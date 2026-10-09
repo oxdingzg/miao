@@ -28,6 +28,17 @@ async function waitForText(
   throw new Error(`timed out waiting for ${JSON.stringify(text)} in the frame`)
 }
 
+// Key handling and network settles are asynchronous; poll the observable state
+// instead of guessing a sleep long enough for a loaded CI host.
+async function waitFor(check: () => boolean, timeout = 2000) {
+  const start = Date.now()
+  while (Date.now() - start < timeout) {
+    if (check()) return
+    await Bun.sleep(20)
+  }
+  throw new Error("timed out waiting for condition")
+}
+
 type QuestionInput = {
   header: string
   question: string
@@ -145,13 +156,12 @@ for (const action of ["enter", "escape"] as const) {
     try {
       app.mockInput.pressEnter()
       app.mockInput.pressEnter()
-      await app.renderOnce()
-      expect(app.captureCharFrame()).toContain("Review")
+      await waitForText(app, "Review")
       if (action === "enter") app.mockInput.pressEnter()
       if (action === "escape") app.mockInput.pressEscape()
       app.mockInput.pressEnter()
       app.mockInput.pressEscape()
-      await Bun.sleep(100)
+      await waitFor(() => settled === 1)
       app.mockInput.pressEnter()
       app.mockInput.pressEscape()
       await Bun.sleep(60)
@@ -172,11 +182,10 @@ for (const action of ["enter", "escape"] as const) {
       const y = lines.findIndex((line) => line.includes("Confirm"))
       const x = lines[y].indexOf("Confirm")
       await app.mockMouse.click(x, y)
-      await app.renderOnce()
-      expect(app.captureCharFrame()).toContain("Review")
+      await waitForText(app, "Review")
       if (action === "enter") app.mockInput.pressEnter()
       if (action === "escape") app.mockInput.pressEscape()
-      await Bun.sleep(60)
+      await waitFor(() => calls.length === 1)
       expect(calls).toEqual([action === "enter" ? replyPath() : rejectPath()])
     } finally {
       app.renderer.destroy()
@@ -192,10 +201,9 @@ for (const action of ["enter", "escape"] as const) {
       app.mockInput.pressEnter()
       if (action === "enter") app.mockInput.pressEnter()
       if (action === "escape") app.mockInput.pressEscape()
-      await Bun.sleep(60)
-      await app.renderOnce()
+      await waitFor(() => calls.length === 1)
+      await waitForText(app, "Question request not found")
       expect(calls).toHaveLength(1)
-      expect(app.captureCharFrame()).toContain("Question request not found")
       expect(settled).toBe(1)
       app.mockInput.pressEscape()
       app.mockInput.pressEnter()
@@ -215,11 +223,11 @@ test("transient failures keep the question available for retry or dismissal", as
     app.mockInput.pressEnter()
     app.mockInput.pressEnter()
     app.mockInput.pressEnter()
-    await Bun.sleep(60)
+    await waitFor(() => calls.length === 1)
     expect(calls).toEqual([replyPath()])
     expect(settled).toBe(0)
     app.mockInput.pressEscape()
-    await Bun.sleep(60)
+    await waitFor(() => calls.length === 2)
     expect(calls).toEqual([replyPath(), rejectPath()])
     expect(settled).toBe(0)
   } finally {
@@ -234,17 +242,14 @@ test("settling a queued question mounts the next question with fresh answers and
     app.mockInput.pressEnter()
     app.mockInput.pressEnter()
     app.mockInput.pressEnter()
-    await Bun.sleep(60)
-    await app.renderOnce()
-    expect(app.captureCharFrame()).toContain("Next First")
+    await waitForText(app, "Next First")
     expect(app.captureCharFrame()).not.toContain("Review")
     expect(app.captureCharFrame()).not.toContain("✓")
     app.mockInput.pressEnter()
-    await app.renderOnce()
-    expect(app.captureCharFrame()).toContain("Next Second")
+    await waitForText(app, "Next Second")
     expect(calls).toHaveLength(1)
     app.mockInput.pressEscape()
-    await Bun.sleep(60)
+    await waitFor(() => calls.length === 2)
     expect(calls).toEqual([replyPath(), "/api/session/ses_test/question/que_next/reject"])
   } finally {
     app.renderer.destroy()
