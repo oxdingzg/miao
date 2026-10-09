@@ -117,8 +117,7 @@ pub fn parse(input: &Input) -> Result<Vec<Operation>, ToolError> {
             }
             Action::Update => {
                 let mut hunk: Vec<(Line, String)> = Vec::new();
-                loop {
-                    let Some(line) = lines.peek() else { break };
+                while let Some(line) = lines.peek() {
                     if *line == "@@" {
                         if hunk.is_empty() {
                             lines.next();
@@ -334,7 +333,8 @@ fn split(root: &Dir, path: &str) -> Result<(Dir, std::ffi::OsString), ToolError>
 /// published files best-effort, mirroring the optimistic-CAS contract of the
 /// single-file writers. Delete runs last because it is not restorable.
 pub fn apply(root: &Dir, operations: &[Operation]) -> Result<Value, ToolError> {
-    let mut plan: Vec<(Operation, Option<Staged>, Option<Vec<u8>>, Option<Vec<u8>>)> = Vec::new();
+    type Plan = Vec<(Operation, Option<Staged>, Option<Vec<u8>>, Option<Vec<u8>>)>;
+    let mut plan: Plan = Vec::new();
     for operation in operations {
         let original = read_original(root, &operation.path)?;
         let (staged, final_bytes) = match operation.action {
@@ -342,9 +342,10 @@ pub fn apply(root: &Dir, operations: &[Operation]) -> Result<Value, ToolError> {
                 if original.is_some() {
                     return Err(ToolError::StaleFile);
                 }
-                let bytes = operation.content.clone().into_bytes();
-                let (handle, _) = split(root, &operation.path)?;
-                (Some(Staged::create(&handle, &bytes, None)?), Some(bytes))
+                // The parent directory may not exist yet; it is created and the
+                // file staged only at publish time, so an aborted patch leaves
+                // no empty directories behind.
+                (None, Some(operation.content.clone().into_bytes()))
             }
             Action::Update => {
                 let original = original.clone().ok_or(ToolError::StaleFile)?;
@@ -373,12 +374,21 @@ pub fn apply(root: &Dir, operations: &[Operation]) -> Result<Value, ToolError> {
     let mut published: Vec<(String, Option<Vec<u8>>)> = Vec::new();
     let mut files = Vec::new();
     for (operation, staged, original, final_bytes) in &mut plan {
-        let Some(staged) = staged.take() else {
+        if operation.action == Action::Delete {
             continue;
-        };
-        let (handle, name) = split(root, &operation.path)?;
+        }
         let created = operation.action == Action::Add;
-        if let Err(error) = staged.publish(&handle, &name, created) {
+        let published_now = if let Some(staged) = staged.take() {
+            let (handle, name) = split(root, &operation.path)?;
+            staged.publish(&handle, &name, created)
+        } else {
+            publish_new(
+                root,
+                &operation.path,
+                final_bytes.as_deref().unwrap_or_default(),
+            )
+        };
+        if let Err(error) = published_now {
             rollback(root, &published);
             return Err(error);
         }
@@ -391,7 +401,10 @@ pub fn apply(root: &Dir, operations: &[Operation]) -> Result<Value, ToolError> {
             "bytes": bytes.len(),
         }));
     }
-    for (operation, _, _, _) in plan.iter().filter(|(_, staged, _, _)| staged.is_none()) {
+    for (operation, _, _, _) in plan
+        .iter()
+        .filter(|(op, _, _, _)| op.action == Action::Delete)
+    {
         match root.remove_file(&operation.path) {
             Ok(()) => files.push(json!({"path": operation.path, "action": "delete"})),
             Err(error) => {
@@ -401,6 +414,17 @@ pub fn apply(root: &Dir, operations: &[Operation]) -> Result<Value, ToolError> {
         }
     }
     Ok(json!({"applied": true, "files": files, "count": files.len()}))
+}
+
+fn publish_new(root: &Dir, path: &str, bytes: &[u8]) -> Result<(), ToolError> {
+    if let Some(parent) = Path::new(path)
+        .parent()
+        .filter(|p| !p.as_os_str().is_empty())
+    {
+        root.create_dir_all(parent)?;
+    }
+    let (handle, name) = split(root, path)?;
+    Staged::create(&handle, bytes, None)?.publish(&handle, &name, true)
 }
 
 fn rollback(root: &Dir, published: &[(String, Option<Vec<u8>>)]) {

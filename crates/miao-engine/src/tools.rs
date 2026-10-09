@@ -71,6 +71,9 @@ pub struct Prepared {
     input: Value,
     path: PathBuf,
     resource: String,
+    /// Workspace-relative paths a multi-file tool touches. Every entry is
+    /// evaluated against policy; a single deny rejects the whole call.
+    targets: Vec<String>,
     access: Access,
 }
 impl Prepared {
@@ -82,6 +85,9 @@ impl Prepared {
     }
     pub fn resource(&self) -> &str {
         &self.resource
+    }
+    pub fn targets(&self) -> &[String] {
+        &self.targets
     }
     pub fn access(&self) -> Access {
         self.access
@@ -244,6 +250,7 @@ impl Tools {
                     input,
                     path: self.root.clone(),
                     resource,
+                    targets: Vec::new(),
                     access: Access::External,
                 });
             }
@@ -322,7 +329,7 @@ impl Tools {
         };
         let path = if name == "apply_patch" {
             for operation in crate::patch::parse(&Self::patch_input(name, input.clone())?)? {
-                let candidate = self.contained(&operation.path).await?;
+                let candidate = self.contained_target(&operation.path).await?;
                 if self.protected.contains(&candidate) {
                     return Err(ToolError::ProtectedResource);
                 }
@@ -404,12 +411,21 @@ impl Tools {
         } else {
             Access::Read
         };
+        let targets = if name == "apply_patch" {
+            crate::patch::parse(&Self::patch_input(name, input.clone())?)?
+                .into_iter()
+                .map(|operation| operation.path)
+                .collect()
+        } else {
+            Vec::new()
+        };
         Ok(Prepared {
             access,
             name: name.into(),
             input,
             path,
             resource,
+            targets,
         })
     }
 
@@ -618,6 +634,24 @@ impl Tools {
             return Err(ToolError::OutsideWorkspace);
         }
         Ok(path)
+    }
+
+    /// Patch targets may not exist yet (Add File). Canonicalize the nearest
+    /// existing ancestor for the boundary check and re-append the missing tail.
+    async fn contained_target(&self, path: &str) -> Result<PathBuf, ToolError> {
+        let joined = self.root.join(path);
+        let mut existing = joined.as_path();
+        while tokio::fs::symlink_metadata(existing).await.is_err() {
+            existing = existing.parent().ok_or(ToolError::OutsideWorkspace)?;
+        }
+        let base = tokio::fs::canonicalize(existing).await?;
+        if !base.starts_with(&self.root) {
+            return Err(ToolError::OutsideWorkspace);
+        }
+        let tail = joined
+            .strip_prefix(existing)
+            .map_err(|_| ToolError::OutsideWorkspace)?;
+        Ok(base.join(tail))
     }
 
     /// Read-only tools use canonical containment, not an OS sandbox. They do

@@ -1048,10 +1048,26 @@ async fn authorize(
     prepared: &Prepared,
     cancel: CancellationToken,
 ) -> Result<bool, Error> {
-    match inner
-        .policy
-        .evaluate(prepared.name(), prepared.resource(), prepared.access())
-    {
+    let decision = if prepared.targets().is_empty() {
+        inner
+            .policy
+            .evaluate(prepared.name(), prepared.resource(), prepared.access())
+    } else {
+        prepared
+            .targets()
+            .iter()
+            .map(|target| {
+                inner
+                    .policy
+                    .evaluate(prepared.name(), target, prepared.access())
+            })
+            .fold(Decision::Allow, |acc, next| match (acc, next) {
+                (Decision::Deny, _) | (_, Decision::Deny) => Decision::Deny,
+                (Decision::Ask, _) | (_, Decision::Ask) => Decision::Ask,
+                _ => Decision::Allow,
+            })
+    };
+    match decision {
         Decision::Allow => return Ok(true),
         Decision::Deny => {
             inner.store.record(session,"permission.denied",json!({"run_id":run,"call_id":call,"tool":prepared.name(),"resource":prepared.resource(),"policy_revision":inner.policy.revision()})).await?;

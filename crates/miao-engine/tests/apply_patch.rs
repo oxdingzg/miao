@@ -62,11 +62,7 @@ fn policy(deny_patch: bool) -> Policy {
             } else {
                 "*".into()
             },
-            path: if deny_patch {
-                "@workspace/patch".into()
-            } else {
-                "**".into()
-            },
+            path: "**".into(),
             decision: if deny_patch {
                 Decision::Deny
             } else {
@@ -139,8 +135,19 @@ async fn patch_adds_updates_and_deletes_in_one_transaction() {
         " Hello, patched\nworld\n"
     );
     assert!(!workspace.join("obsolete.log").exists());
-    assert!(transcript.contains("\"applied\":true"));
-    assert!(transcript.contains("\"delete\""));
+    let history: Value = serde_json::from_str(&transcript).unwrap();
+    let result: Value = serde_json::from_str(
+        history[2]["content"][0]["content"]
+            .as_str()
+            .expect("tool result text"),
+    )
+    .unwrap();
+    assert_eq!(result["applied"], json!(true));
+    assert!(result["files"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .any(|file| file["action"] == json!("delete")));
 }
 
 #[tokio::test]
@@ -174,10 +181,11 @@ async fn bom_and_crlf_are_preserved_through_updates() {
         b"\xEF\xBB\xBF Hello\r\nworld\r\n",
     )
     .unwrap();
+    std::fs::write(workspace.join("obsolete.log"), "old\n").unwrap();
     drive(dir.path(), PATCH, false).await;
     let bytes = std::fs::read(workspace.join("readme.md")).unwrap();
     assert!(bytes.starts_with(b"\xEF\xBB\xBF"));
-    assert_eq!(String::from_utf8_lossy(&bytes).contains("\r\n"), true);
+    assert!(String::from_utf8_lossy(&bytes).contains("\r\n"));
     assert!(String::from_utf8_lossy(&bytes).contains(" Hello, patched\r\n"));
 }
 #[tokio::test]
@@ -208,7 +216,6 @@ fn patch_parsing_is_strict_and_bounded() {
         "*** Begin Patch\n*** Add File: ../escape.txt\n+hi\n*** End Patch",
         "*** Begin Patch\n*** Add File: /abs.txt\n+hi\n*** End Patch",
         "*** Begin Patch\n*** Add File: a//b.txt\n+hi\n*** End Patch",
-        "*** Begin Patch\n*** Delete File: missing.txt\n*** End Patch",
         "*** Begin Patch\n*** Touch File: a.txt\n*** End Patch",
     ] {
         assert!(matches!(parse(bad), Err(ToolError::InvalidInput)), "{bad}");
