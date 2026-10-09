@@ -905,7 +905,7 @@ const layer = Layer.effect(
       let attempt = 0
       return yield* Effect.uninterruptibleMask((restore) =>
         Effect.gen(function* () {
-          const stream = yield* Effect.suspend(() => {
+          const runProviderTurn = () => Effect.suspend(() => {
             // Reset per attempt so a retried stream neither skips events based on
             // the previous attempt's overflow capture nor reports its latency.
             overflowFailure = undefined
@@ -963,6 +963,28 @@ const layer = Layer.effect(
             }),
             Effect.exit,
           )
+          let stream = yield* runProviderTurn()
+          // A request the endpoint rejected (HTTP 400) is not retryable, so the
+          // schedule declines it and the turn would fail and wait for the user
+          // to continue. A gateway commonly wraps a transient upstream failure
+          // in a 400, so grant exactly one immediate extra attempt before giving
+          // up; a deterministic rejection still fails, at the cost of one replay.
+          if (stream._tag === "Failure") {
+            const rejected = Option.getOrUndefined(Cause.findErrorOption(stream.cause))
+            if (
+              !publisher.hasAssistantStarted() &&
+              !publisher.hasProviderError() &&
+              rejected !== undefined &&
+              SessionRunnerProviderRetry.selfHealable(rejected)
+            ) {
+              yield* Effect.logWarning("retrying rejected provider request", {
+                sessionID: session.id,
+                model: `${model.provider}/${model.id}`,
+                ...retryLog(rejected),
+              })
+              stream = yield* runProviderTurn()
+            }
+          }
           const failure =
             stream._tag === "Failure" ? Option.getOrUndefined(Cause.findErrorOption(stream.cause)) : undefined
           if (

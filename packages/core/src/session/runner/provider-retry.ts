@@ -62,3 +62,18 @@ export const retryable = (error: { readonly _tag: string }): boolean => {
   if (reason._tag === "Authentication") return reason.kind !== "insufficient-permissions"
   return reason.retryable === true
 }
+
+/**
+ * Whether a turn failure earns a single extra attempt even though {@link
+ * retryable} declines it.
+ *
+ * A request the endpoint rejected (HTTP 400) is not retryable: replaying an
+ * identical request normally reproduces it. But a 400 delivered through a
+ * gateway commonly wraps an upstream hiccup (`Upstream request failed`) rather
+ * than a real defect in our payload, and the schedule then gives up at once —
+ * the turn fails and waits for the user to continue. The runner grants exactly
+ * one extra attempt for this class so a transient rejection recovers on its
+ * own; a deterministic one still fails, at the cost of one replay.
+ */
+export const selfHealable = (error: { readonly _tag: string }): boolean =>
+  error._tag === "LLM.Error" && (error as LLMError).reason._tag === "InvalidRequest"
