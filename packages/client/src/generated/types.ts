@@ -4576,6 +4576,104 @@ export type ServerRuntimeSetSessionEnabledOutput = {
   readonly hubURL?: string
 }
 
+export type ServerRuntimeAccountTrustOutput = {
+  readonly hubURL: string
+  readonly accountID: string
+  readonly acceptedSequence: number
+  readonly deviceCount: number
+  readonly permissions: ReadonlyArray<
+    | "read"
+    | "prompt"
+    | "permission.reply"
+    | "question.reply"
+    | "interrupt"
+    | "session.create"
+    | "session.rename"
+    | "session.selection"
+  >
+  readonly expiresAt: number
+} | null
+
+export type ServerRuntimeBindAccountInput = {
+  readonly grantID: {
+    readonly grantID: string
+    readonly version: number
+    readonly policy: {
+      readonly permissions: ReadonlyArray<
+        | "read"
+        | "prompt"
+        | "permission.reply"
+        | "question.reply"
+        | "interrupt"
+        | "session.create"
+        | "session.rename"
+        | "session.selection"
+      >
+      readonly projectIDs: ReadonlyArray<string>
+      readonly sessionIDs: ReadonlyArray<string>
+      readonly expiresAt: number
+    }
+  }["grantID"]
+  readonly version: {
+    readonly grantID: string
+    readonly version: number
+    readonly policy: {
+      readonly permissions: ReadonlyArray<
+        | "read"
+        | "prompt"
+        | "permission.reply"
+        | "question.reply"
+        | "interrupt"
+        | "session.create"
+        | "session.rename"
+        | "session.selection"
+      >
+      readonly projectIDs: ReadonlyArray<string>
+      readonly sessionIDs: ReadonlyArray<string>
+      readonly expiresAt: number
+    }
+  }["version"]
+  readonly policy: {
+    readonly grantID: string
+    readonly version: number
+    readonly policy: {
+      readonly permissions: ReadonlyArray<
+        | "read"
+        | "prompt"
+        | "permission.reply"
+        | "question.reply"
+        | "interrupt"
+        | "session.create"
+        | "session.rename"
+        | "session.selection"
+      >
+      readonly projectIDs: ReadonlyArray<string>
+      readonly sessionIDs: ReadonlyArray<string>
+      readonly expiresAt: number
+    }
+  }["policy"]
+}
+
+export type ServerRuntimeBindAccountOutput = {
+  readonly hubURL: string
+  readonly accountID: string
+  readonly acceptedSequence: number
+  readonly deviceCount: number
+  readonly permissions: ReadonlyArray<
+    | "read"
+    | "prompt"
+    | "permission.reply"
+    | "question.reply"
+    | "interrupt"
+    | "session.create"
+    | "session.rename"
+    | "session.selection"
+  >
+  readonly expiresAt: number
+}
+
+export type ServerRuntimeClearAccountTrustOutput = void
+
 export type ServerRuntimeConfigureInput = {
   readonly accountID?: { readonly accountID?: string; readonly hubURL: string; readonly hostToken: string }["accountID"]
   readonly hubURL: { readonly accountID?: string; readonly hubURL: string; readonly hostToken: string }["hubURL"]

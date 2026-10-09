@@ -121,3 +121,23 @@ test("concurrent writers cannot accept conflicting snapshots at the same sequenc
       await other.close()
     }
   }))
+
+test("local cancellation atomically removes authority and revokes member grants but preserves unrelated devices", () =>
+  fixture(async (store, filename) => {
+    const owner = await SecureChannel.createIdentity()
+    const outsider = await SecureChannel.createIdentity()
+    const grant = await bind(store, owner)
+    const unrelated = await store.approve({ ...policy(), publicKey: outsider.publicKey, label: "Independent device" })
+    const revoked = await store.clearAccountTrust()
+    expect(revoked.map((item) => item.id)).toEqual([grant.id])
+    expect(store.accountTrust()).toBeUndefined()
+    expect(store.get(grant.id, owner.publicKey)).toBeUndefined()
+    expect(store.get(unrelated.id, outsider.publicKey)).toBeDefined()
+    const reopened = await DeviceGrants.load(filename)
+    try {
+      expect(reopened.accountTrust()).toBeUndefined()
+      expect(await reopened.clearAccountTrust()).toEqual([])
+    } finally {
+      await reopened.close()
+    }
+  }))

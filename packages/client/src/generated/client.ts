@@ -224,6 +224,10 @@ import type {
   ServerRuntimeSetEnabledOutput,
   ServerRuntimeSetSessionEnabledInput,
   ServerRuntimeSetSessionEnabledOutput,
+  ServerRuntimeAccountTrustOutput,
+  ServerRuntimeBindAccountInput,
+  ServerRuntimeBindAccountOutput,
+  ServerRuntimeClearAccountTrustOutput,
   ServerRuntimeConfigureInput,
   ServerRuntimeConfigureOutput,
   ServerRuntimeInviteInput,
@@ -1830,6 +1834,40 @@ export function make(options: ClientOptions) {
             successStatus: 200,
             declaredStatuses: [503, 400, 401],
             empty: false,
+          },
+          requestOptions,
+        ),
+      accountTrust: (requestOptions?: RequestOptions) =>
+        request<ServerRuntimeAccountTrustOutput>(
+          {
+            method: "GET",
+            path: `/api/runtime/control/account/trust`,
+            successStatus: 200,
+            declaredStatuses: [503, 401, 400],
+            empty: false,
+          },
+          requestOptions,
+        ),
+      bindAccount: (input: ServerRuntimeBindAccountInput, requestOptions?: RequestOptions) =>
+        request<ServerRuntimeBindAccountOutput>(
+          {
+            method: "POST",
+            path: `/api/runtime/control/account/trust`,
+            body: { grantID: input["grantID"], version: input["version"], policy: input["policy"] },
+            successStatus: 200,
+            declaredStatuses: [503, 400, 401],
+            empty: false,
+          },
+          requestOptions,
+        ),
+      clearAccountTrust: (requestOptions?: RequestOptions) =>
+        request<ServerRuntimeClearAccountTrustOutput>(
+          {
+            method: "DELETE",
+            path: `/api/runtime/control/account/trust`,
+            successStatus: 204,
+            declaredStatuses: [503, 401, 400],
+            empty: true,
           },
           requestOptions,
         ),
