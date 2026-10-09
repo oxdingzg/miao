@@ -1,5 +1,6 @@
 import { expect, test } from "bun:test"
-import { parseSessionMessage } from "../src/util/session-message"
+import type { Part } from "@miao/schema/view-models"
+import { parseSessionMessage, sessionMessageEntries } from "../src/util/session-message"
 
 const id = "ses_f0eaecb6affeBw57SfwTo74Ohs"
 
@@ -40,4 +41,57 @@ test("ordinary user text and incomplete or quoted envelopes stay unmodified", ()
 
 test("empty bodies retain their sender", () => {
   expect(parseSessionMessage(`<message from session="${id}">\n\n</message>`)).toEqual({ sessionID: id, body: "" })
+})
+
+test("derives inbound and completed outbound messages from the transcript in order", () => {
+  const parts: Record<string, ReadonlyArray<Part>> = {
+    msg_user: [
+      {
+        id: "prt_in",
+        sessionID: "ses_self",
+        messageID: "msg_user",
+        type: "text",
+        text: `<message from session="${id}">\nhello there\n</message>`,
+      } as Part,
+    ],
+    msg_sent: [
+      {
+        id: "prt_out",
+        sessionID: "ses_self",
+        messageID: "msg_sent",
+        type: "tool",
+        callID: "call_1",
+        tool: "send_message",
+        state: {
+          status: "completed",
+          input: { to: "@peer", message: "first line\nsecond line" },
+          output: "",
+          title: "",
+          metadata: {},
+          time: { start: 0, end: 0 },
+        },
+      } as Part,
+      // A running call has not been delivered, so it stays out of the summary.
+      {
+        id: "prt_running",
+        sessionID: "ses_self",
+        messageID: "msg_sent",
+        type: "tool",
+        callID: "call_2",
+        tool: "send_message",
+        state: { status: "running", input: { to: "@pending", message: "not yet" }, time: { start: 0 } },
+      } as Part,
+    ],
+  }
+  const entries = sessionMessageEntries(
+    [
+      { id: "msg_user", role: "user" },
+      { id: "msg_sent", role: "assistant" },
+    ],
+    (messageID) => parts[messageID] ?? [],
+  )
+  expect(entries).toEqual([
+    { id: "prt_in", direction: "in", peer: id, body: "hello there" },
+    { id: "prt_out", direction: "out", peer: "@peer", body: "first line\nsecond line" },
+  ])
 })
