@@ -12,6 +12,7 @@ mod jobs;
 pub mod mcp;
 pub mod openai_chat;
 pub mod openai_responses;
+pub mod patch;
 pub mod permission;
 pub mod process;
 pub mod protocol;

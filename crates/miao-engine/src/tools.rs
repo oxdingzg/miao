@@ -155,6 +155,12 @@ impl Tools {
         self.context_sources = Arc::new(sources);
         Ok(self)
     }
+    fn patch_input(name: &str, input: Value) -> Result<crate::patch::Input, ToolError> {
+        if name != "apply_patch" {
+            return Err(ToolError::Unsupported);
+        }
+        serde_json::from_value(input).map_err(|_| ToolError::InvalidInput)
+    }
     pub fn with_hooks(mut self, hooks: Vec<crate::hooks::Hook>) -> Result<Self, ToolError> {
         crate::hooks::validate(&hooks)?;
         self.hooks = Arc::new(hooks);
@@ -308,9 +314,21 @@ impl Tools {
             "write_file" | "edit_file" if self.writes => {
                 Mutation::parse(name, input.clone())?.path().to_owned()
             }
+            "apply_patch" if self.writes => {
+                crate::patch::parse(&Self::patch_input(name, input.clone())?)?;
+                ".".into()
+            }
             _ => return Err(ToolError::Unsupported),
         };
-        let path = if name == "write_file" || name == "edit_file" {
+        let path = if name == "apply_patch" {
+            for operation in crate::patch::parse(&Self::patch_input(name, input.clone())?)? {
+                let candidate = self.contained(&operation.path).await?;
+                if self.protected.contains(&candidate) {
+                    return Err(ToolError::ProtectedResource);
+                }
+            }
+            self.root.clone()
+        } else if name == "write_file" || name == "edit_file" {
             let candidate = self.root.join(&path);
             if let Ok(metadata) = tokio::fs::symlink_metadata(&candidate).await {
                 if metadata.file_type().is_symlink() {
@@ -381,7 +399,7 @@ impl Tools {
             Access::Background
         } else if name == "run_command" {
             Access::Execute
-        } else if name == "write_file" || name == "edit_file" {
+        } else if matches!(name, "write_file" | "edit_file" | "apply_patch") {
             Access::Write
         } else {
             Access::Read
@@ -472,9 +490,19 @@ impl Tools {
                 .strip_prefix(&self.root)
                 .map_err(|_| ToolError::OutsideWorkspace)?
                 .to_owned();
-            let mutation = Mutation::parse(&prepared.name, prepared.input)?;
             // A started commit is not dropped on cancellation. Its actual result
             // settles durably before the coordinator announces interruption.
+            if prepared.name == "apply_patch" {
+                let input = crate::patch::Input::parse(prepared.input)?;
+                let operations = crate::patch::parse(&input)?;
+                return tokio::task::spawn_blocking(move || {
+                    let _lease = lease;
+                    crate::patch::apply(&directory, &operations)
+                })
+                .await
+                .map_err(|_| ToolError::Io(std::io::Error::other("file commit worker failed")))?;
+            }
+            let mutation = Mutation::parse(&prepared.name, prepared.input)?;
             return tokio::task::spawn_blocking(move || {
                 let _lease = lease;
                 apply(&directory, &relative, mutation)
@@ -558,7 +586,8 @@ impl Tools {
         if self.writes {
             definitions.extend([
                 ToolDefinition{name:"write_file".into(),description:"Write UTF-8 text (max 32768 bytes) under workspace. expected_sha256=null creates only; existing files require the current SHA-256 from read_file. Requires permission approval.".into(),input_schema:json!({"type":"object","properties":{"path":{"type":"string"},"text":{"type":"string"},"expected_sha256":{"type":["string","null"]}},"required":["path","text","expected_sha256"],"additionalProperties":false})},
-                ToolDefinition{name:"edit_file".into(),description:"Conditionally replace an exact text match using the SHA-256 from read_file. Ambiguous matches fail unless replace_all=true. Requires permission approval.".into(),input_schema:json!({"type":"object","properties":{"path":{"type":"string"},"old_string":{"type":"string"},"new_string":{"type":"string"},"expected_sha256":{"type":"string"},"replace_all":{"type":"boolean"}},"required":["path","old_string","new_string","expected_sha256"],"additionalProperties":false})},
+                ToolDefinition{name:"apply_patch".into(),description:"Apply a strict V4A multi-file patch (Add/Update/Delete File sections with @@ hunks) as one transaction: all-or-nothing, context must match exactly, BOM/CRLF preserved, max 32 files/256 KiB patch/32 KiB per file. Requires permission approval for the whole patch.".into(),input_schema:json!({"type":"object","properties":{"patch":{"type":"string"}},"required":["patch"],"additionalProperties":false})},
+                        ToolDefinition{name:"edit_file".into(),description:"Conditionally replace an exact text match using the SHA-256 from read_file. Ambiguous matches fail unless replace_all=true. Requires permission approval.".into(),input_schema:json!({"type":"object","properties":{"path":{"type":"string"},"old_string":{"type":"string"},"new_string":{"type":"string"},"expected_sha256":{"type":"string"},"replace_all":{"type":"boolean"}},"required":["path","old_string","new_string","expected_sha256"],"additionalProperties":false})},
             ]);
         }
         if self.process_enabled {
