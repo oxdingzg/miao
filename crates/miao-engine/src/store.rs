@@ -1,7 +1,9 @@
 use crate::{
     approval::{now_ms, Approval, Response},
     permission::{context_digest, input_digest, Decision},
-    protocol::{Admission, ContextBundle, Delivery, Error, Event, Input, Message},
+    protocol::{
+        Admission, CollaborationMode, ContextBundle, Delivery, Error, Event, Input, Message,
+    },
 };
 use fs2::FileExt;
 use rusqlite::{params, Connection, OptionalExtension, Transaction};
@@ -17,7 +19,7 @@ use std::{
 use tokio::sync::{mpsc, oneshot};
 
 pub(crate) const APPLICATION_ID: u32 = 0x4d494145;
-pub(crate) const SCHEMA_VERSION: u32 = 6;
+pub(crate) const SCHEMA_VERSION: u32 = 7;
 
 type Work = Box<dyn FnOnce(&mut Connection) + Send>;
 
@@ -100,7 +102,7 @@ impl Store {
                 }
 
                 conn.execute_batch(&format!("PRAGMA application_id={APPLICATION_ID}; PRAGMA user_version={SCHEMA_VERSION}; PRAGMA journal_mode=WAL; PRAGMA synchronous=FULL; PRAGMA foreign_keys=ON;
-                    CREATE TABLE IF NOT EXISTS engine_session(id TEXT PRIMARY KEY, next_seq INTEGER NOT NULL DEFAULT 0);
+                    CREATE TABLE IF NOT EXISTS engine_session(id TEXT PRIMARY KEY, next_seq INTEGER NOT NULL DEFAULT 0, mode TEXT NOT NULL DEFAULT 'build');
                     CREATE TABLE IF NOT EXISTS engine_event(session_id TEXT NOT NULL REFERENCES engine_session(id), seq INTEGER NOT NULL, kind TEXT NOT NULL, data TEXT NOT NULL, PRIMARY KEY(session_id,seq));
                     CREATE TABLE IF NOT EXISTS engine_input(id TEXT PRIMARY KEY, session_id TEXT NOT NULL REFERENCES engine_session(id), prompt TEXT NOT NULL, delivery TEXT NOT NULL, state TEXT NOT NULL, admitted_seq INTEGER NOT NULL);
                     CREATE TABLE IF NOT EXISTS engine_message(session_id TEXT NOT NULL REFERENCES engine_session(id), seq INTEGER NOT NULL, role TEXT NOT NULL, content TEXT NOT NULL, PRIMARY KEY(session_id,seq));
@@ -115,6 +117,13 @@ impl Store {
                     CREATE TABLE IF NOT EXISTS engine_context(session_id TEXT NOT NULL REFERENCES engine_session(id),epoch INTEGER NOT NULL,fingerprint TEXT NOT NULL,system TEXT NOT NULL,sources TEXT NOT NULL,selected_seq INTEGER NOT NULL,PRIMARY KEY(session_id,epoch));
                     CREATE TABLE IF NOT EXISTS engine_job(id TEXT PRIMARY KEY,session_id TEXT NOT NULL REFERENCES engine_session(id),request_key TEXT UNIQUE NOT NULL REFERENCES engine_tool(id),state TEXT NOT NULL,input TEXT NOT NULL,result TEXT);
                     CREATE TABLE IF NOT EXISTS engine_compaction(id TEXT PRIMARY KEY,session_id TEXT NOT NULL REFERENCES engine_session(id),through_seq INTEGER NOT NULL,summary TEXT NOT NULL,created_seq INTEGER NOT NULL);"))?;
+                let has_mode:bool=conn.query_row("SELECT EXISTS(SELECT 1 FROM pragma_table_info('engine_session') WHERE name='mode')",[],|r|r.get(0))?;
+                if !has_mode {
+                    conn.execute(
+                        "ALTER TABLE engine_session ADD COLUMN mode TEXT NOT NULL DEFAULT 'build'",
+                        [],
+                    )?;
+                }
                 Ok((conn, lease, canonical))
             })();
             match opened {
@@ -169,6 +178,52 @@ impl Store {
             let admission = admit_input(&tx, &input, root.as_deref())?;
             tx.commit()?;
             Ok(admission)
+        })
+        .await
+    }
+
+    /// The Session's collaboration mode. A Session without a row defaults to
+    /// Build, matching the schema default.
+    pub async fn mode(&self, session: &str) -> Result<CollaborationMode, Error> {
+        let session = session.to_owned();
+        self.call(move |conn| {
+            let mode: Option<String> = conn
+                .query_row(
+                    "SELECT mode FROM engine_session WHERE id=?1",
+                    [&session],
+                    |r| r.get(0),
+                )
+                .optional()?;
+            match mode.as_deref() {
+                None | Some("build") => Ok(CollaborationMode::Build),
+                Some("plan") => Ok(CollaborationMode::Plan),
+                Some(other) => Err(Error::Invalid(format!("unknown Session mode {other}"))),
+            }
+        })
+        .await
+    }
+
+    /// Set the Session's collaboration mode, creating the Session row if it did
+    /// not exist, and record the transition durably.
+    pub async fn set_mode(&self, session: &str, mode: CollaborationMode) -> Result<Event, Error> {
+        let (session, mode) = (session.to_owned(), mode);
+        self.call(move |conn| {
+            let tx = conn.transaction()?;
+            let value = match mode {
+                CollaborationMode::Build => "build",
+                CollaborationMode::Plan => "plan",
+            };
+            tx.execute(
+                "INSERT OR IGNORE INTO engine_session(id,next_seq) VALUES(?1,0)",
+                [&session],
+            )?;
+            tx.execute(
+                "UPDATE engine_session SET mode=?2 WHERE id=?1",
+                params![session, value],
+            )?;
+            let event = append(&tx, &session, "session.mode", json!({"mode":value}))?;
+            tx.commit()?;
+            Ok(event)
         })
         .await
     }
@@ -351,7 +406,8 @@ impl Store {
             let questions=crate::question::pending(&tx,&session)?;
             let wakeups=crate::wakeup::pending(&tx,&session)?;
             let crons=crate::cron::pending(&tx,&session)?;
-            let snapshot=json!({"session_id":session,"cursor":cursor,"location":location,"messages":messages,"pending":pending,"active_run":active,"approvals":approvals,"context":context,"state":state,"questions":questions,"wakeups":wakeups,"crons":crons});
+            let mode:String=tx.query_row("SELECT mode FROM engine_session WHERE id=?1",[&session],|r|r.get(0)).optional()?.unwrap_or_else(||"build".into());
+            let snapshot=json!({"session_id":session,"cursor":cursor,"location":location,"mode":mode,"messages":messages,"pending":pending,"active_run":active,"approvals":approvals,"context":context,"state":state,"questions":questions,"wakeups":wakeups,"crons":crons});
             if serde_json::to_vec(&snapshot)?.len()>4*1024*1024{return Err(Error::Invalid("snapshot exceeds limit; use events pagination".into()));}
             tx.commit()?;Ok(snapshot)
         }).await

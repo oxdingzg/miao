@@ -9,6 +9,17 @@ pub enum Delivery {
     Queue,
 }
 
+/// Collaboration mode of a Session. `Build` is the default; `Plan` is a
+/// read-only planning mode: file writes, command execution and background work
+/// are denied even when the permission policy would otherwise allow them.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum CollaborationMode {
+    #[default]
+    Build,
+    Plan,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Input {

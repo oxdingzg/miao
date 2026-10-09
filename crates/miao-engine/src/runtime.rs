@@ -226,6 +226,17 @@ impl Runtime {
         self.inner.store.fork(parent, target, message_seq).await
     }
 
+    /// Set the Session collaboration mode. Recorded durably and read at each
+    /// provider boundary; Plan denies writes, execution and background work.
+    pub async fn set_mode(
+        &self,
+        session: &str,
+        mode: crate::protocol::CollaborationMode,
+    ) -> Result<(), Error> {
+        self.inner.store.set_mode(session, mode).await?;
+        Ok(())
+    }
+
     pub async fn resume(&self, session: &str) -> Result<(), Error> {
         if self.inner.store.location(session).await?.as_deref() != Some(self.inner.tools.location())
         {
@@ -471,7 +482,11 @@ async fn execute(
         if cancel.is_cancelled() {
             return Ok(());
         }
-        let system = bundle.system.clone();
+        let plan = inner.store.mode(session).await? == crate::protocol::CollaborationMode::Plan;
+        let mut system = bundle.system.clone();
+        if plan {
+            system.push_str("\n\n<collaboration-mode mode=\"plan\">\nYou are in plan mode: investigate and propose a plan. Do not modify files, run commands, or start background work; those capabilities are denied.\n</collaboration-mode>");
+        }
         let sources = bundle.sources.clone();
         let context_epoch = inner.store.select_context(session, bundle).await?;
         inner
@@ -591,9 +606,16 @@ async fn execute(
                 let (output, is_error) = match prepared {
                     Err(error) => (json!({"error":error.to_string()}), true),
                     Ok(prepared) => {
-                        let allowed =
-                            authorize(inner, session, run, id, &prepared, cancel.child_token())
-                                .await?;
+                        let allowed = authorize(
+                            inner,
+                            session,
+                            run,
+                            id,
+                            &prepared,
+                            cancel.child_token(),
+                            plan,
+                        )
+                        .await?;
                         if cancel.is_cancelled() {
                             return Ok(());
                         }
@@ -1122,7 +1144,19 @@ async fn authorize(
     call: &str,
     prepared: &Prepared,
     cancel: CancellationToken,
+    plan: bool,
 ) -> Result<bool, Error> {
+    if plan
+        && matches!(
+            prepared.access(),
+            crate::permission::Access::Write
+                | crate::permission::Access::Execute
+                | crate::permission::Access::Background
+        )
+    {
+        inner.store.record(session,crate::events::Lifecycle::PermissionDenied.name(),json!({"run_id":run,"call_id":call,"tool":prepared.name(),"resource":prepared.resource(),"reason":"plan_mode"})).await?;
+        return Ok(false);
+    }
     let (decision, matcher) = if prepared.targets().is_empty() {
         inner
             .policy

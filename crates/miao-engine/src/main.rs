@@ -35,6 +35,10 @@ enum Command {
     Resume {
         session_id: String,
     },
+    Mode {
+        session_id: String,
+        mode: miao_engine::protocol::CollaborationMode,
+    },
     Cancel {
         session_id: String,
     },
@@ -493,6 +497,7 @@ async fn serve(runtime: &Runtime) -> io::Result<()> {
                     let result:Result<Value,Error>=match request.command {
                         Command::Admit{input,resume}=>runtime.admit(input,resume).await.and_then(|v|serde_json::to_value(v).map_err(Error::from)),
                         Command::Resume{session_id}=>runtime.resume(&session_id).await.map(|_|json!({"accepted":true})),
+                        Command::Mode{session_id,mode}=>runtime.set_mode(&session_id,mode).await.map(|_|json!({"accepted":true,"mode":mode})),
                         Command::Cancel{session_id}=>runtime.cancel(&session_id).await.map(|active|json!({"accepted":active})),
                         Command::Compact{session_id,compaction_id,through_message_seq,summary}=>runtime.store().compact(&session_id,&compaction_id,through_message_seq,summary).await,
                         Command::Recall{session_id,query,limit,before_message_seq}=>runtime.store().recall(&session_id,miao_engine::recall::Query{query,limit,before_message_seq}).await,
