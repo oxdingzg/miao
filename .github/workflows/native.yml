@@ -15,10 +15,12 @@ on:
       - "packages/core/src/tool/edit-match.ts"
       - "packages/core/src/tool/apply-patch.ts"
       - "packages/core/src/patch.ts"
+      - "packages/core/src/git.ts"
       - "packages/core/test/sandbox-policy.test.ts"
       - "packages/core/test/tool-bash-sandbox.test.ts"
       - "packages/core/test/tool-edit-native.test.ts"
       - "packages/core/test/patch-native.test.ts"
+      - "packages/core/test/git-status-native.test.ts"
       - "packages/miao/src/sandbox-runner.ts"
       - "packages/miao/src/index.ts"
       - ".github/workflows/native.yml"
@@ -34,10 +36,12 @@ on:
       - "packages/core/src/tool/edit-match.ts"
       - "packages/core/src/tool/apply-patch.ts"
       - "packages/core/src/patch.ts"
+      - "packages/core/src/git.ts"
       - "packages/core/test/sandbox-policy.test.ts"
       - "packages/core/test/tool-bash-sandbox.test.ts"
       - "packages/core/test/tool-edit-native.test.ts"
       - "packages/core/test/patch-native.test.ts"
+      - "packages/core/test/git-status-native.test.ts"
       - "packages/miao/src/sandbox-runner.ts"
       - "packages/miao/src/index.ts"
       - ".github/workflows/native.yml"
@@ -97,7 +101,7 @@ jobs:
         working-directory: packages/native
 
       - name: Sandbox tests
-        run: bun test test/sandbox-policy.test.ts test/tool-bash-sandbox.test.ts test/tool-edit-native.test.ts test/patch-native.test.ts
+        run: bun test test/sandbox-policy.test.ts test/tool-bash-sandbox.test.ts test/tool-edit-native.test.ts test/patch-native.test.ts test/git-status-native.test.ts
         working-directory: packages/core
         env:
           MIAO_NATIVE: "1"

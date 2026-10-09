@@ -993,6 +993,20 @@ pub fn derive_new_contents_v2_napi(
 pub struct GitEntry {
     pub path: String,
     pub status: String,
+    pub additions: u32,
+    pub deletions: u32,
+}
+
+/// Line additions/deletions for one working-tree entry, mirroring
+/// `git diff --numstat HEAD`: `old` is the HEAD blob (empty when the path is
+/// absent from HEAD), `new` is the working-tree content (empty when removed).
+fn git_line_stats(old: &[u8], new: &[u8]) -> (u32, u32) {
+    // Git treats a blob containing NUL in its first bytes as binary and prints
+    // "-" in numstat, which the JS contract already maps to zero.
+    if old.iter().take(8000).any(|byte| *byte == 0) || new.iter().take(8000).any(|byte| *byte == 0) {
+        return (0, 0);
+    }
+    compute_stats(&String::from_utf8_lossy(old), &String::from_utf8_lossy(new))
 }
 
 fn git_status_entries(path: &str) -> Result<Vec<GitEntry>, String> {
@@ -1002,27 +1016,48 @@ fn git_status_entries(path: &str) -> Result<Vec<GitEntry>, String> {
     let iter = repo
         .status(gix::progress::Discard)
         .map_err(|error| format!("failed to compute status: {error}"))?
+        // List untracked files individually, matching `git status
+        // --untracked-files=all`; the default collapses them into directories.
+        .untracked_files(gix::status::UntrackedFiles::Files)
         .into_index_worktree_iter(Vec::<gix::bstr::BString>::new())
         .map_err(|error| format!("failed to iterate status: {error}"))?;
+
+    // Stats are measured against HEAD for every entry, like `git diff HEAD`. An
+    // unborn repository has no HEAD tree, so paths are compared to an empty blob.
+    let head_tree = repo.head_tree().ok();
+    let root = std::path::Path::new(path);
 
     let mut entries = Vec::new();
     for item in iter {
         let item = item.map_err(|error| format!("failed to read status entry: {error}"))?;
         let status = match item.summary() {
-            Some(Summary::Modified) | Some(Summary::TypeChange) | Some(Summary::Conflict) => {
-                "modified"
-            }
             Some(Summary::Added) => "added",
             Some(Summary::Removed) => "deleted",
-            Some(Summary::Renamed) => "renamed",
-            Some(Summary::Copied) => "copied",
+            Some(Summary::Modified)
+            | Some(Summary::TypeChange)
+            | Some(Summary::Conflict)
+            | Some(Summary::Renamed)
+            | Some(Summary::Copied) => "modified",
             Some(Summary::IntentToAdd) | None => continue,
         };
+        let rela_path = item.rela_path().to_string();
+        let new = std::fs::read(root.join(&rela_path)).unwrap_or_default();
+        let (additions, deletions) = match head_tree
+            .as_ref()
+            .and_then(|tree| tree.lookup_entry_by_path(&rela_path).ok().flatten())
+            .and_then(|entry| entry.object().ok())
+        {
+            Some(object) => git_line_stats(&object.data, &new),
+            None => git_line_stats(&[], &new),
+        };
         entries.push(GitEntry {
-            path: item.rela_path().to_string(),
+            path: rela_path,
             status: status.to_string(),
+            additions,
+            deletions,
         });
     }
+    entries.sort_by(|left, right| left.path.cmp(&right.path));
     Ok(entries)
 }
 
@@ -1982,6 +2017,60 @@ mod tests {
             git_worktree_changes_impl(dir.to_str().unwrap()).unwrap(),
             expected
         );
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn git_status_matches_git_porcelain_and_numstat() {
+        let Some(dir) = temp_repo("status") else { return };
+        std::fs::write(dir.join("file.txt"), "hello\nworld\nmore\n").unwrap();
+        std::fs::write(dir.join("added.txt"), "fresh\n").unwrap();
+        std::fs::write(dir.join("bin.dat"), [0u8, 1, 2, 3]).unwrap();
+        std::fs::remove_file(dir.join("gone.txt")).unwrap();
+
+        let entries = git_status_entries(dir.to_str().unwrap()).unwrap();
+        let mapped: Vec<(String, String, u32, u32)> = entries
+            .iter()
+            .map(|entry| (entry.path.clone(), entry.status.clone(), entry.additions, entry.deletions))
+            .collect();
+        assert_eq!(
+            mapped,
+            vec![
+                ("added.txt".to_string(), "added".to_string(), 1, 0),
+                ("bin.dat".to_string(), "modified".to_string(), 0, 0),
+                ("file.txt".to_string(), "modified".to_string(), 1, 0),
+                ("gone.txt".to_string(), "deleted".to_string(), 0, 1),
+            ]
+        );
+
+        // Path/status pairs must equal `git status --porcelain` with renames off
+        // and untracked files listed individually.
+        let porcelain = git(
+            &["status", "--porcelain=v1", "--untracked-files=all", "--no-renames", "-z", "--", "."],
+            &dir,
+        );
+        let mut expected: Vec<(String, String)> = String::from_utf8_lossy(&porcelain.stdout)
+            .split('\0')
+            .filter(|record| record.len() > 3)
+            .map(|record| {
+                let code = &record[..2];
+                let status = if code == "??" {
+                    "added"
+                } else if code.contains('D') && !code.contains('A') {
+                    "deleted"
+                } else if code.contains('A') && !code.contains('D') {
+                    "added"
+                } else {
+                    "modified"
+                };
+                (record[3..].to_string(), status.to_string())
+            })
+            .collect();
+        expected.sort();
+        let actual: Vec<(String, String)> =
+            entries.iter().map(|entry| (entry.path.clone(), entry.status.clone())).collect();
+        assert_eq!(actual, expected);
+
         let _ = std::fs::remove_dir_all(&dir);
     }
 

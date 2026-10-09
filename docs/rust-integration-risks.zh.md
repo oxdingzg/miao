@@ -45,6 +45,7 @@
 - 证据：`snapshot` 热路径是 `diff-files`+`ls-files`（我们对比的 2 个调用）**之后还有** `git add --all`（`snapshot/index.ts:149`）和 `write-tree`（:341），这两个仍是子进程，且在大仓上是大头。
 - 结论：`gitStatus` 只替换了列表这一步，**整个 snapshot 步的端到端收益有限**，除非把 add/write-tree 也用 gix 实现（复杂，gix 的 index 写回支持有限）。
 - 实测（3300 文件 / 600 变更）：listing 18.2 ms → native `gitStatus` 9.4 ms；`git add --all` 6.4 ms；`write-tree` 8.3 ms。整步约 32.9 ms → 24.0 ms（约 27%），add/write-tree 仍占约 44%。
+- 追加（本次接入）：`Git.status.entries` 已改用 `gitStatusAsync`，并补齐 untracked 与逐条增删行数；`add`/`write-tree` 仍是子进程，上述 R7 结论不变。
 
 ### R8. gix 生命周期与资源（中）
 - 每次调用 `gix::open`（5.6ms 里含 open）。缓存 `Repository` 会牵出 mmap 的 pack、fd、线程池，多 workspace/session 并发下有 fd/内存泄漏与线程安全问题。
@@ -78,10 +79,10 @@
 
 1. ~~先解决 R1/R2~~ → **已解决**：addon 每平台构建 + 沙箱自执行（R1）；`native`/`sandbox-linux` CI job 强制构建并运行沙箱测试（R2）。
 2. ~~先接风险最低的~~ → **换了一种接法**：原计划基于「native `edit`/`apply_patch` 只被 V1 工具消费」这一假设。该假设并不成立 —— V2 工具本身就经 `packages/core/src/tool/edit-match.ts` 与 `packages/core/src/patch.ts` 调用同一套 `matchEdit` 与 `deriveNewContentsV2`，由 `MIAO_NATIVE` 控制（默认开启）。V1 移除的是工具，不是原语。
-3. **git 后置**：先做 async/worker 封装（R3），并补 snapshot **全链路**（含 add/write-tree）基准；只在能覆盖大头时才接。
+3. **git status 已接入（窄范围）**：async 封装（R3）已完成并用于 `Git.status.entries`，含 untracked 与逐条增删行数；`add`/`write-tree` 仍是子进程，snapshot 全链路收益仍有限（R7）。
 4. **sandbox 作为可选能力**：已 opt-in 接入 V2 `bash` 工具（`MIAO_SANDBOX=1` 或 `sandbox.mode`）并可回退；Linux 后端已补；默认开启仍待定。不要用 stderr 解析做 escalation 的唯一依据。
 5. 每一步都以“现有测试全绿 + 新 parity 不 skip + 内存/RSS 基线”作为验收。
 
 ## 结论
 
-**R1 打包分发**（addon 每平台构建 + 沙箱自执行）与 **R2 CI 假绿** 已解决；**R3 同步阻塞**已有 async 版，接线时强制用 Async 即可。剩下的实质风险是 **R4 字符串语义**、**R5/R6 正确性**（panic/错误类型），以及沙箱的 **R9（平台不一致）/R10（误杀、stderr escalation 不可靠）**——后者决定了沙箱短期内只能 opt-in。纯函数部分（edit/apply_patch）风险可控、可先接；git 与沙箱属于“能力和工程成本更高”的部分，收益要按全链路重新测。
+**R1 打包分发**（addon 每平台构建 + 沙箱自执行）与 **R2 CI 假绿** 已解决；**R3 同步阻塞**已有 async 版，接线时强制用 Async 即可。剩下的实质风险是 **R4 字符串语义**、**R5/R6 正确性**（panic/错误类型），以及沙箱的 **R9（平台不一致）/R10（误杀、stderr escalation 不可靠）**——后者决定了沙箱短期内只能 opt-in。纯函数部分（edit/apply_patch）风险可控、已先接；git status 的只读路径已按 async 接入 `MIAO_NATIVE` 并带回退，沙箱属于“能力和工程成本更高”的部分，收益要按全链路重新测。

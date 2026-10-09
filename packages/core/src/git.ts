@@ -4,6 +4,8 @@ import path from "path"
 import { randomUUID } from "crypto"
 import { Context, Effect, Layer, Schema, Stream } from "effect"
 import { ChildProcess } from "effect/unstable/process"
+import { native, type NativeModule } from "@miao/native"
+import { Flag } from "./flag/flag"
 import { AbsolutePath, RelativePath } from "./schema"
 import { FSUtil } from "./fs-util"
 import { AppProcess } from "./process"
@@ -290,7 +292,7 @@ const layer = Layer.effect(
       }
     })
 
-    const statusEntries = Effect.fn("Git.status.entries")(function* (repository: Repository) {
+    const statusEntriesTs = Effect.fn("Git.status.entries.ts")(function* (repository: Repository) {
       const listed = yield* run(
         repository.worktree,
         proc,
@@ -325,6 +327,43 @@ const layer = Layer.effect(
             deletions: stat?.deletions ?? 0,
           })
         }),
+      )
+    })
+
+    const statusEntriesNative = (module: NativeModule, repository: Repository) =>
+      Effect.tryPromise({
+        try: () => module.gitStatusAsync(repository.worktree),
+        catch: (cause) =>
+          new OperationError({
+            operation: "list_files",
+            directory: repository.worktree,
+            message: cause instanceof Error ? cause.message : String(cause),
+            cause,
+          }),
+      }).pipe(
+        Effect.map((entries) =>
+          entries.map(
+            (entry) =>
+              new StatusEntry({
+                path: RelativePath.make(entry.path),
+                status: entry.status === "added" || entry.status === "deleted" ? entry.status : "modified",
+                additions: entry.additions,
+                deletions: entry.deletions,
+              }),
+          ),
+        ),
+      )
+
+    const statusEntries = Effect.fn("Git.status.entries")(function* (repository: Repository) {
+      if (!(Flag.MIAO_NATIVE && typeof native?.gitStatusAsync === "function")) return yield* statusEntriesTs(repository)
+      // The native read is an optimization: a failure falls back to the git CLI
+      // path, and the interface keeps its `never` error channel.
+      return yield* statusEntriesNative(native, repository).pipe(
+        Effect.catch((cause) =>
+          Effect.logWarning(
+            `Git.status.entries: native read failed (${cause.message}); using the TypeScript path`,
+          ).pipe(Effect.andThen(statusEntriesTs(repository))),
+        ),
       )
     })
 
