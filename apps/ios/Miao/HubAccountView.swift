@@ -148,7 +148,7 @@ struct HubAccountView: View {
                     }
                 }
             }
-            .scrollDismissesKeyboard(.interactively)
+            .scrollDismissesKeyboard(.immediately)
             .navigationTitle("中继账号")
             .confirmationDialog("批准此新设备使用电脑已明确确认的账号授权范围？", isPresented: $confirmEnrollmentApproval, titleVisibility: .visible) {
                 Button("批准新设备") { Task { await model.approveEnrollmentRequest() } }

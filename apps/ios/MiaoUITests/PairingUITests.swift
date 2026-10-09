@@ -108,6 +108,7 @@ final class PairingUITests: XCTestCase {
                 XCTAssertEqual(field.value as? String, approved, "The complete signed approval is entered")
                 let pin = app.textFields["enrollmentPin"]
                 scrollIntoView(app, pin)
+                print("Native enrollment fields approved=\(field.exists) pin=\(pin.exists) independent=\(app.switches["enrollmentIndependentPin"].exists) textFields=\(app.textFields.count) keyboards=\(app.keyboards.count)")
                 XCTAssertTrue(pin.waitForExistence(timeout: 10))
                 pin.tap(); pin.typeText(enrollment.rootKey)
                 XCTAssertEqual(pin.value as? String, enrollment.rootKey)
