@@ -318,6 +318,7 @@ impl Tools {
                 ".".into()
             }
             "run_command" if self.process_enabled => process::Input::parse(input.clone())?.cwd,
+            "bash" if self.process_enabled => process::BashInput::parse(input.clone())?.cwd,
             "write_file" | "edit_file" if self.writes => {
                 Mutation::parse(name, input.clone())?.path().to_owned()
             }
@@ -354,7 +355,7 @@ impl Tools {
         if self.protected.contains(&path) {
             return Err(ToolError::ProtectedResource);
         }
-        if matches!(name, "run_command" | "start_job" | "glob" | "grep")
+        if matches!(name, "run_command" | "bash" | "start_job" | "glob" | "grep")
             && !tokio::fs::metadata(&path).await?.is_dir()
         {
             return Err(ToolError::InvalidInput);
@@ -404,7 +405,7 @@ impl Tools {
             Access::SessionState
         } else if name == "start_job" {
             Access::Background
-        } else if name == "run_command" {
+        } else if matches!(name, "run_command" | "bash") {
             Access::Execute
         } else if matches!(name, "write_file" | "edit_file" | "apply_patch") {
             Access::Write
@@ -478,7 +479,17 @@ impl Tools {
                 return Err(ToolError::ResourceChanged);
             }
             let runner = self.runner.as_deref().ok_or(ToolError::Unsupported)?;
-            let input = process::Input::parse(prepared.input)?;
+            let input = if prepared.name() == "bash" {
+                let bash = process::BashInput::parse(prepared.input)?;
+                process::Input {
+                    argv: bash.argv(),
+                    cwd: bash.cwd,
+                    timeout_ms: bash.timeout_ms,
+                    pty: bash.pty,
+                }
+            } else {
+                process::Input::parse(prepared.input)?
+            };
             return process::execute(
                 runner,
                 &self.root,
@@ -607,7 +618,8 @@ impl Tools {
             ]);
         }
         if self.process_enabled {
-            definitions.push(ToolDefinition{name:"run_command".into(),description:"Run an explicit argv in a workspace-write sandbox. Timeout 1..120000 ms; stdout/stderr bounded to 32768 bytes each. No implicit shell and no background lifetime. Requires process permission.".into(),input_schema:json!({"type":"object","properties":{"argv":{"type":"array","items":{"type":"string"},"minItems":1,"maxItems":128},"cwd":{"type":"string","default":"."},"timeout_ms":{"type":"integer","minimum":1,"maximum":120000,"default":10000}},"required":["argv"],"additionalProperties":false})});
+            definitions.push(ToolDefinition{name:"run_command".into(),description:"Run an explicit argv in a workspace-write sandbox. Timeout 1..120000 ms; stdout/stderr bounded to 32768 bytes each. No implicit shell and no background lifetime. pty merges stdout/stderr behind a terminal. Requires process permission.".into(),input_schema:json!({"type":"object","properties":{"argv":{"type":"array","items":{"type":"string"},"minItems":1,"maxItems":128},"cwd":{"type":"string","default":"."},"timeout_ms":{"type":"integer","minimum":1,"maximum":120000,"default":10000},"pty":{"type":"boolean","default":false}},"required":["argv"],"additionalProperties":false})});
+            definitions.push(ToolDefinition{name:"bash".into(),description:"Run a shell command line (bash -c) in a workspace-write sandbox. Timeout 1..120000 ms; output bounded to 32768 bytes. pty merges stdout/stderr behind a terminal. Requires process permission.".into(),input_schema:json!({"type":"object","properties":{"command":{"type":"string","minLength":1},"cwd":{"type":"string","default":"."},"timeout_ms":{"type":"integer","minimum":1,"maximum":120000,"default":10000},"pty":{"type":"boolean","default":false}},"required":["command"],"additionalProperties":false})});
         }
         if self.background_enabled {
             let mut start = definitions
