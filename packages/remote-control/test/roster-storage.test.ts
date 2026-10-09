@@ -141,3 +141,33 @@ test("local cancellation atomically removes authority and revokes member grants 
       await reopened.close()
     }
   }))
+
+test("managed admission reuses stable grants, fences expiry/membership and resets without accumulating rows", () =>
+  fixture(async (store) => {
+    const owner = await SecureChannel.createIdentity()
+    await bind(store, owner)
+    const first = await store.authorizeRosterDevice(hubURL, accountID, owner.publicKey)
+    for (let index = 0; index < 20; index++)
+      expect(await store.authorizeRosterDevice(hubURL, accountID, owner.publicKey)).toEqual(first)
+    expect(store.list()).toHaveLength(2)
+    await expect(store.authorizeRosterDevice(hubURL, "account_" + "b".repeat(24), owner.publicKey)).rejects.toThrow(
+      "locally authorized",
+    )
+    const outsider = await SecureChannel.createIdentity()
+    await expect(store.authorizeRosterDevice(hubURL, accountID, outsider.publicKey)).rejects.toThrow(
+      "locally authorized",
+    )
+    await store.clearAccountTrust()
+    await expect(store.authorizeRosterDevice(hubURL, accountID, owner.publicKey)).rejects.toThrow("locally authorized")
+    const approved = await store.approve({ ...policy(), publicKey: owner.publicKey, label: "Root again" })
+    await store.bindAccount({
+      hubURL,
+      accountID,
+      grantID: approved.id,
+      grantVersion: approved.version,
+      policy: policy(),
+    })
+    const next = await store.authorizeRosterDevice(hubURL, accountID, owner.publicKey)
+    expect(next.version).toBeGreaterThan(1)
+    expect(store.list()).toHaveLength(3)
+  }))

@@ -95,6 +95,7 @@ export async function start(input: {
     })
     const agent = ControlAgent.connect({
       hubURL: configuration.hubURL,
+      accountID: configuration.accountID,
       hostToken: configuration.hostToken,
       allowLoopbackHTTP: configuration.allowLoopbackHTTP,
       runtimeID: input.runtimeID,
