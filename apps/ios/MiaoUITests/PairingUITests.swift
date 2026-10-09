@@ -53,6 +53,7 @@ final class PairingUITests: XCTestCase {
         app.launchEnvironment["MIAO_UI_TEST_RUN"] = fixture.runID
         if !fixture.invitation.isEmpty { app.launchEnvironment["MIAO_UI_TEST_INVITATION"] = fixture.invitation }
         if fixture.account != nil { app.launchEnvironment["MIAO_UI_TEST_HUB_ACCOUNT"] = "1" }
+        if fixture.enrollment != nil { app.launchEnvironment["MIAO_UI_TEST_ENROLLMENT"] = "1" }
         app.launch()
         if let account = fixture.account {
             stage("account")
@@ -73,21 +74,13 @@ final class PairingUITests: XCTestCase {
                 XCTAssertTrue(app.buttons["hubAccount"].waitForExistence(timeout: 30))
                 // Sign-in dismisses the account sheet on its own, so reopening it
                 // can race that dismissal; retry until the signed-in sheet shows
-                // the enrollment section. The section is a lazy Form row, so it
-                // also has to be scrolled into the tree before it exists, and iOS
-                // 18 and 26 expose the header as different element types, so
-                // address it by the identifier set in HubAccountView.
-                let disclosure = app.descendants(matching: .any)["enrollmentDisclosure"].firstMatch
-                for _ in 0..<10 where !disclosure.exists {
-                    if app.buttons["hubAccount"].isHittable { app.buttons["hubAccount"].tap() }
-                    scrollIntoView(app, disclosure, swipes: 3)
-                }
-                XCTAssertTrue(disclosure.waitForExistence(timeout: 15))
-                for _ in 0..<6 where !disclosure.isHittable { app.swipeUp() }
-                XCTAssertTrue(disclosure.isHittable)
-                disclosure.tap()
+                // the enrollment controls. The enrollment section is a lazy Form
+                // row, so scroll it into the tree before waiting.
                 let enrollmentBegin = app.buttons["enrollmentBegin"]
-                scrollIntoView(app, enrollmentBegin)
+                for _ in 0..<10 where !enrollmentBegin.exists {
+                    if app.buttons["hubAccount"].isHittable { app.buttons["hubAccount"].tap() }
+                    scrollIntoView(app, enrollmentBegin, swipes: 3)
+                }
                 XCTAssertTrue(enrollmentBegin.waitForExistence(timeout: 10))
                 enrollmentBegin.tap()
                 let code = app.staticTexts["enrollmentRequest"]

@@ -13,6 +13,10 @@ struct HubAccountView: View {
     /// effect all along — only the former should close the sheet.
     @State private var wasSignedIn = false
     @State private var confirmEnrollmentApproval = false
+    /// The enrollment disclosure is a lazy Form row whose expander is awkward to
+    /// tap reliably in the UI test; the test build opens it up front so the
+    /// enrollment controls are reachable directly.
+    @State private var enrollmentExpanded = AppTestConfiguration.expandsEnrollment
 
     var body: some View {
         NavigationStack {
@@ -52,7 +56,7 @@ struct HubAccountView: View {
                 }
                 if model.accountSignedIn {
                     Section {
-                        DisclosureGroup {
+                        DisclosureGroup("同账号设备注册", isExpanded: $enrollmentExpanded) {
                             Text("首次使用请先扫码配对，并在电脑设备管理中明确选择本设备作为账号签名设备。")
                                 .font(.footnote).foregroundStyle(.secondary)
                             Toggle("允许本设备批准同账号的新设备", isOn: $model.enrollmentSignerConsent)
@@ -102,10 +106,7 @@ struct HubAccountView: View {
                             if model.enrollmentBusy { ProgressView("正在验证设备授权…") }
                             if let error = model.enrollmentError { Text(error).font(.footnote).foregroundStyle(.red).accessibilityIdentifier("enrollmentError") }
                             if model.enrollmentComplete { Text("设备注册完成").accessibilityIdentifier("enrollmentComplete") }
-                        } label: {
-                            Text("同账号设备注册").accessibilityIdentifier("enrollmentDisclosure")
                         }
-                        .accessibilityIdentifier("enrollmentDisclosure")
                     }
                     Section("会话通知") {
                         Label(model.notificationsRegistered ? "通知设备已连接" : "通知未连接", systemImage: "bell")
