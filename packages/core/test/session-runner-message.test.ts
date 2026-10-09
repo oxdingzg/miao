@@ -86,6 +86,60 @@ describe("toLLMMessages", () => {
     ])
   })
 
+  test("replays an empty reasoning field for a DeepSeek tool-only assistant turn", async () => {
+    const deepseek = Model.make({ id: "deepseek-v4.1-flash", provider: "opencode-go", route: OpenAIChat.route })
+    const sessionMessages = [
+      SessionMessage.User.make({ id: id("user"), type: "user", text: "Continue", time: { created } }),
+      SessionMessage.Assistant.make({
+        id: id("tool-only"),
+        type: "assistant",
+        agent: "build",
+        model: { id: ModelV2.ID.make("deepseek-v4.1-flash"), providerID: ProviderV2.ID.make("opencode-go") },
+        content: [
+          SessionMessage.AssistantTool.make({
+            type: "tool",
+            id: "call_1",
+            name: "read",
+            state: SessionMessage.ToolStateCompleted.make({
+              status: "completed",
+              input: { path: "README.md" },
+              content: [],
+              structured: {},
+            }),
+            time: { created, completed: created },
+          }),
+        ],
+        time: { created, completed: created },
+      }),
+    ]
+
+    const prepared = await Effect.runPromise(
+      LLMClient.prepare<OpenAIChat.OpenAIChatBody>(
+        LLM.request({ id: "req", model: deepseek, messages: toLLMMessages(sessionMessages, deepseek) }),
+      ),
+    )
+
+    // A step that reasoned nothing still has to carry the field back, or
+    // DeepSeek rejects every later request in the turn.
+    expect(prepared.body.messages.find((message) => message.role === "assistant")).toEqual({
+      role: "assistant",
+      content: null,
+      tool_calls: [
+        { id: "call_1", type: "function", function: { name: "read", arguments: '{"path":"README.md"}' } },
+      ],
+      reasoning_content: "",
+    })
+
+    const otherPrepared = await Effect.runPromise(
+      LLMClient.prepare<OpenAIChat.OpenAIChatBody>(
+        LLM.request({ id: "req", model, messages: toLLMMessages(sessionMessages, model) }),
+      ),
+    )
+    expect(
+      otherPrepared.body.messages.find((message) => message.role === "assistant")?.reasoning_content,
+    ).toBeUndefined()
+  })
+
   test("maps every top-level V2 Session message type", () => {
     const file = FileAttachment.make({ uri: "data:image/png;base64,aGVsbG8=", mime: "image/png", name: "hello.png" })
     const messages = toLLMMessages(
