@@ -6678,6 +6678,69 @@ describe("SessionRunnerLLM", () => {
     )
   })
 
+  it.effect("retries a rejected request exactly once before its first event", () =>
+    Effect.gen(function* () {
+      yield* setup
+      const session = yield* SessionV2.Service
+      yield* session.prompt({ sessionID, prompt: Prompt.make({ text: "Survive a rejected request" }), resume: false })
+      // A request the endpoint rejected (HTTP 400) is not retryable in the
+      // schedule, but a gateway may have wrapped a transient upstream failure:
+      // the runner grants exactly one extra attempt.
+      let attempts = 0
+      responseStream = Stream.unwrap(
+        Effect.sync(() =>
+          attempts++ === 0
+            ? Stream.fail(
+                new LLMError({
+                  module: "RequestExecutor",
+                  method: "execute",
+                  reason: new InvalidRequestReason({ message: "Upstream request failed" }),
+                }),
+              )
+            : Stream.fromIterable(fragmentFixture("text", "text-after-400", ["Recovered"]).completeEvents),
+        ),
+      )
+
+      const resumed = yield* session.resume(sessionID).pipe(Effect.forkScoped)
+      while (attempts < 2) yield* TestClock.adjust("1 second")
+      yield* Fiber.join(resumed)
+
+      expect(attempts).toBe(2)
+      expect(yield* session.context(sessionID)).toMatchObject([
+        { type: "user", text: "Survive a rejected request" },
+        { type: "assistant", finish: "stop", content: [{ type: "text", text: "Recovered" }] },
+      ])
+    }),
+  )
+
+  it.effect("does not grant a rejected request a second extra attempt", () =>
+    Effect.gen(function* () {
+      yield* setup
+      const session = yield* SessionV2.Service
+      let attempts = 0
+      responseStream = Stream.unwrap(
+        Effect.sync(() => {
+          attempts++
+          return Stream.fail(
+            new LLMError({
+              module: "RequestExecutor",
+              method: "execute",
+              reason: new InvalidRequestReason({ message: "Upstream request failed" }),
+            }),
+          )
+        }),
+      )
+      yield* session.prompt({ sessionID, prompt: Prompt.make({ text: "Reject twice" }), resume: false })
+      const resumed = yield* session.resume(sessionID).pipe(Effect.forkScoped)
+      while (attempts < 2) yield* TestClock.adjust("1 second")
+      yield* Fiber.join(resumed).pipe(Effect.flip)
+
+      expect(attempts).toBe(2)
+      const last = (yield* session.context(sessionID)).at(-1)
+      expect(last?.type === "assistant" ? last.error?.message : undefined).toBe("Upstream request failed")
+    }),
+  )
+
   it.effect("stops repetitive output without retrying or replaying completed tools", () =>
     Effect.gen(function* () {
       yield* setup
