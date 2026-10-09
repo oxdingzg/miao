@@ -97,24 +97,38 @@ impl Store {
                             .ok_or_else(|| Error::Invalid("store path".into()))?,
                     )
                 };
-                let file = OpenOptions::new()
-                    .create(true)
-                    .truncate(false)
-                    .read(true)
-                    .write(true)
-                    .open(canonical.with_extension("engine-lock"))?;
-                file.try_lock_exclusive().map_err(|e| {
-                    if e.kind() == std::io::ErrorKind::WouldBlock {
-                        Error::Busy
-                    } else {
-                        Error::Io(e)
-                    }
-                })?;
+                // In-process ownership is checked first: it is authoritative for
+                // same-process opens and does not depend on platform lock
+                // semantics. The OS lock then provides the cross-process lease.
                 if !locked_paths()
                     .lock()
                     .map_err(|_| Error::Busy)?
                     .insert(canonical.clone())
                 {
+                    return Err(Error::Busy);
+                }
+                let file = match OpenOptions::new()
+                    .create(true)
+                    .truncate(false)
+                    .read(true)
+                    .write(true)
+                    .open(canonical.with_extension("engine-lock"))
+                {
+                    Ok(file) => file,
+                    Err(error) => {
+                        if let Ok(mut locked) = locked_paths().lock() {
+                            locked.remove(&canonical);
+                        }
+                        return Err(Error::Io(error));
+                    }
+                };
+                // Any failure here means another process holds the lease. Windows
+                // reports lock contention as a lock-violation error, not
+                // `WouldBlock`, so treat every failure as `Busy`.
+                if file.try_lock_exclusive().is_err() {
+                    if let Ok(mut locked) = locked_paths().lock() {
+                        locked.remove(&canonical);
+                    }
                     return Err(Error::Busy);
                 }
                 let lease = FileLease {
