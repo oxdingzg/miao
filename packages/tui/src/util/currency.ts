@@ -59,4 +59,20 @@ export function native(
   return typeof currency === "string" ? currency : undefined
 }
 
+/** Whether a usable per-token rate is quoted for the model at all; an unpriced model projects as an all-zero rate, which reads as free. */
+export function priceable(
+  providers: ReadonlyArray<ProviderLike>,
+  providerID: string | undefined,
+  modelID: string | undefined,
+): boolean {
+  if (!providerID || !modelID) return false
+  const model = providers.find((provider) => provider.id === providerID)?.models[modelID]
+  if (typeof model !== "object" || model === null) return false
+  const cost = (model as { cost?: unknown }).cost
+  if (typeof cost !== "object" || cost === null) return false
+  const rates = cost as { input?: unknown; output?: unknown }
+  if (typeof rates.input !== "number" || typeof rates.output !== "number") return false
+  return rates.input > 0 || rates.output > 0
+}
+
 export * as Currency from "./currency"

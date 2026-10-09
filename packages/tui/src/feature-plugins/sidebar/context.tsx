@@ -39,8 +39,10 @@ function View(props: { api: TuiPluginApi; session_id: string }) {
   // model declares one, and in USD otherwise; the cache figures are derived
   // from the same price table, so every amount follows that split. A subagent
   // row can run a different model, so it resolves its own currency rather than
-  // borrowing the parent's.
+  // borrowing the parent's. A model no table quotes has no honest amount,
+  // which reads better as an em dash than as a fake zero.
   const money = (value: number, model = session()?.model) => {
+    if (!Currency.priceable(props.api.state.provider, model?.providerID, model?.id)) return "—"
     const native = Currency.native(props.api.state.provider, model?.providerID, model?.id)
     return native ? Currency.amount(value, native) : Currency.format(value, currency())
   }
@@ -92,6 +94,15 @@ function View(props: { api: TuiPluginApi; session_id: string }) {
     if (!last) return
     if (!isTimeOfDayPriced(last.model.providerID, last.model.id, { providers: offPeakProviders() })) return
     return isOffPeak(last.time.created) ? "off-peak" : "peak"
+  })
+
+  // Savings are only known when the price tables cover the turns that moved
+  // the cache; an uncovered turn makes the total unknown rather than zero.
+  const savedRow = createMemo(() => {
+    const covered = economy().read + economy().write - economy().unpriced
+    if (covered === 0 && economy().unpriced > 0) return "— saved"
+    const amount = economy().saved
+    return amount < 0 ? `${money(-amount)} cache cost` : `${money(amount)} saved`
   })
 
   // No provider reports an expiry, so the age is counted locally and the row has
@@ -192,7 +203,7 @@ function View(props: { api: TuiPluginApi; session_id: string }) {
         read {compact(economy().read)} · write {compact(economy().write)}
       </text>
       <text fg={theme().textMuted}>
-        {economy().saved < 0 ? `${money(-economy().saved)} cache cost` : `${money(economy().saved)} saved`}
+        {savedRow()}
         {pricing() ? ` · ${pricing()}` : ""}
       </text>
       <Show when={ttl()}>
