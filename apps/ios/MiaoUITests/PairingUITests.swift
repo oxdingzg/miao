@@ -41,6 +41,14 @@ final class PairingUITests: XCTestCase {
         for _ in 0..<swipes where !element.exists { app.swipeUp() }
     }
 
+    /// Resign the software keyboard through the form's 完成 toolbar button; the
+    /// rows it covers are unloaded, and a swipe that starts on the focused field
+    /// scrolls its text instead of the form, so it never reloads them.
+    private func dismissKeyboard(_ app: XCUIApplication) {
+        let done = app.buttons["dismissAccountKeyboard"]
+        if done.waitForExistence(timeout: 2) { done.tap() }
+    }
+
     func testRealRuntimeRenameAndDraftRecovery() throws {
         guard let path = ProcessInfo.processInfo.environment["MIAO_UI_TEST_FIXTURE"], !path.isEmpty,
               !path.hasPrefix("$(") else { throw XCTSkip("Live Runtime fixture is supplied by check-app.ts") }
@@ -106,12 +114,14 @@ final class PairingUITests: XCTestCase {
                 XCTAssertTrue(field.waitForExistence(timeout: 10))
                 field.tap(); field.typeText(approved)
                 XCTAssertEqual(field.value as? String, approved, "The complete signed approval is entered")
+                dismissKeyboard(app)
                 let pin = app.textFields["enrollmentPin"]
                 scrollIntoView(app, pin)
                 print("Native enrollment fields approved=\(field.exists) pin=\(pin.exists) independent=\(app.switches["enrollmentIndependentPin"].exists) textFields=\(app.textFields.count) keyboards=\(app.keyboards.count)")
                 XCTAssertTrue(pin.waitForExistence(timeout: 10))
                 pin.tap(); pin.typeText(enrollment.rootKey)
                 XCTAssertEqual(pin.value as? String, enrollment.rootKey)
+                dismissKeyboard(app)
                 let independent = app.switches["enrollmentIndependentPin"]
                 scrollIntoView(app, independent)
                 XCTAssertTrue(independent.waitForExistence(timeout: 10))

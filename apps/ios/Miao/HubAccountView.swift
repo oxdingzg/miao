@@ -1,4 +1,5 @@
 import SwiftUI
+import UIKit
 import MiaoCore
 
 @MainActor
@@ -154,7 +155,14 @@ struct HubAccountView: View {
                 Button("批准新设备") { Task { await model.approveEnrollmentRequest() } }
                 Button("取消", role: .cancel) {}
             } message: { Text(model.incomingEnrollmentSummary) }
-            .toolbar { ToolbarItem(placement: .cancellationAction) { Button("关闭") { password = ""; dismiss() } } }
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) { Button("关闭") { password = ""; dismiss() } }
+                ToolbarItemGroup(placement: .keyboard) {
+                    Spacer()
+                    Button("完成") { dismissAccountKeyboard() }
+                        .accessibilityIdentifier("dismissAccountKeyboard")
+                }
+            }
             .onAppear {
                 wasSignedIn = model.accountSignedIn
                 origin = model.accountURL.isEmpty ? model.defaultAccountURL : model.accountURL
@@ -172,5 +180,12 @@ struct HubAccountView: View {
             }
             .onDisappear { password = "" }
         }
+    }
+
+    /// Resigns the keyboard so the account form reloads the rows it covers; the
+    /// enrollment fields below a focused multi-line field are not materialized
+    /// while the keyboard is up.
+    private func dismissAccountKeyboard() {
+        UIApplication.shared.sendAction(#selector(UIResponder.resignFirstResponder), to: nil, from: nil, for: nil)
     }
 }
