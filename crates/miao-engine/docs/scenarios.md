@@ -32,5 +32,6 @@ MCP cancellation (`mcp.rs`). A headless end-to-end acceptance drives a small rea
 fix (read -> apply_patch -> bash verification) through the durable run loop
 (`small_fix.rs`), inline image attachments are lowered into each provider's wire
 format (`media.rs`), and the language-server tools answer diagnostics, definition
-and references over an injected transport (`lsp.rs`). The remaining M1 capability
-(delegation) adds its own scenarios as it lands.
+and references over an injected transport (`lsp.rs`), and a `task` tool delegates
+to a child Session with lineage and resource limits (`subagent.rs`). No M1
+capability gaps remain; remaining work is hardening and evaluation.

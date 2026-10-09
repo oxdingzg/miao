@@ -17,7 +17,7 @@ scope for this table and is tracked separately.
 | Coding tools: write/edit/apply_patch | validated | `src/file_mutation.rs`, `src/patch.rs`; conditional SHA-256 writes, BOM/EOL preserved, V4A transaction |
 | Permission and approval | validated | `src/permission.rs`, `src/approval.rs`; policy upper bound, first-answer-wins |
 | Process: foreground command, background job, shell, PTY | validated | `src/process.rs`, `src/jobs.rs`, `src/tools.rs`; macOS seatbelt / Linux Landlock, job slots; `bash -c` and an optional interactive-terminal-style pty with merged output (`tests/bash.rs`)
-| Delegation: subagents, resource limits | inventory | M1 gap |
+| Delegation: subagents, resource limits | validated | `src/runtime.rs`, `src/subagent.rs`; a `task` tool delegates to a child Session with lineage, a depth limit and a global concurrency permit, independent cancellation, and an inherited workspace/policy (`tests/subagent.rs`) |
 | LSP core (diagnostics/definition/references) | validated | `src/lsp.rs`, `--lsp-config`; lazy per-extension server, Content-Length JSON-RPC, bounded diagnostics and definition/references tools (`tests/lsp.rs`) |
 | Media (inline image attachments) | validated | `src/protocol.rs`, `src/store.rs`; base64 image parts on `admit`, promoted into the user message, encoded by the Anthropic/Chat/Responses/Gemini adapters (`tests/media.rs`) |
 | Context: session state, todo, goal | validated | `src/state.rs`, `src/tools.rs` |
@@ -39,7 +39,7 @@ scope for this table and is tracked separately.
   the `engine` workflow (macOS, Linux and Windows).
 - **M1 gate**: 30–50 scenarios, a real small fix, a control lane that is not
   blocked by provider/tool/approval waits, and three-platform unit tests. The
-  remaining M1 gap is delegation.
+  remaining M1 capability gaps; remaining work is hardening and evaluation.
 
 ## Measurement boundaries (M0)
 

@@ -26,5 +26,6 @@ pub mod runtime;
 mod search;
 pub mod state;
 pub mod store;
+pub mod subagent;
 pub mod tools;
 pub mod wakeup;

@@ -505,6 +505,20 @@ impl Store {
     /// Fork only a closed message prefix, never executions, pending inbox,
     /// permissions, side effects or filesystem state. Target ID reconciles an
     /// exact retry even when the parent has advanced after the first commit.
+    pub async fn lineage_parent(&self, session: &str) -> Result<Option<String>, Error> {
+        let session = session.to_owned();
+        self.call(move |conn| {
+            Ok(conn
+                .query_row(
+                    "SELECT parent_session_id FROM engine_lineage WHERE session_id=?1",
+                    [&session],
+                    |row| row.get(0),
+                )
+                .optional()?)
+        })
+        .await
+    }
+
     pub async fn fork(
         &self,
         parent: &str,

@@ -102,6 +102,7 @@ pub struct Tools {
     writes: bool,
     process_enabled: bool,
     background_enabled: bool,
+    delegation_enabled: bool,
     wakeup_enabled: bool,
     cron_enabled: bool,
     process_network: bool,
@@ -134,6 +135,7 @@ impl Tools {
             writes: false,
             process_enabled: false,
             background_enabled: false,
+            delegation_enabled: false,
             wakeup_enabled: false,
             cron_enabled: false,
             process_network: false,
@@ -224,6 +226,11 @@ impl Tools {
 
     pub(crate) fn with_background(mut self, enabled: bool) -> Self {
         self.background_enabled = enabled && self.process_enabled;
+        self
+    }
+
+    pub(crate) fn with_delegation(mut self, enabled: bool) -> Self {
+        self.delegation_enabled = enabled;
         self
     }
 
@@ -323,6 +330,10 @@ impl Tools {
             "lsp_diagnostics" | "lsp_definition" | "lsp_references" if self.lsp.is_some() => {
                 crate::lsp::Query::parse(name, input.clone())?.path
             }
+            "task" if self.delegation_enabled => {
+                crate::subagent::Input::parse(input.clone())?;
+                ".".into()
+            }
             "glob" | "grep" => search::Query::parse(name, input.clone())?.path,
             "start_job" if self.background_enabled => process::Input::parse(input.clone())?.cwd,
             "job_status" | "cancel_job" if self.background_enabled => {
@@ -399,6 +410,8 @@ impl Tools {
             format!("@session/state/{name}")
         } else if name == "recall" {
             "@session/history".into()
+        } else if name == "task" {
+            "@subagent".into()
         } else if name == "job_status" || name == "cancel_job" {
             format!(
                 "@jobs/{}",
@@ -417,6 +430,8 @@ impl Tools {
             Access::SessionState
         } else if name == "start_job" {
             Access::Background
+        } else if name == "task" {
+            Access::Delegate
         } else if matches!(name, "run_command" | "bash") {
             Access::Execute
         } else if matches!(name, "write_file" | "edit_file" | "apply_patch") {
@@ -610,6 +625,13 @@ impl Tools {
         self.execute(&prepared.name, prepared.input, cancel).await
     }
 
+    fn delegation_definitions(&self) -> Vec<ToolDefinition> {
+        if !self.delegation_enabled {
+            return Vec::new();
+        }
+        vec![ToolDefinition{name:"task".into(),description:"Delegate a self-contained task to a child Session and return its final message. The child inherits this Session's workspace and permission policy, has its own run and cancellation, and is bounded by a subagent depth and concurrency limit. Requires explicit subagent authority.".into(),input_schema:json!({"type":"object","properties":{"prompt":{"type":"string","minLength":1,"maxLength":65536},"session_id":{"type":"string","maxLength":256}},"required":["prompt"],"additionalProperties":false})}]
+    }
+
     fn lsp_definitions(&self) -> Vec<ToolDefinition> {
         if self.lsp.is_none() {
             return Vec::new();
@@ -635,6 +657,7 @@ impl Tools {
             ToolDefinition{name:"glob".into(),description:"Find workspace-relative file paths by glob under a directory. No symlink following; generated directories excluded. Per-file permissions and output/traversal budgets apply; truncated reports partial results.".into(),input_schema:json!({"type":"object","properties":{"pattern":{"type":"string"},"path":{"type":"string","default":"."},"limit":{"type":"integer","minimum":1,"maximum":500,"default":100},"include_hidden":{"type":"boolean"}},"required":["pattern"],"additionalProperties":false})},
             ToolDefinition{name:"grep".into(),description:"Find regex matches in permitted UTF-8 workspace files under a directory. Returns paths, 1-based lines and bounded previews. Optional workspace-relative glob filter. No shell or symlink traversal.".into(),input_schema:json!({"type":"object","properties":{"pattern":{"type":"string"},"path":{"type":"string","default":"."},"glob":{"type":"string"},"limit":{"type":"integer","minimum":1,"maximum":500,"default":100},"case_sensitive":{"type":"boolean","default":true},"include_hidden":{"type":"boolean"}},"required":["pattern"],"additionalProperties":false})},
         ]);
+        definitions.extend(self.delegation_definitions());
         definitions.extend(self.lsp_definitions());
         definitions.push(ToolDefinition{name:"recall".into(),description:"Search this Session's raw immutable messages, including history before compaction. Literal case-sensitive substring; opaque provider state excluded. Bounded scan pages may contain no matches; follow next_before_message_seq until exhausted.".into(),input_schema:json!({"type":"object","properties":{"query":{"type":"string","minLength":1,"maxLength":512},"limit":{"type":"integer","minimum":1,"maximum":20,"default":10},"before_message_seq":{"type":"integer","minimum":0}},"required":["query"],"additionalProperties":false})});
         definitions.extend([

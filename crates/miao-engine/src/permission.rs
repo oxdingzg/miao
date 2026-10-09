@@ -26,6 +26,7 @@ pub enum Access {
     Write,
     Execute,
     Background,
+    Delegate,
     External,
     SessionState,
     Schedule,
@@ -50,6 +51,8 @@ pub struct Config {
     #[serde(default)]
     pub allow_background: bool,
     #[serde(default)]
+    pub allow_subagents: bool,
+    #[serde(default)]
     pub allow_mcp: bool,
     #[serde(default)]
     pub allow_wakeup: bool,
@@ -71,6 +74,7 @@ impl Default for Config {
             mode: Mode::ReadOnly,
             allow_process: false,
             allow_background: false,
+            allow_subagents: false,
             allow_mcp: false,
             allow_wakeup: false,
             allow_cron: false,
@@ -175,6 +179,9 @@ impl Policy {
     pub fn background_enabled(&self) -> bool {
         self.process_enabled() && self.config.allow_background
     }
+    pub fn subagents_enabled(&self) -> bool {
+        self.config.mode == Mode::Workspace && self.config.allow_subagents
+    }
 
     pub fn cron_enabled(&self) -> bool {
         self.config.allow_cron
@@ -215,6 +222,7 @@ impl Policy {
             || (access == Access::Schedule && !self.wakeup_enabled())
             || (access == Access::Execute && !self.process_enabled())
             || (access == Access::Background && !self.background_enabled())
+            || (access == Access::Delegate && !self.subagents_enabled())
             || (access == Access::External && !self.mcp_enabled())
             || (access == Access::Write && self.config.mode == Mode::ReadOnly)
         {
