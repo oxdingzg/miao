@@ -96,11 +96,15 @@ final class PairingUITests: XCTestCase {
                 XCTAssertEqual(pin.value as? String, enrollment.rootKey)
                 let independent = app.switches["enrollmentIndependentPin"]
                 XCTAssertTrue(independent.waitForExistence(timeout: 10))
-                print("Native independent pin before=" + (independent.value as? String ?? "unknown"))
+                // SwiftUI toggles inside disclosure rows often swallow element taps on
+                // iOS 18; hit the switch knob by coordinate and fall back to the row.
+                if (independent.value as? String) != "1" {
+                    independent.coordinate(withNormalizedOffset: CGVector(dx: 0.93, dy: 0.5)).tap()
+                }
                 if (independent.value as? String) != "1" { independent.tap() }
                 expectation(for: NSPredicate(format: "value == %@", "1"), evaluatedWith: independent)
                 waitForExpectations(timeout: 5)
-                print("Native independent pin after=" + (independent.value as? String ?? "unknown"))
+                XCTAssertEqual(independent.value as? String, "1", "Independent source confirmation is on")
                 XCTAssertTrue(app.buttons["enrollmentReceive"].isEnabled)
                 app.buttons["enrollmentReceive"].tap()
                 let completedRegistration = app.staticTexts["enrollmentComplete"]
