@@ -1,3 +1,4 @@
+import { PairingLink } from "../src/pairing-link"
 import { Schema } from "effect"
 import { RemoteAccess } from "@miao/schema/remote-access"
 import { BrowserAccount } from "../src/browser-account"
@@ -423,29 +424,7 @@ async function pair() {
   const input = get("invitation", HTMLTextAreaElement)
   const raw = input.value.trim()
   input.value = ""
-  if (raw.length > 8192) throw new Error("Invitation too large")
-  const encoded = raw.startsWith("{") ? undefined : new URL(raw)
-  if (
-    encoded &&
-    (encoded.protocol !== "miao:" ||
-      encoded.hostname !== "pair" ||
-      encoded.pathname ||
-      encoded.search ||
-      encoded.username ||
-      encoded.password ||
-      !/^[A-Za-z0-9_-]+$/.test(encoded.hash.slice(1)))
-  )
-    throw new Error("Invalid invitation link")
-  const json = encoded
-    ? new TextDecoder("utf-8", { fatal: true }).decode(
-        Uint8Array.from(atob(encoded.hash.slice(1).replace(/-/g, "+").replace(/_/g, "/")), (character) =>
-          character.charCodeAt(0),
-        ),
-      )
-    : raw
-  const invitation = Schema.decodeUnknownSync(RemoteAccess.Invitation)(JSON.parse(json))
-  if (new URL(invitation.hubURL).origin !== location.origin || invitation.expiresAt <= Date.now())
-    throw new Error("Invalid invitation")
+  const invitation = PairingLink.parse(raw, location.origin, loopback())
   disconnect()
   const current = generation
   report("等待电脑确认设备授权…")
@@ -945,6 +924,7 @@ get("login-form", HTMLFormElement).onsubmit = (event) => {
     login.hidden = true
     directory.hidden = false
     await refresh()
+    await resumePairing()
   })
 }
 get("pair-form", HTMLFormElement).onsubmit = (event) => {
@@ -1109,6 +1089,8 @@ get("logout", HTMLButtonElement).onclick = () =>
     login.hidden = false
     directory.hidden = true
     await account.signOut()
+    sessionStorage.removeItem("miao.remote-control.invitation")
+    await loginMethods()
     report("已退出。")
   })
 document.addEventListener("visibilitychange", () => {
@@ -1135,14 +1117,66 @@ document.addEventListener("visibilitychange", () => {
     if (sessionID) await openSession(sessionID, label)
   })
 })
+// Clear callback codes and invitation fragments before any asynchronous requests.
+const callbackSearch = new URLSearchParams(location.search).get("miao_login") === "1" ? location.search : undefined
+const scannedInvitation = location.hash.startsWith("#pair=") ? location.href : undefined
+let invalidScannedInvitation = false
+if (callbackSearch || scannedInvitation) history.replaceState(null, "", location.pathname)
+if (scannedInvitation) {
+  try {
+    const invitation = PairingLink.parse(scannedInvitation, location.origin, loopback())
+    sessionStorage.setItem("miao.remote-control.invitation", JSON.stringify(invitation))
+  } catch {
+    invalidScannedInvitation = true
+    sessionStorage.removeItem("miao.remote-control.invitation")
+  }
+}
+async function resumePairing() {
+  const raw = sessionStorage.getItem("miao.remote-control.invitation")
+  if (!raw) return
+  sessionStorage.removeItem("miao.remote-control.invitation")
+  PairingLink.parse(raw, location.origin, loopback())
+  get("invitation", HTMLTextAreaElement).value = raw
+  await pair()
+}
+async function loginMethods() {
+  const providers = await account.providers()
+  get("login-form", HTMLFormElement).hidden = providers.length > 0
+  const social = get("social-login", HTMLDivElement)
+  social.replaceChildren()
+  social.hidden = !providers.length
+  for (const provider of providers) {
+    const button = document.createElement("button")
+    button.type = "button"
+    button.textContent = provider === "github" ? "使用 GitHub 登录" : "使用 Google 登录"
+    button.onclick = () =>
+      run(async () => {
+        location.assign(await account.beginSocial(provider))
+      })
+    social.append(button)
+  }
+}
 window.addEventListener("pagehide", disconnect)
 run(async () => {
   if (!window.isSecureContext || !navigator.locks) throw new Error("HTTPS required")
   identity = await BrowserIdentity.load()
   cache = await BrowserCheckpoint.open()
-  const session = await account.restore()
+  let session
+  try {
+    session = callbackSearch ? await account.completeSocial(callbackSearch) : await account.restore()
+  } catch {
+    login.hidden = false
+    directory.hidden = true
+    await loginMethods()
+    report("登录未完成，请重新选择登录方式。")
+    return
+  }
   login.hidden = !!session
   directory.hidden = !session
-  if (session) await refresh()
-  if (account.revocationPending()) report("上次退出尚未确认。请重新登录以完成退出重试。")
+  if (session) {
+    await refresh()
+    await resumePairing()
+  } else await loginMethods()
+  if (invalidScannedInvitation) report("扫码邀请无效或已过期，请在电脑重新生成。")
+  else if (account.revocationPending()) report("上次退出尚未确认。请重新登录以完成退出重试。")
 })

@@ -115,7 +115,6 @@ Without `MIAO_REMOTE_CONTROL_CONFIG`, the Runtime uses a private `.remote-contro
 
 The generated local SDK exposes `client["server.runtime"].configure`. This is the backend path for the setup wizard; the account-login and channel-selection UI are delivered separately. Loopback plaintext is allowed only by an already private test configuration or an explicit test-only manager option, never by the public configuration payload.
 
-
 ## Desktop Hub selection
 
 The desktop Remote Control dialog offers **使用默认 Hub** and **指定其他 Hub** before
@@ -142,3 +141,26 @@ a root HTTPS origin without credentials, query, fragment, or path. Account
 credentials do not belong in this file. Selecting a default does not log in,
 register a host, or grant a phone access: complete desktop account login and
 locally approve the device grant before opening a remote session.
+
+## Browser OAuth and scan entry
+
+A Hub may advertise GitHub/Google via `GET /api/auth/providers`. The web client
+shows only those social methods; HTTP 404 retains legacy password login.
+Discovery failures stay visible. Social login uses a tab-bound, expiring state
+and a one-time callback code, then `POST /api/auth/exchange` with `client: "web"`.
+The Hub must establish a same-origin HttpOnly session cookie at exchange time,
+so directory requests and page reloads can use the existing cookie API. The web
+client never saves the returned JWT. Callback query parameters are removed from
+the address bar before asynchronous account work begins.
+
+To direct desktop QR codes to a browser bundle hosted on the same Hub, add
+`"browserURL": "https://relay.example.invalid/control/"` to the private
+`client.json`. It must be a same-origin HTTPS URL without credentials, query or
+fragment. The bundle can be hosted at the root or a subdirectory; its assets
+use relative paths. A browser invitation is `<browserURL>#pair=<base64url JSON>`.
+The fragment is removed on startup, validated against the current origin and
+kept only in this tab while account login completes. Pairing then resumes and
+still requires local owner approval. Without `browserURL`, desktop invitations
+keep the native `miao://pair#...` form. With a browser entry configured, the
+dialog also offers **使用 App 扫码** to switch the same invitation back to the
+native URI accepted by iOS clients.

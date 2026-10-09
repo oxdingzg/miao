@@ -18,7 +18,7 @@ export type RemoteRuntime = {
   readonly configure: (value: RemoteAccess.Configuration) => Promise<RemoteAccess.Status>
 }
 export type RemoteLocal = {
-  readonly settings?: () => Promise<{ defaultHubURL?: string }>
+  readonly settings?: () => Promise<{ defaultHubURL?: string; browserURL?: string }>
   readonly providers: (input: { hubURL: string }) => Promise<{ providers: ReadonlyArray<string> }>
   readonly setup: (input: {
     hubURL: string
@@ -244,13 +244,17 @@ export function DialogRemoteView(props: { environment: RemoteEnvironment }) {
                 description: "扫码、批准设备和撤销授权",
                 category: "设备接入",
                 onSelect: () =>
-                  dialog.replace(() => (
-                    <DialogDevices
-                      api={environment.devices!}
-                      sessionID={environment.sessionID}
-                      projectID={environment.projectID}
-                    />
-                  )),
+                  void (async () => {
+                    const settings = await local?.settings?.()
+                    dialog.replace(() => (
+                      <DialogDevices
+                        api={environment.devices!}
+                        sessionID={environment.sessionID}
+                        projectID={environment.projectID}
+                        browserURL={settings?.browserURL}
+                      />
+                    ))
+                  })().catch(() => DialogAlert.show(dialog, "无法读取扫码入口", "请检查本地 Hub 客户端配置。")),
               },
             ]
           : []),

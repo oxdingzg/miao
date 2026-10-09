@@ -56,3 +56,28 @@ test.skipIf(process.platform === "win32")("rejects shared files and symlink targ
     await expect(ControlClientSettings.read(link)).rejects.toThrow()
   }),
 )
+
+test("keeps a private same-origin browser path and rejects cross-Hub pairing defaults", () =>
+  fixture(async (file) => {
+    await writeFile(
+      file,
+      JSON.stringify({
+        defaultHubURL: "https://relay.example.invalid",
+        browserURL: "https://relay.example.invalid/control/",
+      }),
+      { mode: 0o600 },
+    )
+    expect(await ControlClientSettings.read(file)).toEqual({
+      defaultHubURL: "https://relay.example.invalid",
+      browserURL: "https://relay.example.invalid/control/",
+    })
+    await writeFile(
+      file,
+      JSON.stringify({
+        defaultHubURL: "https://relay.example.invalid",
+        browserURL: "https://other.example.invalid/control/",
+      }),
+      { mode: 0o600 },
+    )
+    await expect(ControlClientSettings.read(file)).rejects.toThrow("default Hub origin")
+  }))

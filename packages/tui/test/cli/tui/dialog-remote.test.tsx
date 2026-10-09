@@ -447,6 +447,39 @@ test("device access is available without IM and shows an unconfigured relay trut
   }
 })
 
+test("private browser pairing path produces an HTTPS fragment link with the exact invitation", async () => {
+  await using tmp = await tmpdir()
+  const control = deviceControl()
+  const copied: string[] = []
+  const local: RemoteLocal = {
+    setupOAuth: async () => {
+      throw new Error("unused")
+    },
+    settings: async () => ({ browserURL: "https://relay.example.invalid/control/" }),
+    providers: async () => ({ providers: [] }),
+    setup: async () => {
+      throw new Error("unused")
+    },
+  }
+  const view = await mount(tmp.path, environment({ devices: control.api, local }), {
+    write: async (text) => void copied.push(text),
+  })
+  try {
+    await openDevices(view)
+    await view.app.mockInput.typeText("只读")
+    await view.app.mockInput.pressEnter()
+    await view.until((value) => value.includes("二维码到期"))
+    await view.select(0)
+    await view.until(() => copied.length === 1)
+    const url = new URL(copied[0])
+    expect(url.origin + url.pathname).toBe("https://relay.example.invalid/control/")
+    expect(url.search).toBe("")
+    expect(JSON.parse(Buffer.from(url.hash.slice(6), "base64url").toString())).toEqual(control.issued)
+  } finally {
+    view.cleanup()
+  }
+})
+
 test("read-only pairing is scoped and needs exact-key owner approval without cancelling on confirmation", async () => {
   await using tmp = await tmpdir()
   const control = deviceControl()
