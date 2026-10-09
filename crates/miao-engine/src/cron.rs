@@ -145,7 +145,7 @@ impl Store {
             let input=Input::parse(original["input"].clone()).map_err(|_|Error::Invalid("invalid cron input".into()))?;
             let prompt=Prompt{session_id:session.clone(),input_id:format!("cron/{id}/{occurrence}"),prompt:input.prompt,delivery:input.delivery};
             let location=original["location"].as_str().ok_or_else(||Error::Invalid("cron Location missing".into()))?;
-            let admitted=admit_input(&tx,&prompt,Some(location))?;
+            let admitted=admit_input(&tx,&prompt,Some(location),&[])?;
             append(&tx,&session,"cron.fired",json!({"cron_id":id,"occurrence_ms":occurrence,"input_id":admitted.input_id,"admitted_seq":admitted.admitted_seq}))?;
             if !input.recurring{append(&tx,&session,"cron.resolved",json!({"cron_id":id,"state":"completed"}))?;}
             tx.commit()?;Ok(Some(admitted))

@@ -312,6 +312,15 @@ fn lower(history: &[Message], model: &str) -> Result<Vec<Value>, ProviderError> 
             for block in blocks {
                 match block["type"].as_str() {
                     Some("text") => parts.push(json!({"text":portable_text(block)?})),
+                    Some("image") => {
+                        let mime = block["mime"]
+                            .as_str()
+                            .ok_or_else(|| invalid("invalid Gemini image attachment"))?;
+                        let data = block["data"]
+                            .as_str()
+                            .ok_or_else(|| invalid("invalid Gemini image attachment"))?;
+                        parts.push(json!({"inline_data":{"mime_type":mime,"data":data}}));
+                    }
                     Some("tool_result") => {
                         let id = block["tool_use_id"]
                             .as_str()

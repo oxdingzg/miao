@@ -31,6 +31,8 @@ enum Command {
         input: Input,
         #[serde(default = "yes")]
         resume: bool,
+        #[serde(default)]
+        attachments: Vec<miao_engine::protocol::Attachment>,
     },
     Resume {
         session_id: String,
@@ -495,7 +497,7 @@ async fn serve(runtime: &Runtime) -> io::Result<()> {
                     };
                     let stop=matches!(request.command,Command::Shutdown);
                     let result:Result<Value,Error>=match request.command {
-                        Command::Admit{input,resume}=>runtime.admit(input,resume).await.and_then(|v|serde_json::to_value(v).map_err(Error::from)),
+                        Command::Admit{input,resume,attachments}=>runtime.admit_with(input,attachments,resume).await.and_then(|v|serde_json::to_value(v).map_err(Error::from)),
                         Command::Resume{session_id}=>runtime.resume(&session_id).await.map(|_|json!({"accepted":true})),
                         Command::Mode{session_id,mode}=>runtime.set_mode(&session_id,mode).await.map(|_|json!({"accepted":true,"mode":mode})),
                         Command::Cancel{session_id}=>runtime.cancel(&session_id).await.map(|active|json!({"accepted":active})),

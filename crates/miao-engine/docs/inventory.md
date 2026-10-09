@@ -19,7 +19,7 @@ scope for this table and is tracked separately.
 | Process: foreground command, background job, shell, PTY | validated | `src/process.rs`, `src/jobs.rs`, `src/tools.rs`; macOS seatbelt / Linux Landlock, job slots; `bash -c` and an optional interactive-terminal-style pty with merged output (`tests/bash.rs`)
 | Delegation: subagents, resource limits | inventory | M1 gap |
 | LSP core (diagnostics/definition/references) | inventory | M1 gap |
-| Media (image/PDF/attachment) | inventory | M1 gap |
+| Media (inline image attachments) | validated | `src/protocol.rs`, `src/store.rs`; base64 image parts on `admit`, promoted into the user message, encoded by the Anthropic/Chat/Responses/Gemini adapters (`tests/media.rs`) |
 | Context: session state, todo, goal | validated | `src/state.rs`, `src/tools.rs` |
 | State/tools: question, wakeup, cron | validated | `src/question.rs`, `src/wakeup.rs`, `src/cron.rs` |
 | Providers: Anthropic, OpenAI Chat, OpenAI Responses, subscription Responses, Gemini | validated | `src/provider.rs`, `src/openai_chat.rs`, `src/openai_responses.rs`, `src/gemini.rs` |
@@ -39,7 +39,7 @@ scope for this table and is tracked separately.
   `engine` workflow (macOS, Linux and Windows).
 - **M1 gate**: 30–50 scenarios, a real small fix, a control lane that is not
   blocked by provider/tool/approval waits, and three-platform unit tests. The
-  remaining M1 gaps are PTY, LSP core, media, and delegation.
+  remaining M1 gaps are LSP core and delegation.
 
 ## Measurement boundaries (M0)
 

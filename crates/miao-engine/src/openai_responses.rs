@@ -119,6 +119,11 @@ fn items(history: &[Message], model: &str) -> Result<Vec<Value>, ProviderError> 
                 ("user" | "assistant", Some("text")) => {
                     items.push(json!({"role":message.role,"content":[{"type":if message.role=="user"{"input_text"}else{"output_text"},"text":block["text"].as_str().ok_or_else(invalid)?}]}));
                 }
+                ("user", Some("image")) => {
+                    let mime = block["mime"].as_str().ok_or_else(invalid)?;
+                    let data = block["data"].as_str().ok_or_else(invalid)?;
+                    items.push(json!({"role":"user","content":[{"type":"input_image","image_url":format!("data:{mime};base64,{data}")}]}));
+                }
                 ("assistant", Some("tool_use")) => {
                     if !block["input"].is_object() {
                         return Err(invalid());

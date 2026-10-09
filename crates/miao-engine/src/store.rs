@@ -2,7 +2,8 @@ use crate::{
     approval::{now_ms, Approval, Response},
     permission::{context_digest, input_digest, Decision},
     protocol::{
-        Admission, CollaborationMode, ContextBundle, Delivery, Error, Event, Input, Message,
+        Admission, Attachment, CollaborationMode, ContextBundle, Delivery, Error, Event, Input,
+        Message,
     },
 };
 use fs2::FileExt;
@@ -19,7 +20,7 @@ use std::{
 use tokio::sync::{mpsc, oneshot};
 
 pub(crate) const APPLICATION_ID: u32 = 0x4d494145;
-pub(crate) const SCHEMA_VERSION: u32 = 8;
+pub(crate) const SCHEMA_VERSION: u32 = 9;
 
 type Work = Box<dyn FnOnce(&mut Connection) + Send>;
 
@@ -128,6 +129,10 @@ impl Store {
                 if !has_checkpoint {
                     conn.execute("ALTER TABLE engine_message ADD COLUMN checkpoint TEXT", [])?;
                 }
+                let has_attachments:bool=conn.query_row("SELECT EXISTS(SELECT 1 FROM pragma_table_info('engine_input') WHERE name='attachments')",[],|r|r.get(0))?;
+                if !has_attachments {
+                    conn.execute("ALTER TABLE engine_input ADD COLUMN attachments TEXT", [])?;
+                }
                 Ok((conn, lease, canonical))
             })();
             match opened {
@@ -176,10 +181,36 @@ impl Store {
         self.admit_at(input, None).await
     }
 
+    /// Admit a prompt together with bounded inline media attachments. The
+    /// attachments are part of the admission identity: a retry with different
+    /// media conflicts instead of silently changing the committed prompt.
+    pub async fn admit_with(
+        &self,
+        input: Input,
+        attachments: Vec<Attachment>,
+    ) -> Result<Admission, Error> {
+        self.admit_attachments_at(input, attachments, None).await
+    }
+
     pub async fn admit_at(&self, input: Input, root: Option<String>) -> Result<Admission, Error> {
+        self.admit_attachments_at(input, Vec::new(), root).await
+    }
+
+    pub async fn admit_attachments_at(
+        &self,
+        input: Input,
+        attachments: Vec<Attachment>,
+        root: Option<String>,
+    ) -> Result<Admission, Error> {
+        if attachments.len() > 8 {
+            return Err(Error::Invalid("attachment count limit".into()));
+        }
+        for attachment in &attachments {
+            attachment.validate()?;
+        }
         self.call(move |conn| {
             let tx = conn.transaction()?;
-            let admission = admit_input(&tx, &input, root.as_deref())?;
+            let admission = admit_input(&tx, &input, root.as_deref(), &attachments)?;
             tx.commit()?;
             Ok(admission)
         })
@@ -252,20 +283,26 @@ impl Store {
         let session = session.to_owned();
         self.call(move |conn| {
             let tx = conn.transaction()?;
-            let mut pending: Vec<(String, String)> = {
-                let mut stmt = tx.prepare("SELECT id,prompt FROM engine_input WHERE session_id=?1 AND state='pending' AND delivery='steer' ORDER BY admitted_seq")?;
-                let rows = stmt.query_map([&session], |r| Ok((r.get(0)?,r.get(1)?)))?;
+            let mut pending: Vec<(String, String, Option<String>)> = {
+                let mut stmt = tx.prepare("SELECT id,prompt,attachments FROM engine_input WHERE session_id=?1 AND state='pending' AND delivery='steer' ORDER BY admitted_seq")?;
+                let rows = stmt.query_map([&session], |r| Ok((r.get(0)?,r.get(1)?,r.get(2)?)))?;
                 rows.collect::<Result<_,_>>()?
             };
             if pending.is_empty() && idle {
-                if let Some(row) = tx.query_row("SELECT id,prompt FROM engine_input WHERE session_id=?1 AND state='pending' AND delivery='queue' ORDER BY admitted_seq LIMIT 1", [&session], |r| Ok((r.get(0)?,r.get(1)?))).optional()? { pending.push(row); }
+                if let Some(row) = tx.query_row("SELECT id,prompt,attachments FROM engine_input WHERE session_id=?1 AND state='pending' AND delivery='queue' ORDER BY admitted_seq LIMIT 1", [&session], |r| Ok((r.get(0)?,r.get(1)?,r.get(2)?))).optional()? { pending.push(row); }
             }
             let mut events = Vec::new();
-            for (id,prompt) in pending {
+            for (id,prompt,attachments) in pending {
                 let checkpoint=uuid::Uuid::new_v4().to_string();
                 let e = append(&tx, &session, "input.promoted", json!({"input_id":id,"prompt":prompt,"checkpoint":checkpoint}))?;
                 tx.execute("UPDATE engine_input SET state='promoted' WHERE id=?1", [&id])?;
-                tx.execute("INSERT INTO engine_message(session_id,seq,role,content,checkpoint) VALUES(?1,?2,'user',?3,?4)", params![session,e.seq,serde_json::to_string(&json!([{"type":"text","text":prompt}]))?,checkpoint])?;
+                let mut parts = vec![json!({"type":"text","text":prompt})];
+                if let Some(attachments) = attachments {
+                    if let Ok(media) = serde_json::from_str::<Vec<Attachment>>(&attachments) {
+                        parts.extend(media.iter().map(Attachment::part));
+                    }
+                }
+                tx.execute("INSERT INTO engine_message(session_id,seq,role,content,checkpoint) VALUES(?1,?2,'user',?3,?4)", params![session,e.seq,serde_json::to_string(&Value::Array(parts))?,checkpoint])?;
                 events.push(e);
             }
             tx.commit()?;
@@ -793,6 +830,7 @@ pub(crate) fn admit_input(
     tx: &Transaction<'_>,
     input: &Input,
     root: Option<&str>,
+    attachments: &[Attachment],
 ) -> Result<Admission, Error> {
     if input.session_id.is_empty()
         || input.input_id.is_empty()
@@ -805,9 +843,10 @@ pub(crate) fn admit_input(
             "session_id, input_id and prompt must be nonempty".into(),
         ));
     }
-    let existing: Option<(String, String, String, u64, String)> = tx
+    let serialized = serde_json::to_string(attachments)?;
+    let existing: Option<(String, String, String, u64, String, Option<String>)> = tx
         .query_row(
-            "SELECT session_id,prompt,delivery,admitted_seq,state FROM engine_input WHERE id=?1",
+            "SELECT session_id,prompt,delivery,admitted_seq,state,attachments FROM engine_input WHERE id=?1",
             [&input.input_id],
             |row| {
                 Ok((
@@ -816,6 +855,7 @@ pub(crate) fn admit_input(
                     row.get(2)?,
                     row.get(3)?,
                     row.get(4)?,
+                    row.get(5)?,
                 ))
             },
         )
@@ -824,8 +864,13 @@ pub(crate) fn admit_input(
         Delivery::Steer => "steer",
         Delivery::Queue => "queue",
     };
-    if let Some((session, prompt, mode, _, _)) = &existing {
-        if session != &input.session_id || prompt != &input.prompt || mode != delivery {
+    if let Some((session, prompt, mode, _, _, stored)) = &existing {
+        let stored = stored.clone().unwrap_or_else(|| "[]".into());
+        if session != &input.session_id
+            || prompt != &input.prompt
+            || mode != delivery
+            || stored != serialized
+        {
             return Err(Error::Conflict);
         }
     }
@@ -849,7 +894,7 @@ pub(crate) fn admit_input(
             params![input.session_id, root],
         )?;
     }
-    if let Some((_, _, _, seq, state)) = existing {
+    if let Some((_, _, _, seq, state, _)) = existing {
         return Ok(Admission {
             input_id: input.input_id.clone(),
             admitted_seq: seq,
@@ -864,13 +909,14 @@ pub(crate) fn admit_input(
         json!({"input_id":input.input_id,"delivery":delivery}),
     )?;
     tx.execute(
-        "INSERT INTO engine_input VALUES(?1,?2,?3,?4,'pending',?5)",
+        "INSERT INTO engine_input(id,session_id,prompt,delivery,state,admitted_seq,attachments) VALUES(?1,?2,?3,?4,'pending',?5,?6)",
         params![
             input.input_id,
             input.session_id,
             input.prompt,
             delivery,
-            event.seq
+            event.seq,
+            serialized
         ],
     )?;
     Ok(Admission {

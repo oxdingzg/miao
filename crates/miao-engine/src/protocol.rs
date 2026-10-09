@@ -30,6 +30,43 @@ pub struct Input {
     pub delivery: Delivery,
 }
 
+/// An inline media attachment carried on a prompt. `data` is base64 without a
+/// `data:` prefix; `mime` is the media type (for example `image/png`). The
+/// canonical message part is `{"type":"image","mime":..,"data":..}`; providers
+/// encode it in their own wire format.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct Attachment {
+    pub mime: String,
+    pub data: String,
+}
+
+impl Attachment {
+    pub fn validate(&self) -> Result<(), Error> {
+        if !matches!(
+            self.mime.as_str(),
+            "image/png" | "image/jpeg" | "image/gif" | "image/webp"
+        ) {
+            return Err(Error::Invalid("unsupported attachment media type".into()));
+        }
+        if self.data.is_empty() || self.data.len() > 8 * 1024 * 1024 {
+            return Err(Error::Invalid("attachment data must be 1..8 MiB".into()));
+        }
+        if !self
+            .data
+            .bytes()
+            .all(|b| b.is_ascii_alphanumeric() || matches!(b, b'+' | b'/' | b'='))
+        {
+            return Err(Error::Invalid("attachment data must be base64".into()));
+        }
+        Ok(())
+    }
+
+    pub fn part(&self) -> Value {
+        serde_json::json!({"type":"image","mime":self.mime,"data":self.data})
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Event {
     pub session_id: String,

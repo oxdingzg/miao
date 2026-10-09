@@ -192,6 +192,21 @@ impl Provider for Anthropic {
                 .as_array_mut()
                 .ok_or_else(|| ProviderError::Stream("unsupported Anthropic history".into()))?;
             for block in blocks {
+                if block["type"] == "image" {
+                    if message.role != "user" {
+                        return Err(ProviderError::Stream(
+                            "image attachments are only valid on user messages".into(),
+                        ));
+                    }
+                    let mime = block["mime"].as_str().ok_or_else(|| {
+                        ProviderError::Stream("invalid Anthropic image attachment".into())
+                    })?;
+                    let data = block["data"].as_str().ok_or_else(|| {
+                        ProviderError::Stream("invalid Anthropic image attachment".into())
+                    })?;
+                    *block = json!({"type":"image","source":{"type":"base64","media_type":mime,"data":data}});
+                    continue;
+                }
                 if !matches!(
                     (message.role.as_str(), block["type"].as_str()),
                     ("user" | "assistant", Some("text"))
