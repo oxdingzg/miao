@@ -228,7 +228,12 @@ async function connect(host: Host) {
     transport.close()
     throw new Error("Account grant missing")
   }
-  localStorage.setItem(stamp(host.hostID), JSON.stringify({ publicKey: hostKey, grant: approved }))
+  try {
+    localStorage.setItem(stamp(host.hostID), JSON.stringify({ publicKey: hostKey, grant: approved }))
+  } catch {
+    transport.close()
+    throw new Error("Device grant could not be saved")
+  }
   grant = approved
   rpc = RemoteRPC.make({ transport, target, grant: approved, identityPublicKey: identity.publicKey })
   const connected = rpc
@@ -489,6 +494,7 @@ get("enrollment-root", HTMLButtonElement).onclick = () =>
     if (!get("root-consent", HTMLInputElement).checked) throw new Error("Signer consent required")
     const local = enrollmentStore()
     if (await local.store.read()) {
+      get("enrollment-signer", HTMLInputElement).value = identity.publicKey
       report("本设备已有账号名单信任。")
       return
     }
@@ -556,6 +562,7 @@ get("enrollment-approve-form", HTMLFormElement).onsubmit = (event) => {
   event.preventDefault()
   run(async () => {
     const raw = get("enrollment-incoming", HTMLTextAreaElement).value
+    get("enrollment-response", HTMLTextAreaElement).value = ""
     if (raw.length > 131072) throw new Error("Enrollment input too large")
     const request = Schema.decodeUnknownSync(DeviceEnrollment.Request, { onExcessProperty: "error" })(JSON.parse(raw))
     if (
