@@ -516,6 +516,7 @@ async fn execute(
                     crate::protocol::Message {
                         role: "user".into(),
                         content: json!([{"type":"text","text":text}]),
+                        checkpoint: None,
                     },
                 );
             }

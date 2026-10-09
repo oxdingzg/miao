@@ -89,6 +89,7 @@ fn user() -> Message {
     Message {
         role: "user".into(),
         content: json!([{"type":"text","text":"请求"}]),
+        checkpoint: None,
     }
 }
 async fn completed(store: &Store) {
@@ -242,10 +243,12 @@ async fn opaque_history_cannot_switch_model_protocol_or_mutate_call_mapping() {
         Message {
             role: "assistant".into(),
             content: reply.content.clone(),
+            checkpoint: None,
         },
         Message {
             role: "user".into(),
             content: json!([{"type":"tool_result","tool_use_id":id,"content":"{}","is_error":false}]),
+            checkpoint: None,
         },
     ];
     let other = Gemini::new(url.clone(), "fake-key".into(), "different-model".into()).unwrap();

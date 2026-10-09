@@ -42,6 +42,10 @@ pub struct Event {
 pub struct Message {
     pub role: String,
     pub content: Value,
+    /// Stable checkpoint UUID for a promoted user message; None on assistant and
+    /// tool-result projections. Providers ignore it and map only role/content.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub checkpoint: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

@@ -66,6 +66,7 @@ fn request() -> ModelRequest {
         messages: vec![Message {
             role: "user".into(),
             content: json!([{"type":"text","text":"task"}]),
+            checkpoint: None,
         }],
         tools: vec![],
     }
@@ -209,10 +210,12 @@ async fn opaque_fallback_reply_pins_the_next_turn_and_preserves_signatures() {
     next.messages.push(Message {
         role: "assistant".into(),
         content: first.content.clone(),
+        checkpoint: None,
     });
     next.messages.push(Message {
         role: "user".into(),
         content: json!([{"type":"tool_result","tool_use_id":id,"content":"{}","is_error":false}]),
+        checkpoint: None,
     });
     let (send, _receive) = mpsc::channel(32);
     let second = provider

@@ -19,6 +19,7 @@ fn request() -> ModelRequest {
         messages: vec![Message {
             role: "user".into(),
             content: json!([{"type":"text","text":"hello"}]),
+            checkpoint: None,
         }],
         tools: vec![],
     }

@@ -14,6 +14,7 @@ fn request() -> ModelRequest {
         messages: vec![Message {
             role: "user".into(),
             content: json!([{"type":"text","text":"read file"}]),
+            checkpoint: None,
         }],
         tools: vec![ToolDefinition {
             name: "read_file".into(),
@@ -49,7 +50,7 @@ async fn text_stream_preserves_usage_after_finish_and_lowers_tool_history() {
     let (url, mut requests, server) = common::endpoint(vec![(200, body)]).await;
     let provider = OpenAIChat::new(url, "fixture".into(), "model".into()).unwrap();
     let mut input = request();
-    input.messages.extend([Message{role:"assistant".into(),content:json!([{"type":"tool_use","id":"call","name":"read_file","input":{"path":"file"}}])},Message{role:"user".into(),content:json!([{"type":"tool_result","tool_use_id":"call","content":"contents","is_error":false}])}]);
+    input.messages.extend([Message{role:"assistant".into(),content:json!([{"type":"tool_use","id":"call","name":"read_file","input":{"path":"file"}}]),checkpoint:None},Message{role:"user".into(),content:json!([{"type":"tool_result","tool_use_id":"call","content":"contents","is_error":false}]),checkpoint:None}]);
     let (progress, _receive) = mpsc::channel(64);
     let reply = provider
         .stream(input, progress, CancellationToken::new())
@@ -143,6 +144,7 @@ async fn unsupported_history_is_rejected_before_any_network_request() {
     request.messages.push(Message {
         role: "assistant".into(),
         content: json!([{"type":"thinking","signature":"opaque"}]),
+        checkpoint: None,
     });
     let provider = OpenAIChat::new(
         "http://127.0.0.1:1/unused".into(),

@@ -70,6 +70,7 @@ fn history() -> ModelRequest {
         messages: vec![Message {
             role: "user".into(),
             content: json!([{"type":"text","text":"hi"}]),
+            checkpoint: None,
         }],
         tools: vec![miao_engine::protocol::ToolDefinition {
             name: "read_file".into(),
