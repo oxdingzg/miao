@@ -59,10 +59,12 @@ test("owner configuration connects and switches only relay transport, preserving
     const first = ControlHub.listen({ port: 0, hosts: tokens })
     const second = ControlHub.listen({ port: 0, hosts: tokens })
     hubs.push(first, second)
+    const accountID = "account_binding_fixture_001"
     const configure = manager!.administration.configure!
-    await configure({ hubURL: `http://127.0.0.1:${first.port}`, hostToken: token })
+    await configure({ hubURL: `http://127.0.0.1:${first.port}`, hostToken: token, accountID })
     await connected(manager!)
     expect(manager!.administration.status()).toMatchObject({
+      accountID,
       hostID: before.hostID,
       runtimeID: before.runtimeID,
       hostPublicKey: before.hostPublicKey,
@@ -73,11 +75,12 @@ test("owner configuration connects and switches only relay transport, preserving
       expect((await stat(path.dirname(filename))).mode & 0o777).toBe(0o700)
     }
     const saved = await readFile(filename, "utf8")
+    expect(JSON.parse(saved).accountID).toBe(accountID)
     await expect(configure({ hubURL: "https://user:secret@example.invalid/path", hostToken: token })).rejects.toThrow()
     await expect(configure({ hubURL: "https://example.invalid", hostToken: "bad\r\nheader" })).rejects.toThrow()
     expect(await readFile(filename, "utf8")).toBe(saved)
     expect(manager!.administration.status().connected).toBe(true)
-    await configure({ hubURL: `http://127.0.0.1:${second.port}`, hostToken: token })
+    await configure({ hubURL: `http://127.0.0.1:${second.port}`, hostToken: token, accountID })
     await connected(manager!)
     expect(manager!.administration.status().hubURL).toBe(`http://127.0.0.1:${second.port}`)
     const until = Date.now() + 3000

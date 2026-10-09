@@ -1226,13 +1226,14 @@ const Endpoint28_4 = (raw: RawClient["server.runtime"]) => (input: Endpoint28_4I
 
 type Endpoint28_5Request = Parameters<RawClient["server.runtime"]["runtime.control.configure"]>[0]
 type Endpoint28_5Input = {
+  readonly accountID?: Endpoint28_5Request["payload"]["accountID"]
   readonly hubURL: Endpoint28_5Request["payload"]["hubURL"]
   readonly hostToken: Endpoint28_5Request["payload"]["hostToken"]
 }
 const Endpoint28_5 = (raw: RawClient["server.runtime"]) => (input: Endpoint28_5Input) =>
-  raw["runtime.control.configure"]({ payload: { hubURL: input["hubURL"], hostToken: input["hostToken"] } }).pipe(
-    Effect.mapError(mapClientError),
-  )
+  raw["runtime.control.configure"]({
+    payload: { accountID: input["accountID"], hubURL: input["hubURL"], hostToken: input["hostToken"] },
+  }).pipe(Effect.mapError(mapClientError))
 
 type Endpoint28_6Request = Parameters<RawClient["server.runtime"]["runtime.control.invite"]>[0]
 type Endpoint28_6Input = {

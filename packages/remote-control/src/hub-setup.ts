@@ -64,11 +64,21 @@ export async function connect(input: {
     })
     login = signedIn.headers.get("set-auth-token") ?? undefined
     if (!signedIn.ok || !login) throw new Error("Relay login failed")
+    const signedInBody: unknown = await signedIn.json().catch(() => undefined)
+    const accountID = authAccount(signedInBody)
     const accessResponse = await request("/api/auth/token", login)
     if (!accessResponse.ok) throw new Error("Relay login failed")
     const access: unknown = await accessResponse.json()
     if (!isToken(access)) throw new Error("Relay login failed")
-    return await registerHost({ origin, name: input.name, token: access.token, host, request, runtime: input.runtime })
+    return await registerHost({
+      origin,
+      name: input.name,
+      token: access.token,
+      accountID,
+      host,
+      request,
+      runtime: input.runtime,
+    })
   } catch {
     // Never forward HTTP bodies, provider errors, or Runtime SDK request details containing credentials.
     throw new Error("Relay setup could not be confirmed; check the Runtime status and relay host directory")
@@ -126,7 +136,15 @@ export async function connectWithOAuth(input: {
     const access: unknown = await exchanged.json()
     if (!isToken(access)) throw new Error("Relay login failed")
     token = access.token
-    return await registerHost({ origin, name: input.name, token, host, request, runtime: input.runtime })
+    return await registerHost({
+      origin,
+      name: input.name,
+      token,
+      accountID: authAccount(access),
+      host,
+      request,
+      runtime: input.runtime,
+    })
   } catch {
     throw new Error("Relay setup could not be confirmed; check the Runtime status and relay host directory")
   } finally {
@@ -138,6 +156,7 @@ async function registerHost(input: {
   origin: string
   name: string
   token: string
+  accountID?: string
   host: Host
   request: Request
   runtime: Runtime
@@ -162,7 +181,15 @@ async function registerHost(input: {
   }
   if (!isToken(registration) || !/^[A-Za-z0-9_-]{32,256}$/.test(registration.token))
     throw new Error("Invalid host registration response")
-  return await input.runtime.configure({ hubURL: input.origin, hostToken: registration.token })
+  const declared = "accountID" in registration ? registration.accountID : undefined
+  if (declared !== undefined && !validAccount(declared)) throw new Error("Invalid account registration metadata")
+  if (declared && input.accountID && declared !== input.accountID) throw new Error("Authenticated account mismatch")
+  const accountID = declared ?? input.accountID
+  return await input.runtime.configure({
+    hubURL: input.origin,
+    hostToken: registration.token,
+    ...(accountID ? { accountID } : {}),
+  })
 }
 
 async function requireHost(runtime: Runtime): Promise<Host> {
@@ -225,4 +252,14 @@ function hasMatchingHost(value: unknown, hostID: string, publicKey: string): boo
       "revokedAt" in host &&
       host.revokedAt === null,
   )
+}
+
+function validAccount(value: unknown): value is string {
+  return typeof value === "string" && /^[A-Za-z0-9_-]{16,128}$/.test(value)
+}
+function authAccount(body: unknown): string | undefined {
+  if (typeof body !== "object" || body === null || !("user" in body)) return undefined
+  const user = body.user
+  if (typeof user !== "object" || user === null || !("id" in user) || !validAccount(user.id)) return undefined
+  return user.id
 }

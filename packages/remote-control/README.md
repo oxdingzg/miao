@@ -142,6 +142,21 @@ credentials do not belong in this file. Selecting a default does not log in,
 register a host, or grant a phone access: complete desktop account login and
 locally approve the device grant before opening a remote session.
 
+## Authenticated account binding metadata
+
+Desktop setup records an optional `accountID` from authenticated host
+registration or the authenticated login response. Credential rotation retains
+that identity even if an older relay returns only the replacement host token.
+Conflicting account IDs are rejected before the Runtime configuration changes.
+The private owner-only control configuration saves the ID and host credential;
+account access tokens remain transient. Local Runtime status exposes the ID for
+later owner consent controls. Reconfiguring without account metadata clears a
+previous ID instead of silently carrying it into another login.
+
+The self-hosted Hub includes its authenticated caller's account ID in host
+registration and rotation responses. Legacy relays without this metadata retain
+manual pairing. A device claim never supplies the host's binding identity.
+
 ## Per-session publication
 
 The desktop Remote Control dialog provides **开启当前会话的远程控制** and
