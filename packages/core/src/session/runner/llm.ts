@@ -289,7 +289,12 @@ const layer = Layer.effect(
       return { ttl, prune, budget, loop, disabledTools, disclosure, alwaysLoad }
     })
     // Title generation runs beside the first provider turn and outlives the drain.
-    // One attempt per Session per process, like V1's single first-step attempt.
+    // The title model can fail transiently — a 5xx, or a plan-limited small model
+    // that answers 403 — and a Session nobody retitles keeps its placeholder for
+    // good, so the terminal shows a bare `miao` instead of `miao | <title>`. The
+    // mark therefore only holds while an attempt is in flight or has succeeded;
+    // a failure clears it so a later drain retries while the title is still the
+    // placeholder.
     const titleFibers = yield* FiberSet.make<void>()
     const titled = new Set<string>()
     const generateTitle = Effect.fn("SessionRunner.generateTitle")(
@@ -301,7 +306,7 @@ const layer = Layer.effect(
         readonly http: LLMRequest["http"]
       }) {
         const agent = yield* agents.get(AgentV2.ID.make("title"))
-        if (!agent) return
+        if (!agent) return false
         const model = agent.model
           ? (yield* models.resolve({ ...input.session, model: agent.model })).model
           : (input.small ?? input.model)
@@ -312,18 +317,23 @@ const layer = Layer.effect(
           system: agent.system,
           prompt: input.prompt,
         })
-        if (!title) return
+        if (!title) return false
         // The user may have renamed the Session while the title model ran.
         const current = yield* store.get(input.session.id)
-        if (!current || !SessionTitle.isDefault(current.title)) return
+        if (!current || !SessionTitle.isDefault(current.title)) return false
         yield* events.publish(SessionEvent.Info.Updated, {
           sessionID: input.session.id,
           timestamp: yield* DateTime.now,
           title,
         })
+        return true
       },
-      Effect.catch((error) => Effect.logWarning("failed to generate title", { error })),
-      Effect.catchDefect((defect) => Effect.logWarning("failed to generate title", { defect })),
+      Effect.catch((error) =>
+        Effect.logWarning("failed to generate title", { error }).pipe(Effect.as(false)),
+      ),
+      Effect.catchDefect((defect) =>
+        Effect.logWarning("failed to generate title", { defect }).pipe(Effect.as(false)),
+      ),
     )
     const compaction = SessionCompaction.make({ events, llm, config: yield* config.entries() })
     const getSession = Effect.fn("SessionRunner.getSession")(function* (sessionID: SessionSchema.ID) {
@@ -677,14 +687,20 @@ const layer = Layer.effect(
         toolChoice: isLastStep ? "none" : undefined,
       })
       const requestBuildMs = Date.now() - requestBuildStartedAt
-      // Like V1: title a root Session that still has its placeholder title once
-      // its first real user prompt reaches the model.
+      // Title a root Session that still has its placeholder title once its first
+      // real user prompt reaches the model. The prompt count is not pinned to
+      // one: a Session whose earlier drain never reached this point (or whose
+      // first attempt failed) still gets titled on a later turn, while the
+      // placeholder check keeps a titled or renamed Session from being retitled.
       const users = context.filter((message) => message.type === "user")
-      if (!session.parentID && users.length === 1 && SessionTitle.isDefault(session.title) && !titled.has(session.id)) {
-        titled.add(session.id)
+      if (!session.parentID && users.length > 0 && SessionTitle.isDefault(session.title) && !titled.has(session.id)) {
+        const sessionID = session.id
+        titled.add(sessionID)
         yield* FiberSet.run(
           titleFibers,
-          generateTitle({ session, prompt: users[0].text, model, small: summarizeModel, http: request.http }),
+          generateTitle({ session, prompt: users[0].text, model, small: summarizeModel, http: request.http }).pipe(
+            Effect.tap((published) => (published ? Effect.void : Effect.sync(() => titled.delete(sessionID)))),
+          ),
         )
       }
       const compactStartedAt = Date.now()
