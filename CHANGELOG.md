@@ -11,6 +11,24 @@ at `docs/releases/vX.Y.Z.md` and `docs/releases/vX.Y.Z.zh.md`; both are required
 
 ## [Unreleased]
 
+## [0.2.4] - 2026-10-10
+
+### Added
+- **engine**: persist message and event recording times (#581) (`b3b69d0cc`)
+- **tui**: unify session task state and terminal badges (#583) (`4ea7c8ba2`)
+- **engine**: validate client envelopes with replay-stable source ids (#577) (`7e733b07c`)
+- **server**: fan out engine client events without a second journal (#576) (`fb3cad890`)
+- **engine**: add the EngineSession facade seam (#574) (`54a160010`)
+
+### Fixed
+- **miao**: preserve engine recording times in client delivery (#587) (`ce263b5a3`)
+- **core**: inherit stable credentials read-only in preview channels (#586) (`d143d7ef2`)
+- **core**: wake a session when a background bash job settles (#585) (`c1f18857a`)
+- **ci**: combine engine branch and tag push triggers (#582) (`c9eff3c19`)
+- **core**: bound overflow recovery summaries without dropping history (#580) (`39c193210`)
+- **core**: continue truncated streams from committed history (#584) (`725719b5e`)
+- **engine**: preserve same-version preview rollback binaries (#579) (`12b5a20f7`)
+
 ## [0.2.3] - 2026-10-10
 
 ### Added
