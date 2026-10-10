@@ -27,8 +27,6 @@ export function statusOf(event: EngineEvent): StatusInfo | undefined {
       return { type: "busy" }
     case "run.finished":
       return { type: "idle" }
-    case "provider.failed":
-      return { type: "idle" }
     default:
       return undefined
   }
@@ -45,12 +43,12 @@ export function translateStatus(event: EngineEvent): SessionStatus | undefined {
  * so a burst of engine events (or a resubscribe) does not republish `busy`.
  */
 export class StatusBridge {
-  #current: StatusInfo["type"] | undefined
+  #current = new Map<string, StatusInfo["type"]>()
 
   update(event: EngineEvent): SessionStatus | undefined {
     const status = statusOf(event)
-    if (!status || status.type === this.#current) return undefined
-    this.#current = status.type
+    if (!status || status.type === this.#current.get(event.session_id)) return undefined
+    this.#current.set(event.session_id, status.type)
     return { sessionID: SessionID.descending(event.session_id), timestamp: DateTime.makeUnsafe(Date.now()), status }
   }
 }
@@ -244,9 +242,30 @@ export type SessionToolResult = SessionToolSuccess | SessionToolFailed
  */
 export class ToolBridge {
   #calls = new Map<string, { sessionID: SessionID; assistantMessageID: SessionMessage.ID }>()
+  #plans = new Map<string, {
+    session: string
+    provider: string
+    known?: { sessionID: SessionID; assistantMessageID: SessionMessage.ID }
+  }>()
 
   /** Record `callID -> assistantMessageID` from a committed assistant message. */
   note(event: EngineEvent): void {
+    if (event.kind === "tool.planned" || event.kind === "tool.dispatched") {
+      const data = event.data
+      if (typeof data !== "object" || data === null) return
+      if (!("call_id" in data) || typeof data.call_id !== "string") return
+      if (!("provider_id" in data) || typeof data.provider_id !== "string") return
+      const key = JSON.stringify([event.session_id, data.call_id])
+      if (this.#plans.has(key)) return
+      this.#plans.set(key, {
+        session: event.session_id,
+        provider: data.provider_id,
+        ...(event.kind === "tool.dispatched"
+          ? { known: this.#calls.get(JSON.stringify([event.session_id, data.provider_id])) }
+          : {}),
+      })
+      return
+    }
     if (event.kind !== "message.committed") return
     if (typeof event.data !== "object" || event.data === null) return
     if (!("role" in event.data) || event.data.role !== "assistant") return
@@ -258,7 +277,11 @@ export class ToolBridge {
       if (typeof block !== "object" || block === null) continue
       if (!("type" in block) || block.type !== "tool_use") continue
       if (!("id" in block) || typeof block.id !== "string") continue
-      this.#calls.set(block.id, { sessionID, assistantMessageID })
+      const known = { sessionID, assistantMessageID }
+      this.#calls.set(JSON.stringify([event.session_id, block.id]), known)
+      for (const plan of this.#plans.values()) {
+        if (plan.session === event.session_id && plan.provider === block.id && !plan.known) plan.known = known
+      }
     }
   }
 
@@ -267,7 +290,8 @@ export class ToolBridge {
     if (event.kind !== "tool.completed") return undefined
     if (typeof event.data !== "object" || event.data === null) return undefined
     if (!("call_id" in event.data) || typeof event.data.call_id !== "string") return undefined
-    const known = this.#calls.get(event.data.call_id)
+    const plan = this.#plans.get(JSON.stringify([event.session_id, event.data.call_id]))
+    const known = plan?.known ?? this.#calls.get(JSON.stringify([event.session_id, event.data.call_id]))
     if (!known) return undefined
     const raw: unknown = "result" in event.data ? Reflect.get(event.data, "result") : undefined
     const output = typeof raw === "string" ? raw : JSON.stringify(raw ?? null)
@@ -275,7 +299,7 @@ export class ToolBridge {
       sessionID: known.sessionID,
       timestamp: DateTime.makeUnsafe(Date.now()),
       assistantMessageID: known.assistantMessageID,
-      callID: event.data.call_id,
+      callID: plan?.provider ?? event.data.call_id,
       provider: { executed: false },
     }
     if ("is_error" in event.data && event.data.is_error === true) {
