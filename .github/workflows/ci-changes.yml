@@ -21,6 +21,8 @@ jobs:
           fetch-depth: 0
       - name: Check change classification
         run: python3 .github/scripts/test_ci_changes.py
+      - name: Check release CI policy
+        run: python3 .github/scripts/test_release_ci.py
       - id: paths
         env:
           EVENT_NAME: ${{ github.event_name }}
