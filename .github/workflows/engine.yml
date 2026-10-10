@@ -9,12 +9,20 @@ on:
       - "crates/miao-sandbox/**"
       - "package.json"
       - ".github/workflows/engine.yml"
+      - "packages/core/src/patch.ts"
+      - "packages/core/src/flag/**"
+      - "packages/native/**"
+      - "bun.lock"
   pull_request:
     paths:
       - "crates/miao-engine/**"
       - "crates/miao-sandbox/**"
       - "package.json"
       - ".github/workflows/engine.yml"
+      - "packages/core/src/patch.ts"
+      - "packages/core/src/flag/**"
+      - "packages/native/**"
+      - "bun.lock"
   workflow_dispatch:
 
 concurrency:
@@ -28,6 +36,19 @@ permissions:
   contents: read
 
 jobs:
+  reference:
+    name: engine reference corpus
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+      - name: Setup reference runtime
+        uses: ./.github/actions/setup-bun
+        with:
+          install-flags: --frozen-lockfile --ignore-scripts
+      - name: Verify corpus against the live TypeScript reference
+        run: bun crates/miao-engine/tests/differential/generate.ts --check
+
   engine:
     name: engine (${{ matrix.os }})
     strategy:
@@ -64,6 +85,10 @@ jobs:
 
       - name: Test
         run: cargo test
+
+      - name: Verify accuracy checks detect injected faults
+        if: matrix.os == 'ubuntu-latest'
+        run: python3 tests/accuracy/sensitivity.py
 
   engine-windows:
     name: engine (windows)
