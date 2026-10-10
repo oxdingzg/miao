@@ -1,6 +1,6 @@
 import { describe, expect } from "bun:test"
 import { Effect, Stream } from "effect"
-import { LLM, LLMEvent, Message, ToolCallPart } from "../../src"
+import { LLM, LLMEvent, Message, ToolCallPart, isContextOverflowFailure } from "../../src"
 import * as CommandCode from "../../src/protocols/commandcode"
 import { Auth, LLMClient } from "../../src/route"
 import { it } from "../lib/effect"
@@ -21,6 +21,102 @@ const request = LLM.request({
 const ndjson = (events: ReadonlyArray<unknown>) => events.map((event) => JSON.stringify(event)).join("\n") + "\n"
 
 describe("Command Code route", () => {
+  it.effect("bounds the output reservation by the catalog limit", () =>
+    Effect.gen(function* () {
+      const limited = CommandCode.route
+        .with({ limits: { context: 1_000_000, output: 32_768 } })
+        .model({ id: "deepseek/deepseek-v4.1-flash" })
+      const prepared = yield* LLMClient.prepare<CommandCode.CommandCodeBody>(
+        LLM.request({ model: limited, prompt: "Hello", generation: { maxTokens: 64_000 } }),
+      )
+      expect(prepared.body.params.max_tokens).toBe(32_768)
+      const defaults = yield* LLMClient.prepare<CommandCode.CommandCodeBody>(
+        LLM.request({ model: limited, prompt: "Hello" }),
+      )
+      expect(defaults.body.params.max_tokens).toBe(32_768)
+    }),
+  )
+
+  it.effect("carries pasted images as image parts", () =>
+    Effect.gen(function* () {
+      const prepared = yield* LLMClient.prepare<CommandCode.CommandCodeBody>(
+        LLM.request({
+          model,
+          messages: [Message.user([{ type: "media", mediaType: "image/png", data: "data:image/png;base64,aGk=" }])],
+        }),
+      )
+      expect(prepared.body.params.messages).toEqual([
+        { role: "user", content: [{ type: "image", image: "data:image/png;base64,aGk=", mimeType: "image/png" }] },
+      ])
+    }),
+  )
+
+  it.effect("keeps tool images out of text and after all parallel tool results", () =>
+    Effect.gen(function* () {
+      const prepared = yield* LLMClient.prepare<CommandCode.CommandCodeBody>(
+        LLM.request({
+          model,
+          messages: [
+            Message.assistant([
+              ToolCallPart.make({ id: "read_1", name: "read", input: { path: "shot.png" } }),
+              ToolCallPart.make({ id: "read_2", name: "read", input: { path: "notes.txt" } }),
+            ]),
+            Message.tool({
+              id: "read_1",
+              name: "read",
+              result: [
+                { type: "text", text: "Read image" },
+                { type: "file", mime: "image/png", uri: "data:image/png;base64,aGk=", name: "shot.png" },
+              ],
+              resultType: "content",
+            }),
+            Message.tool({ id: "read_2", name: "read", result: "notes", resultType: "text" }),
+            Message.user("Compare them"),
+          ],
+        }),
+      )
+      expect(prepared.body.params.messages.slice(1)).toEqual([
+        {
+          role: "tool",
+          content: [
+            {
+              type: "tool-result",
+              toolCallId: "read_1",
+              toolName: "read",
+              output: { type: "text", value: "Read image" },
+            },
+          ],
+        },
+        {
+          role: "tool",
+          content: [
+            { type: "tool-result", toolCallId: "read_2", toolName: "read", output: { type: "text", value: "notes" } },
+          ],
+        },
+        { role: "user", content: [{ type: "image", image: "data:image/png;base64,aGk=", mimeType: "image/png" }] },
+        { role: "user", content: [{ type: "text", text: "Compare them" }] },
+      ])
+    }),
+  )
+
+  it.effect("classifies in-stream context overflow for session compaction", () =>
+    Effect.gen(function* () {
+      const body = ndjson([
+        {
+          type: "error",
+          error: {
+            type: "server_error",
+            message:
+              "This model's maximum context length is 1048576 tokens. However, you requested 1096458 tokens. Please reduce the length of the messages or completion.",
+          },
+        },
+      ])
+      const error = yield* LLMClient.generate(request).pipe(Effect.provide(fixedResponse(body)), Effect.flip)
+      expect(isContextOverflowFailure(error)).toBe(true)
+      expect(error.retryable).toBe(false)
+    }),
+  )
+
   it.effect("prepares the /alpha/generate body", () =>
     Effect.gen(function* () {
       const prepared = yield* LLMClient.prepare<CommandCode.CommandCodeBody>(request)
@@ -28,9 +124,7 @@ describe("Command Code route", () => {
       expect(prepared.body.params.stream).toBe(true)
       expect(prepared.body.params.max_tokens).toBe(20)
       expect(prepared.body.params.temperature).toBe(0)
-      expect(prepared.body.params.messages).toEqual([
-        { role: "user", content: [{ type: "text", text: "Say hello." }] },
-      ])
+      expect(prepared.body.params.messages).toEqual([{ role: "user", content: [{ type: "text", text: "Say hello." }] }])
       expect(prepared.body.params.system).toEqual([{ type: "text", text: "You are concise." }])
       expect(prepared.body.permissionMode).toBe("standard")
       expect(prepared.body.memory).toBeNull()
@@ -105,7 +199,10 @@ describe("Command Code route", () => {
 
   it.effect("surfaces a provider-error event as a stream failure", () =>
     Effect.gen(function* () {
-      const body = ndjson([{ type: "start" }, { type: "error", error: { message: "rate limited", type: "rate_limit" } }])
+      const body = ndjson([
+        { type: "start" },
+        { type: "error", error: { message: "rate limited", type: "rate_limit" } },
+      ])
       const error = yield* LLMClient.generate(request).pipe(Effect.provide(fixedResponse(body)), Effect.flip)
       expect(String(error)).toContain("rate limited")
     }),

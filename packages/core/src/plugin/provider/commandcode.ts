@@ -104,11 +104,16 @@ export const CommandCodePlugin = define<HttpClient.HttpClient | EventV2.Service 
             draft.name = model.name ?? model.id
             // The models endpoint reports neither capabilities nor pricing, so
             // borrow the input modalities the catalog lists for the same model
-            // id; ids the catalog does not carry stay on the conservative
-            // text-only default until it does.
+            // id. Subscription speed aliases inherit the base model's input
+            // modalities unless the alias has an explicit declaration. Unknown
+            // base models stay text-only.
             draft.capabilities = {
               tools: true,
-              input: [...(modalities.get(model.id) ?? ["text"])],
+              input: [
+                ...(entries?.[model.id]?.modalities?.input ??
+                  modalities.get(model.id) ??
+                  modalities.get(model.id.replace(/-fast$/, "")) ?? ["text"]),
+              ],
               output: ["text"],
             }
             draft.limit = { context: model.contextLength ?? 128_000, output: 32_768 }

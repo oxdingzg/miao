@@ -4,10 +4,20 @@ import { Auth } from "../route/auth"
 import { Endpoint } from "../route/endpoint"
 import { HttpTransport } from "../route/transport"
 import { Protocol } from "../route/protocol"
-import { LLMEvent, Usage, type FinishReason, type LLMRequest, type MediaPart, type ToolDefinition } from "../schema"
+import {
+  LLMEvent,
+  Usage,
+  type FinishReason,
+  type LLMRequest,
+  type MediaPart,
+  type ToolDefinition,
+  type ToolContent,
+} from "../schema"
 import { Lifecycle } from "./utils/lifecycle"
 import { ToolSchemaProjection } from "./utils/tool-schema"
 import { JsonObject, optionalArray, optionalNull, ProviderShared } from "./shared"
+import { isContextOverflow } from "../provider-error"
+import { InvalidRequestReason, LLMError } from "../schema/errors"
 
 const ADAPTER = "commandcode"
 export const DEFAULT_BASE_URL = "https://api.commandcode.ai"
@@ -197,9 +207,7 @@ const lowerAssistantMessage = Effect.fn("CommandCode.lowerAssistantMessage")(fun
   return content.length === 0 ? undefined : { role: "assistant" as const, content }
 })
 
-const lowerUserMessage = Effect.fn("CommandCode.lowerUserMessage")(function* (
-  message: CommandCodeRequestMessage,
-) {
+const lowerUserMessage = Effect.fn("CommandCode.lowerUserMessage")(function* (message: CommandCodeRequestMessage) {
   const content: Array<Schema.Schema.Type<typeof CommandCodeContent>> = []
   for (const part of message.content) {
     if (part.type === "text") {
@@ -215,26 +223,43 @@ const lowerUserMessage = Effect.fn("CommandCode.lowerUserMessage")(function* (
   return content.length === 0 ? undefined : { role: "user" as const, content }
 })
 
-const lowerToolMessage = Effect.fn("CommandCode.lowerToolMessage")(function* (
-  message: CommandCodeRequestMessage,
-) {
+const lowerToolMessage = Effect.fn("CommandCode.lowerToolMessage")(function* (message: CommandCodeRequestMessage) {
   const content: Array<Schema.Schema.Type<typeof CommandCodeContent>> = []
+  const images: Array<Schema.Schema.Type<typeof CommandCodeContent>> = []
   for (const part of message.content) {
     if (!ProviderShared.supportsContent(part, ["tool-result"]))
       return yield* ProviderShared.unsupportedContent("Command Code", "tool", ["tool-result"])
+    // The subscription endpoint accepts text tool outputs. Carry files in a
+    // following user message, never JSON-stringify image bytes into text.
+    const items: ReadonlyArray<ToolContent> = part.result.type === "content" ? part.result.value : []
+    const value =
+      part.result.type === "content"
+        ? items
+            .filter((item) => item.type === "text")
+            .map((item) => item.text)
+            .join("\n")
+        : ProviderShared.toolResultText(part)
+    if (part.result.type === "content") {
+      for (const item of items) {
+        if (item.type !== "file") continue
+        images.push(yield* lowerMedia({ type: "media", mediaType: item.mime, data: item.uri, filename: item.name }))
+      }
+    }
     content.push({
       type: "tool-result",
       toolCallId: part.id,
       toolName: part.name,
-      output: { type: "text" as const, value: ProviderShared.toolResultText(part) },
+      output: { type: "text" as const, value },
     })
   }
-  return content.length === 0 ? undefined : { role: "tool" as const, content }
+  return { message: content.length === 0 ? undefined : { role: "tool" as const, content }, images }
 })
 
 const lowerMessages = Effect.fn("CommandCode.lowerMessages")(function* (request: LLMRequest) {
   const messages: Array<CommandCodeMessage> = []
+  const images: Array<Schema.Schema.Type<typeof CommandCodeContent>> = []
   for (const message of request.messages) {
+    if (message.role !== "tool" && images.length > 0) messages.push({ role: "user", content: images.splice(0) })
     if (message.role === "system") {
       const part = yield* ProviderShared.wrappedSystemUpdate("Command Code", message)
       messages.push({ role: "user", content: [{ type: "text", text: part.text }] })
@@ -251,8 +276,10 @@ const lowerMessages = Effect.fn("CommandCode.lowerMessages")(function* (request:
       continue
     }
     const lowered = yield* lowerToolMessage(message)
-    if (lowered) messages.push(lowered)
+    if (lowered.message) messages.push(lowered.message)
+    images.push(...lowered.images)
   }
+  if (images.length > 0) messages.push({ role: "user", content: images })
   return messages
 })
 
@@ -296,10 +323,13 @@ const fromRequest = Effect.fn("CommandCode.fromRequest")(function* (request: LLM
     params: {
       model: request.model.id,
       messages: yield* lowerMessages(request),
-      tools:
-        request.tools.length === 0 ? undefined : request.tools.map((tool) => lowerTool(tool)),
+      tools: request.tools.length === 0 ? undefined : request.tools.map((tool) => lowerTool(tool)),
       system: lowerSystem(request),
-      max_tokens: Math.min(request.generation?.maxTokens ?? DEFAULT_MAX_TOKENS, DEFAULT_MAX_TOKENS),
+      max_tokens: Math.min(
+        request.generation?.maxTokens ?? DEFAULT_MAX_TOKENS,
+        request.model.route.defaults.limits?.output ?? DEFAULT_MAX_TOKENS,
+        DEFAULT_MAX_TOKENS,
+      ),
       stream: true as const,
       ...(request.generation?.temperature !== undefined ? { temperature: request.generation.temperature } : {}),
       ...(typeof reasoning === "string" ? { reasoning_effort: reasoning } : {}),
@@ -362,11 +392,20 @@ const step = (state: ParserState, event: CommandCodeEvent) =>
     const events: LLMEvent[] = []
     let lifecycle = state.lifecycle
 
+    if (event.type === "error" && isContextOverflow(streamError(event)))
+      return yield* new LLMError({
+        module: "Command Code",
+        method: "stream",
+        reason: new InvalidRequestReason({ message: streamError(event), classification: "context-overflow" }),
+      })
     if (event.type === "error")
       return yield* ProviderShared.eventError("Command Code", streamError(event), JSON.stringify(event))
 
     if (event.type === "reasoning-start")
-      return [{ ...state, lifecycle: Lifecycle.reasoningStart(lifecycle, events, event.id ?? "reasoning-0") }, events] as const
+      return [
+        { ...state, lifecycle: Lifecycle.reasoningStart(lifecycle, events, event.id ?? "reasoning-0") },
+        events,
+      ] as const
 
     if (event.type === "reasoning-delta") {
       if (event.text) lifecycle = Lifecycle.reasoningDelta(lifecycle, events, event.id ?? "reasoning-0", event.text)
@@ -374,7 +413,10 @@ const step = (state: ParserState, event: CommandCodeEvent) =>
     }
 
     if (event.type === "reasoning-end")
-      return [{ ...state, lifecycle: Lifecycle.reasoningEnd(lifecycle, events, event.id ?? "reasoning-0") }, events] as const
+      return [
+        { ...state, lifecycle: Lifecycle.reasoningEnd(lifecycle, events, event.id ?? "reasoning-0") },
+        events,
+      ] as const
 
     if (event.type === "text-delta") {
       if (event.text) lifecycle = Lifecycle.textDelta(lifecycle, events, event.id ?? "text-0", event.text)
