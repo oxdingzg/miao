@@ -289,3 +289,150 @@ async fn sequenced_unknown_checkpoint_events_are_skipped_and_genuine_failures_st
         }
     }
 }
+
+/// Build a stream whose authoritative items arrive as `response.output_item.done`
+/// and whose `response.completed.output` is `output` (as observed empty on one
+/// upstream). This is the shape that used to lose every finalized tool call.
+fn finalized(items: Vec<Value>, output: Value) -> String {
+    let mut events: Vec<Value> = vec![
+        json!({"type":"response.created","response":{"id":"response","status":"in_progress"}}),
+    ];
+    for item in items {
+        events.push(json!({"type":"response.output_item.done","item":item}));
+    }
+    events.push(json!({"type":"response.completed","response":{"id":"response","status":"completed","output":output,"usage":{"input_tokens":5,"output_tokens":3}}}));
+    events.iter().map(|e| format!("data: {e}\n\n")).collect()
+}
+
+#[tokio::test]
+async fn compact_completion_uses_finalized_items() {
+    let call = json!({"type":"function_call","id":"fc_1","call_id":"call","name":"read_file","arguments":"{\"path\":\"file\"}","status":"completed"});
+    let (url, mut requests, server) =
+        common::endpoint(vec![(200, finalized(vec![call], json!([])))]).await;
+    let provider = OpenAIResponses::new(url, "fixture".into(), "fixture-model".into()).unwrap();
+    let (progress, _receive) = mpsc::channel(64);
+    let reply = provider
+        .stream(request(), progress, CancellationToken::new())
+        .await
+        .unwrap();
+    assert!(reply.needs_tools);
+    assert_eq!(
+        reply.content,
+        json!([{"type":"tool_use","id":"call","name":"read_file","input":{"path":"file"}}])
+    );
+    server.await.unwrap();
+    assert!(requests.recv().await.is_some());
+}
+
+#[tokio::test]
+async fn compact_completion_preserves_finalized_reasoning() {
+    let reasoning =
+        json!({"type":"reasoning","id":"rs_1","summary":[],"encrypted_content":"opaque-fixture"});
+    let call = json!({"type":"function_call","id":"fc_1","call_id":"call","name":"read_file","arguments":"{\"path\":\"file\"}","status":"completed"});
+    let (url, _requests, server) = common::endpoint(vec![(
+        200,
+        finalized(vec![reasoning.clone(), call], json!([])),
+    )])
+    .await;
+    let provider = OpenAIResponses::new(url, "fixture".into(), "fixture-model".into()).unwrap();
+    let (progress, _receive) = mpsc::channel(64);
+    let reply = provider
+        .stream(request(), progress, CancellationToken::new())
+        .await
+        .unwrap();
+    let content = reply.content.as_array().unwrap();
+    assert_eq!(content[0]["type"], "provider_opaque");
+    assert_eq!(content[0]["item"], reasoning);
+    assert_eq!(content[1]["type"], "tool_use");
+    server.await.unwrap();
+}
+
+#[tokio::test]
+async fn compact_completion_without_finalized_items_fails_closed() {
+    let (url, _requests, server) =
+        common::endpoint(vec![(200, finalized(vec![], json!([])))]).await;
+    let provider = OpenAIResponses::new(url, "fixture".into(), "fixture-model".into()).unwrap();
+    let (progress, _receive) = mpsc::channel(64);
+    assert!(matches!(
+        provider
+            .stream(request(), progress, CancellationToken::new())
+            .await,
+        Err(ProviderError::Stream(_))
+    ));
+    server.await.unwrap();
+}
+
+#[tokio::test]
+async fn compact_incomplete_function_call_fails_closed() {
+    let call = json!({"type":"function_call","id":"fc_1","call_id":"call","name":"read_file","arguments":"{","status":"incomplete"});
+    let (url, _requests, server) =
+        common::endpoint(vec![(200, finalized(vec![call], json!([])))]).await;
+    let provider = OpenAIResponses::new(url, "fixture".into(), "fixture-model".into()).unwrap();
+    let (progress, _receive) = mpsc::channel(64);
+    assert!(matches!(
+        provider
+            .stream(request(), progress, CancellationToken::new())
+            .await,
+        Err(ProviderError::Stream(_))
+    ));
+    server.await.unwrap();
+}
+
+#[tokio::test]
+async fn compact_completion_dispatches_tools_end_to_end() {
+    let call = json!({"type":"function_call","id":"fc_1","call_id":"call","name":"read_file","arguments":"{\"path\":\"file\"}","status":"completed"});
+    let last = stream(
+        json!([{"type":"message","id":"msg","role":"assistant","content":[{"type":"output_text","text":"done","annotations":[]}]}]),
+        "completed",
+    );
+    let (url, mut requests, server) =
+        common::endpoint(vec![(200, finalized(vec![call], json!([]))), (200, last)]).await;
+    let dir = tempfile::tempdir().unwrap();
+    std::fs::write(dir.path().join("file"), "contents").unwrap();
+    let store = Store::open(dir.path().join("engine.db")).await.unwrap();
+    let runtime = Runtime::new(
+        store.clone(),
+        Arc::new(OpenAIResponses::new(url, "fixture".into(), "fixture-model".into()).unwrap()),
+        Tools::new(dir.path()).await.unwrap(),
+    )
+    .await
+    .unwrap();
+    runtime
+        .admit(
+            Input {
+                session_id: "s".into(),
+                input_id: "one".into(),
+                prompt: "read".into(),
+                delivery: Delivery::Steer,
+            },
+            true,
+        )
+        .await
+        .unwrap();
+    assert_eq!(requests.recv().await.unwrap()["store"], false);
+    let next = requests.recv().await.unwrap();
+    assert_eq!(next["input"][1]["type"], "function_call");
+    assert_eq!(next["input"][2]["type"], "function_call_output");
+    assert!(next["input"][2]["output"]
+        .as_str()
+        .unwrap()
+        .contains("contents"));
+    server.await.unwrap();
+    tokio::time::timeout(std::time::Duration::from_secs(5), async {
+        loop {
+            if store
+                .events("s", 0, 100)
+                .await
+                .unwrap()
+                .iter()
+                .any(|e| e.kind == "run.finished" && e.data["reason"] == "completed")
+            {
+                break;
+            }
+            tokio::time::sleep(std::time::Duration::from_millis(5)).await;
+        }
+    })
+    .await
+    .unwrap();
+    runtime.shutdown().await;
+}
