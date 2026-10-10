@@ -81,3 +81,44 @@ export function translatePrompt(event: EngineEvent): SessionPromptAdmitted | und
     delivery: "steer",
   }
 }
+
+/** The product `session.next.text.ended` payload for one committed assistant text block. */
+export type SessionTextEnded = {
+  sessionID: SessionID
+  timestamp: DateTime.Utc
+  assistantMessageID: SessionMessage.ID
+  textID: string
+  text: string
+}
+
+/**
+ * Maps a committed assistant message to the product `session.next.text.ended`
+ * events for its text blocks. `text.ended` is the replayable boundary (the
+ * `text.delta` fragments are live-only), so a replayed commit reproduces the
+ * same full-value events. Non-text blocks (tool_use, reasoning) are later slices.
+ */
+export function translateMessage(event: EngineEvent): SessionTextEnded[] {
+  if (event.kind !== "message.committed") return []
+  if (typeof event.data !== "object" || event.data === null) return []
+  if (!("role" in event.data) || event.data.role !== "assistant") return []
+  if (!("content" in event.data)) return []
+  const content = event.data.content
+  if (!Array.isArray(content)) return []
+  const blocks: unknown[] = content
+  const sessionID = adoptSession(event.session_id)
+  const assistantMessageID = messageID(event.session_id, event.seq)
+  return blocks.flatMap((block, index) => {
+    if (typeof block !== "object" || block === null) return []
+    if (!("type" in block) || block.type !== "text") return []
+    if (!("text" in block) || typeof block.text !== "string") return []
+    return [
+      {
+        sessionID,
+        timestamp: DateTime.makeUnsafe(Date.now()),
+        assistantMessageID,
+        textID: `text_${event.seq}_${index}`,
+        text: block.text,
+      },
+    ]
+  })
+}

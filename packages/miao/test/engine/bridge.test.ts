@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test"
-import { StatusBridge, statusOf, translatePrompt, translateStatus } from "@/engine/bridge"
+import { StatusBridge, statusOf, translateMessage, translatePrompt, translateStatus } from "@/engine/bridge"
 import type { EngineEvent } from "@/engine/client"
 
 const event = (kind: string): EngineEvent => ({ session_id: "ses_test", seq: 1, kind, data: {} })
@@ -34,4 +34,24 @@ test("maps input.promoted to a prompt.admitted payload", () => {
   expect(String(admitted?.sessionID)).toBe("ses_abc")
   expect(admitted?.delivery).toBe("steer")
   expect(translatePrompt({ ...event, kind: "run.started" })).toBeUndefined()
+})
+
+test("maps a committed assistant message to text.ended events", () => {
+  const event: EngineEvent = {
+    session_id: "ses_abc",
+    seq: 9,
+    kind: "message.committed",
+    data: {
+      role: "assistant",
+      content: [{ type: "text", text: "hello" }, { type: "tool_use", id: "c1", name: "read_file", input: {} }],
+    },
+  }
+  const events = translateMessage(event)
+  expect(events).toHaveLength(1)
+  expect(String(events[0]?.assistantMessageID)).toBe("msg_ses_abc_9")
+  expect(events[0]?.textID).toBe("text_9_0")
+  expect(events[0]?.text).toBe("hello")
+  expect(String(events[0]?.sessionID)).toBe("ses_abc")
+  expect(translateMessage({ ...event, data: { role: "user", content: [{ type: "text", text: "hi" }] } })).toEqual([])
+  expect(translateMessage({ ...event, kind: "run.started" })).toEqual([])
 })
