@@ -573,8 +573,23 @@ function App(props: {
     kv.get("paste_summary_enabled", !sync.data.config.experimental?.disable_paste_summary),
   )
 
+  // The title is written only when it changes, but a terminal that restores
+  // its tabs — a restart, a reattach after quit — comes back with no title of
+  // its own and keeps whatever the terminal saved. Re-assert the current title
+  // whenever the renderer reports focus or a resize, which is when a restored
+  // terminal becomes current again.
+  const [terminalTitleRefresh, setTerminalTitleRefresh] = createSignal(0)
+  const refreshTerminalTitle = () => setTerminalTitleRefresh((value) => value + 1)
+  renderer.on("focus", refreshTerminalTitle)
+  renderer.on("resize", refreshTerminalTitle)
+  onCleanup(() => {
+    renderer.off("focus", refreshTerminalTitle)
+    renderer.off("resize", refreshTerminalTitle)
+  })
+
   // Update terminal window title based on current route and session
   createEffect(() => {
+    terminalTitleRefresh()
     if (!terminalTitleEnabled() || Flag.MIAO_DISABLE_TERMINAL_TITLE) return
 
     if (route.data.type === "home") {
