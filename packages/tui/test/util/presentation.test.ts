@@ -9,3 +9,9 @@ test("formats session continuation summary", () => {
   expect(epilogue).toContain("( o.o )")
   expect(epilogue).toContain("█   █")
 })
+
+test("formats the host-provided continuation command", () => {
+  expect(
+    sessionEpilogue({ title: "Preview session", sessionID: "ses_preview", resumeCommand: "/preview/build/miao" }),
+  ).toContain("/preview/build/miao -s ses_preview")
+})

@@ -9,7 +9,7 @@ const dim = "\x1b[90m"
 const catColor = "\x1b[38;5;210m"
 const letterColors = ["\x1b[38;5;209m", "\x1b[38;5;215m", "\x1b[38;5;221m", "\x1b[38;5;226m"]
 
-export function sessionEpilogue(input: { title: string; sessionID?: string }) {
+export function sessionEpilogue(input: { title: string; sessionID?: string; resumeCommand?: string }) {
   const weak = (text: string) => `${dim}${text.padEnd(10, " ")}${reset}`
   const mascot = wordmark.map((row, index) => {
     const cat = index >= 1 && index <= 3 ? `${catColor}${logo.right[index - 1]}${reset}   ` : "          "
@@ -20,7 +20,7 @@ export function sessionEpilogue(input: { title: string; sessionID?: string }) {
     ...mascot,
     "",
     `  ${weak("Session")}${bold}${input.title}${reset}`,
-    `  ${weak("Continue")}${bold}miao -s ${input.sessionID}${reset}`,
+    `  ${weak("Continue")}${bold}${input.resumeCommand ?? "miao"} -s ${input.sessionID}${reset}`,
     "",
   ].join("\n")
 }

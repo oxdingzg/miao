@@ -186,6 +186,8 @@ export type TuiInput = {
   remote?: RemoteLocalFactory
   /** Warns once at startup when the attached Runtime's build differs from this client. */
   runtimeNotice?: string
+  /** Host command that reopens the same installation/channel. */
+  resumeCommand?: string
 }
 
 function errorMessage(error: unknown) {
@@ -369,6 +371,7 @@ export const run = Effect.fn("Tui.run")(function* (input: TuiInput) {
                                                                           onSessionChange={input.onSessionChange}
                                                                           pluginHost={input.pluginHost}
                                                                           runtimeNotice={input.runtimeNotice}
+                                                                          resumeCommand={input.resumeCommand}
                                                                         />
                                                                       </LocationProvider>
                                                                     </EditorContextProvider>
@@ -422,6 +425,7 @@ function App(props: {
   onSessionChange?: TuiInput["onSessionChange"]
   pluginHost: TuiPluginHost
   runtimeNotice?: string
+  resumeCommand?: string
 }) {
   const startup = useTuiStartup()
   const tuiConfig = useTuiConfig()
@@ -476,6 +480,7 @@ function App(props: {
       sessionEpilogue({
         title: Locale.truncate(session?.title ?? "", 50),
         sessionID: session?.id,
+        resumeCommand: props.resumeCommand,
       }),
     )
   })
