@@ -61,6 +61,12 @@ and the migration between the two cores. This ADR records how to close it.
   - **M4c — product entry.** The product starts through the engine once the
     bridge, the extension story and the shell decision allow it; this is the
     step that turns "single binary" from an engine property into a product one.
+- **M4c is gated, not scheduled.** The product switches only when the capability
+  matrix is cleared or a substitution is explicitly accepted, when a single
+  credential owner is in place (ADR-09), and when platform claims match reality —
+  a platform whose confinement is not effective is stated as such, never
+  advertised as isolated. Whether the shell stays TypeScript or becomes a Rust
+  one is an experience/maintenance decision that does not block the core.
 
 ## Consequences
 
