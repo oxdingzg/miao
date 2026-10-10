@@ -157,9 +157,17 @@ jobs:
           EXE=""
           case "${{ matrix.target }}" in *windows*) EXE=".exe" ;; esac
           mkdir -p dist
-          cp "target/${{ matrix.target }}/release/miao-engine${EXE}" "dist/miao-engine-${{ matrix.target }}${EXE}"
+          FILE="miao-engine-${{ matrix.target }}${EXE}"
+          cp "target/${{ matrix.target }}/release/miao-engine${EXE}" "dist/${FILE}"
           cd dist
-          shasum -a 256 "miao-engine-${{ matrix.target }}${EXE}" > "miao-engine-${{ matrix.target }}${EXE}.sha256"
+          if command -v sha256sum >/dev/null 2>&1; then
+            HASH=$(sha256sum "${FILE}" | cut -d' ' -f1)
+          elif command -v shasum >/dev/null 2>&1; then
+            HASH=$(shasum -a 256 "${FILE}" | cut -d' ' -f1)
+          else
+            HASH=$(certutil -hashfile "${FILE}" SHA256 | sed -n '2p' | tr -d ' \r')
+          fi
+          printf '%s  %s\n' "${HASH}" "${FILE}" > "${FILE}.sha256"
 
       - name: Upload
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
