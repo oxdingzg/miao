@@ -36,6 +36,44 @@ test("saves versioned private bundles, validates integrity, and rejects incomple
   await expect(BlackboxTape.load(fixtureFile.file)).rejects.toThrow("integrity")
 })
 
+test("incremental frames survive a crash without rewriting the Session snapshot", async () => {
+  await using file = await fixture()
+  const recorder = new BlackboxTape.Recorder(file.file, { fixture: "incremental" })
+  const ticket = await recorder.begin("llm", { prompt: "hello" })
+  const before = await Bun.file(file.file).text()
+  await ticket.frame({ type: "text-delta", text: "partial" })
+  await ticket.frame({ type: "tool-input-delta", text: '{"path":' })
+  expect(await Bun.file(file.file).text()).toBe(before)
+  const recovered = await BlackboxTape.load(file.file)
+  expect(recovered.interactions[0].outcome).toBe("incomplete")
+  expect(recovered.interactions[0].frames.map((frame) => frame.value)).toEqual([
+    { type: "text-delta", text: "partial" },
+    { type: "tool-input-delta", text: '{"path":' },
+  ])
+  expect(() => new BlackboxTape.Replay(recovered).take("llm", { prompt: "hello" })).toThrow("Incomplete")
+  if (process.platform !== "win32") expect((await stat(`${file.file}.journal`)).mode & 0o777).toBe(0o600)
+  await ticket.finish("cancelled")
+  const settled = await BlackboxTape.load(file.file)
+  await rm(`${file.file}.journal`)
+  expect(await BlackboxTape.load(file.file)).toEqual(settled)
+})
+
+test("journal recovery ignores a torn final append and rejects corrupted or missing records", async () => {
+  await using file = await fixture()
+  const recorder = new BlackboxTape.Recorder(file.file, {})
+  const ticket = await recorder.begin("llm", { prompt: "hello" })
+  await ticket.frame({ text: "one" })
+  await ticket.frame({ text: "two" })
+  const journal = await Bun.file(`${file.file}.journal`).text()
+  await Bun.write(`${file.file}.journal`, journal + '{"previous":')
+  expect((await BlackboxTape.load(file.file)).interactions[0].frames).toHaveLength(2)
+  await Bun.write(`${file.file}.journal`, journal.replace('"one"', '"changed"'))
+  await expect(BlackboxTape.load(file.file)).rejects.toThrow("integrity")
+  const lines = journal.trimEnd().split("\n")
+  await Bun.write(`${file.file}.journal`, [lines[0], lines[1], lines[3]].join("\n") + "\n")
+  await expect(BlackboxTape.load(file.file)).rejects.toThrow("integrity")
+})
+
 test("validates requests before delivering results, poisons mismatched replay, and checks unconsumed input", async () => {
   await using file = await fixture()
   const recorder = new BlackboxTape.Recorder(file.file, {})
