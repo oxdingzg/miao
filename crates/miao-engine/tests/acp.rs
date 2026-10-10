@@ -182,6 +182,8 @@ async fn routes_an_approval_through_request_permission() {
 
     let mut text = String::new();
     let mut asked = false;
+    let mut tool_call = false;
+    let mut tool_done = false;
     let stop = loop {
         let line = tokio::time::timeout(Duration::from_secs(15), stdout.next_line())
             .await
@@ -204,8 +206,19 @@ async fn routes_an_approval_through_request_permission() {
             }
             Some("session/update") => {
                 let update = &value["params"]["update"];
-                if update["sessionUpdate"] == "agent_message_chunk" {
-                    text.push_str(update["content"]["text"].as_str().unwrap_or(""));
+                match update["sessionUpdate"].as_str() {
+                    Some("agent_message_chunk") => {
+                        text.push_str(update["content"]["text"].as_str().unwrap_or(""));
+                    }
+                    Some("tool_call") => {
+                        assert_eq!(update["toolCallId"], "call");
+                        assert_eq!(update["kind"], "read");
+                        tool_call = true;
+                    }
+                    Some("tool_call_update") if update["status"] == "completed" => {
+                        tool_done = true;
+                    }
+                    _ => {}
                 }
             }
             _ => {}
@@ -215,6 +228,8 @@ async fn routes_an_approval_through_request_permission() {
         }
     };
     assert!(asked, "expected session/request_permission");
+    assert!(tool_call, "expected a tool_call notification");
+    assert!(tool_done, "expected a completed tool_call_update");
     assert!(text.contains("done"), "streamed text: {text:?}");
     assert_eq!(stop.as_deref(), Some("end_turn"));
 }

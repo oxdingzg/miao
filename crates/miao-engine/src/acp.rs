@@ -17,7 +17,7 @@ use crate::{
 };
 use serde_json::{json, Value};
 use std::{
-    collections::HashMap,
+    collections::{HashMap, HashSet},
     sync::{
         atomic::{AtomicI64, Ordering},
         Arc,
@@ -176,9 +176,8 @@ async fn notification(conn: &Arc<Conn>, method: &str, params: Value) {
     }
 }
 
-/// Admit the prompt, then stream the committed assistant text as
-/// `agent_message_chunk` notifications until the run finishes. The Text and
-/// ResourceLink content blocks are the ACP baseline; only text is mapped here.
+/// Admit the prompt, then stream committed assistant text (`agent_message_chunk`)
+/// and tool calls (`tool_call` plus `tool_call_update`) until the run finishes.
 async fn prompt(conn: &Arc<Conn>, id: Value, params: Value) {
     let Some(session) = params
         .get("sessionId")
@@ -188,6 +187,23 @@ async fn prompt(conn: &Arc<Conn>, id: Value, params: Value) {
         conn.fail(id, INVALID_PARAMS, "sessionId is required").await;
         return;
     };
+    // Baseline the turn so a later prompt never replays an earlier one: text is
+    // indexed by assistant message, events by the committed cursor.
+    let mut seen = 0usize;
+    if let Ok(history) = conn.runtime.store().selected_history(&session).await {
+        seen = history
+            .iter()
+            .filter(|message| message.role == "assistant")
+            .count();
+    }
+    let mut cursor = conn
+        .runtime
+        .store()
+        .snapshot(&session)
+        .await
+        .ok()
+        .and_then(|snapshot| snapshot["cursor"].as_u64())
+        .unwrap_or(0);
     let input = Input {
         session_id: session.clone(),
         input_id: format!("acp_{}", uuid::Uuid::new_v4().simple()),
@@ -199,23 +215,60 @@ async fn prompt(conn: &Arc<Conn>, id: Value, params: Value) {
         return;
     }
 
-    let mut cursor = 0u64;
-    let mut emitted = 0usize;
+    let mut calls = HashSet::new();
+    let mut planned: HashMap<String, String> = HashMap::new();
     let mut finished = false;
     loop {
-        emit_new_text(conn, &session, &mut emitted).await;
+        emit_history(conn, &session, &mut seen, &mut calls).await;
         if finished {
             break;
         }
         if let Ok(events) = conn.runtime.store().events(&session, cursor, 64).await {
             for event in events {
                 cursor = event.seq;
-                if event.kind == "approval.requested" {
-                    if let Ok(approval) = serde_json::from_value::<Approval>(event.data.clone()) {
-                        decide(conn, &approval).await;
+                match event.kind.as_str() {
+                    "approval.requested" => {
+                        if let Ok(approval) = serde_json::from_value::<Approval>(event.data.clone())
+                        {
+                            decide(conn, &approval).await;
+                        }
                     }
-                } else if event.kind == "run.finished" {
-                    finished = true;
+                    // `call_id` is the run-scoped engine key; `provider_id` is the
+                    // id the model used, which is what history carries.
+                    "tool.planned" | "tool.dispatched" => {
+                        if let (Some(call), Some(provider)) = (
+                            event.data.get("call_id").and_then(Value::as_str),
+                            event.data.get("provider_id").and_then(Value::as_str),
+                        ) {
+                            planned.insert(call.to_string(), provider.to_string());
+                            if event.kind == "tool.dispatched" && calls.contains(provider) {
+                                tool_update(conn, &session, provider, "in_progress", None).await;
+                            }
+                        }
+                    }
+                    "tool.completed" => {
+                        if let Some(call) = event.data.get("call_id").and_then(Value::as_str) {
+                            let provider = planned.get(call).map(String::as_str).unwrap_or(call);
+                            if calls.contains(provider) {
+                                let failed = event
+                                    .data
+                                    .get("is_error")
+                                    .and_then(Value::as_bool)
+                                    .unwrap_or(false);
+                                let status = if failed { "failed" } else { "completed" };
+                                tool_update(
+                                    conn,
+                                    &session,
+                                    provider,
+                                    status,
+                                    event.data.get("result"),
+                                )
+                                .await;
+                            }
+                        }
+                    }
+                    "run.finished" => finished = true,
+                    _ => {}
                 }
             }
         }
@@ -274,23 +327,124 @@ async fn request_permission(conn: &Arc<Conn>, approval: &Approval) -> Decision {
     }
 }
 
-/// Emit each assistant message's text once, in order, as it is committed.
-async fn emit_new_text(conn: &Arc<Conn>, session: &str, emitted: &mut usize) {
+/// Emit each new assistant message's text blocks (`agent_message_chunk`) and
+/// `tool_use` blocks (`tool_call`) once, in order, as they are committed.
+async fn emit_history(
+    conn: &Arc<Conn>,
+    session: &str,
+    seen: &mut usize,
+    calls: &mut HashSet<String>,
+) {
     let Ok(history) = conn.runtime.store().selected_history(session).await else {
         return;
     };
-    let texts = assistant_texts(&history);
-    for text in texts.iter().skip(*emitted) {
-        conn.notify(
-            "session/update",
-            json!({
-                "sessionId": session,
-                "update": { "sessionUpdate": "agent_message_chunk", "content": { "type": "text", "text": text } },
-            }),
-        )
-        .await;
+    let root = conn
+        .runtime
+        .store()
+        .location(session)
+        .await
+        .ok()
+        .flatten()
+        .unwrap_or_default();
+    let assistants: Vec<&Message> = history
+        .iter()
+        .filter(|message| message.role == "assistant")
+        .collect();
+    for message in assistants.iter().skip(*seen) {
+        for block in message.content.as_array().into_iter().flatten() {
+            match block["type"].as_str() {
+                Some("text") => {
+                    if let Some(text) = block["text"].as_str() {
+                        conn.notify(
+                            "session/update",
+                            json!({
+                                "sessionId": session,
+                                "update": { "sessionUpdate": "agent_message_chunk", "content": { "type": "text", "text": text } },
+                            }),
+                        )
+                        .await;
+                    }
+                }
+                Some("tool_use") => {
+                    let Some(call) = block["id"].as_str() else {
+                        continue;
+                    };
+                    if !calls.insert(call.to_string()) {
+                        continue;
+                    }
+                    let name = block["name"].as_str().unwrap_or("tool");
+                    let input = block.get("input").cloned().unwrap_or(Value::Null);
+                    conn.notify(
+                        "session/update",
+                        json!({
+                            "sessionId": session,
+                            "update": {
+                                "sessionUpdate": "tool_call",
+                                "toolCallId": call,
+                                "title": tool_title(name, &input),
+                                "kind": tool_kind(name),
+                                "status": "pending",
+                                "rawInput": input,
+                                "locations": tool_locations(name, &input, &root),
+                            },
+                        }),
+                    )
+                    .await;
+                }
+                _ => {}
+            }
+        }
     }
-    *emitted = texts.len();
+    *seen = assistants.len();
+}
+
+async fn tool_update(
+    conn: &Arc<Conn>,
+    session: &str,
+    call: &str,
+    status: &str,
+    output: Option<&Value>,
+) {
+    conn.notify(
+        "session/update",
+        json!({
+            "sessionId": session,
+            "update": { "sessionUpdate": "tool_call_update", "toolCallId": call, "status": status, "rawOutput": output },
+        }),
+    )
+    .await;
+}
+
+fn tool_kind(name: &str) -> &'static str {
+    match name {
+        "bash" | "run_command" => "execute",
+        "write_file" | "edit_file" | "apply_patch" => "edit",
+        "grep" | "glob" | "list_files" => "search",
+        "read_file" => "read",
+        "task" => "think",
+        _ => "other",
+    }
+}
+
+fn tool_title(name: &str, input: &Value) -> String {
+    let text = match name {
+        "bash" | "run_command" => input["command"].as_str(),
+        "read_file" | "write_file" | "edit_file" => input["path"].as_str(),
+        "grep" | "glob" => input["pattern"].as_str().or(input["path"].as_str()),
+        _ => None,
+    };
+    text.unwrap_or(name).to_string()
+}
+
+fn tool_locations(name: &str, input: &Value, root: &str) -> Value {
+    let path = match name {
+        "read_file" | "write_file" | "edit_file" | "grep" | "glob" => input["path"].as_str(),
+        _ => None,
+    };
+    match path {
+        Some(path) if !root.is_empty() => json!([{ "path": format!("{root}/{path}") }]),
+        _ => json!([]),
+    }
 }
 
 fn prompt_text(prompt: Option<&Value>) -> String {
@@ -305,25 +459,4 @@ fn prompt_text(prompt: Option<&Value>) -> String {
                 .join("\n\n")
         })
         .unwrap_or_default()
-}
-
-fn assistant_texts(history: &[Message]) -> Vec<String> {
-    history
-        .iter()
-        .filter(|message| message.role == "assistant")
-        .map(|message| {
-            message
-                .content
-                .as_array()
-                .map(|blocks| {
-                    blocks
-                        .iter()
-                        .filter(|block| block["type"] == "text")
-                        .filter_map(|block| block["text"].as_str())
-                        .collect::<String>()
-                })
-                .unwrap_or_default()
-        })
-        .filter(|text| !text.is_empty())
-        .collect()
 }
