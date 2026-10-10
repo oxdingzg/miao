@@ -178,6 +178,11 @@ impl Host {
                     .fork(&session_id, &target_session_id, message_seq)
                     .await
             }
+            Command::Revert {
+                session_id,
+                checkpoint,
+            } => runtime.store().revert(&session_id, &checkpoint).await,
+            Command::Unrevert { session_id } => runtime.store().unrevert(&session_id).await,
             Command::Events { session_id, after } => runtime
                 .store()
                 .events(&session_id, after, 100)

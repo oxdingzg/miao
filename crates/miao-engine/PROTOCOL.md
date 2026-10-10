@@ -29,6 +29,8 @@ does not claim ACP or the existing miao HttpApi is compatible.
 | `events` | `session_id`, `after` | `Event[]` (page ≤ 100) |
 | `snapshot` | `session_id` | committed Session snapshot |
 | `fork` | `session_id`, `target_session_id`, `message_seq?` | `{target_session_id}` |
+| `revert` | `session_id`, `checkpoint` | `{checkpoint, from_seq, reverted}` |
+| `unrevert` | `session_id` | `{restored}` |
 | `approve` | `session_id`, `response` | `{accepted:true}` |
 | `history` | `session_id`, `selected` | `Message[]` |
 | `context` | `session_id`, `epoch?` | Context Epoch or null |

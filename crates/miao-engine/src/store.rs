@@ -21,7 +21,7 @@ use std::{
 use tokio::sync::{mpsc, oneshot};
 
 pub(crate) const APPLICATION_ID: u32 = 0x4d494145;
-pub(crate) const SCHEMA_VERSION: u32 = 9;
+pub(crate) const SCHEMA_VERSION: u32 = 10;
 
 type Work = Box<dyn FnOnce(&mut Connection) + Send>;
 
@@ -179,6 +179,13 @@ impl Store {
                 let has_attachments:bool=conn.query_row("SELECT EXISTS(SELECT 1 FROM pragma_table_info('engine_input') WHERE name='attachments')",[],|r|r.get(0))?;
                 if !has_attachments {
                     conn.execute("ALTER TABLE engine_input ADD COLUMN attachments TEXT", [])?;
+                }
+                let has_reverted:bool=conn.query_row("SELECT EXISTS(SELECT 1 FROM pragma_table_info('engine_message') WHERE name='reverted')",[],|r|r.get(0))?;
+                if !has_reverted {
+                    conn.execute(
+                        "ALTER TABLE engine_message ADD COLUMN reverted INTEGER NOT NULL DEFAULT 0",
+                        [],
+                    )?;
                 }
                 Ok((conn, lease, canonical))
             })();
@@ -601,11 +608,57 @@ impl Store {
         }).await
     }
 
+    /// Rewind the visible projection to before the user message carrying
+    /// `checkpoint`. Messages from that boundary onward are marked reverted
+    /// (soft, so `unrevert` restores them) and any compaction at or after it is
+    /// dropped. The event ledger stays append-only; nothing is silently lost.
+    pub async fn revert(&self, session: &str, checkpoint: &str) -> Result<Value, Error> {
+        if checkpoint.is_empty() || checkpoint.len() > 256 {
+            return Err(Error::Invalid("invalid revert checkpoint".into()));
+        }
+        let (session, checkpoint) = (session.to_owned(), checkpoint.to_owned());
+        self.call(move |conn| {
+            let tx = conn.transaction()?;
+            if tx.query_row("SELECT EXISTS(SELECT 1 FROM engine_run WHERE session_id=?1 AND state='running')",[&session],|r|r.get::<_,bool>(0))? {
+                return Err(Error::Invalid("revert requires an idle Session".into()));
+            }
+            let seq: Option<u64> = tx.query_row("SELECT seq FROM engine_message WHERE session_id=?1 AND checkpoint=?2 AND role='user'",params![session,checkpoint],|r|r.get(0)).optional()?;
+            let seq = seq.ok_or_else(|| Error::Invalid("revert checkpoint not found".into()))?;
+            let reverted = tx.execute("UPDATE engine_message SET reverted=1 WHERE session_id=?1 AND seq>=?2 AND reverted=0",params![session,seq])?;
+            tx.execute("DELETE FROM engine_compaction WHERE session_id=?1 AND through_seq>=?2",params![session,seq])?;
+            append(&tx,&session,"session.reverted",json!({"checkpoint":checkpoint,"from_seq":seq,"reverted":reverted}))?;
+            tx.commit()?;
+            Ok(json!({"checkpoint":checkpoint,"from_seq":seq,"reverted":reverted}))
+        }).await
+    }
+
+    /// Restore every reverted message in the Session. Compaction dropped by a
+    /// revert is not regenerated; visible messages are.
+    pub async fn unrevert(&self, session: &str) -> Result<Value, Error> {
+        let session = session.to_owned();
+        self.call(move |conn| {
+            let tx = conn.transaction()?;
+            let restored = tx.execute(
+                "UPDATE engine_message SET reverted=0 WHERE session_id=?1 AND reverted=1",
+                [&session],
+            )?;
+            append(
+                &tx,
+                &session,
+                "session.unreverted",
+                json!({"restored":restored}),
+            )?;
+            tx.commit()?;
+            Ok(json!({"restored":restored}))
+        })
+        .await
+    }
+
     pub async fn history(&self, session: &str) -> Result<Vec<Message>, Error> {
         let session = session.to_owned();
         self.call(move |conn| {
             let mut stmt = conn.prepare(
-                "SELECT role,content,checkpoint FROM engine_message WHERE session_id=?1 ORDER BY seq",
+                "SELECT role,content,checkpoint FROM engine_message WHERE session_id=?1 AND reverted=0 ORDER BY seq",
             )?;
             let rows = stmt.query_map([session], |r| {
                 Ok((
@@ -1118,7 +1171,7 @@ pub(crate) fn projected(
     session: &str,
     cursor: u64,
 ) -> Result<Vec<Value>, Error> {
-    let mut stmt=tx.prepare("SELECT seq,role,content,checkpoint FROM engine_message WHERE session_id=?1 AND seq<=?2 ORDER BY seq LIMIT 1001")?;
+    let mut stmt=tx.prepare("SELECT seq,role,content,checkpoint FROM engine_message WHERE session_id=?1 AND seq<=?2 AND reverted=0 ORDER BY seq LIMIT 1001")?;
     let mut rows = stmt.query(params![session, cursor])?;
     let mut messages = Vec::new();
     let mut bytes = 0;
