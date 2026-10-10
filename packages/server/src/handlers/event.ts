@@ -5,6 +5,7 @@ import { HttpServerResponse } from "effect/unstable/http"
 import { HttpApiBuilder } from "effect/unstable/httpapi"
 import * as Sse from "effect/unstable/encoding/Sse"
 import { Api } from "../api"
+import { ClientEvents } from "../client-events"
 
 const subscriberCapacity = 256
 
@@ -25,6 +26,7 @@ function eventData(data: OpenCodeEventEncoded): Sse.Event {
 export const EventHandler = HttpApiBuilder.group(Api, "server.event", (handlers) =>
   Effect.gen(function* () {
     const events = yield* EventV2.Service
+    const clients = yield* ClientEvents.Service
     return handlers.handleRaw("event.subscribe", () =>
       Effect.gen(function* () {
         const connected = {
@@ -36,7 +38,10 @@ export const EventHandler = HttpApiBuilder.group(Api, "server.event", (handlers)
           Effect.gen(function* () {
             // Acquiring the bounded stream installs its listener before readiness is observable.
             const live = yield* EventV2.allBounded(events, subscriberCapacity)
-            return Stream.make(connected).pipe(Stream.concat(live))
+            const external = yield* clients.allBounded(subscriberCapacity)
+            return Stream.make(connected).pipe(
+              Stream.concat(live.pipe(Stream.merge(external, { haltStrategy: "either" }))),
+            )
           }),
         ).pipe(
           Stream.map((event) => encodeEvent(event)),
