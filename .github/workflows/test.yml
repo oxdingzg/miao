@@ -160,7 +160,7 @@ jobs:
         uses: ./.github/actions/setup-bun
       - name: Verify storage and session ownership
         working-directory: packages/core
-        run: bun test test/runtime-ownership.test.ts test/session-ownership.test.ts
+        run: bun test test/runtime-ownership.test.ts test/session-ownership.test.ts test/process/process.test.ts
       - name: Verify window exit and immutable upgrade
         working-directory: packages/miao
         run: bun test test/runtime/window.test.ts test/installation/windows-upgrade.test.ts
