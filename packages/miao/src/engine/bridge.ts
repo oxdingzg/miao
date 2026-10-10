@@ -208,3 +208,77 @@ export function translateTools(event: EngineEvent): SessionToolCalled[] {
     ]
   })
 }
+
+/** The product `session.next.tool.success` payload for one completed engine tool. */
+export type SessionToolSuccess = {
+  type: "session.next.tool.success"
+  sessionID: SessionID
+  timestamp: DateTime.Utc
+  assistantMessageID: SessionMessage.ID
+  callID: string
+  structured: Record<string, unknown>
+  content: { type: "text"; text: string }[]
+  provider: { executed: boolean }
+}
+
+/** The product `session.next.tool.failed` payload for one failed engine tool. */
+export type SessionToolFailed = {
+  type: "session.next.tool.failed"
+  sessionID: SessionID
+  timestamp: DateTime.Utc
+  assistantMessageID: SessionMessage.ID
+  callID: string
+  error: { type: "unknown"; message: string }
+  provider: { executed: boolean }
+}
+
+export type SessionToolResult = SessionToolSuccess | SessionToolFailed
+
+/**
+ * Correlates committed tool calls with their engine completions. The engine's
+ * `tool.completed` carries only `call_id`, while the product `tool.success`/
+ * `tool.failed` also needs the `assistantMessageID`; `note` records that from the
+ * committed assistant projection, then `result` maps the completion.
+ */
+export class ToolBridge {
+  #calls = new Map<string, { sessionID: SessionID; assistantMessageID: SessionMessage.ID }>()
+
+  /** Record `callID -> assistantMessageID` from a committed assistant message. */
+  note(event: EngineEvent): void {
+    if (event.kind !== "message.committed") return
+    if (typeof event.data !== "object" || event.data === null) return
+    if (!("role" in event.data) || event.data.role !== "assistant") return
+    if (!("content" in event.data) || !Array.isArray(event.data.content)) return
+    const blocks: unknown[] = event.data.content
+    const sessionID = adoptSession(event.session_id)
+    const assistantMessageID = messageID(event.session_id, event.seq)
+    for (const block of blocks) {
+      if (typeof block !== "object" || block === null) continue
+      if (!("type" in block) || block.type !== "tool_use") continue
+      if (!("id" in block) || typeof block.id !== "string") continue
+      this.#calls.set(block.id, { sessionID, assistantMessageID })
+    }
+  }
+
+  /** Map a `tool.completed` event to a product tool result, when its call is known. */
+  result(event: EngineEvent): SessionToolResult | undefined {
+    if (event.kind !== "tool.completed") return undefined
+    if (typeof event.data !== "object" || event.data === null) return undefined
+    if (!("call_id" in event.data) || typeof event.data.call_id !== "string") return undefined
+    const known = this.#calls.get(event.data.call_id)
+    if (!known) return undefined
+    const raw: unknown = "result" in event.data ? Reflect.get(event.data, "result") : undefined
+    const output = typeof raw === "string" ? raw : JSON.stringify(raw ?? null)
+    const base = {
+      sessionID: known.sessionID,
+      timestamp: DateTime.makeUnsafe(Date.now()),
+      assistantMessageID: known.assistantMessageID,
+      callID: event.data.call_id,
+      provider: { executed: false },
+    }
+    if ("is_error" in event.data && event.data.is_error === true) {
+      return { type: "session.next.tool.failed", ...base, error: { type: "unknown", message: output } }
+    }
+    return { type: "session.next.tool.success", ...base, structured: {}, content: [{ type: "text", text: output }] }
+  }
+}

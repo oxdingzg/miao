@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test"
-import { StatusBridge, productToolID, statusOf, translateMessage, translatePrompt, translateStatus, translateTools } from "@/engine/bridge"
+import { StatusBridge, ToolBridge, productToolID, statusOf, translateMessage, translatePrompt, translateStatus, translateTools } from "@/engine/bridge"
 import type { EngineEvent } from "@/engine/client"
 
 const event = (kind: string): EngineEvent => ({ session_id: "ses_test", seq: 1, kind, data: {} })
@@ -80,4 +80,24 @@ test("maps engine tool names to product tool ids", () => {
   expect(productToolID("run_command")).toBe("bash")
   expect(productToolID("cron_list")).toBe("schedule")
   expect(productToolID("worker__echo")).toBe("custom")
+})
+
+test("correlates tool.completed with its committed call", () => {
+  const bridge = new ToolBridge()
+  bridge.note({
+    session_id: "ses_abc",
+    seq: 4,
+    kind: "message.committed",
+    data: { role: "assistant", content: [{ type: "tool_use", id: "c1", name: "read_file", input: {} }] },
+  })
+  const success = bridge.result({ session_id: "ses_abc", seq: 6, kind: "tool.completed", data: { call_id: "c1", result: "contents", is_error: false } })
+  expect(success?.type).toBe("session.next.tool.success")
+  if (success?.type === "session.next.tool.success") {
+    expect(String(success.assistantMessageID)).toBe("msg_ses_abc_4")
+    expect(success.content[0]).toEqual({ type: "text", text: "contents" })
+  }
+  const failed = bridge.result({ session_id: "ses_abc", seq: 7, kind: "tool.completed", data: { call_id: "c1", result: "boom", is_error: true } })
+  expect(failed?.type).toBe("session.next.tool.failed")
+  if (failed?.type === "session.next.tool.failed") expect(failed.error.message).toBe("boom")
+  expect(bridge.result({ session_id: "ses_abc", seq: 8, kind: "tool.completed", data: { call_id: "missing", result: "x" } })).toBeUndefined()
 })
