@@ -15,17 +15,18 @@ use std::collections::HashMap;
 ///
 /// The controller capability is created here and never accepted from the wire:
 /// a network adapter must authenticate before it constructs a `Host`.
-pub struct Host<'a> {
-    runtime: &'a Runtime,
+pub struct Host {
+    runtime: Runtime,
     controller: Controller,
     subscriptions: HashMap<String, u64>,
 }
 
-impl<'a> Host<'a> {
-    pub fn new(runtime: &'a Runtime) -> Self {
+impl Host {
+    pub fn new(runtime: Runtime) -> Self {
+        let controller = runtime.controller();
         Self {
             runtime,
-            controller: runtime.controller(),
+            controller,
             subscriptions: HashMap::new(),
         }
     }
@@ -38,7 +39,7 @@ impl<'a> Host<'a> {
     /// Run one command against the runtime. The response carries no request id:
     /// the adapter owns the envelope.
     pub async fn dispatch(&mut self, command: Command) -> Result<Value, Error> {
-        let runtime = self.runtime;
+        let runtime = &self.runtime;
         match command {
             Command::Admit {
                 input,
@@ -209,7 +210,7 @@ impl<'a> Host<'a> {
     /// cursor. Adapters page these into their own envelope; the durable cursor
     /// keeps the replay→live handoff gapless.
     pub async fn poll_events(&mut self) -> Result<Vec<Value>, Error> {
-        let runtime = self.runtime;
+        let runtime = &self.runtime;
         let mut notifications = Vec::new();
         for (session, cursor) in self.subscriptions.iter_mut() {
             for event in runtime.store().events(session, *cursor, 32).await? {

@@ -22,10 +22,12 @@ cargo build --manifest-path crates/miao-engine/Cargo.toml
 `--endpoint URL` 可显式指定兼容 endpoint。provider stream 没有独立配置 Session、工具或数据库的权力。
 版本读取根 `package.json`，不把 crate 内部版本用作产品版本。
 
+使用 `--http 127.0.0.1:PORT` 启用 loopback HTTP 控制面，复用同一命令表（`POST /rpc`，revision `engine-http-0`）；认证用 bearer token，取自 `--http-token` 或 `MIAO_ENGINE_HTTP_TOKEN`，缺省时启动生成并打印到 stderr。非 loopback 地址被拒绝，TLS 交给本地反代。
+
 ## stdio 协议 v0
 
 一行一个 JSON 对象。请求带字符串/数字 `id`，响应带同一个 `id` 与 `result` 或 `error`。
-通知不带请求 id。当前只支持本地 stdio，不声明 ACP 或现有 miao HttpApi 兼容。
+通知不带请求 id。当前支持本地 stdio，另有 loopback HTTP 控制面；不声明 ACP 或现有 miao HttpApi 兼容。
 
 ```jsonl
 {"id":1,"method":"subscribe","params":{"session_id":"s","after":0}}
@@ -95,7 +97,7 @@ stdio 请求和只读导出高水位。测试不消费 live provider credentials
 
 ## 后续能力（当前未实现）
 
-完整 coding tools/PTY、后台进程与任务、Windows 进程 enforcement、ACP/HTTP/TUI adapters、Gemini/Bedrock 等其他 provider、
+完整 coding tools/PTY、后台进程与任务、Windows 进程 enforcement、ACP/TUI adapters、HTTP SSE 事件流、Gemini/Bedrock 等其他 provider、
 独立 OAuth refresh broker、LSP/媒体、Context Epoch/compaction、MCP/TS compatibility worker、完整黑匣子与三平台运行验收。
 `read_file` 当前是 canonical containment 的只读工具，最多 32 KiB UTF-8；`list_files` 仅列立即子项，最多 500 个，不递归不跟随子项 symlink；不宣称能抵抗 workspace 内的恶意并发路径替换。
 默认 read_only 不暴露写入工具；workspace 模式暴露 write_file/edit_file 并默认逐次审批，或使用显式 allow/deny 路径规则。显式开启 allow_process 后可使用前台沙箱进程；其数据库必须位于 workspace 外。

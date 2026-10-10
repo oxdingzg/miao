@@ -10,6 +10,7 @@ pub mod gemini;
 mod history;
 pub mod hooks;
 pub mod host;
+pub mod http;
 mod jobs;
 pub mod lsp;
 pub mod mcp;
