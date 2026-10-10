@@ -112,6 +112,8 @@ pub struct Tools {
     lsp: Option<Arc<crate::lsp::Registry>>,
     context_sources: Arc<Vec<crate::context::Source>>,
     skill_directories: Arc<Vec<crate::context::SkillDirectory>>,
+    references: Arc<Vec<crate::context::Reference>>,
+    read_roots: Arc<Vec<std::path::PathBuf>>,
     hooks: Arc<Vec<crate::hooks::Hook>>,
 }
 
@@ -146,6 +148,8 @@ impl Tools {
             lsp: None,
             context_sources: Arc::new(vec![]),
             skill_directories: Arc::new(vec![]),
+            references: Arc::new(vec![]),
+            read_roots: Arc::new(vec![]),
             hooks: Arc::new(vec![]),
         })
     }
@@ -199,6 +203,36 @@ impl Tools {
         crate::context::validate_skills(&directories)?;
         self.skill_directories = Arc::new(directories);
         Ok(self)
+    }
+
+    pub fn with_references(
+        mut self,
+        references: Vec<crate::context::Reference>,
+    ) -> Result<Self, ToolError> {
+        crate::context::validate_references(&references)?;
+        let mut roots = Vec::new();
+        for reference in &references {
+            let canonical =
+                std::fs::canonicalize(&reference.path).map_err(|_| ToolError::InvalidInput)?;
+            let root = if canonical.is_dir() {
+                canonical
+            } else {
+                canonical
+                    .parent()
+                    .ok_or(ToolError::InvalidInput)?
+                    .to_owned()
+            };
+            if !roots.contains(&root) {
+                roots.push(root);
+            }
+        }
+        self.references = Arc::new(references);
+        self.read_roots = Arc::new(roots);
+        Ok(self)
+    }
+
+    pub(crate) fn references(&self) -> &[crate::context::Reference] {
+        &self.references
     }
 
     pub(crate) fn skill_directories(&self) -> &[crate::context::SkillDirectory] {
@@ -263,7 +297,7 @@ impl Tools {
         self
     }
 
-    pub(crate) fn with_writes(mut self, enabled: bool) -> Self {
+    pub fn with_writes(mut self, enabled: bool) -> Self {
         self.writes = enabled;
         self
     }
@@ -398,14 +432,21 @@ impl Tools {
         {
             return Err(ToolError::InvalidInput);
         }
+        let external = !path.starts_with(&self.root);
         let relative = path
             .strip_prefix(&self.root)
-            .map_err(|_| ToolError::OutsideWorkspace)?;
-        let parts = relative
-            .components()
-            .map(|p| p.as_os_str().to_str().ok_or(ToolError::InvalidInput))
-            .collect::<Result<Vec<_>, _>>()?;
-        let resource = if name == "cron_create" || name == "cron_list" {
+            .unwrap_or(std::path::Path::new(""));
+        let parts = if external {
+            Vec::new()
+        } else {
+            relative
+                .components()
+                .map(|p| p.as_os_str().to_str().ok_or(ToolError::InvalidInput))
+                .collect::<Result<Vec<_>, _>>()?
+        };
+        let resource = if external {
+            path.to_string_lossy().replace('\\', "/")
+        } else if name == "cron_create" || name == "cron_list" {
             "@session/cron".into()
         } else if name == "cron_delete" {
             format!(
@@ -726,10 +767,11 @@ impl Tools {
 
     async fn contained(&self, path: &str) -> Result<PathBuf, ToolError> {
         let path = tokio::fs::canonicalize(self.root.join(path)).await?;
-        if !path.starts_with(&self.root) {
-            return Err(ToolError::OutsideWorkspace);
+        if path.starts_with(&self.root) || self.read_roots.iter().any(|root| path.starts_with(root))
+        {
+            return Ok(path);
         }
-        Ok(path)
+        Err(ToolError::OutsideWorkspace)
     }
 
     /// Patch targets may not exist yet (Add File). Canonicalize the nearest

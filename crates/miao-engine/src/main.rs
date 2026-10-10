@@ -136,6 +136,7 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
             "--hooks-config",
             "--context-config",
             "--skills-config",
+            "--references-config",
             "--credential-db",
             "--credential-id",
             "--credential-integration",
@@ -314,6 +315,21 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
         tools = tools
             .with_protected_resource(&path)
             .with_skill_directories(directories)?;
+    }
+    if let Some(path) = options.get("--references-config") {
+        let path = tokio::fs::canonicalize(path).await?;
+        if path.starts_with(std::path::Path::new(tools.location())) {
+            return Err("References host config must be outside model-writable workspace".into());
+        }
+        let bytes = tokio::fs::read(&path).await?;
+        if bytes.len() > 65536 {
+            return Err("References config exceeds 64 KiB".into());
+        }
+        let references = serde_json::from_slice::<Vec<miao_engine::context::Reference>>(&bytes)
+            .map_err(|_| "invalid References host config")?;
+        tools = tools
+            .with_protected_resource(&path)
+            .with_references(references)?;
     }
     if let Some(path) = options.get("--hooks-config") {
         let path = tokio::fs::canonicalize(path).await?;

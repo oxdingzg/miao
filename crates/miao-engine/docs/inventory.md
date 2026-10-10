@@ -23,6 +23,7 @@ scope for this table and is tracked separately.
 | Media (inline image attachments) | validated | `src/protocol.rs`, `src/store.rs`; base64 image parts on `admit`, promoted into the user message, encoded by the Anthropic/Chat/Responses/Gemini adapters (`tests/media.rs`) |
 | Context: session state, todo, goal | validated | `src/state.rs`, `src/tools.rs` |
 | Context: project skills | validated | `src/context.rs`, `--skills-config`; discovers root `*.md` and nested `SKILL.md`, lists name/description in the system context (body read on demand), bounded and symlink-safe (`tests/skills.rs`) |
+| Context: host references (read-only roots) | validated | `src/context.rs`, `src/tools.rs`, `--references-config`; lists host-authorized reference paths in the system context and extends `read_file` to those roots as read-only (writes stay workspace-only) (`tests/references.rs`) |
 | State/tools: question, wakeup, cron | validated | `src/question.rs`, `src/wakeup.rs`, `src/cron.rs` |
 | Providers: Anthropic, OpenAI Chat, OpenAI Responses, subscription Responses, Gemini | validated | `src/provider.rs`, `src/openai_chat.rs`, `src/openai_responses.rs`, `src/gemini.rs` |
 | Auth: API key + credential store, key/oauth kinds | validated | `src/credential.rs`; OAuth refresh broker planned |
