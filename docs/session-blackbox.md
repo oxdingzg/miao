@@ -31,7 +31,7 @@ MIAO_BLACKBOX_RECORD=/private/path/recordings \
   bun --conditions=browser src/index.ts run --model PROVIDER/MODEL "Use the fixture tool"
 ```
 
-The file is `/private/path/recordings/<sessionID>.json`. Do not combine `MIAO_BLACKBOX_RECORD` and `MIAO_BLACKBOX_REPLAY`.
+The snapshot is `/private/path/recordings/<sessionID>.json`. During recording, a private, hash-chained `<sessionID>.json.journal` sidecar durably appends individual frames. The provider hot path never rewrites the whole Session. Snapshots are packaged at interaction and history boundaries; `BlackboxTape.load` also recovers newer partial output from the journal after a crash, preserving incomplete outcomes. Keep both files when collecting a recording from an interrupted process. Settled snapshots remain standalone, and older snapshots without a journal remain readable. Do not combine `MIAO_BLACKBOX_RECORD` and `MIAO_BLACKBOX_REPLAY`.
 
 ```sh
 MIAO_BLACKBOX_REPLAY=/private/path/recordings/ses_example.json \
