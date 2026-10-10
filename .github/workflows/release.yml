@@ -28,7 +28,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           test "$GITHUB_REF" = refs/heads/main
-          python3 .github/scripts/check-release-ci.py test.yml typecheck.yml
+          python3 .github/scripts/check-release-ci.py ci.yml
 
       - uses: ./.github/actions/setup-bun
 
@@ -96,7 +96,7 @@ jobs:
       - name: Recheck release commit CI before publishing
         env:
           GH_TOKEN: ${{ github.token }}
-        run: python3 .github/scripts/check-release-ci.py test.yml typecheck.yml
+        run: python3 .github/scripts/check-release-ci.py ci.yml
 
       # The Chinese notes mirror is committed to `main` after the tag is cut, so
       # it must be read from `main`, not the dispatch SHA (see script/release-notes.ts).
