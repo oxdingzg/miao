@@ -1,4 +1,6 @@
 import { describe, expect } from "bun:test"
+import { WebSocketExecutor } from "@miao/llm/route"
+import { Headers } from "effect/unstable/http"
 import { mkdtempSync } from "node:fs"
 import fs from "node:fs/promises"
 import os from "node:os"
@@ -1768,6 +1770,61 @@ describe("SessionRunnerLLM", () => {
       expect(yield* session.resume(sessionID).pipe(Effect.flip)).toBe(failure)
       expect((yield* session.context(sessionID)).at(-1)).toMatchObject({ type: "assistant", error: { message: failure.message } })
     }).pipe(Effect.ensuring(Effect.sync(() => { modelResolveFailure = undefined }))),
+  )
+
+  it.live("continues after a real WebSocket 1006 without repeating completed tool effects", () =>
+    Effect.gen(function* () {
+      yield* setup
+      const session = yield* SessionV2.Service
+      const application = yield* ApplicationTools.Service
+      const directory = yield* Effect.acquireRelease(
+        Effect.promise(() => fs.mkdtemp(join(os.tmpdir(), "miao-ws-recovery-"))),
+        (directory) => Effect.promise(() => fs.rm(directory, { recursive: true, force: true })),
+      )
+      let writes = 0
+      yield* application.register({
+        ws_write: Tool.make({ description: "Write a marker", input: Schema.Struct({ text: Schema.String }),
+          output: Schema.Struct({ written: Schema.Boolean }), execute: ({ text }) => Effect.promise(async () => {
+            writes++
+            await Bun.write(join(directory, "marker"), text)
+            return { written: true }
+          }),
+        }),
+      })
+      const server = Bun.serve({ hostname: "127.0.0.1", port: 0,
+        fetch(request, server) { if (server.upgrade(request)) return; return new Response("Expected WebSocket", { status: 426 }) },
+        websocket: { message(socket) { setTimeout(() => socket.terminate(), 20) } },
+      })
+      yield* Effect.addFinalizer(() => Effect.sync(() => { void server.stop(true) }))
+      const url = server.url.toString().replace("http:", "ws:")
+      const broken = Stream.unwrap(Effect.gen(function* () {
+        const connection = yield* WebSocketExecutor.fromWebSocket(new WebSocket(url), { url, headers: Headers.empty })
+        yield* connection.sendText("request")
+        return connection.messages.pipe(Stream.drain, Stream.ensuring(connection.close))
+      }))
+      responseStream = Stream.concat(Stream.fromIterable([
+        LLMEvent.stepStart({ index: 0 }),
+        LLMEvent.toolCall({ id: "call-ws-write", name: "ws_write", input: { text: "once" } }),
+        LLMEvent.textStart({ id: "partial" }), LLMEvent.textDelta({ id: "partial", text: "partial answer" }),
+      ]), broken)
+      response = [
+        LLMEvent.stepStart({ index: 0 }), LLMEvent.textStart({ id: "complete" }),
+        LLMEvent.textDelta({ id: "complete", text: "recovered answer" }), LLMEvent.textEnd({ id: "complete" }),
+        LLMEvent.stepFinish({ index: 0, reason: "stop" }), LLMEvent.finish({ reason: "stop" }),
+      ]
+      yield* session.prompt({ sessionID, prompt: Prompt.make({ text: "Write once and finish the answer" }), resume: false })
+      yield* session.resume(sessionID)
+      expect(writes).toBe(1)
+      expect(yield* Effect.promise(() => Bun.file(join(directory, "marker")).text())).toBe("once")
+      expect(requests).toHaveLength(2)
+      const next = requests[1].messages
+      expect(next.some((message) => message.role === "tool")).toBe(true)
+      expect(next.some((message) => message.role === "assistant" && message.content.some((part) => part.type === "text" && part.text === "partial answer"))).toBe(true)
+      const history = yield* session.context(sessionID)
+      expect(history.filter((message) => message.type === "assistant").at(-1)).toMatchObject({
+        content: [{ type: "text", text: "recovered answer" }],
+      })
+    }),
   )
 
   it.live("blackbox replays a real Session drain without provider IO or repeated file writes", () =>
