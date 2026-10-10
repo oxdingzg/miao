@@ -96,7 +96,11 @@ struct Runner {
 /// seatbelt and Linux uses Landlock; other platforms compile but do not enforce,
 /// so the process tools stay disabled there instead of running unsandboxed.
 pub fn enforced() -> bool {
-    cfg!(any(target_os = "macos", target_os = "linux"))
+    cfg!(any(
+        target_os = "macos",
+        target_os = "linux",
+        target_os = "windows"
+    ))
 }
 
 /// Allocate a pseudo-terminal pair with a sane default window size. The master
@@ -210,7 +214,22 @@ pub fn sandbox_runner(payload: &str) -> Result<(), Box<dyn std::error::Error>> {
             .exec();
         Err(error.into())
     }
-    #[cfg(not(any(target_os = "macos", target_os = "linux")))]
+    #[cfg(target_os = "windows")]
+    {
+        let _ = cwd;
+        let workdirs = vec![workspace.clone(), temp.clone()];
+        let code = miao_sandbox::win::run(&workdirs, &[], spec.allow_network, &spec.argv).map_err(
+            |error| -> Box<dyn std::error::Error> {
+                let message = match error {
+                    miao_sandbox::win::WinError::Unavailable(message) => message,
+                    miao_sandbox::win::WinError::Start(message) => message,
+                };
+                Box::new(std::io::Error::other(message))
+            },
+        )?;
+        std::process::exit(code);
+    }
+    #[cfg(not(any(target_os = "macos", target_os = "linux", target_os = "windows")))]
     {
         let _ = (workspace, cwd, temp);
         Err("process enforcement is not available on this platform".into())
@@ -381,14 +400,23 @@ pub(crate) async fn execute(
         allow_network,
         timeout_ms: input.timeout_ms,
     };
+    // On Windows the AppContainer runner is spawned directly: it owns a job
+    // object whose child tree dies with it, so no guardian/lifeline is needed.
+    #[cfg(unix)]
+    let runner_mode = "__process-guardian";
+    #[cfg(windows)]
+    let runner_mode = "__sandbox-run";
     let mut command = Command::new(runner);
     command
-        .arg("__process-guardian")
+        .arg(runner_mode)
         .arg(serde_json::to_string(&spec).map_err(|_| ToolError::InvalidInput)?)
         .env_clear()
-        .stdin(Stdio::piped())
         .kill_on_drop(true)
         .current_dir(cwd);
+    #[cfg(unix)]
+    command.stdin(Stdio::piped());
+    #[cfg(windows)]
+    command.stdin(Stdio::null());
     let master = if pty {
         let (master, slave) = open_pty()?;
         command.stdout(Stdio::from(slave.try_clone()?));
@@ -400,6 +428,27 @@ pub(crate) async fn execute(
         None
     };
     for key in ["PATH", "HOME", "LANG", "LC_ALL", "TERM"] {
+        if let Some(value) = std::env::var_os(key) {
+            command.env(key, value);
+        }
+    }
+    // Windows needs its core environment for CreateProcessW and for `cmd` to
+    // resolve; a cleared environment makes the AppContainer spawn fail.
+    #[cfg(windows)]
+    for key in [
+        "SystemRoot",
+        "windir",
+        "SystemDrive",
+        "ComSpec",
+        "PATHEXT",
+        "USERPROFILE",
+        "APPDATA",
+        "LOCALAPPDATA",
+        "PROGRAMDATA",
+        "NUMBER_OF_PROCESSORS",
+        "PROCESSOR_ARCHITECTURE",
+        "OS",
+    ] {
         if let Some(value) = std::env::var_os(key) {
             command.env(key, value);
         }

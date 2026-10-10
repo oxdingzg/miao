@@ -33,8 +33,10 @@ authorize a different action.
   Linux Landlock. On a platform without an enforced backend the engine reports
   sandbox unavailable and disables the process tools rather than running
   unsandboxed.
-- **No silent enforcement claims.** Windows compilation support is not reported
-  as Windows enforcement. `doctor` reports what the engine can enforce.
+- **No silent enforcement claims.** `doctor` reports what the engine can
+  enforce: macOS seatbelt, Linux Landlock, and Windows AppContainer. A platform
+  without an enforced backend keeps the process tools disabled rather than
+  running unsandboxed.
 
 ## Consequences
 
