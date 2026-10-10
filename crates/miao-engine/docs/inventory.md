@@ -31,6 +31,7 @@ scope for this table and is tracked separately.
 | Wire: stdio adapter, durable cursor subscription, snapshot/export | validated | `src/protocol.rs`, `src/events.rs`, `src/export.rs` |
 | Wire: HTTP/ACP adapters | inventory | M2 |
 | Observability: doctor, platform/sandbox report | validated | `src/doctor.rs` |
+| Observability: per-run usage aggregation | validated | `src/store.rs`; `run.usage` sums numeric usage leaves across a run's attempts (including nested `*_details`); per-step `usage` events stay for audit (`tests/run_usage.rs`) |
 | Delivery: single binary, install/update/preview | inventory | M4 |
 
 ## Coverage gates
