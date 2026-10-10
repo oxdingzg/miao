@@ -75,6 +75,8 @@ const OpenAIChatMessage = Schema.Union([
     content: Schema.NullOr(Schema.String),
     tool_calls: optionalArray(OpenAIChatAssistantToolCall),
     reasoning_content: Schema.optional(Schema.String),
+    reasoning_text: Schema.optional(Schema.String),
+    reasoning_opaque: Schema.optional(Schema.String),
   }),
   Schema.Struct({ role: Schema.Literal("tool"), tool_call_id: Schema.String, content: Schema.String }),
 ]).pipe(Schema.toTaggedUnion("role"))
@@ -145,6 +147,8 @@ type OpenAIChatToolCallDelta = Schema.Schema.Type<typeof OpenAIChatToolCallDelta
 const OpenAIChatDelta = Schema.Struct({
   content: optionalNull(Schema.String),
   reasoning_content: optionalNull(Schema.String),
+  reasoning_text: optionalNull(Schema.String),
+  reasoning_opaque: optionalNull(Schema.String),
   tool_calls: optionalNull(Schema.Array(OpenAIChatToolCallDelta)),
 })
 
@@ -166,6 +170,8 @@ interface ParserState {
   readonly usage?: Usage
   readonly finishReason?: FinishReason
   readonly lifecycle: Lifecycle.State
+  readonly reasoningIndex?: number
+  readonly reasoningOpaque?: string
 }
 
 const invalid = ProviderShared.invalidRequest
@@ -230,6 +236,7 @@ const lowerUserMessage = Effect.fn("OpenAIChat.lowerUserMessage")(function* (mes
 
 const lowerAssistantMessage = Effect.fn("OpenAIChat.lowerAssistantMessage")(function* (
   message: OpenAIChatRequestMessage,
+  copilot: boolean,
 ) {
   const content: TextPart[] = []
   const reasoning: ReasoningPart[] = []
@@ -255,6 +262,15 @@ const lowerAssistantMessage = Effect.fn("OpenAIChat.lowerAssistantMessage")(func
     reasoning.length > 0
       ? reasoning.map((part) => part.text).join("")
       : openAICompatibleReasoningContent(message.native?.openaiCompatible)
+  const opaque = message.content
+    .flatMap((part) => {
+      const metadata = "providerMetadata" in part ? part.providerMetadata?.copilot : undefined
+      return isRecord(metadata) && typeof metadata.reasoningOpaque === "string" && metadata.reasoningOpaque
+        ? [metadata.reasoningOpaque]
+        : []
+    })
+    .at(-1)
+  const thinking = copilot ? { reasoning_text: reasoning_content, reasoning_opaque: opaque } : { reasoning_content }
   // Strict validators (DeepSeek) reject an assistant message whose `content`
   // and `tool_calls` are both unset: "Invalid assistant message: content or
   // tool_calls must be set". A reasoning-only turn carries no text and no tool
@@ -264,12 +280,12 @@ const lowerAssistantMessage = Effect.fn("OpenAIChat.lowerAssistantMessage")(func
   if (text.length === 0 && toolCalls.length === 0)
     return reasoning_content === undefined || reasoning_content.length === 0
       ? undefined
-      : { role: "assistant" as const, content: "" as const, reasoning_content }
+      : { role: "assistant" as const, content: "" as const, ...thinking }
   return {
     role: "assistant" as const,
     content: text.length === 0 ? null : text,
     tool_calls: toolCalls.length === 0 ? undefined : toolCalls,
-    reasoning_content,
+    ...thinking,
   }
 })
 
@@ -296,10 +312,13 @@ const lowerToolMessages = Effect.fn("OpenAIChat.lowerToolMessages")(function* (m
   return { messages, images }
 })
 
-const lowerMessage = Effect.fn("OpenAIChat.lowerMessage")(function* (message: OpenAIChatRequestMessage) {
+const lowerMessage = Effect.fn("OpenAIChat.lowerMessage")(function* (
+  message: OpenAIChatRequestMessage,
+  copilot: boolean,
+) {
   if (message.role === "user") return [yield* lowerUserMessage(message)]
   if (message.role === "assistant") {
-    const lowered = yield* lowerAssistantMessage(message)
+    const lowered = yield* lowerAssistantMessage(message, copilot)
     return lowered === undefined ? [] : [lowered]
   }
   return (yield* lowerToolMessages(message)).messages
@@ -339,7 +358,7 @@ const lowerMessages = Effect.fn("OpenAIChat.lowerMessages")(function* (request: 
       continue
     }
     flushImages()
-    messages.push(...(yield* lowerMessage(message)))
+    messages.push(...(yield* lowerMessage(message, request.model.provider === "github-copilot")))
   }
   flushImages()
   return messages
@@ -431,15 +450,22 @@ const step = (state: ParserState, event: OpenAIChatEvent) =>
 
     let lifecycle = state.lifecycle
 
-    if (delta?.reasoning_content)
-      lifecycle = Lifecycle.reasoningDelta(lifecycle, events, "reasoning-0", delta.reasoning_content)
+    const reasoningOpaque = delta?.reasoning_opaque || state.reasoningOpaque
+    const metadata = reasoningOpaque ? { copilot: { reasoningOpaque } } : undefined
+    let reasoningIndex = state.reasoningIndex ?? -1
+    const thinking = delta?.reasoning_content || delta?.reasoning_text
+    if (thinking) {
+      if (!lifecycle.reasoning.has(`reasoning-${reasoningIndex}`)) reasoningIndex++
+      lifecycle = Lifecycle.reasoningDelta(lifecycle, events, `reasoning-${reasoningIndex}`, thinking)
+    }
 
     if (delta?.content) {
-      lifecycle = Lifecycle.reasoningEnd(lifecycle, events, "reasoning-0")
+      lifecycle = Lifecycle.reasoningEnd(lifecycle, events, `reasoning-${reasoningIndex}`, metadata)
       lifecycle = Lifecycle.textDelta(lifecycle, events, "text-0", delta.content)
     }
 
-    if (toolDeltas.length) lifecycle = Lifecycle.reasoningEnd(lifecycle, events, "reasoning-0")
+    if (toolDeltas.length)
+      lifecycle = Lifecycle.reasoningEnd(lifecycle, events, `reasoning-${reasoningIndex}`, metadata)
 
     for (const tool of toolDeltas) {
       const result = ToolStream.appendOrStart(
@@ -469,6 +495,8 @@ const step = (state: ParserState, event: OpenAIChatEvent) =>
         usage,
         finishReason,
         lifecycle,
+        reasoningIndex,
+        reasoningOpaque,
       },
       events,
     ] as const
@@ -478,9 +506,18 @@ const finishEvents = (state: ParserState): ReadonlyArray<LLMEvent> => {
   const events: LLMEvent[] = []
   const hasToolCalls = state.toolCallEvents.length > 0
   const reason = state.finishReason === "stop" && hasToolCalls ? "tool-calls" : state.finishReason
-  const lifecycle = state.toolCallEvents.length ? Lifecycle.stepStart(state.lifecycle, events) : state.lifecycle
-  events.push(...state.toolCallEvents)
-  if (reason) Lifecycle.finish(lifecycle, events, { reason, usage: state.usage })
+  const metadata = state.reasoningOpaque ? { copilot: { reasoningOpaque: state.reasoningOpaque } } : undefined
+  let lifecycle = state.toolCallEvents.length ? Lifecycle.stepStart(state.lifecycle, events) : state.lifecycle
+  lifecycle = Lifecycle.reasoningEnd(lifecycle, events, `reasoning-${state.reasoningIndex ?? 0}`, metadata)
+  lifecycle = Lifecycle.textEnd(lifecycle, events, "text-0", metadata)
+  events.push(
+    ...state.toolCallEvents.map((event) =>
+      LLMEvent.is.toolCall(event) && metadata
+        ? LLMEvent.toolCall({ id: event.id, name: event.name, input: event.input, providerMetadata: metadata })
+        : event,
+    ),
+  )
+  if (reason) Lifecycle.finish(lifecycle, events, { reason, usage: state.usage, providerMetadata: metadata })
   return events
 }
 
