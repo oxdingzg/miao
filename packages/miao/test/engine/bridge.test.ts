@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test"
-import { StatusBridge, ToolBridge, productToolID, statusOf, translateApproval, translateApprovalResolved, translateMessage, translatePrompt, translateStatus, translateTools } from "@/engine/bridge"
+import { StatusBridge, ToolBridge, productToolID, statusOf, translateApproval, translateApprovalResolved, translateMessage, translatePrompt, translateQuestion, translateStatus, translateTools } from "@/engine/bridge"
 import type { EngineEvent } from "@/engine/client"
 
 const event = (kind: string): EngineEvent => ({ session_id: "ses_test", seq: 1, kind, data: {} })
@@ -127,4 +127,23 @@ test("maps approval.resolved to a permission.v2.replied payload", () => {
   expect(translateApprovalResolved({ ...base, data: { request_id: "req1", state: "deny" } })?.reply).toBe("reject")
   expect(translateApprovalResolved({ ...base, data: { request_id: "req1", state: "expired" } })?.reply).toBe("reject")
   expect(translateApprovalResolved({ ...base, kind: "run.started", data: {} })).toBeUndefined()
+})
+
+test("maps question.requested to a question.v2.asked payload", () => {
+  const event: EngineEvent = {
+    session_id: "ses_abc",
+    seq: 5,
+    kind: "question.requested",
+    data: {
+      question_id: "q1",
+      input: { questions: [{ question: "Pick", header: "pick", options: [{ label: "a", description: "A" }, { label: "b" }] }] },
+    },
+  }
+  const asked = translateQuestion(event)
+  expect(String(asked?.id)).toBe("que_q1")
+  expect(String(asked?.sessionID)).toBe("ses_abc")
+  expect(asked?.questions[0]?.question).toBe("Pick")
+  expect(asked?.questions[0]?.options).toEqual([{ label: "a", description: "A" }, { label: "b", description: "" }])
+  expect(asked?.questions[0]?.custom).toBe(true)
+  expect(translateQuestion({ ...event, kind: "run.started", data: {} })).toBeUndefined()
 })

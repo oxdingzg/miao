@@ -3,6 +3,7 @@ import { SessionID } from "@miao/schema/session-id"
 import { SessionMessage } from "@miao/schema/session-message"
 import { Permission } from "@miao/schema/permission"
 import { Prompt } from "@miao/schema/prompt"
+import { Question } from "@miao/schema/question"
 import { Delivery } from "@miao/schema/session-delivery"
 import { StatusInfo } from "@miao/schema/session-event"
 import { adoptSession, messageID } from "./identity"
@@ -339,5 +340,57 @@ export function translateApprovalResolved(event: EngineEvent): SessionPermission
     sessionID: adoptSession(event.session_id),
     requestID: Permission.ID.create(`per_${event.data.request_id}`),
     reply: state === "allow" ? "once" : "reject",
+  }
+}
+
+/** The product `question.v2.asked` payload for one engine question request. */
+export type SessionQuestionAsked = {
+  id: Question.ID
+  sessionID: SessionID
+  questions: {
+    question: string
+    header: string
+    options: { label: string; description: string }[]
+    multiSelect: boolean
+    custom: boolean
+  }[]
+}
+
+/**
+ * Maps the engine's `question.requested` (`input.questions`) to the product
+ * `question.v2.asked`. The engine's question shape is compatible with the product
+ * `Info`; the optional `tool` link is omitted (the event carries `call_id` but not
+ * the assistant message id).
+ */
+export function translateQuestion(event: EngineEvent): SessionQuestionAsked | undefined {
+  if (event.kind !== "question.requested") return undefined
+  if (typeof event.data !== "object" || event.data === null) return undefined
+  if (!("question_id" in event.data) || typeof event.data.question_id !== "string") return undefined
+  if (!("input" in event.data)) return undefined
+  const input = event.data.input
+  if (typeof input !== "object" || input === null || !("questions" in input)) return undefined
+  const raw = input.questions
+  if (!Array.isArray(raw)) return undefined
+  const rawQuestions: unknown[] = raw
+  const questions = rawQuestions.flatMap((question) => {
+    if (typeof question !== "object" || question === null) return []
+    if (!("question" in question) || typeof question.question !== "string") return []
+    const header = "header" in question && typeof question.header === "string" ? question.header : ""
+    const rawOptions: unknown[] = "options" in question && Array.isArray(question.options) ? question.options : []
+    const options = rawOptions.flatMap((option) => {
+      if (typeof option !== "object" || option === null) return []
+      if (!("label" in option) || typeof option.label !== "string") return []
+      const description = "description" in option && typeof option.description === "string" ? option.description : ""
+      return [{ label: option.label, description }]
+    })
+    const multiSelect = "multiSelect" in question && question.multiSelect === true
+    const custom = !("custom" in question) || question.custom !== false
+    return [{ question: question.question, header, options, multiSelect, custom }]
+  })
+  if (questions.length === 0) return undefined
+  return {
+    id: Question.ID.ascending(`que_${event.data.question_id}`),
+    sessionID: adoptSession(event.session_id),
+    questions,
   }
 }
