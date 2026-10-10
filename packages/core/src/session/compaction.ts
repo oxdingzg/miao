@@ -13,6 +13,19 @@ const DEFAULT_BUFFER = 20_000
 const DEFAULT_KEEP_TOKENS = 8_000
 const TOOL_OUTPUT_MAX_CHARS = 2_000
 const SUMMARY_OUTPUT_TOKENS = 4_096
+// Recovery must not send another near-window request to an endpoint that already
+// rejected the catalog's window estimate. Summarize the whole head in bounded
+// stages; publish a checkpoint only after every stage succeeds.
+const SUMMARY_INPUT_TOKENS = 64_000
+const MAX_SUMMARY_STAGES = 64
+// Bound tokenizer work as well as provider input. Tokenizing a giant unbroken
+// output in one pass can be pathological; independent short segments provide a
+// conservative count without making recovery itself stall.
+const recoveryTokens = (text: string) => {
+  let total = 0
+  for (let offset = 0; offset < text.length; offset += 4_096) total += Token.count(text.slice(offset, offset + 4_096))
+  return total
+}
 /**
  * Fraction of the context window at which proactive compaction runs. Compacting
  * only once the window is full leaves no room for the summary and no margin for
@@ -290,6 +303,7 @@ export const make = (dependencies: Dependencies) => {
     /** Retried when the primary summarize request is refused or fails. */
     readonly fallbackRequest?: LLMRequest
     readonly recent: string
+    readonly summary?: Effect.Effect<string | undefined>
   }) {
     const messageID = SessionMessage.ID.create()
     yield* dependencies.events.publish(SessionEvent.Compaction.Started, {
@@ -302,8 +316,9 @@ export const make = (dependencies: Dependencies) => {
     // A refused or failed cheap-model summary falls back to the session model
     // once before giving up, matching the "refusal -> retry with another model"
     // behavior for compaction (research G3).
-    let summary = yield* summarizeOnce(input.request)
-    if (summary === undefined && input.fallbackRequest) summary = yield* summarizeOnce(input.fallbackRequest)
+    let summary = input.summary ? yield* input.summary : yield* summarizeOnce(input.request)
+    if (summary === undefined && !input.summary && input.fallbackRequest)
+      summary = yield* summarizeOnce(input.fallbackRequest)
     if (summary === undefined) return false
     yield* dependencies.events.publish(SessionEvent.Compaction.Ended, {
       sessionID: input.sessionID,
@@ -374,33 +389,61 @@ export const make = (dependencies: Dependencies) => {
     }
     const head = selected?.head ?? ""
     if (head.length === 0 && previousSummary?.type !== "compaction") return false
+    const source = [previousSummary?.type === "compaction" ? previousSummary.recent : "", head]
+      .filter(Boolean)
+      .join("\n\n")
     const summaryPrompt = buildPrompt({
       previousSummary: previousSummary?.type === "compaction" ? previousSummary.summary : undefined,
-      context: [previousSummary?.type === "compaction" ? previousSummary.recent : "", head].filter(Boolean),
+      context: [source],
     })
     const summaryOutput = Math.min(output || SUMMARY_OUTPUT_TOKENS, SUMMARY_OUTPUT_TOKENS)
-    if (measure(summaryPrompt) > context - summaryOutput) return false
-    const summarizeModel = config.summarizeSmall
-      ? pickSummarizeModel(input, measure(summaryPrompt), summaryOutput)
-      : input.model
-    const requestFor = (model: Model) =>
+    const systemTokens = Token.measureValue(input.request.system, recoveryTokens)
+    const ceiling = Math.min(SUMMARY_INPUT_TOKENS, context)
+    const requestFor = (model: Model, prompt: string) =>
       LLM.request({
         model,
         http: input.request.http,
         providerOptions: input.request.providerOptions,
-        // Carry the runner's system parts (including the output-language anchor)
-        // so the summary stays in the conversation's language. The overflow path
-        // cannot reuse the prefix, but the system parts are small.
         system: input.request.system,
-        messages: [Message.user(summaryPrompt)],
+        messages: [Message.user(prompt)],
         tools: [],
         generation: { maxTokens: summaryOutput },
       })
+    const choose = (prompt: string) =>
+      config.summarizeSmall
+        ? pickSummarizeModel(input, systemTokens + recoveryTokens(prompt), summaryOutput)
+        : input.model
+    const summarizeModel = choose(summaryPrompt)
+    const staged = Effect.gen(function* () {
+      let summary = previousSummary?.type === "compaction" ? previousSummary.summary : undefined
+      let offset = 0
+      for (let stage = 0; stage < MAX_SUMMARY_STAGES; stage++) {
+        const overhead = systemTokens + recoveryTokens(buildPrompt({ previousSummary: summary, context: [""] }))
+        const budget = ceiling - summaryOutput - overhead
+        if (budget <= 0) return undefined
+        let end = Math.min(source.length, offset + budget * 2)
+        while (end > offset && recoveryTokens(source.slice(offset, end)) > budget)
+          end = offset + Math.floor((end - offset) / 2)
+        const last = source.charCodeAt(end - 1)
+        if (last >= 0xd800 && last <= 0xdbff) end--
+        if (end <= offset) return undefined
+        const prompt = buildPrompt({ previousSummary: summary, context: [source.slice(offset, end)] })
+        const model = choose(prompt)
+        let next = yield* summarizeOnce(requestFor(model, prompt))
+        if (next === undefined && model !== input.model) next = yield* summarizeOnce(requestFor(input.model, prompt))
+        if (next === undefined) return undefined
+        summary = next
+        offset = end
+        if (offset === source.length) return summary
+      }
+      return undefined
+    })
     return yield* runSummary({
       sessionID: input.sessionID,
       recent: retained(input.entries, selected?.recent ?? ""),
-      request: requestFor(summarizeModel),
-      fallbackRequest: summarizeModel === input.model ? undefined : requestFor(input.model),
+      request: requestFor(summarizeModel, summaryPrompt),
+      fallbackRequest: summarizeModel === input.model ? undefined : requestFor(input.model, summaryPrompt),
+      ...(systemTokens + recoveryTokens(summaryPrompt) + summaryOutput > ceiling ? { summary: staged } : {}),
     })
   })
 
