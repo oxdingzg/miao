@@ -11,6 +11,16 @@ at `docs/releases/vX.Y.Z.md` and `docs/releases/vX.Y.Z.zh.md`; both are required
 
 ## [Unreleased]
 
+## [0.2.2] - 2026-10-10
+
+### Added
+- **engine**: delegate tasks to child Sessions (#514) (`e830ea5ae`)
+- **engine**: add LSP diagnostics, definition and references tools (#511) (`7c521c40a`)
+- **engine**: carry inline image attachments on prompts (#509) (`fdd02044e`)
+
+### Fixed
+- **core**: retry a rejected provider request once before giving up (#510) (`9b0fb38d2`)
+
 ## [0.2.1] - 2026-10-10
 
 ### Fixed
