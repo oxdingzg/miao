@@ -265,6 +265,13 @@ pub enum Command {
         #[serde(default)]
         message_seq: Option<u64>,
     },
+    Revert {
+        session_id: String,
+        checkpoint: String,
+    },
+    Unrevert {
+        session_id: String,
+    },
     Events {
         session_id: String,
         #[serde(default)]

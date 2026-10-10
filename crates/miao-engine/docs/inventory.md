@@ -13,6 +13,7 @@ scope for this table and is tracked separately.
 |---|---|---|
 | Session: durable inbox, exact retry, steer/queue, resume, fork, mode | validated | `src/store.rs`, `src/runtime.rs`; `tests/retry.rs`, `tests/fork.rs`, `tests/modes.rs` |
 | Session: compaction, history, recall | validated | `src/state.rs`, `src/history.rs`, `src/recall.rs`; recall bounded scan |
+| Session: revert/rewind (and unrevert) | validated | `src/store.rs`, `src/history.rs`; soft-revert of the visible projection to a user-message checkpoint, compaction at or after the boundary dropped, append-only ledger, `unrevert` restores (`tests/revert.rs`) |
 | Coding tools: read/list/glob/grep | validated | `src/tools.rs`, `src/search.rs`; bounded, no symlink escape |
 | Coding tools: write/edit/apply_patch | validated | `src/file_mutation.rs`, `src/patch.rs`; conditional SHA-256 writes, BOM/EOL preserved, V4A transaction |
 | Permission and approval | validated | `src/permission.rs`, `src/approval.rs`; policy upper bound, first-answer-wins |
