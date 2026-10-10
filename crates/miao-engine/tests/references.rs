@@ -1,9 +1,16 @@
+use async_trait::async_trait;
 use miao_engine::{
     context::{self, Reference},
     permission::{Config, Decision, Mode, Policy, Rule},
+    protocol::{Delivery, Input, ModelRequest},
+    provider::{Provider, ProviderError, Reply},
+    runtime::Runtime,
+    store::Store,
     tools::{ToolError, Tools},
 };
-use serde_json::json;
+use serde_json::{json, Value};
+use std::sync::Arc;
+use tokio::sync::mpsc;
 use tokio_util::sync::CancellationToken;
 
 fn policy() -> Policy {
@@ -113,4 +120,97 @@ async fn invalid_references_are_rejected() {
             description: "  ".into(),
         }])
         .is_err());
+}
+
+struct Reader {
+    path: String,
+}
+#[async_trait]
+impl Provider for Reader {
+    async fn stream(
+        &self,
+        request: ModelRequest,
+        _: mpsc::Sender<Value>,
+        _: CancellationToken,
+    ) -> Result<Reply, ProviderError> {
+        if request.messages.len() == 1 {
+            return Ok(Reply {
+                content: json!([{"type":"tool_use","id":"c","name":"read_file","input":{"path":self.path}}]),
+                usage: json!({}),
+                needs_tools: true,
+            });
+        }
+        Ok(Reply {
+            content: json!([{"type":"text","text":"done"}]),
+            usage: json!({}),
+            needs_tools: false,
+        })
+    }
+}
+
+/// A regression test for the full path: an authorized reference read must pass
+/// the Runtime's policy authorization, not just `Tools::execute`. A naive
+/// absolute-path resource is denied by `permission::assess`'s boundary check.
+#[tokio::test]
+async fn authorized_reference_read_passes_runtime_authorization() {
+    let workspace = tempfile::tempdir().unwrap();
+    let external = tempfile::tempdir().unwrap();
+    let doc = external.path().join("notes.md");
+    std::fs::write(&doc, "external secret").unwrap();
+    let store = Store::open(workspace.path().join("engine.db"))
+        .await
+        .unwrap();
+    let tools = Tools::new(workspace.path())
+        .await
+        .unwrap()
+        .with_references(vec![Reference {
+            path: external.path().to_string_lossy().into_owned(),
+            description: "External".into(),
+        }])
+        .unwrap();
+    let runtime = Runtime::with_policy(
+        store.clone(),
+        Arc::new(Reader {
+            path: doc.to_string_lossy().into_owned(),
+        }),
+        tools,
+        policy(),
+    )
+    .await
+    .unwrap();
+    runtime
+        .admit(
+            Input {
+                session_id: "s".into(),
+                input_id: "one".into(),
+                prompt: "read".into(),
+                delivery: Delivery::Steer,
+            },
+            true,
+        )
+        .await
+        .unwrap();
+    let result = tokio::time::timeout(std::time::Duration::from_secs(10), async {
+        loop {
+            if store
+                .events("s", 0, 100)
+                .await
+                .unwrap()
+                .iter()
+                .any(|event| event.kind == "run.finished")
+            {
+                let history = store.history("s").await.unwrap();
+                return serde_json::from_str::<Value>(
+                    history[2].content[0]["content"].as_str().unwrap(),
+                )
+                .unwrap();
+            }
+            tokio::time::sleep(std::time::Duration::from_millis(5)).await;
+        }
+    })
+    .await
+    .unwrap();
+    runtime.shutdown().await;
+    assert_ne!(result["is_error"], true, "{result}");
+    assert_eq!(result["text"], "external secret", "{result}");
 }

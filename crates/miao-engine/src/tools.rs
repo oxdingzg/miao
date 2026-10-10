@@ -445,7 +445,11 @@ impl Tools {
                 .collect::<Result<Vec<_>, _>>()?
         };
         let resource = if external {
-            path.to_string_lossy().replace('\\', "/")
+            // Authorized external reads use a namespaced resource: an absolute
+            // path would be rejected by `permission::assess`'s boundary check, so
+            // the resource is `@reference/<path>` and policy can target
+            // `@reference/**`.
+            format!("@reference{}", path.to_string_lossy().replace('\\', "/"))
         } else if name == "cron_create" || name == "cron_list" {
             "@session/cron".into()
         } else if name == "cron_delete" {
