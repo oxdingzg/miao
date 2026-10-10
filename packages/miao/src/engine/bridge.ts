@@ -317,3 +317,27 @@ export function translateApproval(event: EngineEvent): SessionPermissionAsked | 
     metadata: { request_id: event.data.request_id, input_hash: inputHash, policy_revision: policyRevision },
   }
 }
+
+/** The product `permission.v2.replied` payload for one engine approval resolution. */
+export type SessionPermissionReplied = {
+  sessionID: SessionID
+  requestID: Permission.ID
+  reply: Permission.Reply
+}
+
+/**
+ * Maps the engine's `approval.resolved` to the product `permission.v2.replied`.
+ * An `allow` is `once` (the engine has no `always` at this boundary); `deny`,
+ * `expired` and `cancelled` are `reject`.
+ */
+export function translateApprovalResolved(event: EngineEvent): SessionPermissionReplied | undefined {
+  if (event.kind !== "approval.resolved") return undefined
+  if (typeof event.data !== "object" || event.data === null) return undefined
+  if (!("request_id" in event.data) || typeof event.data.request_id !== "string") return undefined
+  const state = "state" in event.data && typeof event.data.state === "string" ? event.data.state : ""
+  return {
+    sessionID: adoptSession(event.session_id),
+    requestID: Permission.ID.create(`per_${event.data.request_id}`),
+    reply: state === "allow" ? "once" : "reject",
+  }
+}

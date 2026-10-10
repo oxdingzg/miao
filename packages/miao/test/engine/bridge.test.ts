@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test"
-import { StatusBridge, ToolBridge, productToolID, statusOf, translateApproval, translateMessage, translatePrompt, translateStatus, translateTools } from "@/engine/bridge"
+import { StatusBridge, ToolBridge, productToolID, statusOf, translateApproval, translateApprovalResolved, translateMessage, translatePrompt, translateStatus, translateTools } from "@/engine/bridge"
 import type { EngineEvent } from "@/engine/client"
 
 const event = (kind: string): EngineEvent => ({ session_id: "ses_test", seq: 1, kind, data: {} })
@@ -116,4 +116,15 @@ test("maps approval.requested to a permission.v2.asked payload", () => {
   expect(asked?.resources).toEqual(["file"])
   expect(asked?.metadata).toEqual({ request_id: "req1", input_hash: "h", policy_revision: "rev" })
   expect(translateApproval({ ...event, kind: "run.started" })).toBeUndefined()
+})
+
+test("maps approval.resolved to a permission.v2.replied payload", () => {
+  const base = { session_id: "ses_abc", seq: 3, kind: "approval.resolved" } as const
+  const allow = translateApprovalResolved({ ...base, data: { request_id: "req1", state: "allow" } })
+  expect(String(allow?.requestID)).toBe("per_req1")
+  expect(String(allow?.sessionID)).toBe("ses_abc")
+  expect(allow?.reply).toBe("once")
+  expect(translateApprovalResolved({ ...base, data: { request_id: "req1", state: "deny" } })?.reply).toBe("reject")
+  expect(translateApprovalResolved({ ...base, data: { request_id: "req1", state: "expired" } })?.reply).toBe("reject")
+  expect(translateApprovalResolved({ ...base, kind: "run.started", data: {} })).toBeUndefined()
 })
