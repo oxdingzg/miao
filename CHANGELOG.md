@@ -20,6 +20,7 @@ at `docs/releases/vX.Y.Z.md` and `docs/releases/vX.Y.Z.zh.md`; both are required
 
 ### Fixed
 - **core**: retry a rejected provider request once before giving up (#510) (`9b0fb38d2`)
+- **tui**: re-assert the terminal title after a restore (#512) (`34294a4b4`)
 
 ## [0.2.1] - 2026-10-10
 
