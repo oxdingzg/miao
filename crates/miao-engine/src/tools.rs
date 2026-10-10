@@ -111,6 +111,7 @@ pub struct Tools {
     mcp: Option<Arc<mcp::Registry>>,
     lsp: Option<Arc<crate::lsp::Registry>>,
     context_sources: Arc<Vec<crate::context::Source>>,
+    skill_directories: Arc<Vec<crate::context::SkillDirectory>>,
     hooks: Arc<Vec<crate::hooks::Hook>>,
 }
 
@@ -144,6 +145,7 @@ impl Tools {
             mcp: None,
             lsp: None,
             context_sources: Arc::new(vec![]),
+            skill_directories: Arc::new(vec![]),
             hooks: Arc::new(vec![]),
         })
     }
@@ -188,6 +190,19 @@ impl Tools {
         let mut input = hook.input()?;
         input.cwd = ".".into();
         process::execute(runner, &self.root, &self.root, input, false, cancel).await
+    }
+
+    pub fn with_skill_directories(
+        mut self,
+        directories: Vec<crate::context::SkillDirectory>,
+    ) -> Result<Self, ToolError> {
+        crate::context::validate_skills(&directories)?;
+        self.skill_directories = Arc::new(directories);
+        Ok(self)
+    }
+
+    pub(crate) fn skill_directories(&self) -> &[crate::context::SkillDirectory] {
+        &self.skill_directories
     }
 
     pub(crate) fn context_sources(&self) -> std::slice::Iter<'_, crate::context::Source> {
