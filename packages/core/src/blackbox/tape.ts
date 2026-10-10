@@ -32,6 +32,21 @@ export const Bundle = Schema.Struct({
 export type Bundle = typeof Bundle.Type
 export const Envelope = Schema.Struct({ bundle: Bundle, sha256: Schema.String })
 
+const JournalRecord = Schema.Union([
+  Schema.Struct({ kind: Schema.Literal("begin"), interaction: Interaction }),
+  Schema.Struct({ kind: Schema.Literal("frame"), lane: Schema.String, ordinal: Schema.Number, frame: Frame }),
+  Schema.Struct({
+    kind: Schema.Literal("finish"),
+    lane: Schema.String,
+    ordinal: Schema.Number,
+    outcome: Schema.Literals(["complete", "error", "cancelled"]),
+    endElapsedMs: Schema.Number,
+    error: Schema.optional(Schema.Json),
+  }),
+  Schema.Struct({ kind: Schema.Literal("trace"), event: Trace }),
+])
+const JournalEntry = Schema.Struct({ previous: Schema.String, record: JournalRecord, sha256: Schema.String })
+
 /** Object key order is irrelevant; arrays and every scalar remain significant. */
 export function canonical(value: Schema.Json): string {
   if (Array.isArray(value)) return `[${value.map(canonical).join(",")}]`
@@ -54,8 +69,11 @@ export function digest(bundle: Bundle) {
 export async function load(file: string): Promise<Bundle> {
   const envelope = Schema.decodeUnknownSync(Envelope)(await Bun.file(file).json())
   if (digest(envelope.bundle) !== envelope.sha256) throw new Error("Blackbox integrity check failed")
+  const bundle = (await Bun.file(`${file}.journal`).exists())
+    ? await loadJournal(file, envelope.bundle)
+    : envelope.bundle
   const ordinals = new Map<string, number>()
-  for (const interaction of envelope.bundle.interactions) {
+  for (const interaction of bundle.interactions) {
     const ordinal = ordinals.get(interaction.lane) ?? 0
     if (interaction.ordinal !== ordinal) throw new Error("Blackbox lane order is invalid")
     ordinals.set(interaction.lane, ordinal + 1)
@@ -70,7 +88,7 @@ export async function load(file: string): Promise<Bundle> {
       throw new Error("Blackbox frame timing is invalid")
   }
   if (
-    envelope.bundle.interactions.some(
+    bundle.interactions.some(
       (item) =>
         item.endElapsedMs !== undefined &&
         (!Number.isFinite(item.endElapsedMs) ||
@@ -79,7 +97,61 @@ export async function load(file: string): Promise<Bundle> {
     )
   )
     throw new Error("Blackbox terminal timing is invalid")
-  return envelope.bundle
+  return bundle
+}
+
+async function loadJournal(file: string, snapshot: Bundle): Promise<Bundle> {
+  // Only newline-terminated records were durably written. A process killed in
+  // the middle of an append leaves an incomplete boundary, never a success.
+  const text = await Bun.file(`${file}.journal`).text()
+  const lines = text.slice(0, text.lastIndexOf("\n")).split("\n")
+  const header = Schema.decodeUnknownSync(Schema.UnknownFromJsonString)(lines[0])
+  const envelope = Schema.decodeUnknownSync(Envelope)(header)
+  if (
+    digest(envelope.bundle) !== envelope.sha256 ||
+    canonical(envelope.bundle.metadata) !== canonical(snapshot.metadata)
+  )
+    throw new Error("Blackbox journal integrity check failed")
+  const bundle = {
+    ...envelope.bundle,
+    interactions: envelope.bundle.interactions.map((item) => ({ ...item, frames: [...item.frames] })),
+    trace: [...envelope.bundle.trace],
+  }
+  let previous = envelope.sha256
+  for (const line of lines.slice(1)) {
+    const entry = Schema.decodeUnknownSync(JournalEntry)(Schema.decodeUnknownSync(Schema.UnknownFromJsonString)(line))
+    if (entry.previous !== previous || journalDigest(previous, entry.record) !== entry.sha256)
+      throw new Error("Blackbox journal integrity check failed")
+    previous = entry.sha256
+    const record = entry.record
+    if (record.kind === "trace") {
+      bundle.trace.push(record.event)
+      continue
+    }
+    if (record.kind === "begin") {
+      if (record.interaction.outcome !== "incomplete" || record.interaction.frames.length !== 0)
+        throw new Error("Invalid blackbox journal boundary")
+      bundle.interactions.push({ ...record.interaction, frames: [] })
+      continue
+    }
+    const interaction = bundle.interactions.find((item) => item.lane === record.lane && item.ordinal === record.ordinal)
+    if (!interaction || interaction.outcome !== "incomplete") throw new Error("Invalid blackbox journal boundary")
+    if (record.kind === "frame") {
+      interaction.frames.push(record.frame)
+      continue
+    }
+    interaction.outcome = record.outcome
+    interaction.endElapsedMs = record.endElapsedMs
+    if (record.error !== undefined) interaction.error = record.error
+  }
+  return bundle
+}
+
+function journalDigest(previous: string, record: typeof JournalRecord.Type) {
+  return new Bun.CryptoHasher("sha256")
+    .update(previous)
+    .update(canonical(json(record)))
+    .digest("hex")
 }
 
 type MutableInteraction = {
@@ -103,12 +175,17 @@ export class Recorder {
     trace: Trace[]
   }
   #writes = Promise.resolve()
+  #journalStarted = false
+  #journalHead: string
+  readonly #journalHeader: string
 
   constructor(
     readonly file: string,
     metadata: Record<string, Schema.Json>,
   ) {
     this.bundle = { format: "miao-blackbox", version: 1, metadata, interactions: [], trace: [] }
+    this.#journalHead = digest(this.bundle)
+    this.#journalHeader = JSON.stringify({ bundle: this.bundle, sha256: this.#journalHead }) + "\n"
   }
 
   async begin(lane: string, request: Schema.Json) {
@@ -120,27 +197,63 @@ export class Recorder {
       outcome: "incomplete",
     }
     this.bundle.interactions.push(interaction)
+    await this.#append({ kind: "begin", interaction })
     await this.save()
     const started = performance.now()
     return {
       frame: async (value: Schema.Json) => {
         if (interaction.outcome !== "incomplete") throw new Error("Blackbox interaction already settled")
-        interaction.frames.push({ elapsedMs: performance.now() - started, value: clone(value) })
-        await this.save()
+        const frame = { elapsedMs: performance.now() - started, value: clone(value) }
+        interaction.frames.push(frame)
+        await this.#append({ kind: "frame", lane, ordinal: interaction.ordinal, frame })
       },
       finish: async (outcome: "complete" | "error" | "cancelled", error?: Schema.Json) => {
         if (interaction.outcome !== "incomplete") throw new Error("Blackbox interaction already settled")
         interaction.outcome = outcome
         interaction.endElapsedMs = performance.now() - started
         if (error !== undefined) interaction.error = json(error)
+        await this.#append({
+          kind: "finish",
+          lane,
+          ordinal: interaction.ordinal,
+          outcome,
+          endElapsedMs: interaction.endElapsedMs,
+          ...(error === undefined ? {} : { error: interaction.error }),
+        })
         await this.save()
       },
     }
   }
 
   async trace(event: Trace) {
-    this.bundle.trace.push(Schema.decodeUnknownSync(Trace)({ ...event, data: clone(event.data) }))
+    const recorded = Schema.decodeUnknownSync(Trace)({ ...event, data: clone(event.data) })
+    this.bundle.trace.push(recorded)
+    await this.#append({ kind: "trace", event: recorded })
     await this.save()
+  }
+
+  #append(record: typeof JournalRecord.Type): Promise<void> {
+    // Persist only the new record on the provider hot path. Snapshot packaging
+    // remains at boundaries, while the hash-chained journal preserves partial
+    // output across crashes without rehashing and rewriting the entire Session.
+    const previous = this.#journalHead
+    const sha256 = journalDigest(previous, record)
+    const first = !this.#journalStarted
+    const data = (first ? this.#journalHeader : "") + JSON.stringify({ previous, record, sha256 }) + "\n"
+    this.#journalHead = sha256
+    this.#journalStarted = true
+    const write = this.#writes.then(async () => {
+      if (first) await mkdir(path.dirname(this.file), { recursive: true, mode: 0o700 })
+      const handle = await open(`${this.file}.journal`, first ? "w" : "a", 0o600)
+      try {
+        await handle.writeFile(data)
+        await handle.sync()
+      } finally {
+        await handle.close()
+      }
+    })
+    this.#writes = write
+    return write
   }
 
   save(): Promise<void> {
