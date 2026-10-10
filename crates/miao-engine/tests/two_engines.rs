@@ -390,6 +390,16 @@ async fn unread_subscriber_does_not_block_peer_engine_or_durable_completion() {
     client.engines[0].reply(resume).await;
     client.engines[0].finished_after(0).await;
     let durable = client.engines[0].ledger().await;
+    // Stop hooks can commit after run.finished. Compare through the captured
+    // ledger watermark, rather than racing their publication on slower hosts.
+    let watermark = durable.last().unwrap()["seq"].as_u64().unwrap();
+    while client.engines[0].events.last().unwrap()["seq"]
+        .as_u64()
+        .unwrap()
+        < watermark
+    {
+        client.engines[0].frame().await;
+    }
     assert_eq!(client.engines[0].events, durable);
     assert_eq!(
         client.engines[1]
