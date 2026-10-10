@@ -40,3 +40,23 @@ may drift; re-run the count if it matters.
 - Scope concentrates in the behaviour-bearing groups — `session` (32), `runtime`
   (11), `pty` (9), `permission` (7), `integration` (7) — where a handler carries
   real session/permission/process behaviour rather than a projection read.
+
+## Existing host client
+
+A host-side client already exists, so the B1 façade can build on it rather than
+start from scratch:
+
+- `packages/miao/src/engine/client.ts` — `EngineClient`, which spawns
+  `miao-engine serve` and speaks the stdio protocol (requests, `result`/`error`,
+  `event`/`progress`), owning the child process and no domain state.
+- `packages/miao/src/engine/run.ts` — `runEnginePrompt`, a headless driver:
+  subscribe before admit, resolve approvals, wait for `run.finished`, read the
+  committed history.
+- `packages/miao/test/engine/engine-host.test.ts` — a fake-engine suite plus a
+  real-binary test gated by `MIAO_ENGINE_BIN`.
+
+Verified end-to-end on 2026-10-10 against the real `miao-engine` release binary
+built from `main`: the engine-host suite passes, including the real path (a mock
+endpoint returns the assistant text). What remains for B1 is the **event bridge**
+(engine events → product session events) and **per-handler wiring**; the client is
+not consumed by any product handler yet.
