@@ -15,7 +15,6 @@ import { CodexAuthPlugin } from "./openai/codex"
 import { SessionV1 } from "@miao/core/v1/session"
 import { NamedError } from "@miao/core/util/error"
 import { CopilotAuthPlugin } from "./github-copilot/copilot"
-import { MiaottyPlugin } from "./miaotty"
 import { ModalPlugin } from "./modal/modal"
 import { gitlabAuthPlugin as GitlabAuthPlugin } from "opencode-gitlab-auth"
 import { PoeAuthPlugin } from "opencode-poe-auth"
@@ -87,8 +86,8 @@ function internalPlugins(flags: RuntimeFlags.Info): Array<(input: InternalPlugin
     SnowflakeCortexAuthPlugin,
     XaiAuthPlugin,
     CommandCodeAuthPlugin,
-    // Reports agent state to mtty's terminal (formerly miaotty) when it hosts us.
-    MiaottyPlugin,
+    // Terminal state is reported by the observing TUI client. A shared Runtime
+    // must not overwrite its launching pane with activity from other Sessions.
   ]
 }
 
