@@ -153,6 +153,11 @@ struct ResponsesState {
     model: String,
     created: bool,
     completed: Option<Value>,
+    /// Output items finalized via `response.output_item.done`. Some upstreams
+    /// (observed on subscription-responses) send the authoritative items here
+    /// and a compact `response.completed.output` of `[]`, so the completed array
+    /// alone would lose every tool call.
+    items: Vec<Value>,
 }
 impl Parser for ResponsesState {
     fn frame(&mut self, frame: &Frame) -> Result<(), ProviderError> {
@@ -174,10 +179,18 @@ impl Parser for ResponsesState {
                     "Responses did not complete successfully".into(),
                 ))
             }
+            Some("response.output_item.done") => {
+                let item = event["item"].clone();
+                if !item.is_object() {
+                    return Err(ProviderError::Stream(
+                        "invalid finalized Responses output item".into(),
+                    ));
+                }
+                self.items.push(item);
+            }
             Some(
                 "response.in_progress"
                 | "response.output_item.added"
-                | "response.output_item.done"
                 | "response.content_part.added"
                 | "response.content_part.done"
                 | "response.output_text.delta"
@@ -221,7 +234,15 @@ impl Parser for ResponsesState {
         }
         let mut content = Vec::new();
         let mut calls = HashSet::new();
-        for item in response["output"].as_array().ok_or_else(invalid)? {
+        // Finalized `output_item.done` items take precedence: a compact
+        // `response.completed.output` must not drop them. Fall back only when the
+        // stream never finalized any item.
+        let output: &[Value] = if self.items.is_empty() {
+            response["output"].as_array().ok_or_else(invalid)?
+        } else {
+            &self.items
+        };
+        for item in output {
             match item["type"].as_str() {
                 Some("message") => {
                     if item["role"] != "assistant" {
@@ -238,6 +259,13 @@ impl Parser for ResponsesState {
                     }
                 }
                 Some("function_call") => {
+                    if item
+                        .get("status")
+                        .and_then(Value::as_str)
+                        .is_some_and(|status| status != "completed")
+                    {
+                        return Err(invalid());
+                    }
                     let id = item["call_id"]
                         .as_str()
                         .filter(|s| !s.is_empty())
