@@ -63,6 +63,8 @@ test("execution and decisions outrank checklist outcome; lost observations canno
   expect(sessionState({ ...input, blocked: true, status: { type: "busy" } })).toBe("awaiting")
   expect(sessionState({ ...input, error: "failed" })).toBe("error")
   expect(sessionState({ ...input, unavailable: true })).toBe("unknown")
+  expect(sessionState({ ...input, unavailable: true, status: { type: "busy" } })).toBe("processing")
+  expect(sessionState({ ...input, unavailable: true, blocked: true })).toBe("awaiting")
   expect(sessionState({ ...input, activity: undefined })).toBe("unknown")
   expect(
     sessionState({ ...input, activity: { ...activity, jobs: [{ id: "lost", status: "error", startedAt: 1 }] } }),

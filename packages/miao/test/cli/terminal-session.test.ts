@@ -50,7 +50,35 @@ test.skipIf(process.platform === "win32")(
     expect(values[0].context).toEqual({ kind: "owned", runtimeID: "runtime-for-this-pane", storage: "owned.db" })
     expect(values[1].context).toBeNull()
     expect(values[1].args).toContain("unknown")
-    expect(values[1].args).not.toContain("session-second")
+    expect(values[1].args).toContain("session-second")
+  },
+)
+
+test.skipIf(process.platform === "win32")(
+  "exit preserves confirmed outcomes and Session identity without a live binding",
+  async () => {
+    await using directory = await tmpdir()
+    const fixture = path.join(directory.path, "report.ts")
+    const file = path.join(directory.path, "reports.jsonl")
+    await Bun.write(
+      fixture,
+      `#!${process.execPath}\nimport { appendFileSync } from "node:fs"\nconst context = JSON.parse(await Bun.stdin.text())\nappendFileSync(${JSON.stringify(file)}, JSON.stringify({args:process.argv.slice(2),context}) + "\\n")\n`,
+    )
+    await chmod(fixture, 0o700)
+    for (const outcome of ["completed", "incomplete", "error"] as const) {
+      const report = TerminalSession.reporter(
+        { runtimeID: "runtime", storage: "owned.db" },
+        { MTTY_PANE_ID: "pane", MTTY_CLI: fixture },
+      )!
+      report({ sessionID: `session-${outcome}`, cwd: directory.path, state: outcome })
+      report()
+    }
+    const values = await reports(file, 6)
+    for (const outcome of ["completed", "incomplete", "error"]) {
+      const detached = values.find((value) => value.context === null && value.args.includes(`session-${outcome}`))
+      expect(detached?.args).toContain(outcome)
+      expect(detached?.args).toContain(directory.path)
+    }
   },
 )
 
