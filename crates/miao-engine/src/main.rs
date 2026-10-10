@@ -137,6 +137,7 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
             "--context-config",
             "--skills-config",
             "--references-config",
+            "--worker-config",
             "--credential-db",
             "--credential-id",
             "--credential-integration",
@@ -330,6 +331,24 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
         tools = tools
             .with_protected_resource(&path)
             .with_references(references)?;
+    }
+    if let Some(path) = options.get("--worker-config") {
+        let path = tokio::fs::canonicalize(path).await?;
+        if path.starts_with(std::path::Path::new(tools.location())) {
+            return Err("Worker host config must be outside model-writable workspace".into());
+        }
+        let bytes = tokio::fs::read(&path).await?;
+        if bytes.len() > 65536 {
+            return Err("Worker config exceeds 64 KiB".into());
+        }
+        let config = serde_json::from_slice::<miao_engine::worker::Config>(&bytes)
+            .map_err(|_| "invalid Worker host config")?;
+        let registry =
+            miao_engine::worker::Registry::connect(config, std::path::Path::new(tools.location()))
+                .await?;
+        tools = tools
+            .with_protected_resource(&path)
+            .with_worker(Arc::new(registry));
     }
     if let Some(path) = options.get("--hooks-config") {
         let path = tokio::fs::canonicalize(path).await?;

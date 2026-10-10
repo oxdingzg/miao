@@ -1,6 +1,7 @@
 # ADR-12: Extension worker interface
 
-Status: Proposed (M3). Implements the boundary fixed by
+Status: Accepted (protocol revision 1; implemented by `src/worker.rs`). Implements
+the boundary fixed by
 [ADR-05](0005-extension-compatibility.md) and refined by
 [ADR-10](0010-extension-worker-scope.md). This is the "implementing ADR" ADR-10
 requires before the first worker ships: it fixes the transport, the launch

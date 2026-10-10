@@ -109,6 +109,7 @@ pub struct Tools {
     runner: Option<Arc<PathBuf>>,
     protected: Vec<PathBuf>,
     mcp: Option<Arc<mcp::Registry>>,
+    worker: Option<Arc<crate::worker::Registry>>,
     lsp: Option<Arc<crate::lsp::Registry>>,
     context_sources: Arc<Vec<crate::context::Source>>,
     skill_directories: Arc<Vec<crate::context::SkillDirectory>>,
@@ -145,6 +146,7 @@ impl Tools {
             runner: None,
             protected: vec![],
             mcp: None,
+            worker: None,
             lsp: None,
             context_sources: Arc::new(vec![]),
             skill_directories: Arc::new(vec![]),
@@ -254,8 +256,15 @@ impl Tools {
     pub(crate) fn has_mcp(&self) -> bool {
         self.mcp.is_some()
     }
+    pub fn with_worker(mut self, registry: Arc<crate::worker::Registry>) -> Self {
+        self.worker = Some(registry);
+        self
+    }
     pub(crate) async fn shutdown_extensions(&self) {
         if let Some(registry) = &self.mcp {
+            registry.shutdown().await;
+        }
+        if let Some(registry) = &self.worker {
             registry.shutdown().await;
         }
         if let Some(registry) = &self.lsp {
@@ -308,6 +317,19 @@ impl Tools {
 
     pub async fn prepare(&self, name: &str, input: Value) -> Result<Prepared, ToolError> {
         if let Some(registry) = &self.mcp {
+            if let Some(resource) = registry.resource(name) {
+                registry.validate(name, &input)?;
+                return Ok(Prepared {
+                    name: name.into(),
+                    input,
+                    path: self.root.clone(),
+                    resource,
+                    targets: Vec::new(),
+                    access: Access::External,
+                });
+            }
+        }
+        if let Some(registry) = &self.worker {
             if let Some(resource) = registry.resource(name) {
                 registry.validate(name, &input)?;
                 return Ok(Prepared {
@@ -550,6 +572,12 @@ impl Tools {
         cancel: CancellationToken,
     ) -> Result<Value, ToolError> {
         if prepared.access() == Access::External {
+            if let Some(registry) = &self.worker {
+                if crate::worker::owns(prepared.name()) {
+                    let name = prepared.name().to_owned();
+                    return registry.call(&name, prepared.input, cancel).await;
+                }
+            }
             return self
                 .mcp
                 .as_ref()
@@ -764,6 +792,9 @@ impl Tools {
             }
         }
         if let Some(registry) = &self.mcp {
+            definitions.extend(registry.definitions());
+        }
+        if let Some(registry) = &self.worker {
             definitions.extend(registry.definitions());
         }
         definitions

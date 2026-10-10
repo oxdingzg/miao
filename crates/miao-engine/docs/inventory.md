@@ -29,7 +29,7 @@ scope for this table and is tracked separately.
 | Auth: API key + credential store, key/oauth kinds | validated | `src/credential.rs`; OAuth refresh broker planned |
 | Extension: MCP client | validated | `src/mcp.rs` |
 | Extension: hooks | validated | `src/hooks.rs` |
-| Extension: TS compatibility worker | inventory | M3 |
+| Extension: TS compatibility worker | validated | `src/worker.rs`; ADR-12 newline-JSON protocol (hello handshake, `tool.list`/`tool.call`/`shutdown`), External authority, bounded and cancellable, degrades alone (`tests/worker.rs`) |
 | Wire: stdio adapter, durable cursor subscription, snapshot/export | validated | `src/protocol.rs`, `src/events.rs`, `src/export.rs` |
 | Wire: HTTP/ACP adapters | inventory | M2 |
 | Observability: doctor, platform/sandbox report | validated | `src/doctor.rs` |
