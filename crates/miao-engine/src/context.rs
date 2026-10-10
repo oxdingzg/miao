@@ -23,6 +23,33 @@ pub struct SkillDirectory {
     pub path: String,
 }
 
+/// A host-authorized read-only reference: a directory or file outside the
+/// model-writable workspace whose location is listed in the system context and
+/// whose files may be read. It never becomes writable.
+#[derive(Clone, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct Reference {
+    pub path: String,
+    pub description: String,
+}
+
+pub(crate) fn validate_references(references: &[Reference]) -> Result<(), ToolError> {
+    if references.len() > 16 {
+        return Err(ToolError::InvalidInput);
+    }
+    for reference in references {
+        if reference.path.is_empty()
+            || reference.path.len() > 2048
+            || reference.path.contains('\0')
+            || reference.description.trim().is_empty()
+            || reference.description.len() > 256
+        {
+            return Err(ToolError::InvalidInput);
+        }
+    }
+    Ok(())
+}
+
 pub(crate) fn validate_skills(directories: &[SkillDirectory]) -> Result<(), ToolError> {
     if directories.len() > 16 {
         return Err(ToolError::InvalidInput);
@@ -258,6 +285,26 @@ pub async fn assemble(
             sources.push(
                 json!({"type":"skill","name":skill.name,"path":skill.path,"status":"registered"}),
             );
+        }
+    }
+    let references = tools.references();
+    if !references.is_empty() {
+        let mut section = String::from(
+            "\n\n<available-references>\nHost-authorized read-only references outside the workspace. Read a listed file by its absolute path.\n",
+        );
+        for reference in references {
+            section.push_str(&format!(
+                "- {}: {}\n",
+                reference.description, reference.path
+            ));
+        }
+        section.push_str("</available-references>");
+        if system.len() + section.len() > 65536 {
+            return Err(ToolError::ContextBudget);
+        }
+        system.push_str(&section);
+        for reference in references {
+            sources.push(json!({"type":"reference","path":reference.path,"status":"authorized"}));
         }
     }
     let fingerprint = context_digest(&system, &sources).map_err(|_| ToolError::InvalidInput)?;
