@@ -35,3 +35,14 @@ format (`media.rs`), and the language-server tools answer diagnostics, definitio
 and references over an injected transport (`lsp.rs`), and a `task` tool delegates
 to a child Session with lineage and resource limits (`subagent.rs`). No M1
 capability gaps remain; remaining work is hardening and evaluation.
+
+## M2 gate — compression / recovery / fork / rewind
+
+| Scenario | Test |
+|---|---|
+| Compaction requires a closed assistant boundary; an open/active boundary is refused | `checkpoint.rs::active_or_open_tool_boundaries_cannot_be_compacted` |
+| Snapshot and fork inherit only state at the selected checkpoint | `checkpoint.rs::snapshot_and_fork_inherit_only_state_at_the_selected_checkpoint` |
+| Dynamic state survives compaction and reloads without changing the system epoch | `checkpoint.rs::dynamic_state_survives_compaction_and_reloads_without_changing_system_epoch` |
+| Rewind requires an idle Session (a busy run is refused, not corrupted) | `session_rewind_faults.rs::rewind_requires_an_idle_session` |
+| Rewind survives store recovery; fork excludes reverted messages; unrevert restores across recovery | `session_rewind_faults.rs::rewind_survives_recovery_and_fork_excludes_reverted` |
+| Recovery closes orphaned requests without execution or messages | `supervision.rs::recovery_closes_orphaned_requests_without_execution_or_messages` |
