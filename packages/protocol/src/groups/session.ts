@@ -4,7 +4,7 @@ import { PromptInput } from "@miao/schema/prompt-input"
 import { Session } from "@miao/schema/session"
 import { SessionTodo } from "@miao/schema/session-todo"
 import { Project } from "@miao/schema/project"
-import { AbsolutePath, NonNegativeInt, PositiveInt, RelativePath, statics } from "@miao/schema/schema"
+import { AbsolutePath, NonNegativeInt, PositiveInt, RelativePath, optional, statics } from "@miao/schema/schema"
 import { Workspace } from "@miao/schema/workspace"
 import { Context, Effect, Encoding, Result, Schema, SchemaGetter, Struct } from "effect"
 import { HttpApiEndpoint, HttpApiGroup, HttpApiMiddleware, HttpApiSchema, OpenApi } from "effect/unstable/httpapi"
@@ -494,6 +494,47 @@ export const makeSessionGroup = <I extends HttpApiMiddleware.AnyId, S>(sessionLo
             summary: "Cancel a pending session input",
             description:
               "Remove one durably admitted input before it is promoted. Returns cancelled: false when the input is unknown or already promoted.",
+          }),
+        ),
+    )
+    .add(
+      HttpApiEndpoint.get("session.activity", "/api/session/:sessionID/activity", {
+        params: { sessionID: Session.ID },
+        success: Schema.Struct({
+          data: Schema.Struct({
+            observedAt: NonNegativeInt,
+            status: SessionEvent.StatusInfo,
+            pendingNotifications: NonNegativeInt,
+            schedules: Schema.Array(
+              Schema.Struct({
+                id: Schema.String,
+                prompt: Schema.String,
+                createdAt: NonNegativeInt,
+                nextAt: NonNegativeInt,
+                recurring: Schema.Boolean,
+              }),
+            ),
+            jobs: Schema.Array(
+              Schema.Struct({
+                id: Schema.String,
+                title: Schema.String.pipe(optional),
+                status: Schema.Literals(["running", "completed", "error", "cancelled"]),
+                startedAt: NonNegativeInt,
+                completedAt: NonNegativeInt.pipe(optional),
+                error: Schema.String.pipe(optional),
+              }),
+            ),
+          }),
+        }),
+        error: SessionNotFoundError,
+      })
+        .middleware(sessionLocationMiddleware)
+        .annotateMerge(
+          OpenApi.annotations({
+            identifier: "v2.session.activity",
+            summary: "Observe session timers and background jobs",
+            description:
+              "Read-only, session-owned background status and pending notification count. Schedules are process-local and disappear on restart. Does not resume execution or replay commands.",
           }),
         ),
     )

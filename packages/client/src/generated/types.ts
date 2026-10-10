@@ -1265,6 +1265,51 @@ export type SessionsInputCancelInput = {
 
 export type SessionsInputCancelOutput = { readonly cancelled: boolean }
 
+export type SessionsActivityInput = { readonly sessionID: { readonly sessionID: string }["sessionID"] }
+
+export type SessionsActivityOutput = {
+  readonly data: {
+    readonly observedAt: number
+    readonly status:
+      | { readonly type: "idle" }
+      | {
+          readonly type: "busy"
+          readonly phase?: "queued" | "preparing" | "requesting" | "streaming" | "retrying"
+          readonly since?: number
+        }
+      | {
+          readonly type: "retry"
+          readonly attempt: number
+          readonly message: string
+          readonly action?: {
+            readonly reason: string
+            readonly provider: string
+            readonly title: string
+            readonly message: string
+            readonly label: string
+            readonly link?: string
+          }
+          readonly next: number
+        }
+    readonly pendingNotifications: number
+    readonly schedules: ReadonlyArray<{
+      readonly id: string
+      readonly prompt: string
+      readonly createdAt: number
+      readonly nextAt: number
+      readonly recurring: boolean
+    }>
+    readonly jobs: ReadonlyArray<{
+      readonly id: string
+      readonly title?: string
+      readonly status: "running" | "completed" | "error" | "cancelled"
+      readonly startedAt: number
+      readonly completedAt?: number
+      readonly error?: string
+    }>
+  }
+}["data"]
+
 export type SessionsStatusInput = { readonly sessionID: { readonly sessionID: string }["sessionID"] }
 
 export type SessionsStatusOutput = {

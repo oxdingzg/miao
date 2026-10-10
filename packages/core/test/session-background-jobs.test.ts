@@ -53,6 +53,22 @@ const setup = Effect.gen(function* () {
 })
 
 describe("Session background-job recovery", () => {
+  it.effect("read-only observation reports missing jobs without publishing recovery or touching another owner", () =>
+    Effect.gen(function* () {
+      const test = yield* setup
+      yield* test.announce("started")
+      const other = yield* test.session.create({ location })
+      const jobs = yield* BackgroundJob.make
+      yield* jobs.start({ id: "job_other", type: "bash", metadata: { sessionID: other.id }, run: Effect.never })
+      const owned = SessionBackgroundJobs.make({ db: test.db, events: test.events, sessionID: test.created.id, jobs })
+      expect(yield* owned.observe()).toMatchObject([
+        { id: "job_test", status: "error", error: expect.stringContaining("outcome is unknown") },
+      ])
+      expect(yield* test.session.context(test.created.id)).toHaveLength(1)
+      expect((yield* jobs.get("job_other"))?.status).toBe("running")
+    }),
+  )
+
   it.effect("recovers an untracked start as unknown-outcome error once, without restarting it", () =>
     Effect.gen(function* () {
       const test = yield* setup
