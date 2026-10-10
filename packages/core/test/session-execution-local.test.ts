@@ -1,10 +1,12 @@
 import { describe, expect } from "bun:test"
-import { Effect, Stream } from "effect"
+import { Effect, Layer, Stream } from "effect"
 import { AppNodeBuilder } from "@miao/core/effect/app-node-builder"
 import { LayerNode } from "@miao/core/effect/layer-node"
 import { Database } from "@miao/core/database/database"
 import { EventV2 } from "@miao/core/event"
-import { LocationServiceMap } from "@miao/core/location-services"
+import { LocationServiceMap, buildLocationServiceMap } from "@miao/core/location-services"
+import { SessionRunner } from "@miao/core/session/runner"
+import { node } from "@miao/core/session/runner/llm"
 import { Project } from "@miao/core/project"
 import { ProjectTable } from "@miao/core/project/sql"
 import { AbsolutePath } from "@miao/core/schema"
@@ -80,9 +82,7 @@ describe("SessionExecutionLocal", () => {
               Effect.sync(() => {
                 if (event.type === SessionEvent.Status.type) {
                   const status = (event.data as SessionEvent.Status["data"]).status
-                  seen.push(
-                    status.type === "busy" ? `status:${status.phase ?? "preparing"}` : `status:${status.type}`,
-                  )
+                  seen.push(status.type === "busy" ? `status:${status.phase ?? "preparing"}` : `status:${status.type}`)
                 }
                 if (event.type === SessionEvent.Failed.type)
                   seen.push(`failed:${(event.data as SessionEvent.Failed["data"]).name}`)
@@ -104,3 +104,65 @@ describe("SessionExecutionLocal", () => {
     ),
   )
 })
+
+const routed = testEffect(
+  AppNodeBuilder.build(
+    LayerNode.group([ApplicationTools.node, Database.node, EventV2.node, SessionStore.node, SessionExecution.node]),
+    [
+      [SessionExecution.node, SessionExecutionLocal.node],
+      [
+        LocationServiceMap.node,
+        buildLocationServiceMap([
+          [
+            node,
+            Layer.succeed(
+              SessionRunner.Service,
+              SessionRunner.Service.of({
+                run: () =>
+                  Effect.gen(function* () {
+                    const execution = yield* Effect.serviceOption(SessionExecution.Service)
+                    expect(execution._tag).toBe("Some")
+                    if (execution._tag === "None") return
+                    expect(yield* execution.value.active).toEqual(new Set([SessionV2.ID.make("ses_execution_route")]))
+                  }),
+              }),
+            ),
+          ],
+        ]),
+      ],
+    ],
+  ),
+)
+
+routed.live("Location drains retain the active process-global execution service", () =>
+  Effect.acquireUseRelease(
+    Effect.promise(() => tmpdir()),
+    (dir) =>
+      Effect.gen(function* () {
+        const database = yield* Database.Service
+        const sessionID = SessionV2.ID.make("ses_execution_route")
+        yield* database.db
+          .insert(ProjectTable)
+          .values({ id: Project.ID.global, worktree: AbsolutePath.make(dir.path), sandboxes: [] })
+          .onConflictDoNothing()
+          .run()
+          .pipe(Effect.orDie)
+        yield* database.db
+          .insert(SessionTable)
+          .values({
+            id: sessionID,
+            project_id: Project.ID.global,
+            slug: sessionID,
+            directory: dir.path,
+            title: "route",
+            version: "test",
+          })
+          .run()
+          .pipe(Effect.orDie)
+        const execution = yield* SessionExecution.Service
+        yield* execution.resume(sessionID)
+        expect(yield* execution.active).toEqual(new Set())
+      }),
+    (dir) => Effect.promise(() => dir[Symbol.asyncDispose]()),
+  ),
+)

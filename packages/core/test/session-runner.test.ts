@@ -430,34 +430,43 @@ const config = Layer.succeed(
       ]),
   }),
 )
-const runnerLayer = AppNodeBuilder.build(
-  LayerNode.group([SessionRunnerLLM.node, Database.node, EventV2.node, SessionStore.node]), [
-  [Snapshot.node, Snapshot.noopLayer],
-  [LayerNodePlatform.llmClient, client],
-  [SessionRunnerModel.node, models],
-  [SystemContextRegistry.node, systemContext],
-  [Location.node, Location.boundNode({ directory: AbsolutePath.make("/project") })],
-  [SkillGuidance.node, skillGuidance],
-  [ReferenceGuidance.node, referenceGuidance],
-  [PermissionV2.node, permission],
-  [Config.node, config],
-],
-)
-const makeExecution = (maxConcurrent?: number) =>
+const runnerLayer = (directory: string) =>
+  AppNodeBuilder.build(
+    LayerNode.group([SessionRunnerLLM.node, Database.node, EventV2.node, SessionStore.node, BackgroundJob.node]),
+    [
+      [Snapshot.node, Snapshot.noopLayer],
+      [LayerNodePlatform.llmClient, client],
+      [SessionRunnerModel.node, models],
+      [SystemContextRegistry.node, systemContext],
+      [Location.node, Location.boundNode({ directory: AbsolutePath.make(directory) })],
+      [SkillGuidance.node, skillGuidance],
+      [ReferenceGuidance.node, referenceGuidance],
+      [PermissionV2.node, permission],
+      [Config.node, config],
+    ],
+  )
+const makeExecution = (maxConcurrent?: number, directory = "/project") =>
   Layer.effect(
-  SessionExecution.Service,
-  Effect.gen(function* () {
-    const sessionRunner = yield* SessionRunner.Service
+    SessionExecution.Service,
+    Effect.gen(function* () {
+      const sessionRunner = yield* SessionRunner.Service
+      const jobs = yield* BackgroundJob.Service
       const db = (yield* Database.Service).db
       const events = yield* EventV2.Service
       const store = yield* SessionStore.Service
-    let wake: (sessionID: SessionV2.ID) => Effect.Effect<void> = () => Effect.void
+      let wake: (sessionID: SessionV2.ID) => Effect.Effect<void> = () => Effect.void
       let delegation: SessionDelegation.API | undefined
-    const coordinator = yield* SessionRunCoordinator.make<SessionV2.ID, SessionRunner.RunError>({
+      const coordinator = yield* SessionRunCoordinator.make<SessionV2.ID, SessionRunner.RunError>({
         maxConcurrent,
-        drain: (sessionID, force) => sessionRunner.run({ sessionID, force, wake, delegation }),
-    })
-    wake = coordinator.wake
+        drain: (sessionID, force) =>
+          sessionRunner
+            .run({ sessionID, force, wake, delegation })
+            .pipe(
+              Effect.provideService(SessionExecution.Service, execution),
+              Effect.provideService(BackgroundJob.Service, jobs),
+            ),
+      })
+      wake = coordinator.wake
       delegation = yield* SessionDelegation.make({
         db,
         events,
@@ -467,18 +476,20 @@ const makeExecution = (maxConcurrent?: number) =>
         executions: coordinator.executions,
         interruptIf: coordinator.interruptIf,
       })
-    return SessionExecution.Service.of({
-      active: coordinator.active,
-      executions: coordinator.executions,
-      status: coordinator.status,
-      interruptIf: coordinator.interruptIf,
-      resume: coordinator.run,
-      wake: coordinator.wake,
-      interrupt: coordinator.interrupt,
-      wait: coordinator.awaitIdle,
-    })
-  }),
-).pipe(Layer.provide(runnerLayer))
+      const execution = SessionExecution.Service.of({
+        active: coordinator.active,
+        executions: coordinator.executions,
+        status: coordinator.status,
+        interruptIf: coordinator.interruptIf,
+        resume: coordinator.run,
+        wake: coordinator.wake,
+        interrupt: coordinator.interrupt,
+        wait: coordinator.awaitIdle,
+      })
+      return execution
+    }),
+  ).pipe(Layer.provide(runnerLayer(directory)))
+
 const appNodes = [
   Database.node,
   EventV2.node,
@@ -534,7 +545,10 @@ const itWithSinglePermit = testEffect(
 // to bind a Location that exists on disk.
 const bashLocation = mkdtempSync(join(os.tmpdir(), "miao-bash-harness-"))
 const itWithBash = testEffect(
-  AppNodeBuilder.build(LayerNode.group([...appNodes, BashTool.node]), appOverrides(location(bashLocation))),
+  AppNodeBuilder.build(LayerNode.group([...appNodes, BashTool.node]), [
+    ...appOverrides(location(bashLocation)).filter(([node]) => node !== SessionExecution.node),
+    [SessionExecution.node, makeExecution(undefined, bashLocation)],
+  ]),
 )
 const itWithMonitor = testEffect(
   AppNodeBuilder.build(
@@ -1823,6 +1837,82 @@ describe("SessionRunnerLLM", () => {
       const history = yield* session.context(sessionID)
       expect(history.filter((message) => message.type === "assistant").at(-1)).toMatchObject({
         content: [{ type: "text", text: "recovered answer" }],
+      })
+    }),
+  )
+
+  itWithBash.live("background completion wakes an idle Session and runs the next turn without a human prompt", () =>
+    Effect.gen(function* () {
+      yield* setup
+      const database = yield* Database.Service
+      yield* database.db
+        .update(SessionTable)
+        .set({ directory: bashLocation })
+        .where(eq(SessionTable.id, sessionID))
+        .run()
+        .pipe(Effect.orDie)
+      const session = yield* SessionV2.Service
+      const execution = yield* SessionExecution.Service
+      const directory = yield* Effect.acquireRelease(
+        Effect.promise(() => fs.mkdtemp(join(os.tmpdir(), "miao-background-wake-"))),
+        (directory) => Effect.promise(() => fs.rm(directory, { recursive: true, force: true })),
+      )
+      const release = join(directory, "release")
+      const marker = join(directory, "marker")
+      const resumed = yield* Deferred.make<void>()
+      const finish = yield* Deferred.make<void>()
+      responses = [
+        [
+          LLMEvent.stepStart({ index: 0 }),
+          LLMEvent.toolCall({
+            id: "background-wake",
+            name: "bash",
+            input: {
+              command: `while [ ! -f "${release}" ]; do sleep 0.01; done; printf once >> "${marker}"; printf completed`,
+              timeout: 5000,
+              run_in_background: true,
+            },
+          }),
+          LLMEvent.stepFinish({ index: 0, reason: "tool-calls" }),
+          LLMEvent.finish({ reason: "tool-calls" }),
+        ],
+        [
+          LLMEvent.stepStart({ index: 0 }),
+          LLMEvent.textStart({ id: "waiting" }),
+          LLMEvent.textDelta({ id: "waiting", text: "Waiting for the job" }),
+          LLMEvent.textEnd({ id: "waiting" }),
+          LLMEvent.stepFinish({ index: 0, reason: "stop" }),
+          LLMEvent.finish({ reason: "stop" }),
+        ],
+        [
+          LLMEvent.stepStart({ index: 0 }),
+          LLMEvent.textStart({ id: "resumed" }),
+          LLMEvent.textDelta({ id: "resumed", text: "Resumed after completion" }),
+          LLMEvent.textEnd({ id: "resumed" }),
+          LLMEvent.stepFinish({ index: 0, reason: "stop" }),
+          LLMEvent.finish({ reason: "stop" }),
+        ],
+      ]
+      yield* session.prompt({
+        sessionID,
+        prompt: Prompt.make({ text: "Run the job and continue after it finishes" }),
+        resume: false,
+      })
+      yield* session.resume(sessionID)
+      expect((yield* execution.active).has(sessionID)).toBe(false)
+      expect(requests).toHaveLength(2)
+      streamStarted = resumed
+      streamGate = finish
+      yield* Effect.promise(() => Bun.write(release, "go"))
+      yield* Deferred.await(resumed).pipe(Effect.timeout("5 seconds"))
+      yield* Deferred.succeed(finish, undefined)
+      yield* execution.wait(sessionID)
+      expect(requests).toHaveLength(3)
+      expect(yield* Effect.promise(() => Bun.file(marker).text())).toBe("once")
+      const history = yield* session.context(sessionID)
+      expect(history.filter((message) => message.type === "user")).toHaveLength(1)
+      expect(history.filter((message) => message.type === "assistant").at(-1)).toMatchObject({
+        content: [{ type: "text", text: "Resumed after completion" }],
       })
     }),
   )
