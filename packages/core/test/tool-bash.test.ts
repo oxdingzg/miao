@@ -17,6 +17,7 @@ import { BackgroundJob } from "@miao/core/background-job"
 import { EventV2 } from "@miao/core/event"
 import { AbsolutePath } from "@miao/core/schema"
 import { SessionV2 } from "@miao/core/session"
+import { SessionExecution } from "@miao/core/session/execution"
 import { ShellEnvironment } from "@miao/core/shell/environment"
 import { BashTool } from "@miao/core/tool/bash"
 import { ToolRegistry } from "@miao/core/tool/registry"
@@ -119,10 +120,21 @@ const eventV2 = Layer.succeed(
       }),
   } as unknown as EventV2.Interface,
 )
+const woken: Array<string> = []
+const execution = Layer.succeed(
+  SessionExecution.Service,
+  {
+    wake: (sessionID: SessionV2.ID) =>
+      Effect.sync(() => {
+        woken.push(sessionID)
+      }),
+  } as unknown as SessionExecution.Interface,
+)
 
 const reset = () => {
   assertions.length = 0
   runs.length = 0
+  woken.length = 0
   denyAction = undefined
   runFailure = undefined
   checks.length = 0
@@ -173,13 +185,14 @@ const withTool = <A, E, R>(
   }).pipe(
     Effect.provide(
       AppNodeBuilder.build(
-        LayerNode.group([ToolRegistry.node, ToolRegistry.toolsNode, LocationMutation.node, BashTool.node, BackgroundJob.node, EventV2.node]),
+        LayerNode.group([ToolRegistry.node, ToolRegistry.toolsNode, LocationMutation.node, BashTool.node, BackgroundJob.node, EventV2.node, SessionExecution.node]),
         [
           [Location.node, activeLocation],
           [PermissionV2.node, permission],
           [AppProcess.node, processLayer],
           [Config.node, config],
           [EventV2.node, eventV2],
+          [SessionExecution.node, execution],
           [ToolOutputStore.node, ToolOutputStore.nodeWithoutConfig],
           [ShellEnvironment.node, shellEnvironment],
         ],
@@ -208,11 +221,21 @@ describe("BashTool", () => {
             yield* settleTool(registry, call({ command: "echo hi", run_in_background: true }, "call-bg-lifecycle"))
             const deadline = Date.now() + 5_000
             while (published.length < 2 && Date.now() < deadline) yield* Effect.sleep("10 millis")
-            const statuses = published.map(
-              (entry) =>
-                (entry.data as { metadata: { backgroundJob: { status: string } } }).metadata.backgroundJob.status,
-            )
-            expect(statuses).toEqual(["started", "finished"])
+            expect(published.map((entry) => entry.type)).toEqual([
+              "session.next.synthetic",
+              "session.next.notification.admitted",
+            ])
+            const started = published[0]!.data as { metadata: { backgroundJob: { status: string } } }
+            expect(started.metadata.backgroundJob.status).toBe("started")
+            const settled = published[1]!.data as {
+              text: string
+              metadata: { backgroundJob: { status: string; command: string } }
+            }
+            expect(settled.metadata.backgroundJob.status).toBe("finished")
+            expect(settled.metadata.backgroundJob.command).toBe("echo hi")
+            expect(settled.text).toContain("[exit code 0]")
+            // The settlement wakes the session so an idle drain cannot strand it.
+            expect(woken).toEqual([sessionID])
           }),
         )
       },

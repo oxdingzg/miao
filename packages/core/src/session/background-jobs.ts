@@ -8,7 +8,7 @@ import type { EventV2 } from "../event"
 import { SessionEvent } from "./event"
 import { SessionMessage } from "./message"
 import type { SessionSchema } from "./schema"
-import { SessionMessageTable } from "./sql"
+import { SessionMessageTable, SessionNotificationTable } from "./sql"
 
 const Record = Schema.Struct({
   id: Schema.String,
@@ -49,8 +49,28 @@ export const make = (input: {
       .orderBy(asc(SessionMessageTable.seq))
       .all()
       .pipe(Effect.orDie)
+    // Settled jobs arrive as admitted notifications rather than transcript
+    // lines, so their outcomes are durable in the notification table instead.
+    const settled = yield* input.db
+      .select({
+        record: sql<unknown>`json_extract(${SessionNotificationTable.metadata}, '$.backgroundJob')`.mapWith((value) =>
+          Schema.decodeUnknownOption(Schema.UnknownFromJsonString)(value),
+        ),
+        text: SessionNotificationTable.text,
+        at: SessionNotificationTable.time_created,
+      })
+      .from(SessionNotificationTable)
+      .where(
+        and(
+          eq(SessionNotificationTable.session_id, input.sessionID),
+          sql`json_type(${SessionNotificationTable.metadata}, '$.backgroundJob') = 'object'`,
+        ),
+      )
+      .orderBy(asc(SessionNotificationTable.admitted_seq))
+      .all()
+      .pipe(Effect.orDie)
     const jobs = new Map<string, BackgroundJob.Info>()
-    for (const row of rows) {
+    for (const row of [...rows, ...settled]) {
       const parsed = Option.isSome(row.record) ? decode(row.record.value) : Option.none()
       if (Option.isNone(parsed)) continue
       const record = parsed.value

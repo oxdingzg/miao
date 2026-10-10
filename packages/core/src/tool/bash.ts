@@ -8,6 +8,7 @@ import { ChildProcess } from "effect/unstable/process"
 import { Config } from "../config"
 import { EventV2 } from "../event"
 import { Identifier } from "../id/id"
+import { SessionExecution } from "../session/execution"
 import { SessionEvent } from "../session/event"
 import { SessionMessage } from "../session/message"
 import { makeLocationNode } from "../effect/app-node"
@@ -744,8 +745,12 @@ const executionLayer = Layer.effect(
               return yield* new ToolFailure({ message: "Background jobs are not available in this runtime." })
             // Durable lifecycle records, when the process provides the event
             // service: the session sees the job after a restart, and a crash
-            // mid-job is visible as a start without a finish.
+            // mid-job is visible as a start without a finish. The settlement is
+            // admitted as a notification and wakes the session, so a job that
+            // settles after the drain that started it cannot strand its outcome
+            // in an idle session.
             const events = yield* Effect.serviceOption(EventV2.Service)
+            const execution = yield* Effect.serviceOption(SessionExecution.Service)
             const announce = (text: string, metadata: Record<string, unknown>) =>
               Option.isSome(events)
                 ? Effect.gen(function* () {
@@ -757,6 +762,47 @@ const executionLayer = Layer.effect(
                       metadata,
                     })
                   }).pipe(Effect.ignore)
+                : Effect.void
+            const settle = (text: string) =>
+              Option.isSome(events)
+                ? Effect.gen(function* () {
+                    const metadata = {
+                      backgroundJob: {
+                        id,
+                        command: input.command,
+                        status: "finished",
+                        ...(streamed === undefined ? {} : { outputPath: streamed }),
+                      },
+                    }
+                    if (Option.isSome(execution)) {
+                      yield* events.value.publish(SessionEvent.NotificationAdmitted, {
+                        sessionID: context.sessionID,
+                        messageID: SessionMessage.ID.create(),
+                        timestamp: yield* DateTime.now,
+                        text,
+                        metadata,
+                      })
+                      // Recording text alone does not wake an idle Session. Admission
+                      // precedes the advisory wake so the runner sees durable work.
+                      yield* execution.value.wake(context.sessionID)
+                      return
+                    }
+                    yield* events.value.publish(SessionEvent.Synthetic, {
+                      sessionID: context.sessionID,
+                      messageID: SessionMessage.ID.create(),
+                      timestamp: yield* DateTime.now,
+                      text,
+                      metadata,
+                    })
+                  }).pipe(
+                    Effect.tapCause((cause) =>
+                      Effect.logWarning("Failed to deliver background job settlement", {
+                        sessionID: context.sessionID,
+                        cause,
+                      }),
+                    ),
+                    Effect.ignore,
+                  )
                 : Effect.void
             const id = Identifier.ascending("job")
             yield* announce(`Background job ${id} started: ${input.command}`, {
@@ -775,11 +821,7 @@ const executionLayer = Layer.effect(
               run: run.pipe(
                 Effect.map((result) => modelOutput(result)),
                 Effect.catchCause((cause) => Effect.succeed(`Background command failed: ${cause}`)),
-                Effect.tap((text) =>
-                  announce(`Background job ${id} finished.\n${text}`, {
-                    backgroundJob: { id, command: input.command, status: "finished" },
-                  }),
-                ),
+                Effect.tap((text) => settle(`Background job ${id} finished.\n${text}`)),
               ),
             })
             return {
