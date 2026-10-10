@@ -33,6 +33,9 @@ export const SessionHandler = HttpApiBuilder.group(Api, "server.session", (handl
   Effect.gen(function* () {
     const session = yield* SessionV2.Service
     const db = (yield* Database.Service).db
+    const events = yield* EventV2.Service
+    const schedule = Option.getOrUndefined(yield* Effect.serviceOption(SessionSchedule.Service))
+    const jobs = Option.getOrUndefined(yield* Effect.serviceOption(BackgroundJob.Service))
 
     return handlers
       .handle(
@@ -588,9 +591,6 @@ export const SessionHandler = HttpApiBuilder.group(Api, "server.session", (handl
               ),
             ),
           )
-          const schedule = Option.getOrUndefined(yield* Effect.serviceOption(SessionSchedule.Service))
-          const jobs = Option.getOrUndefined(yield* Effect.serviceOption(BackgroundJob.Service))
-          const events = yield* EventV2.Service
           const background = SessionBackgroundJobs.make({ db, events, sessionID: ctx.params.sessionID, jobs })
           return {
             data: {
