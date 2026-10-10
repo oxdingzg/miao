@@ -146,7 +146,10 @@ export const fromWebSocket = (
 ): Effect.Effect<WebSocketConnection, LLMError> =>
   Effect.gen(function* () {
     yield* waitOpen(ws, input)
-    const messages = yield* Queue.bounded<string | Uint8Array, LLMError | Cause.Done<void>>(128)
+    // WebSocket callbacks cannot suspend to apply Effect queue backpressure.
+    // A bounded queue with offerUnsafe silently drops frames when consumers are
+    // slower than the provider, including the terminal frame on pooled sockets.
+    const messages = yield* Queue.unbounded<string | Uint8Array, LLMError | Cause.Done<void>>()
 
     const onMessage = (event: MessageEvent) => {
       if (typeof event.data === "string") return Queue.offerUnsafe(messages, event.data)
