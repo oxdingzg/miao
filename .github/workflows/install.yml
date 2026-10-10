@@ -17,11 +17,17 @@ jobs:
       matrix:
         host: [ubuntu-latest, macos-latest]
     runs-on: ${{ matrix.host }}
-    timeout-minutes: 60
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+      - name: Resolve latest release with authenticated API
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          version=$(gh api repos/oxdingzg/miao/releases/latest --jq '.tag_name')
+          echo "MIAO_VERSION=${version#v}" >> "$GITHUB_ENV"
       - name: Install with the bash installer
-        run: bash install --no-modify-path
+        run: bash install --no-modify-path --version "$MIAO_VERSION"
       - name: Run miao
         run: |
           "$HOME/.miao/bin/miao" --version
@@ -34,12 +40,19 @@ jobs:
         # powershell = Windows PowerShell 5.1, pwsh = PowerShell 7
         shell: [powershell, pwsh]
     runs-on: windows-2025
-    timeout-minutes: 60
+    timeout-minutes: 10
     defaults:
       run:
         shell: ${{ matrix.shell }}
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+      - name: Resolve latest release with authenticated API
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          version=$(gh api repos/oxdingzg/miao/releases/latest --jq '.tag_name')
+          echo "MIAO_VERSION=${version#v}" >> "$GITHUB_ENV"
       - name: Install the latest release through irm | iex
         run: Get-Content -Raw ./install.ps1 | Invoke-Expression
       - name: Run miao from the user PATH
