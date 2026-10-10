@@ -1,7 +1,9 @@
 import { expect, test } from "bun:test"
-import { LLM, LLMEvent, Message } from "@miao/llm"
+import { LLM, LLMEvent, Message, type LLMRequest } from "@miao/llm"
 import { OpenAIChat } from "@miao/llm/protocols/openai-chat"
-import { Effect, Stream } from "effect"
+import { DateTime, Effect, Stream } from "effect"
+import { SessionMessage } from "@miao/core/session/message"
+import { Token } from "@miao/core/util/token"
 import { SessionCompaction } from "@miao/core/session/compaction"
 import { SessionSchema } from "@miao/core/session/schema"
 
@@ -18,7 +20,7 @@ const compactionInput = (main: ReturnType<typeof model>, small: ReturnType<typeo
   }) as never
 
 const summarizeHarness = (attempts: Array<Stream.Stream<never, never>>) => {
-  const requests: Array<{ readonly model: unknown }> = []
+  const requests: LLMRequest[] = []
   const published: string[] = []
   let index = 0
   const compaction = SessionCompaction.make({
@@ -29,14 +31,12 @@ const summarizeHarness = (attempts: Array<Stream.Stream<never, never>>) => {
       },
     } as never,
     llm: {
-      stream: (request: { readonly model: unknown }) => {
+      stream: (request: LLMRequest) => {
         requests.push(request)
         return attempts[Math.min(index++, attempts.length - 1)] as never
       },
     },
-    config: [
-      { type: "document", info: { compaction: { summarize_small: true, keep: { tokens: 1 } } } },
-    ] as never,
+    config: [{ type: "document", info: { compaction: { summarize_small: true, keep: { tokens: 1 } } } }] as never,
   })
   return { compaction, requests, published }
 }
@@ -45,11 +45,11 @@ const empty = Stream.empty as Stream.Stream<never, never>
 const summary = (text: string) => Stream.make(LLMEvent.textDelta({ id: "c", text })) as Stream.Stream<never, never>
 
 const overflowHarness = () => {
-  const requests: Array<{ readonly model: unknown }> = []
+  const requests: LLMRequest[] = []
   const compaction = SessionCompaction.make({
     events: { publish: () => Effect.succeed(undefined) } as never,
     llm: {
-      stream: (request: { readonly model: unknown }) => {
+      stream: (request: LLMRequest) => {
         requests.push(request)
         return summary("summary") as never
       },
@@ -213,7 +213,7 @@ test("compaction still triggers when the request text fills the window", async (
   } as never
 
   expect(await Effect.runPromise(compaction.compactIfNeeded(input))).toBe(true)
-  expect(requests).toHaveLength(1)
+  expect(requests.length).toBeGreaterThan(0)
 })
 
 test("compaction reserves the requested output instead of the model output ceiling", async () => {
@@ -290,11 +290,11 @@ test("compaction pins the latest goal into the retained context", async () => {
 })
 
 const customHarness = (config: unknown, attempt: Stream.Stream<never, never>) => {
-  const requests: Array<{ readonly model: unknown }> = []
+  const requests: LLMRequest[] = []
   const compaction = SessionCompaction.make({
     events: { publish: () => Effect.succeed(undefined) } as never,
     llm: {
-      stream: (request: { readonly model: unknown }) => {
+      stream: (request: LLMRequest) => {
         requests.push(request)
         return attempt as never
       },
@@ -377,4 +377,57 @@ test("auto-compaction stops after repeated summary failures until it is reset", 
   await Effect.runPromise(compaction.reset(SessionSchema.ID.make("ses_breaker")))
   expect(await run()).toBe(false)
   expect(requests).toHaveLength(4)
+})
+
+const largeRecoveryInput = () => {
+  const main = model("main", 1_000_000)
+  const history = `BEGIN_HISTORY ${"目录 状态 验证。\n".repeat(12_000)} END_HISTORY`
+  return {
+    history,
+    input: {
+      sessionID: SessionSchema.ID.make("ses_bounded_recovery"),
+      entries: [
+        {
+          seq: 1,
+          message: SessionMessage.User.make({
+            id: SessionMessage.ID.create(),
+            type: "user",
+            text: history,
+            time: { created: DateTime.makeUnsafe(123) },
+          }),
+        },
+      ],
+      model: main,
+      request: LLM.request({ model: main, messages: [Message.user(history)] }),
+    },
+  }
+}
+
+test("overflow recovery summarizes every part of a large multilingual history under a bounded request budget", async () => {
+  const { history, input } = largeRecoveryInput()
+  const { compaction, requests, published } = summarizeHarness([summary("anchored checkpoint")])
+  expect(await Effect.runPromise(compaction.compactAfterOverflow(input))).toBe(true)
+  expect(requests.length).toBeGreaterThan(1)
+  const segments = requests.map((request) => {
+    const prompt = request.messages[0].content[0]
+    if (prompt.type !== "text") throw new Error("expected text summary request")
+    expect(
+      Token.measureValue({ system: request.system, messages: request.messages }, Token.count) +
+        (request.generation?.maxTokens ?? 0),
+    ).toBeLessThanOrEqual(64_000)
+    return prompt.text.split("<conversation>\n")[1].split("\n</conversation>")[0]
+  })
+  expect(segments.join("")).toBe(`[User]: ${history}`)
+  expect(published).toEqual(["anchored checkpoint"])
+  const second = requests[1].messages[0].content[0]
+  if (second.type !== "text") throw new Error("expected text summary request")
+  expect(second.text).toContain("<prior-summary>\nanchored checkpoint")
+})
+
+test("a failed intermediate summary never replaces the original long conversation", async () => {
+  const { input } = largeRecoveryInput()
+  const { compaction, requests, published } = summarizeHarness([summary("intermediate only"), empty])
+  expect(await Effect.runPromise(compaction.compactAfterOverflow(input))).toBe(false)
+  expect(requests).toHaveLength(2)
+  expect(published).toEqual([])
 })

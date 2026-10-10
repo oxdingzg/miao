@@ -1,3 +1,5 @@
+import { SessionStateProvider, useSessionState } from "./context/session-state"
+import type { SessionState } from "./util/session-state"
 import { render, TimeToFirstDraw, useRenderer, useTerminalDimensions } from "@opentui/solid"
 import { registerOpencodeSpinner } from "./component/register-spinner"
 import { createDefaultOpenTuiKeymap } from "@opentui/keymap/opentui"
@@ -174,7 +176,7 @@ export type TuiInput = {
   args: Args
   config: TuiConfig.Resolved
   onSnapshot?: () => Promise<string[]>
-  onSessionChange?: (session?: { sessionID?: string; cwd?: string; state: "idle" | "processing" | "awaiting" }) => void
+  onSessionChange?: (session?: { sessionID?: string; cwd?: string; state: SessionState }) => void
   directory?: string
   fetch?: typeof fetch
   headers?: RequestInit["headers"]
@@ -347,37 +349,39 @@ export const run = Effect.fn("Tui.run")(function* (input: TuiInput) {
                                           <PermissionProvider>
                                             <ProjectProvider>
                                               <SyncProvider>
-                                                <DataProvider>
-                                                  <ThemeProvider mode={mode}>
-                                                    <LocalProvider>
-                                                      <PromptStashProvider>
-                                                        {/* Dialogs render from DialogProvider's own scope, so
+                                                <SessionStateProvider>
+                                                  <DataProvider>
+                                                    <ThemeProvider mode={mode}>
+                                                      <LocalProvider>
+                                                        <PromptStashProvider>
+                                                          {/* Dialogs render from DialogProvider's own scope, so
                                                             /remote-control only sees this context when it is
                                                             provided above DialogProvider. */}
-                                                        <RemoteLocalProvider value={input.remote}>
-                                                          <DialogProvider>
-                                                            <FrecencyProvider>
-                                                              <PromptHistoryProvider>
-                                                                <PromptRefProvider>
-                                                                  <EditorContextProvider>
-                                                                    <LocationProvider>
-                                                                      <App
-                                                                        onSnapshot={input.onSnapshot}
-                                                                        onSessionChange={input.onSessionChange}
-                                                                        pluginHost={input.pluginHost}
-                                                                        runtimeNotice={input.runtimeNotice}
-                                                                      />
-                                                                    </LocationProvider>
-                                                                  </EditorContextProvider>
-                                                                </PromptRefProvider>
-                                                              </PromptHistoryProvider>
-                                                            </FrecencyProvider>
-                                                          </DialogProvider>
-                                                        </RemoteLocalProvider>
-                                                      </PromptStashProvider>
-                                                    </LocalProvider>
-                                                  </ThemeProvider>
-                                                </DataProvider>
+                                                          <RemoteLocalProvider value={input.remote}>
+                                                            <DialogProvider>
+                                                              <FrecencyProvider>
+                                                                <PromptHistoryProvider>
+                                                                  <PromptRefProvider>
+                                                                    <EditorContextProvider>
+                                                                      <LocationProvider>
+                                                                        <App
+                                                                          onSnapshot={input.onSnapshot}
+                                                                          onSessionChange={input.onSessionChange}
+                                                                          pluginHost={input.pluginHost}
+                                                                          runtimeNotice={input.runtimeNotice}
+                                                                        />
+                                                                      </LocationProvider>
+                                                                    </EditorContextProvider>
+                                                                  </PromptRefProvider>
+                                                                </PromptHistoryProvider>
+                                                              </FrecencyProvider>
+                                                            </DialogProvider>
+                                                          </RemoteLocalProvider>
+                                                        </PromptStashProvider>
+                                                      </LocalProvider>
+                                                    </ThemeProvider>
+                                                  </DataProvider>
+                                                </SessionStateProvider>
                                               </SyncProvider>
                                             </ProjectProvider>
                                           </PermissionProvider>
@@ -440,6 +444,7 @@ function App(props: {
   const pluginRuntime = usePluginRuntime()
   const attention = createTuiAttention({ renderer, config: tuiConfig, kv })
   const clipboard = useClipboard()
+  const sessionState = useSessionState()
 
   onMount(() => {
     if (props.runtimeNotice) toast.show({ message: props.runtimeNotice, variant: "warning", duration: 15000 })
@@ -449,16 +454,10 @@ function App(props: {
     if (!props.onSessionChange) return
     const sessionID = route.data.type === "session" ? route.data.sessionID : undefined
     const session = sessionID ? sync.session.get(sessionID) : undefined
-    const pending =
-      session && (sync.data.permission[session.id]?.length ?? 0) + (sync.data.question[session.id]?.length ?? 0) > 0
-    const busy =
-      session &&
-      sync.data.session_status[session.id]?.type !== undefined &&
-      sync.data.session_status[session.id]?.type !== "idle"
     props.onSessionChange({
       sessionID: session?.id,
       cwd: session?.location.directory,
-      state: pending ? "awaiting" : busy ? "processing" : "idle",
+      state: sessionState.state(),
     })
   })
   onCleanup(() => props.onSessionChange?.())
@@ -736,9 +735,7 @@ function App(props: {
           if (route.data.type !== "session") return
           const workspace = currentWorktreeWorkspace()
           const location =
-            workspace?.directory != null
-              ? { directory: workspace.directory, workspaceID: workspace.id }
-              : undefined
+            workspace?.directory != null ? { directory: workspace.directory, workspaceID: workspace.id } : undefined
           const model = local.model.current()
           void sdk.api.sessions
             .create(

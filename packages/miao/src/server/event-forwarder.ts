@@ -1,6 +1,7 @@
 export * as EventForwarder from "./event-forwarder"
 
 import { EventV2 } from "@miao/core/event"
+import { ClientEvents } from "@miao/server/client-events"
 import { Effect, Layer, Context } from "effect"
 import { makeGlobalNode } from "@miao/core/effect/app-node"
 import { GlobalBus } from "@/bus/global"
@@ -20,7 +21,8 @@ const layer = Layer.effect(
   Service,
   Effect.gen(function* () {
     const events = yield* EventV2.Service
-    const unsubscribe = yield* events.listen((event) =>
+    const clients = yield* ClientEvents.Service
+    const forward: EventV2.Subscriber = (event) =>
       Effect.gen(function* () {
         const ctx = yield* InstanceRef
         const workspaceID = (yield* WorkspaceRef) ?? event.location?.workspaceID
@@ -49,11 +51,12 @@ const layer = Layer.effect(
             },
           },
         })
-      }),
-    )
-    yield* Effect.addFinalizer(() => unsubscribe)
+      })
+    const unsubscribe = yield* events.listen(forward)
+    const unsubscribeClients = yield* clients.listen(forward)
+    yield* Effect.addFinalizer(() => unsubscribe.pipe(Effect.andThen(unsubscribeClients)))
     return Service.of({})
   }),
 )
 
-export const node = makeGlobalNode({ service: Service, layer, deps: [EventV2.node] })
+export const node = makeGlobalNode({ service: Service, layer, deps: [EventV2.node, ClientEvents.node] })

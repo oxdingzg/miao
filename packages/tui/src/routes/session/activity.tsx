@@ -1,9 +1,9 @@
 import type { Accessor } from "solid-js"
-import { createEffect, createMemo, onCleanup, Show } from "solid-js"
+import { createMemo, Show } from "solid-js"
 import { Spinner, useSecond } from "../../component/spinner"
 import { useSync } from "../../context/sync"
 import { useTheme } from "../../context/theme"
-import { waitingForResponse, watchSessionStatus, statusPhase, type SessionPhase } from "../../context/session-status"
+import { waitingForResponse, statusPhase, type SessionPhase } from "../../context/session-status"
 import { Locale } from "../../util/locale"
 import { toolDisplay } from "../../util/tool-display"
 import type {
@@ -154,19 +154,6 @@ export function SessionActivity(props: { sessionID: string }) {
     const current = status()
     const since = current?.type === "busy" ? current.since : undefined
     return since ?? lastOutput()
-  })
-
-  createEffect(() => {
-    const sessionID = props.sessionID
-    const abort = new AbortController()
-    const stop = watchSessionStatus({
-      read: () => sync.session.syncStatus(sessionID, abort.signal),
-      onError: (error) => console.error("Failed to read session execution status", error),
-    })
-    onCleanup(() => {
-      stop()
-      abort.abort()
-    })
   })
 
   const error = createMemo(() => {

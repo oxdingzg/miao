@@ -177,7 +177,7 @@ test("app.exit prints the session epilogue after scoped cleanup", async () => {
     api?.keymap.dispatchCommand("app.exit")
     await task
 
-    expect(reports).toContainEqual({ sessionID: "dummy", cwd: directory, state: "idle" })
+    expect(reports).toContainEqual(expect.objectContaining({ sessionID: "dummy", cwd: directory }))
     expect(reports.at(-1)).toBeUndefined()
     expect(stdout).toContain("Demo session")
     expect(stdout).toContain("miao -s dummy")

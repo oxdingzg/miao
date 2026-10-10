@@ -6855,28 +6855,135 @@ describe("SessionRunnerLLM", () => {
     }),
   )
 
-  it.effect("does not replay a connection failure after publishing assistant text", () =>
+  it.effect("continues from committed partial output without replaying the failed request", () =>
     Effect.gen(function* () {
       yield* setup
       const session = yield* SessionV2.Service
       yield* session.prompt({ sessionID, prompt: Prompt.make({ text: "Keep partial output" }), resume: false })
-      const failure = new LLMError({
-        module: "test",
-        method: "stream",
-        reason: new TransportReason({ message: "connection reset", kind: "connection-closed" }),
-      })
-      responseStream = Stream.concat(
-        Stream.fromIterable(fragmentFixture("text", "partial-connection", ["Partial"]).partialEvents),
-        Stream.fail(failure),
-      )
+      let attempts = 0
+      responseFor = () => Stream.unwrap(Effect.sync(() =>
+        attempts++ === 0
+          ? Stream.concat(
+              Stream.fromIterable(fragmentFixture("text", "partial-connection", ["Partial"]).partialEvents),
+              Stream.fail(new LLMError({
+                module: "test", method: "stream",
+                reason: new TransportReason({ message: "provider closed the stream without a terminal frame", kind: "connection-closed" }),
+              })),
+            )
+          : Stream.fromIterable(fragmentFixture("text", "continued", ["Recovered"]).completeEvents),
+      ))
+      requests.length = 0
+      yield* session.resume(sessionID)
+      expect(requests).toHaveLength(2)
+      expect(JSON.stringify(requests[1].messages)).toContain("Partial")
+      expect(JSON.stringify(requests[1].messages)).toContain("previous provider response was interrupted")
+      const context = yield* session.context(sessionID)
+      const assistants = context.filter((message) => message.type === "assistant")
+      expect(assistants).toHaveLength(2)
+      expect(assistants[0]).toMatchObject({ finish: "error", content: [{ type: "text", text: "Partial" }] })
+      expect(assistants[1]).toMatchObject({ finish: "stop", content: [{ type: "text", text: "Recovered" }] })
+    }),
+  )
+
+  it.effect("settles an unexecuted prepared tool before continuing a truncated response", () =>
+    Effect.gen(function* () {
+      yield* setup
+      const session = yield* SessionV2.Service
+      executions.length = 0
+      let attempts = 0
+      responseFor = () => Stream.unwrap(Effect.sync(() => {
+        const attempt = attempts++
+        if (attempt === 0) return Stream.concat(
+          Stream.fromIterable([
+            ...fragmentFixture("text", "partial", ["Preparing next action"]).partialEvents,
+            LLMEvent.toolInputStart({ id: "unfinished", name: "echo" }),
+            LLMEvent.toolInputDelta({ id: "unfinished", name: "echo", text: '{"text":"never executed' }),
+          ]),
+          Stream.fail(new LLMError({ module: "test", method: "stream", reason: new TransportReason({ message: "missing terminal frame", kind: "connection-closed" }) })),
+        )
+        if (attempt === 1) return Stream.fromIterable([
+          LLMEvent.stepStart({ index: 0 }),
+          LLMEvent.toolCall({ id: "complete-call", name: "echo", input: { text: "executed once" } }),
+          LLMEvent.stepFinish({ index: 0, reason: "tool-calls" }),
+          LLMEvent.finish({ reason: "tool-calls" }),
+        ])
+        return Stream.fromIterable(fragmentFixture("text", "final", ["Done"]).completeEvents)
+      }))
+      yield* session.prompt({ sessionID, prompt: Prompt.make({ text: "Recover preparing command" }), resume: false })
+      yield* session.resume(sessionID)
+      expect(attempts).toBe(3)
+      expect(executions).toEqual(["executed once"])
+      const context = yield* session.context(sessionID)
+      const first = context.find((message) => message.type === "assistant")
+      expect(first).toMatchObject({ type: "assistant", finish: "error" })
+      if (first?.type !== "assistant") throw new Error("missing interrupted assistant")
+      expect(first.content).toContainEqual(expect.objectContaining({
+        type: "tool", id: "unfinished", state: expect.objectContaining({ status: "error", error: expect.objectContaining({ message: expect.stringContaining("not executed") }) }),
+      }))
+      expect(context.at(-1)).toMatchObject({ type: "assistant", finish: "stop" })
+    }),
+  )
+
+  it.effect("bounds consecutive post-output stream continuations", () =>
+    Effect.gen(function* () {
+      yield* setup
+      const session = yield* SessionV2.Service
+      let attempts = 0
+      const failure = new LLMError({ module: "test", method: "stream", reason: new TransportReason({ message: "truncated", kind: "connection-closed" }) })
+      responseFor = () => Stream.unwrap(Effect.sync(() => {
+        const attempt = ++attempts
+        return Stream.concat(
+          Stream.fromIterable(fragmentFixture("text", `part-${attempt}`, [`Partial ${attempt}`]).partialEvents),
+          Stream.fail(failure),
+        )
+      }))
+      yield* session.prompt({ sessionID, prompt: Prompt.make({ text: "Bound recovery" }), resume: false })
+      expect(yield* session.resume(sessionID).pipe(Effect.flip)).toBe(failure)
+      expect(attempts).toBe(3)
+      expect((yield* session.context(sessionID)).at(-1)).toMatchObject({ type: "assistant", finish: "error" })
+    }),
+  )
+
+  it.effect("keeps completed tool effects when continuing a dropped provider turn", () =>
+    Effect.gen(function* () {
+      yield* setup
+      const session = yield* SessionV2.Service
+      executions.length = 0
+      let attempts = 0
+      responseFor = () => {
+        if (attempts++ > 0) return Stream.fromIterable(fragmentFixture("text", "after-tool-drop", ["Finished"]).completeEvents)
+        return Stream.concat(
+          Stream.fromIterable([
+            LLMEvent.stepStart({ index: 0 }),
+            LLMEvent.toolCall({ id: "executed-before-drop", name: "echo", input: { text: "only once" } }),
+          ]),
+          Stream.fail(new LLMError({ module: "test", method: "stream", reason: new TransportReason({ message: "lost completion", kind: "connection-closed" }) })),
+        )
+      }
+      yield* session.prompt({ sessionID, prompt: Prompt.make({ text: "Keep the completed tool" }), resume: false })
+      yield* session.resume(sessionID)
+      expect(attempts).toBe(2)
+      expect(executions).toEqual(["only once"])
+      expect(JSON.stringify(requests[1].messages)).toContain("only once")
+      const context = yield* session.context(sessionID)
+      const first = context.find((message) => message.type === "assistant")
+      expect(first).toMatchObject({ type: "assistant", content: [{ type: "tool", state: { status: "completed" } }] })
+      expect(context.at(-1)).toMatchObject({ type: "assistant", finish: "stop" })
+    }),
+  )
+
+  it.effect("does not extend the agent's final-step allowance for stream continuation", () =>
+    Effect.gen(function* () {
+      yield* setup
+      const agents = yield* AgentV2.Service
+      yield* agents.transform((editor) => editor.update(AgentV2.ID.make("build"), (agent) => { agent.steps = 1 }))
+      const session = yield* SessionV2.Service
+      const failure = new LLMError({ module: "test", method: "stream", reason: new TransportReason({ message: "truncated", kind: "connection-closed" }) })
+      responseFor = () => Stream.concat(Stream.fromIterable(fragmentFixture("text", "last-step", ["Partial"]).partialEvents), Stream.fail(failure))
+      yield* session.prompt({ sessionID, prompt: Prompt.make({ text: "One step only" }), resume: false })
       requests.length = 0
       expect(yield* session.resume(sessionID).pipe(Effect.flip)).toBe(failure)
       expect(requests).toHaveLength(1)
-      expect((yield* session.context(sessionID)).at(-1)).toMatchObject({
-        type: "assistant",
-        finish: "error",
-        content: [{ type: "text", text: "Partial" }],
-      })
     }),
   )
 

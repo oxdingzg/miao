@@ -207,6 +207,8 @@ export function createFetch(override?: FetchHandler, events?: ReturnType<typeof 
     if (/^\/api\/session\/[^/]+\/context$/.test(url.pathname)) return json({ data: [] })
     if (/^\/api\/session\/[^/]+\/todo$/.test(url.pathname)) return json({ data: [] })
     if (/^\/api\/session\/[^/]+\/diff$/.test(url.pathname)) return json({ data: [] })
+    if (/^\/api\/session\/[^/]+\/activity$/.test(url.pathname))
+      return json({ data: { observedAt: Date.now(), status: { type: "idle" }, pendingNotifications: 0, schedules: [], jobs: [] } })
     if (/^\/api\/session\/[^/]+\/status$/.test(url.pathname)) return json({ data: { type: "idle" } })
     if (/^\/api\/session\/[^/]+\/inputs$/.test(url.pathname)) return json({ data: [], hasMore: false })
     if (/^\/api\/session\/[^/]+$/.test(url.pathname))

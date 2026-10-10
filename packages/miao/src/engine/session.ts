@@ -11,7 +11,11 @@ import {
 } from "./bridge"
 
 /** One bridged product event ready to publish onto the product event bus. */
-export type EngineSessionEvent = { type: string; data: unknown }
+export type EngineSessionEvent = {
+  type: string
+  data: unknown
+  source: { sessionID: string; seq: number; index: number }
+}
 export type EnginePublish = (event: EngineSessionEvent) => void
 
 /**
@@ -43,7 +47,14 @@ export class EngineSession {
   }
 
   #dispatch(event: EngineEvent): void {
-    const publish = this.#publish
+    // The index is per event type, so suppressing an unrelated status update
+    // cannot change a message's identity on replay.
+    const counts = new Map<string, number>()
+    const publish = (output: { type: string; data: unknown }) => {
+      const index = counts.get(output.type) ?? 0
+      counts.set(output.type, index + 1)
+      this.#publish({ ...output, source: { sessionID: event.session_id, seq: event.seq, index } })
+    }
     this.#tools.note(event)
     const status = this.#status.update(event)
     if (status) publish({ type: "session.next.status", data: status })

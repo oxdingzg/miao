@@ -26,6 +26,7 @@ import { HttpRouter, HttpServer } from "effect/unstable/http"
 import { HttpApiBuilder } from "effect/unstable/httpapi"
 import { Layer, Option } from "effect"
 import { Api } from "./api"
+import { ClientEvents } from "./client-events"
 import { ServerAuth } from "./auth"
 import { handlers } from "./handlers"
 import { HttpApiAssembly } from "./assembly"
@@ -38,6 +39,7 @@ import { sessionLocationLayer } from "./middleware/session-location"
 const applicationServices = LayerNode.group([
   Database.node,
   EventV2.node,
+  ClientEvents.node,
   httpClient,
   ToolOutputStore.cleanupNode,
   SessionV2.node,

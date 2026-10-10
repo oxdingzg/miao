@@ -1,42 +1,16 @@
 import type { SessionsActivityOutput } from "@miao/client"
-import { createEffect, createMemo, createSignal, For, onCleanup, Show } from "solid-js"
+import { createMemo, For, Show } from "solid-js"
 import { useSecond } from "../../component/spinner"
-import { useSDK } from "../../context/sdk"
+import { useSessionState } from "../../context/session-state"
 import { useTheme } from "../../context/theme"
-import { watchSessionStatus } from "../../context/session-status"
 import { sessionTimerRows } from "../../util/session-timers"
 
 export function SessionTimers(props: { sessionID: string }) {
-  const sdk = useSDK()
-  const [snapshot, setSnapshot] = createSignal<{ activity: SessionsActivityOutput; receivedAt: number }>()
-  const [stale, setStale] = createSignal<number>()
-
-  createEffect(() => {
-    const sessionID = props.sessionID
-    const abort = new AbortController()
-    setSnapshot(undefined)
-    setStale(undefined)
-    const stop = watchSessionStatus({
-      interval: 2000,
-      idleInterval: 5000,
-      read: async () => {
-        const activity = await sdk.api.sessions.activity({ sessionID }, { signal: abort.signal })
-        if (abort.signal.aborted) return "idle"
-        setSnapshot({ activity, receivedAt: performance.now() })
-        setStale(undefined)
-        return sessionTimerRows(activity, activity.observedAt).some((row) => row.id !== "unknown") ? "busy" : "idle"
-      },
-      onError: () => setStale((current) => current ?? performance.now()),
-    })
-    onCleanup(() => {
-      stop()
-      abort.abort()
-    })
-  })
-
+  const state = useSessionState()
+  const snapshot = createMemo(() => (state.data.sessionID === props.sessionID ? state.data.snapshot : undefined))
   return (
     <Show when={snapshot() && sessionTimerRows(snapshot()!.activity, snapshot()!.activity.observedAt).length > 0}>
-      <SessionTimerDisplay snapshot={snapshot()!} stale={stale()} />
+      <SessionTimerDisplay snapshot={snapshot()!} stale={state.data.stale} />
     </Show>
   )
 }

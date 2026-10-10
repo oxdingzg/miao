@@ -17,13 +17,20 @@ if [[ ! -x "$SRC" ]]; then
   exit 1
 fi
 VERSION="$("$SRC" --version)"
+if command -v sha256sum >/dev/null 2>&1; then
+  HASH="$(sha256sum "$SRC" | cut -d' ' -f1)"
+else
+  HASH="$(shasum -a 256 "$SRC" | cut -d' ' -f1)"
+fi
 mkdir -p "$BIN_DIR" "$(dirname "$LINK")"
-TARGET="$BIN_DIR/${VERSION// /-}"
+TARGET="$BIN_DIR/${VERSION// /-}-${HASH}"
+# A version can have several preview builds. Content-addressed targets keep the
+# previous binary intact even when both builds report the same version.
 # Publish the new binary, then remember the one it replaces.
 cp -f "$SRC" "${TARGET}.new-$$"
 chmod +x "${TARGET}.new-$$"
 mv -f "${TARGET}.new-$$" "$TARGET"
-if [[ -L "$LINK" ]]; then
+if [[ -L "$LINK" && "$(readlink "$LINK")" != "$TARGET" ]]; then
   ln -sfn "$(readlink "$LINK")" "$BIN_DIR/miao-engine.prev.tmp-$$"
   mv -f "$BIN_DIR/miao-engine.prev.tmp-$$" "$BIN_DIR/miao-engine.prev"
 fi

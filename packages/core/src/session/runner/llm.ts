@@ -157,6 +157,7 @@ type Promotion = SessionInput.Delivery | "notification" | "notification-steer"
  * the smaller history before giving up (research G3).
  */
 const MAX_OVERFLOW_COMPACTIONS = 2
+const MAX_STREAM_CONTINUATIONS = 2
 
 /**
  * How many compactions in one Session before the frequency is worth surfacing.
@@ -259,6 +260,7 @@ const layer = Layer.effect(
     // Highest context band already announced per session; reset when
     // compaction rewrites the history so the smaller window re-arms notices.
     const lastContextNotice = new Map<string, number>()
+    const streamContinuations = new Map<string, number>()
     // Repeated identical tool calls per Session drain; reset at each drain start.
     const repeatedToolCalls = new Map<string, number>()
     const readSettings = Effect.fnUntraced(function* () {
@@ -1012,6 +1014,8 @@ const layer = Layer.effect(
           const llmFailure = failure instanceof LLMError ? failure : undefined
           if (llmFailure && !publisher.hasProviderError()) {
             yield* withPublication(publisher.failUnsettledTools("Provider did not return a tool result", true))
+            if (llmFailure.reason._tag === "Transport" && llmFailure.reason.retryable)
+              yield* withPublication(publisher.failPreparedTools("Provider stream interrupted before this tool call was complete; it was not executed"))
             const detail = retryDetail(llmFailure)
             yield* withPublication(publisher.failAssistant(detail.statusCode === undefined
               ? llmFailure.reason.message
@@ -1144,6 +1148,38 @@ const layer = Layer.effect(
                   : undefined,
             })
           }
+          if (
+            stream._tag === "Failure" &&
+            !Cause.hasInterrupts(stream.cause) &&
+            settled._tag === "Success" &&
+            llmFailure?.reason._tag === "Transport" &&
+            llmFailure.reason.retryable &&
+            publisher.hasVisibleOutput() &&
+            !isLastStep &&
+            (streamContinuations.get(session.id) ?? 0) < MAX_STREAM_CONTINUATIONS
+          ) {
+            // This is a NEW provider turn over reloaded durable history, never
+            // an identical replay of partial text or executed tool side effects.
+            const attempt = (streamContinuations.get(session.id) ?? 0) + 1
+            streamContinuations.set(session.id, attempt)
+            yield* events.publish(SessionEvent.Retried, {
+              sessionID: session.id,
+              timestamp: yield* DateTime.now,
+              attempt,
+              error: retryDetail(llmFailure),
+            })
+            yield* events.publish(SessionEvent.Synthetic, {
+              sessionID: session.id,
+              timestamp: yield* DateTime.now,
+              messageID: SessionMessage.ID.create(),
+              text: "The previous provider response was interrupted. Continue from the committed conversation; preserve the partial answer and completed tool results. Tools explicitly marked as not executed had no side effects. Do not rerun completed tools merely because the response stream was interrupted.",
+              metadata: { providerStreamContinuation: true },
+            })
+            yield* phase("retrying")
+            return { needsContinuation: true, step: currentStep }
+          }
+          if (stream._tag === "Success" && stepSettlement && !publisher.hasProviderError())
+            streamContinuations.delete(session.id)
           if (stream._tag === "Failure") return yield* Effect.failCause(stream.cause)
           if (settled._tag === "Failure" && Cause.hasInterrupts(settled.cause))
             return yield* Effect.failCause(settled.cause)
@@ -1587,6 +1623,8 @@ const layer = Layer.effect(
       const report: ReportPhase = input.phase ?? (() => Effect.void)
       return yield* Effect.scoped(
         Effect.gen(function* () {
+          streamContinuations.delete(input.sessionID)
+          yield* Effect.addFinalizer(() => Effect.sync(() => { streamContinuations.delete(input.sessionID) }))
           const drainSession = yield* store.get(input.sessionID)
           const drainAgent = drainSession ? yield* agents.select(drainSession.agent) : undefined
           const jobsOption = yield* Effect.serviceOption(BackgroundJob.Service)

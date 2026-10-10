@@ -313,6 +313,15 @@ export const createLLMEventPublisher = (events: EventV2.Interface, input: Input)
     }
   })
 
+  // An incomplete input is not an executed call. Close its UI part explicitly
+  // before continuing from history, while allowing already-called tools to settle.
+  const failPreparedTools = Effect.fn("SessionRunner.failPreparedTools")(function* (message: string) {
+    for (const [callID, tool] of tools) {
+      if (tool.called || tool.settled) continue
+      yield* failTool(callID, message)
+    }
+  })
+
   const assistantMessageIDForTool = (callID: string) => {
     const tool = tools.get(callID)
     return tool ? Effect.succeed(tool.assistantMessageID) : Effect.die(`Unknown tool call: ${callID}`)
@@ -536,6 +545,7 @@ export const createLLMEventPublisher = (events: EventV2.Interface, input: Input)
     failAssistant,
     failTool,
     failUnsettledTools,
+    failPreparedTools,
     hasActiveAssistant: () => assistantActive,
     hasVisibleOutput: () => visibleOutput,
     discardInFlight,

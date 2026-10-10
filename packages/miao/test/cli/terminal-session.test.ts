@@ -49,6 +49,7 @@ test.skipIf(process.platform === "win32")(
     expect(values[0].args).not.toContain("owned.db")
     expect(values[0].context).toEqual({ kind: "owned", runtimeID: "runtime-for-this-pane", storage: "owned.db" })
     expect(values[1].context).toBeNull()
+    expect(values[1].args).toContain("unknown")
     expect(values[1].args).not.toContain("session-second")
   },
 )
