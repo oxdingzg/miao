@@ -19,3 +19,4 @@ overview and `../PROTOCOL.md` for the stdio wire contract.
 - `adr/0009-credential-refresh-ownership.md` — one refresh owner; read-only until sole runtime.
 - `adr/0010-extension-worker-scope.md` — the M3 compatibility worker boundary.
 - `adr/0011-client-contract.md` — where compatibility sits; the direct-replacement shape.
+- `adr/0012-extension-worker-interface.md` — M3 worker transport, handshake and capability names.
