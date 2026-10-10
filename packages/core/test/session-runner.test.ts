@@ -43,6 +43,8 @@ import { SessionProjector } from "@miao/core/session/projector"
 import { SessionExecution } from "@miao/core/session/execution"
 import { SessionRunCoordinator } from "@miao/core/session/run-coordinator"
 import { SessionRunner } from "@miao/core/session/runner"
+import { SessionBlackbox } from "@miao/core/session/blackbox"
+import { BlackboxTape } from "@miao/core/blackbox/tape"
 import * as SessionRunnerLLM from "@miao/core/session/runner/llm"
 import { SessionRunnerModel } from "@miao/core/session/runner/model"
 import { BashTool } from "@miao/core/tool/bash"
@@ -1766,6 +1768,63 @@ describe("SessionRunnerLLM", () => {
       expect(yield* session.resume(sessionID).pipe(Effect.flip)).toBe(failure)
       expect((yield* session.context(sessionID)).at(-1)).toMatchObject({ type: "assistant", error: { message: failure.message } })
     }).pipe(Effect.ensuring(Effect.sync(() => { modelResolveFailure = undefined }))),
+  )
+
+  it.live("blackbox replays a real Session drain without provider IO or repeated file writes", () =>
+    Effect.gen(function* () {
+      yield* setup
+      const session = yield* SessionV2.Service
+      const runner = yield* SessionRunner.Service
+      const application = yield* ApplicationTools.Service
+      const database = yield* Database.Service
+      const directory = yield* Effect.acquireRelease(
+        Effect.promise(() => fs.mkdtemp(join(os.tmpdir(), "miao-blackbox-runner-"))),
+        (directory) => Effect.promise(() => fs.rm(directory, { recursive: true, force: true })),
+      )
+      let writes = 0
+      yield* application.register({
+        blackbox_write: Tool.make({
+          description: "Write a fixture marker", input: Schema.Struct({ text: Schema.String }),
+          output: Schema.Struct({ written: Schema.Boolean }),
+          execute: ({ text }) => Effect.promise(async () => {
+            writes++
+            await Bun.write(join(directory, "marker"), text)
+            return { written: true }
+          }),
+        }),
+      })
+      const recorder = new BlackboxTape.Recorder(join(directory, "bundle.json"), { engine: "typescript", fixture: "marker" })
+      const prompt = Prompt.make({ text: "Write the marker" })
+      yield* session.prompt({ sessionID, prompt, resume: false })
+      responses = [
+        [LLMEvent.stepStart({ index: 0 }), LLMEvent.toolCall({ id: "call-blackbox", name: "blackbox_write", input: { text: "once" } }),
+          LLMEvent.stepFinish({ index: 0, reason: "tool-calls" }), LLMEvent.finish({ reason: "tool-calls" })],
+        [LLMEvent.stepStart({ index: 0 }), LLMEvent.textStart({ id: "answer" }), LLMEvent.textDelta({ id: "answer", text: "done" }),
+          LLMEvent.textEnd({ id: "answer" }), LLMEvent.stepFinish({ index: 0, reason: "stop" }), LLMEvent.finish({ reason: "stop" })],
+      ]
+      yield* runner.run({ sessionID, force: true }).pipe(Effect.provideService(SessionBlackbox.Current, { get: async () => recorder }))
+      expect(writes).toBe(1)
+      const bundle = yield* Effect.promise(() => BlackboxTape.load(recorder.file))
+      expect(bundle.interactions.map((item) => item.lane)).toEqual(["llm", "tool", "llm"])
+      expect(bundle.trace.at(-1)?.kind).toBe("drain.finished")
+      yield* database.db.delete(SessionMessageTable).where(eq(SessionMessageTable.session_id, sessionID)).run().pipe(Effect.orDie)
+      yield* database.db.delete(SessionInputTable).where(eq(SessionInputTable.session_id, sessionID)).run().pipe(Effect.orDie)
+      yield* Effect.promise(() => fs.rm(join(directory, "marker")))
+      requests.length = 0
+      responses = undefined
+      response = []
+      yield* session.prompt({ sessionID, prompt, resume: false })
+      const replay = new BlackboxTape.Replay(bundle)
+      yield* runner.run({ sessionID, force: true }).pipe(Effect.provideService(SessionBlackbox.Current, { get: async () => replay }))
+      yield* Effect.sync(() => replay.assertConsumed())
+      expect(writes).toBe(1)
+      expect(requests).toHaveLength(0)
+      expect(yield* Effect.promise(() => Bun.file(join(directory, "marker")).exists())).toBe(false)
+      expect(yield* session.context(sessionID)).toMatchObject([
+        { type: "user", text: "Write the marker" }, { type: "assistant" },
+        { type: "assistant", content: [{ type: "text", text: "done" }] },
+      ])
+    }),
   )
 
   it.effect("advertises and executes a globally attached application tool", () =>

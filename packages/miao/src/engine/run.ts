@@ -1,5 +1,7 @@
 import { randomUUID } from "crypto"
 import { EngineClient, EngineError, type EngineEvent, type EngineOptions } from "./client"
+import { BlackboxTape } from "@miao/core/blackbox/tape"
+import { EngineTrace } from "../blackbox/engine-trace"
 
 /**
  * Headless driver for one engine prompt. It subscribes before admitting so no
@@ -16,6 +18,7 @@ export interface EngineRunOptions extends EngineOptions {
   approve?: "allow" | "deny"
   timeoutMs?: number
   onEvent?: (event: EngineEvent) => void
+  blackbox?: BlackboxTape.Recorder | BlackboxTape.Replay
 }
 
 export interface EngineRunResult {
@@ -29,12 +32,26 @@ export async function runEnginePrompt(options: EngineRunOptions): Promise<Engine
   const inputId = options.inputId ?? `in_${randomUUID()}`
   const client = EngineClient.start(options)
   const events: EngineEvent[] = []
+  const recordings: Promise<void>[] = []
+  const trace = new EngineTrace()
+  let recordingFailure: unknown
   let finished: (() => void) | undefined
   const done = new Promise<void>((resolve) => (finished = resolve))
   let failure: Error | undefined
+  let timeoutTimer: ReturnType<typeof setTimeout> | undefined
 
   client.onEvent((event) => {
     events.push(event)
+    if (options.blackbox) {
+      const recorded = event.kind === "provider.failed" ? { ...event, data: { failed: true } } : event
+      const projected = trace.project(recorded)
+      if (options.blackbox instanceof BlackboxTape.Replay) {
+        try { options.blackbox.expectTrace(projected.session, projected.kind, projected.data) }
+        catch (error) { recordingFailure = error }
+      } else {
+        recordings.push(options.blackbox.trace(projected).catch((error: unknown) => { recordingFailure = error }))
+      }
+    }
     options.onEvent?.(event)
     if (event.kind === "approval.requested") {
       const approval = event.data as { request_id: string; input_hash: string; policy_revision: string }
@@ -56,13 +73,16 @@ export async function runEnginePrompt(options: EngineRunOptions): Promise<Engine
     await client.subscribe(session, 0)
     await client.admit({ session_id: session, input_id: inputId, prompt: options.prompt })
     const timeout = new Promise<never>((_, reject) =>
-      setTimeout(() => reject(new EngineError("engine_timeout", "engine run timed out")), options.timeoutMs ?? 120_000),
+      timeoutTimer = setTimeout(() => reject(new EngineError("engine_timeout", "engine run timed out")), options.timeoutMs ?? 120_000),
     )
     await Promise.race([done, timeout])
+    await Promise.all(recordings)
+    if (recordingFailure) throw recordingFailure
     if (failure) throw failure
     const history = (await client.history(session, true)) as Array<{ role: string; content: unknown }>
     return { session, text: assistantText(history), events }
   } finally {
+    if (timeoutTimer !== undefined) clearTimeout(timeoutTimer)
     await client.close()
   }
 }
