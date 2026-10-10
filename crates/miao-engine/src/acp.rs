@@ -158,13 +158,18 @@ async fn request(conn: &Arc<Conn>, id: Value, method: &str, params: Value) {
         "authenticate" => conn.reply(id, json!({})).await,
         "session/new" => {
             let session = format!("ses_{}", uuid::Uuid::new_v4().simple());
-            conn.reply(id, json!({ "sessionId": session })).await;
+            if let Err(error) = conn.runtime.store().ensure(&session).await {
+                conn.fail(id, INTERNAL_ERROR, &error.to_string()).await;
+            } else {
+                conn.reply(id, json!({ "sessionId": session })).await;
+            }
         }
         "session/prompt" => prompt(conn, id, params).await,
         "session/load" => load(conn, id, params).await,
         "session/resume" => conn.reply(id, json!({})).await,
         "session/fork" => fork(conn, id, params).await,
         "session/close" => conn.reply(id, json!({})).await,
+        "session/list" => list(conn, id).await,
         "session/set_mode" => mode(conn, id, params).await,
         other => {
             conn.fail(id, METHOD_NOT_FOUND, &format!("method not found: {other}"))
@@ -358,6 +363,24 @@ async fn fork(conn: &Arc<Conn>, id: Value, params: Value) {
         Ok(_) => conn.reply(id, json!({ "sessionId": target })).await,
         Err(error) => conn.fail(id, INTERNAL_ERROR, &error.to_string()).await,
     }
+}
+
+/// List the Sessions in the engine database with their workspace root.
+async fn list(conn: &Arc<Conn>, id: Value) {
+    let sessions = conn.runtime.store().sessions().await.unwrap_or_default();
+    let mut infos = Vec::new();
+    for session in sessions {
+        let cwd = conn
+            .runtime
+            .store()
+            .location(&session)
+            .await
+            .ok()
+            .flatten()
+            .unwrap_or_default();
+        infos.push(json!({ "sessionId": session, "cwd": cwd }));
+    }
+    conn.reply(id, json!({ "sessions": infos })).await;
 }
 
 /// Switch the Session's collaboration mode and confirm it back to the client.

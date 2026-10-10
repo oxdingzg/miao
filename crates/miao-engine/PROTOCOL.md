@@ -110,7 +110,8 @@ replays the committed conversation as `user_message_chunk`/`agent_message_chunk`
 chunks, `session/fork` returns a fresh Session id, and `session/resume` /
 `session/close` are acknowledged. `session/set_mode` switches the collaboration
 mode and echoes `current_mode_update`, and committed todos stream as `plan`
-entries. `session/list` and config/usage updates are later slices.
+entries. `session/list` returns the Sessions in the engine database. Config/usage
+updates are later slices.
 
 `GET /events?session_id=..&after=..` streams Server-Sent Events: the committed
 `event` notifications for that Session (each frame carries `id: <seq>`, and a

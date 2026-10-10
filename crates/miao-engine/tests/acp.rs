@@ -405,3 +405,74 @@ async fn switches_session_mode() {
     }
     assert_eq!(echoed.as_deref(), Some("plan"));
 }
+
+/// `session/list` returns the Sessions created in the engine database.
+#[tokio::test]
+async fn lists_sessions() {
+    let (endpoint, _requests, _server) = common::endpoint(Vec::new()).await;
+    let dir = tempfile::tempdir().unwrap();
+    let db = dir.path().join("engine.db");
+    let mut child = Command::new(env!("CARGO_BIN_EXE_miao-engine"))
+        .args([
+            "acp",
+            "--db",
+            db.to_str().unwrap(),
+            "--workspace",
+            dir.path().to_str().unwrap(),
+            "--model",
+            "fixture",
+            "--provider",
+            "openai-chat",
+            "--endpoint",
+            &endpoint,
+        ])
+        .env("OPENAI_API_KEY", "fixture")
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::inherit())
+        .kill_on_drop(true)
+        .spawn()
+        .unwrap();
+    let mut stdin = child.stdin.take().unwrap();
+    let mut stdout = BufReader::new(child.stdout.take().unwrap()).lines();
+
+    send(
+        &mut stdin,
+        json!({"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":1,"clientCapabilities":{}}}),
+    )
+    .await;
+    read_response(&mut stdout, 1).await;
+    send(
+        &mut stdin,
+        json!({"jsonrpc":"2.0","id":2,"method":"session/new","params":{"cwd":dir.path().to_str().unwrap(),"mcpServers":[]}}),
+    )
+    .await;
+    let first = read_response(&mut stdout, 2).await["result"]["sessionId"]
+        .as_str()
+        .unwrap()
+        .to_string();
+    send(
+        &mut stdin,
+        json!({"jsonrpc":"2.0","id":3,"method":"session/new","params":{"cwd":dir.path().to_str().unwrap(),"mcpServers":[]}}),
+    )
+    .await;
+    let second = read_response(&mut stdout, 3).await["result"]["sessionId"]
+        .as_str()
+        .unwrap()
+        .to_string();
+
+    send(
+        &mut stdin,
+        json!({"jsonrpc":"2.0","id":4,"method":"session/list","params":{"cwd":dir.path().to_str().unwrap()}}),
+    )
+    .await;
+    let listed = read_response(&mut stdout, 4).await;
+    let ids: Vec<String> = listed["result"]["sessions"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter_map(|info| info["sessionId"].as_str().map(str::to_string))
+        .collect();
+    assert!(ids.contains(&first), "{ids:?}");
+    assert!(ids.contains(&second), "{ids:?}");
+}
