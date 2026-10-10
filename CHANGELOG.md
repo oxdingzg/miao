@@ -11,6 +11,22 @@ at `docs/releases/vX.Y.Z.md` and `docs/releases/vX.Y.Z.zh.md`; both are required
 
 ## [Unreleased]
 
+## [0.2.3] - 2026-10-10
+
+### Added
+- **tui**: live wakeup countdowns and background job timers with read-only activity observation (#544)
+- **engine**: loopback HTTP/SSE and ACP stdio adapters, revert/unrevert, usage aggregation, skills and authorized references (#519, #520, #522, #524–#529, #534, #539, #543, #545, #547)
+- **engine**: extension compatibility worker and product event bridges for status, identity, prompts, text, tools, approvals and questions (#555, #557–#561, #564, #568–#570, #572)
+- **engine**: release artifacts/manifests and local installation with rollback (#536, #541, #565)
+
+### Fixed
+- **llm**: deeper connection-reset retry budget and fresh sockets after a reset (#535, #540)
+- **core**: retry dropped provider turns before visible output and default ChatGPT/Codex to Responses WebSocket (#533, #538)
+- **commandcode**: preserve image input and recover context overflow (#542)
+- **engine**: preserve finalized Responses items, retry transport failures before output, and enforce Windows process sandboxing (#521, #523, #550)
+
+Full release notes: `docs/releases/v0.2.3.md` and `docs/releases/v0.2.3.zh.md`.
+
 ## [0.2.2] - 2026-10-10
 
 ### Added
