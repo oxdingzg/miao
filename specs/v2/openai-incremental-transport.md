@@ -4,8 +4,10 @@
 
 Phase 0 measured; the plan is reordered by its result. **Step 1 (pooled WebSocket, full payload,
 HTTP fallback) is implemented** in `packages/llm/src/route/transport/websocket-pool.ts` and
-`OpenAIResponses.pooledTransport`, used for ChatGPT OAuth when `MIAO_EXPERIMENTAL_RESPONSES_WS` is on
-(default on for non-`latest` channels). Incremental sending (`previous_response_id`) is deferred:
+`OpenAIResponses.pooledTransport`, and is the default ChatGPT OAuth transport (`MIAO_RESPONSES_WS`,
+default on for every channel; `=0` forces HTTP). Graduating it to default also hardens the connection
+against mid-turn `ECONNRESET` on the HTTP SSE path, because the pool owns its socket and never reuses
+one that errored or finished a turn. Incremental sending (`previous_response_id`) is deferred:
 see "Phase 0 result". Codex citations refer to the sparse clone of `openai/codex` (`codex-rs/...`)
 taken on 2026-10-01; miao citations refer to `main` at `3e489920e`.
 
@@ -375,8 +377,11 @@ Extend the `session.turn` log (`llm.ts:608`) and add a transport event from the 
   (core `Flag`), default on for non-`latest` channels. ChatGPT OAuth only.
 - Phase 1b: incremental rule + same-socket fallback, only if long-context sessions show it pays.
 - Phase 2: preconnect/prewarm, API-key path after live probe.
-- Phase 3: default on for `latest` once telemetry shows hit rate and no regressions; keep the flag as
-  a kill switch. Retire `webSocketRoute`'s per-request socket or make it use the pool.
+- Phase 3 (done): default on for every channel as `MIAO_RESPONSES_WS` (legacy
+  `MIAO_EXPERIMENTAL_RESPONSES_WS` still honoured); the flag stays as a kill switch. Graduated on
+  connection-resilience grounds — the pool's own socket avoids the HTTP keep-alive staleness that
+  surfaced as `ECONNRESET` mid-turn. Retire `webSocketRoute`'s per-request socket or make it use the
+  pool.
 
 ## Expected benefit (honest)
 

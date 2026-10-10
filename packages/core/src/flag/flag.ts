@@ -1,5 +1,4 @@
 import { Config } from "effect"
-import { InstallationChannel } from "../installation/version"
 
 export function truthy(key: string) {
   const value = process.env[key]?.toLowerCase()
@@ -94,11 +93,14 @@ export const Flag = {
   get MIAO_EXPERIMENTAL_TOOL_DISCLOSURE() {
     return enabledByExperimental("MIAO_EXPERIMENTAL_TOOL_DISCLOSURE")
   },
-  get MIAO_EXPERIMENTAL_RESPONSES_WS() {
-    // Pooled Responses WebSockets for ChatGPT sign-in; on for source and preview
-    // builds until proven, off for releases unless MIAO_EXPERIMENTAL_RESPONSES_WS=1.
-    const value = process.env["MIAO_EXPERIMENTAL_RESPONSES_WS"]
-    return value === undefined ? InstallationChannel !== "latest" : truthy("MIAO_EXPERIMENTAL_RESPONSES_WS")
+  get MIAO_RESPONSES_WS() {
+    // Pooled Responses WebSockets for the ChatGPT/Codex backend are the default
+    // transport. The pool manages its own socket and drops any socket that
+    // errored or finished a turn, so a stale HTTP keep-alive connection cannot
+    // surface as a mid-turn ECONNRESET. Set MIAO_RESPONSES_WS=0 (or the legacy
+    // MIAO_EXPERIMENTAL_RESPONSES_WS=0) to force the HTTP SSE transport.
+    const value = process.env["MIAO_RESPONSES_WS"] ?? process.env["MIAO_EXPERIMENTAL_RESPONSES_WS"]
+    return value === undefined ? true : truthy("MIAO_RESPONSES_WS") || truthy("MIAO_EXPERIMENTAL_RESPONSES_WS")
   },
   get MIAO_TUI_CONFIG() {
     return process.env["MIAO_TUI_CONFIG"]
