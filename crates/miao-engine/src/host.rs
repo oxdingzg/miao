@@ -207,6 +207,11 @@ impl Host {
                 .approve(&self.controller, &session_id, response)
                 .await
                 .map(|_| json!({ "accepted": true })),
+            Command::Sessions => runtime
+                .store()
+                .sessions()
+                .await
+                .and_then(|value| serde_json::to_value(value).map_err(Error::from)),
             Command::Shutdown => Ok(json!({ "accepted": true })),
         }
     }

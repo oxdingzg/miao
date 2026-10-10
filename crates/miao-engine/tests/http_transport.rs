@@ -158,3 +158,28 @@ async fn serves_the_command_table_and_committed_history() {
         .join("\n");
     assert!(text.contains("finished"), "{text}");
 }
+
+/// The command table lists Sessions over HTTP, matching the ACP `session/list`.
+#[tokio::test]
+async fn lists_sessions_over_http() {
+    let reply = sse(vec![
+        json!({"choices":[{"index":0,"delta":{"content":"hi"},"finish_reason":"stop"}]}),
+        json!({"choices":[],"usage":{"prompt_tokens":1,"completion_tokens":1}}),
+    ]);
+    let (url, _dir) = start(vec![(200, reply)]).await;
+    let client = reqwest::Client::new();
+    rpc(
+        &client,
+        &url,
+        json!({"id":1,"method":"admit","params":{"input":{"session_id":"s","input_id":"one","prompt":"hi"}}}),
+    )
+    .await;
+    let listed = rpc(&client, &url, json!({"id":2,"method":"sessions"})).await;
+    let ids: Vec<String> = listed["result"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter_map(|id| id.as_str().map(str::to_string))
+        .collect();
+    assert!(ids.contains(&"s".to_string()), "{ids:?}");
+}
