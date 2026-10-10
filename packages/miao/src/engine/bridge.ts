@@ -123,6 +123,42 @@ export function translateMessage(event: EngineEvent): SessionTextEnded[] {
   })
 }
 
+const TOOL_IDS: Record<string, string> = {
+  read_file: "read",
+  list_files: "read",
+  glob: "glob",
+  grep: "grep",
+  write_file: "write",
+  edit_file: "edit",
+  apply_patch: "apply-patch",
+  run_command: "bash",
+  bash: "bash",
+  start_job: "background-job",
+  job_status: "background-job",
+  cancel_job: "background-job",
+  task: "task",
+  todowrite: "todowrite",
+  goal: "goal",
+  question: "question",
+  recall: "recall",
+  session_state: "custom",
+  schedule_wakeup: "schedule",
+  cancel_wakeup: "schedule",
+  lsp_diagnostics: "lsp",
+  lsp_definition: "lsp",
+  lsp_references: "lsp",
+}
+
+/**
+ * Map an engine tool name to the product tool id whose renderer already exists
+ * (`facade-mapping.md`). Unknown, worker and MCP tools fall back to `custom`.
+ */
+export function productToolID(engineTool: string): string {
+  if (engineTool in TOOL_IDS) return TOOL_IDS[engineTool]
+  if (engineTool.startsWith("cron_")) return "schedule"
+  return "custom"
+}
+
 /** The product `session.next.tool.called` payload for one committed tool_use block. */
 export type SessionToolCalled = {
   sessionID: SessionID
@@ -165,7 +201,7 @@ export function translateTools(event: EngineEvent): SessionToolCalled[] {
         timestamp: DateTime.makeUnsafe(Date.now()),
         assistantMessageID,
         callID: block.id,
-        tool: block.name,
+        tool: productToolID(block.name),
         input,
         provider: { executed: false },
       },

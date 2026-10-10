@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test"
-import { StatusBridge, statusOf, translateMessage, translatePrompt, translateStatus, translateTools } from "@/engine/bridge"
+import { StatusBridge, productToolID, statusOf, translateMessage, translatePrompt, translateStatus, translateTools } from "@/engine/bridge"
 import type { EngineEvent } from "@/engine/client"
 
 const event = (kind: string): EngineEvent => ({ session_id: "ses_test", seq: 1, kind, data: {} })
@@ -66,9 +66,18 @@ test("maps a committed assistant tool_use block to tool.called", () => {
   const calls = translateTools(event)
   expect(calls).toHaveLength(1)
   expect(calls[0]?.callID).toBe("c1")
-  expect(calls[0]?.tool).toBe("read_file")
+  expect(calls[0]?.tool).toBe("read")
   expect(calls[0]?.input).toEqual({ path: "file" })
   expect(calls[0]?.provider).toEqual({ executed: false })
   expect(String(calls[0]?.assistantMessageID)).toBe("msg_ses_abc_4")
   expect(translateTools({ ...event, kind: "run.finished" })).toEqual([])
+})
+
+test("maps engine tool names to product tool ids", () => {
+  expect(productToolID("read_file")).toBe("read")
+  expect(productToolID("list_files")).toBe("read")
+  expect(productToolID("apply_patch")).toBe("apply-patch")
+  expect(productToolID("run_command")).toBe("bash")
+  expect(productToolID("cron_list")).toBe("schedule")
+  expect(productToolID("worker__echo")).toBe("custom")
 })
