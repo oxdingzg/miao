@@ -27,6 +27,7 @@ const live = JSON.stringify({
     { id: "claude-sonnet-5-5", name: "Claude Sonnet 5.5", context_length: 1_000_000 },
     { id: "deepseek/deepseek-v4-pro", name: "DeepSeek V4 Pro", context_length: 1_000_000 },
     { id: "deepseek/deepseek-v4.1-flash", name: "DeepSeek V4.1 Flash", context_length: 1_000_000 },
+    { id: "deepseek/deepseek-v4.1-flash-fast", name: "DeepSeek V4.1 Flash Fast", context_length: 1_000_000 },
     // Not in the catalog yet, so it carries no plan info and no modalities.
     { id: "brand/new-model", name: "Brand New", context_length: 200_000 },
   ],
@@ -84,10 +85,10 @@ const seed = Effect.fn(function* () {
   })
 })
 
-const addPlugin = Effect.fn(function* () {
+const addPlugin = Effect.fn(function* (source = modelsCatalog) {
   const plugin = yield* PluginV2.Service
   const host = yield* PluginHost.make(plugin)
-  yield* CommandCodePlugin.effect(host).pipe(Effect.provideService(ModelsCatalog.Service, modelsCatalog))
+  yield* CommandCodePlugin.effect(host).pipe(Effect.provideService(ModelsCatalog.Service, source))
 })
 
 const withPlan = <A, E, R>(plan: string | undefined, self: Effect.Effect<A, E, R>) => {
@@ -125,6 +126,7 @@ describe("CommandCodePlugin", () => {
           modelID("claude-sonnet-5-5"),
           modelID("deepseek/deepseek-v4-pro"),
           modelID("deepseek/deepseek-v4.1-flash"),
+          modelID("deepseek/deepseek-v4.1-flash-fast"),
           modelID("brand/new-model"),
         ])
       }),
@@ -142,6 +144,7 @@ describe("CommandCodePlugin", () => {
           modelID("claude-sonnet-5-5"),
           modelID("deepseek/deepseek-v4-pro"),
           modelID("deepseek/deepseek-v4.1-flash"),
+          modelID("deepseek/deepseek-v4.1-flash-fast"),
           modelID("brand/new-model"),
         ])
       }),
@@ -154,7 +157,7 @@ describe("CommandCodePlugin", () => {
       Effect.gen(function* () {
         yield* seed()
         yield* addPlugin()
-        expect(yield* available()).toHaveLength(5)
+        expect(yield* available()).toHaveLength(6)
       }),
     ),
   )
@@ -165,7 +168,7 @@ describe("CommandCodePlugin", () => {
       Effect.gen(function* () {
         yield* seed()
         yield* addPlugin()
-        expect(yield* available()).toHaveLength(5)
+        expect(yield* available()).toHaveLength(6)
       }),
     ),
   )
@@ -187,6 +190,47 @@ describe("CommandCodePlugin", () => {
       yield* seed()
       yield* addPlugin()
       expect((yield* catalog.model.get(PROVIDER_ID, modelID("brand/new-model")))?.capabilities.input).toEqual(["text"])
+    }),
+  )
+
+  it.effect("inherits image input for a subscription fast alias", () =>
+    Effect.gen(function* () {
+      const catalog = yield* Catalog.Service
+      yield* seed()
+      yield* addPlugin()
+      expect(
+        (yield* catalog.model.get(PROVIDER_ID, modelID("deepseek/deepseek-v4.1-flash-fast")))?.capabilities.input,
+      ).toEqual(["text", "image"])
+    }),
+  )
+
+  it.effect("honors an explicit text-only fast alias over the base model", () =>
+    Effect.gen(function* () {
+      const catalog = yield* Catalog.Service
+      yield* seed()
+      yield* addPlugin(
+        ModelsCatalog.Service.of({
+          get: () =>
+            Effect.succeed({
+              ...devCatalog,
+              commandcode: {
+                ...devCatalog.commandcode,
+                models: {
+                  ...devCatalog.commandcode.models,
+                  "deepseek/deepseek-v4.1-flash-fast": {
+                    ...devCatalog.commandcode.models["deepseek/deepseek-v4.1-flash"],
+                    id: "deepseek/deepseek-v4.1-flash-fast",
+                    modalities: { input: ["text"], output: ["text"] },
+                  },
+                },
+              },
+            }),
+          refresh: () => Effect.void,
+        }),
+      )
+      expect(
+        (yield* catalog.model.get(PROVIDER_ID, modelID("deepseek/deepseek-v4.1-flash-fast")))?.capabilities.input,
+      ).toEqual(["text"])
     }),
   )
 })
