@@ -7,6 +7,7 @@ overview and `../PROTOCOL.md` for the stdio wire contract.
 - `client-contract.md` — the product HttpApi/event surface a migration façade must cover.
 - `handler-migration.md` — the B1 façade construction plan: which handlers move to the engine.
 - `event-bridge.md` — mapping engine committed events onto product session events.
+- `facade-mapping.md` — engine tool/event names the product compatibility facade maps from.
 - `measurements.md` — binary size, `serve` readiness and RSS, with conditions and repro.
 - `accuracy.md` — 产品结果、golden、随机不变量、参考差分及故障注入的运行与审阅方式。
 - `adr/0001-runtime-ownership.md` — process/store ownership, coordinator, slots.
