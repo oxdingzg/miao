@@ -1,6 +1,7 @@
 import { DateTime } from "effect"
 import { SessionID } from "@miao/schema/session-id"
 import { SessionMessage } from "@miao/schema/session-message"
+import { Permission } from "@miao/schema/permission"
 import { Prompt } from "@miao/schema/prompt"
 import { Delivery } from "@miao/schema/session-delivery"
 import { StatusInfo } from "@miao/schema/session-event"
@@ -280,5 +281,39 @@ export class ToolBridge {
       return { type: "session.next.tool.failed", ...base, error: { type: "unknown", message: output } }
     }
     return { type: "session.next.tool.success", ...base, structured: {}, content: [{ type: "text", text: output }] }
+  }
+}
+
+/** The product `permission.v2.asked` payload for one engine approval request. */
+export type SessionPermissionAsked = {
+  id: Permission.ID
+  sessionID: SessionID
+  action: string
+  resources: string[]
+  metadata: { request_id: string; input_hash: string; policy_revision: string }
+}
+
+/**
+ * Maps the engine's `approval.requested` to the product `permission.v2.asked`.
+ * `metadata` carries the ADR-04 binding (`request_id`/`input_hash`/
+ * `policy_revision`) the answer must echo, so a stale or replayed answer cannot
+ * authorize a mutated action.
+ */
+export function translateApproval(event: EngineEvent): SessionPermissionAsked | undefined {
+  if (event.kind !== "approval.requested") return undefined
+  if (typeof event.data !== "object" || event.data === null) return undefined
+  if (!("request_id" in event.data) || typeof event.data.request_id !== "string") return undefined
+  if (!("session_id" in event.data) || typeof event.data.session_id !== "string") return undefined
+  const tool = "tool" in event.data && typeof event.data.tool === "string" ? event.data.tool : "tool"
+  const resource = "resource" in event.data && typeof event.data.resource === "string" ? event.data.resource : ""
+  const inputHash = "input_hash" in event.data && typeof event.data.input_hash === "string" ? event.data.input_hash : ""
+  const policyRevision =
+    "policy_revision" in event.data && typeof event.data.policy_revision === "string" ? event.data.policy_revision : ""
+  return {
+    id: Permission.ID.create(`per_${event.data.request_id}`),
+    sessionID: adoptSession(event.data.session_id),
+    action: productToolID(tool),
+    resources: [resource],
+    metadata: { request_id: event.data.request_id, input_hash: inputHash, policy_revision: policyRevision },
   }
 }
