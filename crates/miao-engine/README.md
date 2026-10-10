@@ -26,6 +26,8 @@ cargo build --manifest-path crates/miao-engine/Cargo.toml
 
 `acp` 模式在 stdio 上提供 ACP（newline-delimited JSON-RPC 2.0），供编辑器直接对接：`miao-engine acp --db PATH --workspace PATH --model MODEL [--provider ...] [--endpoint URL] [--policy PATH]`。当前实现 `initialize`/`authenticate`/`session/new`/`session/prompt`/`session/cancel`，把引擎审批映射为 `session/request_permission` 往返，把已提交的工具调用流式推送为 `tool_call`/`tool_call_update`，支持 `session/load`（历史回放）/`session/fork`/`session/resume`/`session/close`/`session/set_mode`，并把已提交的 todos 推送为 `plan`，支持 `session/list`；config/usage 更新为后续切片。
 
+本地安装（不触碰 release 管理的 `miao` 与 `miao-preview`）：在构建机编译后 `./script/install-engine.sh --binary /path/to/miao-engine`。安装到 `~/.local/bin/miao-engine`（版本化于 `~/.local/share/miao-engine/bin`），保留一次旧版本用于一步回滚，并以 `--version` 冒烟。
+
 ## stdio 协议 v0
 
 一行一个 JSON 对象。请求带字符串/数字 `id`，响应带同一个 `id` 与 `result` 或 `error`。
