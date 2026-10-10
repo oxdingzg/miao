@@ -1,4 +1,4 @@
-# miao-engine (experimental Rust M0 engine)
+# miao-engine (experimental Rust engine)
 
 <p align="center"><a href="README.md">English</a> | <a href="README.zh.md">简体中文</a></p>
 
@@ -6,8 +6,11 @@ A standalone entry point that uses its own, explicitly specified SQLite database
 implementation provides a durable inbox, transactional event/message projection, supervised Session
 execution, streaming adapters for Anthropic Messages / OpenAI Chat / OpenAI Responses, contained
 `read_file` / `list_files`, approval-gated `write_file` / `edit_file`, and stdio plus committed
-JSONL export. This is an incremental M0/M1 implementation and has not yet reached the capability
-bar to replace the existing miao.
+JSONL export. The objective is higher task quality with fewer tokens and less end-to-end time.
+Current progress, remaining work and acceptance gates live in the unified [roadmap](docs/roadmap.md)
+(中文), with implementation evidence in [inventory](docs/inventory.md). Product integration and the
+default switch remain incomplete. Detailed instructions below include early implementation snapshots;
+they are not the current capability-gap checklist.
 
 ## Running
 
@@ -130,12 +133,16 @@ escape/oversized files, exact retry/lost wake, cancel/across-Session, unknown re
 settlement, stdio requests, and the read-only export high-water mark. The tests consume no live
 provider credentials; passing fixtures is not claimed as real-model quality acceptance.
 
-## Later capabilities (not implemented today)
+## Current progress and remaining work
 
-Full coding tools/PTY, background processes and tasks, Windows process enforcement, ACP session/list
-and config/usage updates, TUI adapters, other providers such as Gemini/Bedrock, a standalone OAuth
-refresh broker, LSP/media, Context Epoch/compaction, an MCP/TS compatibility worker, a full black
-box, and three-platform run acceptance. `read_file` is currently a read-only tool with canonical
+The [roadmap](docs/roadmap.md) maintains implementation, task-efficiency and product-integration
+status in one place. PTY, background jobs, Windows enforcement, Gemini, LSP core, image input,
+Context Epoch, explicit compaction, MCP, the worker protocol host and three-platform tests already
+have implementations. Automatic context management, representative efficiency evaluation, the
+complete product facade, actual extension integration and shipping delivery still have gaps.
+
+The following describes the early file-tool slice; see inventory and source for the current tool
+surface. `read_file` is a read-only tool with canonical
 containment, up to 32 KiB of UTF-8; `list_files` lists only immediate children, up to 500, without
 recursion or following child symlinks; it does not claim resistance to malicious concurrent path
 replacement inside the workspace. Default read_only exposes no write tools; workspace mode exposes

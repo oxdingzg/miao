@@ -3,7 +3,8 @@
 Design records for the Rust engine. See `../README.md` for the capability
 overview and `../PROTOCOL.md` for the stdio wire contract.
 
-- `inventory.md` — capability coverage and current status.
+- [roadmap.md](roadmap.md) — unified goals, implementation status, task-efficiency work, priorities and release gates (中文).
+- `inventory.md` — capability coverage and implementation evidence; progress and priorities are maintained in `roadmap.md`.
 - `client-contract.md` — the product HttpApi/event surface a migration façade must cover.
 - `handler-migration.md` — the B1 façade construction plan: which handlers move to the engine.
 - `event-bridge.md` — mapping engine committed events onto product session events.
