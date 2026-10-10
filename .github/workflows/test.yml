@@ -1,10 +1,7 @@
 name: test
 
 on:
-  push:
-    branches:
-      - main
-  pull_request:
+  workflow_call:
   # The Windows suite runs on the nightly schedule, not per commit (see the
   # `windows` job below).
   schedule:
@@ -15,7 +12,7 @@ concurrency:
   # A pull request shares one group per number, so a new push cancels its older
   # run. A push to main groups by commit SHA, so every merged commit gets its own
   # run and keeps a complete status instead of being superseded and cancelled.
-  group: ${{ format('{0}-{1}', github.workflow, github.event.pull_request.number || github.sha) }}
+  group: ${{ format('{0}-test-{1}', github.workflow, github.event.pull_request.number || github.sha) }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 permissions:
@@ -31,6 +28,7 @@ jobs:
 
   unit-tests:
     name: unit tests (linux)
+    timeout-minutes: 30
     needs: changes
     if: needs.changes.outputs.code == 'true'
     runs-on: ubuntu-latest

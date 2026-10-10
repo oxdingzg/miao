@@ -5,30 +5,14 @@ name: e2e
 # cannot affect it, instead of queueing a browser install and a full run
 # behind every change.
 on:
-  push:
-    branches: [main]
-    paths:
-      - ".github/workflows/e2e.yml"
-      - "package.json"
-      - "bun.lock"
-      - "packages/app/**"
-      - "packages/ui/**"
-      - "packages/session-ui/**"
-  pull_request:
-    paths:
-      - ".github/workflows/e2e.yml"
-      - "package.json"
-      - "bun.lock"
-      - "packages/app/**"
-      - "packages/ui/**"
-      - "packages/session-ui/**"
+  workflow_call:
   workflow_dispatch:
 
 concurrency:
   # A pull request shares one group per number, so a new push cancels its older
   # run. A push to main groups by commit SHA, so every merged commit gets its own
   # run and keeps a complete status instead of being superseded and cancelled.
-  group: ${{ format('{0}-{1}', github.workflow, github.event.pull_request.number || github.sha) }}
+  group: ${{ format('{0}-e2e-{1}', github.workflow, github.event.pull_request.number || github.sha) }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 permissions:
@@ -54,6 +38,7 @@ jobs:
             host: windows-2025
             blocking: false
     runs-on: ${{ matrix.settings.host }}
+    timeout-minutes: 60
     continue-on-error: ${{ !matrix.settings.blocking }}
     env:
       PLAYWRIGHT_BROWSERS_PATH: ${{ github.workspace }}/.playwright-browsers

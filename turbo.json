@@ -4,6 +4,10 @@
   "globalPassThroughEnv": ["CI", "MIAO_DISABLE_SHARE"],
   "tasks": {
     "typecheck": {},
+    "@miao/native#build": {
+      "cache": false,
+      "outputs": ["src/miao-native.node"]
+    },
     "build": {
       "dependsOn": [],
       "outputs": ["dist/**"]

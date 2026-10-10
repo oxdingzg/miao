@@ -1,37 +1,16 @@
 name: engine
 
 on:
+  workflow_call:
   push:
-    branches:
-      - main
-    tags:
-      - "engine-v*"
-    paths:
-      - "crates/miao-engine/**"
-      - "crates/miao-sandbox/**"
-      - "package.json"
-      - ".github/workflows/engine.yml"
-      - "packages/core/src/patch.ts"
-      - "packages/core/src/flag/**"
-      - "packages/native/**"
-      - "bun.lock"
-  pull_request:
-    paths:
-      - "crates/miao-engine/**"
-      - "crates/miao-sandbox/**"
-      - "package.json"
-      - ".github/workflows/engine.yml"
-      - "packages/core/src/patch.ts"
-      - "packages/core/src/flag/**"
-      - "packages/native/**"
-      - "bun.lock"
+    tags: ["engine-v*"]
   workflow_dispatch:
 
 concurrency:
   # A pull request shares one group per number, so a new push cancels its older
   # run. A push to main groups by commit SHA, so every merged commit gets its own
   # run and keeps a complete status instead of being superseded and cancelled.
-  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.sha }}
+  group: ${{ github.workflow }}-engine-${{ github.event.pull_request.number || github.sha }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 permissions:
@@ -41,6 +20,7 @@ jobs:
   reference:
     name: engine reference corpus
     runs-on: ubuntu-latest
+    timeout-minutes: 60
     steps:
       - name: Checkout repository
         uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
@@ -60,6 +40,7 @@ jobs:
           - macos-14
           - ubuntu-latest
     runs-on: ${{ matrix.os }}
+    timeout-minutes: 60
     defaults:
       run:
         shell: bash
@@ -95,6 +76,7 @@ jobs:
   engine-windows:
     name: engine (windows)
     runs-on: windows-latest
+    timeout-minutes: 60
     defaults:
       run:
         shell: bash
@@ -126,6 +108,7 @@ jobs:
           - { os: ubuntu-latest, target: x86_64-unknown-linux-musl }
           - { os: windows-latest, target: x86_64-pc-windows-msvc }
     runs-on: ${{ matrix.os }}
+    timeout-minutes: 60
     defaults:
       run:
         shell: bash
@@ -182,6 +165,7 @@ jobs:
     needs: artifacts
     if: github.event_name == 'workflow_dispatch' || startsWith(github.ref, 'refs/tags/engine-v')
     runs-on: ubuntu-latest
+    timeout-minutes: 60
     steps:
       - name: Checkout repository
         uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
