@@ -122,3 +122,53 @@ export function translateMessage(event: EngineEvent): SessionTextEnded[] {
     ]
   })
 }
+
+/** The product `session.next.tool.called` payload for one committed tool_use block. */
+export type SessionToolCalled = {
+  sessionID: SessionID
+  timestamp: DateTime.Utc
+  assistantMessageID: SessionMessage.ID
+  callID: string
+  tool: string
+  input: Record<string, unknown>
+  provider: { executed: boolean }
+}
+
+/**
+ * Maps a committed assistant message to the product `session.next.tool.called`
+ * events for its `tool_use` blocks. The engine executes tools itself, so
+ * `provider.executed` is always false. Completion (`tool.success`/`tool.failed`)
+ * is a later slice.
+ */
+export function translateTools(event: EngineEvent): SessionToolCalled[] {
+  if (event.kind !== "message.committed") return []
+  if (typeof event.data !== "object" || event.data === null) return []
+  if (!("role" in event.data) || event.data.role !== "assistant") return []
+  if (!("content" in event.data)) return []
+  const content = event.data.content
+  if (!Array.isArray(content)) return []
+  const blocks: unknown[] = content
+  const sessionID = adoptSession(event.session_id)
+  const assistantMessageID = messageID(event.session_id, event.seq)
+  return blocks.flatMap((block) => {
+    if (typeof block !== "object" || block === null) return []
+    if (!("type" in block) || block.type !== "tool_use") return []
+    if (!("id" in block) || typeof block.id !== "string") return []
+    if (!("name" in block) || typeof block.name !== "string") return []
+    const input: Record<string, unknown> = {}
+    if ("input" in block && typeof block.input === "object" && block.input !== null) {
+      for (const key of Object.keys(block.input)) input[key] = Reflect.get(block.input, key)
+    }
+    return [
+      {
+        sessionID,
+        timestamp: DateTime.makeUnsafe(Date.now()),
+        assistantMessageID,
+        callID: block.id,
+        tool: block.name,
+        input,
+        provider: { executed: false },
+      },
+    ]
+  })
+}
