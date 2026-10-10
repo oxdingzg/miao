@@ -42,6 +42,11 @@ const eventMessage = (event: Event) => {
   return event.type
 }
 
+// Abnormal network loss and temporary server shutdowns can continue on a new
+// provider turn. Protocol, payload, and policy failures must stay permanent.
+const closeKind = (code: number) =>
+  [1001, 1006, 1011, 1012, 1013, 1014, 1015].includes(code) ? "connection-closed" : "close"
+
 const binaryMessage = (data: unknown) => {
   if (data instanceof Uint8Array) return data
   if (data instanceof ArrayBuffer) return new Uint8Array(data)
@@ -89,7 +94,7 @@ const waitOpen = (ws: globalThis.WebSocket, input: WebSocketRequest) => {
         Effect.fail(
           transportError("open", `WebSocket closed before opening with code ${event.code}`, {
             url: input.url,
-            kind: "open",
+            kind: closeKind(event.code),
           }),
         ),
       )
@@ -158,7 +163,7 @@ export const fromWebSocket = (
       Queue.failCauseUnsafe(
         messages,
         Cause.fail(
-          transportError("message", `WebSocket error: ${eventMessage(event)}`, { url: input.url, kind: "message" }),
+          transportError("message", `WebSocket error: ${eventMessage(event)}`, { url: input.url, kind: "stream-read" }),
         ),
       )
     }
@@ -167,7 +172,10 @@ export const fromWebSocket = (
       Queue.failCauseUnsafe(
         messages,
         Cause.fail(
-          transportError("message", `WebSocket closed with code ${event.code}`, { url: input.url, kind: "close" }),
+          transportError("message", `WebSocket closed with code ${event.code}`, {
+            url: input.url,
+            kind: closeKind(event.code),
+          }),
         ),
       )
     }
