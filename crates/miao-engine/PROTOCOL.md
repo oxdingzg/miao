@@ -101,9 +101,11 @@ local proxy's job.
 newline-delimited JSON-RPC 2.0 on stdio, reusing the same domain model and the
 startup workspace. This slice implements `initialize`, `authenticate`,
 `session/new`, `session/prompt` (a text turn streamed as `session/update`
-`agent_message_chunk` notifications) and the `session/cancel` notification. Tool
-calls, permission requests, plan/config updates and `session/load|fork|list|close`
-are later slices.
+`agent_message_chunk` notifications), the `session/cancel` notification, and the
+`session/request_permission` round-trip: each engine approval is sent to the
+client as a permission request (allow-once / reject-once) and its answer resolves
+the approval. Tool-call notifications, plan/config updates and
+`session/load|fork|list|close` are later slices.
 
 `GET /events?session_id=..&after=..` streams Server-Sent Events: the committed
 `event` notifications for that Session (each frame carries `id: <seq>`, and a

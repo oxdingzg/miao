@@ -2,20 +2,31 @@
 //!
 //! An editor speaks ACP to the agent over stdio. This slice covers the core
 //! lifecycle — `initialize`, `authenticate`, `session/new`, `session/prompt`
-//! (a text turn streamed as `agent_message_chunk`) and the `session/cancel`
-//! notification. Tool calls, permission requests, plan/config updates and
-//! `session/load|fork|list|close` are later slices (ADR-07); the adapter reuses
-//! the same domain model over [`Runtime`] and never widens its own authority.
+//! (a text turn streamed as `agent_message_chunk`) — the `session/cancel`
+//! notification, and the `session/request_permission` round-trip that maps an
+//! engine approval to a client permission decision. Tool-call notifications,
+//! plan/config updates and `session/load|fork|list|close` are later slices
+//! (ADR-07); the adapter reuses the same domain model over [`Runtime`] and never
+//! widens its own authority.
 
 use crate::{
+    approval::{Approval, Response},
+    permission::Decision,
     protocol::{Delivery, Input, Message},
-    runtime::Runtime,
+    runtime::{Controller, Runtime},
 };
 use serde_json::{json, Value};
-use std::{sync::Arc, time::Duration};
+use std::{
+    collections::HashMap,
+    sync::{
+        atomic::{AtomicI64, Ordering},
+        Arc,
+    },
+    time::Duration,
+};
 use tokio::{
     io::{AsyncBufReadExt, AsyncWriteExt, BufReader},
-    sync::mpsc,
+    sync::{mpsc, oneshot, Mutex},
 };
 
 const AUTH_METHOD: &str = "miao-login";
@@ -40,37 +51,48 @@ pub async fn serve(runtime: Runtime) -> std::io::Result<()> {
         }
     });
 
-    let conn = Arc::new(Conn { runtime, out });
+    let conn = Arc::new(Conn {
+        controller: runtime.controller(),
+        runtime,
+        out,
+        next: AtomicI64::new(1),
+        pending: Mutex::new(HashMap::new()),
+    });
     let mut lines = BufReader::new(tokio::io::stdin()).lines();
     while let Some(line) = lines.next_line().await? {
         let Ok(message) = serde_json::from_slice::<Value>(line.as_bytes()) else {
             continue;
         };
         let id = message.get("id").cloned();
-        let method = message
+        let Some(method) = message
             .get("method")
             .and_then(Value::as_str)
-            .map(str::to_string);
+            .map(str::to_string)
+        else {
+            // A response to an agent-initiated request (a permission decision).
+            if let Some(id) = id.as_ref().and_then(Value::as_i64) {
+                if let Some(sender) = conn.pending.lock().await.remove(&id) {
+                    let _ = sender.send(message);
+                }
+            }
+            continue;
+        };
         let params = message.get("params").cloned().unwrap_or(Value::Null);
         let conn = conn.clone();
-        match (id, method) {
-            (Some(id), Some(method)) => {
-                tokio::spawn(async move { request(&conn, id, &method, params).await });
-            }
-            (None, Some(method)) => {
-                tokio::spawn(async move { notification(&conn, &method, params).await });
-            }
-            // Responses to agent-initiated requests arrive here once a later
-            // slice adds them (permissions); none are sent yet.
-            _ => {}
-        }
+        match id {
+            Some(id) => tokio::spawn(async move { request(&conn, id, &method, params).await }),
+            None => tokio::spawn(async move { notification(&conn, &method, params).await }),
+        };
     }
     Ok(())
 }
 
 struct Conn {
     runtime: Runtime,
+    controller: Controller,
     out: mpsc::Sender<Value>,
+    next: AtomicI64,
+    pending: Mutex<HashMap<i64, oneshot::Sender<Value>>>,
 }
 
 impl Conn {
@@ -93,6 +115,29 @@ impl Conn {
             .out
             .send(json!({ "jsonrpc": JSONRPC, "method": method, "params": params }))
             .await;
+    }
+
+    /// Send an agent-initiated request (for example `session/request_permission`)
+    /// and await the client's response. `None` means the client never answered.
+    async fn call(&self, method: &str, params: Value) -> Option<Value> {
+        let id = self.next.fetch_add(1, Ordering::Relaxed);
+        let (sender, receiver) = oneshot::channel();
+        self.pending.lock().await.insert(id, sender);
+        let sent = self
+            .out
+            .send(json!({ "jsonrpc": JSONRPC, "id": id, "method": method, "params": params }))
+            .await;
+        if sent.is_err() {
+            self.pending.lock().await.remove(&id);
+            return None;
+        }
+        match tokio::time::timeout(Duration::from_secs(60), receiver).await {
+            Ok(Ok(value)) => Some(value),
+            _ => {
+                self.pending.lock().await.remove(&id);
+                None
+            }
+        }
     }
 }
 
@@ -165,7 +210,11 @@ async fn prompt(conn: &Arc<Conn>, id: Value, params: Value) {
         if let Ok(events) = conn.runtime.store().events(&session, cursor, 64).await {
             for event in events {
                 cursor = event.seq;
-                if event.kind == "run.finished" {
+                if event.kind == "approval.requested" {
+                    if let Ok(approval) = serde_json::from_value::<Approval>(event.data.clone()) {
+                        decide(conn, &approval).await;
+                    }
+                } else if event.kind == "run.finished" {
                     finished = true;
                 }
             }
@@ -175,6 +224,54 @@ async fn prompt(conn: &Arc<Conn>, id: Value, params: Value) {
         }
     }
     conn.reply(id, json!({ "stopReason": "end_turn" })).await;
+}
+
+/// Ask the client for a permission decision and resolve the engine approval to
+/// match. A client that never answers, or cancels, is a deny.
+async fn decide(conn: &Arc<Conn>, approval: &Approval) {
+    let decision = request_permission(conn, approval).await;
+    let response = Response {
+        request_id: approval.request_id.clone(),
+        input_hash: approval.input_hash.clone(),
+        policy_revision: approval.policy_revision.clone(),
+        decision,
+        matcher: Some(approval.matcher.clone()),
+    };
+    let _ = conn
+        .runtime
+        .approve(&conn.controller, &approval.session_id, response)
+        .await;
+}
+
+async fn request_permission(conn: &Arc<Conn>, approval: &Approval) -> Decision {
+    let response = conn
+        .call(
+            "session/request_permission",
+            json!({
+                "sessionId": approval.session_id,
+                "toolCall": {
+                    "toolCallId": approval.call_id,
+                    "title": format!("{} {}", approval.tool, approval.resource),
+                    "kind": "other",
+                    "rawInput": approval.input,
+                },
+                "options": [
+                    { "optionId": "allow_once", "name": "Allow once", "kind": "allow_once" },
+                    { "optionId": "reject_once", "name": "Reject", "kind": "reject_once" },
+                ],
+            }),
+        )
+        .await;
+    match response
+        .as_ref()
+        .and_then(|value| value.get("result"))
+        .and_then(|result| result.get("outcome"))
+        .and_then(|outcome| outcome.get("optionId"))
+        .and_then(Value::as_str)
+    {
+        Some("allow_once") => Decision::Allow,
+        _ => Decision::Deny,
+    }
 }
 
 /// Emit each assistant message's text once, in order, as it is committed.
