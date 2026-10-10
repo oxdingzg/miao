@@ -26,6 +26,7 @@ export class EngineTrace {
               provider_id: "provider-call",
               message_id: "message",
               checkpoint: "checkpoint",
+              request_id: "approval",
             }
             const domain = domains[key]
             if (domain && typeof input === "string") return [key, this.#id(domain, input)]

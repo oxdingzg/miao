@@ -840,7 +840,7 @@ impl Store {
             let key=format!("{run}/{id}");
             let changed=tx.execute("UPDATE engine_tool SET state='completed' WHERE id=?1 AND state IN ('planned','dispatched') AND run_id IN (SELECT id FROM engine_run WHERE id=?2 AND session_id=?3 AND state='running')",params![key,run,session])?;
             if changed!=1 { return Err(Error::Invalid("tool is not dispatched".into())); }
-            append(&tx,&session,"tool.completed",json!({"call_id":key,"result":result,"is_error":is_error}))?;
+            append(&tx,&session,"tool.completed",json!({"call_id":key,"result":result,"result_json":serde_json::to_string(&result)?,"is_error":is_error}))?;
             let event=project_message(&tx,&session,"user",json!([{"type":"tool_result","tool_use_id":id,"content":serde_json::to_string(&result)?,"is_error":is_error}]),None)?;
             tx.commit()?;
             Ok(event)

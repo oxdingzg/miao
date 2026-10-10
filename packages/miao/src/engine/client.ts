@@ -20,6 +20,8 @@ export interface EngineOptions {
   provider?: string
   endpoint?: string
   authFile?: string
+  policyFile?: string
+  toolReplayFile?: string
   env?: Record<string, string | undefined>
 }
 
@@ -73,6 +75,8 @@ export class EngineClient {
     if (options.provider) args.push("--provider", options.provider)
     if (options.endpoint) args.push("--endpoint", options.endpoint)
     if (options.authFile) args.push("--auth-file", options.authFile)
+    if (options.policyFile) args.push("--policy", options.policyFile)
+    if (options.toolReplayFile) args.push("--tool-replay", options.toolReplayFile)
     return new EngineClient(
       spawn([options.binary, ...args], {
         stdin: "pipe",

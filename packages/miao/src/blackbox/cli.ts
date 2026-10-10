@@ -84,6 +84,8 @@ async function main() {
         prompt,
         endpoint: new URL("/chat/completions", proxy.server.url).toString(),
         blackbox: replay ?? recorder,
+        policyFile: option("--policy"),
+        ...(replay ? { toolReplayFile: file } : {}),
         ...(replay ? { env: { OPENAI_API_KEY: "blackbox-offline" } } : {}),
       })
       replay?.assertConsumed()
