@@ -74,14 +74,20 @@ for (const testCase of [
       child.stdin.end()
       const output = new Response(child.stdout).text()
       const errors = new Response(child.stderr).text()
-      while (!pairing.list().length && Date.now() < deadline) await Bun.sleep(5)
+      const claimDeadline = Date.now() + 10_000
+      while (!pairing.list().length && child.exitCode === null && Date.now() < claimDeadline) await Bun.sleep(5)
       const candidate = pairing.list()[0]
       if (
         !candidate ||
         candidate.candidate.publicKey !== device.publicKey ||
         candidate.candidate.label !== "原生手机 / 🎤"
-      )
-        throw new Error("Native pairing did not verify the signed claim and Unicode HMAC transcript")
+      ) {
+        child.kill()
+        await child.exited
+        throw new Error(
+          `Native pairing claim failed (${JSON.stringify(testCase)}, candidate=${Boolean(candidate)}, exit=${child.exitCode}): ${(await errors).slice(0, 4096)}`,
+        )
+      }
       if (calls.length) throw new Error("A business request ran before local owner approval")
       await pairing.approve(invitation.pairingID, device.publicKey)
       if ((await child.exited) !== 0) throw new Error(`Native pairing probe failed: ${(await errors).slice(0, 4096)}`)
@@ -92,7 +98,8 @@ for (const testCase of [
         throw new Error("Native transport admitted work before saving approval")
     } finally {
       clearTimeout(timeout)
-      child.kill()
+      if (child.exitCode === null) child.kill()
+      await child.exited
     }
   } finally {
     state.agent?.stop()
