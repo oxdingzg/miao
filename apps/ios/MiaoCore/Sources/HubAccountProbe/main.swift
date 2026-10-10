@@ -12,30 +12,54 @@ private enum AccountProbe {
         let host: ApprovedHost; let devicePrivateKey: String
         let grant: DeviceGrant; let notificationURL: URL; let notificationToken: String
     }
+    private struct Receipt: Codable {
+        let stage: String
+        let finished: Bool
+        let nativeAccount: Bool
+    }
+    private static func receiptURL() throws -> URL {
+        try FileManager.default.url(for: .documentDirectory, in: .userDomainMask,
+            appropriateFor: nil, create: true).appendingPathComponent("native-account-result.json")
+    }
+    private static func stage(_ name: String) throws {
+        print("NativeAccountStage:\(name)")
+        #if os(iOS)
+        let receipt = Receipt(stage: name, finished: false, nativeAccount: false)
+        try JSONEncoder().encode(receipt).write(to: receiptURL(), options: .atomic)
+        #endif
+    }
+    static func finish(success: Bool) throws {
+        #if os(iOS)
+        let url = try receiptURL()
+        let previous = try? JSONDecoder().decode(Receipt.self, from: Data(contentsOf: url))
+        let receipt = Receipt(stage: previous?.stage ?? "notStarted", finished: true, nativeAccount: success)
+        try JSONEncoder().encode(receipt).write(to: url, options: .atomic)
+        #endif
+    }
     static func run(_ url: URL) async throws {
-        print("NativeAccountStage:fixture")
+        try stage("fixture")
         let fixture = try JSONDecoder().decode(Fixture.self, from: Data(contentsOf: url))
         let service = "miao.hub.probe." + UUID().uuidString
         let account = try HubAccount(origin: fixture.origin, keychainService: service, allowLoopbackHTTP: true)
         let restored = try HubAccount(origin: fixture.origin, keychainService: service, allowLoopbackHTTP: true)
         let cleared = try HubAccount(origin: fixture.origin, keychainService: service, allowLoopbackHTTP: true)
         do {
-            print("NativeAccountStage:login")
+            try stage("login")
             try await account.signIn(email: fixture.email, password: fixture.password)
-            print("NativeAccountStage:directory")
+            try stage("directory")
             let before = try await account.bearer()
             let hosts = try await account.hosts()
             guard hosts.count == 1, hosts[0].hostID == fixture.hostID, hosts[0].name == fixture.hostName,
                   hosts[0].publicKey == fixture.hostPublicKey, hosts[0].online,
                   hosts[0].runtimeID == fixture.host.target.runtimeID, hosts[0].revokedAt == nil else { throw HubAccountError.malformed }
-            print("NativeAccountStage:keychain")
+            try stage("keychain")
             guard try await restored.restore() else { throw HubAccountError.authenticationRequired }
             _ = try await restored.bearer()
             let standard = fixture.devicePrivateKey.replacingOccurrences(of: "-", with: "+").replacingOccurrences(of: "_", with: "/")
             guard let bytes = Data(base64Encoded: standard + String(repeating: "=", count: (4 - standard.count % 4) % 4)) else {
                 throw HubAccountError.malformed
             }
-            print("NativeAccountStage:pushRegistration")
+            try stage("pushRegistration")
             guard try await account.pushRegistrationAvailable(requireDelivery: true) else { throw HubAccountError.malformed }
             let deviceID = try P256.Signing.PrivateKey(rawRepresentation: bytes).publicKey.x963Representation.base64EncodedString()
                 .replacingOccurrences(of: "+", with: "-").replacingOccurrences(of: "/", with: "_").replacingOccurrences(of: "=", with: "")
@@ -46,7 +70,7 @@ private enum AccountProbe {
                   replacementPush.registeredAt > firstPush.registeredAt else { throw HubAccountError.malformed }
             try await account.revokePush(deviceID: deviceID)
             _ = try await account.registerPush(push)
-            print("NativeAccountStage:pushContext")
+            try stage("pushContext")
             func notification(_ route: String) async throws -> String {
                 var request = URLRequest(url: fixture.notificationURL.appendingPathComponent(route))
                 request.httpMethod = "POST"
@@ -72,7 +96,7 @@ private enum AccountProbe {
                 throw HubAccountError.malformed
             } catch HubAccountError.rejected(404) {}
             do {
-                print("NativeAccountStage:denyDevice")
+                try stage("denyDevice")
                 let denied = try await HubConnection.open(host: fixture.host, identity: P256.Signing.PrivateKey(),
                     allowLoopbackHTTP: true, account: account) { _ in }
                 await denied.close()
@@ -82,7 +106,7 @@ private enum AccountProbe {
             let previousHost = ApprovedHost(id: fixture.host.id, label: fixture.host.label, hubURL: fixture.host.hubURL,
                 target: RemoteTarget(hostID: fixture.host.target.hostID, runtimeID: UUID().uuidString),
                 publicKey: fixture.host.publicKey, grantID: fixture.host.grantID, grantVersion: fixture.host.grantVersion)
-            print("NativeAccountStage:refreshRuntime")
+            try stage("refreshRuntime")
             do {
                 let stale = try await HubConnection.open(host: previousHost,
                     identity: P256.Signing.PrivateKey(rawRepresentation: bytes), allowLoopbackHTTP: true, account: account) { _ in }
@@ -94,19 +118,19 @@ private enum AccountProbe {
                 let result = try await connection.request(.sessionGet, sessionID: "session-one")
                 guard result == .object(["title": .string("Account relay session")]) else { throw RemoteRPCError.malformed }
             }
-            print("NativeAccountStage:rpc")
+            try stage("rpc")
             do { try await connection.synchronize() }
             catch { await connection.close(); throw error }
-            print("NativeAccountStage:secondConnection")
+            try stage("secondConnection")
             let remoteConnection = try await HubConnection.open(host: fixture.host,
                 identity: P256.Signing.PrivateKey(rawRepresentation: bytes), allowLoopbackHTTP: true, account: restored) { _ in }
-            print("NativeAccountStage:pushRevocation")
+            try stage("pushRevocation")
             _ = try await notification("revoke")
             do {
                 _ = try await account.pushContext(deviceID: deviceID, signalID: signalID)
                 throw HubAccountError.malformed
             } catch HubAccountError.rejected(404) {}
-            print("NativeAccountStage:logout")
+            try stage("logout")
             try await account.signOut()
             do {
                 _ = try await account.registerPush(push)
@@ -116,14 +140,14 @@ private enum AccountProbe {
                 _ = try await restored.hosts()
                 throw HubAccountError.malformed
             } catch HubAccountError.authenticationRequired {}
-            print("NativeAccountStage:disconnect")
+            try stage("disconnect")
             do { try await connection.waitForDisconnect(); throw HubAccountError.malformed }
             catch RemoteConnectionError.authorizationBlocked {}
             await connection.close()
             do { try await remoteConnection.waitForDisconnect(); throw HubAccountError.malformed }
             catch RemoteConnectionError.authorizationBlocked {}
             await remoteConnection.close()
-            print("NativeAccountStage:cleared")
+            try stage("cleared")
             guard try await !cleared.restore(), !before.isEmpty else { throw HubAccountError.malformed }
         } catch {
             try? await account.signOut()
@@ -145,8 +169,13 @@ private enum AccountProbe {
                         throw HubAccountError.malformed
                     }
                     try await AccountProbe.run(fixture)
+                    try AccountProbe.finish(success: true)
                     exit(0)
-                } catch { print("Native account integration failed"); exit(1) }
+                } catch {
+                    try? AccountProbe.finish(success: false)
+                    print("Native account integration failed")
+                    exit(1)
+                }
             }
         }
     }
