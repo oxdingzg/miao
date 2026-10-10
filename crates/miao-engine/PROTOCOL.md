@@ -93,4 +93,12 @@ the revision (a different value is rejected with `unsupported_protocol`). The
 engine requires `Authorization: Bearer <token>`: the token is supplied at startup
 and an unauthenticated or wrong-token request is rejected before the runtime is
 touched. The engine binds a loopback listener only; TLS and public exposure are a
-local proxy's job. SSE event streaming is not part of this revision yet.
+local proxy's job.
+
+`GET /events?session_id=..&after=..` streams Server-Sent Events: the committed
+`event` notifications for that Session (each frame carries `id: <seq>`, and a
+reconnecting `EventSource` may resend `Last-Event-ID` instead of `after`), then
+live committed events and ephemeral `progress` frames. The durable `seq` cursor
+is authoritative, so replay→live has no gap or duplicate and a lagged progress
+subscriber only receives a `resync` frame; a slow client can never block the
+provider or the run loop.
