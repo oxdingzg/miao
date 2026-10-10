@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test"
-import { StatusBridge, statusOf, translateMessage, translatePrompt, translateStatus } from "@/engine/bridge"
+import { StatusBridge, statusOf, translateMessage, translatePrompt, translateStatus, translateTools } from "@/engine/bridge"
 import type { EngineEvent } from "@/engine/client"
 
 const event = (kind: string): EngineEvent => ({ session_id: "ses_test", seq: 1, kind, data: {} })
@@ -54,4 +54,21 @@ test("maps a committed assistant message to text.ended events", () => {
   expect(String(events[0]?.sessionID)).toBe("ses_abc")
   expect(translateMessage({ ...event, data: { role: "user", content: [{ type: "text", text: "hi" }] } })).toEqual([])
   expect(translateMessage({ ...event, kind: "run.started" })).toEqual([])
+})
+
+test("maps a committed assistant tool_use block to tool.called", () => {
+  const event: EngineEvent = {
+    session_id: "ses_abc",
+    seq: 4,
+    kind: "message.committed",
+    data: { role: "assistant", content: [{ type: "tool_use", id: "c1", name: "read_file", input: { path: "file" } }] },
+  }
+  const calls = translateTools(event)
+  expect(calls).toHaveLength(1)
+  expect(calls[0]?.callID).toBe("c1")
+  expect(calls[0]?.tool).toBe("read_file")
+  expect(calls[0]?.input).toEqual({ path: "file" })
+  expect(calls[0]?.provider).toEqual({ executed: false })
+  expect(String(calls[0]?.assistantMessageID)).toBe("msg_ses_abc_4")
+  expect(translateTools({ ...event, kind: "run.finished" })).toEqual([])
 })
