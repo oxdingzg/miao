@@ -9,9 +9,10 @@ use miao_engine::{
     tools::Tools,
 };
 use serde_json::{json, Value};
-use std::{collections::HashMap, io, sync::Arc, time::Duration};
+use std::{collections::HashMap, io, net::SocketAddr, sync::Arc, time::Duration};
 use tokio::{
     io::{AsyncBufReadExt, AsyncWriteExt, BufReader},
+    net::TcpListener,
     sync::mpsc,
 };
 
@@ -113,7 +114,7 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
         return Ok(());
     }
     if args.first().map(String::as_str) != Some("serve") {
-        eprintln!("Usage: miao-engine serve --db PATH --workspace PATH --model MODEL [--provider anthropic|openai-chat|openai-responses|subscription-responses|gemini] [--endpoint URL] [--policy PATH]\n       miao-engine export --db PATH --session ID [--after CURSOR]\n       miao-engine doctor [--db PATH]\nUse ANTHROPIC_API_KEY, OPENAI_API_KEY or GEMINI_API_KEY for the selected provider. An explicit engine database is required.");
+        eprintln!("Usage: miao-engine serve --db PATH --workspace PATH --model MODEL [--provider anthropic|openai-chat|openai-responses|subscription-responses|gemini] [--endpoint URL] [--policy PATH] [--http ADDR [--http-token TOKEN]]\n       miao-engine export --db PATH --session ID [--after CURSOR]\n       miao-engine doctor [--db PATH]\nUse ANTHROPIC_API_KEY, OPENAI_API_KEY or GEMINI_API_KEY for the selected provider. An explicit engine database is required.");
         std::process::exit(2);
     }
     let mut options = HashMap::new();
@@ -136,6 +137,8 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
             "--credential-id",
             "--credential-integration",
             "--auth-file",
+            "--http",
+            "--http-token",
         ]
         .contains(&flag[0].as_str())
             || options.insert(flag[0].clone(), flag[1].clone()).is_some()
@@ -346,6 +349,41 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
             .with_lsp(Arc::new(registry));
     }
     let runtime = Runtime::with_policy(Store::open(db).await?, provider, tools, policy).await?;
+    if options.contains_key("--http-token") && !options.contains_key("--http") {
+        return Err("--http-token requires --http".into());
+    }
+    if let Some(address) = options.get("--http") {
+        let address: SocketAddr = address
+            .parse()
+            .map_err(|_| "--http must be an IP:port socket address")?;
+        if !address.ip().is_loopback() {
+            return Err(
+                "--http must bind a loopback address; terminate TLS in a local proxy".into(),
+            );
+        }
+        let token = match options
+            .get("--http-token")
+            .cloned()
+            .or_else(|| std::env::var("MIAO_ENGINE_HTTP_TOKEN").ok())
+        {
+            Some(token) => token,
+            None => {
+                let token = uuid::Uuid::new_v4().to_string();
+                eprintln!("miao-engine http generated token: {token}");
+                token
+            }
+        };
+        let listener = TcpListener::bind(address).await?;
+        eprintln!(
+            "miao-engine http listening on {} ({})",
+            listener.local_addr()?,
+            miao_engine::http::PROTOCOL_VERSION
+        );
+        let result = miao_engine::http::serve(runtime.clone(), listener, token).await;
+        runtime.shutdown().await;
+        result?;
+        return Ok(());
+    }
     let result = serve(&runtime).await;
     runtime.shutdown().await;
     result?;
@@ -372,7 +410,7 @@ async fn serve(runtime: &Runtime) -> io::Result<()> {
     // Future network adapters must authenticate before receiving this handle.
     // `Host` holds that capability together with the subscription cursors, so
     // stdio framing owns no domain state.
-    let mut host = Host::new(runtime);
+    let mut host = Host::new(runtime.clone());
     let mut input = BufReader::new(tokio::io::stdin());
     let mut bytes = Vec::new();
     let mut progress = runtime.progress();

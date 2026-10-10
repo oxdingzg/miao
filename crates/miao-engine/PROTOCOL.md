@@ -81,3 +81,16 @@ failing `post_tool_use` hook is observed but never changes the result.
 committed events as JSONL from a read-only high-water snapshot, with no provider
 credential and without owning execution. It is the second half of the headless
 acceptance: the stdio form and the exported form must describe the same ledger.
+
+## HTTP transport (`engine-http-0`)
+
+A loopback HTTP mapping of the same method table, for clients that cannot use
+stdio. `POST /rpc` takes one JSON request object — the same `{id, method,
+params}` shape as a stdio line — and returns the same `{id, result|error}`
+envelope; `GET /version` reports the revision. Every response carries
+`miao-engine-protocol: engine-http-0`, and a request may send that header to pin
+the revision (a different value is rejected with `unsupported_protocol`). The
+engine requires `Authorization: Bearer <token>`: the token is supplied at startup
+and an unauthenticated or wrong-token request is rejected before the runtime is
+touched. The engine binds a loopback listener only; TLS and public exposure are a
+local proxy's job. SSE event streaming is not part of this revision yet.
