@@ -110,6 +110,13 @@ test("Runtime owns storage, hosts Remote Control, authenticates clients, and per
     invitation?: ControlPairing.Invitation,
   ) => {
     // Use the actual encrypted Hub -> Runtime Agent -> local API path.
+    // Enabling the Agent admits a connection attempt; wait for Hub registration
+    // before opening a device socket, including after a Runtime restart.
+    const deadline = Date.now() + 10_000
+    while (!hub.connectedHosts().some((host) => host.runtimeID === record.runtimeID)) {
+      if (Date.now() >= deadline) throw new Error(`Runtime ${record.runtimeID} did not register with the test Hub`)
+      await Bun.sleep(20)
+    }
     const socket = new WebSocket(
       `ws://127.0.0.1:${hub.port}/v1/client?hostID=${grants.hostID}&runtimeID=${record.runtimeID}`,
     )
@@ -117,8 +124,31 @@ test("Runtime owns storage, hosts Remote Control, authenticates clients, and per
     const messages: string[] = []
     socket.addEventListener("message", (event) => messages.push(String(event.data)))
     await new Promise<void>((resolve, reject) => {
-      socket.addEventListener("open", () => resolve(), { once: true })
-      socket.addEventListener("error", () => reject(new Error("Remote test socket failed")), { once: true })
+      const timer = setTimeout(() => reject(new Error(`Remote socket open timed out for ${record.runtimeID}`)), 10_000)
+      socket.addEventListener(
+        "open",
+        () => {
+          clearTimeout(timer)
+          resolve()
+        },
+        { once: true },
+      )
+      socket.addEventListener(
+        "error",
+        () => {
+          clearTimeout(timer)
+          reject(new Error(`Remote test socket failed for ${record.runtimeID} (readyState ${socket.readyState})`))
+        },
+        { once: true },
+      )
+      socket.addEventListener(
+        "close",
+        (event) => {
+          clearTimeout(timer)
+          reject(new Error(`Remote test socket closed for ${record.runtimeID} (code ${event.code})`))
+        },
+        { once: true },
+      )
     })
     const receive = async () => {
       const deadline = Date.now() + 10_000

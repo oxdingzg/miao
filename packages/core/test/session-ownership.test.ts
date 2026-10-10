@@ -47,14 +47,37 @@ async function window(storage: string, id: string, action = "prompt") {
     ],
     { stdout: "pipe", stderr: "pipe", env: { ...process.env, MIAO_PRINT_LOGS: "0" } },
   )
-  const output = await child.stdout.getReader().read()
-  const ready = new TextDecoder().decode(output.value)
+  const reader = child.stdout.getReader()
+  const decoder = new TextDecoder()
+  const timer = setTimeout(() => void reader.cancel(), 20_000)
+  let ready = ""
+  try {
+    while (!ready.includes("\n")) {
+      const output = await reader.read()
+      if (output.done) break
+      ready += decoder.decode(output.value, { stream: true })
+    }
+  } catch (error) {
+    child.kill()
+    await child.exited
+    throw error
+  } finally {
+    clearTimeout(timer)
+    reader.releaseLock()
+  }
   if (!ready.includes('"ready":true')) {
     child.kill()
     await child.exited
-    throw new Error(await new Response(child.stderr).text())
+    throw new Error((await new Response(child.stderr).text()) || `Window readiness failed: ${ready}`)
   }
-  return { child, ready }
+  return {
+    child,
+    ready,
+    async [Symbol.asyncDispose]() {
+      if (child.exitCode === null) child.kill()
+      await child.exited
+    },
+  }
 }
 
 test("claims are idempotent and held until their runtime scope closes", async () => {
@@ -74,8 +97,8 @@ test("another window can read a session but cannot admit input or change its met
   await using tmp = await tmpdir()
   const storage = path.join(tmp.path, "sessions.db")
   const id = SessionSchema.ID.create()
-  const first = await window(storage, id)
-  const reader = await window(storage, id, "read")
+  await using first = await window(storage, id)
+  await using reader = await window(storage, id, "read")
   try {
     expect(reader.ready).toContain('"pending":1')
     expect(reader.ready).toContain('"messages":0')
@@ -93,11 +116,11 @@ test("different sessions run independently and one window's death leaves the oth
   const storage = path.join(tmp.path, "parallel.db")
   const firstID = SessionSchema.ID.create()
   const secondID = SessionSchema.ID.create()
-  const first = await window(storage, firstID)
-  const second = await window(storage, secondID)
+  await using first = await window(storage, firstID)
+  await using second = await window(storage, secondID)
   first.child.kill("SIGKILL")
   await first.child.exited
-  const adopted = await window(storage, firstID, "rename")
+  await using adopted = await window(storage, firstID, "rename")
   try {
     expect(adopted.ready).toContain('"pending":1')
     expect(adopted.ready).toContain('"messages":0')
@@ -114,7 +137,7 @@ test("a paused owner is never stolen through a storage path alias", async () => 
   await using tmp = await tmpdir()
   const storage = path.join(tmp.path, "paused.db")
   const id = SessionSchema.ID.create()
-  const first = await window(storage, id)
+  await using first = await window(storage, id)
   await symlink(tmp.path, path.join(tmp.path, "alias"))
   first.child.kill("SIGSTOP")
   try {
@@ -128,11 +151,14 @@ test("a paused owner is never stolen through a storage path alias", async () => 
 test("different windows concurrently admit inputs without WAL snapshot failures or sequence gaps", async () => {
   await using tmp = await tmpdir()
   const storage = path.join(tmp.path, "writes.db")
-  const windows = await Promise.all([
+  const results = await Promise.allSettled([
     window(storage, SessionSchema.ID.create(), "stress"),
     window(storage, SessionSchema.ID.create(), "stress"),
   ])
+  const windows = results.flatMap((result) => (result.status === "fulfilled" ? [result.value] : []))
   try {
+    const failures = results.flatMap((result) => (result.status === "rejected" ? [result.reason] : []))
+    if (failures.length) throw new AggregateError(failures, "Concurrent window startup failed")
     windows.forEach((entry) => {
       expect(entry.ready).toContain('"pending":40')
       const output = JSON.parse(entry.ready)
@@ -148,7 +174,7 @@ test("a wakeup for a session owned by another window is advisory, not a conflict
   await using tmp = await tmpdir()
   const storage = path.join(tmp.path, "wake.db")
   const id = SessionSchema.ID.create()
-  const owner = await window(storage, id)
+  await using owner = await window(storage, id)
   try {
     const layer = AppNodeBuilder.build(
       LayerNode.group([Database.node, EventV2.node, LocationServiceMap.node, SessionStore.node, SessionExecution.node]),

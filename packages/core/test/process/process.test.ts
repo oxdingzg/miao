@@ -43,16 +43,21 @@ describe("AppProcess", () => {
     )
 
     it.effect(
-      "captures stdout and stderr in emission order",
+      "captures both streams and preserves each stream's emission order",
       Effect.gen(function* () {
         const svc = yield* AppProcess.Service
         const script = [
           'process.stdout.write("out 1\\n")',
-          'setTimeout(() => process.stderr.write("err 1\\n"), 10)',
-          'setTimeout(() => process.stdout.write("out 2\\n"), 20)',
+          'process.stderr.write("err 1\\n")',
+          'process.stdout.write("out 2\\n")',
+          'process.stderr.write("err 2\\n")',
         ].join(";")
         const result = yield* svc.run(cmd("-e", script), { combineOutput: true })
-        expect(result.output?.toString("utf8")).toBe("out 1\nerr 1\nout 2\n")
+        // Separate OS pipes preserve their own order, not a shared wall clock.
+        const lines = result.output?.toString("utf8").trim().split("\n") ?? []
+        expect(lines).toHaveLength(4)
+        expect(lines.filter((line) => line.startsWith("out"))).toEqual(["out 1", "out 2"])
+        expect(lines.filter((line) => line.startsWith("err"))).toEqual(["err 1", "err 2"])
         expect(result.stdout.toString("utf8")).toBe("")
         expect(result.stderr.toString("utf8")).toBe("")
       }),
