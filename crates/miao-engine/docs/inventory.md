@@ -31,10 +31,10 @@ scope for this table and is tracked separately.
 | Extension: hooks | validated | `src/hooks.rs` |
 | Extension: TS compatibility worker | validated | `src/worker.rs`; ADR-12 newline-JSON protocol (hello handshake, `tool.list`/`tool.call`/`shutdown`), External authority, bounded and cancellable, degrades alone (`tests/worker.rs`) |
 | Wire: stdio adapter, durable cursor subscription, snapshot/export | validated | `src/protocol.rs`, `src/events.rs`, `src/export.rs` |
-| Wire: HTTP/ACP adapters | inventory | M2 |
+| Wire: HTTP/ACP adapters | validated | `src/acp.rs`, `src/http.rs`, `src/host.rs`: ACP stdio and loopback HTTP adapters over one command table, with revision negotiation and resync (`tests/acp.rs`, `tests/http_sse.rs`, `tests/http_transport.rs`) |
 | Observability: doctor, platform/sandbox report | validated | `src/doctor.rs` |
 | Observability: per-run usage aggregation | validated | `src/store.rs`; `run.usage` sums numeric usage leaves across a run's attempts (including nested `*_details`); per-step `usage` events stay for audit (`tests/run_usage.rs`) |
-| Delivery: single binary, install/update/preview | inventory | M4 |
+| Delivery: engine artifacts, manifest and local install | partial | M4a artifacts + release manifest (`engine.yml`) and M4b `script/install-engine.sh` landed; the product entry/preview channel per ADR-08 remains |
 
 ## Coverage gates
 
