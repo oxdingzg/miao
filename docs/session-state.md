@@ -12,16 +12,16 @@ snapshot. The sidebar and terminal report consume the same presentation state;
 background timers consume the same activity snapshot. One polling lifecycle follows
 the selected Session and aborts on navigation or disposal.
 
-| State        | Evidence                                                                                  | mtty shape            |
-| ------------ | ----------------------------------------------------------------------------------------- | --------------------- |
-| `processing` | Active execution or provider retry                                                        | Busy circle           |
-| `awaiting`   | Permission or question awaiting a user decision                                           | Amber waiting circle  |
-| `waiting`    | Pending input/notification, live background job or scheduled wakeup                       | Accent waiting circle |
-| `incomplete` | Idle with unresolved todos or without a successful final response                         | Amber empty ring      |
-| `completed`  | Idle, no outstanding waits/todos, latest assistant response completed with `finish: stop` | Green full circle     |
-| `error`      | Session failure                                                                           | Red full circle       |
-| `unknown`    | Missing hydration/activity, failed observation or untracked job                           | Amber empty ring      |
-| `idle`       | Hydrated Session without messages or outstanding work                                     | Empty ring            |
+| State        | Evidence                                                                                  | mtty shape           |
+| ------------ | ----------------------------------------------------------------------------------------- | -------------------- |
+| `processing` | Active execution or provider retry                                                        | Busy circle          |
+| `awaiting`   | Permission or question awaiting a user decision                                           | Amber waiting circle |
+| `waiting`    | Pending input/notification, live background job or scheduled wakeup                       | Accent clock         |
+| `incomplete` | Idle with unresolved todos or without a successful final response                         | Amber pause bars     |
+| `completed`  | Idle, no outstanding waits/todos, latest assistant response completed with `finish: stop` | Green full circle    |
+| `error`      | Session failure                                                                           | Red full circle      |
+| `unknown`    | Missing hydration/activity, failed observation or untracked job                           | Muted question mark  |
+| `idle`       | Hydrated Session without messages or outstanding work                                     | Empty ring           |
 
 Cancellation is a resolved checklist item, not completed work. The sidebar keeps
 the checklist visible after completion and shows completed/total counts plus the
