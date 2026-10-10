@@ -11,7 +11,9 @@
 
 ---
 
-**miao 是一个开源 AI 编程代理，让你在终端里完成真实工程任务，也看清任务消耗了多少时间和费用。** 使用你选择的模型，让代理理解仓库、修改代码、执行命令并验证结果。
+**miao 是一个在终端中与你协作的开源 AI 智能体。** 使用你选择的模型，编写代码、开展调研、管理文件和自动化任务，并随时查看执行进展、上下文用量与费用。
+
+搭配 [mtty](https://github.com/oxdingzg/mtty)（AI 原生终端与编辑器）使用，可在每个窗格查看智能体状态、在需要输入时收到通知，并在任务运行时排队准备下一条提示。
 
 miao 把重点放在模型周围的工程能力上：**上下文效率、持久化会话、代理协作，以及长任务的执行控制。** 目标是用更少的等待、更少浪费的 token，得到同样有用的结果。
 
@@ -173,7 +175,7 @@ miao 无需项目账号即可本地运行；连接模型时使用你选择的供
 
 | 项目             | 是什么                                                                                                | 链接                                                                                                                                  |
 | ---------------- | ----------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------- |
-| **miao**(本仓库) | 在终端里运行的 AI 编程代理                                                                            | [mtty.dev/miao](https://mtty.dev/zh/miao) · [文档](https://mtty.dev/zh/docs/miao) · [oxdingzg/miao](https://github.com/oxdingzg/miao) |
+| **miao**(本仓库) | 在终端中与你协作的 AI 智能体                                                                            | [mtty.dev/miao](https://mtty.dev/zh/miao) · [文档](https://mtty.dev/zh/docs/miao) · [oxdingzg/miao](https://github.com/oxdingzg/miao) |
 | **mtty**         | 用 Rust 编写、GPU 渲染的终端(macOS、Linux、Windows),能看出每个窗格里的代理正在工作、在等你,还是已完成 | [mtty.dev/mtty](https://mtty.dev/zh/mtty) · [oxdingzg/mtty](https://github.com/oxdingzg/mtty)                                         |
 | **mtty.dev**     | 两者的官网与文档站                                                                                    | [mtty.dev](https://mtty.dev/zh/)                                                                                                      |
 
