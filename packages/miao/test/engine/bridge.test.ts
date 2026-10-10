@@ -7,7 +7,7 @@ const event = (kind: string): EngineEvent => ({ session_id: "ses_test", seq: 1, 
 test("maps run lifecycle events to product status", () => {
   expect(statusOf(event("run.started"))).toEqual({ type: "busy" })
   expect(statusOf(event("run.finished"))).toEqual({ type: "idle" })
-  expect(statusOf(event("provider.failed"))).toEqual({ type: "idle" })
+  expect(statusOf(event("provider.failed"))).toBeUndefined()
   expect(statusOf(event("message.committed"))).toBeUndefined()
 })
 
@@ -146,4 +146,41 @@ test("maps question.requested to a question.v2.asked payload", () => {
   expect(asked?.questions[0]?.options).toEqual([{ label: "a", description: "A" }, { label: "b", description: "" }])
   expect(asked?.questions[0]?.custom).toBe(true)
   expect(translateQuestion({ ...event, kind: "run.started", data: {} })).toBeUndefined()
+})
+
+
+test("status transitions are isolated by Session and only terminal events idle a run", () => {
+  const bridge = new StatusBridge()
+  expect(bridge.update({ ...event("run.started"), session_id: "ses_a" })?.status.type).toBe("busy")
+  expect(bridge.update({ ...event("run.started"), session_id: "ses_b" })?.status.type).toBe("busy")
+  expect(bridge.update({ ...event("provider.failed"), session_id: "ses_a" })).toBeUndefined()
+  expect(bridge.update({ ...event("run.finished"), session_id: "ses_a" })?.status.type).toBe("idle")
+  expect(bridge.update({ ...event("run.started"), session_id: "ses_b" })).toBeUndefined()
+})
+
+test("run-scoped tool keys retain the originating message across reused provider ids", () => {
+  const bridge = new ToolBridge()
+  const planned = (session: string, run: string): EngineEvent => ({
+    session_id: session, seq: 1, kind: "tool.planned",
+    data: { call_id: `${run}/call`, provider_id: "call" },
+  })
+  const committed = (session: string, seq: number): EngineEvent => ({
+    session_id: session, seq, kind: "message.committed",
+    data: { role: "assistant", content: [{ type: "tool_use", id: "call", name: "read_file", input: {} }] },
+  })
+  bridge.note(planned("ses_a", "run1"))
+  bridge.note(committed("ses_a", 2))
+  bridge.note(planned("ses_a", "run2"))
+  bridge.note(committed("ses_a", 5))
+  bridge.note(planned("ses_b", "run1"))
+  bridge.note(committed("ses_b", 9))
+  const result = (session: string, run: string) => bridge.result({
+    session_id: session, seq: 10, kind: "tool.completed",
+    data: { call_id: `${run}/call`, result: "contents", is_error: false },
+  })
+  expect(String(result("ses_a", "run1")?.assistantMessageID)).toBe("msg_ses_a_2")
+  expect(String(result("ses_a", "run2")?.assistantMessageID)).toBe("msg_ses_a_5")
+  expect(String(result("ses_b", "run1")?.assistantMessageID)).toBe("msg_ses_b_9")
+  expect(result("ses_a", "run1")?.callID).toBe("call")
+  expect(result("ses_missing", "run1")).toBeUndefined()
 })
