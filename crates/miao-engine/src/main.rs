@@ -135,6 +135,7 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
             "--lsp-config",
             "--hooks-config",
             "--context-config",
+            "--skills-config",
             "--credential-db",
             "--credential-id",
             "--credential-integration",
@@ -297,6 +298,22 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
         tools = tools
             .with_protected_resource(&path)
             .with_context_sources(sources)?;
+    }
+    if let Some(path) = options.get("--skills-config") {
+        let path = tokio::fs::canonicalize(path).await?;
+        if path.starts_with(std::path::Path::new(tools.location())) {
+            return Err("Skills host config must be outside model-writable workspace".into());
+        }
+        let bytes = tokio::fs::read(&path).await?;
+        if bytes.len() > 65536 {
+            return Err("Skills config exceeds 64 KiB".into());
+        }
+        let directories =
+            serde_json::from_slice::<Vec<miao_engine::context::SkillDirectory>>(&bytes)
+                .map_err(|_| "invalid Skills host config")?;
+        tools = tools
+            .with_protected_resource(&path)
+            .with_skill_directories(directories)?;
     }
     if let Some(path) = options.get("--hooks-config") {
         let path = tokio::fs::canonicalize(path).await?;

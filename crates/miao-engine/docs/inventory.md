@@ -22,6 +22,7 @@ scope for this table and is tracked separately.
 | LSP core (diagnostics/definition/references) | validated | `src/lsp.rs`, `--lsp-config`; lazy per-extension server, Content-Length JSON-RPC, bounded diagnostics and definition/references tools (`tests/lsp.rs`) |
 | Media (inline image attachments) | validated | `src/protocol.rs`, `src/store.rs`; base64 image parts on `admit`, promoted into the user message, encoded by the Anthropic/Chat/Responses/Gemini adapters (`tests/media.rs`) |
 | Context: session state, todo, goal | validated | `src/state.rs`, `src/tools.rs` |
+| Context: project skills | validated | `src/context.rs`, `--skills-config`; discovers root `*.md` and nested `SKILL.md`, lists name/description in the system context (body read on demand), bounded and symlink-safe (`tests/skills.rs`) |
 | State/tools: question, wakeup, cron | validated | `src/question.rs`, `src/wakeup.rs`, `src/cron.rs` |
 | Providers: Anthropic, OpenAI Chat, OpenAI Responses, subscription Responses, Gemini | validated | `src/provider.rs`, `src/openai_chat.rs`, `src/openai_responses.rs`, `src/gemini.rs` |
 | Auth: API key + credential store, key/oauth kinds | validated | `src/credential.rs`; OAuth refresh broker planned |
