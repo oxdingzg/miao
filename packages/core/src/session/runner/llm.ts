@@ -89,6 +89,8 @@ import { inlineTextFiles, materializeBlobRefs } from "./materialize-files"
 import { MAX_STEPS_PROMPT } from "./max-steps"
 import { SessionRunnerMetrics } from "./metrics"
 import { SessionRunnerModelIo } from "./model-io"
+import { SessionBlackbox } from "../blackbox"
+import { BlackboxHistory } from "../blackbox-history"
 import { Snapshot } from "../../snapshot"
 import { Blob } from "../../blob"
 import { FSUtil } from "../../fs-util"
@@ -794,7 +796,9 @@ const layer = Layer.effect(
       let firstEventAt: number | undefined
       let lastHandledAt: number | undefined
       const modelIo = SessionRunnerModelIo.collector()
-      const providerStream = llm.stream(request).pipe(
+      const blackbox = yield* SessionBlackbox.Current
+      const providerSource = blackbox ? SessionBlackbox.stream(session.id, request, () => llm.stream(request)) : llm.stream(request)
+      const providerStream = providerSource.pipe(
         SessionOutputGuard.wrap,
         Stream.runForEach((event) =>
           Effect.gen(function* () {
@@ -860,26 +864,23 @@ const layer = Layer.effect(
               return
             }
             const assistantMessageID = yield* publisher.assistantMessageID(event.id)
-            const settleAndPublish = toolMaterialization
-              .settle({
-                sessionID: session.id,
-                agent: agent.id,
-                assistantMessageID,
-                call: event,
-              })
-              .pipe(
-                Effect.flatMap((settlement) =>
-                  publish(
-                    LLMEvent.toolResult({
-                      id: event.id,
-                      name: event.name,
-                      result: settlement.result,
-                      output: settlement.output,
-                    }),
-                    settlement.outputPaths ?? [],
-                  ),
+            const settlement = toolMaterialization.settle({
+              sessionID: session.id,
+              agent: agent.id,
+              assistantMessageID,
+              call: event,
+            })
+            const settleAndPublish = (blackbox
+              ? SessionBlackbox.tool(session.id, event.name, event.input, settlement)
+              : settlement
+            ).pipe(
+              Effect.flatMap((settlement) =>
+                publish(
+                  LLMEvent.toolResult({ id: event.id, name: event.name, result: settlement.result, output: settlement.output }),
+                  settlement.outputPaths ?? [],
                 ),
-              )
+              ),
+            )
             yield* Effect.uninterruptibleMask((restore) =>
               // The wait for the permit sits inside `restore`, so clearing the
               // fiber set interrupts a queued exclusive call instead of letting
@@ -1620,6 +1621,7 @@ const layer = Layer.effect(
         readonly phase?: ReportPhase
     }) {
       yield* ownership.claim(input.sessionID)
+      if (yield* SessionBlackbox.Current) yield* BlackboxHistory.checkpoint(input.sessionID, "drain.started", store.context(input.sessionID), db)
       const report: ReportPhase = input.phase ?? (() => Effect.void)
       return yield* Effect.scoped(
         Effect.gen(function* () {
@@ -1896,6 +1898,7 @@ const layer = Layer.effect(
             }
             promotion = shouldRun ? (notificationNext ? "notification" : "queue") : undefined
           }
+          if (yield* SessionBlackbox.Current) yield* BlackboxHistory.checkpoint(input.sessionID, "drain.finished", store.context(input.sessionID), db)
           yield* Effect.logInfo("session.drain.finished", { sessionID: input.sessionID, reason: finishReason })
         }),
       )
