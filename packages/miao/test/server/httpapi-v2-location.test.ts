@@ -81,6 +81,29 @@ afterEach(async () => {
 })
 
 describe("v2 location HttpApi", () => {
+  test("activity is a read-only, session-scoped observation and validates session identity", async () => {
+    await using tmp = await tmpdir({ git: true })
+    const created = await request("/api/session", tmp.path, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ location: { directory: tmp.path } }),
+    })
+    const session = (await created.json()).data
+    const response = await request(`/api/session/${session.id}/activity`, tmp.path)
+    expect(response.status).toBe(200)
+    expect(await response.json()).toMatchObject({
+      data: {
+        observedAt: expect.any(Number),
+        status: { type: "idle" },
+        pendingNotifications: 0,
+        schedules: [],
+        jobs: [],
+      },
+    })
+    const missing = await request("/api/session/ses_missing/activity", tmp.path)
+    expect(missing.status).toBe(404)
+  })
+
   test("execution observation and targeted interruption validate identity and session ownership", async () => {
     await using tmp = await tmpdir({ git: true })
     const created = await request("/api/session", tmp.path, {

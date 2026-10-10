@@ -69,6 +69,7 @@ import { normalizePath } from "../../util/path"
 import { PermissionPrompt } from "./permission"
 import { QuestionPrompt } from "./question"
 import { SessionActivity, latestSubagentPartID, orderTaskBlocks, subagentActivity, subagentResult, subagentRunning } from "./activity"
+import { SessionTimers } from "./timers"
 import { SessionMessageContent } from "./session-message"
 import { PromptStatus } from "./prompt-status"
 import { providerErrorText } from "./provider-failure"
@@ -1409,6 +1410,7 @@ export function Session() {
                 <Show when={session()?.parentID}>
                   <SubagentFooter />
                 </Show>
+                <SessionTimers sessionID={route.sessionID} />
                 <Show when={visible()}>
                   <pluginRuntime.Slot
                     name="session_prompt"

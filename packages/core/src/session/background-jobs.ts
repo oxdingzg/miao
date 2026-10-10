@@ -108,8 +108,8 @@ export const make = (input: {
       }),
     )
 
-  const list = Effect.fn("SessionBackgroundJobs.list")(function* () {
-    yield* recover()
+  // UI observation must not publish recovery events or resume execution.
+  const observe = Effect.fn("SessionBackgroundJobs.observe")(function* () {
     const saved = yield* read()
     const live = input.jobs ? yield* input.jobs.list() : []
     return [
@@ -117,11 +117,22 @@ export const make = (input: {
         ...saved.map((job) => [job.id, job] as const),
         ...live.filter((job) => job.metadata?.sessionID === input.sessionID).map((job) => [job.id, job] as const),
       ]).values(),
-    ]
+    ].map((job) =>
+      job.status === "running" &&
+      !live.some((item) => item.id === job.id && item.metadata?.sessionID === input.sessionID)
+        ? { ...job, status: "error" as const, error: INTERRUPTED }
+        : job,
+    )
+  })
+
+  const list = Effect.fn("SessionBackgroundJobs.list")(function* () {
+    yield* recover()
+    return yield* observe()
   })
 
   return {
     recover,
+    observe,
     list,
     wait: Effect.fn("SessionBackgroundJobs.wait")(function* (id: string, timeoutMs?: number) {
       const live = input.jobs ? yield* input.jobs.get(id) : undefined

@@ -79,6 +79,8 @@ import type {
   SessionsInputsOutput,
   SessionsInputCancelInput,
   SessionsInputCancelOutput,
+  SessionsActivityInput,
+  SessionsActivityOutput,
   SessionsStatusInput,
   SessionsStatusOutput,
   SessionsChildrenInput,
@@ -896,6 +898,17 @@ export function make(options: ClientOptions) {
           },
           requestOptions,
         ),
+      activity: (input: SessionsActivityInput, requestOptions?: RequestOptions) =>
+        request<{ readonly data: SessionsActivityOutput }>(
+          {
+            method: "GET",
+            path: `/api/session/${encodeURIComponent(input.sessionID)}/activity`,
+            successStatus: 200,
+            declaredStatuses: [404, 400, 410, 409, 401],
+            empty: false,
+          },
+          requestOptions,
+        ).then((value) => value.data),
       status: (input: SessionsStatusInput, requestOptions?: RequestOptions) =>
         request<{ readonly data: SessionsStatusOutput }>(
           {
