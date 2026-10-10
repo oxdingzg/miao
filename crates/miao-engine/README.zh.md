@@ -1,10 +1,12 @@
-# miao-engine（实验性 Rust M0 引擎）
+# miao-engine（实验性 Rust 引擎）
 
 <p align="center"><a href="README.md">English</a> | <a href="README.zh.md">简体中文</a></p>
 
 独立入口，使用显式指定的独立 SQLite 数据库。当前实现提供 durable inbox、事务事件/消息投影、
 受监督的 Session 执行、Anthropic Messages / OpenAI Chat / OpenAI Responses 流式 adapters、受控 `read_file` / `list_files`、审批受控的 `write_file` / `edit_file`、stdio 和 committed JSONL 导出。
-这是 M0/M1 增量实现，尚未达到替代现有 miao 的完整能力门槛。
+目标是在真实任务中提高完成质量、减少 token 与端到端耗时。当前进度、剩余工作与验收门禁统一见
+[Roadmap](docs/roadmap.md)，能力实现证据见 [inventory](docs/inventory.md)；产品接入与默认切换仍待完成。
+本文件的详细运行说明包含早期切片记录，不能将其当作最新能力缺口清单。
 
 ## 运行
 
@@ -101,10 +103,13 @@ cargo clippy --manifest-path crates/miao-engine/Cargo.toml --all-targets -- -D w
 workspace 越界/大文件、exact retry/lost wake、cancel/跨 Session、unknown 恢复、原子 settlement、
 stdio 请求和只读导出高水位。测试不消费 live provider credentials；不把 fixture 通过称为真实模型质量验收。
 
-## 后续能力（当前未实现）
+## 当前进度与后续工作
 
-完整 coding tools/PTY、后台进程与任务、Windows 进程 enforcement、ACP session/list 与 config/usage 更新、TUI adapters、Gemini/Bedrock 等其他 provider、
-独立 OAuth refresh broker、LSP/媒体、Context Epoch/compaction、MCP/TS compatibility worker、完整黑匣子与三平台运行验收。
+已实现能力、效率优化与产品接入的状态统一维护在 [Roadmap](docs/roadmap.md)。
+PTY、后台任务、Windows enforcement、Gemini、LSP core、图片输入、Context Epoch、显式 compaction、MCP、worker 协议宿主与三平台测试已有实现；
+不能再将它们整体列为未实现。自动上下文管理、任务效率评测、完整产品 facade、扩展实际接入及正式交付仍有缺口。
+
+以下为早期文件工具切片的边界说明；最新工具范围以 inventory 与实现为准。
 `read_file` 当前是 canonical containment 的只读工具，最多 32 KiB UTF-8；`list_files` 仅列立即子项，最多 500 个，不递归不跟随子项 symlink；不宣称能抵抗 workspace 内的恶意并发路径替换。
 默认 read_only 不暴露写入工具；workspace 模式暴露 write_file/edit_file 并默认逐次审批，或使用显式 allow/deny 路径规则。显式开启 allow_process 后可使用前台沙箱进程；其数据库必须位于 workspace 外。
 
