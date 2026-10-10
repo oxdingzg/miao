@@ -233,3 +233,104 @@ async fn routes_an_approval_through_request_permission() {
     assert!(text.contains("done"), "streamed text: {text:?}");
     assert_eq!(stop.as_deref(), Some("end_turn"));
 }
+
+/// `session/load` replays the committed conversation and `session/fork` returns a
+/// fresh Session id.
+#[tokio::test]
+async fn replays_and_forks_a_session() {
+    let reply = sse(vec![
+        json!({"choices":[{"index":0,"delta":{"content":"finished"},"finish_reason":"stop"}]}),
+        json!({"choices":[],"usage":{"prompt_tokens":1,"completion_tokens":1}}),
+    ]);
+    let (endpoint, _requests, _server) = common::endpoint(vec![(200, reply)]).await;
+    let dir = tempfile::tempdir().unwrap();
+    let db = dir.path().join("engine.db");
+    let mut child = Command::new(env!("CARGO_BIN_EXE_miao-engine"))
+        .args([
+            "acp",
+            "--db",
+            db.to_str().unwrap(),
+            "--workspace",
+            dir.path().to_str().unwrap(),
+            "--model",
+            "fixture",
+            "--provider",
+            "openai-chat",
+            "--endpoint",
+            &endpoint,
+        ])
+        .env("OPENAI_API_KEY", "fixture")
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::inherit())
+        .kill_on_drop(true)
+        .spawn()
+        .unwrap();
+    let mut stdin = child.stdin.take().unwrap();
+    let mut stdout = BufReader::new(child.stdout.take().unwrap()).lines();
+
+    send(
+        &mut stdin,
+        json!({"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":1,"clientCapabilities":{}}}),
+    )
+    .await;
+    let initialized = read_response(&mut stdout, 1).await;
+    assert_eq!(
+        initialized["result"]["agentCapabilities"]["loadSession"],
+        true
+    );
+
+    send(
+        &mut stdin,
+        json!({"jsonrpc":"2.0","id":2,"method":"session/new","params":{"cwd":dir.path().to_str().unwrap(),"mcpServers":[]}}),
+    )
+    .await;
+    let created = read_response(&mut stdout, 2).await;
+    let session = created["result"]["sessionId"].as_str().unwrap().to_string();
+
+    send(
+        &mut stdin,
+        json!({"jsonrpc":"2.0","id":3,"method":"session/prompt","params":{"sessionId":session,"prompt":[{"type":"text","text":"say hi"}]}}),
+    )
+    .await;
+    read_response(&mut stdout, 3).await;
+
+    send(
+        &mut stdin,
+        json!({"jsonrpc":"2.0","id":4,"method":"session/load","params":{"sessionId":session,"cwd":dir.path().to_str().unwrap(),"mcpServers":[]}}),
+    )
+    .await;
+    let mut replayed = String::new();
+    loop {
+        let line = tokio::time::timeout(Duration::from_secs(15), stdout.next_line())
+            .await
+            .expect("load within 15s")
+            .unwrap()
+            .expect("ACP stdout stayed open");
+        let value: Value = serde_json::from_str(&line).unwrap();
+        if value.get("method") == Some(&json!("session/update")) {
+            let update = &value["params"]["update"];
+            match update["sessionUpdate"].as_str() {
+                Some("user_message_chunk") | Some("agent_message_chunk") => {
+                    replayed.push_str(update["content"]["text"].as_str().unwrap_or(""));
+                }
+                _ => {}
+            }
+        }
+        if value.get("id") == Some(&json!(4)) {
+            assert!(value["result"].is_object());
+            break;
+        }
+    }
+    assert!(replayed.contains("say hi"), "replay: {replayed:?}");
+    assert!(replayed.contains("finished"), "replay: {replayed:?}");
+
+    send(
+        &mut stdin,
+        json!({"jsonrpc":"2.0","id":5,"method":"session/fork","params":{"sessionId":session,"cwd":dir.path().to_str().unwrap(),"mcpServers":[]}}),
+    )
+    .await;
+    let forked = read_response(&mut stdout, 5).await;
+    let forked_id = forked["result"]["sessionId"].as_str().unwrap();
+    assert_ne!(forked_id, session);
+}

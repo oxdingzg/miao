@@ -105,8 +105,11 @@ startup workspace. This slice implements `initialize`, `authenticate`,
 `session/request_permission` round-trip: each engine approval is sent to the
 client as a permission request (allow-once / reject-once) and its answer resolves
 the approval. Committed tool calls stream as `tool_call` (pending) and
-`tool_call_update` (in-progress/completed/failed) notifications. Plan/config
-updates and `session/load|fork|list|close` are later slices.
+`tool_call_update` (in-progress/completed/failed) notifications. `session/load`
+replays the committed conversation as `user_message_chunk`/`agent_message_chunk`
+chunks, `session/fork` returns a fresh Session id, and `session/resume` /
+`session/close` are acknowledged. Plan/config updates and `session/list` are
+later slices.
 
 `GET /events?session_id=..&after=..` streams Server-Sent Events: the committed
 `event` notifications for that Session (each frame carries `id: <seq>`, and a
