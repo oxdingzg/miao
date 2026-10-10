@@ -38,12 +38,14 @@ scope for this table and is tracked separately.
 
 ## Coverage gates
 
-- **M0b gate**: real streaming tool-use loop, ten deterministic/fault scenarios,
-  and a three-platform compile. The three-platform build and test is enforced by
-  the `engine` workflow (macOS, Linux and Windows).
-- **M1 gate**: 30–50 scenarios, a real small fix, a control lane that is not
-  blocked by provider/tool/approval waits, and three-platform unit tests. The
-  remaining M1 capability gaps; remaining work is hardening and evaluation.
+| Gate | Status |
+|---|---|
+| M0a | Met: inventory + ADRs 0001–0012 + baseline/measurements. |
+| M0b | Met: durable inbox/events/projection, exact retry, coordinator, providers, tools, stdio adapter; ten fault scenarios and a three-platform build+test (`engine` workflow). |
+| M1 | Met: coding tools + bash/PTY/job, LSP core, media, subagents, output governance; three-platform unit tests. Shared-primitive parity runs in `native.yml` (Rust matchers vs the TS reference: sandbox-policy, bash-sandbox, edit-native, patch-native, git-status-native), with `miao-sandbox` built by both consumers. |
+| M2 | Engine side met: context/revert/fork/compaction/skills/references plus rewind/recovery/fork fault scenarios (`tests/session_rewind_faults.rs`). Remaining: client compatibility — a TS TUI/HTTP/ACP endpoint attaching the engine and one client attaching two engines — owned by the TS-side integration. |
+| M3 | Met: providers, role routing + safe fallback (`tests/routing.rs`), and the ADR-12 extension worker (`src/worker.rs`). Credential refresh ownership decided (ADR-09: product-owned during the sidecar phase; the engine stays read-only). |
+| M4 | Partly met: Windows AppContainer enforcement, doctor, and delivery artifacts/install landed; a release manifest job produces per-platform checksums. Remaining before the gated default switch: full capability review, live-eval comparison against the baseline, and a rollback drill. |
 
 ## Measurement boundaries (M0)
 
