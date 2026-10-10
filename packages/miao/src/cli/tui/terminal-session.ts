@@ -38,7 +38,7 @@ export function reporter(
             "--pane",
             target.pane,
             "--state",
-            next?.state ?? "idle",
+            next?.state ?? "unknown",
             "--runtime-context",
             "-",
           ]

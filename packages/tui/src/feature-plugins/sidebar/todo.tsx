@@ -1,3 +1,5 @@
+import { useSessionState } from "../../context/session-state"
+import { sessionStateLabel, todoSummary } from "../../util/session-state"
 import type { TuiPlugin, TuiPluginApi } from "@miao/plugin/tui"
 import type { BuiltinTuiPlugin } from "../builtins"
 import { createMemo, For, Show, createSignal } from "solid-js"
@@ -9,19 +11,26 @@ function View(props: { api: TuiPluginApi; session_id: string }) {
   const [open, setOpen] = createSignal(true)
   const theme = () => props.api.theme.current
   const list = createMemo(() => props.api.state.session.todo(props.session_id))
-  const show = createMemo(() => list().length > 0 && list().some((item) => item.status !== "completed"))
+  const state = useSessionState()
+  const summary = createMemo(() => todoSummary(list()))
 
   return (
-    <Show when={show()}>
+    <Show when={list().length > 0}>
       <box>
         <box flexDirection="row" gap={1} onMouseDown={() => list().length > 2 && setOpen((x) => !x)}>
           <Show when={list().length > 2}>
             <text fg={theme().text}>{open() ? "▼" : "▶"}</text>
           </Show>
           <text fg={theme().text}>
-            <b>Todo</b>
+            <b>
+              Todo {summary().completed}/{summary().total}
+            </b>
           </text>
         </box>
+        <text fg={state.state() === "completed" ? theme().success : theme().textMuted}>
+          {sessionStateLabel[state.state()]}
+          {summary().cancelled > 0 ? ` · ${summary().cancelled} cancelled` : ""}
+        </text>
         <Show when={list().length <= 2 || open()}>
           <For each={list()}>{(item) => <TodoItem status={item.status} content={item.content} />}</For>
         </Show>
