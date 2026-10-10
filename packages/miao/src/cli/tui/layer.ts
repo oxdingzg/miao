@@ -4,10 +4,12 @@ import { AppNodeBuilder } from "@miao/core/effect/app-node-builder"
 import { Effect } from "effect"
 import path from "node:path"
 import { TerminalSession } from "./terminal-session"
+import { resumeCommand } from "./resume-command"
 
 export function run(input: TuiInput & { runtimeTarget?: TerminalSession.Runtime }) {
   return runTui({
     ...input,
+    resumeCommand: input.resumeCommand ?? resumeCommand(process.execPath, process.argv[1]),
     onSessionChange: input.onSessionChange ?? TerminalSession.reporter(input.runtimeTarget),
     remote: input.remote ?? remote,
   }).pipe(Effect.provide(AppNodeBuilder.build(Global.node)))
