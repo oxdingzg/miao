@@ -548,6 +548,7 @@ async fn execute(
                         role: "user".into(),
                         content: json!([{"type":"text","text":text}]),
                         checkpoint: None,
+                        recorded_at_ms: None,
                     },
                 );
             }

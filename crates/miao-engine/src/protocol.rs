@@ -74,6 +74,9 @@ pub struct Event {
     pub seq: u64,
     pub kind: String,
     pub data: Value,
+    /// Persisted UNIX milliseconds; null means unknown on pre-timestamp data.
+    #[serde(default)]
+    pub recorded_at_ms: Option<u64>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -84,6 +87,9 @@ pub struct Message {
     /// tool-result projections. Providers ignore it and map only role/content.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub checkpoint: Option<String>,
+    /// Original commit time, preserved through replay and fork.
+    #[serde(default)]
+    pub recorded_at_ms: Option<u64>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

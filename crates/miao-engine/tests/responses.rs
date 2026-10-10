@@ -25,6 +25,7 @@ fn request() -> ModelRequest {
             role: "user".into(),
             content: json!([{"type":"text","text":"hello"}]),
             checkpoint: None,
+            recorded_at_ms: None,
         }],
         tools: vec![],
     }
@@ -146,7 +147,7 @@ async fn incomplete_arguments_refusal_hosted_actions_and_truncation_fail_closed(
 #[tokio::test]
 async fn opaque_history_cannot_silently_cross_protocol_or_model() {
     let mut input = request();
-    input.messages.push(Message{role:"assistant".into(),content:json!([{"type":"provider_opaque","provider":"openai-responses","model":"old-model","item":{"type":"reasoning","encrypted_content":"secret-fixture"}}]),checkpoint:None});
+    input.messages.push(Message{role:"assistant".into(),content:json!([{"type":"provider_opaque","provider":"openai-responses","model":"old-model","item":{"type":"reasoning","encrypted_content":"secret-fixture"}}]),checkpoint:None,recorded_at_ms:None});
     let providers: Vec<Arc<dyn Provider>> = vec![
         Arc::new(
             OpenAIResponses::new(
@@ -200,6 +201,7 @@ async fn sequenced_unknown_checkpoint_events_are_skipped_and_genuine_failures_st
             role: "user".into(),
             content: json!([{"type":"text","text":"task"}]),
             checkpoint: None,
+            recorded_at_ms: None,
         }],
         tools: vec![],
     };

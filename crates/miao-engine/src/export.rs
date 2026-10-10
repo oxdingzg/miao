@@ -23,13 +23,20 @@ pub fn committed_events(
         |r| r.get(0),
     )?;
     {
-        let mut stmt=tx.prepare("SELECT seq,kind,data FROM engine_event WHERE session_id=?1 AND seq>?2 AND seq<=?3 ORDER BY seq")?;
+        // Read-only exports must also support stores not yet migrated by serve.
+        let has_time: bool = tx.query_row(
+            "SELECT EXISTS(SELECT 1 FROM pragma_table_info('engine_event') WHERE name='recorded_at_ms')",
+            [], |row| row.get(0),
+        )?;
+        let time = if has_time { "recorded_at_ms" } else { "NULL" };
+        let mut stmt=tx.prepare(&format!("SELECT seq,kind,data,{time} FROM engine_event WHERE session_id=?1 AND seq>?2 AND seq<=?3 ORDER BY seq"))?;
         let mut rows = stmt.query(params![session, after, high])?;
         while let Some(row) = rows.next()? {
             let event = Event {
                 session_id: session.into(),
                 seq: row.get(0)?,
                 kind: row.get(1)?,
+                recorded_at_ms: row.get(3)?,
                 data: serde_json::from_str(&row.get::<_, String>(2)?)?,
             };
             serde_json::to_writer(&mut output, &event)?;
