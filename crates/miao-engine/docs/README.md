@@ -11,3 +11,4 @@ overview and `../PROTOCOL.md` for the stdio wire contract.
 - `adr/0004-authority.md` — permission, approval binding, sandbox profile.
 - `adr/0005-extension-compatibility.md` — MCP, hooks, compatibility worker.
 - `adr/0006-provider-semantics.md` — opaque reasoning, fallback, usage, credentials.
+- `adr/0007-http-acp-adapters.md` — HTTP/ACP wire, revision negotiation, network authority.
