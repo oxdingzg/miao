@@ -915,6 +915,37 @@ impl Store {
                 "UPDATE engine_tool SET state='unknown' WHERE run_id=?1 AND state='dispatched'",
                 [&run],
             )?;
+            // Aggregate billed usage for the run: each provider attempt already
+            // recorded a `usage` event, so a turn sums them (including failed
+            // attempts) instead of reporting one step or a character estimate.
+            let usage_events: Vec<String> = {
+                let mut stmt = tx.prepare(
+                    "SELECT data FROM engine_event WHERE session_id=?1 AND kind='usage'",
+                )?;
+                let rows = stmt.query_map([&session], |r| r.get::<_, String>(0))?;
+                rows.collect::<Result<Vec<_>, _>>()?
+                    .into_iter()
+                    .filter(|data| {
+                        serde_json::from_str::<Value>(data)
+                            .ok()
+                            .is_some_and(|event| event["run_id"].as_str() == Some(run.as_str()))
+                    })
+                    .collect()
+            };
+            let mut total = Value::Null;
+            let mut steps = 0u64;
+            for data in usage_events {
+                if let Ok(event) = serde_json::from_str::<Value>(&data) {
+                    steps += 1;
+                    merge_usage(&mut total, &event["usage"]);
+                }
+            }
+            append(
+                &tx,
+                &session,
+                "run.usage",
+                json!({"run_id":run,"steps":steps,"usage":total}),
+            )?;
             let e = append(
                 &tx,
                 &session,
@@ -964,6 +995,37 @@ impl Store {
             Ok(events)
         })
         .await
+    }
+}
+
+/// Recursively sum numeric leaves so per-step provider usage aggregates across a
+/// run regardless of provider field names (`input_tokens` vs `prompt_tokens`, or
+/// nested `*_details`). Non-numeric leaves take the latest value.
+fn merge_usage(acc: &mut Value, next: &Value) {
+    match next {
+        Value::Object(update) => {
+            if !acc.is_object() {
+                *acc = Value::Object(serde_json::Map::new());
+            }
+            let current = acc.as_object_mut().expect("object");
+            for (key, value) in update {
+                merge_usage(current.entry(key.clone()).or_insert(Value::Null), value);
+            }
+        }
+        Value::Number(update) => {
+            let sum = acc.as_number().cloned().and_then(|current| {
+                if let (Some(left), Some(right)) = (current.as_i64(), update.as_i64()) {
+                    Some(json!(left + right))
+                } else {
+                    match (current.as_f64(), update.as_f64()) {
+                        (Some(left), Some(right)) => Some(json!(left + right)),
+                        _ => None,
+                    }
+                }
+            });
+            *acc = sum.unwrap_or_else(|| next.clone());
+        }
+        _ => *acc = next.clone(),
     }
 }
 
