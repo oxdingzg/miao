@@ -1,4 +1,8 @@
-# miao-engine M0/M1 inventory
+# miao-engine capability inventory
+
+Goals, remaining work and priorities are maintained in the unified
+[roadmap](roadmap.md). This inventory tracks implementation contracts, not proven
+task-quality, token or latency improvements.
 
 Status of each capability family for the Rust engine, with the evidence that
 backs the status. Status vocabulary: `inventory` → `designed` → `implemented` →
