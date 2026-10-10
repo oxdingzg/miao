@@ -4,6 +4,7 @@ Design records for the Rust engine. See `../README.md` for the capability
 overview and `../PROTOCOL.md` for the stdio wire contract.
 
 - `inventory.md` — capability coverage and current status.
+- `client-contract.md` — the product HttpApi/event surface a migration façade must cover.
 - `measurements.md` — binary size, `serve` readiness and RSS, with conditions and repro.
 - `accuracy.md` — 产品结果、golden、随机不变量、参考差分及故障注入的运行与审阅方式。
 - `adr/0001-runtime-ownership.md` — process/store ownership, coordinator, slots.
@@ -16,3 +17,4 @@ overview and `../PROTOCOL.md` for the stdio wire contract.
 - `adr/0008-delivery-and-migration.md` — sidecar→replacement migration; M4 delivery.
 - `adr/0009-credential-refresh-ownership.md` — one refresh owner; read-only until sole runtime.
 - `adr/0010-extension-worker-scope.md` — the M3 compatibility worker boundary.
+- `adr/0011-client-contract.md` — where compatibility sits; the direct-replacement shape.
