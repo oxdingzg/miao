@@ -95,6 +95,16 @@ and an unauthenticated or wrong-token request is rejected before the runtime is
 touched. The engine binds a loopback listener only; TLS and public exposure are a
 local proxy's job.
 
+## ACP transport (`acp`)
+
+`miao-engine acp ...` speaks the Agent Client Protocol to an editor over
+newline-delimited JSON-RPC 2.0 on stdio, reusing the same domain model and the
+startup workspace. This slice implements `initialize`, `authenticate`,
+`session/new`, `session/prompt` (a text turn streamed as `session/update`
+`agent_message_chunk` notifications) and the `session/cancel` notification. Tool
+calls, permission requests, plan/config updates and `session/load|fork|list|close`
+are later slices.
+
 `GET /events?session_id=..&after=..` streams Server-Sent Events: the committed
 `event` notifications for that Session (each frame carries `id: <seq>`, and a
 reconnecting `EventSource` may resend `Last-Event-ID` instead of `after`), then

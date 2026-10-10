@@ -1,3 +1,4 @@
+pub mod acp;
 pub mod approval;
 pub mod context;
 pub mod credential;

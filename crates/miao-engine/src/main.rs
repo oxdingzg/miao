@@ -113,10 +113,12 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
         .await??;
         return Ok(());
     }
-    if args.first().map(String::as_str) != Some("serve") {
-        eprintln!("Usage: miao-engine serve --db PATH --workspace PATH --model MODEL [--provider anthropic|openai-chat|openai-responses|subscription-responses|gemini] [--endpoint URL] [--policy PATH] [--http ADDR [--http-token TOKEN]]\n       miao-engine export --db PATH --session ID [--after CURSOR]\n       miao-engine doctor [--db PATH]\nUse ANTHROPIC_API_KEY, OPENAI_API_KEY or GEMINI_API_KEY for the selected provider. An explicit engine database is required.");
+    let mode = args.first().map(String::as_str);
+    if !matches!(mode, Some("serve" | "acp")) {
+        eprintln!("Usage: miao-engine serve --db PATH --workspace PATH --model MODEL [--provider anthropic|openai-chat|openai-responses|subscription-responses|gemini] [--endpoint URL] [--policy PATH] [--http ADDR [--http-token TOKEN]]\n       miao-engine acp --db PATH --workspace PATH --model MODEL [--provider ...] [--endpoint URL] [--policy PATH]\n       miao-engine export --db PATH --session ID [--after CURSOR]\n       miao-engine doctor [--db PATH]\nUse ANTHROPIC_API_KEY, OPENAI_API_KEY or GEMINI_API_KEY for the selected provider. An explicit engine database is required.");
         std::process::exit(2);
     }
+    let acp = mode == Some("acp");
     let mut options = HashMap::new();
     let (flags, remainder) = args[1..].as_chunks::<2>();
     for flag in flags {
@@ -349,6 +351,12 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
             .with_lsp(Arc::new(registry));
     }
     let runtime = Runtime::with_policy(Store::open(db).await?, provider, tools, policy).await?;
+    if acp {
+        let result = miao_engine::acp::serve(runtime.clone()).await;
+        runtime.shutdown().await;
+        result?;
+        return Ok(());
+    }
     if options.contains_key("--http-token") && !options.contains_key("--http") {
         return Err("--http-token requires --http".into());
     }
