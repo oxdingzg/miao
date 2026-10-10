@@ -31,10 +31,10 @@ export function sessionState(input: {
   pendingInputs?: boolean
   unavailable?: boolean
 }): SessionState {
-  if (input.unavailable) return "unknown"
   if (input.blocked) return "awaiting"
   if (input.status && input.status.type !== "idle") return "processing"
   if (input.error || (input.message?.type === "assistant" && input.message.error)) return "error"
+  if (input.unavailable) return "unknown"
   if (!input.status || !input.activity) return "unknown"
   if (
     input.pendingInputs ||
