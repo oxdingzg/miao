@@ -9,6 +9,7 @@ mod file_mutation;
 pub mod gemini;
 mod history;
 pub mod hooks;
+pub mod host;
 mod jobs;
 pub mod lsp;
 pub mod mcp;
