@@ -124,7 +124,7 @@ function connectionLayer(attempts: Ref.Ref<number>, cause: unknown, failures: nu
   )
 })
 
-it.effect("bounds persistent connection resets and preserves redacted diagnostics", () =>
+it.effect("gives connection resets a deeper budget than provider errors", () =>
   Effect.gen(function* () {
     const attempts = yield* Ref.make(0)
     const fiber = yield* Effect.gen(function* () {
@@ -139,9 +139,10 @@ it.effect("bounds persistent connection resets and preserves redacted diagnostic
     )
     yield* TestClock.adjust(500)
     expect(yield* Ref.get(attempts)).toBe(2)
-    yield* TestClock.adjust(1000)
+    // Delays 1s + 2s + 4s + 8s exhaust the five-retry connection budget.
+    yield* TestClock.adjust(15_000)
     const error = yield* Fiber.join(fiber)
-    expect(yield* Ref.get(attempts)).toBe(3)
+    expect(yield* Ref.get(attempts)).toBe(6)
     expect(error.retryable).toBe(true)
     expect(error.reason).toMatchObject({
       _tag: "Transport",
@@ -149,6 +150,40 @@ it.effect("bounds persistent connection resets and preserves redacted diagnostic
       message: "socket closed / ECONNRESET",
     })
     expect(JSON.stringify(error.reason)).not.toContain("secret")
+  }).pipe(Effect.provideService(Random.Random, midpoint)),
+)
+
+it.effect("keeps the short request budget for a non-connection provider error", () =>
+  Effect.gen(function* () {
+    const attempts = yield* Ref.make(0)
+    const fiber = yield* Effect.gen(function* () {
+      const executor = yield* RequestExecutor.Service
+      return yield* executor.execute(request)
+    }).pipe(
+      Effect.provide(
+        RequestExecutor.layer.pipe(
+          Layer.provide(
+            Layer.succeed(
+              HttpClient.HttpClient,
+              HttpClient.make((request) =>
+                Effect.gen(function* () {
+                  yield* Ref.update(attempts, (value) => value + 1)
+                  return HttpClientResponse.fromWeb(request, new Response("boom", { status: 500 }))
+                }),
+              ),
+            ),
+          ),
+        ),
+      ),
+      Effect.flip,
+      Effect.forkChild,
+    )
+    yield* TestClock.adjust(500)
+    expect(yield* Ref.get(attempts)).toBe(2)
+    yield* TestClock.adjust(1000)
+    const error = yield* Fiber.join(fiber)
+    expect(yield* Ref.get(attempts)).toBe(3)
+    expect(error.reason._tag).toBe("ProviderInternal")
   }).pipe(Effect.provideService(Random.Random, midpoint)),
 )
 

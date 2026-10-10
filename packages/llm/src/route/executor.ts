@@ -43,6 +43,13 @@ export interface Interface {
 export class Service extends Context.Service<Service, Interface>()("@miao/LLM/RequestExecutor") {}
 
 const MAX_RETRIES = 2
+// A reset connection (a stale keep-alive socket, a proxy dropping an idle
+// connection) is transient on the client side: a fresh socket succeeds. Give it
+// a deeper budget than a generic 5xx so those resets recover in-place instead of
+// failing the turn. Still bounded, so a hard partition gives up in ~15s. A
+// refused/unreachable endpoint keeps the short budget: the server being down is
+// not fixed by retrying.
+const MAX_CONNECTION_RETRIES = 5
 const BASE_DELAY_MS = 500
 const MAX_DELAY_MS = 10_000
 const MIN_RETRY_AFTER_MS = 250
@@ -373,16 +380,33 @@ const retryDelay = (error: LLMError, attempt: number) => {
   ).pipe(Effect.map((delay) => Math.round(delay)))
 }
 
+// A reset connection is retried further than a generic provider error; every
+// other retryable reason keeps the bounded request budget.
+const retryBudget = (error: LLMError) => {
+  const reason = error.reason
+  if (reason._tag !== "Transport") return MAX_RETRIES
+  return reason.kind === "connection-closed" ? MAX_CONNECTION_RETRIES : MAX_RETRIES
+}
+
 const retryStatusFailures = <A, R>(
   effect: Effect.Effect<A, LLMError, R>,
-  retries = MAX_RETRIES,
   attempt = 0,
 ): Effect.Effect<A, LLMError, R> =>
   Effect.catchTag(effect, "LLM.Error", (error): Effect.Effect<A, LLMError, R> => {
-    if (!error.retryable || retries <= 0) return Effect.fail(error)
+    if (!error.retryable || attempt >= retryBudget(error)) return Effect.fail(error)
     return retryDelay(error, attempt).pipe(
+      Effect.tap((delay) =>
+        Effect.logWarning("llm.transport.retry", {
+          module: error.module,
+          method: error.method,
+          tag: error.reason._tag,
+          kind: error.reason._tag === "Transport" ? error.reason.kind : undefined,
+          attempt: attempt + 1,
+          delayMs: delay,
+        }),
+      ),
       Effect.flatMap((delay) => Effect.sleep(delay)),
-      Effect.flatMap(() => retryStatusFailures(effect, retries - 1, attempt + 1)),
+      Effect.flatMap(() => retryStatusFailures(effect, attempt + 1)),
     )
   })
 
