@@ -135,7 +135,16 @@ export class CodeRequiredError extends Schema.TaggedErrorClass<CodeRequiredError
 
 export class AuthorizationError extends Schema.TaggedErrorClass<AuthorizationError>()("Integration.Authorization", {
   cause: Schema.Defect(),
-}) {}
+}) {
+  override get message(): string {
+    if (this.cause instanceof Credential.SharedExpiredError) return this.cause.message
+    const message = this.cause instanceof Error ? this.cause.message : ""
+    const status = /(?:HTTP\s*|Request failed:\s*)([1-5]\d\d)\b/i.exec(message)?.[1]
+    return status
+      ? `Provider authorization failed (HTTP ${status}). Check this integration's credentials.`
+      : "Provider authorization failed. Check this integration's credentials."
+  }
+}
 
 export type Error = CodeRequiredError | AuthorizationError
 
@@ -409,9 +418,7 @@ export const locationLayer = Layer.effect(
         .integrations.get(id)
         ?.methods.find((item) => item.type === "oauth")
       if (!method) return
-      const raw = yield* fsys
-        .readJson(path.join(Global.Path.data, "auth.json"))
-        .pipe(Effect.orElseSucceed(() => ({})))
+      const raw = yield* fsys.readJson(path.join(Global.Path.data, "auth.json")).pipe(Effect.orElseSucceed(() => ({})))
       if (typeof raw !== "object" || raw === null) return
       const value = legacyOAuth((raw as Record<string, unknown>)[id], method.id)
       if (!value) return
@@ -467,6 +474,14 @@ export const locationLayer = Layer.effect(
           const credential = yield* credentials.get(connection.id)
           if (!credential) return undefined
           if (credential.value.type === "key") return credential.value
+          if (credential.source === "shared") {
+            const now = yield* Clock.currentTimeMillis
+            if (credential.value.expires <= now)
+              return yield* new AuthorizationError({
+                cause: new Credential.SharedExpiredError({ integrationID: credential.integrationID }),
+              })
+            return credential.value
+          }
           const implementation = state
             .get()
             .integrations.get(credential.integrationID)
