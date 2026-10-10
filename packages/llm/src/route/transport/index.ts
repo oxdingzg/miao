@@ -35,5 +35,6 @@ export interface TransportPrepareInput<Body> {
 }
 
 export * as HttpTransport from "./http"
+export * as TransportKeepAlive from "./keepalive"
 export { WebSocketExecutor, WebSocketTransport } from "./websocket"
 export { WebSocketPool } from "./websocket-pool"

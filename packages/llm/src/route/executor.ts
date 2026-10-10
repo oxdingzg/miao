@@ -1,6 +1,5 @@
 import { Cause, Context, Effect, Layer, Option, Random } from "effect"
 import {
-  FetchHttpClient,
   Headers,
   HttpClient,
   HttpClientError,
@@ -33,6 +32,7 @@ import {
   type CapturedBody,
 } from "./http-capture"
 import { ProviderWireArchive } from "./archive"
+import { clearStale, httpClientLayer, markStale } from "./transport/keepalive"
 
 export interface Interface {
   readonly execute: (
@@ -394,17 +394,21 @@ const retryStatusFailures = <A, R>(
 ): Effect.Effect<A, LLMError, R> =>
   Effect.catchTag(effect, "LLM.Error", (error): Effect.Effect<A, LLMError, R> => {
     if (!error.retryable || attempt >= retryBudget(error)) return Effect.fail(error)
+    const kind = error.reason._tag === "Transport" ? error.reason.kind : undefined
     return retryDelay(error, attempt).pipe(
-      Effect.tap((delay) =>
-        Effect.logWarning("llm.transport.retry", {
+      Effect.tap((delay) => {
+        // A reset socket is the one retry that must not reuse the same pooled
+        // connection: force the next attempt onto a fresh one.
+        if (kind === "connection-closed") markStale()
+        return Effect.logWarning("llm.transport.retry", {
           module: error.module,
           method: error.method,
           tag: error.reason._tag,
-          kind: error.reason._tag === "Transport" ? error.reason.kind : undefined,
+          kind,
           attempt: attempt + 1,
           delayMs: delay,
-        }),
-      ),
+        })
+      }),
       Effect.flatMap((delay) => Effect.sleep(delay)),
       Effect.flatMap(() => retryStatusFailures(effect, attempt + 1)),
     )
@@ -429,6 +433,9 @@ export const layer: Layer.Layer<Service, never, HttpClient.HttpClient> = Layer.e
         })
         if (trace !== undefined) yield* trace.request()
         return yield* http.execute(request).pipe(
+          // Any response — even an error status — proves the connection is live,
+          // so pooling is safe again.
+          Effect.tap(() => Effect.sync(clearStale)),
           Effect.mapError(toHttpError(redactedNames)),
           Effect.flatMap(statusError(request, redactedNames, trace)),
           Effect.tapError((error) => (trace === undefined ? Effect.void : trace.error(error))),
@@ -440,6 +447,6 @@ export const layer: Layer.Layer<Service, never, HttpClient.HttpClient> = Layer.e
   }),
 )
 
-export const fetchLayer = layer.pipe(Layer.provide(FetchHttpClient.layer))
+export const fetchLayer = layer.pipe(Layer.provide(httpClientLayer))
 
 export * as RequestExecutor from "./executor"
