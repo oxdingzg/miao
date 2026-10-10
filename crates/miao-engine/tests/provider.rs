@@ -71,6 +71,7 @@ fn history() -> ModelRequest {
             role: "user".into(),
             content: json!([{"type":"text","text":"hi"}]),
             checkpoint: None,
+            recorded_at_ms: None,
         }],
         tools: vec![miao_engine::protocol::ToolDefinition {
             name: "read_file".into(),

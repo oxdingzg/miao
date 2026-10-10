@@ -21,7 +21,7 @@ use std::{
 use tokio::sync::{mpsc, oneshot};
 
 pub(crate) const APPLICATION_ID: u32 = 0x4d494145;
-pub(crate) const SCHEMA_VERSION: u32 = 10;
+pub(crate) const SCHEMA_VERSION: u32 = 11;
 
 type Work = Box<dyn FnOnce(&mut Connection) + Send>;
 
@@ -186,6 +186,19 @@ impl Store {
                         "ALTER TABLE engine_message ADD COLUMN reverted INTEGER NOT NULL DEFAULT 0",
                         [],
                     )?;
+                }
+                // Nullable migration deliberately leaves historical times unknown.
+                for table in ["engine_event", "engine_message"] {
+                    let has_time: bool = conn.query_row(
+                        "SELECT EXISTS(SELECT 1 FROM pragma_table_info(?1) WHERE name='recorded_at_ms')",
+                        [table], |row| row.get(0),
+                    )?;
+                    if !has_time {
+                        conn.execute(
+                            &format!("ALTER TABLE {table} ADD COLUMN recorded_at_ms INTEGER"),
+                            [],
+                        )?;
+                    }
                 }
                 Ok((conn, lease, canonical))
             })();
@@ -383,7 +396,7 @@ impl Store {
                         parts.extend(media.iter().map(Attachment::part));
                     }
                 }
-                tx.execute("INSERT INTO engine_message(session_id,seq,role,content,checkpoint) VALUES(?1,?2,'user',?3,?4)", params![session,e.seq,serde_json::to_string(&Value::Array(parts))?,checkpoint])?;
+                tx.execute("INSERT INTO engine_message(session_id,seq,role,content,checkpoint,recorded_at_ms) VALUES(?1,?2,'user',?3,?4,?5)", params![session,e.seq,serde_json::to_string(&Value::Array(parts))?,checkpoint,e.recorded_at_ms])?;
                 events.push(e);
             }
             tx.commit()?;
@@ -584,7 +597,7 @@ impl Store {
             append(&tx,&target,"session.forked",json!({"parent_session_id":parent,"message_seq":seq}))?;
             let mut message_map=std::collections::HashMap::new();
             for message in messages {
-                let copied=project_message(&tx,&target,message["role"].as_str().ok_or_else(||Error::Invalid("projected role".into()))?,message["content"].clone(),message["checkpoint"].as_str())?;
+                let copied=project_message_at(&tx,&target,message["role"].as_str().ok_or_else(||Error::Invalid("projected role".into()))?,message["content"].clone(),message["checkpoint"].as_str(),message["recorded_at_ms"].as_u64())?;
                 if let Some(source)=message["seq"].as_u64(){message_map.insert(source,copied.seq);}
             }
             let context:Option<(u64,String,String,String)>=tx.query_row("SELECT epoch,fingerprint,system,sources FROM engine_context WHERE session_id=?1 AND selected_seq<=?2 ORDER BY epoch DESC LIMIT 1",params![parent,seq],|r|Ok((r.get(0)?,r.get(1)?,r.get(2)?,r.get(3)?))).optional()?;
@@ -658,21 +671,23 @@ impl Store {
         let session = session.to_owned();
         self.call(move |conn| {
             let mut stmt = conn.prepare(
-                "SELECT role,content,checkpoint FROM engine_message WHERE session_id=?1 AND reverted=0 ORDER BY seq",
+                "SELECT role,content,checkpoint,recorded_at_ms FROM engine_message WHERE session_id=?1 AND reverted=0 ORDER BY seq",
             )?;
             let rows = stmt.query_map([session], |r| {
                 Ok((
                     r.get::<_, String>(0)?,
                     r.get::<_, String>(1)?,
                     r.get::<_, Option<String>>(2)?,
+                    r.get::<_, Option<u64>>(3)?,
                 ))
             })?;
             rows.map(|row| {
-                let (role, content, checkpoint) = row?;
+                let (role, content, checkpoint, recorded_at_ms) = row?;
                 Ok(Message {
                     role,
                     content: serde_json::from_str(&content)?,
                     checkpoint,
+                    recorded_at_ms,
                 })
             })
             .collect()
@@ -683,9 +698,9 @@ impl Store {
     pub async fn events(&self, session: &str, after: u64, limit: u32) -> Result<Vec<Event>, Error> {
         let session = session.to_owned();
         self.call(move |conn| {
-            let mut stmt = conn.prepare("SELECT seq,kind,data FROM engine_event WHERE session_id=?1 AND seq>?2 ORDER BY seq LIMIT ?3")?;
-            let rows = stmt.query_map(params![session,after,limit.min(1000)], |r| Ok((r.get::<_,u64>(0)?,r.get::<_,String>(1)?,r.get::<_,String>(2)?)))?;
-            rows.map(|row| { let (seq,kind,data) = row?; Ok(Event { session_id:session.clone(),seq,kind,data:serde_json::from_str(&data)? }) }).collect()
+            let mut stmt = conn.prepare("SELECT seq,kind,data,recorded_at_ms FROM engine_event WHERE session_id=?1 AND seq>?2 ORDER BY seq LIMIT ?3")?;
+            let rows = stmt.query_map(params![session,after,limit.min(1000)], |r| Ok((r.get::<_,u64>(0)?,r.get::<_,String>(1)?,r.get::<_,String>(2)?,r.get::<_,Option<u64>>(3)?)))?;
+            rows.map(|row| { let (seq,kind,data,recorded_at_ms) = row?; Ok(Event { session_id:session.clone(),seq,kind,data:serde_json::from_str(&data)?,recorded_at_ms }) }).collect()
         }).await
     }
 
@@ -715,8 +730,8 @@ impl Store {
                 json!({"role":role,"content":content}),
             )?;
             tx.execute(
-                "INSERT INTO engine_message(session_id,seq,role,content) VALUES(?1,?2,?3,?4)",
-                params![session, e.seq, role, serde_json::to_string(&content)?],
+                "INSERT INTO engine_message(session_id,seq,role,content,recorded_at_ms) VALUES(?1,?2,?3,?4,?5)",
+                params![session, e.seq, role, serde_json::to_string(&content)?, e.recorded_at_ms],
             )?;
             tx.commit()?;
             Ok(e)
@@ -1136,20 +1151,37 @@ pub(crate) fn append(
     kind: &str,
     data: Value,
 ) -> Result<Event, Error> {
+    append_at(tx, session, kind, data, Some(now_ms()))
+}
+
+fn append_at(
+    tx: &Transaction<'_>,
+    session: &str,
+    kind: &str,
+    data: Value,
+    recorded_at_ms: Option<u64>,
+) -> Result<Event, Error> {
     let seq: u64 = tx.query_row(
         "UPDATE engine_session SET next_seq=next_seq+1 WHERE id=?1 RETURNING next_seq",
         [session],
         |r| r.get(0),
     )?;
     tx.execute(
-        "INSERT INTO engine_event VALUES(?1,?2,?3,?4)",
-        params![session, seq, kind, serde_json::to_string(&data)?],
+        "INSERT INTO engine_event(session_id,seq,kind,data,recorded_at_ms) VALUES(?1,?2,?3,?4,?5)",
+        params![
+            session,
+            seq,
+            kind,
+            serde_json::to_string(&data)?,
+            recorded_at_ms
+        ],
     )?;
     Ok(Event {
         session_id: session.into(),
         seq,
         kind: kind.into(),
         data,
+        recorded_at_ms,
     })
 }
 
@@ -1160,20 +1192,33 @@ fn project_message(
     content: Value,
     checkpoint: Option<&str>,
 ) -> Result<Event, Error> {
-    let event = append(
+    project_message_at(tx, session, role, content, checkpoint, Some(now_ms()))
+}
+
+fn project_message_at(
+    tx: &Transaction<'_>,
+    session: &str,
+    role: &str,
+    content: Value,
+    checkpoint: Option<&str>,
+    recorded_at_ms: Option<u64>,
+) -> Result<Event, Error> {
+    let event = append_at(
         tx,
         session,
         "message.committed",
         json!({"role":role,"content":content,"checkpoint":checkpoint}),
+        recorded_at_ms,
     )?;
     tx.execute(
-        "INSERT INTO engine_message(session_id,seq,role,content,checkpoint) VALUES(?1,?2,?3,?4,?5)",
+        "INSERT INTO engine_message(session_id,seq,role,content,checkpoint,recorded_at_ms) VALUES(?1,?2,?3,?4,?5,?6)",
         params![
             session,
             event.seq,
             role,
             serde_json::to_string(&content)?,
-            checkpoint
+            checkpoint,
+            event.recorded_at_ms
         ],
     )?;
     Ok(event)
@@ -1233,7 +1278,7 @@ pub(crate) fn projected(
     session: &str,
     cursor: u64,
 ) -> Result<Vec<Value>, Error> {
-    let mut stmt=tx.prepare("SELECT seq,role,content,checkpoint FROM engine_message WHERE session_id=?1 AND seq<=?2 AND reverted=0 ORDER BY seq LIMIT 1001")?;
+    let mut stmt=tx.prepare("SELECT seq,role,content,checkpoint,recorded_at_ms FROM engine_message WHERE session_id=?1 AND seq<=?2 AND reverted=0 ORDER BY seq LIMIT 1001")?;
     let mut rows = stmt.query(params![session, cursor])?;
     let mut messages = Vec::new();
     let mut bytes = 0;
@@ -1245,7 +1290,7 @@ pub(crate) fn projected(
                 "projection exceeds snapshot/fork limit".into(),
             ));
         }
-        messages.push(json!({"seq":row.get::<_,u64>(0)?,"role":row.get::<_,String>(1)?,"content":serde_json::from_str::<Value>(&content)?,"checkpoint":row.get::<_,Option<String>>(3)?}));
+        messages.push(json!({"seq":row.get::<_,u64>(0)?,"role":row.get::<_,String>(1)?,"content":serde_json::from_str::<Value>(&content)?,"checkpoint":row.get::<_,Option<String>>(3)?,"recorded_at_ms":row.get::<_,Option<u64>>(4)?}));
     }
     Ok(messages)
 }

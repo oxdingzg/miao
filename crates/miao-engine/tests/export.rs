@@ -15,7 +15,7 @@ impl Write for UpdatingWriter {
         if !self.changed {
             self.changed = true;
             let conn = rusqlite::Connection::open(&self.path).unwrap();
-            conn.execute_batch("BEGIN; UPDATE engine_session SET next_seq=next_seq+1 WHERE id='s'; INSERT INTO engine_event SELECT 's',next_seq,'later','{}' FROM engine_session WHERE id='s'; COMMIT;").unwrap();
+            conn.execute_batch("BEGIN; UPDATE engine_session SET next_seq=next_seq+1 WHERE id='s'; INSERT INTO engine_event(session_id,seq,kind,data) SELECT 's',next_seq,'later','{}' FROM engine_session WHERE id='s'; COMMIT;").unwrap();
         }
         self.bytes.extend_from_slice(data);
         Ok(data.len())

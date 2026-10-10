@@ -61,13 +61,13 @@ impl Store {
             let mut selected=Vec::new();let mut bytes=0;
             let through=if let Some((through,summary))=checkpoint {
                 let text=format!("<history-summary>\n{summary}\n</history-summary>\nThis summarizes completed history. Do not repeat completed operations or unknown side effects automatically.");
-                bytes=text.len();selected.push(Message{role:"user".into(),content:json!([{"type":"text","text":text}]),checkpoint:None});through
+                bytes=text.len();selected.push(Message{role:"user".into(),content:json!([{"type":"text","text":text}]),checkpoint:None,recorded_at_ms:None});through
             }else{0};
-            let mut stmt=tx.prepare("SELECT role,content FROM engine_message WHERE session_id=?1 AND seq>?2 AND reverted=0 ORDER BY seq LIMIT 1001")?;
+            let mut stmt=tx.prepare("SELECT role,content,recorded_at_ms FROM engine_message WHERE session_id=?1 AND seq>?2 AND reverted=0 ORDER BY seq LIMIT 1001")?;
             let mut rows=stmt.query(params![session,through])?;
             while let Some(row)=rows.next()? {
                 let content:String=row.get(1)?;bytes+=content.len();if bytes>2*1024*1024||selected.len()>=1000{return Err(Error::Invalid("selected history exceeds budget; compact at a closed boundary".into()));}
-                selected.push(Message{role:row.get(0)?,content:serde_json::from_str(&content)?,checkpoint:None});
+                selected.push(Message{role:row.get(0)?,content:serde_json::from_str(&content)?,checkpoint:None,recorded_at_ms:row.get(2)?});
             }
             let state=crate::state::projection(&tx,&session,i64::MAX as u64)?;
             Ok((selected,state))
