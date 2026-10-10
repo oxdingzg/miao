@@ -48,6 +48,7 @@ import { sessionLocationLayer } from "./middleware/session-location"
 import { PtyEnvironment } from "./pty-environment"
 import { RuntimeIdentity } from "@miao/core/runtime/identity"
 import { Logging } from "@miao/core/observability/logging"
+import { ClientEvents } from "./client-events"
 
 export const context = Context.makeUnsafe<unknown>(new Map())
 
@@ -130,6 +131,7 @@ const app = LayerNode.group([
   WorkspaceLive.node,
   httpClient,
   EventV2.node,
+  ClientEvents.node,
   BackgroundJob.node,
   SessionSchedule.node,
   ProjectV2.node,
