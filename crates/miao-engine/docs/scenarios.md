@@ -46,3 +46,15 @@ capability gaps remain; remaining work is hardening and evaluation.
 | Rewind requires an idle Session (a busy run is refused, not corrupted) | `session_rewind_faults.rs::rewind_requires_an_idle_session` |
 | Rewind survives store recovery; fork excludes reverted messages; unrevert restores across recovery | `session_rewind_faults.rs::rewind_survives_recovery_and_fork_excludes_reverted` |
 | Recovery closes orphaned requests without execution or messages | `supervision.rs::recovery_closes_orphaned_requests_without_execution_or_messages` |
+
+### 双 sidecar 协议验证
+
+`two_engines.rs` 由一个客户端测试进程启动并 attach 两个独立 Rust engine，使用相同 Session/input ID 验证 engine 维度隔离。
+
+- 执行真实 provider HTTP fixture → `read_file` → 后续 provider turn，比较工具 catalog、工具结果和快照中的可见消息/模式/上下文。
+- 提交后主动丢弃应用层 ack，重试必须返回同一 admitted cursor，只留下一个 pending input。
+- 105 次状态操作强制 ledger 分页；重放订阅再续跑，通知必须逐条等于完整 durable ledger，不先去重掩盖重复。另一 engine 的状态/cursor/消息不变。
+- 用 192 KiB 输入产生大通知，暂不读取 A 的 stdout。B 必须完成；只读 SQLite 观察还须证明 A 自己的 run 已持久完成，再恢复读取并核对完整 ledger。
+- 每个等待有超时，stdio 错误立即失败，进程须正常关闭。
+
+这是双 Rust sidecar 的协议级证据，不等于现有产品 TUI 已完成 TS/Rust 双后端切换。客户端投影/交互不退化仍由门面产品级 E2E 验证。
