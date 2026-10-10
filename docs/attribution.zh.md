@@ -4,7 +4,7 @@
 
 ## 来源与致谢
 
-miao 是衍生自 [opencode](https://github.com/anomalyco/opencode) 的开源 AI 编程代理。
+miao 是衍生自 [opencode](https://github.com/anomalyco/opencode) 的开源 AI 智能体。
 代码库中相当一部分来自 opencode 的 MIT 授权实现。感谢其作者与贡献者提供的终端编程工作流和工程基础。
 
 miao 作为单独的项目维护，有自己的开发方向、问题追踪和发布版本。

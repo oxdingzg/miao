@@ -11,7 +11,9 @@
 
 ---
 
-**miao is an open-source AI coding agent for developers who want to get real work done—and understand what it costs.** Work in your terminal, use the models you choose, and let the agent explore a repository, edit code, run commands, and check its work.
+**miao is an open-source AI agent that works with you in the terminal.** Use the models you choose to write code, research topics, manage files, and automate tasks—with visible progress, context usage, and cost.
+
+For an integrated workspace, run miao inside [mtty](https://github.com/oxdingzg/mtty), the AI-native terminal and editor: see agent status per pane, get notified when input is needed, and queue your next prompt while it works.
 
 miao focuses on the engineering around the model: **context efficiency, durable sessions, collaboration, and control over long-running work.** Its aim is the same useful result with less waiting and fewer wasted tokens.
 
@@ -198,7 +200,7 @@ miao runs locally without a miao or OpenCode account. Connect your chosen model 
 
 | Project                    | What it is                                                                                                                         | Links                                                                                                                           |
 | -------------------------- | ---------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------- |
-| **miao** (this repository) | AI coding agent for the terminal                                                                                                   | [mtty.dev/miao](https://mtty.dev/miao) · [docs](https://mtty.dev/docs/miao) · [oxdingzg/miao](https://github.com/oxdingzg/miao) |
+| **miao** (this repository) | AI agent that works with you in the terminal                                                                                                   | [mtty.dev/miao](https://mtty.dev/miao) · [docs](https://mtty.dev/docs/miao) · [oxdingzg/miao](https://github.com/oxdingzg/miao) |
 | **mtty**                   | GPU-rendered terminal written in Rust (macOS, Linux, Windows) that shows which agent in a pane is working, waiting on you, or done | [mtty.dev/mtty](https://mtty.dev/mtty) · [oxdingzg/mtty](https://github.com/oxdingzg/mtty)                                      |
 | **mtty.dev**               | The website and documentation for both                                                                                             | [mtty.dev](https://mtty.dev)                                                                                                    |
 

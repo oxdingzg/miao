@@ -4,7 +4,7 @@
 
 ## Origins and acknowledgements
 
-miao is an open-source AI coding agent derived from
+miao is an open-source AI agent derived from
 [opencode](https://github.com/anomalyco/opencode). A substantial part of the
 codebase comes from opencode's MIT-licensed implementation. We thank its authors
 and contributors for the terminal coding workflow and engineering foundation.
