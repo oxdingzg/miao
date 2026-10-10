@@ -1,148 +1,19 @@
 use miao_engine::{
-    approval::Response,
     credential::{Credential, Source},
+    host::Host,
     permission::{Config, Policy},
-    protocol::{Error, Input},
+    protocol::{Command, Error, Request},
     provider::Provider,
     runtime::Runtime,
     store::Store,
     tools::Tools,
 };
-use serde::Deserialize;
 use serde_json::{json, Value};
 use std::{collections::HashMap, io, sync::Arc, time::Duration};
 use tokio::{
     io::{AsyncBufReadExt, AsyncWriteExt, BufReader},
     sync::mpsc,
 };
-
-#[derive(Deserialize)]
-#[serde(deny_unknown_fields)]
-struct Request {
-    id: Value,
-    #[serde(flatten)]
-    command: Command,
-}
-
-#[derive(Deserialize)]
-#[serde(tag = "method", content = "params", rename_all = "snake_case")]
-enum Command {
-    Admit {
-        input: Input,
-        #[serde(default = "yes")]
-        resume: bool,
-        #[serde(default)]
-        attachments: Vec<miao_engine::protocol::Attachment>,
-    },
-    Resume {
-        session_id: String,
-    },
-    Mode {
-        session_id: String,
-        mode: miao_engine::protocol::CollaborationMode,
-    },
-    Cancel {
-        session_id: String,
-    },
-    Compact {
-        session_id: String,
-        compaction_id: String,
-        through_message_seq: u64,
-        summary: String,
-    },
-    Recall {
-        session_id: String,
-        query: String,
-        #[serde(default = "recall_limit")]
-        limit: usize,
-        #[serde(default)]
-        before_message_seq: Option<u64>,
-    },
-    Crons {
-        session_id: String,
-    },
-    CancelCron {
-        session_id: String,
-        cron_id: String,
-    },
-    Wakeups {
-        session_id: String,
-    },
-    CancelWakeup {
-        session_id: String,
-        timer_id: String,
-    },
-    Questions {
-        session_id: String,
-    },
-    AnswerQuestion {
-        session_id: String,
-        answer: miao_engine::question::Answer,
-    },
-    State {
-        session_id: String,
-    },
-    UpdateState {
-        session_id: String,
-        operation_id: String,
-        tool: String,
-        input: Value,
-    },
-    History {
-        session_id: String,
-        #[serde(default)]
-        selected: bool,
-    },
-    Job {
-        session_id: String,
-        job_id: String,
-    },
-    Jobs {
-        session_id: String,
-    },
-    CancelJob {
-        session_id: String,
-        job_id: String,
-    },
-    Context {
-        session_id: String,
-        #[serde(default)]
-        epoch: Option<u64>,
-    },
-    Snapshot {
-        session_id: String,
-    },
-    Fork {
-        session_id: String,
-        target_session_id: String,
-        #[serde(default)]
-        message_seq: Option<u64>,
-    },
-    Events {
-        session_id: String,
-        #[serde(default)]
-        after: u64,
-    },
-    Subscribe {
-        session_id: String,
-        #[serde(default)]
-        after: u64,
-    },
-    Unsubscribe {
-        session_id: String,
-    },
-    Approve {
-        session_id: String,
-        response: Response,
-    },
-    Shutdown,
-}
-fn recall_limit() -> usize {
-    10
-}
-fn yes() -> bool {
-    true
-}
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut args = std::env::args().skip(1);
@@ -499,10 +370,11 @@ async fn serve(runtime: &Runtime) -> io::Result<()> {
     });
     // Possession of this local stdio adapter is the controller authority.
     // Future network adapters must authenticate before receiving this handle.
-    let controller = runtime.controller();
+    // `Host` holds that capability together with the subscription cursors, so
+    // stdio framing owns no domain state.
+    let mut host = Host::new(runtime);
     let mut input = BufReader::new(tokio::io::stdin());
     let mut bytes = Vec::new();
-    let mut subscriptions = HashMap::<String, u64>::new();
     let mut progress = runtime.progress();
     let mut poll = tokio::time::interval(Duration::from_millis(100));
     let result=async {
@@ -515,52 +387,18 @@ async fn serve(runtime: &Runtime) -> io::Result<()> {
                         _=>{send(&output,json!({"id":null,"error":{"code":"invalid_request","message":"expected an id and a typed method/params request"}}))?;continue;},
                     };
                     let stop=matches!(request.command,Command::Shutdown);
-                    let result:Result<Value,Error>=match request.command {
-                        Command::Admit{input,resume,attachments}=>runtime.admit_with(input,attachments,resume).await.and_then(|v|serde_json::to_value(v).map_err(Error::from)),
-                        Command::Resume{session_id}=>runtime.resume(&session_id).await.map(|_|json!({"accepted":true})),
-                        Command::Mode{session_id,mode}=>runtime.set_mode(&session_id,mode).await.map(|_|json!({"accepted":true,"mode":mode})),
-                        Command::Cancel{session_id}=>runtime.cancel(&session_id).await.map(|active|json!({"accepted":active})),
-                        Command::Compact{session_id,compaction_id,through_message_seq,summary}=>runtime.store().compact(&session_id,&compaction_id,through_message_seq,summary).await,
-                        Command::Recall{session_id,query,limit,before_message_seq}=>runtime.store().recall(&session_id,miao_engine::recall::Query{query,limit,before_message_seq}).await,
-                        Command::Crons{session_id}=>runtime.store().crons(&session_id).await.and_then(|value|serde_json::to_value(value).map_err(Error::from)),
-                        Command::CancelCron{session_id,cron_id}=>runtime.cancel_cron(&session_id,&cron_id).await.map(|accepted|json!({"accepted":accepted})),
-                        Command::Wakeups{session_id}=>runtime.store().wakeups(&session_id).await.and_then(|value|serde_json::to_value(value).map_err(Error::from)),
-                        Command::CancelWakeup{session_id,timer_id}=>runtime.cancel_wakeup(&session_id,&timer_id).await.map(|accepted|json!({"accepted":accepted})),
-                        Command::Questions{session_id}=>runtime.store().questions(&session_id).await.and_then(|value|serde_json::to_value(value).map_err(Error::from)),
-                        Command::AnswerQuestion{session_id,answer}=>runtime.answer_question(&controller,&session_id,answer).await.map(|_|json!({"accepted":true})),
-                        Command::State{session_id}=>runtime.store().state(&session_id).await,
-                        Command::UpdateState{session_id,operation_id,tool,input}=>match miao_engine::state::Mutation::parse(&tool,input){Ok(mutation)=>runtime.store().update_state(&session_id,&operation_id,mutation).await,Err(_)=>Err(Error::Invalid("invalid Session state update".into()))},
-                        Command::History{session_id,selected}=>{let history=if selected {runtime.store().selected_history(&session_id).await}else{runtime.store().history(&session_id).await};history.and_then(|value|serde_json::to_value(value).map_err(Error::from))},
-                        Command::Job{session_id,job_id}=>runtime.store().job(&session_id,&job_id).await.map(|v|v.unwrap_or(Value::Null)),
-                        Command::Jobs{session_id}=>runtime.store().jobs(&session_id).await.and_then(|v|serde_json::to_value(v).map_err(Error::from)),
-                        Command::CancelJob{session_id,job_id}=>runtime.cancel_job(&session_id,&job_id).await.map(|accepted|json!({"accepted":accepted})),
-                        Command::Context{session_id,epoch}=>runtime.store().context(&session_id,epoch).await.map(|v|v.unwrap_or(Value::Null)),
-                        Command::Snapshot{session_id}=>runtime.store().snapshot(&session_id).await,
-                        Command::Fork{session_id,target_session_id,message_seq}=>runtime.fork(&session_id,&target_session_id,message_seq).await,
-                        Command::Events{session_id,after}=>runtime.store().events(&session_id,after,100).await.and_then(|v|serde_json::to_value(v).map_err(Error::from)),
-                        Command::Subscribe{session_id,after}=>{
-                            if subscriptions.len()>=64 && !subscriptions.contains_key(&session_id) {Err(Error::Invalid("subscription limit".into()))}
-                            else {subscriptions.insert(session_id,after);Ok(json!({"accepted":true}))}
-                        },
-                        Command::Unsubscribe{session_id}=>{subscriptions.remove(&session_id);Ok(json!({"accepted":true}))},
-                        Command::Approve{session_id,response}=>runtime.approve(&controller,&session_id,response).await.map(|_|json!({"accepted":true})),
-                        Command::Shutdown=>Ok(json!({"accepted":true})),
-                    };
+                    let result:Result<Value,Error>=host.dispatch(request.command).await;
                     let response=match result {Ok(value)=>json!({"id":request.id,"result":value}),Err(error)=>json!({"id":request.id,"error":{"code":error.code(),"message":error.to_string()}})};
                     send(&output,response)?;
                     if stop {break;}
                 },
                 _=poll.tick()=>{
-                    for (session,cursor) in &mut subscriptions {
-                        let events=runtime.store().events(session,*cursor,32).await.map_err(io::Error::other)?;
-                        for event in events {
-                            *cursor=event.seq;
-                            send(&output,json!({"method":"event","params":event}))?;
-                        }
+                    for value in host.poll_events().await.map_err(io::Error::other)? {
+                        send(&output,value)?;
                     }
                 },
                 notice=progress.recv()=>match notice {
-                    Ok(notice)=>{if notice["session_id"].as_str().is_some_and(|s|subscriptions.contains_key(s)) {send(&output,json!({"method":"progress","params":notice}))?;}},
+                    Ok(notice)=>{if notice["session_id"].as_str().is_some_and(|s|host.subscribed(s)) {send(&output,json!({"method":"progress","params":notice}))?;}},
                     Err(tokio::sync::broadcast::error::RecvError::Lagged(_))=>send(&output,json!({"method":"resync","params":{"reason":"ephemeral_progress_lagged"}}))?,
                     Err(tokio::sync::broadcast::error::RecvError::Closed)=>break,
                 },

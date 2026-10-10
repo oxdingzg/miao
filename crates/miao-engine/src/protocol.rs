@@ -1,3 +1,4 @@
+use crate::{approval::Response, question::Answer};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
@@ -153,4 +154,141 @@ pub struct ContextBundle {
     pub system: String,
     pub fingerprint: String,
     pub sources: Vec<Value>,
+}
+
+/// A framed host request: a client-supplied `id` plus the command vocabulary.
+/// The stdio adapter parses this from JSONL; other transports map their own
+/// envelope onto the same [`Command`] values.
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct Request {
+    pub id: Value,
+    #[serde(flatten)]
+    pub command: Command,
+}
+
+/// The transport-agnostic host command vocabulary. Every adapter maps its
+/// envelope onto these commands and dispatches them through
+/// [`crate::host::Host`], so the domain operations and controller authority are
+/// shared instead of reimplemented per transport.
+#[derive(Deserialize)]
+#[serde(tag = "method", content = "params", rename_all = "snake_case")]
+pub enum Command {
+    Admit {
+        input: Input,
+        #[serde(default = "yes")]
+        resume: bool,
+        #[serde(default)]
+        attachments: Vec<Attachment>,
+    },
+    Resume {
+        session_id: String,
+    },
+    Mode {
+        session_id: String,
+        mode: CollaborationMode,
+    },
+    Cancel {
+        session_id: String,
+    },
+    Compact {
+        session_id: String,
+        compaction_id: String,
+        through_message_seq: u64,
+        summary: String,
+    },
+    Recall {
+        session_id: String,
+        query: String,
+        #[serde(default = "recall_limit")]
+        limit: usize,
+        #[serde(default)]
+        before_message_seq: Option<u64>,
+    },
+    Crons {
+        session_id: String,
+    },
+    CancelCron {
+        session_id: String,
+        cron_id: String,
+    },
+    Wakeups {
+        session_id: String,
+    },
+    CancelWakeup {
+        session_id: String,
+        timer_id: String,
+    },
+    Questions {
+        session_id: String,
+    },
+    AnswerQuestion {
+        session_id: String,
+        answer: Answer,
+    },
+    State {
+        session_id: String,
+    },
+    UpdateState {
+        session_id: String,
+        operation_id: String,
+        tool: String,
+        input: Value,
+    },
+    History {
+        session_id: String,
+        #[serde(default)]
+        selected: bool,
+    },
+    Job {
+        session_id: String,
+        job_id: String,
+    },
+    Jobs {
+        session_id: String,
+    },
+    CancelJob {
+        session_id: String,
+        job_id: String,
+    },
+    Context {
+        session_id: String,
+        #[serde(default)]
+        epoch: Option<u64>,
+    },
+    Snapshot {
+        session_id: String,
+    },
+    Fork {
+        session_id: String,
+        target_session_id: String,
+        #[serde(default)]
+        message_seq: Option<u64>,
+    },
+    Events {
+        session_id: String,
+        #[serde(default)]
+        after: u64,
+    },
+    Subscribe {
+        session_id: String,
+        #[serde(default)]
+        after: u64,
+    },
+    Unsubscribe {
+        session_id: String,
+    },
+    Approve {
+        session_id: String,
+        response: Response,
+    },
+    Shutdown,
+}
+
+fn recall_limit() -> usize {
+    10
+}
+
+fn yes() -> bool {
+    true
 }
