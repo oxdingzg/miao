@@ -148,7 +148,7 @@ async fn request(conn: &Arc<Conn>, id: Value, method: &str, params: Value) {
                 id,
                 json!({
                     "protocolVersion": 1,
-                    "agentCapabilities": {},
+                    "agentCapabilities": { "loadSession": true },
                     "authMethods": [{ "id": AUTH_METHOD, "name": "Login with miao" }],
                     "agentInfo": { "name": "miao-engine", "version": env!("MIAO_ENGINE_VERSION") },
                 }),
@@ -161,6 +161,10 @@ async fn request(conn: &Arc<Conn>, id: Value, method: &str, params: Value) {
             conn.reply(id, json!({ "sessionId": session })).await;
         }
         "session/prompt" => prompt(conn, id, params).await,
+        "session/load" => load(conn, id, params).await,
+        "session/resume" => conn.reply(id, json!({})).await,
+        "session/fork" => fork(conn, id, params).await,
+        "session/close" => conn.reply(id, json!({})).await,
         other => {
             conn.fail(id, METHOD_NOT_FOUND, &format!("method not found: {other}"))
                 .await
@@ -277,6 +281,67 @@ async fn prompt(conn: &Arc<Conn>, id: Value, params: Value) {
         }
     }
     conn.reply(id, json!({ "stopReason": "end_turn" })).await;
+}
+
+/// Replay a Session's committed conversation as `session/update` chunks, then
+/// acknowledge the load.
+async fn load(conn: &Arc<Conn>, id: Value, params: Value) {
+    let Some(session) = params
+        .get("sessionId")
+        .and_then(Value::as_str)
+        .map(str::to_string)
+    else {
+        conn.fail(id, INVALID_PARAMS, "sessionId is required").await;
+        return;
+    };
+    replay(conn, &session).await;
+    conn.reply(id, json!({})).await;
+}
+
+async fn replay(conn: &Arc<Conn>, session: &str) {
+    let Ok(history) = conn.runtime.store().selected_history(session).await else {
+        return;
+    };
+    for message in &history {
+        let update = if message.role == "user" {
+            "user_message_chunk"
+        } else {
+            "agent_message_chunk"
+        };
+        for block in message.content.as_array().into_iter().flatten() {
+            let Some(text) = block["text"].as_str() else {
+                continue;
+            };
+            if block["type"] != "text" {
+                continue;
+            }
+            conn.notify(
+                "session/update",
+                json!({
+                    "sessionId": session,
+                    "update": { "sessionUpdate": update, "content": { "type": "text", "text": text } },
+                }),
+            )
+            .await;
+        }
+    }
+}
+
+/// Fork the Session into a fresh id and return it.
+async fn fork(conn: &Arc<Conn>, id: Value, params: Value) {
+    let Some(session) = params
+        .get("sessionId")
+        .and_then(Value::as_str)
+        .map(str::to_string)
+    else {
+        conn.fail(id, INVALID_PARAMS, "sessionId is required").await;
+        return;
+    };
+    let target = format!("ses_{}", uuid::Uuid::new_v4().simple());
+    match conn.runtime.fork(&session, &target, None).await {
+        Ok(_) => conn.reply(id, json!({ "sessionId": target })).await,
+        Err(error) => conn.fail(id, INTERNAL_ERROR, &error.to_string()).await,
+    }
 }
 
 /// Ask the client for a permission decision and resolve the engine approval to
