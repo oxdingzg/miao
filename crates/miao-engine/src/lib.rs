@@ -32,3 +32,4 @@ pub mod store;
 pub mod subagent;
 pub mod tools;
 pub mod wakeup;
+pub mod worker;
