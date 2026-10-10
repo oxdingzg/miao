@@ -259,6 +259,7 @@ pub enum Command {
     Snapshot {
         session_id: String,
     },
+    Sessions,
     Fork {
         session_id: String,
         target_session_id: String,
