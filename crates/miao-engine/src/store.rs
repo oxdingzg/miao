@@ -324,6 +324,33 @@ impl Store {
         .await
     }
 
+    /// Every Session id in the engine database, in a stable order.
+    pub async fn sessions(&self) -> Result<Vec<String>, Error> {
+        self.call(|conn| {
+            let mut statement = conn.prepare("SELECT id FROM engine_session ORDER BY id")?;
+            let rows = statement.query_map([], |row| row.get::<_, String>(0))?;
+            let mut sessions = Vec::new();
+            for row in rows {
+                sessions.push(row?);
+            }
+            Ok(sessions)
+        })
+        .await
+    }
+
+    /// Create the Session row if it does not exist.
+    pub async fn ensure(&self, session: &str) -> Result<(), Error> {
+        let session = session.to_owned();
+        self.call(move |conn| {
+            conn.execute(
+                "INSERT OR IGNORE INTO engine_session(id,next_seq) VALUES(?1,0)",
+                [session],
+            )?;
+            Ok(())
+        })
+        .await
+    }
+
     /// Safe-boundary promotion: all steers first, then one queued item only when
     /// idle. Projection and promotion events share the same transaction.
     pub async fn promote(&self, session: &str, idle: bool) -> Result<Vec<Event>, Error> {

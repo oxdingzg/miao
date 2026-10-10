@@ -24,7 +24,7 @@ cargo build --manifest-path crates/miao-engine/Cargo.toml
 
 使用 `--http 127.0.0.1:PORT` 启用 loopback HTTP 控制面，复用同一命令表（`POST /rpc` 与 `GET /events` SSE 事件流，revision `engine-http-0`）；认证用 bearer token，取自 `--http-token` 或 `MIAO_ENGINE_HTTP_TOKEN`，缺省时启动生成并打印到 stderr。非 loopback 地址被拒绝，TLS 交给本地反代。
 
-`acp` 模式在 stdio 上提供 ACP（newline-delimited JSON-RPC 2.0），供编辑器直接对接：`miao-engine acp --db PATH --workspace PATH --model MODEL [--provider ...] [--endpoint URL] [--policy PATH]`。当前实现 `initialize`/`authenticate`/`session/new`/`session/prompt`/`session/cancel`，把引擎审批映射为 `session/request_permission` 往返，把已提交的工具调用流式推送为 `tool_call`/`tool_call_update`，支持 `session/load`（历史回放）/`session/fork`/`session/resume`/`session/close`/`session/set_mode`，并把已提交的 todos 推送为 `plan`；`session/list` 与 config/usage 更新为后续切片。
+`acp` 模式在 stdio 上提供 ACP（newline-delimited JSON-RPC 2.0），供编辑器直接对接：`miao-engine acp --db PATH --workspace PATH --model MODEL [--provider ...] [--endpoint URL] [--policy PATH]`。当前实现 `initialize`/`authenticate`/`session/new`/`session/prompt`/`session/cancel`，把引擎审批映射为 `session/request_permission` 往返，把已提交的工具调用流式推送为 `tool_call`/`tool_call_update`，支持 `session/load`（历史回放）/`session/fork`/`session/resume`/`session/close`/`session/set_mode`，并把已提交的 todos 推送为 `plan`，支持 `session/list`；config/usage 更新为后续切片。
 
 ## stdio 协议 v0
 
