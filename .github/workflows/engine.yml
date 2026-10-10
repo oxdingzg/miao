@@ -4,6 +4,8 @@ on:
   push:
     branches:
       - main
+    tags:
+      - "engine-v*"
     paths:
       - "crates/miao-engine/**"
       - "crates/miao-sandbox/**"
@@ -23,9 +25,6 @@ on:
       - "packages/core/src/flag/**"
       - "packages/native/**"
       - "bun.lock"
-  push:
-    tags:
-      - "engine-v*"
   workflow_dispatch:
 
 concurrency:
