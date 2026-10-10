@@ -3,18 +3,7 @@ name: install
 # Runs the published installers against the latest release on each platform, so a
 # change to `install` or `install.ps1` is checked on a real machine before users hit it.
 on:
-  push:
-    branches:
-      - main
-    paths:
-      - install
-      - install.ps1
-      - .github/workflows/install.yml
-  pull_request:
-    paths:
-      - install
-      - install.ps1
-      - .github/workflows/install.yml
+  workflow_call:
   workflow_dispatch:
 
 permissions:
@@ -28,6 +17,7 @@ jobs:
       matrix:
         host: [ubuntu-latest, macos-latest]
     runs-on: ${{ matrix.host }}
+    timeout-minutes: 60
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
       - name: Install with the bash installer
@@ -44,6 +34,7 @@ jobs:
         # powershell = Windows PowerShell 5.1, pwsh = PowerShell 7
         shell: [powershell, pwsh]
     runs-on: windows-2025
+    timeout-minutes: 60
     defaults:
       run:
         shell: ${{ matrix.shell }}

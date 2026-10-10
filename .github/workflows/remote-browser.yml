@@ -1,16 +1,6 @@
 name: remote-browser
 on:
-  pull_request:
-    paths:
-      - ".github/workflows/remote-browser.yml"
-      - "packages/remote-control/**"
-      - "packages/miao/src/runtime/**"
-      - "packages/miao/src/effect/app-runtime.ts"
-      - "packages/core/src/session/**"
-      - "packages/schema/src/session-event.ts"
-      - "packages/client/**"
-      - "package.json"
-      - "bun.lock"
+  workflow_call:
   workflow_dispatch:
 concurrency:
   group: remote-browser-${{ github.event.pull_request.number || github.ref }}

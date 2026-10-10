@@ -1,37 +1,21 @@
 name: storybook
 
 on:
-  push:
-    branches: [main]
-    paths:
-      - ".github/workflows/storybook.yml"
-      - "package.json"
-      - "bun.lock"
-      - "packages/storybook/**"
-      - "packages/ui/**"
-      - "packages/session-ui/**"
-  pull_request:
-    branches: [main]
-    paths:
-      - ".github/workflows/storybook.yml"
-      - "package.json"
-      - "bun.lock"
-      - "packages/storybook/**"
-      - "packages/ui/**"
-      - "packages/session-ui/**"
+  workflow_call:
   workflow_dispatch:
 
 concurrency:
   # A pull request shares one group per number, so a new push cancels its older
   # run. A push to main groups by commit SHA, so every merged commit gets its own
   # run and keeps a complete status instead of being superseded and cancelled.
-  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.sha }}
+  group: ${{ github.workflow }}-storybook-${{ github.event.pull_request.number || github.sha }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   build:
     name: storybook build
     runs-on: ubuntu-latest
+    timeout-minutes: 60
     steps:
       - name: Checkout repository
         uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1

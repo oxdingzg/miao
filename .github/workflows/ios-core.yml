@@ -1,12 +1,6 @@
 name: ios-core
 on:
-  pull_request:
-    paths:
-      - apps/ios/**
-      - packages/remote-control/src/**
-      - packages/miao/src/runtime/**
-      - packages/miao/test/runtime/native-app.ts
-      - .github/workflows/ios-core.yml
+  workflow_call:
   workflow_dispatch:
 permissions:
   contents: read
