@@ -6632,6 +6632,57 @@ describe("SessionRunnerLLM", () => {
     }),
   )
 
+  it.effect("retries a dropped stream after reasoning but before visible output", () =>
+    Effect.gen(function* () {
+      yield* setup
+      const session = yield* SessionV2.Service
+      yield* session.prompt({ sessionID, prompt: Prompt.make({ text: "Recover after thinking" }), resume: false })
+      let attempts = 0
+      responseStream = Stream.unwrap(
+        Effect.sync(() =>
+          attempts++ === 0
+            ? Stream.concat(
+                Stream.fromIterable([
+                  LLMEvent.stepStart({ index: 0 }),
+                  LLMEvent.reasoningStart({ id: "reasoning-dropped" }),
+                  LLMEvent.reasoningDelta({ id: "reasoning-dropped", text: "Thinking before the drop" }),
+                ]),
+                Stream.fail(
+                  new LLMError({
+                    module: "test",
+                    method: "stream",
+                    reason: new TransportReason({ message: "connection reset", kind: "stream-read" }),
+                  }),
+                ),
+              )
+            : Stream.fromIterable(fragmentFixture("text", "text-after-thinking", ["Recovered"]).completeEvents),
+        ),
+      )
+
+      const resumed = yield* session.resume(sessionID).pipe(Effect.forkScoped)
+      while (attempts < 2) yield* TestClock.adjust("1 second")
+      yield* Fiber.join(resumed)
+
+      expect(attempts).toBe(2)
+      const context = yield* session.context(sessionID)
+      expect(context).toHaveLength(2)
+      expect(context).toMatchObject([
+        { type: "user", text: "Recover after thinking" },
+        {
+          type: "assistant",
+          finish: "stop",
+          content: expect.arrayContaining([
+            // The retry recovered the answer and did not duplicate it.
+            expect.objectContaining({ type: "text", text: "Recovered" }),
+            // Reasoning is live-only, so the dropped attempt's reasoning settles
+            // into the durable transcript instead of being replayed by the retry.
+            expect.objectContaining({ type: "reasoning", text: "Thinking before the drop" }),
+          ]),
+        },
+      ])
+    }),
+  )
+
   ;["stream-read", "connection-closed", "connection-failed", "Timeout", "tls-handshake"].forEach((kind) => {
     it.effect(`retries ${kind} before its first event`, () =>
       Effect.gen(function* () {
