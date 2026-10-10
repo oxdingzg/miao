@@ -17,6 +17,8 @@ export const forTurn = (input: {
   readonly promptCacheKey: string
   readonly messages: ReadonlyArray<Message>
 }): Record<string, string> => ({
+  "x-miao-session-id": input.sessionID,
+  ...(input.parentID ? { "x-miao-parent-session-id": input.parentID } : {}),
   "x-session-affinity": input.sessionID,
   "X-Session-Id": input.sessionID,
   ...(input.parentID ? { "x-parent-session-id": input.parentID } : {}),

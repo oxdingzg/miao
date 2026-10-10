@@ -151,6 +151,8 @@ describe("V2 provider request overrides", () => {
       expect(turnHeaders("github-copilot", [Message.user("Hello")], "ses_parent")).toMatchObject({
         "x-initiator": "agent",
         "x-parent-session-id": "ses_parent",
+        "x-miao-parent-session-id": "ses_parent",
+        "x-miao-session-id": "ses_test",
       })
       // A tool continuation is agent-initiated.
       expect(
@@ -160,9 +162,9 @@ describe("V2 provider request overrides", () => {
         ])["x-initiator"],
       ).toBe("agent")
       expect(
-        turnHeaders("github-copilot", [
-          Message.user([{ type: "media", mediaType: "image/png", data: "aGk=" }]),
-        ])["Copilot-Vision-Request"],
+        turnHeaders("github-copilot", [Message.user([{ type: "media", mediaType: "image/png", data: "aGk=" }])])[
+          "Copilot-Vision-Request"
+        ],
       ).toBe("true")
       expect(
         turnHeaders("github-copilot", [
@@ -170,7 +172,10 @@ describe("V2 provider request overrides", () => {
           Message.tool({
             id: "call_1",
             name: "read",
-            result: { type: "content", value: [{ type: "file", uri: "data:image/png;base64,aGk=", mime: "image/png" }] },
+            result: {
+              type: "content",
+              value: [{ type: "file", uri: "data:image/png;base64,aGk=", mime: "image/png" }],
+            },
           }),
         ])["Copilot-Vision-Request"],
       ).toBe("true")
@@ -180,7 +185,11 @@ describe("V2 provider request overrides", () => {
   it.effect("only OpenAI turns carry the Codex session-id cache header", () =>
     Effect.sync(() => {
       expect(turnHeaders("openai")["session-id"]).toBe("cache-key")
-      expect(turnHeaders("anthropic")).toEqual({ "x-session-affinity": "ses_test", "X-Session-Id": "ses_test" })
+      expect(turnHeaders("anthropic")).toEqual({
+        "x-session-affinity": "ses_test",
+        "X-Session-Id": "ses_test",
+        "x-miao-session-id": "ses_test",
+      })
     }),
   )
 })

@@ -2678,10 +2678,12 @@ describe("SessionRunnerLLM", () => {
         {
           "x-session-affinity": sessionID,
           "X-Session-Id": sessionID,
+          "x-miao-session-id": sessionID,
         },
         {
           "x-session-affinity": sessionID,
           "X-Session-Id": sessionID,
+          "x-miao-session-id": sessionID,
         },
       ])
       expect(userTexts(requests[0])[0]).toContain("## Objective")
@@ -5734,6 +5736,7 @@ describe("SessionRunnerLLM", () => {
       expect(requests[0]?.http?.headers).toEqual({
         "x-session-affinity": sessionID,
         "X-Session-Id": sessionID,
+        "x-miao-session-id": sessionID,
       })
     }),
   )
@@ -5771,6 +5774,8 @@ describe("SessionRunnerLLM", () => {
       yield* session.resume(sessionID)
 
       expect(requests[0]?.http?.headers?.["x-parent-session-id"]).toBe(parentID)
+      expect(requests[0]?.http?.headers?.["x-miao-parent-session-id"]).toBe(parentID)
+      expect(requests[0]?.http?.headers?.["x-miao-session-id"]).toBe(sessionID)
     }),
   )
 
