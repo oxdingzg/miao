@@ -31,6 +31,7 @@ export const clientEvent = Effect.fn("Engine.clientEvent")(function* (
         session_id: event.source.sessionID,
         seq: event.source.seq,
         index: event.source.index,
+        recorded_at_ms: event.source.recordedAtMs ?? null,
       },
     },
   })

@@ -46,7 +46,7 @@ function emit(session: string) {
   send({ method: "event", params: { session_id: session, seq: 1, kind: "run.started", data: { run_id: "run" } } })
   send({
     method: "event",
-    params: { session_id: session, seq: 2, kind: "message.committed", data: { role: "assistant", content: [{ type: "text", text }] } },
+    params: { session_id: session, seq: 2, kind: "message.committed", recorded_at_ms: 1_700_000_000_123, data: { role: "assistant", content: [{ type: "text", text }] } },
   })
   send({ method: "event", params: { session_id: session, seq: 3, kind: "run.finished", data: { run_id: "run" } } })
 }

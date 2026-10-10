@@ -23,7 +23,9 @@ it.effect("validates decoded bridge payloads and keeps the Rust cursor out of TS
   Effect.gen(function* () {
     const event = yield* clientEvent(output, { engineID: "store-a", location })
     expect(event.durable).toBeUndefined()
-    expect(event.metadata).toEqual({ engine: { id: "store-a", session_id: "ses_envelope", seq: 42, index: 0 } })
+    expect(event.metadata).toEqual({
+      engine: { id: "store-a", session_id: "ses_envelope", seq: 42, index: 0, recorded_at_ms: null },
+    })
     const wire = yield* Schema.encodeEffect(OpenCodeEvent)(event)
     expect(JSON.stringify(wire)).toContain('"text":"persisted"')
     expect(JSON.stringify(wire)).toContain(`"timestamp":${DateTime.toEpochMillis(text.timestamp)}`)

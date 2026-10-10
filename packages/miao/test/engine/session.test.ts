@@ -39,7 +39,9 @@ test("EngineSession publishes bridged product events for a prompt", async () => 
       sessionID: "ses_x",
       seq: 2,
       index: 0,
+      recordedAtMs: 1_700_000_000_123,
     })
+    expect(events.find((event) => event.type === "session.next.status")?.source.recordedAtMs).toBeNull()
   } finally {
     await client.close()
     await fs.rm(root, { recursive: true, force: true })
