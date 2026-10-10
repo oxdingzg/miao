@@ -57,4 +57,20 @@ sys.exit("No SDK-matching iPhone simulator")
 probe_device=$(xcrun simctl create "miao-account-test-$(uuidgen)" ${probe_template})
 xcrun simctl bootstatus "$probe_device" -b
 xcrun simctl install "$probe_device" "$probe_root/HubProbe.app"
-xcrun simctl launch --console "$probe_device" dev.miao.hub-account-probe
+# Launch acceptance and console attachment are not proof of probe completion.
+# The app writes an atomic receipt only after its account assertions finish.
+probe_container=$(xcrun simctl get_app_container "$probe_device" dev.miao.hub-account-probe data)
+probe_receipt="$probe_container/Documents/native-account-result.json"
+xcrun simctl launch "$probe_device" dev.miao.hub-account-probe >/dev/null
+attempt=0
+while [ "$attempt" -lt 120 ]; do
+  if python3 "$ios_root/scripts/account-receipt.py" "$probe_receipt"; then
+    exit 0
+  else
+    status=$?
+    if [ "$status" -ne 2 ]; then exit "$status"; fi
+  fi
+  attempt=$((attempt + 1))
+  sleep 1
+done
+python3 "$ios_root/scripts/account-receipt.py" "$probe_receipt" --timeout

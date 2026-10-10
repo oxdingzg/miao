@@ -25,6 +25,8 @@ jobs:
           install-flags: --ignore-scripts --frozen-lockfile
       - name: Swift core tests
         run: swift test --package-path apps/ios/MiaoCore
+      - name: Native account receipt contract
+        run: python3 apps/ios/scripts/test_account_receipt.py
       - name: Native signed roster admission integration
         env:
           MIAO_NATIVE_ROSTER_PROBE: apps/ios/MiaoCore/.build/debug/RosterAdmissionProbe
