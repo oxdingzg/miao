@@ -35,7 +35,7 @@ export function statusOf(event: EngineEvent): StatusInfo | undefined {
 export function translateStatus(event: EngineEvent): SessionStatus | undefined {
   const status = statusOf(event)
   if (!status) return undefined
-  return { sessionID: SessionID.descending(event.session_id), timestamp: DateTime.makeUnsafe(Date.now()), status }
+  return { sessionID: SessionID.descending(event.session_id), timestamp: eventTimestamp(event), status }
 }
 
 /**
@@ -49,7 +49,7 @@ export class StatusBridge {
     const status = statusOf(event)
     if (!status || status.type === this.#current.get(event.session_id)) return undefined
     this.#current.set(event.session_id, status.type)
-    return { sessionID: SessionID.descending(event.session_id), timestamp: DateTime.makeUnsafe(Date.now()), status }
+    return { sessionID: SessionID.descending(event.session_id), timestamp: eventTimestamp(event), status }
   }
 }
 
@@ -75,7 +75,7 @@ export function translatePrompt(event: EngineEvent): SessionPromptAdmitted | und
   if (typeof text !== "string") return undefined
   return {
     sessionID: adoptSession(event.session_id),
-    timestamp: DateTime.makeUnsafe(Date.now()),
+    timestamp: eventTimestamp(event),
     messageID: messageID(event.session_id, event.seq),
     prompt: { text },
     delivery: "steer",
@@ -114,7 +114,7 @@ export function translateMessage(event: EngineEvent): SessionTextEnded[] {
     return [
       {
         sessionID,
-        timestamp: DateTime.makeUnsafe(Date.now()),
+        timestamp: eventTimestamp(event),
         assistantMessageID,
         textID: `text_${event.seq}_${index}`,
         text: block.text,
@@ -198,7 +198,7 @@ export function translateTools(event: EngineEvent): SessionToolCalled[] {
     return [
       {
         sessionID,
-        timestamp: DateTime.makeUnsafe(Date.now()),
+        timestamp: eventTimestamp(event),
         assistantMessageID,
         callID: block.id,
         tool: productToolID(block.name),
@@ -242,11 +242,14 @@ export type SessionToolResult = SessionToolSuccess | SessionToolFailed
  */
 export class ToolBridge {
   #calls = new Map<string, { sessionID: SessionID; assistantMessageID: SessionMessage.ID }>()
-  #plans = new Map<string, {
-    session: string
-    provider: string
-    known?: { sessionID: SessionID; assistantMessageID: SessionMessage.ID }
-  }>()
+  #plans = new Map<
+    string,
+    {
+      session: string
+      provider: string
+      known?: { sessionID: SessionID; assistantMessageID: SessionMessage.ID }
+    }
+  >()
 
   /** Record `callID -> assistantMessageID` from a committed assistant message. */
   note(event: EngineEvent): void {
@@ -297,7 +300,7 @@ export class ToolBridge {
     const output = typeof raw === "string" ? raw : JSON.stringify(raw ?? null)
     const base = {
       sessionID: known.sessionID,
-      timestamp: DateTime.makeUnsafe(Date.now()),
+      timestamp: eventTimestamp(event),
       assistantMessageID: known.assistantMessageID,
       callID: plan?.provider ?? event.data.call_id,
       provider: { executed: false },
@@ -417,4 +420,11 @@ export function translateQuestion(event: EngineEvent): SessionQuestionAsked | un
     sessionID: adoptSession(event.session_id),
     questions,
   }
+}
+
+/** Known source times survive replay. For legacy events the required product
+ * timestamp is only a delivery time; nullable source metadata remains the
+ * authority for historical projections, which must not infer creation from it. */
+function eventTimestamp(event: EngineEvent): DateTime.Utc {
+  return DateTime.makeUnsafe(event.recorded_at_ms ?? Date.now())
 }

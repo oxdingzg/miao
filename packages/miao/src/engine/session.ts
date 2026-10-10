@@ -14,7 +14,7 @@ import {
 export type EngineSessionEvent = {
   type: string
   data: unknown
-  source: { sessionID: string; seq: number; index: number }
+  source: { sessionID: string; seq: number; index: number; recordedAtMs?: number | null }
 }
 export type EnginePublish = (event: EngineSessionEvent) => void
 
@@ -53,7 +53,15 @@ export class EngineSession {
     const publish = (output: { type: string; data: unknown }) => {
       const index = counts.get(output.type) ?? 0
       counts.set(output.type, index + 1)
-      this.#publish({ ...output, source: { sessionID: event.session_id, seq: event.seq, index } })
+      this.#publish({
+        ...output,
+        source: {
+          sessionID: event.session_id,
+          seq: event.seq,
+          index,
+          recordedAtMs: event.recorded_at_ms ?? null,
+        },
+      })
     }
     this.#tools.note(event)
     const status = this.#status.update(event)
