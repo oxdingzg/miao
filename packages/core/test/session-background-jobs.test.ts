@@ -13,6 +13,7 @@ import { SessionExecution } from "@miao/core/session/execution"
 import { SessionProjector } from "@miao/core/session/projector"
 import { SessionStore } from "@miao/core/session/store"
 import { SessionBackgroundJobs } from "@miao/core/session/background-jobs"
+import { SessionDelegationStore } from "@miao/core/session/delegation-store"
 import { SessionEvent } from "@miao/core/session/event"
 import { SessionMessage } from "@miao/core/session/message"
 import { testEffect } from "./lib/effect"
@@ -49,7 +50,15 @@ const setup = Effect.gen(function* () {
       text,
       metadata: { backgroundJob: { id: "job_test", command: "do work", status, ...metadata } },
     })
-  return { session, db, events, created, announce }
+  const settle = (text: string, metadata: Record<string, unknown> = {}) =>
+    events.publish(SessionEvent.NotificationAdmitted, {
+      sessionID: created.id,
+      messageID: SessionMessage.ID.create(),
+      timestamp: DateTime.makeUnsafe(2000),
+      text,
+      metadata: { backgroundJob: { id: "job_test", command: "do work", status: "finished", ...metadata } },
+    })
+  return { session, db, events, created, announce, settle }
 })
 
 describe("Session background-job recovery", () => {
@@ -150,6 +159,36 @@ describe("Session background-job recovery", () => {
       yield* test.announce("not-a-status")
       const recovered = SessionBackgroundJobs.make({ db: test.db, events: test.events, sessionID: test.created.id })
       expect(yield* recovered.list()).toEqual([])
+    }),
+  )
+
+  it.effect("merges a settled job admitted as a notification and keeps the transcript clean until promotion", () =>
+    Effect.gen(function* () {
+      const test = yield* setup
+      yield* test.announce("started")
+      yield* test.settle("Background job job_test finished.\n[exit code 0]", { outputPath: "/captured.log" })
+      const recovered = SessionBackgroundJobs.make({ db: test.db, events: test.events, sessionID: test.created.id })
+      expect(yield* recovered.list()).toMatchObject([
+        {
+          id: "job_test",
+          status: "completed",
+          started_at: 1000,
+          output: "Background job job_test finished.\n[exit code 0]",
+          metadata: { outputPath: "/captured.log" },
+        },
+      ])
+      expect(yield* test.session.context(test.created.id)).toHaveLength(1)
+      expect(yield* SessionDelegationStore.hasPromotableNotifications(test.db, test.created.id)).toBe(true)
+      expect(yield* SessionDelegationStore.promoteNext(test.db, test.events, test.created.id)).toBe(true)
+      expect(yield* SessionDelegationStore.hasPromotableNotifications(test.db, test.created.id)).toBe(false)
+      const context = yield* test.session.context(test.created.id)
+      expect(context).toHaveLength(2)
+      expect(context[1]).toMatchObject({
+        type: "synthetic",
+        text: "Background job job_test finished.\n[exit code 0]",
+        metadata: { backgroundJob: { id: "job_test", status: "finished" } },
+      })
+      expect(yield* recovered.list()).toMatchObject([{ status: "completed" }])
     }),
   )
 })
