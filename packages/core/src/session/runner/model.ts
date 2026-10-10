@@ -233,7 +233,7 @@ export const fromCatalogModel = (
               ...(typeof accountID === "string" ? { "ChatGPT-Account-Id": accountID } : {}),
             },
             http: { body: { ...route.defaults.http?.body, store: false } },
-            ...(Flag.MIAO_EXPERIMENTAL_RESPONSES_WS ? { transport: OpenAIResponses.pooledTransport } : {}),
+            ...(Flag.MIAO_RESPONSES_WS ? { transport: OpenAIResponses.pooledTransport } : {}),
           })
           .model({ id: resolved.api.id }),
       )
