@@ -334,3 +334,74 @@ async fn replays_and_forks_a_session() {
     let forked_id = forked["result"]["sessionId"].as_str().unwrap();
     assert_ne!(forked_id, session);
 }
+
+/// `session/set_mode` switches the collaboration mode and echoes it back.
+#[tokio::test]
+async fn switches_session_mode() {
+    let (endpoint, _requests, _server) = common::endpoint(Vec::new()).await;
+    let dir = tempfile::tempdir().unwrap();
+    let db = dir.path().join("engine.db");
+    let mut child = Command::new(env!("CARGO_BIN_EXE_miao-engine"))
+        .args([
+            "acp",
+            "--db",
+            db.to_str().unwrap(),
+            "--workspace",
+            dir.path().to_str().unwrap(),
+            "--model",
+            "fixture",
+            "--provider",
+            "openai-chat",
+            "--endpoint",
+            &endpoint,
+        ])
+        .env("OPENAI_API_KEY", "fixture")
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::inherit())
+        .kill_on_drop(true)
+        .spawn()
+        .unwrap();
+    let mut stdin = child.stdin.take().unwrap();
+    let mut stdout = BufReader::new(child.stdout.take().unwrap()).lines();
+
+    send(
+        &mut stdin,
+        json!({"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":1,"clientCapabilities":{}}}),
+    )
+    .await;
+    read_response(&mut stdout, 1).await;
+    send(
+        &mut stdin,
+        json!({"jsonrpc":"2.0","id":2,"method":"session/new","params":{"cwd":dir.path().to_str().unwrap(),"mcpServers":[]}}),
+    )
+    .await;
+    let created = read_response(&mut stdout, 2).await;
+    let session = created["result"]["sessionId"].as_str().unwrap().to_string();
+
+    send(
+        &mut stdin,
+        json!({"jsonrpc":"2.0","id":3,"method":"session/set_mode","params":{"sessionId":session,"modeId":"plan"}}),
+    )
+    .await;
+    let mut echoed = None;
+    loop {
+        let line = tokio::time::timeout(Duration::from_secs(15), stdout.next_line())
+            .await
+            .unwrap()
+            .unwrap()
+            .unwrap();
+        let value: Value = serde_json::from_str(&line).unwrap();
+        if value.get("method") == Some(&json!("session/update")) {
+            let update = &value["params"]["update"];
+            if update["sessionUpdate"] == "current_mode_update" {
+                echoed = update["currentModeId"].as_str().map(str::to_string);
+            }
+        }
+        if value.get("id") == Some(&json!(3)) {
+            assert!(value["result"].is_object());
+            break;
+        }
+    }
+    assert_eq!(echoed.as_deref(), Some("plan"));
+}

@@ -12,7 +12,7 @@
 use crate::{
     approval::{Approval, Response},
     permission::Decision,
-    protocol::{Delivery, Input, Message},
+    protocol::{CollaborationMode, Delivery, Input, Message},
     runtime::{Controller, Runtime},
 };
 use serde_json::{json, Value};
@@ -165,6 +165,7 @@ async fn request(conn: &Arc<Conn>, id: Value, method: &str, params: Value) {
         "session/resume" => conn.reply(id, json!({})).await,
         "session/fork" => fork(conn, id, params).await,
         "session/close" => conn.reply(id, json!({})).await,
+        "session/set_mode" => mode(conn, id, params).await,
         other => {
             conn.fail(id, METHOD_NOT_FOUND, &format!("method not found: {other}"))
                 .await
@@ -271,6 +272,21 @@ async fn prompt(conn: &Arc<Conn>, id: Value, params: Value) {
                             }
                         }
                     }
+                    "session.state.updated"
+                        if event.data.get("kind").and_then(Value::as_str) == Some("todos") =>
+                    {
+                        if let Some(todos) = event.data.get("value").and_then(Value::as_array) {
+                            let entries: Vec<Value> = todos.iter().map(plan_entry).collect();
+                            conn.notify(
+                                "session/update",
+                                json!({
+                                    "sessionId": session,
+                                    "update": { "sessionUpdate": "plan", "entries": entries },
+                                }),
+                            )
+                            .await;
+                        }
+                    }
                     "run.finished" => finished = true,
                     _ => {}
                 }
@@ -342,6 +358,60 @@ async fn fork(conn: &Arc<Conn>, id: Value, params: Value) {
         Ok(_) => conn.reply(id, json!({ "sessionId": target })).await,
         Err(error) => conn.fail(id, INTERNAL_ERROR, &error.to_string()).await,
     }
+}
+
+/// Switch the Session's collaboration mode and confirm it back to the client.
+async fn mode(conn: &Arc<Conn>, id: Value, params: Value) {
+    let Some(session) = params
+        .get("sessionId")
+        .and_then(Value::as_str)
+        .map(str::to_string)
+    else {
+        conn.fail(id, INVALID_PARAMS, "sessionId is required").await;
+        return;
+    };
+    let mode_id = params
+        .get("modeId")
+        .and_then(Value::as_str)
+        .unwrap_or("build");
+    let collaboration = if mode_id == "plan" {
+        CollaborationMode::Plan
+    } else {
+        CollaborationMode::Build
+    };
+    match conn.runtime.set_mode(&session, collaboration).await {
+        Ok(()) => {
+            conn.notify(
+                "session/update",
+                json!({
+                    "sessionId": session,
+                    "update": { "sessionUpdate": "current_mode_update", "currentModeId": mode_id },
+                }),
+            )
+            .await;
+            conn.reply(id, json!({})).await;
+        }
+        Err(error) => conn.fail(id, INTERNAL_ERROR, &error.to_string()).await,
+    }
+}
+
+/// Map one engine todo onto an ACP plan entry.
+fn plan_entry(todo: &Value) -> Value {
+    let status = match todo["status"].as_str() {
+        Some("pending") => "pending",
+        Some("in_progress") => "in_progress",
+        _ => "completed",
+    };
+    let priority = match todo["priority"].as_str() {
+        Some("high") => "high",
+        Some("low") => "low",
+        _ => "medium",
+    };
+    json!({
+        "content": todo["content"].as_str().unwrap_or(""),
+        "status": status,
+        "priority": priority,
+    })
 }
 
 /// Ask the client for a permission decision and resolve the engine approval to
