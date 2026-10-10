@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test"
-import { StatusBridge, ToolBridge, productToolID, statusOf, translateMessage, translatePrompt, translateStatus, translateTools } from "@/engine/bridge"
+import { StatusBridge, ToolBridge, productToolID, statusOf, translateApproval, translateMessage, translatePrompt, translateStatus, translateTools } from "@/engine/bridge"
 import type { EngineEvent } from "@/engine/client"
 
 const event = (kind: string): EngineEvent => ({ session_id: "ses_test", seq: 1, kind, data: {} })
@@ -100,4 +100,20 @@ test("correlates tool.completed with its committed call", () => {
   expect(failed?.type).toBe("session.next.tool.failed")
   if (failed?.type === "session.next.tool.failed") expect(failed.error.message).toBe("boom")
   expect(bridge.result({ session_id: "ses_abc", seq: 8, kind: "tool.completed", data: { call_id: "missing", result: "x" } })).toBeUndefined()
+})
+
+test("maps approval.requested to a permission.v2.asked payload", () => {
+  const event: EngineEvent = {
+    session_id: "ses_abc",
+    seq: 2,
+    kind: "approval.requested",
+    data: { request_id: "req1", session_id: "ses_abc", tool: "write_file", resource: "file", input_hash: "h", policy_revision: "rev" },
+  }
+  const asked = translateApproval(event)
+  expect(String(asked?.id)).toBe("per_req1")
+  expect(String(asked?.sessionID)).toBe("ses_abc")
+  expect(asked?.action).toBe("write")
+  expect(asked?.resources).toEqual(["file"])
+  expect(asked?.metadata).toEqual({ request_id: "req1", input_hash: "h", policy_revision: "rev" })
+  expect(translateApproval({ ...event, kind: "run.started" })).toBeUndefined()
 })
