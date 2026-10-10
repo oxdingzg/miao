@@ -563,22 +563,42 @@ async fn execute(
                 json!({"run_id":run,"step":step,"context_epoch":context_epoch,"policy_revision":inner.policy.revision(),"state_selection":state_selection}),
             )
             .await?;
-        let (send, mut receive) = mpsc::channel(64);
-        let response = inner.provider.stream(
-            ModelRequest {
-                system,
-                messages: history,
-                tools: inner.tools.definitions(),
-            },
-            send,
-            cancel.child_token(),
-        );
-        tokio::pin!(response);
+        let request = ModelRequest {
+            system,
+            messages: history,
+            tools: inner.tools.definitions(),
+        };
+        // A transport failure before any streamed output is safe to replay; once
+        // output has been emitted it is not. Retry the bounded pre-output case so
+        // a transient reset (for example a proxy dropping the stream) does not
+        // fail the turn.
+        let mut produced = false;
+        let mut attempts = 0;
         let reply = loop {
-            tokio::select! {
-                _=cancel.cancelled()=>return Ok(()),
-                reply=&mut response=>break reply,
-                Some(delta)=receive.recv()=>{ let _=inner.progress.send(json!({"session_id":session,"run_id":run,"step":step,"kind":"provider.delta","data":delta})); },
+            let (send, mut receive) = mpsc::channel(64);
+            let response = inner
+                .provider
+                .stream(request.clone(), send, cancel.child_token());
+            tokio::pin!(response);
+            let outcome = loop {
+                tokio::select! {
+                    _=cancel.cancelled()=>return Ok(()),
+                    reply=&mut response=>break reply,
+                    Some(delta)=receive.recv()=>{ produced = true; let _=inner.progress.send(json!({"session_id":session,"run_id":run,"step":step,"kind":"provider.delta","data":delta})); },
+                }
+            };
+            // Retry only if no output was emitted. Draining the receiver covers a
+            // delta the provider sent just before failing but that the select loop
+            // had not yet forwarded.
+            let observed = produced || receive.try_recv().is_ok();
+            match outcome {
+                Err(ProviderError::Transport) | Err(ProviderError::ResponseTransport)
+                    if !observed && attempts < 2 =>
+                {
+                    attempts += 1;
+                    continue;
+                }
+                other => break other,
             }
         };
         let reply = match reply {
