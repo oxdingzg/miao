@@ -1,6 +1,10 @@
 import { DateTime } from "effect"
 import { SessionID } from "@miao/schema/session-id"
+import { SessionMessage } from "@miao/schema/session-message"
+import { Prompt } from "@miao/schema/prompt"
+import { Delivery } from "@miao/schema/session-delivery"
 import { StatusInfo } from "@miao/schema/session-event"
+import { adoptSession, messageID } from "./identity"
 import type { EngineEvent } from "./client"
 
 /**
@@ -46,5 +50,34 @@ export class StatusBridge {
     if (!status || status.type === this.#current) return undefined
     this.#current = status.type
     return { sessionID: SessionID.descending(event.session_id), timestamp: DateTime.makeUnsafe(Date.now()), status }
+  }
+}
+
+/** The product `session.next.prompt.admitted` payload for a promoted input. */
+export type SessionPromptAdmitted = {
+  sessionID: SessionID
+  timestamp: DateTime.Utc
+  messageID: SessionMessage.ID
+  prompt: Prompt
+  delivery: Delivery
+}
+
+/**
+ * Maps the engine's `input.promoted` event to `session.next.prompt.admitted`,
+ * making the admitted user message visible on the shell. The engine delivers
+ * promotions as `steer` by default; a `queue` delivery would ride the same event
+ * once the engine surfaces the mode.
+ */
+export function translatePrompt(event: EngineEvent): SessionPromptAdmitted | undefined {
+  if (event.kind !== "input.promoted") return undefined
+  if (typeof event.data !== "object" || event.data === null || !("prompt" in event.data)) return undefined
+  const text = event.data.prompt
+  if (typeof text !== "string") return undefined
+  return {
+    sessionID: adoptSession(event.session_id),
+    timestamp: DateTime.makeUnsafe(Date.now()),
+    messageID: messageID(event.session_id, event.seq),
+    prompt: { text },
+    delivery: "steer",
   }
 }
