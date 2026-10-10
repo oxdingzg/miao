@@ -4,6 +4,7 @@ use crate::{
     protocol::{Admission, Attachment, Error, Input, ModelRequest},
     provider::{Provider, ProviderError},
     store::{RuntimeLease, Store},
+    tool_replay::ToolReplay,
     tools::{Prepared, ToolError, Tools},
 };
 use chrono::TimeZone;
@@ -31,6 +32,7 @@ struct Inner {
     store: Store,
     provider: Arc<dyn Provider>,
     tools: Tools,
+    tool_replay: Option<ToolReplay>,
     actors: Mutex<HashMap<String, Actor>>,
     jobs: Mutex<HashMap<String, Background>>,
     timers: Mutex<HashMap<String, Background>>,
@@ -75,6 +77,21 @@ impl Runtime {
         tools: Tools,
         policy: Policy,
     ) -> Result<Self, Error> {
+        Self::with_policy_and_tool_replay(store, provider, tools, policy, None).await
+    }
+
+    pub async fn with_policy_and_tool_replay(
+        store: Store,
+        provider: Arc<dyn Provider>,
+        tools: Tools,
+        policy: Policy,
+        tool_replay: Option<ToolReplay>,
+    ) -> Result<Self, Error> {
+        if tool_replay.is_some() && !tools.hooks().is_empty() {
+            return Err(Error::Invalid(
+                "native tool replay does not execute configured hooks".into(),
+            ));
+        }
         if policy.process_enabled()
             && store
                 .path()
@@ -122,6 +139,7 @@ impl Runtime {
                 store,
                 provider,
                 tools,
+                tool_replay,
                 actors: Mutex::new(HashMap::new()),
                 jobs: Mutex::new(HashMap::new()),
                 timers: Mutex::new(HashMap::new()),
@@ -683,7 +701,17 @@ async fn execute(
                             inner.store.mark_dispatched(session, run, id).await?;
                             let prepared_external =
                                 prepared.access() == crate::permission::Access::External;
-                            let executed = match name {
+                            let replayed = if let Some(replay) = &inner.tool_replay {
+                                Some(replay.take(session, name, prepared.input()).await?)
+                            } else {
+                                None
+                            };
+                            let (executed, replay_error) = if let Some((output, is_error)) =
+                                replayed
+                            {
+                                (Ok(output), Some(is_error))
+                            } else {
+                                (                                match name {
                                 "cron_create" => {
                                     start_cron(inner, session, run, id, &prepared).await?
                                 }
@@ -795,11 +823,15 @@ async fn execute(
                                         )
                                         .await
                                 }
+                            }, None)
                             };
                             match executed {
                                 Ok(output) => {
-                                    let is_error = (prepared_external && output["isError"] == true)
-                                        || (name == "question" && output["state"] != "answered");
+                                    let is_error = replay_error.unwrap_or(
+                                        (prepared_external && output["isError"] == true)
+                                            || (name == "question"
+                                                && output["state"] != "answered"),
+                                    );
                                     (output, is_error)
                                 }
                                 Err(ToolError::Interrupted) => return Ok(()),
@@ -848,6 +880,9 @@ async fn execute(
         }
         let promoted = inner.store.promote(session, !reply.needs_tools).await?;
         if !reply.needs_tools && promoted.is_empty() {
+            if let Some(replay) = &inner.tool_replay {
+                replay.assert_consumed().await?;
+            }
             return Ok(());
         }
         if !promoted.is_empty() {

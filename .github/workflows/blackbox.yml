@@ -11,6 +11,7 @@ on:
       - "packages/miao/src/blackbox/**"
       - "packages/miao/src/engine/**"
       - "packages/miao/test/engine/blackbox*.test.ts"
+      - "packages/miao/test/engine/native-tool-replay.test.ts"
       - "crates/miao-engine/**"
       - ".github/workflows/blackbox.yml"
       - "bun.lock"
@@ -48,4 +49,4 @@ jobs:
         working-directory: packages/miao
         env:
           MIAO_ENGINE_BIN: ${{ github.workspace }}/crates/miao-engine/target/debug/miao-engine
-        run: bun test test/engine/blackbox.test.ts test/engine/blackbox-cli.test.ts
+        run: bun test test/engine/blackbox.test.ts test/engine/blackbox-cli.test.ts test/engine/native-tool-replay.test.ts

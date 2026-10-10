@@ -131,6 +131,7 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
             "--fallback-endpoint",
             "--provider",
             "--policy",
+            "--tool-replay",
             "--mcp-config",
             "--lsp-config",
             "--hooks-config",
@@ -402,7 +403,25 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
             .with_protected_resource(&path)
             .with_lsp(Arc::new(registry));
     }
-    let runtime = Runtime::with_policy(Store::open(db).await?, provider, tools, policy).await?;
+    let replay = options
+        .get("--tool-replay")
+        .map(|file| {
+            if std::path::Path::new(db).exists() {
+                return Err(miao_engine::protocol::Error::Invalid(
+                    "native tool replay requires a fresh diagnostic database".into(),
+                ));
+            }
+            miao_engine::tool_replay::ToolReplay::load(std::path::Path::new(file))
+        })
+        .transpose()?;
+    let runtime = Runtime::with_policy_and_tool_replay(
+        Store::open(db).await?,
+        provider,
+        tools,
+        policy,
+        replay,
+    )
+    .await?;
     if acp {
         let result = miao_engine::acp::serve(runtime.clone()).await;
         runtime.shutdown().await;

@@ -2,6 +2,7 @@ import { randomUUID } from "crypto"
 import { EngineClient, EngineError, type EngineEvent, type EngineOptions } from "./client"
 import { BlackboxTape } from "@miao/core/blackbox/tape"
 import { EngineTrace } from "../blackbox/engine-trace"
+import { EngineTools } from "../blackbox/engine-tools"
 
 /**
  * Headless driver for one engine prompt. It subscribes before admitting so no
@@ -28,12 +29,15 @@ export interface EngineRunResult {
 }
 
 export async function runEnginePrompt(options: EngineRunOptions): Promise<EngineRunResult> {
+  if (options.blackbox instanceof BlackboxTape.Replay && !options.toolReplayFile)
+    throw new EngineError("tool_replay_required", "Engine replay requires an explicit native tool tape")
   const session = options.session ?? `ses_${randomUUID()}`
   const inputId = options.inputId ?? `in_${randomUUID()}`
   const client = EngineClient.start(options)
   const events: EngineEvent[] = []
   const recordings: Promise<void>[] = []
   const trace = new EngineTrace()
+  const toolTape = options.blackbox ? new EngineTools(options.blackbox) : undefined
   let recordingFailure: unknown
   let finished: (() => void) | undefined
   const done = new Promise<void>((resolve) => (finished = resolve))
@@ -46,12 +50,25 @@ export async function runEnginePrompt(options: EngineRunOptions): Promise<Engine
       const recorded = event.kind === "provider.failed" ? { ...event, data: { failed: true } } : event
       const projected = trace.project(recorded)
       if (options.blackbox instanceof BlackboxTape.Replay) {
-        try { options.blackbox.expectTrace(projected.session, projected.kind, projected.data) }
-        catch (error) { recordingFailure = error }
+        try {
+          options.blackbox.expectTrace(projected.session, projected.kind, projected.data)
+        } catch (error) {
+          recordingFailure = error
+        }
       } else {
-        recordings.push(options.blackbox.trace(projected).catch((error: unknown) => { recordingFailure = error }))
+        recordings.push(
+          options.blackbox.trace(projected).catch((error: unknown) => {
+            recordingFailure = error
+          }),
+        )
       }
     }
+    if (toolTape)
+      recordings.push(
+        toolTape.observe(event).catch((error: unknown) => {
+          recordingFailure = error
+        }),
+      )
     options.onEvent?.(event)
     if (event.kind === "approval.requested") {
       const approval = event.data as { request_id: string; input_hash: string; policy_revision: string }
@@ -64,16 +81,26 @@ export async function runEnginePrompt(options: EngineRunOptions): Promise<Engine
         })
         .catch(() => undefined)
     }
-    if (event.kind === "question.requested") failure = new EngineError("question_unsupported", "engine requested a question; headless runs cannot answer")
+    if (event.kind === "question.requested")
+      failure = new EngineError("question_unsupported", "engine requested a question; headless runs cannot answer")
     if (event.kind === "provider.failed") failure = new EngineError("provider_failed", "the provider turn failed")
-    if (event.kind === "run.finished") finished?.()
+    if (event.kind === "run.finished") {
+      const data = BlackboxTape.json(event.data)
+      if (BlackboxTape.isObject(data) && data.reason === "failed")
+        failure ??= new EngineError("engine_run_failed", "the engine run failed")
+      finished?.()
+    }
   })
 
   try {
     await client.subscribe(session, 0)
     await client.admit({ session_id: session, input_id: inputId, prompt: options.prompt })
-    const timeout = new Promise<never>((_, reject) =>
-      timeoutTimer = setTimeout(() => reject(new EngineError("engine_timeout", "engine run timed out")), options.timeoutMs ?? 120_000),
+    const timeout = new Promise<never>(
+      (_, reject) =>
+        (timeoutTimer = setTimeout(
+          () => reject(new EngineError("engine_timeout", "engine run timed out")),
+          options.timeoutMs ?? 120_000,
+        )),
     )
     await Promise.race([done, timeout])
     await Promise.all(recordings)
@@ -91,7 +118,10 @@ function assistantText(history: Array<{ role: string; content: unknown }>) {
   return history
     .filter((message) => message.role === "assistant")
     .flatMap((message) => (Array.isArray(message.content) ? message.content : []))
-    .filter((block): block is { type: string; text: string } => typeof block === "object" && block !== null && (block as { type?: string }).type === "text")
+    .filter(
+      (block): block is { type: string; text: string } =>
+        typeof block === "object" && block !== null && (block as { type?: string }).type === "text",
+    )
     .map((block) => block.text)
     .join("\n")
 }

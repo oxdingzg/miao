@@ -173,6 +173,7 @@ engineTest(
         const second = await runEnginePrompt({
           ...options,
           blackbox: replay,
+          toolReplayFile: fixtureFile.file,
           db: path.join(fixtureFile.dir, "replay.db"),
           endpoint: new URL("/chat/completions", offline.server.url).toString(),
         })

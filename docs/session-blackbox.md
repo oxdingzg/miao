@@ -10,7 +10,9 @@ The blackbox records external execution boundaries and compares their semantic r
 - The headless Rust driver records and checks engine events with explicit identity correlation. Provider replay works with the real sidecar and no upstream server.
 - A structural comparator reports the first mismatch within a causal lane. Independent Session interleaving is irrelevant; order within a lane is significant. Missing interactions, incomplete recordings, changed context, tool input/result changes, and unconsumed replay are failures.
 
-Rust's native tools currently execute in the supplied fixture workspace; this driver is not a native-tool shadow executor. Its approval decision defaults to deny. Use disposable workspaces, fresh databases, and controlled fixtures for native-tool scenarios. The TypeScript tool boundary already substitutes recorded settlements without executing tools. Full cross-engine tool-result substitution and a common product-history adapter are further gates before the B1 default switch.
+Rust replay now requires an explicit native tool tape (`--tool-replay`) and a fresh diagnostic database. Dispatched tool requests are recorded in the `native-tool` lane; the sidecar validates them before substituting the recorded output and error bit instead of entering the executor. The complete provider and engine-event trace must still match, and both sides check consumption. Permission preparation and authorization still run, so fixture paths and policy must match. Configured hooks are rejected in native tool replay rather than executed.
+
+Use disposable workspaces and controlled fixtures. Native receipts do not reconstruct additional durable effects of state, timer, job, or delegation tools: those scenarios can report missing engine events and must not be counted as equivalent. A common cross-engine product-history adapter and control-effect replay remain gates before the B1 default switch.
 
 ## Bundle contract
 
@@ -66,7 +68,7 @@ bun src/blackbox/cli.ts replay \
 
 ## Headless Rust record/replay
 
-The driver uses fresh databases, explicit fixture paths, and denies approvals. Start with a text-only scenario:
+The driver uses fresh databases, explicit fixture paths, and denies approvals. It automatically supplies the native tool tape during replay, including for a text-only recording, so an unexpected dispatched tool cannot fall back to live execution. Start with a text-only scenario:
 
 ```sh
 bun src/blackbox/cli.ts record-engine \
@@ -99,3 +101,11 @@ HTTP bundles compare provider-native requests/responses between engines. TS sema
 Core tests exercise tape integrity, private permissions, request poisoning, unconsumed interactions, partial output and classified transport failures, local tool suppression, and first-difference reports. A real Session-runner test records a two-turn tool flow, removes its file side effect, replays it, checks the same projected history, and verifies zero live provider calls and no repeated file write.
 
 HTTP tests exercise recording/offline replay, mismatched requests, and a partial response followed by a broken socket. With `MIAO_ENGINE_BIN`, the sidecar test records a real Rust run, stops the upstream, replays provider bytes and correlated engine events against a fresh store, and deliberately changes the prompt to prove mismatch detection. The `session blackbox` CI workflow builds the sidecar and requires that test to run.
+
+### Native tool receipts
+
+For writable fixtures, pass the same `--policy PATH` on both `record-engine` and `replay-engine`. A workspace policy can allow only the specific fixture write while other permissions retain their configured decisions. Programmatic `runEnginePrompt` replay must also provide `toolReplayFile`; an omitted tape is rejected before starting the sidecar.
+
+The recorder associates `tool.planned` with the following assistant message and creates a receipt only at `tool.dispatched`. Denied plans are not executor calls. The receipt contains the exact name/input and one `{output, is_error, output_json?}` settlement. `output_json` preserves the native serialization used in model-facing tool-result strings (for example Rust `1.0` versus a shared JSON parser's `1`). The sidecar verifies its semantic agreement with `output` using canonical JSON and never accepts an inconsistent encoding. Result recording is observed from committed engine events; it is not an acknowledgment barrier before the native side effect. A partial tape or missing receipt fails closed during replay.
+
+The real-sidecar test records a fixture `write_file`, deletes the marker, shuts down the upstream, and checks a provider/event/native-receipt replay with no recreated marker. It runs in the dedicated blackbox CI gate.
