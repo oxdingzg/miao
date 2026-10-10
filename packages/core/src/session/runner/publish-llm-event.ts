@@ -126,6 +126,10 @@ export const createLLMEventPublisher = (events: EventV2.Interface, input: Input)
   let assistantActive = false
   let assistantFailed = false
   let providerFailed = false
+  // Visible output is answer content (text or a tool call), as opposed to
+  // reasoning. Reasoning is live-only, so a retry after a drop that streamed
+  // only reasoning replays nothing the user already saw as an answer.
+  let visibleOutput = false
   let stepSettlement:
     | { readonly finish: string; readonly cost: number; readonly tokens: ReturnType<typeof tokens> }
     | undefined
@@ -174,7 +178,11 @@ export const createLLMEventPublisher = (events: EventV2.Interface, input: Input)
     const flush = Effect.fnUntraced(function* () {
       for (const id of chunks.keys()) yield* end(id)
     })
-    return { start, append, end, flush }
+    // Drops buffered fragments without publishing them. The provider stream's
+    // own flush normally empties these first; this keeps a retry from ending a
+    // fragment it never streamed if that flush is ever bypassed.
+    const discard = () => chunks.clear()
+    return { start, append, end, flush, discard }
   }
 
   const text = fragments("text", (textID, value) =>
@@ -262,6 +270,14 @@ export const createLLMEventPublisher = (events: EventV2.Interface, input: Input)
     yield* flushFragments()
   })
 
+  // Clears any fragment the failed attempt left buffered before the retry, so
+  // the retry cannot end a fragment it never streamed.
+  const discardInFlight = Effect.fnUntraced(function* () {
+    text.discard()
+    reasoning.discard()
+    toolInput.discard()
+  })
+
   const failAssistant = Effect.fnUntraced(function* (message: string) {
     if (assistantFailed) return
     yield* flush()
@@ -328,6 +344,7 @@ export const createLLMEventPublisher = (events: EventV2.Interface, input: Input)
       case "step-start":
         return
       case "text-start":
+        visibleOutput = true
         yield* text.start(event.id)
         yield* events.publish(SessionEvent.Text.Started, {
           sessionID: input.sessionID,
@@ -337,6 +354,7 @@ export const createLLMEventPublisher = (events: EventV2.Interface, input: Input)
         })
         return
       case "text-delta":
+        visibleOutput = true
         yield* text.append(event.id, event.text)
         yield* events.publish(SessionEvent.Text.Delta, {
           sessionID: input.sessionID,
@@ -373,6 +391,7 @@ export const createLLMEventPublisher = (events: EventV2.Interface, input: Input)
         yield* reasoning.end(event.id, event.providerMetadata)
         return
       case "tool-input-start":
+        visibleOutput = true
         yield* startToolInput(event)
         return
       case "tool-input-delta": {
@@ -397,6 +416,7 @@ export const createLLMEventPublisher = (events: EventV2.Interface, input: Input)
         yield* endToolInput(event)
         return
       case "tool-call": {
+        visibleOutput = true
         if (!tools.has(event.id)) yield* startToolInput(event)
         const tool = tools.get(event.id)!
         if (!tool.inputEnded) yield* endToolInput(event)
@@ -517,7 +537,8 @@ export const createLLMEventPublisher = (events: EventV2.Interface, input: Input)
     failTool,
     failUnsettledTools,
     hasActiveAssistant: () => assistantActive,
-    hasAssistantStarted: () => assistantMessageID !== undefined,
+    hasVisibleOutput: () => visibleOutput,
+    discardInFlight,
     hasToolCalls: () => tools.size > 0,
     toolCalled: (callID: string) => tools.get(callID)?.called === true,
     hasProviderError: () => providerFailed,

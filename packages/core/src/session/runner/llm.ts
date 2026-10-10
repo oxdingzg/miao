@@ -811,14 +811,14 @@ const layer = Layer.effect(
             }
             if (overflowFailure || publisher.hasProviderError()) return
             if (LLMEvent.is.providerError(event)) {
-              if (isContextOverflowFailure(event) && !publisher.hasAssistantStarted()) {
+              if (isContextOverflowFailure(event) && !publisher.hasVisibleOutput()) {
                 overflowFailure = event
                 return
               }
               // In-band provider errors otherwise settle as successful stream
               // reads and bypass the bounded retry policy. Replay only before
               // any durable assistant output or tool call has been published.
-              if (event.retryable && !publisher.hasAssistantStarted())
+              if (event.retryable && !publisher.hasVisibleOutput())
                 return yield* new LLMError({
                   module: "SessionRunner",
                   method: "stream",
@@ -916,12 +916,16 @@ const layer = Layer.effect(
             if (retried) attempt++
             return (
               retried
-                ? events.publish(SessionEvent.Retried, {
-                    sessionID: session.id,
-                    timestamp: DateTime.makeUnsafe(Date.now()),
-                    attempt,
-                    error: retryDetail(retried),
-                  })
+                ? publisher.discardInFlight().pipe(
+                    Effect.andThen(
+                      events.publish(SessionEvent.Retried, {
+                        sessionID: session.id,
+                        timestamp: DateTime.makeUnsafe(Date.now()),
+                        attempt,
+                        error: retryDetail(retried),
+                      }),
+                    ),
+                  )
                 : Effect.void
             ).pipe(
               Effect.andThen(
@@ -934,11 +938,15 @@ const layer = Layer.effect(
               ),
             )
           }).pipe(
-            // Retry only while the attempt failed before publishing anything:
-            // once text, reasoning, or a tool call is visible, replaying the
-            // turn would duplicate it. Interrupts never retry.
+            // Retry only while the attempt failed before publishing visible
+            // answer content. Reasoning is live-only and replayable, so a drop
+            // after reasoning but before any text or tool call can still retry;
+            // once text or a tool call is visible, replaying would duplicate it.
+            // Interrupts never retry.
             Effect.tapError((error) =>
-              SessionRunnerProviderRetry.retryable(error)
+              SessionRunnerProviderRetry.retryable(error) &&
+              !publisher.hasVisibleOutput() &&
+              !publisher.hasProviderError()
                 ? Effect.sync(() => {
                     retrying = error
                   }).pipe(
@@ -956,7 +964,7 @@ const layer = Layer.effect(
             ),
             Effect.retry({
               while: (error) =>
-                !publisher.hasAssistantStarted() &&
+                !publisher.hasVisibleOutput() &&
                 !publisher.hasProviderError() &&
                 SessionRunnerProviderRetry.retryable(error),
               schedule: SessionRunnerProviderRetry.providerSchedule,
@@ -972,7 +980,7 @@ const layer = Layer.effect(
           if (stream._tag === "Failure") {
             const rejected = Option.getOrUndefined(Cause.findErrorOption(stream.cause))
             if (
-              !publisher.hasAssistantStarted() &&
+              !publisher.hasVisibleOutput() &&
               !publisher.hasProviderError() &&
               rejected !== undefined &&
               SessionRunnerProviderRetry.selfHealable(rejected)
@@ -982,6 +990,7 @@ const layer = Layer.effect(
                 model: `${model.provider}/${model.id}`,
                 ...retryLog(rejected),
               })
+              yield* publisher.discardInFlight()
               stream = yield* runProviderTurn()
             }
           }
@@ -989,7 +998,7 @@ const layer = Layer.effect(
             stream._tag === "Failure" ? Option.getOrUndefined(Cause.findErrorOption(stream.cause)) : undefined
           if (
             recoverOverflow &&
-            !publisher.hasAssistantStarted() &&
+            !publisher.hasVisibleOutput() &&
             isContextOverflowFailure(overflowFailure ?? failure) &&
             (yield* restore(recoverOverflow({ sessionID: session.id, entries, model, summarizeModel, request })))
           ) {
