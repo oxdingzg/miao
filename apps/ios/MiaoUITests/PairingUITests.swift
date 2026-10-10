@@ -1,5 +1,6 @@
 import XCTest
 import Darwin
+import UIKit
 
 final class PairingUITests: XCTestCase {
     func testFreshLaunchAndInvalidInvitationLeaveHostDirectoryEmpty() throws {
@@ -49,6 +50,29 @@ final class PairingUITests: XCTestCase {
         if done.waitForExistence(timeout: 2) { done.tap() }
     }
 
+    @MainActor
+    private func paste(_ text: String, into field: XCUIElement, app: XCUIApplication) {
+        // Signed enrollment envelopes are pasted by users; synthesizing every
+        // keystroke can lose characters while a multiline SwiftUI field updates.
+        UIPasteboard.general.string = text
+        defer { UIPasteboard.general.string = nil }
+        field.tap()
+        field.press(forDuration: 1)
+        let label = NSPredicate(format: "label IN %@", ["Paste", "粘贴"])
+        let inApp = app.descendants(matching: .any).matching(label).firstMatch
+        if !inApp.waitForExistence(timeout: 2) { field.doubleTap() }
+        let inSystem = XCUIApplication(bundleIdentifier: "com.apple.springboard")
+            .descendants(matching: .any).matching(label).firstMatch
+        let paste = inApp.exists ? inApp : inSystem
+        print("NativePasteState:clipboard=\(UIPasteboard.general.hasStrings) available=\(paste.exists)")
+        XCTAssertTrue(paste.waitForExistence(timeout: 5))
+        paste.tap()
+        expectation(for: NSPredicate(format: "value == %@", text), evaluatedWith: field)
+        waitForExpectations(timeout: 5)
+        XCTAssertEqual(field.value as? String, text, "The complete signed input is entered")
+    }
+
+    @MainActor
     func testRealRuntimeRenameAndDraftRecovery() throws {
         guard let path = ProcessInfo.processInfo.environment["MIAO_UI_TEST_FIXTURE"], !path.isEmpty,
               !path.hasPrefix("$(") else { throw XCTSkip("Live Runtime fixture is supplied by check-app.ts") }
@@ -112,15 +136,13 @@ final class PairingUITests: XCTestCase {
                 let field = app.textFields["enrollmentApproved"].exists ? app.textFields["enrollmentApproved"] : app.textViews["enrollmentApproved"]
                 scrollIntoView(app, field)
                 XCTAssertTrue(field.waitForExistence(timeout: 10))
-                field.tap(); field.typeText(approved)
-                XCTAssertEqual(field.value as? String, approved, "The complete signed approval is entered")
+                paste(approved, into: field, app: app)
                 dismissKeyboard(app)
                 let pin = app.textFields["enrollmentPin"]
                 scrollIntoView(app, pin)
                 print("Native enrollment fields approved=\(field.exists) pin=\(pin.exists) independent=\(app.switches["enrollmentIndependentPin"].exists) textFields=\(app.textFields.count) keyboards=\(app.keyboards.count)")
                 XCTAssertTrue(pin.waitForExistence(timeout: 10))
-                pin.tap(); pin.typeText(enrollment.rootKey)
-                XCTAssertEqual(pin.value as? String, enrollment.rootKey)
+                paste(enrollment.rootKey, into: pin, app: app)
                 dismissKeyboard(app)
                 let independent = app.switches["enrollmentIndependentPin"]
                 scrollIntoView(app, independent)

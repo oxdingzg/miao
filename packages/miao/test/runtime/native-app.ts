@@ -484,9 +484,10 @@ export async function run() {
             menuGeometry: /Native menu geometry x=(-?\d+) y=(-?\d+) width=(\d+) height=(\d+) keyboard=(\d+) bars=(\d+)/
               .exec(log)
               ?.slice(1),
-            enrollmentFields: /Native enrollment fields approved=(true|false) pin=(true|false) independent=(true|false) textFields=(\d+) keyboards=(\d+)/
-              .exec(log)
-              ?.slice(1),
+            enrollmentFields:
+              /Native enrollment fields approved=(true|false) pin=(true|false) independent=(true|false) textFields=(\d+) keyboards=(\d+)/
+                .exec(log)
+                ?.slice(1),
             fileReadError: log.includes("couldn’t be opened") || log.includes("could not be opened"),
             missingFile: log.includes("doesn’t exist") || log.includes("No such file"),
             buildFailure: log.includes("BUILD FAILED"),
@@ -500,6 +501,8 @@ export async function run() {
                 ? Number(/rejected with (\d+)$/.exec(state.approvalError.message)?.[1] ?? 0)
                 : 0,
             runtimeExitCode: state.runtime?.exitCode,
+            pasteClipboardPopulated: log.includes("NativePasteState:clipboard=true"),
+            pasteMenuAvailable: /NativePasteState:clipboard=(true|false) available=true/.test(log),
             osErrors: [...log.matchAll(/(NSCocoaErrorDomain|NSPOSIXErrorDomain)[^\n]{0,80}?Code=(\d+)/g)].map(
               (match) => ({ domain: match[1], code: Number(match[2]) }),
             ),
