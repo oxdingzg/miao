@@ -5,6 +5,7 @@ overview and `../PROTOCOL.md` for the stdio wire contract.
 
 - `inventory.md` — capability coverage and current status.
 - `client-contract.md` — the product HttpApi/event surface a migration façade must cover.
+- `handler-migration.md` — the B1 façade construction plan: which handlers move to the engine.
 - `measurements.md` — binary size, `serve` readiness and RSS, with conditions and repro.
 - `accuracy.md` — 产品结果、golden、随机不变量、参考差分及故障注入的运行与审阅方式。
 - `adr/0001-runtime-ownership.md` — process/store ownership, coordinator, slots.
