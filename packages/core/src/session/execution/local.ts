@@ -47,6 +47,9 @@ const layer = Layer.effect(
             phase: (phase) => setPhase(sessionID, phase),
           }),
         ).pipe(
+          // Placement layers expose Location services, not this process-global
+          // router. Tool settlements must retain the same execution owner.
+          Effect.provideService(SessionExecution.Service, execution),
           Effect.provide(locations.get(session.location)),
           Effect.tapCause((cause) =>
             Cause.hasInterruptsOnly(cause)
@@ -106,7 +109,7 @@ const layer = Layer.effect(
       maximum: Number.isFinite(backgroundLimit) && backgroundLimit > 0 ? Math.max(1, Math.floor(backgroundLimit)) : 4,
     })
 
-    return SessionExecution.Service.of({
+    const execution = SessionExecution.Service.of({
       active: coordinator.active,
       executions: coordinator.executions,
       status: coordinator.status,
@@ -116,6 +119,7 @@ const layer = Layer.effect(
       wake,
       wait: coordinator.awaitIdle,
     })
+    return execution
   }),
 )
 
