@@ -1,0 +1,101 @@
+name: ci
+on:
+  pull_request:
+  push:
+    branches: [main]
+  merge_group:
+  schedule:
+    - cron: "41 4 * * *"
+  workflow_dispatch:
+concurrency:
+  group: ci-${{ github.event.pull_request.number || github.sha }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' || github.event_name == 'merge_group' }}
+permissions:
+  contents: read
+  checks: write
+jobs:
+  policy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      engine: ${{ steps.paths.outputs.engine }}
+      native: ${{ steps.paths.outputs.native }}
+      blackbox: ${{ steps.paths.outputs.blackbox }}
+      e2e: ${{ steps.paths.outputs.e2e }}
+      remote: ${{ steps.paths.outputs.remote }}
+      ios: ${{ steps.paths.outputs.ios }}
+      storybook: ${{ steps.paths.outputs.storybook }}
+      install: ${{ steps.paths.outputs.install }}
+      nix: ${{ steps.paths.outputs.nix }}
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
+        with:
+          fetch-depth: 0
+      - name: Validate workflow syntax
+        run: |
+          curl -fsSL https://github.com/rhysd/actionlint/releases/download/v1.7.12/actionlint_1.7.12_linux_amd64.tar.gz -o "$RUNNER_TEMP/actionlint.tar.gz"
+          echo "8aca8db96f1b94770f1b0d72b6dddcb1ebb8123cb3712530b08cc387b349a3d8  $RUNNER_TEMP/actionlint.tar.gz" | sha256sum -c -
+          tar -xzf "$RUNNER_TEMP/actionlint.tar.gz" -C "$RUNNER_TEMP" actionlint
+          "$RUNNER_TEMP/actionlint" -shellcheck=''
+      - name: Verify classification and fail-closed gate policy
+        run: python3 .github/scripts/test_ci_gate.py
+      - id: paths
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.before }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: python3 .github/scripts/ci-gate.py >> "$GITHUB_OUTPUT"
+  unit:
+    needs: policy
+    uses: ./.github/workflows/test.yml
+  typecheck:
+    needs: policy
+    uses: ./.github/workflows/typecheck.yml
+  engine:
+    needs: policy
+    if: needs.policy.outputs.engine == 'true'
+    uses: ./.github/workflows/engine.yml
+  native:
+    needs: policy
+    if: needs.policy.outputs.native == 'true'
+    uses: ./.github/workflows/native.yml
+  blackbox:
+    needs: policy
+    if: needs.policy.outputs.blackbox == 'true'
+    uses: ./.github/workflows/blackbox.yml
+  e2e:
+    needs: policy
+    if: needs.policy.outputs.e2e == 'true'
+    uses: ./.github/workflows/e2e.yml
+  remote:
+    needs: policy
+    if: needs.policy.outputs.remote == 'true'
+    uses: ./.github/workflows/remote-browser.yml
+  ios:
+    needs: policy
+    if: needs.policy.outputs.ios == 'true'
+    uses: ./.github/workflows/ios-core.yml
+  storybook:
+    needs: policy
+    if: needs.policy.outputs.storybook == 'true'
+    uses: ./.github/workflows/storybook.yml
+  install:
+    needs: policy
+    if: needs.policy.outputs.install == 'true'
+    uses: ./.github/workflows/install.yml
+  nix:
+    needs: policy
+    if: needs.policy.outputs.nix == 'true'
+    uses: ./.github/workflows/nix-eval.yml
+  ci-gate:
+    name: ci-gate
+    if: always()
+    needs: [policy, unit, typecheck, engine, native, blackbox, e2e, remote, ios, storybook, install, nix]
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
+      - name: Enforce required checks and explicit skips
+        env:
+          NEEDS: ${{ toJSON(needs) }}
+        run: python3 .github/scripts/ci-gate.py

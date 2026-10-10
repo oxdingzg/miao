@@ -1,17 +1,14 @@
 name: typecheck
 
 on:
-  push:
-    branches:
-      - main
-  pull_request:
+  workflow_call:
   workflow_dispatch:
 
 concurrency:
   # A pull request shares one group per number, so a new push cancels its older
   # run. A push to main groups by commit SHA, so every merged commit gets its own
   # run and keeps a complete status instead of being superseded and cancelled.
-  group: ${{ format('{0}-{1}', github.workflow, github.event.pull_request.number || github.sha) }}
+  group: ${{ format('{0}-typecheck-{1}', github.workflow, github.event.pull_request.number || github.sha) }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
