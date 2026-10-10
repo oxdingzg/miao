@@ -85,7 +85,7 @@ export function convertToOpenAICompatibleChatMessages(prompt: LanguageModelV3Pro
           // Check for reasoningOpaque on any part (may be attached to text/tool-call)
           const partOpaque = (part.providerOptions as { copilot?: { reasoningOpaque?: string } })?.copilot
             ?.reasoningOpaque
-          if (partOpaque && !reasoningOpaque) {
+          if (partOpaque) {
             reasoningOpaque = partOpaque
           }
 
@@ -95,7 +95,7 @@ export function convertToOpenAICompatibleChatMessages(prompt: LanguageModelV3Pro
               break
             }
             case "reasoning": {
-              if (part.text) reasoningText = part.text
+              if (part.text) reasoningText = (reasoningText ?? "") + part.text
               break
             }
             case "tool-call": {
