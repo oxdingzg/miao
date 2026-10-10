@@ -1,0 +1,323 @@
+{
+  "apply_patch": {
+    "additionalProperties": false,
+    "properties": {
+      "patch": {
+        "type": "string"
+      }
+    },
+    "required": [
+      "patch"
+    ],
+    "type": "object"
+  },
+  "edit_file": {
+    "additionalProperties": false,
+    "properties": {
+      "expected_sha256": {
+        "type": "string"
+      },
+      "new_string": {
+        "type": "string"
+      },
+      "old_string": {
+        "type": "string"
+      },
+      "path": {
+        "type": "string"
+      },
+      "replace_all": {
+        "type": "boolean"
+      }
+    },
+    "required": [
+      "path",
+      "old_string",
+      "new_string",
+      "expected_sha256"
+    ],
+    "type": "object"
+  },
+  "glob": {
+    "additionalProperties": false,
+    "properties": {
+      "include_hidden": {
+        "type": "boolean"
+      },
+      "limit": {
+        "default": 100,
+        "maximum": 500,
+        "minimum": 1,
+        "type": "integer"
+      },
+      "path": {
+        "default": ".",
+        "type": "string"
+      },
+      "pattern": {
+        "type": "string"
+      }
+    },
+    "required": [
+      "pattern"
+    ],
+    "type": "object"
+  },
+  "goal": {
+    "additionalProperties": false,
+    "properties": {
+      "budget": {
+        "type": "string"
+      },
+      "evidence": {
+        "type": "string"
+      },
+      "expected_revision": {
+        "minimum": 0,
+        "type": "integer"
+      },
+      "objective": {
+        "type": "string"
+      },
+      "status": {
+        "enum": [
+          "active",
+          "paused",
+          "blocked",
+          "done"
+        ],
+        "type": "string"
+      }
+    },
+    "required": [
+      "objective",
+      "status"
+    ],
+    "type": "object"
+  },
+  "grep": {
+    "additionalProperties": false,
+    "properties": {
+      "case_sensitive": {
+        "default": true,
+        "type": "boolean"
+      },
+      "glob": {
+        "type": "string"
+      },
+      "include_hidden": {
+        "type": "boolean"
+      },
+      "limit": {
+        "default": 100,
+        "maximum": 500,
+        "minimum": 1,
+        "type": "integer"
+      },
+      "path": {
+        "default": ".",
+        "type": "string"
+      },
+      "pattern": {
+        "type": "string"
+      }
+    },
+    "required": [
+      "pattern"
+    ],
+    "type": "object"
+  },
+  "list_files": {
+    "additionalProperties": false,
+    "properties": {
+      "limit": {
+        "default": 100,
+        "maximum": 500,
+        "minimum": 1,
+        "type": "integer"
+      },
+      "path": {
+        "default": ".",
+        "type": "string"
+      }
+    },
+    "type": "object"
+  },
+  "question": {
+    "additionalProperties": false,
+    "properties": {
+      "questions": {
+        "items": {
+          "additionalProperties": false,
+          "properties": {
+            "custom": {
+              "default": true,
+              "type": "boolean"
+            },
+            "header": {
+              "maxLength": 12,
+              "type": "string"
+            },
+            "multiSelect": {
+              "default": false,
+              "type": "boolean"
+            },
+            "options": {
+              "items": {
+                "additionalProperties": false,
+                "properties": {
+                  "description": {
+                    "type": "string"
+                  },
+                  "label": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "label"
+                ],
+                "type": "object"
+              },
+              "maxItems": 4,
+              "minItems": 2,
+              "type": "array"
+            },
+            "question": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "question",
+            "options"
+          ],
+          "type": "object"
+        },
+        "maxItems": 4,
+        "minItems": 1,
+        "type": "array"
+      },
+      "timeout_ms": {
+        "default": 60000,
+        "maximum": 600000,
+        "minimum": 1,
+        "type": "integer"
+      }
+    },
+    "required": [
+      "questions"
+    ],
+    "type": "object"
+  },
+  "read_file": {
+    "additionalProperties": false,
+    "properties": {
+      "path": {
+        "type": "string"
+      }
+    },
+    "required": [
+      "path"
+    ],
+    "type": "object"
+  },
+  "recall": {
+    "additionalProperties": false,
+    "properties": {
+      "before_message_seq": {
+        "minimum": 0,
+        "type": "integer"
+      },
+      "limit": {
+        "default": 10,
+        "maximum": 20,
+        "minimum": 1,
+        "type": "integer"
+      },
+      "query": {
+        "maxLength": 512,
+        "minLength": 1,
+        "type": "string"
+      }
+    },
+    "required": [
+      "query"
+    ],
+    "type": "object"
+  },
+  "session_state": {
+    "additionalProperties": false,
+    "properties": {},
+    "type": "object"
+  },
+  "todowrite": {
+    "additionalProperties": false,
+    "properties": {
+      "expected_revision": {
+        "minimum": 0,
+        "type": "integer"
+      },
+      "todos": {
+        "items": {
+          "additionalProperties": false,
+          "properties": {
+            "content": {
+              "type": "string"
+            },
+            "priority": {
+              "enum": [
+                "high",
+                "medium",
+                "low"
+              ],
+              "type": "string"
+            },
+            "status": {
+              "enum": [
+                "pending",
+                "in_progress",
+                "completed",
+                "cancelled"
+              ],
+              "type": "string"
+            }
+          },
+          "required": [
+            "content",
+            "status",
+            "priority"
+          ],
+          "type": "object"
+        },
+        "maxItems": 128,
+        "type": "array"
+      }
+    },
+    "required": [
+      "todos"
+    ],
+    "type": "object"
+  },
+  "write_file": {
+    "additionalProperties": false,
+    "properties": {
+      "expected_sha256": {
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "path": {
+        "type": "string"
+      },
+      "text": {
+        "type": "string"
+      }
+    },
+    "required": [
+      "path",
+      "text",
+      "expected_sha256"
+    ],
+    "type": "object"
+  }
+}

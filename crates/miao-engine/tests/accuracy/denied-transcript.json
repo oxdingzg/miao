@@ -1,0 +1,42 @@
+[
+  {
+    "kind": "input.admitted",
+    "tool": null
+  },
+  {
+    "kind": "input.promoted",
+    "tool": null
+  },
+  {
+    "kind": "run.started",
+    "tool": null
+  },
+  {
+    "kind": "tool.planned",
+    "tool": "read_file"
+  },
+  {
+    "kind": "tool.dispatched",
+    "tool": null
+  },
+  {
+    "kind": "tool.completed",
+    "tool": null
+  },
+  {
+    "kind": "tool.planned",
+    "tool": "apply_patch"
+  },
+  {
+    "kind": "permission_denied",
+    "tool": null
+  },
+  {
+    "kind": "tool.completed",
+    "tool": null
+  },
+  {
+    "kind": "run.finished",
+    "tool": null
+  }
+]
