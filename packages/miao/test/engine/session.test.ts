@@ -18,7 +18,13 @@ async function waitFor(check: () => boolean, timeoutMs = 5000) {
 
 test("EngineSession publishes bridged product events for a prompt", async () => {
   const root = await tmp()
-  const client = EngineClient.start({ binary: fake, db: path.join(root, "engine.db"), workspace: root, model: "test", provider: "openai-chat" })
+  const client = EngineClient.start({
+    binary: fake,
+    db: path.join(root, "engine.db"),
+    workspace: root,
+    model: "test",
+    provider: "openai-chat",
+  })
   const events: EngineSessionEvent[] = []
   const session = new EngineSession(client, (event) => events.push(event))
   try {
@@ -29,6 +35,11 @@ test("EngineSession publishes bridged product events for a prompt", async () => 
     expect(types).toContain("session.next.text.ended")
     expect(JSON.stringify(events)).toContain("echo:hi")
     expect(JSON.stringify(events)).toContain('"type":"busy"')
+    expect(events.find((event) => event.type === "session.next.text.ended")?.source).toEqual({
+      sessionID: "ses_x",
+      seq: 2,
+      index: 0,
+    })
   } finally {
     await client.close()
     await fs.rm(root, { recursive: true, force: true })
