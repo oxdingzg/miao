@@ -5,6 +5,8 @@ const STD_INPUT_HANDLE = -10
 const STD_OUTPUT_HANDLE = -11
 const STD_ERROR_HANDLE = -12
 const ENABLE_PROCESSED_INPUT = 0x0001
+const ENABLE_LINE_INPUT = 0x0002
+const ENABLE_ECHO_INPUT = 0x0004
 const ENABLE_VIRTUAL_TERMINAL_PROCESSING = 0x0004
 
 const kernel = () =>
@@ -108,7 +110,8 @@ export function win32FlushInputBuffer() {
 let unhook: (() => void) | undefined
 
 /**
- * Keep ENABLE_PROCESSED_INPUT disabled.
+ * Keep ENABLE_PROCESSED_INPUT disabled and protect renderer-owned raw input
+ * from echo/line buffering being restored by another console user.
  *
  * On Windows, Ctrl+C becomes a CTRL_C_EVENT (instead of stdin input) when
  * ENABLE_PROCESSED_INPUT is set. Various runtimes can re-apply console modes
@@ -132,12 +135,17 @@ export function win32InstallCtrlCGuard() {
 
   if (k32!.symbols.GetConsoleMode(handle, ptr(buf)) === 0) return
   const initial = buf[0]!
+  let done = false
 
   const enforce = () => {
-    if (k32!.symbols.GetConsoleMode(handle, ptr(buf)) === 0) return
+    if (done || k32!.symbols.GetConsoleMode(handle, ptr(buf)) === 0) return
     const mode = buf[0]!
-    if ((mode & ENABLE_PROCESSED_INPUT) === 0) return
-    k32!.symbols.SetConsoleMode(handle, mode & ~ENABLE_PROCESSED_INPUT)
+    // Console modes are shared with child processes. Restoring echo while the
+    // renderer still owns raw input prints SGR mouse reports as literal text.
+    // Leave cooked echo/line input alone while suspended or handing off stdin.
+    const flags = ENABLE_PROCESSED_INPUT | (stdin.isRaw ? ENABLE_LINE_INPUT | ENABLE_ECHO_INPUT : 0)
+    if ((mode & flags) === 0) return
+    k32!.symbols.SetConsoleMode(handle, mode & ~flags)
   }
 
   // Some runtimes can re-apply console modes on the next tick; enforce twice.
@@ -164,7 +172,6 @@ export function win32InstallCtrlCGuard() {
   const interval = setInterval(enforce, 100)
   interval.unref()
 
-  let done = false
   unhook = () => {
     if (done) return
     done = true
