@@ -366,3 +366,125 @@ test("reading earlier messages while the tail streams keeps the viewport put", a
     app.renderer.destroy()
   }
 })
+
+test("an idle anchored reader holds still while the tail streams", async () => {
+  // Adaptive window like the session route. Scrolling up from the tail sets the
+  // held trailing rows; idle frames later release them. That release must not
+  // unmount rows still under the viewport: if it does, the block bottom drops,
+  // the window moves down to cover it, the move buries the top edge, and the
+  // anchor bounces by a step on every idle cycle — the reader sees the history
+  // jump a few lines up and down while the model streams.
+  const [rows, setRows] = createSignal(
+    Array.from({ length: 200 }, (_, index) => ({ id: `message-${index}`, height: 3 })),
+  )
+  let scroll!: ScrollBoxRenderable
+  let transcript!: ReturnType<typeof createTranscriptWindow<{ id: string; height: number }>>
+  const anchoring = createScrollAnchoring<Renderable>({
+    atBottom: () => Boolean(scroll && !scroll.isDestroyed && scroll.scrollTop >= scroll.scrollHeight - scroll.height - 1),
+  })
+  let followPass = 0
+  let lastMutation = -10
+  // Mirrors the tail pin the route keeps on the scrollbox.
+  let tailPinned = true
+  let tailWant = true
+  const tailSnap = 3
+  const app = await testRender(
+    () => {
+      transcript = createTranscriptWindow(rows)
+      return (
+        <box width={60} height={WORLD_HEIGHT} flexDirection="column">
+          <SessionScrollbox
+            ref={(value) => {
+              scroll = value
+              const pass = value.onLifecyclePass
+              value.onLifecyclePass = () => {
+                pass?.call(value)
+                const children = value.getChildren()
+                const spacer = children.findIndex((child) => child.id === "transcript-top-spacer")
+                const geometry = {
+                  rows: children,
+                  from: Math.max(1, spacer + 1),
+                  contentTop: value.content.y,
+                  scrollHeight: value.scrollHeight,
+                }
+                anchoring.apply(geometry, (delta) => value.scrollBy(delta))
+                followPass++
+                const captured = followPass - lastMutation >= 2 ? anchoring.capture(geometry) : undefined
+                const before = { start: transcript.start(), top: transcript.top(), bottom: transcript.bottom() }
+                transcript.follow({
+                  scrollTop: value.scrollTop,
+                  viewportHeight: value.height,
+                  mountedHeight: value.scrollHeight - transcript.top() - transcript.bottom(),
+                })
+                if (
+                  transcript.start() !== before.start ||
+                  transcript.top() !== before.top ||
+                  transcript.bottom() !== before.bottom
+                ) {
+                  lastMutation = followPass
+                  if (captured) anchoring.arm(captured)
+                }
+                const tailGap = value.scrollHeight - value.height - value.scrollTop
+                if (tailWant && !tailPinned && tailGap >= 0 && tailGap <= tailSnap) tailPinned = true
+                if (tailPinned && tailGap > 0) value.scrollTo(value.scrollHeight)
+              }
+              value.ctx.registerLifecyclePass(value)
+            }}
+            alwaysShow={true}
+            thumbColor="#808080"
+            trackColor="#202020"
+            hiddenColor="#101010"
+            stickyScroll={true}
+            stickyStart="bottom"
+            width={60}
+            height={WORLD_HEIGHT}
+          >
+            <box height={1} />
+            <box id="transcript-top-spacer" height={transcript.top()} flexShrink={0} />
+            <For each={transcript.messages()}>
+              {(message) => (
+                <text height={message.height} flexShrink={0}>
+                  {message.id}
+                </text>
+              )}
+            </For>
+            <box height={transcript.bottom()} flexShrink={0} />
+          </SessionScrollbox>
+        </box>
+      )
+    },
+    { width: 60, height: WORLD_HEIGHT },
+  )
+
+  try {
+    await app.renderOnce()
+    for (let i = 0; i < 4; i++) await app.renderOnce()
+    expect(scroll.scrollHeight).toBeGreaterThan(0)
+
+    // The reader scrolls up off the tail and settles.
+    tailPinned = false
+    tailWant = false
+    scroll.scrollBy(-80)
+    for (let i = 0; i < 8; i++) await app.renderOnce()
+    expect(scroll.scrollTop).toBeGreaterThan(0)
+
+    const frames: string[] = [app.captureCharFrame()]
+
+    // The model streams: the newest message grows every chunk while the reader
+    // stays idle.
+    for (let chunk = 0; chunk < 6; chunk++) {
+      setRows((current) => {
+        const next = [...current]
+        const last = next[next.length - 1]
+        next[next.length - 1] = { ...last, height: last.height + 2 }
+        return next
+      })
+      for (let i = 0; i < 3; i++) await app.renderOnce()
+      frames.push(app.captureCharFrame())
+    }
+
+    expect(new Set(frames).size).toBe(1)
+  } finally {
+    app.renderer.destroy()
+  }
+})

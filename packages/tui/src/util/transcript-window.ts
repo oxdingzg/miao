@@ -151,6 +151,13 @@ export function createTranscriptWindow<T extends { id: string }>(
   // the tail and yanks the reader. At-bottom readings below the high-water
   // mark are measurement noise and keep anchored reading instead.
   let peakTimeline: number | undefined
+  // How many messages below `start` the window must still mount so the block
+  // covers the viewport. The block starts above the reader (the leading spacer
+  // hides the older messages), so the anchored window reaches past
+  // `start + windowSize`. Released without this floor, the held trailing rows
+  // unmount rows still under the viewport, which forces a downward window move
+  // that buries the top edge and bounces the anchor by a step every idle cycle.
+  const [coverCount, setCoverCount] = createSignal(0)
 
   const total = createMemo(() => messages().length)
   const maxStart = createMemo(() => Math.max(0, total() - windowSize()))
@@ -169,9 +176,10 @@ export function createTranscriptWindow<T extends { id: string }>(
     return index < 0 ? maxStart() : Math.max(0, index)
   })
   const end = createMemo(() => {
+    const floor = Math.min(total(), start() + Math.max(windowSize(), coverCount()))
     const held = holdEnd()
-    if (held === undefined) return Math.min(total(), start() + windowSize())
-    return Math.min(total(), Math.max(start() + windowSize(), Math.min(held, start() + maxWindow)))
+    if (held === undefined) return floor
+    return Math.min(total(), Math.max(floor, Math.min(held, start() + maxWindow)))
   })
   const top = createMemo(() => start() * estimate())
   const bottom = createMemo(() => Math.max(0, total() - end()) * estimate())
@@ -192,6 +200,7 @@ export function createTranscriptWindow<T extends { id: string }>(
       coverageFloor = minWindow
       setAnchor(undefined)
       setHoldEnd(undefined)
+      setCoverCount(0)
       strandedFrames = 0
       peakTimeline = undefined
     },
@@ -216,6 +225,7 @@ export function createTranscriptWindow<T extends { id: string }>(
       if (count <= windowSize()) {
         setAnchor(undefined)
         setHoldEnd(undefined)
+        setCoverCount(0)
         lastScrollTop = metrics.scrollTop
         idleFrames = 0
         strandedFrames = 0
@@ -259,6 +269,7 @@ export function createTranscriptWindow<T extends { id: string }>(
       if (atBottom) {
         setAnchor(undefined)
         setHoldEnd(undefined)
+        setCoverCount(0)
         if (adaptive && metrics.viewportHeight > 0) {
           const rows = average > 0 ? average : estimate()
           const target = metrics.viewportHeight + 2 * margin
@@ -275,6 +286,21 @@ export function createTranscriptWindow<T extends { id: string }>(
         strandedFrames = 0
         return
       }
+      // Keep the mounted block covering the viewport. The block starts above
+      // the reader (the leading spacer hides the older messages), so an
+      // anchored window has to reach past `start + windowSize`; releasing the
+      // held trailing rows without this floor unmounts rows still under the
+      // viewport, which reads as "the bottom edge fell off", forces a move down,
+      // and — because that move buries the top edge — bounces the anchor by a
+      // step on every idle cycle. Measure the reach from the rows this window
+      // actually rendered, never from the estimate grid (a wild estimate would
+      // overshoot), and only while the viewport sits inside the block: a
+      // stranded viewport is the recovery path's to fix. Growth is monotonic, so
+      // it cannot oscillate with the measured height it reads.
+      const rows = average > 0 ? average : estimate()
+      const need = Math.ceil((metrics.scrollTop + metrics.viewportHeight + margin - leading) / rows)
+      if (anchored && !stranded && need > 0)
+        setCoverCount((previous) => Math.max(previous, Math.min(need, maxWindow)))
       const moving = lastScrollTop !== undefined && Math.abs(metrics.scrollTop - lastScrollTop) > 0.5
       // A fast drag, a scrollbar jump, or a streamed reflow can leave the
       // viewport entirely outside the mounted block. The stepped chase below
