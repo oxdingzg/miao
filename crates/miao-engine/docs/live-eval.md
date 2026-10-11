@@ -96,3 +96,32 @@ Older bundles that reduced failure data to `{ "failed": true }` have already los
 the original cause and must be re-recorded for diagnostic-sensitive replay. The
 replayer does not invent those fields or fall back to live IO. Credential header
 exclusion remains at the HTTP capture boundary.
+
+## Comparable baseline reports
+
+`packages/miao/src/engine/baseline-report.ts` validates sample provenance against
+the frozen suite/task fingerprints and requires source revision, artifact and
+receipt digests, effective model/agent/permission/tool-surface fingerprints, and
+per-attempt accounting. Pairing uses task plus repetition, not array order.
+Duplicate samples, missing provenance, invalid metrics, and foreign fixtures are
+rejected. Every task must have balanced verified engine pairs with identical
+effective profiles before the report is marked full-suite comparable.
+
+Totals include unsuccessful attempts before recovery and failed runs. Missing
+token usage or prices keep the affected totals unknown (`null`), rather than
+contributing zero. Latency p50/p95 covers every run, including failures.
+Successful-run attempt tokens are shown separately and never replace all-run
+totals. Sample receipt digests bind the report to external execution evidence;
+the summary does not manufacture those receipts or grade an agent's own claims.
+
+From `packages/miao`, summarize collected samples with:
+
+```sh
+bun src/engine/baseline-report-cli.ts /path/to/samples.json
+```
+
+The CLI emits JSON and returns a nonzero status for incomplete/non-comparable
+coverage. A comparable report still returns `defaultSwitchEligible: false`:
+actual-client, ownership, common-history, installation, and rollback gates remain
+independent. This reporting layer contains no live model score until genuine
+collected samples are supplied.
