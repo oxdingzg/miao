@@ -264,6 +264,11 @@ impl Provider for Anthropic {
                 }
             }
         }
+        // Internal commit metadata is not part of the provider message schema.
+        let messages: Vec<Value> = messages
+            .into_iter()
+            .map(|message| json!({"role":message.role,"content":message.content}))
+            .collect();
         let request=self.client.post(&self.endpoint)
             .header("x-api-key",credential.header()?).header("anthropic-version","2023-06-01")
             .json(&json!({"model":self.model,"max_tokens":4096,"stream":true,"messages":messages,"system":request.system,"tools":request.tools}))
