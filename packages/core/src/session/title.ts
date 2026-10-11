@@ -27,6 +27,7 @@ export const generate = (input: {
   readonly http?: LLMRequest["http"]
   readonly system?: string
   readonly prompt: string
+  readonly providerOptions?: LLMRequest["providerOptions"]
 }) =>
   Effect.gen(function* () {
     const chunks: string[] = []
@@ -39,6 +40,7 @@ export const generate = (input: {
           system: input.system ? [SystemPart.make(input.system)] : [],
           messages: [Message.user("Generate a title for this conversation:\n"), Message.user(input.prompt)],
           tools: [],
+          providerOptions: input.providerOptions,
         }),
       )
       .pipe(

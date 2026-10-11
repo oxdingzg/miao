@@ -24,6 +24,7 @@ import { EventV2 } from "../../event"
 import { Location } from "../../location"
 import { ModelSwitch } from "../model-switch"
 import { ModelV2 } from "../../model"
+import { ModelVariants } from "../../model-variants"
 import { PermissionV2 } from "../../permission"
 import { ProviderV2 } from "../../provider"
 import { QuestionV2 } from "../../question"
@@ -320,19 +321,30 @@ const layer = Layer.effect(
         readonly prompt: string
         readonly model: Model
         readonly small: Model | undefined
+        readonly info?: ModelV2.Info
         readonly http: LLMRequest["http"]
       }) {
         const agent = yield* agents.get(AgentV2.ID.make("title"))
         if (!agent) return false
-        const model = agent.model
-          ? (yield* models.resolve({ ...input.session, model: agent.model })).model
-          : (input.small ?? input.model)
+        // Auxiliary calls must not inherit the Session's reasoning tier: a
+        // title is a one-line answer, so it pins the cheapest tier its model
+        // declares instead of paying the Session's chosen effort.
+        const selected = agent.model ? yield* models.resolve({ ...input.session, model: agent.model }) : undefined
+        const model = selected?.model ?? input.small ?? input.model
+        const info = selected?.info ?? (input.small === undefined ? input.info : undefined)
         const title = yield* SessionTitle.generate({
           llm,
           model,
           http: input.http,
           system: agent.system,
           prompt: input.prompt,
+          providerOptions:
+            info === undefined
+              ? undefined
+              : ModelVariants.auxReasoningOptions(
+                  info.api.type === "aisdk" ? info.api.package : undefined,
+                  info.variants.length > 0 ? info.variants : ModelVariants.generate(info),
+                ),
         })
         if (!title) return false
         // The user may have renamed the Session while the title model ran.
@@ -746,7 +758,14 @@ const layer = Layer.effect(
         titled.add(sessionID)
         yield* FiberSet.run(
           titleFibers,
-          generateTitle({ session, prompt: users[0].text, model, small: summarizeModel, http: request.http }).pipe(
+          generateTitle({
+              session,
+              prompt: users[0].text,
+              model,
+              small: summarizeModel,
+              info: resolved.info,
+              http: request.http,
+            }).pipe(
             Effect.tap((published) => (published ? Effect.void : Effect.sync(() => titled.delete(sessionID)))),
           ),
         )
