@@ -19,7 +19,7 @@ type ContextMessage = {
   providerID: string
   modelID: string
   tokens: AssistantMessage["tokens"]
-  time: { created: number; completed?: number }
+  time: { created: number | null; completed?: number }
 }
 
 type Context = {
@@ -59,8 +59,8 @@ const build = (messages: readonly ContextMessage[] = [], providers: Provider[] =
     message,
     provider,
     model,
-    providerLabel: provider?.name ?? message.providerID,
-    modelLabel: model?.name ?? message.modelID,
+    providerLabel: provider?.name ?? (message.providerID || "—"),
+    modelLabel: model?.name ?? (message.modelID || "—"),
     limit,
     input: message.tokens.input,
     total,
@@ -82,8 +82,8 @@ export function getSessionContextFromRecords(records: SessionMessageInfo[] = [],
         ? [
             {
               id: record.id,
-              providerID: record.model.providerID,
-              modelID: record.model.id,
+              providerID: record.model?.providerID ?? "",
+              modelID: record.model?.id ?? "",
               tokens: record.tokens,
               time: record.time,
             },

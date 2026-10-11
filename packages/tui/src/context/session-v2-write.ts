@@ -33,9 +33,7 @@ export function promptInputFromParts(parts: ReadonlyArray<PromptPartLike>): Prom
 }
 
 /** Rebuild the editable prompt from a V2 user message (resend/fork flows). */
-export function promptInfoFromUserMessage(
-  message: Extract<SessionMessage, { type: "user" }>,
-): PromptInfo {
+export function promptInfoFromUserMessage(message: Extract<SessionMessage, { type: "user" }>): PromptInfo {
   const parts: PromptInfo["parts"] = [
     ...(message.text ? [{ type: "text" as const, text: message.text }] : []),
     ...(message.files ?? []).map((file) => ({
@@ -53,15 +51,33 @@ export function promptInfoFromUserMessage(
  * `Message` + `Part` shape the export surface still emits. The TUI no longer
  * consumes this — its store holds V2 messages directly.
  */
-export function sessionContextToMessages(input: {
+type ProjectionInput = {
   sessionID: string
   cwd: string
   root: string
   messages: SessionMessage[]
   /** Restrict projections to these ids while still accumulating the agent/model/user context they inherit. */
   only?: ReadonlySet<string>
-}): { info: Message; parts: Part[] }[] {
-  const result: { info: Message; parts: Part[] }[] = []
+}
+
+/** Rendering does not require usage to have arrived; missing metrics remain missing. */
+export type RenderMessage =
+  | Exclude<Message, { role: "assistant" }>
+  | (Omit<Extract<Message, { role: "assistant" }>, "cost" | "tokens"> &
+      Partial<Pick<Extract<Message, { role: "assistant" }>, "cost" | "tokens">>)
+
+export function sessionContextToMessages(input: ProjectionInput): { info: Message; parts: Part[] }[] {
+  return renderSessionContext(input).map((message) => {
+    const info = message.info
+    if (info.role !== "assistant") return { ...message, info }
+    if (info.cost === undefined || info.tokens === undefined)
+      throw new Error("Legacy export cannot represent unknown assistant metadata")
+    return { ...message, info: { ...info, cost: info.cost, tokens: info.tokens } }
+  })
+}
+
+export function renderSessionContext(input: ProjectionInput): { info: RenderMessage; parts: Part[] }[] {
+  const result: { info: RenderMessage; parts: Part[] }[] = []
   let lastAgent = ""
   let lastModel: { providerID: string; modelID: string; variant?: string } = { providerID: "", modelID: "" }
   let lastUserID = ""
@@ -93,7 +109,7 @@ export function sessionContextToMessages(input: {
     }
     if (message.type === "assistant") {
       if (input.only && !input.only.has(message.id)) continue
-      if (message.time.created === null || message.agent === null || message.model === null || message.cost === undefined || message.tokens === undefined)
+      if (message.time.created === null || message.agent === null || message.model === null)
         throw new Error("Legacy export cannot represent unknown assistant metadata")
       result.push({
         info: {
@@ -215,7 +231,11 @@ export function toolPart(
       state.status === "pending"
         ? { status: "pending", input: {}, raw: String(state.input) }
         : state.status === "running"
-          ? { status: "running", input: toolInput(tool.name, state.input), time: { start: requireToolTime(knownStart) } }
+          ? {
+              status: "running",
+              input: toolInput(tool.name, state.input),
+              time: { start: requireToolTime(knownStart) },
+            }
           : state.status === "completed"
             ? {
                 status: "completed",
@@ -298,7 +318,6 @@ function structuredMetadata(value: unknown): Record<string, unknown> {
 function textOf(content: Array<{ type: string; text?: string }>) {
   return content.flatMap((item) => (item.type === "text" ? [item.text ?? ""] : [])).join("\n")
 }
-
 
 function requireToolTime(value: number | null | undefined) {
   if (value === null || value === undefined) throw new Error("Legacy export requires an authoritative tool time")

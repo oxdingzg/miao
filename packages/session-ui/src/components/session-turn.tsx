@@ -1,4 +1,4 @@
-import { Part as PartType } from "@miao/schema/view-models"
+import type { PartType } from "@miao/schema/render-part"
 import { contentParts, type SessionMessageAssistant, type SessionMessageInfo } from "../content"
 import type { SnapshotFileDiff } from "@miao/schema/view-models"
 import type { Vcs } from "@miao/schema/vcs"
@@ -208,8 +208,7 @@ export function SessionTurn(
     if (typeof props.active === "boolean") return
     const messages = allMessages() ?? emptyMessages
     return messages.findLast(
-      (item): item is SessionMessageAssistant =>
-        item.type === "assistant" && typeof item.time.completed !== "number",
+      (item): item is SessionMessageAssistant => item.type === "assistant" && typeof item.time.completed !== "number",
     )
   })
 

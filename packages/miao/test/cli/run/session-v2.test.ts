@@ -170,3 +170,15 @@ describe("run session v2 transcript", () => {
     })
   })
 })
+
+test("live transcript renders an assistant before usage arrives", () => {
+  const message = assistant([{ type: "text", id: "text", text: "streaming" }])
+  if (message.type !== "assistant") throw new Error("assistant fixture")
+  const { cost, tokens, ...live } = message
+  const result = entries([live])
+  expect(result[0]?.type).toBe("message")
+  if (result[0]?.type !== "message") throw new Error("missing message")
+  expect(result[0].message.info).not.toHaveProperty("cost", 0)
+  expect(result[0].message.info).toMatchObject({ role: "assistant", cost: undefined, tokens: undefined })
+  expect(result[0].message.parts[0]).toMatchObject({ type: "text", text: "streaming" })
+})

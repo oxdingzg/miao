@@ -16,21 +16,17 @@ import {
 import { createStore } from "solid-js/store"
 import stripAnsi from "strip-ansi"
 import { Dynamic } from "solid-js/web"
-import {
-  AgentPart,
-  AssistantMessage,
-  FilePart,
-  Part as PartType,
-  ReasoningPart,
-  Session,
-  TextPart,
-  ToolPart,
-  UserMessage,
-} from "@miao/schema/view-models"
+import { AgentPart, AssistantMessage, FilePart, Session, TextPart, UserMessage } from "@miao/schema/view-models"
+import type { PartType, ReasoningPart, ToolPart } from "@miao/schema/render-part"
 import type { Todo } from "@miao/schema/view-models"
 import type { QuestionAnswer, QuestionInfo } from "@miao/schema/view-models"
 import { useData } from "../context"
-import { contentParts, type SessionMessageAssistant, type SessionMessageInfo, type SessionMessageUser } from "../content"
+import {
+  contentParts,
+  type SessionMessageAssistant,
+  type SessionMessageInfo,
+  type SessionMessageUser,
+} from "../content"
 import { useFileComponent } from "@miao/ui/context/file"
 import { useDialog } from "@miao/ui/context/dialog"
 import { type UiI18n, useI18n } from "@miao/ui/context/i18n"
@@ -746,7 +742,8 @@ export function AssistantParts(props: {
     () =>
       groupParts(
         props.messages.flatMap((message) =>
-          (projected()[message.id] ?? emptyParts).filter((part) => renderable(part, props.showReasoningSummaries ?? true))
+          (projected()[message.id] ?? emptyParts)
+            .filter((part) => renderable(part, props.showReasoningSummaries ?? true))
             .map((part) => ({
               messageID: message.id,
               part,
@@ -1650,10 +1647,7 @@ PART_MAPPING["text"] = function TextPartDisplay(props) {
   const i18n = useI18n()
   const numfmt = createMemo(() => new Intl.NumberFormat(i18n.locale()))
   const part = () => props.part as TextPart
-  const interrupted = createMemo(
-    () =>
-      props.message.type === "assistant" && props.message.finish === "aborted",
-  )
+  const interrupted = createMemo(() => props.message.type === "assistant" && props.message.finish === "aborted")
 
   const model = createMemo(() => {
     if (props.message.type !== "assistant") return ""
@@ -1671,7 +1665,7 @@ PART_MAPPING["text"] = function TextPartDisplay(props) {
     const ms =
       typeof props.turnDurationMs === "number"
         ? props.turnDurationMs
-        : typeof completed === "number"
+        : typeof completed === "number" && message.time.created !== null
           ? completed - message.time.created
           : -1
     if (!(ms >= 0)) return ""
@@ -1704,9 +1698,7 @@ PART_MAPPING["text"] = function TextPartDisplay(props) {
   const isLastTextPart = createMemo(() => {
     const messageID = props.message.id
     const siblings = contentParts(part().sessionID, [props.message])[messageID] ?? []
-    const last = siblings
-      .filter((item): item is TextPart => item?.type === "text" && !!item.text?.trim())
-      .at(-1)
+    const last = siblings.filter((item): item is TextPart => item?.type === "text" && !!item.text?.trim()).at(-1)
     return last?.id === part().id
   })
   const showCopy = createMemo(() => {

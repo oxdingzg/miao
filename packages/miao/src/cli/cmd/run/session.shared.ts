@@ -1,9 +1,10 @@
+import type { RenderMessage } from "@miao/tui/context/session-v2-write"
 // Session message extraction and prompt history.
 //
 // Reads the V2 session transcript and extracts user turn text for the prompt
 // history ring. Also finds the most recently used variant for the current
 // model so the footer can pre-select it.
-import type { Message, Part } from "@miao/schema/view-models"
+import type { Part } from "@miao/schema/view-models"
 import { promptCopy, promptSame } from "./prompt.shared"
 import { loadTranscript, transcriptMessages } from "./session-v2"
 import type { RunInput, RunPrompt } from "./types"
@@ -12,7 +13,7 @@ const LIMIT = 200
 
 // The transcript in the V1 message/part shape the reducers render, mapped from
 // the V2 projection by `session-v2.ts`.
-export type SessionMessages = Array<{ info: Message; parts: Part[] }>
+export type SessionMessages = Array<{ info: RenderMessage; parts: Part[] }>
 
 type Turn = {
   prompt: RunPrompt

@@ -88,7 +88,6 @@ test("maps prompt parts into the V2 prompt input", () => {
   ).toEqual({ text: "a\n\nb" })
 })
 
-
 test("maps V2 tool parts into the V1 shape the renderers read", () => {
   const edit = {
     type: "tool",
@@ -100,7 +99,13 @@ test("maps V2 tool parts into the V1 shape the renderers read", () => {
       content: [],
       structured: {
         files: [
-          { file: "src/a.ts", patch: "--- a/src/a.ts\n+++ b/src/a.ts\n@@\n-a\n+b\n", additions: 1, deletions: 1, status: "modified" },
+          {
+            file: "src/a.ts",
+            patch: "--- a/src/a.ts\n+++ b/src/a.ts\n@@\n-a\n+b\n",
+            additions: 1,
+            deletions: 1,
+            status: "modified",
+          },
         ],
         replacements: 1,
       },
@@ -133,12 +138,18 @@ test("maps V2 tool parts into the V1 shape the renderers read", () => {
   expect(running.state.input).toMatchObject({ filePath: "/project/src/b.ts" })
 })
 
-
 test("legacy export rejects unknown metadata without changing the V2 source", () => {
-  const message: SessionMessage = { id: "msg_unknown", type: "assistant", agent: null, model: null,
-    content: [{ type: "text", id: "text_unknown", text: "Recorded answer" }], time: { created: null } }
-  expect(() => sessionContextToMessages({ sessionID: "ses_1", cwd: "/project", root: "/project", messages: [message] }))
-    .toThrow("Legacy export cannot represent unknown assistant metadata")
+  const message: SessionMessage = {
+    id: "msg_unknown",
+    type: "assistant",
+    agent: null,
+    model: null,
+    content: [{ type: "text", id: "text_unknown", text: "Recorded answer" }],
+    time: { created: null },
+  }
+  expect(() =>
+    sessionContextToMessages({ sessionID: "ses_1", cwd: "/project", root: "/project", messages: [message] }),
+  ).toThrow("Legacy export cannot represent unknown assistant metadata")
   expect(message).toMatchObject({ agent: null, model: null, time: { created: null } })
   expect(message).not.toHaveProperty("cost")
   expect(message).not.toHaveProperty("tokens")
@@ -152,4 +163,24 @@ test("an unknown history clock preserves cursor order while deduplication retain
     { id: "msg_latest", type: "user", text: "stale", time: { created: 0 } },
   ]
   expect(mergeTranscript(active, history)).toEqual([history[0], history[1], active[0]])
+})
+
+test("legacy archive export rejects usage that has not arrived", () => {
+  expect(() =>
+    sessionContextToMessages({
+      sessionID: "ses_1",
+      cwd: "/repo",
+      root: "/repo",
+      messages: [
+        {
+          id: "a",
+          type: "assistant",
+          agent: "build",
+          model: { providerID: "fixture", id: "model" },
+          time: { created: 1 },
+          content: [],
+        },
+      ],
+    }),
+  ).toThrow("Legacy export cannot represent unknown assistant metadata")
 })

@@ -23,7 +23,7 @@ import type {
 } from "@miao/schema/view-models"
 import { type Client } from "@/client"
 import { mutableResponse } from "@miao/tui/util/mutable-response"
-import { mergeTranscript, sessionContextToMessages, toolPart } from "@miao/tui/context/session-v2-write"
+import { mergeTranscript, renderSessionContext, toolPart } from "@miao/tui/context/session-v2-write"
 import type { SessionMessages } from "./session.shared"
 
 // The messages route caps one page; larger replays walk the timeline.
@@ -85,7 +85,7 @@ export function transcriptEntries(input: {
   messages: SessionMessage[]
 }): TranscriptEntry[] {
   const mapped = new Map(
-    sessionContextToMessages({
+    renderSessionContext({
       sessionID: input.sessionID,
       cwd: input.directory,
       root: input.directory,
