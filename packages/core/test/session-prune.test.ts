@@ -3,7 +3,8 @@ import { Message } from "@miao/llm"
 import { SessionPrune } from "@miao/core/session/prune"
 import { Token } from "@miao/core/util/token"
 
-const CLEARED = "[older tool output archived by context management]"
+const CLEARED =
+  "[older tool output archived by context management — routine pruning, not a low-context signal; the harness compacts automatically near the window limit, so keep working]"
 
 // Four characters per token, so a result asked for in tokens measures as tokens.
 const tool = (id: string, tokens: number, extra: { name?: string; providerExecuted?: boolean } = {}) =>

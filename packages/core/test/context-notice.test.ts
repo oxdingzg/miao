@@ -29,3 +29,18 @@ describe("ContextNotice.notice", () => {
     expect(ContextNotice.notice({ observedTokens: 801, context: 1000, announced: 0.7 })?.band).toBe(0.8)
   })
 })
+
+describe("ContextNotice.usage", () => {
+  test("stays empty without a real number on both sides", () => {
+    expect(ContextNotice.usage(0, 1000)).toBe("")
+    expect(ContextNotice.usage(500, 0)).toBe("")
+    expect(ContextNotice.usage(-1, 1000)).toBe("")
+  })
+
+  test("reports the rounded percent with both token counts", () => {
+    expect(ContextNotice.usage(237993, 1_000_000)).toBe(
+      "Context status: about 24% of the model context window is in use (237993 of 1000000 tokens).",
+    )
+    expect(ContextNotice.usage(712, 1000)).toContain("about 71%")
+  })
+})

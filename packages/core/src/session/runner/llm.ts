@@ -22,6 +22,7 @@ import { ContextNotice } from "../context-notice"
 import { Database } from "../../database/database"
 import { EventV2 } from "../../event"
 import { Location } from "../../location"
+import { ModelSwitch } from "../model-switch"
 import { ModelV2 } from "../../model"
 import { PermissionV2 } from "../../permission"
 import { ProviderV2 } from "../../provider"
@@ -266,6 +267,13 @@ const layer = Layer.effect(
     // Highest context band already announced per session; reset when
     // compaction rewrites the history so the smaller window re-arms notices.
     const lastContextNotice = new Map<string, number>()
+    // Identity and context window of each Session's last resolved model, so a
+    // mid-session switch can be annotated and the loop epilogue can quote real
+    // usage. Process-local: the first turn after a restart stays silent.
+    const lastTurnModel = new Map<string, { identity: string; context: number }>()
+    // `model-switched` markers already seen per Session; only fresh markers
+    // trigger the takeover note, so replays and restarts stay silent.
+    const seenModelSwitches = new Map<string, number>()
     const streamContinuations = new Map<string, number>()
     const toolInputCorrections = new Map<string, number>()
     // Repeated identical tool calls per Session drain; reset at each drain start.
@@ -587,6 +595,31 @@ const layer = Layer.effect(
       const entries = yield* SessionHistory.entriesForRunner(db, session.id, system.baselineSeq)
       const historyMs = Date.now() - historyStartedAt
       const context = entries.map((entry) => entry.message)
+      // A deliberate model switch leaves a `model-switched` marker in history
+      // (internal model changes — compaction, titles — never do). The takeover
+      // model inherits pruning markers it was never trained on and invents a
+      // nearly-full window from them (observed live), so the first request
+      // after a switch carries a request-only note with the real usage.
+      const contextWindow = model.route.defaults.limits?.context ?? 0
+      const modelIdentity = `${model.provider}/${model.id}${session.model?.variant === undefined ? "" : `#${session.model.variant}`}`
+      const previousModel = lastTurnModel.get(session.id)
+      lastTurnModel.set(session.id, { identity: modelIdentity, context: contextWindow })
+      const modelSwitches = context.filter((message) => message.type === "model-switched").length
+      // The first sight of a Session only sets the baseline, so a process
+      // restart never re-announces an old switch.
+      const priorSwitches = seenModelSwitches.get(session.id)
+      seenModelSwitches.set(session.id, modelSwitches)
+      const switchNote =
+        priorSwitches !== undefined && modelSwitches > priorSwitches
+          ? Message.user(
+              ModelSwitch.text({
+                from: previousModel?.identity ?? "the previous model",
+                to: modelIdentity,
+                observedTokens: lastPromptTokens.get(session.id) ?? 0,
+                context: contextWindow,
+              }),
+            )
+          : undefined
       // A leaked tool call the model wrote as text stays in the durable row (the
       // user can still see it), but it must not reach the provider verbatim: the
       // model imitates its own prior output, so each later turn reseeds the same
@@ -656,6 +689,12 @@ const layer = Layer.effect(
         ...toLLMMessages(materialized, model, resolved.info.capabilities.input),
         ...(isLastStep ? [Message.assistant(MAX_STEPS_PROMPT)] : []),
       ]
+      // The note reads best ahead of the turn's actual request, so the user
+      // prompt stays the closing message.
+      if (switchNote) {
+        const insertAt = messages.at(-1)?.role === "user" ? messages.length - 1 : messages.length
+        messages.splice(insertAt, 0, switchNote)
+      }
       const request = LLM.request({
         model,
         http: {
@@ -762,7 +801,7 @@ const layer = Layer.effect(
           sessionID: session.id,
           timestamp: yield* DateTime.now,
           messageID: SessionMessage.ID.create(),
-          text: `Context status: about ${contextNotice.percent}% of the model context window is in use (${contextNotice.observed} of ${contextNotice.context} tokens). Older tool outputs are archived automatically and compaction runs near the limit — keep working normally, no action is required.`,
+          text: `${ContextNotice.usage(contextNotice.observed, contextNotice.context)} Older tool outputs are archived automatically and compaction runs near the limit — keep working normally, no action is required.`,
           metadata: { [ContextNotice.MARKER]: true },
         })
       }
@@ -1941,10 +1980,18 @@ const layer = Layer.effect(
                     })
                   } else {
                     loopIterations += 1
+                    // The loop prompt is where a stopped-but-not-done model
+                    // invents excuses; restate the real context facts so
+                    // "budget exhausted" cannot pass for one.
+                    const last = lastTurnModel.get(input.sessionID)
+                    const observedTokens = lastPromptTokens.get(input.sessionID) ?? 0
+                    const usage = ContextNotice.usage(observedTokens, last?.context ?? 0)
                     yield* SessionInput.admit(db, events, {
                       id: SessionMessage.ID.create(),
                       sessionID: input.sessionID,
-                      prompt: Prompt.make({ text: loop.continuePrompt }),
+                      prompt: Prompt.make({
+                        text: `${loop.continuePrompt}${usage ? ` ${usage}` : ""} Context and cost budgets are managed by the harness — archived tool outputs and automatic compaction are routine, and they never justify stopping. If you stop, name the concrete blocker; never cite context or budget exhaustion.`,
+                      }),
                       delivery: "queue",
                     })
                     shouldRun = true
