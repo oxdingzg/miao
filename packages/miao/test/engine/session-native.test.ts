@@ -104,3 +104,67 @@ real(
   },
   30000,
 )
+
+real(
+  "native facade projects each promoted input with its durable queue or steer delivery",
+  async () => {
+    await using tmp = await tmpdir()
+    const upstream = Bun.serve({
+      port: 0,
+      fetch() {
+        return new Response(
+          [
+            'data: {"choices":[{"index":0,"delta":{"role":"assistant","content":"ACK"},"finish_reason":null}]}\n\n',
+            'data: {"choices":[{"index":0,"delta":{},"finish_reason":"stop"}]}\n\n',
+            "data: [DONE]\n\n",
+          ].join(""),
+          { headers: { "content-type": "text/event-stream" } },
+        )
+      },
+    })
+    const client = EngineClient.start({
+      binary: binary!,
+      db: path.join(tmp.path, "engine.db"),
+      workspace: tmp.path,
+      model: "fixture",
+      provider: "openai-chat",
+      endpoint: upstream.url.toString(),
+      env: { OPENAI_API_KEY: "fixture-only" },
+    })
+    const outputs: EngineSessionEvent[] = []
+    const finished = Promise.withResolvers<void>()
+    const timer = setTimeout(() => finished.reject(new Error("native completion did not arrive")), 10000)
+    client.onEvent((event) => {
+      if (event.kind === "run.finished") finished.resolve()
+    })
+    const facade = new EngineSession(client, (event) => outputs.push(event))
+    try {
+      await facade.prompt("ses_delivery", "queued input", { inputID: "in_queue", delivery: "queue", resume: false })
+      await facade.prompt("ses_delivery", "steering input", { inputID: "in_steer", delivery: "steer", resume: false })
+      await facade.prompt("ses_delivery", "queued input", { inputID: "in_queue", delivery: "queue", resume: true })
+      await finished.promise
+      const prompts = outputs
+        .filter((event) => event.type === "session.next.prompt.admitted")
+        .map((event) => BlackboxTape.json(event.data))
+      expect(prompts).toHaveLength(2)
+      expect(
+        Object.fromEntries(
+          prompts.map((entry) => {
+            if (
+              !BlackboxTape.isObject(entry) ||
+              !BlackboxTape.isObject(entry.prompt) ||
+              typeof entry.prompt.text !== "string"
+            )
+              throw new Error("missing projected prompt")
+            return [entry.prompt.text, entry.delivery]
+          }),
+        ),
+      ).toEqual({ "queued input": "queue", "steering input": "steer" })
+    } finally {
+      clearTimeout(timer)
+      await client.close()
+      upstream.stop(true)
+    }
+  },
+  30000,
+)

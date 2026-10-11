@@ -2,10 +2,10 @@ import { EngineClient, type EngineEvent } from "./client"
 import {
   StatusBridge,
   ToolBridge,
+  PromptBridge,
   translateApproval,
   translateApprovalResolved,
   translateMessage,
-  translatePrompt,
   translateQuestion,
   translateTools,
 } from "./bridge"
@@ -29,6 +29,7 @@ export class EngineSession {
   #publish: EnginePublish
   #status = new StatusBridge()
   #tools = new ToolBridge()
+  #prompts = new PromptBridge()
   #subscriptions = new Map<string, Promise<unknown>>()
 
   constructor(client: EngineClient, publish: EnginePublish) {
@@ -84,7 +85,7 @@ export class EngineSession {
     this.#tools.note(event)
     const status = this.#status.update(event)
     if (status) publish({ type: "session.next.status", data: status })
-    const admitted = translatePrompt(event)
+    const admitted = this.#prompts.project(event)
     if (admitted) publish({ type: "session.next.prompt.admitted", data: admitted })
     for (const text of translateMessage(event)) publish({ type: "session.next.text.ended", data: text })
     for (const call of translateTools(event)) publish({ type: "session.next.tool.called", data: call })
