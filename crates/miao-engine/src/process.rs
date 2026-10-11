@@ -90,6 +90,8 @@ struct Runner {
     argv: Vec<String>,
     allow_network: bool,
     timeout_ms: u64,
+    #[serde(default)]
+    interactive: bool,
 }
 
 /// Whether this engine can actually confine a spawned process. macOS uses
@@ -107,7 +109,7 @@ pub fn enforced() -> bool {
 /// is read by the engine; the slave becomes the guarded child's stdio so that
 /// programs observing `isatty` see a terminal.
 #[cfg(unix)]
-fn open_pty() -> std::io::Result<(std::fs::File, std::fs::File)> {
+pub(crate) fn open_pty() -> std::io::Result<(std::fs::File, std::fs::File)> {
     use std::os::fd::FromRawFd;
     let mut master = 0;
     let mut slave = 0;
@@ -137,7 +139,7 @@ fn open_pty() -> std::io::Result<(std::fs::File, std::fs::File)> {
     })
 }
 #[cfg(not(unix))]
-fn open_pty() -> std::io::Result<(std::fs::File, std::fs::File)> {
+pub(crate) fn open_pty() -> std::io::Result<(std::fs::File, std::fs::File)> {
     Err(std::io::Error::new(
         std::io::ErrorKind::Unsupported,
         "pty unsupported",
@@ -195,7 +197,23 @@ pub fn sandbox_runner(payload: &str) -> Result<(), Box<dyn std::error::Error>> {
     #[cfg(target_os = "macos")]
     {
         use std::os::unix::process::CommandExt;
-        let profile = miao_sandbox::profile(&[workspace, temp], &[], spec.allow_network, false);
+        let mut profile = miao_sandbox::profile(&[workspace, temp], &[], spec.allow_network, false);
+        if spec.interactive {
+            let mut name = [0i8; 128];
+            if unsafe { libc::ttyname_r(0, name.as_mut_ptr(), name.len()) } != 0 {
+                return Err("interactive runner stdin is not a terminal".into());
+            }
+            let name = unsafe { std::ffi::CStr::from_ptr(name.as_ptr()) }.to_str()?;
+            if !name.starts_with("/dev/tty") {
+                return Err("unexpected terminal device".into());
+            }
+            // Only the assigned PTY (and its controlling-terminal alias) may
+            // perform termios/window-size ioctls, not arbitrary device nodes.
+            profile.push_str(&format!(
+                "(allow file-ioctl (literal {}) (literal \"/dev/tty\"))\n",
+                serde_json::to_string(name)?
+            ));
+        }
         let error = std::process::Command::new("/usr/bin/sandbox-exec")
             .args(["-p", &profile, "--"])
             .args(&spec.argv)
@@ -259,15 +277,27 @@ pub fn guardian(payload: &str) -> Result<(), Box<dyn std::error::Error>> {
     }
     struct FailureGuard {
         group: i32,
+        child_group: i32,
     }
-    impl Drop for FailureGuard {
-        fn drop(&mut self) {
+    impl FailureGuard {
+        fn kill(&self) {
             unsafe {
+                if self.child_group != 0 {
+                    libc::kill(-self.child_group, libc::SIGKILL);
+                }
                 libc::kill(-self.group, libc::SIGKILL);
             }
         }
     }
-    let _guard = FailureGuard { group };
+    impl Drop for FailureGuard {
+        fn drop(&mut self) {
+            self.kill();
+        }
+    }
+    let mut guard = FailureGuard {
+        group,
+        child_group: 0,
+    };
     unsafe {
         libc::signal(
             libc::SIGTERM,
@@ -278,12 +308,37 @@ pub fn guardian(payload: &str) -> Result<(), Box<dyn std::error::Error>> {
             guardian_signal as *const () as libc::sighandler_t,
         );
     }
-    let mut child = std::process::Command::new(std::env::current_exe()?)
+    let terminal = if spec.interactive {
+        use std::os::fd::FromRawFd;
+        Some(unsafe { std::fs::File::from_raw_fd(3) })
+    } else {
+        None
+    };
+    let mut command = std::process::Command::new(std::env::current_exe()?);
+    command
         .args(["__sandbox-run", payload])
-        .stdin(Stdio::null())
+        .stdin(match &terminal {
+            Some(terminal) => Stdio::from(terminal.try_clone()?),
+            None => Stdio::null(),
+        })
         .stdout(Stdio::inherit())
-        .stderr(Stdio::inherit())
-        .spawn()?;
+        .stderr(Stdio::inherit());
+    if spec.interactive {
+        use std::os::unix::process::CommandExt;
+        command.process_group(0);
+    }
+    let mut child = command.spawn()?;
+    if let Some(terminal) = &terminal {
+        use std::os::fd::AsRawFd;
+        guard.child_group = child.id() as i32;
+        unsafe {
+            libc::signal(libc::SIGTTOU, libc::SIG_IGN);
+            if libc::tcsetpgrp(terminal.as_raw_fd(), guard.child_group) < 0 {
+                return Err(std::io::Error::last_os_error().into());
+            }
+            libc::kill(-guard.child_group, libc::SIGCONT);
+        }
+    }
     let deadline =
         std::time::Instant::now() + Duration::from_millis(spec.timeout_ms.saturating_add(1000));
     let mut terminated = None;
@@ -299,17 +354,13 @@ pub fn guardian(payload: &str) -> Result<(), Box<dyn std::error::Error>> {
             return Err(std::io::Error::last_os_error().into());
         }
         if fd.revents & (libc::POLLHUP | libc::POLLERR | libc::POLLNVAL) != 0 {
-            unsafe {
-                libc::kill(-group, libc::SIGKILL);
-            }
+            guard.kill();
             return Err("guardian lost its owner".into());
         }
         if fd.revents & libc::POLLIN != 0 {
             let mut byte = 0u8;
             if unsafe { libc::read(0, (&mut byte as *mut u8).cast(), 1) } <= 0 {
-                unsafe {
-                    libc::kill(-group, libc::SIGKILL);
-                }
+                guard.kill();
                 return Err("guardian lost its owner".into());
             }
         }
@@ -323,6 +374,9 @@ pub fn guardian(payload: &str) -> Result<(), Box<dyn std::error::Error>> {
         {
             terminated = Some(std::time::Instant::now());
             unsafe {
+                if guard.child_group != 0 {
+                    libc::kill(-guard.child_group, libc::SIGTERM);
+                }
                 libc::kill(-group, libc::SIGTERM);
             }
         }
@@ -331,11 +385,14 @@ pub fn guardian(payload: &str) -> Result<(), Box<dyn std::error::Error>> {
                 use std::os::unix::process::ExitStatusExt;
                 // The engine remains responsible for the final SIGKILL sweep.
                 // Parent-loss detection above remains active during grace.
+                if guard.child_group != 0 {
+                    unsafe {
+                        libc::kill(-guard.child_group, libc::SIGKILL);
+                    }
+                }
                 std::process::exit(status.code().unwrap_or(128 + status.signal().unwrap_or(1)));
             }
-            unsafe {
-                libc::kill(-group, libc::SIGKILL);
-            }
+            guard.kill();
             return Err("guardian deadline exceeded".into());
         }
     }
@@ -345,15 +402,15 @@ pub fn guardian(_: &str) -> Result<(), Box<dyn std::error::Error>> {
     Err("process guardian unsupported".into())
 }
 
-struct Group {
-    child: Child,
-    pid: u32,
-    armed: bool,
+pub(crate) struct Group {
+    pub(crate) child: Child,
+    pub(crate) pid: u32,
+    pub(crate) armed: bool,
     _lifeline: Option<tokio::process::ChildStdin>,
 }
 impl Group {
     #[cfg(unix)]
-    fn signal(&self, signal: i32) {
+    pub(crate) fn signal(&self, signal: i32) {
         unsafe {
             libc::kill(-(self.pid as i32), signal);
         }
@@ -385,96 +442,17 @@ pub(crate) async fn execute(
     if cancel.is_cancelled() {
         return Err(ToolError::Interrupted);
     }
-    let temp = tokio::task::spawn_blocking(tempfile::tempdir)
-        .await
-        .map_err(|_| ToolError::Io(std::io::Error::other("temp worker failed")))??;
-    if cancel.is_cancelled() {
-        return Err(ToolError::Interrupted);
-    }
-    let pty = input.pty;
-    let spec = Runner {
-        workspace: workspace.into(),
-        cwd: cwd.into(),
-        temp: temp.path().into(),
-        argv: input.argv,
+    let (mut group, master, _temp) = spawn(
+        runner,
+        workspace,
+        cwd,
+        input.argv,
+        input.timeout_ms,
+        input.pty,
+        false,
         allow_network,
-        timeout_ms: input.timeout_ms,
-    };
-    // On Windows the AppContainer runner is spawned directly: it owns a job
-    // object whose child tree dies with it, so no guardian/lifeline is needed.
-    #[cfg(unix)]
-    let runner_mode = "__process-guardian";
-    #[cfg(windows)]
-    let runner_mode = "__sandbox-run";
-    let mut command = Command::new(runner);
-    command
-        .arg(runner_mode)
-        .arg(serde_json::to_string(&spec).map_err(|_| ToolError::InvalidInput)?)
-        .env_clear()
-        .kill_on_drop(true)
-        .current_dir(cwd);
-    #[cfg(unix)]
-    command.stdin(Stdio::piped());
-    #[cfg(windows)]
-    command.stdin(Stdio::null());
-    let master = if pty {
-        let (master, slave) = open_pty()?;
-        command.stdout(Stdio::from(slave.try_clone()?));
-        command.stderr(Stdio::from(slave));
-        Some(master)
-    } else {
-        command.stdout(Stdio::piped());
-        command.stderr(Stdio::piped());
-        None
-    };
-    for key in ["PATH", "HOME", "LANG", "LC_ALL", "TERM"] {
-        if let Some(value) = std::env::var_os(key) {
-            command.env(key, value);
-        }
-    }
-    // Windows needs its core environment for CreateProcessW and for `cmd` to
-    // resolve; a cleared environment makes the AppContainer spawn fail.
-    #[cfg(windows)]
-    for key in [
-        "SystemRoot",
-        "windir",
-        "SystemDrive",
-        "ComSpec",
-        "PATHEXT",
-        "USERPROFILE",
-        "APPDATA",
-        "LOCALAPPDATA",
-        "PROGRAMDATA",
-        "NUMBER_OF_PROCESSORS",
-        "PROCESSOR_ARCHITECTURE",
-        "OS",
-    ] {
-        if let Some(value) = std::env::var_os(key) {
-            command.env(key, value);
-        }
-    }
-    command
-        .env("TMPDIR", temp.path())
-        .env("TMP", temp.path())
-        .env("TEMP", temp.path());
-    #[cfg(unix)]
-    {
-        use std::os::unix::process::CommandExt;
-        command.as_std_mut().process_group(0);
-    }
-    let mut child = command.spawn()?;
-    // A `Stdio::from(File)` slave can outlive `spawn` inside the Command; drop
-    // it so the parent holds no pty slave, or the master would never reach EOF.
-    drop(command);
-    let lifeline = child.stdin.take();
-    let mut group = Group {
-        pid: child
-            .id()
-            .ok_or_else(|| ToolError::Io(std::io::Error::other("child has no pid")))?,
-        child,
-        armed: true,
-        _lifeline: lifeline,
-    };
+    )
+    .await?;
     let mut readers = JoinSet::new();
     if let Some(master) = master {
         readers.spawn(read_pty(master));
@@ -574,4 +552,133 @@ async fn read_pipe(
     let mut bytes = Vec::new();
     stream.take(32769).read_to_end(&mut bytes).await?;
     Ok((is_stdout, bytes))
+}
+
+/// Shared confined spawn for foreground commands and Session-owned terminals.
+#[allow(clippy::too_many_arguments)]
+pub(crate) async fn spawn(
+    runner: &Path,
+    workspace: &Path,
+    cwd: &Path,
+    argv: Vec<String>,
+    timeout_ms: u64,
+    pty: bool,
+    interactive: bool,
+    allow_network: bool,
+) -> Result<(Group, Option<std::fs::File>, tempfile::TempDir), ToolError> {
+    let temp = tokio::task::spawn_blocking(tempfile::tempdir)
+        .await
+        .map_err(|_| ToolError::Io(std::io::Error::other("temp worker failed")))??;
+    let spec = Runner {
+        workspace: workspace.into(),
+        cwd: cwd.into(),
+        temp: temp.path().into(),
+        argv,
+        allow_network,
+        timeout_ms,
+        interactive,
+    };
+    // On Windows the AppContainer runner is spawned directly: it owns a job
+    // object whose child tree dies with it, so no guardian/lifeline is needed.
+    #[cfg(unix)]
+    let runner_mode = "__process-guardian";
+    #[cfg(windows)]
+    let runner_mode = "__sandbox-run";
+    let mut command = Command::new(runner);
+    command
+        .arg(runner_mode)
+        .arg(serde_json::to_string(&spec).map_err(|_| ToolError::InvalidInput)?)
+        .env_clear()
+        .kill_on_drop(true)
+        .current_dir(cwd);
+    #[cfg(unix)]
+    command.stdin(Stdio::piped());
+    #[cfg(windows)]
+    command.stdin(Stdio::null());
+    let master = if pty {
+        let (master, slave) = open_pty()?;
+        #[cfg(unix)]
+        if interactive {
+            use std::os::fd::AsRawFd;
+            // fd 3 carries the slave; guardian stdin remains an independent
+            // owner-lifeline so a hard engine exit still reaps the process tree.
+            let input_slave = slave.try_clone()?;
+            unsafe {
+                command.pre_exec(move || {
+                    if libc::dup2(input_slave.as_raw_fd(), 3) < 0 {
+                        return Err(std::io::Error::last_os_error());
+                    }
+                    if libc::fcntl(3, libc::F_SETFD, 0) < 0 {
+                        return Err(std::io::Error::last_os_error());
+                    }
+                    #[cfg(target_os = "macos")]
+                    let attach = libc::c_ulong::from(libc::TIOCSCTTY);
+                    #[cfg(not(target_os = "macos"))]
+                    let attach = libc::TIOCSCTTY;
+                    if libc::setsid() < 0 || libc::ioctl(3, attach, 0) < 0 {
+                        return Err(std::io::Error::last_os_error());
+                    }
+                    Ok(())
+                });
+            }
+        }
+        command.stdout(Stdio::from(slave.try_clone()?));
+        command.stderr(Stdio::from(slave));
+        Some(master)
+    } else {
+        command.stdout(Stdio::piped());
+        command.stderr(Stdio::piped());
+        None
+    };
+    for key in ["PATH", "HOME", "LANG", "LC_ALL", "TERM"] {
+        if let Some(value) = std::env::var_os(key) {
+            command.env(key, value);
+        }
+    }
+    // Windows needs its core environment for CreateProcessW and for `cmd` to
+    // resolve; a cleared environment makes the AppContainer spawn fail.
+    #[cfg(windows)]
+    for key in [
+        "SystemRoot",
+        "windir",
+        "SystemDrive",
+        "ComSpec",
+        "PATHEXT",
+        "USERPROFILE",
+        "APPDATA",
+        "LOCALAPPDATA",
+        "PROGRAMDATA",
+        "NUMBER_OF_PROCESSORS",
+        "PROCESSOR_ARCHITECTURE",
+        "OS",
+    ] {
+        if let Some(value) = std::env::var_os(key) {
+            command.env(key, value);
+        }
+    }
+    command
+        .env("TMPDIR", temp.path())
+        .env("TMP", temp.path())
+        .env("TEMP", temp.path());
+    #[cfg(unix)]
+    {
+        use std::os::unix::process::CommandExt;
+        if !interactive {
+            command.as_std_mut().process_group(0);
+        }
+    }
+    let mut child = command.spawn()?;
+    // A `Stdio::from(File)` slave can outlive `spawn` inside the Command; drop
+    // it so the parent holds no pty slave, or the master would never reach EOF.
+    drop(command);
+    let lifeline = child.stdin.take();
+    let group = Group {
+        pid: child
+            .id()
+            .ok_or_else(|| ToolError::Io(std::io::Error::other("child has no pid")))?,
+        child,
+        armed: true,
+        _lifeline: lifeline,
+    };
+    Ok((group, master, temp))
 }

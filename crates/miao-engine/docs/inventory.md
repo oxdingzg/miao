@@ -19,6 +19,7 @@ scope for this table and is tracked separately.
 | Session: compaction, history, recall | validated | `src/state.rs`, `src/history.rs`, `src/recall.rs`; recall bounded scan |
 | Session: revert/rewind (and unrevert) | validated | `src/store.rs`, `src/history.rs`; soft-revert of the visible projection to a user-message checkpoint, compaction at or after the boundary dropped, append-only ledger, `unrevert` restores (`tests/revert.rs`) |
 | Coding tools: read/list/glob/grep | validated | `src/tools.rs`, `src/search.rs`; bounded, no symlink escape |
+| Session-owned interactive terminals (Unix) | validated | `src/terminal.rs`, `docs/terminals.md`; start/write/read/resize/list/stop, confined PTY, bounded cursor replay, Session isolation, shutdown and owner-loss cleanup (`tests/terminal.rs`, `tests/guardian.rs`). Windows terminal tools are not advertised yet. |
 | Coding tools: write/edit/apply_patch | validated | `src/file_mutation.rs`, `src/patch.rs`; conditional SHA-256 writes, BOM/EOL preserved, V4A transaction |
 | Permission and approval | validated | `src/permission.rs`, `src/approval.rs`; policy upper bound, first-answer-wins |
 | Process: foreground command, background job, shell, PTY | validated | `src/process.rs`, `src/jobs.rs`, `src/tools.rs`; macOS seatbelt / Linux Landlock / Windows AppContainer (via `miao-sandbox`), job slots; `bash -c` and an optional interactive-terminal-style pty with merged output (`tests/bash.rs`); Windows confinement and output capture (`tests/process_windows.rs`)

@@ -160,6 +160,34 @@ impl Tools {
         self.runner = Some(Arc::new(path));
         self
     }
+    pub(crate) async fn start_terminal(
+        &self,
+        registry: &crate::terminal::Registry,
+        session: &str,
+        prepared: Prepared,
+        cancel: CancellationToken,
+    ) -> Result<Value, ToolError> {
+        let _lease = tokio::select! { _ = cancel.cancelled() => return Err(ToolError::Interrupted), lease = self.gate.write() => lease };
+        let current = self
+            .prepare(prepared.name(), prepared.input().clone())
+            .await?;
+        if current.path != prepared.path || current.resource != prepared.resource {
+            return Err(ToolError::ResourceChanged);
+        }
+        if cancel.is_cancelled() {
+            return Err(ToolError::Interrupted);
+        }
+        registry
+            .start(
+                session,
+                self.runner.as_deref().ok_or(ToolError::Unsupported)?,
+                &self.root,
+                &prepared.path,
+                crate::terminal::Start::parse(prepared.input)?,
+                self.process_network,
+            )
+            .await
+    }
     pub(crate) fn with_process(mut self, enabled: bool, network: bool) -> Self {
         self.process_enabled = enabled && self.runner.is_some() && process::enforced();
         self.process_network = network;
@@ -417,6 +445,21 @@ impl Tools {
                 ".".into()
             }
             "glob" | "grep" => search::Query::parse(name, input.clone())?.path,
+            "terminal_start" if self.background_enabled && crate::terminal::supported() => {
+                crate::terminal::Start::parse(input.clone())?.cwd
+            }
+            "terminal_read" | "terminal_write" | "terminal_resize" | "terminal_stop"
+                if self.background_enabled && crate::terminal::supported() =>
+            {
+                crate::terminal::Control::parse(name, input.clone())?;
+                ".".into()
+            }
+            "terminal_list" if self.background_enabled && crate::terminal::supported() => {
+                if input != json!({}) {
+                    return Err(ToolError::InvalidInput);
+                }
+                ".".into()
+            }
             "start_job" if self.background_enabled => process::Input::parse(input.clone())?.cwd,
             "job_status" | "cancel_job" if self.background_enabled => {
                 crate::jobs::Selector::parse(input.clone())?;
@@ -460,8 +503,10 @@ impl Tools {
         if self.protected.contains(&path) {
             return Err(ToolError::ProtectedResource);
         }
-        if matches!(name, "run_command" | "bash" | "start_job" | "glob" | "grep")
-            && !tokio::fs::metadata(&path).await?.is_dir()
+        if matches!(
+            name,
+            "run_command" | "bash" | "start_job" | "terminal_start" | "glob" | "grep"
+        ) && !tokio::fs::metadata(&path).await?.is_dir()
         {
             return Err(ToolError::InvalidInput);
         }
@@ -505,6 +550,14 @@ impl Tools {
             "@session/history".into()
         } else if name == "task" {
             "@subagent".into()
+        } else if name.starts_with("terminal_")
+            && name != "terminal_start"
+            && name != "terminal_list"
+        {
+            format!(
+                "@terminals/{}",
+                crate::terminal::Control::parse(name, input.clone())?.id
+            )
         } else if name == "job_status" || name == "cancel_job" {
             format!(
                 "@jobs/{}",
@@ -521,7 +574,7 @@ impl Tools {
             Access::Schedule
         } else if matches!(name, "cancel_wakeup" | "todowrite" | "goal" | "cron_delete") {
             Access::SessionState
-        } else if name == "start_job" {
+        } else if name == "start_job" || name.starts_with("terminal_") {
             Access::Background
         } else if name == "task" {
             Access::Delegate
@@ -790,6 +843,32 @@ impl Tools {
         ]);
         definitions.extend(self.delegation_definitions());
         definitions.extend(self.lsp_definitions());
+        if self.background_enabled && crate::terminal::supported() {
+            definitions.push(ToolDefinition {
+                name: "terminal_start".into(),
+                description: "Start a Session-owned interactive PTY for a program or REPL. Supply argv, such as [\"bash\"]. Requires process/background authority, confined to the workspace. Survives turn cancellation, killed on engine shutdown/owner loss; maximum lifetime one day. Up to eight retained terminals per Session; stop to release.".into(),
+                input_schema: json!({"type":"object","properties":{"argv":{"type":"array","items":{"type":"string"},"minItems":1,"maxItems":128},"cwd":{"type":"string","default":"."},"rows":{"type":"integer","minimum":1,"maximum":500,"default":24},"cols":{"type":"integer","minimum":1,"maximum":500,"default":80}},"required":["argv"],"additionalProperties":false}),
+            });
+            for (name, description) in [
+                ("terminal_write", "Write exact keystrokes to a running terminal, including newline to submit. Up to 32768 bytes; partial writes on timeout are reported."),
+                ("terminal_read", "Read up to 32768 bytes from a terminal. Omit cursor to continue; explicit absolute byte cursor allows replay. A 1 MiB output ring reports dropped bytes and truncation. Output is raw PTY text, including terminal escape sequences."),
+                ("terminal_resize", "Resize a running terminal's rows and columns."),
+                ("terminal_stop", "Stop and reap a terminal's process tree, return unread output and release its retained slot."),
+                ("terminal_list", "List this Session's retained terminals and exit status."),
+            ] {
+                let mut properties = json!({});
+                let mut required = Vec::new();
+                if name != "terminal_list" { properties["id"] = json!({"type":"string","minLength":1,"maxLength":128}); required.push("id"); }
+                if name == "terminal_write" { properties["input"] = json!({"type":"string","maxLength":32768}); required.push("input"); }
+                if name == "terminal_read" { properties["cursor"] = json!({"type":"integer","minimum":0}); }
+                if name == "terminal_resize" {
+                    properties["rows"] = json!({"type":"integer","minimum":1,"maximum":500});
+                    properties["cols"] = json!({"type":"integer","minimum":1,"maximum":500});
+                    required.extend(["rows", "cols"]);
+                }
+                definitions.push(ToolDefinition { name:name.into(), description:description.into(), input_schema:json!({"type":"object","properties":properties,"required":required,"additionalProperties":false}) });
+            }
+        }
         definitions.push(ToolDefinition{name:"recall".into(),description:"Search this Session's raw immutable messages, including history before compaction. Literal case-sensitive substring; opaque provider state excluded. Bounded scan pages may contain no matches; follow next_before_message_seq until exhausted.".into(),input_schema:json!({"type":"object","properties":{"query":{"type":"string","minLength":1,"maxLength":512},"limit":{"type":"integer","minimum":1,"maximum":20,"default":10},"before_message_seq":{"type":"integer","minimum":0}},"required":["query"],"additionalProperties":false})});
         definitions.extend([
             ToolDefinition{name:"session_state".into(),description:"Read this Session's durable todo list and goal with optimistic revisions, including after compaction/restart.".into(),input_schema:json!({"type":"object","properties":{},"additionalProperties":false})},

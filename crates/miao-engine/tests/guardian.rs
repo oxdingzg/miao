@@ -6,14 +6,26 @@ use tokio::{io::AsyncWriteExt, process::Command};
 
 #[tokio::test]
 async fn engine_hard_exit_closes_lifeline_and_stops_ordinary_descendants() {
-    let tool = json!({"argv":["/bin/sh","-c","(while :; do printf x >> heartbeat; sleep 0.02; done) & wait"],"timeout_ms":120000});
-    let body=[json!({"choices":[{"index":0,"delta":{"tool_calls":[{"index":0,"id":"call","type":"function","function":{"name":"run_command","arguments":tool.to_string()}}]},"finish_reason":null}]}),json!({"choices":[{"index":0,"delta":{},"finish_reason":"tool_calls"}]})].iter().map(|e|format!("data: {e}\n\n")).collect::<String>()+"data: [DONE]\n\n";
+    hard_exit("run_command").await;
+}
+
+#[tokio::test]
+async fn terminal_owner_hard_exit_stops_ordinary_descendants() {
+    hard_exit("terminal_start").await;
+}
+
+async fn hard_exit(name: &str) {
+    let mut tool = json!({"argv":["/bin/sh","-c","(while :; do printf x >> heartbeat; sleep 0.02; done) & wait"]});
+    if name == "run_command" {
+        tool["timeout_ms"] = json!(120000);
+    }
+    let body=[json!({"choices":[{"index":0,"delta":{"tool_calls":[{"index":0,"id":"call","type":"function","function":{"name":name,"arguments":tool.to_string()}}]},"finish_reason":null}]}),json!({"choices":[{"index":0,"delta":{},"finish_reason":"tool_calls"}]})].iter().map(|e|format!("data: {e}\n\n")).collect::<String>()+"data: [DONE]\n\n";
     let (endpoint, _requests, server) = common::endpoint(vec![(200, body)]).await;
     let dir = tempfile::tempdir().unwrap();
     let workspace = dir.path().join("workspace");
     std::fs::create_dir(&workspace).unwrap();
     let policy = dir.path().join("policy.json");
-    std::fs::write(&policy,json!({"mode":"workspace","allow_process":true,"rules":[{"tool":"*","path":"**","decision":"allow"}]}).to_string()).unwrap();
+    std::fs::write(&policy,json!({"mode":"workspace","allow_process":true,"allow_background":true,"rules":[{"tool":"*","path":"**","decision":"allow"}]}).to_string()).unwrap();
     let mut child = Command::new(env!("CARGO_BIN_EXE_miao-engine"))
         .args([
             "serve",

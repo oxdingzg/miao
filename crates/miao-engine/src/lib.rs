@@ -30,6 +30,7 @@ mod search;
 pub mod state;
 pub mod store;
 pub mod subagent;
+pub mod terminal;
 pub mod tool_replay;
 pub mod tools;
 pub mod wakeup;
