@@ -117,6 +117,7 @@ import {
   win32DisableProcessedInput,
   win32EnableVirtualTerminal,
   win32FlushInputBuffer,
+  win32InstallCtrlCGuard,
 } from "./terminal-win32"
 import { destroyRenderer } from "./util/renderer"
 import { cliErrorMessage, errorFormat } from "./util/error"
@@ -213,6 +214,12 @@ export const run = Effect.fn("Tui.run")(function* (input: TuiInput) {
     Effect.gen(function* () {
       // Enable ANSI/VT on legacy Windows consoles before the renderer writes.
       win32EnableVirtualTerminal()
+      // Own the input guard here as well as at CLI startup so attach windows
+      // receive the same protection. Release after the renderer restores stdin.
+      yield* Effect.acquireRelease(
+        Effect.sync(() => win32InstallCtrlCGuard()),
+        (release) => Effect.sync(() => release?.()),
+      )
       const renderer = yield* Effect.acquireRelease(
         Effect.tryPromise({
           try: () =>
