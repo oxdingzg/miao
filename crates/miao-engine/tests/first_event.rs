@@ -65,6 +65,22 @@ async fn fixture(mode: usize) -> (String, Arc<AtomicUsize>, tokio::task::JoinHan
                         Err(_) => return,
                     }
                 }
+                // Consume the request before closing a healthy response. On
+                // Windows, unread request bytes can turn close into a TCP reset.
+                let length = String::from_utf8(header)
+                    .unwrap()
+                    .lines()
+                    .find_map(|line| {
+                        line.to_ascii_lowercase()
+                            .strip_prefix("content-length: ")
+                            .and_then(|value| value.parse::<usize>().ok())
+                    })
+                    .unwrap();
+                assert!(length < 1024 * 1024);
+                let mut body = vec![0; length];
+                if socket.read_exact(&mut body).await.is_err() {
+                    return;
+                }
                 if mode != 0 && socket.write_all(b"HTTP/1.1 200 OK\r\nContent-Type: text/event-stream\r\nConnection: close\r\n\r\n").await.is_err(){return;}
                 if mode == 2 {
                     loop {

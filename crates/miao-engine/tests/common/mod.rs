@@ -28,8 +28,10 @@ pub async fn endpoint_with_disconnects(
     let (capture, requests) = mpsc::channel(64);
     let server = tokio::spawn(async move {
         for (status, body, broken) in responses {
+            // The listener starts before client/TLS/runtime initialization.
+            // Cold Windows runners can spend more than five seconds there.
             let (mut stream, _) =
-                tokio::time::timeout(std::time::Duration::from_secs(5), listener.accept())
+                tokio::time::timeout(std::time::Duration::from_secs(30), listener.accept())
                     .await
                     .unwrap()
                     .unwrap();
