@@ -86,6 +86,7 @@ import { FrecencyProvider } from "./component/prompt/frecency"
 import { PromptStashProvider } from "./component/prompt/stash"
 import { ToastProvider, useToast } from "./ui/toast"
 import { isDefaultTitle } from "./util/session"
+import { terminalTitle } from "./util/terminal-title"
 import { Locale } from "./util/locale"
 import { sessionEpilogue } from "./util/presentation"
 import { KVProvider, useKV } from "./context/kv"
@@ -608,13 +609,12 @@ function App(props: {
         return
       }
 
-      const title = session.title.length > 40 ? session.title.slice(0, 37) + "…" : session.title
-      renderer.setTerminalTitle(`miao | ${title}`)
+      renderer.setTerminalTitle(terminalTitle(session.title))
       return
     }
 
     if (route.data.type === "plugin") {
-      renderer.setTerminalTitle(`miao | ${route.data.id}`)
+      renderer.setTerminalTitle(terminalTitle(route.data.id))
     }
   })
 
