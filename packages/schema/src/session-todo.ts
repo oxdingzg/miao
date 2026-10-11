@@ -22,6 +22,16 @@ export const Info = Schema.Struct({
 }).annotate({ identifier: "Todo" })
 export interface Info extends Schema.Schema.Type<typeof Info> {}
 
+/** A cancelled prerequisite is not complete. Shared by scheduling and UI projection. */
+export function runnable<T extends Pick<Info, "id" | "status" | "depends_on">>(todos: ReadonlyArray<T>) {
+  const byID = new Map(todos.flatMap((todo) => (todo.id === undefined ? [] : [[todo.id, todo] as const])))
+  return todos.filter(
+    (todo) =>
+      (todo.status === "pending" || todo.status === "in_progress") &&
+      (todo.depends_on ?? []).every((id) => byID.get(id)?.status === "completed"),
+  )
+}
+
 const Updated = define({
   type: "todo.updated",
   schema: {

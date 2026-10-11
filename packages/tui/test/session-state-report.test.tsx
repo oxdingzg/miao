@@ -92,6 +92,26 @@ test("terminal reports follow hydrated checklist and execution events", async ()
       }
     }
     await waitFor(() => reports.at(-1)?.state === "incomplete")
+    const waitingTasks = [
+      { id: "4", content: "CI", status: "waiting", priority: "high" },
+      { id: "5", content: "Release", status: "pending", priority: "high", depends_on: ["4"] },
+    ]
+    events.emit({
+      directory,
+      payload: { type: "todo.updated", properties: { sessionID: "ses_title", todos: waitingTasks } },
+    })
+    await waitFor(() => reports.at(-1)?.state === "waiting")
+    events.emit({
+      directory,
+      payload: {
+        type: "todo.updated",
+        properties: {
+          sessionID: "ses_title",
+          todos: [...waitingTasks, { id: "7", content: "Independent audit", status: "pending", priority: "medium" }],
+        },
+      },
+    })
+    await waitFor(() => reports.at(-1)?.state === "incomplete")
     events.emit({
       directory,
       payload: {

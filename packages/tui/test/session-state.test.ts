@@ -44,6 +44,9 @@ test("idle execution cannot declare unfinished todos completed", () => {
     completed: 1,
     cancelled: 1,
     remaining: 1,
+    runnable: 1,
+    waiting: 0,
+    blocked: 0,
   })
 })
 
@@ -83,4 +86,34 @@ test("execution and decisions outrank checklist outcome; lost observations canno
   expect(
     sessionState({ ...input, activity: { ...activity, jobs: [{ id: "lost", status: "error", startedAt: 1 }] } }),
   ).toBe("unknown")
+})
+
+test("waiting dependencies do not hide independently runnable tasks", () => {
+  const todos = [
+    { id: "4", status: "waiting" },
+    { id: "5", status: "pending", depends_on: ["4"] },
+    { id: "6", status: "pending", depends_on: ["5"] },
+  ]
+  expect(sessionState({ ...input, todos })).toBe("waiting")
+  expect(sessionState({ ...input, todos: [...todos, { id: "7", status: "pending" }] })).toBe("incomplete")
+  expect(
+    sessionState({
+      ...input,
+      todos: [...todos, { id: "7", status: "pending" }],
+      activity: {
+        ...activity,
+        jobs: [{ id: "job", status: "running", startedAt: 1 }],
+      },
+    }),
+  ).toBe("incomplete")
+  expect(
+    sessionState({
+      ...input,
+      todos: [
+        { id: "4", status: "blocked" },
+        { id: "5", status: "pending", depends_on: ["4"] },
+      ],
+    }),
+  ).toBe("awaiting")
+  expect(todoSummary(todos)).toMatchObject({ remaining: 3, runnable: 0, waiting: 1, blocked: 0 })
 })

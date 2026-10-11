@@ -209,15 +209,7 @@ function sameTodos(current: ReadonlyArray<Info>, next: ReadonlyArray<Info>) {
   )
 }
 
-/** A cancelled dependency does not satisfy a prerequisite. */
-export function runnable(todos: ReadonlyArray<Info>) {
-  const byID = new Map(todos.flatMap((todo) => (todo.id === undefined ? [] : [[todo.id, todo] as const])))
-  return todos.filter(
-    (todo) =>
-      (todo.status === "pending" || todo.status === "in_progress") &&
-      (todo.depends_on ?? []).every((id) => byID.get(id)?.status === "completed"),
-  )
-}
+export const runnable = SessionTodo.runnable
 
 /** Reject ambiguous graphs before replacing durable state. */
 export function validate(todos: ReadonlyArray<Info>): string | undefined {
