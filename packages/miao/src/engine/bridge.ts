@@ -64,11 +64,14 @@ export type SessionPromptAdmitted = {
 
 /**
  * Maps the engine's `input.promoted` event to `session.next.prompt.admitted`,
- * making the admitted user message visible on the shell. The engine delivers
- * promotions as `steer` by default; a `queue` delivery would ride the same event
- * once the engine surfaces the mode.
+ * making the admitted user message visible on the shell. Stateful callers use
+ * the delivery from the matching durable admission; the standalone default
+ * retains the legacy steering-only helper contract.
  */
-export function translatePrompt(event: EngineEvent): SessionPromptAdmitted | undefined {
+export function translatePrompt(
+  event: EngineEvent,
+  delivery: "steer" | "queue" = "steer",
+): SessionPromptAdmitted | undefined {
   if (event.kind !== "input.promoted") return undefined
   if (typeof event.data !== "object" || event.data === null || !("prompt" in event.data)) return undefined
   const text = event.data.prompt
@@ -78,7 +81,34 @@ export function translatePrompt(event: EngineEvent): SessionPromptAdmitted | und
     timestamp: eventTimestamp(event),
     messageID: messageID(event.session_id, event.seq),
     prompt: { text },
-    delivery: "steer",
+    delivery,
+  }
+}
+
+/** Retain authoritative admission facts until the matching promotion arrives. */
+export class PromptBridge {
+  #pending = new Map<string, Map<string, "steer" | "queue">>()
+
+  project(event: EngineEvent): SessionPromptAdmitted | undefined {
+    if (typeof event.data !== "object" || event.data === null || !("input_id" in event.data)) return
+    if (typeof event.data.input_id !== "string") return
+    if (event.kind === "input.admitted") {
+      if (!("delivery" in event.data) || (event.data.delivery !== "steer" && event.data.delivery !== "queue")) return
+      const inputs = this.#pending.get(event.session_id) ?? new Map<string, "steer" | "queue">()
+      inputs.set(event.data.input_id, event.data.delivery)
+      this.#pending.set(event.session_id, inputs)
+      return
+    }
+    if (event.kind !== "input.promoted") return
+    const inputs = this.#pending.get(event.session_id)
+    if (!inputs) return
+    const delivery = inputs.get(event.data.input_id)
+    if (!delivery) return
+    const output = translatePrompt(event, delivery)
+    if (!output) return
+    inputs.delete(event.data.input_id)
+    if (!inputs.size) this.#pending.delete(event.session_id)
+    return output
   }
 }
 
