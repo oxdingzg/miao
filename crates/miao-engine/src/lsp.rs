@@ -1,8 +1,9 @@
 use crate::{protocol::Error, tools::ToolError};
 use serde::Deserialize;
 use serde_json::{json, Value};
+use sha2::{Digest, Sha256};
 use std::{
-    collections::{BTreeMap, BTreeSet},
+    collections::BTreeMap,
     path::{Path, PathBuf},
     process::Stdio,
     sync::Arc,
@@ -32,6 +33,7 @@ pub struct Query {
     pub path: String,
     pub line: u32,
     pub character: u32,
+    pub query: String,
 }
 impl Query {
     pub fn parse(name: &str, input: Value) -> Result<Self, ToolError> {
@@ -39,24 +41,36 @@ impl Query {
         #[serde(deny_unknown_fields)]
         struct Position {
             path: String,
-            #[serde(default)]
-            line: u32,
-            #[serde(default)]
-            character: u32,
+            line: Option<u32>,
+            character: Option<u32>,
+            query: Option<String>,
         }
         let parsed: Position =
             serde_json::from_value(input).map_err(|_| ToolError::InvalidInput)?;
         if parsed.path.is_empty() || parsed.path.len() > 4096 {
             return Err(ToolError::InvalidInput);
         }
-        if name != "lsp_diagnostics" && (parsed.line > 10_000_000 || parsed.character > 10_000_000)
+        let position = !matches!(
+            name,
+            "lsp_diagnostics" | "lsp_document_symbols" | "lsp_workspace_symbols"
+        );
+        if position && (parsed.line.is_none() || parsed.character.is_none())
+            || !position && (parsed.line.is_some() || parsed.character.is_some())
+            || parsed.line.is_some_and(|value| value > 10_000_000)
+            || parsed.character.is_some_and(|value| value > 10_000_000)
+            || name != "lsp_workspace_symbols" && parsed.query.is_some()
+            || parsed
+                .query
+                .as_ref()
+                .is_some_and(|query| query.len() > 4096)
         {
             return Err(ToolError::InvalidInput);
         }
         Ok(Self {
             path: parsed.path,
-            line: parsed.line,
-            character: parsed.character,
+            line: parsed.line.unwrap_or_default(),
+            character: parsed.character.unwrap_or_default(),
+            query: parsed.query.unwrap_or_default(),
         })
     }
 }
@@ -66,7 +80,13 @@ struct Client {
     write: Box<dyn AsyncWrite + Unpin + Send>,
     next: u64,
     initialized: bool,
-    opened: BTreeSet<String>,
+    opened: BTreeMap<String, Document>,
+}
+
+struct Document {
+    fingerprint: [u8; 32],
+    version: u32,
+    diagnostics: Option<Vec<Value>>,
 }
 
 impl Client {
@@ -79,7 +99,7 @@ impl Client {
             write: Box::new(write),
             next: 1,
             initialized: false,
-            opened: BTreeSet::new(),
+            opened: BTreeMap::new(),
         }
     }
 
@@ -130,7 +150,7 @@ impl Client {
         }
         let id = self.next;
         self.next += 1;
-        self.send(&json!({"jsonrpc":"2.0","id":id,"method":"initialize","params":{"processId":null,"rootUri":format!("file://{}", root.display()),"capabilities":{}}})).await?;
+        self.send(&json!({"jsonrpc":"2.0","id":id,"method":"initialize","params":{"processId":null,"rootUri":uri(root)?,"capabilities":{"textDocument":{"publishDiagnostics":{"versionSupport":true}}}}})).await?;
         loop {
             let frame = self
                 .read_frame()
@@ -154,10 +174,63 @@ impl Client {
     }
 
     async fn open(&mut self, uri: &str, language: &str, text: &str) -> Result<(), Error> {
-        if self.opened.insert(uri.to_owned()) {
-            self.send(&json!({"jsonrpc":"2.0","method":"textDocument/didOpen","params":{"textDocument":{"uri":uri,"languageId":language,"version":1,"text":text}}})).await?;
+        let fingerprint: [u8; 32] = Sha256::digest(text.as_bytes()).into();
+        if let Some(document) = self.opened.get(uri) {
+            if document.fingerprint == fingerprint {
+                return Ok(());
+            }
+            let version = document
+                .version
+                .checked_add(1)
+                .ok_or_else(|| Error::Invalid("LSP document version exhausted".into()))?;
+            self.send(&json!({"jsonrpc":"2.0","method":"textDocument/didChange","params":{"textDocument":{"uri":uri,"version":version},"contentChanges":[{"text":text}]}})).await?;
+            self.opened.insert(
+                uri.to_owned(),
+                Document {
+                    fingerprint,
+                    version,
+                    diagnostics: None,
+                },
+            );
+            return Ok(());
         }
+        // Bound retained document state; closing a document lets the server
+        // discard its corresponding text and diagnostics as well.
+        if self.opened.len() >= 128 {
+            let oldest = self.opened.keys().next().cloned().unwrap();
+            self.send(&json!({"jsonrpc":"2.0","method":"textDocument/didClose","params":{"textDocument":{"uri":oldest}}})).await?;
+            self.opened.remove(&oldest);
+        }
+        self.send(&json!({"jsonrpc":"2.0","method":"textDocument/didOpen","params":{"textDocument":{"uri":uri,"languageId":language,"version":1,"text":text}}})).await?;
+        self.opened.insert(
+            uri.to_owned(),
+            Document {
+                fingerprint,
+                version: 1,
+                diagnostics: None,
+            },
+        );
         Ok(())
+    }
+
+    fn retain_diagnostics(&mut self, frame: &Value) {
+        if frame["method"] != "textDocument/publishDiagnostics" {
+            return;
+        }
+        let Some(document) = frame["params"]["uri"]
+            .as_str()
+            .and_then(|uri| self.opened.get_mut(uri))
+        else {
+            return;
+        };
+        if let Some(version) = frame["params"]["version"].as_u64() {
+            if version != u64::from(document.version) {
+                return;
+            }
+        }
+        document.diagnostics = frame["params"]["diagnostics"]
+            .as_array()
+            .map(|items| items.iter().take(256).cloned().collect());
     }
 
     async fn request(
@@ -186,11 +259,16 @@ impl Client {
                 self.answer_server_request(&frame).await?;
                 continue;
             }
+            self.retain_diagnostics(&frame);
             if frame.get("id") == Some(&json!(id)) {
                 if frame.get("error").is_some() {
                     return Err(Error::Invalid(format!("LSP {method} failed")));
                 }
-                return Ok(frame.get("result").cloned().unwrap_or(Value::Null));
+                let result = frame.get("result").cloned().unwrap_or(Value::Null);
+                if serde_json::to_vec(&result)?.len() > 64 * 1024 {
+                    return Err(Error::Invalid("LSP result exceeds 64 KiB".into()));
+                }
+                return Ok(result);
             }
         }
     }
@@ -206,27 +284,36 @@ impl Client {
         wait: Duration,
     ) -> Result<Vec<Value>, Error> {
         self.open(uri, language, text).await?;
+        if let Some(diagnostics) = self
+            .opened
+            .get(uri)
+            .and_then(|document| document.diagnostics.clone())
+        {
+            return Ok(diagnostics);
+        }
         let deadline = tokio::time::Instant::now() + wait;
         loop {
             let remaining = deadline.saturating_duration_since(tokio::time::Instant::now());
             if remaining.is_zero() {
-                return Ok(Vec::new());
+                return Err(Error::Invalid("LSP diagnostics timed out".into()));
             }
             let frame = match tokio::time::timeout(remaining, self.read_frame()).await {
                 Ok(Ok(Some(frame))) => frame,
-                Ok(Ok(None)) | Ok(Err(_)) | Err(_) => return Ok(Vec::new()),
+                Ok(Ok(None)) => return Err(Error::Invalid("LSP server closed".into())),
+                Ok(Err(error)) => return Err(error),
+                Err(_) => return Err(Error::Invalid("LSP diagnostics timed out".into())),
             };
             if frame.get("id").is_some() && frame.get("method").is_some() {
                 self.answer_server_request(&frame).await?;
                 continue;
             }
-            if frame["method"] == "textDocument/publishDiagnostics" && frame["params"]["uri"] == uri
+            self.retain_diagnostics(&frame);
+            if let Some(diagnostics) = self
+                .opened
+                .get(uri)
+                .and_then(|document| document.diagnostics.clone())
             {
-                let diagnostics = frame["params"]["diagnostics"]
-                    .as_array()
-                    .cloned()
-                    .unwrap_or_default();
-                return Ok(diagnostics.into_iter().take(256).collect());
+                return Ok(diagnostics);
             }
         }
     }
@@ -341,7 +428,8 @@ impl Registry {
         let config = self
             .config_for(path)
             .ok_or_else(|| Error::Invalid("no LSP server for this file".into()))?;
-        if let Some(server) = self.clients.lock().await.get(&config.name) {
+        let mut clients = self.clients.lock().await;
+        if let Some(server) = clients.get(&config.name) {
             return Ok(server.clone());
         }
         let mut command = Command::new(&config.argv[0]);
@@ -379,10 +467,7 @@ impl Registry {
         let server = Arc::new(Server {
             client: Mutex::new(client),
         });
-        self.clients
-            .lock()
-            .await
-            .insert(config.name.clone(), server.clone());
+        clients.insert(config.name.clone(), server.clone());
         Ok(server)
     }
 
@@ -392,13 +477,18 @@ impl Registry {
             .config_for(path)
             .map(|config| config.name.clone())
             .unwrap_or_else(|| "plaintext".into());
-        let text = tokio::fs::read_to_string(path)
-            .await
-            .map_err(|_| Error::Invalid("LSP target must be readable UTF-8".into()))?;
-        if text.len() > 1024 * 1024 {
+        let mut bytes = Vec::new();
+        tokio::fs::File::open(path)
+            .await?
+            .take(1024 * 1024 + 1)
+            .read_to_end(&mut bytes)
+            .await?;
+        if bytes.len() > 1024 * 1024 {
             return Err(Error::Invalid("LSP target exceeds 1 MiB".into()));
         }
-        Ok((server, uri(path), language, text))
+        let text = String::from_utf8(bytes)
+            .map_err(|_| Error::Invalid("LSP target must be readable UTF-8".into()))?;
+        Ok((server, uri(path)?, language, text))
     }
 
     pub async fn diagnostics(&self, path: &Path) -> Result<Value, ToolError> {
@@ -466,6 +556,83 @@ impl Registry {
             .map_err(|_| ToolError::External("LSP references failed".into()))
     }
 
+    pub async fn query(&self, name: &str, path: &Path, query: Query) -> Result<Value, ToolError> {
+        let (server, uri, language, text) = self
+            .document(path)
+            .await
+            .map_err(|_| ToolError::External("LSP document failed".into()))?;
+        let mut client = server.client.lock().await;
+        client
+            .open(&uri, &language, &text)
+            .await
+            .map_err(|_| ToolError::External("LSP document synchronization failed".into()))?;
+        let position = json!({"textDocument":{"uri":uri},"position":{"line":query.line,"character":query.character}});
+        let (method, params) = match name {
+            "lsp_hover" => ("textDocument/hover", position),
+            "lsp_implementation" => ("textDocument/implementation", position),
+            "lsp_document_symbols" => (
+                "textDocument/documentSymbol",
+                json!({"textDocument":{"uri":uri}}),
+            ),
+            "lsp_workspace_symbols" => ("workspace/symbol", json!({"query":query.query})),
+            "lsp_call_hierarchy" | "lsp_incoming_calls" | "lsp_outgoing_calls" => {
+                ("textDocument/prepareCallHierarchy", position)
+            }
+            _ => return Err(ToolError::Unsupported),
+        };
+        let deadline = tokio::time::Instant::now() + Duration::from_secs(10);
+        let result = client
+            .request(method, params, Duration::from_secs(10))
+            .await
+            .map_err(|_| ToolError::External(format!("LSP {name} failed")))?;
+        if !matches!(name, "lsp_incoming_calls" | "lsp_outgoing_calls") {
+            return Ok(result);
+        }
+        let items = match result {
+            Value::Null => return Ok(json!([])),
+            Value::Array(items) if items.len() <= 16 => items,
+            _ => {
+                return Err(ToolError::External(
+                    "LSP call hierarchy exceeds item limit".into(),
+                ))
+            }
+        };
+        let method = if name == "lsp_incoming_calls" {
+            "callHierarchy/incomingCalls"
+        } else {
+            "callHierarchy/outgoingCalls"
+        };
+        let mut calls = Vec::new();
+        for item in items {
+            let result = client
+                .request(
+                    method,
+                    json!({"item":item}),
+                    deadline.saturating_duration_since(tokio::time::Instant::now()),
+                )
+                .await
+                .map_err(|_| ToolError::External(format!("LSP {name} failed")))?;
+            if let Value::Array(items) = result {
+                calls.extend(items);
+            }
+            if calls.len() > 256 {
+                return Err(ToolError::External(
+                    "LSP call hierarchy exceeds result limit".into(),
+                ));
+            }
+        }
+        if serde_json::to_vec(&calls)
+            .map_err(|_| ToolError::InvalidInput)?
+            .len()
+            > 64 * 1024
+        {
+            return Err(ToolError::External(
+                "LSP call hierarchy exceeds result budget".into(),
+            ));
+        }
+        Ok(Value::Array(calls))
+    }
+
     pub async fn shutdown(&self) {
         for server in self.clients.lock().await.values() {
             let mut client = server.client.lock().await;
@@ -481,8 +648,15 @@ impl Registry {
     }
 }
 
-fn uri(path: &Path) -> String {
-    format!("file://{}", path.display())
+fn uri(path: &Path) -> Result<String, Error> {
+    let path = if path.is_absolute() {
+        path.to_owned()
+    } else {
+        std::env::current_dir()?.join(path)
+    };
+    reqwest::Url::from_file_path(path)
+        .map(String::from)
+        .map_err(|_| Error::Invalid("invalid LSP file path".into()))
 }
 
 fn validate_name(name: &str) -> Result<(), Error> {

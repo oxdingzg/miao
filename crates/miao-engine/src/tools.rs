@@ -398,7 +398,18 @@ impl Tools {
                 crate::recall::Query::parse(input.clone())?;
                 ".".into()
             }
-            "lsp_diagnostics" | "lsp_definition" | "lsp_references" if self.lsp.is_some() => {
+            "lsp_diagnostics"
+            | "lsp_definition"
+            | "lsp_references"
+            | "lsp_hover"
+            | "lsp_implementation"
+            | "lsp_document_symbols"
+            | "lsp_workspace_symbols"
+            | "lsp_call_hierarchy"
+            | "lsp_incoming_calls"
+            | "lsp_outgoing_calls"
+                if self.lsp.is_some() =>
+            {
                 crate::lsp::Query::parse(name, input.clone())?.path
             }
             "task" if self.delegation_enabled => {
@@ -661,7 +672,16 @@ impl Tools {
         }
         if matches!(
             prepared.name.as_str(),
-            "lsp_diagnostics" | "lsp_definition" | "lsp_references"
+            "lsp_diagnostics"
+                | "lsp_definition"
+                | "lsp_references"
+                | "lsp_hover"
+                | "lsp_implementation"
+                | "lsp_document_symbols"
+                | "lsp_workspace_symbols"
+                | "lsp_call_hierarchy"
+                | "lsp_incoming_calls"
+                | "lsp_outgoing_calls"
         ) {
             let registry = self.lsp.as_ref().ok_or(ToolError::Unsupported)?;
             let query = crate::lsp::Query::parse(&prepared.name, prepared.input)?;
@@ -678,7 +698,7 @@ impl Tools {
                         .references(&prepared.path, query.line, query.character)
                         .await
                 }
-                _ => Err(ToolError::Unsupported),
+                _ => registry.query(&prepared.name, &prepared.path, query).await,
             };
         }
         if prepared.name == "glob" || prepared.name == "grep" {
@@ -724,11 +744,34 @@ impl Tools {
         if self.lsp.is_none() {
             return Vec::new();
         }
-        vec![
-            ToolDefinition{name:"lsp_diagnostics".into(),description:"Return language-server diagnostics for a workspace file. Read-only, bounded and time-limited.".into(),input_schema:json!({"type":"object","properties":{"path":{"type":"string"}},"required":["path"],"additionalProperties":false})},
-            ToolDefinition{name:"lsp_definition".into(),description:"Return the definition location(s) at a 0-based line/character in a workspace file. Read-only and time-limited.".into(),input_schema:json!({"type":"object","properties":{"path":{"type":"string"},"line":{"type":"integer","minimum":0,"maximum":10000000},"character":{"type":"integer","minimum":0,"maximum":10000000}},"required":["path","line","character"],"additionalProperties":false})},
-            ToolDefinition{name:"lsp_references".into(),description:"Return reference locations for the symbol at a 0-based line/character, including the declaration. Read-only and time-limited.".into(),input_schema:json!({"type":"object","properties":{"path":{"type":"string"},"line":{"type":"integer","minimum":0,"maximum":10000000},"character":{"type":"integer","minimum":0,"maximum":10000000}},"required":["path","line","character"],"additionalProperties":false})},
-        ]
+        [
+            ("lsp_diagnostics", "Return current language-server diagnostics for a workspace file."),
+            ("lsp_definition", "Return definition locations at a 0-based line and UTF-16 character."),
+            ("lsp_references", "Return reference locations, including the declaration, at a 0-based line and UTF-16 character."),
+            ("lsp_hover", "Return type and documentation at a 0-based line and UTF-16 character."),
+            ("lsp_implementation", "Return implementation locations at a 0-based line and UTF-16 character."),
+            ("lsp_document_symbols", "Return symbols in a workspace file."),
+            ("lsp_workspace_symbols", "Search workspace symbols using a query; path selects the language server."),
+            ("lsp_call_hierarchy", "Prepare call hierarchy at a 0-based line and UTF-16 character."),
+            ("lsp_incoming_calls", "Return incoming calls at a 0-based line and UTF-16 character."),
+            ("lsp_outgoing_calls", "Return outgoing calls at a 0-based line and UTF-16 character."),
+        ].into_iter().map(|(name, description)| {
+            let mut properties = json!({"path":{"type":"string","minLength":1,"maxLength":4096}});
+            let mut required = vec!["path"];
+            if !matches!(name, "lsp_diagnostics" | "lsp_document_symbols" | "lsp_workspace_symbols") {
+                properties["line"] = json!({"type":"integer","minimum":0,"maximum":10000000});
+                properties["character"] = json!({"type":"integer","minimum":0,"maximum":10000000});
+                required.extend(["line", "character"]);
+            }
+            if name == "lsp_workspace_symbols" {
+                properties["query"] = json!({"type":"string","maxLength":4096,"default":""});
+            }
+            ToolDefinition {
+                name: name.into(),
+                description: format!("{description} Read-only, bounded and time-limited. File content is synchronized before queries."),
+                input_schema: json!({"type":"object","properties":properties,"required":required,"additionalProperties":false}),
+            }
+        }).collect()
     }
 
     pub fn definitions(&self) -> Vec<ToolDefinition> {

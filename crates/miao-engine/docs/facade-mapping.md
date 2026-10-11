@@ -29,7 +29,7 @@ external tools fall back to a generic/plugin renderer.
 | `recall` | `recall` |
 | `session_state` | state (generic) |
 | `schedule_wakeup`, `cancel_wakeup`, `cron_*` | `schedule` |
-| `lsp_diagnostics`, `lsp_definition`, `lsp_references` | `lsp` |
+| `lsp_diagnostics`, `lsp_definition`, `lsp_references`, `lsp_hover`, `lsp_implementation`, `lsp_document_symbols`, `lsp_workspace_symbols`, `lsp_call_hierarchy`, `lsp_incoming_calls`, `lsp_outgoing_calls` | `lsp` |
 | `worker__*`, MCP aliases | `custom` / `plugin-tool` (generic) |
 
 The tool *input schema* is the engine's; the facade translates input/output to
