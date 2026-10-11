@@ -113,7 +113,9 @@ async fn interactive_terminal_input_resize_replay_and_session_isolation() {
             .unwrap()["terminals"],
         json!([])
     );
-    registry.shutdown().await;
+    tokio::time::timeout(Duration::from_secs(5), registry.shutdown())
+        .await
+        .unwrap();
 }
 
 #[tokio::test]
@@ -143,10 +145,13 @@ async fn terminal_stop_and_shutdown_reap_processes_and_bound_output() {
         .execute("a", "terminal_read", json!({"id":id,"cursor":u64::MAX}))
         .await
         .is_err());
-    let stopped = registry
-        .execute("a", "terminal_stop", json!({"id":id}))
-        .await
-        .unwrap();
+    let stopped = tokio::time::timeout(
+        Duration::from_secs(5),
+        registry.execute("a", "terminal_stop", json!({"id":id})),
+    )
+    .await
+    .unwrap()
+    .unwrap();
     assert_eq!(stopped["exit"]["reason"], "stopped");
     let started = registry
         .start(
@@ -167,7 +172,9 @@ async fn terminal_stop_and_shutdown_reap_processes_and_bound_output() {
         .trim()
         .parse()
         .unwrap();
-    registry.shutdown().await;
+    tokio::time::timeout(Duration::from_secs(5), registry.shutdown())
+        .await
+        .unwrap();
     assert_eq!(unsafe { libc::kill(pid, 0) }, -1);
 }
 
@@ -205,7 +212,7 @@ impl miao_engine::provider::Provider for Workflow {
                 .any(|tool| tool.name == "terminal_start"));
             (
                 "terminal_start",
-                json!({"argv":["bash","-c","while IFS= read -r line; do printf 'RESULT:%s\\n' \"$line\"; done"]}),
+                json!({"argv":["bash","-c","sleep 0.5; echo READY; while IFS= read -r line; do printf 'RESULT:%s\\n' \"$line\"; done"]}),
             )
         } else {
             let result = result.unwrap();
@@ -213,7 +220,16 @@ impl miao_engine::provider::Provider for Workflow {
                 *self.terminal.lock().await = Some(id.into());
             }
             let id = self.terminal.lock().await.clone().unwrap();
-            if !result["max_lifetime_ms"].is_null() {
+            let written = request
+                .messages
+                .iter()
+                .flat_map(|message| message.content.as_array().into_iter().flatten())
+                .any(|block| block["type"] == "tool_use" && block["name"] == "terminal_write");
+            if result["output"]
+                .as_str()
+                .is_some_and(|text| text.contains("READY"))
+                && !written
+            {
                 ("terminal_write", json!({"id":id,"input":"runtime\n"}))
             } else if result["output"]
                 .as_str()

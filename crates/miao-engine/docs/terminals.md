@@ -8,6 +8,10 @@ its existing confined foreground process support is unchanged.
 - `terminal_start` accepts `argv`, workspace-relative `cwd`, `rows`, and `cols`.
   A shell is explicit, e.g. `argv: ["bash"]`; no shell parsing is implied for
   ordinary argv. Start is authorized before spawning and revalidates placement.
+- Read the program's startup prompt before sending input; startup code may flush
+  early keystrokes. Running-terminal reads are polling, so identical pending
+  output does not trigger the identical-result loop guard; the provider-turn
+  allowance still bounds polling.
 - Write sends exact bytes, including control characters/newlines. It is not a
   new Bash command: it addresses the authorized Session-owned terminal. Write
   and other controls still pass through tool admission and permission policy.

@@ -239,7 +239,20 @@ impl Registry {
             group.signal(libc::SIGKILL);
             if status.is_none() {
                 let _ = group.child.start_kill();
-                status = group.child.wait().await.ok();
+                // On macOS a dying controlling-terminal owner can remain in
+                // kernel exit while queued output awaits a master reader.
+                // Reaping and draining must overlap, including after SIGKILL.
+                loop {
+                    tokio::select! {
+                        biased;
+                        exit = group.child.wait() => { status = exit.ok(); break; }
+                        read = read_master(&master, &mut buffer), if !eof => match read {
+                            Ok(0) => eof = true,
+                            Ok(size) => captured.lock().await.append(&buffer[..size]),
+                            Err(_) => eof = true,
+                        }
+                    }
+                }
             }
             // Drain only already available bytes after reaping; escaped slave
             // holders cannot keep shutdown or terminal_stop waiting forever.

@@ -995,6 +995,9 @@ async fn execute(
                 let signature = serde_json::to_string(
                     &json!({"name":name,"input":block["input"],"output":output,"is_error":is_error}),
                 )?;
+                let polling_terminal = name == "terminal_read"
+                    && !is_error
+                    && output.get("exit").is_some_and(Value::is_null);
                 inner
                     .store
                     .tool_result(session, run, id, output, is_error)
@@ -1008,6 +1011,9 @@ async fn execute(
                     )
                     .await?;
                 run_hooks(inner, session, crate::events::Lifecycle::PostToolUse, name).await?;
+                if polling_terminal {
+                    continue;
+                }
                 let repeat = repeats.entry(signature).or_default();
                 *repeat += 1;
                 if *repeat >= 3 {
