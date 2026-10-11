@@ -34,6 +34,29 @@ const config = (llm: string, skills?: string) => ({
 })
 
 describe("acp V2 adapter", () => {
+  cliIt.live("reasoning blocks have distinct stable identities in live updates and loaded history", ({ home, llm, opencode }) =>
+    Effect.gen(function* () {
+      const server = yield* opencode.serve({ env: { MIAO_CONFIG_CONTENT: JSON.stringify(config(llm.url)) } })
+      const acp = yield* connect(server.url)
+      const created = yield* Effect.promise(() => acp.conn.newSession({ cwd: home, mcpServers: [] }))
+      const sessionId = created.sessionId
+      yield* llm.push(reply().reason("first thought").text("first answer").reason("later thought").text("final answer").stop())
+      yield* Effect.promise(() => acp.conn.prompt({ sessionId, prompt: [{ type: "text", text: "first" }] }))
+      yield* llm.reason("second thought", { text: "second answer" })
+      yield* Effect.promise(() => acp.conn.prompt({ sessionId, prompt: [{ type: "text", text: "second" }] }))
+      const thoughts = acp.of(sessionId, "agent_thought_chunk")
+      const answers = acp.of(sessionId, "agent_message_chunk")
+      expect(new Set(thoughts.map((item) => item.messageId)).size).toBe(3)
+      expect(thoughts.every((thought) => !answers.some((answer) => answer.messageId === thought.messageId))).toBe(true)
+      const reload = yield* connect(server.url)
+      yield* Effect.promise(() => reload.conn.loadSession({ sessionId, cwd: home, mcpServers: [] }))
+      expect(reload.of(sessionId, "agent_thought_chunk").map((item) => item.messageId)).toEqual(
+        [...new Set(thoughts.map((item) => item.messageId))],
+      )
+      expect(reload.text(sessionId, "agent_thought_chunk")).toBe("first thoughtlater thoughtsecond thought")
+    }),
+  )
+
   cliIt.live(
     "drives a session: stream, approve with diff, reject, plan, cancel, switch, list, fork, reload",
     ({ home, llm, opencode }) =>
