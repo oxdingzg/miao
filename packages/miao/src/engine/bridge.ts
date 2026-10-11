@@ -177,6 +177,13 @@ const TOOL_IDS: Record<string, string> = {
   lsp_diagnostics: "lsp",
   lsp_definition: "lsp",
   lsp_references: "lsp",
+  lsp_hover: "lsp",
+  lsp_implementation: "lsp",
+  lsp_document_symbols: "lsp",
+  lsp_workspace_symbols: "lsp",
+  lsp_call_hierarchy: "lsp",
+  lsp_incoming_calls: "lsp",
+  lsp_outgoing_calls: "lsp",
 }
 
 /**
