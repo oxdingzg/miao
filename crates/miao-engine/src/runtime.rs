@@ -38,6 +38,7 @@ struct Inner {
     tool_replay: Option<ToolReplay>,
     actors: Mutex<HashMap<String, Actor>>,
     jobs: Mutex<HashMap<String, Background>>,
+    terminals: crate::terminal::Registry,
     timers: Mutex<HashMap<String, Background>>,
     crons: Mutex<HashMap<String, Background>>,
     job_slots: Arc<Semaphore>,
@@ -145,6 +146,7 @@ impl Runtime {
                 tool_replay,
                 actors: Mutex::new(HashMap::new()),
                 jobs: Mutex::new(HashMap::new()),
+                terminals: crate::terminal::Registry::default(),
                 timers: Mutex::new(HashMap::new()),
                 crons: Mutex::new(HashMap::new()),
                 job_slots: Arc::new(Semaphore::new(2)),
@@ -348,6 +350,7 @@ impl Runtime {
 
     pub async fn shutdown(&self) {
         self.inner.stop.cancel();
+        self.inner.terminals.shutdown().await;
         let actors = std::mem::take(&mut *self.inner.actors.lock().await);
         for (_, actor) in actors {
             let _ = actor.join.await;
@@ -935,6 +938,12 @@ async fn execute(
                                 }
                                 "start_job" => {
                                     start_background(inner, session, run, id, prepared).await
+                                }
+                                "terminal_start" => {
+                                    inner.tools.start_terminal(&inner.terminals, session, prepared, cancel.child_token()).await
+                                }
+                                "terminal_read" | "terminal_write" | "terminal_resize" | "terminal_list" | "terminal_stop" => {
+                                    inner.terminals.execute(session, name, prepared.input().clone()).await
                                 }
                                 "job_status" => {
                                     match crate::jobs::Selector::parse(prepared.input().clone()) {
