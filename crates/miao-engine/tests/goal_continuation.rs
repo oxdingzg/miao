@@ -107,7 +107,8 @@ async fn setup(
         .unwrap();
 }
 async fn finished(store: &Store) {
-    tokio::time::timeout(std::time::Duration::from_secs(5), async {
+    // Windows runners may need several seconds for 25 durable provider turns.
+    tokio::time::timeout(std::time::Duration::from_secs(30), async {
         loop {
             if store
                 .events("s", 0, 500)
