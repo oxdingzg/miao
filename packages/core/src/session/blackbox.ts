@@ -1,6 +1,7 @@
 export * as SessionBlackbox from "./blackbox"
 
 import path from "node:path"
+import { createHash } from "node:crypto"
 import { Context, Effect, Exit, Stream, Schema, Cause, Option } from "effect"
 import { LLMError, LLMEvent, ToolOutput, ToolResultValue, type LLMRequest } from "@miao/llm"
 import { ToolRegistry } from "../tool/registry"
@@ -50,7 +51,9 @@ const Settlement = Schema.Struct({
 const snapshot = (value: unknown) =>
   BlackboxTape.json(Schema.decodeUnknownSync(Schema.UnknownFromJsonString)(JSON.stringify(value)))
 
-export function requestValue(request: LLMRequest) {
+export type ExecutionProfile = { agentID: string; agent: unknown; permissions: unknown }
+
+export function requestValue(request: LLMRequest, execution?: ExecutionProfile) {
   // Route values close over auth functions. Only transport-free model identity
   // and semantic inputs belong in the recording; never serialize a route.
   const ids = new Map<string, string>()
@@ -70,17 +73,41 @@ export function requestValue(request: LLMRequest) {
     providerOptions: request.providerOptions,
     responseFormat: request.responseFormat,
     cache: request.cache,
+    execution: execution
+      ? {
+          coverage: "runtime-agent-permission-service",
+          timing: "provider-turn-admission",
+          agentID: execution.agentID,
+          agentManifestHash:
+            execution.agent == null
+              ? null
+              : createHash("sha256")
+                  .update(BlackboxTape.canonical(snapshot(execution.agent)))
+                  .digest("hex"),
+          permissionHash:
+            execution.permissions == null
+              ? null
+              : createHash("sha256")
+                  .update(BlackboxTape.canonical(snapshot(execution.permissions)))
+                  .digest("hex"),
+        }
+      : undefined,
   })
 }
 
-export function stream<R>(sessionID: string, request: LLMRequest, live: () => Stream.Stream<LLMEvent, LLMError, R>) {
+export function stream<R>(
+  sessionID: string,
+  request: LLMRequest,
+  live: () => Stream.Stream<LLMEvent, LLMError, R>,
+  execution?: ExecutionProfile,
+) {
   const source: { value?: Stream.Stream<LLMEvent, LLMError, R> } = {}
   return Stream.unwrap(
     Effect.gen(function* () {
       const port = yield* Current
       if (!port) return (source.value ??= live())
       const tape = yield* Effect.promise(() => port.get(sessionID))
-      const input = requestValue(request)
+      const input = requestValue(request, execution)
       if (tape instanceof BlackboxTape.Replay) {
         const recorded = yield* Effect.sync(() => tape.take("llm", input))
         const frames = Stream.fromIterable(recorded.frames).pipe(

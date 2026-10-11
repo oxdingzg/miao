@@ -343,9 +343,9 @@ describe("PermissionV2", () => {
         effect: "allow",
       })
       expect(yield* service.list()).toEqual([])
-      expect(
-        yield* service.ask(assertion({ action: "bash", resources: ["git status", "ls -la"] })),
-      ).toMatchObject({ effect: "allow" })
+      expect(yield* service.ask(assertion({ action: "bash", resources: ["git status", "ls -la"] }))).toMatchObject({
+        effect: "allow",
+      })
       expect(yield* service.list()).toEqual([])
     }),
   )
@@ -368,7 +368,9 @@ describe("PermissionV2", () => {
       ).toMatchObject({ effect: "ask" })
       yield* service.reply({ requestID: PermissionV2.ID.make("per_outside"), reply: "reject" })
       expect(
-        yield* service.ask(assertion({ id: PermissionV2.ID.create("per_rm"), action: "bash", resources: ["rm -rf build"] })),
+        yield* service.ask(
+          assertion({ id: PermissionV2.ID.create("per_rm"), action: "bash", resources: ["rm -rf build"] }),
+        ),
       ).toMatchObject({ effect: "ask" })
       yield* service.reply({ requestID: PermissionV2.ID.make("per_rm"), reply: "reject" })
       expect(
@@ -403,3 +405,35 @@ describe("PermissionV2", () => {
     }),
   )
 })
+
+it.effect("runtime snapshots retain configured deny precedence, saved approvals, and auto mode", () =>
+  Effect.gen(function* () {
+    const rules: PermissionV2.Ruleset = [
+      { action: "read", resource: "*", effect: "ask" },
+      { action: "read", resource: "private/*", effect: "deny" },
+    ]
+    yield* setup(rules, "auto")
+    const saved = yield* PermissionSaved.Service
+    yield* saved.add({ projectID: Project.ID.global, action: "read", resources: ["private/*", "public/*"] })
+    const permission = yield* PermissionV2.Service
+    if (!permission.snapshot) throw new Error("missing runtime snapshot")
+    const profile = yield* permission.snapshot(SessionV2.ID.make("ses_test"))
+    expect(profile).toMatchObject({
+      coverage: "permission-service",
+      configured: { rules, mode: "auto" },
+      saved: [
+        { action: "read", resource: "private/*", effect: "allow" },
+        { action: "read", resource: "public/*", effect: "allow" },
+      ],
+    })
+    expect(yield* permission.assert(assertion({ resources: ["private/key"] })).pipe(Effect.flip)).toBeInstanceOf(
+      PermissionV2.BlockedError,
+    )
+    yield* permission.assert(assertion({ resources: ["public/file"] }))
+    yield* setRules([{ action: "*", resource: "*", effect: "allow" }])
+    const changed = yield* permission.snapshot(SessionV2.ID.make("ses_test"))
+    expect(changed.configured).toEqual({ rules: [{ action: "*", resource: "*", effect: "allow" }], mode: "default" })
+    const missing = yield* permission.snapshot(SessionV2.ID.make("ses_test"), AgentV2.ID.make("absent"))
+    expect(missing.configured.rules).toEqual([{ action: "*", resource: "*", effect: "deny" }])
+  }),
+)

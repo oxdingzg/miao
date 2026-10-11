@@ -802,7 +802,18 @@ const layer = Layer.effect(
       let lastHandledAt: number | undefined
       const modelIo = SessionRunnerModelIo.collector()
       const blackbox = yield* SessionBlackbox.Current
-      const providerSource = blackbox ? SessionBlackbox.stream(session.id, request, () => llm.stream(request)) : llm.stream(request)
+      const execution = blackbox
+        ? {
+            agentID: agent.id,
+            agent: agent.info ?? null,
+            permissions: permission.snapshot
+              ? yield * permission.snapshot(session.id, agent.id).pipe(Effect.orDie)
+              : null,
+          }
+        : undefined
+      const providerSource = blackbox
+        ? SessionBlackbox.stream(session.id, request, () => llm.stream(request), execution)
+        : llm.stream(request)
       const providerStream = providerSource.pipe(
         SessionFirstByteGuard.wrap,
         SessionToolInputGuard.wrap,
