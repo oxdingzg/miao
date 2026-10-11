@@ -79,9 +79,17 @@ function renderContext(todos: ReadonlyArray<Info>, staleTurns: number) {
     "# Current session task list",
     "This is the current persisted todo list, also displayed to the user. It supersedes older todo lists in the conversation.",
     "Use todowrite to track multi-step work. Keep this list synchronized with actual progress: mark work in_progress when starting, completed immediately after finishing and verifying it, and cancelled when it is no longer required. Update it before a final response or handoff; do not leave finished work pending or mark unfinished work completed. If blocked, leave the task open and explain the blocker. Do not infer completion merely from an idle session or a successful tool call.",
-    "A background wait blocks only its dependent task. Give related tasks stable IDs and depends_on links; keep not-started dependent tasks pending, and mark external job waits waiting. Continue pending or in_progress tasks only when every depends_on task is completed. Mark tasks needing a human decision blocked. End the Session only when no runnable task remains or its execution budget is exhausted.",
+    ...(todos.length === 0
+      ? []
+      : [
+          "A background wait blocks only its dependent task. Give related tasks stable IDs and depends_on links; keep not-started dependent tasks pending, and mark external job waits waiting. Continue pending or in_progress tasks only when every depends_on task is completed. Mark tasks needing a human decision blocked. End the Session only when no runnable task remains or its execution budget is exhausted.",
+        ]),
     JSON.stringify(todos, null, 2),
-    `Runnable tasks (all prerequisites completed): ${JSON.stringify(runnable(todos).map((todo) => todo.id ?? todo.content))}`,
+    ...(todos.length === 0
+      ? []
+      : [
+          `Runnable tasks (all prerequisites completed): ${JSON.stringify(runnable(todos).map((todo) => todo.id ?? todo.content))}`,
+        ]),
   ]
   if (staleTurns > 0) {
     lines.push(

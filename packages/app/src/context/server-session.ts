@@ -370,7 +370,7 @@ export function createServerSession(
       return (options?.retry ?? retry)(() => client.sessions.todo({ sessionID })).then((result) => {
         if (generations.get(sessionID) !== active) return
         if ((todoRevisions.get(sessionID) ?? 0) !== revision) return
-        setData("todo", sessionID, reconcile([...result], { key: "id" }))
+        setData("todo", sessionID, reconcile(result.map((todo) => ({ ...todo, depends_on: todo.depends_on?.slice() })), { key: "id" }))
       })
     })
   }
