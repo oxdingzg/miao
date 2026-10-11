@@ -42,7 +42,30 @@ export async function runEnginePrompt(options: EngineRunOptions): Promise<Engine
   let finished: (() => void) | undefined
   const done = new Promise<void>((resolve) => (finished = resolve))
   let failure: Error | undefined
+  let admittedSeq: number | undefined
   let timeoutTimer: ReturnType<typeof setTimeout> | undefined
+
+  const settle = () => {
+    const sequence = admittedSeq
+    if (sequence === undefined) return
+    const scoped = events.filter((event) => event.seq > sequence)
+    const terminal = scoped.find((event) => event.kind === "run.finished")
+    if (!terminal) return
+    const data = BlackboxTape.json(terminal.data)
+    const reason = BlackboxTape.isObject(data) ? data.reason : undefined
+    if (reason === "failed")
+      failure =
+        scoped.findLast((event) => event.kind === "provider.started" || event.kind === "provider.failed")?.kind ===
+        "provider.failed"
+          ? new EngineError("provider_failed", "the provider turn failed")
+          : new EngineError("engine_run_failed", "the engine run failed")
+    if (reason === "interrupted") failure = new EngineError("engine_interrupted", "the engine run was interrupted")
+    if (reason !== "completed" && reason !== "failed" && reason !== "interrupted")
+      failure = new EngineError("engine_outcome_missing", "the engine run has no authoritative terminal outcome")
+    if (scoped.some((event) => event.kind === "question.requested"))
+      failure = new EngineError("question_unsupported", "engine requested a question; headless runs cannot answer")
+    finished?.()
+  }
 
   client.onEvent((event) => {
     events.push(event)
@@ -81,20 +104,23 @@ export async function runEnginePrompt(options: EngineRunOptions): Promise<Engine
         })
         .catch(() => undefined)
     }
-    if (event.kind === "question.requested")
-      failure = new EngineError("question_unsupported", "engine requested a question; headless runs cannot answer")
-    if (event.kind === "provider.failed") failure = new EngineError("provider_failed", "the provider turn failed")
-    if (event.kind === "run.finished") {
-      const data = BlackboxTape.json(event.data)
-      if (BlackboxTape.isObject(data) && data.reason === "failed")
-        failure ??= new EngineError("engine_run_failed", "the engine run failed")
-      finished?.()
-    }
+    settle()
   })
 
   try {
     await client.subscribe(session, 0)
-    await client.admit({ session_id: session, input_id: inputId, prompt: options.prompt })
+    const admission = BlackboxTape.json(
+      await client.admit({ session_id: session, input_id: inputId, prompt: options.prompt }),
+    )
+    if (
+      !BlackboxTape.isObject(admission) ||
+      typeof admission.admitted_seq !== "number" ||
+      !Number.isSafeInteger(admission.admitted_seq) ||
+      admission.admitted_seq < 0
+    )
+      throw new EngineError("engine_admission_invalid", "the engine admission has no valid sequence")
+    admittedSeq = admission.admitted_seq
+    settle()
     const timeout = new Promise<never>(
       (_, reject) =>
         (timeoutTimer = setTimeout(
