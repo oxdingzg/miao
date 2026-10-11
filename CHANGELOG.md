@@ -11,9 +11,40 @@ at `docs/releases/vX.Y.Z.md` and `docs/releases/vX.Y.Z.zh.md`; both are required
 
 ## [Unreleased]
 
+## [0.2.5] - 2026-10-11
+
+### Added
+
+- **core**: continue dependency-ready tasks beside background waits (#618) (`f321d477b`)
+- **engine**: persist and validate task dependencies (#623) (`92bb9d408`)
+- **engine**: replay native tool receipts without executor side effects (#592) (`c4e565454`)
+- **core**: add session blackbox recording and strict replay (#589) (`f98fd8a09`)
+
+### Fixed
+
+- **core**: bound tool argument generation (#615) (`1016b682b`)
+- **tui**: distinguish interrupted sessions from failed work (#619) (`bd92bddbd`)
+- **core**: preserve background outcomes and resume todo work (#617) (`7cca62126`)
+- **core**: finalize blackbox streams without masking interruption (#616) (`01592dcf6`)
+- **core**: bound correction of invalid tool arguments (#614) (`17422e772`)
+- **acp**: preserve reasoning block identities (#613) (`a672ca47b`)
+- **ci**: require all applicable specialist checks (#600) (`40b7a1239`)
+- **core**: retain execution routing across location drains (#610) (`63f3f53a4`)
+- **tui**: recognize C++ module file extensions (#606) (`e0e65e664`)
+- **core**: add namespaced provider session identity headers (#605) (`cc52f94ef`)
+- **llm**: accept the ultrafast OpenAI service tier (#604) (`8f8ef1663`)
+- **tui**: retain confirmed session outcomes after client exit (#609) (`16fa41b77`)
+- **tui**: resume sessions with their original executable (#597) (`73ceea866`)
+- **core**: append blackbox frames without rewriting session history (#594) (`21deeb959`)
+- **llm**: support interleaved Copilot reasoning (#598) (`ee7f229f3`)
+- **ci**: require verified commits before release publication (#596) (`567203330`)
+- **llm**: retain websocket frames under slow consumers (#593) (`acda31aad`)
+- **llm**: recover from abnormal websocket disconnects (#590) (`b394df35f`)
+
 ## [0.2.4] - 2026-10-10
 
 ### Added
+
 - **engine**: persist message and event recording times (#581) (`b3b69d0cc`)
 - **tui**: unify session task state and terminal badges (#583) (`4ea7c8ba2`)
 - **engine**: validate client envelopes with replay-stable source ids (#577) (`7e733b07c`)
@@ -21,6 +52,7 @@ at `docs/releases/vX.Y.Z.md` and `docs/releases/vX.Y.Z.zh.md`; both are required
 - **engine**: add the EngineSession facade seam (#574) (`54a160010`)
 
 ### Fixed
+
 - **miao**: preserve engine recording times in client delivery (#587) (`ce263b5a3`)
 - **core**: inherit stable credentials read-only in preview channels (#586) (`d143d7ef2`)
 - **core**: wake a session when a background bash job settles (#585) (`c1f18857a`)
@@ -32,12 +64,14 @@ at `docs/releases/vX.Y.Z.md` and `docs/releases/vX.Y.Z.zh.md`; both are required
 ## [0.2.3] - 2026-10-10
 
 ### Added
+
 - **tui**: live wakeup countdowns and background job timers with read-only activity observation (#544)
 - **engine**: loopback HTTP/SSE and ACP stdio adapters, revert/unrevert, usage aggregation, skills and authorized references (#519, #520, #522, #524–#529, #534, #539, #543, #545, #547)
 - **engine**: extension compatibility worker and product event bridges for status, identity, prompts, text, tools, approvals and questions (#555, #557–#561, #564, #568–#570, #572)
 - **engine**: release artifacts/manifests and local installation with rollback (#536, #541, #565)
 
 ### Fixed
+
 - **llm**: deeper connection-reset retry budget and fresh sockets after a reset (#535, #540)
 - **core**: retry dropped provider turns before visible output and default ChatGPT/Codex to Responses WebSocket (#533, #538)
 - **commandcode**: preserve image input and recover context overflow (#542)
@@ -48,17 +82,20 @@ Full release notes: `docs/releases/v0.2.3.md` and `docs/releases/v0.2.3.zh.md`.
 ## [0.2.2] - 2026-10-10
 
 ### Added
+
 - **engine**: delegate tasks to child Sessions (#514) (`e830ea5ae`)
 - **engine**: add LSP diagnostics, definition and references tools (#511) (`7c521c40a`)
 - **engine**: carry inline image attachments on prompts (#509) (`fdd02044e`)
 
 ### Fixed
+
 - **core**: retry a rejected provider request once before giving up (#510) (`9b0fb38d2`)
 - **tui**: re-assert the terminal title after a restore (#512) (`34294a4b4`)
 
 ## [0.2.1] - 2026-10-10
 
 ### Fixed
+
 - **core**: retry session title generation while the title is a placeholder (#507) (`c3760d6ee`)
 
 ## [0.2.0] - 2026-10-10
@@ -66,6 +103,7 @@ Full release notes: `docs/releases/v0.2.3.md` and `docs/releases/v0.2.3.zh.md`.
 miao 0.2.0 opens the 0.2 line and consolidates the 0.1.x series: the V2 session core, end-to-end remote control, native acceleration and sandboxing, cost and latency controls, and the first slice of the Rust engine. Full milestone notes live at `docs/releases/v0.2.0.md`.
 
 ### Added
+
 - **session**: V2 is the only session runtime; every client reads the durable record (#324, #299, #427, #416, #418)
 - **storage**: shared storage with exclusive migrations and per-window ownership, plus content-addressed blobs (#256, #259, #336, #421, #55, #61)
 - **remote-control**: Hub accounts, signed device authority, signed roster, browser pairing, push, and a native iOS app (#98, #469, #476, #480, #482, #487, #464, #146, #97)
@@ -75,11 +113,13 @@ miao 0.2.0 opens the 0.2 line and consolidates the 0.1.x series: the V2 session 
 - **tui**: recent cross-Session messages in the sidebar (#501)
 
 ### Changed
+
 - **catalog**: miao's own catalog is the only model source; the models.dev fallback is gone (#171)
 - **runtime**: window-owned execution replaced the detached daemon (#261, #268, #421)
 - **plugin**: the deprecated V1-only plugin hooks are retired (#376)
 
 ### Fixed
+
 - **core**: keep a cross-window session wake advisory so the admitted message survives (#500)
 - **llm**: normalise provider-safe tool schema roots at the protocol boundary (#491)
 - **core**: stop markdown-emphasis refrains and other repetitive output (#495)
@@ -89,23 +129,28 @@ miao 0.2.0 opens the 0.2 line and consolidates the 0.1.x series: the V2 session 
 ## [0.1.31] - 2026-10-09
 
 ### Added
+
 - **core**: wire native git status behind MIAO_NATIVE (#492) (`46674f106`)
 
 ### Fixed
+
 - **core**: detect a markdown-emphasis refrain as repetitive output (#495) (`8a0783549`)
 
 ## [0.1.30] - 2026-10-09
 
 ### Fixed
+
 - **llm**: enforce provider-safe object root for tool schemas (#491) (`2032b89bc`)
 
 ## [0.1.29] - 2026-10-09
 
 ### Added
+
 - **remote-control**: one-tap same-account device connection (#487) (`1e80a32c5`)
 - **remote-control**: add trusted browser account device enrollment (#482) (`a8b08bb6f`)
 
 ### Fixed
+
 - **tui**: mark user messages with a prompt glyph and more spacing (#489) (`357d99543`)
 - **tui**: recover the transcript when the viewport strands off the window (#488) (`dfb8acf6e`)
 - **tui**: keep a mid-turn title from reverting in the session list (#485) (`3a5840dc1`)
@@ -113,6 +158,7 @@ miao 0.2.0 opens the 0.2 line and consolidates the 0.1.x series: the V2 session 
 ## [0.1.28] - 2026-10-09
 
 ### Added
+
 - **miao**: record sampler stalls as gaps and report them in doctor (#478) (`eacf3994e`)
 - **remote-control**: add account-isolated signed roster transport (#480) (`5ea84adc1`)
 - **remote-control**: admit signed roster members with bounded grants (#476) (`3f6b34759`)
@@ -120,15 +166,18 @@ miao 0.2.0 opens the 0.2 line and consolidates the 0.1.x series: the V2 session 
 - **remote-control**: persist authenticated Hub account identity (#471) (`a1d73ed22`)
 
 ### Fixed
+
 - **tui**: keep reading history stable while the tail streams (#474) (`78172682d`)
 
 ## [0.1.27] - 2026-10-09
 
 ### Added
+
 - **remote-control**: resume browser pairing across social login (#464) (`4d2b80244`)
 - **miao**: add autonomous-continuation scheduling skill (#461) (`a2e200d70`)
 
 ### Fixed
+
 - **tui**: show an em dash when no model price is known (#462) (`01864d89b`)
 - **remote-control**: select a private default Hub before desktop login (#457) (`85c4e46a4`)
 - **release**: publish the curated bilingual note pair (#455) (`a956d8732`)
@@ -136,9 +185,11 @@ miao 0.2.0 opens the 0.2 line and consolidates the 0.1.x series: the V2 session 
 ## [0.1.26] - 2026-10-08
 
 ### Added
+
 - **sandbox**: add windows appcontainer backend (#435) (`4b416d09a`)
 
 ### Fixed
+
 - **ci**: enforce scoped checks and preserve reproducible environments (#444) (`aa948d4f0`)
 - **core**: coalesce scheduled machine continuations (#450) (`0dfbd394b`)
 - **tui**: retry prompt transport failures with stable admission IDs (#448) (`1146febe9`)
@@ -153,13 +204,16 @@ miao 0.2.0 opens the 0.2 line and consolidates the 0.1.x series: the V2 session 
 ## [0.1.25] - 2026-10-08
 
 ### Added
+
 - **script**: add windows local install script (#432) (`74e6ffc09`)
 
 ### Changed
+
 - **session-ui**: read the session records via the Data contract (#418) (`0f462d596`)
 - **session-ui**: host the V2 record content projection (#416) (`37e37f1da`)
 
 ### Fixed
+
 - **tui**: esc always interrupts the running turn — queued prompts survive and advance (#431) (`eb54fd78e`)
 - **tui**: consume the mtty clipboard file once (#434) (`806e3576c`)
 - **app**: render the timeline from the V2 record contract (#427) (`707772e4b`)
@@ -170,15 +224,18 @@ miao 0.2.0 opens the 0.2 line and consolidates the 0.1.x series: the V2 session 
 ## [0.1.24] - 2026-10-08
 
 ### Added
+
 - **tui**: cancel newest waiting prompt on esc before interrupting (#407) (`51cda7165`)
 - **core**: warn on foreground open-ended wait commands (#406) (`d1ec4e5c1`)
 - **core**: add the background-waits built-in skill (#405) (`dd065a91a`)
 
 ### Changed
+
 - **app**: read the context surfaces from V2 session records (#412) (`9afc6c4a8`)
 - **app**: read session records directly in stage-3 consumers (#408) (`3b6120293`)
 
 ### Fixed
+
 - **tui**: render cancelled todos with a distinct glyph (#411) (`b6850de51`)
 - **tui**: derive tool part props from V2 structured state (#413) (`3c13f5289`)
 - **app**: settle pending tools as failed when a V2 step fails (#404) (`12d59bc4a`)
@@ -187,6 +244,7 @@ miao 0.2.0 opens the 0.2 line and consolidates the 0.1.x series: the V2 session 
 ## [0.1.23] - 2026-10-07
 
 ### Added
+
 - **core**: surface real context-window usage to the model (#375) (`123bb83a7`)
 - **tui**: show confirmation after /clear starts a new session (#349) (`769f6d766`)
 - **server**: log every 5xx response with method and path (#372) (`feb1fcf0b`)
@@ -537,6 +595,7 @@ miao 0.2.0 opens the 0.2 line and consolidates the 0.1.x series: the V2 session 
 - **core**: widen native model dispatch to more providers (`ff61b8984`)
 
 ### Changed
+
 - **app**: project timeline parts through a shared V2 content module (#394) (`f9cb9027e`)
 - **plugin**: retire the deprecated V1-only plugin hooks (#376) (`d13ad7ca9`)
 - **app**: replace synthetic message events with direct V2-derived store writes (#369) (`537152662`)
@@ -621,10 +680,11 @@ miao 0.2.0 opens the 0.2 line and consolidates the 0.1.x series: the V2 session 
 - strip the remaining opencode branding from user-visible surfaces (`fd61648e8`)
 - rename the packages/opencode directory to packages/miao (`2510996bd`)
 - rename the opencode package to miao (`0dab74d6c`)
-- rename OPENCODE_* env vars to MIAO_* with a legacy mirror (`fbfbf9126`)
+- rename OPENCODE*\* env vars to MIAO*\* with a legacy mirror (`fbfbf9126`)
 - rename workspace scope @opencode-ai to @miao (`36346a1fb`)
 
 ### Fixed
+
 - **server**: persist web handler defects to miao.log (#398) (`626e872ea`)
 - **tui**: keep client request failures from killing the window (#389) (`f0c78ad2f`)
 - **installation**: retry transient windows upgrade locks (#351) (`5ee3d09e4`)
@@ -843,7 +903,7 @@ miao 0.2.0 opens the 0.2 line and consolidates the 0.1.x series: the V2 session 
 - **core**: treat a provider's configured key as a connection (`bf9734a94`)
 - **core**: honor the MIAO_CONFIG overrides in the V2 config (`b706c99ca`)
 - **core**: request replayable reasoning from OpenAI reasoning models in V2 (`e7e334480`)
-- **plugin**: report agent state to mtty through its MTTY_* variables (`e2ff0525e`)
+- **plugin**: report agent state to mtty through its MTTY\_\* variables (`e2ff0525e`)
 - **core**: stop retrying a provider's 403 (`834408c03`)
 - **tui**: apply the selected model and agent before sending a V2 prompt (`12700d6e5`)
 - **provider**: stop offering OpenCode Zen free models (`3f7bc21d0`)
@@ -944,6 +1004,7 @@ miao 0.2.0 opens the 0.2 line and consolidates the 0.1.x series: the V2 session 
 - **tui**: show free models are ready instead of prompting to connect (`dcdaae4c4`)
 
 ### Performance
+
 - **tui**: run the pending-input read alongside the status poll (#319) (`f0e6b6b18`)
 - **core**: drop oversized file previews from durable tool progress (#318) (`21926ea3e`)
 - **tui**: back off idle session status polls to a 6x cap (#314) (`503a4dd03`)
@@ -1035,9 +1096,11 @@ The first launch of 0.1.15 migrates the database and requires existing windows u
 ## [0.1.14] - 2026-10-06
 
 ### Added
+
 - **runtime**: exit the Runtime once nothing is active (#243) (`10ef87f67`)
 
 ### Fixed
+
 - **tui**: restore the terminal when a fatal error exits (#252) (`2140022d0`)
 - **tui**: load the session route without an empty text placeholder (#251) (`5adf9aa3b`)
 - **tui**: keep the data context alive when a location bucket is missing (#250) (`1ddd2d36f`)
@@ -1047,6 +1110,7 @@ The first launch of 0.1.15 migrates the database and requires existing windows u
 ## [0.1.13] - 2026-10-06
 
 ### Added
+
 - **core**: bound machine wakeups per human prompt (#242) (`f9eef5fa5`)
 - **script**: add measured latency baseline reports (#239) (`8c41dc605`)
 - **core**: let a running subagent report to its parent (#237) (`973305735`)
@@ -1064,9 +1128,11 @@ The first launch of 0.1.15 migrates the database and requires existing windows u
 - **tui**: estimate per-structure sync heap bytes (#214) (`589f3bdc0`)
 
 ### Changed
+
 - **tui**: lazy-load the session route (#215) (`cec1b42d`)
 
 ### Fixed
+
 - **core**: resolve selected session models without scanning the catalog (#244) (`9cb6ef2d`)
 - **llm**: tolerate unknown stream frames and surface in-band provider errors (#241) (`9d5f819d`)
 - **ci**: give every main commit its own workflow run (#238) (`2439800e`)
@@ -1096,14 +1162,17 @@ Existing windows and active tasks continue running while the installed program i
 ## [0.1.8] - 2026-10-05
 
 ### Added
+
 - **core**: add durable background subagent handoff (#144) (`64030825c`)
 
 ### Fixed
+
 - **core**: accept state-less Command Code browser callback (#149) (`ba596d6f9`)
 
 ## [0.1.7] - 2026-10-05
 
 ### Added
+
 - **tui**: list connectable providers in the switch-provider dialog (#138) (`2f68cb960`)
 - **provider**: add Command Code subscription provider (#129) (`775824cc3`)
 - **remote-control**: authorize durable agent and model selection (#134) (`2ad145fd5`)
@@ -1136,6 +1205,7 @@ Existing windows and active tasks continue running while the installed program i
 - **runtime**: host sessions independently of terminal clients (#83) (`d55210589`)
 
 ### Fixed
+
 - **core**: recover dangling tool-call openers on stop turns (#139) (`670dc755f`)
 - **miao**: validate tui arguments before the Windows VT check (#136) (`a06c0ad79`)
 - **core**: recover background job observations after restart (#133) (`7965c8f02`)
@@ -1150,6 +1220,7 @@ Existing windows and active tasks continue running while the installed program i
 ## [0.1.6] - 2026-10-04
 
 ### Added
+
 - **remote-control**: add authorized outbound Agent and durable grants (#87) (`1238d58a`)
 - **ios**: persist remote operations and coordinate scene connections (#85) (`2a60a650c`)
 - **core**: restore V2 LSP navigation tool (#74) (`4bd3dc762`)
@@ -1157,12 +1228,14 @@ Existing windows and active tasks continue running while the installed program i
 - **ios**: add CryptoKit remote protocol core and interoperability checks (#72) (`d0e726605`)
 
 ### Fixed
+
 - **app**: keep todo sync fresh across live updates and reconnect (#84) (`617f4ed63`)
 - **core**: refresh persisted todos in session model context (#82) (`8352a2851`)
 
 ## [0.1.5] - 2026-10-04
 
 ### Added
+
 - **core**: add `miao db retention` to report prunable events (#77) (`a314d26b7`)
 - **remote-control**: add opaque authenticated relay hub (#70) (`6d16bd993`)
 - **remote-control**: expose execution-aware interruption (#67) (`16ee7326e`)
@@ -1173,12 +1246,14 @@ Existing windows and active tasks continue running while the installed program i
 - **core**: host project metadata writes and directory registration (#35) (`abf3c6b83`)
 
 ### Changed
+
 - **core**: reconstruct a forked session from the projection (#75) (`390062cd3`)
 - **miao**: retire the legacy project facade (#46) (`a760251de`)
 - **app**: drop the identity server-compat shim (#40) (`479665d35`)
 - **miao**: delegate the project service to core persistence (#36) (`ae1906f67`)
 
 ### Fixed
+
 - **core**: refuse blob GC when other channel databases share the store (#68) (`ebfd2ff54`)
 - **core**: mark blob GC across every channel database sharing the store (#66) (`2ad9efc71`)
 - **core**: externalize session_message payloads by column type, not data.type (#65) (`85328ef5d`)
@@ -1191,6 +1266,7 @@ Existing windows and active tasks continue running while the installed program i
 - **core**: release session caches when a session is deleted (#31) (`118ef0313`)
 
 ### Performance
+
 - **core**: externalize oversized tool-result files to the blob store (#54) (`ab191634f`)
 - **core**: page the durable log read instead of loading the whole tail (#52) (`061cef019`)
 - **tui**: debounce the mention file search while typing (#51) (`ba786a496`)
@@ -1203,6 +1279,7 @@ Existing windows and active tasks continue running while the installed program i
 ## [0.1.4] - 2026-10-04
 
 ### Fixed
+
 - **miao**: forward streaming events only once (#24) (`fb880f18e`)
 - **core**: decode Windows shell output by console code page (#23) (`53df1c90e`)
 - **tui**: render prompt placeholder on a single row (#18) (`78c64e93a`)
@@ -1213,6 +1290,7 @@ Existing windows and active tasks continue running while the installed program i
 - **miao**: correct the health endpoint and stale e2e copy (#11) (`0e1829712`)
 
 ### Performance
+
 - **tui**: apply durable session events incrementally (#21) (`4d2d1ad20`)
 - **tui**: window the transcript around the viewport (#22) (`4e430437e`)
 - **core**: drop legacy metadata from the history read path (#19) (`0177fc28f`)
