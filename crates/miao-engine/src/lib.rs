@@ -34,3 +34,5 @@ pub mod tool_replay;
 pub mod tools;
 pub mod wakeup;
 pub mod worker;
+
+mod tool_input;

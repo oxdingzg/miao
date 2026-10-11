@@ -170,3 +170,27 @@ async fn cancel_interrupts_connection_wait() {
         Err(ProviderError::Interrupted)
     ));
 }
+
+#[tokio::test]
+async fn small_sse_frames_cannot_bypass_the_per_tool_argument_budget() {
+    let mut events = vec![
+        json!({"type":"message_start","message":{"usage":{}}}),
+        json!({"type":"content_block_start","index":0,"content_block":{"type":"tool_use","id":"bounded","name":"write_file","input":{}}}),
+    ];
+    events.extend((0..3).map(|_| json!({"type":"content_block_delta","index":0,"delta":{"type":"input_json_delta","partial_json":"private-argument".repeat(28_000)}})));
+    let body = events
+        .iter()
+        .map(|event| format!("data: {event}\r\n\r\n"))
+        .collect();
+    let (url, count, server) = endpoint(vec![(200, body)]).await;
+    let provider = Anthropic::new(url, "fixture-key".into(), "fixture-model".into()).unwrap();
+    let (progress, _receive) = mpsc::channel(64);
+    let result = provider
+        .stream(history(), progress, CancellationToken::new())
+        .await;
+    assert!(
+        matches!(result, Err(ProviderError::Stream(ref message)) if message == "tool input exceeds byte budget")
+    );
+    assert_eq!(count.load(Ordering::SeqCst), 1);
+    server.await.unwrap();
+}
