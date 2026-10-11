@@ -317,3 +317,166 @@ async fn dynamic_state_survives_compaction_and_reloads_without_changing_system_e
         runtime.shutdown().await;
     }
 }
+
+#[tokio::test]
+async fn task_dependencies_survive_restart_and_unlock_only_completed_prerequisites() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("engine.db");
+    let store = setup(&path).await;
+    let tasks = json!([
+        {"id":"4","content":"CI","status":"waiting","priority":"high"},
+        {"id":"5","content":"Release","status":"pending","priority":"high","depends_on":["4"]},
+        {"id":"6","content":"Verify","status":"pending","priority":"high","depends_on":["5"]},
+        {"id":"7","content":"Audit","status":"pending","priority":"medium"},
+        {"id":"8","content":"Baseline","status":"pending","priority":"medium"},
+        {"id":"9","content":"Docs","status":"pending","priority":"low"}
+    ]);
+    store
+        .update_state(
+            "s",
+            "graph",
+            Mutation::parse("todowrite", json!({"todos": tasks})).unwrap(),
+        )
+        .await
+        .unwrap();
+    let state = store.state("s").await.unwrap();
+    assert_eq!(state["todos"]["value"]["todos"], tasks);
+    assert_eq!(
+        miao_engine::state::runnable_state(&state).unwrap(),
+        ["7", "8", "9"]
+    );
+    drop(store);
+    tokio::time::sleep(std::time::Duration::from_millis(20)).await;
+    let store = Store::open(&path).await.unwrap();
+    let state = store.state("s").await.unwrap();
+    assert_eq!(
+        miao_engine::state::runnable_state(&state).unwrap(),
+        ["7", "8", "9"]
+    );
+    let mut tasks = tasks;
+    tasks[0]["status"] = json!("completed");
+    store
+        .update_state(
+            "s",
+            "finish-4",
+            Mutation::parse("todowrite", json!({"todos":tasks})).unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(
+        miao_engine::state::runnable_state(&store.state("s").await.unwrap()).unwrap(),
+        ["5", "7", "8", "9"]
+    );
+    tasks[1]["status"] = json!("completed");
+    store
+        .update_state(
+            "s",
+            "finish-5",
+            Mutation::parse("todowrite", json!({"todos":tasks})).unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(
+        miao_engine::state::runnable_state(&store.state("s").await.unwrap()).unwrap(),
+        ["6", "7", "8", "9"]
+    );
+    let goal = Mutation::parse(
+        "goal",
+        json!({"objective":"Finish the tasks","status":"active","autonomous":true}),
+    )
+    .unwrap();
+    store.update_state("s", "goal-opt-in", goal).await.unwrap();
+    assert_eq!(
+        store.state("s").await.unwrap()["goal"]["value"]["autonomous"],
+        true
+    );
+}
+
+#[test]
+fn invalid_dependency_graphs_and_cancelled_prerequisites_do_not_become_runnable() {
+    let task = |id: &str, status: &str, dependencies: Vec<&str>| json!({"id":id,"content":"Task","status":status,"priority":"high","depends_on":dependencies});
+    for tasks in [
+        json!([task("1", "pending", vec![]), task("1", "pending", vec![])]),
+        json!([task("1", "pending", vec!["missing"])]),
+        json!([task("1", "pending", vec!["1"])]),
+        json!([
+            task("1", "pending", vec!["2"]),
+            task("2", "pending", vec!["1"])
+        ]),
+        json!([
+            task("1", "pending", vec![]),
+            task("2", "in_progress", vec!["1"])
+        ]),
+        json!([
+            task("1", "pending", vec![]),
+            task("2", "completed", vec!["1"])
+        ]),
+        json!([
+            task("1", "pending", vec![]),
+            task("2", "pending", vec!["1", "1"])
+        ]),
+    ] {
+        assert!(Mutation::parse("todowrite", json!({"todos":tasks})).is_err());
+    }
+    let tasks = json!([
+        task("4", "cancelled", vec![]),
+        task("5", "pending", vec!["4"])
+    ]);
+    assert!(Mutation::parse("todowrite", json!({"todos":tasks})).is_ok());
+    assert!(
+        miao_engine::state::runnable_state(&json!({"todos":{"value":{"todos":tasks}}}))
+            .unwrap()
+            .is_empty()
+    );
+    let tasks = json!([
+        task("4", "waiting", vec![]),
+        task("5", "pending", vec!["4"])
+    ]);
+    assert!(
+        miao_engine::state::runnable_state(&json!({"todos":{"value":{"todos":tasks}}}))
+            .unwrap()
+            .is_empty()
+    );
+}
+
+#[tokio::test]
+async fn provider_receives_dependency_ready_context_without_unlocking_serial_work() {
+    let dir = tempfile::tempdir().unwrap();
+    let store = setup(&dir.path().join("engine.db")).await;
+    store.update_state("s", "graph", Mutation::parse("todowrite", json!({"todos":[
+        {"id":"4","content":"CI","status":"waiting","priority":"high"},
+        {"id":"5","content":"Release","status":"pending","priority":"high","depends_on":["4"]},
+        {"id":"7","content":"Independent audit","status":"pending","priority":"medium"}
+    ]})).unwrap()).await.unwrap();
+    let (send, mut receive) = tokio::sync::mpsc::channel(4);
+    let runtime = miao_engine::runtime::Runtime::new(
+        store.clone(),
+        std::sync::Arc::new(Capture { send }),
+        Tools::new(dir.path()).await.unwrap(),
+    )
+    .await
+    .unwrap();
+    runtime
+        .admit(
+            Input {
+                session_id: "s".into(),
+                input_id: "two".into(),
+                prompt: "continue independent work".into(),
+                delivery: Delivery::Steer,
+            },
+            true,
+        )
+        .await
+        .unwrap();
+    let request = receive.recv().await.unwrap();
+    finished(&store, 1).await;
+    let text = request
+        .messages
+        .iter()
+        .flat_map(|message| message.content.as_array().into_iter().flatten())
+        .filter_map(|part| part["text"].as_str())
+        .collect::<Vec<_>>()
+        .join("\n");
+    assert!(text.contains(r#"Runnable tasks (all prerequisites completed): ["7"]"#));
+    assert!(!text.contains(r#"Runnable tasks (all prerequisites completed): ["5""#));
+}

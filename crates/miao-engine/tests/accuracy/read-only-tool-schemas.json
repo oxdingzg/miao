@@ -27,6 +27,9 @@
   "goal": {
     "additionalProperties": false,
     "properties": {
+      "autonomous": {
+        "type": "boolean"
+      },
       "budget": {
         "type": "string"
       },
@@ -224,6 +227,16 @@
             "content": {
               "type": "string"
             },
+            "depends_on": {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            "id": {
+              "minLength": 1,
+              "type": "string"
+            },
             "priority": {
               "enum": [
                 "high",
@@ -236,6 +249,8 @@
               "enum": [
                 "pending",
                 "in_progress",
+                "waiting",
+                "blocked",
                 "completed",
                 "cancelled"
               ],

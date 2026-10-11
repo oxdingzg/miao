@@ -6,12 +6,15 @@ use crate::{
 use rusqlite::{params, Connection, OptionalExtension};
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
+use std::collections::{HashMap, HashSet, VecDeque};
 
 #[derive(Deserialize, Serialize)]
 #[serde(rename_all = "snake_case")]
 pub enum TodoStatus {
     Pending,
     InProgress,
+    Waiting,
+    Blocked,
     Completed,
     Cancelled,
 }
@@ -25,6 +28,10 @@ pub enum Priority {
 #[derive(Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct Todo {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub id: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub depends_on: Option<Vec<String>>,
     pub content: String,
     pub status: TodoStatus,
     pub priority: Priority,
@@ -47,6 +54,8 @@ pub enum GoalStatus {
 #[derive(Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct Goal {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub autonomous: Option<bool>,
     pub objective: String,
     pub status: GoalStatus,
     #[serde(default)]
@@ -55,6 +64,93 @@ pub struct Goal {
     pub budget: Option<String>,
     #[serde(default)]
     pub expected_revision: Option<u64>,
+}
+
+// Task numbers/order are not prerequisites. Validate the declared graph before admission.
+fn valid_dependencies(todos: &[Todo]) -> bool {
+    let mut by_id = HashMap::new();
+    for (index, todo) in todos.iter().enumerate() {
+        if let Some(id) = &todo.id {
+            if id.trim().is_empty() || by_id.insert(id.as_str(), index).is_some() {
+                return false;
+            }
+        }
+        let dependencies = todo.depends_on.as_deref().unwrap_or_default();
+        if !dependencies.is_empty() && todo.id.is_none() {
+            return false;
+        }
+        if dependencies.iter().collect::<HashSet<_>>().len() != dependencies.len() {
+            return false;
+        }
+    }
+    let mut degree = vec![0; todos.len()];
+    let mut children = vec![Vec::new(); todos.len()];
+    for (index, todo) in todos.iter().enumerate() {
+        for id in todo.depends_on.as_deref().unwrap_or_default() {
+            let Some(&parent) = by_id.get(id.as_str()) else {
+                return false;
+            };
+            if matches!(&todo.status, TodoStatus::InProgress | TodoStatus::Completed)
+                && !matches!(&todos[parent].status, TodoStatus::Completed)
+            {
+                return false;
+            }
+            degree[index] += 1;
+            children[parent].push(index);
+        }
+    }
+    let mut ready: VecDeque<_> = degree
+        .iter()
+        .enumerate()
+        .filter_map(|(index, count)| (*count == 0).then_some(index))
+        .collect();
+    let mut visited = 0;
+    while let Some(index) = ready.pop_front() {
+        visited += 1;
+        for child in &children[index] {
+            degree[*child] -= 1;
+            if degree[*child] == 0 {
+                ready.push_back(*child);
+            }
+        }
+    }
+    visited == todos.len()
+}
+
+/// Readiness is derived from durable state. Cancelled prerequisites do not unlock dependents.
+pub fn runnable(todos: &[Todo]) -> Vec<&Todo> {
+    let by_id: HashMap<_, _> = todos
+        .iter()
+        .filter_map(|todo| todo.id.as_deref().map(|id| (id, todo)))
+        .collect();
+    todos
+        .iter()
+        .filter(|todo| {
+            matches!(&todo.status, TodoStatus::Pending | TodoStatus::InProgress)
+                && todo
+                    .depends_on
+                    .as_deref()
+                    .unwrap_or_default()
+                    .iter()
+                    .all(|id| {
+                        by_id
+                            .get(id.as_str())
+                            .is_some_and(|parent| matches!(&parent.status, TodoStatus::Completed))
+                    })
+        })
+        .collect()
+}
+
+pub fn runnable_state(state: &Value) -> Result<Vec<String>, Error> {
+    if state["todos"].is_null() {
+        return Ok(Vec::new());
+    }
+    let todos: Vec<Todo> = serde_json::from_value(state["todos"]["value"]["todos"].clone())
+        .map_err(|_| Error::Invalid("invalid durable todo state".into()))?;
+    Ok(runnable(&todos)
+        .iter()
+        .map(|todo| todo.id.clone().unwrap_or_else(|| todo.content.clone()))
+        .collect())
 }
 
 pub struct Mutation {
@@ -69,6 +165,7 @@ impl Mutation {
                 let todos: Todos =
                     serde_json::from_value(value).map_err(|_| ToolError::InvalidInput)?;
                 if todos.todos.len() > 128
+                    || !valid_dependencies(&todos.todos)
                     || todos
                         .todos
                         .iter()
@@ -97,10 +194,14 @@ impl Mutation {
                 {
                     return Err(ToolError::InvalidInput);
                 }
+                let mut value = json!({"objective":goal.objective,"status":goal.status,"evidence":goal.evidence,"budget":goal.budget});
+                if let Some(autonomous) = goal.autonomous {
+                    value["autonomous"] = json!(autonomous);
+                }
                 Self {
                     kind: "goal",
                     expected: goal.expected_revision,
-                    value: json!({"objective":goal.objective,"status":goal.status,"evidence":goal.evidence,"budget":goal.budget}),
+                    value,
                 }
             }
             _ => return Err(ToolError::Unsupported),
