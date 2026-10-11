@@ -1,3 +1,8 @@
+import { Schema } from "effect"
+import { Prompt } from "@miao/schema/prompt"
+import { SessionInput } from "@miao/schema/session-input"
+import { SessionMessage } from "@miao/schema/session-message"
+import { SessionID } from "@miao/schema/session-id"
 import { EngineClient, EngineError, type EngineEvent } from "./client"
 import {
   StatusBridge,
@@ -110,6 +115,70 @@ export class EngineSession {
     // native subscription replays those rows before continuing live polling.
     await this.#client.subscribe(sessionID, snapshot.cursor)
     return snapshot
+  }
+
+  /** Product admission receipt sourced from the committed native admission row. */
+  async promptProduct(input: {
+    sessionID: SessionID
+    prompt: Prompt
+    id?: SessionMessage.ID
+    delivery?: "steer" | "queue"
+    resume?: boolean
+  }): Promise<SessionInput.Admitted> {
+    // The native prompt vocabulary currently carries plain text only. Reject
+    // richer product inputs before admission, so they cannot be silently lost.
+    if (input.prompt.command || input.prompt.files?.length || input.prompt.agents?.length)
+      throw new EngineError("engine_prompt_unsupported", "native product admission currently requires plain text")
+    const id = input.id ?? SessionMessage.ID.create()
+    const delivery = input.delivery ?? "steer"
+    const admitted = await this.prompt(input.sessionID, input.prompt.text, {
+      inputID: id,
+      delivery,
+      resume: input.resume,
+    })
+    if (
+      typeof admitted !== "object" ||
+      admitted === null ||
+      !("input_id" in admitted) ||
+      admitted.input_id !== id ||
+      !("admitted_seq" in admitted) ||
+      typeof admitted.admitted_seq !== "number" ||
+      !Number.isSafeInteger(admitted.admitted_seq) ||
+      admitted.admitted_seq < 1
+    )
+      throw new EngineError("engine_admission_invalid", "native admission has no matching input sequence")
+    const page = await this.#client.request("events", { session_id: input.sessionID, after: admitted.admitted_seq - 1 })
+    const event: unknown = Array.isArray(page) ? page[0] : undefined
+    if (
+      typeof event !== "object" ||
+      event === null ||
+      !("session_id" in event) ||
+      event.session_id !== input.sessionID ||
+      !("seq" in event) ||
+      event.seq !== admitted.admitted_seq ||
+      !("kind" in event) ||
+      event.kind !== "input.admitted" ||
+      !("recorded_at_ms" in event) ||
+      typeof event.recorded_at_ms !== "number" ||
+      !Number.isSafeInteger(event.recorded_at_ms) ||
+      event.recorded_at_ms < 0 ||
+      !("data" in event) ||
+      typeof event.data !== "object" ||
+      event.data === null ||
+      !("input_id" in event.data) ||
+      event.data.input_id !== id ||
+      !("delivery" in event.data) ||
+      event.data.delivery !== delivery
+    )
+      throw new EngineError("engine_admission_invalid", "native durable admission facts are missing or inconsistent")
+    return Schema.decodeUnknownSync(SessionInput.Admitted)({
+      id,
+      sessionID: input.sessionID,
+      admittedSeq: event.seq,
+      delivery,
+      prompt: { text: input.prompt.text },
+      timeCreated: event.recorded_at_ms,
+    })
   }
 
   #dispatch(event: EngineEvent): void {
