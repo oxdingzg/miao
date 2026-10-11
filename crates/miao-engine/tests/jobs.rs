@@ -232,3 +232,89 @@ async fn crash_reconciliation_preserves_unknown_running_state_without_replay() {
         1
     );
 }
+
+#[tokio::test]
+async fn job_completion_after_idle_admits_once_and_wakes_the_existing_owner() {
+    let dir = tempfile::tempdir().unwrap();
+    let (runtime, store, next) = setup(dir.path(), 1, false).await;
+    tokio::time::timeout(std::time::Duration::from_secs(10), next.notified())
+        .await
+        .unwrap();
+    tokio::time::timeout(std::time::Duration::from_secs(30), async {
+        loop {
+            let events = store.events("s", 0, 500).await.unwrap();
+            if events
+                .iter()
+                .filter(|event| event.kind == "run.finished")
+                .count()
+                == 2
+            {
+                break;
+            }
+            tokio::time::sleep(std::time::Duration::from_millis(10)).await;
+        }
+    })
+    .await
+    .unwrap();
+    let jobs = store.jobs("s").await.unwrap();
+    assert_eq!(jobs.len(), 1);
+    let id = jobs[0]["job_id"].as_str().unwrap();
+    assert_eq!(jobs[0]["state"], "completed");
+    let events = store.events("s", 0, 500).await.unwrap();
+    assert_eq!(
+        events
+            .iter()
+            .filter(|event| event.kind == "job.started")
+            .count(),
+        1
+    );
+    assert_eq!(
+        events
+            .iter()
+            .filter(|event| event.kind == "job.finished")
+            .count(),
+        1
+    );
+    assert_eq!(
+        events
+            .iter()
+            .filter(|event| event.kind == "input.admitted")
+            .count(),
+        2
+    );
+    assert_eq!(
+        events
+            .iter()
+            .filter(|event| event.kind == "input.promoted")
+            .count(),
+        2
+    );
+    let finished = events
+        .iter()
+        .find(|event| event.kind == "job.finished")
+        .unwrap();
+    let notification = events
+        .iter()
+        .rfind(|event| event.kind == "input.admitted")
+        .unwrap();
+    assert!(finished.seq < notification.seq);
+    assert_eq!(
+        std::fs::read_to_string(dir.path().join("workspace/finished_0")).unwrap(),
+        "done"
+    );
+    assert!(store
+        .finish_job("s", id, "completed", json!({}))
+        .await
+        .is_err());
+    assert_eq!(
+        store
+            .events("s", 0, 500)
+            .await
+            .unwrap()
+            .iter()
+            .filter(|event| event.kind == "input.admitted")
+            .count(),
+        2
+    );
+    runtime.shutdown().await;
+}
