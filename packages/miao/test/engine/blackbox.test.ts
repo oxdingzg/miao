@@ -126,8 +126,17 @@ test("HTTP replay reproduces a stream failure after partial output", async () =>
   try {
     const response = await fetch(new URL("/chat/completions", proxy.server.url), { method: "POST", body: "{}" })
     const reader = response.body!.getReader()
-    expect(new TextDecoder().decode((await reader.read()).value)).toBe(frames[0])
-    await expect(reader.read()).rejects.toThrow()
+    const received: Uint8Array[] = []
+    // HTTP reader chunks are transport boundaries, not recorded tape frames.
+    // Consume until failure: an intermediate empty chunk is not a clean EOF.
+    await expect((async () => {
+      while (true) {
+        const chunk = await reader.read()
+        if (chunk.done) return
+        received.push(chunk.value)
+      }
+    })()).rejects.toThrow()
+    expect(Buffer.concat(received).toString()).toBe(frames[0])
     replay.assertConsumed()
   } finally {
     await proxy.server.stop(true)
