@@ -724,13 +724,34 @@ impl Tools {
                 .await
                 .map_err(|_| ToolError::Io(std::io::Error::other("file commit worker failed")))?;
             }
-            let mutation = Mutation::parse(&prepared.name, prepared.input)?;
-            return tokio::task::spawn_blocking(move || {
+            let mutation = Mutation::parse(&prepared.name, prepared.input.clone())?;
+            let anchor = prepared.input["old_string"].as_str().map(str::to_owned);
+            let applied = tokio::task::spawn_blocking(move || {
                 let _lease = lease;
                 apply(&directory, &relative, mutation)
             })
             .await
             .map_err(|_| ToolError::Io(std::io::Error::other("file commit worker failed")))?;
+            // A rejected conditional write returns the current fingerprint and
+            // anchor statistics so one retry with corrected expectations can
+            // succeed without a separate read turn.
+            if prepared.name != "apply_patch"
+                && matches!(
+                    applied,
+                    Err(ToolError::StaleFile | ToolError::AmbiguousEdit)
+                )
+            {
+                if let Ok(current) = tokio::fs::read(&prepared.path).await {
+                    let stale = json!({
+                        "error": applied.unwrap_err().to_string(),
+                        "current_sha256": digest(&current),
+                        "old_string_occurrences": anchor.as_ref()
+                            .map(|needle| String::from_utf8_lossy(&current).matches(needle.as_str()).count()),
+                    });
+                    return Ok(stale);
+                }
+            }
+            return applied;
         }
         let read_lease = tokio::select! {_=cancel.cancelled()=>return Err(ToolError::Interrupted),guard=self.gate.clone().read_owned()=>guard};
         let current = self
