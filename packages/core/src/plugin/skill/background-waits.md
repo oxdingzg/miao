@@ -9,14 +9,18 @@
 A foreground command that waits — `--watch`, `watch`, `tail -f`, a
 `while`/`sleep` polling loop, a CI or release run — holds the turn until its
 timeout and reads as a stuck session. Never hold the turn. Start the wait in
-the background, write one status line, and end the turn; the completion
-notification arrives as a new message and the session continues from there.
+the background and record which task depends on it. Continue any independent
+runnable task while the external process runs. End the turn only when no
+runnable task remains; its completion notification resumes dependent work.
 
 ## Never hold the turn
 
 - Run open-ended commands with `run_in_background` (bash), or the `monitor`
-  tool for waits that can outlive ten minutes. Then end the turn — idle is the
-  correct state while the world works.
+  tool for waits that can outlive ten minutes. A waiting job does not make the
+  entire Session idle: continue independent authorized work in the same Session.
+- Mark the dependent todo `waiting`, with its job or run identity in the content.
+  Keep ready tasks `pending` or `in_progress`; use `blocked` for a missing decision.
+  Starting a watcher is not a reason to suspend unrelated tasks.
 - `job_wait` and foreground polling are still blocking. Only reap jobs you
   expect to finish within seconds; let everything else wake you.
 - Set explicit timeouts on background jobs: a default-timeout job can be
@@ -48,5 +52,7 @@ notification arrives as a new message and the session continues from there.
 - Reduce every long wait to a durable handle — a run id, a job id, a URL — and
   wait on that handle's terminal state, never on a snapshot of currently
   visible items.
-- After starting any background wait, end the turn. The notification, not the
-  session, does the waiting.
+- After starting a background wait, continue independent runnable tasks. End
+  the turn only when all remaining tasks are waiting, blocked, or complete.
+  Notifications drive waiting tasks; the Session need not sit idle while other
+  authorized work can proceed.

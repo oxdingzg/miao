@@ -48,7 +48,10 @@ const STALE_REMIND_EVERY_TURNS = 4
 function staleTurnCount(todos: ReadonlyArray<Info>, turnsBehind: number) {
   const open = todos.some((todo) => todo.status === "pending" || todo.status === "in_progress")
   if (!open || turnsBehind < STALE_AFTER_TURNS) return 0
-  return STALE_AFTER_TURNS + Math.floor((turnsBehind - STALE_AFTER_TURNS) / STALE_REMIND_EVERY_TURNS) * STALE_REMIND_EVERY_TURNS
+  return (
+    STALE_AFTER_TURNS +
+    Math.floor((turnsBehind - STALE_AFTER_TURNS) / STALE_REMIND_EVERY_TURNS) * STALE_REMIND_EVERY_TURNS
+  )
 }
 
 /**
@@ -76,6 +79,7 @@ function renderContext(todos: ReadonlyArray<Info>, staleTurns: number) {
     "# Current session task list",
     "This is the current persisted todo list, also displayed to the user. It supersedes older todo lists in the conversation.",
     "Use todowrite to track multi-step work. Keep this list synchronized with actual progress: mark work in_progress when starting, completed immediately after finishing and verifying it, and cancelled when it is no longer required. Update it before a final response or handoff; do not leave finished work pending or mark unfinished work completed. If blocked, leave the task open and explain the blocker. Do not infer completion merely from an idle session or a successful tool call.",
+    "A background wait blocks only its dependent task. Mark that task waiting and name the dependency in its content; continue pending or in_progress tasks that can proceed independently. Mark tasks needing a human decision blocked. End the Session only when no runnable task remains or its execution budget is exhausted.",
     JSON.stringify(todos, null, 2),
   ]
   if (staleTurns > 0) {

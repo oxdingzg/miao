@@ -11,6 +11,7 @@ import { SessionV2 } from "@miao/core/session"
 import { SessionExecution } from "@miao/core/session/execution"
 import { SessionProjector } from "@miao/core/session/projector"
 import { SessionStore } from "@miao/core/session/store"
+import { SessionGoal } from "@miao/core/session/goal"
 import { GoalTool } from "@miao/core/tool/goal"
 import { testEffect } from "./lib/effect"
 
@@ -53,6 +54,26 @@ describe("GoalTool", () => {
           metadata: { goal: { objective: "Ship the release", status: "active", budget: "1 day" } },
         },
       ])
+    }),
+  )
+
+  it.effect("reads the latest durable goal without losing the autonomous flag", () =>
+    Effect.gen(function* () {
+      const session = yield* SessionV2.Service
+      const events = yield* EventV2.Service
+      const database = yield* Database.Service
+      const created = yield* session.create({ location })
+      yield* GoalTool.record(events, created.id, { objective: "Original", status: "active", autonomous: true })
+      expect(yield* SessionGoal.current(database.db, created.id)).toMatchObject({ status: "active", autonomous: true })
+      yield* GoalTool.record(events, created.id, { objective: "Paused", status: "paused", autonomous: false })
+      expect(yield* SessionGoal.current(database.db, created.id)).toMatchObject({
+        objective: "Paused",
+        status: "paused",
+        autonomous: false,
+      })
+      expect(GoalTool.render({ objective: "Continue", status: "active", autonomous: true })).toContain(
+        "autonomous: true",
+      )
     }),
   )
 
