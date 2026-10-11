@@ -162,3 +162,96 @@ async fn unsupported_history_is_rejected_before_any_network_request() {
         Err(ProviderError::Stream(_))
     ));
 }
+
+#[tokio::test]
+async fn reasoning_content_round_trips_and_lowers_back_verbatim() {
+    let first = frames(
+        vec![
+            chunk(
+                json!({"role":"assistant","reasoning_content":"先看"}),
+                json!(null),
+            ),
+            chunk(json!({"reasoning_content":" 文件。"}), json!(null)),
+            chunk(json!({"content":"done"}), json!(null)),
+            chunk(json!({}), json!("stop")),
+        ],
+        true,
+    );
+    let second = frames(
+        vec![
+            chunk(json!({"content":"ok"}), json!(null)),
+            chunk(json!({}), json!("stop")),
+        ],
+        true,
+    );
+    let (url, mut requests, server) = common::endpoint(vec![(200, first), (200, second)]).await;
+    let provider = OpenAIChat::new(url, "fixture".into(), "model".into()).unwrap();
+    let (progress, _receive) = mpsc::channel(64);
+    let reply = provider
+        .stream(request(), progress, CancellationToken::new())
+        .await
+        .unwrap();
+    assert_eq!(
+        reply.content,
+        json!([
+            {"type":"reasoning","text":"先看 文件。"},
+            {"type":"text","text":"done"}
+        ])
+    );
+    let mut follow = request();
+    follow.messages.push(Message {
+        role: "assistant".into(),
+        content: reply.content.clone(),
+        checkpoint: None,
+        recorded_at_ms: None,
+    });
+    follow.messages.push(Message {
+        role: "user".into(),
+        content: json!([{"type":"text","text":"continue"}]),
+        checkpoint: None,
+        recorded_at_ms: None,
+    });
+    let (progress, _receive) = mpsc::channel(64);
+    provider
+        .stream(follow, progress, CancellationToken::new())
+        .await
+        .unwrap();
+    assert!(requests.recv().await.is_some());
+    let body = requests.recv().await.unwrap();
+    assert_eq!(body["messages"][1]["reasoning_content"], "先看 文件。");
+    assert_eq!(body["messages"][1]["content"], "done");
+    // Reasoning rides on the provider field, never as a native part.
+    assert!(!body.to_string().contains("\"reasoning\""));
+    server.await.unwrap();
+}
+
+#[tokio::test]
+async fn opaque_reasoning_and_legacy_delta_fields_are_rejected() {
+    for (field, value) in [
+        ("reasoning_opaque", json!("signature")),
+        ("audio", json!({"id":"audio"})),
+        (
+            "function_call",
+            json!({"name":"read_file","arguments":"{}"}),
+        ),
+    ] {
+        let mut delta = serde_json::Map::new();
+        delta.insert(field.to_string(), value);
+        let body = frames(vec![chunk(Value::Object(delta), json!(null))], true);
+        let (url, _requests, server) = common::endpoint(vec![(200, body)]).await;
+        let provider = OpenAIChat::new(url, "fixture".into(), "model".into()).unwrap();
+        let (progress, _receive) = mpsc::channel(64);
+        let result = provider
+            .stream(request(), progress, CancellationToken::new())
+            .await;
+        assert!(
+            matches!(result, Err(ProviderError::Stream(ref message)) if message.contains("unsupported")),
+            "{field}: {}",
+            result
+                .err()
+                .map(|error| error.to_string())
+                .unwrap_or_default()
+        );
+        server.await.unwrap();
+    }
+}
