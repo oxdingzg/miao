@@ -1,27 +1,14 @@
 name: session blackbox
 
 on:
-  pull_request:
-    paths:
-      - "packages/core/src/blackbox/**"
-      - "packages/core/src/session/blackbox*.ts"
-      - "packages/core/src/session/runner/**"
-      - "packages/core/test/blackbox*.test.ts"
-      - "packages/core/test/session-runner.test.ts"
-      - "packages/miao/src/blackbox/**"
-      - "packages/miao/src/engine/**"
-      - "packages/miao/test/engine/blackbox*.test.ts"
-      - "packages/miao/test/engine/native-tool-replay.test.ts"
-      - "crates/miao-engine/**"
-      - ".github/workflows/blackbox.yml"
-      - "bun.lock"
+  workflow_call:
   workflow_dispatch:
 
 permissions:
   contents: read
 
 concurrency:
-  group: blackbox-${{ github.ref }}
+  group: blackbox-${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:

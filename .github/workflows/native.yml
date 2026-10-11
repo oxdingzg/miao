@@ -1,57 +1,14 @@
 name: native
 
 on:
-  push:
-    branches:
-      - main
-    paths:
-      - "crates/miao-native/**"
-      - "crates/miao-sandbox/**"
-      - "packages/native/**"
-      - "packages/core/src/sandbox.ts"
-      - "packages/core/src/sandbox/**"
-      - "packages/core/src/tool/edit.ts"
-      - "packages/core/src/tool/edit-fuzzy.ts"
-      - "packages/core/src/tool/edit-match.ts"
-      - "packages/core/src/tool/apply-patch.ts"
-      - "packages/core/src/patch.ts"
-      - "packages/core/src/git.ts"
-      - "packages/core/test/sandbox-policy.test.ts"
-      - "packages/core/test/tool-bash-sandbox.test.ts"
-      - "packages/core/test/tool-edit-native.test.ts"
-      - "packages/core/test/patch-native.test.ts"
-      - "packages/core/test/git-status-native.test.ts"
-      - "packages/miao/src/sandbox-runner.ts"
-      - "packages/miao/src/index.ts"
-      - ".github/workflows/native.yml"
-  pull_request:
-    paths:
-      - "crates/miao-native/**"
-      - "crates/miao-sandbox/**"
-      - "packages/native/**"
-      - "packages/core/src/sandbox.ts"
-      - "packages/core/src/sandbox/**"
-      - "packages/core/src/tool/edit.ts"
-      - "packages/core/src/tool/edit-fuzzy.ts"
-      - "packages/core/src/tool/edit-match.ts"
-      - "packages/core/src/tool/apply-patch.ts"
-      - "packages/core/src/patch.ts"
-      - "packages/core/src/git.ts"
-      - "packages/core/test/sandbox-policy.test.ts"
-      - "packages/core/test/tool-bash-sandbox.test.ts"
-      - "packages/core/test/tool-edit-native.test.ts"
-      - "packages/core/test/patch-native.test.ts"
-      - "packages/core/test/git-status-native.test.ts"
-      - "packages/miao/src/sandbox-runner.ts"
-      - "packages/miao/src/index.ts"
-      - ".github/workflows/native.yml"
+  workflow_call:
   workflow_dispatch:
 
 concurrency:
   # A pull request shares one group per number, so a new push cancels its older
   # run. A push to main groups by commit SHA, so every merged commit gets its own
   # run and keeps a complete status instead of being superseded and cancelled.
-  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.sha }}
+  group: ${{ github.workflow }}-native-${{ github.event.pull_request.number || github.sha }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 permissions:
@@ -61,6 +18,7 @@ jobs:
   native:
     name: native
     runs-on: macos-14
+    timeout-minutes: 60
     defaults:
       run:
         shell: bash
@@ -123,6 +81,7 @@ jobs:
   sandbox-linux:
     name: sandbox-linux
     runs-on: ubuntu-latest
+    timeout-minutes: 60
     defaults:
       run:
         shell: bash
@@ -175,6 +134,7 @@ jobs:
   sandbox-windows:
     name: sandbox-windows
     runs-on: windows-2025
+    timeout-minutes: 60
     defaults:
       run:
         shell: pwsh
