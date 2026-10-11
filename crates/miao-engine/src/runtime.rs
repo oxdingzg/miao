@@ -8,6 +8,7 @@ use crate::{
     tools::{Prepared, ToolError, Tools},
 };
 use chrono::TimeZone;
+use futures_util::StreamExt;
 use serde_json::{json, Value};
 use std::{
     collections::{HashMap, HashSet},
@@ -777,6 +778,9 @@ async fn execute(
             input_corrections += 1;
         }
         if reply.needs_tools {
+            let mut reads =
+                execute_read_batch(inner, session, run, &reply.content, cancel.child_token())
+                    .await?;
             for block in reply
                 .content
                 .as_array()
@@ -785,15 +789,15 @@ async fn execute(
                 if block["type"] != "tool_use" {
                     continue;
                 }
-                if cancel.is_cancelled() {
-                    return Ok(());
-                }
                 let id = block["id"]
                     .as_str()
                     .ok_or_else(|| Error::Invalid("tool id".into()))?;
                 let name = block["name"]
                     .as_str()
                     .ok_or_else(|| Error::Invalid("tool name".into()))?;
+                if cancel.is_cancelled() && !reads.contains_key(id) {
+                    return Ok(());
+                }
                 if block["input_error"] == "invalid_json" {
                     if !block["input"].is_null()
                         || block["provider_executed"] == true
@@ -811,53 +815,61 @@ async fn execute(
                     inner.store.record(session, "tool.input_error", json!({"run_id":run,"step":step,"call_id":id,"tool":name,"reason":"invalid_json","attempt":input_corrections})).await?;
                     continue;
                 }
-                inner
-                    .store
-                    .record(
-                        session,
-                        crate::events::Lifecycle::PreToolUse.name(),
-                        json!({"run_id":run,"call_id":id,"tool":name}),
-                    )
-                    .await?;
-                let prepared = inner.tools.prepare(name, block["input"].clone()).await;
-                let (output, is_error) = match prepared {
-                    Err(error) => (json!({"error":error.to_string()}), true),
-                    Ok(prepared) => {
-                        let allowed = authorize(
-                            inner,
+                let batched = reads.contains_key(id);
+                let (output, is_error) = if let Some(result) = reads.remove(id) {
+                    result
+                } else {
+                    inner
+                        .store
+                        .record(
                             session,
-                            run,
-                            id,
-                            &prepared,
-                            cancel.child_token(),
-                            plan,
+                            crate::events::Lifecycle::PreToolUse.name(),
+                            json!({"run_id":run,"call_id":id,"tool":name}),
                         )
                         .await?;
-                        if cancel.is_cancelled() {
-                            return Ok(());
-                        }
-                        if !allowed {
-                            (json!({"error":"permission denied"}), true)
-                        } else if let Some(blocked) =
-                            run_hooks(inner, session, crate::events::Lifecycle::PreToolUse, name)
-                                .await?
-                        {
-                            (json!({"error":blocked}), true)
-                        } else {
-                            inner.store.mark_dispatched(session, run, id).await?;
-                            let prepared_external =
-                                prepared.access() == crate::permission::Access::External;
-                            let replayed = if let Some(replay) = &inner.tool_replay {
-                                Some(replay.take(session, name, prepared.input()).await?)
-                            } else {
-                                None
-                            };
-                            let (executed, replay_error) = if let Some((output, is_error)) =
-                                replayed
+                    let prepared = inner.tools.prepare(name, block["input"].clone()).await;
+                    match prepared {
+                        Err(error) => (json!({"error":error.to_string()}), true),
+                        Ok(prepared) => {
+                            let allowed = authorize(
+                                inner,
+                                session,
+                                run,
+                                id,
+                                &prepared,
+                                cancel.child_token(),
+                                plan,
+                            )
+                            .await?;
+                            if cancel.is_cancelled() {
+                                return Ok(());
+                            }
+                            if !allowed {
+                                (json!({"error":"permission denied"}), true)
+                            } else if let Some(blocked) = run_hooks(
+                                inner,
+                                session,
+                                crate::events::Lifecycle::PreToolUse,
+                                name,
+                            )
+                            .await?
                             {
-                                (Ok(output), Some(is_error))
+                                (json!({"error":blocked}), true)
                             } else {
-                                (                                match name {
+                                inner.store.mark_dispatched(session, run, id).await?;
+                                let prepared_external =
+                                    prepared.access() == crate::permission::Access::External;
+                                let replayed = if let Some(replay) = &inner.tool_replay {
+                                    Some(replay.take(session, name, prepared.input()).await?)
+                                } else {
+                                    None
+                                };
+                                let (executed, replay_error) = if let Some((output, is_error)) =
+                                    replayed
+                                {
+                                    (Ok(output), Some(is_error))
+                                } else {
+                                    (                                match name {
                                 "cron_create" => {
                                     start_cron(inner, session, run, id, &prepared).await?
                                 }
@@ -976,18 +988,19 @@ async fn execute(
                                         .await
                                 }
                             }, None)
-                            };
-                            match executed {
-                                Ok(output) => {
-                                    let is_error = replay_error.unwrap_or(
-                                        (prepared_external && output["isError"] == true)
-                                            || (name == "question"
-                                                && output["state"] != "answered"),
-                                    );
-                                    (output, is_error)
+                                };
+                                match executed {
+                                    Ok(output) => {
+                                        let is_error = replay_error.unwrap_or(
+                                            (prepared_external && output["isError"] == true)
+                                                || (name == "question"
+                                                    && output["state"] != "answered"),
+                                        );
+                                        (output, is_error)
+                                    }
+                                    Err(ToolError::Interrupted) => return Ok(()),
+                                    Err(error) => (json!({"error":error.to_string()}), true),
                                 }
-                                Err(ToolError::Interrupted) => return Ok(()),
-                                Err(error) => (json!({"error":error.to_string()}), true),
                             }
                         }
                     }
@@ -998,18 +1011,20 @@ async fn execute(
                 let polling_terminal = name == "terminal_read"
                     && !is_error
                     && output.get("exit").is_some_and(Value::is_null);
-                inner
-                    .store
-                    .tool_result(session, run, id, output, is_error)
-                    .await?;
-                inner
-                    .store
-                    .record(
-                        session,
-                        crate::events::Lifecycle::PostToolUse.name(),
-                        json!({"run_id":run,"call_id":id,"tool":name,"is_error":is_error}),
-                    )
-                    .await?;
+                if !batched {
+                    inner
+                        .store
+                        .tool_result(session, run, id, output, is_error)
+                        .await?;
+                    inner
+                        .store
+                        .record(
+                            session,
+                            crate::events::Lifecycle::PostToolUse.name(),
+                            json!({"run_id":run,"call_id":id,"tool":name,"is_error":is_error}),
+                        )
+                        .await?;
+                }
                 run_hooks(inner, session, crate::events::Lifecycle::PostToolUse, name).await?;
                 if polling_terminal {
                     continue;
@@ -1908,4 +1923,110 @@ async fn finish_background_job(
         json!({"job_id":id,"input_id":admitted.input_id}),
     )
     .await
+}
+
+/// Only a complete, approved, hook-free native read batch can overlap. Mixed
+/// tool turns keep their existing barrier semantics and replay stays ordered.
+async fn execute_read_batch(
+    inner: &Inner,
+    session: &str,
+    run: &str,
+    content: &Value,
+    cancel: CancellationToken,
+) -> Result<HashMap<String, (Value, bool)>, Error> {
+    if cancel.is_cancelled() || !inner.tools.hooks().is_empty() || inner.tool_replay.is_some() {
+        return Ok(HashMap::new());
+    }
+    let blocks: Vec<&Value> = content
+        .as_array()
+        .into_iter()
+        .flatten()
+        .filter(|block| block["type"] == "tool_use")
+        .collect();
+    if !(2..=16).contains(&blocks.len())
+        || blocks.iter().any(|block| {
+            block["input_error"].is_string()
+                || block["provider_executed"] == true
+                || !matches!(
+                    block["name"].as_str(),
+                    Some("read_file" | "list_files" | "glob" | "grep")
+                )
+        })
+    {
+        return Ok(HashMap::new());
+    }
+    let mut prepared = Vec::new();
+    for block in blocks {
+        let (Some(id), Some(name)) = (block["id"].as_str(), block["name"].as_str()) else {
+            return Ok(HashMap::new());
+        };
+        let Ok(tool) = inner.tools.prepare(name, block["input"].clone()).await else {
+            return Ok(HashMap::new());
+        };
+        if tool.access() != crate::permission::Access::Read
+            || inner
+                .policy
+                .evaluate(tool.name(), tool.resource(), tool.access())
+                != Decision::Allow
+        {
+            return Ok(HashMap::new());
+        }
+        prepared.push((id.to_owned(), tool));
+    }
+    if cancel.is_cancelled() {
+        return Ok(HashMap::new());
+    }
+    inner.store.record(session, "tool.parallel.started", json!({"run_id":run,"call_ids":prepared.iter().map(|(id,_)| id).collect::<Vec<_>>(),"concurrency":4})).await?;
+    for (id, tool) in &prepared {
+        inner
+            .store
+            .record(
+                session,
+                crate::events::Lifecycle::PreToolUse.name(),
+                json!({"run_id":run,"call_id":id,"tool":tool.name()}),
+            )
+            .await?;
+        inner.store.mark_dispatched(session, run, id).await?;
+    }
+    let order: Vec<_> = prepared
+        .iter()
+        .map(|(id, tool)| (id.clone(), tool.name().to_owned()))
+        .collect();
+    let mut pending = futures_util::stream::iter(prepared.into_iter().map(|(id, tool)| {
+        let cancel = cancel.child_token();
+        async move {
+            let result = inner
+                .tools
+                .execute_prepared(tool, &inner.policy, cancel)
+                .await;
+            (id, result)
+        }
+    }))
+    .buffer_unordered(4);
+    let mut results = HashMap::new();
+    while let Some((id, result)) = pending.next().await {
+        let result = match result {
+            Ok(output) => (output, false),
+            Err(error) => (json!({"error":error.to_string()}), true),
+        };
+        results.insert(id, result);
+    }
+    // Settle every admitted read before the runner can return on cancellation
+    // or a repeat limit; projected receipts preserve the provider's call order.
+    for (id, name) in order {
+        let (output, is_error) = &results[&id];
+        inner
+            .store
+            .tool_result(session, run, &id, output.clone(), *is_error)
+            .await?;
+        inner
+            .store
+            .record(
+                session,
+                crate::events::Lifecycle::PostToolUse.name(),
+                json!({"run_id":run,"call_id":id,"tool":name,"is_error":is_error}),
+            )
+            .await?;
+    }
+    Ok(results)
 }
