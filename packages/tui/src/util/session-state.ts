@@ -33,7 +33,8 @@ export function sessionState(input: {
 }): SessionState {
   if (input.blocked) return "awaiting"
   if (input.status && input.status.type !== "idle") return "processing"
-  if (input.error || (input.message?.type === "assistant" && input.message.error)) return "error"
+  const interrupted = input.message?.type === "assistant" && input.message.error?.interrupted === true
+  if (input.error || (input.message?.type === "assistant" && input.message.error && !interrupted)) return "error"
   if (input.unavailable) return "unknown"
   if (!input.status || !input.activity) return "unknown"
   if (
@@ -44,6 +45,7 @@ export function sessionState(input: {
   )
     return "waiting"
   if (input.activity.jobs.some((job) => job.status === "error" && job.completedAt === undefined)) return "unknown"
+  if (interrupted) return "incomplete"
   if (todoSummary(input.todos).remaining > 0) return "incomplete"
   // A stopped/interrupted/tool-only turn has no successful final response.
   // Completed todos alone cannot declare the whole Session successful.

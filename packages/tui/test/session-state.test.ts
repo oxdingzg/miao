@@ -21,6 +21,20 @@ const message: TranscriptAssistantMessage = {
 }
 const input = { status: { type: "idle" as const }, blocked: false, todos: [], activity, message }
 
+test("an interrupted turn is paused unfinished, never completed or failed", () => {
+  const interrupted = {
+    ...input,
+    message: { ...message, error: { type: "unknown" as const, message: "Stopped", interrupted: true } },
+  }
+  expect(sessionState(interrupted)).toBe("incomplete")
+  expect(sessionState({ ...interrupted, pendingInputs: true })).toBe("waiting")
+  expect(sessionState({ ...interrupted, status: { type: "busy" } })).toBe("processing")
+  expect(sessionState({ ...interrupted, error: "A different failure" })).toBe("error")
+  expect(
+    sessionState({ ...input, message: { ...message, error: { type: "unknown", message: "Provider failed" } } }),
+  ).toBe("error")
+})
+
 test("idle execution cannot declare unfinished todos completed", () => {
   expect(sessionState({ ...input, todos: [{ status: "in_progress" }] })).toBe("incomplete")
   expect(sessionState({ ...input, todos: [{ status: "pending" }] })).toBe("incomplete")

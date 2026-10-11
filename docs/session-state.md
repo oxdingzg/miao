@@ -23,6 +23,8 @@ the selected Session and aborts on navigation or disposal.
 | `unknown`    | Missing hydration/activity, failed observation or untracked job                           | Muted question mark  |
 | `idle`       | Hydrated Session without messages or outstanding work                                     | Empty ring           |
 
+An interrupted provider turn carries the structured `interrupted` error marker. Once execution is idle it remains paused unfinished, rather than being mistaken for a failure or a successful final answer; pending work still reports waiting. Ordinary provider failures remain errors.
+
 Cancellation is a resolved checklist item, not completed work. The sidebar keeps
 the checklist visible after completion and shows completed/total counts plus the
 number cancelled. It never rewrites todo statuses to match execution. A persisted

@@ -1042,7 +1042,11 @@ export type SessionsContextOutput = {
                       | { readonly type: "file"; readonly uri: string; readonly mime: string; readonly name?: string }
                     >
                     readonly structured: { readonly [x: string]: JsonValue }
-                    readonly error: { readonly type: "unknown"; readonly message: string }
+                    readonly error: {
+                      readonly type: "unknown"
+                      readonly message: string
+                      readonly interrupted?: boolean
+                    }
                     readonly result?: JsonValue
                   }
               readonly time: {
@@ -1063,7 +1067,7 @@ export type SessionsContextOutput = {
           readonly cache: { readonly read: number; readonly write: number }
         }
         readonly ttft?: number
-        readonly error?: { readonly type: "unknown"; readonly message: string }
+        readonly error?: { readonly type: "unknown"; readonly message: string; readonly interrupted?: boolean }
       }
     | {
         readonly type: "compaction"
@@ -1811,7 +1815,7 @@ export type SessionsHistoryOutput = {
           readonly timestamp: number
           readonly sessionID: string
           readonly assistantMessageID: string
-          readonly error: { readonly type: "unknown"; readonly message: string }
+          readonly error: { readonly type: "unknown"; readonly message: string; readonly interrupted?: boolean }
         }
       }
     | {
@@ -1941,7 +1945,7 @@ export type SessionsHistoryOutput = {
           readonly sessionID: string
           readonly assistantMessageID: string
           readonly callID: string
-          readonly error: { readonly type: "unknown"; readonly message: string }
+          readonly error: { readonly type: "unknown"; readonly message: string; readonly interrupted?: boolean }
           readonly result?: JsonValue
           readonly provider: {
             readonly executed: boolean
@@ -2488,7 +2492,7 @@ export type SessionsEventsOutput =
         readonly timestamp: number
         readonly sessionID: string
         readonly assistantMessageID: string
-        readonly error: { readonly type: "unknown"; readonly message: string }
+        readonly error: { readonly type: "unknown"; readonly message: string; readonly interrupted?: boolean }
       }
     }
   | {
@@ -2618,7 +2622,7 @@ export type SessionsEventsOutput =
         readonly sessionID: string
         readonly assistantMessageID: string
         readonly callID: string
-        readonly error: { readonly type: "unknown"; readonly message: string }
+        readonly error: { readonly type: "unknown"; readonly message: string; readonly interrupted?: boolean }
         readonly result?: unknown
         readonly provider: {
           readonly executed: boolean
@@ -2897,7 +2901,11 @@ export type SessionsMessageOutput = {
                       | { readonly type: "file"; readonly uri: string; readonly mime: string; readonly name?: string }
                     >
                     readonly structured: { readonly [x: string]: JsonValue }
-                    readonly error: { readonly type: "unknown"; readonly message: string }
+                    readonly error: {
+                      readonly type: "unknown"
+                      readonly message: string
+                      readonly interrupted?: boolean
+                    }
                     readonly result?: JsonValue
                   }
               readonly time: {
@@ -2918,7 +2926,7 @@ export type SessionsMessageOutput = {
           readonly cache: { readonly read: number; readonly write: number }
         }
         readonly ttft?: number
-        readonly error?: { readonly type: "unknown"; readonly message: string }
+        readonly error?: { readonly type: "unknown"; readonly message: string; readonly interrupted?: boolean }
       }
     | {
         readonly type: "compaction"
@@ -3081,7 +3089,11 @@ export type MessagesListOutput = {
                       | { readonly type: "file"; readonly uri: string; readonly mime: string; readonly name?: string }
                     >
                     readonly structured: { readonly [x: string]: JsonValue }
-                    readonly error: { readonly type: "unknown"; readonly message: string }
+                    readonly error: {
+                      readonly type: "unknown"
+                      readonly message: string
+                      readonly interrupted?: boolean
+                    }
                     readonly result?: JsonValue
                   }
               readonly time: {
@@ -3102,7 +3114,7 @@ export type MessagesListOutput = {
           readonly cache: { readonly read: number; readonly write: number }
         }
         readonly ttft?: number
-        readonly error?: { readonly type: "unknown"; readonly message: string }
+        readonly error?: { readonly type: "unknown"; readonly message: string; readonly interrupted?: boolean }
       }
     | {
         readonly type: "compaction"

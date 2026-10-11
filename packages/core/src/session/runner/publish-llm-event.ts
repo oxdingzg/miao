@@ -278,7 +278,7 @@ export const createLLMEventPublisher = (events: EventV2.Interface, input: Input)
     toolInput.discard()
   })
 
-  const failAssistant = Effect.fnUntraced(function* (message: string) {
+  const failAssistant = Effect.fnUntraced(function* (message: string, interrupted = false) {
     if (assistantFailed) return
     yield* flush()
     const assistantMessageID = yield* startAssistant()
@@ -288,7 +288,7 @@ export const createLLMEventPublisher = (events: EventV2.Interface, input: Input)
       sessionID: input.sessionID,
       timestamp: yield* timestamp,
       assistantMessageID,
-      error: { type: "unknown", message },
+      error: { type: "unknown", message, ...(interrupted ? { interrupted: true } : {}) },
     })
   })
 

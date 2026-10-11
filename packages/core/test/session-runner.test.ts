@@ -6696,6 +6696,28 @@ describe("SessionRunnerLLM", () => {
     }),
   )
 
+  it.live("records a structured interruption after partial provider output", () =>
+    Effect.gen(function* () {
+      yield* setup
+      const session = yield* SessionV2.Service
+      yield* session.prompt({ sessionID, prompt: Prompt.make({ text: "Interrupt partial output" }), resume: false })
+      const ready = yield* Deferred.make<void>()
+      responseStream = Stream.fromIterable([
+        LLMEvent.stepStart({ index: 0 }),
+        LLMEvent.textStart({ id: "partial" }),
+        LLMEvent.textDelta({ id: "partial", text: "Partial answer" }),
+      ]).pipe(Stream.concat(Stream.fromEffect(Deferred.succeed(ready, undefined).pipe(Effect.andThen(Effect.never)))))
+      const run = yield* session.resume(sessionID).pipe(Effect.forkChild)
+      yield* Deferred.await(ready)
+      yield* session.interrupt(sessionID)
+      const exit = yield* Fiber.await(run)
+      expect(Exit.isFailure(exit) && Cause.hasInterruptsOnly(exit.cause)).toBeTrue()
+      expect((yield* session.context(sessionID)).find((message) => message.type === "assistant")).toMatchObject({
+        error: { type: "unknown", message: "Provider turn interrupted", interrupted: true },
+      })
+    }),
+  )
+
   it.effect("durably fails blocked local tools when interrupted while awaiting settlement", () =>
     Effect.gen(function* () {
       yield* setup
