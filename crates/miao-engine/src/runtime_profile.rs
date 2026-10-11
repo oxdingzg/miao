@@ -89,15 +89,19 @@ fn capture(
         body["model"].as_str()
     }
     .filter(|model| !model.is_empty())
-    .ok_or_else(|| ProviderError::Stream("missing actual wire model".into()))?;
-    let model = if protocol == "gemini" {
-        percent_encoding::percent_decode_str(model)
-            .decode_utf8()
-            .map_err(|_| ProviderError::Stream("invalid encoded wire model".into()))?
-            .into_owned()
-    } else {
-        model.to_owned()
-    };
+    .map(|model| -> Result<String, ProviderError> {
+        if protocol == "gemini" {
+            return percent_encoding::percent_decode_str(model)
+                .decode_utf8()
+                .map(|model| model.into_owned())
+                .map_err(|_| ProviderError::Stream("invalid encoded wire model".into()));
+        }
+        Ok(model.to_owned())
+    })
+    .transpose()?;
+    // A custom endpoint can select its model outside the observable packet.
+    // Keep that wire identity unknown; profile observation must not prevent a
+    // valid request or substitute the runtime's configured model as evidence.
     let instructions: Map<String, Value> = request
         .iter()
         .filter(|(key, _)| {
@@ -135,7 +139,7 @@ fn capture(
         .map(|(key, value)| (key.clone(), value.clone()))
         .collect();
     Ok(json!({
-        "coverage": "runtime-and-wire", "model": model,
+        "coverage": if model.is_some() { "runtime-and-wire" } else { "runtime-and-request" }, "model": model,
         "modelParametersHash": fingerprint(&json!({"protocol":protocol,"parameters":parameters}))?,
         "agentManifestHash": fingerprint(&json!({"agent":agent,"instructions":instructions,"roles":roles}))?,
         "permissionHash": fingerprint(permissions)?,
@@ -206,6 +210,21 @@ mod tests {
             .unwrap()["model"],
             "a+b"
         );
+    }
+
+    #[test]
+    fn opaque_endpoint_keeps_wire_model_unknown_without_guessing_configuration() {
+        let profile = capture(
+            "gemini",
+            &json!({"contents":[]}),
+            "/custom",
+            &json!({"name":"native-runtime"}),
+            &json!({"policy":"fixture"}),
+        )
+        .unwrap();
+        assert_eq!(profile["model"], Value::Null);
+        assert_eq!(profile["coverage"], "runtime-and-request");
+        assert!(profile["permissionHash"].as_str().is_some());
     }
 
     #[tokio::test]
