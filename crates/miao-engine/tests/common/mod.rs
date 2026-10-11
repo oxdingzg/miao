@@ -11,11 +11,23 @@ use tokio::{
 pub async fn endpoint(
     responses: Vec<(u16, String)>,
 ) -> (String, mpsc::Receiver<Value>, JoinHandle<()>) {
+    endpoint_with_disconnects(
+        responses
+            .into_iter()
+            .map(|(status, body)| (status, body, false))
+            .collect(),
+    )
+    .await
+}
+
+pub async fn endpoint_with_disconnects(
+    responses: Vec<(u16, String, bool)>,
+) -> (String, mpsc::Receiver<Value>, JoinHandle<()>) {
     let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
     let url = format!("http://{}/fixture", listener.local_addr().unwrap());
     let (capture, requests) = mpsc::channel(64);
     let server = tokio::spawn(async move {
-        for (status, body) in responses {
+        for (status, body, broken) in responses {
             let (mut stream, _) =
                 tokio::time::timeout(std::time::Duration::from_secs(5), listener.accept())
                     .await
@@ -43,7 +55,7 @@ pub async fn endpoint(
             let _ = capture
                 .send(serde_json::from_slice(&request).unwrap())
                 .await;
-            stream.write_all(format!("HTTP/1.1 {status} Fixture\r\nContent-Type: text/event-stream\r\nContent-Length: {}\r\nConnection: close\r\n\r\n",body.len()).as_bytes()).await.unwrap();
+            stream.write_all(format!("HTTP/1.1 {status} Fixture\r\nContent-Type: text/event-stream\r\nContent-Length: {}\r\nConnection: close\r\n\r\n",body.len() + if broken { 128 } else { 0 }).as_bytes()).await.unwrap();
             for bytes in body.as_bytes().chunks(3) {
                 stream.write_all(bytes).await.unwrap();
             }

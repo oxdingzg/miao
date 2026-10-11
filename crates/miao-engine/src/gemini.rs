@@ -455,6 +455,58 @@ impl Parser for State {
     fn terminal(&self) -> bool {
         self.done
     }
+    fn interrupted(self) -> ProviderError {
+        let unexecuted_calls = self
+            .parts
+            .iter()
+            .filter(|part| part.get("functionCall").is_some())
+            .count();
+        if self.parts.iter().any(|part| {
+            part.get("thoughtSignature").is_some()
+                && part["thoughtSignature"]
+                    .as_str()
+                    .is_none_or(|signature| signature.is_empty())
+        }) {
+            return ProviderError::ResponseTransport;
+        }
+        if self.parts.iter().any(|part| {
+            (part["thought"] == true
+                || part.get("functionCall").is_some() && part.get("thoughtSignature").is_some())
+                && (part.get("functionCall").is_some()
+                    || part["thoughtSignature"]
+                        .as_str()
+                        .is_none_or(|signature| signature.is_empty()))
+        }) {
+            return ProviderError::ResponseTransport;
+        }
+        let parts = self
+            .parts
+            .into_iter()
+            .filter(|part| part.get("functionCall").is_none())
+            .collect::<Vec<_>>();
+        let text = visible(&parts);
+        let mut content = Vec::new();
+        if parts
+            .iter()
+            .any(|part| part.get("thoughtSignature").is_some() || part["thought"] == true)
+        {
+            content.push(json!({"type":"provider_opaque","protocol":PROTOCOL,"model":self.model,"payload":{"parts":parts,"calls":[]}}));
+        }
+        if !text.is_empty() {
+            content.push(json!({"type":"text","text":text}));
+        }
+        if content.is_empty() && unexecuted_calls == 0 {
+            return ProviderError::ResponseTransport;
+        }
+        ProviderError::ContinuableTransport {
+            partial: Reply {
+                content: Value::Array(content),
+                usage: self.usage,
+                needs_tools: false,
+            },
+            unexecuted_calls,
+        }
+    }
     fn finish(self) -> Result<Reply, ProviderError> {
         if !self.finished {
             return Err(invalid("Gemini stream ended without finishReason"));

@@ -5,7 +5,10 @@ use crate::{
 };
 use async_trait::async_trait;
 use serde_json::{json, Value};
-use std::{collections::HashSet, time::Duration};
+use std::{
+    collections::{BTreeMap, HashSet},
+    time::Duration,
+};
 use tokio::sync::mpsc;
 use tokio_util::sync::CancellationToken;
 
@@ -158,6 +161,11 @@ struct ResponsesState {
     /// and a compact `response.completed.output` of `[]`, so the completed array
     /// alone would lose every tool call.
     items: Vec<Value>,
+    partial_text: BTreeMap<(u64, u64), String>,
+    pending_reasoning: HashSet<u64>,
+    finalized_reasoning: HashSet<u64>,
+    pending_calls: HashSet<u64>,
+    unsafe_partial: bool,
 }
 impl Parser for ResponsesState {
     fn frame(&mut self, frame: &Frame) -> Result<(), ProviderError> {
@@ -186,24 +194,94 @@ impl Parser for ResponsesState {
                         "invalid finalized Responses output item".into(),
                     ));
                 }
+                if let Some(index) = event["output_index"].as_u64() {
+                    if item["type"] == "reasoning" {
+                        self.pending_reasoning.remove(&index);
+                        if !self.finalized_reasoning.insert(index) {
+                            self.unsafe_partial = true;
+                        }
+                    }
+                    if item["type"] == "function_call" {
+                        self.pending_calls.remove(&index);
+                    }
+                    if item["type"] == "message" {
+                        self.partial_text.retain(|key, _| key.0 != index);
+                    }
+                }
+                if !matches!(
+                    item["type"].as_str(),
+                    Some("message" | "reasoning" | "function_call")
+                ) {
+                    self.unsafe_partial = true;
+                }
                 self.items.push(item);
             }
+            Some("response.output_item.added") => {
+                match (
+                    event["item"]["type"].as_str(),
+                    event["output_index"].as_u64(),
+                ) {
+                    (Some("reasoning"), Some(index)) => {
+                        self.pending_reasoning.insert(index);
+                    }
+                    (Some("function_call"), Some(index)) => {
+                        self.pending_calls.insert(index);
+                    }
+                    (Some("message"), Some(_)) if event["item"]["role"] == "assistant" => {}
+                    _ => self.unsafe_partial = true,
+                }
+            }
+            Some("response.output_text.delta" | "response.output_text.done") => {
+                if let (Some(index), Some(part), Some(text)) = (
+                    event["output_index"].as_u64(),
+                    event["content_index"].as_u64(),
+                    event[if event["type"] == "response.output_text.delta" {
+                        "delta"
+                    } else {
+                        "text"
+                    }]
+                    .as_str(),
+                ) {
+                    let entry = self.partial_text.entry((index, part)).or_default();
+                    if event["type"] == "response.output_text.delta" {
+                        entry.push_str(text);
+                    } else {
+                        *entry = text.into();
+                    }
+                } else {
+                    self.unsafe_partial = true;
+                }
+            }
             Some(
-                "response.in_progress"
-                | "response.output_item.added"
-                | "response.content_part.added"
-                | "response.content_part.done"
-                | "response.output_text.delta"
-                | "response.output_text.done"
-                | "response.output_text.annotation.added"
-                | "response.function_call_arguments.delta"
-                | "response.function_call_arguments.done"
-                | "response.reasoning_summary_part.added"
+                "response.reasoning_summary_part.added"
                 | "response.reasoning_summary_part.done"
                 | "response.reasoning_summary_text.delta"
                 | "response.reasoning_summary_text.done"
                 | "response.reasoning_text.delta"
-                | "response.reasoning_text.done"
+                | "response.reasoning_text.done",
+            ) => {
+                if let Some(index) = event["output_index"].as_u64() {
+                    if !self.finalized_reasoning.contains(&index) {
+                        self.pending_reasoning.insert(index);
+                    }
+                } else {
+                    self.unsafe_partial = true;
+                }
+            }
+            Some("response.output_text.annotation.added") => self.unsafe_partial = true,
+            Some(
+                "response.function_call_arguments.delta" | "response.function_call_arguments.done",
+            ) => {
+                if let Some(index) = event["output_index"].as_u64() {
+                    self.pending_calls.insert(index);
+                } else {
+                    self.unsafe_partial = true;
+                }
+            }
+            Some(
+                "response.in_progress"
+                | "response.content_part.added"
+                | "response.content_part.done"
                 | "response.queued",
             ) => {}
             // Unrecognized but sequenced checkpoint events do not invalidate a
@@ -212,6 +290,7 @@ impl Parser for ResponsesState {
                 if other.starts_with("response.") && event.get("sequence_number").is_some() =>
             {
                 let _ = other;
+                self.unsafe_partial = true;
             }
 
             _ => return Err(ProviderError::Stream("unsupported Responses event".into())),
@@ -220,6 +299,52 @@ impl Parser for ResponsesState {
     }
     fn terminal(&self) -> bool {
         self.completed.is_some()
+    }
+    fn interrupted(self) -> ProviderError {
+        if !self.created || self.unsafe_partial || !self.pending_reasoning.is_empty() {
+            return ProviderError::ResponseTransport;
+        }
+        let mut content = Vec::new();
+        let mut unexecuted_calls = self.pending_calls.len();
+        for item in self.items {
+            if item
+                .get("status")
+                .and_then(Value::as_str)
+                .is_some_and(|status| status != "completed")
+            {
+                return ProviderError::ResponseTransport;
+            }
+            match item["type"].as_str() {
+                Some("reasoning") => content.push(json!({"type":"provider_opaque","provider":"openai-responses","model":self.model,"item":item})),
+                Some("function_call") => unexecuted_calls += 1,
+                Some("message") if item["role"] == "assistant" => {
+                    let Some(parts) = item["content"].as_array() else { return ProviderError::ResponseTransport; };
+                    for part in parts {
+                        let Some(text) = part["text"].as_str().filter(|_| part["type"] == "output_text") else { return ProviderError::ResponseTransport; };
+                        content.push(json!({"type":"text","text":text,"annotations":part.get("annotations").cloned().unwrap_or_else(|| json!([]))}));
+                    }
+                }
+                _ => return ProviderError::ResponseTransport,
+            }
+        }
+        for text in self
+            .partial_text
+            .into_values()
+            .filter(|text| !text.is_empty())
+        {
+            content.push(json!({"type":"text","text":text,"annotations":[]}));
+        }
+        if content.is_empty() && unexecuted_calls == 0 {
+            return ProviderError::ResponseTransport;
+        }
+        ProviderError::ContinuableTransport {
+            partial: Reply {
+                content: Value::Array(content),
+                usage: Value::Null,
+                needs_tools: false,
+            },
+            unexecuted_calls,
+        }
     }
     fn finish(self) -> Result<Reply, ProviderError> {
         let invalid = || ProviderError::Stream("invalid completed Responses output".into());
