@@ -112,6 +112,48 @@ export class PromptBridge {
   }
 }
 
+/** The product `session.next.assistant.identity` payload bound to one committed assistant. */
+export type SessionAssistantIdentity = {
+  sessionID: SessionID
+  timestamp: DateTime.Utc
+  assistantMessageID: SessionMessage.ID
+  assistantSeq: number
+  provider: { protocol: string; model: string } | null
+  model: null
+  agent: null
+}
+
+/**
+ * Maps a native assistant.identity evidence row onto the committed assistant it
+ * names. Stateless: `assistant_seq` addresses the commit directly, so replay
+ * reproduces the same product message id. Unknown custom providers stay null
+ * rather than borrowing the configured route; malformed evidence is dropped.
+ */
+export function translateAssistantIdentity(event: EngineEvent): SessionAssistantIdentity | undefined {
+  if (event.kind !== "assistant.identity") return undefined
+  if (typeof event.data !== "object" || event.data === null || !("assistant_seq" in event.data)) return undefined
+  const seq = event.data.assistant_seq
+  if (typeof seq !== "number" || !Number.isSafeInteger(seq) || seq <= 0 || seq >= event.seq) return undefined
+  if (!("provider" in event.data)) return undefined
+  const provider = nativeProvider(event.data.provider)
+  if (provider === undefined) return undefined
+  if (
+    typeof event.recorded_at_ms !== "number" ||
+    !Number.isSafeInteger(event.recorded_at_ms) ||
+    event.recorded_at_ms < 0
+  )
+    return undefined
+  return {
+    sessionID: adoptSession(event.session_id),
+    timestamp: eventTimestamp(event),
+    assistantMessageID: messageID(event.session_id, seq),
+    assistantSeq: seq,
+    provider,
+    model: null,
+    agent: null,
+  }
+}
+
 /** The product `session.next.text.ended` payload for one committed assistant text block. */
 export type SessionTextEnded = {
   sessionID: SessionID
@@ -464,4 +506,19 @@ export function translateQuestion(event: EngineEvent): SessionQuestionAsked | un
  * authority for historical projections, which must not infer creation from it. */
 function eventTimestamp(event: EngineEvent): DateTime.Utc {
   return DateTime.makeUnsafe(event.recorded_at_ms ?? Date.now())
+}
+
+function nativeProvider(value: unknown) {
+  if (value === null) return null
+  if (
+    typeof value !== "object" ||
+    !("protocol" in value) ||
+    typeof value.protocol !== "string" ||
+    !value.protocol ||
+    !("model" in value) ||
+    typeof value.model !== "string" ||
+    !value.model
+  )
+    return undefined
+  return { protocol: value.protocol, model: value.model }
 }

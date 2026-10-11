@@ -1,3 +1,4 @@
+import { EngineEvent } from "./engine-event"
 export * as EventManifest from "./event-manifest"
 
 import { Catalog } from "./catalog"
@@ -68,6 +69,7 @@ const tuiBridgeDefinitions = Event.inventory(
 )
 
 export const ServerDefinitions = Event.inventory(
+  ...EngineEvent.Definitions,
   ...foundationDefinitions,
   ...featureDefinitions,
   ...SessionTodo.Event.Definitions,
@@ -77,6 +79,7 @@ export const ServerDefinitions = Event.inventory(
 )
 
 export const Definitions = Event.inventory(
+  ...EngineEvent.Definitions,
   ...foundationDefinitions,
   ...sessionV1LiveDefinitions,
   ...InstallationEvent.Definitions,

@@ -97,7 +97,7 @@ if (binary)
         const wire = yield* Effect.promise(async () => {
           const decoder = new TextDecoder()
           let body = ""
-          while (!body.includes("NATIVE_CLIENT_ACK")) {
+          while (!body.includes("session.next.assistant.identity")) {
             const chunk = await reader.read()
             if (chunk.done) throw new Error("client event stream closed")
             body += decoder.decode(chunk.value, { stream: true })
@@ -107,6 +107,21 @@ if (binary)
         expect(wire).toContain('"delivery":"queue"')
         expect(wire).toContain('"id":"store-native-client"')
         expect(wire).not.toContain('"durable":')
+        expect(wire).toContain('"provider":{"protocol":"openai-chat","model":"fixture"}')
+        expect(wire).toContain('"model":null')
+        expect(local).toContainEqual(
+          expect.objectContaining({
+            payload: expect.objectContaining({
+              type: "session.next.assistant.identity",
+              properties: expect.objectContaining({
+                provider: { protocol: "openai-chat", model: "fixture" },
+                model: null,
+                agent: null,
+              }),
+            }),
+          }),
+        )
+
         expect(local).toContainEqual(
           expect.objectContaining({
             directory,
