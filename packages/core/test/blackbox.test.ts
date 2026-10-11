@@ -58,6 +58,30 @@ test("incremental frames survive a crash without rewriting the Session snapshot"
   expect(await BlackboxTape.load(file.file)).toEqual(settled)
 })
 
+test("interrupting a recorded provider preserves interruption and durably closes the partial tape", async () => {
+  await using file = await fixture()
+  const recorder = new BlackboxTape.Recorder(file.file, {})
+  const exit = await Effect.runPromise(
+    Effect.scoped(
+      Effect.gen(function* () {
+        const ready = yield* Deferred.make<void>()
+        const run = yield* SessionBlackbox.stream("ses_recorded_cancel", request, () =>
+          Stream.fromIterable([LLMEvent.textStart({ id: "partial" })]).pipe(
+            Stream.concat(Stream.fromEffect(Deferred.succeed(ready, undefined).pipe(Effect.andThen(Effect.never)))),
+          ),
+        ).pipe(Stream.runDrain, Effect.forkChild)
+        yield* Deferred.await(ready)
+        yield* Fiber.interrupt(run)
+        return yield* Fiber.await(run)
+      }),
+    ).pipe(Effect.provideService(SessionBlackbox.Current, { get: async () => recorder })),
+  )
+  expect(Exit.isFailure(exit) && Cause.hasInterruptsOnly(exit.cause)).toBe(true)
+  const bundle = await BlackboxTape.load(file.file)
+  expect(bundle.interactions[0].outcome).toBe("cancelled")
+  expect(bundle.interactions[0].frames).toHaveLength(1)
+})
+
 test("journal recovery ignores a torn final append and rejects corrupted or missing records", async () => {
   await using file = await fixture()
   const recorder = new BlackboxTape.Recorder(file.file, {})
