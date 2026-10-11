@@ -19,6 +19,11 @@ test("blackbox records each retry attempt while preserving one live stream facto
     let factories = 0
     let attempts = 0
     const expected = [LLMEvent.finish({ reason: "stop" })]
+    const execution = {
+      agentID: "fixture-agent",
+      agent: { system: "private-agent-instruction", request: { headers: { Authorization: "private-agent-token" } } },
+      permissions: { mode: "default", rules: [{ action: "read", effect: "allow" }] },
+    }
     const live = () => {
       factories++
       return Stream.suspend(() =>
@@ -34,7 +39,7 @@ test("blackbox records each retry attempt while preserving one live stream facto
       )
     }
     const recorded = await Effect.runPromise(
-      SessionBlackbox.stream("ses_retry", request, live).pipe(
+      SessionBlackbox.stream("ses_retry", request, live, execution).pipe(
         Stream.runCollect,
         Effect.retry({ times: 1 }),
         Effect.provideService(SessionBlackbox.Current, { get: async () => recorder }),
@@ -47,7 +52,7 @@ test("blackbox records each retry attempt while preserving one live stream facto
     expect(bundle.interactions.map((item) => item.outcome)).toEqual(["error", "complete"])
     const replay = new BlackboxTape.Replay(bundle)
     const output = await Effect.runPromise(
-      SessionBlackbox.stream("ses_retry", request, () => Stream.die("must not run")).pipe(
+      SessionBlackbox.stream("ses_retry", request, () => Stream.die("must not run"), execution).pipe(
         Stream.runCollect,
         Effect.retry({ times: 1 }),
         Effect.provideService(SessionBlackbox.Current, { get: async () => replay }),
@@ -55,6 +60,25 @@ test("blackbox records each retry attempt while preserving one live stream facto
     )
     expect(output).toEqual(expected)
     replay.assertConsumed()
+    const serialized = JSON.stringify(bundle)
+    expect(serialized).not.toContain("private-agent-instruction")
+    expect(serialized).not.toContain("private-agent-token")
+    const changed = new BlackboxTape.Replay(bundle)
+    await expect(
+      Effect.runPromise(
+        SessionBlackbox.stream("ses_retry", request, live, {
+          ...execution,
+          permissions: { ...execution.permissions, mode: "auto" },
+        }).pipe(Stream.runCollect, Effect.provideService(SessionBlackbox.Current, { get: async () => changed })),
+      ),
+    ).rejects.toThrow("Blackbox request mismatch")
+    expect(factories).toBe(1)
+    const unknown = SessionBlackbox.requestValue(request, {
+      agentID: "unresolved",
+      agent: null,
+      permissions: execution.permissions,
+    })
+    expect(unknown).toMatchObject({ execution: { agentManifestHash: null } })
   } finally {
     await rm(directory, { recursive: true, force: true })
   }

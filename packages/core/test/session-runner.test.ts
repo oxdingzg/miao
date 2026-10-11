@@ -2079,6 +2079,16 @@ describe("SessionRunnerLLM", () => {
       expect(writes).toBe(1)
       const bundle = yield* Effect.promise(() => BlackboxTape.load(recorder.file))
       expect(bundle.interactions.map((item) => item.lane)).toEqual(["llm", "tool", "llm"])
+      for (const interaction of bundle.interactions.filter((item) => item.lane === "llm")) {
+        expect(interaction.request).toMatchObject({
+          execution: {
+            coverage: "runtime-agent-permission-service",
+            agentID: "build",
+            agentManifestHash: null,
+            permissionHash: null,
+          },
+        })
+      }
       expect(bundle.trace.at(-1)?.kind).toBe("drain.finished")
       yield* database.db.delete(SessionMessageTable).where(eq(SessionMessageTable.session_id, sessionID)).run().pipe(Effect.orDie)
       yield* database.db.delete(SessionInputTable).where(eq(SessionInputTable.session_id, sessionID)).run().pipe(Effect.orDie)

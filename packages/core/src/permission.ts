@@ -114,12 +114,17 @@ export function merge(...rulesets: Permission.Ruleset[]): Permission.Ruleset {
  */
 export function readOnly(info: AgentV2.Info): boolean {
   const rules = info.permissions ?? []
-  return (
-    evaluate("edit", "*", rules).effect === "deny" && evaluate("bash", "*", rules).effect === "deny"
-  )
+  return evaluate("edit", "*", rules).effect === "deny" && evaluate("bash", "*", rules).effect === "deny"
 }
 
+export type PolicySnapshot = EffectRuntime.Success<ReturnType<typeof captureSnapshot>>
+
 export interface Interface {
+  /** Custom permission implementations can omit diagnostics; their profile stays unknown. */
+  readonly snapshot?: (
+    sessionID: SessionV2.ID,
+    agentID?: AgentV2.ID,
+  ) => EffectRuntime.Effect<PolicySnapshot, SessionV2.NotFoundError>
   readonly ask: (input: AssertInput) => EffectRuntime.Effect<AskResult, SessionV2.NotFoundError>
   readonly assert: (input: AssertInput) => EffectRuntime.Effect<void, Error | SessionV2.NotFoundError>
   readonly reply: (input: ReplyInput) => EffectRuntime.Effect<void, NotFoundError>
@@ -169,10 +174,7 @@ const layer = Layer.effect(
       sessionID: SessionV2.ID,
       agentID?: AgentV2.ID,
     ) {
-      const session = yield* sessions.get(sessionID)
-      if (!session) return yield* new SessionV2.NotFoundError({ sessionID })
-      const agent = yield* agents.resolve(agentID ?? session.agent)
-      return { rules: agent?.permissions ?? missingAgentPermissions, mode: agent?.permission_mode ?? "default" }
+      return yield* configuredRules(sessions, agents, sessionID, agentID)
     })
 
     function actions(input: Pick<AssertInput, "action" | "aliases">) {
@@ -365,7 +367,15 @@ const layer = Layer.effect(
       return Array.from(pending.values(), (item) => item.request).filter((request) => request.sessionID === sessionID)
     })
 
-    return Service.of({ ask, assert, reply, get, forSession, list })
+    return Service.of({
+      ask,
+      assert,
+      reply,
+      get,
+      forSession,
+      list,
+      snapshot: (sessionID, agentID) => captureSnapshot(sessions, agents, location, saved, sessionID, agentID),
+    })
   }),
 )
 
@@ -375,4 +385,39 @@ export const node = makeLocationNode({
   service: Service,
   layer,
   deps: [EventV2.node, Location.node, AgentV2.node, SessionStore.node, PermissionSaved.node],
+})
+
+/** Snapshot the rules actually read by this permission service, including saved approvals. */
+const captureSnapshot = EffectRuntime.fn("PermissionV2.snapshot")(function* (
+  sessions: SessionStore.Interface,
+  agents: AgentV2.Interface,
+  location: Location.Interface,
+  saved: PermissionSaved.Interface,
+  sessionID: SessionV2.ID,
+  agentID?: AgentV2.ID,
+) {
+  const configured = yield* configuredRules(sessions, agents, sessionID, agentID)
+  const remembered = yield* saved.list({ projectID: location.project.id })
+  return {
+    coverage: "permission-service" as const,
+    semantics: "configured-deny-first-then-last-match-v1" as const,
+    explicit: "ignore-configured-wildcard-action" as const,
+    autoClassifier: "edit-bash-safe-v1" as const,
+    configured,
+    saved: remembered.map(
+      (item): Permission.Rule => ({ action: item.action, resource: item.resource, effect: "allow" }),
+    ),
+  }
+})
+
+const configuredRules = EffectRuntime.fnUntraced(function* (
+  sessions: SessionStore.Interface,
+  agents: AgentV2.Interface,
+  sessionID: SessionV2.ID,
+  agentID?: AgentV2.ID,
+) {
+  const session = yield* sessions.get(sessionID)
+  if (!session) return yield* new SessionV2.NotFoundError({ sessionID })
+  const agent = yield* agents.resolve(agentID ?? session.agent)
+  return { rules: agent?.permissions ?? missingAgentPermissions, mode: agent?.permission_mode ?? "default" }
 })
