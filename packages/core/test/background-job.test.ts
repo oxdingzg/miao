@@ -7,6 +7,41 @@ import { it } from "./lib/effect"
 const jobsLayer = LayerNode.compile(BackgroundJob.node)
 
 describe("BackgroundJob", () => {
+  it.live("settlement observers see terminal registry state once before waiters resume", () =>
+    Effect.gen(function* () {
+      const jobs = yield* BackgroundJob.Service
+      const seen: BackgroundJob.Status[] = []
+      for (const status of ["completed", "error"] as const) {
+        const job = yield* jobs.start({
+          type: "test",
+          run: status === "completed" ? Effect.succeed("done") : Effect.fail("failure"),
+          onSettle: (info) =>
+            Effect.gen(function* () {
+              expect((yield* jobs.get(info.id))?.status).toBe(status)
+              seen.push(info.status)
+            }),
+        })
+        expect((yield* jobs.wait({ id: job.id })).info?.status).toBe(status)
+      }
+      expect(seen).toEqual(["completed", "error"])
+    }).pipe(Effect.provide(jobsLayer)),
+  )
+
+  it.live("a broken settlement observer cannot strand completed job waiters", () =>
+    Effect.gen(function* () {
+      const jobs = yield* BackgroundJob.Service
+      const job = yield* jobs.start({
+        type: "test",
+        run: Effect.succeed("done"),
+        onSettle: () => Effect.die("observer failed"),
+      })
+      expect(yield* jobs.wait({ id: job.id, timeout: 1000 })).toMatchObject({
+        timedOut: false,
+        info: { status: "completed" },
+      })
+    }).pipe(Effect.provide(jobsLayer)),
+  )
+
   it.live("tracks process-local work through explicit observation", () =>
     Effect.gen(function* () {
       const jobs = yield* BackgroundJob.Service

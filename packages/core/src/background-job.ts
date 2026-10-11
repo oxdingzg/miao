@@ -29,6 +29,7 @@ type Active = {
   tail: Deferred.Deferred<void>
   promoted: Deferred.Deferred<Info>
   onPromote?: Effect.Effect<void>
+  onSettle?: (info: Info) => Effect.Effect<void>
 }
 
 type State = {
@@ -40,6 +41,7 @@ type FinishResult = {
   info?: Info
   done?: Deferred.Deferred<Info>
   scope?: Scope.Closeable
+  onSettle?: (info: Info) => Effect.Effect<void>
 }
 
 type PromoteResult = {
@@ -67,6 +69,8 @@ export type StartInput = {
   title?: string
   metadata?: Record<string, unknown>
   onPromote?: Effect.Effect<void>
+  /** Observes the committed terminal outcome before waiters resume. Cancellation is owner-controlled. */
+  onSettle?: (info: Info) => Effect.Effect<void>
   run: Effect.Effect<string, unknown>
 }
 
@@ -155,6 +159,7 @@ export const make = Effect.gen(function* () {
       const next = {
         ...job,
         onPromote: undefined,
+        onSettle: undefined,
         pending: 0,
         output,
         info: {
@@ -165,8 +170,22 @@ export const make = Effect.gen(function* () {
           ...(Exit.isFailure(exit) ? { error: errorText(Cause.squash(exit.cause)) } : {}),
         },
       }
-      return [{ info: snapshot(next), done: job.done, scope: job.scope }, new Map(jobs).set(id, next)]
+      return [
+        {
+          info: snapshot(next),
+          done: job.done,
+          scope: job.scope,
+          onSettle: status === "cancelled" ? undefined : job.onSettle,
+        },
+        new Map(jobs).set(id, next),
+      ]
     })
+    if (result.info && result.onSettle)
+      yield* result
+        .onSettle(result.info)
+        .pipe(
+          Effect.catchCause((cause) => Effect.logWarning("Failed to observe background job settlement", { id, cause })),
+        )
     if (result.info && result.done) yield* Deferred.succeed(result.done, result.info).pipe(Effect.ignore)
     if (result.scope) {
       yield* Scope.close(result.scope, Exit.void).pipe(Effect.forkIn(state.scope, { startImmediately: true }))
@@ -237,6 +256,7 @@ export const make = Effect.gen(function* () {
               tail,
               promoted,
               onPromote: input.onPromote,
+              onSettle: input.onSettle,
             }
             return [{ info: snapshot(job), scope, token }, new Map(jobs).set(id, job)] as readonly [
               StartResult,
@@ -347,6 +367,7 @@ export const make = Effect.gen(function* () {
       const next = {
         ...job,
         onPromote: undefined,
+        onSettle: undefined,
         pending: 0,
         info: {
           ...job.info,

@@ -62,6 +62,18 @@ const setup = Effect.gen(function* () {
 })
 
 describe("Session background-job recovery", () => {
+  it.effect("failed settlements stay failed after promotion and without a live registry", () =>
+    Effect.gen(function* () {
+      const test = yield* setup
+      yield* test.announce("started")
+      yield* test.settle("Background job job_test failed.\n[exit code 7]", { status: "failed", error: "exit code 7" })
+      const recovered = SessionBackgroundJobs.make({ db: test.db, events: test.events, sessionID: test.created.id })
+      expect(yield* recovered.observe()).toMatchObject([{ status: "error", error: "exit code 7", completed_at: 2000 }])
+      expect(yield* SessionDelegationStore.promoteNext(test.db, test.events, test.created.id)).toBe(true)
+      expect(yield* recovered.observe()).toMatchObject([{ status: "error", error: "exit code 7" }])
+    }),
+  )
+
   it.effect("read-only observation reports missing jobs without publishing recovery or touching another owner", () =>
     Effect.gen(function* () {
       const test = yield* setup

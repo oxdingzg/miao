@@ -140,7 +140,8 @@ const modelOutput = (output: Output) => {
     : ""
   const file = output.outputPath === undefined ? "" : `\n\nCaptured output: ${output.outputPath}`
   if (output.timeout) return `${warnings.trimStart()}${warnings ? "\n\n" : ""}[command timed out]${file}`
-  return `${warnings.trimStart()}${warnings ? "\n\n" : ""}[exit code ${output.exit}]${file}`
+  if (output.jobID) return `${warnings.trimStart()}${warnings ? "\n\n" : ""}[background job started]${file}`
+  return `${warnings.trimStart()}${warnings ? "\n\n" : ""}${output.exit === undefined ? "[command not executed]" : `[exit code ${output.exit}]`}${file}`
 }
 
 const isTimeout = (error: AppProcess.AppProcessError) =>
@@ -763,14 +764,15 @@ const executionLayer = Layer.effect(
                     })
                   }).pipe(Effect.ignore)
                 : Effect.void
-            const settle = (text: string) =>
+            const settle = (text: string, status: "finished" | "failed", error?: string) =>
               Option.isSome(events)
                 ? Effect.gen(function* () {
                     const metadata = {
                       backgroundJob: {
                         id,
                         command: input.command,
-                        status: "finished",
+                        status,
+                        ...(error === undefined ? {} : { error }),
                         ...(streamed === undefined ? {} : { outputPath: streamed }),
                       },
                     }
@@ -818,10 +820,24 @@ const executionLayer = Layer.effect(
               type: "bash",
               title: input.command,
               metadata: { sessionID: context.sessionID, ...(streamed === undefined ? {} : { outputPath: streamed }) },
+              onSettle: (info) =>
+                settle(
+                  `Background job ${id} ${info.status === "completed" ? "finished" : "failed"}.\n${info.output ?? info.error ?? "(no output)"}`,
+                  info.status === "completed" ? "finished" : "failed",
+                  info.error,
+                ),
               run: run.pipe(
-                Effect.map((result) => modelOutput(result)),
-                Effect.catchCause((cause) => Effect.succeed(`Background command failed: ${cause}`)),
-                Effect.tap((text) => settle(`Background job ${id} finished.\n${text}`)),
+                Effect.flatMap((result: Output) => {
+                  if (result.timeout)
+                    return Effect.fail(new Error(`Background command timed out.\n${modelOutput(result)}`))
+                  if (result.exit !== 0)
+                    return Effect.fail(
+                      new Error(
+                        `${result.exit === undefined ? "Background command did not execute." : `Background command exited with code ${result.exit}.`}\n${modelOutput(result)}`,
+                      ),
+                    )
+                  return Effect.succeed(modelOutput(result))
+                }),
               ),
             })
             return {
