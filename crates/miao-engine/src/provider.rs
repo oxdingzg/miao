@@ -88,7 +88,7 @@ pub(crate) fn decode_tool_call(
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct Identity {
     pub protocol: String,
     pub model: String,
@@ -154,6 +154,11 @@ pub struct Reply {
 pub trait Provider: Send + Sync {
     fn identity(&self) -> Option<Identity> {
         None
+    }
+    /// The identity that actually produced this successful reply. Unknown
+    /// custom providers retain None rather than borrowing a configured route.
+    fn reply_identity(&self, _reply: &Reply) -> Option<Identity> {
+        self.identity()
     }
     fn protected_resources(&self) -> Vec<std::path::PathBuf> {
         vec![]

@@ -167,3 +167,84 @@ async fn replay_to_watermark_then_live_has_no_gap_or_duplicate() {
     combined.extend(live);
     assert_eq!(combined, full);
 }
+
+#[tokio::test]
+async fn reply_identity_is_atomic_replayable_and_preserved_when_forked() {
+    let dir = tempfile::tempdir().unwrap();
+    let db = dir.path().join("engine.db");
+    let store = Store::open(&db).await.unwrap();
+    store.admit(input("one", Delivery::Steer)).await.unwrap();
+    store.promote("s", false).await.unwrap();
+    store.start_run("s", "run").await.unwrap();
+    let content = json!([{"type":"text","text":"answer"}]);
+    let committed = store
+        .assistant_reply_profiled(
+            "s",
+            "run",
+            2,
+            content.clone(),
+            Some(miao_engine::provider::Identity {
+                protocol: "openai-chat".into(),
+                model: "actual-secondary".into(),
+            }),
+        )
+        .await
+        .unwrap();
+    let events = store.events("s", committed.seq, 100).await.unwrap();
+    assert_eq!(events[0].kind, "assistant.identity");
+    assert_eq!(events[0].data["assistant_seq"], committed.seq);
+    assert_eq!(events[0].data["run_id"], "run");
+    assert_eq!(events[0].data["step"], 2);
+    assert_eq!(events[0].recorded_at_ms, committed.recorded_at_ms);
+    assert!(events[0].data["agent"].is_null());
+    store.fork("s", "copy", Some(committed.seq)).await.unwrap();
+    let snapshot = store.snapshot("copy").await.unwrap();
+    let assistant = snapshot["messages"].as_array().unwrap().last().unwrap();
+    assert_eq!(
+        assistant["identity"]["provider"]["model"],
+        "actual-secondary"
+    );
+    assert_eq!(assistant["identity"]["assistant_seq"], assistant["seq"]);
+    assert_eq!(
+        assistant["identity"]["origin"]["assistant_seq"],
+        committed.seq
+    );
+    assert_eq!(
+        store.history("copy").await.unwrap().last().unwrap().content,
+        content
+    );
+    drop(store);
+    let reopened = Store::open(&db).await.unwrap();
+    assert_eq!(
+        reopened.events("s", committed.seq, 100).await.unwrap()[0].data,
+        events[0].data
+    );
+    let unknown = reopened
+        .assistant_reply_profiled(
+            "s",
+            "run",
+            3,
+            json!([{"type":"text","text":"unknown"}]),
+            None,
+        )
+        .await
+        .unwrap();
+    assert!(reopened.events("s", unknown.seq, 10).await.unwrap()[0].data["provider"].is_null());
+    assert!(reopened
+        .assistant_reply_profiled("s", "missing-run", 4, json!([]), None)
+        .await
+        .is_err());
+    assert_eq!(
+        reopened.events("s", unknown.seq, 10).await.unwrap().len(),
+        1
+    );
+    let mut jsonl = Vec::new();
+    miao_engine::export::committed_events(&db, "s", committed.seq, &mut jsonl).unwrap();
+    let exported: Vec<serde_json::Value> = String::from_utf8(jsonl)
+        .unwrap()
+        .lines()
+        .map(|line| serde_json::from_str(line).unwrap())
+        .collect();
+    assert_eq!(exported[0]["kind"], "assistant.identity");
+    assert_eq!(exported[0]["data"], events[0].data);
+}

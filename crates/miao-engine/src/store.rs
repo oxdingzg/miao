@@ -606,7 +606,14 @@ impl Store {
             let mut message_map=std::collections::HashMap::new();
             for message in messages {
                 let copied=project_message_at(&tx,&target,message["role"].as_str().ok_or_else(||Error::Invalid("projected role".into()))?,message["content"].clone(),message["checkpoint"].as_str(),message["recorded_at_ms"].as_u64())?;
-                if let Some(source)=message["seq"].as_u64(){message_map.insert(source,copied.seq);}
+                if let Some(source)=message["seq"].as_u64(){
+                    message_map.insert(source,copied.seq);
+                    if let Some((mut profile, time)) = assistant_profile(&tx, &parent, source)? {
+                        profile["origin"] = json!({"session_id":parent,"assistant_seq":source});
+                        profile["assistant_seq"] = json!(copied.seq);
+                        append_at(&tx,&target,"assistant.identity",profile,time)?;
+                    }
+                }
             }
             let context:Option<(u64,String,String,String)>=tx.query_row("SELECT epoch,fingerprint,system,sources FROM engine_context WHERE session_id=?1 AND selected_seq<=?2 ORDER BY epoch DESC LIMIT 1",params![parent,seq],|r|Ok((r.get(0)?,r.get(1)?,r.get(2)?,r.get(3)?))).optional()?;
             if let Some((parent_epoch,fingerprint,system,sources))=context {
@@ -815,6 +822,34 @@ impl Store {
         run: &str,
         content: Value,
     ) -> Result<Event, Error> {
+        self.assistant_projection(session, run, content, None).await
+    }
+
+    /// Bind successful reply identity to its assistant projection atomically.
+    pub async fn assistant_reply_profiled(
+        &self,
+        session: &str,
+        run: &str,
+        step: usize,
+        content: Value,
+        identity: Option<crate::provider::Identity>,
+    ) -> Result<Event, Error> {
+        self.assistant_projection(
+            session,
+            run,
+            content,
+            Some(json!({"run_id":run,"step":step,"provider":identity,"agent":null})),
+        )
+        .await
+    }
+
+    async fn assistant_projection(
+        &self,
+        session: &str,
+        run: &str,
+        content: Value,
+        profile: Option<Value>,
+    ) -> Result<Event, Error> {
         let (session, run) = (session.to_owned(), run.to_owned());
         self.call(move |conn| {
             let tx=conn.transaction()?;
@@ -829,6 +864,10 @@ impl Store {
                 append(&tx,&session,"tool.planned",json!({"run_id":run,"call_id":key,"provider_id":id,"name":name}))?;
             }
             let event=project_message(&tx,&session,"assistant",content,None)?;
+            if let Some(mut profile) = profile {
+                profile["assistant_seq"] = json!(event.seq);
+                append_at(&tx,&session,"assistant.identity",profile,event.recorded_at_ms)?;
+            }
             tx.commit()?;
             Ok(event)
         }).await
@@ -1298,9 +1337,27 @@ pub(crate) fn projected(
                 "projection exceeds snapshot/fork limit".into(),
             ));
         }
-        messages.push(json!({"seq":row.get::<_,u64>(0)?,"role":row.get::<_,String>(1)?,"content":serde_json::from_str::<Value>(&content)?,"checkpoint":row.get::<_,Option<String>>(3)?,"recorded_at_ms":row.get::<_,Option<u64>>(4)?}));
+        let seq = row.get::<_, u64>(0)?;
+        let mut message = json!({"seq":seq,"role":row.get::<_,String>(1)?,"content":serde_json::from_str::<Value>(&content)?,"checkpoint":row.get::<_,Option<String>>(3)?,"recorded_at_ms":row.get::<_,Option<u64>>(4)?});
+        if let Some((profile, _)) = assistant_profile(tx, session, seq)? {
+            message["identity"] = profile;
+        }
+        messages.push(message);
     }
     Ok(messages)
+}
+
+fn assistant_profile(
+    tx: &Transaction<'_>,
+    session: &str,
+    seq: u64,
+) -> Result<Option<(Value, Option<u64>)>, Error> {
+    let row: Option<(String, Option<u64>)> = tx.query_row(
+        "SELECT data,recorded_at_ms FROM engine_event WHERE session_id=?1 AND kind='assistant.identity' AND json_extract(data,'$.assistant_seq')=?2 ORDER BY seq LIMIT 1",
+        params![session,seq], |row| Ok((row.get(0)?,row.get(1)?)),
+    ).optional()?;
+    row.map(|(data, time)| Ok((serde_json::from_str(&data)?, time)))
+        .transpose()
 }
 
 pub(crate) fn closed_prefix(messages: &[Value]) -> Result<(), Error> {
