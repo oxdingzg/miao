@@ -160,6 +160,7 @@ type Promotion = SessionInput.Delivery | "notification" | "notification-steer"
  */
 const MAX_OVERFLOW_COMPACTIONS = 2
 const MAX_STREAM_CONTINUATIONS = 2
+const MAX_TOOL_INPUT_CORRECTIONS = 2
 
 /**
  * How many compactions in one Session before the frequency is worth surfacing.
@@ -263,6 +264,7 @@ const layer = Layer.effect(
     // compaction rewrites the history so the smaller window re-arms notices.
     const lastContextNotice = new Map<string, number>()
     const streamContinuations = new Map<string, number>()
+    const toolInputCorrections = new Map<string, number>()
     // Repeated identical tool calls per Session drain; reset at each drain start.
     const repeatedToolCalls = new Map<string, number>()
     const readSettings = Effect.fnUntraced(function* () {
@@ -1013,9 +1015,11 @@ const layer = Layer.effect(
           }
           if (overflowFailure) yield* publish(overflowFailure)
           const llmFailure = failure instanceof LLMError ? failure : undefined
+          const invalidToolInput = llmFailure?.reason._tag === "InvalidProviderOutput"
+            && llmFailure.reason.toolInput?.canCorrect ? llmFailure.reason.toolInput : undefined
           if (llmFailure && !publisher.hasProviderError()) {
             yield* withPublication(publisher.failUnsettledTools("Provider did not return a tool result", true))
-            if (llmFailure.reason._tag === "Transport" && llmFailure.reason.retryable)
+            if (invalidToolInput || (llmFailure.reason._tag === "Transport" && llmFailure.reason.retryable))
               yield* withPublication(publisher.failPreparedTools("Provider stream interrupted before this tool call was complete; it was not executed"))
             const detail = retryDetail(llmFailure)
             yield* withPublication(publisher.failAssistant(detail.statusCode === undefined
@@ -1148,6 +1152,26 @@ const layer = Layer.effect(
                   ? firstEventAt - requestStartedAt
                   : undefined,
             })
+          }
+          if (
+            stream._tag === "Failure" && !Cause.hasInterrupts(stream.cause) &&
+            settled._tag === "Success" && invalidToolInput && publisher.hasVisibleOutput() &&
+            !isLastStep && (toolInputCorrections.get(session.id) ?? 0) < MAX_TOOL_INPUT_CORRECTIONS
+          ) {
+            const attempt = (toolInputCorrections.get(session.id) ?? 0) + 1
+            toolInputCorrections.set(session.id, attempt)
+            yield* Effect.logWarning("session.tool.input.invalid", {
+              sessionID: session.id, ...invalidToolInput, correction: attempt,
+            })
+            yield* events.publish(SessionEvent.Synthetic, {
+              sessionID: session.id,
+              timestamp: yield* DateTime.now,
+              messageID: SessionMessage.ID.create(),
+              text: `Tool ${invalidToolInput.name} (${invalidToolInput.callID}) had invalid JSON arguments and was not executed. Generate a fresh call with valid JSON. Preserve completed tool results; do not rerun completed operations. If you cannot correct the arguments, explain the blocker instead of repeating them.`,
+              metadata: { toolInputCorrection: true, attempt, ...invalidToolInput },
+            })
+            yield* phase("retrying")
+            return { needsContinuation: true, step: currentStep }
           }
           if (
             stream._tag === "Failure" &&
@@ -1626,7 +1650,11 @@ const layer = Layer.effect(
       return yield* Effect.scoped(
         Effect.gen(function* () {
           streamContinuations.delete(input.sessionID)
-          yield* Effect.addFinalizer(() => Effect.sync(() => { streamContinuations.delete(input.sessionID) }))
+          toolInputCorrections.delete(input.sessionID)
+          yield* Effect.addFinalizer(() => Effect.sync(() => {
+            streamContinuations.delete(input.sessionID)
+            toolInputCorrections.delete(input.sessionID)
+          }))
           const drainSession = yield* store.get(input.sessionID)
           const drainAgent = drainSession ? yield* agents.select(drainSession.agent) : undefined
           const jobsOption = yield* Effect.serviceOption(BackgroundJob.Service)

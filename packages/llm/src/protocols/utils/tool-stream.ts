@@ -1,5 +1,5 @@
 import { Effect } from "effect"
-import { LLMError, LLMEvent, type ProviderMetadata, type ToolCall } from "../../schema"
+import { InvalidProviderOutputReason, LLMError, LLMEvent, type ProviderMetadata, type ToolCall } from "../../schema"
 import { eventError, parseToolInput, type ToolAccumulator } from "../shared"
 
 type StreamKey = string | number
@@ -65,6 +65,25 @@ const inputDelta = (tool: PendingTool, text: string) =>
 
 const toolCall = (route: string, tool: PendingTool, inputOverride?: string) =>
   parseToolInput(route, tool.name, inputOverride ?? tool.input).pipe(
+    Effect.mapError(
+      (error) =>
+        new LLMError({
+          module: error.module,
+          method: error.method,
+          reason: new InvalidProviderOutputReason({
+            route,
+            message: error.reason.message,
+            // Keep malformed arguments out of error metadata: they may be huge or
+            // contain private file content. The lifecycle already records input.
+            toolInput: {
+              callID: tool.id,
+              name: tool.name,
+              characters: (inputOverride ?? tool.input).length,
+              canCorrect: tool.providerExecuted !== true,
+            },
+          }),
+        }),
+    ),
     Effect.map(
       (input): ToolCall =>
         LLMEvent.toolCall({
