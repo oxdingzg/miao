@@ -77,7 +77,7 @@ impl ToolInputBudget {
             .is_some_and(|deadline| deadline <= Instant::now())
         {
             return Err(ProviderError::Stream(
-                "tool input exceeded time budget".into(),
+                "tool input time budget exceeded".into(),
             ));
         }
         let Frame::Json(event) = frame else {
