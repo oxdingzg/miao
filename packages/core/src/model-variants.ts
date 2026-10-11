@@ -19,7 +19,7 @@ type Api = {
  * protocols express effort differently (Anthropic sends `thinking`), so they
  * keep whatever the provider declares instead of a guess.
  */
-const supportsReasoningBody = (api: Api) =>
+const supportsReasoningBody = (api: { readonly package?: string }) =>
   api.package === "@ai-sdk/openai" || api.package === "@ai-sdk/openai-compatible"
 
 const effortVariants = (api: Api, values: ReadonlyArray<string | null>): ModelV2Info["variants"] =>
@@ -46,6 +46,28 @@ export function fromReasoningOptions(input: {
   const effort = input.options?.find((option) => option.type === "effort")
   if (effort?.type !== "effort") return []
   return effortVariants(input.api, effort.values)
+}
+
+/**
+ * Tiers an auxiliary call may fall back to, cheapest first. `none` is excluded:
+ * it marks "no effort" in the catalog rather than a wire value every provider
+ * accepts.
+ */
+const AUX_EFFORTS = ["minimal", "low"] as const
+
+/**
+ * Provider options that pin an auxiliary call — a title or a summary — to the
+ * cheapest reasoning tier its model declares. Only packages whose reasoning
+ * body this module can write are eligible, so the option never reaches a
+ * protocol that would reject it, and a model declaring no tier gets none.
+ */
+export const auxReasoningOptions = (
+  packageName: string | undefined,
+  variants: ReadonlyArray<{ readonly id: string }>,
+): Record<string, Record<string, unknown>> | undefined => {
+  if (packageName === undefined || !supportsReasoningBody({ package: packageName })) return undefined
+  const effort = AUX_EFFORTS.find((candidate) => variants.some((variant) => variant.id === candidate))
+  return effort === undefined ? undefined : { [packageName]: { reasoningEffort: effort } }
 }
 
 /** Reasoning families whose own catalog entry is not always the one in use. */

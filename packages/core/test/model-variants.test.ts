@@ -82,3 +82,19 @@ test("a model whose reasoning is not expressed as effort keeps no variant", () =
   expect(ids(ModelVariants.generate({ id: "gpt-5.2", api: api("@ai-sdk/anthropic", "gpt-5.2") }))).toEqual([])
   expect(ids(ModelVariants.generate({ id: "some-model", api: api("@ai-sdk/openai-compatible") }))).toEqual([])
 })
+
+test("auxiliary calls pin the cheapest declared tier for a reasoning package", () => {
+  expect(
+    ModelVariants.auxReasoningOptions("@ai-sdk/openai-compatible", [{ id: "high" }, { id: "low" }, { id: "max" }]),
+  ).toEqual({ "@ai-sdk/openai-compatible": { reasoningEffort: "low" } })
+  expect(ModelVariants.auxReasoningOptions("@ai-sdk/openai", [{ id: "minimal" }, { id: "low" }])).toEqual({
+    "@ai-sdk/openai": { reasoningEffort: "minimal" },
+  })
+})
+
+test("auxiliary calls stay silent without a tier or a writable reasoning body", () => {
+  expect(ModelVariants.auxReasoningOptions("@ai-sdk/openai", [{ id: "medium" }, { id: "high" }])).toBeUndefined()
+  expect(ModelVariants.auxReasoningOptions("@ai-sdk/openai", [{ id: "none" }])).toBeUndefined()
+  expect(ModelVariants.auxReasoningOptions("@ai-sdk/anthropic", [{ id: "low" }])).toBeUndefined()
+  expect(ModelVariants.auxReasoningOptions(undefined, [{ id: "low" }])).toBeUndefined()
+})
