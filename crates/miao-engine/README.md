@@ -8,7 +8,7 @@ execution, streaming adapters for Anthropic Messages / OpenAI Chat / OpenAI Resp
 `read_file` / `list_files`, approval-gated `write_file` / `edit_file`, and stdio plus committed
 JSONL export. The objective is higher task quality with fewer tokens and less end-to-end time.
 Current progress, remaining work and acceptance gates live in the unified [roadmap](docs/roadmap.md)
-(中文), with implementation evidence in [inventory](docs/inventory.md). Product integration and the
+with implementation evidence in [inventory](docs/inventory.md). Product integration and the
 default switch remain incomplete. Detailed instructions below include early implementation snapshots;
 they are not the current capability-gap checklist.
 
@@ -157,7 +157,14 @@ policy revision. The default is read_only. Workspace writes default to ask, and 
 leaf permission merely because it appears in the catalog.
 
 ```json
-{"mode":"workspace","approval_timeout_ms":60000,"rules":[{"tool":"write_file","path":"generated/**","decision":"allow"},{"tool":"*","path":"secrets/**","decision":"deny"}]}
+{
+  "mode": "workspace",
+  "approval_timeout_ms": 60000,
+  "rules": [
+    { "tool": "write_file", "path": "generated/**", "decision": "allow" },
+    { "tool": "*", "path": "secrets/**", "decision": "deny" }
+  ]
+}
 ```
 
 After receiving `approval.requested`, reply with its input_hash/policy_revision through the local
@@ -165,7 +172,19 @@ stdio `approve` method; the response decision can only be allow/deny and cannot 
 self-claimed controller role. The controller capability is held by the adapter.
 
 ```jsonl
-{"id":10,"method":"approve","params":{"session_id":"s","response":{"request_id":"REQUEST_ID","input_hash":"INPUT_HASH","policy_revision":"POLICY_REVISION","decision":"allow"}}}
+{
+  "id": 10,
+  "method": "approve",
+  "params": {
+    "session_id": "s",
+    "response": {
+      "request_id": "REQUEST_ID",
+      "input_hash": "INPUT_HASH",
+      "policy_revision": "POLICY_REVISION",
+      "decision": "allow"
+    }
+  }
+}
 ```
 
 - read_file returns text and sha256; write_file requires that fingerprint for an existing file, and expected_sha256=null only creates a file that does not exist.
@@ -183,7 +202,7 @@ default is ask. `process_network=false` disables network by default, and the mod
 own privilege through tool arguments. The mode/capabilities/rules form the same policy revision.
 
 ```json
-{"mode":"workspace","allow_process":true,"process_network":false,"rules":[]}
+{ "mode": "workspace", "allow_process": true, "process_network": false, "rules": [] }
 ```
 
 run_command accepts an explicit argv, a workspace-internal cwd, and a 1..120000ms timeout; there is
@@ -300,7 +319,7 @@ Specify a host configuration outside the workspace via `--mcp-config
 /absolute/path/servers.json`:
 
 ```json
-[{"name":"local_service","argv":["/absolute/path/to/server","--stdio"],"env":{}}]
+[{ "name": "local_service", "argv": ["/absolute/path/to/server", "--stdio"], "env": {} }]
 ```
 
 The permission policy must set `mode: "workspace"` and `allow_mcp: true`. Starting a server is a host
@@ -325,7 +344,10 @@ compatibility are not implemented today.
 `--context-config /absolute/path/context.json` selects additional instruction/persona files:
 
 ```json
-[{"label":"persona","path":"docs/persona.md"},{"label":"team-rules","path":"docs/team-rules.md"}]
+[
+  { "label": "persona", "path": "docs/persona.md" },
+  { "label": "team-rules", "path": "docs/team-rules.md" }
+]
 ```
 
 The configuration lives outside the workspace, and content paths must be workspace-relative. At most
@@ -342,7 +364,15 @@ skill/reference catalog, and per-task automatic selection are not implemented ye
 ## In-Session raw-history recall
 
 ```jsonl
-{"id":50,"method":"recall","params":{"session_id":"s","query":"old error text","limit":10}}
+{
+  "id": 50,
+  "method": "recall",
+  "params": {
+    "session_id": "s",
+    "query": "old error text",
+    "limit": 10
+  }
+}
 ```
 
 The model tool `recall` is automatically bound to the current Session and does not accept a target
@@ -558,7 +588,7 @@ full purpose-role catalog, automatic model discovery, or quality/price routing.
 KiB, automatically listed as a protected resource):
 
 ```json
-[{"event":"tool_before","tool":"run_command","argv":["/path/guard","--check"],"timeout_ms":10000}]
+[{ "event": "tool_before", "tool": "run_command", "argv": ["/path/guard", "--check"], "timeout_ms": 10000 }]
 ```
 
 `event` is `tool_before` / `tool_after`; `tool` is an exact model tool name or `*`; at most 16,
