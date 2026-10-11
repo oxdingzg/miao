@@ -70,8 +70,7 @@ export async function runEnginePrompt(options: EngineRunOptions): Promise<Engine
   client.onEvent((event) => {
     events.push(event)
     if (options.blackbox) {
-      const recorded = event.kind === "provider.failed" ? { ...event, data: { failed: true } } : event
-      const projected = trace.project(recorded)
+      const projected = trace.project(event)
       if (options.blackbox instanceof BlackboxTape.Replay) {
         try {
           options.blackbox.expectTrace(projected.session, projected.kind, projected.data)
