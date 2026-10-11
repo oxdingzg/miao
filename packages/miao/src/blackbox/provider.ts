@@ -56,7 +56,7 @@ export async function providerProxy(
         return
       }
       if (!recorded.frames[0]) {
-        response.destroy()
+        interruptResponse(response)
         return
       }
       const head = decodeHead(recorded.frames[0].value)
@@ -73,7 +73,7 @@ export async function providerProxy(
         // Flush partial bytes before breaking the socket; otherwise the replay
         // may look like a failure before output rather than after output.
         await Bun.sleep(input.timing ? Math.max(0, (recorded.endElapsedMs ?? previous) - previous) : 0)
-        response.destroy()
+        interruptResponse(response)
         return
       }
       response.end()
@@ -114,13 +114,13 @@ export async function providerProxy(
       response.end()
     } catch {
       await ticket.finish(abort.signal.aborted ? "cancelled" : "error", { message: "Provider transport interrupted" })
-      response.destroy()
+      interruptResponse(response)
     }
   }
   const server = createServer((request, response) => {
     const operation = handle(request, response).catch((error: unknown) => {
       failures.push(error instanceof Error ? error : new Error("Blackbox HTTP boundary failed"))
-      response.destroy()
+      interruptResponse(response)
     })
     active.add(operation)
     void operation.finally(() => active.delete(operation))
@@ -143,4 +143,16 @@ export async function providerProxy(
       },
     },
   }
+}
+
+function interruptResponse(response: ServerResponse) {
+  // Bun's ServerResponse.destroy() may append closing header bytes to an
+  // already-started chunked body. Close the TCP socket itself so interruption
+  // preserves the exact payload bytes and remains a transport failure.
+  const socket = response.socket
+  if (socket) {
+    socket.destroy()
+    return
+  }
+  response.destroy()
 }
