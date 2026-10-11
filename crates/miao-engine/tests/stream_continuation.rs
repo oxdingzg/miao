@@ -67,6 +67,14 @@ fn fixture(backend: usize, mode: &str) -> String {
                 json!({"type":"message_delta","delta":{"stop_reason":"tool_use"},"usage":{"output_tokens":1}}),
                 json!({"type":"message_stop"}),
             ]);
+        } else if mode.starts_with("invalid-") {
+            events.extend([
+                json!({"type":"content_block_start","index":0,"content_block":{"type":"tool_use","id":mode,"name":"read_file","input":{}}}),
+                json!({"type":"content_block_delta","index":0,"delta":{"type":"input_json_delta","partial_json":"{"}}),
+                json!({"type":"content_block_stop","index":0}),
+                json!({"type":"message_delta","delta":{"stop_reason":"tool_use"}}),
+                json!({"type":"message_stop"}),
+            ]);
         } else {
             events.push(json!({"type":"content_block_start","index":0,"content_block":{"type":"text","text":if mode=="partial"{"PARTIAL"}else{"RECOVERED"}}}));
             if mode == "partial" {
@@ -86,13 +94,15 @@ fn fixture(backend: usize, mode: &str) -> String {
     } else {
         let delta = if mode == "write" {
             json!({"tool_calls":[{"index":0,"id":"write","type":"function","function":{"name":"write_file","arguments":"{\"path\":\"audit\",\"text\":\"once\",\"expected_sha256\":null}"}}]})
+        } else if mode.starts_with("invalid-") {
+            json!({"tool_calls":[{"index":0,"id":mode,"type":"function","function":{"name":"read_file","arguments":"{"}}]})
         } else if mode == "partial" {
             json!({"content":"PARTIAL","tool_calls":[{"index":0,"id":"unfinished","type":"function","function":{"name":"write_file","arguments":"{\"path\":\"do-not-retain\","}}]})
         } else {
             json!({"content":"RECOVERED"})
         };
         vec![
-            json!({"choices":[{"index":0,"delta":delta,"finish_reason":if mode=="partial"{Value::Null}else{json!(if mode=="write"{"tool_calls"}else{"stop"})}}]}),
+            json!({"choices":[{"index":0,"delta":delta,"finish_reason":if mode=="partial"{Value::Null}else{json!(if mode=="write" || mode.starts_with("invalid-"){"tool_calls"}else{"stop"})}}]}),
         ]
     };
     let body = events
@@ -321,6 +331,55 @@ async fn clean_eof_with_an_incomplete_message_remains_a_terminal_protocol_failur
         server.await.unwrap();
         assert!(requests.recv().await.is_some());
         assert!(requests.recv().await.is_none());
+        runtime.shutdown().await;
+    }
+}
+
+#[tokio::test]
+async fn transport_internal_steers_do_not_refill_the_json_correction_budget() {
+    for backend in 0..2 {
+        let (_dir, runtime, store, mut requests, server) = run(
+            backend,
+            vec![
+                (fixture(backend, "invalid-1"), false),
+                (fixture(backend, "partial"), true),
+                (fixture(backend, "invalid-2"), false),
+                (fixture(backend, "invalid-3"), false),
+            ],
+        )
+        .await;
+        let events = store.events("s", 0, 1000).await.unwrap();
+        assert_eq!(
+            events
+                .iter()
+                .find(|event| event.kind == "run.finished")
+                .unwrap()
+                .data["reason"],
+            "failed"
+        );
+        assert_eq!(
+            events
+                .iter()
+                .filter(|event| event.kind == "tool.input_error")
+                .count(),
+            3
+        );
+        assert!(events.iter().any(
+            |event| event.kind == "tool.input_recovery.stopped" && event.data["attempts"] == 3
+        ));
+        assert_eq!(
+            events
+                .iter()
+                .filter(|event| event.kind == "provider.recovery.continuation")
+                .count(),
+            1
+        );
+        server.await.unwrap();
+        let mut count = 0;
+        while requests.recv().await.is_some() {
+            count += 1;
+        }
+        assert_eq!(count, 4);
         runtime.shutdown().await;
     }
 }
