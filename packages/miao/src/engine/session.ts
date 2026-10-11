@@ -29,7 +29,7 @@ export class EngineSession {
   #publish: EnginePublish
   #status = new StatusBridge()
   #tools = new ToolBridge()
-  #subscribed = new Set<string>()
+  #subscriptions = new Map<string, Promise<unknown>>()
 
   constructor(client: EngineClient, publish: EnginePublish) {
     this.#client = client
@@ -37,13 +37,31 @@ export class EngineSession {
     client.onEvent((event) => this.#dispatch(event))
   }
 
-  /** Subscribe (once per Session) before admitting so no committed event is missed. */
-  async prompt(sessionID: string, prompt: string): Promise<unknown> {
-    if (!this.#subscribed.has(sessionID)) {
-      await this.#client.subscribe(sessionID, 0)
-      this.#subscribed.add(sessionID)
+  /** Subscribe before admitting; retain the caller's identity for exact retries. */
+  async prompt(
+    sessionID: string,
+    prompt: string,
+    options: { inputID?: string; delivery?: "steer" | "queue"; resume?: boolean } = {},
+  ): Promise<unknown> {
+    if (!this.#subscriptions.has(sessionID)) {
+      const subscription = this.#client.subscribe(sessionID, 0).catch((error: unknown) => {
+        this.#subscriptions.delete(sessionID)
+        throw error
+      })
+      // Share the pending subscription too: concurrent admissions must not
+      // replay the same history twice before either subscribe reply arrives.
+      this.#subscriptions.set(sessionID, subscription)
     }
-    return this.#client.admit({ session_id: sessionID, input_id: `in_${crypto.randomUUID()}`, prompt })
+    await this.#subscriptions.get(sessionID)
+    return this.#client.admit(
+      {
+        session_id: sessionID,
+        input_id: options.inputID ?? `in_${crypto.randomUUID()}`,
+        prompt,
+        delivery: options.delivery,
+      },
+      options.resume ?? true,
+    )
   }
 
   #dispatch(event: EngineEvent): void {
