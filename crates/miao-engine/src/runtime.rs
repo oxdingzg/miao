@@ -9,7 +9,10 @@ use crate::{
 };
 use chrono::TimeZone;
 use serde_json::{json, Value};
-use std::{collections::HashMap, sync::Arc};
+use std::{
+    collections::{HashMap, HashSet},
+    sync::Arc,
+};
 use tokio::sync::{broadcast, mpsc, oneshot, Mutex, Semaphore};
 use tokio::task::{JoinHandle, JoinSet};
 use tokio_util::sync::CancellationToken;
@@ -511,6 +514,10 @@ async fn execute(
     let mut step = 0;
     let mut allowance = 25;
     let mut repeats = HashMap::<String, u32>::new();
+    let mut goal_inputs = HashSet::new();
+    let mut goal_iterations = 0;
+    let mut goal_stalls = 0;
+    let mut goal_signature = None;
     loop {
         if allowance == 0 {
             return Err(Error::Invalid("provider turn allowance exceeded".into()));
@@ -879,7 +886,53 @@ async fn execute(
         if cancel.is_cancelled() {
             return Ok(());
         }
-        let promoted = inner.store.promote(session, !reply.needs_tools).await?;
+        let mut promoted = inner.store.promote(session, !reply.needs_tools).await?;
+        if !reply.needs_tools && promoted.is_empty() && state_allowed {
+            let state = inner.store.state(session).await?;
+            let goal = &state["goal"]["value"];
+            if goal["status"] == "active"
+                && goal["autonomous"] == true
+                && !crate::state::runnable_state(&state)?.is_empty()
+            {
+                let signature = serde_json::to_string(&state["todos"]["value"]["todos"])?;
+                goal_stalls = if goal_signature.as_ref() == Some(&signature) {
+                    goal_stalls + 1
+                } else {
+                    0
+                };
+                goal_signature = Some(signature);
+                let reason = if allowance == 0 {
+                    Some("budget")
+                } else if goal_iterations >= 25 {
+                    Some("max-iterations")
+                } else if goal_stalls >= 2 {
+                    Some("no-progress")
+                } else {
+                    None
+                };
+                if let Some(reason) = reason {
+                    inner
+                        .store
+                        .record(
+                            session,
+                            "loop.stopped",
+                            json!({"run_id":run,"reason":reason}),
+                        )
+                        .await?;
+                } else {
+                    goal_iterations += 1;
+                    let input_id = format!("goal:{run}:{goal_iterations}");
+                    let admission = inner.store.admit(Input {
+                            session_id: session.into(), input_id: input_id.clone(),
+                            prompt: "Continue the next dependency-ready todo independently of background waits. Choose only tasks whose depends_on prerequisites are completed. Preserve completed operations, make concrete progress, and update the todo list. If no task is runnable, wait for existing completion notifications rather than polling.".into(),
+                            delivery: crate::protocol::Delivery::Queue,
+                        }).await?;
+                    goal_inputs.insert(input_id.clone());
+                    inner.store.record(session, "loop.continuation", json!({"run_id":run,"input_id":input_id,"admitted_seq":admission.admitted_seq,"iteration":goal_iterations})).await?;
+                    promoted = inner.store.promote(session, true).await?;
+                }
+            }
+        }
         if !reply.needs_tools && promoted.is_empty() {
             if let Some(replay) = &inner.tool_replay {
                 replay.assert_consumed().await?;
@@ -888,8 +941,19 @@ async fn execute(
         }
         if !promoted.is_empty() {
             record_promotions(inner, session, run, &promoted).await?;
-            allowance = 25;
-            repeats.clear();
+            // Synthetic goal admissions are durable, but do not refill the
+            // user-input provider allowance. External admissions still do.
+            if promoted.iter().any(|event| {
+                event.data["input_id"]
+                    .as_str()
+                    .is_none_or(|id| !goal_inputs.contains(id))
+            }) {
+                allowance = 25;
+                repeats.clear();
+                goal_iterations = 0;
+                goal_stalls = 0;
+                goal_signature = None;
+            }
         }
         step += 1;
     }
