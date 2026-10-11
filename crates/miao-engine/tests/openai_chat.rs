@@ -108,10 +108,6 @@ async fn truncation_refusal_length_and_invalid_shapes_never_complete_or_retry() 
         ),
         frames(vec![chunk(json!({"refusal":"no"}), json!("stop"))], true),
         frames(
-            vec![chunk(json!({"content":"truncated"}), json!("length"))],
-            true,
-        ),
-        frames(
             vec![chunk(
                 json!({"tool_calls":[{"index":0,"id":"call","function":{"name":"read_file","arguments":"[]"}}]}),
                 json!("tool_calls"),
@@ -254,4 +250,64 @@ async fn opaque_reasoning_and_legacy_delta_fields_are_rejected() {
         );
         server.await.unwrap();
     }
+}
+
+#[tokio::test]
+async fn length_truncation_continues_without_publishing_partial_calls() {
+    let truncated_calls = frames(
+        vec![
+            chunk(json!({"reasoning_content":"thinking"}), json!(null)),
+            chunk(json!({"content":"partial"}), json!(null)),
+            chunk(
+                json!({"tool_calls":[{"index":0,"id":"call","type":"function","function":{"name":"read_file","arguments":"{\"path\":\"fi"}}]}),
+                json!(null),
+            ),
+            chunk(json!({}), json!("length")),
+        ],
+        true,
+    );
+    let (url, mut requests, server) = common::endpoint(vec![(200, truncated_calls)]).await;
+    let provider = OpenAIChat::new(url, "fixture".into(), "model".into()).unwrap();
+    let (progress, _receive) = mpsc::channel(64);
+    let error = match provider
+        .stream(request(), progress, CancellationToken::new())
+        .await
+    {
+        Err(error) => error,
+        Ok(_) => panic!("a truncated reply must not complete"),
+    };
+    match error {
+        ProviderError::ContinuableTransport {
+            partial,
+            unexecuted_calls,
+        } => {
+            assert_eq!(unexecuted_calls, 1);
+            assert_eq!(
+                partial.content,
+                json!([
+                    {"type":"reasoning","text":"thinking"},
+                    {"type":"text","text":"partial"}
+                ])
+            );
+            assert!(!partial.needs_tools);
+        }
+        other => panic!("expected a bounded continuation, got {other}"),
+    }
+    assert!(requests.recv().await.is_some());
+    server.await.unwrap();
+}
+
+#[tokio::test]
+async fn length_truncation_with_nothing_salvageable_is_a_transport_failure() {
+    let body = frames(vec![chunk(json!({}), json!("length"))], true);
+    let (url, _requests, server) = common::endpoint(vec![(200, body)]).await;
+    let provider = OpenAIChat::new(url, "fixture".into(), "model".into()).unwrap();
+    let (progress, _receive) = mpsc::channel(64);
+    assert!(matches!(
+        provider
+            .stream(request(), progress, CancellationToken::new())
+            .await,
+        Err(ProviderError::ResponseTransport)
+    ));
+    server.await.unwrap();
 }
