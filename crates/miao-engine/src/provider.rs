@@ -246,6 +246,21 @@ impl Provider for Anthropic {
                     *block = json!({"type":"image","source":{"type":"base64","media_type":mime,"data":data}});
                     continue;
                 }
+                if message.role == "assistant" && block["type"] == "reasoning" {
+                    let text = block["text"].as_str().ok_or_else(|| {
+                        ProviderError::Stream("invalid Anthropic reasoning part".into())
+                    })?;
+                    let mut thinking = json!({"type":"thinking","thinking":text});
+                    if let Some(signature) = block
+                        .get("signature")
+                        .and_then(Value::as_str)
+                        .filter(|signature| !signature.is_empty())
+                    {
+                        thinking["signature"] = Value::String(signature.into());
+                    }
+                    *block = thinking;
+                    continue;
+                }
                 if !matches!(
                     (message.role.as_str(), block["type"].as_str()),
                     ("user" | "assistant", Some("text"))
@@ -415,6 +430,24 @@ struct StreamState {
     stopped: bool,
 }
 
+/// Anthropic reports thinking natively; the canonical part is `reasoning`, so
+/// the opaque signature travels with it and the lowering step restores the
+/// block shape the provider expects.
+fn reasoning_part(block: Value) -> Value {
+    if block["type"] != "thinking" {
+        return block;
+    }
+    let text = block["thinking"].as_str().unwrap_or("").to_owned();
+    let mut part = json!({"type":"reasoning","text":text});
+    if let Some(signature) = block["signature"]
+        .as_str()
+        .filter(|value| !value.is_empty())
+    {
+        part["signature"] = Value::String(signature.into());
+    }
+    part
+}
+
 impl StreamState {
     fn event(&mut self, event: &Value) -> Result<(), ProviderError> {
         match event["type"].as_str().unwrap_or("") {
@@ -435,8 +468,10 @@ impl StreamState {
                 let block = &event["content_block"];
                 // Unknown hosted tools/thinking must not be silently converted
                 // to text or retried against another provider.
-                if !matches!(block["type"].as_str(), Some("text" | "tool_use"))
-                    || self.blocks.contains_key(&index)
+                if !matches!(
+                    block["type"].as_str(),
+                    Some("text" | "tool_use" | "thinking")
+                ) || self.blocks.contains_key(&index)
                 {
                     return Err(ProviderError::Stream(
                         "unsupported or duplicate content block".into(),
@@ -461,6 +496,24 @@ impl StreamState {
                         let mut value = block["text"].as_str().unwrap_or("").to_owned();
                         value.push_str(text);
                         block["text"] = Value::String(value);
+                    }
+                    Some("thinking_delta") if block["type"] == "thinking" => {
+                        let text = event["delta"]["thinking"].as_str().ok_or_else(|| {
+                            ProviderError::Stream("invalid thinking delta".into())
+                        })?;
+                        let mut value = block["thinking"].as_str().unwrap_or("").to_owned();
+                        value.push_str(text);
+                        block["thinking"] = Value::String(value);
+                    }
+                    // The signature is opaque to us and must return verbatim
+                    // with the reasoning it authenticated.
+                    Some("signature_delta") if block["type"] == "thinking" => {
+                        let signature = event["delta"]["signature"].as_str().ok_or_else(|| {
+                            ProviderError::Stream("invalid signature delta".into())
+                        })?;
+                        let mut value = block["signature"].as_str().unwrap_or("").to_owned();
+                        value.push_str(signature);
+                        block["signature"] = Value::String(value);
                     }
                     Some("input_json_delta") if block["type"] == "tool_use" => {
                         let text = event["delta"]["partial_json"]
@@ -521,17 +574,16 @@ impl StreamState {
                 "incomplete or unsupported stop reason".into(),
             ));
         }
-        if self.blocks.is_empty()
-            || (!needs_tools
-                && !self
-                    .blocks
-                    .values()
-                    .any(|b| b["text"].as_str().is_some_and(|s| !s.is_empty())))
-        {
+        let visible = |key: &str| {
+            self.blocks
+                .values()
+                .any(|b| b[key].as_str().is_some_and(|value| !value.is_empty()))
+        };
+        if self.blocks.is_empty() || (!needs_tools && !visible("text") && !visible("thinking")) {
             return Err(ProviderError::Stream("empty completed message".into()));
         }
         Ok(Reply {
-            content: Value::Array(self.blocks.into_values().collect()),
+            content: Value::Array(self.blocks.into_values().map(reasoning_part).collect()),
             usage: crate::usage::anthropic(&Value::Object(self.usage)),
             needs_tools,
         })
@@ -562,9 +614,13 @@ impl Parser for StreamState {
         let content = self
             .blocks
             .into_values()
+            .map(reasoning_part)
             .filter(|block| {
-                block["type"] == "text"
-                    && block["text"].as_str().is_some_and(|text| !text.is_empty())
+                matches!(block["type"].as_str(), Some("text" | "reasoning"))
+                    && block["text"]
+                        .as_str()
+                        .or(block["thinking"].as_str())
+                        .is_some_and(|text| !text.is_empty())
             })
             .collect::<Vec<_>>();
         ProviderError::ContinuableTransport {
