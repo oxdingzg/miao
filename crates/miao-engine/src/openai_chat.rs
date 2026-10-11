@@ -74,7 +74,8 @@ impl Provider for OpenAIChat {
             .json(&body)
             .build()
             .map_err(|_| ProviderError::Transport)?;
-        let response = request_with_retry(&self.client, request, &progress, &cancel).await?;
+        let response =
+            request_with_retry("openai-chat", &self.client, request, &progress, &cancel).await?;
         read_stream(response, progress, cancel, ChatState::default()).await
     }
 }

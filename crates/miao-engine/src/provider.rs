@@ -329,12 +329,14 @@ impl Provider for Anthropic {
             .header("x-api-key",credential.header()?).header("anthropic-version","2023-06-01")
             .json(&json!({"model":self.model,"max_tokens":self.max_tokens,"stream":true,"messages":messages,"system":system,"tools":tools}))
             .build().map_err(|_|ProviderError::Transport)?;
-        let response = request_with_retry(&self.client, request, &progress, &cancel).await?;
+        let response =
+            request_with_retry("anthropic", &self.client, request, &progress, &cancel).await?;
         read_stream(response, progress, cancel, StreamState::default()).await
     }
 }
 
 pub(crate) async fn request_with_retry(
+    protocol: &str,
     client: &reqwest::Client,
     request: reqwest::Request,
     progress: &mpsc::Sender<Value>,
@@ -354,15 +356,23 @@ pub(crate) async fn request_with_retry(
         let request = request
             .try_clone()
             .ok_or_else(|| ProviderError::Stream("request cannot be replayed".into()))?;
+        let request_seq =
+            crate::runtime_profile::record(protocol, &request, scope.budget.used()).await?;
         let first_event = crate::first_event::FirstEventDeadline::default();
         let request_deadline = first_event.0.map_or(deadline, |first| deadline.min(first));
         let response = tokio::select! {
-            _=cancel.cancelled()=>return Err(ProviderError::Interrupted),
+            _=cancel.cancelled()=>Err(ProviderError::Interrupted),
             result=tokio::time::timeout_at(request_deadline,client.execute(request))=>match result {
                 Ok(Ok(mut response))=>{ response.extensions_mut().insert(first_event); Ok(response) },
                 _=>Err(ProviderError::Transport),
             },
         };
+        let (status, outcome) = match &response {
+            Ok(response) => (Some(response.status().as_u16()), "headers_received"),
+            Err(ProviderError::Interrupted) => (None, "interrupted_unknown"),
+            Err(_) => (None, "transport_unknown"),
+        };
+        crate::runtime_profile::result(request_seq, status, outcome).await?;
         let error = match response {
             Ok(response) if response.status().is_success() => return Ok(response),
             Ok(response) => ProviderError::Http(response.status().as_u16()),
