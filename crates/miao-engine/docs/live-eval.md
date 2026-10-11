@@ -84,3 +84,15 @@ immutable-oracle tampering cannot bypass verification, repeated mutation fails,
 and caller-modified task metadata cannot change the frozen contract. These are
 fixture/oracle checks, not live-agent measurements or evidence for default-engine
 promotion.
+
+## Native failure trace sensitivity
+
+Native host capture retains the full `provider.failed` data through the declared
+identity-only projection. Failure messages, attempt/step fields, routing details,
+and unknown fields remain significant; a changed failure cause must fail strict
+replay. Native timestamps retain their existing recording provenance.
+
+Older bundles that reduced failure data to `{ "failed": true }` have already lost
+the original cause and must be re-recorded for diagnostic-sensitive replay. The
+replayer does not invent those fields or fall back to live IO. Credential header
+exclusion remains at the HTTP capture boundary.
