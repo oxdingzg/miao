@@ -1655,16 +1655,16 @@ async fn start_background(
         });
         let result = match work.await {
             Ok(result) => result,
-            Err(_) => task_inner
-                .store
-                .finish_job(
+            Err(_) => {
+                finish_background_job(
+                    &task_inner,
                     &task_owner,
                     &task_id,
                     "unknown",
                     json!({"error":"job execution task panicked"}),
                 )
                 .await
-                .map(|_| ()),
+            }
         };
         if let Err(error) = result {
             let _=task_inner.progress.send(json!({"session_id":task_owner,"kind":"job.error","job_id":task_id,"message":error.to_string()}));
@@ -1691,15 +1691,14 @@ async fn background(
 ) -> Result<(), Error> {
     let permit = tokio::select! {_=cancel.cancelled()=>None,slot=inner.job_slots.clone().acquire_owned()=>Some(slot.map_err(|_|Error::Closed)?)};
     let Some(_permit) = permit else {
-        inner
-            .store
-            .finish_job(
-                session,
-                id,
-                "cancelled",
-                json!({"reason":"cancelled_before_dispatch"}),
-            )
-            .await?;
+        finish_background_job(
+            &inner,
+            session,
+            id,
+            "cancelled",
+            json!({"reason":"cancelled_before_dispatch"}),
+        )
+        .await?;
         return Ok(());
     };
     inner.store.start_job(session, id).await?;
@@ -1721,6 +1720,24 @@ async fn background(
         Err(ToolError::Interrupted) => ("cancelled", json!({"reason":"cancelled_before_dispatch"})),
         Err(error) => ("failed", json!({"error":error.to_string()})),
     };
-    inner.store.finish_job(session, id, state, output).await?;
+    finish_background_job(&inner, session, id, state, output).await?;
     Ok(())
+}
+
+async fn finish_background_job(
+    inner: &Inner,
+    session: &str,
+    id: &str,
+    state: &str,
+    output: Value,
+) -> Result<(), Error> {
+    let admitted = inner.store.finish_job(session, id, state, output).await?;
+    notify_admission(
+        inner,
+        session,
+        &admitted,
+        "job.wake_failed",
+        json!({"job_id":id,"input_id":admitted.input_id}),
+    )
+    .await
 }

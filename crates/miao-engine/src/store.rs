@@ -460,7 +460,7 @@ impl Store {
         id: &str,
         state: &str,
         result: Value,
-    ) -> Result<Event, Error> {
+    ) -> Result<Admission, Error> {
         let (session, id, state) = (session.to_owned(), id.to_owned(), state.to_owned());
         if !["completed", "failed", "cancelled", "interrupted", "unknown"].contains(&state.as_str())
         {
@@ -468,7 +468,15 @@ impl Store {
         }
         self.call(move |conn| {
             let tx=conn.transaction()?;if tx.execute("UPDATE engine_job SET state=?3,result=?4 WHERE id=?1 AND session_id=?2 AND state IN ('queued','running')",params![id,session,state,serde_json::to_string(&result)?])?!=1{return Err(Error::Invalid("job is not active".into()));}
-            let event=append(&tx,&session,"job.finished",json!({"job_id":id,"state":state}))?;tx.commit()?;Ok(event)
+            append(&tx,&session,"job.finished",json!({"job_id":id,"state":state}))?;
+            let admission = admit_input(&tx, &Input {
+                session_id: session.clone(),
+                input_id: format!("job:{id}:finished"),
+                prompt: format!("Background job {id} finished with state {state}. Read its stored result with job_status and continue eligible work."),
+                delivery: Delivery::Steer,
+            }, None, &[])?;
+            tx.commit()?;
+            Ok(admission)
         }).await
     }
 
