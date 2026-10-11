@@ -1,9 +1,9 @@
 {
   "version": "7",
   "dialect": "sqlite",
-  "id": "a97e79e3-7f2e-455a-8150-8dcd0564ab4a",
+  "id": "934fa06c-d37a-49e4-88ea-650d0cacfde6",
   "prevIds": [
-    "3fec286e-c89c-4a5b-8ed3-c67170ad8c87"
+    "a97e79e3-7f2e-455a-8150-8dcd0564ab4a"
   ],
   "ddl": [
     {
@@ -1899,6 +1899,26 @@
       "default": null,
       "generated": null,
       "name": "session_id",
+      "entityType": "columns",
+      "table": "todo"
+    },
+    {
+      "type": "text",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "task_id",
+      "entityType": "columns",
+      "table": "todo"
+    },
+    {
+      "type": "text",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "depends_on",
       "entityType": "columns",
       "table": "todo"
     },

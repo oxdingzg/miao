@@ -35,9 +35,10 @@ import { ProjectTable } from "@miao/core/project/sql"
 import { QuestionV2 } from "@miao/core/question"
 import { AbsolutePath, RelativePath } from "@miao/core/schema"
 import { SessionV2 } from "@miao/core/session"
+import { TodoWriteTool } from "@miao/core/tool/todowrite"
+import { GoalTool } from "@miao/core/tool/goal"
 import { SessionTodo } from "@miao/core/session/todo"
 import { SessionBackgroundJobs } from "@miao/core/session/background-jobs"
-import { TodoWriteTool } from "@miao/core/tool/todowrite"
 import { WriteTool } from "@miao/core/tool/write"
 import { Snapshot } from "@miao/core/snapshot"
 import { ContextSnapshotDecodeError, LegacyNotMigratedError } from "@miao/core/session/error"
@@ -423,6 +424,7 @@ const skillGuidance = Layer.mock(SkillGuidance.Service, {
     ),
 })
 const referenceGuidance = Layer.mock(ReferenceGuidance.Service, { load: () => Effect.succeed(SystemContext.empty) })
+let loopEnabled = true
 const config = Layer.succeed(
   Config.Service,
   Config.Service.of({
@@ -435,7 +437,7 @@ const config = Layer.succeed(
               buffer: 3_000,
               keep: new ConfigCompaction.Keep({ tokens: 1_000 }),
             }),
-            loop: new ConfigLoop.Info({ enabled: true, max_iterations: 10, continue_prompt: "keep going" }),
+            loop: new ConfigLoop.Info({ enabled: loopEnabled, max_iterations: 10, continue_prompt: "keep going" }),
           }),
         }),
       ]),
@@ -502,6 +504,7 @@ const makeExecution = (maxConcurrent?: number, directory = "/project") =>
   ).pipe(Layer.provide(runnerLayer(directory)))
 
 const appNodes = [
+  TodoWriteTool.node,
   Database.node,
   EventV2.node,
   QuestionV2.node,
@@ -663,6 +666,7 @@ const insertPeerMessages = (id: SessionV2.ID, messages: ReadonlyArray<Record<str
 
 let todoBaseline = ""
 const setup = Effect.gen(function* () {
+  loopEnabled = true
   const todos = yield* SessionTodo.Service
   todoBaseline = (yield* SystemContext.initialize(SessionTodo.context(todos, sessionID))).baseline
   const { db } = yield* Database.Service
@@ -2219,7 +2223,7 @@ describe("SessionRunnerLLM", () => {
 
       expect(requests).toHaveLength(1)
       expect(requests[0]?.model).toBe(model)
-      expect(requests[0]?.tools.map((tool) => tool.name)).toEqual(["echo", "defect"])
+      expect(requests[0]?.tools.map((tool) => tool.name)).toEqual(["todowrite", "echo", "defect"])
       expect(requests[0]?.messages.map((message) => ({ role: message.role, content: message.content }))).toEqual([
         { role: "user", content: [{ type: "text", text: "First" }] },
         { role: "user", content: [{ type: "text", text: "Second" }] },
@@ -3280,7 +3284,7 @@ describe("SessionRunnerLLM", () => {
       yield* session.resume(sessionID)
 
       expect(requests).toHaveLength(1)
-      expect(requests[0]?.tools.map((tool) => tool.name)).toEqual(["echo", "defect"])
+      expect(requests[0]?.tools.map((tool) => tool.name)).toEqual(["todowrite", "echo", "defect"])
       expect(yield* session.context(sessionID)).toMatchObject([
         { type: "user", text: "Use tools" },
         {
@@ -4735,6 +4739,98 @@ describe("SessionRunnerLLM", () => {
       expect(stored.filter((row) => row.type.includes("notified"))).toHaveLength(0)
     }),
   )
+
+  it.effect("continues ready work beside a waiting CI task, then becomes idle when only waits remain", () =>
+    Effect.gen(function* () {
+      yield* setup
+      const session = yield* SessionV2.Service
+      const todos = yield* SessionTodo.Service
+      yield* todos.update({
+        sessionID,
+        todos: [
+          { content: "CI run 123", status: "waiting", priority: "high" },
+          { content: "Independent contract audit", status: "pending", priority: "medium" },
+        ],
+      })
+      responses = [
+        fragmentFixture("text", "wait", ["CI running"]).completeEvents,
+        [
+          LLMEvent.stepStart({ index: 0 }),
+          LLMEvent.toolCall({
+            id: "audit",
+            name: "todowrite",
+            input: {
+              todos: [
+                { content: "CI run 123", status: "waiting", priority: "high" },
+                { content: "Independent contract audit", status: "completed", priority: "medium" },
+              ],
+            },
+          }),
+          LLMEvent.stepFinish({ index: 0, reason: "tool-calls" }),
+          LLMEvent.finish({ reason: "tool-calls" }),
+        ],
+        fragmentFixture("text", "done", ["Audit done; waiting for CI"]).completeEvents,
+      ]
+      yield* session.prompt({ sessionID, prompt: Prompt.make({ text: "Complete both tasks" }), resume: false })
+      yield* session.resume(sessionID)
+      expect(requests).toHaveLength(3)
+      expect((yield* todos.get(sessionID)).map((todo) => todo.status)).toEqual(["waiting", "completed"])
+    }),
+  )
+  ;["waiting", "blocked"].forEach((status) => {
+    it.effect(`does not spin autonomous loops when all tasks are ${status}`, () =>
+      Effect.gen(function* () {
+        yield* setup
+        const session = yield* SessionV2.Service
+        const todos = yield* SessionTodo.Service
+        yield* todos.update({ sessionID, todos: [{ content: "Dependency", status, priority: "high" }] })
+        response = fragmentFixture("text", "wait", ["Waiting for dependency"]).completeEvents
+        yield* session.prompt({ sessionID, prompt: Prompt.make({ text: "Work" }), resume: false })
+        yield* session.resume(sessionID)
+        expect(requests).toHaveLength(1)
+      }),
+    )
+  })
+  ;(["paused", "blocked", "done"] as const).forEach((status) => {
+    it.effect(`a ${status} goal stops autonomous continuation even with open todos`, () =>
+      Effect.gen(function* () {
+        yield* setup
+        const events = yield* EventV2.Service
+        const session = yield* SessionV2.Service
+        const todos = yield* SessionTodo.Service
+        yield* todos.update({ sessionID, todos: [{ content: "Ready work", status: "pending", priority: "high" }] })
+        yield* GoalTool.record(events, sessionID, {
+          objective: "Respect goal lifecycle",
+          status,
+          autonomous: true,
+          evidence: "Stopped by the user",
+        })
+        response = fragmentFixture("text", "stopped", ["Stopped"]).completeEvents
+        yield* session.prompt({ sessionID, prompt: Prompt.make({ text: "Work" }), resume: false })
+        yield* session.resume(sessionID)
+        expect(requests).toHaveLength(1)
+      }),
+    )
+  })
+  ;[true, false].forEach((autonomous) => {
+    it.effect(`durable goal authorizes continuation only with explicit autonomous opt-in (${autonomous})`, () =>
+      Effect.gen(function* () {
+        yield* setup
+        loopEnabled = false
+        const events = yield* EventV2.Service
+        const session = yield* SessionV2.Service
+        const todos = yield* SessionTodo.Service
+        yield* todos.update({ sessionID, todos: [{ content: "Ready work", status: "pending", priority: "high" }] })
+        yield* GoalTool.record(events, sessionID, { objective: "Finish ready work", status: "active", autonomous })
+        response = fragmentFixture("text", "wait", ["Stopping early"]).completeEvents
+        yield* session.prompt({ sessionID, prompt: Prompt.make({ text: "Work" }), resume: false })
+        yield* session.resume(sessionID)
+        if (autonomous) expect(requests.length).toBeGreaterThan(1)
+        if (!autonomous) expect(requests).toHaveLength(1)
+        expect(requests.length).toBeLessThanOrEqual(5)
+      }),
+    )
+  })
 
   it.effect("keeps continuing while todos stay open, then stops on no progress", () =>
     Effect.gen(function* () {

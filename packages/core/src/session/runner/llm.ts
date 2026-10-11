@@ -13,6 +13,7 @@ import {
   type ProviderErrorEvent,
   type ToolOutput,
 } from "@miao/llm"
+import { SessionGoal } from "../goal"
 import { Cause, DateTime, Duration, Effect, FiberSet, Layer, Option, Semaphore, Stream, Schema } from "effect"
 import { and, asc, desc, eq, isNull, ne, sql } from "drizzle-orm"
 import { AgentV2 } from "../../agent"
@@ -193,7 +194,7 @@ const STREAM_STALL_MS = 5_000
 const DEFAULT_LOOP_MAX_ITERATIONS = 25
 const LOOP_STALL_LIMIT = 2
 const DEFAULT_LOOP_PROMPT =
-  "Continue with the next incomplete todo item. Make concrete progress, then update the todo list. If every todo is complete and verified, reply DONE and stop."
+  "Continue the next runnable todo independently of background waits. Only choose a task whose depends_on prerequisites are all completed; skip dependent tasks until they unlock. Make concrete progress, then update the todo list. Mark tasks waiting on external jobs as waiting and name their dependencies; mark tasks needing a decision as blocked. Do not poll or rerun existing background jobs. If no runnable todo remains, wait for its completion notification. If every todo is complete and verified, reply DONE and stop."
 
 const signatureInput = (input: unknown) => {
   try {
@@ -1894,18 +1895,21 @@ const layer = Layer.effect(
                     SessionDelegationStore.hasPromotableNotifications(db, input.sessionID),
                   )
               shouldRun = queuedNext || notificationNext
-            if (!shouldRun && settings.loop !== undefined) {
+            const goal = !shouldRun ? yield* SessionGoal.current(db, input.sessionID) : undefined
+            const loop = settings.loop ?? (goal?.status === "active" && goal.autonomous === true
+              ? { maxIterations: DEFAULT_LOOP_MAX_ITERATIONS, continuePrompt: DEFAULT_LOOP_PROMPT } : undefined)
+            if (!shouldRun && loop !== undefined && (goal === undefined || goal.status === "active")) {
               const current = yield* getSession(input.sessionID)
               if (exceeded(current)) {
                 yield* Effect.logWarning("session.loop-stopped", { sessionID: input.sessionID, reason: "budget" })
-              } else if (loopIterations >= settings.loop.maxIterations) {
+              } else if (loopIterations >= loop.maxIterations) {
                 yield* Effect.logWarning("session.loop-stopped", {
                   sessionID: input.sessionID,
                   reason: "max-iterations",
                 })
               } else {
                 const list = yield* todos.get(input.sessionID)
-                const open = list.filter((todo) => todo.status !== "completed" && todo.status !== "cancelled")
+                const open = SessionTodo.runnable(list)
                 if (list.length > 0 && open.length > 0) {
                   // An unfinished checklist is not runnable work while its
                   // owned background command is still executing. Settlement
@@ -1927,7 +1931,7 @@ const layer = Layer.effect(
                     yield* SessionInput.admit(db, events, {
                       id: SessionMessage.ID.create(),
                       sessionID: input.sessionID,
-                      prompt: Prompt.make({ text: settings.loop.continuePrompt }),
+                      prompt: Prompt.make({ text: loop.continuePrompt }),
                       delivery: "queue",
                     })
                     shouldRun = true

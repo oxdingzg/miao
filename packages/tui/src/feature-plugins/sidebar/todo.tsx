@@ -32,7 +32,11 @@ function View(props: { api: TuiPluginApi; session_id: string }) {
           {summary().cancelled > 0 ? ` · ${summary().cancelled} cancelled` : ""}
         </text>
         <Show when={list().length <= 2 || open()}>
-          <For each={list()}>{(item) => <TodoItem status={item.status} content={item.content} />}</For>
+          <For each={list()}>
+            {(item) => (
+              <TodoItem status={item.status} content={item.content} id={item.id} depends_on={item.depends_on} />
+            )}
+          </For>
         </Show>
       </box>
     </Show>

@@ -293,6 +293,8 @@ export default {
       yield* tx.run(`
         CREATE TABLE \`todo\` (
           \`session_id\` text NOT NULL,
+          \`task_id\` text,
+          \`depends_on\` text,
           \`content\` text NOT NULL,
           \`status\` text NOT NULL,
           \`priority\` text NOT NULL,

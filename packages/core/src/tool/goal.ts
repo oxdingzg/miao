@@ -1,7 +1,8 @@
 export * as GoalTool from "./goal"
 
+import { SessionGoal } from "../session/goal"
 import { ToolFailure } from "@miao/llm"
-import { DateTime, Effect, Schema } from "effect"
+import { DateTime, Effect } from "effect"
 import { EventV2 } from "../event"
 import { SessionEvent } from "../session/event"
 import { SessionMessage } from "../session/message"
@@ -10,19 +11,10 @@ import { Tool, type AnyTool } from "./tool"
 
 export const name = "goal"
 
-/** A goal's lifecycle. `done` requires evidence; `blocked` names the blocker. */
-export const Status = Schema.Literals(["active", "paused", "blocked", "done"])
-export type Status = typeof Status.Type
-
-export const Info = Schema.Struct({
-  objective: Schema.String.annotate({ description: "The outcome to achieve" }),
-  status: Status.annotate({ description: "active, paused, blocked, or done" }),
-  evidence: Schema.optional(Schema.String).annotate({
-    description: "Concrete evidence the goal is met (for done), or the blocker (for blocked)",
-  }),
-  budget: Schema.optional(Schema.String).annotate({ description: "Optional budget or limit for the goal" }),
-}).annotate({ identifier: "Session.Goal" })
-export type Info = typeof Info.Type
+export const Status = SessionGoal.Status
+export type Status = SessionGoal.Status
+export const Info = SessionGoal.Info
+export type Info = SessionGoal.Info
 
 export const Input = Info
 export const Output = Info
@@ -37,6 +29,7 @@ export const render = (goal: Info): string =>
   [
     `<goal status="${goal.status}">`,
     goal.objective,
+    ...(goal.autonomous === undefined ? [] : [`autonomous: ${goal.autonomous}`]),
     ...(goal.budget === undefined ? [] : [`budget: ${goal.budget}`]),
     ...(goal.evidence === undefined ? [] : [`evidence: ${goal.evidence}`]),
     "</goal>",
@@ -57,8 +50,7 @@ export const record = (events: EventV2.Interface, sessionID: SessionSchema.ID, g
 /** A goal may be `done` or `blocked` only with evidence; returns the reason otherwise. */
 export const validate = (goal: Info): string | undefined => {
   const evidence = goal.evidence?.trim()
-  if (goal.status === "done" && !evidence)
-    return "A goal may be marked done only with evidence that proves completion."
+  if (goal.status === "done" && !evidence) return "A goal may be marked done only with evidence that proves completion."
   if (goal.status === "blocked" && !evidence) return "A blocked goal must name the blocker as evidence."
   return undefined
 }
