@@ -103,10 +103,17 @@ fn messages(history: &[Message]) -> Result<Vec<Value>, ProviderError> {
         let mut text = Vec::new();
         let mut images = Vec::new();
         let mut calls = Vec::new();
+        let mut reasoning = Vec::new();
         for block in blocks {
             match (message.role.as_str(), block["type"].as_str()) {
                 ("user" | "assistant", Some("text")) => {
                     text.push(block["text"].as_str().ok_or_else(invalid)?.to_owned())
+                }
+                // Reasoning text must return to the provider verbatim and in
+                // order; GLM interleaved/preserved thinking and DeepSeek both
+                // require it across tool calls.
+                ("assistant", Some("reasoning")) => {
+                    reasoning.push(block["text"].as_str().ok_or_else(invalid)?.to_owned())
                 }
                 ("user", Some("image")) => {
                     let mime = block["mime"].as_str().ok_or_else(invalid)?;
@@ -138,6 +145,9 @@ fn messages(history: &[Message]) -> Result<Vec<Value>, ProviderError> {
         }
         if message.role == "assistant" {
             let mut message = json!({"role":"assistant","content":if text.is_empty(){None}else{Some(text.join("\n"))}});
+            if !reasoning.is_empty() {
+                message["reasoning_content"] = Value::String(reasoning.join(""));
+            }
             if !calls.is_empty() {
                 message["tool_calls"] = Value::Array(calls);
             }
@@ -158,6 +168,7 @@ struct Call {
 #[derive(Default)]
 struct ChatState {
     text: String,
+    reasoning: String,
     calls: BTreeMap<u64, Call>,
     finish: Option<String>,
     usage: Value,
@@ -192,13 +203,18 @@ impl Parser for ChatState {
         if delta.get("refusal").is_some_and(|v| !v.is_null()) {
             return Err(ProviderError::Stream("model refused the request".into()));
         }
-        if delta.get("reasoning_content").is_some_and(|v| !v.is_null())
-            || delta.get("function_call").is_some()
+        if delta.get("function_call").is_some()
             || delta.get("audio").is_some()
+            || delta.get("reasoning_opaque").is_some_and(|v| !v.is_null())
         {
             return Err(ProviderError::Stream(
-                "unsupported reasoning/audio/legacy function content".into(),
+                "unsupported Chat Completions content field".into(),
             ));
+        }
+        for field in ["reasoning_content", "reasoning_text"] {
+            if let Some(text) = delta[field].as_str() {
+                self.reasoning.push_str(text);
+            }
         }
         if self.finish.is_some()
             && (delta.get("content").is_some_and(|v| !v.is_null())
@@ -276,7 +292,13 @@ impl Parser for ChatState {
                 "incomplete or unsupported Chat finish reason".into(),
             ));
         }
+        if self.text.is_empty() && self.calls.is_empty() {
+            return Err(ProviderError::Stream("empty completed Chat message".into()));
+        }
         let mut content = Vec::new();
+        if !self.reasoning.is_empty() {
+            content.push(json!({"type":"reasoning","text":self.reasoning}));
+        }
         if !self.text.is_empty() {
             content.push(json!({"type":"text","text":self.text}));
         }
@@ -290,9 +312,6 @@ impl Parser for ChatState {
                 &call.name,
                 &call.arguments,
             )?);
-        }
-        if content.is_empty() {
-            return Err(ProviderError::Stream("empty completed Chat message".into()));
         }
         Ok(Reply {
             content: Value::Array(content),
