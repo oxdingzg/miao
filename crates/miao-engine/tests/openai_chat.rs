@@ -58,7 +58,7 @@ async fn text_stream_preserves_usage_after_finish_and_lowers_tool_history() {
         .await
         .unwrap();
     assert_eq!(reply.content[0]["text"], "你好");
-    assert_eq!(reply.usage["prompt_tokens_details"]["cached_tokens"], 8);
+    assert_eq!(reply.usage["cacheReadInputTokens"], 8);
     let body = requests.recv().await.unwrap();
     assert_eq!(
         body["messages"][1]["tool_calls"][0]["function"]["arguments"],

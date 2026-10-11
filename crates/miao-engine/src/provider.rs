@@ -532,7 +532,7 @@ impl StreamState {
         }
         Ok(Reply {
             content: Value::Array(self.blocks.into_values().collect()),
-            usage: Value::Object(self.usage),
+            usage: crate::usage::anthropic(&Value::Object(self.usage)),
             needs_tools,
         })
     }

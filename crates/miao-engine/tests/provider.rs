@@ -114,8 +114,8 @@ async fn real_http_adapter_decodes_stream_and_usage() {
         .await
         .unwrap();
     assert_eq!(reply.content[0]["text"], "你好");
-    assert_eq!(reply.usage["input_tokens"], 7);
-    assert_eq!(reply.usage["output_tokens"], 2);
+    assert_eq!(reply.usage["inputTokens"], 7);
+    assert_eq!(reply.usage["outputTokens"], 2);
     assert!(!reply.needs_tools);
     server.await.unwrap();
     assert_eq!(count.load(Ordering::SeqCst), 1);

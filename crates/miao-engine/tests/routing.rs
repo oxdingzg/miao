@@ -98,7 +98,7 @@ async fn rejected_primary_can_fallback_with_one_shared_retry_budget() {
     assert_eq!(reply.usage["routing"]["route"], "fallback");
     assert_eq!(provider.reply_identity(&reply).unwrap().model, "secondary");
     assert_eq!(reply.usage["routing"]["http_attempts"], 2);
-    assert_eq!(reply.usage["reported"]["prompt_tokens"], 1);
+    assert_eq!(reply.usage["reported"]["inputTokens"], 1);
     assert_eq!(primary.recv().await.unwrap()["model"], "primary");
     assert_eq!(secondary.recv().await.unwrap()["model"], "secondary");
     at.await.unwrap();
@@ -256,8 +256,11 @@ async fn provider_reported_routing_cannot_spoof_success_identity() {
         .await
         .unwrap();
     assert_eq!(provider.reply_identity(&reply).unwrap().model, "primary");
+    // Normalization keeps no `routing` key of its own, and the provider's
+    // claim survives only inside the audit-only raw payload.
+    assert!(reply.usage["reported"].get("routing").is_none());
     assert_eq!(
-        reply.usage["reported"]["routing"]["identity"]["model"],
+        reply.usage["reported"]["providerMetadata"]["openai-chat"]["routing"]["identity"]["model"],
         "secondary"
     );
     assert!(primary.recv().await.is_some());
