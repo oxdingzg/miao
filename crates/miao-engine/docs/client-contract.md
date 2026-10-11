@@ -6,16 +6,16 @@ may drift; re-run the count if it matters.
 
 ## Endpoint counts by group (≈124 total, 29 groups)
 
-| Group | Endpoints | Group | Endpoints |
-|---|---|---|---|
-| session | 32 | project-copy | 3 |
-| runtime | 11 | vcs | 3 |
-| pty | 9 | worktree | 3 |
-| permission | 7 | credential | 2 |
-| workspace | 7 | location | 2 |
-| integration | 7 | model | 2 |
-| mcp | 6 | provider | 2 |
-| project | 5 | agent, capabilities, command, config, control-plane, event, formatter, fs, health, lsp, message, question, reference, skill | 1–4 each |
+| Group       | Endpoints | Group                                                                                                                       | Endpoints |
+| ----------- | --------- | --------------------------------------------------------------------------------------------------------------------------- | --------- |
+| session     | 32        | project-copy                                                                                                                | 3         |
+| runtime     | 11        | vcs                                                                                                                         | 3         |
+| pty         | 9         | worktree                                                                                                                    | 3         |
+| permission  | 7         | credential                                                                                                                  | 2         |
+| workspace   | 7         | location                                                                                                                    | 2         |
+| integration | 7         | model                                                                                                                       | 2         |
+| mcp         | 6         | provider                                                                                                                    | 2         |
+| project     | 5         | agent, capabilities, command, config, control-plane, event, formatter, fs, health, lsp, message, question, reference, skill | 1–4 each  |
 
 ## Streaming
 
@@ -60,3 +60,22 @@ built from `main`: the engine-host suite passes, including the real path (a mock
 endpoint returns the assistant text). What remains for B1 is the **event bridge**
 (engine events → product session events) and **per-handler wiring**; the client is
 not consumed by any product handler yet.
+
+## Headless host-driver terminal outcomes
+
+`packages/miao/src/engine/run.ts` scopes terminal outcomes to the durable admitted
+input sequence. Historical errors and completed runs remain available as events,
+but cannot finish or fail a newly admitted prompt. Events arriving before the
+admission receipt are reconciled after that receipt; exact retries may reuse the
+original terminal outcome without executing again.
+
+A recovered intermediate provider failure is retained as evidence and does not
+override a final completed run. Terminal failed/interrupted outcomes remain
+errors; a prior recovered provider failure does not misclassify a later tool
+failure. Missing terminal outcome metadata is not promoted to success.
+
+`packages/miao/test/engine/final-outcome.test.ts` drives the actual native process
+through `EngineClient` and real HTTP framing for recovery, bounded failure,
+Session reuse, exact retry, and mixed failure-cause classification. These are
+headless seam checks, not evidence that the product HttpApi/TUI execution
+handlers have switched owners or that the full client migration is complete.
