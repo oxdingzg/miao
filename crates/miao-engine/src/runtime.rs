@@ -994,7 +994,14 @@ async fn execute(
                                         let is_error = replay_error.unwrap_or(
                                             (prepared_external && output["isError"] == true)
                                                 || (name == "question"
-                                                    && output["state"] != "answered"),
+                                                    && output["state"] != "answered")
+                                                // Native tools signal rejection through a
+                                                // structured error payload that carries
+                                                // recovery data, not through Err.
+                                                || (!prepared_external
+                                                    && output
+                                                        .get("error")
+                                                        .is_some_and(Value::is_string)),
                                         );
                                         (output, is_error)
                                     }
