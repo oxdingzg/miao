@@ -196,6 +196,7 @@ export const {
       session_status: {
         [sessionID: string]: SessionStatus
       }
+      session_compaction: Record<string, { messageID: string; since: number } | undefined>
       session_error: Record<string, string>
       session_diff: {
         [sessionID: string]: SnapshotFileDiff[]
@@ -238,6 +239,7 @@ export const {
       provider_default: {},
       session: [],
       session_status: {},
+      session_compaction: {},
       session_error: {},
       session_diff: {},
       todo: {},
@@ -611,10 +613,6 @@ export const {
 
     // Events that rewrite or replace the transcript rather than extend it still
     // need a full re-sync; everything else is folded into the shadow in place.
-    // V2 compaction runs inside a drain; the transcript does not change while
-    // it works, so the status indicator tracks it explicitly.
-    const compactingSessions = new Set<string>()
-
     const FULL_SYNC_V2_EVENTS = new Set<string>([
       "session.next.compaction.started",
       "session.next.compaction.delta",
@@ -704,8 +702,23 @@ export const {
       // client streaming a turn does not make every other client re-render it.
       // A new or renamed session still refreshes the session list.
       const eventSessionID = sessionIDOf(event)
-      if (event.type === "session.next.compaction.started" && eventSessionID) compactingSessions.add(eventSessionID)
-      if (event.type === "session.next.compaction.ended" && eventSessionID) compactingSessions.delete(eventSessionID)
+      if (eventSessionID) {
+        const current = store.session_compaction[eventSessionID]
+        if (event.type === "session.next.compaction.started" && current?.messageID !== event.properties.messageID)
+          setStore("session_compaction", eventSessionID, {
+            messageID: event.properties.messageID,
+            since: event.properties.timestamp,
+          })
+        // A late end for an older summary must not hide a newer compaction.
+        if (
+          (event.type === "session.next.compaction.ended" && current?.messageID === event.properties.messageID) ||
+          event.type === "session.next.step.started" ||
+          event.type === "session.next.failed" ||
+          event.type === "session.next.step.failed" ||
+          (event.type === "session.next.status" && event.properties.status.type === "idle")
+        )
+          if (current) setStore("session_compaction", eventSessionID, undefined)
+      }
       if (isLiveSessionV2Event(event.type) && !isV2StreamFragmentEvent(event.type)) {
         const sessionID = sessionIDOf(event)
         if (sessionID && !watchedSessions.has(sessionID)) {
@@ -1277,9 +1290,17 @@ export const {
             : result.session.syncInputs(sessionID, signal).catch((error) =>
                 console.error("session input sync failed", { error: errorMessage(error) }),
               )
+          const observedCompaction = store.session_compaction[sessionID]?.messageID
           const response = await sdk.api.sessions.status({ sessionID }, { signal })
           const busy = response.type !== "idle"
           if (signal?.aborted) return busy ? "busy" : "idle"
+          // Polling idle also recovers a lost end/cancel event.
+          if (
+            response.type === "idle" &&
+            observedCompaction &&
+            store.session_compaction[sessionID]?.messageID === observedCompaction
+          )
+            setStore("session_compaction", sessionID, undefined)
           const previous = store.session_status[sessionID]
           const previousType = previous?.type
           const previousPhase = previousType === "busy" ? previous.phase : undefined
@@ -1334,9 +1355,9 @@ export const {
           if (observed.some((id) => !ids.has(id))) v2Refresh.schedule(sessionID)
         },
         status(sessionID: string) {
+          if (store.session_compaction[sessionID]) return "compacting"
           const session = result.session.get(sessionID)
           if (!session) return "idle"
-          if (compactingSessions.has(sessionID)) return "compacting"
           if (store.session_status[sessionID])
             return store.session_status[sessionID].type === "idle" ? "idle" : "working"
           const messages = store.message[sessionID] ?? []

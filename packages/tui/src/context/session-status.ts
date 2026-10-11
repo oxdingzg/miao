@@ -1,7 +1,7 @@
 import type { SessionMessage, TranscriptAssistantMessage } from "@miao/schema/view-models"
 import type { SessionStatus } from "@miao/schema/view-models"
 
-export type SessionPhase = "queued" | "preparing" | "requesting" | "streaming" | "retrying"
+export type SessionPhase = "queued" | "preparing" | "requesting" | "streaming" | "retrying" | "compacting"
 
 /**
  * Normalizes a status to its phase. `retry` is the `retrying` phase, and a busy

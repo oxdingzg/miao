@@ -114,8 +114,9 @@ export function lastOutputAt(parts: ReadonlyArray<AssistantContent>, fallback: n
 export function SessionActivity(props: { sessionID: string }) {
   const sync = useSync()
   const status = createMemo(() => sync.data.session_status[props.sessionID])
+  const compaction = createMemo(() => sync.data.session_compaction[props.sessionID])
   const busy = createMemo(() => status()?.type === "busy")
-  const phase = createMemo(() => statusPhase(status()))
+  const phase = createMemo(() => (compaction() ? ("compacting" as const) : statusPhase(status())))
   const blocked = createMemo(
     () =>
       (sync.data.permission[props.sessionID]?.length ?? 0) > 0 ||
@@ -138,12 +139,12 @@ export function SessionActivity(props: { sessionID: string }) {
   // `working` mirrors Claude Code's live flag: the current step is still
   // streaming, so the summary uses present tense and flips to past between steps.
   const activity = createMemo(() => {
-    if (!busy() || blocked()) return undefined
+    if (compaction() || !busy() || blocked()) return undefined
     return turnActivity({ parts: turnParts(), working: !waiting() })
   })
   const turnStartedAt = createMemo(() => messages().findLast((entry) => entry.type === "user")?.time.created)
   const lastOutput = createMemo(() => lastOutputAt(turnParts(), turnStartedAt()))
-  const active = createMemo(() => busy() && !blocked())
+  const active = createMemo(() => (busy() || !!compaction()) && !blocked())
   // The timestamp the elapsed timer counts from: the phase's own start so the
   // timer is TTFT for `requesting`, not the time since the last streamed
   // output. A start that is not epoch millis prints "NaNd NaNh", so undefined
@@ -151,12 +152,15 @@ export function SessionActivity(props: { sessionID: string }) {
   // re-reads this lives in SessionActiveWaiting, mounted only while active.
   const elapsedBase = createMemo(() => {
     if (!active()) return undefined
+    const summary = compaction()
+    if (summary) return summary.since
     const current = status()
     const since = current?.type === "busy" ? current.since : undefined
     return since ?? lastOutput()
   })
 
   const error = createMemo(() => {
+    if (compaction()) return undefined
     const status = sync.data.session_status[props.sessionID]
     return status?.type === "retry" ? status.message : sync.data.session_error[props.sessionID]
   })
@@ -344,6 +348,7 @@ export function SessionWaiting(props: {
   // Claude Code keeps the elapsed time on the live status line whether the turn
   // is still reading its first token or already running tools.
   const text = createMemo(() => {
+    if (props.phase === "compacting") return waitingText(props.phase, props.elapsed, props.esc ?? "interrupt")
     if (props.activity) {
       return props.elapsed > 0 ? `${props.activity} · ${Locale.duration(props.elapsed)}` : props.activity
     }
@@ -366,15 +371,24 @@ export function SessionWaiting(props: {
 // provider yet, which is the distinction the old single label could not make.
 function waitingText(phase: SessionPhase | undefined, elapsed: number, esc: string) {
   const label =
-    phase === "queued"
-      ? "Queued · waiting for a free slot"
-      : phase === "preparing"
-        ? "Preparing request"
-        : phase === "streaming"
-          ? "Receiving model response"
-          : phase === "retrying"
-            ? "Retrying"
-            : "Waiting for model response"
-  const suffix = elapsed >= 30000 ? ` · no readable output yet; esc ${esc}` : ""
+    phase === "compacting"
+      ? "Compacting context"
+      : phase === "queued"
+        ? "Queued · waiting for a free slot"
+        : phase === "preparing"
+          ? "Preparing request"
+          : phase === "streaming"
+            ? "Receiving model response"
+            : phase === "retrying"
+              ? "Retrying"
+              : "Waiting for model response"
+  const suffix =
+    phase === "compacting"
+      ? elapsed >= 30000
+        ? ` · still waiting for summary; esc ${esc}`
+        : " · making room to continue"
+      : elapsed >= 30000
+        ? ` · no readable output yet; esc ${esc}`
+        : ""
   return `${label} · ${Locale.duration(elapsed)}${suffix}`
 }
