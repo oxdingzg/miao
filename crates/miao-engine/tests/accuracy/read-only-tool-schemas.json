@@ -107,6 +107,21 @@
     },
     "type": "object"
   },
+  "load_skill": {
+    "additionalProperties": false,
+    "properties": {
+      "name": {
+        "enum": [
+          "media-observe"
+        ],
+        "type": "string"
+      }
+    },
+    "required": [
+      "name"
+    ],
+    "type": "object"
+  },
   "question": {
     "additionalProperties": false,
     "properties": {
@@ -173,6 +188,18 @@
     "type": "object"
   },
   "read_file": {
+    "additionalProperties": false,
+    "properties": {
+      "path": {
+        "type": "string"
+      }
+    },
+    "required": [
+      "path"
+    ],
+    "type": "object"
+  },
+  "read_image": {
     "additionalProperties": false,
     "properties": {
       "path": {
