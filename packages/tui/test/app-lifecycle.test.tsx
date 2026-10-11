@@ -49,6 +49,11 @@ test("SIGHUP clears title and disposes scoped resources once", async () => {
       }).pipe(Effect.provide(AppNodeBuilder.build(Global.node))),
     )
     await ready
+    const beforeRefresh = titles.length
+    setup.renderer.emit("focus")
+    setup.renderer.emit("resize", 80, 24)
+    await Bun.sleep(0)
+    expect(titles.slice(beforeRefresh)).toEqual(["miao", "miao"])
     process.emit("SIGHUP")
     await task
 
