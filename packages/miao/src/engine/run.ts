@@ -58,6 +58,20 @@ export async function runEnginePrompt(options: EngineRunOptions): Promise<Engine
     if (!promoted) return
     const terminal = scoped.find((event) => event.seq > promoted.seq && event.kind === "run.finished")
     if (!terminal) return
+    const terminalData = BlackboxTape.json(terminal.data)
+    // A normal drain records its lifecycle stop after run.finished. Waiting
+    // for that durable boundary keeps record and replay independent of pipe
+    // chunking. Startup recovery has no executing drain or lifecycle stop.
+    if (
+      BlackboxTape.isObject(terminalData) &&
+      terminalData.recovered !== true &&
+      !scoped.some((event) => {
+        if (event.seq <= terminal.seq || (event.kind !== "stop" && event.kind !== "stop_failure")) return false
+        const data = BlackboxTape.json(event.data)
+        return BlackboxTape.isObject(data) && data.run_id === terminalData.run_id
+      })
+    )
+      return
     completed = { after: promoted.seq, until: terminal.seq }
     const outcome = scoped.filter((event) => event.seq > promoted.seq && event.seq <= terminal.seq)
     const data = BlackboxTape.json(terminal.data)
