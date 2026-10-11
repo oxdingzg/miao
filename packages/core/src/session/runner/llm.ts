@@ -83,6 +83,7 @@ import { SessionRunnerModel } from "./model"
 import { SessionRunnerProviderHeaders } from "./provider-headers"
 import { SessionRunnerProviderRetry } from "./provider-retry"
 import { SessionOutputGuard } from "./output-guard"
+import { SessionToolInputGuard } from "./tool-input-guard"
 import { createLLMEventPublisher, progressContent, progressGate } from "./publish-llm-event"
 import { toLLMMessages } from "./to-llm-message"
 import { inlineTextFiles, materializeBlobRefs } from "./materialize-files"
@@ -801,6 +802,7 @@ const layer = Layer.effect(
       const blackbox = yield* SessionBlackbox.Current
       const providerSource = blackbox ? SessionBlackbox.stream(session.id, request, () => llm.stream(request)) : llm.stream(request)
       const providerStream = providerSource.pipe(
+        SessionToolInputGuard.wrap,
         SessionOutputGuard.wrap,
         Stream.runForEach((event) =>
           Effect.gen(function* () {
@@ -1019,6 +1021,8 @@ const layer = Layer.effect(
             && llmFailure.reason.toolInput?.canCorrect ? llmFailure.reason.toolInput : undefined
           if (llmFailure && !publisher.hasProviderError()) {
             yield* withPublication(publisher.failUnsettledTools("Provider did not return a tool result", true))
+            if (llmFailure.module === "SessionToolInputGuard")
+              yield* withPublication(publisher.failPreparedTools("Tool argument budget exceeded; incomplete local calls were not dispatched. Provider-managed side effects may be unknown."))
             if (invalidToolInput || (llmFailure.reason._tag === "Transport" && llmFailure.reason.retryable))
               yield* withPublication(publisher.failPreparedTools("Provider stream interrupted before this tool call was complete; it was not executed"))
             const detail = retryDetail(llmFailure)
