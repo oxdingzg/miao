@@ -756,7 +756,13 @@ async fn execute(
             .await?;
         inner
             .store
-            .assistant_reply(session, run, reply.content.clone())
+            .assistant_reply_profiled(
+                session,
+                run,
+                step,
+                reply.content.clone(),
+                inner.provider.reply_identity(&reply),
+            )
             .await?;
         let invalid_input = reply
             .content

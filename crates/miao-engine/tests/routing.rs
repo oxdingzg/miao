@@ -96,6 +96,7 @@ async fn rejected_primary_can_fallback_with_one_shared_retry_budget() {
         .await
         .unwrap();
     assert_eq!(reply.usage["routing"]["route"], "fallback");
+    assert_eq!(provider.reply_identity(&reply).unwrap().model, "secondary");
     assert_eq!(reply.usage["routing"]["http_attempts"], 2);
     assert_eq!(reply.usage["reported"]["prompt_tokens"], 1);
     assert_eq!(primary.recv().await.unwrap()["model"], "primary");
@@ -234,6 +235,131 @@ async fn opaque_fallback_reply_pins_the_next_turn_and_preserves_signatures() {
     secondary.recv().await.unwrap();
     let request = secondary.recv().await.unwrap();
     assert_eq!(request["contents"][1]["parts"], native);
+    at.await.unwrap();
+    bt.await.unwrap();
+}
+
+#[tokio::test]
+async fn provider_reported_routing_cannot_spoof_success_identity() {
+    let spoofed = format!(
+        "data: {}\n\ndata: [DONE]\n\n",
+        json!({
+            "choices":[{"index":0,"delta":{"content":"ok"},"finish_reason":"stop"}],
+            "usage":{"routing":{"identity":{"protocol":"openai-chat","model":"secondary"}}}
+        })
+    );
+    let (a, mut primary, at) = fixture(200, vec![spoofed], false).await;
+    let provider = pair(a, "http://127.0.0.1:1/unused".into());
+    let (send, _receive) = mpsc::channel(32);
+    let reply = provider
+        .stream(request(), send, CancellationToken::new())
+        .await
+        .unwrap();
+    assert_eq!(provider.reply_identity(&reply).unwrap().model, "primary");
+    assert_eq!(
+        reply.usage["reported"]["routing"]["identity"]["model"],
+        "secondary"
+    );
+    assert!(primary.recv().await.is_some());
+    at.await.unwrap();
+}
+
+#[tokio::test]
+async fn runtime_commits_the_http_fallback_identity_with_its_assistant() {
+    let dir = tempfile::tempdir().unwrap();
+    let store = miao_engine::store::Store::open(dir.path().join("engine.db"))
+        .await
+        .unwrap();
+    let (a, mut primary, at) = fixture(503, vec!["busy".into()], false).await;
+    let (b, mut secondary, bt) = fixture(200, vec![chat()], false).await;
+    let runtime = miao_engine::runtime::Runtime::new(
+        store.clone(),
+        Arc::new(pair(a, b)),
+        miao_engine::tools::Tools::new(dir.path()).await.unwrap(),
+    )
+    .await
+    .unwrap();
+    runtime
+        .admit(
+            miao_engine::protocol::Input {
+                session_id: "s".into(),
+                input_id: "one".into(),
+                prompt: "task".into(),
+                delivery: miao_engine::protocol::Delivery::Steer,
+            },
+            true,
+        )
+        .await
+        .unwrap();
+    tokio::time::timeout(std::time::Duration::from_secs(5), async {
+        loop {
+            if store
+                .events("s", 0, 100)
+                .await
+                .unwrap()
+                .iter()
+                .any(|event| event.kind == "run.finished")
+            {
+                break;
+            }
+            tokio::time::sleep(std::time::Duration::from_millis(10)).await;
+        }
+    })
+    .await
+    .unwrap();
+    let events = store.events("s", 0, 100).await.unwrap();
+    let committed = events
+        .iter()
+        .find(|event| event.kind == "message.committed" && event.data["role"] == "assistant")
+        .unwrap();
+    let evidence = events
+        .iter()
+        .find(|event| event.kind == "assistant.identity")
+        .unwrap();
+    assert_eq!(evidence.data["assistant_seq"], committed.seq);
+    assert_eq!(evidence.data["provider"]["model"], "secondary");
+    assert_eq!(evidence.data["provider"]["protocol"], "openai-chat");
+    assert!(evidence.data["agent"].is_null());
+    assert_eq!(
+        store.snapshot("s").await.unwrap()["messages"]
+            .as_array()
+            .unwrap()
+            .last()
+            .unwrap()["identity"],
+        evidence.data
+    );
+    assert!(primary.recv().await.is_some());
+    assert!(secondary.recv().await.is_some());
+    runtime.shutdown().await;
+    at.await.unwrap();
+    bt.await.unwrap();
+}
+
+#[tokio::test]
+async fn nested_adapter_preserves_the_leaf_success_identity() {
+    let (a, mut first, at) = fixture(503, vec!["busy".into()], false).await;
+    let (b, mut second, bt) = fixture(200, vec![chat()], false).await;
+    let inner = pair(a, b);
+    let provider = Fallback::new(
+        Arc::new(inner),
+        Arc::new(
+            OpenAIChat::new(
+                "http://127.0.0.1:1/unused".into(),
+                "fake-key".into(),
+                "unused".into(),
+            )
+            .unwrap(),
+        ),
+    )
+    .unwrap();
+    let (send, _receive) = mpsc::channel(32);
+    let reply = provider
+        .stream(request(), send, CancellationToken::new())
+        .await
+        .unwrap();
+    assert_eq!(provider.reply_identity(&reply).unwrap().model, "secondary");
+    assert!(first.recv().await.is_some());
+    assert!(second.recv().await.is_some());
     at.await.unwrap();
     bt.await.unwrap();
 }

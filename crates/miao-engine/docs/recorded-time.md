@@ -14,10 +14,12 @@ For known recording times, bridged prompt, text, tool-call, tool-result, and lif
 
 ## Historical model identity
 
-`Provider.identity()` currently reports protocol/model identity, and routing can expose the selected provider identity. This identity is not yet persisted by the runtime: `run.started` carries only `run_id`, and `message.committed` contains no complete model/provider/agent identity. Some provider-opaque content includes a model, but it is protocol-specific and does not establish identity for all messages or fallback turns.
+Successful runtime replies now commit a separate `assistant.identity` event in the same transaction as the assistant message and tool dispatch intents. It binds `assistant_seq`, `run_id`, and provider `step` to the reply's actual protocol/model identity. Its recording time matches the assistant commit. Unknown custom-provider identities and agent manifests remain explicit null.
 
-Product projections must not apply the current configuration retroactively as historical identity. Persisting the actual selected provider-turn identity, including fallback routing, remains a separate integration requirement.
+`Provider.reply_identity(reply)` is the authority for a successful turn. A direct provider reports its configured identity; the fallback adapter reports its own selected-route identity, including opaque-history pinning. Provider-reported usage is nested under `reported` and cannot impersonate the adapter's routing selection. `Provider.identity()` alone reports the initial configured route and must not be applied to fallback replies.
+
+Snapshots attach this evidence as `messages[].identity`. Forks preserve it with a rebased `assistant_seq` and an explicit source `origin`; ledger replay, reopen, and JSONL export retain the evidence. The model-input `history` vocabulary remains role/content/checkpoint/time, so provenance does not enter provider message bodies. Legacy messages and partial replies without successful identity evidence stay unknown; consumers must not borrow the current configuration or a later turn's identity. Product catalog provider IDs and complete agent manifests are not established by a protocol/model pair.
 
 ## Verification
 
-`tests/recorded_time.rs` checks shared event/message times across promotion and assistant commit paths, stable replay/reopen/snapshot/export, preservation on fork, nullable legacy migration, and read-only export before migration.
+`tests/routing.rs` checks actual HTTP fallback identity, runtime message binding, and rejection of provider-reported routing spoofing. `tests/store.rs` checks atomic identity/message binding, unknown custom identity, snapshots, fork rebinding, and reopen. `tests/recorded_time.rs` checks shared event/message times across promotion and assistant commit paths, stable replay/reopen/snapshot/export, preservation on fork, nullable legacy migration, and read-only export before migration.

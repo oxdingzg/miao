@@ -112,6 +112,11 @@ impl Provider for Fallback {
     fn identity(&self) -> Option<Identity> {
         Some(self.first.clone())
     }
+    fn reply_identity(&self, reply: &Reply) -> Option<Identity> {
+        // Only this adapter's wrapper is authoritative; provider-reported
+        // usage stays nested under `reported` and cannot select a route.
+        serde_json::from_value(reply.usage["routing"]["identity"].clone()).ok()
+    }
     fn protected_resources(&self) -> Vec<std::path::PathBuf> {
         self.primary
             .protected_resources()
@@ -186,7 +191,15 @@ impl Provider for Fallback {
                 self.secondary.stream(request, progress, cancel),
             )
             .await;
-            return finish(result, &self.second, true, pinned, None, budget.used());
+            return finish(
+                result,
+                &self.second,
+                true,
+                pinned,
+                None,
+                budget.used(),
+                self.secondary.as_ref(),
+            );
         }
         let can_switch = !pinned || self.first == self.second;
         let result = scoped(
@@ -212,9 +225,18 @@ impl Provider for Fallback {
                     pinned,
                     Some(reason),
                     budget.used(),
+                    self.secondary.as_ref(),
                 )
             }
-            result => finish(result, &self.first, false, pinned, None, budget.used()),
+            result => finish(
+                result,
+                &self.first,
+                false,
+                pinned,
+                None,
+                budget.used(),
+                self.primary.as_ref(),
+            ),
         }
     }
 }
@@ -225,10 +247,12 @@ fn finish(
     pinned: bool,
     reason: Option<String>,
     attempts: usize,
+    provider: &dyn Provider,
 ) -> Result<Reply, ProviderError> {
-    let selection = json!({"identity":identity,"route":if secondary{"fallback"}else{"primary"},"opaque_pinned":pinned,"fallback_reason":reason,"http_attempts":attempts});
+    let mut selection = json!({"identity":identity,"route":if secondary{"fallback"}else{"primary"},"opaque_pinned":pinned,"fallback_reason":reason,"http_attempts":attempts});
     match result {
         Ok(mut reply) => {
+            selection["identity"] = json!(provider.reply_identity(&reply));
             reply.usage = json!({"reported":reply.usage,"routing":selection});
             Ok(reply)
         }
