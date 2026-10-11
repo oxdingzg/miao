@@ -61,6 +61,7 @@ async function main() {
     const provider = option("--provider") ?? replay?.bundle.metadata.provider ?? "openai-chat"
     if (typeof prompt !== "string" || typeof model !== "string" || typeof provider !== "string")
       throw new Error("Provide --prompt and --model when recording")
+    const endpointPath = engineEndpoint(provider, model)
     const recorder = replay
       ? undefined
       : new BlackboxTape.Recorder(file, {
@@ -82,11 +83,21 @@ async function main() {
         model,
         provider,
         prompt,
-        endpoint: new URL("/chat/completions", proxy.server.url).toString(),
+        endpoint: new URL(endpointPath, proxy.server.url).toString(),
         blackbox: replay ?? recorder,
         policyFile: option("--policy"),
         ...(replay ? { toolReplayFile: file } : {}),
-        ...(replay ? { env: { OPENAI_API_KEY: "blackbox-offline" } } : {}),
+        ...(replay
+          ? {
+              env: {
+                OPENAI_API_KEY: "blackbox-offline",
+                ANTHROPIC_API_KEY: "blackbox-offline",
+                GEMINI_API_KEY: "blackbox-offline",
+                OPENAI_ACCESS_TOKEN: "blackbox-offline",
+                OPENAI_ACCOUNT_ID: "blackbox-offline",
+              },
+            }
+          : {}),
       })
       replay?.assertConsumed()
       if (proxy.failures.length) throw proxy.failures[0]
@@ -136,6 +147,15 @@ async function main() {
     "Usage: bun src/blackbox/cli.ts record --bundle FILE --upstream URL [--engine ts|rust] [--port N]\n       bun src/blackbox/cli.ts replay --bundle FILE [--port N] [--timing]\n       bun src/blackbox/cli.ts record-engine --bundle FILE --binary BIN --workspace DIR --db NEW_DB --upstream URL --model MODEL --prompt TEXT\n       bun src/blackbox/cli.ts replay-engine --bundle FILE --binary BIN --workspace DIR --db NEW_DB [--timing]\n       bun src/blackbox/cli.ts compare --expected FILE --actual FILE [--recorded-time]\n       bun src/blackbox/cli.ts inspect --bundle FILE",
   )
   process.exitCode = command ? 2 : 0
+}
+
+function engineEndpoint(provider: string, model: string) {
+  if (provider === "openai-chat") return "/chat/completions"
+  if (provider === "openai-responses" || provider === "subscription-responses") return "/responses"
+  if (provider === "anthropic") return "/messages"
+  if (provider === "gemini")
+    return `/v1beta/models/${encodeURIComponent(model.replace(/^models\//, ""))}:streamGenerateContent?alt=sse`
+  throw new Error(`Unsupported engine provider: ${provider}`)
 }
 
 function report(error: unknown) {
