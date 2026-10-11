@@ -7,6 +7,26 @@ import { it } from "./lib/effect"
 const ADAPTER = "test-route"
 
 describe("ToolStream", () => {
+  ;[false, true].forEach((providerExecuted) => {
+    it.effect(`malformed tool input carries correction provenance (providerExecuted=${providerExecuted})`, () =>
+      Effect.gen(function* () {
+        const tools = ToolStream.start(ToolStream.empty<string>(), "item", {
+          id: "call_bad",
+          name: "edit",
+          input: '{"private":',
+          providerExecuted,
+        })
+        const error = yield* ToolStream.finish(ADAPTER, tools, "item").pipe(Effect.flip)
+        expect(error.reason).toMatchObject({
+          _tag: "InvalidProviderOutput",
+          toolInput: { callID: "call_bad", name: "edit", characters: 11, canCorrect: !providerExecuted },
+        })
+        expect(JSON.stringify(error)).not.toContain("private")
+        expect(error.retryable).toBe(false)
+      }),
+    )
+  })
+
   it.effect("starts from OpenAI-style deltas and finalizes parsed input", () =>
     Effect.gen(function* () {
       const first = ToolStream.appendOrStart(

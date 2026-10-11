@@ -176,9 +176,13 @@ export async function runHeadless(input: HeadlessInput): Promise<string | undefi
         await printPart(part, settled)
       }
       if (!completed) continue
-      if (info.error && once(`${info.id}:error`)) report(errorText(info.error), info.error)
+      if (info.error && once(`${info.id}:error`)) report(errorText(info.error), info.error, false)
       if (once(`${info.id}:finish`)) input.emit("step_finish", { part: stepFinish(info) })
     }
+    // Intermediate failed attempts remain visible, but a durable successful
+    // continuation determines the command's final outcome.
+    const last = messages.filter((message) => message.info.role === "assistant").at(-1)
+    if (final && last?.info.role === "assistant" && last.info.error) errors.push(errorText(last.info.error))
   }
 
   // Part ids come from the provider stream and are only unique within one
@@ -268,8 +272,8 @@ export async function runHeadless(input: HeadlessInput): Promise<string | undefi
     return true
   }
 
-  function report(text: string, error: unknown) {
-    errors.push(text)
+  function report(text: string, error: unknown, terminal = true) {
+    if (terminal) errors.push(text)
     if (!input.emit("error", { error })) input.print.error(text)
     return text
   }

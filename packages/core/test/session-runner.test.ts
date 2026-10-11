@@ -12,6 +12,7 @@ import {
   Model,
   TransportReason,
   InvalidRequestReason,
+  InvalidProviderOutputReason,
   RateLimitReason,
   HttpContext,
   HttpRateLimitDetails,
@@ -7134,6 +7135,29 @@ describe("SessionRunnerLLM", () => {
       expect(context.at(-1)).toMatchObject({ type: "assistant", finish: "stop" })
     }),
   )
+
+  ;["provider-executed", "final-step", "unrelated-output"].forEach((scenario) => {
+    it.effect(`does not correct unsafe or ineligible tool input (${scenario})`, () => Effect.gen(function* () {
+      yield* setup
+      if (scenario === "final-step") {
+        const agents = yield* AgentV2.Service
+        yield* agents.transform((editor) => editor.update(AgentV2.ID.make("build"), (agent) => { agent.steps = 1 }))
+      }
+      const session = yield* SessionV2.Service
+      const failure = new LLMError({ module: "test", method: "stream", reason: new InvalidProviderOutputReason({
+        message: "invalid input", route: "test",
+        ...(scenario === "unrelated-output" ? {} : { toolInput: {
+          callID: "bad", name: "bash", characters: 10, canCorrect: scenario !== "provider-executed",
+        } }),
+      }) })
+      responseFor = () => Stream.concat(Stream.fromIterable([
+        LLMEvent.stepStart({ index: 0 }), LLMEvent.toolInputStart({ id: "bad", name: "bash" }),
+      ]), Stream.fail(failure))
+      yield* session.prompt({ sessionID, prompt: Prompt.make({ text: "Do not replay unsafe calls" }), resume: false })
+      expect(yield* session.resume(sessionID).pipe(Effect.flip)).toBe(failure)
+      expect(requests).toHaveLength(1)
+    }))
+  })
 
   it.effect("bounds consecutive post-output stream continuations", () =>
     Effect.gen(function* () {

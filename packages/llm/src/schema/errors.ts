@@ -153,6 +153,14 @@ export class InvalidProviderOutputReason extends Schema.Class<InvalidProviderOut
   _tag: Schema.tag("InvalidProviderOutput"),
   message: Schema.String,
   route: Schema.optional(Schema.String),
+  toolInput: Schema.optional(
+    Schema.Struct({
+      callID: Schema.String,
+      name: Schema.String,
+      characters: Schema.Number,
+      canCorrect: Schema.Boolean,
+    }),
+  ),
   raw: Schema.optional(Schema.String),
   providerMetadata: Schema.optional(ProviderMetadata),
 }) {
