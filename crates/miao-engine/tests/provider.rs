@@ -55,6 +55,18 @@ async fn endpoint(
             let request: serde_json::Value = serde_json::from_slice(&request).unwrap();
             assert_eq!(request["stream"], true);
             assert_eq!(request["tools"][0]["name"], "read_file");
+            for message in request["messages"].as_array().unwrap() {
+                assert_eq!(
+                    message
+                        .as_object()
+                        .unwrap()
+                        .keys()
+                        .map(String::as_str)
+                        .collect::<Vec<_>>(),
+                    vec!["content", "role"],
+                    "internal commit/checkpoint metadata must not enter provider messages"
+                );
+            }
             stream.write_all(format!("HTTP/1.1 {status} Fixture\r\nContent-Type: text/event-stream\r\nContent-Length: {}\r\nConnection: close\r\n\r\n",body.len()).as_bytes()).await.unwrap();
             for chunk in body.as_bytes().chunks(3) {
                 stream.write_all(chunk).await.unwrap();
@@ -70,8 +82,8 @@ fn history() -> ModelRequest {
         messages: vec![Message {
             role: "user".into(),
             content: json!([{"type":"text","text":"hi"}]),
-            checkpoint: None,
-            recorded_at_ms: None,
+            checkpoint: Some("internal-checkpoint".into()),
+            recorded_at_ms: Some(1_700_000_000_123),
         }],
         tools: vec![miao_engine::protocol::ToolDefinition {
             name: "read_file".into(),
