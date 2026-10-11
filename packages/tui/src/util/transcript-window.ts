@@ -97,7 +97,8 @@ export function createScrollAnchoring<Row extends AnchorRow>(options: { atBottom
       }
       pending = undefined
       if (options.atBottom()) return
-      const delta = offset !== undefined ? offset - awaiting.anchor.offset : geometry.scrollHeight - awaiting.scrollHeight
+      const delta =
+        offset !== undefined ? offset - awaiting.anchor.offset : geometry.scrollHeight - awaiting.scrollHeight
       if (delta !== 0) scrollBy(delta)
     },
   }
@@ -225,7 +226,7 @@ export function createTranscriptWindow<T extends { id: string }>(
       const trailing = bottom()
       const content = Math.max(0, metrics.mountedHeight)
       const mounted = Math.max(1, end() - start())
-      const atBottom = metrics.scrollTop + metrics.viewportHeight >= leading + content + trailing - margin
+      const measuredAtBottom = metrics.scrollTop + metrics.viewportHeight >= leading + content + trailing - margin
       const anchored = anchor() !== undefined || holdEnd() !== undefined
       const timeline = leading + content + trailing
       if (!anchored) peakTimeline = undefined
@@ -233,10 +234,18 @@ export function createTranscriptWindow<T extends { id: string }>(
       // Below the high-water mark the geometry is mid-reflow, so an at-bottom
       // reading is noise: keep anchored reading instead of snapping to the tail.
       const atHighWater = peakTimeline !== undefined && timeline >= peakTimeline - 0.5
-      if (atBottom && anchored && !atHighWater) {
+      const stranded =
+        content > 0 &&
+        (metrics.scrollTop + metrics.viewportHeight <= leading - margin ||
+          metrics.scrollTop >= leading + content + margin)
+      // A real collapse can settle below the peak forever. Preserve a covered
+      // reader, but allow the normal two-pass recovery when only a spacer is
+      // visible; otherwise idle frames can never repair the blank viewport.
+      if (measuredAtBottom && anchored && !atHighWater && !stranded) {
         lastScrollTop = metrics.scrollTop
         return
       }
+      const atBottom = measuredAtBottom && (!anchored || atHighWater)
       const average = content / mounted
       // Recalibrate only while following the tail. A message renders at
       // `index * estimate`, so once the reader is anchored the estimate defines
@@ -280,13 +289,11 @@ export function createTranscriptWindow<T extends { id: string }>(
       // caller measured; reading `estimate()` again here would describe a
       // layout that is not on screen yet and report a stranding that the real
       // geometry does not have.
-      const first = leading
-      const last = first + content
-      const stranded =
-        content > 0 &&
-        (metrics.scrollTop + metrics.viewportHeight <= first - margin || metrics.scrollTop >= last + margin)
       strandedFrames = stranded ? strandedFrames + 1 : 0
       if (stranded && strandedFrames >= 2) {
+        // The old peak no longer describes a visible block. Rebase it with
+        // recovery so a later return to the tail can follow new messages.
+        peakTimeline = timeline
         setHoldEnd(undefined)
         moveTo(Math.max(0, Math.min(total() - 1, Math.floor(metrics.scrollTop / Math.max(1, estimate())))))
         lastScrollTop = metrics.scrollTop

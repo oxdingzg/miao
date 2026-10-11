@@ -1,4 +1,5 @@
 import { expect, test } from "bun:test"
+import { createSignal } from "solid-js"
 import { createTranscriptWindow } from "../src/util/transcript-window"
 
 const items = Array.from({ length: 200 }, (_, i) => ({ id: `m${i}` }))
@@ -69,4 +70,41 @@ test("a single stranded pass only steps, never jumps", () => {
   follow(window, 100)
   // One regular step (a quarter of the window), not a jump to the viewport.
   expect(window.start()).toBe(190)
+})
+
+test("a collapsed tool cannot leave an idle viewport stranded below its high-water mark", () => {
+  const [messages, setMessages] = createSignal(Array.from({ length: 1000 }, (_, index) => ({ id: `m${index}` })))
+  const window = createTranscriptWindow(messages, { windowSize: 40 })
+  window.reveal("m500")
+  window.follow({ scrollTop: window.top() + 200, viewportHeight: 40, mountedHeight: 1000 })
+  const previous = window.start()
+  // A real tool collapse leaves the viewport over the trailing spacer. Its
+  // clamped bottom reading is below the old height peak, even after layout
+  // has settled. No mouse/scroll event should be required for recovery.
+  for (let pass = 0; pass < 20; pass++) {
+    window.follow({
+      scrollTop: window.top() + 40 + window.bottom() - 40,
+      viewportHeight: 40,
+      mountedHeight: 40,
+    })
+  }
+  expect(window.start()).toBeGreaterThan(previous)
+  expect(window.bottom()).toBe(0)
+  setMessages((current) => [...current, ...Array.from({ length: 5 }, (_, index) => ({ id: `live-${index}` }))])
+  window.follow({ scrollTop: window.top() + window.bottom(), viewportHeight: 40, mountedHeight: 40 })
+  expect(window.messages().at(-1)?.id).toBe("live-4")
+  expect(window.bottom()).toBe(0)
+})
+
+test("a transient height collapse while mounted rows still cover the reader preserves the anchor", () => {
+  const messages = Array.from({ length: 1000 }, (_, index) => ({ id: `m${index}` }))
+  const window = createTranscriptWindow(() => messages, { windowSize: 40 })
+  window.reveal("m970")
+  window.follow({ scrollTop: window.top() + 200, viewportHeight: 40, mountedHeight: 1200 })
+  const previous = window.start()
+  // Mid-layout scrollHeight can shrink enough to look like the bottom, but
+  // the actual mounted block still covers the viewport.
+  window.follow({ scrollTop: window.top() + 960, viewportHeight: 40, mountedHeight: 1000 })
+  window.follow({ scrollTop: window.top() + 990, viewportHeight: 40, mountedHeight: 1020 })
+  expect(window.start()).toBe(previous)
 })
