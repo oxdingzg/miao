@@ -514,8 +514,9 @@ async fn execute(
     let mut step = 0;
     let mut allowance = 25;
     let mut input_corrections = 0;
+    let mut transport_continuations = 0;
     let mut repeats = HashMap::<String, u32>::new();
-    let mut goal_inputs = HashSet::new();
+    let mut internal_inputs = HashSet::new();
     let mut goal_iterations = 0;
     let mut goal_stalls = 0;
     let mut goal_signature = None;
@@ -657,6 +658,83 @@ async fn execute(
                         json!({"run_id":run,"step":step,"message":error.to_string(),"routing":error.routing()}),
                     )
                     .await?;
+                if cancel.is_cancelled() {
+                    return Ok(());
+                }
+                if let Some((partial, unexecuted_calls)) = error.continuation() {
+                    inner
+                        .store
+                        .record(
+                            session,
+                            "usage",
+                            json!({"run_id":run,"step":step,"usage":partial.usage,"partial":true}),
+                        )
+                        .await?;
+                    if partial
+                        .content
+                        .as_array()
+                        .is_some_and(|content| !content.is_empty())
+                    {
+                        inner
+                            .store
+                            .assistant_reply(session, run, partial.content.clone())
+                            .await?;
+                    }
+                    inner
+                        .store
+                        .record(
+                            session,
+                            "provider.interrupted",
+                            json!({"run_id":run,"step":step,"unexecuted_calls":unexecuted_calls}),
+                        )
+                        .await?;
+                    if cancel.is_cancelled() {
+                        return Ok(());
+                    }
+                    if transport_continuations < 2 && allowance > 0 {
+                        transport_continuations += 1;
+                        let input_id = format!("transport:{run}:{transport_continuations}");
+                        inner.store.admit(crate::protocol::Input {
+                            session_id: session.into(), input_id: input_id.clone(),
+                            prompt: "The provider stream was interrupted by a transport failure. Continue from committed history and retained partial text. Previously completed tools remain completed; do not repeat their side effects. Unfinished local calls from the interrupted response were not dispatched; regenerate only the remaining work.".into(),
+                            delivery: crate::protocol::Delivery::Steer,
+                        }).await?;
+                        internal_inputs.insert(input_id);
+                        let promoted = inner.store.promote(session, false).await?;
+                        record_promotions(inner, session, run, &promoted).await?;
+                        if promoted.iter().any(|event| {
+                            event.data["input_id"]
+                                .as_str()
+                                .is_none_or(|id| !internal_inputs.contains(id))
+                        }) {
+                            allowance = 25;
+                            input_corrections = 0;
+                            repeats.clear();
+                            transport_continuations = 0;
+                            goal_iterations = 0;
+                            goal_stalls = 0;
+                            goal_signature = None;
+                        }
+                        inner
+                            .store
+                            .record(
+                                session,
+                                "provider.recovery.continuation",
+                                json!({"run_id":run,"step":step,"attempt":transport_continuations}),
+                            )
+                            .await?;
+                        step += 1;
+                        continue;
+                    }
+                    inner
+                        .store
+                        .record(
+                            session,
+                            "provider.recovery.stopped",
+                            json!({"run_id":run,"step":step,"reason":"continuation_budget"}),
+                        )
+                        .await?;
+                }
                 return Err(Error::Invalid(error.to_string()));
             }
         };
@@ -986,7 +1064,7 @@ async fn execute(
                             prompt: "Continue the next dependency-ready todo independently of background waits. Choose only tasks whose depends_on prerequisites are completed. Preserve completed operations, make concrete progress, and update the todo list. If no task is runnable, wait for existing completion notifications rather than polling.".into(),
                             delivery: crate::protocol::Delivery::Queue,
                         }).await?;
-                    goal_inputs.insert(input_id.clone());
+                    internal_inputs.insert(input_id.clone());
                     inner.store.record(session, "loop.continuation", json!({"run_id":run,"input_id":input_id,"admitted_seq":admission.admitted_seq,"iteration":goal_iterations})).await?;
                     promoted = inner.store.promote(session, true).await?;
                 }
@@ -1000,15 +1078,16 @@ async fn execute(
         }
         if !promoted.is_empty() {
             record_promotions(inner, session, run, &promoted).await?;
-            // Synthetic goal admissions are durable, but do not refill the
+            // Synthetic internal admissions are durable, but do not refill the
             // user-input provider allowance. External admissions still do.
             if promoted.iter().any(|event| {
                 event.data["input_id"]
                     .as_str()
-                    .is_none_or(|id| !goal_inputs.contains(id))
+                    .is_none_or(|id| !internal_inputs.contains(id))
             }) {
                 allowance = 25;
                 input_corrections = 0;
+                transport_continuations = 0;
                 repeats.clear();
                 goal_iterations = 0;
                 goal_stalls = 0;

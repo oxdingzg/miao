@@ -8,7 +8,7 @@ These contracts apply to both execution backends. TypeScript implementations do 
 | ---------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | Invalid local tool arguments | An unexecuted local call with invalid JSON may be corrected at most twice. A previously completed file write happens once. The final successful continuation is successful, while intermediate errors remain visible. Provider-executed calls and unknown side effects are not replayed.                   | TS #614; `packages/miao/test/cli/run/tool-input-recovery.test.ts`. Native Anthropic/Chat/Responses correction over durable history is covered by `tests/tool_input_recovery.rs`; actual cross-backend client parity remains pending.                                                                                |
 | Argument generation budgets  | Bound unfinished arguments by UTF-8 bytes and elapsed generation time, including a stalled stream. Cancel before incomplete local dispatch. Preserve completed operations. Do not automatically replay a budget violation or apply the deadline to tool execution.                                         | TS #615; `packages/miao/test/cli/run/tool-input-budget.test.ts`. Native wire budgets: `src/tool_input.rs`, real HTTP watchdog regressions in `src/provider.rs`, and cumulative-frame regression in `tests/provider.rs`. Cross-backend recovery and actual-client parity remain pending.                             |
-| Transport interruption       | A retryable abnormal close can resume over committed history within a bounded allowance. Partial output and completed tools remain observable; completed mutations are not repeated. Protocol/policy failures remain terminal.                                                                             | TS #590; provider and Session regressions. Rust transport/recovery parity requires end-to-end verification.                                                                                                                                                                                                         |
+| Transport interruption       | A retryable abnormal close can resume over committed history within a bounded allowance. Partial output and completed tools remain observable; completed mutations are not repeated. Protocol/policy failures remain terminal.                                                                             | TS #590; provider and Session regressions. Native Anthropic/Chat validated partial-text continuation is covered by `tests/stream_continuation.rs`; Responses/Gemini opaque recovery and cross-backend actual-client parity remain pending.                                                                          |
 | Background completion        | A job completing after its Session becomes idle admits a durable completion notification, promotes it, and starts the next provider turn without a new human prompt. No lost wake or duplicate execution during completion/idle races.                                                                     | TS #610; actual compiled HTTP/model verification and `session-runner.test.ts`. Native atomic notification admission and existing-owner idle wake are covered by `tests/jobs.rs`; actual HTTP/TUI delivery and cross-backend parity remain pending.                                                                  |
 | Dependency-ready work        | Stable task IDs and prerequisite edges survive reload. If 4 waits, 5 depends on 4, and 6 depends on 5, independent 7–9 remain runnable. Completing 4 unlocks only 5; completing 5 unlocks 6. Cancelling a prerequisite does not satisfy it. Invalid graphs are rejected without replacing prior state.     | TS proposal #618; `session-todo-dependencies.test.ts` and actual CLI continuation tests. Rust state/tool schema and dependency-ready context are covered by `crates/miao-engine/tests/state.rs`; native idle scheduling is covered by `goal_continuation.rs`; actual cross-backend client delivery remains pending. |
 | Authorized idle continuation | Ready work continues within existing step, iteration, and no-progress limits only under explicit autonomous authorization or configured looping. A waiting-only graph, including its pending locked dependents, becomes idle without polling. Paused, blocked, or done goals stop autonomous continuation. | TS proposal #618; Core and actual CLI tests. Native runtime behavior is covered by `goal_continuation.rs`; actual product/client parity still requires verification.                                                                                                                                                |
@@ -104,3 +104,30 @@ Real local HTTP fixtures cover all three wire adapters, two successive invalid
 calls followed by valid recovery, a completed file write occurring once, exact
 provider-turn/usage counts, no raw argument retention, and bounded changing call
 identities. Actual product HTTP/TUI delivery remains a separate gate.
+
+## Native validated partial-stream continuation slice
+
+An actual response-body transport rejection can continue an Anthropic or Chat
+turn when its parser has observed supported local text/call frames. The parser
+returns retained text, known usage (unknown remains null), and the count of local
+calls that were never dispatched. Raw unfinished arguments are discarded. This
+explicit classification also survives routing metadata without switching models.
+
+The Session records the failed attempt, commits retained partial assistant text,
+and admits a stable internal steer for at most two continuation turns. Each turn
+reloads committed history. Synthetic inputs do not refill the provider allowance;
+external steers retain their normal boundary behavior and queued inputs stay
+queued. Completed tool mutations remain committed and are not automatically
+replayed. A third interruption preserves its partial evidence and stops.
+
+A clean EOF without a complete protocol message, unsupported content, refusals,
+argument-budget violations, cancellation, and unclassified/unknown provider
+side effects are not eligible. In particular, Responses/Gemini opaque partial
+recovery is not implemented by this slice. Recovery after process loss is not
+automatic. The real HTTP regressions force reqwest body rejection below the
+advertised Content-Length and distinguish it from clean EOF; they verify one
+completed file write, no unfinished call dispatch, retained partial text,
+continuation history, bounded failures, and unknown usage accounting.
+
+Actual product/client delivery and strict cross-backend interrupted-history
+mapping remain separate gates.
