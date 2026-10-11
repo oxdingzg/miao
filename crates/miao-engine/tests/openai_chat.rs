@@ -100,7 +100,7 @@ async fn fragmented_tool_input_is_only_published_after_valid_terminal() {
 }
 
 #[tokio::test]
-async fn truncation_refusal_length_and_partial_tools_never_complete_or_retry() {
+async fn truncation_refusal_length_and_invalid_shapes_never_complete_or_retry() {
     let bodies = [
         frames(
             vec![chunk(json!({"content":"partial"}), json!("stop"))],
@@ -113,7 +113,7 @@ async fn truncation_refusal_length_and_partial_tools_never_complete_or_retry() {
         ),
         frames(
             vec![chunk(
-                json!({"tool_calls":[{"index":0,"id":"call","function":{"name":"read_file","arguments":"{"}}]}),
+                json!({"tool_calls":[{"index":0,"id":"call","function":{"name":"read_file","arguments":"[]"}}]}),
                 json!("tool_calls"),
             )],
             true,

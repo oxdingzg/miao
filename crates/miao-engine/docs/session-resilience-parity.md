@@ -6,7 +6,7 @@ These contracts apply to both execution backends. TypeScript implementations do 
 
 | Contract                     | Required observable result                                                                                                                                                                                                                                                                                 | Current evidence anchor                                                                                                                                                                                                                                                                                             |
 | ---------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Invalid local tool arguments | An unexecuted local call with invalid JSON may be corrected at most twice. A previously completed file write happens once. The final successful continuation is successful, while intermediate errors remain visible. Provider-executed calls and unknown side effects are not replayed.                   | TS #614; `packages/miao/test/cli/run/tool-input-recovery.test.ts`. Rust parity not yet verified.                                                                                                                                                                                                                    |
+| Invalid local tool arguments | An unexecuted local call with invalid JSON may be corrected at most twice. A previously completed file write happens once. The final successful continuation is successful, while intermediate errors remain visible. Provider-executed calls and unknown side effects are not replayed.                   | TS #614; `packages/miao/test/cli/run/tool-input-recovery.test.ts`. Native Anthropic/Chat/Responses correction over durable history is covered by `tests/tool_input_recovery.rs`; actual cross-backend client parity remains pending.                                                                                |
 | Argument generation budgets  | Bound unfinished arguments by UTF-8 bytes and elapsed generation time, including a stalled stream. Cancel before incomplete local dispatch. Preserve completed operations. Do not automatically replay a budget violation or apply the deadline to tool execution.                                         | TS #615; `packages/miao/test/cli/run/tool-input-budget.test.ts`. Native wire budgets: `src/tool_input.rs`, real HTTP watchdog regressions in `src/provider.rs`, and cumulative-frame regression in `tests/provider.rs`. Cross-backend recovery and actual-client parity remain pending.                             |
 | Transport interruption       | A retryable abnormal close can resume over committed history within a bounded allowance. Partial output and completed tools remain observable; completed mutations are not repeated. Protocol/policy failures remain terminal.                                                                             | TS #590; provider and Session regressions. Rust transport/recovery parity requires end-to-end verification.                                                                                                                                                                                                         |
 | Background completion        | A job completing after its Session becomes idle admits a durable completion notification, promotes it, and starts the next provider turn without a new human prompt. No lost wake or duplicate execution during completion/idle races.                                                                     | TS #610; actual compiled HTTP/model verification and `session-runner.test.ts`. Native atomic notification admission and existing-owner idle wake are covered by `tests/jobs.rs`; actual HTTP/TUI delivery and cross-backend parity remain pending.                                                                  |
@@ -76,3 +76,31 @@ separate from job ownership, and shutdown joins owned jobs while preserving
 pending notifications. Crash reconciliation still marks running effects unknown
 without executing them again; it does not resume provider work automatically.
 Actual HTTP/TUI client delivery remains a separate verification gate.
+
+## Native invalid-argument correction implementation slice
+
+A successfully terminated local tool call with syntactically invalid JSON is
+projected with its original identity, an `invalid_json` marker, and explicitly
+null unavailable input. Raw malformed arguments are not retained in the durable
+call or error result. Invalid root shapes, stream truncation, hosted actions,
+refusals, policy failures, and argument-budget violations remain terminal.
+
+The runtime settles the invalid local call with a sanitized error without
+permission checks, hooks, or tool dispatch, then reloads committed history for
+at most two correction turns per admitted user-input allowance. Valid calls in
+the same reply settle normally and are not automatically replayed. A third
+invalid response settles its error but stops the run; a later successful answer
+completes the run while intermediate errors remain visible. Provider-executed
+and unregistered calls are not eligible for this correction path.
+
+Durable history retains null plus the invalid-input marker. The selected model
+request explicitly projects that failed call to an empty object because provider
+wire schemas require object arguments; its paired error result explains that no
+call was executed. This placeholder is never passed to a tool. It is an explicit
+lossy error-history projection, not an argument equivalence rule for strict
+cross-backend replay. Common-history parity still requires a declared mapping.
+
+Real local HTTP fixtures cover all three wire adapters, two successive invalid
+calls followed by valid recovery, a completed file write occurring once, exact
+provider-turn/usage counts, no raw argument retention, and bounded changing call
+identities. Actual product HTTP/TUI delivery remains a separate gate.

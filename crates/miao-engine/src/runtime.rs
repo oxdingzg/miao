@@ -513,6 +513,7 @@ async fn execute(
 ) -> Result<(), Error> {
     let mut step = 0;
     let mut allowance = 25;
+    let mut input_corrections = 0;
     let mut repeats = HashMap::<String, u32>::new();
     let mut goal_inputs = HashSet::new();
     let mut goal_iterations = 0;
@@ -590,6 +591,22 @@ async fn execute(
                 json!({"run_id":run,"step":step,"context_epoch":context_epoch,"policy_revision":inner.policy.revision(),"state_selection":state_selection}),
             )
             .await?;
+        // Durable history retains null plus the error marker for unavailable
+        // arguments. Wire schemas require an object; the paired error result
+        // explains this placeholder. It is never used for tool execution.
+        for message in &mut history {
+            for block in message.content.as_array_mut().into_iter().flatten() {
+                if block["type"] == "tool_use"
+                    && block["input_error"] == "invalid_json"
+                    && block["input"].is_null()
+                {
+                    block["input"] = json!({});
+                    if let Some(block) = block.as_object_mut() {
+                        block.remove("input_error");
+                    }
+                }
+            }
+        }
         let request = ModelRequest {
             system,
             messages: history,
@@ -655,6 +672,15 @@ async fn execute(
             .store
             .assistant_reply(session, run, reply.content.clone())
             .await?;
+        let invalid_input = reply
+            .content
+            .as_array()
+            .into_iter()
+            .flatten()
+            .any(|block| block["type"] == "tool_use" && block["input_error"] == "invalid_json");
+        if invalid_input {
+            input_corrections += 1;
+        }
         if reply.needs_tools {
             for block in reply
                 .content
@@ -673,6 +699,23 @@ async fn execute(
                 let name = block["name"]
                     .as_str()
                     .ok_or_else(|| Error::Invalid("tool name".into()))?;
+                if block["input_error"] == "invalid_json" {
+                    if !block["input"].is_null()
+                        || block["provider_executed"] == true
+                        || !inner
+                            .tools
+                            .definitions()
+                            .iter()
+                            .any(|tool| tool.name == name)
+                    {
+                        return Err(Error::Invalid(
+                            "unsupported invalid tool input correction".into(),
+                        ));
+                    }
+                    inner.store.tool_result(session, run, id, json!({"error":"Invalid JSON tool arguments. This call was not executed. Supply a valid JSON object for this call only; do not repeat completed operations."}), true).await?;
+                    inner.store.record(session, "tool.input_error", json!({"run_id":run,"step":step,"call_id":id,"tool":name,"reason":"invalid_json","attempt":input_corrections})).await?;
+                    continue;
+                }
                 inner
                     .store
                     .record(
@@ -881,6 +924,22 @@ async fn execute(
                 }
             }
         }
+        if invalid_input && input_corrections <= 2 {
+            inner
+                .store
+                .record(
+                    session,
+                    "tool.input_recovery.continuation",
+                    json!({"run_id":run,"step":step,"attempt":input_corrections}),
+                )
+                .await?;
+        }
+        if invalid_input && input_corrections > 2 {
+            inner.store.record(session, "tool.input_recovery.stopped", json!({"run_id":run,"step":step,"reason":"correction_budget","attempts":input_corrections})).await?;
+            return Err(Error::Invalid(
+                "invalid tool JSON correction allowance exceeded".into(),
+            ));
+        }
         // Boundary reload always follows committed tool results. Steers promote
         // before continuation; queue only when this task would otherwise idle.
         if cancel.is_cancelled() {
@@ -949,6 +1008,7 @@ async fn execute(
                     .is_none_or(|id| !goal_inputs.contains(id))
             }) {
                 allowance = 25;
+                input_corrections = 0;
                 repeats.clear();
                 goal_iterations = 0;
                 goal_stalls = 0;

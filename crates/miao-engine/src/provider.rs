@@ -54,6 +54,24 @@ impl ProviderError {
         }
     }
 }
+/// Unavailable arguments remain explicit null in history; raw malformed JSON
+/// is not retained in a completed local call or its error result.
+pub(crate) fn decode_tool_call(
+    id: &str,
+    name: &str,
+    arguments: &str,
+) -> Result<Value, ProviderError> {
+    match serde_json::from_str::<Value>(arguments) {
+        Ok(input) if input.is_object() => {
+            Ok(json!({"type":"tool_use","id":id,"name":name,"input":input}))
+        }
+        Ok(_) => Err(ProviderError::Stream("tool input must be an object".into())),
+        Err(_) => Ok(
+            json!({"type":"tool_use","id":id,"name":name,"input":null,"input_error":"invalid_json"}),
+        ),
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
 pub struct Identity {
     pub protocol: String,
@@ -427,9 +445,16 @@ impl StreamState {
                     return Err(ProviderError::Stream("stop outside open block".into()));
                 }
                 if let Some(text) = self.partial.remove(&index) {
-                    self.blocks.get_mut(&index).expect("block exists")["input"] =
-                        serde_json::from_str(&text)
-                            .map_err(|_| ProviderError::Stream("incomplete tool input".into()))?;
+                    let block = self.blocks.get_mut(&index).expect("block exists");
+                    *block = decode_tool_call(
+                        block["id"]
+                            .as_str()
+                            .ok_or_else(|| ProviderError::Stream("missing tool id".into()))?,
+                        block["name"]
+                            .as_str()
+                            .ok_or_else(|| ProviderError::Stream("missing tool name".into()))?,
+                        &text,
+                    )?;
                 }
             }
             "message_delta" => {
