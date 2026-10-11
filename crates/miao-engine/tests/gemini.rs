@@ -188,7 +188,7 @@ async fn real_http_runtime_preserves_parallel_native_parts_signatures_and_tool_r
         .into_iter()
         .filter(|event| event.kind == "usage")
         .collect::<Vec<_>>();
-    assert_eq!(usage[0].data["usage"]["totalTokenCount"], 44);
+    assert_eq!(usage[0].data["usage"]["totalTokens"], 44);
 }
 #[tokio::test]
 async fn malformed_truncated_blocked_and_duplicate_calls_never_become_replies() {

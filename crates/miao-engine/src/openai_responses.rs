@@ -428,7 +428,7 @@ impl Parser for ResponsesState {
         }
         Ok(Reply {
             content: Value::Array(content),
-            usage: response["usage"].clone(),
+            usage: crate::usage::responses(&response["usage"]),
             needs_tools,
         })
     }

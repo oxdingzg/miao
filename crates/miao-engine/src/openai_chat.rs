@@ -296,7 +296,7 @@ impl Parser for ChatState {
         }
         Ok(Reply {
             content: Value::Array(content),
-            usage: self.usage,
+            usage: crate::usage::chat(&self.usage),
             needs_tools,
         })
     }

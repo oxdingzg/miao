@@ -1071,6 +1071,12 @@ fn merge_usage(acc: &mut Value, next: &Value) {
             }
             let current = acc.as_object_mut().expect("object");
             for (key, value) in update {
+                // Raw provider payloads are audit-only; counting them would
+                // double every normalized number.
+                if key == crate::usage::PROVIDER_METADATA {
+                    current.insert(key.clone(), value.clone());
+                    continue;
+                }
                 merge_usage(current.entry(key.clone()).or_insert(Value::Null), value);
             }
         }

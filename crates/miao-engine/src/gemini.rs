@@ -501,7 +501,7 @@ impl Parser for State {
         ProviderError::ContinuableTransport {
             partial: Reply {
                 content: Value::Array(content),
-                usage: self.usage,
+                usage: crate::usage::gemini(&self.usage),
                 needs_tools: false,
             },
             unexecuted_calls,
@@ -552,7 +552,7 @@ impl Parser for State {
         Ok(Reply {
             needs_tools: !calls.is_empty(),
             content: Value::Array(content),
-            usage: self.usage,
+            usage: crate::usage::gemini(&self.usage),
         })
     }
 }

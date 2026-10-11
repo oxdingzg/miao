@@ -112,3 +112,86 @@ async fn run_usage_aggregates_provider_attempts() {
         2
     );
 }
+
+/// Emits already-normalized usage with an audit-only raw payload.
+struct Normalized;
+#[async_trait]
+impl Provider for Normalized {
+    async fn stream(
+        &self,
+        request: ModelRequest,
+        _: mpsc::Sender<Value>,
+        _: CancellationToken,
+    ) -> Result<Reply, ProviderError> {
+        if request.messages.len() == 1 {
+            return Ok(Reply {
+                content: json!([{"type":"tool_use","id":"c","name":"read_file","input":{"path":"file.txt"}}]),
+                usage: json!({"inputTokens":5,"outputTokens":3,"reasoningTokens":1,"providerMetadata":{"openai-chat":{"prompt_tokens":5,"completion_tokens":3}}}),
+                needs_tools: true,
+            });
+        }
+        Ok(Reply {
+            content: json!([{"type":"text","text":"done"}]),
+            usage: json!({"inputTokens":7,"outputTokens":2,"providerMetadata":{"openai-chat":{"prompt_tokens":7,"completion_tokens":2}}}),
+            needs_tools: false,
+        })
+    }
+}
+
+#[tokio::test]
+async fn run_usage_counts_normalized_fields_once_and_keeps_raw_for_audit() {
+    let dir = tempfile::tempdir().unwrap();
+    std::fs::write(dir.path().join("file.txt"), "hi").unwrap();
+    let store = Store::open(dir.path().join("engine.db")).await.unwrap();
+    let runtime = Runtime::with_policy(
+        store.clone(),
+        Arc::new(Normalized),
+        Tools::new(dir.path()).await.unwrap(),
+        policy(),
+    )
+    .await
+    .unwrap();
+    runtime
+        .admit(
+            Input {
+                session_id: "s".into(),
+                input_id: "one".into(),
+                prompt: "read".into(),
+                delivery: Delivery::Steer,
+            },
+            true,
+        )
+        .await
+        .unwrap();
+    tokio::time::timeout(std::time::Duration::from_secs(10), async {
+        loop {
+            if store
+                .events("s", 0, 1000)
+                .await
+                .unwrap()
+                .iter()
+                .any(|event| event.kind == "run.finished")
+            {
+                break;
+            }
+            tokio::time::sleep(std::time::Duration::from_millis(5)).await;
+        }
+    })
+    .await
+    .unwrap();
+    runtime.shutdown().await;
+
+    let events = store.events("s", 0, 1000).await.unwrap();
+    let aggregate = events
+        .iter()
+        .find(|event| event.kind == "run.usage")
+        .expect("run.usage recorded");
+    // Five plus seven, not double-counted against the nested raw payload.
+    assert_eq!(aggregate.data["usage"]["inputTokens"], 12);
+    assert_eq!(aggregate.data["usage"]["outputTokens"], 5);
+    assert_eq!(aggregate.data["usage"]["reasoningTokens"], 1);
+    assert_eq!(
+        aggregate.data["usage"]["providerMetadata"]["openai-chat"]["prompt_tokens"],
+        7
+    );
+}
