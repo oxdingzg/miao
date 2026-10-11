@@ -1,4 +1,4 @@
-import { EngineClient, type EngineEvent } from "./client"
+import { EngineClient, EngineError, type EngineEvent } from "./client"
 import {
   StatusBridge,
   ToolBridge,
@@ -30,7 +30,7 @@ export class EngineSession {
   #status = new StatusBridge()
   #tools = new ToolBridge()
   #prompts = new PromptBridge()
-  #subscriptions = new Map<string, Promise<unknown>>()
+  #subscriptions = new Map<string, { mode: "live" | "restored"; ready: Promise<unknown> }>()
 
   constructor(client: EngineClient, publish: EnginePublish) {
     this.#client = client
@@ -51,9 +51,9 @@ export class EngineSession {
       })
       // Share the pending subscription too: concurrent admissions must not
       // replay the same history twice before either subscribe reply arrives.
-      this.#subscriptions.set(sessionID, subscription)
+      this.#subscriptions.set(sessionID, { mode: "live", ready: subscription })
     }
-    await this.#subscriptions.get(sessionID)
+    await this.#subscriptions.get(sessionID)?.ready
     return this.#client.admit(
       {
         session_id: sessionID,
@@ -63,6 +63,52 @@ export class EngineSession {
       },
       options.resume ?? true,
     )
+  }
+
+  /** Replay a transactionally captured snapshot cursor before attaching live delivery. */
+  restore(sessionID: string): Promise<unknown> {
+    const existing = this.#subscriptions.get(sessionID)
+    if (existing?.mode === "restored") return existing.ready
+    if (existing)
+      return Promise.reject(new EngineError("engine_already_subscribed", "restore requires an unattached Session"))
+    const ready = this.#restore(sessionID).catch((error: unknown) => {
+      this.#subscriptions.delete(sessionID)
+      throw error
+    })
+    this.#subscriptions.set(sessionID, { mode: "restored", ready })
+    return ready
+  }
+
+  async #restore(sessionID: string): Promise<unknown> {
+    const snapshot = await this.#client.request("snapshot", { session_id: sessionID })
+    if (
+      typeof snapshot !== "object" ||
+      snapshot === null ||
+      !("cursor" in snapshot) ||
+      !("session_id" in snapshot) ||
+      snapshot.session_id !== sessionID ||
+      typeof snapshot.cursor !== "number" ||
+      !Number.isSafeInteger(snapshot.cursor) ||
+      snapshot.cursor < 0
+    )
+      throw new EngineError("engine_snapshot_invalid", "native snapshot has no valid Session cursor")
+    let after = 0
+    while (after < snapshot.cursor) {
+      const page = await this.#client.request("events", { session_id: sessionID, after })
+      if (!Array.isArray(page) || page.length === 0)
+        throw new EngineError("engine_replay_invalid", "native replay ended before the snapshot cursor")
+      for (const event of page) {
+        if (!isReplayEvent(event, sessionID) || event.seq !== after + 1)
+          throw new EngineError("engine_replay_invalid", "native replay has an invalid or discontinuous event")
+        if (event.seq > snapshot.cursor) break
+        this.#dispatch(event)
+        after = event.seq
+      }
+    }
+    // Events committed during snapshot/replay remain after this cursor. The
+    // native subscription replays those rows before continuing live polling.
+    await this.#client.subscribe(sessionID, snapshot.cursor)
+    return snapshot
   }
 
   #dispatch(event: EngineEvent): void {
@@ -98,4 +144,24 @@ export class EngineSession {
     const question = translateQuestion(event)
     if (question) publish({ type: "question.v2.asked", data: question })
   }
+}
+
+function isReplayEvent(value: unknown, sessionID: string): value is EngineEvent {
+  if (typeof value !== "object" || value === null) return false
+  return (
+    "session_id" in value &&
+    value.session_id === sessionID &&
+    "seq" in value &&
+    typeof value.seq === "number" &&
+    Number.isSafeInteger(value.seq) &&
+    value.seq > 0 &&
+    "kind" in value &&
+    typeof value.kind === "string" &&
+    "data" in value &&
+    (!("recorded_at_ms" in value) ||
+      value.recorded_at_ms === null ||
+      (typeof value.recorded_at_ms === "number" &&
+        Number.isSafeInteger(value.recorded_at_ms) &&
+        value.recorded_at_ms >= 0))
+  )
 }
