@@ -37,7 +37,7 @@ test("EngineSession publishes bridged product events for a prompt", async () => 
     expect(JSON.stringify(events)).toContain('"type":"busy"')
     expect(events.find((event) => event.type === "session.next.text.ended")?.source).toEqual({
       sessionID: "ses_x",
-      seq: 2,
+      seq: 4,
       index: 0,
       recordedAtMs: 1_700_000_000_123,
     })
