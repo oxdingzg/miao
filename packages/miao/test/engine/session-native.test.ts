@@ -168,3 +168,85 @@ real(
   },
   30000,
 )
+
+real(
+  "native restore pages to a captured cursor before readiness and hands later events to live delivery",
+  async () => {
+    await using tmp = await tmpdir()
+    const upstream = Bun.serve({
+      port: 0,
+      fetch() {
+        return new Response(
+          [
+            'data: {"choices":[{"index":0,"delta":{"role":"assistant","content":"RESTORED_ACK"},"finish_reason":null}]}\n\n',
+            'data: {"choices":[{"index":0,"delta":{},"finish_reason":"stop"}]}\n\n',
+            "data: [DONE]\n\n",
+          ].join(""),
+          { headers: { "content-type": "text/event-stream" } },
+        )
+      },
+    })
+    const options = {
+      binary: binary!,
+      db: path.join(tmp.path, "engine.db"),
+      workspace: tmp.path,
+      model: "fixture",
+      provider: "openai-chat",
+      endpoint: upstream.url.toString(),
+      env: { OPENAI_API_KEY: "fixture-only" },
+    }
+    const seed = EngineClient.start(options)
+    try {
+      for (let index = 0; index < 110; index++)
+        await seed.request("mode", { session_id: "ses_restore", mode: index % 2 ? "build" : "plan" })
+      const completed = Promise.withResolvers<void>()
+      seed.onEvent((event) => {
+        if (event.kind === "run.finished") completed.resolve()
+      })
+      await seed.subscribe("ses_restore")
+      await seed.admit({ session_id: "ses_restore", input_id: "in_history", prompt: "historical completed prompt" })
+      await completed.promise
+      await seed.admit(
+        { session_id: "ses_restore", input_id: "in_before", prompt: "before reconnect", delivery: "queue" },
+        false,
+      )
+    } finally {
+      await seed.close()
+    }
+    const client = EngineClient.start(options)
+    const outputs: EngineSessionEvent[] = []
+    const facade = new EngineSession(client, (event) => outputs.push(event))
+    const finished = Promise.withResolvers<void>()
+    client.onEvent((event) => {
+      if (event.kind === "run.finished") finished.resolve()
+    })
+    const timer = setTimeout(() => finished.reject(new Error("restored run did not finish")), 10000)
+    try {
+      const first = facade.restore("ses_restore")
+      expect(facade.restore("ses_restore")).toBe(first)
+      const snapshot = BlackboxTape.json(await first)
+      expect(BlackboxTape.isObject(snapshot) && snapshot.cursor).toBeGreaterThan(110)
+      expect(outputs.filter((event) => event.type === "session.next.text.ended")).toHaveLength(1)
+      expect(outputs.filter((event) => event.type === "session.next.prompt.admitted")).toHaveLength(1)
+      expect(BlackboxTape.json(outputs.find((event) => event.type === "session.next.text.ended")?.data)).toEqual(
+        expect.objectContaining({ text: "RESTORED_ACK" }),
+      )
+      await facade.prompt("ses_restore", "after reconnect", { inputID: "in_after", delivery: "steer" })
+      await finished.promise
+      const prompts = outputs.filter((event) => event.type === "session.next.prompt.admitted")
+      expect(prompts).toHaveLength(3)
+      expect(prompts.map((event) => BlackboxTape.json(event.data))).toEqual([
+        expect.objectContaining({ delivery: "steer", prompt: { text: "historical completed prompt" } }),
+        expect.objectContaining({ delivery: "steer", prompt: { text: "after reconnect" } }),
+        expect.objectContaining({ delivery: "queue", prompt: { text: "before reconnect" } }),
+      ])
+      expect(outputs.filter((event) => event.type === "session.next.text.ended")).toHaveLength(3)
+      expect(new Set(outputs.map((event) => JSON.stringify(event.source))).size).toBe(outputs.length)
+    } finally {
+      clearTimeout(timer)
+      await client.close()
+      upstream.stop(true)
+    }
+  },
+  30000,
+)
