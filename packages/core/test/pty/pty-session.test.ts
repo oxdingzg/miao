@@ -144,7 +144,11 @@ describe("pty", () => {
   ptyTest("reads retained output from an absolute cursor without consuming it", () =>
     Effect.gen(function* () {
       const pty = yield* Pty.Service
-      const info = yield* createPty("cat")
+      // Disable terminal echo and wait for that change before writing input.
+      // Otherwise the first read can see only echo, with cat's duplicate AAA
+      // arriving after its cursor and legitimately appearing in the next read.
+      const info = yield* createPty("/usr/bin/env", ["sh", "-c", "stty -echo && printf 'READY\\n' && exec cat"])
+      yield* readWhile(info.id, undefined, (result) => !result.chunk.includes("READY"))
       yield* pty.write(info.id, "AAA\n")
       const first = yield* readWhile(info.id, undefined, (result) => !result.chunk.includes("AAA"))
 
