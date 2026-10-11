@@ -155,3 +155,25 @@ object or Gemini signed parts. It also verifies the same model identity,
 non-retention of unfinished arguments, no local dispatch, clean-EOF separation,
 and the unsafe cases above. These are declared recovery boundaries, not alpha
 renaming rules or proof of common-history/actual-client parity.
+
+## Native first-event deadline
+
+`MIAO_LLM_FIRST_BYTE_TIMEOUT_MS` shares the 60-second default and explicit zero
+disable setting of the TypeScript first-event contract. The native deadline starts
+at HTTP dispatch and travels with the response into the SSE reader, so receiving
+headers alone does not release it. The first valid semantic event cancels the
+deadline; protocol pings and empty Chat heartbeat choices do not. Existing idle,
+argument-generation, and network budgets remain independent.
+
+The Session drain shares the HTTP attempt budget across outer stream retries.
+This prevents three inner HTTP attempts from being multiplied by three outer
+attempts. Heartbeats and retry notices are not treated as model output, and
+external cancellation still closes the active ownership chain without retry.
+
+`tests/first_event.rs` drives the actual native JSONL process against real TCP
+peers. It verifies header silence, body silence, periodic pings, a healthy stream
+lasting beyond the first-event deadline, a disabled deadline, and interruption.
+Failed silent turns issue exactly three HTTP attempts, healthy turns issue one,
+and no incomplete local call is dispatched. This establishes the native
+implementation boundary; common product/client and performance gates still
+require their own evidence.
