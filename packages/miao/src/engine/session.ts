@@ -5,6 +5,7 @@ import {
   PromptBridge,
   translateApproval,
   translateApprovalResolved,
+  translateAssistantIdentity,
   translateMessage,
   translateQuestion,
   translateTools,
@@ -133,6 +134,8 @@ export class EngineSession {
     if (status) publish({ type: "session.next.status", data: status })
     const admitted = this.#prompts.project(event)
     if (admitted) publish({ type: "session.next.prompt.admitted", data: admitted })
+    const identity = translateAssistantIdentity(event)
+    if (identity) publish({ type: "session.next.assistant.identity", data: identity })
     for (const text of translateMessage(event)) publish({ type: "session.next.text.ended", data: text })
     for (const call of translateTools(event)) publish({ type: "session.next.tool.called", data: call })
     const result = this.#tools.result(event)
