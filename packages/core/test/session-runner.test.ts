@@ -36,6 +36,9 @@ import { QuestionV2 } from "@miao/core/question"
 import { AbsolutePath, RelativePath } from "@miao/core/schema"
 import { SessionV2 } from "@miao/core/session"
 import { SessionTodo } from "@miao/core/session/todo"
+import { SessionBackgroundJobs } from "@miao/core/session/background-jobs"
+import { TodoWriteTool } from "@miao/core/tool/todowrite"
+import { WriteTool } from "@miao/core/tool/write"
 import { Snapshot } from "@miao/core/snapshot"
 import { ContextSnapshotDecodeError, LegacyNotMigratedError } from "@miao/core/session/error"
 import { SessionEvent } from "@miao/core/session/event"
@@ -115,12 +118,19 @@ let maxActiveToolExecutions = 0
 let exclusiveActive = 0
 let maxExclusiveActive = 0
 let exclusiveTimeline: string[] = []
+let requestsChanged = Deferred.makeUnsafe<void>()
+const waitForRequests = (ready: () => boolean) =>
+  Effect.gen(function* () {
+    while (!ready()) yield* Deferred.await(requestsChanged)
+  }).pipe(Effect.timeout("5 seconds"))
 const client = Layer.succeed(
   LLMClient.Service,
   LLMClient.Service.of({
     prepare: () => Effect.die("unused"),
     stream: ((request: LLMRequest) => {
       requests.push(request)
+      Deferred.doneUnsafe(requestsChanged, Effect.void)
+      requestsChanged = Deferred.makeUnsafe<void>()
       if (titleResponse && request.system.some((part) => part.text === TITLE_SYSTEM))
         return Stream.fromIterable(titleResponse)
       if (responseFor) return responseFor(request)
@@ -173,7 +183,7 @@ const permission = Layer.succeed(
       // "external_directory" for a workdir outside the bound Location; the test
       // only cares that the OS process it spawns is cleaned up.
       if (input.action === commandDeniedAction) return Effect.fail(new PermissionV2.BlockedError({ rules: [] }))
-      return input.action === "task" || input.action === "read" || input.action === "message" || input.action === "read_session" || input.action === "bash" || input.action === "monitor" || input.action === "external_directory"
+      return input.action === "task" || input.action === "read" || input.action === "message" || input.action === "read_session" || input.action === "bash" || input.action === "monitor" || input.action === "external_directory" || input.action === "todowrite" || input.action === "edit"
         ? Effect.void
         : Effect.die("unused")
     },
@@ -551,6 +561,12 @@ const itWithBash = testEffect(
     [SessionExecution.node, makeExecution(undefined, bashLocation)],
   ]),
 )
+const itWithBashAndTodo = testEffect(
+  AppNodeBuilder.build(LayerNode.group([...appNodes, BashTool.node, TodoWriteTool.node, WriteTool.node]), [
+    ...appOverrides(location(bashLocation)).filter(([node]) => node !== SessionExecution.node),
+    [SessionExecution.node, makeExecution(undefined, bashLocation)],
+  ]),
+)
 const itWithMonitor = testEffect(
   AppNodeBuilder.build(
     LayerNode.group([...appNodes, BackgroundJob.node, MonitorTool.node]),
@@ -651,6 +667,7 @@ const setup = Effect.gen(function* () {
   todoBaseline = (yield* SystemContext.initialize(SessionTodo.context(todos, sessionID))).baseline
   const { db } = yield* Database.Service
   requests.length = 0
+  requestsChanged = Deferred.makeUnsafe<void>()
   response = []
   commandDeniedAction = undefined
   systemBaseline = "Initial context"
@@ -1918,6 +1935,110 @@ describe("SessionRunnerLLM", () => {
     }),
   )
 
+  itWithBashAndTodo.live(
+    "a failed background command wakes the idle Session and advances its todo through real tools",
+    () =>
+      Effect.gen(function* () {
+        yield* setup
+        const database = yield* Database.Service
+        yield* database.db
+          .update(SessionTable)
+          .set({ directory: bashLocation })
+          .where(eq(SessionTable.id, sessionID))
+          .run()
+          .pipe(Effect.orDie)
+        const session = yield* SessionV2.Service
+        const execution = yield* SessionExecution.Service
+        const events = yield* EventV2.Service
+        const todos = yield* SessionTodo.Service
+        yield* todos.update({
+          sessionID,
+          todos: [{ content: "Review the failed background command", status: "in_progress", priority: "high" }],
+        })
+        const directory = yield* Effect.acquireRelease(
+          Effect.promise(() => fs.mkdtemp(join(os.tmpdir(), "miao-background-failure-"))),
+          (directory) => Effect.promise(() => fs.rm(directory, { recursive: true, force: true })),
+        )
+        const release = join(directory, "release")
+        const marker = join(directory, "reviewed")
+        const resumed = yield* Deferred.make<void>()
+        const finish = yield* Deferred.make<void>()
+        responses = [
+          [
+            LLMEvent.stepStart({ index: 0 }),
+            LLMEvent.toolCall({
+              id: "background-failure",
+              name: "bash",
+              input: {
+                command: `while [ ! -f "${release}" ]; do sleep 0.01; done; exit 7`,
+                timeout: 5000,
+                run_in_background: true,
+              },
+            }),
+            LLMEvent.stepFinish({ index: 0, reason: "tool-calls" }),
+            LLMEvent.finish({ reason: "tool-calls" }),
+          ],
+          [
+            LLMEvent.stepStart({ index: 0 }),
+            LLMEvent.textStart({ id: "waiting" }),
+            LLMEvent.textDelta({ id: "waiting", text: "Waiting for the job" }),
+            LLMEvent.textEnd({ id: "waiting" }),
+            LLMEvent.stepFinish({ index: 0, reason: "stop" }),
+            LLMEvent.finish({ reason: "stop" }),
+          ],
+          [
+            LLMEvent.stepStart({ index: 0 }),
+            LLMEvent.toolCall({
+              id: "review-marker",
+              name: "write",
+              input: { path: marker, content: "reviewed exit 7" },
+            }),
+            LLMEvent.toolCall({
+              id: "review-todo",
+              name: "todowrite",
+              input: {
+                todos: [{ content: "Review the failed background command", status: "completed", priority: "high" }],
+              },
+            }),
+            LLMEvent.stepFinish({ index: 0, reason: "tool-calls" }),
+            LLMEvent.finish({ reason: "tool-calls" }),
+          ],
+          [
+            LLMEvent.stepStart({ index: 0 }),
+            LLMEvent.textStart({ id: "reviewed" }),
+            LLMEvent.textDelta({ id: "reviewed", text: "Reviewed the failure" }),
+            LLMEvent.textEnd({ id: "reviewed" }),
+            LLMEvent.stepFinish({ index: 0, reason: "stop" }),
+            LLMEvent.finish({ reason: "stop" }),
+          ],
+        ]
+        yield* session.prompt({
+          sessionID,
+          prompt: Prompt.make({ text: "Run the command and review its failure" }),
+          resume: false,
+        })
+        yield* session.resume(sessionID)
+        expect(requests).toHaveLength(2)
+        expect((yield* execution.active).has(sessionID)).toBe(false)
+        expect((yield* todos.get(sessionID))[0].status).toBe("in_progress")
+        streamStarted = resumed
+        streamGate = finish
+        yield* Effect.promise(() => Bun.write(release, "go"))
+        yield* Deferred.await(resumed).pipe(Effect.timeout("5 seconds"))
+        expect(yield* SessionBackgroundJobs.make({ db: database.db, events, sessionID }).observe()).toMatchObject([
+          { status: "error", error: expect.stringContaining("code 7") },
+        ])
+        expect(JSON.stringify(requests.at(-1))).toContain("exit code 7")
+        yield* Deferred.succeed(finish, undefined)
+        yield* execution.wait(sessionID)
+        expect(requests).toHaveLength(4)
+        expect(yield* Effect.promise(() => Bun.file(marker).text())).toBe("reviewed exit 7")
+        expect((yield* todos.get(sessionID))[0].status).toBe("completed")
+        expect(yield* SessionDelegationStore.pendingCount(database.db, sessionID)).toBe(0)
+        expect((yield* session.context(sessionID)).filter((message) => message.type === "user")).toHaveLength(1)
+      }),
+  )
+
   it.live("blackbox replays a real Session drain without provider IO or repeated file writes", () =>
     Effect.gen(function* () {
       yield* setup
@@ -2032,7 +2153,7 @@ describe("SessionRunnerLLM", () => {
     }),
   )
 
-  it.effect("starts a real runner turn after default prompt recording", () =>
+  it.live("starts a real runner turn after default prompt recording", () =>
     Effect.gen(function* () {
       yield* setup
       const session = yield* SessionV2.Service
@@ -2043,6 +2164,7 @@ describe("SessionRunnerLLM", () => {
       response = []
 
       const message = yield* session.prompt({ sessionID, prompt: Prompt.make({ text: "Run automatically" }) })
+      yield* waitForRequests(() => requests.length >= 1)
 
       expect(requests).toHaveLength(1)
       expect(yield* session.messages({ sessionID })).toMatchObject([
@@ -2051,7 +2173,7 @@ describe("SessionRunnerLLM", () => {
     }),
   )
 
-  it.effect("sends a PDF attachment the route cannot carry as a note naming its local path", () =>
+  it.live("sends a PDF attachment the route cannot carry as a note naming its local path", () =>
     Effect.gen(function* () {
       yield* setup
       const session = yield* SessionV2.Service
@@ -2068,6 +2190,7 @@ describe("SessionRunnerLLM", () => {
           files: [{ uri: "data:application/pdf;base64,JVBERi0=", name: "report.pdf", path: "/home/me/report.pdf" }],
         },
       })
+      yield* waitForRequests(() => requests.length >= 1)
 
       expect(requests).toHaveLength(1)
       const content = requests[0]!.messages.find((message) => message.role === "user")!.content
@@ -2105,7 +2228,7 @@ describe("SessionRunnerLLM", () => {
     }),
   )
 
-  it.effect("retries the first provider turn after system context becomes available", () =>
+  it.live("retries the first provider turn after system context becomes available", () =>
     Effect.gen(function* () {
       yield* setup
       const session = yield* SessionV2.Service
@@ -2131,6 +2254,7 @@ describe("SessionRunnerLLM", () => {
 
       systemUnavailable = false
       yield* session.prompt({ id: messageID, sessionID, prompt: Prompt.make({ text: "First" }) })
+      yield* waitForRequests(() => requests.length >= 1)
 
       expect(requests).toHaveLength(1)
       expect(requests[0]?.messages.map((message) => message.role)).toEqual(["user"])
@@ -3838,7 +3962,7 @@ describe("SessionRunnerLLM", () => {
     }),
   )
 
-  it.effect("runs independent workflow steps together with Promise.all", () =>
+  it.live("runs independent workflow steps together with Promise.all", () =>
     Effect.gen(function* () {
       yield* setup
       const session = yield* SessionV2.Service
@@ -3896,7 +4020,7 @@ describe("SessionRunnerLLM", () => {
       const run = yield* session.resume(sessionID).pipe(Effect.forkChild)
       // Both steps must be waiting on the provider at the same time: a sequential script
       // would still be blocked on the first child, so the second request would never arrive.
-      for (let attempt = 0; attempt < 500 && childRequests().length < 2; attempt++) yield* Effect.yieldNow
+      yield* waitForRequests(() => childRequests().length >= 2)
       expect(childRequests()).toHaveLength(2)
       yield* Deferred.succeed(gate, undefined)
       yield* Fiber.join(run)
@@ -5464,7 +5588,7 @@ describe("SessionRunnerLLM", () => {
     }),
   )
 
-  it.effect("runs steering input accepted while the active provider turn fails", () =>
+  it.live("runs steering input accepted while the active provider turn fails", () =>
     Effect.gen(function* () {
       yield* setup
       const session = yield* SessionV2.Service
@@ -5486,7 +5610,7 @@ describe("SessionRunnerLLM", () => {
       streamFailure = undefined
       streamGate = undefined
       streamStarted = undefined
-      yield* Effect.yieldNow
+      yield* waitForRequests(() => requests.length >= 2)
 
       expect(requests).toHaveLength(2)
       expect(userTexts(requests[1]!)).toEqual(["Start working", "Recover with this"])
@@ -5715,7 +5839,7 @@ describe("SessionRunnerLLM", () => {
     }),
   )
 
-  it.effect("promotes the first queued input when woken while idle", () =>
+  it.live("promotes the first queued input when woken while idle", () =>
     Effect.gen(function* () {
       yield* setup
       const session = yield* SessionV2.Service
@@ -5727,8 +5851,9 @@ describe("SessionRunnerLLM", () => {
       })
 
       requests.length = 0
-      yield* (yield* SessionExecution.Service).wake(sessionID)
-      yield* Effect.yieldNow
+      const execution = yield* SessionExecution.Service
+      yield* execution.wake(sessionID)
+      yield* waitForRequests(() => requests.length >= 1)
 
       expect(requests).toHaveLength(1)
       expect(userTexts(requests[0]!)).toEqual(["Wait in queue"])
@@ -5783,7 +5908,7 @@ describe("SessionRunnerLLM", () => {
     }),
   )
 
-  it.effect("runs different sessions concurrently", () =>
+  it.live("runs different sessions concurrently", () =>
     Effect.gen(function* () {
       yield* setup
       yield* insertSession(otherSessionID)
@@ -5800,7 +5925,7 @@ describe("SessionRunnerLLM", () => {
       const first = yield* session.resume(sessionID).pipe(Effect.forkChild)
       yield* Deferred.await(streamStarted)
       const second = yield* session.resume(otherSessionID).pipe(Effect.forkChild)
-      yield* Effect.yieldNow
+      yield* waitForRequests(() => requests.length >= 2)
 
       expect(requests).toHaveLength(2)
       expect(requests.map((request) => request.providerOptions?.openai?.promptCacheKey)).toEqual([
@@ -6548,7 +6673,7 @@ describe("SessionRunnerLLM", () => {
     }),
   )
 
-  it.effect("interrupts a blocked provider turn without local tool execution", () =>
+  it.live("interrupts a blocked provider turn without local tool execution", () =>
     Effect.gen(function* () {
       yield* setup
       const session = yield* SessionV2.Service

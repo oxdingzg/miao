@@ -3,7 +3,7 @@ import { existsSync, realpathSync } from "node:fs"
 import path from "path"
 import { describe, expect, test } from "bun:test"
 import type { ToolContent } from "@miao/llm"
-import { Effect, Layer } from "effect"
+import { Deferred, Effect, Layer } from "effect"
 import { ChildProcess } from "effect/unstable/process"
 import { FSUtil } from "@miao/core/fs-util"
 import { Config } from "@miao/core/config"
@@ -50,6 +50,8 @@ let result: AppProcess.RunResult = {
   stderrTruncated: false,
 }
 let runFailure: AppProcess.AppProcessError | undefined
+let holdRun = false
+let runReady: Deferred.Deferred<void> | undefined
 const published: Array<{ readonly type: string; readonly data: unknown }> = []
 // `<shell> -n -c <command>` syntax checks, kept apart from the command runs.
 const checks: Array<{ readonly shell: string; readonly args: readonly string[] }> = []
@@ -95,6 +97,7 @@ const appProcess = Layer.succeed(
           extendEnv: command.options.extendEnv,
           options,
         })
+        if (holdRun) return runReady ? Deferred.succeed(runReady, undefined).pipe(Effect.andThen(Effect.never)) : Effect.never
         return runFailure ? Effect.fail(runFailure) : Effect.succeed(result)
       }),
   } as unknown as AppProcess.Interface),
@@ -137,6 +140,8 @@ const reset = () => {
   woken.length = 0
   denyAction = undefined
   runFailure = undefined
+  holdRun = false
+  runReady = undefined
   checks.length = 0
   checkResult = undefined
   configuredShell = undefined
@@ -211,6 +216,60 @@ const it = testEffect(Layer.empty)
 const liveIf = (condition: boolean) => (condition ? it.live : it.live.skip)
 
 describe("BashTool", () => {
+  for (const failure of ["non-zero exit", "timeout"] as const) {
+    it.live(`background ${failure} remains a failure in the registry and durable notification`, () =>
+      Effect.acquireUseRelease(
+        Effect.promise(() => tmpdir()),
+        (tmp) => {
+          reset()
+          if (failure === "non-zero exit") result = { ...result, exitCode: 7 }
+          if (failure === "timeout")
+            runFailure = new AppProcess.AppProcessError({ command: "sleep", cause: new Error("Timed out") })
+          return withTool(tmp.path, (registry) =>
+            Effect.gen(function* () {
+              yield* settleTool(registry, call({ command: "echo failure", run_in_background: true }))
+              const jobs = yield* BackgroundJob.Service
+              const job = (yield* jobs.list())[0]
+              const settled = yield* jobs.wait({ id: job.id, timeout: 5000 })
+              expect(settled.info?.status).toBe("error")
+              expect(settled.info?.error).toContain(failure === "timeout" ? "timed out" : "code 7")
+              expect(published[1]?.data).toMatchObject({
+                text: expect.stringContaining("failed"),
+                metadata: { backgroundJob: { status: "failed", error: expect.any(String) } },
+              })
+              expect(woken).toEqual([sessionID])
+            }),
+          )
+        },
+        (tmp) => Effect.promise(() => tmp[Symbol.asyncDispose]()),
+      ),
+    )
+  }
+
+  it.live("cancellation does not publish a successful finish or wake for a cancelled run", () =>
+    Effect.acquireUseRelease(
+      Effect.promise(() => tmpdir()),
+      (tmp) => {
+        reset()
+        holdRun = true
+        return withTool(tmp.path, (registry) =>
+          Effect.gen(function* () {
+            const ready = yield* Deferred.make<void>()
+            runReady = ready
+            yield* settleTool(registry, call({ command: "echo held", run_in_background: true }))
+            yield* Deferred.await(ready).pipe(Effect.timeout("5 seconds"))
+            const jobs = yield* BackgroundJob.Service
+            const job = (yield* jobs.list())[0]
+            expect((yield* jobs.cancel(job.id))?.status).toBe("cancelled")
+            expect(published.map((entry) => entry.type)).toEqual(["session.next.synthetic"])
+            expect(woken).toEqual([])
+          }),
+        )
+      },
+      (tmp) => Effect.promise(() => tmp[Symbol.asyncDispose]()),
+    ),
+  )
+
   it.live("durably announces the background job lifecycle", () =>
     Effect.acquireUseRelease(
       Effect.promise(() => tmpdir()),
@@ -249,7 +308,11 @@ describe("BashTool", () => {
         reset()
         return withTool(tmp.path, (registry) =>
           Effect.gen(function* () {
-            yield* settleTool(registry, call({ command: "echo hi", run_in_background: true }, "call-background"))
+            const started = yield* settleTool(registry, call({ command: "echo hi", run_in_background: true }, "call-background"))
+            expect(started.result).toMatchObject({
+              type: "content",
+              value: expect.arrayContaining([{ type: "text", text: expect.stringContaining("[background job started]") }]),
+            })
             const jobs = yield* BackgroundJob.Service
             const listed = yield* jobs.list()
             expect(listed).toHaveLength(1)

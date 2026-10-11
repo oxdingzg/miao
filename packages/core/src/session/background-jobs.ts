@@ -13,7 +13,8 @@ import { SessionMessageTable, SessionNotificationTable } from "./sql"
 const Record = Schema.Struct({
   id: Schema.String,
   command: Schema.String,
-  status: Schema.Literals(["started", "finished", "interrupted", "cancelled"]),
+  status: Schema.Literals(["started", "finished", "failed", "interrupted", "cancelled"]),
+  error: Schema.optional(Schema.String),
   outputPath: Schema.String.pipe(Schema.optional),
 })
 const decode = Schema.decodeUnknownOption(Record)
@@ -76,7 +77,7 @@ export const make = (input: {
       const record = parsed.value
       const previous = jobs.get(record.id)
       // A generic finish notice racing cancellation cannot turn it into success.
-      if (previous?.status === "cancelled" && record.status === "finished") continue
+      if (previous?.status === "cancelled" && (record.status === "finished" || record.status === "failed")) continue
       jobs.set(record.id, {
         id: record.id,
         type: "bash",
@@ -92,6 +93,7 @@ export const make = (input: {
                 : "error",
         ...(record.status === "started" ? {} : { completed_at: row.at, output: row.text }),
         ...(record.status === "interrupted" ? { error: INTERRUPTED } : {}),
+        ...(record.status === "failed" ? { error: record.error ?? row.text } : {}),
         metadata: { sessionID: input.sessionID, ...(record.outputPath ? { outputPath: record.outputPath } : {}) },
       })
     }

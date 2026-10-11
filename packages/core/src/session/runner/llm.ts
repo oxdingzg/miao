@@ -1903,6 +1903,13 @@ const layer = Layer.effect(
                 const list = yield* todos.get(input.sessionID)
                 const open = list.filter((todo) => todo.status !== "completed" && todo.status !== "cancelled")
                 if (list.length > 0 && open.length > 0) {
+                  // An unfinished checklist is not runnable work while its
+                  // owned background command is still executing. Settlement
+                  // admits a notification and wakes the Session when ready.
+                  if ((yield* backgroundJobs.observe()).some((job) => job.status === "running")) {
+                    finishReason = "waiting-background-job"
+                    break
+                  }
                   const signature = JSON.stringify(list)
                   loopStalls = signature === lastTodoSignature ? loopStalls + 1 : 0
                   lastTodoSignature = signature
