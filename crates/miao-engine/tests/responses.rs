@@ -108,10 +108,10 @@ async fn responses_runtime_preserves_opaque_reasoning_and_function_outputs() {
 }
 
 #[tokio::test]
-async fn incomplete_arguments_refusal_hosted_actions_and_truncation_fail_closed() {
+async fn invalid_shapes_refusal_hosted_actions_and_truncation_fail_closed() {
     let cases = [
         stream(
-            json!([{"type":"function_call","call_id":"call","name":"read_file","arguments":"{"}]),
+            json!([{"type":"function_call","call_id":"call","name":"read_file","arguments":"[]"}]),
             "completed",
         ),
         stream(

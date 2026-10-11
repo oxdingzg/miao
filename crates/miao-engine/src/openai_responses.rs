@@ -273,13 +273,11 @@ impl Parser for ResponsesState {
                     if !calls.insert(id.to_owned()) {
                         return Err(invalid());
                     }
-                    let input: Value =
-                        serde_json::from_str(item["arguments"].as_str().ok_or_else(invalid)?)
-                            .map_err(|_| invalid())?;
-                    if !input.is_object() {
-                        return Err(invalid());
-                    }
-                    content.push(json!({"type":"tool_use","id":id,"name":item["name"].as_str().ok_or_else(invalid)?,"input":input}));
+                    content.push(crate::provider::decode_tool_call(
+                        id,
+                        item["name"].as_str().ok_or_else(invalid)?,
+                        item["arguments"].as_str().ok_or_else(invalid)?,
+                    )?);
                 }
                 Some("reasoning") => {
                     // Preserve provider continuation identity verbatim. Other

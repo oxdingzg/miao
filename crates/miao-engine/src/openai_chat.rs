@@ -264,12 +264,11 @@ impl Parser for ChatState {
             if call.id.is_empty() || call.name.is_empty() || !ids.insert(call.id.clone()) {
                 return Err(ProviderError::Stream("invalid tool identity".into()));
             }
-            let input: Value = serde_json::from_str(&call.arguments)
-                .map_err(|_| ProviderError::Stream("incomplete tool JSON".into()))?;
-            if !input.is_object() {
-                return Err(ProviderError::Stream("tool input must be an object".into()));
-            }
-            content.push(json!({"type":"tool_use","id":call.id,"name":call.name,"input":input}));
+            content.push(crate::provider::decode_tool_call(
+                &call.id,
+                &call.name,
+                &call.arguments,
+            )?);
         }
         if content.is_empty() {
             return Err(ProviderError::Stream("empty completed Chat message".into()));
