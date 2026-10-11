@@ -110,3 +110,15 @@ test("native model endpoint and protocol-specific generation configuration are c
     }),
   ).toThrow("Missing on-wire model identity")
 })
+
+test("packet observations retain unknown policies and match proven complete-profile body hashes", () => {
+  const observed = EngineWireProfile.captureRequestObservation({ protocol: "openai-chat", request })
+  expect(observed.model).toBe("fixture-model")
+  expect(observed.coverage).toBe("request-body-only")
+  expect(observed.agentManifestHash).toBeNull()
+  expect(observed.permissionHash).toBeNull()
+  expect(observed.modelParametersHash).toBe(capture(request).modelParametersHash)
+  expect(observed.toolSurfaceHash).toBe(capture(request).toolSurfaceHash)
+  expect(JSON.stringify(observed)).not.toContain("project rules")
+  expect(JSON.stringify(observed)).not.toContain("first task")
+})

@@ -28,6 +28,17 @@ async function main() {
   }
   if (command === "inspect") {
     const bundle = await BlackboxTape.load(required("--bundle"))
+    const { EngineWireProfile } = await import("../engine/wire-profile")
+    const provider = option("--provider") ?? bundle.metadata.provider
+    const protocol =
+      provider === "subscription-responses"
+        ? "openai-responses"
+        : provider === "openai-chat" ||
+            provider === "openai-responses" ||
+            provider === "anthropic" ||
+            provider === "gemini"
+          ? provider
+          : undefined
     console.log(
       JSON.stringify(
         {
@@ -41,6 +52,29 @@ async function main() {
             frames: item.frames.length,
           })),
           traceEvents: bundle.trace.length,
+          requestObservations: protocol
+            ? bundle.interactions
+                .filter((item) => item.lane === "provider")
+                .map((item) => {
+                  if (!BlackboxTape.isObject(item.request) || typeof item.request.path !== "string")
+                    throw new Error("Missing recorded provider request path")
+                  const head = item.frames[0]?.value
+                  return {
+                    lane: item.lane,
+                    ordinal: item.ordinal,
+                    transportOutcome: item.outcome,
+                    httpStatus:
+                      BlackboxTape.isObject(head) && head.type === "head" && typeof head.status === "number"
+                        ? head.status
+                        : null,
+                    ...EngineWireProfile.captureRequestObservation({
+                      protocol,
+                      request: item.request.body,
+                      endpoint: new URL(item.request.path, "http://localhost").toString(),
+                    }),
+                  }
+                })
+            : null,
         },
         null,
         2,
@@ -108,6 +142,7 @@ async function main() {
     return
   }
   if (command === "record" || command === "replay") {
+    const provider = option("--provider")
     const port = Number(option("--port") ?? 0)
     if (!Number.isInteger(port) || port < 0 || port > 65535) throw new Error("Invalid port")
     const replay =
@@ -117,6 +152,7 @@ async function main() {
         ? new BlackboxTape.Recorder(required("--bundle"), {
             engine: option("--engine") ?? "unspecified",
             protocol: "http",
+            ...(provider ? { provider } : {}),
             createdAt: new Date().toISOString(),
           })
         : undefined

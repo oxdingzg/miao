@@ -125,6 +125,25 @@ cases.forEach((entry) =>
         expect(bundle.interactions.filter((item) => item.lane === "provider").map((item) => item.request)).toEqual([
           { method: "POST", path: entry.path, body: requests[0].body },
         ])
+        const inspect = Bun.spawn([process.execPath, "src/blackbox/cli.ts", "inspect", "--bundle", file], {
+          stdout: "pipe",
+          stderr: "pipe",
+        })
+        const [inspected, inspectionError, inspectionExit] = await Promise.all([
+          new Response(inspect.stdout).text(),
+          new Response(inspect.stderr).text(),
+          inspect.exited,
+        ])
+        expect({ inspectionError, inspectionExit }).toEqual({ inspectionError: "", inspectionExit: 0 })
+        const observation = JSON.parse(inspected).requestObservations[0]
+        expect(observation.model).toBe("test-model")
+        expect(observation.ordinal).toBe(0)
+        expect(observation.coverage).toBe("request-body-only")
+        expect(observation.agentManifestHash).toBeNull()
+        expect(observation.permissionHash).toBeNull()
+        expect(observation.modelParametersHash).toMatch(/^[a-f0-9]{64}$/)
+        expect(observation.toolSurfaceHash).toMatch(/^[a-f0-9]{64}$/)
+        expect(observation.systemInstructionsHash).toMatch(/^[a-f0-9]{64}$/)
         expect(await Bun.file(file).text()).not.toContain("fixture-only")
         await upstream.stop(true)
         const replayed = await run("replay-engine", "replay.db")
