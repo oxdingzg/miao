@@ -31,6 +31,7 @@ scope for this table and is tracked separately.
 | Context: project skills | validated | `src/context.rs`, `--skills-config`; discovers root `*.md` and nested `SKILL.md`, lists name/description in the system context (body read on demand), bounded and symlink-safe (`tests/skills.rs`) |
 | Context: host references (read-only roots) | validated | `src/context.rs`, `src/tools.rs`, `--references-config`; lists host-authorized reference paths in the system context and extends `read_file` to those roots as read-only (writes stay workspace-only); the resource is namespaced `@reference/<path>` so the permission boundary does not reject it (`tests/references.rs`) |
 | State/tools: question, wakeup, cron | validated | `src/question.rs`, `src/wakeup.rs`, `src/cron.rs` |
+| Reasoning round-trip | validated | `src/provider.rs`, `src/openai_chat.rs`; Anthropic extended thinking is published as the canonical `reasoning` part with its opaque signature and lowered back to a signed `thinking` block, while Chat Completions carries `reasoning_content` verbatim. `redacted_thinking` stays an explicit rejection (`tests/provider.rs`, `tests/openai_chat.rs`) |
 | Providers: Anthropic, OpenAI Chat, OpenAI Responses, subscription Responses, Gemini | validated | `src/provider.rs`, `src/openai_chat.rs`, `src/openai_responses.rs`, `src/gemini.rs` |
 | Auth: API key + credential store, key/oauth kinds | validated | `src/credential.rs`; OAuth refresh broker planned |
 | Extension: MCP client | validated | `src/mcp.rs` |
