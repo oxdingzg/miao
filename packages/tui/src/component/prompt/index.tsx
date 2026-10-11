@@ -161,6 +161,7 @@ export function Prompt(props: PromptProps) {
   const tuiConfig = useTuiConfig()
   const dialog = useDialog()
   const toast = useToast()
+  const compaction = createMemo(() => sync.data.session_compaction[props.sessionID ?? ""])
   const status = createMemo(() => sync.data.session_status?.[props.sessionID ?? ""] ?? { type: "idle" })
   const waitingPrompts = createMemo(() => (props.sessionID ? sync.prompt.waiting(props.sessionID) : []))
   const history = usePromptHistory()
@@ -298,16 +299,17 @@ export function Prompt(props: PromptProps) {
   })
 
   // Claude Code shows how long the current turn has been running next to the
-  // interrupt hint. Measure from the prompt so it matches the completed footer.
+  // interrupt hint. Compaction has its own clock; ordinary turns measure from
+  // the prompt so the timer matches the completed footer.
   const [now, setNow] = createSignal(Date.now())
   createEffect(() => {
-    if (status().type === "idle") return
+    if (status().type === "idle" && !compaction()) return
     setNow(Date.now())
     const timer = setInterval(() => setNow(Date.now()), 1000)
     onCleanup(() => clearInterval(timer))
   })
   const turnElapsed = createMemo(() => {
-    const start = lastUserMessage()?.time.created
+    const start = compaction()?.since ?? lastUserMessage()?.time.created
     return start === undefined ? 0 : Math.max(0, now() - start)
   })
 
@@ -1603,7 +1605,7 @@ export function Prompt(props: PromptProps) {
         </box>
         <box width="100%" flexDirection="row" justifyContent="space-between">
           <Switch>
-            <Match when={status().type !== "idle"}>
+            <Match when={status().type !== "idle" || compaction()}>
               <box
                 flexDirection="row"
                 gap={1}
@@ -1617,10 +1619,12 @@ export function Prompt(props: PromptProps) {
                     </Show>
                   </box>
                   <box flexDirection="row" gap={1} flexShrink={0}>
-                    <ProviderRetryStatus status={status()} />
+                    <Show when={compaction()} fallback={<ProviderRetryStatus status={status()} />}>
+                      <text fg={theme.warning}>Compacting context</text>
+                    </Show>
                   </box>
                 </box>
-                <Show when={status().type === "busy" && turnElapsed() > 0}>
+                <Show when={(status().type === "busy" || compaction()) && turnElapsed() > 0}>
                   <text fg={theme.textMuted}>{Locale.duration(turnElapsed())}</text>
                 </Show>
                 <text fg={theme.text}>

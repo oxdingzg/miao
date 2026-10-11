@@ -153,3 +153,52 @@ test("the waiting label names the current drain phase", async () => {
     app.renderer.destroy()
   }
 })
+
+test("compaction overrides stale tool activity, keeps a live timer, and restores normal waiting", async () => {
+  await using tmp = await tmpdir()
+  const state = path.join(tmp.path, "state")
+  await mkdir(state, { recursive: true })
+  await Bun.write(path.join(state, "kv.json"), "{}")
+  const [{ SessionWaiting }, { KVProvider }, { ThemeProvider }, { TuiConfigProvider }] = await Promise.all([
+    import("../../../src/routes/session/activity"),
+    import("../../../src/context/kv"),
+    import("../../../src/context/theme"),
+    import("../../../src/config"),
+  ])
+  const [phase, setPhase] = createSignal<"compacting" | "requesting">("compacting")
+  const [elapsed, setElapsed] = createSignal(4000)
+  const [activity, setActivity] = createSignal<string | undefined>("ran 43 shell commands")
+  const app = await testRender(
+    () => (
+      <TestTuiContexts directory={tmp.path} paths={{ home: tmp.path, state, worktree: tmp.path }}>
+        <TuiConfigProvider config={createTuiResolvedConfig()}>
+          <KVProvider>
+            <ThemeProvider mode="dark">
+              <SessionWaiting waiting={false} activity={activity()} phase={phase()} elapsed={elapsed()} />
+            </ThemeProvider>
+          </KVProvider>
+        </TuiConfigProvider>
+      </TestTuiContexts>
+    ),
+    { width: 120, height: 10 },
+  )
+  try {
+    const deadline = Date.now() + 2000
+    while (!app.captureCharFrame().includes("Compacting context") && Date.now() < deadline) {
+      await Bun.sleep(20)
+      await app.renderOnce()
+    }
+    expect(app.captureCharFrame()).toContain("Compacting context · 4.0s · making room to continue")
+    expect(app.captureCharFrame()).not.toContain("ran 43 shell commands")
+    setElapsed(31000)
+    await app.renderOnce()
+    expect(app.captureCharFrame()).toContain("Compacting context · 31.0s")
+    expect(app.captureCharFrame()).toContain("still waiting for summary; esc interrupt")
+    setPhase("requesting")
+    setActivity(undefined)
+    await app.renderOnce()
+    expect(app.captureCharFrame()).not.toContain("Compacting context")
+  } finally {
+    app.renderer.destroy()
+  }
+})

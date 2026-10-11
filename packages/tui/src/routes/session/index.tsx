@@ -1352,7 +1352,7 @@ export function Session() {
                         <></>
                       </Match>
                       <Match when={message.type === "compaction"}>
-                        <box marginTop={1} border={["top"]} title=" Compaction " titleAlignment="center" borderColor={theme.borderActive} />
+                        <box marginTop={1} border={["top"]} title=" Context compacted " titleAlignment="center" borderColor={theme.borderActive} />
                       </Match>
                       <Match when={message.type === "user"}>
                         <UserMessage
