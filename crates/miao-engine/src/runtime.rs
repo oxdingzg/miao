@@ -619,23 +619,31 @@ async fn execute(
         // fail the turn.
         let mut produced = false;
         let mut attempts = 0;
+        let transport_budget = crate::provider::Budget::new();
         let reply = loop {
             let (send, mut receive) = mpsc::channel(64);
-            let response = inner
-                .provider
-                .stream(request.clone(), send, cancel.child_token());
+            let response = crate::provider::scoped(
+                transport_budget.clone(),
+                3,
+                inner
+                    .provider
+                    .stream(request.clone(), send, cancel.child_token()),
+            );
             tokio::pin!(response);
             let outcome = loop {
                 tokio::select! {
                     _=cancel.cancelled()=>return Ok(()),
                     reply=&mut response=>break reply,
-                    Some(delta)=receive.recv()=>{ produced = true; let _=inner.progress.send(json!({"session_id":session,"run_id":run,"step":step,"kind":"provider.delta","data":delta})); },
+                    Some(delta)=receive.recv()=>{ produced |= delta["kind"] != "provider.retry" && crate::first_event::semantic_event(&delta); let _=inner.progress.send(json!({"session_id":session,"run_id":run,"step":step,"kind":"provider.delta","data":delta})); },
                 }
             };
             // Retry only if no output was emitted. Draining the receiver covers a
             // delta the provider sent just before failing but that the select loop
             // had not yet forwarded.
-            let observed = produced || receive.try_recv().is_ok();
+            let observed = produced
+                || std::iter::from_fn(|| receive.try_recv().ok()).any(|event| {
+                    event["kind"] != "provider.retry" && crate::first_event::semantic_event(&event)
+                });
             match outcome {
                 Err(ProviderError::Transport) | Err(ProviderError::ResponseTransport)
                     if !observed && attempts < 2 =>

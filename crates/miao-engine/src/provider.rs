@@ -293,9 +293,14 @@ pub(crate) async fn request_with_retry(
         let request = request
             .try_clone()
             .ok_or_else(|| ProviderError::Stream("request cannot be replayed".into()))?;
+        let first_event = crate::first_event::FirstEventDeadline::default();
+        let request_deadline = first_event.0.map_or(deadline, |first| deadline.min(first));
         let response = tokio::select! {
             _=cancel.cancelled()=>return Err(ProviderError::Interrupted),
-            result=tokio::time::timeout_at(deadline,client.execute(request))=>match result {Ok(Ok(response))=>Ok(response),_=>Err(ProviderError::Transport)},
+            result=tokio::time::timeout_at(request_deadline,client.execute(request))=>match result {
+                Ok(Ok(mut response))=>{ response.extensions_mut().insert(first_event); Ok(response) },
+                _=>Err(ProviderError::Transport),
+            },
         };
         let error = match response {
             Ok(response) if response.status().is_success() => return Ok(response),
@@ -593,6 +598,12 @@ async fn read_stream_with_budget<P: Parser>(
     mut parser: P,
     mut input_budget: crate::tool_input::ToolInputBudget,
 ) -> Result<Reply, ProviderError> {
+    let mut first_event = response
+        .extensions()
+        .get::<crate::first_event::FirstEventDeadline>()
+        .copied()
+        .unwrap_or_default()
+        .0;
     let mut bytes = response.bytes_stream();
     let mut decoder = SseDecoder::default();
     let mut total = 0;
@@ -600,8 +611,11 @@ async fn read_stream_with_budget<P: Parser>(
         let deadline = input_budget
             .deadline()
             .unwrap_or_else(|| tokio::time::Instant::now() + Duration::from_secs(120));
+        let first_deadline =
+            first_event.unwrap_or_else(|| tokio::time::Instant::now() + Duration::from_secs(60));
         let chunk = tokio::select! {
             _=cancel.cancelled()=>return Err(ProviderError::Interrupted),
+            _=tokio::time::sleep_until(first_deadline), if first_event.is_some()=>return Err(ProviderError::Transport),
             _=tokio::time::sleep_until(deadline), if input_budget.deadline().is_some()=>return Err(ProviderError::Stream("tool input time budget exceeded".into())),
             result=tokio::time::timeout(Duration::from_secs(120),bytes.next())=>result.map_err(|_|ProviderError::Stream("provider idle timeout".into()))?,
         };
@@ -619,6 +633,12 @@ async fn read_stream_with_budget<P: Parser>(
         for frame in decoder.push(&chunk)? {
             input_budget.frame(&frame)?;
             parser.frame(&frame)?;
+            if match &frame {
+                Frame::Done => true,
+                Frame::Json(event) => crate::first_event::semantic_event(event),
+            } {
+                first_event = None;
+            }
             let notice = match frame {
                 Frame::Json(event) => event,
                 Frame::Done => json!({"kind":"stream.done"}),
