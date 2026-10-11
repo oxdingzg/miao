@@ -13,7 +13,8 @@ external tools fall back to a generic/plugin renderer.
 
 | Engine tool | Product tool id |
 |---|---|
-| `read_file` | `read` |
+| `read_file`, `read_image` | `read` |
+| `load_skill` | `skill` |
 | `list_files` | `read` (directory listing) |
 | `glob` | `glob` |
 | `grep` | `grep` |

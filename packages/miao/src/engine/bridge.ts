@@ -197,6 +197,8 @@ export function translateMessage(event: EngineEvent): SessionTextEnded[] {
 
 const TOOL_IDS: Record<string, string> = {
   read_file: "read",
+  read_image: "read",
+  load_skill: "skill",
   list_files: "read",
   glob: "glob",
   grep: "grep",

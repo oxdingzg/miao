@@ -53,6 +53,12 @@ struct ReadInput {
 
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
+struct SkillInput {
+    name: String,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
 struct ListInput {
     #[serde(default = "root_path")]
     path: String,
@@ -371,10 +377,18 @@ impl Tools {
             }
         }
         let path = match name {
-            "read_file" => {
+            "read_file" | "read_image" => {
                 serde_json::from_value::<ReadInput>(input.clone())
                     .map_err(|_| ToolError::InvalidInput)?
                     .path
+            }
+            "load_skill" => {
+                let parsed: SkillInput =
+                    serde_json::from_value(input.clone()).map_err(|_| ToolError::InvalidInput)?;
+                if parsed.name != "media-observe" {
+                    return Err(ToolError::InvalidInput);
+                }
+                ".".into()
             }
             "list_files" => {
                 let parsed = serde_json::from_value::<ListInput>(input.clone())
@@ -522,7 +536,9 @@ impl Tools {
                 .map(|p| p.as_os_str().to_str().ok_or(ToolError::InvalidInput))
                 .collect::<Result<Vec<_>, _>>()?
         };
-        let resource = if external {
+        let resource = if name == "load_skill" {
+            "@builtin/skill/media-observe".into()
+        } else if external {
             // Authorized external reads use a namespaced resource: an absolute
             // path would be rejected by `permission::assess`'s boundary check, so
             // the resource is `@reference/<path>` and policy can target
@@ -869,6 +885,16 @@ impl Tools {
                 definitions.push(ToolDefinition { name:name.into(), description:description.into(), input_schema:json!({"type":"object","properties":properties,"required":required,"additionalProperties":false}) });
             }
         }
+        definitions.push(ToolDefinition {
+            name: "read_image".into(),
+            description: "Read a local PNG/JPEG/GIF/WebP image (up to 4 MiB) for visual understanding. The committed tool result attaches image pixels to the next provider turn; base64 is not text context. Use after extracting video frames/contact sheets with Bash, or for screenshots. Uses read permission and path boundaries.".into(),
+            input_schema: json!({"type":"object","properties":{"path":{"type":"string"}},"required":["path"],"additionalProperties":false}),
+        });
+        definitions.push(ToolDefinition {
+            name: "load_skill".into(),
+            description: "Load the built-in media-observe skill for timestamped video/audio inspection through Bash, ffmpeg/ffprobe, and read_image. Project skill bodies remain available through their listed read_file paths.".into(),
+            input_schema: json!({"type":"object","properties":{"name":{"type":"string","enum":["media-observe"]}},"required":["name"],"additionalProperties":false}),
+        });
         definitions.push(ToolDefinition{name:"recall".into(),description:"Search this Session's raw immutable messages, including history before compaction. Literal case-sensitive substring; opaque provider state excluded. Bounded scan pages may contain no matches; follow next_before_message_seq until exhausted.".into(),input_schema:json!({"type":"object","properties":{"query":{"type":"string","minLength":1,"maxLength":512},"limit":{"type":"integer","minimum":1,"maximum":20,"default":10},"before_message_seq":{"type":"integer","minimum":0}},"required":["query"],"additionalProperties":false})});
         definitions.extend([
             ToolDefinition{name:"session_state".into(),description:"Read this Session's durable todo list and goal with optimistic revisions, including after compaction/restart.".into(),input_schema:json!({"type":"object","properties":{},"additionalProperties":false})},
@@ -959,6 +985,51 @@ impl Tools {
     ) -> Result<Value, ToolError> {
         let task = async {
             match name {
+                "load_skill" => {
+                    let input: SkillInput =
+                        serde_json::from_value(input).map_err(|_| ToolError::InvalidInput)?;
+                    if input.name != "media-observe" {
+                        return Err(ToolError::InvalidInput);
+                    }
+                    Ok(
+                        json!({"name":input.name,"content":crate::context::MEDIA_OBSERVE,"sha256":digest(crate::context::MEDIA_OBSERVE.as_bytes()),"tool_mapping":{"bash":"bash","read_images":"read_image","read_text":"read_file"}}),
+                    )
+                }
+                "read_image" => {
+                    use base64::Engine;
+                    let input: ReadInput =
+                        serde_json::from_value(input).map_err(|_| ToolError::InvalidInput)?;
+                    let path = self.contained(&input.path).await?;
+                    let file = tokio::fs::File::open(&path).await?;
+                    let metadata = file.metadata().await?;
+                    if !metadata.is_file() || metadata.len() > 4 * 1024 * 1024 {
+                        return Err(ToolError::External(
+                            "image must be a regular PNG/JPEG/GIF/WebP file of at most 4 MiB"
+                                .into(),
+                        ));
+                    }
+                    let mut bytes = Vec::new();
+                    file.take(4 * 1024 * 1024 + 1)
+                        .read_to_end(&mut bytes)
+                        .await?;
+                    if bytes.len() > 4 * 1024 * 1024 {
+                        return Err(ToolError::InvalidFile);
+                    }
+                    let mime = if bytes.starts_with(b"\x89PNG\r\n\x1a\n") {
+                        "image/png"
+                    } else if bytes.starts_with(b"\xff\xd8\xff") {
+                        "image/jpeg"
+                    } else if bytes.starts_with(b"GIF87a") || bytes.starts_with(b"GIF89a") {
+                        "image/gif"
+                    } else if bytes.starts_with(b"RIFF") && bytes.get(8..12) == Some(b"WEBP") {
+                        "image/webp"
+                    } else {
+                        return Err(ToolError::External("unsupported image format".into()));
+                    };
+                    Ok(
+                        json!({"path":input.path,"mime":mime,"bytes":bytes.len(),"sha256":digest(&bytes),"image":{"mime":mime,"data":base64::engine::general_purpose::STANDARD.encode(bytes)}}),
+                    )
+                }
                 "read_file" => {
                     let input: ReadInput =
                         serde_json::from_value(input).map_err(|_| ToolError::InvalidInput)?;
