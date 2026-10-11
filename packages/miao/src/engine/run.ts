@@ -7,8 +7,8 @@ import { EngineTools } from "../blackbox/engine-tools"
 /**
  * Headless driver for one engine prompt. It subscribes before admitting so no
  * committed event is missed, resolves approvals with a fixed decision (the PoC
- * has no interactive approval UI), waits for `run.finished`, then reads the
- * committed history for the assistant text. A question request is unsupported
+ * has no interactive approval UI), waits for promotion plus `run.finished`, and
+ * projects only the admitted input's bounded committed assistant text. A question request is unsupported
  * here and fails the run instead of hanging on the engine's timeout.
  */
 
@@ -43,26 +43,35 @@ export async function runEnginePrompt(options: EngineRunOptions): Promise<Engine
   const done = new Promise<void>((resolve) => (finished = resolve))
   let failure: Error | undefined
   let admittedSeq: number | undefined
+  let completed: { after: number; until: number } | undefined
   let timeoutTimer: ReturnType<typeof setTimeout> | undefined
 
   const settle = () => {
     const sequence = admittedSeq
     if (sequence === undefined) return
     const scoped = events.filter((event) => event.seq > sequence)
-    const terminal = scoped.find((event) => event.kind === "run.finished")
+    const promoted = scoped.find((event) => {
+      if (event.kind !== "input.promoted") return false
+      const data = BlackboxTape.json(event.data)
+      return BlackboxTape.isObject(data) && data.input_id === inputId
+    })
+    if (!promoted) return
+    const terminal = scoped.find((event) => event.seq > promoted.seq && event.kind === "run.finished")
     if (!terminal) return
+    completed = { after: promoted.seq, until: terminal.seq }
+    const outcome = scoped.filter((event) => event.seq > promoted.seq && event.seq <= terminal.seq)
     const data = BlackboxTape.json(terminal.data)
     const reason = BlackboxTape.isObject(data) ? data.reason : undefined
     if (reason === "failed")
       failure =
-        scoped.findLast((event) => event.kind === "provider.started" || event.kind === "provider.failed")?.kind ===
+        outcome.findLast((event) => event.kind === "provider.started" || event.kind === "provider.failed")?.kind ===
         "provider.failed"
           ? new EngineError("provider_failed", "the provider turn failed")
           : new EngineError("engine_run_failed", "the engine run failed")
     if (reason === "interrupted") failure = new EngineError("engine_interrupted", "the engine run was interrupted")
     if (reason !== "completed" && reason !== "failed" && reason !== "interrupted")
       failure = new EngineError("engine_outcome_missing", "the engine run has no authoritative terminal outcome")
-    if (scoped.some((event) => event.kind === "question.requested"))
+    if (outcome.some((event) => event.kind === "question.requested"))
       failure = new EngineError("question_unsupported", "engine requested a question; headless runs cannot answer")
     finished?.()
   }
@@ -131,22 +140,23 @@ export async function runEnginePrompt(options: EngineRunOptions): Promise<Engine
     await Promise.all(recordings)
     if (recordingFailure) throw recordingFailure
     if (failure) throw failure
-    const history = (await client.history(session, true)) as Array<{ role: string; content: unknown }>
-    return { session, text: assistantText(history), events }
+    if (!completed) throw new EngineError("engine_outcome_missing", "the admitted input has no completed output range")
+    return { session, text: assistantText(events, completed), events }
   } finally {
     if (timeoutTimer !== undefined) clearTimeout(timeoutTimer)
     await client.close()
   }
 }
 
-function assistantText(history: Array<{ role: string; content: unknown }>) {
-  return history
-    .filter((message) => message.role === "assistant")
-    .flatMap((message) => (Array.isArray(message.content) ? message.content : []))
-    .filter(
-      (block): block is { type: string; text: string } =>
-        typeof block === "object" && block !== null && (block as { type?: string }).type === "text",
-    )
-    .map((block) => block.text)
+function assistantText(events: EngineEvent[], range: { after: number; until: number }) {
+  return events
+    .filter((event) => event.seq > range.after && event.seq < range.until && event.kind === "message.committed")
+    .flatMap((event) => {
+      const data = BlackboxTape.json(event.data)
+      if (!BlackboxTape.isObject(data) || data.role !== "assistant" || !Array.isArray(data.content)) return []
+      return data.content.flatMap((block) =>
+        BlackboxTape.isObject(block) && block.type === "text" && typeof block.text === "string" ? [block.text] : [],
+      )
+    })
     .join("\n")
 }

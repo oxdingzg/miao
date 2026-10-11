@@ -24,7 +24,13 @@ describe("engine host client", () => {
         prompt: "hi",
       })
       expect(result.text).toBe("echo:hi")
-      expect(result.events.map((event) => event.kind)).toEqual(["run.started", "message.committed", "run.finished"])
+      expect(result.events.map((event) => event.kind)).toEqual([
+        "input.admitted",
+        "input.promoted",
+        "run.started",
+        "message.committed",
+        "run.finished",
+      ])
     } finally {
       await fs.rm(root, { recursive: true, force: true })
     }
@@ -32,7 +38,12 @@ describe("engine host client", () => {
 
   test("maps an engine error reply to EngineError", async () => {
     const root = await tmp()
-    const client = EngineClient.start({ binary: fake, db: path.join(root, "engine.db"), workspace: root, model: "test" })
+    const client = EngineClient.start({
+      binary: fake,
+      db: path.join(root, "engine.db"),
+      workspace: root,
+      model: "test",
+    })
     try {
       await expect(client.request("boom", {})).rejects.toMatchObject({ code: "boom", message: "kaboom" })
     } finally {

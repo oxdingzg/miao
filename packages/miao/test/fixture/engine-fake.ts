@@ -18,7 +18,7 @@ function handle(request: { id: number; method: string; params: Record<string, un
     const input = params.input as { session_id: string; input_id: string; prompt: string }
     prompts.set(input.session_id, input.prompt)
     send({ id, result: { input_id: input.input_id, admitted_seq: 1, duplicate: false, pending: false } })
-    emit(input.session_id)
+    emit(input.session_id, input.input_id)
     return
   }
   if (method === "history") {
@@ -40,15 +40,28 @@ function handle(request: { id: number; method: string; params: Record<string, un
   send({ id, result: { accepted: true } })
 }
 
-function emit(session: string) {
+function emit(session: string, inputID: string) {
   const text = `echo:${prompts.get(session) ?? ""}`
   send({ method: "progress", params: { session_id: session, kind: "provider.delta", data: { text } } })
-  send({ method: "event", params: { session_id: session, seq: 1, kind: "run.started", data: { run_id: "run" } } })
+  send({
+    method: "event",
+    params: { session_id: session, seq: 1, kind: "input.admitted", data: { input_id: inputID, delivery: "steer" } },
+  })
   send({
     method: "event",
     params: {
       session_id: session,
       seq: 2,
+      kind: "input.promoted",
+      data: { input_id: inputID, prompt: prompts.get(session), checkpoint: "checkpoint" },
+    },
+  })
+  send({ method: "event", params: { session_id: session, seq: 3, kind: "run.started", data: { run_id: "run" } } })
+  send({
+    method: "event",
+    params: {
+      session_id: session,
+      seq: 4,
       kind: "message.committed",
       recorded_at_ms: 1_700_000_000_123,
       data: { role: "assistant", content: [{ type: "text", text }] },
@@ -56,7 +69,7 @@ function emit(session: string) {
   })
   send({
     method: "event",
-    params: { session_id: session, seq: 3, kind: "run.finished", data: { run_id: "run", reason: "completed" } },
+    params: { session_id: session, seq: 5, kind: "run.finished", data: { run_id: "run", reason: "completed" } },
   })
 }
 
