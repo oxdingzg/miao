@@ -24,6 +24,11 @@ pub enum ProviderError {
     Transport,
     #[error("provider response transport failed; outcome is not replayable")]
     ResponseTransport,
+    #[error("provider response transport interrupted; local calls were not dispatched")]
+    ContinuableTransport {
+        partial: Reply,
+        unexecuted_calls: usize,
+    },
     #[error("{source}")]
     Routed {
         selection: Value,
@@ -47,6 +52,17 @@ impl ProviderError {
             Self::Transport | Self::Http(429 | 500 | 502 | 503 | 504 | 529)
         )
     }
+    pub(crate) fn continuation(&self) -> Option<(&Reply, usize)> {
+        match self {
+            Self::ContinuableTransport {
+                partial,
+                unexecuted_calls,
+            } => Some((partial, *unexecuted_calls)),
+            Self::Routed { source, .. } => source.continuation(),
+            _ => None,
+        }
+    }
+
     pub fn routing(&self) -> Option<&Value> {
         match self {
             Self::Routed { selection, .. } => Some(selection),
@@ -313,9 +329,12 @@ pub enum Frame {
     Done,
 }
 
-pub(crate) trait Parser {
+pub(crate) trait Parser: Sized {
     fn frame(&mut self, frame: &Frame) -> Result<(), ProviderError>;
     fn terminal(&self) -> bool;
+    fn interrupted(self) -> ProviderError {
+        ProviderError::ResponseTransport
+    }
     fn finish(self) -> Result<Reply, ProviderError>;
 }
 
@@ -516,6 +535,36 @@ impl Parser for StreamState {
     fn terminal(&self) -> bool {
         self.stopped
     }
+    fn interrupted(self) -> ProviderError {
+        if self.blocks.is_empty() {
+            return ProviderError::ResponseTransport;
+        }
+        let unexecuted_calls = self
+            .blocks
+            .values()
+            .filter(|block| block["type"] == "tool_use")
+            .count();
+        let content = self
+            .blocks
+            .into_values()
+            .filter(|block| {
+                block["type"] == "text"
+                    && block["text"].as_str().is_some_and(|text| !text.is_empty())
+            })
+            .collect::<Vec<_>>();
+        ProviderError::ContinuableTransport {
+            partial: Reply {
+                content: Value::Array(content),
+                usage: if self.usage.is_empty() {
+                    Value::Null
+                } else {
+                    Value::Object(self.usage)
+                },
+                needs_tools: false,
+            },
+            unexecuted_calls,
+        }
+    }
     fn finish(self) -> Result<Reply, ProviderError> {
         StreamState::finish(self)
     }
@@ -559,7 +608,10 @@ async fn read_stream_with_budget<P: Parser>(
         let Some(chunk) = chunk else {
             return parser.finish();
         };
-        let chunk = chunk.map_err(|_| ProviderError::ResponseTransport)?;
+        let chunk = match chunk {
+            Ok(chunk) => chunk,
+            Err(_) => return Err(parser.interrupted()),
+        };
         total += chunk.len();
         if total > 8 * 1024 * 1024 {
             return Err(ProviderError::Stream("message exceeds 8 MiB".into()));

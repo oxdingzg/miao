@@ -127,7 +127,9 @@ async fn accepted_body_transport_semantic_and_auth_failures_do_not_switch_model(
         assert_eq!(selection["route"], "primary");
         assert_eq!(selection["http_attempts"], 1);
         if truncated {
-            assert!(matches!(*source, ProviderError::ResponseTransport));
+            assert!(
+                matches!(*source, ProviderError::ContinuableTransport { ref partial, unexecuted_calls: 0 } if partial.content[0]["text"] == "partial")
+            );
         } else if status == 401 {
             assert!(matches!(*source, ProviderError::Http(401)));
         } else {

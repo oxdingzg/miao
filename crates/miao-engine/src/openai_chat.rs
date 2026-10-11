@@ -241,6 +241,27 @@ impl Parser for ChatState {
     fn terminal(&self) -> bool {
         self.done
     }
+    fn interrupted(self) -> ProviderError {
+        if self.text.is_empty() && self.calls.is_empty() {
+            return ProviderError::ResponseTransport;
+        }
+        ProviderError::ContinuableTransport {
+            partial: Reply {
+                content: if self.text.is_empty() {
+                    json!([])
+                } else {
+                    json!([{"type":"text","text":self.text}])
+                },
+                usage: if self.usage.is_null() {
+                    Value::Null
+                } else {
+                    self.usage
+                },
+                needs_tools: false,
+            },
+            unexecuted_calls: self.calls.len(),
+        }
+    }
     fn finish(self) -> Result<Reply, ProviderError> {
         if !self.done {
             return Err(ProviderError::Stream(
