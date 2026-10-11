@@ -130,6 +130,9 @@ fn collect_skills(dir: &std::path::Path, depth: u8, out: &mut Vec<std::path::Pat
     }
 }
 
+pub(crate) const MEDIA_OBSERVE: &str =
+    include_str!("../../../packages/core/src/plugin/skill/media-observe.md");
+
 fn discover_skills(root: &std::path::Path, directories: &[SkillDirectory]) -> Vec<Skill> {
     let mut skills = Vec::new();
     for directory in directories {
@@ -262,6 +265,11 @@ pub async fn assemble(
             Err(error)=>return Err(error),
         }
     }
+    system.push_str("\n\nBuilt-in skill: media-observe — use load_skill with name media-observe when inspecting video/audio. Follow its timestamped frame/contact-sheet workflow using bash and read_image. Project skills below are loaded using read_file.");
+    if system.len() > 65536 {
+        return Err(ToolError::ContextBudget);
+    }
+    sources.push(json!({"type":"builtin_skill","name":"media-observe","path":"@builtin/skill/media-observe","status":"registered","sha256":crate::permission::digest(MEDIA_OBSERVE.as_bytes())}));
     let skills = discover_skills(
         std::path::Path::new(tools.location()),
         tools.skill_directories(),

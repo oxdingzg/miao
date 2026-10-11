@@ -21,6 +21,8 @@ async fn directory_catalog_and_execution_have_bounded_workspace_scope() {
             "list_files",
             "glob",
             "grep",
+            "read_image",
+            "load_skill",
             "recall",
             "session_state",
             "todowrite",

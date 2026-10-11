@@ -887,8 +887,20 @@ impl Store {
             let key=format!("{run}/{id}");
             let changed=tx.execute("UPDATE engine_tool SET state='completed' WHERE id=?1 AND state IN ('planned','dispatched') AND run_id IN (SELECT id FROM engine_run WHERE id=?2 AND session_id=?3 AND state='running')",params![key,run,session])?;
             if changed!=1 { return Err(Error::Invalid("tool is not dispatched".into())); }
+            let name: String = tx.query_row("SELECT name FROM engine_tool WHERE id=?1",params![key],|row| row.get(0))?;
+            let mut result = result;
+            let image = if name == "read_image" && !is_error {
+                let image = result.as_object_mut().and_then(|result| result.remove("image"))
+                    .ok_or_else(|| Error::Invalid("image tool result is missing its attachment".into()))?;
+                let attachment: crate::protocol::Attachment = serde_json::from_value(image)?;
+                attachment.validate()?;
+                result["image_attached"] = json!(true);
+                Some(attachment.part())
+            } else { None };
             append(&tx,&session,"tool.completed",json!({"call_id":key,"result":result,"result_json":serde_json::to_string(&result)?,"is_error":is_error}))?;
-            let event=project_message(&tx,&session,"user",json!([{"type":"tool_result","tool_use_id":id,"content":serde_json::to_string(&result)?,"is_error":is_error}]),None)?;
+            let mut content = vec![json!({"type":"tool_result","tool_use_id":id,"content":serde_json::to_string(&result)?,"is_error":is_error})];
+            if let Some(image) = image { content.push(image); }
+            let event=project_message(&tx,&session,"user",json!(content),None)?;
             tx.commit()?;
             Ok(event)
         }).await
