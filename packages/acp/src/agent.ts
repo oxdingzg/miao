@@ -533,7 +533,7 @@ export class MiaoAgent implements Agent {
         if (item.text)
           await this.notify(state.id, {
             sessionUpdate: "agent_thought_chunk",
-            messageId: message.id,
+            messageId: `${message.id}:${item.id}`,
             content: { type: "text", text: item.text },
           })
         continue
@@ -621,7 +621,7 @@ export class MiaoAgent implements Agent {
         state.streamed.add(`${event.data.assistantMessageID}:${event.data.reasoningID}`)
         return this.notify(state.id, {
           sessionUpdate: "agent_thought_chunk",
-          messageId: event.data.assistantMessageID,
+          messageId: `${event.data.assistantMessageID}:${event.data.reasoningID}`,
           content: { type: "text", text: event.data.delta },
         })
       case "session.next.reasoning.ended":
@@ -629,7 +629,7 @@ export class MiaoAgent implements Agent {
           return
         return this.notify(state.id, {
           sessionUpdate: "agent_thought_chunk",
-          messageId: event.data.assistantMessageID,
+          messageId: `${event.data.assistantMessageID}:${event.data.reasoningID}`,
           content: { type: "text", text: event.data.text },
         })
       case "session.next.tool.input.started": {
