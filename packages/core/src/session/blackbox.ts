@@ -92,49 +92,48 @@ export function stream<R>(sessionID: string, request: LLMRequest, live: () => St
         return Stream.concat(frames, Stream.fail(Schema.decodeUnknownSync(LLMError)(recorded.error)))
       }
       const ticket = yield* Effect.promise(() => tape.begin("llm", input))
-      return (source.value ??= live()).pipe(
-        Stream.tap((event) => Effect.promise(() => ticket.frame(snapshot(event)))),
-        Stream.onExit((exit) =>
-          Effect.promise(() => {
-            if (Exit.isSuccess(exit)) return ticket.finish("complete")
-            if (Cause.hasInterrupts(exit.cause)) return ticket.finish("cancelled")
-            const failure = Cause.findErrorOption(exit.cause)
-            const error = Option.isSome(failure) && failure.value instanceof LLMError ? failure.value : undefined
-            // Error transport context can contain Authorization headers and signed
-            // URLs. Preserve classification/retry fields, not the HTTP context.
-            const reason = error ? Schema.encodeSync(LLMError)(error).reason : undefined
-            const classified = reason
-              ? snapshot({
-                  _tag: "LLM.Error",
-                  module: error?.module,
-                  method: error?.method,
-                  reason: {
-                    ...Object.fromEntries(
-                      Object.entries(reason).filter(([key]) =>
-                        [
-                          "_tag",
-                          "kind",
-                          "status",
-                          "retryAfterMs",
-                          "transient",
-                          "route",
-                          "provider",
-                          "model",
-                          "classification",
-                        ].includes(key),
-                      ),
+      // Use the consumer scope: the stream hook's parallel scope fails when
+      // interrupted with an asynchronous finalizer, masking cancellation with
+      // a cleanup defect. Await durable recording before releasing the turn.
+      yield* Effect.addFinalizer((exit) =>
+        Effect.promise(() => {
+          if (Exit.isSuccess(exit)) return ticket.finish("complete")
+          if (Cause.hasInterrupts(exit.cause)) return ticket.finish("cancelled")
+          const failure = Cause.findErrorOption(exit.cause)
+          const error = Option.isSome(failure) && failure.value instanceof LLMError ? failure.value : undefined
+          // Error transport context can contain Authorization headers and signed
+          // URLs. Preserve classification/retry fields, not the HTTP context.
+          const reason = error ? Schema.encodeSync(LLMError)(error).reason : undefined
+          const classified = reason
+            ? snapshot({
+                _tag: "LLM.Error",
+                module: error?.module,
+                method: error?.method,
+                reason: {
+                  ...Object.fromEntries(
+                    Object.entries(reason).filter(([key]) =>
+                      [
+                        "_tag",
+                        "kind",
+                        "status",
+                        "retryAfterMs",
+                        "transient",
+                        "route",
+                        "provider",
+                        "model",
+                        "classification",
+                      ].includes(key),
                     ),
-                    message: error?.retryable
-                      ? "Recorded provider temporarily overloaded"
-                      : "Recorded provider failure",
-                    ...(reason._tag === "UnknownProvider" ? { transient: error?.retryable } : {}),
-                  },
-                })
-              : undefined
-            return ticket.finish("error", classified)
-          }),
-        ),
+                  ),
+                  message: error?.retryable ? "Recorded provider temporarily overloaded" : "Recorded provider failure",
+                  ...(reason._tag === "UnknownProvider" ? { transient: error?.retryable } : {}),
+                },
+              })
+            : undefined
+          return ticket.finish("error", classified)
+        }),
       )
+      return (source.value ??= live()).pipe(Stream.tap((event) => Effect.promise(() => ticket.frame(snapshot(event)))))
     }),
   )
 }

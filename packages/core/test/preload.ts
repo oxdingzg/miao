@@ -20,3 +20,7 @@ process.env.MIAO_DB = ":memory:"
 process.env.NPM_CONFIG_AUDIT = "false"
 process.env.MIAO_MODELS_PATH = path.join(import.meta.dir, "plugin", "fixtures", "models.json")
 process.env.MIAO_DISABLE_MODELS_FETCH = "true"
+// Recording/replay fixtures explicitly provide their own tape. Never inherit
+// a developer's real recording directory or replay file into unrelated tests.
+delete process.env.MIAO_BLACKBOX_RECORD
+delete process.env.MIAO_BLACKBOX_REPLAY
