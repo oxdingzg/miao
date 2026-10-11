@@ -3854,12 +3854,16 @@ describe("SessionRunnerLLM", () => {
         ],
       ]
 
-      // Hold the subagent's provider stream open so it emits nothing at all:
-      // only the silence watchdog can end the parent's wait.
+      // Start the child stream, then stall it. The first-event watchdog has
+      // finished; this case still exercises the independent 15-minute silence
+      // boundary rather than a provider that never begins streaming.
       const gate = yield* Deferred.make<void>()
       const run = yield* session.resume(sessionID).pipe(Effect.forkChild)
       while (requests.length < 1) yield* Effect.yieldNow
-      streamGate = gate
+      responseFor = () => Stream.concat(
+        Stream.make(LLMEvent.stepStart({ index: 0 })),
+        Stream.fromEffect(Deferred.await(gate)).pipe(Stream.drain),
+      )
       while (requests.length < 2) yield* Effect.yieldNow
 
       const taskTool = (context: SessionMessage.Message[]) =>
@@ -3888,7 +3892,7 @@ describe("SessionRunnerLLM", () => {
         state: { status: "error", error: { message: expect.stringContaining("no output for 15 minutes") } },
       })
 
-      streamGate = undefined
+      responseFor = undefined
       yield* Fiber.interrupt(run)
     }),
   )
@@ -7135,6 +7139,92 @@ describe("SessionRunnerLLM", () => {
           ]),
         },
       ])
+    }),
+  )
+
+  it.effect("abandons a silent provider attempt and recovers through the existing bounded retry", () =>
+    Effect.gen(function* () {
+      yield* setup
+      const previous = process.env.MIAO_LLM_FIRST_BYTE_TIMEOUT_MS
+      yield* Effect.addFinalizer(() =>
+        Effect.sync(() => {
+          if (previous === undefined) delete process.env.MIAO_LLM_FIRST_BYTE_TIMEOUT_MS
+          else process.env.MIAO_LLM_FIRST_BYTE_TIMEOUT_MS = previous
+        }),
+      )
+      process.env.MIAO_LLM_FIRST_BYTE_TIMEOUT_MS = "100"
+      const session = yield* SessionV2.Service
+      yield* session.prompt({ sessionID, prompt: Prompt.make({ text: "Recover from silence" }), resume: false })
+      let attempts = 0
+      responseStream = Stream.unwrap(
+        Effect.sync(() =>
+          attempts++ === 0
+            ? Stream.never
+            : Stream.fromIterable(fragmentFixture("text", "after-silence", ["Recovered"]).completeEvents),
+        ),
+      )
+      const run = yield* session.resume(sessionID).pipe(Effect.forkScoped)
+      while (attempts < 2) yield* TestClock.adjust("1 second")
+      yield* Fiber.join(run)
+      expect(attempts).toBe(2)
+      expect(yield* session.context(sessionID)).toMatchObject([
+        { type: "user", text: "Recover from silence" },
+        { type: "assistant", finish: "stop", content: [{ type: "text", text: "Recovered" }] },
+      ])
+      const database = yield* Database.Service
+      const retried = yield* database.db
+        .select({ data: EventTable.data })
+        .from(EventTable)
+        .where(eq(EventTable.type, EventV2.versionedType(SessionEvent.Retried.type, 1)))
+        .all()
+        .pipe(Effect.orDie)
+      expect(retried.map((row) => row.data)).toMatchObject([
+        {
+          sessionID,
+          attempt: 1,
+          error: {
+            message: "SessionFirstByteGuard.stream: provider produced no stream event within 100ms",
+            isRetryable: true,
+          },
+        },
+      ])
+    }),
+  )
+
+  it.effect("disabled first-event deadlines retain interruption without retrying silent attempts", () =>
+    Effect.gen(function* () {
+      yield* setup
+      const previous = process.env.MIAO_LLM_FIRST_BYTE_TIMEOUT_MS
+      yield* Effect.addFinalizer(() =>
+        Effect.sync(() => {
+          if (previous === undefined) delete process.env.MIAO_LLM_FIRST_BYTE_TIMEOUT_MS
+          else process.env.MIAO_LLM_FIRST_BYTE_TIMEOUT_MS = previous
+        }),
+      )
+      process.env.MIAO_LLM_FIRST_BYTE_TIMEOUT_MS = "0"
+      const session = yield* SessionV2.Service
+      yield* session.prompt({ sessionID, prompt: Prompt.make({ text: "Wait for the provider" }), resume: false })
+      let attempts = 0
+      responseStream = Stream.unwrap(
+        Effect.sync(() => {
+          attempts++
+          return Stream.never
+        }),
+      )
+      const run = yield* session.resume(sessionID).pipe(Effect.forkScoped)
+      while (attempts === 0) yield* TestClock.adjust("1 second")
+      yield* TestClock.adjust("2 minutes")
+      expect(run.pollUnsafe()).toBeUndefined()
+      yield* Fiber.interrupt(run)
+      expect(attempts).toBe(1)
+      const database = yield* Database.Service
+      const retried = yield* database.db
+        .select()
+        .from(EventTable)
+        .where(eq(EventTable.type, EventV2.versionedType(SessionEvent.Retried.type, 1)))
+        .all()
+        .pipe(Effect.orDie)
+      expect(retried).toHaveLength(0)
     }),
   )
 

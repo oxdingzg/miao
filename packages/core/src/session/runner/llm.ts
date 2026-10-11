@@ -85,6 +85,7 @@ import { SessionRunnerProviderHeaders } from "./provider-headers"
 import { SessionRunnerProviderRetry } from "./provider-retry"
 import { SessionOutputGuard } from "./output-guard"
 import { SessionToolInputGuard } from "./tool-input-guard"
+import { SessionFirstByteGuard } from "./first-byte-guard"
 import { createLLMEventPublisher, progressContent, progressGate } from "./publish-llm-event"
 import { toLLMMessages } from "./to-llm-message"
 import { inlineTextFiles, materializeBlobRefs } from "./materialize-files"
@@ -803,6 +804,7 @@ const layer = Layer.effect(
       const blackbox = yield* SessionBlackbox.Current
       const providerSource = blackbox ? SessionBlackbox.stream(session.id, request, () => llm.stream(request)) : llm.stream(request)
       const providerStream = providerSource.pipe(
+        SessionFirstByteGuard.wrap,
         SessionToolInputGuard.wrap,
         SessionOutputGuard.wrap,
         Stream.runForEach((event) =>

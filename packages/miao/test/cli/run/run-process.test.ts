@@ -7,7 +7,7 @@ import { describe, expect } from "bun:test"
 import { Effect } from "effect"
 import { reply } from "../../lib/llm-server"
 import { cliIt, withCliFixture } from "../../lib/cli-process"
-import { it } from "../../lib/effect"
+import { it, pollWithTimeout } from "../../lib/effect"
 import { RuntimeOwnership } from "@miao/core/runtime/ownership"
 import path from "node:path"
 
@@ -24,6 +24,12 @@ describe("opencode run (non-interactive subprocess)", () => {
         yield* llm.hold("completed after disconnect", held)
         const terminal = yield* opencode.startRun("work while disconnected")
         yield* llm.wait(1)
+        // Title requests also count as hits; wait until the held main reply has
+        // actually been claimed before disconnecting its terminal.
+        yield* pollWithTimeout(
+          llm.pending.pipe(Effect.map((pending) => pending === 0 ? true : undefined)),
+          "main provider request never claimed its held reply",
+        )
         terminal.disconnect()
         expect((yield* terminal.result).exitCode).not.toBe(0)
         yield* Effect.promise(async () => {
