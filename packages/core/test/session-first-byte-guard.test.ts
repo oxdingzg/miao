@@ -1,5 +1,5 @@
 import { describe, expect } from "bun:test"
-import { Effect, Fiber, Stream } from "effect"
+import { Deferred, Effect, Fiber, Stream } from "effect"
 import { LLMError, LLMEvent } from "@miao/llm"
 import { SessionFirstByteGuard } from "@miao/core/session/runner/first-byte-guard"
 import { it } from "./lib/effect"
@@ -56,31 +56,27 @@ describe("SessionFirstByteGuard", () => {
   )
 
   it.live("disabled deadlines and external interruption preserve upstream cleanup", () =>
-    Effect.gen(function* () {
-      let closed = false
-      const source = Stream.never.pipe(
-        Stream.ensuring(
-          Effect.sync(() => {
-            closed = true
-          }),
-        ),
-      )
-      const running = yield* SessionFirstByteGuard.wrap(source, { timeoutMs: 0 }).pipe(
-        Stream.runDrain,
-        Effect.forkChild,
-      )
-      yield* Effect.sleep("50 millis")
-      expect(running.pollUnsafe()).toBeUndefined()
-      yield* Fiber.interrupt(running)
-      expect(closed).toBe(true)
-      closed = false
-      const enabled = yield* SessionFirstByteGuard.wrap(source, { timeoutMs: 60_000 }).pipe(
-        Stream.runDrain,
-        Effect.forkChild,
-      )
-      yield* Effect.sleep("10 millis")
-      yield* Fiber.interrupt(enabled).pipe(Effect.timeout("1 second"))
-      expect(closed).toBe(true)
-    }),
+    Effect.forEach([0, 60_000], (timeoutMs) =>
+      Effect.gen(function* () {
+        let closed = false
+        const ready = yield* Deferred.make<void>()
+        const source = Stream.fromEffect(Deferred.succeed(ready, undefined)).pipe(
+          Stream.flatMap(() => Stream.never),
+          Stream.ensuring(
+            Effect.sync(() => {
+              closed = true
+            }),
+          ),
+        )
+        const running = yield* SessionFirstByteGuard.wrap(source, { timeoutMs }).pipe(Stream.runDrain, Effect.forkChild)
+        // The source must enter its owned scope before interruption can verify
+        // upstream cleanup. Scheduler speed is not a readiness signal.
+        yield* Deferred.await(ready).pipe(Effect.timeout("1 second"))
+        if (timeoutMs === 0) yield* Effect.sleep("50 millis")
+        expect(running.pollUnsafe()).toBeUndefined()
+        yield* Fiber.interrupt(running).pipe(Effect.timeout("1 second"))
+        expect(closed).toBe(true)
+      }),
+    ),
   )
 })
