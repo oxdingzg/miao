@@ -310,3 +310,44 @@ async fn anthropic_rejects_redacted_thinking_and_allows_reasoning_only_turns() {
     assert!(!reply.needs_tools);
     server.await.unwrap();
 }
+
+#[tokio::test]
+async fn anthropic_prompt_cache_marks_the_stable_prefix_and_honours_max_tokens() {
+    let (url, mut requests, server) = common::endpoint(vec![(200, text_stream())]).await;
+    let provider = Anthropic::new(url, "fixture-key".into(), "fixture-model".into())
+        .unwrap()
+        .with_max_tokens(64_000)
+        .with_prompt_cache(true);
+    let (progress, _receive) = mpsc::channel(64);
+    provider
+        .stream(history(), progress, CancellationToken::new())
+        .await
+        .unwrap();
+    let body = requests.recv().await.unwrap();
+    assert_eq!(body["max_tokens"], 64_000);
+    assert_eq!(
+        body["system"],
+        json!([{"type":"text","text":"","cache_control":{"type":"ephemeral"}}])
+    );
+    assert_eq!(
+        body["tools"][0]["cache_control"],
+        json!({"type":"ephemeral"})
+    );
+    server.await.unwrap();
+}
+
+#[tokio::test]
+async fn anthropic_defaults_keep_the_plain_system_prompt_uncached() {
+    let (url, mut requests, server) = common::endpoint(vec![(200, text_stream())]).await;
+    let provider = Anthropic::new(url, "fixture-key".into(), "fixture-model".into()).unwrap();
+    let (progress, _receive) = mpsc::channel(64);
+    provider
+        .stream(history(), progress, CancellationToken::new())
+        .await
+        .unwrap();
+    let body = requests.recv().await.unwrap();
+    assert_eq!(body["max_tokens"], 4096);
+    assert_eq!(body["system"], json!(""));
+    assert!(body["tools"][0].get("cache_control").is_none());
+    server.await.unwrap();
+}

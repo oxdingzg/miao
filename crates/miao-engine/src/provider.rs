@@ -176,6 +176,8 @@ pub struct Anthropic {
     endpoint: String,
     source: Source,
     model: String,
+    max_tokens: u32,
+    prompt_cache: bool,
 }
 
 impl Anthropic {
@@ -196,7 +198,24 @@ impl Anthropic {
             endpoint,
             source,
             model,
+            max_tokens: 4096,
+            prompt_cache: false,
         })
+    }
+
+    /// Anthropic requires an explicit output cap; 4096 is only the pre-existing
+    /// default, so a caller that knows the model's limit should set it.
+    pub fn with_max_tokens(mut self, max_tokens: u32) -> Self {
+        self.max_tokens = max_tokens;
+        self
+    }
+
+    /// Marks the stable prefix — system prompt and the tool catalog — as a
+    /// cacheable breakpoint. Anthropic caches up to the marked block, so both
+    /// belong to the same prefix and adding another one later invalidates it.
+    pub fn with_prompt_cache(mut self, enabled: bool) -> Self {
+        self.prompt_cache = enabled;
+        self
     }
 }
 
@@ -289,9 +308,26 @@ impl Provider for Anthropic {
             .into_iter()
             .map(|message| json!({"role":message.role,"content":message.content}))
             .collect();
+        // The default stays the plain string system prompt and a plain tool
+        // catalog; the block form is only needed to carry a cache breakpoint.
+        let tools = if self.prompt_cache {
+            let mut tools =
+                serde_json::to_value(&request.tools).map_err(|_| ProviderError::Transport)?;
+            if let Some(last) = tools.as_array_mut().and_then(|tools| tools.last_mut()) {
+                last["cache_control"] = json!({"type":"ephemeral"});
+            }
+            tools
+        } else {
+            json!(request.tools)
+        };
+        let system = if self.prompt_cache {
+            json!([{"type":"text","text":request.system,"cache_control":{"type":"ephemeral"}}])
+        } else {
+            json!(request.system)
+        };
         let request=self.client.post(&self.endpoint)
             .header("x-api-key",credential.header()?).header("anthropic-version","2023-06-01")
-            .json(&json!({"model":self.model,"max_tokens":4096,"stream":true,"messages":messages,"system":request.system,"tools":request.tools}))
+            .json(&json!({"model":self.model,"max_tokens":self.max_tokens,"stream":true,"messages":messages,"system":system,"tools":tools}))
             .build().map_err(|_|ProviderError::Transport)?;
         let response = request_with_retry(&self.client, request, &progress, &cancel).await?;
         read_stream(response, progress, cancel, StreamState::default()).await
