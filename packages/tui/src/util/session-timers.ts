@@ -25,9 +25,12 @@ export function sessionTimerRows(activity: SessionsActivityOutput, now: number) 
     color: "textMuted" as const,
     text: `${schedule.recurring ? "Next check" : "Wakeup"} ${schedule.nextAt > now ? `in ${timerDuration(schedule.nextAt - now)}` : "due · waiting for scheduler"} · waited ${timerDuration(now - schedule.createdAt)}`,
   }))
-  const jobs = activity.jobs
-    .filter((job) => job.status === "running" || (job.completedAt !== undefined && now - job.completedAt < 30_000))
-    .toSorted((a, b) => Number(b.status === "running") - Number(a.status === "running") || b.startedAt - a.startedAt)
+  const visible = activity.jobs.filter((job) => job.status === "running" ||
+    (job.completedAt !== undefined && job.completedAt !== null && now - job.completedAt < 30_000))
+  const timed = visible.every((job) => job.startedAt !== null)
+  const jobs = visible
+    .toSorted((a, b) => Number(b.status === "running") - Number(a.status === "running") ||
+      (timed && a.startedAt !== null && b.startedAt !== null ? b.startedAt - a.startedAt : 0))
     .map((job) => ({
       id: job.id,
       color:
@@ -36,7 +39,7 @@ export function sessionTimerRows(activity: SessionsActivityOutput, now: number) 
           : job.status === "completed"
             ? ("success" as const)
             : ("warning" as const),
-      text: `${job.status === "running" ? "Running" : job.status === "completed" ? "Finished" : job.status === "cancelled" ? "Cancelled" : "Failed"} ${timerDuration((job.completedAt ?? now) - job.startedAt)} · ${(job.title ?? job.id).split("\n")[0].replace(/\s+/g, " ").slice(0, 70)}`,
+      text: `${job.status === "running" ? "Running" : job.status === "completed" ? "Finished" : job.status === "cancelled" ? "Cancelled" : "Failed"} ${job.startedAt === null || job.completedAt === null ? "duration unknown" : timerDuration((job.completedAt ?? now) - job.startedAt)} · ${(job.title ?? job.id).split("\n")[0].replace(/\s+/g, " ").slice(0, 70)}`,
     }))
   const unknown = activity.jobs.some((job) => job.status === "error" && job.completedAt === undefined)
     ? [

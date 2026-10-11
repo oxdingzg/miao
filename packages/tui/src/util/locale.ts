@@ -1,20 +1,24 @@
-export function titlecase(str: string) {
+export function titlecase(str: string | null) {
+  if (str === null) return "Unknown"
   return str.replace(/\b\w/g, (c) => c.toUpperCase())
 }
 
-export function time(input: number): string {
+export function time(input: number | null): string {
+  if (input === null) return "Unknown"
   const date = new Date(input)
   return date.toLocaleTimeString(undefined, { timeStyle: "short" })
 }
 
-export function datetime(input: number): string {
+export function datetime(input: number | null): string {
+  if (input === null) return "Unknown"
   const date = new Date(input)
   const localTime = time(input)
   const localDate = date.toLocaleDateString()
   return `${localTime} · ${localDate}`
 }
 
-export function todayTimeOrDateTime(input: number): string {
+export function todayTimeOrDateTime(input: number | null): string {
+  if (input === null) return "Unknown"
   const date = new Date(input)
   const now = new Date()
   const isToday =
@@ -36,7 +40,8 @@ export function number(num: number): string {
   return num.toString()
 }
 
-export function duration(input: number) {
+export function duration(input: number | null) {
+  if (input === null) return "Unknown"
   if (input < 1000) {
     return `${input}ms`
   }

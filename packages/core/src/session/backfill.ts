@@ -216,7 +216,7 @@ export const write = (
           session_id: sessionID,
           type,
           seq,
-          time_created: DateTime.toEpochMillis(message.time.created),
+          time_created: message.time.created === null ? null : DateTime.toEpochMillis(message.time.created),
           data,
         })
         .run()

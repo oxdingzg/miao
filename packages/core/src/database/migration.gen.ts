@@ -47,6 +47,7 @@ export const migrations = (
     import("./migration/20261006062542_remove-session-lease"),
     import("./migration/20261006095207_session_usage_facts"),
     import("./migration/20261011013321_todo_dependencies"),
+    import("./migration/20261011123454_unknown_message_clocks"),
     import("./migration/20261011151147_session_engine_placement"),
   ])
 ).map((module) => module.default) satisfies DatabaseMigration.Migration[]

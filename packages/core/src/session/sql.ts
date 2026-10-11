@@ -137,6 +137,8 @@ export const SessionMessageTable = sqliteTable(
     type: text().$type<SessionMessage.Type>().notNull(),
     seq: integer().notNull(),
     ...Timestamps,
+    // A stored historical message may have no authoritative creation clock.
+    time_created: integer().$default(() => Date.now()),
     data: text({ mode: "json" }).notNull().$type<SessionMessageData>(),
   },
   (table) => [

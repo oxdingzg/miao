@@ -3,7 +3,7 @@
   "dialect": "sqlite",
   "id": "f21f0e8f-3b52-40d0-998f-d8d009c9f898",
   "prevIds": [
-    "934fa06c-d37a-49e4-88ea-650d0cacfde6"
+    "fea802e3-16a6-42cf-a5d6-16005f6b7998"
   ],
   "ddl": [
     {
@@ -1318,7 +1318,7 @@
     },
     {
       "type": "integer",
-      "notNull": true,
+      "notNull": false,
       "autoincrement": false,
       "default": null,
       "generated": null,

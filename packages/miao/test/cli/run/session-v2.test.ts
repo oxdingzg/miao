@@ -11,6 +11,8 @@ function assistant(content: Assistant["content"], completed?: number): SessionMe
     agent: "build",
     model: { providerID: "openai", id: "gpt-5" },
     time: { created: 10, ...(completed === undefined ? {} : { completed }) },
+    cost: 0.01,
+    tokens: { input: 10, output: 5, reasoning: 0, cache: { read: 0, write: 0 } },
     content,
   }
 }

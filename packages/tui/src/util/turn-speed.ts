@@ -21,7 +21,7 @@ export function turnSpeed(message: TranscriptAssistantMessage): TurnSpeed | unde
   // A turn still in flight has no duration yet, and one that reported no output
   // has no rate to report either.
   const tokens = message.tokens
-  if (completed === undefined || !tokens || tokens.output <= 0) return
+  if (completed === undefined || message.time.created === null || !tokens || tokens.output <= 0) return
   const duration = completed - message.time.created
   if (duration <= 0) return
   return { output: tokens.output, duration, tps: tokens.output / (duration / 1000) }

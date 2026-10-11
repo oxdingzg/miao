@@ -7,7 +7,7 @@ import {
   isV2StreamFragmentEvent,
   mergeTranscript,
 } from "../src/context/session-v2"
-import { promptInputFromParts, toolPart } from "../src/context/session-v2-write"
+import { promptInputFromParts, toolPart, sessionContextToMessages } from "../src/context/session-v2-write"
 
 const base = { sessionID: "ses_1" }
 
@@ -108,7 +108,7 @@ test("maps V2 tool parts into the V1 shape the renderers read", () => {
     time: { created: 1, ran: 2, completed: 3 },
   } as Extract<SessionMessage, { type: "assistant" }>["content"][number] & { type: "tool" }
 
-  const part = toolPart("ses_1", "msg_1", edit)
+  const part = toolPart("ses_1", "msg_1", edit, 0)
   if (part.type !== "tool" || part.state.status !== "completed") throw new Error("expected a completed tool part")
   // V2 names the target `path`; the Edit renderer reads `filePath`, and a
   // missing one renders the part as permanently pending.
@@ -128,7 +128,28 @@ test("maps V2 tool parts into the V1 shape the renderers read", () => {
     },
     time: { created: 4, ran: 5 },
   } as Extract<SessionMessage, { type: "assistant" }>["content"][number] & { type: "tool" }
-  const running = toolPart("ses_1", "msg_1", read)
+  const running = toolPart("ses_1", "msg_1", read, 0)
   if (running.type !== "tool" || running.state.status !== "running") throw new Error("expected a running tool part")
   expect(running.state.input).toMatchObject({ filePath: "/project/src/b.ts" })
+})
+
+
+test("legacy export rejects unknown metadata without changing the V2 source", () => {
+  const message: SessionMessage = { id: "msg_unknown", type: "assistant", agent: null, model: null,
+    content: [{ type: "text", id: "text_unknown", text: "Recorded answer" }], time: { created: null } }
+  expect(() => sessionContextToMessages({ sessionID: "ses_1", cwd: "/project", root: "/project", messages: [message] }))
+    .toThrow("Legacy export cannot represent unknown assistant metadata")
+  expect(message).toMatchObject({ agent: null, model: null, time: { created: null } })
+  expect(message).not.toHaveProperty("cost")
+  expect(message).not.toHaveProperty("tokens")
+})
+
+test("an unknown history clock preserves cursor order while deduplication retains the active copy", () => {
+  const active: SessionMessage[] = [{ id: "msg_latest", type: "user", text: "active", time: { created: 0 } }]
+  const history: SessionMessage[] = [
+    { id: "msg_first", type: "user", text: "first", time: { created: 1000 } },
+    { id: "msg_unknown", type: "user", text: "unknown", time: { created: null } },
+    { id: "msg_latest", type: "user", text: "stale", time: { created: 0 } },
+  ]
+  expect(mergeTranscript(active, history)).toEqual([history[0], history[1], active[0]])
 })

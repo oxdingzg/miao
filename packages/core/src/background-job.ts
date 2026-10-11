@@ -11,8 +11,8 @@ export type Info = {
   type: string
   title?: string
   status: Status
-  started_at: number
-  completed_at?: number
+  started_at: number | null
+  completed_at?: number | null
   output?: string
   error?: string
   metadata?: Record<string, unknown>
@@ -211,9 +211,12 @@ export const make = Effect.gen(function* () {
   })
 
   const list: Interface["list"] = Effect.fn("BackgroundJob.list")(function* () {
-    return Array.from((yield* SynchronizedRef.get(state.jobs)).values())
-      .map(snapshot)
-      .toSorted((a, b) => a.started_at - b.started_at)
+    const jobs = Array.from((yield* SynchronizedRef.get(state.jobs)).values()).map(snapshot)
+    if (jobs.some((job) => job.started_at === null)) return jobs
+    return jobs.toSorted((a, b) => {
+      if (a.started_at === null || b.started_at === null) return 0
+      return a.started_at - b.started_at
+    })
   })
 
   const get: Interface["get"] = Effect.fn("BackgroundJob.get")(function* (id) {

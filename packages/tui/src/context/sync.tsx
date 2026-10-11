@@ -1,3 +1,4 @@
+import { chronological } from "../util/message-order"
 import { mutableResponse } from "../util/mutable-response"
 import type { SessionsInputsOutput } from "@miao/client"
 import { DiagnosticMetrics } from "@miao/core/diagnostic-metrics"
@@ -74,9 +75,7 @@ function search<T>(items: T[], target: string, key: (item: T) => string) {
   return { found: false, index: left }
 }
 
-function compareMessage(a: TuiTranscriptMessage, b: TuiTranscriptMessage) {
-  return a.time.created - b.time.created || a.id.localeCompare(b.id)
-}
+
 
 // Rough JS heap estimate of a value: string bytes, per-node overhead, and key
 // lengths. Walks nodes only (string length is O(1)), so it is cheap enough to
@@ -670,7 +669,7 @@ export const {
           const current = store.message[sessionID] ?? []
           const index = current.findIndex((item) => item.id === message.id)
           if (index >= 0) setStore("message", sessionID, index, reconcile(message))
-          else setStore("message", sessionID, (messages = []) => [...messages, message].toSorted(compareMessage))
+          else setStore("message", sessionID, (messages = []) => chronological([...messages, message]))
         }
       })
       capSessionMessages(sessionID)
@@ -819,7 +818,7 @@ export const {
           }
           touchMessage(input.sessionID, input.messageID)
           batch(() => {
-            setStore("message", input.sessionID, (messages = []) => [...messages, message].toSorted(compareMessage))
+            setStore("message", input.sessionID, (messages = []) => chronological([...messages, message]))
             pendingPrompts.remove(input.messageID)
           })
           break
@@ -1481,7 +1480,7 @@ export const {
                   (message) => tracker.messages.has(message.id) && !hydratedIDs.has(message.id),
                 ),
               )
-              infos.sort(compareMessage)
+              infos.splice(0, infos.length, ...chronological(infos))
               // Render the whole active context (everything since the last
               // compaction). Windowing this to the newest N messages made the
               // transcript feel scroll-locked because older history existed

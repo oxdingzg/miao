@@ -6,6 +6,7 @@ import type {
   TranscriptUserMessage,
 } from "@miao/schema/view-models"
 import type { Provider } from "@miao/schema/view-models"
+import { chronological } from "./message-order"
 import { Locale } from "./locale"
 import * as Model from "./model"
 
@@ -50,9 +51,7 @@ export function formatTranscript(
   transcript += `**Updated:** ${new Date(session.time.updated).toLocaleString()}\n\n`
   transcript += `---\n\n`
 
-  for (const msg of messages.toSorted(
-    (a, b) => a.time.created - b.time.created || a.id.localeCompare(b.id),
-  )) {
+  for (const msg of chronological(messages)) {
     if (msg.type !== "user" && msg.type !== "assistant") continue
     transcript += formatMessage(msg, options, providers)
     transcript += `---\n\n`
@@ -96,14 +95,19 @@ export function formatAssistantHeader(
   }
 
   const duration =
-    msg.time.completed && msg.time.created ? ((msg.time.completed - msg.time.created) / 1000).toFixed(1) + "s" : ""
+    msg.time.completed !== undefined && msg.time.created !== null
+      ? ((msg.time.completed - msg.time.created) / 1000).toFixed(1) + "s"
+      : ""
 
-  const modelName = Model.name(providers, msg.model.providerID, msg.model.id)
+  const modelName = msg.model ? Model.name(providers, msg.model.providerID, msg.model.id) : "Unknown model"
 
-  return `## Assistant (${Locale.titlecase(msg.agent)} · ${modelName}${duration ? ` · ${duration}` : ""})\n\n`
+  return `## Assistant (${msg.agent === null ? "Unknown agent" : Locale.titlecase(msg.agent)} · ${modelName}${duration ? ` · ${duration}` : ""})\n\n`
 }
 
-export function formatPart(part: TranscriptToolPart | TranscriptAssistantMessage["content"][number], options: TranscriptOptions): string {
+export function formatPart(
+  part: TranscriptToolPart | TranscriptAssistantMessage["content"][number],
+  options: TranscriptOptions,
+): string {
   if (part.type === "text") {
     return `${part.text}\n\n`
   }

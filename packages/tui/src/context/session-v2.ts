@@ -1,3 +1,4 @@
+import { chronological } from "../util/message-order"
 import type { SessionMessage, SessionMessageAssistantTool } from "@miao/schema/view-models"
 import type { TuiTranscriptMessage } from "@miao/plugin/tui"
 
@@ -82,5 +83,5 @@ export function mergeTranscript(
     seen.add(message.id)
     older.push(message)
   }
-  return [...older, ...active].toSorted((a, b) => a.time.created - b.time.created || a.id.localeCompare(b.id))
+  return chronological([...older, ...active])
 }

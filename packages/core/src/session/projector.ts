@@ -201,7 +201,7 @@ function run(db: DatabaseService, event: SessionEvent.Event) {
       const { id, type, ...data } = encoded
       return db
         .update(SessionMessageTable)
-        .set({ type, time_created: DateTime.toEpochMillis(message.time.created), data })
+        .set({ type, time_created: message.time.created === null ? null : DateTime.toEpochMillis(message.time.created), data })
         .where(
           and(
             eq(SessionMessageTable.id, SessionMessage.ID.make(id)),
@@ -333,7 +333,7 @@ function insertMessage(db: DatabaseService, event: SessionEvent.Event, message: 
       session_id: event.data.sessionID,
       type,
       seq: event.durable.seq,
-      time_created: DateTime.toEpochMillis(message.time.created),
+      time_created: message.time.created === null ? null : DateTime.toEpochMillis(message.time.created),
       data,
     })
     .run()

@@ -38,3 +38,8 @@ describe("turnSpeed", () => {
     expect(turnSpeed(turn(200, 1000, 1000))).toBeUndefined()
   })
 })
+
+test("an unknown creation time cannot establish a throughput duration", () => {
+  const message = turn(200, 0, 4000)
+  expect(turnSpeed({ ...message, time: { ...message.time, created: null } })).toBeUndefined()
+})

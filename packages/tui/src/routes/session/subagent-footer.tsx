@@ -44,7 +44,7 @@ export function SubagentFooter() {
       last.tokens.input + last.tokens.output + last.tokens.reasoning + last.tokens.cache.read + last.tokens.cache.write
     if (tokens <= 0) return
 
-    const model = sync.data.provider.find((item) => item.id === last.model.providerID)?.models[last.model.id]
+    const model = last.model ? sync.data.provider.find((item) => item.id === last.model?.providerID)?.models[last.model.id] : undefined
     const pct = model?.limit.context ? `${Math.round((tokens / model.limit.context) * 100)}%` : undefined
     const cost = session()?.cost ?? 0
     const native = Currency.native(sync.data.provider, session()?.model?.providerID, session()?.model?.id)
