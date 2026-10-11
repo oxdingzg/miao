@@ -554,7 +554,8 @@ async fn execute(
         ) == Decision::Allow;
         let state_selection = if state_allowed {
             if !state["todos"].is_null() || !state["goal"].is_null() {
-                let text=format!("<session-state>\n{}\n</session-state>\nCurrent durable progress tracking; recorded evidence is a claim, not independent verification. Follow the latest user request.",serde_json::to_string(&state)?);
+                let ready = crate::state::runnable_state(&state)?;
+                let text=format!("<session-state>\n{}\n</session-state>\nRunnable tasks (all prerequisites completed): {}. Waiting jobs block only their dependents; continue independent runnable work. Current durable progress tracking; recorded evidence is a claim, not independent verification. Follow the latest user request.",serde_json::to_string(&state)?,serde_json::to_string(&ready)?);
                 if serde_json::to_vec(&history)?.len() + text.len() > 2 * 1024 * 1024 {
                     return Err(Error::Invalid(
                         "selected input including Session state exceeds budget".into(),
