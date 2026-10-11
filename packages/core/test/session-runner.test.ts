@@ -1717,6 +1717,9 @@ describe("SessionRunnerLLM", () => {
       // machinery a budget must not let pay for itself.
       expect(requests.length).toBeGreaterThan(1)
       expect(yield* wakeAllowance(sessionID)).toBe(5)
+      // Every admitted continuation restates the real context facts, so a
+      // stalled model cannot dress "no progress" up as budget exhaustion.
+      expect(userTexts(requests.at(-1)!).some((text) => text.startsWith("keep going") && text.includes("never cite context or budget exhaustion"))).toBe(true)
     }),
   )
 
@@ -2791,6 +2794,11 @@ describe("SessionRunnerLLM", () => {
       ])
       expect(requests[1]?.messages.map((message) => message.role)).toEqual(["user", "user", "system"])
       expect(requests[2]?.messages.filter((message) => message.role === "system")).toHaveLength(2)
+      // The takeover's first request carries the switch note ahead of the
+      // turn's prompt, with the real usage; nothing is stored.
+      const note = userTexts(requests[2]!).find((text) => text.startsWith("Model switched from fake/fake-model to"))
+      expect(note).toBeDefined()
+      expect(note).toContain("is a reason to stop")
       expect((yield* session.context(sessionID)).map((message) => message.type)).toEqual([
         "user",
         "user",

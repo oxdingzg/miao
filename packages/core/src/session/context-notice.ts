@@ -15,6 +15,16 @@ export type Notice = {
 }
 
 /**
+ * One factual usage sentence shared by every prompt that tells the model where
+ * it stands; empty when there is no real number, so prompts never carry a
+ * guessed figure the model could treat as authoritative.
+ */
+export const usage = (observedTokens: number, context: number): string =>
+  observedTokens <= 0 || context <= 0
+    ? ""
+    : `Context status: about ${Math.round((observedTokens / context) * 100)}% of the model context window is in use (${observedTokens} of ${context} tokens).`
+
+/**
  * Models cannot introspect their remaining context; left to guess, they read
  * routine pruning markers as "nearly exhausted" (observed live). Compute the
  * notice from the provider-reported prompt tokens against the model's window:

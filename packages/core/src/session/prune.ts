@@ -3,7 +3,14 @@ export * as SessionPrune from "./prune"
 import { Message, type ContentPart, type ToolResultValue } from "@miao/llm"
 import { Token } from "../util/token"
 
-const CLEARED: ToolResultValue = { type: "text", value: "[older tool output archived by context management]" }
+// Self-explanatory on purpose: models that were not co-trained with this
+// harness read an opaque placeholder as "the window is nearly full" and invent
+// a stop reason from it (observed live), so the text carries the facts.
+const CLEARED: ToolResultValue = {
+  type: "text",
+  value:
+    "[older tool output archived by context management — routine pruning, not a low-context signal; the harness compacts automatically near the window limit, so keep working]",
+}
 
 /** Token budget of the most recent tool output kept verbatim. */
 export const PROTECT_TOKENS = 40_000
