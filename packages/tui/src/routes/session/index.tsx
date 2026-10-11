@@ -448,12 +448,8 @@ export function Session() {
   // Helper: Scroll to message in direction or fallback to page scroll
   const scrollToMessage = (direction: "next" | "prev", dialog: ReturnType<typeof useDialog>) => {
     const targetID = findNextVisibleMessage(direction)
-    if (direction === "prev") {
-      tailPinned = false
-      tailWant = false
-    } else {
-      tailWant = true
-    }
+    if (direction === "prev") leaveTail()
+    else rejoinTail()
 
     if (!targetID) {
       scroll.scrollBy(direction === "next" ? scroll.height : -scroll.height)
@@ -478,6 +474,19 @@ export function Session() {
     if (!scroll || scroll.isDestroyed) return
     const child = scroll.getChildren().find((child) => child.id === id)
     if (child) scroll.scrollBy(child.y - scroll.y - 1)
+  }
+
+  // Reader intent about the live tail. The scrollbox's own sticky tracking
+  // cannot read this: layout passes move the scroll position too, so only a
+  // real scroll may release the pin — otherwise the first layout pass after the
+  // reader scrolls up snaps the view back to the streaming tail, and holding a
+  // key to read history fights the snap every frame.
+  const leaveTail = () => {
+    tailPinned = false
+    tailWant = false
+  }
+  const rejoinTail = () => {
+    tailWant = true
   }
 
   function toBottom() {
@@ -721,6 +730,7 @@ export function Session() {
       category: "Session",
       hidden: true,
       run: () => {
+        leaveTail()
         scroll.scrollBy(-scroll.height / 2)
         loadOlderAtTop()
         dialog.clear()
@@ -732,6 +742,7 @@ export function Session() {
       category: "Session",
       hidden: true,
       run: () => {
+        rejoinTail()
         scroll.scrollBy(scroll.height / 2)
         dialog.clear()
       },
@@ -742,6 +753,7 @@ export function Session() {
       category: "Session",
       hidden: true,
       run: () => {
+        leaveTail()
         scroll.scrollBy(-1)
         loadOlderAtTop()
         dialog.clear()
@@ -753,6 +765,7 @@ export function Session() {
       category: "Session",
       hidden: true,
       run: () => {
+        rejoinTail()
         scroll.scrollBy(1)
         dialog.clear()
       },
@@ -763,6 +776,7 @@ export function Session() {
       category: "Session",
       hidden: true,
       run: () => {
+        leaveTail()
         scroll.scrollBy(-scroll.height / 4)
         loadOlderAtTop()
         dialog.clear()
@@ -774,6 +788,7 @@ export function Session() {
       category: "Session",
       hidden: true,
       run: () => {
+        rejoinTail()
         scroll.scrollBy(scroll.height / 4)
         dialog.clear()
       },
@@ -784,6 +799,7 @@ export function Session() {
       category: "Session",
       hidden: true,
       run: () => {
+        leaveTail()
         scroll.scrollTo(0)
         loadOlderAtTop()
         dialog.clear()
@@ -795,6 +811,8 @@ export function Session() {
       category: "Session",
       hidden: true,
       run: () => {
+        tailPinned = true
+        tailWant = true
         scroll.scrollTo(scroll.scrollHeight)
         dialog.clear()
       },
@@ -1251,11 +1269,10 @@ export function Session() {
                 scrollAcceleration={scrollAcceleration()}
                 onMouseScroll={(event) => {
                   if (event.scroll?.direction === "up") {
+                    leaveTail()
                     loadOlderAtTop()
-                    tailPinned = false
-                    tailWant = false
                   } else if (event.scroll?.direction === "down") {
-                    tailWant = true
+                    rejoinTail()
                   }
                 }}
               >
