@@ -129,4 +129,11 @@ export const Flag = {
   get MIAO_LLM_WIRE_ARCHIVE() {
     return process.env["MIAO_LLM_WIRE_ARCHIVE"]
   },
+  // Zero explicitly disables the pre-event provider watchdog.
+  get MIAO_LLM_FIRST_BYTE_TIMEOUT_MS() {
+    const raw = process.env["MIAO_LLM_FIRST_BYTE_TIMEOUT_MS"]
+    if (raw === undefined || raw.trim() === "") return 60_000
+    const value = Number(raw)
+    return Number.isFinite(value) && value >= 0 ? value : 60_000
+  },
 }
