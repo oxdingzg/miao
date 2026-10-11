@@ -2935,7 +2935,7 @@ function TodoWrite(props: ToolProps) {
       <Match when={parseTodos(props.metadata.todos).length}>
         <BlockTool title="# Todos" part={props.part}>
           <box>
-            <For each={todos()}>{(todo) => <TodoItem status={todo.status} content={todo.content} />}</For>
+            <For each={todos()}>{(todo) => <TodoItem status={todo.status} content={todo.content} id={todo.id} depends_on={todo.depends_on} />}</For>
           </box>
         </BlockTool>
       </Match>
@@ -3080,7 +3080,10 @@ export function parseTodos(value: unknown) {
     const todo = recordValue(item)
     const status = stringValue(todo?.status)
     const content = stringValue(todo?.content)
-    return status && content ? [{ status, content }] : []
+    const id = stringValue(todo?.id)
+    const dependencies = todo?.depends_on
+    const depends_on = Array.isArray(dependencies) ? dependencies.filter((item): item is string => typeof item === "string") : undefined
+    return status && content ? [{ status, content, ...(id ? { id } : {}), ...(depends_on ? { depends_on } : {}) }] : []
   })
 }
 

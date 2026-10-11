@@ -3,6 +3,8 @@ import { useTheme } from "../context/theme"
 export interface TodoItemProps {
   status: string
   content: string
+  id?: string
+  depends_on?: readonly string[]
 }
 
 export function TodoItem(props: TodoItemProps) {
@@ -37,7 +39,9 @@ export function TodoItem(props: TodoItemProps) {
           fg: props.status === "in_progress" ? theme.warning : theme.textMuted,
         }}
       >
+        {props.id ? `${props.id}: ` : ""}
         {props.content}
+        {props.depends_on?.length ? ` ← ${props.depends_on.join(", ")}` : ""}
       </text>
     </box>
   )

@@ -59,6 +59,30 @@ describe("SessionTodo", () => {
         .pipe(Effect.orDie)
     })
 
+  it.effect("persists stable task identities and dependencies across replacements", () =>
+    Effect.gen(function* () {
+      yield* setup
+      const todos = yield* SessionTodo.Service
+      const input = [
+        { id: "4", content: "CI", status: "waiting", priority: "high" },
+        { id: "5", content: "Release", status: "pending", priority: "high", depends_on: ["4"] },
+      ]
+      yield* todos.update({ sessionID, todos: input })
+      expect(yield* todos.get(sessionID)).toEqual(input)
+      const update = input.map((todo) => (todo.id === "4" ? { ...todo, status: "completed" } : todo))
+      yield* todos.update({ sessionID, todos: update })
+      expect(SessionTodo.runnable(yield* todos.get(sessionID)).map((todo) => todo.id)).toEqual(["5"])
+      const invalid = yield* todos
+        .update({
+          sessionID,
+          todos: [{ id: "5", content: "Invalid", status: "pending", priority: "high", depends_on: ["missing"] }],
+        })
+        .pipe(Effect.exit)
+      expect(invalid._tag).toBe("Failure")
+      expect(yield* todos.get(sessionID)).toEqual(update)
+    }),
+  )
+
   it.effect("re-injects a reconciliation nudge once the list goes stale across provider turns", () =>
     Effect.gen(function* () {
       yield* setup

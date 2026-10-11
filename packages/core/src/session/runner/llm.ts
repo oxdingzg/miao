@@ -194,7 +194,7 @@ const STREAM_STALL_MS = 5_000
 const DEFAULT_LOOP_MAX_ITERATIONS = 25
 const LOOP_STALL_LIMIT = 2
 const DEFAULT_LOOP_PROMPT =
-  "Continue the next runnable todo independently of background waits. Make concrete progress, then update the todo list. Mark tasks waiting on external jobs as waiting and name their dependencies; mark tasks needing a decision as blocked. Do not poll or rerun existing background jobs. If no runnable todo remains, wait for its completion notification. If every todo is complete and verified, reply DONE and stop."
+  "Continue the next runnable todo independently of background waits. Only choose a task whose depends_on prerequisites are all completed; skip dependent tasks until they unlock. Make concrete progress, then update the todo list. Mark tasks waiting on external jobs as waiting and name their dependencies; mark tasks needing a decision as blocked. Do not poll or rerun existing background jobs. If no runnable todo remains, wait for its completion notification. If every todo is complete and verified, reply DONE and stop."
 
 const signatureInput = (input: unknown) => {
   try {
@@ -1909,7 +1909,7 @@ const layer = Layer.effect(
                 })
               } else {
                 const list = yield* todos.get(input.sessionID)
-                const open = list.filter((todo) => todo.status === "pending" || todo.status === "in_progress")
+                const open = SessionTodo.runnable(list)
                 if (list.length > 0 && open.length > 0) {
                   // An unfinished checklist is not runnable work while its
                   // owned background command is still executing. Settlement

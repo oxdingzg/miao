@@ -79,8 +79,9 @@ function renderContext(todos: ReadonlyArray<Info>, staleTurns: number) {
     "# Current session task list",
     "This is the current persisted todo list, also displayed to the user. It supersedes older todo lists in the conversation.",
     "Use todowrite to track multi-step work. Keep this list synchronized with actual progress: mark work in_progress when starting, completed immediately after finishing and verifying it, and cancelled when it is no longer required. Update it before a final response or handoff; do not leave finished work pending or mark unfinished work completed. If blocked, leave the task open and explain the blocker. Do not infer completion merely from an idle session or a successful tool call.",
-    "A background wait blocks only its dependent task. Mark that task waiting and name the dependency in its content; continue pending or in_progress tasks that can proceed independently. Mark tasks needing a human decision blocked. End the Session only when no runnable task remains or its execution budget is exhausted.",
+    "A background wait blocks only its dependent task. Give related tasks stable IDs and depends_on links; keep not-started dependent tasks pending, and mark external job waits waiting. Continue pending or in_progress tasks only when every depends_on task is completed. Mark tasks needing a human decision blocked. End the Session only when no runnable task remains or its execution budget is exhausted.",
     JSON.stringify(todos, null, 2),
+    `Runnable tasks (all prerequisites completed): ${JSON.stringify(runnable(todos).map((todo) => todo.id ?? todo.content))}`,
   ]
   if (staleTurns > 0) {
     lines.push(
@@ -101,6 +102,8 @@ const layer = Layer.effect(
       readonly sessionID: SessionSchema.ID
       readonly todos: ReadonlyArray<Info>
     }) {
+      const invalid = validate(input.todos)
+      if (invalid !== undefined) return yield* Effect.die(new Error(invalid))
       yield* ownership.claim(input.sessionID)
       const current = yield* get(input.sessionID)
       if (sameTodos(current, input.todos)) {
@@ -125,6 +128,8 @@ const layer = Layer.effect(
               .values(
                 input.todos.map((todo, position) => ({
                   session_id: input.sessionID,
+                  task_id: todo.id ?? null,
+                  depends_on: todo.depends_on ?? null,
                   content: todo.content,
                   status: todo.status,
                   priority: todo.priority,
@@ -147,6 +152,8 @@ const layer = Layer.effect(
         .all()
         .pipe(Effect.orDie)
       return rows.map((row) => ({
+        ...(row.task_id === null ? {} : { id: row.task_id }),
+        ...(row.depends_on === null ? {} : { depends_on: row.depends_on }),
         content: row.content,
         status: row.status,
         priority: row.priority,
@@ -191,9 +198,64 @@ function sameTodos(current: ReadonlyArray<Info>, next: ReadonlyArray<Info>) {
     current.length === next.length &&
     current.every((todo, index) => {
       const other = next[index]!
-      return todo.content === other.content && todo.status === other.status && todo.priority === other.priority
+      return (
+        todo.content === other.content &&
+        todo.status === other.status &&
+        todo.priority === other.priority &&
+        todo.id === other.id &&
+        JSON.stringify(todo.depends_on) === JSON.stringify(other.depends_on)
+      )
     })
   )
+}
+
+/** A cancelled dependency does not satisfy a prerequisite. */
+export function runnable(todos: ReadonlyArray<Info>) {
+  const byID = new Map(todos.flatMap((todo) => (todo.id === undefined ? [] : [[todo.id, todo] as const])))
+  return todos.filter(
+    (todo) =>
+      (todo.status === "pending" || todo.status === "in_progress") &&
+      (todo.depends_on ?? []).every((id) => byID.get(id)?.status === "completed"),
+  )
+}
+
+/** Reject ambiguous graphs before replacing durable state. */
+export function validate(todos: ReadonlyArray<Info>): string | undefined {
+  const byID = new Map<string, Info>()
+  for (const todo of todos) {
+    if (todo.id !== undefined) {
+      if (!todo.id.trim()) return "Task IDs must not be empty."
+      if (byID.has(todo.id)) return `Duplicate task ID: ${todo.id}`
+      byID.set(todo.id, todo)
+    }
+    if (todo.depends_on?.length && todo.id === undefined) return "Tasks declaring dependencies must have a stable ID."
+    if (new Set(todo.depends_on ?? []).size !== (todo.depends_on?.length ?? 0))
+      return `Duplicate dependencies for task ${todo.id}`
+  }
+  for (const todo of todos) {
+    const missing = todo.depends_on?.find((id) => !byID.has(id))
+    if (missing !== undefined) return `Unknown dependency ${missing} for task ${todo.id}`
+  }
+  const visiting = new Set<string>()
+  const visited = new Set<string>()
+  const cycle = (id: string): boolean => {
+    if (visiting.has(id)) return true
+    if (visited.has(id)) return false
+    visiting.add(id)
+    if (byID.get(id)?.depends_on?.some(cycle)) return true
+    visiting.delete(id)
+    visited.add(id)
+    return false
+  }
+  const cyclic = [...byID.keys()].find(cycle)
+  if (cyclic !== undefined) return `Cyclic task dependency involving ${cyclic}`
+  const premature = todos.find(
+    (todo) =>
+      (todo.status === "in_progress" || todo.status === "completed") &&
+      (todo.depends_on ?? []).some((id) => byID.get(id)?.status !== "completed"),
+  )
+  if (premature !== undefined)
+    return `Task ${premature.id} cannot be ${premature.status} before its dependencies complete.`
 }
 
 export const node = makeLocationNode({

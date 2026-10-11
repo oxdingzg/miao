@@ -1084,7 +1084,13 @@ export type SessionsContextOutput = {
 export type SessionsTodoInput = { readonly sessionID: { readonly sessionID: string }["sessionID"] }
 
 export type SessionsTodoOutput = {
-  readonly data: ReadonlyArray<{ readonly content: string; readonly status: string; readonly priority: string }>
+  readonly data: ReadonlyArray<{
+    readonly id?: string | undefined
+    readonly depends_on?: ReadonlyArray<string> | undefined
+    readonly content: string
+    readonly status: string
+    readonly priority: string
+  }>
 }["data"]
 
 export type SessionsRenameInput = {

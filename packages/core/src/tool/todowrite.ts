@@ -33,12 +33,14 @@ const layer = Layer.effectDiscard(
         [name]: Tool.withConcurrency(
           Tool.make({
             description:
-              "Create and maintain a structured task list for the current coding session. Use it to track progress during multi-step work and keep todo statuses current.",
+              "Create and maintain a structured task list for the current coding session. Use it to track progress during multi-step work and keep todo statuses current. Use stable id and depends_on for prerequisites; never assume list order means dependency. External waits block only dependent tasks. Preserve prerequisite records while other tasks reference them.",
             input: Input,
             output: Output,
             toModelOutput: ({ output }) => [{ type: "text", text: toModelOutput(output) }],
             execute: (input, context) =>
               Effect.gen(function* () {
+                const invalid = SessionTodo.validate(input.todos)
+                if (invalid !== undefined) return yield* new ToolFailure({ message: invalid })
                 yield* permission.assert({
                   action: name,
                   resources: ["*"],

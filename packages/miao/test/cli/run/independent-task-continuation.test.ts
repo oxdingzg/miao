@@ -4,8 +4,9 @@ import path from "node:path"
 import { cliIt } from "../../lib/cli-process"
 import { reply } from "../../lib/llm-server"
 
-const waiting = { content: "CI run 123 is still running", status: "waiting", priority: "high" }
-const ready = { content: "Write independent audit result", status: "pending", priority: "medium" }
+const waiting = { id: "4", content: "CI run 123 is still running", status: "waiting", priority: "high" }
+const dependent = { id: "5", content: "Release after CI", status: "pending", priority: "high", depends_on: ["4"] }
+const ready = { id: "7", content: "Write independent audit result", status: "pending", priority: "medium" }
 
 describe("independent task continuation", () => {
   cliIt.serial(
@@ -15,10 +16,10 @@ describe("independent task continuation", () => {
         yield* llm.push(
           reply().tool("goal", { objective: "Finish the authorized tasks", status: "active", autonomous: true }),
         )
-        yield* llm.push(reply().tool("todowrite", { todos: [waiting, ready] }))
+        yield* llm.push(reply().tool("todowrite", { todos: [waiting, dependent, ready] }))
         yield* llm.text("CI is running")
         yield* llm.push(reply().tool("bash", { command: "printf once > audit" }))
-        yield* llm.push(reply().tool("todowrite", { todos: [waiting, { ...ready, status: "completed" }] }))
+        yield* llm.push(reply().tool("todowrite", { todos: [waiting, dependent, { ...ready, status: "completed" }] }))
         yield* llm.text("Independent audit complete; waiting for CI")
         const result = yield* opencode.run("Work autonomously on independent tasks", {
           extraArgs: ["--dangerously-skip-permissions", "--title", "Independent work"],
@@ -36,7 +37,7 @@ describe("independent task continuation", () => {
     ({ llm, opencode }) =>
       Effect.gen(function* () {
         yield* llm.push(reply().tool("goal", { objective: "Wait for CI", status: "active", autonomous: true }))
-        yield* llm.push(reply().tool("todowrite", { todos: [waiting] }))
+        yield* llm.push(reply().tool("todowrite", { todos: [waiting, dependent] }))
         yield* llm.text("Waiting for the existing CI notification")
         const result = yield* opencode.run("Continue autonomously when ready", {
           extraArgs: ["--dangerously-skip-permissions", "--title", "Only waiting tasks"],

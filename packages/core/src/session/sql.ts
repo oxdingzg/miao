@@ -112,6 +112,8 @@ export const TodoTable = sqliteTable(
       .$type<SessionSchema.ID>()
       .notNull()
       .references(() => SessionTable.id, { onDelete: "cascade" }),
+    task_id: text(),
+    depends_on: text({ mode: "json" }).$type<ReadonlyArray<string>>(),
     content: text().notNull(),
     status: text().notNull(),
     priority: text().notNull(),

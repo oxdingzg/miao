@@ -5,6 +5,13 @@ import { define, inventory } from "./event"
 import { SessionID } from "./session-id"
 
 export const Info = Schema.Struct({
+  id: Schema.optional(Schema.String).annotate({
+    description: "Stable task identity, required when a task declares dependencies. Keep it unchanged across updates.",
+  }),
+  depends_on: Schema.optional(Schema.Array(Schema.String)).annotate({
+    description:
+      "Task IDs that must be completed before this task is runnable. Omitted means no declared dependencies.",
+  }),
   content: Schema.String.annotate({ description: "Brief description of the task" }),
   status: Schema.String.annotate({
     description: "Current status of the task: pending, in_progress, waiting, blocked, completed, cancelled",

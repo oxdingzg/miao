@@ -19,7 +19,9 @@ runnable task remains; its completion notification resumes dependent work.
   tool for waits that can outlive ten minutes. A waiting job does not make the
   entire Session idle: continue independent authorized work in the same Session.
 - Mark the dependent todo `waiting`, with its job or run identity in the content.
-  Keep ready tasks `pending` or `in_progress`; use `blocked` for a missing decision.
+  Use stable `id` and `depends_on` for prerequisites; list order does not imply
+  dependency. Keep not-started tasks `pending`, but run them only after all
+  dependencies are completed. Use `blocked` for a missing decision.
   Starting a watcher is not a reason to suspend unrelated tasks.
 - `job_wait` and foreground polling are still blocking. Only reap jobs you
   expect to finish within seconds; let everything else wake you.

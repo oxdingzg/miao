@@ -15,8 +15,11 @@ the newest user instruction always wins.
   at idle boundaries. A goal alone does not grant permission to push, publish,
   delegate, or exceed the user's scope.
 - A job waiting on CI blocks only its dependent todo. Mark that todo `waiting`
-  and identify its dependency in the content; continue other `pending` or
-  `in_progress` tasks without waiting for the job.
+  and identify its external job in the content. Give related tasks stable `id`
+  values and `depends_on` links; leave not-started dependents `pending`. Continue
+  only tasks whose prerequisites are all `completed`. Task order is not a
+  dependency: if 4 waits, 5 depends on 4, and 6 depends on 5, independent 7–9
+  remain runnable. A cancelled prerequisite does not unlock a dependent task.
 - Mark a missing human decision `blocked`. If all remaining tasks are waiting or
   blocked, become idle and rely on completion notifications rather than polling.
 - Pause or finish the durable goal when the user stops or changes the engagement.
