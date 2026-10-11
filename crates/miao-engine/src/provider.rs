@@ -500,14 +500,35 @@ pub(crate) async fn read_stream<P: Parser>(
     response: reqwest::Response,
     progress: mpsc::Sender<Value>,
     cancel: CancellationToken,
+    parser: P,
+) -> Result<Reply, ProviderError> {
+    read_stream_with_budget(
+        response,
+        progress,
+        cancel,
+        parser,
+        crate::tool_input::ToolInputBudget::default(),
+    )
+    .await
+}
+
+async fn read_stream_with_budget<P: Parser>(
+    response: reqwest::Response,
+    progress: mpsc::Sender<Value>,
+    cancel: CancellationToken,
     mut parser: P,
+    mut input_budget: crate::tool_input::ToolInputBudget,
 ) -> Result<Reply, ProviderError> {
     let mut bytes = response.bytes_stream();
     let mut decoder = SseDecoder::default();
     let mut total = 0;
     loop {
+        let deadline = input_budget
+            .deadline()
+            .unwrap_or_else(|| tokio::time::Instant::now() + Duration::from_secs(120));
         let chunk = tokio::select! {
             _=cancel.cancelled()=>return Err(ProviderError::Interrupted),
+            _=tokio::time::sleep_until(deadline), if input_budget.deadline().is_some()=>return Err(ProviderError::Stream("tool input time budget exceeded".into())),
             result=tokio::time::timeout(Duration::from_secs(120),bytes.next())=>result.map_err(|_|ProviderError::Stream("provider idle timeout".into()))?,
         };
         let Some(chunk) = chunk else {
@@ -519,18 +540,83 @@ pub(crate) async fn read_stream<P: Parser>(
             return Err(ProviderError::Stream("message exceeds 8 MiB".into()));
         }
         for frame in decoder.push(&chunk)? {
+            input_budget.frame(&frame)?;
             parser.frame(&frame)?;
             let notice = match frame {
                 Frame::Json(event) => event,
                 Frame::Done => json!({"kind":"stream.done"}),
             };
+            let deadline = input_budget
+                .deadline()
+                .unwrap_or_else(|| tokio::time::Instant::now() + Duration::from_secs(120));
             tokio::select! {
                 _=cancel.cancelled()=>return Err(ProviderError::Interrupted),
+                _=tokio::time::sleep_until(deadline), if input_budget.deadline().is_some()=>return Err(ProviderError::Stream("tool input time budget exceeded".into())),
                 result=progress.send(notice)=>if result.is_err(){return Err(ProviderError::Interrupted);},
             }
             if parser.terminal() {
                 return parser.finish();
             }
+        }
+    }
+}
+
+#[cfg(test)]
+mod input_watchdog_tests {
+    use super::{read_stream_with_budget, ProviderError, StreamState};
+    use crate::tool_input::ToolInputBudget;
+    use serde_json::json;
+    use std::time::Duration;
+    use tokio::{
+        io::{AsyncReadExt, AsyncWriteExt},
+        net::TcpListener,
+        sync::mpsc,
+    };
+    use tokio_util::sync::CancellationToken;
+
+    #[tokio::test]
+    async fn tool_deadline_interrupts_silence_pings_and_progress_backpressure() {
+        for mode in 0..3 {
+            let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+            let address = listener.local_addr().unwrap();
+            let server = tokio::spawn(async move {
+                let (mut stream, _) = listener.accept().await.unwrap();
+                let mut header = Vec::new();
+                while !header.ends_with(b"\r\n\r\n") {
+                    header.push(stream.read_u8().await.unwrap());
+                }
+                let start = json!({"type":"content_block_start","index":0,"content_block":{"type":"tool_use","id":"call","name":"write_file","input":{}}});
+                stream.write_all(format!("HTTP/1.1 200 OK\r\nContent-Type: text/event-stream\r\nConnection: close\r\n\r\ndata: {{\"type\":\"message_start\",\"message\":{{}}}}\n\ndata: {start}\n\n").as_bytes()).await.unwrap();
+                loop {
+                    tokio::time::sleep(Duration::from_millis(5)).await;
+                    if mode == 1
+                        && stream
+                            .write_all(b"data: {\"type\":\"ping\"}\n\n")
+                            .await
+                            .is_err()
+                    {
+                        return;
+                    }
+                }
+            });
+            let response = reqwest::get(format!("http://{address}/")).await.unwrap();
+            let (progress, _receive) = mpsc::channel(if mode == 2 { 1 } else { 64 });
+            let result = tokio::time::timeout(
+                Duration::from_secs(2),
+                read_stream_with_budget(
+                    response,
+                    progress,
+                    CancellationToken::new(),
+                    StreamState::default(),
+                    ToolInputBudget::testing(1024, Duration::from_millis(30)),
+                ),
+            )
+            .await
+            .unwrap();
+            assert!(
+                matches!(result, Err(ProviderError::Stream(message)) if message.contains("time budget exceeded"))
+            );
+            server.abort();
         }
     }
 }
