@@ -285,6 +285,31 @@ impl Parser for ChatState {
             ));
         }
         let needs_tools = !self.calls.is_empty();
+        // A `length` stop means the provider truncated the reply. Partial tool
+        // arguments must never execute, so the committed partial carries only
+        // reasoning and text while the runtime re-issues a bounded
+        // continuation from durable history.
+        if self.finish.as_deref() == Some("length") {
+            let unexecuted_calls = self.calls.len();
+            let mut content = Vec::new();
+            if !self.reasoning.is_empty() {
+                content.push(json!({"type":"reasoning","text":self.reasoning}));
+            }
+            if !self.text.is_empty() {
+                content.push(json!({"type":"text","text":self.text}));
+            }
+            if content.is_empty() && unexecuted_calls == 0 {
+                return Err(ProviderError::ResponseTransport);
+            }
+            return Err(ProviderError::ContinuableTransport {
+                partial: Reply {
+                    content: Value::Array(content),
+                    usage: self.usage,
+                    needs_tools: false,
+                },
+                unexecuted_calls,
+            });
+        }
         if (needs_tools && self.finish.as_deref() != Some("tool_calls"))
             || (!needs_tools && self.finish.as_deref() != Some("stop"))
         {
