@@ -42,6 +42,7 @@ export class EngineSession {
   #status = new StatusBridge()
   #tools = new ToolBridge()
   #prompts = new PromptBridge()
+  #settledThrough = new Map<string, number>()
   #subscriptions = new Map<string, { mode: "live" | "restored"; ready: Promise<unknown> }>()
 
   constructor(client: EngineClient, publish: EnginePublish) {
@@ -75,7 +76,7 @@ export class EngineSession {
       recorded >= 0
         ? { seq, recordedAtMs: recorded, nextDelta: 0 }
         : undefined)
-    if (!anchor) return
+    if (!anchor || anchor.seq <= (this.#settledThrough.get(sessionID) ?? 0)) return
     this.#anchors.set(key, anchor)
     const data = translateTextDelta(progress, anchor)
     if (!data) return
@@ -241,7 +242,21 @@ export class EngineSession {
       })
     }
     this.#tools.note(event)
-    if (event.kind === "provider.started") {
+    const committed =
+      event.kind === "message.committed" &&
+      typeof event.data === "object" &&
+      event.data !== null &&
+      "role" in event.data &&
+      event.data.role === "assistant"
+    if (committed || event.kind === "run.finished") {
+      // The durable boundary wins over late progress from the independent pipe.
+      // Keep one cursor per subscribed Session, rather than retaining every run.
+      this.#settledThrough.set(event.session_id, Math.max(this.#settledThrough.get(event.session_id) ?? 0, event.seq))
+      for (const [key, anchor] of this.#anchors) {
+        if (key.startsWith(`${event.session_id}/`) && anchor.seq <= event.seq) this.#anchors.delete(key)
+      }
+    }
+    if (event.kind === "provider.started" && event.seq > (this.#settledThrough.get(event.session_id) ?? 0)) {
       const data: unknown = event.data
       const run = typeof data === "object" && data !== null && "run_id" in data ? data.run_id : undefined
       const step = typeof data === "object" && data !== null && "step" in data ? data.step : undefined
