@@ -163,12 +163,30 @@ pub trait Provider: Send + Sync {
     fn protected_resources(&self) -> Vec<std::path::PathBuf> {
         vec![]
     }
+    /// Provider-native token counting for context management (§2.13 gate ②).
+    async fn count_tokens(&self, _request: &ModelRequest) -> CountTokens {
+        CountTokens::Unsupported
+    }
+
     async fn stream(
         &self,
         request: ModelRequest,
         progress: mpsc::Sender<Value>,
         cancel: CancellationToken,
     ) -> Result<Reply, ProviderError>;
+}
+
+/// Provider-native token counting for context management (§2.13 gate ②).
+/// A refused or failed count must never fail the turn; every non-`Counted`
+/// case falls back to the char estimate.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum CountTokens {
+    /// The provider has no count endpoint; use the estimate.
+    Unsupported,
+    /// The provider reported the prompt's input tokens.
+    Counted(u64),
+    /// The endpoint refused, was unreadable, or the transport failed.
+    Failed(String),
 }
 
 pub struct Anthropic {
@@ -332,6 +350,56 @@ impl Provider for Anthropic {
         let response =
             request_with_retry("anthropic", &self.client, request, &progress, &cancel).await?;
         read_stream(response, progress, cancel, StreamState::default()).await
+    }
+
+    /// Advisory pre-send count against the provider's own endpoint. No retry
+    /// and a short timeout: any refusal degrades to the estimate.
+    async fn count_tokens(&self, request: &ModelRequest) -> CountTokens {
+        let credential = match self.source.load().await {
+            Ok(credential) if credential.kind() == Kind::Key => credential,
+            _ => return CountTokens::Failed("credential unavailable".into()),
+        };
+        let header = match credential.header() {
+            Ok(header) => header,
+            Err(_) => return CountTokens::Failed("credential header unavailable".into()),
+        };
+        let messages: Vec<Value> = request
+            .messages
+            .iter()
+            .map(|message| json!({"role": message.role, "content": message.content}))
+            .collect();
+        let request = self
+            .client
+            .post(format!("{}/count_tokens", self.endpoint))
+            .header("x-api-key", header)
+            .header("anthropic-version", "2023-06-01")
+            .json(&json!({"model": self.model, "messages": messages}))
+            .build();
+        let request = match request {
+            Ok(request) => request,
+            Err(_) => return CountTokens::Failed("count request build failed".into()),
+        };
+        match tokio::time::timeout(
+            std::time::Duration::from_secs(15),
+            self.client.execute(request),
+        )
+        .await
+        {
+            Ok(Ok(response)) if response.status().is_success() => {
+                let counted = response
+                    .json::<Value>()
+                    .await
+                    .ok()
+                    .and_then(|body| body["input_tokens"].as_u64());
+                counted
+                    .map(CountTokens::Counted)
+                    .unwrap_or_else(|| CountTokens::Failed("count response unreadable".into()))
+            }
+            Ok(Ok(response)) => {
+                CountTokens::Failed(format!("count refused: {}", response.status()))
+            }
+            Ok(Err(_)) | Err(_) => CountTokens::Failed("count transport failed".into()),
+        }
     }
 }
 
