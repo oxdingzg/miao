@@ -893,3 +893,44 @@ describe("Anthropic Messages route", () => {
     }),
   )
 })
+
+describe("request counting", () => {
+  it.effect("counts a request through the provider's count endpoint", () =>
+    Effect.gen(function* () {
+      const counted = yield* LLMClient.count(request).pipe(
+        Effect.provide(
+          dynamicResponse((input) =>
+            Effect.gen(function* () {
+              const web = yield* HttpClientRequest.toWeb(input.request).pipe(Effect.orDie)
+              expect(web.url).toBe("https://api.anthropic.test/v1/messages/count_tokens")
+              expect(web.headers.get("x-api-key")).toBe("test")
+              // The count endpoint rejects the streaming fields, so they must not be sent.
+              const body = JSON.parse(input.text) as Record<string, unknown>
+              expect(body).not.toHaveProperty("stream")
+              expect(body).not.toHaveProperty("max_tokens")
+              expect(body).toMatchObject({ model: "claude-sonnet-4-5" })
+              return input.respond(JSON.stringify({ input_tokens: 4321 }), {
+                headers: { "content-type": "application/json" },
+              })
+            }),
+          ),
+        ),
+      )
+
+      expect(counted).toBe(4321)
+    }),
+  )
+
+  it.effect("reports no count when the provider refuses the count request", () =>
+    Effect.gen(function* () {
+      const counted = yield* LLMClient.count(request).pipe(
+        Effect.provide(
+          dynamicResponse((input) => Effect.succeed(input.respond("nope", { status: 400 }))),
+        ),
+      )
+
+      // A refused count is not a failed turn: the caller keeps its own estimate.
+      expect(counted).toBeUndefined()
+    }),
+  )
+})
