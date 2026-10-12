@@ -15,15 +15,68 @@ impl Store {
         through: u64,
         summary: String,
     ) -> Result<Value, Error> {
+        self.commit_compaction(session, id, through, summary, None)
+            .await
+    }
+
+    /// Runtime-owned checkpoint at a provider-turn boundary. The control-plane
+    /// `compact` command remains idle-only and does not expose this operation.
+    /// A matching active run, settled provider turn, and no outstanding tool
+    /// dispatch are required in the checkpoint's write transaction.
+    pub async fn compact_for_run(
+        &self,
+        session: &str,
+        run: &str,
+        id: &str,
+        through: u64,
+        summary: String,
+    ) -> Result<Value, Error> {
+        self.commit_compaction(session, id, through, summary, Some(run.to_owned()))
+            .await
+    }
+
+    async fn commit_compaction(
+        &self,
+        session: &str,
+        id: &str,
+        through: u64,
+        summary: String,
+        run: Option<String>,
+    ) -> Result<Value, Error> {
         if id.is_empty() || id.len() > 256 || summary.is_empty() || summary.len() > 32768 {
             return Err(Error::Invalid("invalid compaction checkpoint".into()));
         }
         let (session, id) = (session.to_owned(), id.to_owned());
         self.call(move |conn| {
             let tx=conn.transaction()?;
+            if let Some(run) = &run {
+                let active: bool = tx.query_row(
+                    "SELECT EXISTS(SELECT 1 FROM engine_run WHERE id=?1 AND session_id=?2 AND state='running')",
+                    params![run, session], |row| row.get(0),
+                )?;
+                if !active { return Err(Error::Invalid("compaction run is not active".into())); }
+                let outstanding: bool = tx.query_row(
+                    "SELECT EXISTS(SELECT 1 FROM engine_tool WHERE run_id=?1 AND state IN ('planned','dispatched'))",
+                    [run], |row| row.get(0),
+                )?;
+                if outstanding { return Err(Error::Invalid("compaction requires settled tools".into())); }
+                let started: Option<(u64, String)> = tx.query_row(
+                    "SELECT seq,data FROM engine_event WHERE session_id=?1 AND kind='provider.started' AND json_extract(data,'$.run_id')=?2 ORDER BY seq DESC LIMIT 1",
+                    params![session, run], |row| Ok((row.get(0)?, row.get(1)?)),
+                ).optional()?;
+                if let Some((anchor, data)) = started {
+                    let step = serde_json::from_str::<Value>(&data)?["step"].as_u64()
+                        .ok_or_else(|| Error::Invalid("provider start has no valid step".into()))?;
+                    let settled: bool = tx.query_row(
+                        "SELECT EXISTS(SELECT 1 FROM engine_event WHERE session_id=?1 AND seq>?2 AND json_extract(data,'$.run_id')=?3 AND json_extract(data,'$.step')=?4 AND (kind='provider.failed' OR (kind='assistant.identity' AND json_extract(data,'$.anchor_seq')=?2)))",
+                        params![session, anchor, run, step], |row| row.get(0),
+                    )?;
+                    if !settled { return Err(Error::Invalid("compaction requires a settled provider turn".into())); }
+                }
+            }
             let existing:Option<(String,u64,String)>=tx.query_row("SELECT session_id,through_seq,summary FROM engine_compaction WHERE id=?1",[&id],|r|Ok((r.get(0)?,r.get(1)?,r.get(2)?))).optional()?;
             if let Some((owner,cut,text))=existing {if owner!=session||cut!=through||text!=summary{return Err(Error::Conflict);}return Ok(json!({"compaction_id":id,"through_message_seq":through,"duplicate":true}));}
-            if tx.query_row("SELECT EXISTS(SELECT 1 FROM engine_run WHERE session_id=?1 AND state='running')",[&session],|r|r.get::<_,bool>(0))? {return Err(Error::Invalid("compaction requires an idle Session".into()));}
+            if run.is_none() && tx.query_row("SELECT EXISTS(SELECT 1 FROM engine_run WHERE session_id=?1 AND state='running')",[&session],|r|r.get::<_,bool>(0))? {return Err(Error::Invalid("compaction requires an idle Session".into()));}
             let role:Option<String>=tx.query_row("SELECT role FROM engine_message WHERE session_id=?1 AND seq=?2",params![session,through],|r|r.get(0)).optional()?;
             if role.as_deref()!=Some("assistant"){return Err(Error::Invalid("compaction needs an assistant message boundary".into()));}
             let mut pending=std::collections::HashSet::new();let mut last=None;

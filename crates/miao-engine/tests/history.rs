@@ -171,3 +171,142 @@ async fn default_fork_inherits_effective_checkpoint_and_old_explicit_fork_does_n
         .await
         .is_err());
 }
+
+#[tokio::test]
+async fn run_owned_checkpoint_preserves_idle_api_and_raw_history() {
+    let dir = tempfile::tempdir().unwrap();
+    let store = Store::open(dir.path().join("engine.db")).await.unwrap();
+    seed(&store).await;
+    store.start_run("s", "run").await.unwrap();
+    let started = store
+        .record("s", "provider.started", json!({"run_id":"run","step":0}))
+        .await
+        .unwrap();
+    let boundary = store
+        .assistant_reply_profiled(
+            "s",
+            "run",
+            0,
+            Some(started.seq),
+            json!([{"type":"text","text":"done"}]),
+            None,
+        )
+        .await
+        .unwrap()
+        .seq;
+    let before = serde_json::to_value(store.history("s").await.unwrap()).unwrap();
+    assert!(store
+        .compact("s", "public", boundary, "summary".into())
+        .await
+        .is_err());
+    assert!(store
+        .compact_for_run("s", "wrong", "cut", boundary, "summary".into())
+        .await
+        .is_err());
+    assert_eq!(
+        store
+            .compact_for_run("s", "run", "cut", boundary, "summary".into())
+            .await
+            .unwrap()["duplicate"],
+        false
+    );
+    assert_eq!(
+        store
+            .compact_for_run("s", "run", "cut", boundary, "summary".into())
+            .await
+            .unwrap()["duplicate"],
+        true
+    );
+    assert!(matches!(
+        store
+            .compact_for_run("s", "run", "cut", boundary, "different".into())
+            .await,
+        Err(Error::Conflict)
+    ));
+    assert_eq!(
+        serde_json::to_value(store.history("s").await.unwrap()).unwrap(),
+        before
+    );
+    assert_eq!(store.selected_history("s").await.unwrap().len(), 1);
+    let events = store.events("s", 0, 100).await.unwrap();
+    let lifecycle: Vec<_> = events
+        .iter()
+        .filter(|event| {
+            matches!(
+                event.kind.as_str(),
+                "pre_compact" | "history.compacted" | "post_compact"
+            )
+        })
+        .map(|event| event.kind.as_str())
+        .collect();
+    assert_eq!(
+        lifecycle,
+        ["pre_compact", "history.compacted", "post_compact"]
+    );
+    // The checkpoint neither finishes nor replaces its owning execution.
+    store.finish_run("s", "run", "completed").await.unwrap();
+    assert!(store
+        .compact_for_run("s", "run", "later", boundary, "summary".into())
+        .await
+        .is_err());
+}
+
+#[tokio::test]
+async fn run_owned_checkpoint_rejects_inflight_provider_and_unsettled_tools() {
+    let dir = tempfile::tempdir().unwrap();
+    let store = Store::open(dir.path().join("engine.db")).await.unwrap();
+    let boundary = seed(&store).await;
+    store.start_run("s", "run").await.unwrap();
+    let started = store
+        .record("s", "provider.started", json!({"run_id":"run","step":0}))
+        .await
+        .unwrap();
+    let cursor = store.events("s", 0, 100).await.unwrap().len();
+    assert!(store
+        .compact_for_run("s", "run", "inflight", boundary, "summary".into())
+        .await
+        .is_err());
+    assert_eq!(store.events("s", 0, 100).await.unwrap().len(), cursor);
+    // A different step's failure cannot settle the current provider request.
+    store
+        .record("s", "provider.failed", json!({"run_id":"run","step":1}))
+        .await
+        .unwrap();
+    assert!(store
+        .compact_for_run("s", "run", "wrong-step", boundary, "summary".into())
+        .await
+        .is_err());
+    store.assistant_reply_profiled("s", "run", 0, Some(started.seq), json!([{"type":"text","text":"calling"},{"type":"tool_use","id":"call","name":"read_file","input":{"path":"file"}}]), None).await.unwrap();
+    assert!(store
+        .compact_for_run("s", "run", "tools", boundary, "summary".into())
+        .await
+        .is_err());
+    let events = store.events("s", 0, 100).await.unwrap();
+    assert!(!events.iter().any(|event| event.kind == "history.compacted"));
+    store.finish_run("s", "run", "interrupted").await.unwrap();
+}
+
+#[tokio::test]
+async fn settled_provider_failure_allows_only_closed_prefix_checkpoint() {
+    let dir = tempfile::tempdir().unwrap();
+    let store = Store::open(dir.path().join("engine.db")).await.unwrap();
+    let boundary = seed(&store).await;
+    store.start_run("s", "run").await.unwrap();
+    store
+        .record("s", "provider.started", json!({"run_id":"run","step":0}))
+        .await
+        .unwrap();
+    store
+        .record("s", "provider.failed", json!({"run_id":"run","step":0}))
+        .await
+        .unwrap();
+    assert!(store
+        .compact_for_run("s", "run", "user-cut", boundary - 1, "summary".into())
+        .await
+        .is_err());
+    store
+        .compact_for_run("s", "run", "closed", boundary, "summary".into())
+        .await
+        .unwrap();
+    store.finish_run("s", "run", "failed").await.unwrap();
+}
