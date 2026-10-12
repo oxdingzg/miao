@@ -55,26 +55,22 @@ fn anthropic_text(frame: &Value) -> Option<Option<String>> {
 
 fn chat_text(frame: &Value) -> Option<Option<String>> {
     let choices = frame.get("choices")?.as_array()?;
-    if choices.is_empty() {
-        return None;
+    if choices.len() != 1 || choices[0]["index"] != 0 {
+        return Some(None);
     }
-    let text = choices
-        .iter()
-        .filter_map(|choice| choice["delta"]["content"].as_str())
-        .collect::<String>();
-    Some(if text.is_empty() { None } else { Some(text) })
+    Some(non_empty(choices[0]["delta"].get("content")))
 }
 
 fn gemini_text(frame: &Value) -> Option<Option<String>> {
     let candidates = frame.get("candidates")?.as_array()?;
-    let text = candidates
-        .iter()
-        .flat_map(|candidate| {
-            candidate["content"]["parts"]
-                .as_array()
-                .into_iter()
-                .flatten()
-        })
+    if candidates.len() != 1 || candidates[0].get("index").is_some_and(|index| index != 0) {
+        return Some(None);
+    }
+    let text = candidates[0]["content"]["parts"]
+        .as_array()
+        .into_iter()
+        .flatten()
+        .filter(|part| part["thought"] != true)
         .filter_map(|part| part["text"].as_str())
         .collect::<String>();
     Some(if text.is_empty() { None } else { Some(text) })
@@ -108,10 +104,26 @@ mod tests {
     }
 
     #[test]
-    fn concatenates_fragments_and_ignores_empty_payloads() {
+    fn rejects_alternative_candidates_and_ignores_empty_payloads() {
         assert_eq!(
             normalize(&json!({"choices":[{"delta":{"content":"a"}},{"delta":{"content":"b"}}]})),
-            Some(json!({"kind":"text.delta","text":"ab"}))
+            None
+        );
+        assert_eq!(
+            normalize(&json!({"choices":[{"index":1,"delta":{"content":"alternative"}}]})),
+            None
+        );
+        assert_eq!(
+            normalize(
+                &json!({"candidates":[{"index":0,"content":{"parts":[{"text":"a"}]}},{"index":1,"content":{"parts":[{"text":"b"}]}}]})
+            ),
+            None
+        );
+        assert_eq!(
+            normalize(
+                &json!({"candidates":[{"index":1,"content":{"parts":[{"text":"alternative"}]}}]})
+            ),
+            None
         );
         assert_eq!(
             normalize(&json!({"choices":[{"delta":{"role":"assistant"}}]})),
@@ -123,6 +135,23 @@ mod tests {
         );
         assert_eq!(
             normalize(&json!({"type":"content_block_delta","delta":{"type":"input_json_delta"}})),
+            None
+        );
+    }
+
+    #[test]
+    fn gemini_answer_text_excludes_thought_parts() {
+        assert_eq!(
+            normalize(&json!({"candidates":[{"content":{"parts":[
+                {"text":"private reasoning","thought":true},
+                {"text":"answer "},{"text":"fragment"}
+            ]}}]})),
+            Some(json!({"kind":"text.delta","text":"answer fragment"}))
+        );
+        assert_eq!(
+            normalize(
+                &json!({"candidates":[{"content":{"parts":[{"text":"reasoning","thought":true}]}}]})
+            ),
             None
         );
     }
