@@ -38,7 +38,13 @@ export const resolve = Effect.fn("SessionRouting.resolve")(function* (input: {
   sessionID: SessionID
 }) {
   const placement = yield* SessionEnginePlacement.find(input.db, input.sessionID)
-  if (placement?.engine === "rust") return { type: "placed", engine: "rust", location: placement.location } as const
+  if (placement?.engine === "rust") {
+    // The native engine owns the Session and its storage; the TS side must not
+    // relocate it. Report a vanished Location instead of serving a dead path.
+    if (!(yield* input.fs.existsSafe(placement.location.directory)))
+      return { type: "missing", directory: placement.location.directory } as const
+    return { type: "placed", engine: "rust", location: placement.location } as const
+  }
 
   const row = yield* input.db
     .select({
