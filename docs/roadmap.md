@@ -385,10 +385,13 @@ behavior the engine needs (see the landed list above).
 - [ ] Give the first turn after a compaction a restore budget for re-reading the files the summary
       says matter, bounded per file and per compaction, so a checkpoint does not cost the model its
       working set.
-- [ ] Show the streaming summary text where the transcript can carry it: `.delta` is published and
-      neither client renders it mid-flight (the app no-ops it, the TUI refreshes on `ended`).
+- [ ] Optional polish: render the streaming summary text mid-flight. `.delta` is published, but with
+      the phase and slice progress visible (#709 #715) neither client needs it to see that work is
+      happening; the transcript showing the settled checkpoint is the deliberate projection, so this
+      is a rendering preference, not a gap.
 - **Acceptance:** the first turn after a checkpoint can re-read the working set within its budget
-  without re-compacting, and the summary text is visible while it streams.
+  without re-compacting. Visibility acceptance is met (#709 #715): both clients show the phase and
+  slice progress while a compaction runs.
 
 ---
 
