@@ -347,7 +347,7 @@ describe("CatalogV2", () => {
     }),
   )
 
-  it.effect("small model prefers small keyword candidates before cost scoring", () =>
+  it.effect("small model is the cheapest priced model, whatever it is named", () =>
     Effect.gen(function* () {
       const catalog = yield* Catalog.Service
       const providerID = ProviderV2.ID.make("test")
@@ -356,18 +356,72 @@ describe("CatalogV2", () => {
         catalog.model.update(providerID, ModelV2.ID.make("cheap-large"), (model) => {
           model.capabilities.input = ["text"]
           model.capabilities.output = ["text"]
-          model.cost = [{ input: 1, output: 1, cache: { read: 0, write: 0 } }]
+          model.cost = [{ input: 1, output: 1, cache: { read: 0.01, write: 0 } }]
           model.time.released = Date.now()
         })
         catalog.model.update(providerID, ModelV2.ID.make("expensive-mini"), (model) => {
           model.capabilities.input = ["text"]
           model.capabilities.output = ["text"]
-          model.cost = [{ input: 10, output: 10, cache: { read: 0, write: 0 } }]
+          model.cost = [{ input: 10, output: 10, cache: { read: 0.1, write: 0 } }]
           model.time.released = Date.now()
         })
       })
 
-      expect((yield* catalog.model.small(providerID))?.id).toMatch("expensive-mini")
+      // A `-mini` name is not a price, and choosing the cheaper prompt is the whole
+      // point of resolving a small model.
+      expect((yield* catalog.model.small(providerID))?.id).toMatch("cheap-large")
+    }),
+  )
+
+  it.effect("small model prefers a model the plan prices at zero over a metered one", () =>
+    Effect.gen(function* () {
+      const catalog = yield* Catalog.Service
+      const providerID = ProviderV2.ID.make("plan")
+      yield* catalog.transform((catalog) => {
+        catalog.provider.update(providerID, () => {})
+        catalog.model.update(providerID, ModelV2.ID.make("metered-flash"), (model) => {
+          model.capabilities.input = ["text"]
+          model.capabilities.output = ["text"]
+          model.cost = [{ input: 0.8, output: 2, cache: { read: 0.05, write: 0 } }]
+          model.time.released = Date.now()
+        })
+        catalog.model.update(providerID, ModelV2.ID.make("plan-tiny"), (model) => {
+          model.capabilities.input = ["text"]
+          model.capabilities.output = ["text"]
+          model.cost = [{ input: 0, output: 0, cache: { read: 0, write: 0 } }]
+          model.time.released = Date.now() - 1_000
+        })
+      })
+
+      // A zero price on a subscription plan means the plan covers it, so it is the
+      // cheapest prompt there is — not a missing figure to be skipped.
+      expect((yield* catalog.model.small(providerID))?.id).toMatch("plan-tiny")
+    }),
+  )
+
+  it.effect("small model falls back to the family name when no model carries a price", () =>
+    Effect.gen(function* () {
+      const catalog = yield* Catalog.Service
+      const providerID = ProviderV2.ID.make("unpriced")
+      yield* catalog.transform((catalog) => {
+        catalog.provider.update(providerID, () => {})
+        // No cost entry at all: the catalog does not say what these cost, so the
+        // price cannot rank them and the family name is the only signal left.
+        catalog.model.update(providerID, ModelV2.ID.make("unpriced-large"), (model) => {
+          model.capabilities.input = ["text"]
+          model.capabilities.output = ["text"]
+          model.cost = []
+          model.time.released = Date.now()
+        })
+        catalog.model.update(providerID, ModelV2.ID.make("unpriced-flash"), (model) => {
+          model.capabilities.input = ["text"]
+          model.capabilities.output = ["text"]
+          model.cost = []
+          model.time.released = Date.now() - 1_000
+        })
+      })
+
+      expect((yield* catalog.model.small(providerID))?.id).toMatch("unpriced-flash")
     }),
   )
 
