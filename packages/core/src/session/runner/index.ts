@@ -33,8 +33,14 @@ export interface Interface {
     readonly wake?: (sessionID: SessionSchema.ID) => Effect.Effect<void>
     /** Runtime-owned background execution capability, injected without a tag cycle. */
     readonly delegation?: SessionDelegation.API
-    /** Reports local drain phases so a client can tell preparation from a dispatched request. */
-    readonly phase?: (phase: BusyPhase) => Effect.Effect<void>
+    /**
+     * Reports local drain phases so a client can tell preparation from a dispatched
+     * request, with the slice progress of a phase that has any.
+     */
+    readonly phase?: (
+      phase: BusyPhase,
+      progress?: { readonly stage: number; readonly stages: number },
+    ) => Effect.Effect<void>
   }) => Effect.Effect<void, RunError>
 }
 

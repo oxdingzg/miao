@@ -27,7 +27,11 @@ const layer = Layer.effect(
     let delegation: SessionDelegation.API | undefined
     // Same forward-reference break as `wake`: the runner reports phases into the
     // coordinator that owns the drain.
-    let setPhase: (sessionID: SessionSchema.ID, phase: SessionEvent.BusyPhase) => Effect.Effect<void> = () =>
+    let setPhase: (
+      sessionID: SessionSchema.ID,
+      phase: SessionEvent.BusyPhase,
+      progress?: { readonly stage: number; readonly stages: number },
+    ) => Effect.Effect<void> = () =>
       Effect.void
     // A high default bounds runaway fan-out without constraining normal use.
     // `MIAO_MAX_CONCURRENT_DRAINS=0` (or a non-positive value) removes the cap.
@@ -44,7 +48,7 @@ const layer = Layer.effect(
             force,
             wake,
             delegation,
-            phase: (phase) => setPhase(sessionID, phase),
+            phase: (phase, progress) => setPhase(sessionID, phase, progress),
           }),
         ).pipe(
           // Placement layers expose Location services, not this process-global

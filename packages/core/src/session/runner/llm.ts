@@ -503,7 +503,10 @@ const layer = Layer.effect(
       return rows.length > 0
     })
 
-    type ReportPhase = (phase: SessionEvent.BusyPhase) => Effect.Effect<void>
+    type ReportPhase = (
+      phase: SessionEvent.BusyPhase,
+      progress?: { readonly stage: number; readonly stages: number },
+    ) => Effect.Effect<void>
 
     const runTurnAttempt = Effect.fn("SessionRunner.runTurn")(function* (
       sessionID: SessionSchema.ID,

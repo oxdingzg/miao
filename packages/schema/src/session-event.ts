@@ -524,6 +524,16 @@ export const StatusInfo = Schema.Union([
     phase: BusyPhase.pipe(optional),
     /** Epoch millis when the current phase began. */
     since: Schema.Finite.pipe(optional),
+    /**
+     * How far a phase that reports progress has come, sliced by the work it does.
+     * A staged compaction summarizes a history in bounded slices, so a client can
+     * show `8/22` instead of an indeterminate wait; absent for phases that cannot
+     * say, which reads as "no count", not as zero.
+     */
+    progress: Schema.Struct({
+      stage: NonNegativeInt,
+      stages: NonNegativeInt,
+    }).pipe(optional),
   }),
   Schema.Struct({
     type: Schema.Literal("retry"),

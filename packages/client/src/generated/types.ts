@@ -1286,6 +1286,7 @@ export type SessionsActivityOutput = {
           readonly type: "busy"
           readonly phase?: "queued" | "preparing" | "requesting" | "streaming" | "retrying" | "compacting"
           readonly since?: number
+          readonly progress?: { readonly stage: number; readonly stages: number }
         }
       | {
           readonly type: "retry"
@@ -1329,6 +1330,7 @@ export type SessionsStatusOutput = {
         readonly type: "busy"
         readonly phase?: "queued" | "preparing" | "requesting" | "streaming" | "retrying" | "compacting"
         readonly since?: number
+        readonly progress?: { readonly stage: number; readonly stages: number }
       }
     | {
         readonly type: "retry"

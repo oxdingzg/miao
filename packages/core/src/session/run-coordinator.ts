@@ -13,7 +13,7 @@ export interface Coordinator<Key, E> {
   /** Current status for a key, including the active drain phase. */
   readonly status: (key: Key) => Effect.Effect<Status>
   /** Sets the phase of an active drain; ignored once the key is idle. */
-  readonly setPhase: (key: Key, phase: Phase) => Effect.Effect<void>
+  readonly setPhase: (key: Key, phase: Phase, progress?: Progress) => Effect.Effect<void>
   /** Starts execution while idle or joins the active execution. */
   readonly run: (key: Key) => Effect.Effect<void, E>
   /** Registers one coalesced follow-up after newly recorded work. */
@@ -42,8 +42,10 @@ type Entry<E> = {
  * restated, so a new phase cannot exist in the schema and be missing here.
  */
 export type Phase = SessionEvent.BusyPhase
+/** How far the work behind a phase has come, when it can say. */
+export type Progress = { readonly stage: number; readonly stages: number }
 export type Status =
-  | { readonly type: "busy"; readonly phase: Phase; readonly since: number }
+  | { readonly type: "busy"; readonly phase: Phase; readonly since: number; readonly progress?: Progress }
   | { readonly type: "idle" }
 
 export const make = <Key, E>(options: {
@@ -65,13 +67,24 @@ export const make = <Key, E>(options: {
     const fork = yield* FiberSet.makeRuntime<never, void, never>()
     // Keys whose busy status was last reported, mapped to the reported phase.
     // Only active drains are present, so a settled key is skipped as idle.
-    const reported = new Map<Key, Phase>()
-    const phases = new Map<Key, { phase: Phase; since: number }>()
+    const reported = new Map<Key, string>()
+    const phases = new Map<Key, { phase: Phase; since: number; progress?: Progress }>()
     const reporting = Semaphore.makeUnsafe(1)
+    // Progress is part of what a report says, so a slice update is a change worth
+    // publishing even though the phase itself did not move.
+    const statusKey = (status: Status) =>
+      status.type === "idle"
+        ? "idle"
+        : `${status.phase}:${status.progress?.stage ?? ""}/${status.progress?.stages ?? ""}`
     const statusOf = (key: Key): Status => {
       if (!active.has(key)) return { type: "idle" }
       const current = phases.get(key)
-      return { type: "busy", phase: current?.phase ?? "queued", since: current?.since ?? Date.now() }
+      return {
+        type: "busy",
+        phase: current?.phase ?? "queued",
+        since: current?.since ?? Date.now(),
+        ...(current?.progress === undefined ? {} : { progress: current.progress }),
+      }
     }
     // Publishes under the reporting lock. Reads the live state and skips repeats
     // so reports from overlapping owners can never leave a stale phase behind.
@@ -84,17 +97,27 @@ export const make = <Key, E>(options: {
           reported.delete(key)
           return options.report(key, status)
         }
-        if (reported.get(key) === status.phase) return Effect.void
-        reported.set(key, status.phase)
+        const keyed = statusKey(status)
+        if (reported.get(key) === keyed) return Effect.void
+        reported.set(key, keyed)
         return options.report(key, status)
       })
     const report = (key: Key) => reporting.withPermit(publish(key))
-    const setPhase = (key: Key, phase: Phase) =>
+    const setPhase = (key: Key, phase: Phase, progress?: Progress) =>
       reporting.withPermit(
         Effect.suspend(() => {
           if (!active.has(key)) return Effect.void
-          if (phases.get(key)?.phase === phase) return Effect.void
-          phases.set(key, { phase, since: Date.now() })
+          const current = phases.get(key)
+          const sameProgress =
+            current?.progress?.stage === progress?.stage && current?.progress?.stages === progress?.stages
+          if (current?.phase === phase && sameProgress) return Effect.void
+          // Only a phase change restarts the clock: a slice update must not reset the
+          // elapsed time a client is already showing.
+          phases.set(key, {
+            phase,
+            since: current?.phase === phase ? (current?.since ?? Date.now()) : Date.now(),
+            ...(progress === undefined ? {} : { progress }),
+          })
           return publish(key)
         }),
       )
