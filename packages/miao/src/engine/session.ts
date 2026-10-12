@@ -14,6 +14,7 @@ import {
   translateMessage,
   translateProviderRequest,
   translateProviderRequestResult,
+  translateQuestionResolved,
   translateRetried,
   translateRunFailure,
   translateQuestion,
@@ -227,6 +228,8 @@ export class EngineSession {
     if (replied) publish({ type: "permission.v2.replied", data: replied })
     const question = translateQuestion(event)
     if (question) publish({ type: "question.v2.asked", data: question })
+    const resolved = translateQuestionResolved(event)
+    if (resolved) publish({ type: resolved.type, data: resolved.data })
   }
 }
 

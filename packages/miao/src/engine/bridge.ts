@@ -637,6 +637,40 @@ export function translateApprovalResolved(event: EngineEvent): SessionPermission
   }
 }
 
+/** The product question resolution payload, answered or rejected. */
+export type SessionQuestionResolved =
+  | { type: "question.v2.replied"; data: { sessionID: SessionID; requestID: Question.ID; answers: string[][] } }
+  | { type: "question.v2.rejected"; data: { sessionID: SessionID; requestID: Question.ID } }
+
+/**
+ * Maps the engine's `question.resolved` to the product resolution. An answered
+ * question replies with the selected labels; an expired or cancelled question is
+ * rejected, matching how approvals resolve. Without this a client kept showing a
+ * pending question the engine had already settled.
+ */
+export function translateQuestionResolved(event: EngineEvent): SessionQuestionResolved | undefined {
+  if (event.kind !== "question.resolved") return undefined
+  const data = event.data
+  if (typeof data !== "object" || data === null) return undefined
+  const questionID = readNonEmptyString(data, "question_id")
+  if (questionID === undefined) return undefined
+  const sessionID = adoptSession(event.session_id)
+  const requestID = Question.ID.ascending(`que_${questionID}`)
+  const state = readNonEmptyString(data, "state")
+  if (state === "answered") {
+    const raw = "answers" in data ? Reflect.get(data, "answers") : undefined
+    if (!Array.isArray(raw)) return undefined
+    const answers = raw.flatMap((entry) =>
+      Array.isArray(entry) && entry.every((label) => typeof label === "string") ? [entry as string[]] : [],
+    )
+    if (answers.length !== raw.length) return undefined
+    return { type: "question.v2.replied", data: { sessionID, requestID, answers } }
+  }
+  if (state === "expired" || state === "cancelled")
+    return { type: "question.v2.rejected", data: { sessionID, requestID } }
+  return undefined
+}
+
 /** The product `question.v2.asked` payload for one engine question request. */
 export type SessionQuestionAsked = {
   id: Question.ID
