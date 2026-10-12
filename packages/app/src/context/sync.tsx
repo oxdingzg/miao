@@ -2,7 +2,8 @@ import { Binary } from "@miao/core/util/binary"
 import { createMemo } from "solid-js"
 import { useServerSync } from "./server-sync"
 import { useSDK } from "./sdk"
-import type { Message, Part } from "@miao/schema/view-models"
+import type { Message } from "@miao/schema/view-models"
+import type { Part } from "@miao/schema/render-part"
 import { messageKey } from "@/utils/session-message"
 
 const SKIP_PARTS = new Set(["patch", "step-start", "step-finish"])

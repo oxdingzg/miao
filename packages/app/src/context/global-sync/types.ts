@@ -1,5 +1,15 @@
 import type { CommandInfo, FileDiffInfo, McpResource, McpStatus, SessionMessageInfo } from "@/utils/server"
-import type { Agent, LspStatus, Message, Part, ReferenceInfo, Session, SessionStatus, Todo, VcsInfo } from "@miao/schema/view-models"
+import type {
+  Agent,
+  LspStatus,
+  Message,
+  ReferenceInfo,
+  Session,
+  SessionStatus,
+  Todo,
+  VcsInfo,
+} from "@miao/schema/view-models"
+import type { Part } from "@miao/schema/render-part"
 import type { QuestionRequest } from "@miao/schema/view-models"
 import type { PermissionV2Request } from "@miao/schema/view-models"
 import type { LocationPath } from "@miao/protocol/groups/location"

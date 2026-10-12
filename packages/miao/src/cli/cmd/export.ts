@@ -416,7 +416,7 @@ export function transcript(info: SessionV1.SessionInfo, projection: ReadonlyArra
             cost: 0,
             tokens: { input: 0, output: 0, reasoning: 0, cache: { read: 0, write: 0 } },
             finish: "stop",
-            time: { created: DateTime.toEpochMillis(message.time.created) },
+            time: { created: DateTime.toEpochMillis(requireCreationTime(message.time.created)) },
           },
           [{ type: "text", text: message.summary } as { readonly type: string }],
         ),
@@ -532,4 +532,10 @@ function withUserSelections(converted: ReturnType<typeof sessionContextToMessage
     previous = selected ?? previous
     return selected ? { ...entry, info: { ...entry.info, ...selected } } : entry
   })
+}
+
+
+function requireCreationTime(time: DateTime.DateTime | null) {
+  if (time === null) throw new Error("Legacy export cannot represent an unknown compaction creation time")
+  return time
 }

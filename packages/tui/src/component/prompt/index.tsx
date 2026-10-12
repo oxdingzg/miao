@@ -1,3 +1,4 @@
+import { Model } from "../../util/model"
 import {
   BoxRenderable,
   RGBA,
@@ -310,7 +311,7 @@ export function Prompt(props: PromptProps) {
   })
   const turnElapsed = createMemo(() => {
     const start = compaction()?.since ?? lastUserMessage()?.time.created
-    return start === undefined ? 0 : Math.max(0, now() - start)
+    return start === undefined || start === null ? null : Math.max(0, now() - start)
   })
 
   const usage = createMemo(() => {
@@ -326,7 +327,7 @@ export function Prompt(props: PromptProps) {
       last.tokens.input + last.tokens.output + last.tokens.reasoning + last.tokens.cache.read + last.tokens.cache.write
     if (tokens <= 0) return
 
-    const model = sync.data.provider.find((item) => item.id === last.model.providerID)?.models[last.model.id]
+    const model = Model.get(sync.data.provider, last.model?.providerID, last.model?.id)
     const pct = model?.limit.context ? `${Math.round((tokens / model.limit.context) * 100)}%` : undefined
     const cost = session?.cost ?? 0
     const native = Currency.native(sync.data.provider, session?.model?.providerID, session?.model?.id)
@@ -1624,7 +1625,7 @@ export function Prompt(props: PromptProps) {
                     </Show>
                   </box>
                 </box>
-                <Show when={(status().type === "busy" || compaction()) && turnElapsed() > 0}>
+                <Show when={(status().type === "busy" || compaction()) && (turnElapsed() !== null && (turnElapsed() ?? 0) > 0)}>
                   <text fg={theme.textMuted}>{Locale.duration(turnElapsed())}</text>
                 </Show>
                 <text fg={theme.text}>

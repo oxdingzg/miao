@@ -10,7 +10,7 @@ import type { Part, SessionMessage, ToolPart } from "@miao/schema/view-models"
 import { type Client } from "@/client"
 import { mutableResponse } from "@miao/tui/util/mutable-response"
 import { isV2StreamFragmentEvent } from "@miao/tui/context/session-v2"
-import { promptInputFromParts, sessionContextToMessages, toolPart } from "@miao/tui/context/session-v2-write"
+import { promptInputFromParts, renderSessionContext, toolPart } from "@miao/tui/context/session-v2-write"
 
 export type HeadlessInput = {
   client: Client
@@ -156,7 +156,7 @@ export async function runHeadless(input: HeadlessInput): Promise<string | undefi
   // Durable state, not the event stream, is the source of truth: each settled
   // event re-reads the projected transcript and prints what has not been printed.
   async function mirror(final = false) {
-    const messages = sessionContextToMessages({
+    const messages = renderSessionContext({
       sessionID,
       cwd: input.directory,
       root: input.directory,
@@ -289,7 +289,7 @@ export async function runHeadless(input: HeadlessInput): Promise<string | undefi
       messageID: info.id,
       type: "step-finish",
       reason: info.finish ?? "stop",
-      cost: info.cost ?? 0,
+      cost: info.cost,
       tokens: info.tokens,
     }
   }

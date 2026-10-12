@@ -64,7 +64,7 @@ function View(props: { api: TuiPluginApi; session_id: string }) {
 
     const tokens =
       last.tokens.input + last.tokens.output + last.tokens.reasoning + last.tokens.cache.read + last.tokens.cache.write
-    const model = props.api.state.provider.find((item) => item.id === last.model.providerID)?.models[last.model.id]
+    const model = last.model ? props.api.state.provider.find((item) => item.id === last.model?.providerID)?.models[last.model.id] : undefined
     const cacheTotal = last.tokens.cache.read + last.tokens.cache.write + last.tokens.input
     return {
       tokens,
@@ -84,9 +84,9 @@ function View(props: { api: TuiPluginApi; session_id: string }) {
       assistants(),
       props.api.state.provider,
       (message) =>
-        priceMultiplier(message.time.created, message.model.providerID, message.model.id, {
+        message.model ? priceMultiplier(message.time.created, message.model.providerID, message.model.id, {
           providers: offPeakProviders(),
-        }),
+        }) : undefined,
     ),
   )
 
@@ -94,8 +94,8 @@ function View(props: { api: TuiPluginApi; session_id: string }) {
   // for a model whose price actually moves with the clock.
   const pricing = createMemo(() => {
     const last = assistants().at(-1)
-    if (!last) return
-    if (!isTimeOfDayPriced(last.model.providerID, last.model.id, { providers: offPeakProviders() })) return
+    if (!last?.model || last.time.created === null) return
+    if (!isTimeOfDayPriced(last.model?.providerID, last.model?.id, { providers: offPeakProviders() })) return
     return isOffPeak(last.time.created) ? "off-peak" : "peak"
   })
 
@@ -114,7 +114,7 @@ function View(props: { api: TuiPluginApi; session_id: string }) {
   const spendKnown = createMemo(() => {
     if (cost() > 0) return true
     const last = assistants().at(-1)
-    return !last || priced(last.model)
+    return !last || (last.model !== null && priced(last.model))
   })
 
   // No provider reports an expiry, so the age is counted locally and the row has
@@ -184,6 +184,7 @@ function View(props: { api: TuiPluginApi; session_id: string }) {
   const byModel = createMemo(() => {
     const rows = new Map<string, { providerID: string; id: string; turns: number; cost: number; tokens: number }>()
     for (const item of assistants()) {
+      if (item.model === null) continue
       const key = `${item.model.providerID}\u0000${item.model.id}`
       const row =
         rows.get(key) ?? { providerID: item.model.providerID, id: item.model.id, turns: 0, cost: 0, tokens: 0 }

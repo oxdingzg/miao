@@ -1,3 +1,4 @@
+import { chronological } from "../util/message-order"
 import { createStore, produce } from "solid-js/store"
 import type { SessionMessage, TranscriptUserMessage } from "@miao/schema/view-models"
 
@@ -66,16 +67,14 @@ export function createPendingPrompts() {
     // In-flight ("sending") receipts are excluded: the server may not have
     // admitted them yet, so cancelling one is a race.
     waiting(sessionID: string): PendingPrompt[] {
-      return Object.values(data)
-        .filter((prompt) => prompt.sessionID === sessionID && prompt.state === "admitted")
-        .toSorted((a, b) => a.info.time.created - b.info.time.created || a.info.id.localeCompare(b.info.id))
+      const pending = Object.values(data).filter((prompt) => prompt.sessionID === sessionID && prompt.state === "admitted")
+      return chronological(pending.map((prompt) => ({ id: prompt.info.id, time: prompt.info.time, prompt }))).map((item) => item.prompt)
     },
     messages(sessionID: string, projected: ReadonlyArray<SessionMessage>): SessionMessage[] {
       const ids = new Set(projected.map((message) => message.id))
-      const pending = Object.values(data)
+      const pending = chronological(Object.values(data)
         .filter((prompt) => prompt.sessionID === sessionID && !ids.has(prompt.info.id))
-        .map((prompt) => prompt.info)
-        .toSorted((a, b) => a.time.created - b.time.created || a.id.localeCompare(b.id))
+        .map((prompt) => prompt.info))
       // Projected history is authoritative and already ordered by the server.
       // Receipts for prompts that have not been promoted yet always belong at
       // the tail: mixing them by `time.created` would let a client clock that

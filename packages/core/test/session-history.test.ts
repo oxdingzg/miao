@@ -1,3 +1,5 @@
+import { asc, eq } from "drizzle-orm"
+import { SessionBackfill } from "@miao/core/session/backfill"
 import { describe, expect } from "bun:test"
 import { DateTime, Effect, Layer, Schema } from "effect"
 import { Database } from "@miao/core/database/database"
@@ -468,3 +470,26 @@ describe("SessionV2.history", () => {
     }),
   )
 })
+
+
+it.effect("event-less history preserves unknown identities and creation clocks alongside known epoch zero", () =>
+  Effect.gen(function* () {
+    const sessions = yield* SessionV2.Service
+    const database = yield* Database.Service
+    const createdSession = yield* sessions.create({ location })
+    const unknown = SessionMessage.Assistant.make({ id: SessionMessage.ID.create(), type: "assistant", agent: null, model: null,
+      content: [{ type: "text", id: "unknown-text", text: "Historical facts" }], time: { created: null } })
+    const known = SessionMessage.User.make({ id: SessionMessage.ID.create(), type: "user", text: "Epoch zero", time: { created: DateTime.makeUnsafe(0) } })
+    yield* database.db.transaction((tx) => SessionBackfill.write(tx, createdSession.id, [unknown, known]))
+    const rows = yield* database.db.select().from(SessionMessageTable).where(eq(SessionMessageTable.session_id, createdSession.id))
+      .orderBy(asc(SessionMessageTable.seq)).all()
+    expect(rows.map((row) => row.time_created)).toEqual([null, 0])
+    const context = yield* sessions.context(createdSession.id)
+    expect(context.map((message) => message.id)).toEqual([unknown.id, known.id])
+    expect(context[0]).toMatchObject({ type: "assistant", agent: null, model: null, time: { created: null } })
+    expect(context[0]).not.toHaveProperty("cost")
+    expect(context[0]).not.toHaveProperty("tokens")
+    expect(context[1].time.created).toEqual(DateTime.makeUnsafe(0))
+    expect(yield* database.db.transaction((tx) => SessionBackfill.write(tx, createdSession.id, [unknown, known]))).toBe(0)
+  }),
+)

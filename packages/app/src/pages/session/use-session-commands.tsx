@@ -17,7 +17,7 @@ import { downloadSessionExport, fetchSessionExport, sessionExportFilename } from
 import { findLast } from "@miao/core/util/array"
 import { createSessionTabs } from "@/pages/session/helpers"
 import { extractPromptFromParts } from "@/utils/prompt"
-import { Part } from "@miao/schema/view-models"
+import type { Part } from "@miao/schema/render-part"
 import type { SessionMessageUser } from "@miao/session-ui/content"
 import { useSessionLayout } from "@/pages/session/session-layout"
 import { useSessionArchive } from "@/pages/session/session-archive"

@@ -1,4 +1,5 @@
-import type { Message, Part } from "@miao/schema/view-models"
+import type { Message } from "@miao/schema/view-models"
+import type { Part } from "@miao/schema/render-part"
 
 export type SessionContextBreakdownKey = "system" | "user" | "assistant" | "tool" | "other"
 

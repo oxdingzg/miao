@@ -31,7 +31,7 @@ type CachePrice = {
 export function cacheEconomy(
   messages: ReadonlyArray<TranscriptAssistantMessage>,
   providers: ReadonlyArray<ProviderLike>,
-  multiplier: (message: TranscriptAssistantMessage) => number = () => 1,
+  multiplier: (message: TranscriptAssistantMessage) => number | undefined = () => 1,
 ): CacheEconomy {
   return messages.reduce(
     (total, message) => {
@@ -40,13 +40,15 @@ export function cacheEconomy(
       // The tiers below apply to the request's inclusive input, which is what
       // the runner bills against, so a session that outgrew the base rate is
       // measured at the rate it actually paid.
+      const model = message.model
       const price = priceFor(
-        providers.find((provider) => provider.id === message.model.providerID)?.models[message.model.id],
+        model ? providers.find((provider) => provider.id === model.providerID)?.models[model.id] : undefined,
         tokens.input + tokens.cache.read + tokens.cache.write,
       )
+      const factor = model ? multiplier(message) : undefined
       const read = tokens.cache.read
       const write = tokens.cache.write
-      if (!price || !priceable(providers, message.model.providerID, message.model.id))
+      if (factor === undefined || !model || !price || !priceable(providers, model.providerID, model.id))
         return {
           read: total.read + read,
           write: total.write + write,
@@ -59,7 +61,7 @@ export function cacheEconomy(
       return {
         read: total.read + read,
         write: total.write + write,
-        saved: total.saved + (net * multiplier(message)) / 1_000_000,
+        saved: total.saved + (net * factor) / 1_000_000,
         unpriced: total.unpriced,
       }
     },

@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test"
 import type { Message } from "@miao/schema/view-models"
-import { getSessionContext } from "./session-context-metrics"
+import { getSessionContext, getSessionContextFromRecords } from "./session-context-metrics"
 
 const assistant = (
   id: string,
@@ -96,4 +96,27 @@ describe("getSessionContext", () => {
 
     expect(ctx).toBeUndefined()
   })
+})
+
+test("native unknown model and clock do not borrow catalog metadata", () => {
+  const ctx = getSessionContextFromRecords(
+    [
+      {
+        id: "native",
+        type: "assistant",
+        agent: null,
+        model: null,
+        time: { created: null },
+        content: [],
+        tokens: { input: 10, output: 2, reasoning: 0, cache: { read: 0, write: 0 } },
+      },
+    ],
+    [{ id: "fixture", models: { model: { name: "Current model", limit: { context: 1000 } } } }],
+  )
+  expect(ctx?.message.time.created).toBeNull()
+  expect(ctx?.total).toBe(12)
+  expect(ctx?.providerLabel).toBe("—")
+  expect(ctx?.modelLabel).toBe("—")
+  expect(ctx?.model).toBeUndefined()
+  expect(ctx?.usage).toBeNull()
 })

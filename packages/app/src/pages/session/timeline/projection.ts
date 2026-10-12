@@ -1,4 +1,5 @@
-import type { Part, SessionStatus } from "@miao/schema/view-models"
+import type { SessionStatus } from "@miao/schema/view-models"
+import type { Part } from "@miao/schema/render-part"
 import type { SessionMessageAssistant, SessionMessageInfo, SessionMessageUser } from "@/utils/server"
 import { createMemo, type Accessor } from "solid-js"
 import { reuseTimelineRows } from "./row-reconciliation"

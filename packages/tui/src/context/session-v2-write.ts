@@ -1,3 +1,4 @@
+import { chronological } from "../util/message-order"
 import path from "node:path"
 import type { Message, Part, PromptInput, SessionMessage, TranscriptUserMessage } from "@miao/schema/view-models"
 import type { PromptInfo } from "../prompt/history"
@@ -32,9 +33,7 @@ export function promptInputFromParts(parts: ReadonlyArray<PromptPartLike>): Prom
 }
 
 /** Rebuild the editable prompt from a V2 user message (resend/fork flows). */
-export function promptInfoFromUserMessage(
-  message: Extract<SessionMessage, { type: "user" }>,
-): PromptInfo {
+export function promptInfoFromUserMessage(message: Extract<SessionMessage, { type: "user" }>): PromptInfo {
   const parts: PromptInfo["parts"] = [
     ...(message.text ? [{ type: "text" as const, text: message.text }] : []),
     ...(message.files ?? []).map((file) => ({
@@ -52,15 +51,33 @@ export function promptInfoFromUserMessage(
  * `Message` + `Part` shape the export surface still emits. The TUI no longer
  * consumes this — its store holds V2 messages directly.
  */
-export function sessionContextToMessages(input: {
+type ProjectionInput = {
   sessionID: string
   cwd: string
   root: string
   messages: SessionMessage[]
   /** Restrict projections to these ids while still accumulating the agent/model/user context they inherit. */
   only?: ReadonlySet<string>
-}): { info: Message; parts: Part[] }[] {
-  const result: { info: Message; parts: Part[] }[] = []
+}
+
+/** Rendering does not require usage to have arrived; missing metrics remain missing. */
+export type RenderMessage =
+  | Exclude<Message, { role: "assistant" }>
+  | (Omit<Extract<Message, { role: "assistant" }>, "cost" | "tokens"> &
+      Partial<Pick<Extract<Message, { role: "assistant" }>, "cost" | "tokens">>)
+
+export function sessionContextToMessages(input: ProjectionInput): { info: Message; parts: Part[] }[] {
+  return renderSessionContext(input).map((message) => {
+    const info = message.info
+    if (info.role !== "assistant") return { ...message, info }
+    if (info.cost === undefined || info.tokens === undefined)
+      throw new Error("Legacy export cannot represent unknown assistant metadata")
+    return { ...message, info: { ...info, cost: info.cost, tokens: info.tokens } }
+  })
+}
+
+export function renderSessionContext(input: ProjectionInput): { info: RenderMessage; parts: Part[] }[] {
+  const result: { info: RenderMessage; parts: Part[] }[] = []
   let lastAgent = ""
   let lastModel: { providerID: string; modelID: string; variant?: string } = { providerID: "", modelID: "" }
   let lastUserID = ""
@@ -76,6 +93,7 @@ export function sessionContextToMessages(input: {
     if (message.type === "user") {
       lastUserID = message.id
       if (input.only && !input.only.has(message.id)) continue
+      if (message.time.created === null) throw new Error("Legacy export cannot represent an unknown user creation time")
       result.push({
         info: {
           id: message.id,
@@ -91,6 +109,8 @@ export function sessionContextToMessages(input: {
     }
     if (message.type === "assistant") {
       if (input.only && !input.only.has(message.id)) continue
+      if (message.time.created === null || message.agent === null || message.model === null)
+        throw new Error("Legacy export cannot represent unknown assistant metadata")
       result.push({
         info: {
           id: message.id,
@@ -104,8 +124,8 @@ export function sessionContextToMessages(input: {
           mode: message.agent,
           agent: message.agent,
           path: { cwd: input.cwd, root: input.root },
-          cost: message.cost ?? 0,
-          tokens: message.tokens ?? { input: 0, output: 0, reasoning: 0, cache: { read: 0, write: 0 } },
+          cost: message.cost,
+          tokens: message.tokens,
           ...(message.ttft === undefined ? {} : { ttft: message.ttft }),
           finish: message.finish,
           error: message.error ? { name: "UnknownError", data: { message: message.error.message } } : undefined,
@@ -121,16 +141,19 @@ export function sessionContextToMessages(input: {
             }
           }
           if (content.type === "reasoning") {
+            // A part without its own clock reuses the message's recorded
+            // creation time; it never samples a live clock.
+            const start = content.time?.created ?? requireToolTime(message.time.created)
             return {
               id: content.id,
               sessionID: input.sessionID,
               messageID: message.id,
               type: "reasoning",
               text: content.text,
-              time: { start: content.time?.created ?? message.time.created, end: content.time?.completed },
+              time: { start, end: content.time?.completed },
             }
           }
-          return toolPart(input.sessionID, message.id, content)
+          return toolPart(input.sessionID, message.id, content, requireToolTime(message.time.created))
         }),
       })
     }
@@ -163,7 +186,7 @@ export function mergeTranscript(
     seen.add(message.id)
     older.push(message)
   }
-  return [...older, ...active].toSorted((a, b) => a.time.created - b.time.created || a.id.localeCompare(b.id))
+  return chronological([...older, ...active])
 }
 
 function userParts(sessionID: string, message: Extract<SessionMessage, { type: "user" }>): Part[] {
@@ -190,10 +213,13 @@ export function toolPart(
   sessionID: string,
   messageID: string,
   tool: Extract<SessionMessage, { type: "assistant" }>["content"][number] & { type: "tool" },
+  /** The owning message's recorded creation time, used when the part has no clock of its own. */
+  fallbackTime: number,
 ): Part {
-  const start = tool.time.ran ?? tool.time.created
-  const end = tool.time.completed ?? start
   const state = tool.state
+  // Parts without their own clocks reuse the message's recorded times.
+  const knownStart = tool.time.ran ?? tool.time.created ?? fallbackTime
+  const end = tool.time.completed ?? knownStart
   return {
     id: tool.id,
     sessionID,
@@ -205,7 +231,11 @@ export function toolPart(
       state.status === "pending"
         ? { status: "pending", input: {}, raw: String(state.input) }
         : state.status === "running"
-          ? { status: "running", input: toolInput(tool.name, state.input), time: { start } }
+          ? {
+              status: "running",
+              input: toolInput(tool.name, state.input),
+              time: { start: requireToolTime(knownStart) },
+            }
           : state.status === "completed"
             ? {
                 status: "completed",
@@ -213,14 +243,14 @@ export function toolPart(
                 output: textOf(state.content),
                 title: tool.name,
                 metadata: toolMetadata(tool.name, state.structured, textOf(state.content)),
-                time: { start, end },
+                time: { start: requireToolTime(knownStart), end: requireToolTime(end) },
               }
             : {
                 status: "error",
                 input: toolInput(tool.name, state.input),
                 error: state.error.message,
                 metadata: toolMetadata(tool.name, state.structured),
-                time: { start, end },
+                time: { start: requireToolTime(knownStart), end: requireToolTime(end) },
               },
   }
 }
@@ -287,4 +317,9 @@ function structuredMetadata(value: unknown): Record<string, unknown> {
 
 function textOf(content: Array<{ type: string; text?: string }>) {
   return content.flatMap((item) => (item.type === "text" ? [item.text ?? ""] : [])).join("\n")
+}
+
+function requireToolTime(value: number | null | undefined) {
+  if (value === null || value === undefined) throw new Error("Legacy export requires an authoritative tool time")
+  return value
 }

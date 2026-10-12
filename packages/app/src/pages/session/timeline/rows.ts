@@ -6,7 +6,8 @@ import type {
   SessionMessageSynthetic,
   SessionMessageUser,
 } from "@/utils/server"
-import { Part, SessionStatus } from "@miao/schema/view-models"
+import { SessionStatus } from "@miao/schema/view-models"
+import type { Part } from "@miao/schema/render-part"
 import { groupParts, renderable, type PartGroup } from "@miao/session-ui/message-part"
 import { TimelineRow, type SummaryDiff } from "./timeline-row"
 import { uniqueSummaryDiffs } from "./summary-diffs"
@@ -100,13 +101,16 @@ export namespace Timeline {
           id: user.id,
           type: "user",
           text: "",
-        agents: undefined,
+          agents: undefined,
           time: { created: user.time.created },
         } as unknown as TurnUser,
         assistants: [] as TurnAssistant[],
       }
       turnByUserID.set(user.id, turn)
-      const index = turns.findIndex((item) => user.time.created < item.user.time.created)
+      const index = turns.findIndex(
+        (item) =>
+          user.time.created !== null && item.user.time.created !== null && user.time.created < item.user.time.created,
+      )
       if (index < 0) turns.push(turn)
       else turns.splice(index, 0, turn)
     })

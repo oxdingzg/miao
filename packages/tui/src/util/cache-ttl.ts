@@ -34,8 +34,9 @@ export function cacheTtl(messages: ReadonlyArray<TranscriptAssistantMessage>, no
   const last = messages.findLast(
     (message) => message.tokens !== undefined && (message.tokens.cache.read > 0 || message.tokens.cache.write > 0),
   )
-  if (!last) return
+  if (!last?.model) return
   const startedAt = last.time.completed ?? last.time.created
+  if (startedAt === null) return
   const ttl = ttlFor(last.model.providerID)
   const elapsed = now - startedAt
   return {

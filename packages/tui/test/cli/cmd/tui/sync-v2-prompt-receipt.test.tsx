@@ -151,10 +151,12 @@ test("admission is a receipt, promotion reconciles one visible message, and a la
   const sent = mounted.sync.prompt.send(input)
   try {
     const [receipt] = Object.values(mounted.sync.prompt.data)
+    const timestamp = receipt.info.time.created
+    if (timestamp === null) throw new Error("A freshly submitted prompt must have its local creation clock")
     const properties = {
       sessionID,
       messageID: receipt.info.id,
-      timestamp: receipt.info.time.created,
+      timestamp,
       delivery: "steer" as const,
       prompt: { text: "还没完成吗？" },
     }

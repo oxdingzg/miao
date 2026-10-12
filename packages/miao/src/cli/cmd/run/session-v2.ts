@@ -23,7 +23,7 @@ import type {
 } from "@miao/schema/view-models"
 import { type Client } from "@/client"
 import { mutableResponse } from "@miao/tui/util/mutable-response"
-import { mergeTranscript, sessionContextToMessages, toolPart } from "@miao/tui/context/session-v2-write"
+import { mergeTranscript, renderSessionContext, toolPart } from "@miao/tui/context/session-v2-write"
 import type { SessionMessages } from "./session.shared"
 
 // The messages route caps one page; larger replays walk the timeline.
@@ -85,7 +85,7 @@ export function transcriptEntries(input: {
   messages: SessionMessage[]
 }): TranscriptEntry[] {
   const mapped = new Map(
-    sessionContextToMessages({
+    renderSessionContext({
       sessionID: input.sessionID,
       cwd: input.directory,
       root: input.directory,
@@ -108,13 +108,15 @@ export function transcriptEntries(input: {
     if (message.type === "compaction") return [{ type: "compaction", id: message.id, reason: message.reason }]
     const found = mapped.get(message.id)
     if (!found) return []
+    const created = message.time.created
+    if (created === null) throw new Error("Legacy output cannot represent an unknown message creation time")
     const completed = message.type === "assistant" ? message.time.completed : undefined
     return [
       {
         type: "message",
         message: {
           info: interruptedAsAborted(found.info),
-          parts: found.parts.map((part) => settleText(scopePart(part), message.time.created, completed)),
+          parts: found.parts.map((part) => settleText(scopePart(part), created, completed)),
         },
       },
     ]
@@ -150,7 +152,9 @@ export function transcriptMessages(input: {
 
 /** Builds the V1 tool part for one live or projected V2 tool call, with a message-scoped id. */
 export function liveToolPart(sessionID: string, messageID: string, tool: SessionMessageAssistantTool): ToolPart {
-  const part = toolPart(sessionID, messageID, trimTool(tool))
+  const created = tool.time.created
+  if (created === null) throw new Error("Live tool events carry their own creation time")
+  const part = toolPart(sessionID, messageID, trimTool(tool), created)
   if (part.type !== "tool") throw new Error("tool content mapped to a non-tool part")
   return { ...part, id: partKey(messageID, part.id) }
 }

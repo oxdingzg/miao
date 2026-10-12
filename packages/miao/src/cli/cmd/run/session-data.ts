@@ -1,3 +1,4 @@
+import type { RenderMessage } from "@miao/tui/context/session-v2-write"
 // Core reducer for direct interactive mode.
 //
 // Takes V2 session events (and projected V1-shaped parts on replay) and
@@ -54,7 +55,9 @@ type Tokens = {
 }
 
 // Projected message and part updates in the V1 shape (replay and the demo).
-export type PartEvent = Extract<Event, { type: "message.updated" | "message.part.updated" | "message.part.delta" }>
+export type PartEvent =
+  | Extract<Event, { type: "message.part.updated" | "message.part.delta" }>
+  | { type: "message.updated"; properties: { sessionID: string; info: RenderMessage }; id?: string }
 
 // Published by the V2 runtime (`specs/v2/session.md`, "Status, Retry, and
 // Failure Events") but not yet part of the generated SDK event union.

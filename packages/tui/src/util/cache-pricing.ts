@@ -49,12 +49,13 @@ export function isOffPeak(at: number, timezone = DEFAULT_TIMEZONE) {
 
 /** The factor to bill a turn at, given the static price table quotes peak rates. */
 export function priceMultiplier(
-  at: number,
+  at: number | null,
   providerID: string,
   modelID: string,
   options?: CachePricingOptions,
 ) {
   if (!isDeepSeek(providerID, modelID, options?.providers)) return 1
+  if (at === null) return undefined
   return isOffPeak(at, options?.timezone) ? OFF_PEAK_MULTIPLIER : 1
 }
 

@@ -2,7 +2,8 @@ import { Binary } from "@miao/core/util/binary"
 import type { FileDiffInfo, SessionApi, SessionMessageInfo } from "@/utils/server"
 import { retry } from "@miao/core/util/retry"
 import type { OpenCodeEventEncoded } from "@miao/protocol/groups/event"
-import type { Message, Part, Session, SessionStatus, Todo } from "@miao/schema/view-models"
+import type { Message, Session, SessionStatus, Todo } from "@miao/schema/view-models"
+import type { Part } from "@miao/schema/render-part"
 import type { QuestionRequest } from "@miao/schema/view-models"
 import type { PermissionV2Request } from "@miao/schema/view-models"
 import { batch } from "solid-js"
@@ -45,10 +46,8 @@ type MessagePage = {
   complete: boolean
 }
 
-
 // Most markers describe the current HTTP attempt; deltaParts persists non-durable stream state across retries.
 type MessageLoadState = { touchedSource: Set<string> }
-
 
 function mergePendingRecords(source: SessionMessageInfo[], items: OptimisticItem[]) {
   if (items.length === 0) return source
@@ -370,7 +369,14 @@ export function createServerSession(
       return (options?.retry ?? retry)(() => client.sessions.todo({ sessionID })).then((result) => {
         if (generations.get(sessionID) !== active) return
         if ((todoRevisions.get(sessionID) ?? 0) !== revision) return
-        setData("todo", sessionID, reconcile(result.map((todo) => ({ ...todo, depends_on: todo.depends_on?.slice() })), { key: "id" }))
+        setData(
+          "todo",
+          sessionID,
+          reconcile(
+            result.map((todo) => ({ ...todo, depends_on: todo.depends_on?.slice() })),
+            { key: "id" },
+          ),
+        )
       })
     })
   }
@@ -706,9 +712,15 @@ export function createServerSession(
         if (items) items.set(input.message.id, { message: input.message })
         else optimistic.set(input.sessionID, new Map([[input.message.id, { message: input.message }]]))
         setData("message", input.sessionID, (messages = []) =>
-          [...messages.filter((message) => message.id !== input.message.id), input.message].sort(
-            (a, b) => a.time.created - b.time.created || (a.id < b.id ? -1 : 1),
-          ),
+          (() => {
+            const next = [...messages.filter((message) => message.id !== input.message.id), input.message]
+            if (next.some((message) => message.time.created === null)) return next
+            return next.sort((a, b) =>
+              a.time.created === null || b.time.created === null
+                ? 0
+                : a.time.created - b.time.created || (a.id < b.id ? -1 : 1),
+            )
+          })(),
         )
       },
       remove(input: { sessionID: string; messageID: string }) {

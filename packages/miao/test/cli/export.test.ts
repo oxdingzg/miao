@@ -346,6 +346,8 @@ describe("session archive", () => {
           agent: "build",
           model,
           content: [{ type: "text", id: "txt_1", text: "done" }],
+          cost: 0.01,
+          tokens: { input: 10, output: 5, reasoning: 0, cache: { read: 0, write: 0 } },
           time: { created: at(3), completed: at(4) },
         }),
         SessionMessage.Compaction.make({

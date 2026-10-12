@@ -1,17 +1,8 @@
 // @ts-nocheck
 import { createSignal, createMemo, createEffect, on, For, Show, batch } from "solid-js"
 import { createStore, produce } from "solid-js/store"
-import type {
-  Message,
-  UserMessage,
-  AssistantMessage,
-  Part,
-  TextPart,
-  ReasoningPart,
-  ToolPart,
-  FilePart,
-  AgentPart,
-} from "@miao/schema/view-models"
+import type { Message, UserMessage, AssistantMessage, TextPart, FilePart, AgentPart } from "@miao/schema/view-models"
+import type { Part, ReasoningPart, ToolPart } from "@miao/schema/render-part"
 import { DataProvider } from "../context/data"
 import { FileComponentProvider } from "@miao/ui/context/file"
 import { SessionTurn } from "./session-turn"

@@ -11,7 +11,7 @@ import { StickyAccordionHeader } from "@miao/ui/sticky-accordion-header"
 import { File } from "@miao/session-ui/file"
 import { Markdown } from "@miao/session-ui/markdown"
 import { ScrollView } from "@miao/ui/scroll-view"
-import type { Part } from "@miao/schema/view-models"
+import type { Part } from "@miao/schema/render-part"
 import type { SessionMessageInfo } from "@/utils/server"
 import { showToast } from "@/utils/toast"
 import { downloadSessionExport, fetchSessionExport, sessionExportFilename } from "@/utils/session-export"
@@ -82,7 +82,9 @@ function RawMessage(props: {
               {props.message.type} <span class="text-text-base">• {props.message.id}</span>
             </div>
             <div class="flex items-center gap-3">
-              <div class="shrink-0 text-12-regular text-text-weak">{props.time(props.message.time.created)}</div>
+              <div class="shrink-0 text-12-regular text-text-weak">
+                {props.time(props.message.time.created ?? undefined)}
+              </div>
               <Icon name="chevron-grabber-vertical" size="small" class="shrink-0 text-text-weak" />
             </div>
           </div>
@@ -119,11 +121,9 @@ export function SessionContextTab() {
     { equals: same },
   )
 
-  const userMessages = createMemo(
-    () => messages().filter((m) => m.type === "user"),
-    emptyUserMessages,
-    { equals: same },
-  )
+  const userMessages = createMemo(() => messages().filter((m) => m.type === "user"), emptyUserMessages, {
+    equals: same,
+  })
 
   const visibleUserMessages = createMemo(
     () => {
@@ -227,7 +227,7 @@ export function SessionContextTab() {
     { label: "context.stats.assistantMessages", value: () => counts().assistant.toLocaleString(language.intl()) },
     { label: "context.stats.totalCost", value: cost },
     { label: "context.stats.sessionCreated", value: () => formatter().time(info()?.time.created) },
-    { label: "context.stats.lastActivity", value: () => formatter().time(ctx()?.message.time.created) },
+    { label: "context.stats.lastActivity", value: () => formatter().time(ctx()?.message.time.created ?? undefined) },
   ] satisfies { label: string; value: () => JSX.Element }[]
 
   const exportSession = async () => {
