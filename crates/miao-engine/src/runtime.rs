@@ -671,7 +671,7 @@ async fn execute(
                                 "attempt":delta["attempt"],"reason":delta["reason"],"status":delta["status"],
                             })).await?;
                         } else {
-                            produced |= crate::first_event::semantic_event(&delta);
+                            produced |= crate::first_event::semantic_event(delta.get("raw").unwrap_or(&delta));
                             let _=inner.progress.send(json!({"session_id":session,"run_id":run,"step":step,"kind":"provider.delta","data":delta}));
                         }
                     },
@@ -682,7 +682,8 @@ async fn execute(
             // had not yet forwarded.
             let observed = produced
                 || std::iter::from_fn(|| receive.try_recv().ok()).any(|event| {
-                    event["kind"] != "provider.retry" && crate::first_event::semantic_event(&event)
+                    event["kind"] != "provider.retry"
+                        && crate::first_event::semantic_event(event.get("raw").unwrap_or(&event))
                 });
             match outcome {
                 Err(ProviderError::Transport) | Err(ProviderError::ResponseTransport)
