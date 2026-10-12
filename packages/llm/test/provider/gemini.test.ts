@@ -1,11 +1,12 @@
 import { describe, expect } from "bun:test"
 import { Effect } from "effect"
+import { HttpClientRequest } from "effect/unstable/http"
 import { LLM, LLMError, Message, ToolCallPart, Usage } from "../../src"
 import { Auth, LLMClient } from "../../src/route"
 import * as Gemini from "../../src/protocols/gemini"
 import { ProviderShared } from "../../src/protocols/shared"
 import { it } from "../lib/effect"
-import { fixedResponse } from "../lib/http"
+import { dynamicResponse, fixedResponse } from "../lib/http"
 import { sseEvents, sseRaw } from "../lib/sse"
 
 const model = Gemini.route
@@ -579,6 +580,33 @@ describe("Gemini route", () => {
       expect(error.message).toContain(
         "Gemini assistant messages only support text, reasoning, and tool-call content for now",
       )
+    }),
+  )
+})
+
+describe("Gemini request counting", () => {
+  it.effect("counts a request through :countTokens with the model in the path", () =>
+    Effect.gen(function* () {
+      const counted = yield* LLMClient.count(request).pipe(
+        Effect.provide(
+          dynamicResponse((input) =>
+            Effect.gen(function* () {
+              const web = yield* HttpClientRequest.toWeb(input.request).pipe(Effect.orDie)
+              expect(web.url).toBe("https://generativelanguage.test/v1beta/models/gemini-2.5-flash:countTokens")
+              expect(web.headers.get("x-goog-api-key")).toBe("test")
+              // `:countTokens` takes the request minus `generationConfig`.
+              const body = JSON.parse(input.text) as Record<string, unknown>
+              expect(body).not.toHaveProperty("generationConfig")
+              expect(body).toHaveProperty("contents")
+              return input.respond(JSON.stringify({ totalTokens: 987 }), {
+                headers: { "content-type": "application/json" },
+              })
+            }),
+          ),
+        ),
+      )
+
+      expect(counted).toBe(987)
     }),
   )
 })

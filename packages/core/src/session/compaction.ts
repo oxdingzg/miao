@@ -18,6 +18,10 @@ const SUMMARY_OUTPUT_TOKENS = 4_096
 // rejected the catalog's window estimate. Summarize the whole head in bounded
 // stages; publish a checkpoint only after every stage succeeds.
 const SUMMARY_INPUT_TOKENS = 64_000
+// How close to the limit a decision has to be before the provider is asked to count
+// the request. Below it the estimated delta cannot flip the outcome, and asking would
+// add a request to a check that runs on every drain.
+const COUNT_MARGIN = 0.05
 const MAX_SUMMARY_STAGES = 64
 // Bound tokenizer work as well as provider input. Tokenizing a giant unbroken
 // output in one pass can be pathological; independent short segments provide a
@@ -100,6 +104,11 @@ type Dependencies = {
   readonly events: EventV2.Interface
   readonly llm: {
     readonly stream: (request: LLMRequest) => Stream.Stream<LLMEvent, LLMError>
+    /**
+     * Prompt tokens the provider counts for a request that has not been sent, when
+     * its route can count at all. Absent means the caller falls back to its estimate.
+     */
+    readonly count?: (request: LLMRequest) => Effect.Effect<number | undefined>
   }
   readonly config: readonly Config.Entry[]
 }
@@ -315,7 +324,7 @@ export const make = (dependencies: Dependencies) => {
    * drifted by about 20% on a real Session (921k estimated against the 763k the
    * provider reported), which compacted it that much too early.
    */
-  const promptTokens = (input: Input) => {
+  const anchoredTokens = (input: Input) => {
     const measured = measureValue({
       system: input.request.system,
       messages: input.request.messages,
@@ -331,6 +340,27 @@ export const make = (dependencies: Dependencies) => {
     if (appended.length === 0) return Math.max(observed, measured)
     return observed + measureValue(appended)
   }
+
+  /**
+   * The provider's own count of this request, which is the only exact number for a
+   * request that has not been sent yet. It costs a request of its own, so it is only
+   * asked when it could change the decision: close enough to the limit that the
+   * estimated delta matters. Providers without a count endpoint are absent.
+   */
+  const exactTokens = Effect.fnUntraced(function* (input: Input, anchored: number, limit: number, context: number) {
+    if (dependencies.llm.count === undefined) return anchored
+    if (anchored <= limit - context * COUNT_MARGIN) return anchored
+    const counted = yield* dependencies.llm.count(input.request).pipe(Effect.orElseSucceed(() => undefined))
+    if (counted === undefined || counted <= 0) return anchored
+    yield* Effect.logInfo("session.compaction.count", {
+      sessionID: input.sessionID,
+      counted,
+      anchored,
+      limit,
+    })
+    return counted
+  })
+
   // Consecutive proactive-compaction failures per Session. A provider that keeps
   // refusing the summary must not cost a summary attempt on every drain; the
   // breaker trips until a compaction succeeds or a manual one resets it.
@@ -594,7 +624,7 @@ export const make = (dependencies: Dependencies) => {
     // fires at the configured ratio instead of at whatever the headroom leaves.
     const headroom = PROTECT_TOKENS + SUMMARY_OUTPUT_TOKENS + reserve
     const limit = Math.max(context - headroom, context * config.threshold - reserve)
-    const size = promptTokens(input)
+    const size = yield* exactTokens(input, anchoredTokens(input), limit, context)
     if (size <= limit) return false
     yield* Effect.logInfo("session.compaction.trigger", {
       sessionID: input.sessionID,

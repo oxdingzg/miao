@@ -490,6 +490,23 @@ export const protocol = Protocol.make({
     from: fromRequest,
   },
   media: MEDIA_MIMES,
+  // Counting shares the streaming request lowering minus `generationConfig`, which
+  // `:countTokens` does not accept; the model travels in the path.
+  count: {
+    path: (request: LLMRequest) => `/models/${request.model.id}:countTokens`,
+    body: (request: LLMRequest) =>
+      fromRequest(request).pipe(
+        Effect.map(({ contents, systemInstruction, tools }) => ({
+          contents,
+          ...(systemInstruction === undefined ? {} : { systemInstruction }),
+          ...(tools === undefined ? {} : { tools }),
+        })),
+      ),
+    tokens: (response: unknown) =>
+      ProviderShared.isRecord(response) && typeof response.totalTokens === "number"
+        ? response.totalTokens
+        : undefined,
+  },
   stream: {
     event: Protocol.jsonEvent(GeminiEvent),
     initial: () => ({ hasToolCalls: false, nextToolCallId: 0, lifecycle: Lifecycle.initial() }),

@@ -1,5 +1,6 @@
 import { Cause, Context, Effect, Layer, Ref, Schema, Stream } from "effect"
 import * as Option from "effect/Option"
+import { Headers, HttpClientRequest } from "effect/unstable/http"
 import { Auth, type Auth as AuthDef } from "./auth"
 import { Endpoint, type EndpointPatch } from "./endpoint"
 import { RequestExecutor } from "./executor"
@@ -54,6 +55,13 @@ export interface Route<Body, Prepared = unknown> {
     request: LLMRequest,
     runtime: TransportRuntime,
   ) => Stream.Stream<LLMEvent, LLMError>
+  /**
+   * Prepared request to the provider's count endpoint, when its protocol declares
+   * one. `undefined` means this route cannot count a request before sending it.
+   */
+  readonly countRequest?: (request: LLMRequest) => Effect.Effect<HttpClientRequest.HttpClientRequest, LLMError>
+  /** Prompt tokens in a count response. Set together with `countRequest`. */
+  readonly countTokens?: (response: unknown) => number | undefined
 }
 
 // Route registries intentionally erase body generics after construction.
@@ -156,10 +164,21 @@ export interface Interface {
   readonly prepare: <Body = unknown>(request: LLMRequest) => Effect.Effect<PreparedRequestOf<Body>, LLMError>
   readonly stream: StreamMethod
   readonly generate: GenerateMethod
+  /**
+   * Prompt tokens the provider counts for a request that has not been sent, or
+   * `undefined` when its route cannot count. Never fails: a provider that refuses
+   * a count only means the caller falls back to its own estimate. Optional so a
+   * service that does not count at all stays valid.
+   */
+  readonly count?: CountMethod
 }
 
 export interface StreamMethod {
   (request: LLMRequest): Stream.Stream<LLMEvent, LLMError>
+}
+
+export interface CountMethod {
+  (request: LLMRequest): Effect.Effect<number | undefined>
 }
 
 export interface GenerateMethod {
@@ -272,6 +291,7 @@ function makeFromTransport<Body, Prepared, Frame, Event, State>(
   }
 
   const build = (routeInput: BuiltRouteInput): Route<Body, Prepared> => {
+    const count = protocol.count
     const route: Route<Body, Prepared> = {
       id: routeInput.id,
       provider: routeInput.provider === undefined ? undefined : ProviderID.make(routeInput.provider),
@@ -341,6 +361,37 @@ function makeFromTransport<Body, Prepared, Frame, Event, State>(
           }),
         ).pipe(Stream.catchCause((cause) => Stream.fail(streamError(route, `Failed to read ${route} stream`, cause))))
       },
+      ...(count === undefined
+        ? {}
+        : {
+            // The count request reaches the same host with the same credentials and
+            // provider headers as the streaming call; only the path and body differ.
+            countRequest: (request: LLMRequest) =>
+              Effect.gen(function* () {
+                const body = yield* count.body(request)
+                const url = Endpoint.render(
+                  {
+                    baseURL: routeInput.endpoint.baseURL,
+                    path: count.path(request),
+                    query: routeInput.endpoint.query,
+                  } as Endpoint<unknown>,
+                  { request, body },
+                ).toString()
+                const bodyText = ProviderShared.encodeJson(body)
+                const headers = yield* Auth.toEffect(routeInput.auth ?? Auth.none)({
+                  request,
+                  method: "POST",
+                  url,
+                  body: bodyText,
+                  headers: Headers.fromInput({
+                    ...routeInput.headers?.({ request }),
+                    ...request.http?.headers,
+                  }),
+                })
+                return ProviderShared.jsonPost({ url, body: bodyText, headers })
+              }),
+            countTokens: count.tokens,
+          }),
     } satisfies Route<Body, Prepared>
     return route
   }
@@ -466,8 +517,28 @@ const generateWith = (stream: Interface["stream"]) =>
     )
   })
 
+const countWith = (executor: RequestExecutor.Interface) =>
+  Effect.fn("LLM.count")(function* (request: LLMRequest) {
+    const route = request.model.route
+    if (route.countRequest === undefined || route.countTokens === undefined) return undefined
+    const prepared = yield* route.countRequest(request).pipe(Effect.option)
+    if (Option.isNone(prepared)) return undefined
+    const response = yield* executor.execute(prepared.value).pipe(Effect.option)
+    // A count that fails is not a failed turn: the caller falls back to its estimate.
+    if (Option.isNone(response) || response.value.status < 200 || response.value.status >= 300) return undefined
+    const json = yield* response.value.json.pipe(Effect.option)
+    return Option.isNone(json) ? undefined : route.countTokens(json.value)
+  })
+
 export const prepare = <Body = unknown>(request: LLMRequest) =>
   prepareWith(request) as Effect.Effect<PreparedRequestOf<Body>, LLMError>
+
+export function count(request: LLMRequest): Effect.Effect<number | undefined> {
+  return Effect.gen(function* () {
+    const service = yield* Service
+    return service.count === undefined ? undefined : yield* service.count(request)
+  }) as Effect.Effect<number | undefined>
+}
 
 export function stream(request: LLMRequest): Stream.Stream<LLMEvent, LLMError> {
   return Stream.unwrap(
@@ -499,7 +570,12 @@ export const layer: Layer.Layer<Service, never, RequestExecutor.Service> = Layer
       webSocketPool: Option.getOrUndefined(yield* Effect.serviceOption(WebSocketPool.Service)),
       archive: Option.getOrUndefined(yield* Effect.serviceOption(ProviderWireArchive.Service)),
     })
-    return Service.of({ prepare: prepareWith as Interface["prepare"], stream, generate: generateWith(stream) })
+    return Service.of({
+      prepare: prepareWith as Interface["prepare"],
+      stream,
+      generate: generateWith(stream),
+      count: countWith(yield* RequestExecutor.Service),
+    })
   }),
 )
 
@@ -511,4 +587,5 @@ export const LLMClient = {
   prepare,
   stream,
   generate,
+  count,
 } as const

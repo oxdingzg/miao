@@ -466,6 +466,39 @@ test("compaction falls back to the staged strategy when the prefix cannot hold t
   expect(prompt.text).toStartWith("Here is the conversation so far:")
 })
 
+test("compaction asks the provider to count only when the decision is close", async () => {
+  const main = model("main", 1_000_000)
+  const counts: LLMRequest[] = []
+  const counted = { value: 0 }
+  const compaction = SessionCompaction.make({
+    events: { publish: () => Effect.succeed(undefined) } as never,
+    llm: {
+      stream: () => summary("summary") as never,
+      count: (request: LLMRequest) => {
+        counts.push(request)
+        return Effect.succeed(counted.value)
+      },
+    },
+    config: [] as never,
+  })
+
+  // Far below the limit: the estimated delta cannot flip the outcome, so no count
+  // request is spent.
+  expect(
+    await Effect.runPromise(compaction.compactIfNeeded(observedInput("ses_count_far", main, 600_000))),
+  ).toBe(false)
+  expect(counts).toHaveLength(0)
+
+  // Close to the limit, the provider's own count decides the outcome either way.
+  const near = observedInput("ses_count_near", main, 920_000)
+  counted.value = 900_000
+  expect(await Effect.runPromise(compaction.compactIfNeeded(near))).toBe(false)
+  expect(counts).toHaveLength(1)
+  counted.value = 950_000
+  expect(await Effect.runPromise(compaction.compactIfNeeded(near))).toBe(true)
+  expect(counts).toHaveLength(2)
+})
+
 test("an attempt that never reached the model does not count against the breaker", async () => {
   const main = model("main", 100_000)
   const requests: LLMRequest[] = []

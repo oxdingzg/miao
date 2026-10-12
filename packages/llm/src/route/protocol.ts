@@ -47,6 +47,33 @@ export interface Protocol<Body, Frame, Event, State> {
    * instead of failing the whole request. Absent means undeclared, not "none".
    */
   readonly media?: ReadonlySet<string>
+  /**
+   * Counting a request that has not been sent yet, when the provider can do that.
+   *
+   * The streaming usage report describes the request it answered, so a caller that
+   * wants the exact size of the *next* request has nowhere to read it from. The
+   * providers that offer a count endpoint can answer it directly. Absent means the
+   * provider cannot count, which is not the same as counting zero.
+   */
+  readonly count?: ProtocolCount
+}
+
+/**
+ * A provider that can count a request before sending it.
+ *
+ * The body is not the streaming body: count endpoints reject `max_tokens` and
+ * `stream`, and some carry the model in the path instead. It is also not
+ * schema-validated here, because a count request is an optimization — a rejected
+ * one falls back to the caller's estimate, and validating it strictly would let a
+ * body this package builds reject the whole turn.
+ */
+export interface ProtocolCount {
+  /** Path of the count endpoint, relative to the route's base URL. */
+  readonly path: (request: LLMRequest) => string
+  /** Provider-native body for the count request. */
+  readonly body: (request: LLMRequest) => Effect.Effect<unknown, LLMError>
+  /** Prompt tokens the provider counted, when the response carries them. */
+  readonly tokens: (response: unknown) => number | undefined
 }
 
 export interface ProtocolBody<Body> {

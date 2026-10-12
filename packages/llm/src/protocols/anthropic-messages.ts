@@ -829,6 +829,24 @@ export const protocol = Protocol.make({
     from: fromRequest,
   },
   media: IMAGE_MIMES,
+  // Counting shares the streaming request lowering, minus the fields that only make
+  // sense for a completion: `/messages/count_tokens` rejects `max_tokens` and `stream`.
+  count: {
+    path: () => `${PATH}/count_tokens`,
+    body: (request: LLMRequest) =>
+      fromRequest(request).pipe(
+        Effect.map(({ model, system, messages, tools }) => ({
+          model,
+          ...(system === undefined ? {} : { system }),
+          messages,
+          ...(tools === undefined ? {} : { tools }),
+        })),
+      ),
+    tokens: (response: unknown) =>
+      ProviderShared.isRecord(response) && typeof response.input_tokens === "number"
+        ? response.input_tokens
+        : undefined,
+  },
   stream: {
     event: Protocol.jsonEvent(AnthropicEvent),
     initial: () => ({ tools: ToolStream.empty<number>(), lifecycle: Lifecycle.initial() }),
