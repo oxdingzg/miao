@@ -139,3 +139,26 @@ test("a Rust-owned Session whose Location vanished reports missing instead of re
     }),
   )
 })
+
+test("a freshly bound Rust Session resolves before its native storage exists", async () => {
+  await using tmp = await tmpdir()
+  await run(
+    ":memory:",
+    Effect.gen(function* () {
+      const database = yield* Database.Service
+      const events = yield* EventV2.Service
+      const fs = yield* FSUtil.Service
+      const sessionID = SessionV2.ID.create()
+      const placement = native(tmp.path)
+      // The native Store creates its database lazily, so routing must not require
+      // the storage file to exist yet: only the Location must be present.
+      expect(yield* fs.existsSafe(placement.storage)).toBe(false)
+      yield* SessionEnginePlacement.claim(database.db, { sessionID, placement })
+      expect(yield* SessionRouting.resolve({ db: database.db, events, fs, sessionID })).toEqual({
+        type: "placed",
+        engine: "rust",
+        location: placement.location,
+      })
+    }),
+  )
+})
