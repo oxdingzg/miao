@@ -403,6 +403,17 @@ impl Provider for Anthropic {
     }
 }
 
+/// One frame can normalize into several fragments; a receiver that went away
+/// stops the stream exactly like a single failed send would.
+async fn send_all(progress: &mpsc::Sender<Value>, notices: &[Value]) -> Result<(), ()> {
+    for notice in notices {
+        if progress.send(notice.clone()).await.is_err() {
+            return Err(());
+        }
+    }
+    Ok(())
+}
+
 pub(crate) async fn request_with_retry(
     protocol: &str,
     client: &reqwest::Client,
@@ -829,11 +840,19 @@ async fn read_stream_with_budget<P: Parser>(
             // Publish a normalized delta alongside the raw frame. The engine's
             // own first-event and retry logic reads `raw` through `semantic_event`,
             // so the provider wire format stays untouched there.
-            let notice = match &frame {
-                Frame::Json(event) => crate::delta::normalize(event)
-                    .map(|delta| json!({"kind":"delta","delta":delta,"raw":event}))
-                    .unwrap_or_else(|| event.clone()),
-                Frame::Done => json!({"kind":"stream.done"}),
+            let notices = match &frame {
+                Frame::Json(event) => {
+                    let normalized = crate::delta::normalize(event);
+                    if normalized.is_empty() {
+                        vec![event.clone()]
+                    } else {
+                        normalized
+                            .into_iter()
+                            .map(|delta| json!({"kind":"delta","delta":delta,"raw":event}))
+                            .collect()
+                    }
+                }
+                Frame::Done => vec![json!({"kind":"stream.done"})],
             };
             let deadline = input_budget
                 .deadline()
@@ -841,7 +860,7 @@ async fn read_stream_with_budget<P: Parser>(
             tokio::select! {
                 _=cancel.cancelled()=>return Err(ProviderError::Interrupted),
                 _=tokio::time::sleep_until(deadline), if input_budget.deadline().is_some()=>return Err(ProviderError::Stream("tool input time budget exceeded".into())),
-                result=progress.send(notice)=>if result.is_err(){return Err(ProviderError::Interrupted);},
+                result=send_all(&progress, &notices)=>if result.is_err(){return Err(ProviderError::Interrupted);},
             }
             if parser.terminal() {
                 return parser.finish();
