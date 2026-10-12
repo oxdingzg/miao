@@ -605,12 +605,15 @@ impl Store {
             append(&tx,&target,"session.forked",json!({"parent_session_id":parent,"message_seq":seq}))?;
             let mut message_map=std::collections::HashMap::new();
             for message in messages {
-                let copied=project_message_at(&tx,&target,message["role"].as_str().ok_or_else(||Error::Invalid("projected role".into()))?,message["content"].clone(),message["checkpoint"].as_str(),message["recorded_at_ms"].as_u64())?;
+                let copied=project_message_at(&tx,&target,message["role"].as_str().ok_or_else(||Error::Invalid("projected role".into()))?,message["content"].clone(),message["checkpoint"].as_str(),None,message["recorded_at_ms"].as_u64())?;
                 if let Some(source)=message["seq"].as_u64(){
                     message_map.insert(source,copied.seq);
                     if let Some((mut profile, time)) = assistant_profile(&tx, &parent, source)? {
                         profile["origin"] = json!({"session_id":parent,"assistant_seq":source});
                         profile["assistant_seq"] = json!(copied.seq);
+                        if let Some(profile) = profile.as_object_mut() {
+                            profile.remove("anchor_seq");
+                        }
                         append_at(&tx,&target,"assistant.identity",profile,time)?;
                     }
                 }
@@ -868,7 +871,7 @@ impl Store {
                 tx.execute("INSERT INTO engine_tool VALUES(?1,?2,?3,?4,'planned')",params![key,run,name,serde_json::to_string(&json!({"provider_id":id,"input":block["input"]}))?])?;
                 append(&tx,&session,"tool.planned",json!({"run_id":run,"call_id":key,"provider_id":id,"name":name}))?;
             }
-            let event=project_message(&tx,&session,"assistant",content,None)?;
+            let event=project_message(&tx,&session,"assistant",content,None,anchor)?;
             if let Some(mut profile) = profile {
                 profile["assistant_seq"] = json!(event.seq);
                 // The step-start anchor lets a client name the streamed part
@@ -912,7 +915,7 @@ impl Store {
             append(&tx,&session,"tool.completed",json!({"call_id":key,"result":result,"result_json":serde_json::to_string(&result)?,"is_error":is_error}))?;
             let mut content = vec![json!({"type":"tool_result","tool_use_id":id,"content":serde_json::to_string(&result)?,"is_error":is_error})];
             if let Some(image) = image { content.push(image); }
-            let event=project_message(&tx,&session,"user",json!(content),None)?;
+            let event=project_message(&tx,&session,"user",json!(content),None,None)?;
             tx.commit()?;
             Ok(event)
         }).await
@@ -1268,8 +1271,17 @@ fn project_message(
     role: &str,
     content: Value,
     checkpoint: Option<&str>,
+    anchor: Option<u64>,
 ) -> Result<Event, Error> {
-    project_message_at(tx, session, role, content, checkpoint, Some(now_ms()))
+    project_message_at(
+        tx,
+        session,
+        role,
+        content,
+        checkpoint,
+        anchor,
+        Some(now_ms()),
+    )
 }
 
 fn project_message_at(
@@ -1278,15 +1290,19 @@ fn project_message_at(
     role: &str,
     content: Value,
     checkpoint: Option<&str>,
+    anchor: Option<u64>,
     recorded_at_ms: Option<u64>,
 ) -> Result<Event, Error> {
-    let event = append_at(
-        tx,
-        session,
-        "message.committed",
-        json!({"role":role,"content":content,"checkpoint":checkpoint}),
-        recorded_at_ms,
-    )?;
+    // The anchor binds a committed assistant message to the step that streamed
+    // it, so a client can move its live part onto the committed id. Other
+    // roles have no anchor and omit the field.
+    let payload = match anchor {
+        Some(anchor) => {
+            json!({"role":role,"content":content,"checkpoint":checkpoint,"anchor_seq":anchor})
+        }
+        None => json!({"role":role,"content":content,"checkpoint":checkpoint}),
+    };
+    let event = append_at(tx, session, "message.committed", payload, recorded_at_ms)?;
     tx.execute(
         "INSERT INTO engine_message(session_id,seq,role,content,checkpoint,recorded_at_ms) VALUES(?1,?2,?3,?4,?5,?6)",
         params![
@@ -1323,7 +1339,7 @@ fn reconcile_tools(tx: &Transaction<'_>, session: &str, run: &str) -> Result<(),
         }
     }
     if !results.is_empty() {
-        project_message(tx, session, "user", Value::Array(results), None)?;
+        project_message(tx, session, "user", Value::Array(results), None, None)?;
     }
     tx.execute(
         "UPDATE engine_tool SET state='not_executed' WHERE run_id=?1 AND state='planned'",

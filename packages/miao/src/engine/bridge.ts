@@ -7,7 +7,7 @@ import { Question } from "@miao/schema/question"
 import { Delivery } from "@miao/schema/session-delivery"
 import { StatusInfo } from "@miao/schema/session-event"
 import { adoptSession, messageID } from "./identity"
-import type { EngineEvent } from "./client"
+import type { EngineEvent, EngineProgress } from "./client"
 
 /**
  * The product `session.next.status` payload for one status transition. Status is
@@ -153,7 +153,9 @@ export function translateAssistantIdentity(event: EngineEvent): SessionAssistant
   return {
     sessionID: adoptSession(event.session_id),
     timestamp: eventTimestamp(event),
-    assistantMessageID: messageID(event.session_id, seq),
+    // The anchor minted at step start names the streamed part and the commit
+    // identically, so live deltas and the committed message share one id.
+    assistantMessageID: messageID(event.session_id, anchorSeq(event) ?? seq),
     assistantSeq: seq,
     provider,
     model: null,
@@ -278,6 +280,44 @@ function readNonEmptyString(data: object, key: string): string | undefined {
   return value
 }
 
+/** The product `session.next.text.delta` payload for one live text fragment. */
+export type SessionTextDelta = {
+  sessionID: SessionID
+  timestamp: DateTime.Utc
+  assistantMessageID: SessionMessage.ID
+  textID: string
+  delta: string
+}
+
+/**
+ * Maps one normalized provider text fragment onto the product text delta. The
+ * part id is minted from the step's durable start anchor, so the part a client
+ * renders while streaming is the part the commit finalizes. Undefined when the
+ * frame is not a text fragment or the anchor has not been observed yet.
+ */
+export function translateTextDelta(
+  progress: EngineProgress,
+  anchor: { seq: number; recordedAtMs: number | null },
+): SessionTextDelta | undefined {
+  if (anchor.recordedAtMs === null) return undefined
+  if (typeof progress.session_id !== "string") return undefined
+  const sessionID = adoptSession(progress.session_id)
+  const frame = progress.data
+  if (typeof frame !== "object" || frame === null || !("delta" in frame)) return undefined
+  const data = frame.delta
+  if (typeof data !== "object" || data === null) return undefined
+  if (!("kind" in data) || data.kind !== "text.delta") return undefined
+  if (!("text" in data) || typeof data.text !== "string") return undefined
+  const text = data.text
+  return {
+    sessionID,
+    timestamp: DateTime.makeUnsafe(anchor.recordedAtMs),
+    assistantMessageID: messageID(sessionID, anchor.seq),
+    textID: `text_${anchor.seq}_0`,
+    delta: text,
+  }
+}
+
 /** The product `session.next.retried` payload for one bounded retry of a failed attempt. */
 export type SessionRetry = {
   sessionID: SessionID
@@ -364,7 +404,8 @@ export function translateMessage(event: EngineEvent): SessionTextEnded[] {
   if (!Array.isArray(content)) return []
   const blocks: unknown[] = content
   const sessionID = adoptSession(event.session_id)
-  const assistantMessageID = messageID(event.session_id, event.seq)
+  const anchor = anchorSeq(event)
+  const assistantMessageID = messageID(event.session_id, anchor ?? event.seq)
   return blocks.flatMap((block, index) => {
     if (typeof block !== "object" || block === null) return []
     if (!("type" in block) || block.type !== "text") return []
@@ -374,7 +415,7 @@ export function translateMessage(event: EngineEvent): SessionTextEnded[] {
         sessionID,
         timestamp: eventTimestamp(event),
         assistantMessageID,
-        textID: `text_${event.seq}_${index}`,
+        textID: `text_${anchor ?? event.seq}_${index}`,
         text: block.text,
       },
     ]
@@ -743,4 +784,17 @@ function nativeProvider(value: unknown) {
   )
     return undefined
   return { protocol: value.protocol, model: value.model }
+}
+
+/**
+ * The step-start anchor recorded on the event, when the engine minted one. It
+ * names the assistant part before and after the commit identically, so a
+ * client can stream into the part it will finally render.
+ */
+function anchorSeq(event: EngineEvent): number | undefined {
+  const data = event.data
+  if (typeof data !== "object" || data === null || !("anchor_seq" in data)) return undefined
+  const value: unknown = Reflect.get(data, "anchor_seq")
+  if (typeof value !== "number" || !Number.isSafeInteger(value) || value <= 0) return undefined
+  return value
 }
