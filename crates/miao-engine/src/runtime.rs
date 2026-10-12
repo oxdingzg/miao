@@ -482,9 +482,20 @@ async fn drain(
     } else {
         crate::events::Lifecycle::Stop
     };
+    // `reason` stays the coarse lifecycle category (completed/failed/interrupted).
+    // Carry the underlying error text separately so a client can show why the
+    // drain failed instead of the bare category.
+    let message = match &result {
+        Err(error) => Some(error.to_string()),
+        Ok(_) => None,
+    };
     inner
         .store
-        .record(&session, stop.name(), json!({"run_id":run,"reason":reason}))
+        .record(
+            &session,
+            stop.name(),
+            json!({"run_id":run,"reason":reason,"message":message}),
+        )
         .await?;
     result
 }

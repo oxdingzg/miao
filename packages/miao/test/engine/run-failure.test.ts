@@ -21,6 +21,15 @@ test("a native lifecycle failure becomes a product drain failure", () => {
   })
 })
 
+test("the recorded error text is preferred over the coarse lifecycle category", () => {
+  expect(
+    translateRunFailure(event({ run_id: "run_1", reason: "failed", message: "HTTP 400: rejected by fixture" })),
+  ).toMatchObject({ error: { type: "unknown", message: "HTTP 400: rejected by fixture" } })
+  expect(translateRunFailure(event({ run_id: "run_1", reason: "failed", message: null }))).toMatchObject({
+    error: { type: "unknown", message: "failed" },
+  })
+})
+
 test("malformed or foreign lifecycle facts are dropped", () => {
   expect(translateRunFailure(event({ run_id: "run_1" }))).toBeUndefined()
   expect(translateRunFailure(event({ run_id: "run_1", reason: "" }))).toBeUndefined()
@@ -76,6 +85,8 @@ real(
       expect(failures[0]?.data).toMatchObject({ sessionID: "ses_failure_native", error: { type: "unknown" } })
       const data = failures[0]?.data
       if (typeof data !== "object" || data === null || !("error" in data)) throw new Error("bad failure")
+      // The message is the provider error, not the bare `failed` category.
+      expect((data.error as { message: string }).message).not.toBe("failed")
       expect((data.error as { message: string }).message.length).toBeGreaterThan(0)
       // The lifecycle stop also settles the status, so the client is not left busy.
       expect(outputs.filter((e) => e.type === "session.next.status").at(-1)?.data).toMatchObject({
