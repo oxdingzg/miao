@@ -14,6 +14,7 @@ import {
   translateMessage,
   translateProviderRequest,
   translateProviderRequestResult,
+  translateRunFailure,
   translateQuestion,
   translateTools,
 } from "./bridge"
@@ -207,6 +208,8 @@ export class EngineSession {
     if (admitted) publish({ type: "session.next.prompt.admitted", data: admitted })
     const identity = translateAssistantIdentity(event)
     if (identity) publish({ type: "session.next.assistant.identity", data: identity })
+    const failure = translateRunFailure(event)
+    if (failure) publish({ type: "session.next.failed", data: failure })
     const request = translateProviderRequest(event)
     if (request) publish({ type: "session.next.provider.request", data: request })
     const requestResult = translateProviderRequestResult(event)
