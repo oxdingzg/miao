@@ -379,6 +379,88 @@ test("auto-compaction stops after repeated summary failures until it is reset", 
   expect(requests).toHaveLength(4)
 })
 
+test("proactive compaction summarizes once over the warm request prefix", async () => {
+  const main = model("main", 100_000)
+  const { compaction, requests } = customHarness([], summary("summary"))
+  const input = observedInput("ses_hot_prefix", main, 95_000)
+
+  expect(await Effect.runPromise(compaction.compactIfNeeded(input))).toBe(true)
+
+  // One call over the prefix the turn already built: the conversation stays in
+  // place and the instruction is appended, so the provider serves the prefix from
+  // its prompt cache instead of re-reading a re-embedded history.
+  expect(requests).toHaveLength(1)
+  expect(requests[0].messages).toHaveLength(2)
+  expect(requests[0].toolChoice?.type).toBe("none")
+  const instruction = requests[0].messages[1]?.content[0]
+  if (instruction?.type !== "text") throw new Error("expected text instruction")
+  expect(instruction.text).toStartWith("Summarize the conversation above")
+})
+
+test("compaction falls back to the staged strategy when the prefix cannot hold the instruction", async () => {
+  const main = model("main", 20_000)
+  const { compaction, requests } = customHarness([], summary("summary"))
+
+  // The prefix alone is already at the window with the output reserve turned
+  // down to nothing, so there is no room for the instruction. The truncated head
+  // is summarized instead, which re-embeds the conversation as one prompt.
+  const input = {
+    sessionID: SessionSchema.ID.make("ses_staged_fallback"),
+    entries: overflowEntries(),
+    model: main,
+    request: LLM.request({
+      model: main,
+      messages: [Message.user("filler".repeat(14_000))],
+      generation: { maxTokens: 1 },
+    }),
+    observedTokens: 19_000,
+  } as never
+
+  expect(await Effect.runPromise(compaction.compactIfNeeded(input))).toBe(true)
+  expect(requests).toHaveLength(1)
+  expect(requests[0].messages).toHaveLength(1)
+  const prompt = requests[0].messages[0]?.content[0]
+  if (prompt?.type !== "text") throw new Error("expected text summary request")
+  expect(prompt.text).toStartWith("Here is the conversation so far:")
+})
+
+test("an attempt that never reached the model does not count against the breaker", async () => {
+  const main = model("main", 100_000)
+  const requests: LLMRequest[] = []
+  const compaction = SessionCompaction.make({
+    events: { publish: () => Effect.succeed(undefined) } as never,
+    llm: {
+      stream: (request: LLMRequest) => {
+        requests.push(request)
+        return empty as never
+      },
+    },
+    config: [] as never,
+  })
+
+  // No room for the instruction, and nothing left to summarize: both strategies
+  // decline without contacting a model.
+  const declined = {
+    sessionID: SessionSchema.ID.make("ses_skipped_breaker"),
+    entries: [{ seq: 1, message: { type: "compaction", id: "msg_c", summary: "earlier", recent: "tail" } }],
+    model: model("main", 1_000),
+    request: LLM.request({ model: main, messages: [Message.user("continue")] }),
+    observedTokens: 95_000,
+  } as never
+  for (let attempt = 0; attempt < 5; attempt++)
+    expect(await Effect.runPromise(compaction.compactIfNeeded(declined))).toBe(false)
+  expect(requests).toHaveLength(0)
+
+  // Those attempts spent none of the breaker's budget, so a refused summary still
+  // gets its three tries before the breaker trips.
+  const refused = observedInput("ses_skipped_breaker", main, 95_000)
+  for (let attempt = 0; attempt < 3; attempt++)
+    expect(await Effect.runPromise(compaction.compactIfNeeded(refused))).toBe(false)
+  expect(requests).toHaveLength(3)
+  expect(await Effect.runPromise(compaction.compactIfNeeded(refused))).toBe(false)
+  expect(requests).toHaveLength(3)
+})
+
 const largeRecoveryInput = () => {
   const main = model("main", 1_000_000)
   const history = `BEGIN_HISTORY ${"目录 状态 验证。\n".repeat(12_000)} END_HISTORY`

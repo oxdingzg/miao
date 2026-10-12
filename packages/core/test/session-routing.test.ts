@@ -51,7 +51,18 @@ test("a Rust-owned Session resolves from its placement without any TS metadata",
       yield* SessionEnginePlacement.claim(database.db, { sessionID, placement })
 
       const resolution = yield* SessionRouting.resolve({ db: database.db, events, fs, sessionID })
-      expect(resolution).toEqual({ type: "placed", engine: "rust", location: placement.location })
+      expect(resolution).toEqual({ type: "placed", ...placement })
+      const otherID = SessionV2.ID.create()
+      const other = { ...placement, storage: AbsolutePath.make(path.join(tmp.path, "other-native.db")) }
+      yield* SessionEnginePlacement.claim(database.db, { sessionID: otherID, placement: other })
+      expect(yield* SessionRouting.resolve({ db: database.db, events, fs, sessionID: otherID })).toEqual({
+        type: "placed",
+        ...other,
+      })
+      expect(yield* SessionRouting.resolve({ db: database.db, events, fs, sessionID })).toEqual({
+        type: "placed",
+        ...placement,
+      })
       // Resolving a native Session must not resurrect TS ownership or write the TS journal.
       expect(yield* database.db.select().from(SessionTable).where(eq(SessionTable.id, sessionID)).get()).toBeUndefined()
       expect(
@@ -157,6 +168,7 @@ test("a freshly bound Rust Session resolves before its native storage exists", a
       expect(yield* SessionRouting.resolve({ db: database.db, events, fs, sessionID })).toEqual({
         type: "placed",
         engine: "rust",
+        storage: placement.storage,
         location: placement.location,
       })
     }),
@@ -165,7 +177,14 @@ test("a freshly bound Rust Session resolves before its native storage exists", a
 
 test("only the TypeScript engine may serve a TypeScript Session", () => {
   const directory = AbsolutePath.make("/tmp/placed")
-  expect(SessionRouting.route({ type: "placed", engine: "rust", location: { directory } })).toBe("native")
+  expect(
+    SessionRouting.route({
+      type: "placed",
+      engine: "rust",
+      storage: AbsolutePath.make("/tmp/native.db"),
+      location: { directory },
+    }),
+  ).toBe("native")
   expect(SessionRouting.route({ type: "placed", engine: "ts", location: { directory } })).toBe("ts")
   expect(SessionRouting.route({ type: "unbound", location: { directory } })).toBe("ts")
   expect(SessionRouting.route({ type: "missing", directory: "/tmp/gone" })).toBe("missing")
