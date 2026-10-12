@@ -262,12 +262,19 @@ export class EngineSession {
           Number.isSafeInteger(event.recorded_at_ms) &&
           event.recorded_at_ms >= 0
         ) {
-          publish({
+          // Ephemeral closure must not shift the durable boundary's delivery ordinals.
+          this.#publish({
             type: "session.next.stream.discarded",
             data: {
               sessionID: adoptSession(event.session_id),
               timestamp: DateTime.makeUnsafe(event.recorded_at_ms),
               assistantMessageID: messageID(event.session_id, anchor.seq),
+            },
+            source: {
+              sessionID: event.session_id,
+              seq: anchor.seq,
+              index: anchor.nextDelta,
+              recordedAtMs: anchor.recordedAtMs,
             },
           })
         }
