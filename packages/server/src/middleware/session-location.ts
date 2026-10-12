@@ -10,9 +10,10 @@ import { SessionRouting } from "@miao/core/session/routing"
 import { SessionV2 } from "@miao/core/session"
 import { WorkspaceV2 } from "@miao/core/workspace"
 import { eq } from "drizzle-orm"
-import { Effect, Layer, Schema } from "effect"
+import { Effect, Layer, Option, Schema } from "effect"
 import { HttpRouter } from "effect/unstable/http"
 import { HttpApiMiddleware } from "effect/unstable/httpapi"
+import { NativeEngine } from "../native-engine"
 import {
   ConflictError,
   InvalidRequestError,
@@ -39,6 +40,9 @@ export const sessionLocationLayer = Layer.effect(
     const permissions = yield* PermissionSaved.Service
     const fs = yield* FSUtil.Service
     const events = yield* EventV2.Service
+    // Composition-root transport presence decides the native gate; the handler
+    // branch reads the same service at request time.
+    const native = Option.getOrUndefined(yield* Effect.serviceOption(NativeEngine.Service))
 
     return SessionLocationMiddleware.of((effect) =>
       Effect.gen(function* () {
@@ -55,12 +59,27 @@ export const sessionLocationLayer = Layer.effect(
         const resolution = yield* SessionRouting.resolve({ db, events, fs, sessionID })
         // A native Session is owned and stored by the engine. Serving it through
         // the TypeScript handlers would read and write metadata this server does
-        // not own, so refuse instead of returning wrong data.
-        if (SessionRouting.route(resolution) === "native")
-          return yield* new ConflictError({
-            message: `Session ${sessionID} is owned by the native engine and cannot be served by this server.`,
-            resource: sessionID,
-          })
+        // not own, so refuse unless a native transport is composed.
+        if (resolution.type === "placed" && resolution.engine === "rust") {
+          if (!native)
+            return yield* new ConflictError({
+              message: `Session ${sessionID} is owned by the native engine and cannot be served by this server.`,
+              resource: sessionID,
+            })
+          // A composed native transport is present; the handler branch reads the
+          // same service and must not touch TypeScript session metadata. The
+          // placement resolved here travels with the request; the handler
+          // effect's environment is satisfied the same way, unused.
+          return yield* effect.pipe(
+            Effect.provideService(NativeEngine.Placement, {
+              storage: resolution.storage,
+              location: resolution.location,
+            }),
+            Effect.provide(locations.get(resolution.location)),
+            Effect.provideService(Project.Service, project),
+            Effect.provideService(PermissionSaved.Service, permissions),
+          )
+        }
         if (resolution.type === "unknown")
           return yield* new SessionNotFoundError({
             sessionID,

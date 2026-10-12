@@ -11,6 +11,7 @@ import { SessionDelegationStore } from "@miao/core/session/delegation-store"
 import { EventV2 } from "@miao/core/event"
 import { HttpApiBuilder, HttpApiSchema } from "effect/unstable/httpapi"
 import { Api } from "../api"
+import { NativeEngine } from "../native-engine"
 import { booted } from "../location"
 import { SessionsCursor } from "@miao/protocol/groups/session"
 import {
@@ -160,6 +161,34 @@ export const SessionHandler = HttpApiBuilder.group(Api, "server.session", (handl
       .handle(
         "session.prompt",
         Effect.fn(function* (ctx) {
+          // A composed native transport owns this Session's storage: admit into
+          // the engine instead of the TypeScript SessionV2 catalog. The
+          // placement was resolved by the location middleware.
+          const native = yield* Effect.serviceOption(NativeEngine.Service)
+          const placement = Option.getOrUndefined(yield* Effect.serviceOption(NativeEngine.Placement))
+          if (Option.isSome(native)) {
+            if (!placement)
+              return yield* new ConflictError({
+                message: `Session ${ctx.params.sessionID} is missing its native placement.`,
+                resource: ctx.params.sessionID,
+              })
+            // Last point before the prompt becomes durable, and the only one that
+            // holds the session Location's services, so image attachments are
+            // shrunk to the configured budget here rather than stored at full size.
+            const image = yield* Image.Service
+            const prompt = yield* SessionImageNormalize.promptInput(image, ctx.payload.prompt)
+            return {
+              data: yield* native.value.admit({
+                sessionID: ctx.params.sessionID,
+                storage: placement.storage,
+                location: placement.location,
+                id: ctx.payload.id,
+                prompt,
+                delivery: ctx.payload.delivery,
+                resume: ctx.payload.resume,
+              }),
+            }
+          }
           // Last point before the prompt becomes durable, and the only one that
           // holds the session Location's services, so image attachments are
           // shrunk to the configured budget here rather than stored at full size.
