@@ -60,7 +60,7 @@ import { ToolOutputStore } from "../../tool-output-store"
 import { SessionOwnership } from "../ownership"
 import { SessionCreate } from "../../session-create"
 import { SessionContextEpoch } from "../context-epoch"
-import { SessionCompaction } from "../compaction"
+import { SessionCompaction, RESTORE_TOKENS, RESTORE_FILES, RESTORE_FILE_TOKENS } from "../compaction"
 import { SessionCompactRequest } from "../compact-request"
 import { SessionEvent } from "../event"
 import { SessionHistory } from "../history"
@@ -247,6 +247,20 @@ const layer = Layer.effect(
     // Compactions per Session, so a Session that keeps compacting is visible
     // rather than silent. Process-local and best-effort, like the cache telemetry.
     const compactions = new Map<string, number>()
+    // The first request after a checkpoint carries a restore budget: the model works
+    // from a summary, so it may need to re-read the files the summary names. Prompt
+    // guidance rather than a gate — the model spends the budget with its own read
+    // tool, which is how the restore step works in every harness that has one — and
+    // request-scoped rather than durable, so it does not tax every later request.
+    const restoreBudgetNote = () =>
+      Message.user(
+        `The conversation was just compacted into a summary, so earlier details may be missing. ` +
+          `You have a restore budget of about ${RESTORE_TOKENS.toLocaleString("en-US")} tokens: ` +
+          `re-read the files you need to continue correctly (at most ${RESTORE_FILES} files, ` +
+          `about ${RESTORE_FILE_TOKENS.toLocaleString("en-US")} tokens each) before answering, ` +
+          `and skip anything the summary already covers.`,
+      )
+
     const recordCompaction = (sessionID: SessionSchema.ID, cause: string, ms?: number) =>
       Effect.gen(function* () {
         const count = (compactions.get(sessionID) ?? 0) + 1
@@ -712,6 +726,12 @@ const layer = Layer.effect(
       if (switchNote) {
         const insertAt = messages.at(-1)?.role === "user" ? messages.length - 1 : messages.length
         messages.splice(insertAt, 0, switchNote)
+      }
+      if (expectedRebuild) {
+        // Append, not splice before the closing prompt: at this point `messages`
+        // holds the checkpoint (and the turn's prompt is joined later), so the read
+        // order is summary → restore note → user instruction.
+        messages.push(restoreBudgetNote())
       }
       const request = LLM.request({
         model,
