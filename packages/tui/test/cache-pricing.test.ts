@@ -65,3 +65,9 @@ describe("isTimeOfDayPriced", () => {
     expect(isTimeOfDayPriced("anthropic", "claude-sonnet-5-5")).toBe(false)
   })
 })
+
+
+test("unknown creation clock leaves time-dependent prices unknown but preserves fixed-rate billing", () => {
+  expect(priceMultiplier(null, "deepseek", "reasoner")).toBeUndefined()
+  expect(priceMultiplier(null, "fixed-provider", "fixed-model")).toBe(1)
+})

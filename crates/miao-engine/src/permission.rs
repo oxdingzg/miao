@@ -167,6 +167,10 @@ impl Policy {
             matchers,
         })
     }
+    /// Snapshot the same immutable Config whose matchers enforce each tool.
+    pub(crate) fn descriptor(&self) -> Value {
+        serde_json::json!({"semantics":"native-policy-v1","revision":self.revision,"config":self.config,"collaboration_mode":"checked_at_tool_dispatch"})
+    }
     pub fn revision(&self) -> &str {
         &self.revision
     }

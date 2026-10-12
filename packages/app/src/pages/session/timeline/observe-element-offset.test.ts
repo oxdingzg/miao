@@ -88,7 +88,11 @@ test("keeps checking until stale reset-delay callbacks can no longer win", async
   expect(instance.scrollOffset).toBe(0)
 
   instance.scrollOffset = 79_400
-  await new Promise((resolve) => setTimeout(resolve, 25))
+  // The reconnect checker only corrects a stale offset on a later animation
+  // frame, and CI throttles frames. Wait for the correction to be observable
+  // instead of assuming a fixed number of frames, then give any spurious extra
+  // delivery a few frames to surface before asserting exact delivery count.
+  await waitFor(() => instance.scrollOffset === 0 && calls.length >= 2)
   await frames(3)
 
   expect(instance.scrollOffset).toBe(0)
@@ -195,5 +199,13 @@ test("cleanup cancels reconnect checks and delegated offset observation", async 
 async function frames(count: number) {
   for (let index = 0; index < count; index++) {
     await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()))
+  }
+}
+
+async function waitFor(predicate: () => boolean, timeoutMs = 5_000) {
+  const started = performance.now()
+  while (!predicate()) {
+    if (performance.now() - started > timeoutMs) throw new Error("condition was not reached before the timeout")
+    await frames(1)
   }
 }

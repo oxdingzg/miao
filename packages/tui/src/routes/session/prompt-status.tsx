@@ -12,6 +12,7 @@ export function PromptStatus(props: { prompt: PendingPrompt }) {
   const seconds = useSecond()
   const waited = createMemo(() => {
     seconds()
+    if (props.prompt.info.time.created === null) return " · elapsed unknown"
     const elapsed = Math.max(0, Date.now() - props.prompt.info.time.created)
     return elapsed >= 1000 ? ` · ${Locale.duration(elapsed)}` : ""
   })

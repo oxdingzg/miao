@@ -10,6 +10,11 @@ const send = (value: unknown) => process.stdout.write(JSON.stringify(value) + "\
 
 function handle(request: { id: number; method: string; params: Record<string, unknown> }) {
   const { id, method, params } = request
+  if (method === "fixture_frames" && Array.isArray(params.frames)) {
+    params.frames.forEach(send)
+    send({ id, result: { accepted: true } })
+    return
+  }
   if (method === "boom") {
     send({ id, error: { code: "boom", message: "kaboom" } })
     return
@@ -71,6 +76,7 @@ function emit(session: string, inputID: string) {
     method: "event",
     params: { session_id: session, seq: 5, kind: "run.finished", data: { run_id: "run", reason: "completed" } },
   })
+  send({ method: "event", params: { session_id: session, seq: 6, kind: "stop", data: { run_id: "run" } } })
 }
 
 const reader = Bun.stdin.stream().getReader()

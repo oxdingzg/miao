@@ -7,7 +7,7 @@ import { Question } from "@miao/schema/question"
 import { Delivery } from "@miao/schema/session-delivery"
 import { StatusInfo } from "@miao/schema/session-event"
 import { adoptSession, messageID } from "./identity"
-import type { EngineEvent } from "./client"
+import type { EngineEvent, EngineProgress } from "./client"
 
 /**
  * The product `session.next.status` payload for one status transition. Status is
@@ -26,6 +26,10 @@ export function statusOf(event: EngineEvent): StatusInfo | undefined {
     case "run.started":
       return { type: "busy" }
     case "run.finished":
+    case "stop":
+    case "stop_failure":
+      // The lifecycle stop is the durable end of a drain. A failed drain may
+      // record only this, so it must still settle the client's busy status.
       return { type: "idle" }
     default:
       return undefined
@@ -79,7 +83,10 @@ export function translatePrompt(
   return {
     sessionID: adoptSession(event.session_id),
     timestamp: eventTimestamp(event),
-    messageID: messageID(event.session_id, event.seq),
+    messageID:
+      "input_id" in event.data && typeof event.data.input_id === "string" && event.data.input_id.startsWith("msg_")
+        ? SessionMessage.ID.make(event.data.input_id)
+        : messageID(event.session_id, event.seq),
     prompt: { text },
     delivery,
   }
@@ -146,11 +153,230 @@ export function translateAssistantIdentity(event: EngineEvent): SessionAssistant
   return {
     sessionID: adoptSession(event.session_id),
     timestamp: eventTimestamp(event),
-    assistantMessageID: messageID(event.session_id, seq),
+    // The anchor minted at step start names the streamed part and the commit
+    // identically, so live deltas and the committed message share one id.
+    assistantMessageID: messageID(event.session_id, anchorSeq(event) ?? seq),
     assistantSeq: seq,
     provider,
     model: null,
     agent: null,
+  }
+}
+
+/** The product `session.next.provider.request` payload for one prepared HTTP attempt. */
+export type SessionProviderRequest = {
+  sessionID: SessionID
+  timestamp: DateTime.Utc
+  runID: string
+  step: number
+  contextEpoch: number
+  attempt: number
+  protocol: string
+  requestBodySha256: string
+  agent: unknown
+  permissions: unknown
+  profile: unknown
+}
+
+/**
+ * Maps a prepared native `provider.request` row onto the product receipt. The
+ * native runtime owns these facts, so the bridge only validates the durable
+ * envelope; `session.next.provider.request.result` correlates by `request_seq`.
+ */
+export function translateProviderRequest(event: EngineEvent): SessionProviderRequest | undefined {
+  if (event.kind !== "provider.request") return undefined
+  const data = event.data
+  if (typeof data !== "object" || data === null) return undefined
+  const runID = readNonEmptyString(data, "run_id")
+  const step = readCount(data, "step")
+  const contextEpoch = readCount(data, "context_epoch")
+  const attempt = readCount(data, "attempt")
+  const protocol = readNonEmptyString(data, "protocol")
+  const requestBodySha256 = readNonEmptyString(data, "request_body_sha256")
+  if (
+    runID === undefined ||
+    step === undefined ||
+    contextEpoch === undefined ||
+    attempt === undefined ||
+    attempt < 1 ||
+    protocol === undefined ||
+    requestBodySha256 === undefined ||
+    !hasRecordedTime(event)
+  )
+    return undefined
+  return {
+    sessionID: adoptSession(event.session_id),
+    timestamp: eventTimestamp(event),
+    runID,
+    step,
+    contextEpoch,
+    attempt,
+    protocol,
+    requestBodySha256,
+    agent: "agent" in data ? data.agent : null,
+    permissions: "permissions" in data ? data.permissions : null,
+    profile: "profile" in data ? data.profile : null,
+  }
+}
+
+/** The product `session.next.provider.request.result` payload for one attempt outcome. */
+export type SessionProviderRequestResult = {
+  sessionID: SessionID
+  timestamp: DateTime.Utc
+  runID: string
+  step: number
+  requestSeq: number
+  httpStatus: number | null
+  outcome: string
+}
+
+/**
+ * Maps the observed outcome of a prepared attempt. `http_status` is null when
+ * no response headers arrived; the outcome string names why, so an interrupted
+ * or transport-unknown attempt is never reported as success.
+ */
+export function translateProviderRequestResult(event: EngineEvent): SessionProviderRequestResult | undefined {
+  if (event.kind !== "provider.request.result") return undefined
+  const data = event.data
+  if (typeof data !== "object" || data === null) return undefined
+  if (!hasRecordedTime(event)) return undefined
+  const runID = readNonEmptyString(data, "run_id")
+  const step = readCount(data, "step")
+  const outcome = readNonEmptyString(data, "outcome")
+  const requestSeq = readCount(data, "request_seq")
+  if (runID === undefined || step === undefined || outcome === undefined) return undefined
+  if (requestSeq === undefined || requestSeq <= 0 || requestSeq >= event.seq) return undefined
+  const status = "http_status" in data ? data.http_status : null
+  if (status !== null && (typeof status !== "number" || !Number.isSafeInteger(status) || status < 0)) return undefined
+  return {
+    sessionID: adoptSession(event.session_id),
+    timestamp: eventTimestamp(event),
+    runID,
+    step,
+    requestSeq,
+    httpStatus: status,
+    outcome,
+  }
+}
+
+/** The durable envelope every native runtime receipt must carry. */
+function hasRecordedTime(event: EngineEvent): boolean {
+  return (
+    typeof event.recorded_at_ms === "number" && Number.isSafeInteger(event.recorded_at_ms) && event.recorded_at_ms >= 0
+  )
+}
+
+function readCount(data: object, key: string): number | undefined {
+  if (!(key in data)) return undefined
+  const value: unknown = Reflect.get(data, key)
+  if (typeof value !== "number" || !Number.isSafeInteger(value) || value < 0) return undefined
+  return value
+}
+
+function readNonEmptyString(data: object, key: string): string | undefined {
+  if (!(key in data)) return undefined
+  const value: unknown = Reflect.get(data, key)
+  if (typeof value !== "string" || !value) return undefined
+  return value
+}
+
+/** The product `session.next.text.delta` payload for one live text fragment. */
+export type SessionTextDelta = {
+  sessionID: SessionID
+  timestamp: DateTime.Utc
+  assistantMessageID: SessionMessage.ID
+  textID: string
+  delta: string
+}
+
+/**
+ * Maps one normalized provider text fragment onto the product text delta. The
+ * part id is minted from the step's durable start anchor, so the part a client
+ * renders while streaming is the part the commit finalizes. Undefined when the
+ * frame is not a text fragment or the anchor has not been observed yet.
+ */
+export function translateTextDelta(
+  progress: EngineProgress,
+  anchor: { seq: number; recordedAtMs: number | null },
+): SessionTextDelta | undefined {
+  if (anchor.recordedAtMs === null) return undefined
+  if (typeof progress.session_id !== "string") return undefined
+  const sessionID = adoptSession(progress.session_id)
+  const frame = progress.data
+  if (typeof frame !== "object" || frame === null || !("delta" in frame)) return undefined
+  const data = frame.delta
+  if (typeof data !== "object" || data === null) return undefined
+  if (!("kind" in data) || data.kind !== "text.delta") return undefined
+  if (!("text" in data) || typeof data.text !== "string") return undefined
+  const text = data.text
+  return {
+    sessionID,
+    timestamp: DateTime.makeUnsafe(anchor.recordedAtMs),
+    assistantMessageID: messageID(sessionID, anchor.seq),
+    textID: `text_${anchor.seq}_0`,
+    delta: text,
+  }
+}
+
+/** The product `session.next.retried` payload for one bounded retry of a failed attempt. */
+export type SessionRetry = {
+  sessionID: SessionID
+  timestamp: DateTime.Utc
+  attempt: number
+  error: { message: string; isRetryable: boolean; statusCode?: number }
+}
+
+/**
+ * Maps the native durable `provider.retry` fact onto the product retry event.
+ * Only retryable failures reach the native retry loop and the fact carries the
+ * reason it retried, so neither `isRetryable` nor the message is guessed.
+ */
+export function translateRetried(event: EngineEvent): SessionRetry | undefined {
+  if (event.kind !== "provider.retry") return undefined
+  if (!hasRecordedTime(event)) return undefined
+  const data = event.data
+  if (typeof data !== "object" || data === null) return undefined
+  const attempt = readCount(data, "attempt")
+  const reason = readNonEmptyString(data, "reason")
+  if (attempt === undefined || attempt < 1 || reason === undefined) return undefined
+  const status = "status" in data ? Reflect.get(data, "status") : undefined
+  const statusCode = typeof status === "number" && Number.isSafeInteger(status) ? status : undefined
+  return {
+    sessionID: adoptSession(event.session_id),
+    timestamp: eventTimestamp(event),
+    attempt,
+    error: { message: reason, isRetryable: true, ...(statusCode === undefined ? {} : { statusCode }) },
+  }
+}
+
+/** The product `session.next.failed` payload for a drain that ended outside a provider step. */
+export type SessionRunFailure = {
+  sessionID: SessionID
+  timestamp: DateTime.Utc
+  error: { type: "unknown"; message: string }
+  name: string
+}
+
+/**
+ * Maps the native lifecycle `stop_failure` fact onto the product drain failure.
+ * Without it a client only ever sees the run start, so a failed native drain
+ * would leave the session busy and show no error.
+ */
+export function translateRunFailure(event: EngineEvent): SessionRunFailure | undefined {
+  if (event.kind !== "stop_failure") return undefined
+  if (!hasRecordedTime(event)) return undefined
+  const data = event.data
+  if (typeof data !== "object" || data === null) return undefined
+  const reason = readNonEmptyString(data, "reason")
+  if (reason === undefined) return undefined
+  // `reason` is the coarse lifecycle category; prefer the underlying error text
+  // when the engine recorded one, and fall back to the category otherwise.
+  const message = readNonEmptyString(data, "message") ?? reason
+  return {
+    sessionID: adoptSession(event.session_id),
+    timestamp: eventTimestamp(event),
+    error: { type: "unknown", message },
+    name: "EngineRunFailed",
   }
 }
 
@@ -178,21 +404,24 @@ export function translateMessage(event: EngineEvent): SessionTextEnded[] {
   if (!Array.isArray(content)) return []
   const blocks: unknown[] = content
   const sessionID = adoptSession(event.session_id)
-  const assistantMessageID = messageID(event.session_id, event.seq)
-  return blocks.flatMap((block, index) => {
-    if (typeof block !== "object" || block === null) return []
-    if (!("type" in block) || block.type !== "text") return []
-    if (!("text" in block) || typeof block.text !== "string") return []
-    return [
-      {
-        sessionID,
-        timestamp: eventTimestamp(event),
-        assistantMessageID,
-        textID: `text_${event.seq}_${index}`,
-        text: block.text,
-      },
-    ]
-  })
+  const anchor = anchorSeq(event)
+  const assistantMessageID = messageID(event.session_id, anchor ?? event.seq)
+  return blocks
+    .flatMap((block, index) => {
+      if (typeof block !== "object" || block === null) return []
+      if (!("type" in block) || block.type !== "text") return []
+      if (!("text" in block) || typeof block.text !== "string") return []
+      return [{ index, text: block.text }]
+    })
+    .map((block, ordinal) => ({
+      sessionID,
+      timestamp: eventTimestamp(event),
+      assistantMessageID,
+      // Anchored live text has its own ordinal, independent of reasoning/tool
+      // blocks. Preserve historical commit-index IDs for unanchored stores.
+      textID: `text_${anchor ?? event.seq}_${anchor === undefined ? block.index : ordinal}`,
+      text: block.text,
+    }))
 }
 
 const TOOL_IDS: Record<string, string> = {
@@ -451,6 +680,40 @@ export function translateApprovalResolved(event: EngineEvent): SessionPermission
   }
 }
 
+/** The product question resolution payload, answered or rejected. */
+export type SessionQuestionResolved =
+  | { type: "question.v2.replied"; data: { sessionID: SessionID; requestID: Question.ID; answers: string[][] } }
+  | { type: "question.v2.rejected"; data: { sessionID: SessionID; requestID: Question.ID } }
+
+/**
+ * Maps the engine's `question.resolved` to the product resolution. An answered
+ * question replies with the selected labels; an expired or cancelled question is
+ * rejected, matching how approvals resolve. Without this a client kept showing a
+ * pending question the engine had already settled.
+ */
+export function translateQuestionResolved(event: EngineEvent): SessionQuestionResolved | undefined {
+  if (event.kind !== "question.resolved") return undefined
+  const data = event.data
+  if (typeof data !== "object" || data === null) return undefined
+  const questionID = readNonEmptyString(data, "question_id")
+  if (questionID === undefined) return undefined
+  const sessionID = adoptSession(event.session_id)
+  const requestID = Question.ID.ascending(`que_${questionID}`)
+  const state = readNonEmptyString(data, "state")
+  if (state === "answered") {
+    const raw = "answers" in data ? Reflect.get(data, "answers") : undefined
+    if (!Array.isArray(raw)) return undefined
+    const answers = raw.flatMap((entry) =>
+      Array.isArray(entry) && entry.every((label) => typeof label === "string") ? [entry as string[]] : [],
+    )
+    if (answers.length !== raw.length) return undefined
+    return { type: "question.v2.replied", data: { sessionID, requestID, answers } }
+  }
+  if (state === "expired" || state === "cancelled")
+    return { type: "question.v2.rejected", data: { sessionID, requestID } }
+  return undefined
+}
+
 /** The product `question.v2.asked` payload for one engine question request. */
 export type SessionQuestionAsked = {
   id: Question.ID
@@ -523,4 +786,17 @@ function nativeProvider(value: unknown) {
   )
     return undefined
   return { protocol: value.protocol, model: value.model }
+}
+
+/**
+ * The step-start anchor recorded on the event, when the engine minted one. It
+ * names the assistant part before and after the commit identically, so a
+ * client can stream into the part it will finally render.
+ */
+function anchorSeq(event: EngineEvent): number | undefined {
+  const data = event.data
+  if (typeof data !== "object" || data === null || !("anchor_seq" in data)) return undefined
+  const value: unknown = Reflect.get(data, "anchor_seq")
+  if (typeof value !== "number" || !Number.isSafeInteger(value) || value <= 0) return undefined
+  return value
 }

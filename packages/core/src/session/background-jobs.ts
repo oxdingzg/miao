@@ -82,7 +82,7 @@ export const make = (input: {
         id: record.id,
         type: "bash",
         title: record.command,
-        started_at: previous?.started_at ?? row.at,
+        started_at: previous ? previous.started_at : record.status === "started" ? row.at : null,
         status:
           record.status === "started"
             ? "running"

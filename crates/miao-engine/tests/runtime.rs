@@ -189,6 +189,7 @@ async fn interrupted_committed_tool_calls_have_unknown_results_without_rerun() {
         .assistant_reply(
             "s",
             "run",
+            None,
             json!([{"type":"tool_use","id":"call","name":"read_file","input":{"path":"file"}}]),
         )
         .await
@@ -231,11 +232,11 @@ async fn wrong_session_cannot_commit_assistant_dispatch_and_settlement_is_atomic
     store.start_run("s", "run").await.unwrap();
     let tool = json!([{"type":"tool_use","id":"call","name":"read_file","input":{"path":"file"}}]);
     assert!(store
-        .assistant_reply("other", "run", tool.clone())
+        .assistant_reply("other", "run", None, tool.clone())
         .await
         .is_err());
     assert!(store.history("other").await.unwrap().is_empty());
-    store.assistant_reply("s", "run", tool).await.unwrap();
+    store.assistant_reply("s", "run", None, tool).await.unwrap();
     assert!(store
         .tool_result("other", "run", "call", json!({}), false)
         .await

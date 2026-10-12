@@ -12,8 +12,8 @@ export const JobInfo = Schema.Struct({
   type: Schema.String,
   title: Schema.optional(Schema.String),
   status: Schema.Literals(["running", "completed", "error", "cancelled"]),
-  started_at: Schema.Number,
-  completed_at: Schema.optional(Schema.Number),
+  started_at: Schema.NullOr(Schema.Number),
+  completed_at: Schema.optional(Schema.NullOr(Schema.Number)),
   output: Schema.optional(Schema.String),
   error: Schema.optional(Schema.String),
 })

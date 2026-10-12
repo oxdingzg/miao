@@ -6,6 +6,9 @@ import { Database } from "@miao/core/database/database"
 import { OpenCodeEvent } from "@miao/protocol/groups/event"
 import { EventTable } from "@miao/core/event/sql"
 import { ClientEvents } from "@miao/server/client-events"
+import { SessionID } from "@miao/schema/session-id"
+import { SessionMessage } from "@miao/schema/session-message"
+import { DateTime } from "effect"
 import { Location } from "@miao/schema/location"
 import { Effect, Schema } from "effect"
 import { eq } from "drizzle-orm"
@@ -89,9 +92,20 @@ if (binary)
         owner.client.onEvent((event) => {
           if (event.kind === "run.finished") finished.resolve()
         })
-        yield* Effect.promise(() =>
-          owner.session.prompt("ses_native_client", "queued actual input", { inputID: "in_client", delivery: "queue" }),
-        )
+        const input = {
+          sessionID: SessionID.descending("ses_native_client"),
+          id: SessionMessage.ID.make("msg_client_fixture"),
+          prompt: { text: "queued actual input" },
+          delivery: "queue" as const,
+        }
+        const receipt = yield* Effect.promise(() => owner.session.promptProduct(input))
+        expect(receipt).toMatchObject({
+          id: input.id,
+          sessionID: input.sessionID,
+          delivery: "queue",
+          prompt: input.prompt,
+        })
+        expect(DateTime.toEpochMillis(receipt.timeCreated)).toBeGreaterThan(0)
         yield* Effect.promise(() => finished.promise).pipe(Effect.timeout("10 seconds"))
         yield* owner.flush
         const wire = yield* Effect.promise(async () => {
@@ -105,6 +119,9 @@ if (binary)
           return body
         }).pipe(Effect.timeout("5 seconds"))
         expect(wire).toContain('"delivery":"queue"')
+        expect(wire).toContain('"messageID":"msg_client_fixture"')
+        const duplicate = yield* Effect.promise(() => owner.session.promptProduct({ ...input, resume: false }))
+        expect(duplicate).toEqual(receipt)
         expect(wire).toContain('"id":"store-native-client"')
         expect(wire).not.toContain('"durable":')
         expect(wire).toContain('"provider":{"protocol":"openai-chat","model":"fixture"}')
@@ -139,7 +156,10 @@ if (binary)
           .where(eq(EventTable.aggregate_id, "ses_native_client"))
           .all()
         expect(stored).toHaveLength(0)
-        const original = projected.map((event) => event.id)
+        const streamed = projected.filter((event) => event.type === "session.next.text.delta")
+        expect(streamed.length).toBeGreaterThan(0)
+        expect(streamed.every((event) => event.durable === undefined)).toBe(true)
+        const original = projected.filter((event) => event.type !== "session.next.text.delta").map((event) => event.id)
         expect(original.length).toBeGreaterThan(0)
         expect(new Set(original).size).toBe(original.length)
         yield* Effect.promise(() => owner.client.close())
@@ -150,13 +170,7 @@ if (binary)
         retry.client.onEvent((event) => {
           if (event.kind === "run.finished") replayed.resolve()
         })
-        yield* Effect.promise(() =>
-          retry.session.prompt("ses_native_client", "queued actual input", {
-            inputID: "in_client",
-            delivery: "queue",
-            resume: false,
-          }),
-        )
+        yield* Effect.promise(() => retry.session.promptProduct({ ...input, resume: false }))
         yield* Effect.promise(() => replayed.promise).pipe(Effect.timeout("10 seconds"))
         yield* retry.flush
         expect(projected.map((event) => event.id)).toEqual(original)

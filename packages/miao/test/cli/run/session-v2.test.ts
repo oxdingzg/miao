@@ -11,6 +11,8 @@ function assistant(content: Assistant["content"], completed?: number): SessionMe
     agent: "build",
     model: { providerID: "openai", id: "gpt-5" },
     time: { created: 10, ...(completed === undefined ? {} : { completed }) },
+    cost: 0.01,
+    tokens: { input: 10, output: 5, reasoning: 0, cache: { read: 0, write: 0 } },
     content,
   }
 }
@@ -167,4 +169,16 @@ describe("run session v2 transcript", () => {
       tool: { messageID: "msg_a", callID: "call_1" },
     })
   })
+})
+
+test("live transcript renders an assistant before usage arrives", () => {
+  const message = assistant([{ type: "text", id: "text", text: "streaming" }])
+  if (message.type !== "assistant") throw new Error("assistant fixture")
+  const { cost, tokens, ...live } = message
+  const result = entries([live])
+  expect(result[0]?.type).toBe("message")
+  if (result[0]?.type !== "message") throw new Error("missing message")
+  expect(result[0].message.info).not.toHaveProperty("cost", 0)
+  expect(result[0].message.info).toMatchObject({ role: "assistant", cost: undefined, tokens: undefined })
+  expect(result[0].message.parts[0]).toMatchObject({ type: "text", text: "streaming" })
 })

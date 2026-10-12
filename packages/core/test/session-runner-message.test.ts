@@ -816,3 +816,28 @@ Recent work
   })
 
 })
+
+
+test("unknown historical model identity never borrows current-model provider metadata", () => {
+  const historical = SessionMessage.Assistant.make({ id: id("unknown-model"), type: "assistant", agent: null, model: null,
+    content: [
+      { type: "text", id: "answer", text: "Recorded answer" },
+      { type: "reasoning", id: "thought", text: "Recorded thought", providerMetadata: { anthropic: { signature: "private-native-signature" } } },
+      { type: "tool", id: "recorded-tool", name: "read", provider: { executed: true,
+        metadata: { fake: { continuation: "private-native-call" } }, resultMetadata: { fake: { continuation: "private-native-result" } } },
+        state: { status: "completed", input: { path: "README.md" }, structured: {}, content: [{ type: "text", text: "Recorded result" }] },
+        time: { created: null } },
+    ], time: { created: null } })
+  const request = toLLMMessages([historical], model)
+  const serialized = JSON.stringify(request)
+  expect(serialized).toContain("Recorded answer")
+  expect(serialized).toContain("Recorded thought")
+  expect(serialized).toContain("Recorded result")
+  expect(serialized).not.toContain("private-native-signature")
+  expect(serialized).not.toContain("private-native-call")
+  expect(serialized).not.toContain("private-native-result")
+  expect(historical.model).toBeNull()
+  expect(historical.agent).toBeNull()
+  expect(historical.time.created).toBeNull()
+  expect(historical.content[1]).toMatchObject({ providerMetadata: { anthropic: { signature: "private-native-signature" } } })
+})

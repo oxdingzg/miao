@@ -93,22 +93,22 @@ function runningTool(parts: ReadonlyArray<AssistantContent>) {
 // read as a healthy twelve-minute turn. Each part records when it last changed,
 // so the newest stamp is the moment output stopped. A turn with no output yet
 // falls back to the prompt that opened it.
-export function lastOutputAt(parts: ReadonlyArray<AssistantContent>, fallback: number | undefined) {
+export function lastOutputAt(parts: ReadonlyArray<AssistantContent>, fallback: number | null | undefined) {
   const times = parts.flatMap((part) => {
     if (part.type === "tool") {
       if (part.state.status === "pending") return []
-      return [part.time?.ran ?? part.time?.created].filter((value): value is number => value !== undefined)
+      return [part.time?.ran ?? part.time?.created].filter((value): value is number => value !== undefined && value !== null)
     }
     if (part.type === "text") return []
     if (part.type === "reasoning") {
       const time = part.time?.completed ?? part.time?.created
-      return time === undefined ? [] : [time]
+      return time === undefined || time === null ? [] : [time]
     }
     return []
   })
-  if (times.length === 0) return fallback
+  if (times.length === 0) return fallback ?? undefined
   const latest = Math.max(...times)
-  return fallback === undefined ? latest : Math.max(latest, fallback)
+  return fallback === undefined || fallback === null ? latest : Math.max(latest, fallback)
 }
 
 export function SessionActivity(props: { sessionID: string }) {

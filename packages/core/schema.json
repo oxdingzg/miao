@@ -1,9 +1,9 @@
 {
   "version": "7",
   "dialect": "sqlite",
-  "id": "934fa06c-d37a-49e4-88ea-650d0cacfde6",
+  "id": "f21f0e8f-3b52-40d0-998f-d8d009c9f898",
   "prevIds": [
-    "a97e79e3-7f2e-455a-8150-8dcd0564ab4a"
+    "fea802e3-16a6-42cf-a5d6-16005f6b7998"
   ],
   "ddl": [
     {
@@ -16,6 +16,10 @@
     },
     {
       "name": "remote_operation",
+      "entityType": "tables"
+    },
+    {
+      "name": "session_engine_placement",
       "entityType": "tables"
     },
     {
@@ -301,6 +305,46 @@
       "name": "time_updated",
       "entityType": "columns",
       "table": "remote_operation"
+    },
+    {
+      "type": "text",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "session_id",
+      "entityType": "columns",
+      "table": "session_engine_placement"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "engine",
+      "entityType": "columns",
+      "table": "session_engine_placement"
+    },
+    {
+      "type": "text",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "native_storage",
+      "entityType": "columns",
+      "table": "session_engine_placement"
+    },
+    {
+      "type": "text",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "location",
+      "entityType": "columns",
+      "table": "session_engine_placement"
     },
     {
       "type": "integer",
@@ -1274,7 +1318,7 @@
     },
     {
       "type": "integer",
-      "notNull": true,
+      "notNull": false,
       "autoincrement": false,
       "default": null,
       "generated": null,
@@ -2367,6 +2411,15 @@
     },
     {
       "columns": [
+        "session_id"
+      ],
+      "nameExplicit": false,
+      "name": "session_engine_placement_pk",
+      "table": "session_engine_placement",
+      "entityType": "pks"
+    },
+    {
+      "columns": [
         "id"
       ],
       "nameExplicit": false,
@@ -2939,6 +2992,18 @@
       "name": "todo_session_idx",
       "entityType": "indexes",
       "table": "todo"
+    },
+    {
+      "value": "\"engine\" IN ('ts', 'rust')",
+      "name": "session_engine_placement_engine",
+      "entityType": "checks",
+      "table": "session_engine_placement"
+    },
+    {
+      "value": "(\"engine\" = 'ts' AND \"native_storage\" IS NULL AND \"location\" IS NULL)\n        OR (\"engine\" = 'rust' AND \"native_storage\" IS NOT NULL AND \"location\" IS NOT NULL)",
+      "name": "session_engine_placement_native",
+      "entityType": "checks",
+      "table": "session_engine_placement"
     }
   ],
   "renames": []

@@ -50,7 +50,7 @@ export const DialogFork: Component = () => {
       result.push({
         id: message.id,
         text: textPart.text.replace(/\n/g, " ").slice(0, 200),
-        time: formatTime(new Date(message.time.created)),
+        time: message.time.created === null ? "—" : formatTime(new Date(message.time.created)),
       })
     }
 

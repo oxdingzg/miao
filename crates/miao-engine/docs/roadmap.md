@@ -1,6 +1,6 @@
 # Unified Rust engine roadmap
 
-Status snapshot: **2026-10-10**; reviewed baseline: `f98fd8a09` (including #589).
+Status snapshot: **2026-10-12**; reviewed baseline: `c3baaa6d1` (including #589).
 
 ## 1. Objective and document responsibilities
 
@@ -57,7 +57,7 @@ These are reusable foundations, not work to repeatedly rebuild from scratch. See
 - Two small-task live-evaluation rounds exist: six task classes × eight repetitions, Rust 48/48 and TS 47/48; another three classes × three repetitions, both 9/9, with Rust p50 22 s and TS p50 26 s. These observations apply only to that model and small-task scope.
 - A single-platform release binary measured 18.4 MiB; warm readiness p50 8.3 ms, first startup 642 ms, and ready engine RSS 10 MiB. Do not extrapolate to long Sessions, the full process tree, or other platforms.
 - Preview rollback has been exercised; formal product publication still requires acceptance.
-- #589 blackbox supports strict TS semantic-boundary replay and Rust provider replay. Native Rust tool-result substitution and common product-history normalization are still missing at this snapshot.
+- #589 blackbox supports strict TS semantic-boundary replay and Rust provider replay; partial-response interruption now preserves the recorded payload bytes exactly. Native Rust tool-result substitution and common product-history normalization are still missing at this snapshot.
 - **Evidence is not yet sufficient to establish higher quality, fewer tokens, and shorter latency simultaneously across a representative task set.**
 
 ## 4. Track A: task quality and efficiency
@@ -92,7 +92,13 @@ This track makes optimizations usable in the real product while preserving relia
 | B5  | Installation, formal updates, and rollback       | Partial: Actions artifacts/checksum manifests, local installer, and preview rollback exist                                                | Formal engine distribution, version/channel/upgrade handling, release-channel rollback; verify platform confinement and product support scope individually                                                      |
 | B6  | Default switch and legacy-core retirement        | Pending                                                                                                                                   | Every switch gate passes; explicitly migrate existing Sessions or retain a readable path; one authority per Session, no double writes, and eventual removal of the second execution core                        |
 
-Decide an independent credential broker, additional providers, full media/LSP/MCP surfaces, terminal-multiplexing APIs, host-service migration, and a fully Rust shell from actual task and maintenance benefits. A single all-Rust binary is the end-state direction of the existing migration design. Revise the ADR and use experience/startup/maintenance data to decide whether and when to migrate the shell.
+Decide an independent credential broker, additional providers, full media/LSP/MCP surfaces, terminal-multiplexing APIs, host-service migration, and a fully Rust shell from actual task and maintenance benefits.
+
+Recently landed product-integration evidence (2026-10-12), recorded without changing any status above:
+
+- A durable `session_engine_placement` catalog binds each Session's engine, native storage, and Location atomically; exact retries adopt the binding and cross-engine/storage/Location takeover is rejected. Location resolution now treats that catalog as the routing authority and never reads or heals TS metadata for a Rust-owned Session.
+- Client-only assistant-identity and per-attempt provider request/result receipts are delivered on the product stream, bound to their durable cursor, without writing the TS journal. They are evidence for clients; no product UI consumes them yet.
+- Strict offline replay preserves recorded partial-response bytes exactly, and WAL enablement retries when another window holds the database. A single all-Rust binary is the end-state direction of the existing migration design. Revise the ADR and use experience/startup/maintenance data to decide whether and when to migrate the shell.
 
 ## 6. Stage gates and execution order
 

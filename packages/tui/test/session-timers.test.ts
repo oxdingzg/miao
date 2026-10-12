@@ -44,3 +44,9 @@ test("untracked jobs report unknown outcomes rather than an ever-increasing runt
     { id: "unknown", color: "warning", text: "Background job untracked · outcome unknown; it was not restarted" },
   ])
 })
+
+
+test("a running job with an unknown start displays unknown duration instead of a sampled age", () => {
+  const unknown = { ...activity, schedules: [], jobs: [{ id: "job_unknown", title: "Recorded job", status: "running" as const, startedAt: null }] }
+  expect(sessionTimerRows(unknown, 1000000)[0].text).toBe("Running duration unknown · Recorded job")
+})

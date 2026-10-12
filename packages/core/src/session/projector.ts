@@ -6,6 +6,7 @@ import { Database } from "../database/database"
 import { EventV2 } from "../event"
 import { makeGlobalNode } from "../effect/app-node"
 import { SessionEvent } from "./event"
+import { SessionEnginePlacement } from "./engine-placement"
 import { SessionV1 } from "../v1/session"
 import { WorkspaceTable } from "../control-plane/workspace.sql"
 import { SessionMessage } from "./message"
@@ -200,7 +201,7 @@ function run(db: DatabaseService, event: SessionEvent.Event) {
       const { id, type, ...data } = encoded
       return db
         .update(SessionMessageTable)
-        .set({ type, time_created: DateTime.toEpochMillis(message.time.created), data })
+        .set({ type, time_created: message.time.created === null ? null : DateTime.toEpochMillis(message.time.created), data })
         .where(
           and(
             eq(SessionMessageTable.id, SessionMessage.ID.make(id)),
@@ -332,7 +333,7 @@ function insertMessage(db: DatabaseService, event: SessionEvent.Event, message: 
       session_id: event.data.sessionID,
       type,
       seq: event.durable.seq,
-      time_created: DateTime.toEpochMillis(message.time.created),
+      time_created: message.time.created === null ? null : DateTime.toEpochMillis(message.time.created),
       data,
     })
     .run()
@@ -345,6 +346,9 @@ const layer = Layer.effectDiscard(
     const { db } = yield* Database.Service
     yield* events.project(SessionV1.Event.Created, (event) =>
       Effect.gen(function* () {
+        yield* SessionEnginePlacement.claim(db, { sessionID: event.data.info.id, placement: { engine: "ts" } }).pipe(
+          Effect.orDie,
+        )
         const stored = yield* db
           .insert(SessionTable)
           .values(sessionRow(event.data.info))
@@ -365,6 +369,9 @@ const layer = Layer.effectDiscard(
     )
     yield* events.project(SessionEvent.Info.Created, (event) =>
       Effect.gen(function* () {
+        yield* SessionEnginePlacement.claim(db, { sessionID: event.data.info.id, placement: { engine: "ts" } }).pipe(
+          Effect.orDie,
+        )
         const stored = yield* db
           .insert(SessionTable)
           .values(sessionRowFromInfo(event.data.info, event.data.slug, event.data.version))

@@ -73,3 +73,19 @@ describe("cacheEconomy", () => {
     expect(economy.unpriced).toBe(1000)
   })
 })
+
+test("unknown model identity keeps observed cache tokens unpriced", () => {
+  expect(cacheEconomy([{ ...turn({ read: 1000, write: 500 }), model: null }], [provider(PRICED)])).toEqual({
+    read: 1000,
+    write: 500,
+    saved: 0,
+    unpriced: 1500,
+  })
+})
+
+
+test("unknown time-dependent multiplier leaves observed cache tokens unpriced", () => {
+  expect(cacheEconomy([turn({ read: 1000, write: 500 })], [provider(PRICED)], () => undefined)).toEqual({
+    read: 1000, write: 500, saved: 0, unpriced: 1500,
+  })
+})

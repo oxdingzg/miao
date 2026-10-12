@@ -173,7 +173,10 @@ describe("timeline content projection", () => {
 
   test("creates reactive content with stable references for unchanged parts", () => {
     createRoot((dispose) => {
-      const [records, setRecords] = createStore<SessionMessageInfo[]>([user("u1"), assistant("a1", [text("t1", "first")])])
+      const [records, setRecords] = createStore<SessionMessageInfo[]>([
+        user("u1"),
+        assistant("a1", [text("t1", "first")]),
+      ])
       const content = createSessionContent(
         () => "ses_content",
         () => records,
@@ -191,5 +194,48 @@ describe("timeline content projection", () => {
 
       dispose()
     })
+  })
+})
+
+test("unknown clocks stay null while settled tool and shell output remains visible", () => {
+  const parts = contentParts(sessionID, [
+    {
+      id: "native",
+      type: "assistant",
+      agent: null,
+      model: null,
+      time: { created: null },
+      content: [
+        { type: "reasoning", id: "r", text: "reason" },
+        {
+          type: "tool",
+          id: "t",
+          name: "read",
+          time: { created: null },
+          state: {
+            status: "completed",
+            input: {},
+            structured: {},
+            content: [{ type: "text", text: "result" }],
+          },
+        },
+      ],
+    },
+    {
+      id: "shell",
+      type: "shell",
+      callID: "call",
+      command: "pwd",
+      output: "/repo",
+      time: { created: null, completed: 10 },
+    },
+  ])
+  expect(parts.native?.[0]).toMatchObject({ type: "reasoning", text: "reason", time: { start: null } })
+  expect(parts.native?.[1]).toMatchObject({
+    type: "tool",
+    state: { status: "completed", output: "result", time: { start: null, end: null } },
+  })
+  expect(parts["shell:assistant"]?.[0]).toMatchObject({
+    state: { status: "completed", output: "/repo", time: { start: null, end: 10 } },
   })
 })

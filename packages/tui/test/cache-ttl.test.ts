@@ -94,3 +94,11 @@ describe("cacheTtl", () => {
     expect(cacheTtl([turn("anthropic", { startedAt: 0 })], 0)).toBeUndefined()
   })
 })
+
+test("unknown identity or cache-touch time does not reuse an older known cache lifetime", () => {
+  const older = turn("anthropic", { read: 10, startedAt: 0 })
+  const last = turn("anthropic", { read: 10, startedAt: MINUTE })
+  expect(cacheTtl([older, { ...last, model: null }], 2 * MINUTE)).toBeUndefined()
+  expect(cacheTtl([older, { ...last, time: { created: null } }], 2 * MINUTE)).toBeUndefined()
+  expect(cacheTtl([{ ...last, time: { created: null, completed: MINUTE } }], 2 * MINUTE)?.startedAt).toBe(MINUTE)
+})

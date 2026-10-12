@@ -3,7 +3,8 @@
 // @miao/session-ui renders, contained inside the timeline model. The store-level
 // projection this complements (`data.part` + normalizeSessionMessages) is
 // retired in stage 3, leaving this module as the only content projection.
-import type { FilePart, Part, ToolPart } from "@miao/schema/view-models"
+import type { FilePart } from "@miao/schema/view-models"
+import type { Part, ToolPart } from "@miao/schema/render-part"
 import type { MessagesListOutput } from "@miao/client"
 
 export type SessionMessageInfo = MessagesListOutput["data"][number]
@@ -228,7 +229,7 @@ function toolPart(sessionID: string, messageID: string, tool: SessionMessageAssi
         input: normalizeToolInput(tool.name, tool.state.input),
         error: tool.state.error.message,
         metadata: normalizeToolMetadata(tool.name, tool.state.structured),
-        time: { start, end: tool.time.completed ?? start },
+        time: { start, end: tool.time.completed ?? null },
       }
     }
     const attachments = tool.state.content.flatMap((item, index): FilePart[] =>
@@ -252,7 +253,7 @@ function toolPart(sessionID: string, messageID: string, tool: SessionMessageAssi
       output: tool.state.content.flatMap((item) => (item.type === "text" ? [item.text] : [])).join("\n"),
       title: tool.name,
       metadata: normalizeToolMetadata(tool.name, tool.state.structured),
-      time: { start, end: tool.time.completed ?? start },
+      time: { start, end: tool.time.completed ?? null },
       attachments: attachments.length ? attachments : undefined,
     }
   })()

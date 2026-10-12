@@ -53,15 +53,29 @@ real(
   async () => {
     await using tmp = await tmpdir()
     if (!binary) throw new Error("missing native binary")
+    const streamed = Promise.withResolvers<void>()
     const upstream = Bun.serve({
       port: 0,
       fetch() {
         return new Response(
-          [
-            'data: {"choices":[{"index":0,"delta":{"role":"assistant","content":"IDENTITY_ACK"},"finish_reason":null}]}\n\n',
-            'data: {"choices":[{"index":0,"delta":{},"finish_reason":"stop"}]}\n\n',
-            "data: [DONE]\n\n",
-          ].join(""),
+          new ReadableStream({
+            async start(controller) {
+              const encoder = new TextEncoder()
+              controller.enqueue(
+                encoder.encode(
+                  'data: {"choices":[{"index":0,"delta":{"reasoning_content":"check identity","content":"IDENTITY_"},"finish_reason":null}]}\n\n',
+                ),
+              )
+              await streamed.promise
+              controller.enqueue(
+                encoder.encode('data: {"choices":[{"index":0,"delta":{"content":"ACK"},"finish_reason":null}]}\n\n'),
+              )
+              controller.enqueue(
+                encoder.encode('data: {"choices":[{"index":0,"delta":{},"finish_reason":"stop"}]}\n\ndata: [DONE]\n\n'),
+              )
+              controller.close()
+            },
+          }),
           { headers: { "content-type": "text/event-stream" } },
         )
       },
@@ -81,7 +95,10 @@ real(
     client.onEvent((event) => {
       if (event.kind === "run.finished") finished.resolve()
     })
-    const facade = new EngineSession(client, (event) => outputs.push(event))
+    const facade = new EngineSession(client, (event) => {
+      outputs.push(event)
+      if (event.type === "session.next.text.delta") streamed.resolve()
+    })
     try {
       await facade.prompt("ses_identity_native", "say it", { inputID: "in_identity", delivery: "steer" })
       await finished.promise
@@ -106,7 +123,16 @@ real(
       )
         throw new Error("missing committed assistant")
       expect(data.assistantMessageID).toBe(text.assistantMessageID)
+      const deltas = outputs.filter((event) => event.type === "session.next.text.delta")
+      expect(deltas).toHaveLength(2)
+      expect(deltas.map((event) => event.source.index)).toEqual([0, 1])
+      for (const delta of deltas) {
+        expect(delta.data).toMatchObject({ assistantMessageID: text.assistantMessageID })
+        expect(delta.data).toMatchObject({ textID: Reflect.get(text, "textID") })
+      }
+      expect(outputs.indexOf(deltas[0])).toBeLessThan(outputs.indexOf(assistant!))
     } finally {
+      streamed.resolve()
       clearTimeout(timer)
       await client.close()
       upstream.stop(true)

@@ -176,6 +176,8 @@ pub struct Anthropic {
     endpoint: String,
     source: Source,
     model: String,
+    max_tokens: u32,
+    prompt_cache: bool,
 }
 
 impl Anthropic {
@@ -196,7 +198,24 @@ impl Anthropic {
             endpoint,
             source,
             model,
+            max_tokens: 4096,
+            prompt_cache: false,
         })
+    }
+
+    /// Anthropic requires an explicit output cap; 4096 is only the pre-existing
+    /// default, so a caller that knows the model's limit should set it.
+    pub fn with_max_tokens(mut self, max_tokens: u32) -> Self {
+        self.max_tokens = max_tokens;
+        self
+    }
+
+    /// Marks the stable prefix — system prompt and the tool catalog — as a
+    /// cacheable breakpoint. Anthropic caches up to the marked block, so both
+    /// belong to the same prefix and adding another one later invalidates it.
+    pub fn with_prompt_cache(mut self, enabled: bool) -> Self {
+        self.prompt_cache = enabled;
+        self
     }
 }
 
@@ -246,6 +265,21 @@ impl Provider for Anthropic {
                     *block = json!({"type":"image","source":{"type":"base64","media_type":mime,"data":data}});
                     continue;
                 }
+                if message.role == "assistant" && block["type"] == "reasoning" {
+                    let text = block["text"].as_str().ok_or_else(|| {
+                        ProviderError::Stream("invalid Anthropic reasoning part".into())
+                    })?;
+                    let mut thinking = json!({"type":"thinking","thinking":text});
+                    if let Some(signature) = block
+                        .get("signature")
+                        .and_then(Value::as_str)
+                        .filter(|signature| !signature.is_empty())
+                    {
+                        thinking["signature"] = Value::String(signature.into());
+                    }
+                    *block = thinking;
+                    continue;
+                }
                 if !matches!(
                     (message.role.as_str(), block["type"].as_str()),
                     ("user" | "assistant", Some("text"))
@@ -274,16 +308,35 @@ impl Provider for Anthropic {
             .into_iter()
             .map(|message| json!({"role":message.role,"content":message.content}))
             .collect();
+        // The default stays the plain string system prompt and a plain tool
+        // catalog; the block form is only needed to carry a cache breakpoint.
+        let tools = if self.prompt_cache {
+            let mut tools =
+                serde_json::to_value(&request.tools).map_err(|_| ProviderError::Transport)?;
+            if let Some(last) = tools.as_array_mut().and_then(|tools| tools.last_mut()) {
+                last["cache_control"] = json!({"type":"ephemeral"});
+            }
+            tools
+        } else {
+            json!(request.tools)
+        };
+        let system = if self.prompt_cache {
+            json!([{"type":"text","text":request.system,"cache_control":{"type":"ephemeral"}}])
+        } else {
+            json!(request.system)
+        };
         let request=self.client.post(&self.endpoint)
             .header("x-api-key",credential.header()?).header("anthropic-version","2023-06-01")
-            .json(&json!({"model":self.model,"max_tokens":4096,"stream":true,"messages":messages,"system":request.system,"tools":request.tools}))
+            .json(&json!({"model":self.model,"max_tokens":self.max_tokens,"stream":true,"messages":messages,"system":system,"tools":tools}))
             .build().map_err(|_|ProviderError::Transport)?;
-        let response = request_with_retry(&self.client, request, &progress, &cancel).await?;
+        let response =
+            request_with_retry("anthropic", &self.client, request, &progress, &cancel).await?;
         read_stream(response, progress, cancel, StreamState::default()).await
     }
 }
 
 pub(crate) async fn request_with_retry(
+    protocol: &str,
     client: &reqwest::Client,
     request: reqwest::Request,
     progress: &mpsc::Sender<Value>,
@@ -303,15 +356,23 @@ pub(crate) async fn request_with_retry(
         let request = request
             .try_clone()
             .ok_or_else(|| ProviderError::Stream("request cannot be replayed".into()))?;
+        let request_seq =
+            crate::runtime_profile::record(protocol, &request, scope.budget.used()).await?;
         let first_event = crate::first_event::FirstEventDeadline::default();
         let request_deadline = first_event.0.map_or(deadline, |first| deadline.min(first));
         let response = tokio::select! {
-            _=cancel.cancelled()=>return Err(ProviderError::Interrupted),
+            _=cancel.cancelled()=>Err(ProviderError::Interrupted),
             result=tokio::time::timeout_at(request_deadline,client.execute(request))=>match result {
                 Ok(Ok(mut response))=>{ response.extensions_mut().insert(first_event); Ok(response) },
                 _=>Err(ProviderError::Transport),
             },
         };
+        let (status, outcome) = match &response {
+            Ok(response) => (Some(response.status().as_u16()), "headers_received"),
+            Err(ProviderError::Interrupted) => (None, "interrupted_unknown"),
+            Err(_) => (None, "transport_unknown"),
+        };
+        crate::runtime_profile::result(request_seq, status, outcome).await?;
         let error = match response {
             Ok(response) if response.status().is_success() => return Ok(response),
             Ok(response) => ProviderError::Http(response.status().as_u16()),
@@ -326,9 +387,16 @@ pub(crate) async fn request_with_retry(
         {
             return Err(error);
         }
+        // Carry the reason so a client can show why the attempt was retried.
+        // Only retryable errors reach here, so `is_retryable` is true by
+        // construction; the status code is the HTTP one when there was one.
+        let (reason, status) = match &error {
+            ProviderError::Http(status) => (error.to_string(), Some(*status)),
+            other => (other.to_string(), None),
+        };
         tokio::select! {
             _=cancel.cancelled()=>return Err(ProviderError::Interrupted),
-            result=progress.send(json!({"kind":"provider.retry","attempt":attempt+1}))=>if result.is_err(){return Err(ProviderError::Interrupted);},
+            result=progress.send(json!({"kind":"provider.retry","attempt":attempt+1,"reason":reason,"status":status}))=>if result.is_err(){return Err(ProviderError::Interrupted);},
         }
         tokio::select! {
             _=cancel.cancelled()=>return Err(ProviderError::Interrupted),
@@ -415,6 +483,24 @@ struct StreamState {
     stopped: bool,
 }
 
+/// Anthropic reports thinking natively; the canonical part is `reasoning`, so
+/// the opaque signature travels with it and the lowering step restores the
+/// block shape the provider expects.
+fn reasoning_part(block: Value) -> Value {
+    if block["type"] != "thinking" {
+        return block;
+    }
+    let text = block["thinking"].as_str().unwrap_or("").to_owned();
+    let mut part = json!({"type":"reasoning","text":text});
+    if let Some(signature) = block["signature"]
+        .as_str()
+        .filter(|value| !value.is_empty())
+    {
+        part["signature"] = Value::String(signature.into());
+    }
+    part
+}
+
 impl StreamState {
     fn event(&mut self, event: &Value) -> Result<(), ProviderError> {
         match event["type"].as_str().unwrap_or("") {
@@ -435,8 +521,10 @@ impl StreamState {
                 let block = &event["content_block"];
                 // Unknown hosted tools/thinking must not be silently converted
                 // to text or retried against another provider.
-                if !matches!(block["type"].as_str(), Some("text" | "tool_use"))
-                    || self.blocks.contains_key(&index)
+                if !matches!(
+                    block["type"].as_str(),
+                    Some("text" | "tool_use" | "thinking")
+                ) || self.blocks.contains_key(&index)
                 {
                     return Err(ProviderError::Stream(
                         "unsupported or duplicate content block".into(),
@@ -461,6 +549,24 @@ impl StreamState {
                         let mut value = block["text"].as_str().unwrap_or("").to_owned();
                         value.push_str(text);
                         block["text"] = Value::String(value);
+                    }
+                    Some("thinking_delta") if block["type"] == "thinking" => {
+                        let text = event["delta"]["thinking"].as_str().ok_or_else(|| {
+                            ProviderError::Stream("invalid thinking delta".into())
+                        })?;
+                        let mut value = block["thinking"].as_str().unwrap_or("").to_owned();
+                        value.push_str(text);
+                        block["thinking"] = Value::String(value);
+                    }
+                    // The signature is opaque to us and must return verbatim
+                    // with the reasoning it authenticated.
+                    Some("signature_delta") if block["type"] == "thinking" => {
+                        let signature = event["delta"]["signature"].as_str().ok_or_else(|| {
+                            ProviderError::Stream("invalid signature delta".into())
+                        })?;
+                        let mut value = block["signature"].as_str().unwrap_or("").to_owned();
+                        value.push_str(signature);
+                        block["signature"] = Value::String(value);
                     }
                     Some("input_json_delta") if block["type"] == "tool_use" => {
                         let text = event["delta"]["partial_json"]
@@ -521,17 +627,16 @@ impl StreamState {
                 "incomplete or unsupported stop reason".into(),
             ));
         }
-        if self.blocks.is_empty()
-            || (!needs_tools
-                && !self
-                    .blocks
-                    .values()
-                    .any(|b| b["text"].as_str().is_some_and(|s| !s.is_empty())))
-        {
+        let visible = |key: &str| {
+            self.blocks
+                .values()
+                .any(|b| b[key].as_str().is_some_and(|value| !value.is_empty()))
+        };
+        if self.blocks.is_empty() || (!needs_tools && !visible("text") && !visible("thinking")) {
             return Err(ProviderError::Stream("empty completed message".into()));
         }
         Ok(Reply {
-            content: Value::Array(self.blocks.into_values().collect()),
+            content: Value::Array(self.blocks.into_values().map(reasoning_part).collect()),
             usage: crate::usage::anthropic(&Value::Object(self.usage)),
             needs_tools,
         })
@@ -562,9 +667,13 @@ impl Parser for StreamState {
         let content = self
             .blocks
             .into_values()
+            .map(reasoning_part)
             .filter(|block| {
-                block["type"] == "text"
-                    && block["text"].as_str().is_some_and(|text| !text.is_empty())
+                matches!(block["type"].as_str(), Some("text" | "reasoning"))
+                    && block["text"]
+                        .as_str()
+                        .or(block["thinking"].as_str())
+                        .is_some_and(|text| !text.is_empty())
             })
             .collect::<Vec<_>>();
         ProviderError::ContinuableTransport {
@@ -649,8 +758,13 @@ async fn read_stream_with_budget<P: Parser>(
             } {
                 first_event = None;
             }
-            let notice = match frame {
-                Frame::Json(event) => event,
+            // Publish a normalized delta alongside the raw frame. The engine's
+            // own first-event and retry logic reads `raw` through `semantic_event`,
+            // so the provider wire format stays untouched there.
+            let notice = match &frame {
+                Frame::Json(event) => crate::delta::normalize(event)
+                    .map(|delta| json!({"kind":"delta","delta":delta,"raw":event}))
+                    .unwrap_or_else(|| event.clone()),
                 Frame::Done => json!({"kind":"stream.done"}),
             };
             let deadline = input_budget

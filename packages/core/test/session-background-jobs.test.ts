@@ -1,5 +1,7 @@
+import { SessionBackfill } from "@miao/core/session/backfill"
+import { BackgroundJobTool } from "@miao/core/tool/background-job"
 import { describe, expect } from "bun:test"
-import { DateTime, Effect, Layer } from "effect"
+import { DateTime, Effect, Layer, Schema } from "effect"
 import { BackgroundJob } from "@miao/core/background-job"
 import { Database } from "@miao/core/database/database"
 import { AppNodeBuilder } from "@miao/core/effect/app-node-builder"
@@ -204,3 +206,29 @@ describe("Session background-job recovery", () => {
     }),
   )
 })
+
+
+it.effect("durable background observations retain an unknown start after a known settlement", () =>
+  Effect.gen(function* () {
+    const test = yield* setup
+    const message = SessionMessage.Synthetic.make({ id: SessionMessage.ID.create(), sessionID: test.created.id,
+      type: "synthetic", text: "historical start", time: { created: null },
+      metadata: { backgroundJob: { id: "job_test", command: "do work", status: "started" } } })
+    yield* test.db.transaction((tx) => SessionBackfill.write(tx, test.created.id, [message]))
+    const observed = SessionBackgroundJobs.make({ db: test.db, events: test.events, sessionID: test.created.id })
+    expect(yield* observed.observe()).toMatchObject([{ started_at: null }])
+    yield* test.settle("Recorded completion")
+    const jobs = yield* observed.observe()
+    expect(jobs).toMatchObject([{ started_at: null, completed_at: 2000, status: "completed" }])
+    expect(Schema.decodeUnknownSync(BackgroundJobTool.JobInfo)(jobs[0]).started_at).toBeNull()
+  }),
+)
+
+it.effect("a settlement with no start record does not manufacture its start from the completion clock", () =>
+  Effect.gen(function* () {
+    const test = yield* setup
+    yield* test.settle("Recorded completion")
+    const observed = SessionBackgroundJobs.make({ db: test.db, events: test.events, sessionID: test.created.id })
+    expect(yield* observed.observe()).toMatchObject([{ started_at: null, completed_at: 2000, status: "completed" }])
+  }),
+)

@@ -119,6 +119,7 @@ async fn active_parent_requires_closed_explicit_message_boundary() {
         .assistant_reply(
             "parent",
             "run",
+            None,
             json!([{"type":"tool_use","id":"call","name":"read_file","input":{"path":"file"}}]),
         )
         .await

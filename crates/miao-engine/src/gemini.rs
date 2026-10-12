@@ -105,7 +105,8 @@ impl Provider for Gemini {
             .json(&body)
             .build()
             .map_err(|_| ProviderError::Transport)?;
-        let response = request_with_retry(&self.client, request, &progress, &cancel).await?;
+        let response =
+            request_with_retry("gemini", &self.client, request, &progress, &cancel).await?;
         read_stream(
             response,
             progress,

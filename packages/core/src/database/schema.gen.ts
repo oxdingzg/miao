@@ -39,6 +39,17 @@ export default {
         );
       `)
       yield* tx.run(`
+        CREATE TABLE \`session_engine_placement\` (
+          \`session_id\` text PRIMARY KEY,
+          \`engine\` text NOT NULL,
+          \`native_storage\` text,
+          \`location\` text,
+          CONSTRAINT "session_engine_placement_engine" CHECK("engine" IN ('ts', 'rust')),
+          CONSTRAINT "session_engine_placement_native" CHECK(("engine" = 'ts' AND "native_storage" IS NULL AND "location" IS NULL)
+                OR ("engine" = 'rust' AND "native_storage" IS NOT NULL AND "location" IS NOT NULL))
+        );
+      `)
+      yield* tx.run(`
         CREATE TABLE \`account_state\` (
           \`id\` integer PRIMARY KEY,
           \`active_account_id\` text,
@@ -204,7 +215,7 @@ export default {
           \`session_id\` text NOT NULL,
           \`type\` text NOT NULL,
           \`seq\` integer NOT NULL,
-          \`time_created\` integer NOT NULL,
+          \`time_created\` integer,
           \`time_updated\` integer NOT NULL,
           \`data\` text NOT NULL,
           CONSTRAINT \`fk_session_message_session_id_session_id_fk\` FOREIGN KEY (\`session_id\`) REFERENCES \`session\`(\`id\`) ON DELETE CASCADE

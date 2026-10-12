@@ -5,16 +5,20 @@ import { LocationServiceMap } from "@miao/core/location-services"
 import { Location } from "@miao/core/location"
 import { PermissionSaved } from "@miao/core/permission/saved"
 import { Project } from "@miao/core/project"
-import { SessionHeal } from "@miao/core/session/heal"
 import { AbsolutePath } from "@miao/core/schema"
+import { SessionRouting } from "@miao/core/session/routing"
 import { SessionV2 } from "@miao/core/session"
-import { SessionTable } from "@miao/core/session/sql"
 import { WorkspaceV2 } from "@miao/core/workspace"
 import { eq } from "drizzle-orm"
 import { Effect, Layer, Schema } from "effect"
 import { HttpRouter } from "effect/unstable/http"
 import { HttpApiMiddleware } from "effect/unstable/httpapi"
-import { ConflictError, InvalidRequestError, SessionLocationMissingError, SessionNotFoundError } from "@miao/protocol/errors"
+import {
+  ConflictError,
+  InvalidRequestError,
+  SessionLocationMissingError,
+  SessionNotFoundError,
+} from "@miao/protocol/errors"
 import type { LocationServices } from "../location"
 
 export class SessionLocationMiddleware extends HttpApiMiddleware.Service<
@@ -48,51 +52,31 @@ export const sessionLocationLayer = Layer.effect(
               }),
           ),
         )
-        const row = yield* db
-          .select({
-            directory: SessionTable.directory,
-            workspaceID: SessionTable.workspace_id,
-            projectID: SessionTable.project_id,
+        const resolution = yield* SessionRouting.resolve({ db, events, fs, sessionID })
+        // A native Session is owned and stored by the engine. Serving it through
+        // the TypeScript handlers would read and write metadata this server does
+        // not own, so refuse instead of returning wrong data.
+        if (SessionRouting.route(resolution) === "native")
+          return yield* new ConflictError({
+            message: `Session ${sessionID} is owned by the native engine and cannot be served by this server.`,
+            resource: sessionID,
           })
-          .from(SessionTable)
-          .where(eq(SessionTable.id, sessionID))
-          .get()
-          .pipe(Effect.orDie)
-        if (!row)
+        if (resolution.type === "unknown")
           return yield* new SessionNotFoundError({
             sessionID,
             message: `Session not found: ${sessionID}`,
           })
-
-        // A Session whose directory was deleted out-of-band (e.g. a removed
-        // worktree) cannot open its Location; move it back to its project's
-        // checkout first so the request can proceed.
-        const directory = yield* SessionHeal.relocateOrphan({
-          db,
-          events,
-          fs,
-          sessionID,
-          directory: AbsolutePath.make(row.directory),
-          projectID: row.projectID,
-        })
-        if (!directory)
+        if (resolution.type === "missing")
           return yield* new SessionLocationMissingError({
             sessionID,
-            directory: row.directory,
+            directory: resolution.directory,
             message:
-              `Session ${sessionID} lives in "${row.directory}", which no longer exists, ` +
+              `Session ${sessionID} lives in "${resolution.directory}", which no longer exists, ` +
               "and its project checkout could not take it back.",
           })
 
         return yield* effect.pipe(
-          Effect.provide(
-            locations.get(
-              Location.Ref.make({
-                directory,
-                ...(row.workspaceID ? { workspaceID: WorkspaceV2.ID.make(row.workspaceID) } : {}),
-              }),
-            ),
-          ),
+          Effect.provide(locations.get(resolution.location)),
           Effect.provideService(Project.Service, project),
           Effect.provideService(PermissionSaved.Service, permissions),
         )

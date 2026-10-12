@@ -32,7 +32,7 @@ export function agentColor(name: string, custom?: string) {
 }
 
 export function messageAgentColor(
-  list: readonly { type: string; agent?: string }[] | undefined,
+  list: readonly { type: string; agent?: string | null }[] | undefined,
   agents: readonly { name: string; color?: string }[],
 ) {
   if (!list) return undefined

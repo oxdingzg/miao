@@ -25,7 +25,7 @@ export const UnknownError = Schema.Struct({
 const Base = {
   id: ID,
   metadata: Schema.Record(Schema.String, Schema.Unknown).pipe(optional),
-  time: Schema.Struct({ created: DateTimeUtcFromMillis }),
+  time: Schema.Struct({ created: Schema.NullOr(DateTimeUtcFromMillis) }),
 }
 
 export interface AgentSwitched extends Schema.Schema.Type<typeof AgentSwitched> {}
@@ -78,7 +78,7 @@ export const Shell = Schema.Struct({
   command: Schema.String,
   output: Schema.String,
   time: Schema.Struct({
-    created: DateTimeUtcFromMillis,
+    created: Schema.NullOr(DateTimeUtcFromMillis),
     completed: DateTimeUtcFromMillis.pipe(optional),
   }),
 }).annotate({ identifier: "Session.Message.Shell" })
@@ -135,7 +135,7 @@ export const AssistantTool = Schema.Struct({
   }).pipe(optional),
   state: ToolState,
   time: Schema.Struct({
-    created: DateTimeUtcFromMillis,
+    created: Schema.NullOr(DateTimeUtcFromMillis),
     ran: DateTimeUtcFromMillis.pipe(optional),
     completed: DateTimeUtcFromMillis.pipe(optional),
     pruned: DateTimeUtcFromMillis.pipe(optional),
@@ -156,7 +156,7 @@ export const AssistantReasoning = Schema.Struct({
   text: Schema.String,
   providerMetadata: ProviderMetadata.pipe(optional),
   time: Schema.Struct({
-    created: DateTimeUtcFromMillis,
+    created: Schema.NullOr(DateTimeUtcFromMillis),
     completed: DateTimeUtcFromMillis.pipe(optional),
   }).pipe(optional),
 }).annotate({ identifier: "Session.Message.Assistant.Reasoning" })
@@ -170,8 +170,8 @@ export interface Assistant extends Schema.Schema.Type<typeof Assistant> {}
 export const Assistant = Schema.Struct({
   ...Base,
   type: Schema.Literal("assistant"),
-  agent: Schema.String,
-  model: Model.Ref,
+  agent: Schema.NullOr(Schema.String),
+  model: Schema.NullOr(Model.Ref),
   content: AssistantContent.pipe(Schema.Array),
   snapshot: Schema.Struct({
     start: Schema.String.pipe(optional),
@@ -190,7 +190,7 @@ export const Assistant = Schema.Struct({
   ttft: Schema.Finite.pipe(optional),
   error: UnknownError.pipe(optional),
   time: Schema.Struct({
-    created: DateTimeUtcFromMillis,
+    created: Schema.NullOr(DateTimeUtcFromMillis),
     completed: DateTimeUtcFromMillis.pipe(optional),
   }),
 }).annotate({ identifier: "Session.Message.Assistant" })

@@ -482,9 +482,20 @@ async fn drain(
     } else {
         crate::events::Lifecycle::Stop
     };
+    // `reason` stays the coarse lifecycle category (completed/failed/interrupted).
+    // Carry the underlying error text separately so a client can show why the
+    // drain failed instead of the bare category.
+    let message = match &result {
+        Err(error) => Some(error.to_string()),
+        Ok(_) => None,
+    };
     inner
         .store
-        .record(&session, stop.name(), json!({"run_id":run,"reason":reason}))
+        .record(
+            &session,
+            stop.name(),
+            json!({"run_id":run,"reason":reason,"message":message}),
+        )
         .await?;
     result
 }
@@ -588,7 +599,7 @@ async fn execute(
         } else {
             json!({"status":"skipped","reason":"state_read_policy"})
         };
-        inner
+        let started = inner
             .store
             .record(
                 session,
@@ -626,31 +637,68 @@ async fn execute(
         let transport_budget = crate::provider::Budget::new();
         let reply = loop {
             let (send, mut receive) = mpsc::channel(64);
-            let response = crate::provider::scoped(
-                transport_budget.clone(),
-                3,
-                inner
-                    .provider
-                    .stream(request.clone(), send, cancel.child_token()),
+            let response = crate::runtime_profile::scoped(
+                crate::runtime_profile::Scope {
+                    store: inner.store.clone(),
+                    session: session.into(),
+                    run: run.into(),
+                    step,
+                    context_epoch,
+                    agent: json!({"name":"native-runtime","semantics":"native-runtime-v1","collaborationMode":if plan {"plan"} else {"build"}}),
+                    permissions: json!({"policy":inner.policy.descriptor(),"boundary":inner.tools.authority_descriptor()}),
+                },
+                crate::provider::scoped(
+                    transport_budget.clone(),
+                    3,
+                    inner
+                        .provider
+                        .stream(request.clone(), send, cancel.child_token()),
+                ),
             );
             tokio::pin!(response);
             let outcome = loop {
                 tokio::select! {
                     _=cancel.cancelled()=>return Ok(()),
                     reply=&mut response=>break reply,
-                    Some(delta)=receive.recv()=>{ produced |= delta["kind"] != "provider.retry" && crate::first_event::semantic_event(&delta); let _=inner.progress.send(json!({"session_id":session,"run_id":run,"step":step,"kind":"provider.delta","data":delta})); },
+                    Some(delta)=receive.recv()=>{
+                        if delta["kind"] == "provider.retry" {
+                            // A retry is a durable product fact that survives replay,
+                            // unlike stream deltas, so it is recorded rather than
+                            // forwarded on the ephemeral progress channel. It is not
+                            // provider output, so it never counts as `produced`.
+                            inner.store.record(session,"provider.retry",json!({
+                                "run_id":run,"step":step,
+                                "attempt":delta["attempt"],"reason":delta["reason"],"status":delta["status"],
+                            })).await?;
+                        } else {
+                            produced |= crate::first_event::semantic_event(delta.get("raw").unwrap_or(&delta));
+                            let _=inner.progress.send(json!({"session_id":session,"run_id":run,"step":step,"kind":"provider.delta","anchor_seq":started.seq,"recorded_at_ms":started.recorded_at_ms,"data":delta}));
+                        }
+                    },
                 }
             };
-            // Retry only if no output was emitted. Draining the receiver covers a
-            // delta the provider sent just before failing but that the select loop
-            // had not yet forwarded.
-            let observed = produced
-                || std::iter::from_fn(|| receive.try_recv().ok()).any(|event| {
-                    event["kind"] != "provider.retry" && crate::first_event::semantic_event(&event)
-                });
+            // Completion can win select while the final frames are still queued.
+            // Deliver every queued fact before committing the response or retrying.
+            while let Ok(delta) = receive.try_recv() {
+                if delta["kind"] == "provider.retry" {
+                    inner.store.record(session, "provider.retry", json!({
+                        "run_id":run,"step":step,
+                        "attempt":delta["attempt"],"reason":delta["reason"],"status":delta["status"],
+                    })).await?;
+                } else {
+                    produced |=
+                        crate::first_event::semantic_event(delta.get("raw").unwrap_or(&delta));
+                    let _ =
+                        inner
+                            .progress
+                            .send(json!({"session_id":session,"run_id":run,"step":step,
+                        "kind":"provider.delta","anchor_seq":started.seq,
+                        "recorded_at_ms":started.recorded_at_ms,"data":delta}));
+                }
+            }
             match outcome {
                 Err(ProviderError::Transport) | Err(ProviderError::ResponseTransport)
-                    if !observed && attempts < 2 =>
+                    if !produced && attempts < 2 =>
                 {
                     attempts += 1;
                     continue;
@@ -689,7 +737,12 @@ async fn execute(
                     {
                         inner
                             .store
-                            .assistant_reply(session, run, partial.content.clone())
+                            .assistant_reply(
+                                session,
+                                run,
+                                Some(started.seq),
+                                partial.content.clone(),
+                            )
                             .await?;
                     }
                     inner
@@ -764,6 +817,7 @@ async fn execute(
                 session,
                 run,
                 step,
+                Some(started.seq),
                 reply.content.clone(),
                 inner.provider.reply_identity(&reply),
             )
@@ -994,7 +1048,14 @@ async fn execute(
                                         let is_error = replay_error.unwrap_or(
                                             (prepared_external && output["isError"] == true)
                                                 || (name == "question"
-                                                    && output["state"] != "answered"),
+                                                    && output["state"] != "answered")
+                                                // Native tools signal rejection through a
+                                                // structured error payload that carries
+                                                // recovery data, not through Err.
+                                                || (!prepared_external
+                                                    && output
+                                                        .get("error")
+                                                        .is_some_and(Value::is_string)),
                                         );
                                         (output, is_error)
                                     }

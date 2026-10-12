@@ -44,7 +44,8 @@ import { isScrollKeyTarget, scrollKey, scrollKeyOwner, ScrollView } from "@miao/
 import { StickyAccordionHeader } from "@miao/ui/sticky-accordion-header"
 import { TextReveal } from "@miao/ui/text-reveal"
 import { TextShimmer } from "@miao/ui/text-shimmer"
-import type { Message as MessageType, Part as PartType, ToolPart } from "@miao/schema/view-models"
+import type { Message as MessageType } from "@miao/schema/view-models"
+import type { PartType, ToolPart } from "@miao/schema/render-part"
 import type { SessionMessageAssistant, SessionMessageUser } from "@miao/session-ui/content"
 import { showToast } from "@/utils/toast"
 import { downloadSessionExport, fetchSessionExport, sessionExportFilename } from "@/utils/session-export"
@@ -123,11 +124,7 @@ const markBoundaryGesture = (input: {
   }
 }
 
-function TimelineThinkingRow(props: {
-  reasoningHeading?: string
-  showReasoningSummaries: boolean
-  phase?: BusyPhase
-}) {
+function TimelineThinkingRow(props: { reasoningHeading?: string; showReasoningSummaries: boolean; phase?: BusyPhase }) {
   const language = useLanguage()
   const label = createMemo(() => language.t(sessionPhaseLabelKey(props.phase)))
 
@@ -894,7 +891,7 @@ export function MessageTimeline(props: {
       },
       undefined,
     )
-    if (typeof end !== "number") return
+    if (typeof end !== "number" || message.time.created === null) return
     if (end < message.time.created) return
     return end - message.time.created
   }
@@ -1097,8 +1094,11 @@ export function MessageTimeline(props: {
         return (
           <TimelineRowFrame row={turnDividerRow}>
             <div data-slot="session-turn-message-container" class="w-full px-4 md:px-5">
-              <div data-slot="session-turn-compaction" data-timeline-label={turnDividerRow().label}
-                data-testid={`timeline-divider-${turnDividerRow().label}`}>
+              <div
+                data-slot="session-turn-compaction"
+                data-timeline-label={turnDividerRow().label}
+                data-testid={`timeline-divider-${turnDividerRow().label}`}
+              >
                 <MessageDivider
                   label={language.t(
                     turnDividerRow().label === "compaction" ? "ui.messagePart.compaction" : "ui.message.interrupted",

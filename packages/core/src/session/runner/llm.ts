@@ -1385,7 +1385,7 @@ const layer = Layer.effect(
       const parentAssistant = parentContext.findLast((message) => message.type === "assistant")
       // Inherit the active turn, including a sampled model that changed after resolution.
       const parentAgent = yield* agents.select(parent.agent)
-      const model = request.model ?? selection.info.model ?? (parentAssistant?.type === "assistant" ? parentAssistant.model : (parent.model ?? parentAgent.info?.model))
+      const model = request.model ?? selection.info.model ?? (parentAssistant?.type === "assistant" ? parentAssistant.model ?? undefined : (parent.model ?? parentAgent.info?.model))
       // An explicit choice always wins. Otherwise a read-only subagent defaults
       // to the background so it cannot block the parent's turn. When the entry
       // point carries no delegation capability, fall back to the blocking

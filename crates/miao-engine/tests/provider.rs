@@ -1,3 +1,5 @@
+mod common;
+
 use miao_engine::{
     protocol::{Message, ModelRequest},
     provider::{Anthropic, Frame, Provider, ProviderError, SseDecoder},
@@ -204,5 +206,148 @@ async fn small_sse_frames_cannot_bypass_the_per_tool_argument_budget() {
         matches!(result, Err(ProviderError::Stream(ref message)) if message == "tool input exceeds byte budget")
     );
     assert_eq!(count.load(Ordering::SeqCst), 1);
+    server.await.unwrap();
+}
+
+fn thinking_frames() -> Vec<serde_json::Value> {
+    vec![
+        json!({"type":"message_start","message":{"usage":{"input_tokens":7}}}),
+        json!({"type":"content_block_start","index":0,"content_block":{"type":"thinking","thinking":"","signature":""}}),
+        json!({"type":"content_block_delta","index":0,"delta":{"type":"thinking_delta","thinking":"先看"}}),
+        json!({"type":"content_block_delta","index":0,"delta":{"type":"thinking_delta","thinking":"文件。"}}),
+        json!({"type":"content_block_delta","index":0,"delta":{"type":"signature_delta","signature":"sig"}}),
+        json!({"type":"content_block_stop","index":0}),
+        json!({"type":"content_block_start","index":1,"content_block":{"type":"text","text":""}}),
+        json!({"type":"content_block_delta","index":1,"delta":{"type":"text_delta","text":"好的"}}),
+        json!({"type":"content_block_stop","index":1}),
+        json!({"type":"message_delta","delta":{"stop_reason":"end_turn"},"usage":{"output_tokens":2}}),
+        json!({"type":"message_stop"}),
+    ]
+}
+
+#[tokio::test]
+async fn anthropic_thinking_round_trips_as_reasoning_with_its_signature() {
+    let bodies = thinking_frames()
+        .iter()
+        .map(|value| format!("data: {value}\r\n\r\n"))
+        .collect::<String>();
+    let (url, mut requests, server) =
+        common::endpoint(vec![(200, bodies), (200, text_stream())]).await;
+    let provider = Anthropic::new(url, "fixture-key".into(), "fixture-model".into()).unwrap();
+    let (progress, _receive) = mpsc::channel(64);
+    let reply = provider
+        .stream(history(), progress, CancellationToken::new())
+        .await
+        .unwrap();
+    assert_eq!(
+        reply.content,
+        json!([
+            {"type":"reasoning","text":"先看文件。","signature":"sig"},
+            {"type":"text","text":"好的"}
+        ])
+    );
+    let mut follow = history();
+    follow.messages.push(Message {
+        role: "assistant".into(),
+        content: reply.content.clone(),
+        checkpoint: None,
+        recorded_at_ms: None,
+    });
+    follow.messages.push(Message {
+        role: "user".into(),
+        content: json!([{"type":"text","text":"continue"}]),
+        checkpoint: None,
+        recorded_at_ms: None,
+    });
+    let (progress, _receive) = mpsc::channel(64);
+    provider
+        .stream(follow, progress, CancellationToken::new())
+        .await
+        .unwrap();
+    requests.recv().await.unwrap();
+    let second = requests.recv().await.unwrap();
+    // The canonical part returns as the signed block the provider expects.
+    assert_eq!(
+        second["messages"][1]["content"][0],
+        json!({"type":"thinking","thinking":"先看文件。","signature":"sig"})
+    );
+    assert_eq!(
+        second["messages"][1]["content"][1],
+        json!({"type":"text","text":"好的"})
+    );
+    server.await.unwrap();
+}
+
+#[tokio::test]
+async fn anthropic_rejects_redacted_thinking_and_allows_reasoning_only_turns() {
+    let redacted = [json!({"type":"message_start","message":{"usage":{}}}), json!({"type":"content_block_start","index":0,"content_block":{"type":"redacted_thinking","data":"opaque"}}), json!({"type":"message_stop"})]
+        .iter()
+        .map(|value| format!("data: {value}\r\n\r\n"))
+        .collect::<String>();
+    let (url, _, server) = endpoint(vec![(200, redacted)]).await;
+    let provider = Anthropic::new(url, "fixture-key".into(), "fixture-model".into()).unwrap();
+    let (progress, _receive) = mpsc::channel(64);
+    assert!(matches!(
+        provider
+            .stream(history(), progress, CancellationToken::new())
+            .await,
+        Err(ProviderError::Stream(_))
+    ));
+    server.await.unwrap();
+
+    let reasoning_only = [json!({"type":"message_start","message":{"usage":{}}}), json!({"type":"content_block_start","index":0,"content_block":{"type":"thinking","thinking":"","signature":""}}), json!({"type":"content_block_delta","index":0,"delta":{"type":"thinking_delta","thinking":"only"}}), json!({"type":"content_block_stop","index":0}), json!({"type":"message_delta","delta":{"stop_reason":"end_turn"},"usage":{}}), json!({"type":"message_stop"})]
+        .iter()
+        .map(|value| format!("data: {value}\r\n\r\n"))
+        .collect::<String>();
+    let (url, _, server) = endpoint(vec![(200, reasoning_only)]).await;
+    let provider = Anthropic::new(url, "fixture-key".into(), "fixture-model".into()).unwrap();
+    let (progress, _receive) = mpsc::channel(64);
+    let reply = provider
+        .stream(history(), progress, CancellationToken::new())
+        .await
+        .unwrap();
+    assert_eq!(reply.content, json!([{"type":"reasoning","text":"only"}]));
+    assert!(!reply.needs_tools);
+    server.await.unwrap();
+}
+
+#[tokio::test]
+async fn anthropic_prompt_cache_marks_the_stable_prefix_and_honours_max_tokens() {
+    let (url, mut requests, server) = common::endpoint(vec![(200, text_stream())]).await;
+    let provider = Anthropic::new(url, "fixture-key".into(), "fixture-model".into())
+        .unwrap()
+        .with_max_tokens(64_000)
+        .with_prompt_cache(true);
+    let (progress, _receive) = mpsc::channel(64);
+    provider
+        .stream(history(), progress, CancellationToken::new())
+        .await
+        .unwrap();
+    let body = requests.recv().await.unwrap();
+    assert_eq!(body["max_tokens"], 64_000);
+    assert_eq!(
+        body["system"],
+        json!([{"type":"text","text":"","cache_control":{"type":"ephemeral"}}])
+    );
+    assert_eq!(
+        body["tools"][0]["cache_control"],
+        json!({"type":"ephemeral"})
+    );
+    server.await.unwrap();
+}
+
+#[tokio::test]
+async fn anthropic_defaults_keep_the_plain_system_prompt_uncached() {
+    let (url, mut requests, server) = common::endpoint(vec![(200, text_stream())]).await;
+    let provider = Anthropic::new(url, "fixture-key".into(), "fixture-model".into()).unwrap();
+    let (progress, _receive) = mpsc::channel(64);
+    provider
+        .stream(history(), progress, CancellationToken::new())
+        .await
+        .unwrap();
+    let body = requests.recv().await.unwrap();
+    assert_eq!(body["max_tokens"], 4096);
+    assert_eq!(body["system"], json!(""));
+    assert!(body["tools"][0].get("cache_control").is_none());
     server.await.unwrap();
 }

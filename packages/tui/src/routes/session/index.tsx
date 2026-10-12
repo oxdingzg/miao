@@ -1615,7 +1615,7 @@ function AssistantMessage(props: { message: TranscriptAssistantMessage; sessionI
   const local = useLocal()
   const { theme } = useTheme()
   const sync = useSync()
-  const model = createMemo(() => Model.name(ctx.providers(), props.message.model.providerID, props.message.model.id))
+  const model = createMemo(() => Model.name(ctx.providers(), props.message.model?.providerID, props.message.model?.id))
   // V2 errors are untyped `{ type: "unknown", message }`; an aborted turn is
   // recognized by its abort message text.
   const aborted = createMemo(() => props.message.error?.message.toLowerCase().includes("abort") ?? false)
@@ -1626,7 +1626,7 @@ function AssistantMessage(props: { message: TranscriptAssistantMessage; sessionI
 
   const duration = createMemo(() => {
     if (!final()) return 0
-    if (!props.message.time.completed) return 0
+    if (props.message.time.completed === undefined || props.message.time.created === null) return null
     return props.message.time.completed - props.message.time.created
   })
 
@@ -2560,7 +2560,7 @@ function Task(props: ToolProps) {
 
   const duration = createMemo(() => {
     const first = childMessages().find((x) => x.type === "user")?.time.created
-    if (first !== undefined) {
+    if (first !== undefined && first !== null) {
       const completed = childMessages().findLast((x) => x.type === "assistant")?.time.completed
       const span = (completed ?? (running() ? now() : first)) - first
       // A completed child transcript whose final assistant message never

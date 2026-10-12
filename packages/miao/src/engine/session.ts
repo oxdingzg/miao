@@ -1,4 +1,9 @@
-import { EngineClient, EngineError, type EngineEvent } from "./client"
+import { Schema } from "effect"
+import { Prompt } from "@miao/schema/prompt"
+import { SessionInput } from "@miao/schema/session-input"
+import { SessionMessage } from "@miao/schema/session-message"
+import { SessionID } from "@miao/schema/session-id"
+import { EngineClient, EngineError, type EngineEvent, type EngineProgress } from "./client"
 import {
   StatusBridge,
   ToolBridge,
@@ -7,7 +12,13 @@ import {
   translateApprovalResolved,
   translateAssistantIdentity,
   translateMessage,
+  translateProviderRequest,
+  translateProviderRequestResult,
+  translateQuestionResolved,
+  translateRetried,
+  translateRunFailure,
   translateQuestion,
+  translateTextDelta,
   translateTools,
 } from "./bridge"
 
@@ -31,12 +42,49 @@ export class EngineSession {
   #status = new StatusBridge()
   #tools = new ToolBridge()
   #prompts = new PromptBridge()
+  #settledThrough = new Map<string, number>()
   #subscriptions = new Map<string, { mode: "live" | "restored"; ready: Promise<unknown> }>()
 
   constructor(client: EngineClient, publish: EnginePublish) {
     this.#client = client
     this.#publish = publish
     client.onEvent((event) => this.#dispatch(event))
+    client.onProgress((progress) => this.#progressUpdate(progress))
+  }
+
+  /** The durable step-start sequence, keyed by session/run/step: a streamed part's id anchor. */
+  readonly #anchors = new Map<string, { seq: number; recordedAtMs: number | null; nextDelta: number }>()
+
+  #progressUpdate(progress: EngineProgress): void {
+    if (progress.kind !== "provider.delta") return
+    const sessionID = progress.session_id
+    if (typeof sessionID !== "string") return
+    const run = progress.run_id
+    const step = progress.step
+    if (typeof run !== "string" || typeof step !== "number") return
+    const key = `${sessionID}/${run}/${step}`
+    const existing = this.#anchors.get(key)
+    const seq = progress.anchor_seq
+    const recorded = progress.recorded_at_ms
+    const anchor =
+      existing ??
+      (typeof seq === "number" &&
+      Number.isSafeInteger(seq) &&
+      seq > 0 &&
+      typeof recorded === "number" &&
+      Number.isSafeInteger(recorded) &&
+      recorded >= 0
+        ? { seq, recordedAtMs: recorded, nextDelta: 0 }
+        : undefined)
+    if (!anchor || anchor.seq <= (this.#settledThrough.get(sessionID) ?? 0)) return
+    this.#anchors.set(key, anchor)
+    const data = translateTextDelta(progress, anchor)
+    if (!data) return
+    this.#publish({
+      type: "session.next.text.delta",
+      data,
+      source: { sessionID, seq: anchor.seq, index: anchor.nextDelta++, recordedAtMs: anchor.recordedAtMs },
+    })
   }
 
   /** Subscribe before admitting; retain the caller's identity for exact retries. */
@@ -112,6 +160,70 @@ export class EngineSession {
     return snapshot
   }
 
+  /** Product admission receipt sourced from the committed native admission row. */
+  async promptProduct(input: {
+    sessionID: SessionID
+    prompt: Prompt
+    id?: SessionMessage.ID
+    delivery?: "steer" | "queue"
+    resume?: boolean
+  }): Promise<SessionInput.Admitted> {
+    // The native prompt vocabulary currently carries plain text only. Reject
+    // richer product inputs before admission, so they cannot be silently lost.
+    if (input.prompt.command || input.prompt.files?.length || input.prompt.agents?.length)
+      throw new EngineError("engine_prompt_unsupported", "native product admission currently requires plain text")
+    const id = input.id ?? SessionMessage.ID.create()
+    const delivery = input.delivery ?? "steer"
+    const admitted = await this.prompt(input.sessionID, input.prompt.text, {
+      inputID: id,
+      delivery,
+      resume: input.resume,
+    })
+    if (
+      typeof admitted !== "object" ||
+      admitted === null ||
+      !("input_id" in admitted) ||
+      admitted.input_id !== id ||
+      !("admitted_seq" in admitted) ||
+      typeof admitted.admitted_seq !== "number" ||
+      !Number.isSafeInteger(admitted.admitted_seq) ||
+      admitted.admitted_seq < 1
+    )
+      throw new EngineError("engine_admission_invalid", "native admission has no matching input sequence")
+    const page = await this.#client.request("events", { session_id: input.sessionID, after: admitted.admitted_seq - 1 })
+    const event: unknown = Array.isArray(page) ? page[0] : undefined
+    if (
+      typeof event !== "object" ||
+      event === null ||
+      !("session_id" in event) ||
+      event.session_id !== input.sessionID ||
+      !("seq" in event) ||
+      event.seq !== admitted.admitted_seq ||
+      !("kind" in event) ||
+      event.kind !== "input.admitted" ||
+      !("recorded_at_ms" in event) ||
+      typeof event.recorded_at_ms !== "number" ||
+      !Number.isSafeInteger(event.recorded_at_ms) ||
+      event.recorded_at_ms < 0 ||
+      !("data" in event) ||
+      typeof event.data !== "object" ||
+      event.data === null ||
+      !("input_id" in event.data) ||
+      event.data.input_id !== id ||
+      !("delivery" in event.data) ||
+      event.data.delivery !== delivery
+    )
+      throw new EngineError("engine_admission_invalid", "native durable admission facts are missing or inconsistent")
+    return Schema.decodeUnknownSync(SessionInput.Admitted)({
+      id,
+      sessionID: input.sessionID,
+      admittedSeq: event.seq,
+      delivery,
+      prompt: { text: input.prompt.text },
+      timeCreated: event.recorded_at_ms,
+    })
+  }
+
   #dispatch(event: EngineEvent): void {
     // The index is per event type, so suppressing an unrelated status update
     // cannot change a message's identity on replay.
@@ -130,12 +242,49 @@ export class EngineSession {
       })
     }
     this.#tools.note(event)
+    const committed =
+      event.kind === "message.committed" &&
+      typeof event.data === "object" &&
+      event.data !== null &&
+      "role" in event.data &&
+      event.data.role === "assistant"
+    if (committed || event.kind === "run.finished") {
+      // The durable boundary wins over late progress from the independent pipe.
+      // Keep one cursor per subscribed Session, rather than retaining every run.
+      this.#settledThrough.set(event.session_id, Math.max(this.#settledThrough.get(event.session_id) ?? 0, event.seq))
+      for (const [key, anchor] of this.#anchors) {
+        if (key.startsWith(`${event.session_id}/`) && anchor.seq <= event.seq) this.#anchors.delete(key)
+      }
+    }
+    if (event.kind === "provider.started" && event.seq > (this.#settledThrough.get(event.session_id) ?? 0)) {
+      const data: unknown = event.data
+      const run = typeof data === "object" && data !== null && "run_id" in data ? data.run_id : undefined
+      const step = typeof data === "object" && data !== null && "step" in data ? data.step : undefined
+      if (
+        typeof run === "string" &&
+        typeof step === "number" &&
+        !this.#anchors.has(`${event.session_id}/${run}/${step}`)
+      )
+        this.#anchors.set(`${event.session_id}/${run}/${step}`, {
+          seq: event.seq,
+          recordedAtMs: event.recorded_at_ms ?? null,
+          nextDelta: 0,
+        })
+    }
     const status = this.#status.update(event)
     if (status) publish({ type: "session.next.status", data: status })
     const admitted = this.#prompts.project(event)
     if (admitted) publish({ type: "session.next.prompt.admitted", data: admitted })
     const identity = translateAssistantIdentity(event)
     if (identity) publish({ type: "session.next.assistant.identity", data: identity })
+    const failure = translateRunFailure(event)
+    if (failure) publish({ type: "session.next.failed", data: failure })
+    const retry = translateRetried(event)
+    if (retry) publish({ type: "session.next.retried", data: retry })
+    const request = translateProviderRequest(event)
+    if (request) publish({ type: "session.next.provider.request", data: request })
+    const requestResult = translateProviderRequestResult(event)
+    if (requestResult) publish({ type: "session.next.provider.request.result", data: requestResult })
     for (const text of translateMessage(event)) publish({ type: "session.next.text.ended", data: text })
     for (const call of translateTools(event)) publish({ type: "session.next.tool.called", data: call })
     const result = this.#tools.result(event)
@@ -146,6 +295,8 @@ export class EngineSession {
     if (replied) publish({ type: "permission.v2.replied", data: replied })
     const question = translateQuestion(event)
     if (question) publish({ type: "question.v2.asked", data: question })
+    const resolved = translateQuestionResolved(event)
+    if (resolved) publish({ type: resolved.type, data: resolved.data })
   }
 }
 

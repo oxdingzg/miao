@@ -28,7 +28,7 @@ async fn commit_times_survive_replay_reopen_fork_and_export() {
         .unwrap();
     store.start_run("s", "run").await.unwrap();
     let reply = store
-        .assistant_reply("s", "run", json!([{"type":"text","text":"second"}]))
+        .assistant_reply("s", "run", None, json!([{"type":"text","text":"second"}]))
         .await
         .unwrap();
     let after = now_ms();

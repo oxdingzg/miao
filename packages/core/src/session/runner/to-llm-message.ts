@@ -166,7 +166,7 @@ const toolResult = (
 
 const assistant = (message: SessionMessage.Assistant, model: Model, images: boolean) => {
   const sameModel =
-    String(message.model.providerID) === String(model.provider) && String(message.model.id) === String(model.id)
+    message.model !== null && String(message.model.providerID) === String(model.provider) && String(message.model.id) === String(model.id)
   const reuseProviderMetadata = sameModel && message.error === undefined
   const content = message.content.flatMap((item): ContentPart[] => {
     if (item.type === "text") return [{ type: "text", text: item.text }]
