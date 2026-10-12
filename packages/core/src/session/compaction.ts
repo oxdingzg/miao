@@ -6,6 +6,7 @@ import type { Config } from "../config"
 import type { EventV2 } from "../event"
 import { SessionEvent } from "./event"
 import { SessionMessage } from "./message"
+import { PROTECT_TOKENS } from "./prune"
 import { SessionSchema } from "./schema"
 import { Token } from "../util/token"
 
@@ -118,6 +119,12 @@ type Input = {
    * without ever crossing the threshold.
    */
   readonly observedTokens?: number
+  /**
+   * How many of `request.messages` that reported count covered. The report is
+   * exact for the request it answered, so everything appended after it is the
+   * only part the local estimate has to cover.
+   */
+  readonly observedMessages?: number
 }
 
 /**
@@ -295,10 +302,35 @@ export const buildHotPrompt = () =>
 
 export const make = (dependencies: Dependencies) => {
   const config = settings(dependencies.config)
-  // Precise BPE counting is opt-in: it changes threshold behavior, so the
-  // character heuristic stays the default.
+  // Precise BPE counting is opt-in. It changes threshold behavior, and a long run of
+  // one character is pathological for it (measured: 110 s for 400k characters), so
+  // the character heuristic stays the default here even though the staged path uses
+  // `count` on the slices it feeds the summarizer.
   const measure = (text: string) => (config.preciseTokens ? Token.count(text) : Token.estimate(text))
   const measureValue = (value: unknown) => Token.measureValue(value, measure)
+  /**
+   * Token size of the request a compaction decision is about. The provider's own
+   * count for the previous request is exact, and only the messages appended since
+   * then have to be estimated. Measuring the whole history from scratch instead
+   * drifted by about 20% on a real Session (921k estimated against the 763k the
+   * provider reported), which compacted it that much too early.
+   */
+  const promptTokens = (input: Input) => {
+    const measured = measureValue({
+      system: input.request.system,
+      messages: input.request.messages,
+      tools: input.request.tools,
+    })
+    const observed = input.observedTokens ?? 0
+    if (observed <= 0) return measured
+    const boundary = input.observedMessages
+    if (boundary === undefined) return Math.max(observed, measured)
+    const appended = input.request.messages.slice(boundary)
+    // Nothing appended since the report: the report still describes this request,
+    // unless the prefix itself changed under it, which `measured` would catch.
+    if (appended.length === 0) return Math.max(observed, measured)
+    return observed + measureValue(appended)
+  }
   // Consecutive proactive-compaction failures per Session. A provider that keeps
   // refusing the summary must not cost a summary attempt on every drain; the
   // breaker trips until a compaction succeeds or a manual one resets it.
@@ -534,17 +566,23 @@ export const make = (dependencies: Dependencies) => {
     // ceiling: `limits.output` is a catalog limit, and treating it as the reserve
     // shrinks the usable window to a fraction of the real context.
     const reserve = Math.max(input.request.generation?.maxTokens ?? 0, config.buffer)
-    // The provider's reported prompt tokens are ground truth for the history the
-    // last turn sent; the local estimate covers the growth since then (and is the
-    // only signal before the first usage). Take the larger: the estimate alone
-    // under-counts code and CJK text, and the reported count alone lags a turn
-    // that just added a large tool result.
-    const size = Math.max(
-      input.observedTokens ?? 0,
-      measureValue({ system: input.request.system, messages: input.request.messages, tools: input.request.tools }),
-    )
-    // Trigger below the raw limit, not at it: the summary request needs room too.
-    if (size <= context * config.threshold - reserve) return false
+    // Two headrooms bound how late this may fire: the ratio a user configures, and
+    // the room one step needs for its own content — the tool output pruning
+    // protects, the summary this compaction will write, and the configured slack.
+    // Take whichever is later: a large window then follows the provider's own count
+    // to about 94%, in the band other harnesses work in, while a small window still
+    // fires at the configured ratio instead of at whatever the headroom leaves.
+    const headroom = PROTECT_TOKENS + SUMMARY_OUTPUT_TOKENS + reserve
+    const limit = Math.max(context - headroom, context * config.threshold - reserve)
+    const size = promptTokens(input)
+    if (size <= limit) return false
+    yield* Effect.logInfo("session.compaction.trigger", {
+      sessionID: input.sessionID,
+      context,
+      limit,
+      size,
+      observed: input.observedTokens ?? 0,
+    })
     const key = input.sessionID
     if ((failures.get(key) ?? 0) >= MAX_COMPACTION_FAILURES) return false
     const attempt = yield* compact(input)
