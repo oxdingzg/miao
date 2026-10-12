@@ -1,9 +1,14 @@
 #!/usr/bin/env python3
 """Generate the checked-in Xcode project without third-party build generators."""
+import os
 from hashlib import sha256
 from pathlib import Path
 
 root = Path(__file__).resolve().parent.parent
+# The Apple team stays out of the checked-in project; supply it through the
+# environment or as the first argument when generating a signing build.
+team = (os.environ.get("MIAO_DEVELOPMENT_TEAM") or (os.sys.argv[1] if len(os.sys.argv) > 1 else "")).strip()
+team_settings = f' DEVELOPMENT_TEAM = "{team}";' if team else ""
 entries = []
 def ident(name):
     return sha256(name.encode()).hexdigest()[:24].upper()
@@ -43,14 +48,14 @@ for config in ['Debug', 'Release']:
     else:
         common += ' DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym"; SWIFT_OPTIMIZATION_LEVEL = "-O";'
     add('project:' + config, f'isa = XCBuildConfiguration; buildSettings = {{ {common} }}; name = {config};')
-    target = '''ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon; CODE_SIGN_STYLE = Automatic; CURRENT_PROJECT_VERSION = 1; GENERATE_INFOPLIST_FILE = NO;
+    target = '''ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon; CODE_SIGN_ENTITLEMENTS = Miao/Miao.entitlements; CODE_SIGN_STYLE = Automatic; CURRENT_PROJECT_VERSION = 1; GENERATE_INFOPLIST_FILE = NO;
         INFOPLIST_FILE = Miao/Info.plist; MARKETING_VERSION = "$(MIAO_VERSION)"; MIAO_PUSH_ENVIRONMENT = disabled; MIAO_HUB_ORIGIN = "";
         PRODUCT_BUNDLE_IDENTIFIER = dev.miao.remote; PRODUCT_NAME = Miao;
         SUPPORTED_PLATFORMS = "iphoneos iphonesimulator"; SWIFT_VERSION = 5.0;
-        SWIFT_STRICT_CONCURRENCY = complete; TARGETED_DEVICE_FAMILY = "1,2";
+        SWIFT_STRICT_CONCURRENCY = complete; TARGETED_DEVICE_FAMILY = "1,2";''' + team_settings + '''
         LD_RUNPATH_SEARCH_PATHS = "$(inherited) @executable_path/Frameworks";'''
     add('target:' + config, f'isa = XCBuildConfiguration; buildSettings = {{ {target} }}; name = {config};')
-    ui = 'CODE_SIGN_STYLE = Automatic; GENERATE_INFOPLIST_FILE = YES; PRODUCT_BUNDLE_IDENTIFIER = dev.miao.remote.uitests; PRODUCT_NAME = MiaoUITests; SWIFT_VERSION = 5.0; TARGETED_DEVICE_FAMILY = "1,2"; TEST_TARGET_NAME = Miao;'
+    ui = 'CODE_SIGN_STYLE = Automatic; GENERATE_INFOPLIST_FILE = YES; PRODUCT_BUNDLE_IDENTIFIER = dev.miao.remote.uitests; PRODUCT_NAME = MiaoUITests; SWIFT_VERSION = 5.0; TARGETED_DEVICE_FAMILY = "1,2"; TEST_TARGET_NAME = Miao;' + team_settings
     add('ui:' + config, f'isa = XCBuildConfiguration; buildSettings = {{ {ui} }}; name = {config};')
 for kind in ['project', 'target', 'ui']:
     add(kind + '-configs', f'isa = XCConfigurationList; buildConfigurations = {refs([kind + ":Debug", kind + ":Release"])}; defaultConfigurationIsVisible = 0; defaultConfigurationName = Release;')
