@@ -91,6 +91,36 @@ impl Breaker {
     }
 }
 
+/// Gate 4: one tool output's pruning decision.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Prune {
+    /// The output stays whole.
+    Keep,
+    /// The output is replaced by a bounded head and tail with an elision mark.
+    Elide { keep_head: usize, keep_tail: usize },
+}
+
+/// Gate ④: prune oversized tool outputs from the context selection. Outputs
+/// within `budget` chars stay whole; anything larger keeps a head/tail
+/// reserve plus an explicit elision mark, so a model can still see the
+/// shape of what it received. Recent outputs (the newest `protect` tool
+/// messages, which the turn is most likely acting on) are never pruned
+/// regardless of size.
+pub fn prune_tool_output(output_len: usize, budget: usize, is_recent: bool) -> Prune {
+    if is_recent || output_len <= budget {
+        return Prune::Keep;
+    }
+    // Half of the budget for the head, a quarter for the tail, and the rest
+    // for the elision mark and framing, bounded so tiny budgets still keep
+    // something recognizable on both ends.
+    let keep_head = (budget / 2).max(64);
+    let keep_tail = (budget / 4).max(32);
+    Prune::Elide {
+        keep_head,
+        keep_tail,
+    }
+}
+
 /// Gate ③: how a hot prefix is summarized. One pass while the prefix fits
 /// the summarizer's budget; consecutive segments only when it cannot. Ranges
 /// are half-open `[start, end)` message offsets, so a caller replays them
@@ -264,6 +294,27 @@ mod tests {
         assert!(!breaker.allows());
         breaker.reset();
         assert!(breaker.allows());
+    }
+
+    #[test]
+    fn tool_output_pruning_protects_recent_and_bounds_old() {
+        assert_eq!(prune_tool_output(100, 200, true), Prune::Keep);
+        assert_eq!(prune_tool_output(100, 200, false), Prune::Keep);
+        assert_eq!(
+            prune_tool_output(100_000, 4_000, false),
+            Prune::Elide {
+                keep_head: 2_000,
+                keep_tail: 1_000
+            }
+        );
+        // Tiny budgets keep the recognizable minimum on both ends.
+        assert_eq!(
+            prune_tool_output(1_000, 10, false),
+            Prune::Elide {
+                keep_head: 64,
+                keep_tail: 32
+            }
+        );
     }
 
     #[test]
