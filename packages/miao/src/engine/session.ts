@@ -14,6 +14,7 @@ import {
   translateMessage,
   translateProviderRequest,
   translateProviderRequestResult,
+  translateRetried,
   translateRunFailure,
   translateQuestion,
   translateTools,
@@ -210,6 +211,8 @@ export class EngineSession {
     if (identity) publish({ type: "session.next.assistant.identity", data: identity })
     const failure = translateRunFailure(event)
     if (failure) publish({ type: "session.next.failed", data: failure })
+    const retry = translateRetried(event)
+    if (retry) publish({ type: "session.next.retried", data: retry })
     const request = translateProviderRequest(event)
     if (request) publish({ type: "session.next.provider.request", data: request })
     const requestResult = translateProviderRequestResult(event)
