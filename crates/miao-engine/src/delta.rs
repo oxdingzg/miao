@@ -55,6 +55,15 @@ fn non_empty(text: Option<&Value>) -> Option<String> {
 
 fn responses_deltas(frame: &Value) -> Vec<Value> {
     let index = frame["output_index"].as_u64();
+    if frame["type"].as_str() == Some("response.output_item.added")
+        && frame["item"]["type"].as_str() == Some("function_call")
+    {
+        return tool_start(
+            frame["item"]["call_id"].as_str(),
+            frame["item"]["name"].as_str(),
+            index,
+        );
+    }
     match frame["type"].as_str() {
         Some("response.output_text.delta") => {
             let mut deltas = Vec::new();
@@ -84,6 +93,15 @@ fn responses_deltas(frame: &Value) -> Vec<Value> {
 }
 
 fn anthropic_deltas(frame: &Value) -> Vec<Value> {
+    if frame["type"].as_str() == Some("content_block_start")
+        && frame["content_block"]["type"].as_str() == Some("tool_use")
+    {
+        return tool_start(
+            frame["content_block"]["id"].as_str(),
+            frame["content_block"]["name"].as_str(),
+            frame["index"].as_u64(),
+        );
+    }
     if frame["type"].as_str() != Some("content_block_delta") {
         return Vec::new();
     }
@@ -112,6 +130,18 @@ fn chat_deltas(frame: &Value) -> Vec<Value> {
     }
     let delta = &choices[0]["delta"];
     let mut deltas = Vec::new();
+    for call in delta
+        .get("tool_calls")
+        .and_then(Value::as_array)
+        .into_iter()
+        .flatten()
+    {
+        deltas.extend(tool_start(
+            call["id"].as_str(),
+            call["function"]["name"].as_str(),
+            call["index"].as_u64(),
+        ));
+    }
     if let Some(text) = non_empty(delta.get("content")) {
         deltas.push(text_delta(&text, None));
     }
@@ -135,6 +165,17 @@ fn chat_deltas(frame: &Value) -> Vec<Value> {
         }
     }
     deltas
+}
+
+/// A streamed tool call's identity. Requires an id and a call index: without
+/// either, a client cannot key the fragments that follow.
+fn tool_start(id: Option<&str>, name: Option<&str>, index: Option<u64>) -> Vec<Value> {
+    match (id, name, index) {
+        (Some(id), Some(name), Some(index)) if !id.is_empty() && !name.is_empty() => {
+            vec![json!({"kind": "tool.start", "index": index, "id": id, "name": name})]
+        }
+        _ => Vec::new(),
+    }
 }
 
 fn gemini_deltas(frame: &Value) -> Vec<Value> {
@@ -284,6 +325,41 @@ mod tests {
         assert_eq!(
             kinds(&deltas),
             vec!["text.delta", "reasoning.delta", "tool.input.delta"]
+        );
+    }
+
+    #[test]
+    fn tool_starts_carry_identity_and_index() {
+        assert_eq!(
+            normalize(
+                &json!({"type":"content_block_start","index":4,"content_block":{"type":"tool_use","id":"toolu_1","name":"read_file"}})
+            ),
+            vec![json!({"kind":"tool.start","index":4,"id":"toolu_1","name":"read_file"})]
+        );
+        assert_eq!(
+            normalize(
+                &json!({"type":"response.output_item.added","output_index":5,"item":{"type":"function_call","call_id":"call_1","name":"grep"}})
+            ),
+            vec![json!({"kind":"tool.start","index":5,"id":"call_1","name":"grep"})]
+        );
+        assert_eq!(
+            normalize(
+                &json!({"choices":[{"index":0,"delta":{"tool_calls":[{"index":0,"id":"call","type":"function","function":{"name":"bash","arguments":""}}]}}]})
+            ),
+            vec![json!({"kind":"tool.start","index":0,"id":"call","name":"bash"})]
+        );
+    }
+
+    #[test]
+    fn tool_starts_without_identity_stay_silent() {
+        assert!(normalize(&json!({"type":"content_block_start","index":0,"content_block":{"type":"text","text":""}})).is_empty());
+        assert!(normalize(&json!({"type":"content_block_start","index":0,"content_block":{"type":"tool_use","id":"","name":"read_file"}})).is_empty());
+        // An id-less chat call still streams its fragments; only the start needs identity.
+        assert_eq!(
+            normalize(
+                &json!({"choices":[{"index":0,"delta":{"tool_calls":[{"index":0,"function":{"name":"bash","arguments":"{}"}}]}}]})
+            ),
+            vec![json!({"kind":"tool.input.delta","index":0,"delta":"{}"})]
         );
     }
 
