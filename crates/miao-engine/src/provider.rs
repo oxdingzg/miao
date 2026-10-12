@@ -758,8 +758,13 @@ async fn read_stream_with_budget<P: Parser>(
             } {
                 first_event = None;
             }
-            let notice = match frame {
-                Frame::Json(event) => event,
+            // Publish a normalized delta alongside the raw frame. The engine's
+            // own first-event and retry logic reads `raw` through `semantic_event`,
+            // so the provider wire format stays untouched there.
+            let notice = match &frame {
+                Frame::Json(event) => crate::delta::normalize(event)
+                    .map(|delta| json!({"kind":"delta","delta":delta,"raw":event}))
+                    .unwrap_or_else(|| event.clone()),
                 Frame::Done => json!({"kind":"stream.done"}),
             };
             let deadline = input_budget
