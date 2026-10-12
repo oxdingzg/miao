@@ -665,7 +665,10 @@ export const {
       batch(() => {
         for (const id of reduction.touched) {
           const message = reduction.messages.find((item) => item.id === id)
-          if (!message) continue
+          if (!message) {
+            setStore("message", sessionID, (messages = []) => messages.filter((item) => item.id !== id))
+            continue
+          }
           const current = store.message[sessionID] ?? []
           const index = current.findIndex((item) => item.id === message.id)
           if (index >= 0) setStore("message", sessionID, index, reconcile(message))

@@ -861,3 +861,23 @@ describe("run session data (V2 events)", () => {
     expect(out.data.permissions).toEqual([])
   })
 })
+
+test("discard releases only its assistant buffers before interruption flushing", () => {
+  const data = createSessionData()
+  for (const id of ["msg_partial", "msg_draft"])
+    reduce(data, {
+      type: "session.next.text.delta",
+      properties: { sessionID: "session-1", timestamp: 1, assistantMessageID: id, textID: "text", delta: id },
+    })
+  expect([...data.msg.values()]).toEqual(["msg_partial", "msg_draft"])
+  reduce(data, {
+    type: "session.next.stream.discarded",
+    properties: { sessionID: "session-1", timestamp: 2, assistantMessageID: "msg_draft" },
+  })
+  expect([...data.msg.values()]).toEqual(["msg_partial"])
+  expect([...data.text.values()]).not.toContain("msg_draft")
+  expect(data.role.has("msg_draft")).toBe(false)
+  const commits: StreamCommit[] = []
+  flushInterrupted(data, commits)
+  expect(JSON.stringify(commits)).not.toContain("msg_draft")
+})

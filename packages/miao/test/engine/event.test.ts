@@ -74,3 +74,20 @@ it.effect("rejects invalid or unregistered product event payloads before client 
     expect(Exit.isFailure(crossSession)).toBe(true)
   }),
 )
+
+it.effect("discard is a valid public live event without a durable journal cursor", () =>
+  Effect.gen(function* () {
+    const event = yield* clientEvent(
+      {
+        type: "session.next.stream.discarded",
+        data: { sessionID: text.sessionID, timestamp: text.timestamp, assistantMessageID: text.assistantMessageID },
+        source: { sessionID: "ses_envelope", seq: 43, index: 0 },
+      },
+      { engineID: "store-a", location },
+    )
+    expect(event.durable).toBeUndefined()
+    const wire = yield* Schema.encodeEffect(OpenCodeEvent)(event)
+    expect(wire.type).toBe("session.next.stream.discarded")
+    expect(wire.data).toMatchObject({ assistantMessageID: text.assistantMessageID })
+  }),
+)

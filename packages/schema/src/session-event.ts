@@ -287,6 +287,13 @@ export namespace Step {
   export type Failed = typeof Failed.Type
 }
 
+/** Remove an uncommitted streamed assistant from connected clients only. */
+export const StreamDiscarded = Event.define({
+  type: "session.next.stream.discarded",
+  schema: { ...Base, assistantMessageID: SessionMessage.ID },
+})
+export type StreamDiscarded = typeof StreamDiscarded.Type
+
 export namespace Text {
   export const Started = Event.define({
     type: "session.next.text.started",
@@ -716,6 +723,7 @@ export const Definitions = Event.inventory(
   Step.Started,
   Step.Ended,
   Step.Failed,
+  StreamDiscarded,
   Text.Started,
   Text.Delta,
   Text.Ended,

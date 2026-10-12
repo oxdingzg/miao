@@ -122,6 +122,7 @@ real(
         !("assistantMessageID" in text)
       )
         throw new Error("missing committed assistant")
+      expect(outputs.filter((event) => event.type === "session.next.stream.discarded")).toHaveLength(0)
       expect(data.assistantMessageID).toBe(text.assistantMessageID)
       const deltas = outputs.filter((event) => event.type === "session.next.text.delta")
       expect(deltas).toHaveLength(2)

@@ -1,9 +1,10 @@
-import { Schema } from "effect"
+import { DateTime, Schema } from "effect"
 import { Prompt } from "@miao/schema/prompt"
 import { SessionInput } from "@miao/schema/session-input"
 import { SessionMessage } from "@miao/schema/session-message"
 import { SessionID } from "@miao/schema/session-id"
 import { EngineClient, EngineError, type EngineEvent, type EngineProgress } from "./client"
+import { adoptSession, messageID } from "./identity"
 import {
   StatusBridge,
   ToolBridge,
@@ -253,7 +254,24 @@ export class EngineSession {
       // Keep one cursor per subscribed Session, rather than retaining every run.
       this.#settledThrough.set(event.session_id, Math.max(this.#settledThrough.get(event.session_id) ?? 0, event.seq))
       for (const [key, anchor] of this.#anchors) {
-        if (key.startsWith(`${event.session_id}/`) && anchor.seq <= event.seq) this.#anchors.delete(key)
+        if (!key.startsWith(`${event.session_id}/`) || anchor.seq > event.seq) continue
+        if (
+          event.kind === "run.finished" &&
+          anchor.nextDelta > 0 &&
+          typeof event.recorded_at_ms === "number" &&
+          Number.isSafeInteger(event.recorded_at_ms) &&
+          event.recorded_at_ms >= 0
+        ) {
+          publish({
+            type: "session.next.stream.discarded",
+            data: {
+              sessionID: adoptSession(event.session_id),
+              timestamp: DateTime.makeUnsafe(event.recorded_at_ms),
+              assistantMessageID: messageID(event.session_id, anchor.seq),
+            },
+          })
+        }
+        this.#anchors.delete(key)
       }
     }
     if (event.kind === "provider.started" && event.seq > (this.#settledThrough.get(event.session_id) ?? 0)) {

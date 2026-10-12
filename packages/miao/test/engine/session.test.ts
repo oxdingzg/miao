@@ -95,6 +95,9 @@ test.each(["failed", "interrupted", "completed"])(
           progress(1, "other-session", "ses_other"),
         ],
       })
+      const discarded = outputs.filter((event) => event.type === "session.next.stream.discarded")
+      expect(discarded).toHaveLength(1)
+      expect(discarded[0]?.data).toMatchObject({ assistantMessageID: "msg_ses_boundary_5" })
       const fragments = outputs.filter((event) => event.type === "session.next.text.delta")
       expect(
         fragments.map((event) => {
