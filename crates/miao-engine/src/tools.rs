@@ -114,6 +114,7 @@ pub struct Tools {
     process_network: bool,
     runner: Option<Arc<PathBuf>>,
     protected: Vec<PathBuf>,
+    private_store: Option<PathBuf>,
     mcp: Option<Arc<mcp::Registry>>,
     worker: Option<Arc<crate::worker::Registry>>,
     lsp: Option<Arc<crate::lsp::Registry>>,
@@ -151,6 +152,7 @@ impl Tools {
             process_network: false,
             runner: None,
             protected: vec![],
+            private_store: None,
             mcp: None,
             worker: None,
             lsp: None,
@@ -267,6 +269,29 @@ impl Tools {
         Ok(self)
     }
 
+    /// Snapshot the immutable capability/boundary closure used by prepare and
+    /// dispatch, not a caller-supplied declaration of intended permissions.
+    pub(crate) fn authority_descriptor(&self) -> Value {
+        json!({"semantics":"native-tool-boundary-v1","workspace":self.root,"protected":self.protected.iter().map(|path| {
+                // The native database and its companions have explicit private
+                // storage identities. Replay changes their filenames, not the
+                // authority to access them. Other protected paths remain exact.
+                if let Some(store) = &self.private_store {
+                    if path == store { return json!({"privateStorage":"database"}); }
+                    if path == &store.with_extension("engine-lock") { return json!({"privateStorage":"lock"}); }
+                    for suffix in ["-wal", "-shm"] {
+                        let mut name = store.as_os_str().to_owned(); name.push(suffix);
+                        if path == &PathBuf::from(name) { return json!({"privateStorage":suffix}); }
+                    }
+                }
+                json!({"path":path})
+            }).collect::<Vec<_>>(),
+            "readRoots":self.read_roots.as_ref(),"writes":self.writes,"process":self.process_enabled,
+            "background":self.background_enabled,"delegation":self.delegation_enabled,
+            "wakeup":self.wakeup_enabled,"cron":self.cron_enabled,"processNetwork":self.process_network,
+            "processRunnerConfigured":self.runner.is_some(),"mcpAttached":self.mcp.is_some(),
+            "workerAttached":self.worker.is_some(),"lspAttached":self.lsp.is_some()})
+    }
     pub(crate) fn references(&self) -> &[crate::context::Reference] {
         &self.references
     }
@@ -327,9 +352,13 @@ impl Tools {
     }
 
     pub fn with_protected_resource(self, path: &Path) -> Self {
-        self.protect_store(path)
+        self.protect_resource(path)
     }
     pub(crate) fn protect_store(mut self, path: &Path) -> Self {
+        self.private_store = Some(path.to_owned());
+        self.protect_resource(path)
+    }
+    fn protect_resource(mut self, path: &Path) -> Self {
         self.protected.push(path.to_owned());
         self.protected.push(path.with_extension("engine-lock"));
         for suffix in ["-wal", "-shm"] {

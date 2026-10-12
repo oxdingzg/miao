@@ -99,7 +99,14 @@ impl Provider for OpenAIResponses {
             }
         }
         let request = builder.build().map_err(|_| ProviderError::Transport)?;
-        let response = request_with_retry(&self.client, request, &progress, &cancel).await?;
+        let response = request_with_retry(
+            "openai-responses",
+            &self.client,
+            request,
+            &progress,
+            &cancel,
+        )
+        .await?;
         read_stream(
             response,
             progress,

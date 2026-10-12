@@ -626,12 +626,23 @@ async fn execute(
         let transport_budget = crate::provider::Budget::new();
         let reply = loop {
             let (send, mut receive) = mpsc::channel(64);
-            let response = crate::provider::scoped(
-                transport_budget.clone(),
-                3,
-                inner
-                    .provider
-                    .stream(request.clone(), send, cancel.child_token()),
+            let response = crate::runtime_profile::scoped(
+                crate::runtime_profile::Scope {
+                    store: inner.store.clone(),
+                    session: session.into(),
+                    run: run.into(),
+                    step,
+                    context_epoch,
+                    agent: json!({"name":"native-runtime","semantics":"native-runtime-v1","collaborationMode":if plan {"plan"} else {"build"}}),
+                    permissions: json!({"policy":inner.policy.descriptor(),"boundary":inner.tools.authority_descriptor()}),
+                },
+                crate::provider::scoped(
+                    transport_budget.clone(),
+                    3,
+                    inner
+                        .provider
+                        .stream(request.clone(), send, cancel.child_token()),
+                ),
             );
             tokio::pin!(response);
             let outcome = loop {

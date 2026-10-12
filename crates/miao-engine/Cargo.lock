@@ -1156,6 +1156,7 @@ dependencies = [
  "jsonschema",
  "libc",
  "miao-sandbox",
+ "percent-encoding",
  "regex",
  "reqwest",
  "rmcp",
