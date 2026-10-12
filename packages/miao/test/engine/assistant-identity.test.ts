@@ -124,9 +124,16 @@ real(
         throw new Error("missing committed assistant")
       expect(outputs.filter((event) => event.type === "session.next.stream.discarded")).toHaveLength(0)
       expect(data.assistantMessageID).toBe(text.assistantMessageID)
+      // The first frame carries reasoning and content together: the reasoning
+      // fragment publishes as its own event and consumes a stream index, so
+      // the second text fragment lands at index 2.
+      const reasoning = outputs.filter((event) => event.type === "session.next.reasoning.delta")
+      expect(reasoning).toHaveLength(1)
+      expect(reasoning[0]?.source.index).toBe(1)
+      expect((reasoning[0]?.data as { delta: string }).delta).toBe("check identity")
       const deltas = outputs.filter((event) => event.type === "session.next.text.delta")
       expect(deltas).toHaveLength(2)
-      expect(deltas.map((event) => event.source.index)).toEqual([0, 1])
+      expect(deltas.map((event) => event.source.index)).toEqual([0, 2])
       for (const delta of deltas) {
         expect(delta.data).toMatchObject({ assistantMessageID: text.assistantMessageID })
         expect(delta.data).toMatchObject({ textID: Reflect.get(text, "textID") })
