@@ -154,6 +154,11 @@ Most V2 endpoints exist (`pty.shells`, `project.update`, `vcs.diff`, `fs.content
 `workspace.reset` via `/api/worktree`, `project.initGit`, `project` persistence). Remaining:
 - [x] Move project persistence into core (#35, #36).
 - [x] Delete the legacy `packages/miao` `Project` facade (#46).
+- [x] Drop the dead V1 `@/storage` service and the `@/background/job` instance wrapper from the
+      app layer; the background-job engine cases moved to `packages/core/test/background-job.test.ts`.
+      The release server already assembles V2-only through `packages/server` (`assembly.ts`), and
+      `RuntimeHost` builds a core-only execution runtime, so `AppRuntime` remains only as the CLI
+      command harness (`effect-cmd.ts`) plus the `upgrade` config read and the TUI SIGUSR2 reload.
 - [ ] Remove the `packages/miao` `app-runtime` V1 layer and any remaining non-session legacy routes;
       switch the release server to the V2-only assembly. (`AppRuntime` is still used by
       `packages/miao/src/runtime/*` and the TUI worker.)
