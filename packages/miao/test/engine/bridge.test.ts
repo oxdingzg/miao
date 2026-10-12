@@ -77,6 +77,21 @@ test("maps a committed assistant message to text.ended events", () => {
   expect(translateMessage({ ...event, kind: "run.started" })).toEqual([])
 })
 
+test("anchored text ordinals exclude reasoning and tool blocks while legacy IDs retain their indices", () => {
+  const content = [
+    { type: "reasoning", text: "thinking" },
+    { type: "text", text: "first" },
+    { type: "tool_use", id: "call", name: "read_file", input: {} },
+    { type: "text", text: "second" },
+  ]
+  const base: EngineEvent = { session_id: "ses_abc", seq: 9, kind: "message.committed", data: {} }
+  const anchored = translateMessage({ ...base, data: { role: "assistant", anchor_seq: 4, content } })
+  expect(anchored.map((part) => part.textID)).toEqual(["text_4_0", "text_4_1"])
+  expect(anchored.map((part) => part.text)).toEqual(["first", "second"])
+  const legacy = translateMessage({ ...base, data: { role: "assistant", content } })
+  expect(legacy.map((part) => part.textID)).toEqual(["text_9_1", "text_9_3"])
+})
+
 test("maps a committed assistant tool_use block to tool.called", () => {
   const event: EngineEvent = {
     session_id: "ses_abc",

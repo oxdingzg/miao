@@ -63,7 +63,7 @@ real(
               const encoder = new TextEncoder()
               controller.enqueue(
                 encoder.encode(
-                  'data: {"choices":[{"index":0,"delta":{"content":"IDENTITY_"},"finish_reason":null}]}\n\n',
+                  'data: {"choices":[{"index":0,"delta":{"reasoning_content":"check identity","content":"IDENTITY_"},"finish_reason":null}]}\n\n',
                 ),
               )
               await streamed.promise
