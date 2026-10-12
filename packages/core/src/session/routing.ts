@@ -15,7 +15,7 @@ import { SessionTable } from "./sql"
 
 export type Resolution =
   /** The durable placement catalog knows the Session; its engine owns it. */
-  | { type: "placed"; engine: "rust"; location: Location.Ref }
+  | { type: "placed"; engine: "rust"; storage: AbsolutePath; location: Location.Ref }
   | { type: "placed"; engine: "ts"; location: Location.Ref }
   /** A legacy TS Session row exists without a binding; the TS engine owns it. */
   | { type: "unbound"; location: Location.Ref }
@@ -65,7 +65,7 @@ export const resolve = Effect.fn("SessionRouting.resolve")(function* (input: {
     // relocate it. Report a vanished Location instead of serving a dead path.
     if (!(yield* input.fs.existsSafe(placement.location.directory)))
       return { type: "missing", directory: placement.location.directory } as const
-    return { type: "placed", engine: "rust", location: placement.location } as const
+    return { type: "placed", ...placement } as const
   }
 
   const row = yield* input.db
