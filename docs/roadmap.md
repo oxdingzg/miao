@@ -51,6 +51,18 @@ entry points where known, and an observable acceptance check.
 - **New stream (see §8)**: hub auth/directory/relay (#98 #99 #109 #110), remote-control
   channels/grants (#67 #70 #71 #87 #90), iOS app and pairing (#72 #85 #96 #125), Command Code
   provider (#129 #138 #149).
+- **Context management (compaction)**: proactive compaction summarizes **once** over the warm
+  request prefix instead of re-embedding the history in bounded stages, which on a 1M-token window
+  measured **43 minutes** with no progress in the log (#698). The trigger is anchored on the
+  provider's own count for the previous request plus the messages appended since it, and bounded by
+  `max(window − headroom, window × threshold)` rather than a bare ratio (#700); the staged fallback
+  reports a slice plan and per-slice progress and stays interruptible (#701); the auxiliary model is
+  chosen by **price within its provider** rather than by name, with a plan-priced zero read as
+  cheapest rather than unknown (#699); Anthropic `/messages/count_tokens` and Gemini
+  `:countTokens` can count a request before it is sent, and a refused count never fails a turn
+  (#704). The pre-push secret scan now covers only the commits a push sends, so one stale local
+  branch no longer blocks every push from a machine (#706), and the iOS enrollment fixture's dummy
+  keys are an accepted finding (#707).
 
 ## Next up (ordered)
 
@@ -310,6 +322,57 @@ boundaries (#112) and outgoing receipts are shown. A → B delivery works in the
 - [x] Extend coverage beyond short newline-delimited prose to multi-phrase loops (#127).
 - **Evidence:** [Investigation and limits](provider-output-repetition.en.md), including concurrent
   same-model normal-session controls. This is a client mitigation, not a proven provider root fix.
+
+### 2.13 Engine context management and automatic compaction
+
+**Status:** not started. The engine owns compaction **persistence** but not the decision:
+`src/history.rs::compact` commits a checkpoint (`through_message_seq` plus a caller-supplied
+`summary`) into `engine_compaction`, requires an idle Session and a closed assistant boundary, is
+idempotent and conflict-checked, and emits `pre_compact` / `history.compacted` / `post_compact`;
+`recall` reads across the checkpoint and `session_state` survives it. Nothing in `crates/miao-engine`
+decides **when** or **what** to summarize: `should_compact`, `context_window`, `count_tokens` and
+tool-output pruning do not appear in its sources, and `README.md` lists context selection and
+compaction among what "remain[s] to be wired". The one history budget that exists (2 MB / 1000
+messages in `history.rs`) is a transport bound, not context management. The TS path now carries the
+behavior the engine needs (see the landed list above).
+
+- [ ] Anchor the trigger on `src/usage.rs`'s normalized per-turn usage plus the messages appended
+      since that report, with the headroom spelled out (prune protection + summary output + slack)
+      and the later of that and a configured ratio as the limit.
+- [ ] Count a request before sending it through the provider's own endpoint where one exists
+      (Anthropic `/messages/count_tokens`, Gemini `:countTokens`), falling back to the estimate and
+      never failing a turn on a refused count.
+- [ ] Summarize once over the warm request prefix, keeping the bounded staged recovery only for a
+      prefix that no longer fits, and reuse the existing checkpoint contract (idle-only, closed
+      boundary, idempotent, pre/post events).
+- [ ] Prune tool output in the context selection so the protected output of one step bounds the
+      prompt.
+- [ ] Trip a breaker after N refused summaries, reset by an explicit `compact` request.
+- [ ] Publish progress between `pre_compact` and `post_compact` (slice i/n, characters covered) so a
+      client can render it.
+- **Acceptance:** a 1M-window engine Session compacts in one provider call; no compaction crosses the
+  headroom; a refused summary trips the breaker without dropping history; progress is observable;
+  `cargo test -p miao-engine` covers each item above.
+- **Evidence:** `crates/miao-engine/README.md`, `src/history.rs::compact`, `src/usage.rs`,
+  `PROTOCOL.md` (`compact`, `pre_compact`/`post_compact`), and the TS implementation in
+  `packages/core/src/session/compaction.ts`.
+
+### 2.14 Compaction client surface and restore budget
+
+**Status:** partial. The durable events exist (`session.next.compaction.started` / `.delta` /
+`.ended`) and the transcript carries the settled checkpoint, but neither client renders anything
+while a compaction runs: the app reducer treats `started`/`delta` as a no-op and the TUI defers to a
+full reload on `ended`. A TS session therefore still looks idle for the whole compaction, which is
+the client half of the 43-minute report.
+
+- [ ] Surface compaction in both clients: a compacting indicator from `started`, progress from a new
+      `session.next.compaction.progress` event (slice i/n, characters covered), and the existing
+      `.delta` text where the transcript can show it.
+- [ ] Give the first turn after a compaction a restore budget for re-reading the files the summary
+      says matter, bounded per file and per compaction, so a checkpoint does not cost the model its
+      working set.
+- **Acceptance:** a compaction shows progress in the TUI and the app while it runs; the first turn
+  after a checkpoint can re-read the working set within its budget without re-compacting.
 
 ---
 
