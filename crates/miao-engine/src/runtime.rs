@@ -649,7 +649,21 @@ async fn execute(
                 tokio::select! {
                     _=cancel.cancelled()=>return Ok(()),
                     reply=&mut response=>break reply,
-                    Some(delta)=receive.recv()=>{ produced |= delta["kind"] != "provider.retry" && crate::first_event::semantic_event(&delta); let _=inner.progress.send(json!({"session_id":session,"run_id":run,"step":step,"kind":"provider.delta","data":delta})); },
+                    Some(delta)=receive.recv()=>{
+                        if delta["kind"] == "provider.retry" {
+                            // A retry is a durable product fact that survives replay,
+                            // unlike stream deltas, so it is recorded rather than
+                            // forwarded on the ephemeral progress channel. It is not
+                            // provider output, so it never counts as `produced`.
+                            inner.store.record(session,"provider.retry",json!({
+                                "run_id":run,"step":step,
+                                "attempt":delta["attempt"],"reason":delta["reason"],"status":delta["status"],
+                            })).await?;
+                        } else {
+                            produced |= crate::first_event::semantic_event(&delta);
+                            let _=inner.progress.send(json!({"session_id":session,"run_id":run,"step":step,"kind":"provider.delta","data":delta}));
+                        }
+                    },
                 }
             };
             // Retry only if no output was emitted. Draining the receiver covers a

@@ -278,6 +278,37 @@ function readNonEmptyString(data: object, key: string): string | undefined {
   return value
 }
 
+/** The product `session.next.retried` payload for one bounded retry of a failed attempt. */
+export type SessionRetry = {
+  sessionID: SessionID
+  timestamp: DateTime.Utc
+  attempt: number
+  error: { message: string; isRetryable: boolean; statusCode?: number }
+}
+
+/**
+ * Maps the native durable `provider.retry` fact onto the product retry event.
+ * Only retryable failures reach the native retry loop and the fact carries the
+ * reason it retried, so neither `isRetryable` nor the message is guessed.
+ */
+export function translateRetried(event: EngineEvent): SessionRetry | undefined {
+  if (event.kind !== "provider.retry") return undefined
+  if (!hasRecordedTime(event)) return undefined
+  const data = event.data
+  if (typeof data !== "object" || data === null) return undefined
+  const attempt = readCount(data, "attempt")
+  const reason = readNonEmptyString(data, "reason")
+  if (attempt === undefined || attempt < 1 || reason === undefined) return undefined
+  const status = "status" in data ? Reflect.get(data, "status") : undefined
+  const statusCode = typeof status === "number" && Number.isSafeInteger(status) ? status : undefined
+  return {
+    sessionID: adoptSession(event.session_id),
+    timestamp: eventTimestamp(event),
+    attempt,
+    error: { message: reason, isRetryable: true, ...(statusCode === undefined ? {} : { statusCode }) },
+  }
+}
+
 /** The product `session.next.failed` payload for a drain that ended outside a provider step. */
 export type SessionRunFailure = {
   sessionID: SessionID

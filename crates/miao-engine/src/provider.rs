@@ -387,9 +387,16 @@ pub(crate) async fn request_with_retry(
         {
             return Err(error);
         }
+        // Carry the reason so a client can show why the attempt was retried.
+        // Only retryable errors reach here, so `is_retryable` is true by
+        // construction; the status code is the HTTP one when there was one.
+        let (reason, status) = match &error {
+            ProviderError::Http(status) => (error.to_string(), Some(*status)),
+            other => (other.to_string(), None),
+        };
         tokio::select! {
             _=cancel.cancelled()=>return Err(ProviderError::Interrupted),
-            result=progress.send(json!({"kind":"provider.retry","attempt":attempt+1}))=>if result.is_err(){return Err(ProviderError::Interrupted);},
+            result=progress.send(json!({"kind":"provider.retry","attempt":attempt+1,"reason":reason,"status":status}))=>if result.is_err(){return Err(ProviderError::Interrupted);},
         }
         tokio::select! {
             _=cancel.cancelled()=>return Err(ProviderError::Interrupted),
