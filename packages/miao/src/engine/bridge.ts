@@ -157,6 +157,123 @@ export function translateAssistantIdentity(event: EngineEvent): SessionAssistant
   }
 }
 
+/** The product `session.next.provider.request` payload for one prepared HTTP attempt. */
+export type SessionProviderRequest = {
+  sessionID: SessionID
+  timestamp: DateTime.Utc
+  runID: string
+  step: number
+  contextEpoch: number
+  attempt: number
+  protocol: string
+  requestBodySha256: string
+  agent: unknown
+  permissions: unknown
+  profile: unknown
+}
+
+/**
+ * Maps a prepared native `provider.request` row onto the product receipt. The
+ * native runtime owns these facts, so the bridge only validates the durable
+ * envelope; `session.next.provider.request.result` correlates by `request_seq`.
+ */
+export function translateProviderRequest(event: EngineEvent): SessionProviderRequest | undefined {
+  if (event.kind !== "provider.request") return undefined
+  const data = event.data
+  if (typeof data !== "object" || data === null) return undefined
+  const runID = readNonEmptyString(data, "run_id")
+  const step = readCount(data, "step")
+  const contextEpoch = readCount(data, "context_epoch")
+  const attempt = readCount(data, "attempt")
+  const protocol = readNonEmptyString(data, "protocol")
+  const requestBodySha256 = readNonEmptyString(data, "request_body_sha256")
+  if (
+    runID === undefined ||
+    step === undefined ||
+    contextEpoch === undefined ||
+    attempt === undefined ||
+    attempt < 1 ||
+    protocol === undefined ||
+    requestBodySha256 === undefined ||
+    !hasRecordedTime(event)
+  )
+    return undefined
+  return {
+    sessionID: adoptSession(event.session_id),
+    timestamp: eventTimestamp(event),
+    runID,
+    step,
+    contextEpoch,
+    attempt,
+    protocol,
+    requestBodySha256,
+    agent: "agent" in data ? data.agent : null,
+    permissions: "permissions" in data ? data.permissions : null,
+    profile: "profile" in data ? data.profile : null,
+  }
+}
+
+/** The product `session.next.provider.request.result` payload for one attempt outcome. */
+export type SessionProviderRequestResult = {
+  sessionID: SessionID
+  timestamp: DateTime.Utc
+  runID: string
+  step: number
+  requestSeq: number
+  httpStatus: number | null
+  outcome: string
+}
+
+/**
+ * Maps the observed outcome of a prepared attempt. `http_status` is null when
+ * no response headers arrived; the outcome string names why, so an interrupted
+ * or transport-unknown attempt is never reported as success.
+ */
+export function translateProviderRequestResult(event: EngineEvent): SessionProviderRequestResult | undefined {
+  if (event.kind !== "provider.request.result") return undefined
+  const data = event.data
+  if (typeof data !== "object" || data === null) return undefined
+  if (!hasRecordedTime(event)) return undefined
+  const runID = readNonEmptyString(data, "run_id")
+  const step = readCount(data, "step")
+  const outcome = readNonEmptyString(data, "outcome")
+  const requestSeq = readCount(data, "request_seq")
+  if (runID === undefined || step === undefined || outcome === undefined) return undefined
+  if (requestSeq === undefined || requestSeq <= 0 || requestSeq >= event.seq) return undefined
+  const status = "http_status" in data ? data.http_status : null
+  if (status !== null && (typeof status !== "number" || !Number.isSafeInteger(status) || status < 0)) return undefined
+  return {
+    sessionID: adoptSession(event.session_id),
+    timestamp: eventTimestamp(event),
+    runID,
+    step,
+    requestSeq,
+    httpStatus: status,
+    outcome,
+  }
+}
+
+/** The durable envelope every native runtime receipt must carry. */
+function hasRecordedTime(event: EngineEvent): boolean {
+  return (
+    typeof event.recorded_at_ms === "number" && Number.isSafeInteger(event.recorded_at_ms) && event.recorded_at_ms >= 0
+  )
+}
+
+function readCount(data: object, key: string): number | undefined {
+  if (!(key in data)) return undefined
+  const value: unknown = Reflect.get(data, key)
+  if (typeof value !== "number" || !Number.isSafeInteger(value) || value < 0) return undefined
+  return value
+}
+
+function readNonEmptyString(data: object, key: string): string | undefined {
+  if (!(key in data)) return undefined
+  const value: unknown = Reflect.get(data, key)
+  if (typeof value !== "string" || !value) return undefined
+  return value
+}
+
 /** The product `session.next.text.ended` payload for one committed assistant text block. */
 export type SessionTextEnded = {
   sessionID: SessionID
