@@ -118,3 +118,77 @@ test.each(["failed", "interrupted", "completed"])(
     }
   },
 )
+
+test("native fragments translate into reasoning, tool, and indexed text events", async () => {
+  const root = await tmp()
+  const client = EngineClient.start({
+    binary: fake,
+    db: path.join(root, "engine.db"),
+    workspace: root,
+    model: "test",
+  })
+  const outputs: EngineSessionEvent[] = []
+  new EngineSession(client, (event) => outputs.push(event))
+  const progress = (anchor: number, delta: unknown) => ({
+    method: "progress",
+    params: {
+      session_id: "ses_fragments",
+      run_id: "run",
+      step: anchor,
+      kind: "provider.delta",
+      anchor_seq: anchor,
+      recorded_at_ms: 1_700_000_000_123,
+      data: { kind: "delta", delta },
+    },
+  })
+  try {
+    await client.request("fixture_frames", {
+      frames: [
+        progress(1, { kind: "text.delta", index: 0, text: "hello" }),
+        progress(1, { kind: "reasoning.delta", index: 1, text: "thinking" }),
+        progress(1, { kind: "tool.start", index: 2, id: "call_1", name: "read_file" }),
+        progress(1, { kind: "tool.input.delta", index: 2, delta: '{"p":1' }),
+        progress(1, { kind: "text.delta", index: 3, text: "again" }),
+        progress(1, { kind: "reasoning.delta", text: "free" }),
+        progress(1, { kind: "tool.input.delta", index: 9, delta: "orphan" }),
+      ],
+    })
+    await waitFor(() => outputs.length >= 6)
+    const by = (type: string) => outputs.filter((event) => event.type === type)
+    const text = by("session.next.text.delta")
+    expect(
+      text.map((event) => {
+        const data = event.data as { textID: string; delta: string }
+        return [data.textID, data.delta]
+      }),
+    ).toEqual([
+      ["text_1_0", "hello"],
+      ["text_1_1", "again"],
+    ])
+    const reasoning = by("session.next.reasoning.delta")
+    expect(
+      reasoning.map((event) => {
+        const data = event.data as { reasoningID: string; delta: string }
+        return [data.reasoningID, data.delta]
+      }),
+    ).toEqual([
+      ["reasoning_1_0", "thinking"],
+      ["reasoning_1_1", "free"],
+    ])
+    const started = by("session.next.tool.input.started")
+    expect(started).toHaveLength(1)
+    expect(started[0]?.data).toMatchObject({ callID: "call_1", name: "read_file" })
+    const input = by("session.next.tool.input.delta")
+    expect(
+      input.map((event) => {
+        const data = event.data as { callID: string; delta: string }
+        return [data.callID, data.delta]
+      }),
+    ).toEqual([["call_1", '{"p":1']])
+    const streamed = outputs.filter((event) => event.type.startsWith("session.next."))
+    expect(streamed.map((event) => event.source?.index)).toEqual([0, 1, 2, 3, 4, 5])
+  } finally {
+    await client.close()
+    await fs.rm(root, { recursive: true, force: true })
+  }
+})
