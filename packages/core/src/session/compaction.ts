@@ -22,6 +22,13 @@ const SUMMARY_INPUT_TOKENS = 64_000
 // the request. Below it the estimated delta cannot flip the outcome, and asking would
 // add a request to a check that runs on every drain.
 const COUNT_MARGIN = 0.05
+
+// What a model may re-read after a checkpoint, so the summary does not cost it its
+// working set. Prompt budget, not a hard gate: the model spends it with its own
+// read tool, the way Claude Code's restore budget works.
+export const RESTORE_TOKENS = 50_000
+export const RESTORE_FILES = 5
+export const RESTORE_FILE_TOKENS = 5_000
 const MAX_SUMMARY_STAGES = 64
 // Bound tokenizer work as well as provider input. Tokenizing a giant unbroken
 // output in one pass can be pathological; independent short segments provide a

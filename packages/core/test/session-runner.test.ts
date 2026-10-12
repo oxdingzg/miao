@@ -2924,9 +2924,12 @@ describe("SessionRunnerLLM", () => {
         },
       ])
       expect(userTexts(requests[0])[0]).toContain("## Objective")
-      expect(userTexts(requests[1])).toHaveLength(1)
+      // The checkpoint, then the one-shot restore note the first turn after a
+      // compaction carries.
+      expect(userTexts(requests[1])).toHaveLength(2)
       expect(userTexts(requests[1])[0]).toContain("<summary>\n## Objective\n- Preserve the task\n</summary>")
       expect(userTexts(requests[1])[0]).toContain(`[User]: ${"Recent exact request ".repeat(180)}`)
+      expect(userTexts(requests[1])[1]).toContain("restore budget of about 50,000 tokens")
 
       const context = yield* (yield* SessionStore.Service).context(sessionID)
       expect(context.map((message) => message.type)).toEqual(["compaction", "assistant"])
