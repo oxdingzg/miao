@@ -1,5 +1,18 @@
 import { expect, test } from "bun:test"
-import { StatusBridge, ToolBridge, productToolID, statusOf, translateApproval, translateApprovalResolved, translateMessage, translatePrompt, translateQuestion, translateStatus, translateTools } from "@/engine/bridge"
+import {
+  StatusBridge,
+  ToolBridge,
+  productToolID,
+  statusOf,
+  translateApproval,
+  translateApprovalResolved,
+  translateMessage,
+  translatePrompt,
+  translateQuestion,
+  translateQuestionResolved,
+  translateStatus,
+  translateTools,
+} from "@/engine/bridge"
 import type { EngineEvent } from "@/engine/client"
 
 const event = (kind: string): EngineEvent => ({ session_id: "ses_test", seq: 1, kind, data: {} })
@@ -27,7 +40,12 @@ test("StatusBridge emits only on a transition", () => {
 })
 
 test("maps input.promoted to a prompt.admitted payload", () => {
-  const event: EngineEvent = { session_id: "ses_abc", seq: 7, kind: "input.promoted", data: { input_id: "in_1", prompt: "hello" } }
+  const event: EngineEvent = {
+    session_id: "ses_abc",
+    seq: 7,
+    kind: "input.promoted",
+    data: { input_id: "in_1", prompt: "hello" },
+  }
   const admitted = translatePrompt(event)
   expect(String(admitted?.messageID)).toBe("msg_ses_abc_7")
   expect(admitted?.prompt).toEqual({ text: "hello" })
@@ -43,7 +61,10 @@ test("maps a committed assistant message to text.ended events", () => {
     kind: "message.committed",
     data: {
       role: "assistant",
-      content: [{ type: "text", text: "hello" }, { type: "tool_use", id: "c1", name: "read_file", input: {} }],
+      content: [
+        { type: "text", text: "hello" },
+        { type: "tool_use", id: "c1", name: "read_file", input: {} },
+      ],
     },
   }
   const events = translateMessage(event)
@@ -90,16 +111,28 @@ test("correlates tool.completed with its committed call", () => {
     kind: "message.committed",
     data: { role: "assistant", content: [{ type: "tool_use", id: "c1", name: "read_file", input: {} }] },
   })
-  const success = bridge.result({ session_id: "ses_abc", seq: 6, kind: "tool.completed", data: { call_id: "c1", result: "contents", is_error: false } })
+  const success = bridge.result({
+    session_id: "ses_abc",
+    seq: 6,
+    kind: "tool.completed",
+    data: { call_id: "c1", result: "contents", is_error: false },
+  })
   expect(success?.type).toBe("session.next.tool.success")
   if (success?.type === "session.next.tool.success") {
     expect(String(success.assistantMessageID)).toBe("msg_ses_abc_4")
     expect(success.content[0]).toEqual({ type: "text", text: "contents" })
   }
-  const failed = bridge.result({ session_id: "ses_abc", seq: 7, kind: "tool.completed", data: { call_id: "c1", result: "boom", is_error: true } })
+  const failed = bridge.result({
+    session_id: "ses_abc",
+    seq: 7,
+    kind: "tool.completed",
+    data: { call_id: "c1", result: "boom", is_error: true },
+  })
   expect(failed?.type).toBe("session.next.tool.failed")
   if (failed?.type === "session.next.tool.failed") expect(failed.error.message).toBe("boom")
-  expect(bridge.result({ session_id: "ses_abc", seq: 8, kind: "tool.completed", data: { call_id: "missing", result: "x" } })).toBeUndefined()
+  expect(
+    bridge.result({ session_id: "ses_abc", seq: 8, kind: "tool.completed", data: { call_id: "missing", result: "x" } }),
+  ).toBeUndefined()
 })
 
 test("maps approval.requested to a permission.v2.asked payload", () => {
@@ -107,7 +140,14 @@ test("maps approval.requested to a permission.v2.asked payload", () => {
     session_id: "ses_abc",
     seq: 2,
     kind: "approval.requested",
-    data: { request_id: "req1", session_id: "ses_abc", tool: "write_file", resource: "file", input_hash: "h", policy_revision: "rev" },
+    data: {
+      request_id: "req1",
+      session_id: "ses_abc",
+      tool: "write_file",
+      resource: "file",
+      input_hash: "h",
+      policy_revision: "rev",
+    },
   }
   const asked = translateApproval(event)
   expect(String(asked?.id)).toBe("per_req1")
@@ -136,18 +176,22 @@ test("maps question.requested to a question.v2.asked payload", () => {
     kind: "question.requested",
     data: {
       question_id: "q1",
-      input: { questions: [{ question: "Pick", header: "pick", options: [{ label: "a", description: "A" }, { label: "b" }] }] },
+      input: {
+        questions: [{ question: "Pick", header: "pick", options: [{ label: "a", description: "A" }, { label: "b" }] }],
+      },
     },
   }
   const asked = translateQuestion(event)
   expect(String(asked?.id)).toBe("que_q1")
   expect(String(asked?.sessionID)).toBe("ses_abc")
   expect(asked?.questions[0]?.question).toBe("Pick")
-  expect(asked?.questions[0]?.options).toEqual([{ label: "a", description: "A" }, { label: "b", description: "" }])
+  expect(asked?.questions[0]?.options).toEqual([
+    { label: "a", description: "A" },
+    { label: "b", description: "" },
+  ])
   expect(asked?.questions[0]?.custom).toBe(true)
   expect(translateQuestion({ ...event, kind: "run.started", data: {} })).toBeUndefined()
 })
-
 
 test("status transitions are isolated by Session and only terminal events idle a run", () => {
   const bridge = new StatusBridge()
@@ -161,11 +205,15 @@ test("status transitions are isolated by Session and only terminal events idle a
 test("run-scoped tool keys retain the originating message across reused provider ids", () => {
   const bridge = new ToolBridge()
   const planned = (session: string, run: string): EngineEvent => ({
-    session_id: session, seq: 1, kind: "tool.planned",
+    session_id: session,
+    seq: 1,
+    kind: "tool.planned",
     data: { call_id: `${run}/call`, provider_id: "call" },
   })
   const committed = (session: string, seq: number): EngineEvent => ({
-    session_id: session, seq, kind: "message.committed",
+    session_id: session,
+    seq,
+    kind: "message.committed",
     data: { role: "assistant", content: [{ type: "tool_use", id: "call", name: "read_file", input: {} }] },
   })
   bridge.note(planned("ses_a", "run1"))
@@ -174,13 +222,49 @@ test("run-scoped tool keys retain the originating message across reused provider
   bridge.note(committed("ses_a", 5))
   bridge.note(planned("ses_b", "run1"))
   bridge.note(committed("ses_b", 9))
-  const result = (session: string, run: string) => bridge.result({
-    session_id: session, seq: 10, kind: "tool.completed",
-    data: { call_id: `${run}/call`, result: "contents", is_error: false },
-  })
+  const result = (session: string, run: string) =>
+    bridge.result({
+      session_id: session,
+      seq: 10,
+      kind: "tool.completed",
+      data: { call_id: `${run}/call`, result: "contents", is_error: false },
+    })
   expect(String(result("ses_a", "run1")?.assistantMessageID)).toBe("msg_ses_a_2")
   expect(String(result("ses_a", "run2")?.assistantMessageID)).toBe("msg_ses_a_5")
   expect(String(result("ses_b", "run1")?.assistantMessageID)).toBe("msg_ses_b_9")
   expect(result("ses_a", "run1")?.callID).toBe("call")
   expect(result("ses_missing", "run1")).toBeUndefined()
+})
+
+test("maps question.resolved to the product reply with matching request id", () => {
+  const resolved = translateQuestionResolved({
+    session_id: "ses_abc",
+    seq: 6,
+    kind: "question.resolved",
+    data: { question_id: "q1", state: "answered", answers: [["a"], []] },
+  })
+  expect(resolved).toEqual({
+    type: "question.v2.replied",
+    data: {
+      sessionID: expect.anything(),
+      requestID: expect.anything(),
+      answers: [["a"], []],
+    },
+  })
+})
+
+test("an expired or cancelled question is rejected and malformed resolutions are dropped", () => {
+  const base = { session_id: "ses_abc", seq: 6, kind: "question.resolved" } as const
+  expect(translateQuestionResolved({ ...base, data: { question_id: "q1", state: "expired" } })?.type).toBe(
+    "question.v2.rejected",
+  )
+  expect(
+    translateQuestionResolved({ ...base, data: { question_id: "q1", state: "cancelled", recovered: true } })?.type,
+  ).toBe("question.v2.rejected")
+  expect(translateQuestionResolved({ ...base, data: { state: "answered", answers: [] } })).toBeUndefined()
+  expect(translateQuestionResolved({ ...base, data: { question_id: "q1", state: "answered" } })).toBeUndefined()
+  expect(
+    translateQuestionResolved({ ...base, data: { question_id: "q1", state: "answered", answers: ["a"] } }),
+  ).toBeUndefined()
+  expect(translateQuestionResolved({ ...base, data: { question_id: "q1", state: "pending" } })).toBeUndefined()
 })
