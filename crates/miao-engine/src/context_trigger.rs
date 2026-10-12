@@ -54,6 +54,43 @@ pub fn estimate_tokens(chars: usize) -> u64 {
     (chars as u64).div_ceil(3)
 }
 
+/// Gate 5: the compaction circuit breaker. After `threshold` consecutive
+/// rejected attempts the breaker trips and the trigger stays off until an
+/// explicit `compact` resets it, so a persistently failing summarizer cannot
+/// spin the engine. An operator's explicit compact is also the reset.
+#[derive(Debug, Clone)]
+pub struct Breaker {
+    threshold: u8,
+    failures: u8,
+}
+
+impl Breaker {
+    pub fn new(threshold: u8) -> Self {
+        Self {
+            threshold,
+            failures: 0,
+        }
+    }
+
+    /// A rejected compaction attempt. Reaching the threshold trips the breaker.
+    pub fn rejected(&mut self) {
+        if self.failures < u8::MAX {
+            self.failures = self.failures.saturating_add(1);
+        }
+    }
+
+    /// An explicit operator compact clears the failure streak and closes the
+    /// breaker.
+    pub fn reset(&mut self) {
+        self.failures = 0;
+    }
+
+    /// Whether compaction may be attempted.
+    pub fn allows(&self) -> bool {
+        self.failures < self.threshold
+    }
+}
+
 /// Gate ③: how a hot prefix is summarized. One pass while the prefix fits
 /// the summarizer's budget; consecutive segments only when it cannot. Ranges
 /// are half-open `[start, end)` message offsets, so a caller replays them
@@ -212,6 +249,21 @@ mod tests {
                 segments: vec![]
             }
         );
+    }
+
+    #[test]
+    fn breaker_trips_after_the_threshold_and_resets_explicitly() {
+        let mut breaker = Breaker::new(3);
+        assert!(breaker.allows());
+        breaker.rejected();
+        breaker.rejected();
+        assert!(breaker.allows());
+        breaker.rejected();
+        assert!(!breaker.allows());
+        breaker.rejected();
+        assert!(!breaker.allows());
+        breaker.reset();
+        assert!(breaker.allows());
     }
 
     #[test]
