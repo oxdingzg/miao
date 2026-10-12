@@ -599,7 +599,7 @@ async fn execute(
         } else {
             json!({"status":"skipped","reason":"state_read_policy"})
         };
-        inner
+        let started = inner
             .store
             .record(
                 session,
@@ -726,7 +726,12 @@ async fn execute(
                     {
                         inner
                             .store
-                            .assistant_reply(session, run, partial.content.clone())
+                            .assistant_reply(
+                                session,
+                                run,
+                                Some(started.seq),
+                                partial.content.clone(),
+                            )
                             .await?;
                     }
                     inner
@@ -801,6 +806,7 @@ async fn execute(
                 session,
                 run,
                 step,
+                Some(started.seq),
                 reply.content.clone(),
                 inner.provider.reply_identity(&reply),
             )

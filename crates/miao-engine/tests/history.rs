@@ -99,7 +99,7 @@ async fn active_or_open_tool_boundaries_cannot_be_compacted() {
         .compact("s", "active", boundary, "summary".into())
         .await
         .is_err());
-    let call=store.assistant_reply("s","run",json!([{"type":"text","text":"calling"},{"type":"tool_use","id":"call","name":"read_file","input":{"path":"file"}}])).await.unwrap();
+    let call=store.assistant_reply("s","run",None,json!([{"type":"text","text":"calling"},{"type":"tool_use","id":"call","name":"read_file","input":{"path":"file"}}])).await.unwrap();
     store.finish_run("s", "run", "interrupted").await.unwrap();
     assert!(store
         .compact("s", "open", call.seq, "summary".into())
