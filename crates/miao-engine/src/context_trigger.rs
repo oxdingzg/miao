@@ -54,6 +54,48 @@ pub fn estimate_tokens(chars: usize) -> u64 {
     (chars as u64).div_ceil(3)
 }
 
+/// Gate ③: how a hot prefix is summarized. One pass while the prefix fits
+/// the summarizer's budget; consecutive segments only when it cannot. Ranges
+/// are half-open `[start, end)` message offsets, so a caller replays them
+/// directly against the selected history and the checkpoint contract stays
+/// the single-shot one: every segment lands in the same checkpoint summary.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SummaryPlan {
+    /// `single` never splits; `segmented` only when the prefix cannot fit.
+    pub mode: &'static str,
+    /// Consecutive half-open message ranges, in order.
+    pub segments: Vec<(usize, usize)>,
+}
+
+/// Partition `prefix` messages into summarizer passes of at most `per_pass`
+/// messages. A non-positive budget means "cannot summarize"; the plan stays
+/// empty rather than guessing.
+pub fn plan_summary(prefix: usize, per_pass: usize) -> SummaryPlan {
+    if per_pass == 0 {
+        return SummaryPlan {
+            mode: "segmented",
+            segments: Vec::new(),
+        };
+    }
+    if prefix <= per_pass {
+        return SummaryPlan {
+            mode: "single",
+            segments: vec![(0, prefix)],
+        };
+    }
+    let mut segments = Vec::new();
+    let mut start = 0;
+    while start < prefix {
+        let end = (start + per_pass).min(prefix);
+        segments.push((start, end));
+        start = end;
+    }
+    SummaryPlan {
+        mode: "segmented",
+        segments,
+    }
+}
+
 /// Gate ②: the provider's own count wins; absence or refusal falls back to
 /// the estimate. A counting failure never fails the turn — this function
 /// cannot fail by construction.
@@ -131,6 +173,45 @@ mod tests {
         };
         assert!(!budget.should_compact(Some(700), 50));
         assert!(budget.should_compact(Some(700), 100));
+    }
+
+    #[test]
+    fn summary_plans_stay_single_until_the_prefix_cannot_fit() {
+        assert_eq!(
+            plan_summary(4, 8),
+            SummaryPlan {
+                mode: "single",
+                segments: vec![(0, 4)]
+            }
+        );
+        assert_eq!(
+            plan_summary(8, 8),
+            SummaryPlan {
+                mode: "single",
+                segments: vec![(0, 8)]
+            }
+        );
+        assert_eq!(
+            plan_summary(9, 4),
+            SummaryPlan {
+                mode: "segmented",
+                segments: vec![(0, 4), (4, 8), (8, 9)]
+            }
+        );
+        assert_eq!(
+            plan_summary(0, 4),
+            SummaryPlan {
+                mode: "single",
+                segments: vec![(0, 0)]
+            }
+        );
+        assert_eq!(
+            plan_summary(9, 0),
+            SummaryPlan {
+                mode: "segmented",
+                segments: vec![]
+            }
+        );
     }
 
     #[test]
