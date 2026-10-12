@@ -55,6 +55,16 @@ export function createTuiV2SessionReducer() {
 
     switch (event.type) {
       // Admission only marks an input as accepted; the visible message appears on promotion.
+      case "session.next.stream.discarded": {
+        const sessionID = event.properties.sessionID
+        const id = event.properties.assistantMessageID
+        streams.delete(`${sessionID}:${id}`)
+        return result(
+          sessionID,
+          source.filter((item) => item.id !== id),
+          [id],
+        )
+      }
       case "session.next.prompt.admitted":
         return result(event.properties.sessionID, [...source])
       case "session.next.prompted":

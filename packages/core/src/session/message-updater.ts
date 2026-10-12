@@ -169,6 +169,8 @@ export function update(adapter: Adapter, event: SessionEvent.Event) {
         if (user) yield* adapter.updateUser({ ...user, text: event.data.text, commandState: "failed", commandError: event.data.error })
       }),
       "session.next.prompt.admitted": () => Effect.void,
+      // This live-only event removes a client draft, never a durable message.
+      "session.next.stream.discarded": () => Effect.void,
       "session.next.notification.admitted": () => Effect.void,
       // A cancelled input was never promoted, so there is no message to project.
       "session.next.prompt.cancelled": () => Effect.void,

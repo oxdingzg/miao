@@ -100,3 +100,75 @@ real(
   },
   30000,
 )
+
+real(
+  "a streamed native reply rejected at completion discards its live draft",
+  async () => {
+    await using tmp = await tmpdir()
+    if (!binary) throw new Error("missing native binary")
+    const streamed = Promise.withResolvers<void>()
+    const upstream = Bun.serve({
+      port: 0,
+      fetch() {
+        return new Response(
+          new ReadableStream({
+            async start(controller) {
+              const encoder = new TextEncoder()
+              controller.enqueue(
+                encoder.encode(
+                  'data: {"choices":[{"index":0,"delta":{"content":"temporary answer"},"finish_reason":null}]}\n\n',
+                ),
+              )
+              await streamed.promise
+              controller.enqueue(
+                encoder.encode(
+                  'data: {"choices":[{"index":0,"delta":{},"finish_reason":"content_filter"}]}\n\ndata: [DONE]\n\n',
+                ),
+              )
+              controller.close()
+            },
+          }),
+          { headers: { "content-type": "text/event-stream" } },
+        )
+      },
+    })
+    const client = EngineClient.start({
+      binary,
+      db: path.join(tmp.path, "engine.db"),
+      workspace: tmp.path,
+      model: "fixture",
+      provider: "openai-chat",
+      endpoint: upstream.url.toString(),
+      env: { OPENAI_API_KEY: "fixture-only" },
+    })
+    const outputs: EngineSessionEvent[] = []
+    const finished = Promise.withResolvers<void>()
+    const timer = setTimeout(() => finished.reject(new Error("run did not finish")), 20000)
+    client.onEvent((event) => {
+      if (event.kind === "stop" || event.kind === "stop_failure") finished.resolve()
+    })
+    const facade = new EngineSession(client, (event) => {
+      outputs.push(event)
+      if (event.type === "session.next.text.delta") streamed.resolve()
+    })
+    try {
+      await facade.prompt("ses_discard_native", "trigger rejection", { inputID: "in_discard" })
+      await finished.promise
+      const delta = outputs.find((event) => event.type === "session.next.text.delta")
+      if (typeof delta?.data !== "object" || delta.data === null || !("assistantMessageID" in delta.data))
+        throw new Error("missing live draft")
+      const discarded = outputs.filter((event) => event.type === "session.next.stream.discarded")
+      expect(discarded).toHaveLength(1)
+      expect(discarded[0]?.data).toMatchObject({ assistantMessageID: delta.data.assistantMessageID })
+      expect(outputs.filter((event) => event.type === "session.next.text.ended")).toHaveLength(0)
+      expect(outputs.filter((event) => event.type === "session.next.failed")).toHaveLength(1)
+      expect(JSON.stringify(await client.history("ses_discard_native"))).not.toContain("temporary answer")
+    } finally {
+      streamed.resolve()
+      clearTimeout(timer)
+      await client.close()
+      upstream.stop(true)
+    }
+  },
+  30000,
+)

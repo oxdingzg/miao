@@ -1304,6 +1304,21 @@ function reduceV2Event(input: SessionDataInput & { event: SessionV2Event }): Ses
       return out(data, commits, type === "text" ? merge(next, settleRetry(data, undefined)) : next)
     }
 
+    case "session.next.stream.discarded": {
+      const messageID = event.properties.assistantMessageID
+      for (const [partID, owner] of data.msg) {
+        if (owner !== messageID) continue
+        data.msg.delete(partID)
+        data.part.delete(partID)
+        data.text.delete(partID)
+        data.sent.delete(partID)
+        data.visible.delete(partID)
+        data.end.delete(partID)
+      }
+      data.role.delete(messageID)
+      data.steps.delete(messageID)
+      return out(data, commits)
+    }
     case "session.next.text.delta":
     case "session.next.reasoning.delta": {
       const item = event.properties

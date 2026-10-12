@@ -55,6 +55,14 @@ export function createV2SessionReducer() {
 
     switch (event.type) {
       // Admission only marks an input as accepted; the visible message appears on promotion.
+      case "session.next.stream.discarded": {
+        const id = event.data.assistantMessageID
+        streams.delete(`${sessionID}:${id}`)
+        return result(
+          source.filter((item) => item.id !== id),
+          [id],
+        )
+      }
       case "session.next.prompt.admitted":
         return result([...source])
       case "session.next.prompted":
