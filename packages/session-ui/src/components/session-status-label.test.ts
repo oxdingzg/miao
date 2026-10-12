@@ -6,6 +6,7 @@ test("maps a drain phase to the waiting label", () => {
   expect(sessionPhaseLabelKey("queued")).toBe("ui.message.queued")
   expect(sessionPhaseLabelKey("preparing")).toBe("ui.sessionTurn.status.preparingRequest")
   expect(sessionPhaseLabelKey("requesting")).toBe("ui.sessionTurn.status.waitingForModel")
+  expect(sessionPhaseLabelKey("compacting")).toBe("ui.sessionTurn.status.compacting")
   expect(sessionPhaseLabelKey("streaming")).toBe("ui.sessionTurn.status.thinking")
   expect(sessionPhaseLabelKey("retrying")).toBe("ui.sessionTurn.status.thinking")
 })

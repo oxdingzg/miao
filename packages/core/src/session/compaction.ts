@@ -134,6 +134,11 @@ type Input = {
    * only part the local estimate has to cover.
    */
   readonly observedMessages?: number
+  /**
+   * Reports the drain phase while a summary is in flight. A compaction is neither
+   * requesting nor streaming, and a long one must not look like an idle Session.
+   */
+  readonly report?: (phase: SessionEvent.BusyPhase) => Effect.Effect<void>
 }
 
 /**
@@ -472,6 +477,7 @@ export const make = (dependencies: Dependencies) => {
     const summarizeModel = config.summarizeSmall
       ? pickSummarizeModel(input, requestTokens + measure(instruction), summaryOutput)
       : input.model
+    if (input.report) yield* input.report("compacting")
     yield* logSummary(input, "hot", summarizeModel, requestTokens)
     const requestFor = (model: Model) =>
       LLM.request({
@@ -538,6 +544,7 @@ export const make = (dependencies: Dependencies) => {
         ? pickSummarizeModel(input, systemTokens + recoveryTokens(prompt), summaryOutput)
         : input.model
     const summarizeModel = choose(summaryPrompt)
+    if (input.report) yield* input.report("compacting")
     yield* logSummary(input, "staged", summarizeModel, systemTokens + recoveryTokens(summaryPrompt))
     // A staged compaction re-summarizes the head one bounded slice at a time, which
     // on a large window is many model calls in a row. Announce how many that will

@@ -96,6 +96,7 @@ export const dict = {
   "ui.sessionTurn.status.consideringNextSteps": "Examen des prochaines étapes",
   "ui.sessionTurn.status.preparingRequest": "Préparation de la requête",
   "ui.sessionTurn.status.waitingForModel": "En attente de la réponse du modèle",
+  "ui.sessionTurn.status.compacting": "Compacting context",
 
   "ui.messagePart.questions.dismissed": "Questions ignorées",
   "ui.messagePart.compaction": "Session compactée",

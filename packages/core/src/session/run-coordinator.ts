@@ -2,6 +2,7 @@ export * as SessionRunCoordinator from "./run-coordinator"
 
 import { Deferred, Effect, Exit, Fiber, FiberSet, Scope, Semaphore } from "effect"
 import { randomUUID } from "node:crypto"
+import type { SessionEvent } from "@miao/schema/session-event"
 
 /** Serializes execution for each key while allowing different keys to run concurrently. */
 export interface Coordinator<Key, E> {
@@ -36,8 +37,11 @@ type Entry<E> = {
   execution: string
 }
 
-/** Where an active drain currently is, in order. */
-export type Phase = "queued" | "preparing" | "requesting" | "streaming" | "retrying"
+/**
+ * Where an active drain currently is. Derived from the published phase rather than
+ * restated, so a new phase cannot exist in the schema and be missing here.
+ */
+export type Phase = SessionEvent.BusyPhase
 export type Status =
   | { readonly type: "busy"; readonly phase: Phase; readonly since: number }
   | { readonly type: "idle" }

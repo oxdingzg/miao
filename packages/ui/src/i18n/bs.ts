@@ -99,6 +99,7 @@ export const dict = {
   "ui.sessionTurn.status.consideringNextSteps": "Razmatranje sljedećih koraka",
   "ui.sessionTurn.status.preparingRequest": "Priprema zahtjeva",
   "ui.sessionTurn.status.waitingForModel": "Čekanje odgovora modela",
+  "ui.sessionTurn.status.compacting": "Compacting context",
 
   "ui.messagePart.questions.dismissed": "Pitanja odbačena",
   "ui.messagePart.compaction": "Sesija sažeta",

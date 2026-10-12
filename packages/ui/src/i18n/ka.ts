@@ -89,6 +89,7 @@ export const dict: Record<string, string> = {
   "ui.sessionTurn.status.consideringNextSteps": "შემდეგი ნაბიჯების განხილვა",
   "ui.sessionTurn.status.preparingRequest": "მოთხოვნის მომზადება",
   "ui.sessionTurn.status.waitingForModel": "მოდელის პასუხის ლოდინი",
+  "ui.sessionTurn.status.compacting": "Compacting context",
   "ui.messagePart.diagnostic.error": "შეცდომა",
   "ui.messagePart.title.edit": "რედაქტირება",
   "ui.messagePart.title.write": "დაწერა",

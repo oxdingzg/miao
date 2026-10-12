@@ -91,6 +91,7 @@ export const dict: Record<string, string> = {
   "ui.sessionTurn.status.consideringNextSteps": "A következő lépések mérlegelése",
   "ui.sessionTurn.status.preparingRequest": "Kérés előkészítése",
   "ui.sessionTurn.status.waitingForModel": "Válaszra várakozás a modelltől",
+  "ui.sessionTurn.status.compacting": "Compacting context",
   "ui.messagePart.diagnostic.error": "Hiba",
   "ui.messagePart.title.edit": "Szerkesztés",
   "ui.messagePart.title.write": "Írj",

@@ -93,6 +93,7 @@ export const dict = {
   "ui.sessionTurn.status.consideringNextSteps": "次のステップを検討中",
   "ui.sessionTurn.status.preparingRequest": "リクエストを準備中",
   "ui.sessionTurn.status.waitingForModel": "モデルの応答を待機中",
+  "ui.sessionTurn.status.compacting": "Compacting context",
 
   "ui.messagePart.questions.dismissed": "質問をスキップしました",
   "ui.messagePart.compaction": "セッションが圧縮されました",

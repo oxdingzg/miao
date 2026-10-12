@@ -783,6 +783,7 @@ const layer = Layer.effect(
           model,
           summarizeModel,
           request,
+          report: phase,
         })
         if (attempt.result === "compacted") {
           turns.set(session.id, { at: Date.now(), afterCompaction: true })
@@ -798,6 +799,7 @@ const layer = Layer.effect(
         yield* compaction.compactIfNeeded({
           sessionID: session.id,
           entries,
+          report: phase,
           model,
           summarizeModel,
           request,
@@ -1085,7 +1087,7 @@ const layer = Layer.effect(
             recoverOverflow &&
             !publisher.hasVisibleOutput() &&
             isContextOverflowFailure(overflowFailure ?? failure) &&
-            (yield* restore(recoverOverflow({ sessionID: session.id, entries, model, summarizeModel, request })))
+            (yield* restore(recoverOverflow({ sessionID: session.id, entries, model, summarizeModel, request, report: phase })))
           ) {
             turns.set(session.id, { at: Date.now(), afterCompaction: true })
             yield* recordCompaction(session.id, "recovery")

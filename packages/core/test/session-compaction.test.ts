@@ -466,6 +466,32 @@ test("compaction falls back to the staged strategy when the prefix cannot hold t
   expect(prompt.text).toStartWith("Here is the conversation so far:")
 })
 
+test("a compaction reports the compacting phase while it runs", async () => {
+  const main = model("main", 100_000)
+  const phases: string[] = []
+  const compaction = SessionCompaction.make({
+    events: { publish: () => Effect.succeed(undefined) } as never,
+    llm: { stream: () => summary("summary") as never },
+    config: [] as never,
+  })
+  const input = (sessionID: string, observedTokens: number) =>
+    ({
+      ...(observedInput(sessionID, main, observedTokens) as Record<string, unknown>),
+      report: (phase: string) => {
+        phases.push(phase)
+        return Effect.void
+      },
+    }) as never
+
+  // The drain is neither requesting nor streaming while a summary is in flight.
+  expect(await Effect.runPromise(compaction.compactIfNeeded(input("ses_phase", 95_000) as never))).toBe(true)
+  expect(phases).toEqual(["compacting"])
+
+  // A decision that never reaches the provider reports nothing.
+  expect(await Effect.runPromise(compaction.compactIfNeeded(input("ses_phase_idle", 50_000) as never))).toBe(false)
+  expect(phases).toEqual(["compacting"])
+})
+
 test("compaction asks the provider to count only when the decision is close", async () => {
   const main = model("main", 1_000_000)
   const counts: LLMRequest[] = []
