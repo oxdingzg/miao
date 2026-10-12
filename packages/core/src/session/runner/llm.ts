@@ -265,6 +265,9 @@ const layer = Layer.effect(
     // cleared when compaction rewrites the history so the next decision sees the
     // smaller window rather than the pre-compaction size.
     const lastPromptTokens = new Map<string, number>()
+    // Request length the provider counted, so a compaction decision can price the
+    // request as that exact count plus the messages appended since.
+    const lastPromptMessages = new Map<string, number>()
     // Highest context band already announced per session; reset when
     // compaction rewrites the history so the smaller window re-arms notices.
     const lastContextNotice = new Map<string, number>()
@@ -784,6 +787,7 @@ const layer = Layer.effect(
         if (attempt.result === "compacted") {
           turns.set(session.id, { at: Date.now(), afterCompaction: true })
           lastPromptTokens.delete(session.id)
+          lastPromptMessages.delete(session.id)
           lastContextNotice.delete(session.id)
         }
         yield* recordCompaction(session.id, "overflow", Date.now() - compactStartedAt)
@@ -798,10 +802,12 @@ const layer = Layer.effect(
           summarizeModel,
           request,
           observedTokens: lastPromptTokens.get(session.id),
+          observedMessages: lastPromptMessages.get(session.id),
         })
       ) {
         turns.set(session.id, { at: Date.now(), afterCompaction: true })
         lastPromptTokens.delete(session.id)
+        lastPromptMessages.delete(session.id)
         lastContextNotice.delete(session.id)
         yield* recordCompaction(session.id, "threshold", Date.now() - compactCheckedAt)
         return yield* Effect.die(continueAfterCompaction(currentStep))
@@ -1084,6 +1090,7 @@ const layer = Layer.effect(
             turns.set(session.id, { at: Date.now(), afterCompaction: true })
             yield* recordCompaction(session.id, "recovery")
             lastPromptTokens.delete(session.id)
+            lastPromptMessages.delete(session.id)
             lastContextNotice.delete(session.id)
             return yield* Effect.die(continueAfterOverflowCompaction(currentStep))
           }
@@ -1140,6 +1147,7 @@ const layer = Layer.effect(
           if (stepSettlement && !publisher.hasProviderError()) {
             // Feed the next compaction decision the provider's own count.
             lastPromptTokens.set(session.id, SessionRunnerMetrics.promptTokens(stepSettlement.tokens))
+            lastPromptMessages.set(session.id, request.messages.length)
             const cacheMissed = SessionRunnerMetrics.cacheMissed(stepSettlement.tokens)
             const endSnapshotStartedAt = Date.now()
             // A step that published no tool call cannot have mutated the
