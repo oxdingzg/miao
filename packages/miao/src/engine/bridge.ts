@@ -406,20 +406,22 @@ export function translateMessage(event: EngineEvent): SessionTextEnded[] {
   const sessionID = adoptSession(event.session_id)
   const anchor = anchorSeq(event)
   const assistantMessageID = messageID(event.session_id, anchor ?? event.seq)
-  return blocks.flatMap((block, index) => {
-    if (typeof block !== "object" || block === null) return []
-    if (!("type" in block) || block.type !== "text") return []
-    if (!("text" in block) || typeof block.text !== "string") return []
-    return [
-      {
-        sessionID,
-        timestamp: eventTimestamp(event),
-        assistantMessageID,
-        textID: `text_${anchor ?? event.seq}_${index}`,
-        text: block.text,
-      },
-    ]
-  })
+  return blocks
+    .flatMap((block, index) => {
+      if (typeof block !== "object" || block === null) return []
+      if (!("type" in block) || block.type !== "text") return []
+      if (!("text" in block) || typeof block.text !== "string") return []
+      return [{ index, text: block.text }]
+    })
+    .map((block, ordinal) => ({
+      sessionID,
+      timestamp: eventTimestamp(event),
+      assistantMessageID,
+      // Anchored live text has its own ordinal, independent of reasoning/tool
+      // blocks. Preserve historical commit-index IDs for unanchored stores.
+      textID: `text_${anchor ?? event.seq}_${anchor === undefined ? block.index : ordinal}`,
+      text: block.text,
+    }))
 }
 
 const TOOL_IDS: Record<string, string> = {
