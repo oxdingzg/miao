@@ -89,6 +89,7 @@ export const dict: Record<string, string> = {
   "ui.sessionTurn.status.consideringNextSteps": "Հաշվի առնելով հաջորդ քայլերը",
   "ui.sessionTurn.status.preparingRequest": "Հարցման նախապատրաստում",
   "ui.sessionTurn.status.waitingForModel": "Սպասում ենք մոդելի պատասխանին",
+  "ui.sessionTurn.status.compacting": "Compacting context",
   "ui.messagePart.diagnostic.error": "Սխալ",
   "ui.messagePart.title.edit": "Խմբագրել",
   "ui.messagePart.title.write": "Գրել",

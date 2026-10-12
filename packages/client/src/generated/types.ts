@@ -1284,7 +1284,7 @@ export type SessionsActivityOutput = {
       | { readonly type: "idle" }
       | {
           readonly type: "busy"
-          readonly phase?: "queued" | "preparing" | "requesting" | "streaming" | "retrying"
+          readonly phase?: "queued" | "preparing" | "requesting" | "streaming" | "retrying" | "compacting"
           readonly since?: number
         }
       | {
@@ -1327,7 +1327,7 @@ export type SessionsStatusOutput = {
     | { readonly type: "idle" }
     | {
         readonly type: "busy"
-        readonly phase?: "queued" | "preparing" | "requesting" | "streaming" | "retrying"
+        readonly phase?: "queued" | "preparing" | "requesting" | "streaming" | "retrying" | "compacting"
         readonly since?: number
       }
     | {

@@ -89,6 +89,7 @@ export const dict = {
   "ui.sessionTurn.status.consideringNextSteps": "Бо назардошти қадамҳои оянда",
   "ui.sessionTurn.status.preparingRequest": "Омодасозии дархост",
   "ui.sessionTurn.status.waitingForModel": "Интизори ҷавоби модел",
+  "ui.sessionTurn.status.compacting": "Compacting context",
   "ui.messagePart.diagnostic.error": "Хатогӣ",
   "ui.messagePart.title.edit": "Таҳрир",
   "ui.messagePart.title.write": "нависед",

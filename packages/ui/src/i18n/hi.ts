@@ -90,6 +90,7 @@ export const dict: Record<string, string> = {
   "ui.sessionTurn.status.consideringNextSteps": "अगले कदमों पर विचार",
   "ui.sessionTurn.status.preparingRequest": "अनुरोध तैयार किया जा रहा है",
   "ui.sessionTurn.status.waitingForModel": "मॉडल की प्रतिक्रिया की प्रतीक्षा में",
+  "ui.sessionTurn.status.compacting": "Compacting context",
   "ui.messagePart.diagnostic.error": "त्रुटि",
   "ui.messagePart.title.edit": "संपादित करें",
   "ui.messagePart.title.write": "लिखें",

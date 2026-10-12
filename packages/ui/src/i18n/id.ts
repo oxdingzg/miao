@@ -95,6 +95,7 @@ export const dict: Record<string, string> = {
   "ui.sessionTurn.status.consideringNextSteps": "Mempertimbangkan langkah selanjutnya",
   "ui.sessionTurn.status.preparingRequest": "Menyiapkan permintaan",
   "ui.sessionTurn.status.waitingForModel": "Menunggu respons model",
+  "ui.sessionTurn.status.compacting": "Compacting context",
 
   "ui.messagePart.diagnostic.error": "Kesalahan",
   "ui.messagePart.title.edit": "Sunting",

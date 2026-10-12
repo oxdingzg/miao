@@ -90,6 +90,7 @@ export const dict = {
   "ui.sessionTurn.status.consideringNextSteps": "ពិចារណាជំហានបន្ទាប់",
   "ui.sessionTurn.status.preparingRequest": "កំពុងរៀបចំសំណើ",
   "ui.sessionTurn.status.waitingForModel": "កំពុងរង់ចាំការឆ្លើយតបពីគំរូ",
+  "ui.sessionTurn.status.compacting": "Compacting context",
   "ui.messagePart.diagnostic.error": "កំហុស",
   "ui.messagePart.title.edit": "កែសម្រួល",
   "ui.messagePart.title.write": "សរសេរ",

@@ -502,7 +502,7 @@ export type Retried = typeof Retried.Type
  * awaiting the provider's first event (TTFT); `streaming` is at least one
  * provider event received; `retrying` is a bounded retry of a failed attempt.
  */
-export const BusyPhase = Schema.Literals(["queued", "preparing", "requesting", "streaming", "retrying"]).annotate({
+export const BusyPhase = Schema.Literals(["queued", "preparing", "requesting", "streaming", "retrying", "compacting"]).annotate({
   identifier: "session.next.busy_phase",
 })
 export type BusyPhase = Schema.Schema.Type<typeof BusyPhase>

@@ -70,6 +70,7 @@ export const dict = {
   "ui.sessionTurn.status.consideringNextSteps": "다음 단계 고려 중",
   "ui.sessionTurn.status.preparingRequest": "요청 준비 중",
   "ui.sessionTurn.status.waitingForModel": "모델 응답 대기 중",
+  "ui.sessionTurn.status.compacting": "Compacting context",
 
   "ui.messagePart.questions.dismissed": "질문 무시됨",
   "ui.messagePart.compaction": "세션 압축됨",

@@ -94,6 +94,7 @@ export const dict = {
   "ui.sessionTurn.status.consideringNextSteps": "กำลังพิจารณาขั้นตอนถัดไป",
   "ui.sessionTurn.status.preparingRequest": "กำลังเตรียมคำขอ",
   "ui.sessionTurn.status.waitingForModel": "กำลังรอการตอบกลับจากโมเดล",
+  "ui.sessionTurn.status.compacting": "Compacting context",
 
   "ui.messagePart.questions.dismissed": "ละทิ้งคำถามแล้ว",
   "ui.messagePart.compaction": "บีบอัดเซสชันแล้ว",

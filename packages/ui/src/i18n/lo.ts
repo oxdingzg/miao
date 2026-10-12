@@ -89,6 +89,7 @@ export const dict = {
   "ui.sessionTurn.status.consideringNextSteps": "ພິຈາລະນາຂັ້ນຕອນຕໍ່ໄປ",
   "ui.sessionTurn.status.preparingRequest": "ກຳລັງກະກຽມຄຳຂໍ",
   "ui.sessionTurn.status.waitingForModel": "ກຳລັງລໍຖ້າການຕອບສະໜອງຈາກໂມເດລ",
+  "ui.sessionTurn.status.compacting": "Compacting context",
   "ui.messagePart.diagnostic.error": "ຜິດພາດ",
   "ui.messagePart.title.edit": "ແກ້ໄຂ",
   "ui.messagePart.title.write": "ຂຽນ",

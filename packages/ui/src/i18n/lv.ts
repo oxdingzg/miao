@@ -90,6 +90,7 @@ export const dict: Record<string, string> = {
   "ui.sessionTurn.status.consideringNextSteps": "Apsver nākamos soļus",
   "ui.sessionTurn.status.preparingRequest": "Notiek pieprasījuma sagatavošana",
   "ui.sessionTurn.status.waitingForModel": "Gaida modeļa atbildi",
+  "ui.sessionTurn.status.compacting": "Compacting context",
   "ui.messagePart.diagnostic.error": "Kļūda",
   "ui.messagePart.title.edit": "Rediģēt",
   "ui.messagePart.title.write": "Rakstīt",

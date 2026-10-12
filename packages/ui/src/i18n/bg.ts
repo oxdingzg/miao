@@ -89,6 +89,7 @@ export const dict = {
   "ui.sessionTurn.status.consideringNextSteps": "Обмисляне на следващите стъпки",
   "ui.sessionTurn.status.preparingRequest": "Подготовка на заявката",
   "ui.sessionTurn.status.waitingForModel": "Изчакване на отговор от модела",
+  "ui.sessionTurn.status.compacting": "Compacting context",
   "ui.messagePart.diagnostic.error": "Грешка",
   "ui.messagePart.title.edit": "Редактиране",
   "ui.messagePart.title.write": "Пишете",
