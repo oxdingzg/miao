@@ -3,7 +3,7 @@ import { Prompt } from "@miao/schema/prompt"
 import { SessionInput } from "@miao/schema/session-input"
 import { SessionMessage } from "@miao/schema/session-message"
 import { SessionID } from "@miao/schema/session-id"
-import { EngineClient, EngineError, type EngineEvent } from "./client"
+import { EngineClient, EngineError, type EngineEvent, type EngineProgress } from "./client"
 import {
   StatusBridge,
   ToolBridge,
@@ -18,6 +18,7 @@ import {
   translateRetried,
   translateRunFailure,
   translateQuestion,
+  translateTextDelta,
   translateTools,
 } from "./bridge"
 
@@ -47,6 +48,42 @@ export class EngineSession {
     this.#client = client
     this.#publish = publish
     client.onEvent((event) => this.#dispatch(event))
+    client.onProgress((progress) => this.#progressUpdate(progress))
+  }
+
+  /** The durable step-start sequence, keyed by session/run/step: a streamed part's id anchor. */
+  readonly #anchors = new Map<string, { seq: number; recordedAtMs: number | null; nextDelta: number }>()
+
+  #progressUpdate(progress: EngineProgress): void {
+    if (progress.kind !== "provider.delta") return
+    const sessionID = progress.session_id
+    if (typeof sessionID !== "string") return
+    const run = progress.run_id
+    const step = progress.step
+    if (typeof run !== "string" || typeof step !== "number") return
+    const key = `${sessionID}/${run}/${step}`
+    const existing = this.#anchors.get(key)
+    const seq = progress.anchor_seq
+    const recorded = progress.recorded_at_ms
+    const anchor =
+      existing ??
+      (typeof seq === "number" &&
+      Number.isSafeInteger(seq) &&
+      seq > 0 &&
+      typeof recorded === "number" &&
+      Number.isSafeInteger(recorded) &&
+      recorded >= 0
+        ? { seq, recordedAtMs: recorded, nextDelta: 0 }
+        : undefined)
+    if (!anchor) return
+    this.#anchors.set(key, anchor)
+    const data = translateTextDelta(progress, anchor)
+    if (!data) return
+    this.#publish({
+      type: "session.next.text.delta",
+      data,
+      source: { sessionID, seq: anchor.seq, index: anchor.nextDelta++, recordedAtMs: anchor.recordedAtMs },
+    })
   }
 
   /** Subscribe before admitting; retain the caller's identity for exact retries. */
@@ -204,6 +241,21 @@ export class EngineSession {
       })
     }
     this.#tools.note(event)
+    if (event.kind === "provider.started") {
+      const data: unknown = event.data
+      const run = typeof data === "object" && data !== null && "run_id" in data ? data.run_id : undefined
+      const step = typeof data === "object" && data !== null && "step" in data ? data.step : undefined
+      if (
+        typeof run === "string" &&
+        typeof step === "number" &&
+        !this.#anchors.has(`${event.session_id}/${run}/${step}`)
+      )
+        this.#anchors.set(`${event.session_id}/${run}/${step}`, {
+          seq: event.seq,
+          recordedAtMs: event.recorded_at_ms ?? null,
+          nextDelta: 0,
+        })
+    }
     const status = this.#status.update(event)
     if (status) publish({ type: "session.next.status", data: status })
     const admitted = this.#prompts.project(event)

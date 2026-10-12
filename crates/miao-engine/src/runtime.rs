@@ -672,22 +672,33 @@ async fn execute(
                             })).await?;
                         } else {
                             produced |= crate::first_event::semantic_event(delta.get("raw").unwrap_or(&delta));
-                            let _=inner.progress.send(json!({"session_id":session,"run_id":run,"step":step,"kind":"provider.delta","data":delta}));
+                            let _=inner.progress.send(json!({"session_id":session,"run_id":run,"step":step,"kind":"provider.delta","anchor_seq":started.seq,"recorded_at_ms":started.recorded_at_ms,"data":delta}));
                         }
                     },
                 }
             };
-            // Retry only if no output was emitted. Draining the receiver covers a
-            // delta the provider sent just before failing but that the select loop
-            // had not yet forwarded.
-            let observed = produced
-                || std::iter::from_fn(|| receive.try_recv().ok()).any(|event| {
-                    event["kind"] != "provider.retry"
-                        && crate::first_event::semantic_event(event.get("raw").unwrap_or(&event))
-                });
+            // Completion can win select while the final frames are still queued.
+            // Deliver every queued fact before committing the response or retrying.
+            while let Ok(delta) = receive.try_recv() {
+                if delta["kind"] == "provider.retry" {
+                    inner.store.record(session, "provider.retry", json!({
+                        "run_id":run,"step":step,
+                        "attempt":delta["attempt"],"reason":delta["reason"],"status":delta["status"],
+                    })).await?;
+                } else {
+                    produced |=
+                        crate::first_event::semantic_event(delta.get("raw").unwrap_or(&delta));
+                    let _ =
+                        inner
+                            .progress
+                            .send(json!({"session_id":session,"run_id":run,"step":step,
+                        "kind":"provider.delta","anchor_seq":started.seq,
+                        "recorded_at_ms":started.recorded_at_ms,"data":delta}));
+                }
+            }
             match outcome {
                 Err(ProviderError::Transport) | Err(ProviderError::ResponseTransport)
-                    if !observed && attempts < 2 =>
+                    if !produced && attempts < 2 =>
                 {
                     attempts += 1;
                     continue;

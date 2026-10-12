@@ -176,13 +176,17 @@ async fn reply_identity_is_atomic_replayable_and_preserved_when_forked() {
     store.admit(input("one", Delivery::Steer)).await.unwrap();
     store.promote("s", false).await.unwrap();
     store.start_run("s", "run").await.unwrap();
+    let started = store
+        .record("s", "provider.started", json!({"run_id":"run","step":2}))
+        .await
+        .unwrap();
     let content = json!([{"type":"text","text":"answer"}]);
     let committed = store
         .assistant_reply_profiled(
             "s",
             "run",
             2,
-            None,
+            Some(started.seq),
             content.clone(),
             Some(miao_engine::provider::Identity {
                 protocol: "openai-chat".into(),
@@ -192,6 +196,8 @@ async fn reply_identity_is_atomic_replayable_and_preserved_when_forked() {
         .await
         .unwrap();
     let events = store.events("s", committed.seq, 100).await.unwrap();
+    assert_eq!(committed.data["anchor_seq"], started.seq);
+    assert_eq!(events[0].data["anchor_seq"], started.seq);
     assert_eq!(events[0].kind, "assistant.identity");
     assert_eq!(events[0].data["assistant_seq"], committed.seq);
     assert_eq!(events[0].data["run_id"], "run");
@@ -206,6 +212,7 @@ async fn reply_identity_is_atomic_replayable_and_preserved_when_forked() {
         "actual-secondary"
     );
     assert_eq!(assistant["identity"]["assistant_seq"], assistant["seq"]);
+    assert!(assistant["identity"].get("anchor_seq").is_none());
     assert_eq!(
         assistant["identity"]["origin"]["assistant_seq"],
         committed.seq
