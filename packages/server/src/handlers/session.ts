@@ -9,8 +9,6 @@ import { SessionBackgroundJobs } from "@miao/core/session/background-jobs"
 import { SessionSchedule } from "@miao/core/session/schedule"
 import { SessionDelegationStore } from "@miao/core/session/delegation-store"
 import { EventV2 } from "@miao/core/event"
-import { FSUtil } from "@miao/core/fs-util"
-import { SessionRouting } from "@miao/core/session/routing"
 import { HttpApiBuilder, HttpApiSchema } from "effect/unstable/httpapi"
 import { Api } from "../api"
 import { NativeEngine } from "../native-engine"
@@ -164,18 +162,14 @@ export const SessionHandler = HttpApiBuilder.group(Api, "server.session", (handl
         "session.prompt",
         Effect.fn(function* (ctx) {
           // A composed native transport owns this Session's storage: admit into
-          // the engine instead of the TypeScript SessionV2 catalog.
+          // the engine instead of the TypeScript SessionV2 catalog. The
+          // placement was resolved by the location middleware.
           const native = yield* Effect.serviceOption(NativeEngine.Service)
+          const placement = Option.getOrUndefined(yield* Effect.serviceOption(NativeEngine.Placement))
           if (Option.isSome(native)) {
-            const placement = yield* SessionRouting.resolve({
-              db,
-              events,
-              fs: yield* FSUtil.Service,
-              sessionID: ctx.params.sessionID,
-            })
-            if (placement.type !== "placed" || placement.engine !== "rust")
+            if (!placement)
               return yield* new ConflictError({
-                message: `Session ${ctx.params.sessionID} is no longer owned by the native engine.`,
+                message: `Session ${ctx.params.sessionID} is missing its native placement.`,
                 resource: ctx.params.sessionID,
               })
             // Last point before the prompt becomes durable, and the only one that

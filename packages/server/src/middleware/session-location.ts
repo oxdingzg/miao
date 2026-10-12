@@ -68,8 +68,13 @@ export const sessionLocationLayer = Layer.effect(
             })
           // A composed native transport is present; the handler branch reads the
           // same service and must not touch TypeScript session metadata. The
-          // handler effect's environment is satisfied the same way, unused.
+          // placement resolved here travels with the request; the handler
+          // effect's environment is satisfied the same way, unused.
           return yield* effect.pipe(
+            Effect.provideService(NativeEngine.Placement, {
+              storage: resolution.storage,
+              location: resolution.location,
+            }),
             Effect.provide(locations.get(resolution.location)),
             Effect.provideService(Project.Service, project),
             Effect.provideService(PermissionSaved.Service, permissions),

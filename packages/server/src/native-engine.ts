@@ -32,4 +32,17 @@ export interface Interface {
  */
 export class Service extends Context.Service<Service, Interface>()("@miao/NativeEngine") {}
 
+/**
+ * Request-scoped placement for a native-owned Session, resolved by the
+ * location middleware and consumed by the handler branch. Present only when
+ * the native transport is composed.
+ */
+export class Placement extends Context.Service<
+  Placement,
+  {
+    readonly storage: AbsolutePath
+    readonly location: Location.Ref
+  }
+>()("@miao/NativePlacement") {}
+
 export * as NativeEngine from "./native-engine"
