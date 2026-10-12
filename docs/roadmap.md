@@ -60,9 +60,11 @@ entry points where known, and an observable acceptance check.
   chosen by **price within its provider** rather than by name, with a plan-priced zero read as
   cheapest rather than unknown (#699); Anthropic `/messages/count_tokens` and Gemini
   `:countTokens` can count a request before it is sent, and a refused count never fails a turn
-  (#704). The pre-push secret scan now covers only the commits a push sends, so one stale local
-  branch no longer blocks every push from a machine (#706), and the iOS enrollment fixture's dummy
-  keys are an accepted finding (#707).
+  (#704). A running compaction is now visible: the drain status carries the `compacting` phase (#709)
+  and its slice progress (`8/22 slices`; #715), which the status route and the remote clients read.
+  The pre-push secret scan now covers only the commits a push sends, so one stale local branch no
+  longer blocks every push from a machine (#706), and the iOS enrollment fixture's dummy keys are an
+  accepted finding (#707).
 
 ## Next up (ordered)
 
@@ -364,20 +366,25 @@ behavior the engine needs (see the landed list above).
 
 ### 2.14 Compaction client surface and restore budget
 
-**Status:** partial. The durable events exist (`session.next.compaction.started` / `.delta` /
-`.ended`) and the transcript carries the settled checkpoint, but neither client renders anything
-while a compaction runs: the app reducer treats `started`/`delta` as a no-op and the TUI defers to a
-full reload on `ended`. A TS session therefore still looks idle for the whole compaction, which is
-the client half of the 43-minute report.
+**Status:** partial. The visible half has landed, the restore budget has not.
 
-- [ ] Surface compaction in both clients: a compacting indicator from `started`, progress from a new
-      `session.next.compaction.progress` event (slice i/n, characters covered), and the existing
-      `.delta` text where the transcript can show it.
+- [x] Make a running compaction visible from the **drain status** rather than a new event: the
+      status could not say `compacting` at all, so clients that read it (the app's thinking row,
+      remote control) could not tell a summary in flight from any other wait (#709). The TUI was
+      never in that position — it infers the phase from `compaction.started`/`ended` in its own
+      store — so the status path now agrees with it instead of being a second, driftable copy.
+- [x] Publish the slice plan and each slice as progress on that status (`stage`/`stages`), with the
+      coordinator treating a slice update as worth publishing and **not** restarting the phase clock
+      a client is already showing, and render it as `Compacting context · 8/22 slices` (#715).
+      Deliberately not a `session.next.compaction.progress` event: progress is what the session is
+      doing *now*, which is exactly what the status is for, and it expires with the phase.
 - [ ] Give the first turn after a compaction a restore budget for re-reading the files the summary
       says matter, bounded per file and per compaction, so a checkpoint does not cost the model its
       working set.
-- **Acceptance:** a compaction shows progress in the TUI and the app while it runs; the first turn
-  after a checkpoint can re-read the working set within its budget without re-compacting.
+- [ ] Show the streaming summary text where the transcript can carry it: `.delta` is published and
+      neither client renders it mid-flight (the app no-ops it, the TUI refreshes on `ended`).
+- **Acceptance:** the first turn after a checkpoint can re-read the working set within its budget
+  without re-compacting, and the summary text is visible while it streams.
 
 ---
 
