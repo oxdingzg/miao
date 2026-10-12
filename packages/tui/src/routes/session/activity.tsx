@@ -117,6 +117,12 @@ export function SessionActivity(props: { sessionID: string }) {
   const compaction = createMemo(() => sync.data.session_compaction[props.sessionID])
   const busy = createMemo(() => status()?.type === "busy")
   const phase = createMemo(() => (compaction() ? ("compacting" as const) : statusPhase(status())))
+  // Slice progress rides the drain status, so the count is live for the whole
+  // staged run rather than only after it settles.
+  const progress = createMemo(() => {
+    const current = status()
+    return current?.type === "busy" ? current.progress : undefined
+  })
   const blocked = createMemo(
     () =>
       (sync.data.permission[props.sessionID]?.length ?? 0) > 0 ||
@@ -175,13 +181,21 @@ export function SessionActivity(props: { sessionID: string }) {
         <Show
           when={active()}
           fallback={
-            <SessionWaiting waiting={waiting()} elapsed={0} activity={activity()} phase={phase()} esc={esc()} />
+            <SessionWaiting
+              waiting={waiting()}
+              elapsed={0}
+              activity={activity()}
+              phase={phase()}
+              progress={progress()}
+              esc={esc()}
+            />
           }
         >
           <SessionActiveWaiting
             waiting={waiting()}
             activity={activity()}
             phase={phase()}
+            progress={progress()}
             base={elapsedBase}
             esc={esc()}
           />
@@ -202,6 +216,7 @@ function SessionActiveWaiting(props: {
   waiting: boolean
   activity?: string
   phase?: SessionPhase
+  progress?: { readonly stage: number; readonly stages: number }
   base: Accessor<number | undefined>
   esc?: string
 }) {
@@ -217,6 +232,7 @@ function SessionActiveWaiting(props: {
       elapsed={elapsed()}
       activity={props.activity}
       phase={props.phase}
+      progress={props.progress}
       esc={props.esc}
     />
   )
@@ -342,18 +358,20 @@ export function SessionWaiting(props: {
   elapsed: number
   activity?: string
   phase?: SessionPhase
+  progress?: { readonly stage: number; readonly stages: number }
   esc?: string
 }) {
   const { theme } = useTheme()
   // Claude Code keeps the elapsed time on the live status line whether the turn
   // is still reading its first token or already running tools.
   const text = createMemo(() => {
-    if (props.phase === "compacting") return waitingText(props.phase, props.elapsed, props.esc ?? "interrupt")
+    if (props.phase === "compacting")
+      return waitingText(props.phase, props.elapsed, props.esc ?? "interrupt", props.progress)
     if (props.activity) {
       return props.elapsed > 0 ? `${props.activity} · ${Locale.duration(props.elapsed)}` : props.activity
     }
     if (!props.waiting) return undefined
-    return waitingText(props.phase, props.elapsed, props.esc ?? "interrupt")
+    return waitingText(props.phase, props.elapsed, props.esc ?? "interrupt", props.progress)
   })
   return (
     <Show when={text()}>
@@ -369,10 +387,18 @@ export function SessionWaiting(props: {
 // Name what is actually being waited on. `requesting` is a dispatched request
 // awaiting the first token (TTFT); `preparing` and `queued` have not reached the
 // provider yet, which is the distinction the old single label could not make.
-function waitingText(phase: SessionPhase | undefined, elapsed: number, esc: string) {
+function waitingText(
+  phase: SessionPhase | undefined,
+  elapsed: number,
+  esc: string,
+  progress?: { readonly stage: number; readonly stages: number },
+) {
+  // A staged compaction summarizes in slices, so say how many: an indeterminate
+  // wait is what made a long compaction look like a hang.
+  const slices = progress !== undefined && progress.stages > 0 ? ` · ${progress.stage}/${progress.stages} slices` : ""
   const label =
     phase === "compacting"
-      ? "Compacting context"
+      ? `Compacting context${slices}`
       : phase === "queued"
         ? "Queued · waiting for a free slot"
         : phase === "preparing"

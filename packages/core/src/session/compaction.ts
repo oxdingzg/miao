@@ -138,7 +138,10 @@ type Input = {
    * Reports the drain phase while a summary is in flight. A compaction is neither
    * requesting nor streaming, and a long one must not look like an idle Session.
    */
-  readonly report?: (phase: SessionEvent.BusyPhase) => Effect.Effect<void>
+  readonly report?: (
+    phase: SessionEvent.BusyPhase,
+    progress?: { readonly stage: number; readonly stages: number },
+  ) => Effect.Effect<void>
 }
 
 /**
@@ -544,7 +547,6 @@ export const make = (dependencies: Dependencies) => {
         ? pickSummarizeModel(input, systemTokens + recoveryTokens(prompt), summaryOutput)
         : input.model
     const summarizeModel = choose(summaryPrompt)
-    if (input.report) yield* input.report("compacting")
     yield* logSummary(input, "staged", summarizeModel, systemTokens + recoveryTokens(summaryPrompt))
     // A staged compaction re-summarizes the head one bounded slice at a time, which
     // on a large window is many model calls in a row. Announce how many that will
@@ -553,10 +555,14 @@ export const make = (dependencies: Dependencies) => {
     const previous = previousSummary?.type === "compaction" ? previousSummary.summary : undefined
     const sourceTokens = recoveryTokens(source)
     const stageBudget = ceiling - summaryOutput - (systemTokens + recoveryTokens(buildPrompt({ previousSummary: previous, context: [""] })))
+    const stages = stageBudget > 0 ? Math.min(Math.ceil(sourceTokens / stageBudget), MAX_SUMMARY_STAGES) : 0
+    // Publish the plan before the first slice, then each slice as it lands: a client
+    // shows `0/22` followed by real movement instead of an indeterminate wait.
+    if (input.report) yield* input.report("compacting", { stage: 0, stages })
     yield* Effect.logInfo("session.compaction.staged", {
       sessionID: input.sessionID,
       tokens: sourceTokens,
-      stages: stageBudget > 0 ? Math.min(Math.ceil(sourceTokens / stageBudget), MAX_SUMMARY_STAGES) : 0,
+      stages,
     })
     const staged: Effect.Effect<Attempt> = Effect.gen(function* () {
       let summary = previous
@@ -579,6 +585,7 @@ export const make = (dependencies: Dependencies) => {
         if (next === undefined) return summaryAttempt.failed()
         summary = next
         offset = end
+        if (input.report) yield* input.report("compacting", { stage: stage + 1, stages })
         yield* Effect.logInfo("session.compaction.stage", {
           sessionID: input.sessionID,
           stage: stage + 1,

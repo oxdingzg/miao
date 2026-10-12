@@ -615,6 +615,35 @@ test("a failed intermediate summary never replaces the original long conversatio
   expect(published).toEqual([])
 })
 
+test("a staged compaction publishes its slice plan and then each slice", async () => {
+  const { input } = largeRecoveryInput()
+  const reports: Array<{ phase: string; progress?: { stage: number; stages: number } }> = []
+  const { compaction, requests } = summarizeHarness([summary("first"), summary("second")])
+
+  expect(
+    await Effect.runPromise(
+      compaction.compactAfterOverflow({
+        ...input,
+        report: (phase: string, progress?: { stage: number; stages: number }) => {
+          reports.push({ phase, progress })
+          return Effect.void
+        },
+      } as never),
+    ),
+  ).toBe(true)
+
+  // The plan arrives before the first slice, then every slice in order, so a client
+  // can show 0/N turning into real movement instead of an indeterminate wait.
+  const compacting = reports.filter((entry) => entry.phase === "compacting")
+  expect(compacting[0]?.progress?.stage).toBe(0)
+  const stages = compacting[0]?.progress?.stages ?? 0
+  expect(stages).toBeGreaterThan(0)
+  expect(compacting.slice(1).map((entry) => entry.progress?.stage)).toEqual(
+    Array.from({ length: stages }, (_, index) => index + 1),
+  )
+  expect(requests.length).toBeGreaterThan(1)
+})
+
 test("an interrupted staged compaction stops without publishing a checkpoint", () =>
   Effect.gen(function* () {
     const { input } = largeRecoveryInput()
