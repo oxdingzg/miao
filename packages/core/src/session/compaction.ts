@@ -120,6 +120,27 @@ type Input = {
   readonly observedTokens?: number
 }
 
+/**
+ * How one compaction attempt ended. A summary the provider refused, or an empty
+ * one, is `failed`: the summarizer did not work, and the caller counts it against
+ * the circuit breaker. An attempt that never reached the model — an instruction
+ * that cannot fit the window, a history with nothing left to summarize — is
+ * `skipped`, which says nothing about the summarizer. Keeping the two apart is
+ * what lets the proactive path try the warm-prefix strategy first, fall back to
+ * the staged one, and still not trip the breaker on a prompt that simply did not
+ * fit.
+ */
+type Attempt =
+  | { readonly result: "compacted"; readonly text: string }
+  | { readonly result: "skipped" }
+  | { readonly result: "failed" }
+
+const summaryAttempt = {
+  compacted: (text: string): Attempt => ({ result: "compacted", text }),
+  skipped: (): Attempt => ({ result: "skipped" }),
+  failed: (): Attempt => ({ result: "failed" }),
+}
+
 const truncate = (value: string) =>
   value.length <= TOOL_OUTPUT_MAX_CHARS ? value : `${value.slice(0, TOOL_OUTPUT_MAX_CHARS)}\n[truncated]`
 
@@ -191,7 +212,12 @@ const settings = (documents: readonly Config.Entry[]) => {
     }),
     {
       auto: true,
-      hotPrefix: false,
+      // The warm-prefix strategy is the default because the fallback covers what
+      // it cannot serve: a request that no longer has room for the instruction
+      // still gets the staged recovery. Turning this off restores the staged
+      // strategy as the proactive path, which on a large window summarizes the
+      // history again in one uncached call per 64k tokens.
+      hotPrefix: true,
       preciseTokens: false,
       summarizeSmall: false,
       buffer: DEFAULT_BUFFER,
@@ -297,14 +323,41 @@ export const make = (dependencies: Dependencies) => {
       return completed && !failed && summary.trim() ? summary : undefined
     })
 
+  // Which model summarized is otherwise invisible: a summary written by a cheap
+  // same-provider model and one written by the session model look identical in
+  // the transcript, so the choice is recorded where it is made.
+  const logSummary = (input: Input, strategy: "hot" | "staged", model: Model, tokens: number) =>
+    Effect.logInfo("session.compaction.summarize", {
+      sessionID: input.sessionID,
+      strategy,
+      model: `${model.provider}/${model.id}`,
+      tokens,
+    })
+
+  const summarizeWithFallback = (request: LLMRequest, fallbackRequest?: LLMRequest): Effect.Effect<Attempt> =>
+    Effect.gen(function* () {
+      const summary = yield* summarizeOnce(request)
+      if (summary !== undefined) return summaryAttempt.compacted(summary)
+      // A refused or failed cheap-model summary falls back to the session model
+      // once before giving up, matching the "refusal -> retry with another model"
+      // behavior for compaction (research G3).
+      if (fallbackRequest === undefined) return summaryAttempt.failed()
+      const fallback = yield* summarizeOnce(fallbackRequest)
+      return fallback === undefined ? summaryAttempt.failed() : summaryAttempt.compacted(fallback)
+    })
+
   const runSummary = Effect.fnUntraced(function* (input: {
     readonly sessionID: SessionSchema.ID
     readonly request: LLMRequest
     /** Retried when the primary summarize request is refused or fails. */
     readonly fallbackRequest?: LLMRequest
     readonly recent: string
-    readonly summary?: Effect.Effect<string | undefined>
-  }) {
+    /**
+     * The staged strategy builds its own summary across several calls, so it
+     * supplies the attempt; the single-call paths let this drive the request.
+     */
+    readonly attempt?: Effect.Effect<Attempt>
+  }): Effect.fn.Return<Attempt> {
     const messageID = SessionMessage.ID.create()
     yield* dependencies.events.publish(SessionEvent.Compaction.Started, {
       sessionID: input.sessionID,
@@ -312,31 +365,30 @@ export const make = (dependencies: Dependencies) => {
       timestamp: yield* DateTime.now,
       reason: "auto",
     })
-
-    // A refused or failed cheap-model summary falls back to the session model
-    // once before giving up, matching the "refusal -> retry with another model"
-    // behavior for compaction (research G3).
-    let summary = input.summary ? yield* input.summary : yield* summarizeOnce(input.request)
-    if (summary === undefined && !input.summary && input.fallbackRequest)
-      summary = yield* summarizeOnce(input.fallbackRequest)
-    if (summary === undefined) return false
+    const attempt = input.attempt
+      ? yield* input.attempt
+      : yield* summarizeWithFallback(input.request, input.fallbackRequest)
+    if (attempt.result !== "compacted") return attempt
     yield* dependencies.events.publish(SessionEvent.Compaction.Ended, {
       sessionID: input.sessionID,
       messageID,
       timestamp: yield* DateTime.now,
       reason: "auto",
-      text: summary,
+      text: attempt.text,
       recent: input.recent,
     })
-    return true
+    return attempt
   })
 
-  // Proactive compaction reuses the current request prefix (system, tools, and
-  // conversation), so the provider serves it from the warm prompt cache, and
-  // appends the summary instruction as the final user message.
-  const compactHot = Effect.fn("SessionCompaction.compactHot")(function* (input: Input) {
+  // One summary of the whole conversation over the request prefix the turn
+  // already built (system, tools, and messages): the provider serves that prefix
+  // from its prompt cache, and appending the instruction as the final user
+  // message needs no second pass over the history. A large window therefore
+  // costs one cached call, where the staged strategy costs one uncached call per
+  // 64k tokens of history.
+  const hotAttempt = Effect.fn("SessionCompaction.hotAttempt")(function* (input: Input): Effect.fn.Return<Attempt> {
     const context = input.model.route.defaults.limits?.context
-    if (context === undefined || context <= 0) return false
+    if (context === undefined || context <= 0) return summaryAttempt.skipped()
     const output = input.request.generation?.maxTokens ?? input.model.route.defaults.limits?.output ?? 0
     const summaryOutput = Math.min(output || SUMMARY_OUTPUT_TOKENS, SUMMARY_OUTPUT_TOKENS)
     const instruction = buildHotPrompt()
@@ -345,11 +397,20 @@ export const make = (dependencies: Dependencies) => {
       messages: input.request.messages,
       tools: input.request.tools,
     })
-    if (requestTokens + measure(instruction) > context - summaryOutput) return false
+    const selected = select(input.entries, config.tokens)
+    // Nothing newer than the retained recent context: everything here is already a
+    // checkpoint or work the last compaction kept, so summarizing again would
+    // rewrite the same history. The staged path carries the same guard through
+    // `select`, which is what keeps a still-satisfied threshold from compacting on
+    // every step.
+    if (!selected || selected.head.length === 0) return summaryAttempt.skipped()
+    // The instruction plus the summary are what the prefix cannot hold, so a
+    // request that no longer has room for them cannot use this strategy at all.
+    if (requestTokens + measure(instruction) > context - summaryOutput) return summaryAttempt.skipped()
     const summarizeModel = config.summarizeSmall
       ? pickSummarizeModel(input, requestTokens + measure(instruction), summaryOutput)
       : input.model
-    const selected = select(input.entries, config.tokens)
+    yield* logSummary(input, "hot", summarizeModel, requestTokens)
     const requestFor = (model: Model) =>
       LLM.request({
         model,
@@ -370,13 +431,14 @@ export const make = (dependencies: Dependencies) => {
   })
 
   // Overflow recovery cannot reuse the prefix (the request already failed to
-  // fit), so it re-embeds a truncated head instead.
-  const compactAfterOverflow = Effect.fn("SessionCompaction.compactAfterOverflow")(function* (
+  // fit), so it re-embeds a truncated head instead, in bounded stages that stay
+  // under the summarizer's own window.
+  const stagedAttempt = Effect.fn("SessionCompaction.stagedAttempt")(function* (
     input: Input,
     options?: { readonly allowSummaryOnly?: boolean },
-  ) {
+  ): Effect.fn.Return<Attempt> {
     const context = input.model.route.defaults.limits?.context
-    if (context === undefined || context <= 0) return false
+    if (context === undefined || context <= 0) return summaryAttempt.skipped()
     const output = input.request.generation?.maxTokens ?? input.model.route.defaults.limits?.output ?? 0
     const selected = select(input.entries, config.tokens)
     const previousSummary = input.entries.find((entry) => entry.message.type === "compaction")?.message
@@ -385,10 +447,10 @@ export const make = (dependencies: Dependencies) => {
       // compact an existing summary again, and only while it still carries a
       // retained tail; otherwise a summary-only history would loop forever.
       if (!options?.allowSummaryOnly || previousSummary?.type !== "compaction" || previousSummary.recent.length === 0)
-        return false
+        return summaryAttempt.skipped()
     }
     const head = selected?.head ?? ""
-    if (head.length === 0 && previousSummary?.type !== "compaction") return false
+    if (head.length === 0 && previousSummary?.type !== "compaction") return summaryAttempt.skipped()
     const source = [previousSummary?.type === "compaction" ? previousSummary.recent : "", head]
       .filter(Boolean)
       .join("\n\n")
@@ -414,37 +476,54 @@ export const make = (dependencies: Dependencies) => {
         ? pickSummarizeModel(input, systemTokens + recoveryTokens(prompt), summaryOutput)
         : input.model
     const summarizeModel = choose(summaryPrompt)
-    const staged = Effect.gen(function* () {
+    yield* logSummary(input, "staged", summarizeModel, systemTokens + recoveryTokens(summaryPrompt))
+    const staged: Effect.Effect<Attempt> = Effect.gen(function* () {
       let summary = previousSummary?.type === "compaction" ? previousSummary.summary : undefined
       let offset = 0
       for (let stage = 0; stage < MAX_SUMMARY_STAGES; stage++) {
         const overhead = systemTokens + recoveryTokens(buildPrompt({ previousSummary: summary, context: [""] }))
         const budget = ceiling - summaryOutput - overhead
-        if (budget <= 0) return undefined
+        if (budget <= 0) return summaryAttempt.failed()
         let end = Math.min(source.length, offset + budget * 2)
         while (end > offset && recoveryTokens(source.slice(offset, end)) > budget)
           end = offset + Math.floor((end - offset) / 2)
         const last = source.charCodeAt(end - 1)
         if (last >= 0xd800 && last <= 0xdbff) end--
-        if (end <= offset) return undefined
+        if (end <= offset) return summaryAttempt.failed()
         const prompt = buildPrompt({ previousSummary: summary, context: [source.slice(offset, end)] })
         const model = choose(prompt)
         let next = yield* summarizeOnce(requestFor(model, prompt))
         if (next === undefined && model !== input.model) next = yield* summarizeOnce(requestFor(input.model, prompt))
-        if (next === undefined) return undefined
+        if (next === undefined) return summaryAttempt.failed()
         summary = next
         offset = end
-        if (offset === source.length) return summary
+        if (offset === source.length) return summaryAttempt.compacted(summary)
       }
-      return undefined
+      return summaryAttempt.failed()
     })
     return yield* runSummary({
       sessionID: input.sessionID,
       recent: retained(input.entries, selected?.recent ?? ""),
       request: requestFor(summarizeModel, summaryPrompt),
       fallbackRequest: summarizeModel === input.model ? undefined : requestFor(input.model, summaryPrompt),
-      ...(systemTokens + recoveryTokens(summaryPrompt) + summaryOutput > ceiling ? { summary: staged } : {}),
+      ...(systemTokens + recoveryTokens(summaryPrompt) + summaryOutput > ceiling ? { attempt: staged } : {}),
     })
+  })
+
+  // The proactive strategy: one cached summary over the request prefix, and only
+  // when the prefix can no longer hold the instruction at all the staged
+  // recovery, which re-embeds a truncated head. Overflow recovery keeps calling
+  // the staged path directly, because there the request is known not to fit.
+  const compact = Effect.fn("SessionCompaction.compact")(function* (input: Input): Effect.fn.Return<Attempt> {
+    const attempt = config.hotPrefix ? yield* hotAttempt(input) : summaryAttempt.skipped()
+    return attempt.result === "skipped" ? yield* stagedAttempt(input) : attempt
+  })
+
+  const compactAfterOverflow = Effect.fn("SessionCompaction.compactAfterOverflow")(function* (
+    input: Input,
+    options?: { readonly allowSummaryOnly?: boolean },
+  ) {
+    return (yield* stagedAttempt(input, options)).result === "compacted"
   })
 
   const compactIfNeeded = Effect.fn("SessionCompaction.compactIfNeeded")(function* (input: Input) {
@@ -468,10 +547,16 @@ export const make = (dependencies: Dependencies) => {
     if (size <= context * config.threshold - reserve) return false
     const key = input.sessionID
     if ((failures.get(key) ?? 0) >= MAX_COMPACTION_FAILURES) return false
-    const compacted = yield* config.hotPrefix ? compactHot(input) : compactAfterOverflow(input)
-    if (compacted) failures.delete(key)
-    else failures.set(key, (failures.get(key) ?? 0) + 1)
-    return compacted
+    const attempt = yield* compact(input)
+    if (attempt.result === "compacted") {
+      failures.delete(key)
+      return true
+    }
+    // A strategy that never reached the model says nothing about the summarizer,
+    // so only a real attempt counts against the breaker: counting a prompt that
+    // did not fit is what used to stop compaction silently after three of them.
+    if (attempt.result === "failed") failures.set(key, (failures.get(key) ?? 0) + 1)
+    return false
   })
 
   const reset = (sessionID: Input["sessionID"]) => {
@@ -480,6 +565,7 @@ export const make = (dependencies: Dependencies) => {
   }
 
   return {
+    compact,
     compactIfNeeded,
     compactAfterOverflow,
     reset,

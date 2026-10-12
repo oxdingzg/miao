@@ -774,14 +774,14 @@ const layer = Layer.effect(
       if (SessionCompactRequest.consume(session.id)) {
         // A manual compaction is the user's reset: give the breaker a fresh try.
         yield* compaction.reset(session.id)
-        const compacted = yield* compaction.compactAfterOverflow({
+        const attempt = yield* compaction.compact({
           sessionID: session.id,
           entries,
           model,
           summarizeModel,
           request,
         })
-        if (compacted) {
+        if (attempt.result === "compacted") {
           turns.set(session.id, { at: Date.now(), afterCompaction: true })
           lastPromptTokens.delete(session.id)
           lastContextNotice.delete(session.id)
