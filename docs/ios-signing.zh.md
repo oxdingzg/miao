@@ -97,6 +97,29 @@ xcrun altool --upload-app -f build/export/Miao.ipa -t ios \
 
 `ExportOptions.plist` 至少包含 `method: app-store-connect`（新 Xcode）或 `app-store`、`teamID: <TEAM_ID>`。上传前在 App Store Connect 建好 App 记录。
 
+## TestFlight 提交与外部测试
+
+上传后构建出现在 App Store Connect → 应用 → TestFlight → 构建版本。分发有两条路：
+
+- **内部测试**（团队成员，上限 100 人）：把构建加入内部组即可，无需审核。内部测试员必须是 App Store Connect 用户，并用该用户对应的 Apple ID 登录 TestFlight。
+- **外部测试**（按邮箱邀请，上限 10000 人）：建外部组、加入构建并邀请测试员。**首个构建必须过 Beta 审核**（同一版本后续构建可能免审），过审后测试员收到邮件安装。
+
+外部提交前，"测试信息"（TestFlight → 其他 → 测试信息，或构建页 → 测试信息）必须齐全，否则提交会以笼统的 `422 MISSING_REQUIRED_DATA` 失败。逐项核对：
+
+- **Beta App 描述**（Beta App Description）——每个本地化各一份。
+- **反馈邮箱**（Feedback Email）——必填，最易漏；缺它就 422。
+- **联系信息**——姓、名、电话（**须带国码**，如 `+86…`，否则报 `INVALID_PHONE_NUMBER`）、邮箱。
+- **测试内容**（What to Test）——每个构建、每个本地化各一份。
+- **Beta 许可协议**文本。
+- **出口合规**——`usesNonExemptEncryption`。
+- **演示账号**——需要登录就填，否则勾"不需要登录"。
+
+说明：
+
+- `Info.plist` 里设 `ITSAppUsesNonExemptEncryption=false` 后，之后的构建不再逐个提示出口合规。
+- App 级 `appInfos`（分类等）对 Admin 也可能返回 403，只能网页设置；遇到 422 优先看"测试信息"页，UI 会点名缺失项。
+- 这些字段都能用 App Store Connect API 设置：`betaAppLocalizations`（描述、反馈邮箱、网址）、`betaBuildLocalizations`（What to Test）、`betaAppReviewDetails`（联系人）、`betaLicenseAgreements`、`betaGroups`/`betaTesters`，最后 `betaAppReviewSubmissions` 提交审核。
+
 ## CI
 
 `.github/workflows/ios-core.yml` 目前只做无签名构建与模拟器测试。要接入真机/TestFlight，需要向仓库添加签名 secret（证书 `.p12`、描述文件、App Store Connect API key），再在归档步骤注入 `CODE_SIGN_IDENTITY` 与 `PROVISIONING_PROFILE_SPECIFIER`；这些材料按本仓库约定不写进源码。
