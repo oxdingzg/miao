@@ -16,7 +16,10 @@ import { SessionExecution } from "../src/session/execution"
 import { EventTable } from "../src/event/sql"
 import { tmpdir } from "./fixture/tmpdir"
 
-const run = <A, E>(storage: string, effect: Effect.Effect<A, E, Database.Service | SessionV2.Service>) =>
+const run = <A, E>(
+  storage: string,
+  effect: Effect.Effect<A, E, Database.Service | SessionV2.Service | EventV2.Service | FSUtil.Service>,
+) =>
   Effect.runPromise(
     effect.pipe(
       Effect.provide(
