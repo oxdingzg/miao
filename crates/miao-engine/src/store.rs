@@ -820,9 +820,11 @@ impl Store {
         &self,
         session: &str,
         run: &str,
+        anchor: Option<u64>,
         content: Value,
     ) -> Result<Event, Error> {
-        self.assistant_projection(session, run, content, None).await
+        self.assistant_projection(session, run, anchor, content, None)
+            .await
     }
 
     /// Bind successful reply identity to its assistant projection atomically.
@@ -831,12 +833,14 @@ impl Store {
         session: &str,
         run: &str,
         step: usize,
+        anchor: Option<u64>,
         content: Value,
         identity: Option<crate::provider::Identity>,
     ) -> Result<Event, Error> {
         self.assistant_projection(
             session,
             run,
+            anchor,
             content,
             Some(json!({"run_id":run,"step":step,"provider":identity,"agent":null})),
         )
@@ -847,6 +851,7 @@ impl Store {
         &self,
         session: &str,
         run: &str,
+        anchor: Option<u64>,
         content: Value,
         profile: Option<Value>,
     ) -> Result<Event, Error> {
@@ -866,6 +871,13 @@ impl Store {
             let event=project_message(&tx,&session,"assistant",content,None)?;
             if let Some(mut profile) = profile {
                 profile["assistant_seq"] = json!(event.seq);
+                // The step-start anchor lets a client name the streamed part
+                // before the commit and reach the same id afterwards. `assistant_seq`
+                // keeps its own meaning (this event's sequence), so replay and the
+                // fork identity correlation stay untouched.
+                if let Some(anchor) = anchor {
+                    profile["anchor_seq"] = json!(anchor);
+                }
                 append_at(&tx,&session,"assistant.identity",profile,event.recorded_at_ms)?;
             }
             tx.commit()?;

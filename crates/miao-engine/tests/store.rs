@@ -182,6 +182,7 @@ async fn reply_identity_is_atomic_replayable_and_preserved_when_forked() {
             "s",
             "run",
             2,
+            None,
             content.clone(),
             Some(miao_engine::provider::Identity {
                 protocol: "openai-chat".into(),
@@ -224,6 +225,7 @@ async fn reply_identity_is_atomic_replayable_and_preserved_when_forked() {
             "s",
             "run",
             3,
+            None,
             json!([{"type":"text","text":"unknown"}]),
             None,
         )
@@ -231,7 +233,7 @@ async fn reply_identity_is_atomic_replayable_and_preserved_when_forked() {
         .unwrap();
     assert!(reopened.events("s", unknown.seq, 10).await.unwrap()[0].data["provider"].is_null());
     assert!(reopened
-        .assistant_reply_profiled("s", "missing-run", 4, json!([]), None)
+        .assistant_reply_profiled("s", "missing-run", 4, None, json!([]), None)
         .await
         .is_err());
     assert_eq!(

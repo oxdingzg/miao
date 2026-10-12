@@ -191,6 +191,7 @@ async fn crash_reconciliation_preserves_unknown_running_state_without_replay() {
         .assistant_reply(
             "s",
             "run",
+            None,
             json!([{"type":"tool_use","id":"call","name":"start_job","input":input}]),
         )
         .await
