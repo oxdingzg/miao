@@ -96,3 +96,29 @@ test("an unknown Session resolves to nothing", async () => {
     }),
   )
 })
+
+test("a Rust-owned Session whose Location vanished reports missing instead of relocating", async () => {
+  await using tmp = await tmpdir()
+  await run(
+    ":memory:",
+    Effect.gen(function* () {
+      const database = yield* Database.Service
+      const events = yield* EventV2.Service
+      const fs = yield* FSUtil.Service
+      const sessionID = SessionV2.ID.create()
+      const gone = path.join(tmp.path, "gone-location")
+      yield* SessionEnginePlacement.claim(database.db, {
+        sessionID,
+        placement: {
+          engine: "rust",
+          storage: AbsolutePath.make(path.join(tmp.path, "native.db")),
+          location: { directory: AbsolutePath.make(gone) },
+        },
+      })
+      const resolution = yield* SessionRouting.resolve({ db: database.db, events, fs, sessionID })
+      expect(resolution).toEqual({ type: "missing", directory: gone })
+      // The native Session is never adopted into TS ownership by a failed resolution.
+      expect(yield* database.db.select().from(SessionTable).where(eq(SessionTable.id, sessionID)).get()).toBeUndefined()
+    }),
+  )
+})
