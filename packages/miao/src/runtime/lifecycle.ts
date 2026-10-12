@@ -50,6 +50,8 @@ export function install() {
 /** Dispose the process graph once, after owned listeners and executions stop. */
 export function disposeCore() {
   state.core ??= (async () => {
+    const { appRuntimeUsed } = await import("../effect/app-runtime-usage")
+    if (!appRuntimeUsed.value) return
     const { AppRuntime } = await import("../effect/app-runtime")
     await AppRuntime.dispose()
   })()

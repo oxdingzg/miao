@@ -25,8 +25,8 @@ import {
   withTestInstance,
   provideInstanceEffect,
   testInstanceStoreLayer,
+  disposeAllInstances,
 } from "../fixture/fixture"
-import { InstanceRuntime } from "@/project/instance-runtime"
 import { CrossSpawnSpawner } from "@miao/core/cross-spawn-spawner"
 import { testEffect } from "../lib/effect"
 import path from "path"
@@ -122,7 +122,7 @@ const clearEffect = (wait = false) =>
     .pipe(
       Effect.scoped,
       Effect.provide(layer),
-      Effect.andThen(wait ? Effect.promise(() => InstanceRuntime.disposeAllInstances()) : Effect.void),
+      Effect.andThen(wait ? Effect.promise(() => disposeAllInstances()) : Effect.void),
     )
 const clear = (wait = false) => Effect.runPromise(clearEffect(wait))
 // Get managed config directory from environment (set in preload.ts)
@@ -281,7 +281,7 @@ async function check(map: (dir: string) => string) {
       },
     })
   } finally {
-    await InstanceRuntime.disposeAllInstances()
+    await disposeAllInstances()
     await Effect.runPromise(resetGlobalConfigDir)
   }
 }

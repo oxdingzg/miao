@@ -36,6 +36,7 @@ import { RuntimeFlags } from "@/effect/runtime-flags"
 import { EventV2Bridge } from "@/event-v2-bridge"
 import { LayerNode } from "@miao/core/effect/layer-node"
 import { AppNodeBuilderV1 } from "./app-node-builder-v1"
+import { appRuntimeUsed } from "./app-runtime-usage"
 import { SessionProjector } from "@miao/core/session/projector"
 import { SessionStore } from "@miao/core/session/store"
 import { SessionSchedule } from "@miao/core/session/schedule"
@@ -90,7 +91,10 @@ type Runtime = Pick<typeof rt, "runSync" | "runPromise" | "runPromiseExit" | "ru
 
 /** Services provided by AppRuntime — i.e. what an Effect run via AppRuntime.runPromise can yield. */
 export type AppServices = ManagedRuntime.ManagedRuntime.Services<typeof rt>
-const wrap = (effect: Parameters<typeof rt.runSync>[0]) => attach(effect as never) as never
+const wrap = (effect: Parameters<typeof rt.runSync>[0]) => {
+  appRuntimeUsed.value = true
+  return attach(effect as never) as never
+}
 
 export const AppRuntime: Runtime = {
   runSync(effect) {

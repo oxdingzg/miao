@@ -36,8 +36,12 @@ for (const [signal, code] of [
     }
     shutdownStarted = true
     const force = setTimeout(() => process.exit(code), 5_000)
-    void import("@/effect/app-runtime")
-      .then(({ AppRuntime }) => AppRuntime.dispose())
+    void (async () => {
+      const { appRuntimeUsed } = await import("@/effect/app-runtime-usage")
+      if (!appRuntimeUsed.value) return
+      const { AppRuntime } = await import("@/effect/app-runtime")
+      await AppRuntime.dispose()
+    })()
       .catch(() => undefined)
       .finally(() => {
         clearTimeout(force)

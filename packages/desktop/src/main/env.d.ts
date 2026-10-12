@@ -15,5 +15,4 @@ declare module "virtual:miao-server" {
     export const get: typeof import("../../../miao/dist/types/src/node").Config.get
     export type Info = import("../../../miao/dist/types/src/node").Config.Info
   }
-  export const bootstrap: typeof import("../../../miao/dist/types/src/node").bootstrap
 }

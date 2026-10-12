@@ -9,12 +9,12 @@ import type * as Scope from "effect/Scope"
 import { CrossSpawnSpawner } from "@miao/core/cross-spawn-spawner"
 import { AppNodeBuilder } from "@miao/core/effect/app-node-builder"
 import { ChildProcess, ChildProcessSpawner } from "effect/unstable/process"
+import { ManagedRuntime } from "effect"
 import type { Config } from "@/config/config"
 import { LayerNode } from "@miao/core/effect/layer-node"
 import { InstanceRef } from "../../src/effect/instance-ref"
-import { InstanceBootstrap } from "../../src/project/bootstrap-service"
+import { InstanceBootstrap } from "../../src/project/bootstrap"
 import type { InstanceContext } from "../../src/project/instance-context"
-import { InstanceRuntime } from "../../src/project/instance-runtime"
 import { InstanceStore } from "../../src/project/instance-store"
 import { TestLLMServer } from "../lib/llm-server"
 
@@ -23,30 +23,44 @@ export const testInstanceStoreLayer = LayerNode.compile(InstanceStore.node, [
   [InstanceStore.bootstrapNode, noopBootstrap],
 ])
 
+// Shared store for the promise-style helpers below, wired like production
+// (real InstanceBootstrap) so tests keep exercising the same bootstrap path.
+const instanceRuntime = ManagedRuntime.make(
+  LayerNode.compile(InstanceStore.node, [[InstanceStore.bootstrapNode, InstanceBootstrap.node]]),
+)
+
 export async function provideTestInstance<R>(input: {
   directory: string
   init?: Effect.Effect<void>
   fn: (ctx: InstanceContext) => R
 }) {
-  const ctx = await InstanceRuntime.load({ directory: input.directory })
+  const ctx = await instanceRuntime.runPromise(
+    InstanceStore.Service.use((store) => store.load({ directory: input.directory })),
+  )
   try {
     if (input.init) await Effect.runPromise(input.init.pipe(Effect.provideService(InstanceRef, ctx)))
     return await input.fn(ctx)
   } finally {
-    await InstanceRuntime.disposeInstance(ctx)
+    await instanceRuntime.runPromise(
+      InstanceStore.Service.use((store) => store.dispose(ctx)),
+    )
   }
 }
 
 export async function withTestInstance<R>(input: { directory: string; fn: (ctx: InstanceContext) => R }) {
-  return input.fn(await InstanceRuntime.load({ directory: input.directory }))
+  return input.fn(
+    await instanceRuntime.runPromise(
+      InstanceStore.Service.use((store) => store.load({ directory: input.directory })),
+    ),
+  )
 }
 
 export async function reloadTestInstance(input: { directory: string }) {
-  return InstanceRuntime.reloadInstance(input)
+  return instanceRuntime.runPromise(InstanceStore.Service.use((store) => store.reload(input)))
 }
 
 export async function disposeAllInstances() {
-  await InstanceRuntime.disposeAllInstances()
+  await instanceRuntime.runPromise(InstanceStore.Service.use((store) => store.disposeAll()))
 }
 
 // Strip null bytes from paths (defensive fix for CI environment issues)
