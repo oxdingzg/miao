@@ -13,7 +13,6 @@ import { Command } from "@/command"
 import { RuntimeFlags } from "@/effect/runtime-flags"
 import { CrossSpawnSpawner } from "@miao/core/cross-spawn-spawner"
 import { Cause, Effect, Exit, Fiber } from "effect"
-import { bootstrap as cliBootstrap } from "../../src/cli/bootstrap"
 import { InstanceBootstrap } from "../../src/project/bootstrap"
 import { InstanceStore } from "../../src/project/instance-store"
 import { disposeAllInstances, tmpdirScoped } from "../fixture/fixture"
@@ -86,24 +85,18 @@ it.live("InstanceStore.provide runs InstanceBootstrap before effect", () =>
   }),
 )
 
-it.live("CLI bootstrap runs InstanceBootstrap before callback", () =>
+it.live("disposes the instance when the callback fails", () =>
   Effect.gen(function* () {
     const tmp = yield* bootstrapFixture
-
-    yield* Effect.promise(() => cliBootstrap(tmp.directory, async () => "ok"))
-
-    expect(existsSync(tmp.marker)).toBe(true)
-  }),
-)
-
-it.live("CLI bootstrap disposes the instance when the callback rejects", () =>
-  Effect.gen(function* () {
-    const tmp = yield* bootstrapFixture
+    const store = yield* InstanceStore.Service
     const disposed = yield* waitDisposed(tmp.directory).pipe(Effect.forkScoped({ startImmediately: true }))
 
-    const exit = yield* Effect.promise(() =>
-      cliBootstrap(tmp.directory, async () => Promise.reject(new Error("boom"))),
-    ).pipe(Effect.exit)
+    const exit = yield* store
+      .load({ directory: tmp.directory })
+      .pipe(
+        Effect.flatMap((ctx) => Effect.fail(new Error("boom")).pipe(Effect.ensuring(store.dispose(ctx)))),
+        Effect.exit,
+      )
 
     expect(Exit.isFailure(exit)).toBe(true)
     if (Exit.isFailure(exit)) expect(Cause.squash(exit.cause)).toMatchObject({ message: "boom" })

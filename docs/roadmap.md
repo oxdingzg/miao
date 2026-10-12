@@ -157,11 +157,15 @@ Most V2 endpoints exist (`pty.shells`, `project.update`, `vcs.diff`, `fs.content
 - [x] Drop the dead V1 `@/storage` service and the `@/background/job` instance wrapper from the
       app layer; the background-job engine cases moved to `packages/core/test/background-job.test.ts`.
       The release server already assembles V2-only through `packages/server` (`assembly.ts`), and
-      `RuntimeHost` builds a core-only execution runtime, so `AppRuntime` remains only as the CLI
-      command harness (`effect-cmd.ts`) plus the `upgrade` config read and the TUI SIGUSR2 reload.
-- [ ] Remove the `packages/miao` `app-runtime` V1 layer and any remaining non-session legacy routes;
-      switch the release server to the V2-only assembly. (`AppRuntime` is still used by
-      `packages/miao/src/runtime/*` and the TUI worker.)
+      `RuntimeHost` builds a core-only execution runtime.
+- [x] Decouple the remaining non-harness consumers from `AppRuntime`: the updater reads global
+      config directly (same file order as the Config service), the TUI SIGUSR2 reload only emits
+      the local disposed event (the window process holds no instances), exit paths dispose only
+      when AppRuntime was used, and the unused `bootstrap`/`InstanceRuntime` Promise bridge is
+      deleted. `AppRuntime` remains only inside `effect-cmd.ts` plus the control-plane worktree
+      adapter.
+- [ ] Remove the `packages/miao` `app-runtime` V1 layer: migrate `effect-cmd.ts` commands and the
+      control-plane worktree adapter to core services, then delete the V1 graph.
 - [ ] Confirm V2 endpoints cover app behaviors that were silently disabled on V2 (global config
       read, project rename, directory picker, custom providers).
 - **Acceptance:** `packages/miao` is only the CLI shell; the server mounts `/api/*` only; no V1

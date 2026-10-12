@@ -191,11 +191,12 @@ export const TuiThreadCommand = cmd({
       const listener = external ? await Server.listen(network) : undefined
       const reload = () => {
         void (async () => {
-          const { AppRuntime } = await import("@/effect/app-runtime")
-          const { Config } = await import("@/config/config")
-          const { disposeAllInstancesAndEmitGlobalDisposed } = await import("@/server/global-lifecycle")
-          await AppRuntime.runPromise(Config.Service.use((config) => config.invalidate()))
-          await disposeAllInstancesAndEmitGlobalDisposed({ swallowErrors: true })
+          // The window process holds no AppRuntime instances — the server
+          // resolves location-scoped services directly — so reload only tells
+          // the UI bridge to resync. Server-side config reload is a separate
+          // V2 gap (roadmap §1.3).
+          const { emitGlobalDisposed } = await import("@/server/global-lifecycle")
+          emitGlobalDisposed()
         })().catch(console.error)
       }
       process.on("SIGUSR2", reload)
