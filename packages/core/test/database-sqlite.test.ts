@@ -15,6 +15,28 @@ afterAll(() => fs.rm(dir, { recursive: true, force: true }))
 const runWith = <A, E>(effect: Effect.Effect<A, E, SqlClient | Sqlite.Native>) =>
   Effect.runPromise(effect.pipe(Effect.provide(layer({ filename: file })), Effect.scoped))
 
+describe("sqlite WAL open", () => {
+  test("opening a fresh database retries WAL while another connection holds the writer", async () => {
+    const dir = await fs.mkdtemp(path.join(await fs.realpath("/tmp"), "miao-sqlite-wal-"))
+    const fresh = path.join(dir, "fresh.db")
+    const writer = new BunDatabase(fresh)
+    writer.exec("CREATE TABLE seed (x INTEGER)")
+    writer.exec("BEGIN IMMEDIATE")
+    const opened = Effect.runPromise(Effect.scoped(Layer.build(layer({ filename: fresh })).pipe(Effect.asVoid)))
+    // Release the writer only after the layer's first WAL attempt has failed.
+    // On Windows that failure is SQLITE_BUSY, so the open must retry instead of
+    // rejecting. This is exactly the two-window startup race.
+    await new Promise((resolve) => setTimeout(resolve, 1200))
+    writer.exec("COMMIT")
+    await opened
+    const check = new BunDatabase(fresh)
+    expect(check.query("PRAGMA journal_mode").get()).toMatchObject({ journal_mode: "wal" })
+    check.close()
+    writer.close()
+    await fs.rm(dir, { recursive: true, force: true })
+  })
+})
+
 describe("sqlite busy retry", () => {
   test("a statement the write lock blocks succeeds once the holder releases it", async () => {
     await runWith(

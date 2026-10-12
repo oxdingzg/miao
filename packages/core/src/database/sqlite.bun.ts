@@ -155,6 +155,30 @@ const make = (options: Config) =>
     return client
   })
 
+const WAL_BUSY_RETRY_DELAYS_MS = [100, 500, 2500]
+
+/**
+ * Enable WAL on a freshly opened connection. SQLite reports SQLITE_BUSY for
+ * this pragma instead of honoring the busy handler when another window is
+ * switching the same database, so retry a few times before giving up.
+ */
+const enableWAL = (native: Database) =>
+  Effect.gen(function* () {
+    yield* Effect.try({ try: () => native.run("PRAGMA busy_timeout = 5000;"), catch: (cause) => cause }).pipe(
+      Effect.orDie,
+    )
+    for (const delay of [0, ...WAL_BUSY_RETRY_DELAYS_MS]) {
+      if (delay > 0) yield* Effect.sleep(`${Math.round(delay * (0.8 + Math.random() * 0.4))} millis`)
+      const result = yield* Effect.try({
+        try: () => native.run("PRAGMA journal_mode = WAL;"),
+        catch: (cause) => cause,
+      }).pipe(Effect.exit)
+      if (result._tag === "Success") return
+      if (delay === WAL_BUSY_RETRY_DELAYS_MS[WAL_BUSY_RETRY_DELAYS_MS.length - 1])
+        return yield* Effect.die(result.cause)
+    }
+  })
+
 const nativeLayer = (config: Config) =>
   Layer.effect(
     Sqlite.Native,
@@ -173,7 +197,11 @@ const nativeLayer = (config: Config) =>
           try: () => native.run("PRAGMA auto_vacuum = INCREMENTAL;"),
           catch: () => undefined,
         }).pipe(Effect.ignore)
-        native.run("PRAGMA journal_mode = WAL;")
+        // Switching a fresh database from the rollback journal to WAL needs
+        // exclusive access, and SQLite can surface that as SQLITE_BUSY instead
+        // of waiting when another window is opening the same file. Wait for the
+        // lock and retry rather than failing the whole open.
+        yield* enableWAL(native)
       }
       return native
     }),
