@@ -10,7 +10,6 @@ import { Auth } from "@/auth"
 import { Config } from "@/config/config"
 import { GitCli } from "@miao/core/git-cli"
 import { Ripgrep } from "@miao/core/ripgrep"
-import { Storage } from "@/storage/storage"
 import { Snapshot } from "@/snapshot"
 import { Plugin } from "@/plugin"
 import { ModelsCatalog } from "@miao/core/models-catalog"
@@ -33,7 +32,6 @@ import { Worktree } from "@/worktree"
 import { Installation } from "@/installation"
 import { Npm } from "@miao/core/npm"
 import { memoMap } from "@miao/core/effect/memo-map"
-import { BackgroundJob } from "@/background/job"
 import { RuntimeFlags } from "@/effect/runtime-flags"
 import { EventV2Bridge } from "@/event-v2-bridge"
 import { LayerNode } from "@miao/core/effect/layer-node"
@@ -55,7 +53,6 @@ export const AppLayer = AppNodeBuilderV1.build(
     Auth.node,
     Config.node,
     GitCli.node,
-    Storage.node,
     Snapshot.node,
     Plugin.node,
     ModelsCatalog.node,
@@ -68,7 +65,6 @@ export const AppLayer = AppNodeBuilderV1.build(
     Permission.node,
     SessionProjector.node,
     SessionStore.node,
-    BackgroundJob.node,
     SessionSchedule.node,
     RuntimeFlags.node,
     EventV2Bridge.node,
