@@ -603,6 +603,11 @@ export class MiaoAgent implements Agent {
         turn.tokens.read += event.data.tokens.cache.read
         turn.tokens.write += event.data.tokens.cache.write
         return
+      case "session.next.stream.discarded":
+        for (const key of state.streamed) {
+          if (key.startsWith(`${event.data.assistantMessageID}:`)) state.streamed.delete(key)
+        }
+        return
       case "session.next.text.delta":
         state.streamed.add(`${event.data.assistantMessageID}:${event.data.textID}`)
         return this.notify(state.id, {

@@ -36,3 +36,41 @@ test("command receipts update the promoted user message without adding duplicate
     commandState: "failed",
   })
 })
+
+test("discard removes only the streamed draft and preserves settled partial text", () => {
+  const reducer = createTuiV2SessionReducer()
+  const settled = [
+    {
+      id: "msg_partial",
+      type: "assistant" as const,
+      agent: "build",
+      model: { id: "model", providerID: "provider" },
+      time: { created: 1, completed: 2 },
+      content: [{ type: "text" as const, id: "text_partial", text: "saved partial" }],
+    },
+  ]
+  const source = [
+    ...settled,
+    {
+      id: "msg_draft",
+      type: "assistant" as const,
+      agent: "build",
+      model: { id: "model", providerID: "provider" },
+      time: { created: 3 },
+      content: [],
+    },
+  ]
+  const streamed = reducer.reduce(source, {
+    type: "session.next.text.delta",
+    properties: { ...stamp, assistantMessageID: "msg_draft", textID: "text_draft", delta: "temporary" },
+  })!
+  expect(streamed.messages).toHaveLength(2)
+  const discard = {
+    type: "session.next.stream.discarded" as const,
+    properties: { ...stamp, assistantMessageID: "msg_draft" },
+  }
+  const removed = reducer.reduce(streamed.messages, discard)!
+  expect(removed.messages).toEqual(settled)
+  expect(removed.touched).toEqual(["msg_draft"])
+  expect(reducer.reduce(removed.messages, discard)?.messages).toEqual(settled)
+})
