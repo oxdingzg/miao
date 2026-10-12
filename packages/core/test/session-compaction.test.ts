@@ -1,7 +1,7 @@
 import { expect, test } from "bun:test"
 import { LLM, LLMEvent, Message, type LLMRequest } from "@miao/llm"
 import { OpenAIChat } from "@miao/llm/protocols/openai-chat"
-import { DateTime, Effect, Stream } from "effect"
+import { DateTime, Effect, Exit, Fiber, Stream } from "effect"
 import { SessionMessage } from "@miao/core/session/message"
 import { Token } from "@miao/core/util/token"
 import { SessionCompaction } from "@miao/core/session/compaction"
@@ -513,3 +513,35 @@ test("a failed intermediate summary never replaces the original long conversatio
   expect(requests).toHaveLength(2)
   expect(published).toEqual([])
 })
+
+test("an interrupted staged compaction stops without publishing a checkpoint", () =>
+  Effect.gen(function* () {
+    const { input } = largeRecoveryInput()
+    const published: string[] = []
+    const compaction = SessionCompaction.make({
+      events: {
+        publish: (_schema: unknown, data: { text?: string }) => {
+          if (typeof data?.text === "string") published.push(data.text)
+          return Effect.succeed(undefined)
+        },
+      } as never,
+      // The summarizer accepts the request and then never answers, so only an
+      // interrupt ends the run.
+      llm: { stream: () => Stream.fromEffect(Effect.never) as never },
+      config: [] as never,
+    })
+
+    const fiber = yield* compaction.compactAfterOverflow(input).pipe(Effect.forkChild)
+    yield* Effect.sleep("20 millis")
+    // The summarizer never answered, so the run is still in flight.
+    expect(fiber.pollUnsafe()).toBeUndefined()
+    yield* Fiber.interrupt(fiber)
+    const exit = fiber.pollUnsafe()
+
+    // The staged run has to stay interruptible: an escaping user must be able to end
+    // it, and it must end without a summary, because a partial chain of slices would
+    // drop the history it had not summarized yet.
+    expect(exit === undefined ? "still running" : Exit.hasInterrupts(exit)).toBe(true)
+    expect(published).toEqual([])
+  }).pipe(Effect.runPromise),
+)

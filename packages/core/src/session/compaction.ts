@@ -477,10 +477,23 @@ export const make = (dependencies: Dependencies) => {
         : input.model
     const summarizeModel = choose(summaryPrompt)
     yield* logSummary(input, "staged", summarizeModel, systemTokens + recoveryTokens(summaryPrompt))
+    // A staged compaction re-summarizes the head one bounded slice at a time, which
+    // on a large window is many model calls in a row. Announce how many that will
+    // be and report each slice as it lands: otherwise the run publishes nothing
+    // until the checkpoint appears, and a slow one is indistinguishable from a hang.
+    const previous = previousSummary?.type === "compaction" ? previousSummary.summary : undefined
+    const sourceTokens = recoveryTokens(source)
+    const stageBudget = ceiling - summaryOutput - (systemTokens + recoveryTokens(buildPrompt({ previousSummary: previous, context: [""] })))
+    yield* Effect.logInfo("session.compaction.staged", {
+      sessionID: input.sessionID,
+      tokens: sourceTokens,
+      stages: stageBudget > 0 ? Math.min(Math.ceil(sourceTokens / stageBudget), MAX_SUMMARY_STAGES) : 0,
+    })
     const staged: Effect.Effect<Attempt> = Effect.gen(function* () {
-      let summary = previousSummary?.type === "compaction" ? previousSummary.summary : undefined
+      let summary = previous
       let offset = 0
       for (let stage = 0; stage < MAX_SUMMARY_STAGES; stage++) {
+        const stageStartedAt = Date.now()
         const overhead = systemTokens + recoveryTokens(buildPrompt({ previousSummary: summary, context: [""] }))
         const budget = ceiling - summaryOutput - overhead
         if (budget <= 0) return summaryAttempt.failed()
@@ -497,6 +510,13 @@ export const make = (dependencies: Dependencies) => {
         if (next === undefined) return summaryAttempt.failed()
         summary = next
         offset = end
+        yield* Effect.logInfo("session.compaction.stage", {
+          sessionID: input.sessionID,
+          stage: stage + 1,
+          chars: offset,
+          charsTotal: source.length,
+          ms: Date.now() - stageStartedAt,
+        })
         if (offset === source.length) return summaryAttempt.compacted(summary)
       }
       return summaryAttempt.failed()
