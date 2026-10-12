@@ -26,6 +26,10 @@ export function statusOf(event: EngineEvent): StatusInfo | undefined {
     case "run.started":
       return { type: "busy" }
     case "run.finished":
+    case "stop":
+    case "stop_failure":
+      // The lifecycle stop is the durable end of a drain. A failed drain may
+      // record only this, so it must still settle the client's busy status.
       return { type: "idle" }
     default:
       return undefined
@@ -272,6 +276,34 @@ function readNonEmptyString(data: object, key: string): string | undefined {
   const value: unknown = Reflect.get(data, key)
   if (typeof value !== "string" || !value) return undefined
   return value
+}
+
+/** The product `session.next.failed` payload for a drain that ended outside a provider step. */
+export type SessionRunFailure = {
+  sessionID: SessionID
+  timestamp: DateTime.Utc
+  error: { type: "unknown"; message: string }
+  name: string
+}
+
+/**
+ * Maps the native lifecycle `stop_failure` fact onto the product drain failure.
+ * Without it a client only ever sees the run start, so a failed native drain
+ * would leave the session busy and show no error.
+ */
+export function translateRunFailure(event: EngineEvent): SessionRunFailure | undefined {
+  if (event.kind !== "stop_failure") return undefined
+  if (!hasRecordedTime(event)) return undefined
+  const data = event.data
+  if (typeof data !== "object" || data === null) return undefined
+  const reason = readNonEmptyString(data, "reason")
+  if (reason === undefined) return undefined
+  return {
+    sessionID: adoptSession(event.session_id),
+    timestamp: eventTimestamp(event),
+    error: { type: "unknown", message: reason },
+    name: "EngineRunFailed",
+  }
 }
 
 /** The product `session.next.text.ended` payload for one committed assistant text block. */
