@@ -329,10 +329,13 @@ export function translateRunFailure(event: EngineEvent): SessionRunFailure | und
   if (typeof data !== "object" || data === null) return undefined
   const reason = readNonEmptyString(data, "reason")
   if (reason === undefined) return undefined
+  // `reason` is the coarse lifecycle category; prefer the underlying error text
+  // when the engine recorded one, and fall back to the category otherwise.
+  const message = readNonEmptyString(data, "message") ?? reason
   return {
     sessionID: adoptSession(event.session_id),
     timestamp: eventTimestamp(event),
-    error: { type: "unknown", message: reason },
+    error: { type: "unknown", message },
     name: "EngineRunFailed",
   }
 }
