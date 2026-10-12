@@ -53,6 +53,14 @@ export const sessionLocationLayer = Layer.effect(
           ),
         )
         const resolution = yield* SessionRouting.resolve({ db, events, fs, sessionID })
+        // A native Session is owned and stored by the engine. Serving it through
+        // the TypeScript handlers would read and write metadata this server does
+        // not own, so refuse instead of returning wrong data.
+        if (SessionRouting.route(resolution) === "native")
+          return yield* new ConflictError({
+            message: `Session ${sessionID} is owned by the native engine and cannot be served by this server.`,
+            resource: sessionID,
+          })
         if (resolution.type === "unknown")
           return yield* new SessionNotFoundError({
             sessionID,

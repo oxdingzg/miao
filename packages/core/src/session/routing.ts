@@ -24,6 +24,28 @@ export type Resolution =
   /** No placement and no TS row: the Session does not exist. */
   | { type: "unknown" }
 
+/** Which engine a resolved Session may be served by. */
+export type Route = "ts" | "native" | "missing" | "unknown"
+
+/**
+ * The serving decision for a resolution. A Rust-owned Session is `native`: the
+ * TypeScript handlers have no authority over it, so a TS route must neither read
+ * nor write its metadata. Keeping the decision here makes it testable without a
+ * server harness, and the middleware only maps it to a transport error.
+ */
+export function route(resolution: Resolution): Route {
+  switch (resolution.type) {
+    case "placed":
+      return resolution.engine === "rust" ? "native" : "ts"
+    case "unbound":
+      return "ts"
+    case "missing":
+      return "missing"
+    case "unknown":
+      return "unknown"
+  }
+}
+
 /**
  * Resolve where a Session lives and which engine owns it. The durable placement
  * catalog is the authority: a Rust-owned Session resolves from its binding and

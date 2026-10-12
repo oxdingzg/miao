@@ -162,3 +162,12 @@ test("a freshly bound Rust Session resolves before its native storage exists", a
     }),
   )
 })
+
+test("only the TypeScript engine may serve a TypeScript Session", () => {
+  const directory = AbsolutePath.make("/tmp/placed")
+  expect(SessionRouting.route({ type: "placed", engine: "rust", location: { directory } })).toBe("native")
+  expect(SessionRouting.route({ type: "placed", engine: "ts", location: { directory } })).toBe("ts")
+  expect(SessionRouting.route({ type: "unbound", location: { directory } })).toBe("ts")
+  expect(SessionRouting.route({ type: "missing", directory: "/tmp/gone" })).toBe("missing")
+  expect(SessionRouting.route({ type: "unknown" })).toBe("unknown")
+})
