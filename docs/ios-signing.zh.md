@@ -6,10 +6,10 @@
 
 | 项 | 值 |
 | --- | --- |
-| 团队 (Team ID) | `9LJ9A465L9` |
+| 团队 (Team ID) | `<TEAM_ID>` |
 | App 标识 (bundle id) | `dev.miao.remote` |
 | 测试 target | `dev.miao.remote.uitests` |
-| App ID 记录 | `FMAUTSH25S` |
+| App ID 记录 | `<APP_ID>` |
 | 能力 | Push Notifications（已开启） |
 | 描述文件命名 | 按描述文件 UUID 命名 |
 
@@ -20,10 +20,10 @@
 工程默认不写 `DEVELOPMENT_TEAM`。生成签名工程时通过环境变量或参数传入：
 
 ```sh
-MIAO_DEVELOPMENT_TEAM=9LJ9A465L9 python3 apps/ios/scripts/create-project.py
+MIAO_DEVELOPMENT_TEAM=<TEAM_ID> python3 apps/ios/scripts/create-project.py
 ```
 
-这会把 `DEVELOPMENT_TEAM = "9LJ9A465L9";` 写进 App 与测试 target。仓库里签入的是**不带团队**的版本，改完源码后重新生成即可。
+这会把 `DEVELOPMENT_TEAM = "<TEAM_ID>";` 写进 App 与测试 target。仓库里签入的是**不带团队**的版本，改完源码后重新生成即可。
 
 ## 用 App Store Connect API 管理证书
 
@@ -61,7 +61,7 @@ MIAO_DEVELOPMENT_TEAM=9LJ9A465L9 python3 apps/ios/scripts/create-project.py
 ```sh
 sh apps/ios/scripts/build-app.sh build -configuration Debug -sdk iphoneos \
   -destination 'generic/platform=iOS' \
-  MIAO_DEVELOPMENT_TEAM=9LJ9A465L9 CODE_SIGN_STYLE=Manual \
+  MIAO_DEVELOPMENT_TEAM=<TEAM_ID> CODE_SIGN_STYLE=Manual \
   CODE_SIGN_IDENTITY=<Apple Development 证书的 SHA-1> \
   PROVISIONING_PROFILE_SPECIFIER=<开发描述文件 UUID>
 
@@ -82,7 +82,7 @@ xcrun devicectl device process launch --device <设备 UDID> dev.miao.remote
 ```sh
 sh apps/ios/scripts/build-app.sh archive -configuration Release -sdk iphoneos \
   -destination 'generic/platform=iOS' \
-  MIAO_DEVELOPMENT_TEAM=9LJ9A465L9 MIAO_PUSH_ENVIRONMENT=production \
+  MIAO_DEVELOPMENT_TEAM=<TEAM_ID> MIAO_PUSH_ENVIRONMENT=production \
   CODE_SIGN_STYLE=Manual CODE_SIGN_IDENTITY=<Apple Distribution 证书 SHA-1> \
   PROVISIONING_PROFILE_SPECIFIER=<App Store 描述文件 UUID> \
   -archivePath build/Miao.xcarchive
@@ -95,7 +95,7 @@ xcrun altool --upload-app -f build/export/Miao.ipa -t ios \
   --apiKey <Key ID> --apiIssuer <Issuer ID>
 ```
 
-`ExportOptions.plist` 至少包含 `method: app-store-connect`（新 Xcode）或 `app-store`、`teamID: 9LJ9A465L9`。上传前在 App Store Connect 建好 App 记录。
+`ExportOptions.plist` 至少包含 `method: app-store-connect`（新 Xcode）或 `app-store`、`teamID: <TEAM_ID>`。上传前在 App Store Connect 建好 App 记录。
 
 ## CI
 

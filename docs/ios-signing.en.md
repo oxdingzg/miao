@@ -6,10 +6,10 @@ This explains how to sign the native iPhone/iPad client under `apps/ios` with a 
 
 | Item | Value |
 | --- | --- |
-| Team (Team ID) | `9LJ9A465L9` |
+| Team (Team ID) | `<TEAM_ID>` |
 | App identifier (bundle id) | `dev.miao.remote` |
 | Test target | `dev.miao.remote.uitests` |
-| App ID record | `FMAUTSH25S` |
+| App ID record | `<APP_ID>` |
 | Capability | Push Notifications (enabled) |
 | Profile file name | the provisioning profile UUID |
 
@@ -20,10 +20,10 @@ The `aps-environment` in `Miao.entitlements` comes from the build setting `MIAO_
 The project carries no `DEVELOPMENT_TEAM` by default. Supply it through the environment or an argument when generating a signing project:
 
 ```sh
-MIAO_DEVELOPMENT_TEAM=9LJ9A465L9 python3 apps/ios/scripts/create-project.py
+MIAO_DEVELOPMENT_TEAM=<TEAM_ID> python3 apps/ios/scripts/create-project.py
 ```
 
-That writes `DEVELOPMENT_TEAM = "9LJ9A465L9";` into the app and test targets. What is checked in is the **team-free** version; regenerate after adding source files.
+That writes `DEVELOPMENT_TEAM = "<TEAM_ID>";` into the app and test targets. What is checked in is the **team-free** version; regenerate after adding source files.
 
 ## Managing certificates with the App Store Connect API
 
@@ -59,7 +59,7 @@ Common calls:
 ```sh
 sh apps/ios/scripts/build-app.sh build -configuration Debug -sdk iphoneos \
   -destination 'generic/platform=iOS' \
-  MIAO_DEVELOPMENT_TEAM=9LJ9A465L9 CODE_SIGN_STYLE=Manual \
+  MIAO_DEVELOPMENT_TEAM=<TEAM_ID> CODE_SIGN_STYLE=Manual \
   CODE_SIGN_IDENTITY=<Apple Development certificate SHA-1> \
   PROVISIONING_PROFILE_SPECIFIER=<development profile UUID>
 
@@ -80,7 +80,7 @@ Notes:
 ```sh
 sh apps/ios/scripts/build-app.sh archive -configuration Release -sdk iphoneos \
   -destination 'generic/platform=iOS' \
-  MIAO_DEVELOPMENT_TEAM=9LJ9A465L9 MIAO_PUSH_ENVIRONMENT=production \
+  MIAO_DEVELOPMENT_TEAM=<TEAM_ID> MIAO_PUSH_ENVIRONMENT=production \
   CODE_SIGN_STYLE=Manual CODE_SIGN_IDENTITY=<Apple Distribution certificate SHA-1> \
   PROVISIONING_PROFILE_SPECIFIER=<App Store profile UUID> \
   -archivePath build/Miao.xcarchive
@@ -93,7 +93,7 @@ xcrun altool --upload-app -f build/export/Miao.ipa -t ios \
   --apiKey <Key ID> --apiIssuer <Issuer ID>
 ```
 
-`ExportOptions.plist` needs at least `method: app-store-connect` (new Xcode) or `app-store`, and `teamID: 9LJ9A465L9`. Create the App record in App Store Connect before uploading.
+`ExportOptions.plist` needs at least `method: app-store-connect` (new Xcode) or `app-store`, and `teamID: <TEAM_ID>`. Create the App record in App Store Connect before uploading.
 
 ## CI
 
