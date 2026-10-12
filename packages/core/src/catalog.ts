@@ -290,31 +290,39 @@ const layer = Layer.effect(
             ),
             Array.map((model) => ({
               model,
-              cost: model.cost[0] ? model.cost[0].input + model.cost[0].output : 999,
+              // What an auxiliary request costs: the base input rate for the prompt
+              // and the cache-read rate for the prefix a compaction reuses. A model
+              // the catalog prices at zero is free on a plan rather than unknown, so
+              // only an absent price stays `undefined`.
+              price: model.cost[0] ? model.cost[0].input + model.cost[0].cache.read : undefined,
               age: (Date.now() - model.time.released) / (1000 * 60 * 60 * 24 * 30),
               small: SMALL_MODEL_RE.test(`${model.id} ${model.family ?? ""} ${model.name}`.toLowerCase()),
             })),
-            Array.filter((item) => item.cost > 0 && item.age <= 18),
+            Array.filter((item) => item.age <= 18),
           )
 
-          const pick = (items: typeof candidates) => {
-            const maxCost = Math.max(...items.map((item) => item.cost), 0.01)
-            const maxAge = Math.max(...items.map((item) => item.age), 0.01)
-            return pipe(
-              items,
-              Array.sortWith((item) => (item.cost / maxCost) * 0.8 + (item.age / maxAge) * 0.2, Order.Number),
-              Array.map((item) => projectModel(item.model, provider)),
-              Array.head,
-            )
-          }
-
-          return Option.getOrUndefined(
-            pipe(
-              candidates,
-              Array.filter((item) => item.small),
-              (items) => (items.length > 0 ? pick(items) : pick(candidates)),
-            ),
+          // Price decides whenever the catalog reports one, because a name does not
+          // price a model: a `-fast` or `-flash` variant can cost more than the
+          // model it derives from. Newest breaks a tie between equally priced
+          // models, the one place recency is worth preferring.
+          const priced = Array.filter(candidates, (item) => item.price !== undefined)
+          const chosen = Option.getOrUndefined(
+            priced.length > 0
+              ? pipe(
+                  priced,
+                  Array.sortWith((item) => item.age, Order.Number),
+                  Array.sortWith((item) => item.price ?? Number.POSITIVE_INFINITY, Order.Number),
+                  Array.head,
+                )
+              : pipe(
+                  // No price anywhere: a subscription plan prices every model at
+                  // zero, so the family name is the only signal left for "small".
+                  Array.filter(candidates, (item) => item.small),
+                  Array.sortWith((item) => item.age, Order.Number),
+                  Array.head,
+                ),
           )
+          return chosen ? projectModel(chosen.model, provider) : undefined
         }),
       },
     }
