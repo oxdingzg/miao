@@ -95,6 +95,29 @@ xcrun altool --upload-app -f build/export/Miao.ipa -t ios \
 
 `ExportOptions.plist` needs at least `method: app-store-connect` (new Xcode) or `app-store`, and `teamID: <TEAM_ID>`. Create the App record in App Store Connect before uploading.
 
+## TestFlight submission and external testing
+
+After upload the build appears under App Store Connect → your app → TestFlight → builds. Distribution has two paths:
+
+- **Internal testing** (team members, up to 100): add the build to the internal group; no review. Internal testers must be App Store Connect users and sign into TestFlight with that user's Apple ID.
+- **External testing** (invited by email, up to 10,000): create an external group, add the build and invite testers. **The first build must pass Beta App Review** (later builds of the same version may not), after which testers get an email and install.
+
+Before submitting externally, the Test Information (TestFlight → Other → Test Information, or the build page → Test Information) must be complete, or submission fails with a generic `422 MISSING_REQUIRED_DATA`. Check each item:
+
+- **Beta App Description** — one per localization.
+- **Feedback Email** — required and the easiest to miss; without it the submit fails.
+- **Contact Information** — first name, last name, phone (**with country code**, e.g. `+86…`, or it fails `INVALID_PHONE_NUMBER`), email.
+- **What to Test** — one per build and localization.
+- **Beta License Agreement** text.
+- **Export compliance** — `usesNonExemptEncryption`.
+- **Demo account** — fill it if sign-in is required, otherwise mark "no sign-in required".
+
+Notes:
+
+- Setting `ITSAppUsesNonExemptEncryption=false` in `Info.plist` stops later builds from prompting for export compliance individually.
+- The app-level `appInfos` (category and so on) may return 403 even for Admin and can only be set in the web UI; on a 422, check the Test Information page first — the UI names the missing field.
+- Every one of these fields can be set through the App Store Connect API: `betaAppLocalizations` (description, feedback email, URLs), `betaBuildLocalizations` (What to Test), `betaAppReviewDetails` (contact), `betaLicenseAgreements`, `betaGroups`/`betaTesters`, and finally `betaAppReviewSubmissions` to submit.
+
 ## CI
 
 `.github/workflows/ios-core.yml` currently only does unsigned builds and simulator tests. Wiring up a device/TestFlight build needs signing secrets in the repository (certificate `.p12`, profile, App Store Connect API key), then injecting `CODE_SIGN_IDENTITY` and `PROVISIONING_PROFILE_SPECIFIER` in the archive step; per this repository's convention these materials never go into source.
