@@ -1,10 +1,8 @@
-import { addDefaultParsers, getTreeSitterClient } from "@opentui/core"
+import { getTreeSitterClient } from "@opentui/core"
 import { expect, test } from "bun:test"
 import parsers from "../../src/parsers-config"
 import { filetype } from "../../src/util/filetype"
 import { shellSegments } from "../../src/util/shell-highlight"
-
-addDefaultParsers(parsers.parsers)
 
 test("a heredoc fed to python highlights its body as python", () => {
   expect(shellSegments("python3 - <<'PY'\nimport json\nprint(json.dumps({}))\nPY\necho done")).toEqual([
@@ -49,6 +47,9 @@ test("plain commands, unknown targets and unterminated heredocs stay shell", () 
 test("shell segments and shell files use a filetype that has a parser", async () => {
   const client = getTreeSitterClient()
   await client.initialize()
+  // Other suites can initialize the shared client before this file is loaded.
+  // Register on that worker rather than changing defaults for a future worker.
+  parsers.parsers.forEach((parser) => client.addFiletypeParser(parser))
   const segments = shellSegments("if [ -f x ]; then python3 - <<'PY'\nimport os\nPY\nfi")
   for (const segment of segments) {
     const result = await client.highlightOnce(segment.content, segment.filetype)
