@@ -65,6 +65,20 @@ export function createTuiV2SessionReducer() {
           [id],
         )
       }
+      // Native streams carry no `step.started` (the engine does not know product
+      // agent/model identities), so this evidence is what makes the assistant
+      // exist before its commit. Wire model facts stay unknown here.
+      case "session.next.assistant.identity":
+        return updateAssistant(
+          ensureAssistant(source, event.properties.assistantMessageID, event.properties.timestamp),
+          event.properties.assistantMessageID,
+          event.properties.sessionID,
+          (item) => ({
+            ...item,
+            agent: event.properties.agent ?? item.agent,
+            model: event.properties.model ?? item.model,
+          }),
+        )
       case "session.next.prompt.admitted":
         return result(event.properties.sessionID, [...source])
       case "session.next.prompted":
@@ -78,20 +92,37 @@ export function createTuiV2SessionReducer() {
           time: { created: event.properties.timestamp },
         })
       case "session.next.command.started":
-        return updateMessage<User>(source,
+        return updateMessage<User>(
+          source,
           (item): item is User => item.type === "user" && item.id === event.properties.messageID,
           (item) => ({ ...item, commandState: "running" }),
-          event.properties.sessionID,)
+          event.properties.sessionID,
+        )
       case "session.next.command.completed":
-        return updateMessage<User>(source,
+        return updateMessage<User>(
+          source,
           (item): item is User => item.type === "user" && item.id === event.properties.messageID,
-          (item) => ({ ...item, text: event.properties.prompt.text, files: event.properties.prompt.files, agents: event.properties.prompt.agents, commandState: "completed" }),
-          event.properties.sessionID,)
+          (item) => ({
+            ...item,
+            text: event.properties.prompt.text,
+            files: event.properties.prompt.files,
+            agents: event.properties.prompt.agents,
+            commandState: "completed",
+          }),
+          event.properties.sessionID,
+        )
       case "session.next.command.failed":
-        return updateMessage<User>(source,
+        return updateMessage<User>(
+          source,
           (item): item is User => item.type === "user" && item.id === event.properties.messageID,
-          (item) => ({ ...item, text: event.properties.text, commandState: "failed", commandError: event.properties.error }),
-          event.properties.sessionID,)
+          (item) => ({
+            ...item,
+            text: event.properties.text,
+            commandState: "failed",
+            commandError: event.properties.error,
+          }),
+          event.properties.sessionID,
+        )
       case "session.next.agent.switched":
         return append(event.properties.sessionID, {
           id: event.properties.messageID,
@@ -208,18 +239,40 @@ export function createTuiV2SessionReducer() {
           time: { ...item.time, completed: event.properties.timestamp },
         }))
       case "session.next.text.started":
-        return updateAssistant(source, event.properties.assistantMessageID, event.properties.sessionID, (item) => ({
-          ...item,
-          content: insertOrdinal(
-            item.content,
-            "text",
-            position(stream(event.properties.sessionID, item.id, source).text, event.properties.textID),
-            { type: "text", id: event.properties.textID, text: "" },
-          ),
-        }))
-      case "session.next.text.delta":
+        return updateAssistant(
+          ensureAssistant(source, event.properties.assistantMessageID, event.properties.timestamp),
+          event.properties.assistantMessageID,
+          event.properties.sessionID,
+          (item) => ({
+            ...item,
+            content: insertOrdinal(
+              item.content,
+              "text",
+              position(stream(event.properties.sessionID, item.id, source).text, event.properties.textID),
+              { type: "text", id: event.properties.textID, text: "" },
+            ),
+          }),
+        )
+      case "session.next.text.delta": {
+        const prepared = updateAssistant(
+          ensureAssistant(source, event.properties.assistantMessageID, event.properties.timestamp),
+          event.properties.assistantMessageID,
+          event.properties.sessionID,
+          (item) => ({
+            ...item,
+            content: insertOrdinal(
+              item.content,
+              "text",
+              position(
+                stream(event.properties.sessionID, event.properties.assistantMessageID, source).text,
+                event.properties.textID,
+              ),
+              { type: "text", id: event.properties.textID, text: "" },
+            ),
+          }),
+        )
         return updateContent(
-          source,
+          prepared.messages,
           event.properties.assistantMessageID,
           event.properties.sessionID,
           "text",
@@ -229,9 +282,10 @@ export function createTuiV2SessionReducer() {
           ),
           (item) => ({ ...item, text: item.text + event.properties.delta }),
         )
+      }
       case "session.next.text.ended":
         return updateContent(
-          source,
+          ensureAssistant(source, event.properties.assistantMessageID, event.properties.timestamp),
           event.properties.assistantMessageID,
           event.properties.sessionID,
           "text",
@@ -242,24 +296,51 @@ export function createTuiV2SessionReducer() {
           (item) => ({ ...item, text: event.properties.text }),
         )
       case "session.next.reasoning.started":
-        return updateAssistant(source, event.properties.assistantMessageID, event.properties.sessionID, (item) => ({
-          ...item,
-          content: insertOrdinal(
-            item.content,
-            "reasoning",
-            position(stream(event.properties.sessionID, item.id, source).reasoning, event.properties.reasoningID),
-            {
-              type: "reasoning",
-              id: event.properties.reasoningID,
-              text: "",
-              providerMetadata: event.properties.providerMetadata,
-              time: { created: event.properties.timestamp },
-            },
-          ),
-        }))
-      case "session.next.reasoning.delta":
+        return updateAssistant(
+          ensureAssistant(source, event.properties.assistantMessageID, event.properties.timestamp),
+          event.properties.assistantMessageID,
+          event.properties.sessionID,
+          (item) => ({
+            ...item,
+            content: insertOrdinal(
+              item.content,
+              "reasoning",
+              position(stream(event.properties.sessionID, item.id, source).reasoning, event.properties.reasoningID),
+              {
+                type: "reasoning",
+                id: event.properties.reasoningID,
+                text: "",
+                providerMetadata: event.properties.providerMetadata,
+                time: { created: event.properties.timestamp },
+              },
+            ),
+          }),
+        )
+      case "session.next.reasoning.delta": {
+        const prepared = updateAssistant(
+          ensureAssistant(source, event.properties.assistantMessageID, event.properties.timestamp),
+          event.properties.assistantMessageID,
+          event.properties.sessionID,
+          (item) => ({
+            ...item,
+            content: insertOrdinal(
+              item.content,
+              "reasoning",
+              position(
+                stream(event.properties.sessionID, event.properties.assistantMessageID, source).reasoning,
+                event.properties.reasoningID,
+              ),
+              {
+                type: "reasoning",
+                id: event.properties.reasoningID,
+                text: "",
+                time: { created: event.properties.timestamp },
+              },
+            ),
+          }),
+        )
         return updateContent(
-          source,
+          prepared.messages,
           event.properties.assistantMessageID,
           event.properties.sessionID,
           "reasoning",
@@ -269,9 +350,10 @@ export function createTuiV2SessionReducer() {
           ),
           (item) => ({ ...item, text: item.text + event.properties.delta }),
         )
+      }
       case "session.next.reasoning.ended":
         return updateContent(
-          source,
+          ensureAssistant(source, event.properties.assistantMessageID, event.properties.timestamp),
           event.properties.assistantMessageID,
           event.properties.sessionID,
           "reasoning",
@@ -287,24 +369,29 @@ export function createTuiV2SessionReducer() {
           }),
         )
       case "session.next.tool.input.started":
-        return updateAssistant(source, event.properties.assistantMessageID, event.properties.sessionID, (item) => ({
-          ...item,
-          content: item.content.some((content) => content.type === "tool" && content.id === event.properties.callID)
-            ? item.content
-            : [
-                ...item.content,
-                {
-                  type: "tool",
-                  id: event.properties.callID,
-                  name: event.properties.name,
-                  state: { status: "pending", input: "" },
-                  time: { created: event.properties.timestamp },
-                },
-              ],
-        }))
+        return updateAssistant(
+          ensureAssistant(source, event.properties.assistantMessageID, event.properties.timestamp),
+          event.properties.assistantMessageID,
+          event.properties.sessionID,
+          (item) => ({
+            ...item,
+            content: item.content.some((content) => content.type === "tool" && content.id === event.properties.callID)
+              ? item.content
+              : [
+                  ...item.content,
+                  {
+                    type: "tool",
+                    id: event.properties.callID,
+                    name: event.properties.name,
+                    state: { status: "pending", input: "" },
+                    time: { created: event.properties.timestamp },
+                  },
+                ],
+          }),
+        )
       case "session.next.tool.input.delta":
         return updateTool(
-          source,
+          ensureAssistant(source, event.properties.assistantMessageID, event.properties.timestamp),
           event.properties.assistantMessageID,
           event.properties.callID,
           event.properties.sessionID,
@@ -315,7 +402,7 @@ export function createTuiV2SessionReducer() {
         )
       case "session.next.tool.input.ended":
         return updateTool(
-          source,
+          ensureAssistant(source, event.properties.assistantMessageID, event.properties.timestamp),
           event.properties.assistantMessageID,
           event.properties.callID,
           event.properties.sessionID,
@@ -437,6 +524,24 @@ export function createTuiV2SessionReducer() {
       }
     },
   }
+}
+
+// A native stream's parts can arrive before any committed assistant exists
+// (`step.started` requires product identities the engine does not know), so
+// streaming cases seed the placeholder they render into.
+function ensureAssistant(source: readonly SessionMessage[], id: string, timestamp: number): readonly SessionMessage[] {
+  if (source.some((item) => item.id === id && item.type === "assistant")) return source
+  return [
+    ...source,
+    {
+      id,
+      type: "assistant",
+      agent: null,
+      model: null,
+      content: [],
+      time: { created: timestamp },
+    },
+  ]
 }
 
 // Stream ids arrive in the order their content item was created, so the first sighting of an id

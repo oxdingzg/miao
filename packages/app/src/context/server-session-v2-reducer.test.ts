@@ -259,18 +259,59 @@ describe("v2 session reducer", () => {
   })
 })
 
- test("updates the original command message through preparation and failure", () => {
+test("updates the original command message through preparation and failure", () => {
   const reducer = createV2SessionReducer()
-  const promoted = reducer.reduce([], event({ ...base, id: "evt_command", type: "session.next.prompted", data: { ...stamp, messageID: "msg_command", delivery: "steer", prompt: { text: "raw !`echo`", command: { name: "daily", arguments: "", subtask: false } } } }))
-  const started = reducer.reduce(promoted?.messages ?? [], event({ ...base, id: "evt_started", type: "session.next.command.started", data: { ...stamp, messageID: "msg_command" } }))
+  const promoted = reducer.reduce(
+    [],
+    event({
+      ...base,
+      id: "evt_command",
+      type: "session.next.prompted",
+      data: {
+        ...stamp,
+        messageID: "msg_command",
+        delivery: "steer",
+        prompt: { text: "raw !`echo`", command: { name: "daily", arguments: "", subtask: false } },
+      },
+    }),
+  )
+  const started = reducer.reduce(
+    promoted?.messages ?? [],
+    event({
+      ...base,
+      id: "evt_started",
+      type: "session.next.command.started",
+      data: { ...stamp, messageID: "msg_command" },
+    }),
+  )
   expect(started?.messages[0]).toMatchObject({ id: "msg_command", commandState: "running" })
-  const completed = reducer.reduce(started?.messages ?? [], event({ ...base, id: "evt_completed", type: "session.next.command.completed", data: { ...stamp, messageID: "msg_command", prompt: { text: "expanded output" } } }))
+  const completed = reducer.reduce(
+    started?.messages ?? [],
+    event({
+      ...base,
+      id: "evt_completed",
+      type: "session.next.command.completed",
+      data: { ...stamp, messageID: "msg_command", prompt: { text: "expanded output" } },
+    }),
+  )
   expect(completed?.touched).toEqual(["msg_command"])
   expect(completed?.messages).toHaveLength(1)
   expect(completed?.messages[0]).toMatchObject({ text: "expanded output", commandState: "completed" })
-  const failed = reducer.reduce(started?.messages ?? [], event({ ...base, id: "evt_failed", type: "session.next.command.failed", data: { ...stamp, messageID: "msg_command", error: "refused", text: "canonical failure text" } }))
-  expect(failed?.messages[0]).toMatchObject({ text: "canonical failure text", commandState: "failed", commandError: "refused" })
- })
+  const failed = reducer.reduce(
+    started?.messages ?? [],
+    event({
+      ...base,
+      id: "evt_failed",
+      type: "session.next.command.failed",
+      data: { ...stamp, messageID: "msg_command", error: "refused", text: "canonical failure text" },
+    }),
+  )
+  expect(failed?.messages[0]).toMatchObject({
+    text: "canonical failure text",
+    commandState: "failed",
+    commandError: "refused",
+  })
+})
 
 test("discard removes only the streamed draft and preserves settled partial text", () => {
   const reducer = createV2SessionReducer()
@@ -313,4 +354,95 @@ test("discard removes only the streamed draft and preserves settled partial text
   expect(removed.messages).toEqual(settled)
   expect(removed.touched).toEqual(["msg_draft"])
   expect(reducer.reduce(removed.messages, discard)?.messages).toEqual(settled)
+})
+
+describe("native assistant initialization", () => {
+  test("deltas before any commit seed the assistant and identity keeps unknown facts unknown", () => {
+    const reducer = createV2SessionReducer()
+    let messages: SessionMessageInfo[] = []
+    const apply = (input: object) => {
+      const result = reducer.reduce(messages, event(input))
+      if (result) messages = result.messages
+      return result
+    }
+
+    const seeded = apply({
+      ...base,
+      id: "evt_delta",
+      type: "session.next.text.delta",
+      data: { ...stamp, assistantMessageID: "msg_native", textID: "text_native_5_0", delta: "hel" },
+    })!
+    expect(seeded.touched).toEqual(["msg_native"])
+    expect(messages[0]).toMatchObject({
+      id: "msg_native",
+      type: "assistant",
+      agent: null,
+      model: null,
+      content: [{ type: "text", text: "hel" }],
+    })
+
+    apply({
+      ...base,
+      id: "evt_delta_2",
+      type: "session.next.text.delta",
+      data: { ...stamp, assistantMessageID: "msg_native", textID: "text_native_5_0", delta: "lo" },
+    })
+    apply({
+      ...base,
+      id: "evt_identity",
+      type: "session.next.assistant.identity",
+      data: {
+        ...stamp,
+        assistantMessageID: "msg_native",
+        assistantSeq: 5,
+        provider: { protocol: "openai-chat", model: "fixture" },
+        model: null,
+        agent: null,
+      },
+    })
+    expect(messages[0]).toMatchObject({
+      id: "msg_native",
+      agent: null,
+      model: null,
+      content: [{ type: "text", text: "hello" }],
+    })
+
+    apply({
+      ...base,
+      id: "evt_end",
+      type: "session.next.text.ended",
+      data: { ...stamp, assistantMessageID: "msg_native", textID: "text_native_5_0", text: "hello world" },
+    })
+    expect(messages[0]).toMatchObject({ content: [{ type: "text", text: "hello world" }] })
+  })
+
+  test("a failing native stream settles its seeded assistant with the error", () => {
+    const reducer = createV2SessionReducer()
+    let messages: SessionMessageInfo[] = []
+    const apply = (input: object) => {
+      const result = reducer.reduce(messages, event(input))
+      if (result) messages = result.messages
+      return result
+    }
+
+    apply({
+      ...base,
+      id: "evt_delta",
+      type: "session.next.text.delta",
+      data: { ...stamp, assistantMessageID: "msg_native", textID: "text_native_5_0", delta: "partial" },
+    })
+    const failed = apply({
+      ...base,
+      id: "evt_failed",
+      type: "session.next.step.failed",
+      data: { ...stamp, assistantMessageID: "msg_native", error: { type: "unknown", message: "boom" } },
+    })!
+    expect(failed.touched).toEqual(["msg_native"])
+    expect(messages[0]).toMatchObject({
+      id: "msg_native",
+      finish: "error",
+      error: { message: "boom" },
+      time: { completed: 1 },
+    })
+  })
 })

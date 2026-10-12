@@ -63,6 +63,20 @@ export function createV2SessionReducer() {
           [id],
         )
       }
+      // Native streams carry no `step.started` (the engine does not know product
+      // agent/model identities), so this evidence is what makes the assistant
+      // exist before its commit. Wire model facts stay unknown here.
+      case "session.next.assistant.identity":
+        return updateAssistant(
+          ensureAssistant(source, event.data.assistantMessageID, event.data.timestamp),
+          event.data.assistantMessageID,
+          sessionID,
+          (item) => ({
+            ...item,
+            agent: event.data.agent ?? item.agent,
+            model: event.data.model ?? item.model,
+          }),
+        )
       case "session.next.prompt.admitted":
         return result([...source])
       case "session.next.prompted":
@@ -205,18 +219,37 @@ export function createV2SessionReducer() {
           }),
         }))
       case "session.next.text.started":
-        return updateAssistant(source, event.data.assistantMessageID, sessionID, (item) => ({
-          ...item,
-          content: insertOrdinal(
-            item.content,
-            "text",
-            position(stream(sessionID, item.id, source).text, event.data.textID),
-            { type: "text", id: event.data.textID, text: "" },
-          ),
-        }))
-      case "session.next.text.delta":
+        return updateAssistant(
+          ensureAssistant(source, event.data.assistantMessageID, event.data.timestamp),
+          event.data.assistantMessageID,
+          sessionID,
+          (item) => ({
+            ...item,
+            content: insertOrdinal(
+              item.content,
+              "text",
+              position(stream(sessionID, item.id, source).text, event.data.textID),
+              { type: "text", id: event.data.textID, text: "" },
+            ),
+          }),
+        )
+      case "session.next.text.delta": {
+        const prepared = updateAssistant(
+          ensureAssistant(source, event.data.assistantMessageID, event.data.timestamp),
+          event.data.assistantMessageID,
+          sessionID,
+          (item) => ({
+            ...item,
+            content: insertOrdinal(
+              item.content,
+              "text",
+              position(stream(sessionID, event.data.assistantMessageID, source).text, event.data.textID),
+              { type: "text", id: event.data.textID, text: "" },
+            ),
+          }),
+        )
         return updateContent(
-          source,
+          prepared.messages,
           event.data.assistantMessageID,
           sessionID,
           "text",
@@ -226,9 +259,10 @@ export function createV2SessionReducer() {
             text: item.text + event.data.delta,
           }),
         )
+      }
       case "session.next.text.ended":
         return updateContent(
-          source,
+          ensureAssistant(source, event.data.assistantMessageID, event.data.timestamp),
           event.data.assistantMessageID,
           sessionID,
           "text",
@@ -239,24 +273,48 @@ export function createV2SessionReducer() {
           }),
         )
       case "session.next.reasoning.started":
-        return updateAssistant(source, event.data.assistantMessageID, sessionID, (item) => ({
-          ...item,
-          content: insertOrdinal(
-            item.content,
-            "reasoning",
-            position(stream(sessionID, item.id, source).reasoning, event.data.reasoningID),
-            {
-              type: "reasoning",
-              id: event.data.reasoningID,
-              text: "",
-              providerMetadata: wire(event.data.providerMetadata),
-              time: { created: event.data.timestamp },
-            },
-          ),
-        }))
-      case "session.next.reasoning.delta":
+        return updateAssistant(
+          ensureAssistant(source, event.data.assistantMessageID, event.data.timestamp),
+          event.data.assistantMessageID,
+          sessionID,
+          (item) => ({
+            ...item,
+            content: insertOrdinal(
+              item.content,
+              "reasoning",
+              position(stream(sessionID, item.id, source).reasoning, event.data.reasoningID),
+              {
+                type: "reasoning",
+                id: event.data.reasoningID,
+                text: "",
+                providerMetadata: wire(event.data.providerMetadata),
+                time: { created: event.data.timestamp },
+              },
+            ),
+          }),
+        )
+      case "session.next.reasoning.delta": {
+        const prepared = updateAssistant(
+          ensureAssistant(source, event.data.assistantMessageID, event.data.timestamp),
+          event.data.assistantMessageID,
+          sessionID,
+          (item) => ({
+            ...item,
+            content: insertOrdinal(
+              item.content,
+              "reasoning",
+              position(stream(sessionID, event.data.assistantMessageID, source).reasoning, event.data.reasoningID),
+              {
+                type: "reasoning",
+                id: event.data.reasoningID,
+                text: "",
+                time: { created: event.data.timestamp },
+              },
+            ),
+          }),
+        )
         return updateContent(
-          source,
+          prepared.messages,
           event.data.assistantMessageID,
           sessionID,
           "reasoning",
@@ -266,9 +324,10 @@ export function createV2SessionReducer() {
             text: item.text + event.data.delta,
           }),
         )
+      }
       case "session.next.reasoning.ended":
         return updateContent(
-          source,
+          ensureAssistant(source, event.data.assistantMessageID, event.data.timestamp),
           event.data.assistantMessageID,
           sessionID,
           "reasoning",
@@ -281,30 +340,45 @@ export function createV2SessionReducer() {
           }),
         )
       case "session.next.tool.input.started":
-        return updateAssistant(source, event.data.assistantMessageID, sessionID, (item) => ({
-          ...item,
-          content: item.content.some((content) => content.type === "tool" && content.id === event.data.callID)
-            ? item.content
-            : [
-                ...item.content,
-                {
-                  type: "tool",
-                  id: event.data.callID,
-                  name: event.data.name,
-                  state: { status: "pending", input: "" },
-                  time: { created: event.data.timestamp },
-                },
-              ],
-        }))
+        return updateAssistant(
+          ensureAssistant(source, event.data.assistantMessageID, event.data.timestamp),
+          event.data.assistantMessageID,
+          sessionID,
+          (item) => ({
+            ...item,
+            content: item.content.some((content) => content.type === "tool" && content.id === event.data.callID)
+              ? item.content
+              : [
+                  ...item.content,
+                  {
+                    type: "tool",
+                    id: event.data.callID,
+                    name: event.data.name,
+                    state: { status: "pending", input: "" },
+                    time: { created: event.data.timestamp },
+                  },
+                ],
+          }),
+        )
       case "session.next.tool.input.delta":
-        return updateTool(source, event.data.assistantMessageID, event.data.callID, sessionID, (tool) =>
-          tool.state.status === "pending"
-            ? { ...tool, state: { ...tool.state, input: tool.state.input + event.data.delta } }
-            : tool,
+        return updateTool(
+          ensureAssistant(source, event.data.assistantMessageID, event.data.timestamp),
+          event.data.assistantMessageID,
+          event.data.callID,
+          sessionID,
+          (tool) =>
+            tool.state.status === "pending"
+              ? { ...tool, state: { ...tool.state, input: tool.state.input + event.data.delta } }
+              : tool,
         )
       case "session.next.tool.input.ended":
-        return updateTool(source, event.data.assistantMessageID, event.data.callID, sessionID, (tool) =>
-          tool.state.status === "pending" ? { ...tool, state: { ...tool.state, input: event.data.text } } : tool,
+        return updateTool(
+          ensureAssistant(source, event.data.assistantMessageID, event.data.timestamp),
+          event.data.assistantMessageID,
+          event.data.callID,
+          sessionID,
+          (tool) =>
+            tool.state.status === "pending" ? { ...tool, state: { ...tool.state, input: event.data.text } } : tool,
         )
       case "session.next.tool.called":
         return updateTool(source, event.data.assistantMessageID, event.data.callID, sessionID, (tool) => ({
@@ -415,6 +489,28 @@ function position(list: (string | undefined)[], id: string) {
   return list.length - 1
 }
 
+// A native stream's parts can arrive before any committed assistant exists
+// (`step.started` requires product identities the engine does not know), so
+// streaming cases seed the placeholder they render into.
+function ensureAssistant(
+  source: readonly SessionMessageInfo[],
+  id: string,
+  timestamp: number,
+): readonly SessionMessageInfo[] {
+  if (source.some((item) => item.id === id && item.type === "assistant")) return source
+  return [
+    ...source,
+    {
+      id,
+      type: "assistant",
+      agent: null,
+      model: null,
+      content: [],
+      time: { created: timestamp },
+    },
+  ]
+}
+
 // The event contract widens values it cannot type and marks collections readonly, while the
 // projected message keeps the narrower mutable JSON form. This is where the two shapes meet.
 function wire<T>(input: unknown): T {
@@ -505,14 +601,30 @@ function insertOrdinal<T extends Assistant["content"][number]["type"]>(
   return [...source, item]
 }
 
-function updateCommand(source: readonly SessionMessageInfo[], event: Extract<OpenCodeEventEncoded, {
-  type: "session.next.command.started" | "session.next.command.completed" | "session.next.command.failed"
-}>) {
-  return updateMessage<User>(source,
+function updateCommand(
+  source: readonly SessionMessageInfo[],
+  event: Extract<
+    OpenCodeEventEncoded,
+    {
+      type: "session.next.command.started" | "session.next.command.completed" | "session.next.command.failed"
+    }
+  >,
+) {
+  return updateMessage<User>(
+    source,
     (item): item is User => item.type === "user" && item.id === event.data.messageID,
     (item) => {
       if (event.type === "session.next.command.started") return { ...item, commandState: "running" }
-      if (event.type === "session.next.command.failed") return { ...item, text: event.data.text, commandState: "failed", commandError: event.data.error }
-      return { ...item, text: event.data.prompt.text, files: wire(event.data.prompt.files), agents: wire(event.data.prompt.agents), commandState: "completed" }
-    }, event.data.sessionID)
+      if (event.type === "session.next.command.failed")
+        return { ...item, text: event.data.text, commandState: "failed", commandError: event.data.error }
+      return {
+        ...item,
+        text: event.data.prompt.text,
+        files: wire(event.data.prompt.files),
+        agents: wire(event.data.prompt.agents),
+        commandState: "completed",
+      }
+    },
+    event.data.sessionID,
+  )
 }
