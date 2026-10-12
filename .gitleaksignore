@@ -33,3 +33,8 @@ b025ef80944f3e9f04521d4f8ad7c884441b01a6:packages/opencode/src/plugin/digitaloce
 b025ef80944f3e9f04521d4f8ad7c884441b01a6:packages/sdk/js/src/v2/gen/sdk.gen.ts:generic-api-key:5370
 b025ef80944f3e9f04521d4f8ad7c884441b01a6:packages/session-ui/src/components/tool-count-summary.tsx:generic-api-key:6
 e6f6ddaa5ccf3d242c2b341e4ee4303513d38161:packages/console/app/package.json:generic-api-key:9
+
+# Enrollment test fixture: dummy root/device/host keys the iOS UI test enrolls with.
+# They are generated for the test and never leave it, and all four findings share
+# this fingerprint because the fixture is one line of JSON.
+de922740735b3d76041a47bfa241cfbb3b57656a:apps/ios/MiaoCore/Tests/MiaoCoreTests/Fixtures/account-enrollment.json:generic-api-key:1
