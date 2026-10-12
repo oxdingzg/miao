@@ -361,6 +361,48 @@ test("compaction ignores an out-of-range threshold instead of thrashing", async 
   expect(zero.requests).toHaveLength(0)
 })
 
+test("compaction carries the configured ratio only as far as the window's headroom allows", async () => {
+  const main = model("main", 1_000_000)
+  const { compaction, requests } = customHarness([], summary("summary"))
+
+  // The ratio alone would fire at 0.9 of the window. The headroom a step needs for
+  // its protected tool output, the summary it will write, and the configured slack
+  // carries a large window later, to about 94%, which is where other harnesses
+  // compact too.
+  expect(
+    await Effect.runPromise(compaction.compactIfNeeded(observedInput("ses_headroom_below", main, 930_000))),
+  ).toBe(false)
+  expect(requests).toHaveLength(0)
+  expect(
+    await Effect.runPromise(compaction.compactIfNeeded(observedInput("ses_headroom_above", main, 940_000))),
+  ).toBe(true)
+  expect(requests).toHaveLength(1)
+})
+
+test("compaction sizes the request from the provider's count plus what was appended", async () => {
+  const main = model("main", 1_000_000)
+  const { compaction, requests } = customHarness([], summary("summary"))
+  const appended = Message.user("lorem ipsum dolor sit amet consectetur ".repeat(10_000))
+  const input = (sessionID: string, observedMessages: number) =>
+    ({
+      sessionID: SessionSchema.ID.make(sessionID),
+      entries: overflowEntries(),
+      model: main,
+      request: LLM.request({ model: main, messages: [Message.user("counted"), appended] }),
+      observedTokens: 900_000,
+      observedMessages,
+    }) as never
+
+  // The report covered the first message only, so the second is this request's own
+  // growth and belongs in the size: 900k plus its tokens passes the window's limit.
+  expect(await Effect.runPromise(compaction.compactIfNeeded(input("ses_delta_counted", 1)))).toBe(true)
+  expect(requests).toHaveLength(1)
+  // The same report already covered both messages, so nothing arrived since and the
+  // request is the 900k the provider counted, below the limit.
+  expect(await Effect.runPromise(compaction.compactIfNeeded(input("ses_delta_covered", 2)))).toBe(false)
+  expect(requests).toHaveLength(1)
+})
+
 test("auto-compaction stops after repeated summary failures until it is reset", async () => {
   const main = model("main", 100_000)
   const { compaction, requests } = customHarness([], empty)
