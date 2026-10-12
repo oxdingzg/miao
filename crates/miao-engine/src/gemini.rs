@@ -1,7 +1,9 @@
 use crate::{
     credential::{Credential, Kind, Source},
     protocol::{Message, ModelRequest},
-    provider::{read_stream, request_with_retry, Frame, Parser, Provider, ProviderError, Reply},
+    provider::{
+        read_stream, request_with_retry, CountTokens, Frame, Parser, Provider, ProviderError, Reply,
+    },
 };
 use async_trait::async_trait;
 use serde_json::{json, Value};
@@ -81,6 +83,61 @@ impl Provider for Gemini {
             .map(|path| vec![path.to_owned()])
             .unwrap_or_default()
     }
+    /// Advisory pre-send count against Gemini's own endpoint. No retry and a
+    /// short timeout: any refusal degrades to the estimate.
+    async fn count_tokens(&self, request: &ModelRequest) -> CountTokens {
+        let credential = match self.source.load().await {
+            Ok(credential) if credential.kind() == Kind::Key => credential,
+            _ => return CountTokens::Failed("credential unavailable".into()),
+        };
+        let header = match credential.header() {
+            Ok(header) => header,
+            Err(_) => return CountTokens::Failed("credential header unavailable".into()),
+        };
+        let contents = match lower(&request.messages, &self.model) {
+            Ok(contents) => contents,
+            Err(_) => return CountTokens::Failed("unsupported Gemini history".into()),
+        };
+        let mut url = self.endpoint.clone();
+        url.set_path(&url.path().replace(":streamGenerateContent", ":countTokens"));
+        url.set_query(None);
+        let body = json!({
+            "contents": contents,
+            "systemInstruction": {"parts": [{"text": request.system}]},
+        });
+        let built = self
+            .client
+            .post(url)
+            .header("x-goog-api-key", header)
+            .json(&body)
+            .build();
+        let request = match built {
+            Ok(request) => request,
+            Err(_) => return CountTokens::Failed("count request build failed".into()),
+        };
+        match tokio::time::timeout(
+            std::time::Duration::from_secs(15),
+            self.client.execute(request),
+        )
+        .await
+        {
+            Ok(Ok(response)) if response.status().is_success() => {
+                let counted = response
+                    .json::<Value>()
+                    .await
+                    .ok()
+                    .and_then(|body| body["totalTokens"].as_u64());
+                counted
+                    .map(CountTokens::Counted)
+                    .unwrap_or_else(|| CountTokens::Failed("count response unreadable".into()))
+            }
+            Ok(Ok(response)) => {
+                CountTokens::Failed(format!("count refused: {}", response.status()))
+            }
+            Ok(Err(_)) | Err(_) => CountTokens::Failed("count transport failed".into()),
+        }
+    }
+
     async fn stream(
         &self,
         request: ModelRequest,

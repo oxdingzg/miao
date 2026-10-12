@@ -54,6 +54,16 @@ pub fn estimate_tokens(chars: usize) -> u64 {
     (chars as u64).div_ceil(3)
 }
 
+/// Gate ②: the provider's own count wins; absence or refusal falls back to
+/// the estimate. A counting failure never fails the turn — this function
+/// cannot fail by construction.
+pub fn resolve_pending_tokens(counted: crate::provider::CountTokens, chars: usize) -> u64 {
+    match counted {
+        crate::provider::CountTokens::Counted(tokens) => tokens,
+        _ => estimate_tokens(chars),
+    }
+}
+
 impl Store {
     /// Normalized context anchor from the newest `usage` event, or `None`
     /// before the first provider turn.
@@ -121,6 +131,26 @@ mod tests {
         };
         assert!(!budget.should_compact(Some(700), 50));
         assert!(budget.should_compact(Some(700), 100));
+    }
+
+    #[test]
+    fn provider_count_wins_and_every_other_outcome_falls_back() {
+        use crate::provider::CountTokens;
+        assert_eq!(
+            resolve_pending_tokens(CountTokens::Counted(4321), 9_000),
+            4321
+        );
+        assert_eq!(
+            resolve_pending_tokens(CountTokens::Unsupported, 9_000),
+            estimate_tokens(9_000)
+        );
+        assert_eq!(
+            resolve_pending_tokens(
+                CountTokens::Failed("count refused: 429 Too Many Requests".into()),
+                3
+            ),
+            1
+        );
     }
 
     #[test]
