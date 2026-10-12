@@ -79,7 +79,10 @@ export function translatePrompt(
   return {
     sessionID: adoptSession(event.session_id),
     timestamp: eventTimestamp(event),
-    messageID: messageID(event.session_id, event.seq),
+    messageID:
+      "input_id" in event.data && typeof event.data.input_id === "string" && event.data.input_id.startsWith("msg_")
+        ? SessionMessage.ID.make(event.data.input_id)
+        : messageID(event.session_id, event.seq),
     prompt: { text },
     delivery,
   }

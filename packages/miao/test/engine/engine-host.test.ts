@@ -30,6 +30,7 @@ describe("engine host client", () => {
         "run.started",
         "message.committed",
         "run.finished",
+        "stop",
       ])
     } finally {
       await fs.rm(root, { recursive: true, force: true })

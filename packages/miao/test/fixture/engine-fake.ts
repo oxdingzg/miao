@@ -71,6 +71,7 @@ function emit(session: string, inputID: string) {
     method: "event",
     params: { session_id: session, seq: 5, kind: "run.finished", data: { run_id: "run", reason: "completed" } },
   })
+  send({ method: "event", params: { session_id: session, seq: 6, kind: "stop", data: { run_id: "run" } } })
 }
 
 const reader = Bun.stdin.stream().getReader()

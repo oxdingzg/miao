@@ -74,6 +74,10 @@ real(
         endpoint: new URL("/chat/completions", record.server.url).toString(),
       })
       expect(first.text).toBe("written once")
+      expect(first.events.at(-1)?.kind).toBe("stop")
+      expect(first.events.findLast((event) => event.kind === "run.finished")?.seq).toBeLessThan(
+        first.events.at(-1)?.seq ?? -1,
+      )
       expect(await Bun.file(path.join(workspace, "marker.txt")).text()).toBe("once")
       const bundle = await BlackboxTape.load(file)
       const calls = bundle.interactions.filter((item) => item.lane === "native-tool")
