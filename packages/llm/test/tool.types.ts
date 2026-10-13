@@ -1,5 +1,6 @@
 import { Effect, Schema } from "effect"
-import { LLM, LLMRequest, ToolRuntime, toDefinitions } from "../src"
+import { LLM, LLMRequest, toDefinitions } from "../src"
+import { ToolRuntime } from "../src/tool-runtime"
 import * as OpenAIChat from "../src/protocols/openai-chat"
 import { Auth } from "../src/route"
 import { Tool } from "../src/tool"

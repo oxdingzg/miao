@@ -1,5 +1,6 @@
 import { Config, Effect, Formatter, Layer, Schema, Stream } from "effect"
-import { LLM, LLMClient, Message, ProviderID, Tool, ToolRuntime } from "@miao/llm"
+import { LLM, LLMClient, Message, ProviderID, Tool } from "@miao/llm"
+import { ToolRuntime } from "../src/tool-runtime"
 import { Route, Auth, Endpoint, Framing, Protocol, RequestExecutor, WebSocketExecutor } from "@miao/llm/route"
 import { OpenAI } from "@miao/llm/providers"
 

@@ -1,4 +1,9 @@
 import { Effect } from "effect"
+// Tool execution lives in each host's runner (core's runner owns settlement and
+// publication; code mode owns its own interpreter runtime). Nothing in the
+// package or the workspace consumes this dispatcher; it stays for the
+// Tool/ToolFailure semantics its tests pin down and is deliberately not part
+// of the package's public surface.
 import {
   LLMEvent,
   type ToolCallPart,

@@ -13,16 +13,57 @@ import { makeEngineOwners } from "./owners"
  * keep the explicit refusal. The model identity is required from the operator
  * because the engine cannot invent provider credentials or catalog facts.
  */
-const options = (): Omit<EngineOptions, "db" | "workspace"> | undefined => {
-  const binary = process.env.MIAO_ENGINE_BIN
+/**
+ * Provider keys the engine reads from its environment when no credential
+ * database is configured. Named one by one so an unrelated secret in the
+ * operator's environment never reaches the child.
+ */
+const PROVIDER_ENVIRONMENT = [
+  "ANTHROPIC_API_KEY",
+  "OPENAI_API_KEY",
+  "OPENAI_ACCESS_TOKEN",
+  "OPENAI_ACCOUNT_ID",
+  "GEMINI_API_KEY",
+] as const
+
+/**
+ * Engine deployment knobs the operator may set for the child. Passed by name so
+ * the explicit channel keeps working for them now that the child no longer
+ * inherits the whole environment.
+ */
+const ENGINE_ENVIRONMENT = [
+  "MIAO_ENGINE_VERSION",
+  "MIAO_ENGINE_HTTP_TOKEN",
+  "MIAO_LLM_FIRST_BYTE_TIMEOUT_MS",
+  "MIAO_TOOL_INPUT_MAX_BYTES",
+  "MIAO_TOOL_INPUT_TIMEOUT_MS",
+] as const
+
+const named = (keys: readonly string[], environment: Record<string, string | undefined>) =>
+  Object.fromEntries(
+    keys.flatMap((key) => (environment[key] === undefined ? [] : [[key, environment[key]]])),
+  )
+
+const options = (
+  environment: Record<string, string | undefined> = process.env,
+): Omit<EngineOptions, "db" | "workspace"> | undefined => {
+  const binary = environment.MIAO_ENGINE_BIN
   if (!binary) return undefined
-  const limits = process.env.MIAO_CONTEXT_LIMITS
+  const limits = environment.MIAO_CONTEXT_LIMITS
   return {
     binary,
-    model: process.env.MIAO_ENGINE_MODEL ?? "",
-    provider: process.env.MIAO_ENGINE_PROVIDER,
+    model: environment.MIAO_ENGINE_MODEL ?? "",
+    provider: environment.MIAO_ENGINE_PROVIDER,
     contextLimits: limits ? JSON.parse(limits) : undefined,
-    env: { ...process.env },
+    // ADR-09: the product's credential database is the explicit channel; the
+    // engine only reads it. Named provider keys are the single-key fallback.
+    credentialDatabase: environment.MIAO_ENGINE_CREDENTIAL_DB,
+    credentialID: environment.MIAO_ENGINE_CREDENTIAL_ID,
+    credentialIntegration: environment.MIAO_ENGINE_CREDENTIAL_INTEGRATION,
+    env: {
+      ...named(PROVIDER_ENVIRONMENT, environment),
+      ...named(ENGINE_ENVIRONMENT, environment),
+    },
   }
 }
 

@@ -1,3 +1,4 @@
+import { ToolRuntime } from "../src/tool-runtime"
 import { expect } from "bun:test"
 import { Effect, Schema } from "effect"
 import {
@@ -5,7 +6,6 @@ import {
   LLMEvent,
   LLMResponse,
   Message,
-  ToolRuntime,
   ToolChoice,
   ToolDefinition,
   toDefinitions,

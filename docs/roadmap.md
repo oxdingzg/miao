@@ -247,14 +247,20 @@ The first Effect-native local runner is implemented. Next reviewed slices:
 - [x] Preserve eager structured local-tool settlement: durably record each complete call, start its
       child execution immediately, await every settlement after the provider turn closes, then
       reload projected history once.
-- [ ] Revisit per-turn tool-call limits, output truncation, and operational backpressure before
-      broadening exposure. Eager local execution is deliberately unbounded today while SQLite
-      publication stays serialized.
-- [ ] Remove the public in-memory `@miao/llm` tool loop after replacing its remaining one-turn
-      native-adapter use with a narrow typed dispatcher.
+- [x] Revisit per-turn tool-call limits, output truncation, and operational backpressure before
+      broadening exposure (#764). A drain now executes at most 100 tool calls, settlements share a
+      concurrency permit of 8 that the exclusive permit composes on top of, and output size was
+      already bounded by the tool-output store's preview limits plus blob externalization.
+- [x] Remove the public in-memory `@miao/llm` tool loop after replacing its remaining one-turn
+      native-adapter use with a narrow typed dispatcher. The loop itself left the public surface
+      some time ago; this closes the item by dropping the orphan `ToolRuntime`/`ToolSettlement`
+      exports that no package consumed, leaving execution ownership with each host's runner.
 - [ ] Batch streamed deltas and add covering context indexes.
-- [ ] Expose replayable Session event cursors over HTTP and the generated SDK where remote
-      consumers need them.
+- [x] Expose replayable Session event cursors over HTTP and the generated SDK where remote
+      consumers need them (#768). `GET /api/event/durable?aggregateID=...&after=<seq>` replays one
+      aggregate's committed durable log from the exclusive cursor and then follows it; every frame
+      carries its durable aggregateID, seq, and version, so a consumer resumes by passing the last
+      seen seq back.
 
 ### 2.2 Background / async jobs (G6)
 **Entry:** `packages/core/src/session/background-jobs.ts`, `packages/core/src/tool/background-job.ts`,
@@ -475,9 +481,11 @@ estimate.
       a client is already showing, and render it as `Compacting context · 8/22 slices` (#715).
       Deliberately not a `session.next.compaction.progress` event: progress is what the session is
       doing *now*, which is exactly what the status is for, and it expires with the phase.
-- [ ] Give the first turn after a compaction a restore budget for re-reading the files the summary
+- [x] Give the first turn after a compaction a restore budget for re-reading the files the summary
       says matter, bounded per file and per compaction, so a checkpoint does not cost the model its
-      working set.
+      working set (#724). The budget rides the first provider request after the compaction
+      checkpoint as prompt guidance — about 50k tokens, at most five files at about 5k each — and
+      is request-scoped rather than durable, so it cannot tax later turns.
 - [x] Optional polish: render the streaming summary text mid-flight. The app folds `.delta` fragments
       into an unsettled draft the transcript renders as plain assistant text and swaps for the settled
       checkpoint on `ended` (a refused or failed summary publishes no `ended`, so the app drops the
