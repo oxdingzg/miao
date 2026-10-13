@@ -20,7 +20,7 @@ import { type Client } from "@/client"
 import { mutableResponse } from "@miao/tui/util/mutable-response"
 import { Context, Deferred, Effect, Exit, Layer, Scope, Stream } from "effect"
 import { promptInputFromParts } from "@miao/tui/context/session-v2-write"
-import { makeRuntime } from "@/effect/run-service"
+import { makeRuntime } from "@miao/core/effect/runtime"
 import {
   blockerStatus,
   bootstrapSessionData,

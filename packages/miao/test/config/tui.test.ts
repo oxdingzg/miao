@@ -6,14 +6,13 @@ import { LayerNode } from "@miao/core/effect/layer-node"
 import { Effect, Layer } from "effect"
 import { FSUtil } from "@miao/core/fs-util"
 import { Global } from "@miao/core/global"
-import { Config } from "@/config/config"
 import { ConfigPlugin } from "@/config/plugin"
 import { CurrentWorkingDirectory } from "@/config/tui-cwd"
 import { TuiConfig } from "../../src/config/tui"
 import { TestInstance } from "../fixture/fixture"
 import { testEffect } from "../lib/effect"
 
-const it = testEffect(LayerNode.compile(LayerNode.group([Config.node, FSUtil.node])))
+const it = testEffect(LayerNode.compile(LayerNode.group([FSUtil.node])))
 const winIt = process.platform === "win32" ? it.instance : it.instance.skip
 
 const globalConfigFiles = ["miao.json", "miao.jsonc", "tui.json", "tui.jsonc"].map((file) =>
@@ -82,45 +81,6 @@ const getTuiPluginOrigins = (directory: string) =>
       AppNodeBuilder.build(TuiConfig.node).pipe(Layer.provide(Layer.succeed(CurrentWorkingDirectory, directory))),
     ),
   )
-
-it.instance("keeps server and tui plugin merge semantics aligned", () =>
-  withCleanState(
-    Effect.gen(function* () {
-      const fs = yield* FSUtil.Service
-      const test = yield* TestInstance
-      const local = path.join(test.directory, ".miao")
-      yield* fs.makeDirectory(local, { recursive: true })
-
-      yield* fs.writeJson(path.join(Global.Path.config, "miao.json"), {
-        plugin: [["shared-plugin@1.0.0", { source: "global" }], "global-only@1.0.0"],
-      })
-      yield* fs.writeJson(path.join(Global.Path.config, "tui.json"), {
-        plugin: [["shared-plugin@1.0.0", { source: "global" }], "global-only@1.0.0"],
-      })
-      yield* fs.writeJson(path.join(local, "miao.json"), {
-        plugin: [["shared-plugin@2.0.0", { source: "local" }], "local-only@1.0.0"],
-      })
-      yield* fs.writeJson(path.join(local, "tui.json"), {
-        plugin: [["shared-plugin@2.0.0", { source: "local" }], "local-only@1.0.0"],
-      })
-
-      const server = yield* Config.use.get()
-      const tui = yield* getTuiConfig(test.directory)
-      const tuiOrigins = yield* getTuiPluginOrigins(test.directory)
-      const serverPlugins = (server.plugin ?? []).map((item) => ConfigPlugin.pluginSpecifier(item))
-      const tuiPlugins = (tui.plugin ?? []).map((item) => ConfigPlugin.pluginSpecifier(item))
-
-      expect(serverPlugins).toEqual(tuiPlugins)
-      expect(serverPlugins).toContain("shared-plugin@2.0.0")
-      expect(serverPlugins).not.toContain("shared-plugin@1.0.0")
-
-      const serverOrigins = server.plugin_origins ?? []
-      expect(serverOrigins.map((item) => ConfigPlugin.pluginSpecifier(item.spec))).toEqual(serverPlugins)
-      expect(tuiOrigins.map((item) => ConfigPlugin.pluginSpecifier(item.spec))).toEqual(tuiPlugins)
-      expect(serverOrigins.map((item) => item.scope)).toEqual(tuiOrigins.map((item) => item.scope))
-    }),
-  ),
-)
 
 it.instance("loads tui config with the same precedence order as server config paths", () =>
   withCleanState(

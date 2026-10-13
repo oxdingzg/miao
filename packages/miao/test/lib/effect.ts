@@ -5,9 +5,7 @@ import * as Scope from "effect/Scope"
 import * as TestClock from "effect/testing/TestClock"
 import * as TestConsole from "effect/testing/TestConsole"
 import { memoMap } from "@miao/core/effect/memo-map"
-import type { Config } from "@/config/config"
 import { TestInstance, withTmpdirInstance } from "../fixture/fixture"
-import { InstanceStore } from "@/project/instance-store"
 
 type Body<A, E, R> = Effect.Effect<A, E, R> | (() => Effect.Effect<A, E, R>)
 type InstanceOptions<E, R> = {
@@ -85,7 +83,7 @@ const make = <R, E>(testLayer: Layer.Layer<R, E>, liveLayer: Layer.Layer<R, E>, 
 
   const instance = <A, E2, E3 = never>(
     name: string,
-    value: Body<A, E2, R | InstanceStore.Service | TestInstance | Scope.Scope>,
+    value: Body<A, E2, R | TestInstance | Scope.Scope>,
     options?: InstanceOptions<E3, R | Scope.Scope> | number | TestOptions,
     opts?: number | TestOptions,
   ) => {
@@ -99,7 +97,7 @@ const make = <R, E>(testLayer: Layer.Layer<R, E>, liveLayer: Layer.Layer<R, E>, 
 
   instance.only = <A, E2, E3 = never>(
     name: string,
-    value: Body<A, E2, R | InstanceStore.Service | TestInstance | Scope.Scope>,
+    value: Body<A, E2, R | TestInstance | Scope.Scope>,
     options?: InstanceOptions<E3, R | Scope.Scope> | number | TestOptions,
     opts?: number | TestOptions,
   ) => {
@@ -113,7 +111,7 @@ const make = <R, E>(testLayer: Layer.Layer<R, E>, liveLayer: Layer.Layer<R, E>, 
 
   instance.skip = <A, E2, E3 = never>(
     name: string,
-    value: Body<A, E2, R | InstanceStore.Service | TestInstance | Scope.Scope>,
+    value: Body<A, E2, R | TestInstance | Scope.Scope>,
     options?: InstanceOptions<E3, R | Scope.Scope> | number | TestOptions,
     opts?: number | TestOptions,
   ) => {

@@ -11,8 +11,4 @@ declare module "virtual:miao-server" {
     export const listen: typeof import("../../../miao/dist/types/src/node").Server.listen
     export type Listener = import("../../../miao/dist/types/src/node").Server.Listener
   }
-  export namespace Config {
-    export const get: typeof import("../../../miao/dist/types/src/node").Config.get
-    export type Info = import("../../../miao/dist/types/src/node").Config.Info
-  }
 }
