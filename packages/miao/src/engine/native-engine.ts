@@ -6,6 +6,7 @@ import { Location } from "@miao/schema/location"
 import { Effect, Layer } from "effect"
 import { EngineError, type EngineOptions } from "./client"
 import { makeEngineOwners } from "./owners"
+import { replayJournal } from "./journal"
 
 /**
  * Production native transport, opt-in through the engine binary environment:
@@ -97,9 +98,22 @@ export const fromOwners = (owners: Owners): NativeEngine.Interface => {
       read<readonly unknown[]>(input, (connection) => connection.client.request("sessions")).pipe(
         Effect.map((value) => (Array.isArray(value) ? value : [])),
       ),
+    events: (input) =>
+      connect(input).pipe(
+        Effect.flatMap((connection) =>
+          Effect.tryPromise({
+            try: () => replayJournal({
+              ...input,
+              engineID: input.storage,
+              request: (method, params) => connection.client.request(method, params),
+            }),
+            catch: (error) => refusal(input.sessionID, error),
+          }),
+        ),
+        Effect.mapError((error) => refusal(input.sessionID, error)),
+      ),
   }
 }
-
 const layer = Layer.effect(
   NativeEngine.Service,
   Effect.gen(function* () {
