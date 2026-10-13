@@ -108,7 +108,7 @@ export class EngineClient {
     return this.stderr
   }
 
-  request(method: string, params: unknown): Promise<unknown> {
+  request(method: string, params?: unknown): Promise<unknown> {
     const id = this.next++
     this.child.stdin.write(JSON.stringify({ id, method, params }) + EOL)
     void this.child.stdin.flush()

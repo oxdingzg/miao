@@ -22,6 +22,20 @@ export interface Interface {
     delivery?: "steer" | "queue"
     resume?: boolean
   }) => Effect.Effect<SessionInput.Admitted, ConflictError>
+  /**
+   * The engine-owned Session snapshot. TypeScript handlers cannot serve this
+   * for a native Session: their catalog does not contain it.
+   */
+  readonly snapshot: (input: {
+    sessionID: SessionID
+    storage: AbsolutePath
+    location: Location.Ref
+  }) => Effect.Effect<Readonly<Record<string, unknown>>, ConflictError>
+  /** Every engine-owned Session in one storage. */
+  readonly sessions: (input: {
+    storage: AbsolutePath
+    location: Location.Ref
+  }) => Effect.Effect<readonly unknown[], ConflictError>
 }
 
 /**
