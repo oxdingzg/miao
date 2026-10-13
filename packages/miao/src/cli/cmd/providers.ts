@@ -5,12 +5,11 @@ import { CliError, effectCmd, fail } from "../effect-cmd"
 import { UI } from "../ui"
 import * as Prompt from "../effect/prompt"
 import { ModelsCatalog } from "@miao/core/models-catalog"
+import { Credential } from "@miao/core/credential"
+import { LayerNode } from "@miao/core/effect/layer-node"
 
 import { map, pipe, sortBy, values } from "remeda"
-import path from "path"
-import os from "os"
 import { Config } from "@/config/config"
-import { Global } from "@miao/core/global"
 import { Plugin } from "../../plugin"
 import type { Hooks } from "@miao/plugin"
 import { Process } from "@/util/process"
@@ -252,23 +251,19 @@ export const ProvidersListCommand = effectCmd({
   // Lists global credentials + provider env vars; no project instance needed.
   instance: false,
   handler: Effect.fn("Cli.providers.list")(function* (_args) {
-    const authSvc = yield* Auth.Service
+    const credentials = yield* Credential.Service.use((store) => store.all())
     const modelsCatalog = yield* ModelsCatalog.Service
 
     UI.empty()
-    const authPath = path.join(Global.Path.data, "auth.json")
-    const homedir = os.homedir()
-    const displayPath = authPath.startsWith(homedir) ? authPath.replace(homedir, "~") : authPath
-    yield* Prompt.intro(`Credentials ${UI.Style.TEXT_DIM}${displayPath}`)
-    const results = Object.entries(yield* Effect.orDie(authSvc.all()))
+    yield* Prompt.intro("Credentials")
     const database = yield* modelsCatalog.get()
 
-    for (const [providerID, result] of results) {
-      const name = database[providerID]?.name || providerID
-      yield* Prompt.log.info(`${name} ${UI.Style.TEXT_DIM}${result.type}`)
+    for (const credential of credentials) {
+      const name = database[credential.integrationID]?.name || credential.integrationID
+      yield* Prompt.log.info(`${name} ${UI.Style.TEXT_DIM}${credential.value.type}`)
     }
 
-    yield* Prompt.outro(`${results.length} credentials`)
+    yield* Prompt.outro(`${credentials.length} credentials`)
 
     const activeEnvVars: Array<{ provider: string; envVar: string }> = []
 
@@ -293,7 +288,7 @@ export const ProvidersListCommand = effectCmd({
 
       yield* Prompt.outro(`${activeEnvVars.length} environment variable` + (activeEnvVars.length === 1 ? "" : "s"))
     }
-  }),
+  }, Effect.provide(LayerNode.compile(Credential.node))),
 })
 
 export const ProvidersLoginCommand = effectCmd({
@@ -506,26 +501,35 @@ export const ProvidersLogoutCommand = effectCmd({
   // Removes a global auth credential; no project instance needed.
   instance: false,
   handler: Effect.fn("Cli.providers.logout")(function* (args) {
-    const authSvc = yield* Auth.Service
+    const credentials = yield* Credential.Service.use((store) => store.all())
     const modelsCatalog = yield* ModelsCatalog.Service
 
     UI.empty()
-    const credentials: Array<[string, Auth.Info]> = Object.entries(yield* Effect.orDie(authSvc.all()))
     yield* Prompt.intro("Remove credential")
     if (credentials.length === 0) {
       yield* Prompt.log.error("No credentials found")
       return
     }
     const database = yield* modelsCatalog.get()
-    const options = credentials.map(([key, value]) => ({
-      label: (database[key]?.name || key) + UI.Style.TEXT_DIM + " (" + value.type + ")",
-      value: key,
+    const options = credentials.map((credential) => ({
+      label:
+        (database[credential.integrationID]?.name || credential.integrationID) +
+        UI.Style.TEXT_DIM +
+        " (" +
+        credential.value.type +
+        ")",
+      value: credential.id,
     }))
     const provider = args.provider
       ? options.find(
-          (option) =>
-            option.value === args.provider ||
-            database[option.value]?.name?.toLowerCase() === args.provider?.toLowerCase(),
+          (option) => {
+            const integrationID = credentials.find((credential) => credential.id === option.value)?.integrationID
+            return (
+              option.value === args.provider ||
+              integrationID === args.provider ||
+              database[integrationID ?? ""]?.name?.toLowerCase() === args.provider?.toLowerCase()
+            )
+          },
         )?.value
       : yield* promptValue(
           yield* Prompt.autocomplete({
@@ -535,7 +539,7 @@ export const ProvidersLogoutCommand = effectCmd({
           }),
         )
     if (!provider) return yield* fail(`Unknown configured provider "${args.provider}"`)
-    yield* Effect.orDie(authSvc.remove(provider))
+    yield* Credential.Service.use((store) => store.remove(provider))
     yield* Prompt.outro("Logout successful")
-  }),
+  }, Effect.provide(LayerNode.compile(Credential.node))),
 })
