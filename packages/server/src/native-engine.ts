@@ -54,6 +54,14 @@ export interface Interface {
     location: Location.Ref
     after: number
   }) => Effect.Effect<NativeJournalPage, ConflictError>
+  /** A finite page of public durable projections; a native sequence group is indivisible. */
+  readonly history: (input: {
+    sessionID: SessionID
+    storage: AbsolutePath
+    location: Location.Ref
+    after: number
+    limit: number
+  }) => Effect.Effect<NativeJournalPage & { readonly hasMore: boolean }, ConflictError>
 }
 
 export interface NativeJournalPage {
