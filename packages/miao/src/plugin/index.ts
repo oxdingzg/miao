@@ -4,7 +4,6 @@ import type {
   PluginInput,
   Plugin as PluginInstance,
   PluginModule,
-  WorkspaceAdapter as PluginWorkspaceAdapter,
 } from "@miao/plugin"
 import { Config } from "@/config/config"
 import { createClient } from "@/client"
@@ -30,8 +29,6 @@ import { InstanceState } from "@/effect/instance-state"
 import { errorMessage } from "@/util/error"
 import { PluginLoader } from "./loader"
 import { parsePluginSpecifier, readPluginId, readV1Plugin, resolvePluginId } from "./shared"
-import { registerAdapter } from "@/control-plane/adapters"
-import type { WorkspaceAdapter } from "@/control-plane/types"
 import { RuntimeFlags } from "@/effect/runtime-flags"
 import { EventV2Bridge } from "@/event-v2-bridge"
 import { InstallationChannel } from "@miao/core/installation/version"
@@ -166,11 +163,6 @@ const layer = Layer.effect(
           project: { ...ctx.project, sandboxes: [...ctx.project.sandboxes] },
           worktree: ctx.worktree,
           directory: ctx.directory,
-          experimental_workspace: {
-            register(type: string, adapter: PluginWorkspaceAdapter) {
-              registerAdapter(ctx.project.id, type, adapter as WorkspaceAdapter)
-            },
-          },
           get serverUrl(): URL {
             return Server.url ?? new URL("http://localhost:4096")
           },
