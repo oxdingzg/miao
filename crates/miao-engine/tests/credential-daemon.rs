@@ -69,6 +69,15 @@ async fn daemon_source_loads_and_rotates_inside_the_margin() {
     tokio::spawn(daemon.serve(listener));
     tokio::time::sleep(std::time::Duration::from_millis(20)).await;
 
+    let adopted = client::request(
+        &socket,
+        serde_json::json!({"id":1,"op":"adopt","credential_id":"cred_1","integration":"openai"})
+            .to_string(),
+    )
+    .await
+    .unwrap();
+    assert!(adopted.get("ok").is_some());
+
     // The engine path: Source::Daemon::load once per provider turn.
     let source = Source::Daemon {
         socket: socket.clone(),
