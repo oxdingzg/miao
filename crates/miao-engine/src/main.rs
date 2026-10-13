@@ -298,7 +298,12 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
     let policy = Policy::new(config)?;
     let mut tools = Tools::new(workspace)
         .await?
-        .with_process_runner(std::env::current_exe()?);
+        .with_process_runner(std::env::current_exe()?)
+        .with_edit_recovery(match options.get("--edit-recovery").map(String::as_str) {
+            None | Some("on") => true,
+            Some("off") => false,
+            Some(_) => return Err("--edit-recovery must be on or off".into()),
+        });
     if let Some(path) = source.path() {
         if policy.process_enabled() && path.starts_with(std::path::Path::new(tools.location())) {
             return Err("process-enabled credential sources must be outside workspace".into());

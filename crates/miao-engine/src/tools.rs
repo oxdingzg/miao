@@ -1,4 +1,5 @@
 use crate::{
+    edit_recovery::Snapshots,
     file_mutation::{apply, Mutation},
     mcp,
     permission::{digest, Access, Policy},
@@ -39,6 +40,8 @@ pub enum ToolError {
     ProtectedResource,
     #[error("file content changed or expected fingerprint does not match")]
     StaleFile,
+    #[error("the file drifted since the read and recovery was {0}")]
+    StaleEditRecovery(&'static str),
     #[error("old_string is absent or ambiguous; use an exact match or replace_all")]
     AmbiguousEdit,
     #[error("file IO failed: {0}")]
@@ -123,6 +126,8 @@ pub struct Tools {
     references: Arc<Vec<crate::context::Reference>>,
     read_roots: Arc<Vec<std::path::PathBuf>>,
     hooks: Arc<Vec<crate::hooks::Hook>>,
+    edit_snapshots: Arc<std::sync::Mutex<Snapshots>>,
+    edit_recovery: bool,
 }
 
 impl Tools {
@@ -161,6 +166,8 @@ impl Tools {
             references: Arc::new(vec![]),
             read_roots: Arc::new(vec![]),
             hooks: Arc::new(vec![]),
+            edit_snapshots: Arc::new(std::sync::Mutex::new(Snapshots::new())),
+            edit_recovery: true,
         })
     }
 
@@ -371,6 +378,13 @@ impl Tools {
 
     pub fn with_writes(mut self, enabled: bool) -> Self {
         self.writes = enabled;
+        self
+    }
+
+    /// Evaluation ablation switch: `false` disables stale-edit recovery while
+    /// keeping every other path identical.
+    pub fn with_edit_recovery(mut self, enabled: bool) -> Self {
+        self.edit_recovery = enabled;
         self
     }
 
@@ -755,9 +769,18 @@ impl Tools {
             }
             let mutation = Mutation::parse(&prepared.name, prepared.input.clone())?;
             let anchor = prepared.input["old_string"].as_str().map(str::to_owned);
+            let snapshot = if self.edit_recovery && prepared.name == "edit_file" {
+                self.edit_snapshots.lock().ok().and_then(|snapshots| {
+                    snapshots
+                        .lookup(&prepared.path.to_string_lossy())
+                        .map(str::to_owned)
+                })
+            } else {
+                None
+            };
             let applied = tokio::task::spawn_blocking(move || {
                 let _lease = lease;
-                apply(&directory, &relative, mutation)
+                apply(&directory, &relative, mutation, snapshot)
             })
             .await
             .map_err(|_| ToolError::Io(std::io::Error::other("file commit worker failed")))?;
@@ -767,7 +790,9 @@ impl Tools {
             if prepared.name != "apply_patch"
                 && matches!(
                     applied,
-                    Err(ToolError::StaleFile | ToolError::AmbiguousEdit)
+                    Err(ToolError::StaleFile
+                        | ToolError::StaleEditRecovery(_)
+                        | ToolError::AmbiguousEdit)
                 )
             {
                 if let Ok(current) = tokio::fs::read(&prepared.path).await {
@@ -1096,6 +1121,9 @@ impl Tools {
                     }
                     let sha256 = digest(&bytes);
                     let text = String::from_utf8(bytes).map_err(|_| ToolError::InvalidFile)?;
+                    if let Ok(mut snapshots) = self.edit_snapshots.lock() {
+                        snapshots.register(path.to_string_lossy().into_owned(), text.clone());
+                    }
                     Ok(json!({"text":text,"sha256":sha256}))
                 }
                 "list_files" => {

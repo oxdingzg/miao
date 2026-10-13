@@ -5,6 +5,7 @@ pub mod context_trigger;
 pub mod credential;
 pub mod cron;
 pub mod doctor;
+mod edit_recovery;
 pub mod events;
 pub mod export;
 mod file_mutation;
