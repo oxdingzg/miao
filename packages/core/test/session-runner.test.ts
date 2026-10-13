@@ -3435,6 +3435,89 @@ describe("SessionRunnerLLM", () => {
     }),
   )
 
+  it.effect("bounds the total tool calls executed within a drain", () =>
+    Effect.gen(function* () {
+      yield* setup
+      const session = yield* SessionV2.Service
+      yield* session.prompt({ sessionID, prompt: Prompt.make({ text: "Fan out" }), resume: false })
+
+      requests.length = 0
+      executions.length = 0
+      responses = [
+        [
+          LLMEvent.stepStart({ index: 0 }),
+          ...Array.from({ length: 101 }, (_unused, index) =>
+            LLMEvent.toolCall({ id: `call-many-${index}`, name: "echo", input: { text: `many-${index}` } }),
+          ),
+          LLMEvent.stepFinish({ index: 0, reason: "tool-calls" }),
+          LLMEvent.finish({ reason: "tool-calls" }),
+        ],
+        [
+          LLMEvent.stepStart({ index: 0 }),
+          LLMEvent.textStart({ id: "text-final" }),
+          LLMEvent.textDelta({ id: "text-final", text: "Done" }),
+          LLMEvent.textEnd({ id: "text-final" }),
+          LLMEvent.stepFinish({ index: 0, reason: "stop" }),
+          LLMEvent.finish({ reason: "stop" }),
+        ],
+      ]
+
+      yield* session.resume(sessionID)
+
+      expect(executions).toHaveLength(100)
+      const context = yield* (yield* SessionStore.Service).context(sessionID)
+      const fanOut = context.find((entry) => entry.type === "assistant" && entry.finish === "tool-calls")
+      const rejected = fanOut?.type === "assistant" ? fanOut.content.at(-1) : undefined
+      expect(rejected).toMatchObject({ type: "tool", id: "call-many-100", state: { status: "error" } })
+    }),
+  )
+
+  it.effect("bounds eager tool settlements running at once", () =>
+    Effect.gen(function* () {
+      yield* setup
+      const session = yield* SessionV2.Service
+      yield* session.prompt({ sessionID, prompt: Prompt.make({ text: "Echo sixteen times" }), resume: false })
+
+      requests.length = 0
+      executions.length = 0
+      maxActiveToolExecutions = 0
+      toolExecutionsReady = 8
+      toolExecutionGate = yield* Deferred.make<void>()
+      toolExecutionsStarted = yield* Deferred.make<void>()
+      responses = [
+        [
+          LLMEvent.stepStart({ index: 0 }),
+          ...Array.from({ length: 16 }, (_unused, index) =>
+            LLMEvent.toolCall({ id: `call-echo-${index}`, name: "echo", input: { text: `${index}` } }),
+          ),
+          LLMEvent.stepFinish({ index: 0, reason: "tool-calls" }),
+          LLMEvent.finish({ reason: "tool-calls" }),
+        ],
+        [
+          LLMEvent.stepStart({ index: 0 }),
+          LLMEvent.textStart({ id: "text-final" }),
+          LLMEvent.textDelta({ id: "text-final", text: "Done" }),
+          LLMEvent.textEnd({ id: "text-final" }),
+          LLMEvent.stepFinish({ index: 0, reason: "stop" }),
+          LLMEvent.finish({ reason: "stop" }),
+        ],
+      ]
+
+      const run = yield* session.resume(sessionID).pipe(Effect.forkChild)
+      yield* Deferred.await(toolExecutionsStarted)
+
+      expect(executions).toHaveLength(8)
+      expect(maxActiveToolExecutions).toBe(8)
+
+      yield* Deferred.succeed(toolExecutionGate, undefined)
+      yield* Fiber.join(run)
+
+      expect(executions).toHaveLength(16)
+      expect(maxActiveToolExecutions).toBe(8)
+      expect(requests).toHaveLength(2)
+    }),
+  )
+
   it.effect("runs a tool call the provider replays only once", () =>
     Effect.gen(function* () {
       yield* setup
