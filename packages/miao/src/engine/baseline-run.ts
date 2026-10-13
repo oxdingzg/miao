@@ -111,7 +111,7 @@ export async function runBaselineRust(input: BaselineRustInput): Promise<Baselin
     credentialDatabase: input.credentialDatabase,
     credentialID: input.credentialID,
     credentialIntegration: input.credentialIntegration,
-    policyFile: input.policyFile,
+    policyFile: input.policyFile ?? (await writeBaselinePolicy(input.root)),
     env: input.env,
     session,
     prompt: task.prompt,
@@ -526,6 +526,34 @@ function tsConfig() {
       { action: "*", resource: "**", effect: "allow" },
     ],
   })
+}
+
+/**
+ * The baseline permission contract: workspace writes and processes are allowed,
+ * anything touching `protected/**` is denied. Symmetric with the TypeScript
+ * ruleset, and written outside the workspace so it cannot count as an artifact.
+ */
+async function writeBaselinePolicy(root: string) {
+  const file = path.join(root, "policy.json")
+  await Bun.write(
+    file,
+    JSON.stringify(
+      {
+        mode: "workspace",
+        allow_process: true,
+        allow_background: true,
+        allow_subagents: true,
+        process_network: true,
+        rules: [
+          { tool: "*", path: "protected/**", decision: "deny" },
+          { tool: "*", path: "**", decision: "allow" },
+        ],
+      },
+      null,
+      2,
+    ) + "\n",
+  )
+  return file
 }
 
 async function readJsonLines(

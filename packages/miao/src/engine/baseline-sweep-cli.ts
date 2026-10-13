@@ -23,7 +23,7 @@ common:
 rust:
   --binary PATH             miao-engine binary
   --provider NAME           provider protocol (e.g. subscription-responses)
-  --policy FILE             permission policy JSON
+  --policy FILE             policy override (default: protected/** deny contract)
   --credential-db FILE      product credential database (read-only)
   --credential-id ID        credential row
   --credential-integration NAME

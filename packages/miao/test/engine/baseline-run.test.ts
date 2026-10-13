@@ -1,4 +1,5 @@
 import { describe, expect, test } from "bun:test"
+import { readdir } from "node:fs/promises"
 import path from "node:path"
 import { runBaselineRust } from "@/engine/baseline-run"
 import { baselineContract } from "@/engine/baseline"
@@ -207,3 +208,23 @@ test(
   },
   15000,
 )
+test("writes the baseline permission policy with protected writes denied", async () => {
+  await using tmp = await tmpdir()
+  await run(tmp.path, "permission-denial", [
+    ...base,
+    event(4, "provider.request", { run_id: "run", step: 0, attempt: 1, profile: profile() }),
+    event(5, "usage", { run_id: "run", step: 0, usage: { inputTokens: 10, outputTokens: 1 } }),
+    event(6, "permission_denied", { run_id: "run", call_id: "call", tool: "write_file", resource: "protected/record.txt", reason: "policy" }),
+    event(7, "run.finished", { run_id: "run", reason: "completed" }),
+    event(8, "stop", { run_id: "run" }),
+  ])
+  const roots = (await readdir(tmp.path)).filter((name) => name.startsWith("run-permission-denial-"))
+  expect(roots).toHaveLength(1)
+  const policy = await Bun.file(path.join(tmp.path, roots[0], "policy.json")).json()
+  expect(policy.rules).toEqual([
+    { tool: "*", path: "protected/**", decision: "deny" },
+    { tool: "*", path: "**", decision: "allow" },
+  ])
+  expect(policy.mode).toBe("workspace")
+  expect(policy.allow_process).toBe(true)
+})
