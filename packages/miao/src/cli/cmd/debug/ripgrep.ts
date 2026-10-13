@@ -3,7 +3,6 @@ import { Effect } from "effect"
 import { Ripgrep } from "@miao/core/ripgrep"
 import { effectCmd } from "../../effect-cmd"
 import { cmd } from "../cmd"
-import { InstanceRef } from "@/effect/instance-ref"
 
 export const RipgrepCommand = cmd({
   command: "rg",
@@ -15,6 +14,7 @@ export const RipgrepCommand = cmd({
 const FilesCommand = effectCmd({
   command: "files",
   describe: "list files using ripgrep",
+  instance: false,
   builder: (yargs) =>
     yargs
       .option("query", {
@@ -30,12 +30,10 @@ const FilesCommand = effectCmd({
         description: "Limit number of results",
       }),
   handler: Effect.fn("Cli.debug.rg.files")(function* (args) {
-    const ctx = yield* InstanceRef
-    if (!ctx) return
     const ripgrep = yield* Ripgrep.Service
     const files = yield* ripgrep
       .glob({
-        cwd: ctx.directory,
+        cwd: process.cwd(),
         pattern: args.glob ?? "**/*",
         limit: args.limit ?? 10_000,
       })
@@ -47,6 +45,7 @@ const FilesCommand = effectCmd({
 const SearchCommand = effectCmd({
   command: "search <pattern>",
   describe: "search file contents using ripgrep",
+  instance: false,
   builder: (yargs) =>
     yargs
       .positional("pattern", {
@@ -63,12 +62,10 @@ const SearchCommand = effectCmd({
         description: "Limit number of results",
       }),
   handler: Effect.fn("Cli.debug.rg.search")(function* (args) {
-    const ctx = yield* InstanceRef
-    if (!ctx) return
     const ripgrep = yield* Ripgrep.Service
     const results = yield* ripgrep
       .grep({
-        cwd: ctx.directory,
+        cwd: process.cwd(),
         pattern: args.pattern,
         include: args.glob?.[0],
         limit: args.limit ?? 10_000,

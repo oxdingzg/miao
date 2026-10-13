@@ -204,9 +204,12 @@ Most V2 endpoints exist (`pty.shells`, `project.update`, `vcs.diff`, `fs.content
       control-plane worktree adapter to core services, then delete the V1 graph.
       Inventory from the completed survey:
       - Commands still reading the V1 instance through `InstanceRef` / `InstanceStore`: `stats`,
-        `marketplace`, `agent`, `plug`, `pr`, `mcp add`, `export`, `session`, `import`,
-        `debug ripgrep`. Each needs the core equivalent of what it reads from the instance
-        (project metadata, session store, config entries) before the bootstrap can go.
+        `agent`, `plug`, `pr`, `mcp add`, `export`, `session`, `import`. (`debug rg` and
+        `marketplace` now read the process working directory and set `instance: false`.) Each
+        remaining one needs the core equivalent of what it reads from the instance
+        (project metadata, worktree, session store) before the bootstrap can go; core
+        `Project.resolve` supplies the project id/directory/vcs, but the V1 `ctx.worktree`
+        root has no direct V2 resolver yet and must be designed.
       - The V1 workspace/adapters subsystem has no production caller (`Workspace.Service` is
         only referenced by tests), so `control-plane/workspace.ts`, `workspace-context.ts`,
         `workspace-adapter-runtime.ts`, `types.ts`, `util.ts`, `adapters/*`, and `dev/*` are

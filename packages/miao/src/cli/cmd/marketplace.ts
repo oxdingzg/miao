@@ -3,7 +3,6 @@ import path from "path"
 import { Effect } from "effect"
 
 import { Global } from "@miao/core/global"
-import { InstanceRef } from "@/effect/instance-ref"
 import {
   MarketplaceInvalidError,
   PluginMarketplace,
@@ -38,6 +37,7 @@ async function readManifest(source: string): Promise<{ manifest: Manifest; root:
 export const MarketplaceCommand = effectCmd({
   command: "marketplace <source> [plugins..]",
   describe: "browse a Claude Code / ZCode style marketplace and install plugin assets",
+  instance: false,
   builder: (yargs) =>
     yargs
       .positional("source", {
@@ -94,13 +94,7 @@ export const MarketplaceCommand = effectCmd({
       return
     }
 
-    const ctx = yield* InstanceRef
-    const base = args.project ? (ctx ? path.join(ctx.directory, ".miao") : undefined) : Global.Path.config
-    if (!base) {
-      UI.error("project install needs a project context")
-      process.exitCode = 1
-      return
-    }
+    const base = args.project ? path.join(process.cwd(), ".miao") : Global.Path.config
     const targets: Targets = {
       skills: path.join(base, "skills"),
       commands: path.join(base, "commands"),
