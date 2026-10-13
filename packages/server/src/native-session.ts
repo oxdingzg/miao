@@ -42,3 +42,36 @@ export function nativeSessionInfo(input: {
 function number(value: unknown): number | undefined {
   return typeof value === "number" && Number.isFinite(value) ? value : undefined
 }
+
+/**
+ * Select native Sessions for a listing page using exactly the key the
+ * TypeScript catalog pages by: `time.created` then `id`, filtered by the same
+ * anchor predicate and direction. `limit` truncates after ordering, so the
+ * caller can merge this prefix with the TypeScript prefix of the same size and
+ * keep the correct page overall.
+ */
+export function selectNativeSessions(input: {
+  sessions: readonly SessionInfo.Info[]
+  order: "asc" | "desc"
+  anchor?: { readonly id: string; readonly time: number }
+  search?: string
+  limit: number
+}): readonly SessionInfo.Info[] {
+  const { anchor, order } = input
+  const wanted = input.search ? input.sessions.filter((session) => session.title.includes(input.search!)) : input.sessions
+  const anchored = anchor
+    ? wanted.filter((session) => {
+        const time = DateTime.toEpochMillis(session.time.created)
+        if (time !== anchor.time) return order === "asc" ? time > anchor.time : time < anchor.time
+        return order === "asc" ? session.id > anchor.id : session.id < anchor.id
+      })
+    : wanted
+  return [...anchored]
+    .sort((left, right) => {
+      const delta = DateTime.toEpochMillis(left.time.created) - DateTime.toEpochMillis(right.time.created)
+      if (delta !== 0) return order === "asc" ? delta : -delta
+      const ids = left.id < right.id ? -1 : left.id > right.id ? 1 : 0
+      return order === "asc" ? ids : -ids
+    })
+    .slice(0, input.limit)
+}
