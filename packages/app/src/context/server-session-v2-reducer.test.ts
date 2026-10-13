@@ -445,4 +445,157 @@ describe("native assistant initialization", () => {
       time: { completed: 1 },
     })
   })
+
+  test("streams the compaction summary as a draft and settles it into the checkpoint record", () => {
+    const reducer = createV2SessionReducer()
+    let messages: SessionMessageInfo[] = []
+    const apply = (input: object) => {
+      const result = reducer.reduce(messages, event(input))
+      if (result) messages = result.messages
+      return result
+    }
+
+    apply({
+      ...base,
+      id: "evt_started",
+      type: "session.next.compaction.started",
+      data: { ...stamp, messageID: "msg_compact", reason: "auto" },
+    })
+    apply({
+      ...base,
+      id: "evt_delta_1",
+      type: "session.next.compaction.delta",
+      data: { ...stamp, messageID: "msg_compact", text: "hello " },
+    })
+    const mid = apply({
+      ...base,
+      id: "evt_delta_2",
+      type: "session.next.compaction.delta",
+      data: { ...stamp, messageID: "msg_compact", text: "world" },
+    })!
+    expect(mid.messages[0]).toMatchObject({
+      type: "assistant",
+      agent: null,
+      content: [{ type: "text", id: "msg_compact:summary", text: "hello world" }],
+    })
+
+    const ended = apply({
+      ...base,
+      id: "evt_ended",
+      type: "session.next.compaction.ended",
+      data: { ...stamp, messageID: "msg_compact", reason: "auto", text: "final summary", recent: "kept" },
+    })!
+    expect(ended.touched).toEqual(["msg_compact"])
+    expect(ended.messages).toHaveLength(1)
+    expect(ended.messages[0]).toMatchObject({ type: "compaction", summary: "final summary", recent: "kept" })
+
+    // A late delta must never resurrect the settled checkpoint as a draft.
+    const stray = apply({
+      ...base,
+      id: "evt_delta_3",
+      type: "session.next.compaction.delta",
+      data: { ...stamp, messageID: "msg_compact", text: "more" },
+    })!
+    expect(stray.messages).toHaveLength(1)
+    expect(stray.messages[0]).toMatchObject({ type: "compaction", summary: "final summary" })
+  })
+
+  test("drops an unsettled summary draft when the drain leaves the compacting phase", () => {
+    const reducer = createV2SessionReducer()
+    let messages: SessionMessageInfo[] = []
+    const apply = (input: object) => {
+      const result = reducer.reduce(messages, event(input))
+      if (result) messages = result.messages
+      return result
+    }
+
+    apply({
+      ...base,
+      id: "evt_started",
+      type: "session.next.compaction.started",
+      data: { ...stamp, messageID: "msg_compact", reason: "auto" },
+    })
+    apply({
+      ...base,
+      id: "evt_delta",
+      type: "session.next.compaction.delta",
+      data: { ...stamp, messageID: "msg_compact", text: "partial" },
+    })
+    // Still compacting: the draft stays.
+    const compacting = apply({
+      ...base,
+      id: "evt_status_busy",
+      type: "session.next.status",
+      data: { ...stamp, status: { type: "busy", phase: "compacting" } },
+    })
+    expect(compacting).toBeUndefined()
+    expect(messages).toHaveLength(1)
+
+    // A failed summary never publishes `ended`; the next phase drops the draft.
+    const dropped = apply({
+      ...base,
+      id: "evt_status_requesting",
+      type: "session.next.status",
+      data: { ...stamp, status: { type: "busy", phase: "requesting" } },
+    })!
+    expect(dropped.touched).toEqual(["msg_compact"])
+    expect(dropped.messages).toEqual([])
+
+    // Nothing unsettled remains, so later statuses reduce to nothing.
+    expect(
+      reducer.reduce(dropped.messages, event({
+        ...base,
+        id: "evt_status_idle",
+        type: "session.next.status",
+        data: { ...stamp, status: { type: "idle" } },
+      })),
+    ).toBeUndefined()
+  })
+
+  test("keeps the settled checkpoint through a phase change that follows `ended`", () => {
+    const reducer = createV2SessionReducer()
+    let messages: SessionMessageInfo[] = []
+    const apply = (input: object) => {
+      const result = reducer.reduce(messages, event(input))
+      if (result) messages = result.messages
+      return result
+    }
+
+    apply({
+      ...base,
+      id: "evt_started",
+      type: "session.next.compaction.started",
+      data: { ...stamp, messageID: "msg_compact", reason: "auto" },
+    })
+    apply({
+      ...base,
+      id: "evt_ended",
+      type: "session.next.compaction.ended",
+      data: { ...stamp, messageID: "msg_compact", reason: "auto", text: "summary", recent: "kept" },
+    })
+    expect(
+      apply({
+        ...base,
+        id: "evt_status_idle",
+        type: "session.next.status",
+        data: { ...stamp, status: { type: "idle" } },
+      }),
+    ).toBeUndefined()
+    expect(messages[0]).toMatchObject({ type: "compaction", summary: "summary" })
+  })
+
+  test("ended without started appends the settled checkpoint record", () => {
+    const reducer = createV2SessionReducer()
+    const ended = reducer.reduce(
+      [],
+      event({
+        ...base,
+        id: "evt_ended",
+        type: "session.next.compaction.ended",
+        data: { ...stamp, messageID: "msg_compact", reason: "manual", text: "summary", recent: "" },
+      }),
+    )!
+    expect(ended.messages).toHaveLength(1)
+    expect(ended.messages[0]).toMatchObject({ type: "compaction", summary: "summary", reason: "manual" })
+  })
 })
