@@ -170,16 +170,20 @@ impl Source {
                     }
                     let value: Value =
                         serde_json::from_str(&encoded).map_err(|_| Error::Invalid)?;
+                    let parsed = parse_bound(&value, &integration)?;
                     let owner = value["metadata"]["miaoCredentialSocket"]
                         .as_str()
                         .filter(|name| !name.is_empty())
                         .map(|name| (PathBuf::from(name), id, integration));
-                    (parse(&value)?, owner)
+                    (parsed, owner)
                 }
                 Self::Legacy { path, integration } => {
                     let values = legacy(&path)?;
                     (
-                        parse(values.get(&integration).ok_or(Error::Missing)?)?,
+                        parse_bound(
+                            values.get(&integration).ok_or(Error::Missing)?,
+                            &integration,
+                        )?,
                         None,
                     )
                 }
@@ -212,12 +216,17 @@ async fn load_daemon(socket: &Path, id: &str, integration: &str) -> Result<Crede
             miao_credential::Error::RefreshRejected => Error::RefreshRejected,
             _ => Error::Io,
         })?;
-    let mut value = parse(&credential)?;
-    if integration == "github-copilot" && value.expires == Some(0) {
-        value.expires = None;
-    }
+    let value = parse_bound(&credential, integration)?;
     value.validate()?;
     Ok(value)
+}
+
+fn parse_bound(value: &Value, integration: &str) -> Result<Credential, Error> {
+    let mut credential = parse(value)?;
+    if integration == "github-copilot" && credential.expires == Some(0) {
+        credential.expires = None;
+    }
+    Ok(credential)
 }
 
 fn parse(value: &Value) -> Result<Credential, Error> {
@@ -268,7 +277,7 @@ pub struct Metadata {
     pub expired: bool,
 }
 fn metadata(id: String, integration: String, label: String, value: &Value) -> Metadata {
-    let parsed = parse(value).ok();
+    let parsed = parse_bound(value, &integration).ok();
     let expires = parsed.as_ref().and_then(|value| value.expires);
     Metadata {
         id,
