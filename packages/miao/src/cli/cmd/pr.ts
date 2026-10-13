@@ -2,12 +2,13 @@ import { Effect } from "effect"
 import { UI } from "../ui"
 import { effectCmd, fail } from "../effect-cmd"
 import { GitCli } from "@miao/core/git-cli"
-import { InstanceRef } from "@/effect/instance-ref"
 import { Process } from "@/util/process"
+import { projectContext } from "../project-context"
 
 export const PrCommand = effectCmd({
   command: "pr <number>",
   describe: "fetch and checkout a GitHub PR branch, then run miao",
+  instance: false,
   builder: (yargs) =>
     yargs.positional("number", {
       type: "number",
@@ -15,8 +16,7 @@ export const PrCommand = effectCmd({
       demandOption: true,
     }),
   handler: Effect.fn("Cli.pr")(function* (args) {
-    const ctx = yield* InstanceRef
-    if (!ctx) return yield* fail("Could not load instance context")
+    const ctx = yield* projectContext()
     if (ctx.project.vcs !== "git") {
       return yield* fail("Could not find git repository. Please run this command from a git repository.")
     }
