@@ -8,8 +8,22 @@ import { Filesystem } from "@/util/filesystem"
 import matter from "gray-matter"
 import { EOL } from "os"
 import type { Argv } from "yargs"
-import { Effect } from "effect"
-import { effectCmd } from "../effect-cmd"
+import { Effect, Schema } from "effect"
+import { generateObject } from "ai"
+import { AISDK } from "@miao/core/aisdk"
+import { AgentV2 } from "@miao/core/agent"
+import { Catalog } from "@miao/core/catalog"
+import { ModelV2 } from "@miao/core/model"
+import { ProviderV2 } from "@miao/core/provider"
+import { effectCmd, fail } from "../effect-cmd"
+import { locationScope, projectContext } from "../project-context"
+import PROMPT_GENERATE from "../../agent/generate.txt"
+
+const GeneratedAgent = Schema.Struct({
+  identifier: Schema.String,
+  whenToUse: Schema.String,
+  systemPrompt: Schema.String,
+})
 
 type AgentMode = "all" | "primary" | "subagent"
 
@@ -58,16 +72,33 @@ const AgentCreateCommand = effectCmd({
         alias: ["m"],
         describe: "model to use in the format of provider/model",
       }),
+  instance: false,
   handler: Effect.fn("Cli.agent.create")(function* (args) {
-    const { InstanceRef } = yield* Effect.promise(() => import("@/effect/instance-ref"))
-    const { Agent } = yield* Effect.promise(() => import("../../agent/agent"))
-    const { Provider } = yield* Effect.promise(() => import("@/provider/provider"))
-    const maybeCtx = yield* InstanceRef
-    if (!maybeCtx) return yield* Effect.die("InstanceRef not provided")
-    const ctx = maybeCtx
-    const agentSvc = yield* Agent.Service
-    const runLocalEffect = <A, E>(effect: Effect.Effect<A, E>) =>
-      Effect.runPromise(effect.pipe(Effect.provideService(InstanceRef, ctx)))
+    const ctx = yield* projectContext()
+    const prepared = yield* locationScope(
+      Effect.gen(function* () {
+        const catalog = yield* Catalog.Service
+        const aisdk = yield* AISDK.Service
+        const agent = yield* AgentV2.Service
+        const requested = (() => {
+          if (!args.model) return undefined
+          const index = args.model.indexOf("/")
+          if (index < 1) return undefined
+          return {
+            providerID: ProviderV2.ID.make(args.model.slice(0, index)),
+            modelID: ModelV2.ID.make(args.model.slice(index + 1)),
+          }
+        })()
+        const model = requested
+          ? yield* catalog.model.get(requested.providerID, requested.modelID)
+          : yield* catalog.model.default()
+        return {
+          language: model ? yield* aisdk.language(model) : undefined,
+          model,
+          existing: (yield* agent.all()).map((item) => item.id),
+        }
+      }),
+    ).pipe(Effect.catch((error) => fail(`Could not initialize the model: ${error._tag}`)))
     yield* Effect.promise(async () => {
       const cliPath = args.path
       const cliDescription = args.description
@@ -128,12 +159,32 @@ const AgentCreateCommand = effectCmd({
       // Generate agent
       const spinner = prompts.spinner()
       spinner.start("Generating agent configuration...")
-      const model = args.model ? Provider.parseModel(args.model) : undefined
-      const generated = await runLocalEffect(agentSvc.generate({ description, model })).catch((error) => {
-        spinner.stop(`LLM failed to generate agent: ${error.message}`, 1)
+      if (!prepared.language) {
+        spinner.stop("No model is available to generate an agent", 1)
         if (isFullyNonInteractive) process.exit(1)
         throw new UI.CancelledError()
+      }
+      const generated = await generateObject({
+        model: prepared.language,
+        temperature: 0.3,
+        schema: Object.assign(
+          Schema.toStandardSchemaV1(GeneratedAgent),
+          Schema.toStandardJSONSchemaV1(GeneratedAgent),
+        ),
+        messages: [
+          { role: "system", content: PROMPT_GENERATE },
+          {
+            role: "user",
+            content: `Create an agent configuration based on this request: "${description}".\n\nIMPORTANT: The following identifiers already exist and must NOT be used: ${prepared.existing.join(", ")}\n  Return ONLY the JSON object, no other text, do not wrap in backticks`,
+          },
+        ],
       })
+        .then((result) => result.object)
+        .catch((error) => {
+          spinner.stop(`LLM failed to generate agent: ${error.message}`, 1)
+          if (isFullyNonInteractive) process.exit(1)
+          throw new UI.CancelledError()
+        })
       spinner.stop(`Agent ${generated.identifier} generated`)
 
       // Select permissions to allow
@@ -234,19 +285,14 @@ const AgentCreateCommand = effectCmd({
 const AgentListCommand = effectCmd({
   command: "list",
   describe: "list all available agents",
+  instance: false,
   handler: Effect.fn("Cli.agent.list")(function* () {
-    const { Agent } = yield* Effect.promise(() => import("../../agent/agent"))
-    const agents = yield* Agent.Service.use((svc) => svc.list())
-    const sortedAgents = agents.sort((a, b) => {
-      if (a.native !== b.native) {
-        return a.native ? -1 : 1
-      }
-      return a.name.localeCompare(b.name)
-    })
+    const agents = yield* locationScope(AgentV2.Service.use((agent) => agent.all()))
+    const sorted = [...agents].sort((a, b) => a.id.localeCompare(b.id))
 
-    for (const agent of sortedAgents) {
-      process.stdout.write(`${agent.name} (${agent.mode})` + EOL)
-      process.stdout.write(`  ${JSON.stringify(agent.permission, null, 2)}` + EOL)
+    for (const agent of sorted) {
+      process.stdout.write(`${agent.id} (${agent.mode})` + EOL)
+      process.stdout.write(`  ${JSON.stringify(agent.permissions, null, 2)}` + EOL)
     }
   }),
 })
