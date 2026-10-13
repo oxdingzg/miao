@@ -229,6 +229,12 @@ Most V2 endpoints exist (`pty.shells`, `project.update`, `vcs.diff`, `fs.content
       - `server/routes/instance/httpapi/public-schemas.ts` still imports the V1 `Workspace`
         module for the OpenAPI document; that reference must switch to a protocol/schema
         source before the module is deleted.
+        Landed: `public-schemas.ts` now imports every view model from the `@miao/schema/*-view`
+        modules directly (`ProviderView`, `CommandView`, `AgentView`, `AuthView`,
+        `ProviderAuthView`, `FormatView`, `LspView`, plus the new `McpView` that carries the V1
+        MCP status union moved out of the V1 MCP module) and only `@/control-plane/types` for the
+        workspace view model, so it no longer keeps the V1 service modules alive.
+        `check:generated` passes with no diff.
       This is a multi-PR cutover: land the command migrations first, then the instance/workspace
       deletion, then the app-layer deletion.
 - [ ] Confirm V2 endpoints cover app behaviors that were silently disabled on V2 (global config
