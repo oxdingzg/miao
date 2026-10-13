@@ -13,6 +13,7 @@ import {
   translateApprovalResolved,
   translateAssistantIdentity,
   translateMessage,
+  translateCopiedPrompt,
   translateProviderRequest,
   translateProviderRequestResult,
   translateQuestionResolved,
@@ -119,7 +120,7 @@ export class EngineTranslator {
     }
     const status = this.#status.update(event)
     if (status) publish({ type: "session.next.status", data: status })
-    const admitted = this.#prompts.project(event)
+    const admitted = this.#prompts.project(event) ?? translateCopiedPrompt(event)
     if (admitted) publish({ type: "session.next.prompt.admitted", data: admitted })
     const identity = translateAssistantIdentity(event)
     if (identity) publish({ type: "session.next.assistant.identity", data: identity })
@@ -302,6 +303,15 @@ export class EngineSession {
       throw new EngineError("engine_admission_invalid", "native admission has no matching input sequence")
     const page = await this.#client.request("events", { session_id: input.sessionID, after: admitted.admitted_seq - 1 })
     const event: unknown = Array.isArray(page) ? page[0] : undefined
+    const copied =
+      "duplicate" in admitted &&
+      admitted.duplicate === true &&
+      "pending" in admitted &&
+      admitted.pending === false &&
+      typeof event === "object" &&
+      event !== null &&
+      "kind" in event &&
+      event.kind === "message.committed"
     if (
       typeof event !== "object" ||
       event === null ||
@@ -310,7 +320,7 @@ export class EngineSession {
       !("seq" in event) ||
       event.seq !== admitted.admitted_seq ||
       !("kind" in event) ||
-      event.kind !== "input.admitted" ||
+      (event.kind !== "input.admitted" && !copied) ||
       !("recorded_at_ms" in event) ||
       typeof event.recorded_at_ms !== "number" ||
       !Number.isSafeInteger(event.recorded_at_ms) ||
@@ -318,6 +328,7 @@ export class EngineSession {
       !("data" in event) ||
       typeof event.data !== "object" ||
       event.data === null ||
+      (copied && (!("role" in event.data) || event.data.role !== "user")) ||
       !("input_id" in event.data) ||
       event.data.input_id !== id ||
       !("delivery" in event.data) ||
@@ -331,9 +342,9 @@ export class EngineSession {
       delivery,
       prompt: { text: input.prompt.text },
       timeCreated: event.recorded_at_ms,
+      ...(copied ? { promotedSeq: event.seq } : {}),
     })
   }
-
 }
 
 export function isReplayEvent(value: unknown, sessionID: string): value is EngineEvent {

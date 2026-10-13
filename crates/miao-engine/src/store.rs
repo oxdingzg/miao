@@ -626,6 +626,7 @@ impl Store {
             let cursor:u64=tx.query_row("SELECT next_seq FROM engine_session WHERE id=?1",[&session],|r|r.get(0)).optional()?.ok_or_else(||Error::Invalid("Session does not exist".into()))?;
             let location:Option<String>=tx.query_row("SELECT root FROM engine_location WHERE session_id=?1",[&session],|r|r.get(0)).optional()?;
             let messages=projected(&tx,&session,cursor)?;
+            let parent:Option<String>=tx.query_row("SELECT parent_session_id FROM engine_lineage WHERE session_id=?1",[&session],|row|row.get(0)).optional()?;
             let active:Option<String>=tx.query_row("SELECT id FROM engine_run WHERE session_id=?1 AND state='running'",[&session],|r|r.get(0)).optional()?;
             let pending={
                 let mut stmt=tx.prepare("SELECT id,delivery,admitted_seq,substr(prompt,1,200),length(prompt)>200 FROM engine_input WHERE session_id=?1 AND state='pending' ORDER BY admitted_seq LIMIT 1001")?;
@@ -649,7 +650,7 @@ impl Store {
                 "SELECT title,created_at_ms,updated_at_ms FROM engine_session WHERE id=?1",
                 [&session],|r|Ok((r.get(0)?,r.get(1)?,r.get(2)?)),
             )?;
-            let snapshot=json!({"session_id":session,"cursor":cursor,"location":location,"mode":mode,"title":title,"created_at_ms":created_at_ms,"updated_at_ms":updated_at_ms,"messages":messages,"pending":pending,"active_run":active,"approvals":approvals,"context":context,"state":state,"questions":questions,"wakeups":wakeups,"crons":crons});
+            let snapshot=json!({"session_id":session,"parent_session_id":parent,"cursor":cursor,"location":location,"mode":mode,"title":title,"created_at_ms":created_at_ms,"updated_at_ms":updated_at_ms,"messages":messages,"pending":pending,"active_run":active,"approvals":approvals,"context":context,"state":state,"questions":questions,"wakeups":wakeups,"crons":crons});
             if serde_json::to_vec(&snapshot)?.len()>4*1024*1024{return Err(Error::Invalid("snapshot exceeds limit; use events pagination".into()));}
             tx.commit()?;Ok(snapshot)
         }).await
@@ -697,16 +698,39 @@ impl Store {
             if seq!=0&&!tx.query_row("SELECT EXISTS(SELECT 1 FROM engine_message WHERE session_id=?1 AND seq=?2)",params![parent,seq],|r|r.get::<_,bool>(0))? {return Err(Error::Invalid("fork cursor must be a committed message boundary".into()));}
             let messages=projected(&tx,&parent,seq)?;
             closed_prefix(&messages)?;
+            // A fork must not escape the parent's read-only collaboration mode.
+            let mode:String=tx.query_row("SELECT mode FROM engine_session WHERE id=?1",[&parent],|row|row.get(0))?;
             tx.execute(
-                "INSERT INTO engine_session(id,created_at_ms) VALUES(?1,?2)",
-                params![target, crate::approval::now_ms() as i64],
+                "INSERT INTO engine_session(id,created_at_ms,mode) VALUES(?1,?2,?3)",
+                params![target, crate::approval::now_ms() as i64, mode],
             )?;
             tx.execute("INSERT INTO engine_lineage VALUES(?1,?2,?3)",params![target,parent,seq])?;
             tx.execute("INSERT INTO engine_location SELECT ?1,root FROM engine_location WHERE session_id=?2",params![target,parent])?;
             append(&tx,&target,"session.forked",json!({"parent_session_id":parent,"message_seq":seq}))?;
             let mut message_map=std::collections::HashMap::new();
             for message in messages {
-                let copied=project_message_at(&tx,&target,message["role"].as_str().ok_or_else(||Error::Invalid("projected role".into()))?,message["content"].clone(),message["checkpoint"].as_str(),None,message["recorded_at_ms"].as_u64())?;
+                let mut copied=project_message_at(&tx,&target,message["role"].as_str().ok_or_else(||Error::Invalid("projected role".into()))?,message["content"].clone(),message["checkpoint"].as_str(),None,message["recorded_at_ms"].as_u64())?;
+                if message["role"] == "user" {
+                    let source = message["seq"].as_u64().ok_or_else(||Error::Invalid("projected message seq".into()))?;
+                    let original:Option<(String,String,Option<String>)>=tx.query_row(
+                        "SELECT prompt,delivery,attachments FROM engine_input WHERE session_id=?1 AND id=COALESCE((SELECT json_extract(data,'$.input_id') FROM engine_event WHERE session_id=?1 AND seq=?2 AND kind='input.promoted'),(SELECT id FROM engine_input WHERE session_id=?1 AND admitted_seq=?2 AND state='promoted'))",
+                        params![parent,source],|row|Ok((row.get(0)?,row.get(1)?,row.get(2)?)),
+                    ).optional()?;
+                    let (prompt,delivery,attachments) = original.unwrap_or_else(|| {
+                        let text=message["content"].as_array().into_iter().flatten().filter(|part|part["type"]=="text").filter_map(|part|part["text"].as_str()).collect::<Vec<_>>().join("");
+                        (text,"steer".to_owned(),None)
+                    });
+                    let input_id=format!("msg_{target}_{}",copied.seq);
+                    // Historical copies are promoted, never executable inbox
+                    // inputs. Retrying the public copied ID must reconcile it,
+                    // not admit the same visible prompt for a second execution.
+                    tx.execute("INSERT INTO engine_input(id,session_id,prompt,delivery,state,admitted_seq,attachments) VALUES(?1,?2,?3,?4,'promoted',?5,?6)",params![input_id,target,prompt,delivery,copied.seq,attachments])?;
+                    copied.data["input_id"]=json!(input_id);
+                    copied.data["delivery"]=json!(delivery);
+                    // Finalize the copy payload before this transaction is
+                    // committed/published; no existing ledger row is rewritten.
+                    tx.execute("UPDATE engine_event SET data=?3 WHERE session_id=?1 AND seq=?2",params![target,copied.seq,serde_json::to_string(&copied.data)?])?;
+                }
                 if let Some(source)=message["seq"].as_u64(){
                     message_map.insert(source,copied.seq);
                     if let Some((mut profile, time)) = assistant_profile(&tx, &parent, source)? {

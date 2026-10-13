@@ -114,6 +114,15 @@ if (binary)
       expect(listOther.status).toBe(200)
       expect((await listOther.json()).data).toEqual([other.data])
       expect(Array.from(new Bun.Glob("*.db").scanSync(path.join(tmp.path, "engines")))).toHaveLength(2)
+      // The guard protects TS fallback only: a supported native fork returns
+      // before it and remains immediately readable with the right parent.
+      const fork = await fetch(url + "/api/session/" + body.id + "/fork", { method: "POST", headers, body: "{}" })
+      expect(fork.status).toBe(200)
+      const forked = await fork.json()
+      expect(forked.data.parentID).toBe(body.id)
+      const childGet = await fetch(url + "/api/session/" + forked.data.id, { headers })
+      expect(childGet.status).toBe(200)
+      expect(await childGet.json()).toEqual(forked)
     } finally {
       clearTimeout(timer)
       child.kill()
