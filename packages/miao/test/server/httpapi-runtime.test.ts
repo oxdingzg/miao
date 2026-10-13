@@ -5,10 +5,8 @@ import { HttpRouter } from "effect/unstable/http"
 import { randomBytes } from "node:crypto"
 import { HttpApiApp } from "../../src/server/routes/instance/httpapi/server"
 import { resetDatabase } from "../fixture/db"
-import { disposeAllInstances } from "../fixture/fixture"
 
 afterEach(async () => {
-  await disposeAllInstances()
   await resetDatabase()
 })
 

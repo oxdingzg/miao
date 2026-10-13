@@ -5,7 +5,7 @@ import { HttpApiApp } from "../../src/server/routes/instance/httpapi/server"
 import { ServerAuth } from "../../src/server/auth"
 import { PtyID } from "@miao/core/pty/schema"
 import { resetDatabase } from "../fixture/db"
-import { disposeAllInstances, tmpdir } from "../fixture/fixture"
+import { tmpdir } from "../fixture/fixture"
 
 function app(input: { password?: string; username?: string }) {
   const handler = HttpRouter.toWebHandler(
@@ -39,7 +39,6 @@ async function cancelBody(response: Response) {
 }
 
 afterEach(async () => {
-  await disposeAllInstances()
   await resetDatabase()
 })
 

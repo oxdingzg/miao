@@ -9,7 +9,7 @@ import { Pty } from "@miao/core/pty"
 import { PtyTicket } from "@miao/core/pty/ticket"
 import { HttpApiApp } from "../../src/server/routes/instance/httpapi/server"
 import { resetDatabase } from "../fixture/db"
-import { disposeAllInstances, tmpdir, tmpdirScoped } from "../fixture/fixture"
+import { tmpdir, tmpdirScoped } from "../fixture/fixture"
 import { testEffect } from "../lib/effect"
 
 const context = Context.empty() as Context.Context<unknown>
@@ -56,7 +56,6 @@ const directoryHeader = (dir: string) => HttpClientRequest.setHeader("x-opencode
 const serverUrl = () => HttpServer.HttpServer.use((server) => Effect.succeed(HttpServer.formatAddress(server.address)))
 
 afterEach(async () => {
-  await disposeAllInstances()
   await resetDatabase()
 })
 
