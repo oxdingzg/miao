@@ -19,6 +19,11 @@ class ReleaseCITest(unittest.TestCase):
         self.assertEqual(workflow.count("ref: ${{ needs.version.outputs.commit }}"), 2)
         self.assertNotIn("ref: main", workflow)
 
+    def test_tag_target_uses_the_verified_checkout(self):
+        version = Path(__file__).resolve().parents[2].joinpath("script/version.ts").read_text()
+        self.assertIn("git rev-parse HEAD", version)
+        self.assertNotIn("process.env.GITHUB_SHA", version)
+
     def test_exact_main_push_passes(self):
         self.assertEqual(release.require_success([run()], "release-sha", "test.yml"), "https://example.invalid/run/1")
 
