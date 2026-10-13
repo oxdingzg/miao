@@ -20,6 +20,7 @@ pub enum Profile {
     Subscription,
 }
 
+#[derive(Clone)]
 pub struct OpenAIResponses {
     profile: Profile,
     client: reqwest::Client,
@@ -56,6 +57,14 @@ impl OpenAIResponses {
 }
 #[async_trait]
 impl Provider for OpenAIResponses {
+    fn for_model(&self, model: &str) -> Option<std::sync::Arc<dyn Provider>> {
+        if !crate::provider::valid_model(model) {
+            return None;
+        }
+        let mut selected = self.clone();
+        selected.model = model.to_owned();
+        Some(std::sync::Arc::new(selected))
+    }
     fn identity(&self) -> Option<crate::provider::Identity> {
         Some(crate::provider::Identity {
             protocol: "openai-responses".into(),

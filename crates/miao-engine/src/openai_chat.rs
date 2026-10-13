@@ -9,6 +9,7 @@ use std::{collections::BTreeMap, time::Duration};
 use tokio::sync::mpsc;
 use tokio_util::sync::CancellationToken;
 
+#[derive(Clone)]
 pub struct OpenAIChat {
     client: reqwest::Client,
     endpoint: String,
@@ -39,6 +40,14 @@ impl OpenAIChat {
 
 #[async_trait]
 impl Provider for OpenAIChat {
+    fn for_model(&self, model: &str) -> Option<std::sync::Arc<dyn Provider>> {
+        if !crate::provider::valid_model(model) {
+            return None;
+        }
+        let mut selected = self.clone();
+        selected.model = model.to_owned();
+        Some(std::sync::Arc::new(selected))
+    }
     fn identity(&self) -> Option<crate::provider::Identity> {
         Some(crate::provider::Identity {
             protocol: "openai-chat".into(),
