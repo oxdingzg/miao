@@ -47,12 +47,12 @@ const readFrame = async (
   const deadline = Date.now() + budgetMs
   try {
     while (Date.now() < deadline) {
-      const { done, value } = await Promise.race([
+      const chunk = (await Promise.race([
         reader.read(),
         new Promise<{ done: true }>((resolve) => setTimeout(() => resolve({ done: true }), 500)),
-      ])
-      if (done) break
-      buffer += decoder.decode(value, { stream: true })
+      ])) as { done: boolean; value?: Uint8Array }
+      if (chunk.done || chunk.value === undefined) break
+      buffer += decoder.decode(chunk.value, { stream: true })
       for (;;) {
         const boundary = buffer.indexOf("\n\n")
         if (boundary === -1) break
