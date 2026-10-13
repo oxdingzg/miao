@@ -1,6 +1,5 @@
-import { Layer, ManagedRuntime } from "effect"
-import { attach } from "../effect/run-service"
-import * as Observability from "@miao/core/observability"
+import { Effect, Layer, ManagedRuntime } from "effect"
+import { Observability } from "@miao/core/observability"
 
 import { Blob } from "@miao/core/blob"
 import { FSUtil } from "@miao/core/fs-util"
@@ -61,9 +60,9 @@ type Runtime = Pick<typeof rt, "runSync" | "runPromise" | "runPromiseExit" | "ru
 
 /** Services provided by the CLI runtime — i.e. what an Effect run via `CliRuntime.runPromise` can yield. */
 export type CliServices = ManagedRuntime.ManagedRuntime.Services<typeof rt>
-const wrap = (effect: Parameters<typeof rt.runSync>[0]) => {
+const wrap = <A, E>(effect: Effect.Effect<A, E, CliServices>) => {
   cliRuntimeUsed.value = true
-  return attach(effect as never) as never
+  return effect
 }
 
 export const CliRuntime: Runtime = {

@@ -17,7 +17,7 @@ import { ModelV2 } from "@miao/core/model"
 import { ProviderV2 } from "@miao/core/provider"
 import { effectCmd, fail } from "../effect-cmd"
 import { locationScope, projectContext } from "../project-context"
-import PROMPT_GENERATE from "../../agent/generate.txt"
+import PROMPT_GENERATE from "./agent-generate.txt"
 
 const GeneratedAgent = Schema.Struct({
   identifier: Schema.String,
@@ -166,10 +166,7 @@ const AgentCreateCommand = effectCmd({
       const generated = await generateObject({
         model: prepared.language,
         temperature: 0.3,
-        schema: Object.assign(
-          Schema.toStandardSchemaV1(GeneratedAgent),
-          Schema.toStandardJSONSchemaV1(GeneratedAgent),
-        ),
+        schema: Object.assign(Schema.toStandardSchemaV1(GeneratedAgent), Schema.toStandardJSONSchemaV1(GeneratedAgent)),
         messages: [
           { role: "system", content: PROMPT_GENERATE },
           {
