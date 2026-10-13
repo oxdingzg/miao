@@ -177,6 +177,13 @@ impl Runtime {
         *self.inner.context.lock().await = limits;
     }
 
+    /// An explicit operator `compact` is the automatic trigger's breaker reset:
+    /// it clears the failure streak so a repaired summarizer gets a fresh try
+    /// instead of staying off until the process restarts.
+    pub async fn reset_compaction_breaker(&self) {
+        self.inner.breaker.lock().await.reset();
+    }
+
     pub async fn approve(
         &self,
         controller: &Controller,
@@ -1204,7 +1211,7 @@ async fn execute(
                 let _ = inner.progress.send(notice);
             };
             let mut breaker = inner.breaker.lock().await;
-            let compacted = crate::context_trigger::maybe_compact(
+            let _ = crate::context_trigger::maybe_compact(
                 &inner.store,
                 crate::context_trigger::CompactRequest {
                     session,
@@ -1218,7 +1225,6 @@ async fn execute(
                 &mut summarize,
             )
             .await;
-            eprintln!("COMPACTION_DEBUG committed={compacted:?}");
         }
         if !reply.needs_tools && promoted.is_empty() && state_allowed {
             let state = inner.store.state(session).await?;
