@@ -7,7 +7,7 @@
 //! no trigger; nothing is invented. Gate ②'s provider counting will replace
 //! the char estimate for messages that have not been counted yet.
 
-use crate::protocol::Error;
+use crate::protocol::{Error, Message};
 use crate::store::Store;
 use rusqlite::OptionalExtension;
 
@@ -43,6 +43,57 @@ impl Budget {
                 context_tokens.saturating_add(pending_tokens) >= self.threshold()
             }
             _ => false,
+        }
+    }
+}
+
+/// Default failures before the automatic trigger stays off until an explicit
+/// `compact` resets it. Mirrors the TypeScript path's failure limit.
+pub const BREAKER_THRESHOLD: u8 = 3;
+
+/// Product-supplied automatic compaction configuration plus its breaker state.
+/// Absent configuration means the trigger is off, so enabling it is explicit.
+#[derive(Debug, Clone)]
+pub struct Control {
+    pub budget: Budget,
+    /// Messages per summarizer pass. A prefix that fits one pass stays single.
+    pub per_pass: usize,
+    pub breaker: Breaker,
+}
+
+/// The `--compaction-config` file shape the product writes.
+#[derive(Debug, Clone, serde::Deserialize)]
+pub struct Config {
+    /// Effective provider context window in tokens.
+    pub window_tokens: u64,
+    /// Fraction of the window at which compaction triggers.
+    #[serde(default = "default_ratio")]
+    pub ratio: f64,
+    /// Explicit token headroom: prune protection + summary output + slack.
+    #[serde(default)]
+    pub headroom_tokens: u64,
+    /// Messages per summarizer pass; one pass while the prefix fits.
+    #[serde(default = "default_per_pass")]
+    pub per_pass: usize,
+}
+
+fn default_ratio() -> f64 {
+    0.8
+}
+
+fn default_per_pass() -> usize {
+    // The history selection caps at 1000 messages, so the default keeps any
+    // selectable prefix in one summarizer call; a smaller pass is a product
+    // choice, not the default.
+    1000
+}
+
+impl Control {
+    pub fn new(budget: Budget, per_pass: usize) -> Self {
+        Self {
+            budget,
+            per_pass,
+            breaker: Breaker::new(BREAKER_THRESHOLD),
         }
     }
 }
@@ -174,6 +225,97 @@ pub fn resolve_pending_tokens(counted: crate::provider::CountTokens, chars: usiz
 }
 
 impl Store {
+    /// The highest committed message seq, recorded inside each usage event so
+    /// later turns know which messages their count already covered.
+    pub async fn max_message_seq(&self, session: &str) -> Result<u64, Error> {
+        let session = session.to_owned();
+        self.call(move |conn| {
+            Ok(conn.query_row(
+                "SELECT COALESCE(MAX(seq),0) FROM engine_message WHERE session_id=?1",
+                [&session],
+                |row| row.get(0),
+            )?)
+        })
+        .await
+    }
+
+    /// The compaction anchor: the newest usage event's normalized context tokens
+    /// plus the highest message seq that count covered. An event without the
+    /// marker (recorded before the trigger existed) reports `None` rather than
+    /// inventing an anchor, so the trigger arms one turn later.
+    pub async fn context_anchor(&self, session: &str) -> Result<Option<(u64, u64)>, Error> {
+        let session = session.to_owned();
+        self.call(move |conn| {
+            let data: Option<String> = conn
+                .query_row(
+                    "SELECT data FROM engine_event WHERE session_id=?1 AND kind='usage' ORDER BY seq DESC LIMIT 1",
+                    [&session],
+                    |row| row.get(0),
+                )
+                .optional()?;
+            let Some(data) = data else { return Ok(None) };
+            let event = serde_json::from_str::<serde_json::Value>(&data)?;
+            let Some(through) = event["context_message_seq"].as_u64() else {
+                return Ok(None);
+            };
+            let usage = &event["usage"];
+            let input = usage["inputTokens"].as_u64().unwrap_or(0);
+            let output = usage["outputTokens"].as_u64().unwrap_or(0);
+            Ok(Some((input.saturating_add(output), through)))
+        })
+        .await
+    }
+
+    /// The messages committed after the anchor's count, plus their content
+    /// chars. These are what the anchor does not cover, so the trigger adds
+    /// their tokens (counted or estimated) to the anchored context.
+    pub async fn pending_context(
+        &self,
+        session: &str,
+        after_seq: u64,
+    ) -> Result<(Vec<Message>, u64), Error> {
+        let session = session.to_owned();
+        self.call(move |conn| {
+            let mut stmt = conn.prepare(
+                "SELECT role,content,recorded_at_ms FROM engine_message WHERE session_id=?1 AND seq>?2 AND reverted=0 ORDER BY seq",
+            )?;
+            let mut rows = stmt.query(rusqlite::params![session, after_seq])?;
+            let mut chars = 0usize;
+            let mut messages = Vec::new();
+            while let Some(row) = rows.next()? {
+                let content: String = row.get(1)?;
+                chars += content.len();
+                messages.push(Message {
+                    role: row.get(0)?,
+                    content: serde_json::from_str(&content)?,
+                    checkpoint: None,
+                    recorded_at_ms: row.get(2)?,
+                });
+            }
+            Ok((messages, chars as u64))
+        })
+        .await
+    }
+
+    /// The only legal cut for a run-owned checkpoint: the newest non-reverted
+    /// assistant seq that is not already at or before the latest checkpoint, so
+    /// a checkpoint can never move backwards.
+    pub async fn compactable_boundary(&self, session: &str) -> Result<Option<u64>, Error> {
+        let session = session.to_owned();
+        self.call(move |conn| {
+            Ok(conn
+                .query_row(
+                    "SELECT seq FROM engine_message WHERE session_id=?1 AND role='assistant' AND reverted=0 \
+                     AND seq > COALESCE((SELECT through_seq FROM engine_compaction WHERE session_id=?1 ORDER BY created_seq DESC LIMIT 1),0) \
+                     ORDER BY seq DESC LIMIT 1",
+                    [&session],
+                    |row| row.get(0),
+                )
+                .optional()?)
+        })
+        .await
+    }
+
     /// Normalized context anchor from the newest `usage` event, or `None`
     /// before the first provider turn.
     pub async fn last_context_tokens(&self, session: &str) -> Result<Option<u64>, Error> {

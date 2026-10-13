@@ -341,37 +341,43 @@ boundaries (#112) and outgoing receipts are shown. A → B delivery works in the
 
 ### 2.13 Engine context management and automatic compaction
 
-**Status:** not started. The engine owns compaction **persistence** but not the decision:
-`src/history.rs::compact` commits a checkpoint (`through_message_seq` plus a caller-supplied
-`summary`) into `engine_compaction`, requires an idle Session and a closed assistant boundary, is
-idempotent and conflict-checked, and emits `pre_compact` / `history.compacted` / `post_compact`;
-`recall` reads across the checkpoint and `session_state` survives it. Nothing in `crates/miao-engine`
-decides **when** or **what** to summarize: `should_compact`, `context_window`, `count_tokens` and
-tool-output pruning do not appear in its sources, and `README.md` lists context selection and
-compaction among what "remain[s] to be wired". The one history budget that exists (2 MB / 1000
-messages in `history.rs`) is a transport bound, not context management. The TS path now carries the
-behavior the engine needs (see the landed list above).
+**Status:** implemented and wired behind an explicit `--compaction-config`; tool-output pruning is
+the one open item. `src/context_trigger.rs` owns the decisions — the usage-anchored `Budget`
+(gate ①), the provider-count resolver (gate ②), `plan_summary`'s single prefix with a bounded
+segmented fallback (gate ③), the `prune_tool_output` decision (gate ④, not yet applied), and the
+`Breaker` (gate ⑤). `src/runtime.rs::maybe_compact` evaluates them at a settled provider-turn
+boundary (every tool settled, closed assistant boundary), summarizes the warm prefix the next turn
+would re-send, and commits exactly one checkpoint through the run-owned `compact_for_run` contract;
+`history.rs::compact` stays the idle-only operator path and its explicit `compact` also resets the
+breaker. A refused or failed summary never fails the drain or drops history: it records
+`compaction.failed` and feeds the breaker. Ephemeral `compaction.started` / `compaction.progress`
+(slice i/n, characters covered) / `compaction.finished` frames sit between the durable
+`pre_compact` and `post_compact` events (gate ⑥). Usage events now carry the highest message seq
+their count covered (`context_message_seq`), which makes the anchor exact; an event without it
+leaves the trigger off for one turn rather than inventing an anchor.
 
-- [ ] Anchor the trigger on `src/usage.rs`'s normalized per-turn usage plus the messages appended
-      since that report, with the headroom spelled out (prune protection + summary output + slack)
-      and the later of that and a configured ratio as the limit.
-- [ ] Count a request before sending it through the provider's own endpoint where one exists
-      (Anthropic `/messages/count_tokens`, Gemini `:countTokens`), falling back to the estimate and
-      never failing a turn on a refused count.
-- [ ] Summarize once over the warm request prefix, keeping the bounded staged recovery only for a
+- [x] Anchor the trigger on the newest `usage` event's normalized per-turn usage plus the messages
+      appended since that report, with the headroom spelled out (prune protection + summary output +
+      slack) and the later of that and a configured ratio as the limit.
+- [x] Count a request before sending it through the provider's own endpoint where one exists
+      (Anthropic `/messages/count_tokens`), falling back to the estimate and never failing a turn on
+      a refused count.
+- [x] Summarize once over the warm request prefix, keeping the bounded staged recovery only for a
       prefix that no longer fits, and reuse the existing checkpoint contract (idle-only, closed
       boundary, idempotent, pre/post events).
-- [ ] Prune tool output in the context selection so the protected output of one step bounds the
-      prompt.
-- [ ] Trip a breaker after N refused summaries, reset by an explicit `compact` request.
-- [ ] Publish progress between `pre_compact` and `post_compact` (slice i/n, characters covered) so a
+- [ ] Prune tool output in the context selection so the protected output of one step bounds the prompt.
+- [x] Trip a breaker after N refused summaries, reset by an explicit `compact` request.
+- [x] Publish progress between `pre_compact` and `post_compact` (slice i/n, characters covered) so a
       client can render it.
 - **Acceptance:** a 1M-window engine Session compacts in one provider call; no compaction crosses the
   headroom; a refused summary trips the breaker without dropping history; progress is observable;
-  `cargo test -p miao-engine` covers each item above.
-- **Evidence:** `crates/miao-engine/README.md`, `src/history.rs::compact`, `src/usage.rs`,
-  `PROTOCOL.md` (`compact`, `pre_compact`/`post_compact`), and the TS implementation in
-  `packages/core/src/session/compaction.ts`.
+  `cargo test -p miao-engine` covers each item above. `tests/compaction.rs` covers the crossed-budget
+  single pass, the trigger being off without configuration, a small context never triggering, and the
+  refused-summary breaker streak with every drain still completing; the literal 1M-window live run
+  and the segmented fallback remain unverified.
+- **Evidence:** `crates/miao-engine/README.md`, `src/context_trigger.rs`, `src/runtime.rs::maybe_compact`,
+  `src/history.rs::compact_for_run`, `tests/compaction.rs`, `PROTOCOL.md` (`compact`,
+  `pre_compact`/`post_compact`), and the TS implementation in `packages/core/src/session/compaction.ts`.
 
 ### 2.14 Compaction client surface and restore budget
 

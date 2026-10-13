@@ -48,6 +48,9 @@ struct Inner {
     started: Mutex<std::collections::HashSet<String>>,
     stop: CancellationToken,
     progress: broadcast::Sender<Value>,
+    /// Product-supplied automatic context management (§2.13). Absent means the
+    /// trigger is off; configured once at startup, before any run.
+    compaction: std::sync::Mutex<Option<crate::context_trigger::Control>>,
 }
 
 struct Actor {
@@ -156,8 +159,24 @@ impl Runtime {
                 started: Mutex::new(std::collections::HashSet::new()),
                 stop: CancellationToken::new(),
                 progress,
+                compaction: std::sync::Mutex::new(None),
             }),
         })
+    }
+
+    /// Enable automatic context management with the product's budget. Called
+    /// once at startup; an absent configuration leaves the trigger off.
+    pub fn configure_compaction(&self, budget: crate::context_trigger::Budget, per_pass: usize) {
+        *self.inner.compaction.lock().unwrap() =
+            Some(crate::context_trigger::Control::new(budget, per_pass));
+    }
+
+    /// An operator's explicit `compact` is the breaker reset: it clears the
+    /// failure streak so the trigger may try again.
+    pub fn reset_compaction_breaker(&self) {
+        if let Some(control) = self.inner.compaction.lock().unwrap().as_mut() {
+            control.breaker.reset();
+        }
     }
 
     pub fn controller(&self) -> Controller {
@@ -722,12 +741,13 @@ async fn execute(
                     return Ok(());
                 }
                 if let Some((partial, unexecuted_calls)) = error.continuation() {
+                    let context_message_seq = inner.store.max_message_seq(session).await?;
                     inner
                         .store
                         .record(
                             session,
                             "usage",
-                            json!({"run_id":run,"step":step,"usage":partial.usage,"partial":true}),
+                            json!({"run_id":run,"step":step,"usage":partial.usage,"partial":true,"context_message_seq":context_message_seq}),
                         )
                         .await?;
                     if partial
@@ -803,12 +823,13 @@ async fn execute(
                 return Err(Error::Invalid(error.to_string()));
             }
         };
+        let context_message_seq = inner.store.max_message_seq(session).await?;
         inner
             .store
             .record(
                 session,
                 "usage",
-                json!({"run_id":run,"step":step,"usage":reply.usage}),
+                json!({"run_id":run,"step":step,"usage":reply.usage,"context_message_seq":context_message_seq}),
             )
             .await?;
         inner
@@ -1175,6 +1196,10 @@ async fn execute(
                 }
             }
         }
+        // Both the between-turn continuation and the end of the drain sit at a
+        // settled provider turn with every tool settled, so this is the one
+        // boundary where an automatic checkpoint is legal.
+        maybe_compact(inner, session, run, &cancel).await?;
         if !reply.needs_tools && promoted.is_empty() {
             if let Some(replay) = &inner.tool_replay {
                 replay.assert_consumed().await?;
@@ -1201,6 +1226,202 @@ async fn execute(
         }
         step += 1;
     }
+}
+
+/// The summarizer's instruction. The projected transcript is the whole input,
+/// and the reply becomes the checkpoint summary verbatim.
+const SUMMARY_SYSTEM: &str = "You summarize a coding session for continuation by another model. Preserve the user's requests, decisions and their reasons, files and commands touched with their outcomes, the current state of the work, and unfinished or next steps. Keep exact file paths, identifiers and commands verbatim. Output only the summary, with no preamble.";
+
+/// Roadmap §2.13: automatic context management evaluated at a settled
+/// provider-turn boundary. Storage failures propagate; a refused or failed
+/// summary only feeds the breaker, so it can never fail the drain or drop
+/// history.
+async fn maybe_compact(
+    inner: &Arc<Inner>,
+    session: &str,
+    run: &str,
+    cancel: &CancellationToken,
+) -> Result<(), Error> {
+    let Some(control) = inner.compaction.lock().unwrap().clone() else {
+        return Ok(());
+    };
+    if !control.breaker.allows() {
+        return Ok(());
+    }
+    let Some((anchor, through)) = inner.store.context_anchor(session).await? else {
+        return Ok(());
+    };
+    let (pending, chars) = inner.store.pending_context(session, through).await?;
+    if pending.is_empty() {
+        return Ok(());
+    }
+    let counted = inner
+        .provider
+        .count_tokens(&ModelRequest {
+            system: String::new(),
+            messages: pending,
+            tools: Vec::new(),
+        })
+        .await;
+    if !control.budget.should_compact(
+        Some(anchor),
+        crate::context_trigger::resolve_pending_tokens(counted, chars as usize),
+    ) {
+        return Ok(());
+    }
+    match compact_now(inner, session, run, &control, cancel).await {
+        Ok(()) => {
+            if let Some(control) = inner.compaction.lock().unwrap().as_mut() {
+                control.breaker.reset();
+            }
+        }
+        Err(error) => {
+            if let Some(control) = inner.compaction.lock().unwrap().as_mut() {
+                control.breaker.rejected();
+            }
+            inner
+                .store
+                .record(
+                    session,
+                    "compaction.failed",
+                    json!({"run_id":run,"message":error.to_string()}),
+                )
+                .await?;
+        }
+    }
+    Ok(())
+}
+
+/// One checkpoint: summarize the warm prefix the next turn would re-send, then
+/// commit it through the run-owned contract. A cancelled pass commits nothing.
+async fn compact_now(
+    inner: &Arc<Inner>,
+    session: &str,
+    run: &str,
+    control: &crate::context_trigger::Control,
+    cancel: &CancellationToken,
+) -> Result<(), Error> {
+    let Some(through) = inner.store.compactable_boundary(session).await? else {
+        return Ok(());
+    };
+    let history = inner.store.selected_history(session).await?;
+    if history.is_empty() {
+        return Ok(());
+    }
+    let plan = crate::context_trigger::plan_summary(history.len(), control.per_pass);
+    if plan.segments.is_empty() {
+        return Ok(());
+    }
+    let slices = plan.segments.len();
+    let _ = inner.progress.send(json!({
+        "session_id":session,"run_id":run,"kind":"compaction.started","slices":slices
+    }));
+    let mut summary = String::new();
+    for (index, (start, end)) in plan.segments.iter().enumerate() {
+        if cancel.is_cancelled() {
+            return Ok(());
+        }
+        let _ = inner.progress.send(json!({
+            "session_id":session,"run_id":run,"kind":"compaction.progress",
+            "slice":index+1,"slices":slices,"characters":summary.len()
+        }));
+        let pass = summarize_pass(inner, &history[*start..*end], cancel).await?;
+        if pass.trim().is_empty() {
+            return Err(Error::Invalid("summary pass returned no text".into()));
+        }
+        if !summary.is_empty() {
+            summary.push_str("\n\n");
+        }
+        summary.push_str(pass.trim());
+    }
+    // The checkpoint contract bounds the summary; a model that overruns it is
+    // cut at a character boundary rather than failing the attempt.
+    if summary.len() > 32_000 {
+        let mut cut = 32_000;
+        while !summary.is_char_boundary(cut) {
+            cut -= 1;
+        }
+        summary.truncate(cut);
+    }
+    let id = format!("auto-{run}-{through}");
+    inner
+        .store
+        .compact_for_run(session, run, &id, through, summary)
+        .await?;
+    let _ = inner.progress.send(json!({
+        "session_id":session,"run_id":run,"kind":"compaction.finished",
+        "compaction_id":id,"through_message_seq":through
+    }));
+    Ok(())
+}
+
+/// One summarizer provider call over a segment of the warm prefix. No tools:
+/// the reply is text, and an empty reply is the caller's error.
+async fn summarize_pass(
+    inner: &Arc<Inner>,
+    messages: &[crate::protocol::Message],
+    cancel: &CancellationToken,
+) -> Result<String, Error> {
+    let (send, _receive) = mpsc::channel(16);
+    let reply = inner
+        .provider
+        .stream(
+            ModelRequest {
+                system: SUMMARY_SYSTEM.into(),
+                messages: vec![crate::protocol::Message {
+                    role: "user".into(),
+                    content: json!([{"type":"text","text":render_transcript(messages)}]),
+                    checkpoint: None,
+                    recorded_at_ms: None,
+                }],
+                tools: Vec::new(),
+            },
+            send,
+            cancel.child_token(),
+        )
+        .await
+        .map_err(|error| Error::Invalid(format!("summary pass failed: {error}")))?;
+    Ok(reply
+        .content
+        .as_array()
+        .into_iter()
+        .flatten()
+        .filter(|block| block["type"] == "text")
+        .filter_map(|block| block["text"].as_str())
+        .collect::<Vec<_>>()
+        .join(""))
+}
+
+/// Flatten a history segment into the transcript the summarizer reads. Each
+/// block is bounded so one oversized tool result cannot dominate the pass.
+fn render_transcript(messages: &[crate::protocol::Message]) -> String {
+    let mut out = String::new();
+    for message in messages {
+        for block in message.content.as_array().into_iter().flatten() {
+            let line = match block["type"].as_str() {
+                Some("text") => block["text"].as_str().map(str::to_owned),
+                Some("tool_use") => Some(format!(
+                    "tool call {} {}",
+                    block["name"].as_str().unwrap_or("unknown"),
+                    block["input"]
+                )),
+                Some("tool_result") => Some(format!("tool result {}", block["content"])),
+                _ => None,
+            };
+            let Some(line) = line else { continue };
+            let bounded = if line.len() > 4_000 {
+                let mut cut = 4_000;
+                while !line.is_char_boundary(cut) {
+                    cut -= 1;
+                }
+                format!("{}…", &line[..cut])
+            } else {
+                line
+            };
+            out.push_str(&format!("\n[{}] {}", message.role, bounded));
+        }
+    }
+    out
 }
 
 async fn notify_admission(

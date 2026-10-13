@@ -137,9 +137,10 @@ provider credentials; passing fixtures is not claimed as real-model quality acce
 
 The [roadmap](docs/roadmap.md) maintains implementation, task-efficiency and product-integration
 status in one place. PTY, background jobs, Windows enforcement, Gemini, LSP core, image input,
-Context Epoch, explicit compaction, MCP, the worker protocol host and three-platform tests already
-have implementations. Automatic context management, representative efficiency evaluation, the
-complete product facade, actual extension integration and shipping delivery still have gaps.
+Context Epoch, explicit compaction, automatic context management (except tool-output pruning in the
+context selection), MCP, the worker protocol host and three-platform tests already have
+implementations. Representative efficiency evaluation, the complete product facade, actual extension
+integration and shipping delivery still have gaps.
 
 The following describes the early file-tool slice; see inventory and source for the current tool
 surface. `read_file` is a read-only tool with canonical
@@ -310,8 +311,30 @@ tail of opaque/tool records; an oversized window reports an explicit budget erro
 streaming-based, allowing an old prefix that already exceeds the selection budget to be compacted
 into a checkpoint; the summary is at most 32 KiB. A default fork inherits the currently effective
 checkpoint and maps the message cursor; an explicit history fork inherits only the checkpoint that
-already existed at that point. This is not automatic LLM summarization or a task-quality guarantee;
-automatic policy, model role routing, and context-quality evaluation remain to be implemented.
+already existed at that point. Model role routing and context-quality evaluation remain to be
+implemented.
+
+## Automatic context management
+
+`--compaction-config /absolute/path/compaction.json` enables the runtime-owned trigger:
+
+```json
+{ "window_tokens": 1000000, "ratio": 0.8, "headroom_tokens": 120000, "per_pass": 1000 }
+```
+
+The trigger anchors on the newest `usage` event (its `inputTokens` inclusive of cache reads plus
+`outputTokens`) plus the messages appended since that report — the same messages the provider's own
+counting endpoint sees, with the char estimate (≈3 chars/token) as the fallback when a provider
+cannot count. The limit is the later of the window ratio and the explicit headroom, so an unknown
+window never triggers. When crossed at a settled provider-turn boundary, the runtime summarizes the
+warm prefix the next turn would re-send and commits one checkpoint through the run-owned contract
+(the same idle/closed-boundary/idempotent checks as `compact`, plus an active run with no
+outstanding tool dispatch). A refused or failed summary records `compaction.failed` and feeds a
+breaker that stops further attempts after three consecutive failures until an explicit `compact`
+resets it; it never fails the drain or drops history. Progress is ephemeral: `compaction.started`,
+`compaction.progress` (slice i/n plus characters covered) and `compaction.finished` around the
+durable `pre_compact`/`post_compact` events. Tool-output pruning in the context selection, and
+context-quality evaluation, remain to be implemented.
 
 ## MCP stdio client (explicit external authority)
 

@@ -136,6 +136,7 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
             "--lsp-config",
             "--hooks-config",
             "--context-config",
+            "--compaction-config",
             "--skills-config",
             "--references-config",
             "--worker-config",
@@ -422,6 +423,25 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
         replay,
     )
     .await?;
+    if let Some(path) = options.get("--compaction-config") {
+        let bytes = tokio::fs::read(path).await?;
+        if bytes.len() > 65536 {
+            return Err("compaction config exceeds 64 KiB".into());
+        }
+        let config = serde_json::from_slice::<miao_engine::context_trigger::Config>(&bytes)
+            .map_err(|_| "invalid compaction config")?;
+        if config.per_pass == 0 || config.headroom_tokens > config.window_tokens {
+            return Err("compaction config needs a window with a smaller headroom and a pass size".into());
+        }
+        runtime.configure_compaction(
+            miao_engine::context_trigger::Budget {
+                window: Some(config.window_tokens),
+                ratio: config.ratio,
+                headroom: config.headroom_tokens,
+            },
+            config.per_pass,
+        );
+    }
     if acp {
         let result = miao_engine::acp::serve(runtime.clone()).await;
         runtime.shutdown().await;
