@@ -13,6 +13,7 @@ import { HttpApiBuilder, HttpApiSchema } from "effect/unstable/httpapi"
 import { Api } from "../api"
 import { Project } from "@miao/core/project"
 import { NativeEngine } from "../native-engine"
+import { nativeExecution, nativeTodos } from "../native-state"
 import { nativeSessionEvents } from "../native-events"
 import { mergeNativeSessions, nativeSessionInfo } from "../native-session"
 import { booted } from "../location"
@@ -474,6 +475,12 @@ export const SessionHandler = HttpApiBuilder.group(Api, "server.session", (handl
       .handle(
         "session.todo",
         Effect.fn(function* (ctx) {
+          const native = yield* Effect.serviceOption(NativeEngine.Service)
+          const placement = Option.getOrUndefined(yield* Effect.serviceOption(NativeEngine.Placement))
+          if (Option.isSome(native) && placement) {
+            const snapshot = yield* native.value.snapshot({ sessionID: ctx.params.sessionID, ...placement })
+            return { data: nativeTodos(snapshot) }
+          }
           return {
             data: yield* session.todo(ctx.params.sessionID).pipe(
               Effect.catchTag("Session.NotFoundError", (error) =>
@@ -683,6 +690,15 @@ export const SessionHandler = HttpApiBuilder.group(Api, "server.session", (handl
       .handle(
         "session.status",
         Effect.fn(function* (ctx) {
+          const native = yield* Effect.serviceOption(NativeEngine.Service)
+          const placement = Option.getOrUndefined(yield* Effect.serviceOption(NativeEngine.Placement))
+          if (Option.isSome(native) && placement) {
+            const snapshot = yield* native.value.snapshot({ sessionID: ctx.params.sessionID, ...placement })
+            return {
+              data:
+                nativeExecution(snapshot).type === "running" ? { type: "busy" as const } : { type: "idle" as const },
+            }
+          }
           return {
             data: yield* session.status(ctx.params.sessionID).pipe(
               Effect.catchTag("Session.NotFoundError", (error) =>
@@ -756,6 +772,12 @@ export const SessionHandler = HttpApiBuilder.group(Api, "server.session", (handl
       .handle(
         "session.execution",
         Effect.fn(function* (ctx) {
+          const native = yield* Effect.serviceOption(NativeEngine.Service)
+          const placement = Option.getOrUndefined(yield* Effect.serviceOption(NativeEngine.Placement))
+          if (Option.isSome(native) && placement) {
+            const snapshot = yield* native.value.snapshot({ sessionID: ctx.params.sessionID, ...placement })
+            return nativeExecution(snapshot)
+          }
           const executionID = (yield* session.executions).get(ctx.params.sessionID)
           return executionID ? { type: "running" as const, executionID } : { type: "idle" as const }
         }),
