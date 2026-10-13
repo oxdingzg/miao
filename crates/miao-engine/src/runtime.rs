@@ -1,7 +1,8 @@
 use crate::{
     approval::{now_ms, Approval, Response},
+    context_trigger::{self, ContextLimits},
     permission::{input_digest, Config, Decision, Policy},
-    protocol::{Admission, Attachment, Error, Input, ModelRequest},
+    protocol::{Admission, Attachment, Error, Input, Message, ModelRequest},
     provider::{Provider, ProviderError},
     store::{RuntimeLease, Store},
     tool_replay::ToolReplay,
@@ -48,6 +49,8 @@ struct Inner {
     started: Mutex<std::collections::HashSet<String>>,
     stop: CancellationToken,
     progress: broadcast::Sender<Value>,
+    context: Mutex<Option<ContextLimits>>,
+    breaker: Mutex<context_trigger::Breaker>,
 }
 
 struct Actor {
@@ -156,6 +159,8 @@ impl Runtime {
                 started: Mutex::new(std::collections::HashSet::new()),
                 stop: CancellationToken::new(),
                 progress,
+                context: Mutex::new(None),
+                breaker: Mutex::new(crate::context_trigger::Breaker::new(3)),
             }),
         })
     }
@@ -164,6 +169,12 @@ impl Runtime {
         Controller {
             runtime_id: self.inner.id.clone(),
         }
+    }
+
+    /// Configure automatic context management (roadmap §2.13). `None` keeps it
+    /// off; without limits the run loop never attempts a checkpoint.
+    pub async fn set_context_limits(&self, limits: Option<ContextLimits>) {
+        *self.inner.context.lock().await = limits;
     }
 
     pub async fn approve(
@@ -811,7 +822,7 @@ async fn execute(
                 json!({"run_id":run,"step":step,"usage":reply.usage}),
             )
             .await?;
-        inner
+        let assistant_boundary = inner
             .store
             .assistant_reply_profiled(
                 session,
@@ -821,7 +832,8 @@ async fn execute(
                 reply.content.clone(),
                 inner.provider.reply_identity(&reply),
             )
-            .await?;
+            .await?
+            .seq;
         let invalid_input = reply
             .content
             .as_array()
@@ -1198,6 +1210,64 @@ async fn execute(
                 goal_stalls = 0;
                 goal_signature = None;
             }
+        }
+        // Automatic context management at the settled boundary (roadmap
+        // §2.13). Off unless the runtime was configured with limits.
+        if let Some(limits) = &*inner.context.lock().await {
+            let provider = Arc::clone(&inner.provider);
+            let stop = inner.stop.clone();
+            let mut summarize = move |body: String| {
+                let provider = Arc::clone(&provider);
+                let stop = stop.clone();
+                async move {
+                    let (tx, _rx) = mpsc::channel(16);
+                    let request = ModelRequest {
+                        system: "Summarize the conversation portion you are given. Reply with only the summary text.".into(),
+                        messages: vec![Message {
+                            role: "user".into(),
+                            content: json!([{"type": "text", "text": body}]),
+                            checkpoint: None,
+                            recorded_at_ms: None,
+                        }],
+                        tools: vec![],
+                    };
+                    let reply = provider
+                        .stream(request, tx, stop.child_token())
+                        .await
+                        .map_err(|error| error.to_string())?;
+                    let text = reply
+                        .content
+                        .as_array()
+                        .into_iter()
+                        .flatten()
+                        .filter_map(|block| block["text"].as_str())
+                        .collect::<Vec<_>>()
+                        .join("");
+                    if text.is_empty() {
+                        Err("summarizer returned no text".into())
+                    } else {
+                        Ok(text)
+                    }
+                }
+            };
+            let mut notify = |notice: Value| {
+                let _ = inner.progress.send(notice);
+            };
+            let mut breaker = inner.breaker.lock().await;
+            let _ = crate::context_trigger::maybe_compact(
+                &inner.store,
+                crate::context_trigger::CompactRequest {
+                    session,
+                    run,
+                    boundary: assistant_boundary,
+                    budget: &limits.budget(),
+                    per_pass: limits.per_pass,
+                    breaker: &mut breaker,
+                    notify: &mut notify,
+                },
+                &mut summarize,
+            )
+            .await;
         }
         step += 1;
     }
