@@ -816,7 +816,7 @@ export function translateQuestionResolved(event: EngineEvent): SessionQuestionRe
     if (answers.length !== raw.length) return undefined
     return { type: "question.v2.replied", data: { sessionID, requestID, answers } }
   }
-  if (state === "expired" || state === "cancelled")
+  if (state === "expired" || state === "cancelled" || state === "rejected")
     return { type: "question.v2.rejected", data: { sessionID, requestID } }
   return undefined
 }

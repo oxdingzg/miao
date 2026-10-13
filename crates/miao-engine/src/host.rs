@@ -69,6 +69,10 @@ impl Host {
                 .cancel(&session_id)
                 .await
                 .map(|accepted| json!({ "accepted": accepted })),
+            Command::CancelIf { session_id, run_id } => runtime
+                .cancel_if(&session_id, &run_id)
+                .await
+                .map(|accepted| json!({ "accepted": accepted })),
             Command::Compact {
                 session_id,
                 compaction_id,
@@ -135,6 +139,13 @@ impl Host {
                 .and_then(|value| serde_json::to_value(value).map_err(Error::from)),
             Command::AnswerQuestion { session_id, answer } => runtime
                 .answer_question(&self.controller, &session_id, answer)
+                .await
+                .map(|_| json!({ "accepted": true })),
+            Command::RejectQuestion {
+                session_id,
+                rejection,
+            } => runtime
+                .reject_question(&self.controller, &session_id, rejection)
                 .await
                 .map(|_| json!({ "accepted": true })),
             Command::State { session_id } => runtime.store().state(&session_id).await,

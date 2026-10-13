@@ -64,10 +64,21 @@ async fn daemon_source_loads_and_rotates_inside_the_margin() {
     let socket = dir.path().join("credential.sock");
     let listener = tokio::net::UnixListener::bind(&socket).unwrap();
     let daemon = Arc::new(
-        Daemon::new(db.clone(), profile, "miao-engine/test".into()).with_margin_ms(60_000),
+        Daemon::new(db.clone(), profile, "miao-engine/test".into())
+            .with_margin_ms(60_000)
+            .with_profile(profile::copilot("https://github.com".into())),
     );
     tokio::spawn(daemon.serve(listener));
     tokio::time::sleep(std::time::Duration::from_millis(20)).await;
+
+    let adopted = client::request(
+        &socket,
+        serde_json::json!({"id":1,"op":"adopt","credential_id":"cred_1","integration":"openai"})
+            .to_string(),
+    )
+    .await
+    .unwrap();
+    assert!(adopted.get("ok").is_some());
 
     // The engine path: Source::Daemon::load once per provider turn.
     let source = Source::Daemon {
@@ -75,7 +86,14 @@ async fn daemon_source_loads_and_rotates_inside_the_margin() {
         id: "cred_1".into(),
         integration: "openai".into(),
     };
-    let _credential = source.load().await.unwrap();
+    // A database source carrying the ownership marker routes to the daemon
+    // before inspecting the stale snapshot's expiry, without another CLI flag.
+    let inherited = Source::Database {
+        path: db.clone(),
+        id: "cred_1".into(),
+        integration: "openai".into(),
+    };
+    let _credential = inherited.load().await.unwrap();
     // The daemon refreshed inside the margin before handing the value over:
     // the stored row already carries the rotated tokens.
     let stored = Connection::open(&db).unwrap();
@@ -107,4 +125,22 @@ async fn daemon_source_loads_and_rotates_inside_the_margin() {
     let credential = source.load().await.unwrap();
     let _ = credential;
     let _ = client::discover(&socket).await.unwrap();
+    let connection = Connection::open(&db).unwrap();
+    connection.execute("INSERT INTO credential VALUES('cred_copilot','github-copilot','GitHub','{\"type\":\"oauth\",\"access\":\"fixture-gh\",\"refresh\":\"fixture-gh\",\"expires\":0,\"methodID\":\"github-copilot-device\"}')",[]).unwrap();
+    let source = Source::Daemon {
+        socket: socket.clone(),
+        id: "cred_copilot".into(),
+        integration: "github-copilot".into(),
+    };
+    source.load().await.unwrap();
+    connection.execute("INSERT INTO credential VALUES('cred_expired','openai','Expired','{\"type\":\"oauth\",\"access\":\"stale\",\"expires\":1}')",[]).unwrap();
+    let source = Source::Daemon {
+        socket,
+        id: "cred_expired".into(),
+        integration: "openai".into(),
+    };
+    assert!(matches!(
+        source.load().await,
+        Err(miao_engine::credential::Error::Expired)
+    ));
 }

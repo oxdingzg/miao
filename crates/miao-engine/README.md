@@ -650,3 +650,24 @@ auditable.
 Hooks are a gatekeeper/observation surface of trusted host configuration, not a model capability:
 they do not occupy permission rules, do not need allow_process, and give the model no new authority.
 There is currently no per-hook network, stdin injection, run/turn-level event, or remote hook.
+
+### Product sidecar coding policy
+
+The product forwards `MIAO_ENGINE_ENDPOINT` as the explicit provider endpoint and
+`MIAO_ENGINE_POLICY` as the engine's policy-file path. Use an absolute policy
+path when the product starts children for different Locations. For example:
+
+```json
+{ "mode": "workspace" }
+```
+
+This enables workspace mutation subject to the engine's existing approval rules;
+it does not automatically approve writes or enable process execution. With no
+policy configured, the engine keeps its read-only default. A write approval is
+answered through the product's native permission endpoint and remains bound to
+the original Session, input hash and policy revision.
+
+`packages/miao/test/engine/native-coding-http.test.ts` exercises the production
+CLI and HTTP API: create, submit a prompt, await and approve a native write once,
+observe the final history, and verify the file. Its unconfigured-policy case
+verifies that the same request does not write a file.
