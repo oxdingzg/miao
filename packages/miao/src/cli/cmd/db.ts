@@ -19,7 +19,6 @@ import { effectCmd } from "../effect-cmd"
 const QueryCommand = effectCmd({
   command: "$0 [query]",
   describe: "open an interactive sqlite3 shell or run a query",
-  instance: false,
   builder: (yargs: Argv) => {
     return yargs
       .positional("query", {
@@ -56,7 +55,6 @@ const QueryCommand = effectCmd({
 const PathCommand = effectCmd({
   command: "path",
   describe: "print the database path",
-  instance: false,
   handler: Effect.fn("Cli.db.path")(function* () {
     console.log(Database.path())
   }),
@@ -67,7 +65,6 @@ const mb = (bytes: number) => (bytes / 1024 / 1024).toFixed(1)
 const StatsCommand = effectCmd({
   command: "stats",
   describe: "report database size and per-table / per-event-type usage",
-  instance: false,
   handler: Effect.fn("Cli.db.stats")(function* () {
     const { db } = yield* Database.Service
     const pragma = (name: string) => db.get<Record<string, unknown>>(sql.raw(`PRAGMA ${name}`)).pipe(Effect.orDie)
@@ -136,7 +133,6 @@ const StatsCommand = effectCmd({
 const BackfillCommand = effectCmd({
   command: "backfill",
   describe: "convert legacy V1 session messages into the V2 projection (idempotent)",
-  instance: false,
   builder: (yargs: Argv) =>
     yargs
       .option("dry-run", {
@@ -172,7 +168,6 @@ const BackfillCommand = effectCmd({
 const VacuumCommand = effectCmd({
   command: "vacuum",
   describe: "checkpoint, enable incremental auto-vacuum, and VACUUM to reclaim free space",
-  instance: false,
   handler: Effect.fn("Cli.db.vacuum")(function* () {
     const { db } = yield* Database.Service
     // auto_vacuum is only persisted by VACUUM, and must be requested before it runs.
@@ -187,7 +182,6 @@ const VacuumCommand = effectCmd({
 const CompactCommand = effectCmd({
   command: "compact",
   describe: "retire legacy V1 storage once its history is projected (deletes events, drops tables, vacuums)",
-  instance: false,
   builder: (yargs: Argv) =>
     yargs
       .option("dry-run", {
@@ -240,7 +234,6 @@ const CompactCommand = effectCmd({
 const RestoreCommand = effectCmd({
   command: "restore",
   describe: "merge sessions from another database into this one (to roll back a compaction)",
-  instance: false,
   builder: (yargs: Argv) =>
     yargs
       .option("merge-from", {
@@ -276,7 +269,6 @@ const RestoreCommand = effectCmd({
 const ExternalizeBlobsCommand = effectCmd({
   command: "externalize-blobs",
   describe: "move existing inline attachments and tool files into the content-addressed blob store",
-  instance: false,
   builder: (yargs: Argv) =>
     yargs.option("dry-run", {
       type: "boolean",
@@ -299,7 +291,6 @@ const ExternalizeBlobsCommand = effectCmd({
 const GcBlobsCommand = effectCmd({
   command: "gc-blobs",
   describe: "delete content-addressed blobs that no session row references",
-  instance: false,
   builder: (yargs: Argv) =>
     yargs
       .option("yes", {
@@ -353,7 +344,6 @@ const GcBlobsCommand = effectCmd({
 const RetentionCommand = effectCmd({
   command: "retention",
   describe: "report durable events a bounded event log could prune (report only)",
-  instance: false,
   handler: Effect.fn("Cli.db.retention")(function* () {
     const { db } = yield* Database.Service
     const result = yield* SessionRetention.plan(db)
@@ -367,7 +357,6 @@ const RetentionCommand = effectCmd({
 const StatusCommand = effectCmd({
   command: "status",
   describe: "report the V1 to V2 session storage migration status",
-  instance: false,
   handler: Effect.fn("Cli.db.status")(function* () {
     const { db } = yield* Database.Service
     const pending = yield* SessionBackfill.backfill(db, { dryRun: true })
@@ -402,7 +391,6 @@ const StatusCommand = effectCmd({
 export const DbCommand = effectCmd({
   command: "db",
   describe: "database tools",
-  instance: false,
   builder: (yargs: Argv) => {
     return yargs
       .command(QueryCommand)

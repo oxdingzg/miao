@@ -449,7 +449,6 @@ async function addMcpToConfig(name: string, mcpConfig: ConfigMCPV1.Info, configP
 export const McpAddCommand = effectCmd({
   command: "add [name]",
   describe: "add an MCP server",
-  instance: false,
   builder: (yargs) =>
     yargs
       .positional("name", {

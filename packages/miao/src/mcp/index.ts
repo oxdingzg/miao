@@ -2,6 +2,7 @@ import path from "node:path"
 import { pathToFileURL } from "node:url"
 import { LayerNode } from "@miao/core/effect/layer-node"
 import { ConfigV1 } from "@miao/core/v1/config/config"
+import { McpView } from "@miao/schema/mcp-view"
 import { serviceUse } from "@miao/core/effect/service-use"
 import { Client, type ClientOptions } from "@modelcontextprotocol/sdk/client/index.js"
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js"
@@ -71,31 +72,8 @@ function createClient(directory: string) {
   return client
 }
 
-const StatusConnected = Schema.Struct({ status: Schema.Literal("connected") }).annotate({
-  identifier: "MCPStatusConnected",
-})
-const StatusDisabled = Schema.Struct({ status: Schema.Literal("disabled") }).annotate({
-  identifier: "MCPStatusDisabled",
-})
-const StatusFailed = Schema.Struct({ status: Schema.Literal("failed"), error: Schema.String }).annotate({
-  identifier: "MCPStatusFailed",
-})
-const StatusNeedsAuth = Schema.Struct({ status: Schema.Literal("needs_auth") }).annotate({
-  identifier: "MCPStatusNeedsAuth",
-})
-const StatusNeedsClientRegistration = Schema.Struct({
-  status: Schema.Literal("needs_client_registration"),
-  error: Schema.String,
-}).annotate({ identifier: "MCPStatusNeedsClientRegistration" })
-
-export const Status = Schema.Union([
-  StatusConnected,
-  StatusDisabled,
-  StatusFailed,
-  StatusNeedsAuth,
-  StatusNeedsClientRegistration,
-]).annotate({ identifier: "MCPStatus", discriminator: "status" })
-export type Status = Schema.Schema.Type<typeof Status>
+export const Status = McpView.Status
+export type Status = McpView.Status
 
 // Store transports for OAuth servers to allow finishing auth
 type TransportWithAuth = StreamableHTTPClientTransport | SSEClientTransport

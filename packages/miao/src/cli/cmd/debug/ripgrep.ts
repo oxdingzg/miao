@@ -14,7 +14,6 @@ export const RipgrepCommand = cmd({
 const FilesCommand = effectCmd({
   command: "files",
   describe: "list files using ripgrep",
-  instance: false,
   builder: (yargs) =>
     yargs
       .option("query", {
@@ -45,7 +44,6 @@ const FilesCommand = effectCmd({
 const SearchCommand = effectCmd({
   command: "search <pattern>",
   describe: "search file contents using ripgrep",
-  instance: false,
   builder: (yargs) =>
     yargs
       .positional("pattern", {

@@ -1,8 +1,19 @@
-import { LSP } from "@/lsp/lsp"
-import { Effect } from "effect"
-import { effectCmd } from "../../effect-cmd"
-import { cmd } from "../cmd"
 import { EOL } from "os"
+import { Effect } from "effect"
+import { Location } from "@miao/core/location"
+import { LocationServiceMap, locationServiceMapLayer } from "@miao/core/location-services"
+import { AbsolutePath } from "@miao/core/schema"
+import { LSP } from "@miao/core/lsp"
+import { effectCmd, fail } from "../../effect-cmd"
+import { cmd } from "../cmd"
+
+const locationScope = <A, E, R>(effect: Effect.Effect<A, E, R>) =>
+  effect.pipe(
+    Effect.provide(
+      LocationServiceMap.Service.get(Location.Ref.make({ directory: AbsolutePath.make(process.cwd()) })),
+    ),
+    Effect.provide(locationServiceMapLayer),
+  )
 
 export const LSPCommand = cmd({
   command: "lsp",
@@ -16,35 +27,41 @@ const DiagnosticsCommand = effectCmd({
   command: "diagnostics <file>",
   describe: "get diagnostics for a file",
   builder: (yargs) => yargs.positional("file", { type: "string", demandOption: true }),
-  handler: Effect.fn("Cli.debug.lsp.diagnostics")(function* (args) {
-    const out = yield* LSP.Service.use((lsp) =>
-      Effect.gen(function* () {
-        yield* lsp.touchFile(args.file, "full")
-        return yield* lsp.diagnostics()
-      }),
-    )
-    process.stdout.write(JSON.stringify(out, null, 2) + EOL)
-  }),
+  handler: (args) =>
+    Effect.gen(function* () {
+      const lsp = yield* LSP.Service
+      yield* lsp.touchFile(args.file, "full")
+      const out = yield* lsp.diagnostics()
+      process.stdout.write(JSON.stringify(out, null, 2) + EOL)
+    }).pipe(locationScope),
 })
 
 export const SymbolsCommand = effectCmd({
-  command: "symbols <query>",
-  describe: "search workspace symbols",
-  builder: (yargs) => yargs.positional("query", { type: "string", demandOption: true }),
-  handler: Effect.fn("Cli.debug.lsp.symbols")(function* (args) {
-    yield* Effect.logInfo("symbols")
-    const results = yield* LSP.Service.use((lsp) => lsp.workspaceSymbol(args.query))
-    process.stdout.write(JSON.stringify(results, null, 2) + EOL)
-  }),
+  command: "symbols <file> <query>",
+  describe: "search workspace symbols using the server that owns the file",
+  builder: (yargs) =>
+    yargs.positional("file", { type: "string", demandOption: true }).positional("query", {
+      type: "string",
+      demandOption: true,
+    }),
+  handler: (args) =>
+    Effect.gen(function* () {
+      const lsp = yield* LSP.Service
+      const results = yield* lsp
+        .workspaceSymbol(args.file, args.query)
+        .pipe(Effect.catch((error) => fail(error.message)))
+      process.stdout.write(JSON.stringify(results, null, 2) + EOL)
+    }).pipe(locationScope),
 })
 
 export const DocumentSymbolsCommand = effectCmd({
-  command: "document-symbols <uri>",
+  command: "document-symbols <file>",
   describe: "get symbols from a document",
-  builder: (yargs) => yargs.positional("uri", { type: "string", demandOption: true }),
-  handler: Effect.fn("Cli.debug.lsp.documentSymbols")(function* (args) {
-    yield* Effect.logInfo("document-symbols")
-    const results = yield* LSP.Service.use((lsp) => lsp.documentSymbol(args.uri))
-    process.stdout.write(JSON.stringify(results, null, 2) + EOL)
-  }),
+  builder: (yargs) => yargs.positional("file", { type: "string", demandOption: true }),
+  handler: (args) =>
+    Effect.gen(function* () {
+      const lsp = yield* LSP.Service
+      const results = yield* lsp.documentSymbol(args.file).pipe(Effect.catch((error) => fail(error.message)))
+      process.stdout.write(JSON.stringify(results, null, 2) + EOL)
+    }).pipe(locationScope),
 })

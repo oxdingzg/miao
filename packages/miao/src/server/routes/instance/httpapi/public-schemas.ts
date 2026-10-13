@@ -1,33 +1,34 @@
 import { ConfigV1 } from "@miao/core/v1/config/config"
 import { Vcs } from "@miao/schema/vcs"
 import { FileContent, FileNode } from "@miao/schema/filesystem-v1"
-import { Agent } from "@/agent/agent"
-import { Auth } from "@/auth"
-import { Command } from "@/command"
+import { AgentView } from "@miao/schema/agent-view"
+import { AuthView } from "@miao/schema/auth-view"
+import { CommandView } from "@miao/schema/command-view"
+import { FormatView } from "@miao/schema/format-view"
+import { LspView } from "@miao/schema/lsp-view"
+import { McpView } from "@miao/schema/mcp-view"
+import { ProviderAuthView } from "@miao/schema/provider-auth-view"
+import { ProviderView } from "@miao/schema/provider-view"
 import { Workspace } from "@/control-plane/types"
-import { Format } from "@/format"
-import { LSP } from "@/lsp/lsp"
-import { MCP } from "@/mcp"
-import { ProviderAuth } from "@/provider/auth"
-import { Provider } from "@/provider/provider"
 
 export { FileContent, FileNode }
 
 // V1-shaped types that clients still use as their own view models. No route returns them any
-// more; listing them keeps them in the generated legacy SDK.
+// more; listing them keeps them in the generated legacy SDK. They come from the schema view
+// modules directly so the V1 service modules that used to re-export them stay deletable.
 export const ClientSchemas = [
-  Provider.Info,
-  Provider.Model,
+  ProviderView.Info,
+  ProviderView.Model,
   ConfigV1.Info,
-  Command.Info,
-  Agent.Info,
-  Auth.Info,
-  ProviderAuth.Method,
+  CommandView.Info,
+  AgentView.Info,
+  AuthView.Info,
+  ProviderAuthView.Method,
   Vcs.FileDiff,
-  Format.Status,
+  FormatView.Status,
   Workspace.Info,
-  MCP.Status,
-  LSP.Status,
+  McpView.Status,
+  LspView.Status,
   FileNode,
   FileContent,
 ]

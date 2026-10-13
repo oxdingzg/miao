@@ -203,15 +203,21 @@ Most V2 endpoints exist (`pty.shells`, `project.update`, `vcs.diff`, `fs.content
 - [ ] Remove the `packages/miao` `app-runtime` V1 layer: migrate `effect-cmd.ts` commands and the
       control-plane worktree adapter to core services, then delete the V1 graph.
       Inventory from the completed survey:
-      - Commands reading the V1 instance: none. (`stats`, `session list`, `export`, `pr`,
-        `mcp add`, `import`, `plugin`, `agent`, `debug rg`, and `marketplace` all resolve the
-        project through `cli/project-context.ts` or `process.cwd()` and set `instance: false`.)
-        `agent create` was reimplemented on core: it resolves a model from `Catalog`
-        (`model.get`/`model.default`), gets the `LanguageModelV3` from `AISDK.language`, and
-        runs `generateObject` with the existing prompt and schema — the V1
-        `Agent.Service.generate` (now dead) and its prompt file are the only V1 agent pieces
-        left, and they go with the module when the V1 graph is deleted. `agent list` reads
-        `AgentV2.all()`.
+      - Commands reading the V1 instance: none. Every `effectCmd` command now sets
+        `instance: false` (project/worktree resolution goes through
+        `cli/project-context.ts`, which wraps `ProjectRegistry.registerDirectory`) — the V1
+        instance bootstrap no longer runs on any command path, so
+        `InstanceStore`/`InstanceBootstrap` are one step from deletion (only the app layer and
+        the test fixture still build them).
+        Landed: the CLI runtime is now core-only. `cli/cli-runtime.ts` assembles the global
+        core nodes (Database, EventV2, FSUtil, Blob, Npm, GitCli, Ripgrep, ModelsCatalog,
+        McpAuth, SessionStore/Projector/Schedule, RuntimeFlags, EventV2Bridge, ProjectMetadata,
+        Installation) plus the location map and `SessionExecutionLocal`, and `effect-cmd.ts`
+        runs every handler on it with `CliServices` as the only ambient services; the
+        `instance` option is gone, `cli/global-config.ts` (shared with the updater) replaces
+        the V1 config read in `network.ts`, and `effect/app-runtime.ts` +
+        `effect/app-node-builder-v1.ts` are deleted. What still references the V1 graph is only
+        the instance subsystem, the V1 service modules themselves, and their tests.
       - The V1 workspace/adapters subsystem has no production caller (`Workspace.Service` is
         only referenced by tests), so its runtime is deleted: `control-plane/workspace.ts`,
         `workspace-adapter-runtime.ts`, `util.ts`, and `dev/*`. The V1 workspace plugin API is
@@ -229,6 +235,12 @@ Most V2 endpoints exist (`pty.shells`, `project.update`, `vcs.diff`, `fs.content
       - `server/routes/instance/httpapi/public-schemas.ts` still imports the V1 `Workspace`
         module for the OpenAPI document; that reference must switch to a protocol/schema
         source before the module is deleted.
+        Landed: `public-schemas.ts` now imports every view model from the `@miao/schema/*-view`
+        modules directly (`ProviderView`, `CommandView`, `AgentView`, `AuthView`,
+        `ProviderAuthView`, `FormatView`, `LspView`, plus the new `McpView` that carries the V1
+        MCP status union moved out of the V1 MCP module) and only `@/control-plane/types` for the
+        workspace view model, so it no longer keeps the V1 service modules alive.
+        `check:generated` passes with no diff.
       This is a multi-PR cutover: land the command migrations first, then the instance/workspace
       deletion, then the app-layer deletion.
 - [ ] Confirm V2 endpoints cover app behaviors that were silently disabled on V2 (global config

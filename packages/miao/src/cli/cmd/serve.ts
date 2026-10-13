@@ -9,7 +9,6 @@ export const ServeCommand = effectCmd({
   describe: "starts a headless miao server",
   // Server loads instances per-request via x-opencode-directory header — no
   // need for an ambient project InstanceContext at startup.
-  instance: false,
   handler: Effect.fn("Cli.serve")(function* (args) {
     const { Server } = yield* Effect.promise(() => import("../../server/server"))
     if (!Flag.MIAO_SERVER_PASSWORD) {

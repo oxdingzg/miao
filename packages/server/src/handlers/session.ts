@@ -11,7 +11,9 @@ import { SessionDelegationStore } from "@miao/core/session/delegation-store"
 import { EventV2 } from "@miao/core/event"
 import { HttpApiBuilder, HttpApiSchema } from "effect/unstable/httpapi"
 import { Api } from "../api"
+import { Project } from "@miao/core/project"
 import { NativeEngine } from "../native-engine"
+import { mergeNativeSessions, nativeSessionInfo } from "../native-session"
 import { booted } from "../location"
 import { SessionsCursor } from "@miao/protocol/groups/session"
 import {
@@ -48,15 +50,33 @@ export const SessionHandler = HttpApiBuilder.group(Api, "server.session", (handl
                   Effect.mapError(() => new InvalidCursorError({ message: "Invalid cursor" })),
                 )
               : ctx.query
-          const sessions = yield* session.list({
-            ...query,
-            workspaceID: query.workspace,
-            limit: ctx.query.limit ?? DefaultSessionsLimit,
-          })
-          const first = sessions[0]
-          const last = sessions.at(-1)
+          const limit = ctx.query.limit ?? DefaultSessionsLimit
+          const sessions = yield* session.list({ ...query, workspaceID: query.workspace, limit })
+          // Native Sessions live in the engine's storage, not this catalog.
+          // They join every page under the same `(time, id)` anchor: both
+          // sources cut at the same element, so the merged page continues
+          // seamlessly across sources in both directions.
+          const native = yield* Effect.serviceOption(NativeEngine.Service)
+          const projects = Option.getOrUndefined(yield* Effect.serviceOption(Project.Service))
+          const merged =
+            Option.isSome(native) && projects !== undefined
+              ? yield* mergeNativeSessions({
+                  native: native.value,
+                  db,
+                  sessions,
+                  limit,
+                  order: query.order ?? "desc",
+                  search: query.search,
+                  anchor: "anchor" in query ? query.anchor : undefined,
+                  directory: "directory" in query ? query.directory : undefined,
+                  project: "project" in query ? query.project : undefined,
+                  projects,
+                }).pipe(Effect.orDie)
+              : sessions
+          const first = merged[0]
+          const last = merged.at(-1)
           return {
-            data: sessions,
+            data: merged,
             cursor: {
               previous: first
                 ? SessionsCursor.make({
@@ -108,6 +128,26 @@ export const SessionHandler = HttpApiBuilder.group(Api, "server.session", (handl
       .handle(
         "session.get",
         Effect.fn(function* (ctx) {
+          // A native Session is stored by the engine; its snapshot is the only
+          // authority for identity, title, and time.
+          const native = yield* Effect.serviceOption(NativeEngine.Service)
+          const placement = Option.getOrUndefined(yield* Effect.serviceOption(NativeEngine.Placement))
+          if (Option.isSome(native) && placement) {
+            const snapshot = yield* native.value.snapshot({
+              sessionID: ctx.params.sessionID,
+              storage: placement.storage,
+              location: placement.location,
+            })
+            const project = yield* (yield* Project.Service).resolve(placement.location.directory)
+            return {
+              data: nativeSessionInfo({
+                sessionID: ctx.params.sessionID,
+                projectID: project.id,
+                location: placement.location,
+                snapshot,
+              }),
+            }
+          }
           const info = yield* session.get(ctx.params.sessionID).pipe(
             Effect.catchTag(
               "Session.NotFoundError",

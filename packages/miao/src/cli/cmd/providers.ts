@@ -40,7 +40,6 @@ export const ProvidersListCommand = effectCmd({
   aliases: ["ls"],
   describe: "list providers and credentials",
   // Lists global credentials + provider env vars; no project instance needed.
-  instance: false,
   handler: Effect.fn("Cli.providers.list")(function* (_args) {
     const credentials = yield* Credential.Service.use((store) => store.all())
     const modelsCatalog = yield* ModelsCatalog.Service
@@ -87,7 +86,6 @@ export const ProvidersLoginCommand = effectCmd({
   describe: "log in to a provider",
   // The core integration registry is location-scoped; the handler opens its own
   // scope, so no instance bootstrap is needed.
-  instance: false,
   builder: (yargs: Argv) =>
     yargs
       .positional("provider", {
@@ -263,7 +261,6 @@ export const ProvidersLogoutCommand = effectCmd({
       type: "string",
     }),
   // Removes a global auth credential; no project instance needed.
-  instance: false,
   handler: Effect.fn("Cli.providers.logout")(function* (args) {
     const credentials = yield* Credential.Service.use((store) => store.all())
     const modelsCatalog = yield* ModelsCatalog.Service

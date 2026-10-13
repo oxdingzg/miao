@@ -37,7 +37,6 @@ async function readManifest(source: string): Promise<{ manifest: Manifest; root:
 export const MarketplaceCommand = effectCmd({
   command: "marketplace <source> [plugins..]",
   describe: "browse a Claude Code / ZCode style marketplace and install plugin assets",
-  instance: false,
   builder: (yargs) =>
     yargs
       .positional("source", {

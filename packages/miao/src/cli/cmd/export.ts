@@ -231,7 +231,6 @@ function sanitize(data: Archive) {
 export const ExportCommand = effectCmd({
   command: "export [sessionID]",
   describe: "export session data as JSON or JSONL",
-  instance: false,
   builder: (yargs) =>
     yargs
       .positional("sessionID", {

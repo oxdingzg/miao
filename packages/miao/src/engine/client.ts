@@ -37,9 +37,11 @@ export interface EngineOptions {
 }
 
 /**
- * Process basics the engine child inherits. Credentials are deliberately absent:
- * only what the caller passes through `env` reaches the child, so unrelated
- * secrets in the operator's environment stay out of it.
+ * Everything that may cross into the engine child: the process basics it needs
+ * to run, the provider credentials it authenticates with, and its own
+ * deployment knobs. Unrelated secrets in the operator's environment (cloud
+ * tokens, CI secrets, other providers' keys) never reach it, and the caller's
+ * `env` still overrides any of these.
  */
 const INHERITED_ENVIRONMENT = [
   "PATH",
@@ -63,6 +65,18 @@ const INHERITED_ENVIRONMENT = [
   "LOCALAPPDATA",
   "ProgramData",
   "NUMBER_OF_PROCESSORS",
+  // Provider credentials the engine reads.
+  "ANTHROPIC_API_KEY",
+  "OPENAI_API_KEY",
+  "OPENAI_ACCESS_TOKEN",
+  "OPENAI_ACCOUNT_ID",
+  "GEMINI_API_KEY",
+  // Engine deployment knobs.
+  "MIAO_ENGINE_VERSION",
+  "MIAO_ENGINE_HTTP_TOKEN",
+  "MIAO_LLM_FIRST_BYTE_TIMEOUT_MS",
+  "MIAO_TOOL_INPUT_MAX_BYTES",
+  "MIAO_TOOL_INPUT_TIMEOUT_MS",
 ] as const
 
 /**
