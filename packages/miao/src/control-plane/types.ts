@@ -15,6 +15,17 @@ export const WorkspaceInfo = Schema.Struct({
 }).annotate({ identifier: "Workspace" })
 export type WorkspaceInfo = DeepMutable<Schema.Schema.Type<typeof WorkspaceInfo>>
 
+/**
+ * View model kept in the generated legacy SDK. No route returns it any more —
+ * the V1 workspace service is retired — but the shape must not change.
+ */
+export const Workspace = {
+  Info: Schema.Struct({
+    ...WorkspaceInfo.fields,
+    timeUsed: Schema.Number,
+  }).annotate({ identifier: "Workspace" }),
+} as const
+
 export const WorkspaceListedInfo = Schema.Struct(Struct.omit(WorkspaceInfo.fields, ["id"])).annotate({
   identifier: "WorkspaceListedInfo",
 })

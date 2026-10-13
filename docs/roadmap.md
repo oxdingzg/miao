@@ -211,12 +211,15 @@ Most V2 endpoints exist (`pty.shells`, `project.update`, `vcs.diff`, `fs.content
         generator with no V2 counterpart yet), so it needs a V2 design rather than a pure
         context swap.
       - The V1 workspace/adapters subsystem has no production caller (`Workspace.Service` is
-        only referenced by tests), so `control-plane/workspace.ts`, `workspace-context.ts`,
-        `workspace-adapter-runtime.ts`, `types.ts`, `util.ts`, `adapters/*`, and `dev/*` are
-        deletions rather than migrations. They are entangled with the instance plumbing:
-        `effect/instance-state.ts`, `effect/bridge.ts`, `effect/run-service.ts`, and
-        `project/instance-store.ts` all import `WorkspaceContext`, so the whole group moves
-        together.
+        only referenced by tests), so its runtime is deleted: `control-plane/workspace.ts`,
+        `workspace-adapter-runtime.ts`, `util.ts`, and `dev/*`. What survives is `types.ts`
+        (the `Workspace` view model that `public-schemas.ts` keeps in the generated legacy SDK —
+        shape and identifier unchanged, verified by `check:generated`) and `adapters/` (the
+        plugin `experimental_workspace.register` target, itself now dead). They are entangled
+        with the instance plumbing: `effect/instance-state.ts`, `effect/bridge.ts`,
+        `effect/run-service.ts`, and `project/instance-store.ts` all import
+        `control-plane/workspace-context.ts`, so that module moves with the instance group when
+        the whole group is deleted.
       - After those, `effect/app-runtime.ts`, `effect/app-node-builder-v1.ts`,
         `project/bootstrap.ts`, `project/bootstrap-service.ts`, and the remaining V1 service
         modules (v1 config/provider/plugin/lsp/skill/snapshot/auth/worktree/…) have no
