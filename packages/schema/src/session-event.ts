@@ -6,7 +6,7 @@ import { Event } from "./event"
 import { ProviderMetadata, ToolContent } from "./llm"
 import { Delivery } from "./session-delivery"
 import { Model } from "./model"
-import { DateTimeUtcFromMillis, NonNegativeInt, RelativePath } from "./schema"
+import { AbsolutePath, DateTimeUtcFromMillis, NonNegativeInt, RelativePath } from "./schema"
 import { FileAttachment, Prompt } from "./prompt"
 import { SessionID } from "./session-id"
 import { Location } from "./location"
@@ -653,6 +653,9 @@ export namespace Info {
       info: SessionInfo.Info,
       slug: Schema.String,
       version: Schema.String,
+      /** Present when the Session was born on the native engine: the storage the
+       * placement catalog binds this identity to. Absent means TypeScript-owned. */
+      nativeStorage: AbsolutePath.pipe(optional),
     },
   })
   export type Created = typeof Created.type
