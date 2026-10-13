@@ -11,7 +11,9 @@ import { SessionDelegationStore } from "@miao/core/session/delegation-store"
 import { EventV2 } from "@miao/core/event"
 import { HttpApiBuilder, HttpApiSchema } from "effect/unstable/httpapi"
 import { Api } from "../api"
+import { Project } from "@miao/core/project"
 import { NativeEngine } from "../native-engine"
+import { nativeSessionInfo } from "../native-session"
 import { booted } from "../location"
 import { SessionsCursor } from "@miao/protocol/groups/session"
 import {
@@ -108,6 +110,26 @@ export const SessionHandler = HttpApiBuilder.group(Api, "server.session", (handl
       .handle(
         "session.get",
         Effect.fn(function* (ctx) {
+          // A native Session is stored by the engine; its snapshot is the only
+          // authority for identity, title, and time.
+          const native = yield* Effect.serviceOption(NativeEngine.Service)
+          const placement = Option.getOrUndefined(yield* Effect.serviceOption(NativeEngine.Placement))
+          if (Option.isSome(native) && placement) {
+            const snapshot = yield* native.value.snapshot({
+              sessionID: ctx.params.sessionID,
+              storage: placement.storage,
+              location: placement.location,
+            })
+            const project = yield* (yield* Project.Service).resolve(placement.location.directory)
+            return {
+              data: nativeSessionInfo({
+                sessionID: ctx.params.sessionID,
+                projectID: project.id,
+                location: placement.location,
+                snapshot,
+              }),
+            }
+          }
           const info = yield* session.get(ctx.params.sessionID).pipe(
             Effect.catchTag(
               "Session.NotFoundError",
