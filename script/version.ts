@@ -4,7 +4,9 @@ import { Script } from "@miao/script"
 import { $ } from "bun"
 
 const output = [`version=${Script.version}`]
-const sha = process.env.GITHUB_SHA ?? (await $`git rev-parse HEAD`.text()).trim()
+// A pinned release checkout can differ from the workflow dispatch SHA.
+// Tag the source that passed the release gate and will be built by every job.
+const sha = (await $`git rev-parse HEAD`.text()).trim()
 
 if (!Script.preview) {
   // Changelog generation is best-effort: it shells out to an LLM-backed CLI that
