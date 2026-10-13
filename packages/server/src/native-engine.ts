@@ -91,6 +91,13 @@ export interface Interface {
     location: Location.Ref
     requestID: Question.ID
   }) => Effect.Effect<void, ConflictError>
+  readonly fork: (input: {
+    sessionID: SessionID
+    storage: AbsolutePath
+    location: Location.Ref
+    targetSessionID: SessionID
+    messageID?: SessionMessage.ID
+  }) => Effect.Effect<void, ConflictError>
   /** Every engine-owned Session in one storage. */
   readonly sessions: (input: {
     storage: AbsolutePath

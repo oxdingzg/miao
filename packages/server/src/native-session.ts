@@ -31,6 +31,9 @@ export function nativeSessionInfo(input: {
   const title = input.snapshot["title"]
   return {
     id: input.sessionID,
+    ...(typeof input.snapshot["parent_session_id"] === "string"
+      ? { parentID: Schema.decodeUnknownSync(SessionID)(input.snapshot["parent_session_id"]) }
+      : {}),
     projectID: input.projectID,
     cost: 0,
     tokens: { input: 0, output: 0, reasoning: 0, cache: { read: 0, write: 0 } },

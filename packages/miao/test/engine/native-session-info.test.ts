@@ -1,4 +1,5 @@
 import { expect, test } from "bun:test"
+import { SessionID } from "@miao/schema/session-id"
 import { Location } from "@miao/schema/location"
 import { Project } from "@miao/schema/project"
 import { DateTime, Schema } from "effect"
@@ -13,7 +14,12 @@ test("engine snapshot projects to the product record without inventing facts", (
     sessionID,
     projectID,
     location,
-    snapshot: { session_id: "ses_native", title: "First title", created_at_ms: 1_700_000_000_000, updated_at_ms: 1_700_000_001_000 },
+    snapshot: {
+      session_id: "ses_native",
+      title: "First title",
+      created_at_ms: 1_700_000_000_000,
+      updated_at_ms: 1_700_000_001_000,
+    },
   })
   expect(info.id).toBe(sessionID)
   expect(info.projectID).toBe(projectID)
@@ -38,4 +44,11 @@ test("unknown metadata degrades honestly instead of fabricating", () => {
   expect(info.title).toBe("")
   expect(DateTime.toEpochMillis(info.time.created)).toBe(0)
   expect(DateTime.toEpochMillis(info.time.updated)).toBe(0)
+})
+
+test("fork lineage comes from the engine snapshot rather than a fabricated catalog parent", () => {
+  const input = { sessionID: SessionID.make("ses_child"), projectID, location }
+  expect(nativeSessionInfo({ ...input, snapshot: { parent_session_id: "ses_parent" } }).parentID).toBe(SessionID.make("ses_parent"))
+  expect(nativeSessionInfo({ ...input, snapshot: { parent_session_id: null } }).parentID).toBeUndefined()
+  expect(() => nativeSessionInfo({ ...input, snapshot: { parent_session_id: "invalid" } })).toThrow()
 })
