@@ -31,6 +31,7 @@ rust:
 typescript:
   --entry PATH              packages/miao/src/index.ts of the checkout under test
   --bun PATH                bun executable (default: bun)
+  --credential-db FILE      stable credential store to inherit (read-only)
 
 rust only:
   --env-file FILE           extra engine environment JSON (research fixtures)
@@ -62,6 +63,10 @@ if (args.length === 0 || args.includes("--help") || args.includes("-h")) {
 }
 const options = readOptions(args)
 const env = options.envFile ? await Bun.file(options.envFile).json() : undefined
+const binarySha256 =
+  options.engine === "rust"
+    ? new Bun.CryptoHasher("sha256").update(await Bun.file(options.binary!).arrayBuffer()).digest("hex")
+    : undefined
 await mkdir(options.out, { recursive: true })
 await mkdir(path.join(options.out, "evidence"), { recursive: true })
 
@@ -87,6 +92,7 @@ for (const task of options.tasks) {
             credentialIntegration: options.credentialIntegration,
             timeoutMs: options.timeoutMs,
             env,
+            binarySha256,
           })
         : await runBaselineTs({
             revision: options.revision,
@@ -96,6 +102,7 @@ for (const task of options.tasks) {
             model: options.model,
             entry: options.entry!,
             bun: options.bun,
+            credentialDatabase: options.credentialDatabase,
             timeoutMs: options.timeoutMs,
           })
     results.push(result)
@@ -134,6 +141,7 @@ await Bun.write(
       model: options.model,
       revision: options.revision,
       binary: options.binary ?? null,
+      binarySha256: binarySha256 ?? null,
       tasks: options.tasks,
       repetitions: options.repetitions,
       suiteHash: baselineContract().suiteHash,

@@ -1,5 +1,6 @@
+import { Database } from "bun:sqlite"
 import { createHash, randomUUID } from "node:crypto"
-import { mkdir } from "node:fs/promises"
+import { chmod, mkdir } from "node:fs/promises"
 import path from "node:path"
 import type { Schema } from "effect"
 import { BlackboxTape } from "@miao/core/blackbox/tape"
@@ -45,6 +46,7 @@ export interface BaselineEvidence {
   profileReceipts: number
   toolCalls: number
   textHash: string
+  binarySha256: string | null
   startedAtMs: number
   admissionMs: number | null
   elapsedMs: number
@@ -73,6 +75,7 @@ export interface BaselineRustInput {
   policyFile?: string
   timeoutMs?: number
   env?: Record<string, string | undefined>
+  binarySha256?: string
 }
 
 export interface BaselineTsInput {
@@ -85,6 +88,8 @@ export interface BaselineTsInput {
   /** Absolute path to packages/miao/src/index.ts. */
   entry: string
   bun?: string
+  /** Stable credential store copied into the run's shared store (read-only). */
+  credentialDatabase?: string
   timeoutMs?: number
 }
 
@@ -133,11 +138,12 @@ export async function runBaselineRust(input: BaselineRustInput): Promise<Baselin
   return finishBaselineRun({
     engine: "rust",
     revision: input.revision,
+    binarySha256: input.binarySha256,
     task: task.id,
     repetition: input.repetition,
     startedAtMs,
     verifiedAtMs,
-    error,
+    error: [error, providerFailureDetail(events)].filter(Boolean).join(": ") || null,
     assessment,
     answer: committedText(events),
     terminal: terminalFromEvents(events),
@@ -158,6 +164,14 @@ export async function runBaselineTs(input: BaselineTsInput): Promise<BaselineRun
   await mkdir(input.root, { recursive: true })
   await initializeBaselineWorkspace(workspace, task.id)
   const blackbox = path.join(input.root, "blackbox")
+  // The source runtime keeps its sessions in the local channel database under
+  // the data directory, so redirecting XDG_DATA_HOME isolates every run. The
+  // product reads inherited credentials from `<data>/miao.db` read-only, so a
+  // minimal copy of the stable credential table makes the shared store work
+  // without writing the product database.
+  const data = path.join(input.root, "data")
+  await mkdir(path.join(data, "miao"), { recursive: true })
+  if (input.credentialDatabase) await seedSharedCredentials(input.credentialDatabase, path.join(data, "miao", "miao.db"))
   const startedAtMs = Date.now()
   const child = Bun.spawn(
     [
@@ -177,7 +191,7 @@ export async function runBaselineTs(input: BaselineTsInput): Promise<BaselineRun
       stderr: "pipe",
       env: {
         ...process.env,
-        MIAO_DB: path.join(input.root, "miao.db"),
+        XDG_DATA_HOME: data,
         MIAO_CONFIG_CONTENT: tsConfig(),
         MIAO_CONFIG_DIR: path.join(input.root, "config"),
         MIAO_DISABLE_PROJECT_CONFIG: "1",
@@ -215,6 +229,7 @@ export async function runBaselineTs(input: BaselineTsInput): Promise<BaselineRun
   return finishBaselineRun({
     engine: "typescript",
     revision: input.revision,
+    binarySha256: undefined,
     task: task.id,
     repetition: input.repetition,
     startedAtMs,
@@ -265,6 +280,7 @@ interface FinishedBaselineRun {
   admissionMs: number | null
   requiredReceipts: string[]
   answerContains: string[]
+  binarySha256?: string
 }
 
 function finishBaselineRun(input: FinishedBaselineRun): BaselineRun {
@@ -283,6 +299,7 @@ function finishBaselineRun(input: FinishedBaselineRun): BaselineRun {
     profileReceipts: profile?.receipts ?? 0,
     toolCalls: input.toolCalls,
     textHash: digest(input.answer),
+    binarySha256: input.binarySha256 ?? null,
     startedAtMs: input.startedAtMs,
     admissionMs: input.admissionMs,
     elapsedMs: input.verifiedAtMs - input.startedAtMs,
@@ -375,6 +392,22 @@ function interruptPolicy(task: string) {
     if (!armed) return false
     return signal.kind === "provider.delta" || signal.kind === "tool.input.delta"
   }
+}
+
+/// The engine records a bounded provider error body on the durable result; keep
+/// it on the evidence so a failed live run stays diagnosable after the fact.
+function providerFailureDetail(events: EngineEvent[]) {
+  return (
+    events
+      .filter((event) => event.kind === "provider.request.result")
+      .flatMap((event) => {
+        const data = BlackboxTape.json(event.data)
+        return BlackboxTape.isObject(data) && typeof data.response_body === "string" && data.response_body
+          ? [data.response_body]
+          : []
+      })
+      .at(-1) ?? null
+  )
 }
 
 function terminalFromEvents(events: EngineEvent[]): BaselineEvidence["terminal"] {
@@ -517,6 +550,58 @@ function enginePhases(
       : []),
     { phase: "verified", atMs: verifiedAtMs, clock: "observed" },
   ]
+}
+
+async function seedSharedCredentials(source: string, target: string) {
+  const origin = new Database(source, { readonly: true })
+  const rows = origin
+    .query<
+      {
+        id: string
+        integration_id: string
+        label: string
+        value: string
+        connector_id: string | null
+        method_id: string | null
+        active: number | null
+        time_created: number
+        time_updated: number
+      },
+      []
+    >(
+      "SELECT id,integration_id,label,value,connector_id,method_id,active,time_created,time_updated FROM credential WHERE integration_id IS NOT NULL",
+    )
+    .all()
+  origin.close()
+  const shared = new Database(target, { create: true })
+  shared.run(`CREATE TABLE credential (
+    id text primary key,
+    integration_id text,
+    label text not null,
+    value text not null,
+    connector_id text,
+    method_id text,
+    active integer,
+    time_created integer not null,
+    time_updated integer not null
+  )`)
+  const insert = shared.prepare(
+    "INSERT INTO credential (id,integration_id,label,value,connector_id,method_id,active,time_created,time_updated) VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9)",
+  )
+  for (const row of rows)
+    insert.run(
+      row.id,
+      row.integration_id,
+      row.label,
+      row.value,
+      row.connector_id,
+      row.method_id,
+      row.active,
+      row.time_created,
+      row.time_updated,
+    )
+  shared.close()
+  await chmod(target, 0o600)
 }
 
 function tsConfig() {
