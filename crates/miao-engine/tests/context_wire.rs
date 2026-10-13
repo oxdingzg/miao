@@ -9,7 +9,6 @@ use miao_engine::{
     store::Store,
 };
 use serde_json::{json, Value};
-use tokio::sync::mpsc;
 
 async fn seeded() -> (tempfile::TempDir, Store, u64) {
     let dir = tempfile::tempdir().unwrap();
@@ -65,7 +64,7 @@ fn budget() -> Budget {
 #[tokio::test]
 async fn below_threshold_leaves_the_session_untouched() {
     let (_dir, store, boundary) = seeded().await;
-    let (progress, mut progress_rx) = mpsc::channel(16);
+    let mut notices: Vec<Value> = Vec::new();
     let mut breaker = Breaker::new(2);
     let mut calls = 0;
     let committed = maybe_compact(
@@ -77,7 +76,7 @@ async fn below_threshold_leaves_the_session_untouched() {
             budget: &budget(),
             per_pass: 8,
             breaker: &mut breaker,
-            progress: &progress,
+            notify: &mut |notice: Value| notices.push(notice),
         },
         |body| {
             calls += 1;
@@ -89,7 +88,7 @@ async fn below_threshold_leaves_the_session_untouched() {
     .unwrap();
     assert!(!committed);
     assert_eq!(calls, 0);
-    assert!(progress_rx.try_recv().is_err());
+    assert!(notices.is_empty());
 }
 
 #[tokio::test]
@@ -103,7 +102,7 @@ async fn trigger_summarizes_by_plan_and_commits_the_run_checkpoint() {
         )
         .await
         .unwrap();
-    let (progress, mut progress_rx) = mpsc::channel(16);
+    let mut notices: Vec<Value> = Vec::new();
     let mut breaker = Breaker::new(2);
     let committed = maybe_compact(
         &store,
@@ -114,7 +113,7 @@ async fn trigger_summarizes_by_plan_and_commits_the_run_checkpoint() {
             budget: &budget(),
             per_pass: 1,
             breaker: &mut breaker,
-            progress: &progress,
+            notify: &mut |notice: Value| notices.push(notice),
         },
         |body| async move { Ok(format!("part<{}>", body.len())) },
     )
@@ -125,7 +124,7 @@ async fn trigger_summarizes_by_plan_and_commits_the_run_checkpoint() {
     // notices, one finished notice.
     let kinds: Vec<String> = {
         let mut kinds = Vec::new();
-        while let Ok(notice) = progress_rx.try_recv() {
+        for notice in &notices {
             kinds.push(notice["kind"].as_str().unwrap().to_owned());
         }
         kinds
@@ -176,7 +175,7 @@ async fn a_failing_summarizer_trips_the_breaker_and_keeps_history() {
         )
         .await
         .unwrap();
-    let (progress, mut progress_rx) = mpsc::channel(16);
+    let mut notices: Vec<Value> = Vec::new();
     let mut breaker = Breaker::new(1);
     let committed = maybe_compact(
         &store,
@@ -187,7 +186,7 @@ async fn a_failing_summarizer_trips_the_breaker_and_keeps_history() {
             budget: &budget(),
             per_pass: 1,
             breaker: &mut breaker,
-            progress: &progress,
+            notify: &mut |notice: Value| notices.push(notice),
         },
         |_body| async { Err("summarizer refused".into()) },
     )
@@ -212,7 +211,7 @@ async fn a_failing_summarizer_trips_the_breaker_and_keeps_history() {
             budget: &budget(),
             per_pass: 1,
             breaker: &mut breaker,
-            progress: &progress,
+            notify: &mut |notice: Value| notices.push(notice),
         },
         |_body| {
             calls += 1;
@@ -223,13 +222,7 @@ async fn a_failing_summarizer_trips_the_breaker_and_keeps_history() {
     .unwrap();
     assert!(!second);
     assert_eq!(calls, 0);
-    let skipped = {
-        let mut notices = Vec::new();
-        while let Ok(notice) = progress_rx.try_recv() {
-            notices.push(notice);
-        }
-        notices
-    };
+    let skipped = &notices;
     assert!(skipped
         .iter()
         .any(|notice: &Value| notice["kind"] == "compaction.skipped"));
@@ -248,7 +241,6 @@ async fn gate_two_estimates_pending_from_the_unsent_prompt() {
         )
         .await
         .unwrap();
-    let (progress, _progress_rx) = mpsc::channel::<Value>(16);
     let mut breaker = Breaker::new(2);
     let mut calls = 0;
     let pending_chars = 20_000;
@@ -263,5 +255,4 @@ async fn gate_two_estimates_pending_from_the_unsent_prompt() {
     assert!(committed);
     let _ = &mut breaker;
     let _ = &mut calls;
-    let _ = progress;
 }
