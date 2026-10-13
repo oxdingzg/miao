@@ -12,7 +12,6 @@ use crate::store::Store;
 use rusqlite::OptionalExtension;
 use serde_json::{json, Value};
 use std::future::Future;
-use tokio::sync::mpsc;
 
 /// Explicit trigger configuration from the product layer.
 #[derive(Debug, Clone)]
@@ -66,7 +65,32 @@ pub fn estimate_tokens(chars: usize) -> u64 {
 /// transactional pre_compact and post_compact events the store already emits.
 /// Returns whether a checkpoint was committed.
 /// One run's compaction knobs at the checkpoint boundary.
-pub struct CompactRequest<'a> {
+/// Effective context limits from the product configuration. `None` keeps
+/// automatic compaction off entirely.
+#[derive(Debug, Clone)]
+pub struct ContextLimits {
+    /// Effective context window for the provider.
+    pub window: u64,
+    /// Fraction of the window at which compaction triggers.
+    pub ratio: f64,
+    /// Explicit token headroom: trim protection + summary output + slack.
+    pub headroom: u64,
+    /// Summarizer passes carry at most this many selected messages.
+    pub per_pass: usize,
+}
+
+impl ContextLimits {
+    pub fn budget(&self) -> Budget {
+        Budget {
+            window: Some(self.window),
+            ratio: self.ratio,
+            headroom: self.headroom,
+        }
+    }
+}
+
+/// One run's compaction knobs at the checkpoint boundary.
+pub struct CompactRequest<'a, P: FnMut(Value)> {
     pub session: &'a str,
     pub run: &'a str,
     /// The settled assistant boundary the checkpoint cuts through.
@@ -75,18 +99,19 @@ pub struct CompactRequest<'a> {
     /// Summarizer passes carry at most this many selected messages.
     pub per_pass: usize,
     pub breaker: &'a mut Breaker,
-    /// The run's progress channel; gate-6 notices flow here.
-    pub progress: &'a mpsc::Sender<Value>,
+    /// Gate-6 notices flow through this sink.
+    pub notify: &'a mut P,
 }
 
-pub async fn maybe_compact<S, F>(
+pub async fn maybe_compact<S, F, P>(
     store: &Store,
-    request: CompactRequest<'_>,
+    request: CompactRequest<'_, P>,
     mut summarize: S,
 ) -> Result<bool, Error>
 where
     S: FnMut(String) -> F,
     F: Future<Output = Result<String, String>>,
+    P: FnMut(Value),
 {
     let CompactRequest {
         session,
@@ -95,11 +120,11 @@ where
         budget,
         per_pass,
         breaker,
-        progress,
+        notify,
     } = request;
     let channel = |kind: &str| json!({"session_id": session, "run_id": run, "kind": kind});
     if !breaker.allows() {
-        let _ = progress.send(channel("compaction.skipped")).await;
+        notify(channel("compaction.skipped"));
         return Ok(false);
     }
     let context = store.last_context_tokens(session).await?;
@@ -112,12 +137,10 @@ where
         return Ok(false);
     }
     let plan = plan_summary(messages.len(), per_pass);
-    let _ = progress
-        .send(json!({
-            "session_id": session, "run_id": run,
-            "kind": "compaction.started", "segments": plan.segments.len(),
-        }))
-        .await;
+    notify(json!({
+        "session_id": session, "run_id": run,
+        "kind": "compaction.started", "segments": plan.segments.len(),
+    }));
     let mut parts = Vec::new();
     for (nth, (start, end)) in plan.segments.iter().enumerate() {
         let body = messages[*start..*end]
@@ -132,21 +155,17 @@ where
         {
             Ok(part) => {
                 parts.push(part);
-                let _ = progress
-                    .send(json!({
-                        "session_id": session, "run_id": run,
-                        "kind": "compaction.progress", "segment": nth + 1, "total": plan.segments.len(),
-                    }))
-                    .await;
+                notify(json!({
+                    "session_id": session, "run_id": run,
+                    "kind": "compaction.progress", "segment": nth + 1, "total": plan.segments.len(),
+                }));
             }
             Err(reason) => {
                 breaker.rejected();
-                let _ = progress
-                    .send(json!({
-                        "session_id": session, "run_id": run,
-                        "kind": "compaction.failed", "reason": reason,
-                    }))
-                    .await;
+                notify(json!({
+                    "session_id": session, "run_id": run,
+                    "kind": "compaction.failed", "reason": reason,
+                }));
                 return Ok(false);
             }
         }
@@ -157,17 +176,15 @@ where
         .await
     {
         Ok(_) => {
-            let _ = progress.send(channel("compaction.finished")).await;
+            notify(channel("compaction.finished"));
             Ok(true)
         }
         Err(error) => {
             breaker.rejected();
-            let _ = progress
-                .send(json!({
-                    "session_id": session, "run_id": run,
-                    "kind": "compaction.failed", "reason": error.to_string(),
-                }))
-                .await;
+            notify(json!({
+                "session_id": session, "run_id": run,
+                "kind": "compaction.failed", "reason": error.to_string(),
+            }));
             Ok(false)
         }
     }
