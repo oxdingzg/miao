@@ -21,6 +21,10 @@ pub enum Request {
         integration: String,
     },
     Discover,
+    Adopt {
+        credential_id: String,
+        integration: String,
+    },
     LoginStart {
         credential_id: String,
         label: String,

@@ -31,6 +31,7 @@ pub struct Daemon {
     user_agent: String,
     row_locks: Mutex<HashMap<String, Arc<Mutex<()>>>>,
     logins: Mutex<HashMap<String, Login>>,
+    socket: Mutex<Option<PathBuf>>,
 }
 
 impl Daemon {
@@ -42,6 +43,7 @@ impl Daemon {
             user_agent,
             row_locks: Mutex::new(HashMap::new()),
             logins: Mutex::new(HashMap::new()),
+            socket: Mutex::new(None),
         }
     }
 
@@ -95,6 +97,13 @@ impl Daemon {
     }
 
     async fn run(self: Arc<Self>, listener: UnixListener) -> std::io::Result<()> {
+        store::ensure_ownership(&self.db).map_err(std::io::Error::other)?;
+        let path = listener
+            .local_addr()?
+            .as_pathname()
+            .ok_or_else(|| std::io::Error::other("unnamed credential socket"))?
+            .to_path_buf();
+        *self.socket.lock().await = Some(std::fs::canonicalize(path)?);
         loop {
             let (stream, _address) = listener.accept().await?;
             let daemon = self.clone();
@@ -150,6 +159,16 @@ impl Daemon {
                 label,
             } => reply(frame.id, self.login_start(credential_id, label).await),
             Request::LoginPoll { handle } => reply(frame.id, self.login_poll(&handle).await),
+            Request::Adopt {
+                credential_id,
+                integration,
+            } => {
+                let result = self
+                    .adopt(&credential_id, &integration)
+                    .await
+                    .map(|()| serde_json::json!({"status":"owned", "credential_id":credential_id}));
+                reply(frame.id, result)
+            }
             Request::Discover => {
                 let payload = store::discover(&self.db).map(|rows| {
                     serde_json::to_value(rows).unwrap_or_else(|_| serde_json::json!([]))
@@ -157,6 +176,27 @@ impl Daemon {
                 reply(frame.id, payload)
             }
         }
+    }
+
+    async fn adopt(&self, id: &str, integration: &str) -> Result<(), Error> {
+        if integration != self.profile.integration {
+            return Err(Error::Integration);
+        }
+        let lock = {
+            let mut locks = self.row_locks.lock().await;
+            locks
+                .entry(id.to_owned())
+                .or_insert_with(|| Arc::new(Mutex::new(())))
+                .clone()
+        };
+        let _guard = lock.lock().await;
+        let socket = self.socket.lock().await.clone().ok_or(Error::Io)?;
+        store::claim(
+            &self.db,
+            id,
+            integration,
+            socket.to_str().ok_or(Error::Invalid)?,
+        )
     }
 
     async fn login_start(&self, id: String, label: String) -> Result<Value, Error> {
@@ -193,12 +233,14 @@ impl Daemon {
                 // The code can only be exchanged once. Remove the pending
                 // handle even if insertion fails; never replay that code.
                 let login = pending.remove(handle).ok_or(Error::LoginRejected)?;
+                let socket = self.socket.lock().await.clone().ok_or(Error::Io)?;
                 store::insert_login(
                     &self.db,
                     &login.id,
                     &self.profile.integration,
                     &login.label,
                     &value,
+                    socket.to_str().ok_or(Error::Invalid)?,
                 )?;
                 Ok(serde_json::json!({"status":"complete", "credential_id":login.id}))
             }
@@ -253,6 +295,10 @@ impl Daemon {
     ) -> Result<Value, Error> {
         if integration != self.profile.integration {
             return Err(Error::Integration);
+        }
+        let socket = self.socket.lock().await.clone().ok_or(Error::Io)?;
+        if value["metadata"]["miaoCredentialSocket"].as_str() != socket.to_str() {
+            return Err(Error::NotRefreshable);
         }
         let refresh_token = value
             .get("refresh")

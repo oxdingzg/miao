@@ -83,6 +83,28 @@ is rejected before it can take over an existing socket. Only stale socket
 files may be removed; regular files and symlinks are rejected. The process
 lease is distinct from the per-row refresh mutex.
 
-TS broker row ownership transfer is still a separate migration step: the
-process lease prevents two daemon writers, but does not freeze an existing TS
-broker. Do not treat the lease as a completed cross-broker ownership transfer.
+## Ownership handoff
+
+After draining provider turns and stopping the old broker, run:
+
+```sh
+miao-credential adopt --socket /path/to/credential.sock --credential-id cred_X --integration openai
+```
+
+The adoption transaction keeps the same credential ID, tokens, method and
+account metadata, writes `metadata.miaoCredentialSocket`, and installs a durable
+owner record. SQLite guards refuse updates/deletes from ordinary connections.
+The daemon releases that guard only inside its own write transaction and
+restores it before commit; rollback restores it too. Newly device-authorized
+credentials are inserted with ownership in the same transaction.
+
+Restart the updated TS runtime after adoption. It reads the ownership marker
+before selecting a refresh implementation and resolves through the socket.
+Owner unavailability is an authorization failure, never a fallback to TS
+refresh. Its mutation/replacement APIs refuse daemon-owned identities.
+The daemon refuses to refresh unadopted OAuth rows.
+
+The handoff requires an idle old broker: a token request already in flight
+cannot be undone by changing SQLite ownership. Storage guards prevent stale
+writes, but cannot revoke such an external request. No real user credentials
+are moved by tests or by installing this code.

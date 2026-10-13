@@ -19,6 +19,7 @@ fn main() {
         Some("serve") => serve(&args[1..]),
         Some("discover") => discover(&args[1..]),
         Some("login") => login(&args[1..]),
+        Some("adopt") => adopt(&args[1..]),
         _ => Err("usage: miao-credential serve --db PATH --socket PATH [--refresh-margin-ms N]\n       miao-credential discover --db PATH".into()),
     };
     if let Err(error) = error {
@@ -192,5 +193,51 @@ fn login(args: &[String]) -> Result<(), String> {
 
 #[cfg(not(unix))]
 fn login(_args: &[String]) -> Result<(), String> {
+    Err("credential daemon requires Unix sockets".into())
+}
+
+#[cfg(unix)]
+fn adopt(args: &[String]) -> Result<(), String> {
+    let (pairs, remainder) = args.as_chunks::<2>();
+    if !remainder.is_empty() {
+        return Err("missing option value".into());
+    }
+    let mut options = std::collections::HashMap::new();
+    for pair in pairs {
+        if !["--socket", "--credential-id", "--integration"].contains(&pair[0].as_str())
+            || options.insert(pair[0].clone(), pair[1].clone()).is_some()
+        {
+            return Err("unknown or duplicate option".into());
+        }
+    }
+    let socket = options.get("--socket").ok_or("--socket is required")?;
+    let id = options
+        .get("--credential-id")
+        .ok_or("--credential-id is required")?;
+    let integration = options
+        .get("--integration")
+        .ok_or("--integration is required")?;
+    let runtime = tokio::runtime::Builder::new_multi_thread()
+        .enable_all()
+        .build()
+        .map_err(|e| e.to_string())?;
+    runtime.block_on(async {
+        let reply = miao_credential::client::request(
+            std::path::Path::new(socket),
+            serde_json::json!({"id":1,"op":"adopt","credential_id":id,"integration":integration})
+                .to_string(),
+        )
+        .await
+        .map_err(|e| e.to_string())?;
+        if reply.get("ok").is_none() {
+            return Err("credential adoption rejected".into());
+        }
+        println!("Credential {id} is daemon-owned");
+        Ok(())
+    })
+}
+
+#[cfg(not(unix))]
+fn adopt(_args: &[String]) -> Result<(), String> {
     Err("credential daemon requires Unix sockets".into())
 }

@@ -18,6 +18,7 @@ import {
 import { Integration } from "@miao/schema/integration"
 import path from "path"
 import { Credential } from "./credential"
+import { CredentialDaemon } from "./credential/daemon"
 import { FSUtil } from "./fs-util"
 import { Global } from "./global"
 import { State } from "./state"
@@ -473,6 +474,13 @@ export const locationLayer = Layer.effect(
           }
           const credential = yield* credentials.get(connection.id)
           if (!credential) return undefined
+          const socket = CredentialDaemon.socket(credential.value)
+          if (socket) {
+            return yield* Effect.tryPromise({
+              try: () => CredentialDaemon.get(socket, credential.id, credential.integrationID),
+              catch: (cause) => new AuthorizationError({ cause }),
+            })
+          }
           if (credential.value.type === "key") return credential.value
           if (credential.source === "shared") {
             const now = yield* Clock.currentTimeMillis
