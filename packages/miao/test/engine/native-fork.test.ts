@@ -84,6 +84,23 @@ if (binary)
         expect(child["messages"]).toHaveLength(2)
         expect(child["pending"]).toEqual([])
         expect(child["active_run"]).toBeNull()
+        const history = yield* native.history({ ...input, sessionID: targetSessionID, after: 0, limit: 100 })
+        const user = history.events.find((event) => event.type === "session.next.prompt.admitted")
+        expect(user?.data).toMatchObject({ sessionID: targetSessionID, prompt: { text: "request" } })
+        const projected = Schema.decodeUnknownSync(Schema.Struct({ messageID: SessionMessage.ID }))(user?.data)
+        const beforeRetry = yield* native.snapshot({ ...input, sessionID: targetSessionID })
+        const retry = yield* native.admit({
+          ...input,
+          sessionID: targetSessionID,
+          id: projected.messageID,
+          prompt: { text: "request" },
+          resume: false,
+        })
+        expect(retry.id).toBe(projected.messageID)
+        expect(yield* native.snapshot({ ...input, sessionID: targetSessionID })).toEqual(beforeRetry)
+
+        expect((yield* native.snapshot({ ...input, sessionID: targetSessionID }))["pending"]).toEqual([])
+
         const userFork = Schema.decodeUnknownSync(SessionID)("ses_native_user_fork")
         yield* native.fork({ ...input, targetSessionID: userFork, messageID: promptID })
         expect((yield* native.snapshot({ ...input, sessionID: userFork }))["messages"]).toHaveLength(1)

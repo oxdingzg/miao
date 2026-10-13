@@ -22,3 +22,46 @@ async fn fork_keeps_parent_identity_title_and_read_only_mode() {
     store.fork("parent", "child", None).await.unwrap();
     assert_eq!(store.snapshot("child").await.unwrap(), child);
 }
+
+#[tokio::test]
+async fn copied_user_prompts_are_promoted_exact_retries_not_new_work() {
+    use miao_engine::protocol::{Delivery, Input};
+    let directory = tempfile::tempdir().unwrap();
+    let store = Store::open(directory.path().join("engine.db"))
+        .await
+        .unwrap();
+    store
+        .admit(Input {
+            session_id: "parent".into(),
+            input_id: "msg_source".into(),
+            prompt: "request".into(),
+            delivery: Delivery::Queue,
+        })
+        .await
+        .unwrap();
+    store.promote("parent", true).await.unwrap();
+    store.fork("parent", "child", None).await.unwrap();
+    let before = store.snapshot("child").await.unwrap();
+    let seq = before["messages"][0]["seq"].as_u64().unwrap();
+    let copied_id = format!("msg_child_{seq}");
+    let receipt = store
+        .admit(Input {
+            session_id: "child".into(),
+            input_id: copied_id.clone(),
+            prompt: "request".into(),
+            delivery: Delivery::Queue,
+        })
+        .await
+        .unwrap();
+    assert!(receipt.duplicate);
+    assert_eq!(store.snapshot("child").await.unwrap(), before);
+    assert!(store
+        .admit(Input {
+            session_id: "child".into(),
+            input_id: copied_id,
+            prompt: "changed".into(),
+            delivery: Delivery::Queue
+        })
+        .await
+        .is_err());
+}

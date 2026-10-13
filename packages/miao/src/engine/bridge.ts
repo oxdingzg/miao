@@ -821,6 +821,42 @@ export function translateQuestionResolved(event: EngineEvent): SessionQuestionRe
   return undefined
 }
 
+/**
+ * Fork copies are committed history, not new inbox admissions. Reuse the
+ * public user-message projection shape without scheduling or synthesizing an
+ * engine input. Their timestamp comes from the preserved source record.
+ */
+export function translateCopiedPrompt(event: EngineEvent): SessionPromptAdmitted | undefined {
+  if (event.kind !== "message.committed" || !hasRecordedTime(event)) return undefined
+  if (typeof event.data !== "object" || event.data === null || !("role" in event.data) || event.data.role !== "user")
+    return undefined
+  if (!("content" in event.data) || !Array.isArray(event.data.content)) return undefined
+  const text = event.data.content
+    .flatMap((part: unknown) => {
+      if (
+        typeof part !== "object" ||
+        part === null ||
+        !("type" in part) ||
+        part.type !== "text" ||
+        !("text" in part) ||
+        typeof part.text !== "string"
+      )
+        return []
+      return [part.text]
+    })
+    .join("")
+  return {
+    sessionID: adoptSession(event.session_id),
+    timestamp: eventTimestamp(event),
+    messageID:
+      "input_id" in event.data && typeof event.data.input_id === "string" && event.data.input_id.startsWith("msg_")
+        ? SessionMessage.ID.make(event.data.input_id)
+        : messageID(event.session_id, event.seq),
+    prompt: { text },
+    delivery: "delivery" in event.data && event.data.delivery === "queue" ? "queue" : "steer",
+  }
+}
+
 /** The product `question.v2.asked` payload for one engine question request. */
 export type SessionQuestionAsked = {
   id: Question.ID
