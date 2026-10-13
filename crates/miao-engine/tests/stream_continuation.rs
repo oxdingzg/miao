@@ -23,8 +23,11 @@ async fn endpoint(
     let (send, receive) = mpsc::channel(32);
     let server = tokio::spawn(async move {
         for (body, broken) in bodies {
+            // Real time: a loaded runner needs the project's patience (30s) for
+            // the engine to reach the fixture, the same as every other durable
+            // wait in this suite.
             let (mut stream, _) =
-                tokio::time::timeout(std::time::Duration::from_secs(10), listener.accept())
+                tokio::time::timeout(std::time::Duration::from_secs(30), listener.accept())
                     .await
                     .unwrap()
                     .unwrap();
