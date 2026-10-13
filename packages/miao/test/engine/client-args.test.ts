@@ -35,24 +35,29 @@ test("the credential channel rides the spawn args only when configured", () => {
   expect(configured[configured.indexOf("--credential-integration") + 1]).toBe("openai")
 })
 
-test("the child inherits process basics and nothing else", () => {
+test("the child inherits the engine's own surface and nothing else", () => {
   const parent = {
     PATH: "/usr/bin",
     HOME: "/home/u",
     TEMP: "/tmp",
     ANTHROPIC_API_KEY: "sk-ant-parent",
+    MIAO_TOOL_INPUT_MAX_BYTES: "4096",
     AWS_SECRET_ACCESS_KEY: "aws-parent",
     CI_JOB_TOKEN: "ci-parent",
+    GH_TOKEN: "gh-parent",
   }
   const child = engineEnvironment({ OPENAI_API_KEY: "explicit" }, parent)
   expect(child.PATH).toBe("/usr/bin")
   expect(child.HOME).toBe("/home/u")
   expect(child.TEMP).toBe("/tmp")
+  // The engine's own credential and knob surface crosses the boundary.
+  expect(child.ANTHROPIC_API_KEY).toBe("sk-ant-parent")
+  expect(child.MIAO_TOOL_INPUT_MAX_BYTES).toBe("4096")
   expect(child.OPENAI_API_KEY).toBe("explicit")
   // Unrelated secrets in the operator's environment never reach the engine.
-  expect(child.ANTHROPIC_API_KEY).toBeUndefined()
   expect(child.AWS_SECRET_ACCESS_KEY).toBeUndefined()
   expect(child.CI_JOB_TOKEN).toBeUndefined()
+  expect(child.GH_TOKEN).toBeUndefined()
 })
 
 test("an explicit credential overrides an inherited value of the same name", () => {
