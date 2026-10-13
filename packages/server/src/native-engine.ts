@@ -2,9 +2,9 @@ import { Context, Effect } from "effect"
 import type { OpenCodeEvent } from "@miao/protocol/groups/event"
 import type { ConflictError } from "@miao/protocol/errors"
 import type { Location } from "@miao/schema/location"
+import type { SessionMessage } from "@miao/schema/session-message"
 import type { SessionID } from "@miao/schema/session-id"
 import type { SessionInput } from "@miao/schema/session-input"
-import type { SessionMessage } from "@miao/schema/session-message"
 import type { AbsolutePath } from "@miao/core/schema"
 
 export interface Interface {
@@ -39,6 +39,13 @@ export interface Interface {
     storage: AbsolutePath
     location: Location.Ref
   }) => Effect.Effect<Readonly<Record<string, unknown>>, ConflictError>
+  readonly fork: (input: {
+    sessionID: SessionID
+    storage: AbsolutePath
+    location: Location.Ref
+    targetSessionID: SessionID
+    messageID?: SessionMessage.ID
+  }) => Effect.Effect<void, ConflictError>
   /** Every engine-owned Session in one storage. */
   readonly sessions: (input: {
     storage: AbsolutePath

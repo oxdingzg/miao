@@ -3,9 +3,10 @@ import { ClientEvents } from "@miao/server/client-events"
 import { NativeEngine } from "@miao/server/native-engine"
 import { ConflictError } from "@miao/protocol/errors"
 import { Location } from "@miao/schema/location"
-import { Effect, Layer } from "effect"
-import { EngineError, type EngineOptions } from "./client"
+import { Effect, Layer, Schema } from "effect"
+import { EngineError, type EngineOptions, type EngineEvent } from "./client"
 import { makeEngineOwners } from "./owners"
+import { engineMessageSequence } from "./message-sequence"
 import { replayJournal } from "./journal"
 
 /**
@@ -97,6 +98,46 @@ export const fromOwners = (owners: Owners): NativeEngine.Interface => {
       read<Readonly<Record<string, unknown>>>(input, (connection) =>
         connection.client.request("snapshot", { session_id: input.sessionID }),
       ).pipe(Effect.map((value) => (typeof value === "object" && value !== null ? value : {}))),
+    fork: (input) =>
+      read(input, async (connection) => {
+        const snapshot = Schema.decodeUnknownSync(
+          Schema.Struct({
+            cursor: Schema.Number,
+            title: Schema.String,
+            messages: Schema.Array(Schema.Struct({ seq: Schema.Number })),
+          }),
+        )(await connection.client.request("snapshot", { session_id: input.sessionID }))
+        let boundary: number | undefined
+        if (input.messageID) {
+          let after = 0
+          const events: EngineEvent[] = []
+          while (after < snapshot.cursor) {
+            const page = Schema.decodeUnknownSync(
+              Schema.Array(
+                Schema.Struct({
+                  session_id: Schema.String,
+                  seq: Schema.Number,
+                  kind: Schema.String,
+                  data: Schema.Unknown,
+                }),
+              ),
+            )(await connection.client.request("events", { session_id: input.sessionID, after }))
+            const next = page.at(-1)?.seq
+            if (next === undefined || next <= after)
+              throw new EngineError("invalid_cursor", "Native message cursor did not advance")
+            events.push(...page.filter((event) => event.seq <= snapshot.cursor))
+            after = next
+          }
+          boundary = engineMessageSequence(input.sessionID, input.messageID, events)
+          if (boundary === undefined || !snapshot.messages.some((message) => message.seq === boundary))
+            throw new EngineError("message_not_found", "No committed message for this public ID in the Session")
+        }
+        await connection.client.request("fork", {
+          session_id: input.sessionID,
+          target_session_id: input.targetSessionID,
+          ...(boundary === undefined ? {} : { message_seq: boundary }),
+        })
+      }),
     sessions: (input) =>
       // `sessions` is a unit command: it takes no params.
       read<readonly unknown[]>(input, (connection) => connection.client.request("sessions")).pipe(

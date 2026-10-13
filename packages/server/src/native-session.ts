@@ -31,6 +31,9 @@ export function nativeSessionInfo(input: {
   const title = input.snapshot["title"]
   return {
     id: input.sessionID,
+    ...(typeof input.snapshot["parent_session_id"] === "string"
+      ? { parentID: Schema.decodeUnknownSync(SessionID)(input.snapshot["parent_session_id"]) }
+      : {}),
     projectID: input.projectID,
     cost: 0,
     tokens: { input: 0, output: 0, reasoning: 0, cache: { read: 0, write: 0 } },
@@ -67,7 +70,9 @@ export function selectNativeSessions(input: {
   const { anchor, order } = input
   const direction = anchor?.direction ?? "next"
   const traversal = direction === "previous" ? (order === "asc" ? "desc" : "asc") : order
-  const wanted = input.search ? input.sessions.filter((session) => session.title.includes(input.search!)) : input.sessions
+  const wanted = input.search
+    ? input.sessions.filter((session) => session.title.includes(input.search!))
+    : input.sessions
   const anchored = anchor
     ? wanted.filter((session) => {
         const time = DateTime.toEpochMillis(session.time.created)

@@ -612,6 +612,7 @@ impl Store {
             let cursor:u64=tx.query_row("SELECT next_seq FROM engine_session WHERE id=?1",[&session],|r|r.get(0)).optional()?.ok_or_else(||Error::Invalid("Session does not exist".into()))?;
             let location:Option<String>=tx.query_row("SELECT root FROM engine_location WHERE session_id=?1",[&session],|r|r.get(0)).optional()?;
             let messages=projected(&tx,&session,cursor)?;
+            let parent:Option<String>=tx.query_row("SELECT parent_session_id FROM engine_lineage WHERE session_id=?1",[&session],|row|row.get(0)).optional()?;
             let active:Option<String>=tx.query_row("SELECT id FROM engine_run WHERE session_id=?1 AND state='running'",[&session],|r|r.get(0)).optional()?;
             let pending={
                 let mut stmt=tx.prepare("SELECT id,delivery,admitted_seq,substr(prompt,1,200),length(prompt)>200 FROM engine_input WHERE session_id=?1 AND state='pending' ORDER BY admitted_seq LIMIT 1001")?;
@@ -635,7 +636,7 @@ impl Store {
                 "SELECT title,created_at_ms,updated_at_ms FROM engine_session WHERE id=?1",
                 [&session],|r|Ok((r.get(0)?,r.get(1)?,r.get(2)?)),
             )?;
-            let snapshot=json!({"session_id":session,"cursor":cursor,"location":location,"mode":mode,"title":title,"created_at_ms":created_at_ms,"updated_at_ms":updated_at_ms,"messages":messages,"pending":pending,"active_run":active,"approvals":approvals,"context":context,"state":state,"questions":questions,"wakeups":wakeups,"crons":crons});
+            let snapshot=json!({"session_id":session,"parent_session_id":parent,"cursor":cursor,"location":location,"mode":mode,"title":title,"created_at_ms":created_at_ms,"updated_at_ms":updated_at_ms,"messages":messages,"pending":pending,"active_run":active,"approvals":approvals,"context":context,"state":state,"questions":questions,"wakeups":wakeups,"crons":crons});
             if serde_json::to_vec(&snapshot)?.len()>4*1024*1024{return Err(Error::Invalid("snapshot exceeds limit; use events pagination".into()));}
             tx.commit()?;Ok(snapshot)
         }).await
@@ -683,9 +684,11 @@ impl Store {
             if seq!=0&&!tx.query_row("SELECT EXISTS(SELECT 1 FROM engine_message WHERE session_id=?1 AND seq=?2)",params![parent,seq],|r|r.get::<_,bool>(0))? {return Err(Error::Invalid("fork cursor must be a committed message boundary".into()));}
             let messages=projected(&tx,&parent,seq)?;
             closed_prefix(&messages)?;
+            // A fork must not escape the parent's read-only collaboration mode.
+            let (mode,title):(String,String)=tx.query_row("SELECT mode,title FROM engine_session WHERE id=?1",[&parent],|row|Ok((row.get(0)?,row.get(1)?)))?;
             tx.execute(
-                "INSERT INTO engine_session(id,created_at_ms) VALUES(?1,?2)",
-                params![target, crate::approval::now_ms() as i64],
+                "INSERT INTO engine_session(id,created_at_ms,mode,title) VALUES(?1,?2,?3,?4)",
+                params![target, crate::approval::now_ms() as i64, mode, title],
             )?;
             tx.execute("INSERT INTO engine_lineage VALUES(?1,?2,?3)",params![target,parent,seq])?;
             tx.execute("INSERT INTO engine_location SELECT ?1,root FROM engine_location WHERE session_id=?2",params![target,parent])?;

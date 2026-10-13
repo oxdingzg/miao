@@ -615,6 +615,32 @@ export const SessionHandler = HttpApiBuilder.group(Api, "server.session", (handl
       .handle(
         "session.fork",
         Effect.fn(function* (ctx) {
+          const native = yield* Effect.serviceOption(NativeEngine.Service)
+          const placement = Option.getOrUndefined(yield* Effect.serviceOption(NativeEngine.Placement))
+          if (Option.isSome(native) && placement) {
+            const targetSessionID = SessionV2.ID.create()
+            yield* native.value.fork({
+              sessionID: ctx.params.sessionID,
+              targetSessionID,
+              messageID: ctx.payload.messageID,
+              ...placement,
+            })
+            const child = yield* session.create({
+              id: targetSessionID,
+              parentID: ctx.params.sessionID,
+              location: placement.location,
+              nativeStorage: placement.storage,
+            })
+            const snapshot = yield* native.value.snapshot({ sessionID: targetSessionID, ...placement })
+            return {
+              data: nativeSessionInfo({
+                sessionID: targetSessionID,
+                projectID: child.projectID,
+                location: placement.location,
+                snapshot,
+              }),
+            }
+          }
           return {
             data: yield* session.fork({ sessionID: ctx.params.sessionID, messageID: ctx.payload.messageID }).pipe(
               Effect.catchTag("Session.NotFoundError", (error) =>
