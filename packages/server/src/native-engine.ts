@@ -1,4 +1,5 @@
 import { Context, Effect } from "effect"
+import type { OpenCodeEvent } from "@miao/protocol/groups/event"
 import type { ConflictError } from "@miao/protocol/errors"
 import type { Location } from "@miao/schema/location"
 import type { SessionID } from "@miao/schema/session-id"
@@ -49,6 +50,21 @@ export interface Interface {
     storage: AbsolutePath
     location: Location.Ref
   }) => Effect.Effect<readonly unknown[], ConflictError>
+  /**
+   * Translate the engine's durable journal after an exclusive sequence into
+   * product events, so a replay reconstructs what live delivery published.
+   */
+  readonly events: (input: {
+    sessionID: SessionID
+    storage: AbsolutePath
+    location: Location.Ref
+    after: number
+  }) => Effect.Effect<NativeJournalPage, ConflictError>
+}
+
+export interface NativeJournalPage {
+  readonly events: readonly OpenCodeEvent[]
+  readonly cursor: number
 }
 
 /**

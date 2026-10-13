@@ -13,6 +13,7 @@ import { HttpApiBuilder, HttpApiSchema } from "effect/unstable/httpapi"
 import { Api } from "../api"
 import { Project } from "@miao/core/project"
 import { NativeEngine } from "../native-engine"
+import { nativeSessionEvents } from "../native-events"
 import { mergeNativeSessions, nativeSessionInfo } from "../native-session"
 import { booted } from "../location"
 import { SessionsCursor } from "@miao/protocol/groups/session"
@@ -748,11 +749,17 @@ export const SessionHandler = HttpApiBuilder.group(Api, "server.session", (handl
       )
       .handle(
         "session.events",
-        Effect.fn((ctx) =>
-          Effect.succeed(
-            session.events({ sessionID: ctx.params.sessionID, after: ctx.query.after }).pipe(Stream.orDie),
-          ),
-        ),
+        Effect.fn(function* (ctx) {
+          const native = Option.getOrUndefined(yield* Effect.serviceOption(NativeEngine.Service))
+          const placement = Option.getOrUndefined(yield* Effect.serviceOption(NativeEngine.Placement))
+          if (native && placement)
+            return nativeSessionEvents(native, {
+              ...placement,
+              sessionID: ctx.params.sessionID,
+              after: ctx.query.after ?? 0,
+            }).pipe(Stream.orDie)
+          return session.events({ sessionID: ctx.params.sessionID, after: ctx.query.after }).pipe(Stream.orDie)
+        }),
       )
       .handle(
         "session.execution",
