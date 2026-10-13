@@ -209,6 +209,21 @@ export const fromOwners = (owners: Owners): NativeEngine.Interface => {
           answers: input.answers,
         })
       }).pipe(Effect.asVoid),
+    rejectQuestion: (input) =>
+      read(input, async (connection) => {
+        const value = await connection.client.request("questions", { session_id: input.sessionID })
+        const pending = Schema.decodeUnknownSync(
+          Schema.Array(Schema.Struct({ question_id: Schema.String, input_hash: Schema.String })),
+        )(value)
+        const binding = pending.find((request) => `que_${request.question_id}` === input.requestID)
+        if (!binding) throw new EngineError("question_not_found", "No pending question in this Session")
+        return connection.client.request("reject_question", {
+          session_id: input.sessionID,
+          rejection: { question_id: binding.question_id, input_hash: binding.input_hash },
+        })
+
+
+      }).pipe(Effect.asVoid),
     sessions: (input) =>
       // `sessions` is a unit command: it takes no params.
       read<readonly unknown[]>(input, (connection) => connection.client.request("sessions")).pipe(

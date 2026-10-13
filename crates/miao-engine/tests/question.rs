@@ -2,7 +2,7 @@ use async_trait::async_trait;
 use miao_engine::{
     protocol::{Delivery, Input, ModelRequest},
     provider::{Provider, ProviderError, Reply},
-    question::Answer,
+    question::{Answer, Rejection},
     runtime::Runtime,
     store::Store,
     tools::Tools,
@@ -329,4 +329,52 @@ async fn multiple_choice_and_custom_answers_follow_the_request_contract() {
             .unwrap();
         runtime.shutdown().await;
     }
+}
+
+#[tokio::test]
+async fn rejection_is_bound_and_idempotent_and_the_model_continues() {
+    let dir = tempfile::tempdir().unwrap();
+    let (runtime, store, done) = setup(dir.path(), 30_000).await;
+    let request = requested(&store).await;
+    let rejection = || Rejection {
+        question_id: request["question_id"].as_str().unwrap().into(),
+        input_hash: request["input_hash"].as_str().unwrap().into(),
+    };
+    let mut wrong_hash = rejection();
+    wrong_hash.input_hash = "0".repeat(64);
+    assert!(runtime
+        .reject_question(&runtime.controller(), "s", wrong_hash)
+        .await
+        .is_err());
+    assert!(runtime
+        .reject_question(&runtime.controller(), "other", rejection())
+        .await
+        .is_err());
+    assert_eq!(store.questions("s").await.unwrap().len(), 1);
+    runtime
+        .reject_question(&runtime.controller(), "s", rejection())
+        .await
+        .unwrap();
+    runtime
+        .reject_question(&runtime.controller(), "s", rejection())
+        .await
+        .unwrap();
+    assert!(store.questions("s").await.unwrap().is_empty());
+    assert!(runtime
+        .answer_question(&runtime.controller(), "s", answer(&request, "A"))
+        .await
+        .is_err());
+    tokio::time::timeout(std::time::Duration::from_secs(30), done.notified())
+        .await
+        .unwrap();
+    let resolved = store
+        .events("s", 0, 100)
+        .await
+        .unwrap()
+        .into_iter()
+        .filter(|event| event.kind == "question.resolved")
+        .collect::<Vec<_>>();
+    assert_eq!(resolved.len(), 1);
+    assert_eq!(resolved[0].data["state"], "rejected");
+    runtime.shutdown().await;
 }

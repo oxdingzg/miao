@@ -84,7 +84,12 @@ export interface Interface {
     location: Location.Ref
     requestID: Question.ID
     answers: readonly (readonly string[])[]
-
+  }) => Effect.Effect<void, ConflictError>
+  readonly rejectQuestion: (input: {
+    sessionID: SessionID
+    storage: AbsolutePath
+    location: Location.Ref
+    requestID: Question.ID
   }) => Effect.Effect<void, ConflictError>
   /** Every engine-owned Session in one storage. */
   readonly sessions: (input: {

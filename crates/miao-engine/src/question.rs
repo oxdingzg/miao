@@ -107,7 +107,48 @@ pub struct Answer {
     pub input_hash: String,
     pub answers: Vec<Vec<String>>,
 }
+#[derive(Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct Rejection {
+    pub question_id: String,
+    pub input_hash: String,
+}
+
 impl Store {
+    /// Reject only this bound question. It wakes the question tool's result
+    /// path without cancelling the owning Session or another pending question.
+    pub async fn reject_question(&self, session: &str, rejection: Rejection) -> Result<(), Error> {
+        if rejection.question_id.is_empty()
+            || rejection.question_id.len() > 512
+            || rejection.input_hash.len() != 64
+        {
+            return Err(Error::Invalid("invalid question rejection".into()));
+        }
+        let session = session.to_owned();
+        self.call(move |conn| {
+            let tx = conn.transaction()?;
+            let data: Option<String> = tx.query_row(
+                "SELECT data FROM engine_event WHERE session_id=?1 AND kind='question.requested' AND json_extract(data,'$.question_id')=?2 ORDER BY seq DESC LIMIT 1",
+                params![session,rejection.question_id], |row| row.get(0),
+            ).optional()?;
+            let data: Value = serde_json::from_str(&data.ok_or_else(||Error::Invalid("question not found in this Session".into()))?)?;
+            if data["input_hash"] != rejection.input_hash { return Err(Error::Invalid("question input binding mismatch".into())); }
+            if let Some(resolved) = resolution(&tx, &session, &rejection.question_id)? {
+                if resolved["state"] == "rejected" { return Ok(()); }
+                return Err(Error::Invalid("question is already resolved".into()));
+            }
+            let active: bool = tx.query_row("SELECT EXISTS(SELECT 1 FROM engine_run WHERE id=?1 AND session_id=?2 AND state='running')",params![data["run_id"].as_str(),session],|row|row.get(0))?;
+            if !active { return Err(Error::Invalid("question run is no longer active".into())); }
+            if now_ms() >= data["expires_at_ms"].as_u64().unwrap_or(0) {
+                append(&tx,&session,"question.resolved",json!({"question_id":rejection.question_id,"state":"expired"}))?;
+                tx.commit()?;
+                return Err(Error::Invalid("question has expired".into()));
+            }
+            append(&tx,&session,"question.resolved",json!({"question_id":rejection.question_id,"state":"rejected"}))?;
+            tx.commit()?;
+            Ok(())
+        }).await
+    }
     pub(crate) async fn request_question(
         &self,
         session: &str,
