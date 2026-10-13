@@ -120,3 +120,40 @@ async fn malformed_data_and_static_debug_do_not_echo_secret_material() {
         Err(Error::Invalid)
     ));
 }
+
+#[tokio::test]
+async fn copilot_non_expiring_sentinel_agrees_in_readonly_load_and_discovery() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("source.db");
+    database(
+        &path,
+        json!({"type":"oauth","access":"fixture","refresh":"fixture","expires":0}),
+    );
+    let connection = rusqlite::Connection::open(&path).unwrap();
+    connection
+        .execute("UPDATE credential SET integration_id='github-copilot'", [])
+        .unwrap();
+    let source = Source::Database {
+        path: path.clone(),
+        id: "cred_one".into(),
+        integration: "github-copilot".into(),
+    };
+    assert_eq!(source.load().await.unwrap().kind(), Kind::OAuth);
+    let rows = list_database(&path).unwrap();
+    assert!(!rows[0].expired);
+    assert!(rows[0].expires_at_ms.is_none());
+    let file = dir.path().join("auth.json");
+    std::fs::write(
+        &file,
+        json!({"github-copilot":{"type":"oauth","access":"fixture","expires":0}}).to_string(),
+    )
+    .unwrap();
+    Source::Legacy {
+        path: file.clone(),
+        integration: "github-copilot".into(),
+    }
+    .load()
+    .await
+    .unwrap();
+    assert!(!list_legacy(&file).unwrap()[0].expired);
+}

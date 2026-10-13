@@ -96,6 +96,8 @@ jobs:
 
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
 
       - name: Cache Rust
         uses: Swatinem/rust-cache@v2
@@ -106,6 +108,12 @@ jobs:
         # SQLite-backed event waits compete for disk on hosted Windows runners.
         # Serialize these tests rather than relax their event deadlines.
         run: cargo test -- --test-threads=1
+
+      - name: Credential daemon tests
+        run: cargo test --locked --manifest-path ../miao-credential/Cargo.toml
+
+      - name: Credential daemon clippy
+        run: cargo clippy --locked --manifest-path ../miao-credential/Cargo.toml --all-targets -- -D warnings
 
   artifacts:
     name: engine artifact (${{ matrix.target }})

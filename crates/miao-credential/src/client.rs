@@ -6,13 +6,34 @@ use crate::Error;
 use serde_json::Value;
 use std::path::Path;
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
+#[cfg(unix)]
 use tokio::net::UnixStream;
 
 /// One request, one reply. The daemon handles a connection frame by frame,
 /// but a client per request keeps callers simple and stateless.
 pub async fn request(socket: &Path, line: String) -> Result<Value, Error> {
+    tokio::time::timeout(
+        std::time::Duration::from_secs(40),
+        request_inner(socket, line),
+    )
+    .await
+    .map_err(|_| Error::Io)?
+}
+
+async fn request_inner(socket: &Path, line: String) -> Result<Value, Error> {
+    #[cfg(unix)]
     let stream = UnixStream::connect(socket).await.map_err(|_| Error::Io)?;
-    let (reader, mut writer) = stream.into_split();
+    #[cfg(windows)]
+    let stream = loop {
+        match tokio::net::windows::named_pipe::ClientOptions::new().open(socket) {
+            Ok(stream) => break stream,
+            Err(error) if error.raw_os_error() == Some(231) => {
+                tokio::time::sleep(std::time::Duration::from_millis(50)).await
+            }
+            Err(_) => return Err(Error::Io),
+        }
+    };
+    let (reader, mut writer) = tokio::io::split(stream);
     writer
         .write_all(line.as_bytes())
         .await
@@ -35,6 +56,12 @@ pub async fn get(socket: &Path, credential_id: &str, integration: &str) -> Resul
         "integration": integration,
     });
     let reply = request(socket, line.to_string()).await?;
+    if reply["ok"]["integration"]
+        .as_str()
+        .is_some_and(|binding| binding != integration)
+    {
+        return Err(Error::Integration);
+    }
     let credential = reply
         .get("ok")
         .and_then(|ok| ok.get("credential"))

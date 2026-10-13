@@ -128,3 +128,20 @@ Each pending login retains its selected profile. Unknown integrations are
 rejected rather than routed to another integration's token endpoint. The
 Console credential's recorded server must match the configured issuer on
 refresh.
+
+## Windows transport
+
+The same daemon and JSONL protocol run over a local named pipe on Windows:
+
+```powershell
+miao-credential serve --db C:\data\miao.db --socket \\.\pipe\miao-credential
+miao-credential login --socket \\.\pipe\miao-credential --credential-id cred_device
+```
+
+The pipe has a protected DACL granting access only to the current Windows user
+and SYSTEM, rejects remote clients and acquires the same database lease before
+binding. Clients retry a busy pipe within a bounded request timeout. TS uses
+its existing `node:net` path transport; engine socket selection does not try to
+canonicalize named pipes as disk files. Database-source engine reads also
+follow the durable ownership marker, so adoption does not require changing an
+existing credential database selection.

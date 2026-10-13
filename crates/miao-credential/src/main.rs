@@ -1,16 +1,16 @@
 //! `miao-credential` — the standalone credential daemon.
 //!
-//! `serve` binds a unix socket and becomes the single refresh writer for the
+//! `serve` binds local IPC and becomes the single refresh writer for the
 //! credential rows of one SQLite database. `discover` prints the same
 //! normalized listing as the engine's read-only bridge, for inspection
 //! without going through the socket.
 
 use miao_credential::store;
-#[cfg(unix)]
+#[cfg(any(unix, windows))]
 use miao_credential::{daemon::Daemon, profile};
-#[cfg(unix)]
+#[cfg(any(unix, windows))]
 use std::path::PathBuf;
-#[cfg(unix)]
+#[cfg(any(unix, windows))]
 use std::sync::Arc;
 
 fn main() {
@@ -48,7 +48,7 @@ fn parse_options(args: &[String], allowed: &[&str]) -> Result<Option<String>, St
     Ok(options.get("--db").cloned())
 }
 
-#[cfg(unix)]
+#[cfg(any(unix, windows))]
 fn serve(args: &[String]) -> Result<(), String> {
     let mut options = std::collections::HashMap::new();
     let allowed = [
@@ -103,6 +103,7 @@ fn serve(args: &[String]) -> Result<(), String> {
         if let Some(margin_ms) = margin_ms {
             daemon = daemon.with_margin_ms(margin_ms);
         }
+        #[cfg(unix)]
         if let Some(parent) = std::path::Path::new(socket).parent() {
             std::fs::create_dir_all(parent).map_err(|error| error.to_string())?;
         }
@@ -124,17 +125,17 @@ fn discover(args: &[String]) -> Result<(), String> {
     Ok(())
 }
 
-#[cfg(unix)]
+#[cfg(any(unix, windows))]
 fn user_agent() -> String {
     format!("miao-credential/{}", env!("CARGO_PKG_VERSION"))
 }
 
-#[cfg(not(unix))]
+#[cfg(not(any(unix, windows)))]
 fn serve(_args: &[String]) -> Result<(), String> {
     Err("credential daemon requires Unix sockets".into())
 }
 
-#[cfg(unix)]
+#[cfg(any(unix, windows))]
 fn login(args: &[String]) -> Result<(), String> {
     let mut options = std::collections::HashMap::new();
     if !args.len().is_multiple_of(2) {
@@ -214,12 +215,12 @@ fn login(args: &[String]) -> Result<(), String> {
     })
 }
 
-#[cfg(not(unix))]
+#[cfg(not(any(unix, windows)))]
 fn login(_args: &[String]) -> Result<(), String> {
     Err("credential daemon requires Unix sockets".into())
 }
 
-#[cfg(unix)]
+#[cfg(any(unix, windows))]
 fn adopt(args: &[String]) -> Result<(), String> {
     let (pairs, remainder) = args.as_chunks::<2>();
     if !remainder.is_empty() {
@@ -260,7 +261,7 @@ fn adopt(args: &[String]) -> Result<(), String> {
     })
 }
 
-#[cfg(not(unix))]
+#[cfg(not(any(unix, windows)))]
 fn adopt(_args: &[String]) -> Result<(), String> {
     Err("credential daemon requires Unix sockets".into())
 }

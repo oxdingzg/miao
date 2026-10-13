@@ -198,7 +198,10 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
     }
     let source = if let Some(socket) = options.get("--credential-socket") {
         Source::Daemon {
+            #[cfg(unix)]
             socket: tokio::fs::canonicalize(socket).await?,
+            #[cfg(windows)]
+            socket: std::path::PathBuf::from(socket),
             id: options
                 .get("--credential-id")
                 .ok_or("--credential-id is required")?
