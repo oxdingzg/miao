@@ -58,6 +58,7 @@ pub(crate) async fn result(
     request_seq: Option<u64>,
     status: Option<u16>,
     outcome: &str,
+    detail: Option<&str>,
 ) -> Result<(), ProviderError> {
     let Some(request_seq) = request_seq else {
         return Ok(());
@@ -65,8 +66,11 @@ pub(crate) async fn result(
     let scope = SCOPE
         .try_with(Clone::clone)
         .map_err(|_| ProviderError::Stream("runtime request scope was lost".into()))?;
+    // A non-success status is opaque without the provider's error body; keep a
+    // bounded copy on the durable result so a failure stays diagnosable.
     scope.store.record(&scope.session,"provider.request.result",json!({
         "run_id":scope.run,"step":scope.step,"request_seq":request_seq,"http_status":status,"outcome":outcome,
+        "response_body":detail,
     })).await.map_err(|_| ProviderError::Stream("runtime request result could not be recorded".into()))?;
     Ok(())
 }
