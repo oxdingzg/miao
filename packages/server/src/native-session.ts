@@ -67,7 +67,9 @@ export function selectNativeSessions(input: {
   const { anchor, order } = input
   const direction = anchor?.direction ?? "next"
   const traversal = direction === "previous" ? (order === "asc" ? "desc" : "asc") : order
-  const wanted = input.search ? input.sessions.filter((session) => session.title.includes(input.search!)) : input.sessions
+  const wanted = input.search
+    ? input.sessions.filter((session) => session.title.includes(input.search!))
+    : input.sessions
   const anchored = anchor
     ? wanted.filter((session) => {
         const time = DateTime.toEpochMillis(session.time.created)
@@ -87,6 +89,25 @@ export function compareSessions(order: "asc" | "desc") {
     const ids = left.id < right.id ? -1 : left.id > right.id ? 1 : 0
     return order === "asc" ? ids : -ids
   }
+}
+
+/** Merge in traversal order so previous pages keep the nearest candidates. */
+export function mergeListingPage(input: {
+  sessions: readonly SessionInfo.Info[]
+  native: readonly SessionInfo.Info[]
+  nativeIDs: ReadonlySet<string>
+  order: "asc" | "desc"
+  direction?: "previous" | "next"
+  limit: number
+}) {
+  const order = input.direction === "previous" ? (input.order === "asc" ? "desc" : "asc") : input.order
+  const entries = new Map(
+    [...input.sessions.filter((session) => !input.nativeIDs.has(session.id)), ...input.native].map(
+      (session) => [session.id, session] as const,
+    ),
+  )
+  const page = [...entries.values()].sort(compareSessions(order)).slice(0, input.limit)
+  return input.direction === "previous" ? page.toReversed() : page
 }
 
 /**
@@ -139,5 +160,12 @@ export const mergeNativeSessions = Effect.fn("NativeSession.mergeSessions")(func
     search: input.search,
     limit: input.limit,
   })
-  return [...input.sessions, ...selected].sort(compareSessions(input.order)).slice(0, input.limit)
+  return mergeListingPage({
+    sessions: input.sessions,
+    native: selected,
+    nativeIDs: new Set(placements.map((placement) => placement.sessionID)),
+    order: input.order,
+    direction: input.anchor?.direction,
+    limit: input.limit,
+  })
 })
