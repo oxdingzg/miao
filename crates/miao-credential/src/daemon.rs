@@ -19,6 +19,7 @@ use tokio::net::{UnixListener, UnixStream};
 use tokio::sync::Mutex;
 
 struct Login {
+    profile: profile::Profile,
     pending: crate::login::Pending,
     id: String,
     label: String,
@@ -26,7 +27,7 @@ struct Login {
 
 pub struct Daemon {
     db: PathBuf,
-    profile: profile::Profile,
+    profiles: HashMap<String, profile::Profile>,
     margin_ms: u64,
     user_agent: String,
     row_locks: Mutex<HashMap<String, Arc<Mutex<()>>>>,
@@ -38,13 +39,18 @@ impl Daemon {
     pub fn new(db: PathBuf, profile: profile::Profile, user_agent: String) -> Self {
         Self {
             db,
-            profile,
+            profiles: HashMap::from([(profile.integration.clone(), profile)]),
             margin_ms: REFRESH_MARGIN_MS,
             user_agent,
             row_locks: Mutex::new(HashMap::new()),
             logins: Mutex::new(HashMap::new()),
             socket: Mutex::new(None),
         }
+    }
+
+    pub fn with_profile(mut self, profile: profile::Profile) -> Self {
+        self.profiles.insert(profile.integration.clone(), profile);
+        self
     }
 
     /// The CLI exposes the margin so a deployment can trade token lifetime
@@ -155,9 +161,13 @@ impl Daemon {
                 reply(frame.id, payload)
             }
             Request::LoginStart {
+                integration,
                 credential_id,
                 label,
-            } => reply(frame.id, self.login_start(credential_id, label).await),
+            } => reply(
+                frame.id,
+                self.login_start(credential_id, label, integration).await,
+            ),
             Request::LoginPoll { handle } => reply(frame.id, self.login_poll(&handle).await),
             Request::Adopt {
                 credential_id,
@@ -179,7 +189,7 @@ impl Daemon {
     }
 
     async fn adopt(&self, id: &str, integration: &str) -> Result<(), Error> {
-        if integration != self.profile.integration {
+        if !self.profiles.contains_key(integration) {
             return Err(Error::Integration);
         }
         let lock = {
@@ -199,7 +209,17 @@ impl Daemon {
         )
     }
 
-    async fn login_start(&self, id: String, label: String) -> Result<Value, Error> {
+    async fn login_start(
+        &self,
+        id: String,
+        label: String,
+        integration: String,
+    ) -> Result<Value, Error> {
+        let profile = self
+            .profiles
+            .get(&integration)
+            .ok_or(Error::Integration)?
+            .clone();
         if id.is_empty() || id.len() > 256 || label.len() > 1024 {
             return Err(Error::Invalid);
         }
@@ -210,12 +230,13 @@ impl Daemon {
         if pending.len() >= 32 {
             return Err(Error::LoginRejected);
         }
-        let (state, mut public) = crate::login::begin(&self.profile, &self.user_agent).await?;
+        let (state, mut public) = crate::login::begin(&profile, &self.user_agent).await?;
         let handle = uuid::Uuid::new_v4().to_string();
         public["handle"] = handle.clone().into();
         pending.insert(
             handle,
             Login {
+                profile,
                 pending: state,
                 id,
                 label,
@@ -227,7 +248,7 @@ impl Daemon {
     async fn login_poll(&self, handle: &str) -> Result<Value, Error> {
         let mut pending = self.logins.lock().await;
         let login = pending.get_mut(handle).ok_or(Error::LoginRejected)?;
-        match crate::login::poll(&mut login.pending, &self.profile, &self.user_agent).await {
+        match crate::login::poll(&mut login.pending, &login.profile, &self.user_agent).await {
             Ok(None) => Ok(serde_json::json!({"status":"pending"})),
             Ok(Some(value)) => {
                 // The code can only be exchanged once. Remove the pending
@@ -237,7 +258,7 @@ impl Daemon {
                 store::insert_login(
                     &self.db,
                     &login.id,
-                    &self.profile.integration,
+                    &login.profile.integration,
                     &login.label,
                     &value,
                     socket.to_str().ok_or(Error::Invalid)?,
@@ -259,7 +280,7 @@ impl Daemon {
         let value = store::load(&self.db, credential_id, integration)?;
         let expires = value.get("expires").and_then(Value::as_u64);
         let due = matches!(expires, Some(expires) if expires <= now_ms() + self.margin_ms);
-        if !due {
+        if !due || (integration == "github-copilot" && expires == Some(0)) {
             return Ok(value);
         }
         let refresh_token = value.get("refresh").and_then(Value::as_str);
@@ -293,7 +314,7 @@ impl Daemon {
         integration: &str,
         value: Value,
     ) -> Result<Value, Error> {
-        if integration != self.profile.integration {
+        if !self.profiles.contains_key(integration) {
             return Err(Error::Integration);
         }
         let socket = self.socket.lock().await.clone().ok_or(Error::Io)?;
@@ -328,7 +349,15 @@ impl Daemon {
                 return Ok(current);
             }
         }
-        let tokens = profile::refresh(&self.profile, &refresh_token, &self.user_agent).await?;
+        let profile = self.profiles.get(integration).ok_or(Error::Integration)?;
+        if integration == "opencode"
+            && value["metadata"]["server"]
+                .as_str()
+                .is_some_and(|server| server != profile.issuer)
+        {
+            return Err(Error::Integration);
+        }
+        let tokens = profile::refresh(profile, &refresh_token, &self.user_agent).await?;
         let mut next = current;
         profile::apply_tokens(&mut next, &tokens, now_ms());
         store::store_refreshed(&self.db, credential_id, integration, next.clone())?;
