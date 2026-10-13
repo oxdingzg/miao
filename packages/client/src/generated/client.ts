@@ -150,6 +150,8 @@ import type {
   SkillsListInput,
   SkillsListOutput,
   EventsSubscribeOutput,
+  EventsDurableInput,
+  EventsDurableOutput,
   PtysShellsInput,
   PtysShellsOutput,
   PtysListInput,
@@ -1343,6 +1345,18 @@ export function make(options: ClientOptions) {
       subscribe: (requestOptions?: RequestOptions): AsyncIterable<EventsSubscribeOutput> =>
         sse<EventsSubscribeOutput>(
           { method: "GET", path: `/api/event`, successStatus: 200, declaredStatuses: [401, 400], empty: false },
+          requestOptions,
+        ),
+      durable: (input: EventsDurableInput, requestOptions?: RequestOptions): AsyncIterable<EventsDurableOutput> =>
+        sse<EventsDurableOutput>(
+          {
+            method: "GET",
+            path: `/api/event/durable`,
+            query: { aggregateID: input["aggregateID"], after: input["after"] },
+            successStatus: 200,
+            declaredStatuses: [401, 400],
+            empty: false,
+          },
           requestOptions,
         ),
     },

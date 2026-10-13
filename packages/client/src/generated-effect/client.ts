@@ -829,7 +829,20 @@ const Endpoint18_0 = (raw: RawClient["server.event"]) => () =>
     ),
   )
 
-const adaptGroup18 = (raw: RawClient["server.event"]) => ({ subscribe: Endpoint18_0(raw) })
+type Endpoint18_1Request = Parameters<RawClient["server.event"]["event.durable"]>[0]
+type Endpoint18_1Input = {
+  readonly aggregateID: Endpoint18_1Request["query"]["aggregateID"]
+  readonly after?: Endpoint18_1Request["query"]["after"]
+}
+const Endpoint18_1 = (raw: RawClient["server.event"]) => (input: Endpoint18_1Input) =>
+  Stream.unwrap(
+    raw["event.durable"]({ query: { aggregateID: input["aggregateID"], after: input["after"] } }).pipe(
+      Effect.mapError(mapClientError),
+      Effect.map((stream) => stream.pipe(Stream.mapError(mapClientError))),
+    ),
+  )
+
+const adaptGroup18 = (raw: RawClient["server.event"]) => ({ subscribe: Endpoint18_0(raw), durable: Endpoint18_1(raw) })
 
 type Endpoint19_0Request = Parameters<RawClient["server.pty"]["pty.shells"]>[0]
 type Endpoint19_0Input = { readonly location?: Endpoint19_0Request["query"]["location"] }

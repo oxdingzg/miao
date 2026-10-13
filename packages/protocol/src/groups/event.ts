@@ -28,6 +28,16 @@ const schema = <const Definitions extends ReadonlyArray<Definition>>(definitions
 
 const make = <const Definitions extends ReadonlyArray<Definition>>(definitions: Definitions) => {
   const EventSchema = schema(definitions)
+  const DurableQuery = Schema.Struct({
+    aggregateID: Schema.String.annotate({
+      description: "Aggregate (session) whose durable event log to replay.",
+    }),
+    after: Schema.optional(
+      Schema.Int.annotate({
+        description: "Exclusive durable sequence cursor; omit to replay from the beginning.",
+      }),
+    ),
+  }).annotate({ identifier: "EventDurableQuery" })
   return {
     schema: EventSchema,
     group: HttpApiGroup.make("server.event")
@@ -39,6 +49,19 @@ const make = <const Definitions extends ReadonlyArray<Definition>>(definitions: 
             identifier: "v2.event.subscribe",
             summary: "Subscribe to events",
             description: "Subscribe to native event payloads for the server.",
+          }),
+        ),
+      )
+      .add(
+        HttpApiEndpoint.get("event.durable", "/api/event/durable", {
+          query: DurableQuery,
+          success: HttpApiSchema.StreamSse({ data: EventSchema }),
+        }).annotateMerge(
+          OpenApi.annotations({
+            identifier: "v2.event.durable",
+            summary: "Replay durable events",
+            description:
+              "Replay one aggregate's durable event log from a sequence cursor, then keep following it as new events commit. Every frame carries its durable aggregateID, seq, and version, so a consumer resumes by passing the last seen seq back as after.",
           }),
         ),
       )
