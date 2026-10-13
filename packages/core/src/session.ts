@@ -4,7 +4,7 @@ export * from "./session/schema"
 import { DateTime, Effect, Layer, Option, Schema, Context, Stream } from "effect"
 import path from "path"
 import { ListAnchor } from "@miao/schema/session"
-import { and, asc, desc, eq, gt, isNull, like, lt, or, type SQL } from "drizzle-orm"
+import { and, asc, desc, eq, gt, isNull, like, lt, or, sql, type SQL } from "drizzle-orm"
 import { ProjectV2 } from "./project"
 import { WorkspaceV2 } from "./workspace"
 import { ModelV2 } from "./model"
@@ -17,6 +17,7 @@ import { Database } from "./database/database"
 import { SessionProjector } from "./session/projector"
 import { SessionHistory } from "./session/history"
 import { SessionMessageTable, SessionTable, TodoTable } from "./session/sql"
+import { SessionEnginePlacementTable } from "./session/engine-placement.sql"
 import { ProjectTable } from "./project/sql"
 import { SessionSchema } from "./session/schema"
 import { AbsolutePath, PositiveInt, RelativePath } from "./schema"
@@ -332,7 +333,16 @@ const layer = Layer.effect(
         const requestedOrder = input.order ?? "desc"
         const order = direction === "previous" ? (requestedOrder === "asc" ? "desc" : "asc") : requestedOrder
         const sortColumn = SessionTable.time_created
-        const conditions: SQL[] = []
+        // Native metadata can also have a catalog projection. Exclude it before
+        // applying anchor/order/limit, otherwise it consumes a TS page slot and
+        // duplicates the engine-authoritative projection during the merge.
+        const conditions: SQL[] = [
+          sql`NOT EXISTS (
+          SELECT 1 FROM ${SessionEnginePlacementTable}
+          WHERE ${SessionEnginePlacementTable.session_id} = ${SessionTable.id}
+            AND ${SessionEnginePlacementTable.engine} = ${"rust"}
+        )`,
+        ]
         if ("directory" in input) conditions.push(eq(SessionTable.directory, input.directory))
         if (input.workspaceID) conditions.push(eq(SessionTable.workspace_id, input.workspaceID))
         if ("project" in input) conditions.push(eq(SessionTable.project_id, input.project))
