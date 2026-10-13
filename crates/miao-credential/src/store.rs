@@ -68,7 +68,7 @@ pub fn discover(path: &Path) -> Result<Vec<Metadata>, Error> {
     Ok(output)
 }
 
-fn now_ms() -> u64 {
+pub fn now_ms() -> u64 {
     std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .map(|d| d.as_millis() as u64)
@@ -136,6 +136,26 @@ pub fn store_refreshed(
     if changed == 0 {
         return Err(Error::Missing);
     }
+    Ok(())
+}
+
+/// Insert a newly authorized credential; never overwrite an existing identity.
+pub fn insert_login(
+    path: &Path,
+    id: &str,
+    integration: &str,
+    label: &str,
+    value: &Value,
+) -> Result<(), Error> {
+    if id.is_empty() || id.len() > 256 || label.len() > 1024 {
+        return Err(Error::Invalid);
+    }
+    let encoded = serde_json::to_string(value).map_err(|_| Error::Invalid)?;
+    if encoded.len() > 131072 {
+        return Err(Error::Invalid);
+    }
+    open(path)?.execute("INSERT INTO credential(id,integration_id,label,value,time_created,time_updated) VALUES (?1,?2,?3,?4,?5,?5)",
+        rusqlite::params![id,integration,label,encoded,now_ms()]).map_err(|_| Error::Database)?;
     Ok(())
 }
 

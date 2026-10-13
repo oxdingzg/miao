@@ -76,7 +76,7 @@ async fn start_daemon(db: PathBuf, margin_ms: u64) -> PathBuf {
 #[tokio::test]
 async fn get_returns_a_fresh_row_untouched() {
     let dir = tempfile::tempdir().unwrap();
-    let db = setup_db(&dir.path(), 3_600_000, "r1");
+    let db = setup_db(dir.path(), 3_600_000, "r1");
     let socket = start_daemon(db.clone(), 60_000).await;
 
     let credential = client::get(&socket, "cred_1", "openai").await.unwrap();
@@ -94,7 +94,7 @@ async fn get_returns_a_fresh_row_untouched() {
 #[tokio::test]
 async fn get_refreshes_a_row_inside_the_margin() {
     let dir = tempfile::tempdir().unwrap();
-    let db = setup_db(&dir.path(), 10_000, "r1");
+    let db = setup_db(dir.path(), 10_000, "r1");
     let (url, counter) = token_server(Arc::new(vec![(
         200,
         r#"{"access_token":"a2","refresh_token":"r2","expires_in":3600,"id_token":"jwt"}"#.into(),
@@ -134,7 +134,7 @@ async fn get_refreshes_a_row_inside_the_margin() {
 #[tokio::test]
 async fn concurrent_refreshes_share_one_token_request() {
     let dir = tempfile::tempdir().unwrap();
-    let db = setup_db(&dir.path(), 10_000, "r1");
+    let db = setup_db(dir.path(), 10_000, "r1");
     let (url, counter) = token_server(Arc::new(vec![
         (
             200,
@@ -170,7 +170,7 @@ async fn concurrent_refreshes_share_one_token_request() {
 #[tokio::test]
 async fn refresh_rejection_is_reported_as_refresh_rejected() {
     let dir = tempfile::tempdir().unwrap();
-    let db = setup_db(&dir.path(), 10_000, "r1");
+    let db = setup_db(dir.path(), 10_000, "r1");
     let (url, counter) = token_server(Arc::new(vec![(401, r#"{"error":"invalid_grant"}"#.into())]));
     let profile = profile::Profile {
         issuer: url.clone(),
@@ -204,7 +204,7 @@ async fn refresh_rejection_is_reported_as_refresh_rejected() {
 #[tokio::test]
 async fn integration_mismatch_and_missing_rows_map_to_wire_codes() {
     let dir = tempfile::tempdir().unwrap();
-    let db = setup_db(&dir.path(), 3_600_000, "r1");
+    let db = setup_db(dir.path(), 3_600_000, "r1");
     let socket = start_daemon(db, 60_000).await;
 
     assert!(matches!(

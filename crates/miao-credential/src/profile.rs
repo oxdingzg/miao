@@ -28,6 +28,8 @@ pub struct Profile {
 pub struct TokenResponse {
     pub access_token: String,
     #[serde(default)]
+    pub id_token: Option<String>,
+    #[serde(default)]
     pub refresh_token: Option<String>,
     #[serde(default)]
     pub expires_in: Option<u64>,
@@ -50,7 +52,7 @@ pub async fn refresh(
         ("refresh_token", refresh_token),
         ("client_id", profile.client_id.as_str()),
     ];
-    let response = reqwest::Client::new()
+    let response = http_client()?
         .post(&url)
         .header("User-Agent", user_agent)
         .form(&form)
@@ -85,6 +87,15 @@ pub fn apply_tokens(value: &mut serde_json::Value, tokens: &TokenResponse, now_m
     }
 }
 
+/// Token-bearing requests must never follow redirects to another origin.
+pub fn http_client() -> Result<reqwest::Client, Error> {
+    reqwest::Client::builder()
+        .redirect(reqwest::redirect::Policy::none())
+        .timeout(std::time::Duration::from_secs(30))
+        .build()
+        .map_err(|_| Error::Io)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -97,6 +108,7 @@ mod tests {
             &mut value,
             &TokenResponse {
                 access_token: "a2".into(),
+                id_token: None,
                 refresh_token: Some("r2".into()),
                 expires_in: Some(3600),
             },
@@ -111,6 +123,7 @@ mod tests {
             &mut kept,
             &TokenResponse {
                 access_token: "a3".into(),
+                id_token: None,
                 refresh_token: None,
                 expires_in: None,
             },
