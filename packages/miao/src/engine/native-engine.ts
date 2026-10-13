@@ -121,6 +121,14 @@ export const fromOwners = (owners: Owners): NativeEngine.Interface => {
       read<Readonly<Record<string, unknown>>>(input, (connection) =>
         connection.client.request("snapshot", { session_id: input.sessionID }),
       ).pipe(Effect.map((value) => (typeof value === "object" && value !== null ? value : {}))),
+    interruptIf: (input) =>
+      read(input, async (connection) => {
+        const result = await connection.client.request("cancel_if", {
+          session_id: input.sessionID,
+          run_id: input.executionID,
+        })
+        return Schema.decodeUnknownSync(Schema.Struct({ accepted: Schema.Boolean }))(result).accepted
+      }),
     interrupt: (input) =>
       read(input, (connection) => connection.client.request("cancel", { session_id: input.sessionID })).pipe(
         Effect.asVoid,

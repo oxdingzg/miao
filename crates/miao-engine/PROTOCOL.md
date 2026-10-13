@@ -124,6 +124,13 @@ is authoritative, so replay→live has no gap or duplicate and a lagged progress
 subscriber only receives a `resync` frame; a slow client can never block the
 provider or the run loop.
 
+### Guarded interruption
+
+`cancel_if` takes `session_id` and `run_id`. The Session actor checks its active
+run and cancels that owner's token as one serialized command. It returns
+`accepted: false` for a missing, idle, already-cancelled or changed run. A stale
+run ID cannot cancel the next run; a failed match also preserves pending wakes.
+
 ### Idle Session initialization
 
 `initialize` takes `session_id` and `title`. It creates an idle identity in the
