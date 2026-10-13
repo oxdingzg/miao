@@ -98,6 +98,7 @@ type CreateInput = {
   agent?: AgentV2.ID
   model?: ModelV2.Ref
   location: Location.Ref
+  nativeStorage?: AbsolutePath
 }
 
 type CompactInput = {
