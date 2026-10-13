@@ -78,6 +78,26 @@ if (binary)
       const retry = await fetch(url + "/api/session", { method: "POST", headers, body: JSON.stringify(body) })
       expect(retry.status).toBe(200)
       expect(await retry.json()).toEqual(created)
+      const list = await fetch(url + "/api/session?directory=" + encodeURIComponent(directory), { headers })
+      expect(list.status).toBe(200)
+      expect((await list.json()).data).toEqual([created.data])
+      const another = path.join(tmp.path, "another-project")
+      await Bun.$`mkdir -p ${another}`.quiet()
+      const anotherHeaders = { ...headers, "x-opencode-directory": another }
+      const anotherBody = { id: "ses_http_native_other", location: { directory: another } }
+      const createOther = await fetch(url + "/api/session", {
+        method: "POST",
+        headers: anotherHeaders,
+        body: JSON.stringify(anotherBody),
+      })
+      expect(createOther.status).toBe(200)
+      const other = await createOther.json()
+      const listOther = await fetch(url + "/api/session?directory=" + encodeURIComponent(another), {
+        headers: anotherHeaders,
+      })
+      expect(listOther.status).toBe(200)
+      expect((await listOther.json()).data).toEqual([other.data])
+      expect(Array.from(new Bun.Glob("*.db").scanSync(path.join(tmp.path, "engines")))).toHaveLength(2)
     } finally {
       clearTimeout(timer)
       child.kill()

@@ -191,8 +191,8 @@ export const TuiThreadCommand = cmd({
       const listener = external ? await Server.listen(network) : undefined
       const reload = () => {
         void (async () => {
-          // The window process holds no AppRuntime instances — the server
-          // resolves location-scoped services directly — so reload only tells
+          // The server resolves location-scoped services directly, so
+          // reload only tells
           // the UI bridge to resync. Server-side config reload is a separate
           // V2 gap (roadmap §1.3).
           const { emitGlobalDisposed } = await import("@/server/global-lifecycle")

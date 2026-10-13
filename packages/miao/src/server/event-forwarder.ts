@@ -5,7 +5,6 @@ import { ClientEvents } from "@miao/server/client-events"
 import { Effect, Layer, Context } from "effect"
 import { makeGlobalNode } from "@miao/core/effect/app-node"
 import { GlobalBus } from "@/bus/global"
-import { InstanceRef, WorkspaceRef } from "@/effect/instance-ref"
 
 /**
  * Relays every EventV2 event onto the process-local GlobalBus so the in-process
@@ -24,21 +23,18 @@ const layer = Layer.effect(
     const clients = yield* ClientEvents.Service
     const forward: EventV2.Subscriber = (event) =>
       Effect.gen(function* () {
-        const ctx = yield* InstanceRef
-        const workspaceID = (yield* WorkspaceRef) ?? event.location?.workspaceID
+        const workspaceID = event.location?.workspaceID
         // The worker serializes GlobalBus payloads, so encode dates and other
         // schema values once for both live and durable sync envelopes.
         const data = EventV2.encodeData(event)
         GlobalBus.emit("event", {
-          directory: event.location?.directory ?? ctx?.directory ?? "global",
-          project: ctx?.project.id,
+          directory: event.location?.directory ?? "global",
           workspace: workspaceID,
           payload: { id: event.id, type: event.type, properties: data },
         })
         if (event.durable === undefined) return
         GlobalBus.emit("event", {
-          directory: event.location?.directory ?? ctx?.directory ?? "global",
-          project: ctx?.project.id,
+          directory: event.location?.directory ?? "global",
           workspace: workspaceID,
           payload: {
             type: "sync",

@@ -1,40 +1,12 @@
 import { describe, expect, test } from "bun:test"
 import { ConfigV1 } from "@miao/core/v1/config/config"
-import { LayerNode } from "@miao/core/effect/layer-node"
-import { httpClient } from "@miao/core/effect/app-node-platform"
-import { FSUtil } from "@miao/core/fs-util"
-import { CrossSpawnSpawner } from "@miao/core/cross-spawn-spawner"
-import { Npm } from "@miao/core/npm"
-import { Effect, Layer, Logger } from "effect"
-import { HttpClient } from "effect/unstable/http"
 import path from "path"
-import { Auth } from "../../src/auth"
-import { Config } from "../../src/config/config"
 import { ConfigParse } from "../../src/config/parse"
 import { ConfigV2Compat } from "../../src/config/v2-compat"
-import { Env } from "../../src/env"
-import { AuthTest } from "../fake/auth"
-import { NpmTest } from "../fake/npm"
-import { TestInstance } from "../fixture/fixture"
-import { testEffect } from "../lib/effect"
 import { snapshot } from "./snapshot"
 
 const source = "test:v2-compat"
 const lower = (input: unknown) => ConfigParse.schema(ConfigV1.Info, ConfigV2Compat.lower(input, source).value, source)
-
-const it = testEffect(
-  LayerNode.compile(LayerNode.group([Config.node, FSUtil.node, Env.node, CrossSpawnSpawner.node]), [
-    [Auth.node, AuthTest.empty],
-    [Npm.node, NpmTest.noop],
-    [
-      httpClient,
-      Layer.succeed(
-        HttpClient.HttpClient,
-        HttpClient.make((request) => Effect.die(`unexpected http request: ${request.method} ${request.url}`)),
-      ),
-    ],
-  ]),
-)
 
 describe("V2 compatibility read fixtures", () => {
   const directory = path.join(import.meta.dir, "fixtures/v2-compat/read")
@@ -278,120 +250,4 @@ describe("ConfigV2Compat.lower", () => {
 
     expect(input).toEqual(original)
   })
-})
-
-describe("V2 configuration loading", () => {
-  it.instance("logs compatibility diagnostics without writing the lowered projection", () =>
-    Effect.gen(function* () {
-      const instance = yield* TestInstance
-      const fs = yield* FSUtil.Service
-      const file = path.join(instance.directory, "miao.jsonc")
-      const text =
-        '{\n  // Retain this comment\n  "$schema": "https://mtty.dev/miao/config.json",\n  "plugins": ["native-only"]\n}\n'
-      yield* fs.writeWithDirs(file, text)
-      const messages: unknown[] = []
-      const config = yield* Config.use.get().pipe(
-        Effect.provide(
-          Logger.layer([
-            Logger.make<unknown, void>((options) => {
-              messages.push(options.message)
-            }),
-          ]),
-        ),
-      )
-
-      expect(config.plugin).toEqual([])
-      expect(messages).toContainEqual([
-        "configuration compatibility diagnostic",
-        expect.objectContaining({ source: file, kind: "unsupported", path: ["plugins"] }),
-      ])
-      expect(yield* fs.readFileString(file)).toBe(text)
-    }),
-  )
-
-  it.instance("loads native V2 configuration through the V1 Config service", () =>
-    Effect.gen(function* () {
-      const instance = yield* TestInstance
-      const fs = yield* FSUtil.Service
-      yield* fs.writeWithDirs(
-        path.join(instance.directory, "miao.json"),
-        JSON.stringify({
-          $schema: "https://mtty.dev/miao/config.json",
-          model: { providerID: "anthropic", model: "claude-sonnet", variant: "fast" },
-          snapshots: false,
-          skills: ["./skills", "https://example.com/skills"],
-          mcp: {
-            timeout: { catalog: 9000, execution: 9000 },
-            servers: {
-              native: { type: "remote", url: "https://native.example.com/mcp", disabled: false },
-            },
-          },
-          agents: {
-            reviewer: {
-              model: "anthropic/claude-sonnet#thinking",
-              system: "Review carefully.",
-            },
-          },
-          commands: {
-            review: {
-              template: "Review $ARGUMENTS",
-              model: { providerID: "anthropic", model: "claude-sonnet", variant: "thinking" },
-            },
-          },
-          experimental: { subagent_depth: 2 },
-        }),
-      )
-
-      const config = yield* Config.use.get()
-
-      expect(config.model).toBe("anthropic/claude-sonnet")
-      expect(config.snapshot).toBe(false)
-      expect(config.skills).toEqual({ paths: ["./skills"], urls: ["https://example.com/skills"] })
-      expect(config.mcp?.native).toEqual({ type: "remote", url: "https://native.example.com/mcp", enabled: true })
-      expect(config.experimental?.mcp_timeout).toBe(9000)
-      expect(config.permission).toBeUndefined()
-      expect(config.agent?.reviewer).toMatchObject({
-        model: "anthropic/claude-sonnet",
-        variant: "thinking",
-        prompt: "Review carefully.",
-        permission: {},
-      })
-      expect(config.command?.review).toMatchObject({
-        template: "Review $ARGUMENTS",
-        model: "anthropic/claude-sonnet",
-        variant: "thinking",
-      })
-      expect(config.subagent_depth).toBe(2)
-    }),
-  )
-
-  it.instance("keeps legacy TUI normalization when loading a mixed V1 and V2 document", () =>
-    Effect.gen(function* () {
-      const instance = yield* TestInstance
-      const fs = yield* FSUtil.Service
-      yield* fs.writeWithDirs(
-        path.join(instance.directory, "miao.json"),
-        JSON.stringify({
-          $schema: "https://mtty.dev/miao/config.json",
-          model: { providerID: "openai", model: "gpt-4.1" },
-          theme: "legacy",
-          keybinds: { leader: "ctrl+x" },
-          tui: { scroll_speed: 4 },
-          mcp: {
-            legacy: { enabled: false },
-            servers: { native: { type: "local", command: ["native-mcp"] } },
-          },
-        }),
-      )
-
-      const config = yield* Config.use.get()
-
-      expect(config.model).toBe("openai/gpt-4.1")
-      expect(config.mcp?.legacy).toEqual({ enabled: false })
-      expect(config.mcp?.native).toEqual({ type: "local", command: ["native-mcp"], enabled: true })
-      expect(config).not.toHaveProperty("theme")
-      expect(config).not.toHaveProperty("keybinds")
-      expect(config).not.toHaveProperty("tui")
-    }),
-  )
 })

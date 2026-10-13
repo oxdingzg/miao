@@ -6,11 +6,10 @@ import { afterEach, describe, expect, test } from "bun:test"
 import { createClient } from "@/client"
 import { isInvalidRequestError, isSessionNotFoundError } from "@miao/client"
 import { Server } from "../../src/server/server"
-import { disposeAllInstances, tmpdir } from "../fixture/fixture"
+import { tmpdir } from "../fixture/fixture"
 import { resetDatabase } from "../fixture/db"
 
 afterEach(async () => {
-  await disposeAllInstances()
   await resetDatabase()
 })
 
