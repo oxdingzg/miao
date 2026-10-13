@@ -4,13 +4,14 @@
 //! commits through the run-owned checkpoint contract.
 
 use miao_engine::{
-    context_trigger::{estimate_tokens, maybe_compact, Breaker, Budget, CompactRequest},
+    context_trigger::{maybe_compact, Breaker, Budget, CompactRequest},
     protocol::{Delivery, Input},
+    provider::CountTokens,
     store::Store,
 };
 use serde_json::{json, Value};
 
-async fn seeded() -> (tempfile::TempDir, Store, u64) {
+async fn seeded() -> (tempfile::TempDir, Store, u64, u64) {
     let dir = tempfile::tempdir().unwrap();
     let store = Store::open(dir.path().join("engine.db")).await.unwrap();
     store
@@ -38,6 +39,10 @@ async fn seeded() -> (tempfile::TempDir, Store, u64) {
         .record("s", "provider.started", json!({"run_id":"run","step":0}))
         .await
         .unwrap();
+    // A usage report lands before the reply it describes is committed, so the
+    // marker is the highest message seq at that moment and the reply is the one
+    // message the report did not count.
+    let counted_through = store.max_message_seq("s").await.unwrap();
     let boundary = store
         .assistant_reply_profiled(
             "s",
@@ -50,7 +55,7 @@ async fn seeded() -> (tempfile::TempDir, Store, u64) {
         .await
         .unwrap()
         .seq;
-    (dir, store, boundary)
+    (dir, store, boundary, counted_through)
 }
 
 fn budget() -> Budget {
@@ -63,7 +68,7 @@ fn budget() -> Budget {
 
 #[tokio::test]
 async fn below_threshold_leaves_the_session_untouched() {
-    let (_dir, store, boundary) = seeded().await;
+    let (_dir, store, boundary, _counted) = seeded().await;
     let mut notices: Vec<Value> = Vec::new();
     let mut breaker = Breaker::new(2);
     let mut calls = 0;
@@ -77,6 +82,7 @@ async fn below_threshold_leaves_the_session_untouched() {
             per_pass: 8,
             breaker: &mut breaker,
             notify: &mut |notice: Value| notices.push(notice),
+            count: &mut |_messages| Box::pin(async { CountTokens::Unsupported }),
         },
         |body| {
             calls += 1;
@@ -93,12 +99,12 @@ async fn below_threshold_leaves_the_session_untouched() {
 
 #[tokio::test]
 async fn trigger_summarizes_by_plan_and_commits_the_run_checkpoint() {
-    let (_dir, store, boundary) = seeded().await;
+    let (_dir, store, boundary, counted) = seeded().await;
     store
         .record(
             "s",
             "usage",
-            json!({"run_id":"run","step":0,"usage":{"inputTokens":1_900,"outputTokens":100}}),
+            json!({"run_id":"run","step":0,"usage":{"inputTokens":1_900,"outputTokens":100},"context_message_seq":counted}),
         )
         .await
         .unwrap();
@@ -114,6 +120,7 @@ async fn trigger_summarizes_by_plan_and_commits_the_run_checkpoint() {
             per_pass: 1,
             breaker: &mut breaker,
             notify: &mut |notice: Value| notices.push(notice),
+            count: &mut |_messages| Box::pin(async { CountTokens::Unsupported }),
         },
         |body| async move { Ok(format!("part<{}>", body.len())) },
     )
@@ -166,12 +173,12 @@ async fn trigger_summarizes_by_plan_and_commits_the_run_checkpoint() {
 
 #[tokio::test]
 async fn a_failing_summarizer_trips_the_breaker_and_keeps_history() {
-    let (_dir, store, boundary) = seeded().await;
+    let (_dir, store, boundary, counted) = seeded().await;
     store
         .record(
             "s",
             "usage",
-            json!({"run_id":"run","step":0,"usage":{"inputTokens":1_900,"outputTokens":100}}),
+            json!({"run_id":"run","step":0,"usage":{"inputTokens":1_900,"outputTokens":100},"context_message_seq":counted}),
         )
         .await
         .unwrap();
@@ -187,6 +194,7 @@ async fn a_failing_summarizer_trips_the_breaker_and_keeps_history() {
             per_pass: 1,
             breaker: &mut breaker,
             notify: &mut |notice: Value| notices.push(notice),
+            count: &mut |_messages| Box::pin(async { CountTokens::Unsupported }),
         },
         |_body| async { Err("summarizer refused".into()) },
     )
@@ -212,6 +220,7 @@ async fn a_failing_summarizer_trips_the_breaker_and_keeps_history() {
             per_pass: 1,
             breaker: &mut breaker,
             notify: &mut |notice: Value| notices.push(notice),
+            count: &mut |_messages| Box::pin(async { CountTokens::Unsupported }),
         },
         |_body| {
             calls += 1;
@@ -229,30 +238,133 @@ async fn a_failing_summarizer_trips_the_breaker_and_keeps_history() {
 }
 
 #[tokio::test]
-async fn gate_two_estimates_pending_from_the_unsent_prompt() {
-    // The trigger must also see messages a provider has not counted yet: a
-    // small anchored context plus a large pending prompt still crosses.
-    let (_dir, store, _boundary) = seeded().await;
+async fn gate_two_counts_the_delta_since_the_anchor() {
+    // The anchor covers everything the last usage report counted; only the reply
+    // that landed after it is uncounted, and the provider's own endpoint prices
+    // it (gate ②). Anchor 110 + counted 950 crosses the 1000 limit, which the
+    // old whole-history estimate would not have.
+    let (_dir, store, boundary, counted) = seeded().await;
     store
         .record(
             "s",
             "usage",
-            json!({"run_id":"run","step":0,"usage":{"inputTokens":100,"outputTokens":10}}),
+            json!({"run_id":"run","step":0,"usage":{"inputTokens":100,"outputTokens":10},"context_message_seq":counted}),
+        )
+        .await
+        .unwrap();
+    let mut notices: Vec<Value> = Vec::new();
+    let mut breaker = Breaker::new(2);
+    let mut seen: Vec<usize> = Vec::new();
+    let mut calls = 0;
+    let committed = maybe_compact(
+        &store,
+        CompactRequest {
+            session: "s",
+            run: "run",
+            boundary,
+            budget: &budget(),
+            per_pass: 1,
+            breaker: &mut breaker,
+            notify: &mut |notice: Value| notices.push(notice),
+            count: &mut |messages| {
+                seen.push(messages.len());
+                Box::pin(async { CountTokens::Counted(950) })
+            },
+        },
+        |_body| {
+            calls += 1;
+            async { Ok("summary".into()) }
+        },
+    )
+    .await
+    .unwrap();
+    assert!(committed, "110 + 950 crosses the limit");
+    assert_eq!(
+        seen,
+        vec![1],
+        "counted={counted} selected={} calls={calls}",
+        store.selected_history("s").await.unwrap().len()
+    );
+    assert!(calls > 0, "the summary ran");
+}
+
+#[tokio::test]
+async fn a_report_without_the_anchor_marker_leaves_the_trigger_off() {
+    // A usage event recorded before the anchor existed reports no marker, so
+    // nothing is invented: no count is requested and no checkpoint is written.
+    let (_dir, store, boundary, _) = seeded().await;
+    store
+        .record(
+            "s",
+            "usage",
+            json!({"run_id":"run","step":0,"usage":{"inputTokens":1_900,"outputTokens":100}}),
+        )
+        .await
+        .unwrap();
+    let mut breaker = Breaker::new(2);
+    let mut counted = 0;
+    let mut calls = 0;
+    let committed = maybe_compact(
+        &store,
+        CompactRequest {
+            session: "s",
+            run: "run",
+            boundary,
+            budget: &budget(),
+            per_pass: 1,
+            breaker: &mut breaker,
+            notify: &mut |_: Value| {},
+            count: &mut |_messages| {
+                counted += 1;
+                Box::pin(async { CountTokens::Unsupported })
+            },
+        },
+        |_body| {
+            calls += 1;
+            async { Ok("summary".into()) }
+        },
+    )
+    .await
+    .unwrap();
+    assert!(!committed);
+    assert_eq!(counted, 0);
+    assert_eq!(calls, 0);
+}
+
+#[tokio::test]
+async fn an_unsupported_count_falls_back_to_the_delta_estimate() {
+    // Gate ②'s fallback: a provider without a count endpoint still triggers from
+    // the estimate of the uncounted delta when the anchor is already high.
+    let (_dir, store, boundary, counted) = seeded().await;
+    store
+        .record(
+            "s",
+            "usage",
+            json!({"run_id":"run","step":0,"usage":{"inputTokens":1_900,"outputTokens":100},"context_message_seq":counted}),
         )
         .await
         .unwrap();
     let mut breaker = Breaker::new(2);
     let mut calls = 0;
-    let pending_chars = 20_000;
-    let context = store.last_context_tokens("s").await.unwrap();
-    let committed = (context.is_some())
-        && Budget {
-            window: Some(2_000),
-            ratio: 0.5,
-            headroom: 0,
-        }
-        .should_compact(context, estimate_tokens(pending_chars));
-    assert!(committed);
-    let _ = &mut breaker;
-    let _ = &mut calls;
+    let committed = maybe_compact(
+        &store,
+        CompactRequest {
+            session: "s",
+            run: "run",
+            boundary,
+            budget: &budget(),
+            per_pass: 1,
+            breaker: &mut breaker,
+            notify: &mut |_: Value| {},
+            count: &mut |_messages| Box::pin(async { CountTokens::Failed("refused".into()) }),
+        },
+        |_body| {
+            calls += 1;
+            async { Ok("summary".into()) }
+        },
+    )
+    .await
+    .unwrap();
+    assert!(committed, "the anchored 2000 already crosses the limit");
+    assert!(calls > 0, "the summary ran");
 }
