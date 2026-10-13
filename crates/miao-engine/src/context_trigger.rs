@@ -7,7 +7,7 @@
 //! no trigger; nothing is invented. Gate ②'s provider counting will replace
 //! the char estimate for messages that have not been counted yet.
 
-use crate::protocol::Error;
+use crate::protocol::{Error, Message};
 use crate::store::Store;
 use rusqlite::OptionalExtension;
 use serde_json::{json, Value};
@@ -78,6 +78,17 @@ pub struct ContextLimits {
     pub headroom: u64,
     /// Summarizer passes carry at most this many selected messages.
     pub per_pass: usize,
+    /// Serialized chars one tool-result payload may keep in the outgoing request
+    /// before it is elided. Absent leaves tool output whole (pruning off).
+    #[serde(default)]
+    pub prune_chars: Option<usize>,
+    /// Newest user-role messages whose tool output is never elided.
+    #[serde(default = "default_protect_turns")]
+    pub protect_turns: usize,
+}
+
+fn default_protect_turns() -> usize {
+    2
 }
 
 impl ContextLimits {
@@ -264,6 +275,73 @@ pub fn prune_tool_output(output_len: usize, budget: usize, is_recent: bool) -> P
     }
 }
 
+/// The elision mark's text. A model that reads an opaque placeholder as a
+/// low-context signal invents a stop reason (observed on the TypeScript path),
+/// so the mark states the facts instead of looking like a truncation.
+pub const PRUNE_MARK: &str = "\n…[older tool output elided by context management — routine pruning, not a low-context signal; the harness compacts automatically near the window limit, so keep working]…\n";
+
+/// Gate ④: elide oversized tool results from the outgoing request only, never
+/// from stored history. The newest `protect_turns` user-role messages (prompts
+/// or tool results) keep their output whatever it costs, so the work in flight
+/// keeps its data. Returns the elided payload count and the characters dropped.
+pub fn prune_history(
+    messages: &mut [Message],
+    budget: usize,
+    protect_turns: usize,
+) -> (usize, usize) {
+    let mut elided = 0;
+    let mut dropped = 0;
+    let mut turns = 0;
+    for message in messages.iter_mut().rev() {
+        if message.role == "user" {
+            turns += 1;
+        }
+        if turns <= protect_turns {
+            continue;
+        }
+        for block in message.content.as_array_mut().into_iter().flatten() {
+            if block["type"] != "tool_result" {
+                continue;
+            }
+            let Some(content) = block["content"].as_str() else {
+                continue;
+            };
+            let Prune::Elide {
+                keep_head,
+                keep_tail,
+            } = prune_tool_output(content.len(), budget, false)
+            else {
+                continue;
+            };
+            let head = floor_boundary(content, keep_head);
+            let tail = content.len() - ceil_boundary_from_end(content, keep_tail);
+            let pruned = format!("{}{}{}", &content[..head], PRUNE_MARK, &content[tail..]);
+            dropped += content.len() - pruned.len();
+            block["content"] = json!(pruned);
+            elided += 1;
+        }
+    }
+    (elided, dropped)
+}
+
+/// The largest char boundary at or below `index`.
+fn floor_boundary(text: &str, index: usize) -> usize {
+    let mut cut = index.min(text.len());
+    while !text.is_char_boundary(cut) {
+        cut -= 1;
+    }
+    cut
+}
+
+/// The smallest char boundary at or above `len - index`.
+fn ceil_boundary_from_end(text: &str, index: usize) -> usize {
+    let mut cut = index.min(text.len());
+    while !text.is_char_boundary(text.len() - cut) {
+        cut -= 1;
+    }
+    cut
+}
+
 /// Gate ③: how a hot prefix is summarized. One pass while the prefix fits
 /// the summarizer's budget; consecutive segments only when it cannot. Ranges
 /// are half-open `[start, end)` message offsets, so a caller replays them
@@ -344,6 +422,49 @@ impl Store {
 mod tests {
     use super::*;
     use serde_json::json;
+
+    #[test]
+    fn prune_elides_oversized_tool_output_and_protects_recent_turns() {
+        let mut messages = vec![
+            Message {
+                role: "user".into(),
+                content: json!([{"type":"tool_result","content":"x".repeat(4000)}]),
+                checkpoint: None,
+                recorded_at_ms: None,
+            },
+            Message {
+                role: "assistant".into(),
+                content: json!([{"type":"text","text":"ok"}]),
+                checkpoint: None,
+                recorded_at_ms: None,
+            },
+            Message {
+                role: "user".into(),
+                content: json!([{"type":"tool_result","content":"y".repeat(4000)}]),
+                checkpoint: None,
+                recorded_at_ms: None,
+            },
+        ];
+        // The newest user message keeps its output; the older one is elided.
+        let (elided, dropped) = prune_history(&mut messages, 1000, 1);
+        assert_eq!(elided, 1);
+        assert!(dropped > 0);
+        let kept = messages[2].content[0]["content"].as_str().unwrap();
+        assert_eq!(kept.len(), 4000);
+        let pruned = messages[0].content[0]["content"].as_str().unwrap();
+        assert!(pruned.contains("elided by context management"), "{pruned}");
+        assert!(pruned.len() < 4000);
+
+        // Within budget nothing is touched, and protecting every turn is a no-op.
+        let mut small = vec![Message {
+            role: "user".into(),
+            content: json!([{"type":"tool_result","content":"z".repeat(50)}]),
+            checkpoint: None,
+            recorded_at_ms: None,
+        }];
+        assert_eq!(prune_history(&mut small, 1000, 0), (0, 0));
+        assert_eq!(prune_history(&mut messages, 1000, 3), (0, 0));
+    }
 
     #[test]
     fn threshold_prefers_the_later_bound() {
