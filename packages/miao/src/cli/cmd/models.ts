@@ -13,6 +13,7 @@ import { UI } from "../ui"
 export const ModelsCommand = effectCmd({
   command: "models [provider]",
   describe: "list all available models",
+  instance: false,
   builder: (yargs) =>
     yargs
       .positional("provider", {
