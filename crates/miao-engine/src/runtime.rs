@@ -227,6 +227,13 @@ impl Runtime {
         self.inner.store.answer_question(session, answer).await
     }
 
+    pub async fn initialize(&self, session: &str, title: &str) -> Result<Value, Error> {
+        self.inner
+            .store
+            .initialize(session, title, self.inner.tools.location())
+            .await
+    }
+
     pub fn store(&self) -> &Store {
         &self.inner.store
     }

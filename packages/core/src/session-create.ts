@@ -12,7 +12,7 @@ import { SessionStore } from "./session/store"
 import { SessionProjector } from "./session/projector"
 import { SessionSchema } from "./session/schema"
 import { SessionEvent } from "./session/event"
-import { RelativePath } from "./schema"
+import { AbsolutePath, RelativePath } from "./schema"
 import { WorkspaceV2 } from "./workspace"
 import { ModelV2 } from "./model"
 import { AgentV2 } from "./agent"
@@ -27,6 +27,13 @@ export type Input = {
   readonly agent?: AgentV2.ID
   readonly model?: ModelV2.Ref
   readonly location: Location.Ref
+  /**
+   * Born on the native engine: the placement catalog binds this identity to the
+   * given storage instead of the TypeScript runtime. Requires a composed native
+   * transport at the composition root; without one the session stays
+   * TypeScript-owned.
+   */
+  readonly nativeStorage?: AbsolutePath
 }
 
 export interface Interface {
@@ -75,7 +82,14 @@ const layer = Layer.effect(
       const projected = yield* events
         .publish(
           SessionEvent.Info.Created,
-          { sessionID, timestamp, info, slug: Slug.create(), version: InstallationVersion },
+          {
+            sessionID,
+            timestamp,
+            info,
+            slug: Slug.create(),
+            version: InstallationVersion,
+            nativeStorage: input.nativeStorage,
+          },
           { location: input.location },
         )
         .pipe(
