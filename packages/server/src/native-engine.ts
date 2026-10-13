@@ -7,6 +7,13 @@ import type { SessionMessage } from "@miao/schema/session-message"
 import type { AbsolutePath } from "@miao/core/schema"
 
 export interface Interface {
+  /** Create idle engine identity before publishing its durable placement. */
+  readonly initialize: (input: {
+    sessionID: SessionID
+    storage: AbsolutePath
+    location: Location.Ref
+    title: string
+  }) => Effect.Effect<void, ConflictError>
   /**
    * Admit one durable prompt into the native engine that owns the Session.
    * The placement catalog's storage and Location are authoritative; the engine

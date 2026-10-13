@@ -14,6 +14,7 @@ import { HttpApiBuilder, HttpApiSchema } from "effect/unstable/httpapi"
 import { Api } from "../api"
 import { Project } from "@miao/core/project"
 import { NativeEngine } from "../native-engine"
+import { SessionEnginePlacement } from "@miao/core/session/engine-placement"
 import { mergeNativeSessions, nativeSessionInfo } from "../native-session"
 import { booted } from "../location"
 import { SessionsCursor } from "@miao/protocol/groups/session"
@@ -106,6 +107,8 @@ export const SessionHandler = HttpApiBuilder.group(Api, "server.session", (handl
       .handle(
         "session.create",
         Effect.fn(function* (ctx) {
+          const id = ctx.payload.id ?? SessionV2.ID.create()
+          const binding = yield* SessionEnginePlacement.find(db, id)
           const location = ctx.payload.location ?? { directory: AbsolutePath.make(process.cwd()) }
           // New Sessions are born on the engine only when the operator pointed
           // the server at an engine storage root and a native transport is
@@ -114,17 +117,22 @@ export const SessionHandler = HttpApiBuilder.group(Api, "server.session", (handl
           const native = Option.getOrUndefined(yield* Effect.serviceOption(NativeEngine.Service))
           const root = process.env.MIAO_ENGINE_STORAGE
           const nativeStorage =
-            native && root
+            native && root && !binding
               ? AbsolutePath.make(
-                  path.join(
+                  path.resolve(
                     root,
-                    `${new Bun.CryptoHasher("sha256").update(location.directory).digest("hex")}.db`,
+                    `${new Bun.CryptoHasher("sha256").update(JSON.stringify(location)).digest("hex")}.db`,
                   ),
                 )
               : undefined
+          // Initialize the engine before publishing its placement: get/list
+          // must work even when no prompt has ever been submitted. Retrying a
+          // catalogued identity preserves its original placement.
+          if (native && nativeStorage)
+            yield* native.initialize({ sessionID: id, storage: nativeStorage, location, title: "New session" })
           return {
             data: yield* session.create({
-              id: ctx.payload.id,
+              id,
               agent: ctx.payload.agent,
               model: ctx.payload.model,
               location,
