@@ -9,59 +9,12 @@ import type * as Scope from "effect/Scope"
 import { CrossSpawnSpawner } from "@miao/core/cross-spawn-spawner"
 import { AppNodeBuilder } from "@miao/core/effect/app-node-builder"
 import { ChildProcess, ChildProcessSpawner } from "effect/unstable/process"
-import { ManagedRuntime } from "effect"
-import type { Config } from "@/config/config"
 import { LayerNode } from "@miao/core/effect/layer-node"
-import { InstanceRef } from "../../src/effect/instance-ref"
-import { InstanceBootstrap } from "../../src/project/bootstrap"
-import type { InstanceContext } from "../../src/project/instance-context"
-import { InstanceStore } from "../../src/project/instance-store"
+import { Database } from "@miao/core/database/database"
+import { EventV2 } from "@miao/core/event"
+import { FSUtil } from "@miao/core/fs-util"
+import { projectContext, type ProjectContext } from "../../src/cli/project-context"
 import { TestLLMServer } from "../lib/llm-server"
-
-const noopBootstrap = Layer.succeed(InstanceBootstrap.Service, InstanceBootstrap.Service.of({ run: Effect.void }))
-export const testInstanceStoreLayer = LayerNode.compile(InstanceStore.node, [
-  [InstanceStore.bootstrapNode, noopBootstrap],
-])
-
-// Shared store for the promise-style helpers below, wired like production
-// (real InstanceBootstrap) so tests keep exercising the same bootstrap path.
-const instanceRuntime = ManagedRuntime.make(
-  LayerNode.compile(InstanceStore.node, [[InstanceStore.bootstrapNode, InstanceBootstrap.node]]),
-)
-
-export async function provideTestInstance<R>(input: {
-  directory: string
-  init?: Effect.Effect<void>
-  fn: (ctx: InstanceContext) => R
-}) {
-  const ctx = await instanceRuntime.runPromise(
-    InstanceStore.Service.use((store) => store.load({ directory: input.directory })),
-  )
-  try {
-    if (input.init) await Effect.runPromise(input.init.pipe(Effect.provideService(InstanceRef, ctx)))
-    return await input.fn(ctx)
-  } finally {
-    await instanceRuntime.runPromise(
-      InstanceStore.Service.use((store) => store.dispose(ctx)),
-    )
-  }
-}
-
-export async function withTestInstance<R>(input: { directory: string; fn: (ctx: InstanceContext) => R }) {
-  return input.fn(
-    await instanceRuntime.runPromise(
-      InstanceStore.Service.use((store) => store.load({ directory: input.directory })),
-    ),
-  )
-}
-
-export async function reloadTestInstance(input: { directory: string }) {
-  return instanceRuntime.runPromise(InstanceStore.Service.use((store) => store.reload(input)))
-}
-
-export async function disposeAllInstances() {
-  await instanceRuntime.runPromise(InstanceStore.Service.use((store) => store.disposeAll()))
-}
 
 // Strip null bytes from paths (defensive fix for CI environment issues)
 function sanitizePath(p: string): string {
@@ -181,18 +134,13 @@ export function tmpdirScoped<E = never, R = never>(options?: {
 
 export const provideInstance =
   (directory: string) =>
-  <A, E, R>(self: Effect.Effect<A, E, R>): Effect.Effect<A, E, R | InstanceStore.Service> =>
-    InstanceStore.Service.use((store) => store.provide({ directory }, self))
+  <A, E, R>(self: Effect.Effect<A, E, R>) =>
+    Effect.gen(function* () {
+      const ctx = yield* projectContext(directory)
+      return yield* self.pipe(Effect.provideService(TestInstance, ctx))
+    }).pipe(Effect.provide(LayerNode.compile(LayerNode.group([Database.node, EventV2.node, FSUtil.node]))))
 
-export const provideInstanceEffect =
-  (directory: string) =>
-  <A, E, R>(self: Effect.Effect<A, E, R>): Effect.Effect<A, E, R | InstanceStore.Service> =>
-    InstanceStore.Service.use((store) => store.provide({ directory }, self))
-
-export const reloadInstance = (input: InstanceStore.LoadInput) =>
-  InstanceStore.Service.use((store) => store.reload(input))
-
-export const disposeAllInstancesEffect = InstanceStore.Service.use((store) => store.disposeAll())
+export const provideInstanceEffect = provideInstance
 
 export function provideTmpdirInstance<A, E, R>(
   self: (path: string) => Effect.Effect<A, E, R>,
@@ -201,16 +149,10 @@ export function provideTmpdirInstance<A, E, R>(
   return Effect.gen(function* () {
     const path = yield* tmpdirScoped(options)
     return yield* self(path).pipe(provideInstance(path))
-  }).pipe(Effect.provide(testInstanceStoreLayer))
+  })
 }
 
-export class TestInstance extends Context.Service<TestInstance, { readonly directory: string }>()("@test/Instance") {}
-
-export const requireInstance = Effect.gen(function* () {
-  const instance = yield* InstanceRef
-  if (!instance) return yield* Effect.die(new Error("missing test instance"))
-  return instance
-})
+export class TestInstance extends Context.Service<TestInstance, ProjectContext>()("@test/Instance") {}
 
 export const withTmpdirInstance =
   <E2 = never, R2 = never>(options?: {
@@ -221,8 +163,8 @@ export const withTmpdirInstance =
   <A, E, R>(self: Effect.Effect<A, E, R>) =>
     Effect.gen(function* () {
       const directory = yield* tmpdirScoped(options)
-      return yield* self.pipe(Effect.provideService(TestInstance, { directory }), provideInstanceEffect(directory))
-    }).pipe(Effect.provide(testInstanceStoreLayer), Effect.provide(AppNodeBuilder.build(CrossSpawnSpawner.node)))
+      return yield* self.pipe(provideInstanceEffect(directory))
+    }).pipe(Effect.provide(AppNodeBuilder.build(CrossSpawnSpawner.node)))
 
 export function provideTmpdirServer<A, E, R>(
   self: (input: { dir: string; llm: TestLLMServer["Service"] }) => Effect.Effect<A, E, R>,
