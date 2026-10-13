@@ -6,12 +6,11 @@ import { SessionMessage } from "@miao/core/session/message"
 import { SessionSchema } from "@miao/core/session/schema"
 import { SessionTable } from "@miao/core/session/sql"
 import { SessionV1Read } from "@miao/core/session/v1-read"
-import { InstanceRef } from "@/effect/instance-ref"
+import { projectContext, type ProjectContext } from "../project-context"
 import { EOL } from "os"
 import path from "path"
 import { FSUtil } from "@miao/core/fs-util"
 import { Effect, Schema } from "effect"
-import type { InstanceContext } from "@/project/instance-context"
 import { ARCHIVE_VERSION } from "./export"
 
 const decodeSessionInfo = Schema.decodeUnknownSync(SessionV1.SessionInfo)
@@ -38,9 +37,9 @@ export const ImportCommand = effectCmd({
       type: "string",
       demandOption: true,
     }),
+  instance: false,
   handler: Effect.fn("Cli.import")(function* (args) {
-    const ctx = yield* InstanceRef
-    if (!ctx) return yield* Effect.die("InstanceRef not provided")
+    const ctx = yield* projectContext()
     if (args.file.startsWith("http://") || args.file.startsWith("https://"))
       return yield* fail("importing from a share URL is no longer supported; export the session to a file instead")
     const fs = yield* FSUtil.Service
@@ -62,7 +61,7 @@ export const ImportCommand = effectCmd({
  * backfill maps legacy history, keeping what V2 has no field for under
  * `metadata.v1`. Nothing is written to the legacy tables.
  */
-export const importArchive = Effect.fn("Cli.import.archive")(function* (input: unknown, ctx: InstanceContext) {
+export const importArchive = Effect.fn("Cli.import.archive")(function* (input: unknown, ctx: ProjectContext) {
   const { db } = yield* Database.Service
   const archive = (typeof input === "object" && input !== null ? input : {}) as {
     version?: unknown

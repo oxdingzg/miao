@@ -13,7 +13,7 @@ import { McpOAuthProvider } from "@miao/core/mcp/oauth-provider"
 import { Config } from "@miao/core/config"
 import { MCP } from "@miao/core/mcp"
 import { ConfigMCPV1 } from "@miao/core/v1/config/mcp"
-import { InstanceRef } from "@/effect/instance-ref"
+import { projectContext } from "../project-context"
 import { InstallationVersion } from "@miao/core/installation/version"
 import path from "path"
 import { Global } from "@miao/core/global"
@@ -449,6 +449,7 @@ async function addMcpToConfig(name: string, mcpConfig: ConfigMCPV1.Info, configP
 export const McpAddCommand = effectCmd({
   command: "add [name]",
   describe: "add an MCP server",
+  instance: false,
   builder: (yargs) =>
     yargs
       .positional("name", {
@@ -470,9 +471,7 @@ export const McpAddCommand = effectCmd({
         array: true,
       }),
   handler: Effect.fn("Cli.mcp.add")(function* (args) {
-    const maybeCtx = yield* InstanceRef
-    if (!maybeCtx) return yield* Effect.die("InstanceRef not provided")
-    const ctx = maybeCtx
+    const ctx = yield* projectContext()
     yield* Effect.promise(async () => {
       const command = args["--"] ?? []
       if (!args.name && (args.url || args.env?.length || args.header?.length || command.length)) {
