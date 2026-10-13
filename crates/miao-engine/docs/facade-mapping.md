@@ -79,6 +79,10 @@ without sending it to the engine.
 
 Per ADR-09 the TS runtime stays the sole refresh owner in the sidecar phase; the
 engine reads the V2 credential database (or the legacy file) read-only and fails
-with `credential is expired; its owning broker must refresh it`. The facade maps
+with `credential is expired; its owning broker must refresh it`. With
+`--credential-socket` the source is instead the standalone credential daemon,
+which refreshes owned rows inside a five-minute margin; a provider-side
+rejection surfaces as `credential refresh was rejected by the provider;
+re-login required`. The facade maps
 the product's model/provider/permission/agent and LSP/MCP/skills/references
 config into the engine's `--model/--provider/--policy/--lsp-config/--mcp-config/--skills-config/--references-config`.

@@ -18,6 +18,8 @@ pub enum Error {
     Integration,
     #[error("credential is expired; its owning broker must refresh it")]
     Expired,
+    #[error("credential refresh was rejected by the provider; re-login required")]
+    RefreshRejected,
     #[error("credential source IO failed")]
     Io,
     #[error("unsupported or unavailable credential database")]
@@ -110,21 +112,54 @@ pub enum Source {
         path: PathBuf,
         integration: String,
     },
+    /// The standalone credential daemon owns this row's refresh; the engine
+    /// is a client that re-reads through the socket each turn.
+    Daemon {
+        socket: PathBuf,
+        id: String,
+        integration: String,
+    },
 }
 impl Source {
     pub fn path(&self) -> Option<&Path> {
         match self {
             Self::Static(_) => None,
             Self::Database { path, .. } | Self::Legacy { path, .. } => Some(path),
+            Self::Daemon { socket, .. } => Some(socket),
         }
     }
-    /// Read again at each provider turn. The existing broker remains the only
-    /// refresh writer; no rotation, migration or in-place credential mutation.
+    /// Read again at each provider turn. Database and Legacy sources stay
+    /// read-only: their owning broker remains the refresh writer, and an
+    /// expired snapshot fails explicitly rather than competing to refresh.
+    /// The Daemon source is the one exception — the daemon refreshes the row
+    /// inside the margin before the engine ever sees the value.
     pub async fn load(&self) -> Result<Credential, Error> {
+        #[cfg(unix)]
+        if let Self::Daemon {
+            socket,
+            id,
+            integration,
+        } = self
+        {
+            let credential = miao_credential::client::get(socket, id, integration)
+                .await
+                .map_err(|error| match error {
+                    miao_credential::Error::Missing => Error::Missing,
+                    miao_credential::Error::Integration => Error::Integration,
+                    miao_credential::Error::Invalid => Error::Invalid,
+                    miao_credential::Error::RefreshRejected => Error::RefreshRejected,
+                    _ => Error::Io,
+                })?;
+            return parse(&credential);
+        }
         let source = self.clone();
         tokio::task::spawn_blocking(move || {
             let credential = match source {
                 Self::Static(credential) => credential,
+                #[cfg(unix)]
+                Self::Daemon { .. } => unreachable!("handled above"),
+                #[cfg(not(unix))]
+                Self::Daemon { .. } => return Err(Error::Invalid),
                 Self::Database {
                     path,
                     id,

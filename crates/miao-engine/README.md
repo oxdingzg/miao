@@ -272,7 +272,13 @@ miao-engine serve --db /path/to/engine.db --workspace /path/to/project --model M
 - When the API-key/OAuth type is incompatible with the selected profile, it is rejected before the request is sent; redirects are disabled so the token is not sent to a redirect target.
 - The credential file/DB is excluded from leaf tools and automatic context as a protected resource; when processes are enabled the source must be outside the workspace.
 - workspace-write does not provide global secret-read isolation; an explicitly approved arbitrary process still has the read capability described by the profile.
-- The current read-only bridge is not a full credential broker: device login, a standalone refresh/rotation lock, cross-broker migration, and live-account task acceptance remain to be done.
+- `--credential-socket PATH` selects the standalone credential daemon
+  (`crates/miao-credential`, `miao-credential serve --db ... --socket ...`) as
+  the source: the daemon is the single refresh writer for its rows and
+  refreshes them inside a five-minute margin, so a subscription survives
+  without the TS broker. Database and Legacy sources stay read-only with the
+  broker as their writer. Still not implemented: interactive device login in
+  the daemon, cross-broker row migration, and live-account task acceptance.
 
 ## Durable background jobs
 

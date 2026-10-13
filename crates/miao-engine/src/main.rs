@@ -142,6 +142,7 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
             "--credential-db",
             "--credential-id",
             "--credential-integration",
+            "--credential-socket",
             "--auth-file",
             "--http",
             "--http-token",
@@ -190,7 +191,21 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
     if options.contains_key("--credential-db") && options.contains_key("--auth-file") {
         return Err("select only one credential source".into());
     }
-    let source = if let Some(path) = options.get("--credential-db") {
+    if options.contains_key("--credential-socket")
+        && (options.contains_key("--credential-db") || options.contains_key("--auth-file"))
+    {
+        return Err("select only one credential source".into());
+    }
+    let source = if let Some(socket) = options.get("--credential-socket") {
+        Source::Daemon {
+            socket: tokio::fs::canonicalize(socket).await?,
+            id: options
+                .get("--credential-id")
+                .ok_or("--credential-id is required")?
+                .clone(),
+            integration,
+        }
+    } else if let Some(path) = options.get("--credential-db") {
         Source::Database {
             path: tokio::fs::canonicalize(path).await?,
             id: options
@@ -201,7 +216,7 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
         }
     } else if let Some(path) = options.get("--auth-file") {
         if options.contains_key("--credential-id") {
-            return Err("credential-id requires credential-db".into());
+            return Err("credential-id requires a database or socket source".into());
         }
         Source::Legacy {
             path: tokio::fs::canonicalize(path).await?,
@@ -211,7 +226,7 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
         if options.contains_key("--credential-id")
             || options.contains_key("--credential-integration")
         {
-            return Err("credential selection requires a file/database source".into());
+            return Err("credential selection requires a file, database, or socket source".into());
         }
         if provider_name == "subscription-responses" {
             Source::Static(Credential::token(
