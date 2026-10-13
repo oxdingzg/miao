@@ -24,7 +24,60 @@ export interface EngineOptions {
   toolReplayFile?: string
   /** Automatic compaction limits (roadmap §2.13); absent keeps it off. */
   contextLimits?: { window: number; ratio: number; headroom: number; perPass: number }
+  /**
+   * The product's own credential database (ADR-09: the product owns refresh and
+   * writes; the engine only reads). Together with `credentialID` and
+   * `credentialIntegration` this is the explicit credential channel; without it
+   * the caller passes provider keys through `env`.
+   */
+  credentialDatabase?: string
+  credentialID?: string
+  credentialIntegration?: string
   env?: Record<string, string | undefined>
+}
+
+/**
+ * Process basics the engine child inherits. Credentials are deliberately absent:
+ * only what the caller passes through `env` reaches the child, so unrelated
+ * secrets in the operator's environment stay out of it.
+ */
+const INHERITED_ENVIRONMENT = [
+  "PATH",
+  "HOME",
+  "USER",
+  "LOGNAME",
+  "SHELL",
+  "TMPDIR",
+  "TMP",
+  "TEMP",
+  "LANG",
+  "LC_ALL",
+  "TZ",
+  "SystemRoot",
+  "SYSTEMROOT",
+  "windir",
+  "COMSPEC",
+  "PATHEXT",
+  "USERPROFILE",
+  "APPDATA",
+  "LOCALAPPDATA",
+  "ProgramData",
+  "NUMBER_OF_PROCESSORS",
+] as const
+
+/**
+ * The child engine's environment: the process basics above plus exactly what the
+ * caller passed. Exported so the boundary is testable without spawning a process.
+ */
+export function engineEnvironment(
+  explicit: Record<string, string | undefined> | undefined,
+  inherited: Record<string, string | undefined> = process.env,
+) {
+  const environment: Record<string, string | undefined> = {}
+  for (const key of INHERITED_ENVIRONMENT) {
+    if (inherited[key] !== undefined) environment[key] = inherited[key]
+  }
+  return { ...environment, ...explicit }
 }
 
 /** The argv the child engine is spawned with; pure so tests can assert it. */
@@ -36,6 +89,9 @@ export function engineArgs(options: EngineOptions): string[] {
   if (options.policyFile) args.push("--policy", options.policyFile)
   if (options.toolReplayFile) args.push("--tool-replay", options.toolReplayFile)
   if (options.contextLimits) args.push("--context-limits", JSON.stringify(options.contextLimits))
+  if (options.credentialDatabase) args.push("--credential-db", options.credentialDatabase)
+  if (options.credentialID) args.push("--credential-id", options.credentialID)
+  if (options.credentialIntegration) args.push("--credential-integration", options.credentialIntegration)
   return args
 }
 
@@ -91,7 +147,7 @@ export class EngineClient {
         stdin: "pipe",
         stdout: "pipe",
         stderr: "pipe",
-        env: { ...process.env, ...options.env },
+        env: engineEnvironment(options.env),
       }),
     )
   }
