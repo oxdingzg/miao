@@ -131,15 +131,33 @@ export const SessionHandler = HttpApiBuilder.group(Api, "server.session", (handl
           // catalogued identity preserves its original placement.
           if (native && nativeStorage)
             yield* native.initialize({ sessionID: id, storage: nativeStorage, location, title: "New session" })
-          return {
-            data: yield* session.create({
-              id,
-              agent: ctx.payload.agent,
-              model: ctx.payload.model,
-              location,
-              ...(nativeStorage ? { nativeStorage } : {}),
-            }),
+          if (binding?.engine === "rust" && !native)
+            return yield* new ConflictError({ message: "Native engine transport is not composed", resource: id })
+          const created = yield* session.create({
+            id,
+            agent: ctx.payload.agent,
+            model: ctx.payload.model,
+            location,
+            ...(nativeStorage ? { nativeStorage } : {}),
+          })
+          const placement =
+            binding?.engine === "rust" ? binding : nativeStorage ? { storage: nativeStorage, location } : undefined
+          if (native && placement) {
+            const snapshot = yield* native.snapshot({
+              sessionID: id,
+              storage: placement.storage,
+              location: placement.location,
+            })
+            return {
+              data: nativeSessionInfo({
+                sessionID: id,
+                projectID: created.projectID,
+                location: placement.location,
+                snapshot,
+              }),
+            }
           }
+          return { data: created }
         }),
       )
       .handle(
