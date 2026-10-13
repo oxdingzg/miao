@@ -414,6 +414,10 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
             miao_engine::tool_replay::ToolReplay::load(std::path::Path::new(file))
         })
         .transpose()?;
+    let context_limits = options
+        .get("--context-limits")
+        .map(|json| miao_engine::context_trigger::ContextLimits::from_wire(json))
+        .transpose()?;
     let runtime = Runtime::with_policy_and_tool_replay(
         Store::open(db).await?,
         provider,
@@ -422,6 +426,9 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
         replay,
     )
     .await?;
+    if let Some(limits) = context_limits {
+        runtime.set_context_limits(Some(limits)).await;
+    }
     if acp {
         let result = miao_engine::acp::serve(runtime.clone()).await;
         runtime.shutdown().await;
