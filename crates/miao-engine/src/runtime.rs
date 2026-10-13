@@ -1191,7 +1191,7 @@ async fn execute(
                 let _ = inner.progress.send(notice);
             };
             let mut breaker = inner.breaker.lock().await;
-            let compacted = crate::context_trigger::maybe_compact(
+            let _ = crate::context_trigger::maybe_compact(
                 &inner.store,
                 crate::context_trigger::CompactRequest {
                     session,
