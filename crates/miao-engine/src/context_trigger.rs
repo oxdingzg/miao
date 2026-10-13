@@ -10,6 +10,9 @@
 use crate::protocol::Error;
 use crate::store::Store;
 use rusqlite::OptionalExtension;
+use serde_json::{json, Value};
+use std::future::Future;
+use tokio::sync::mpsc;
 
 /// Explicit trigger configuration from the product layer.
 #[derive(Debug, Clone)]
@@ -52,6 +55,122 @@ impl Budget {
 /// toward compacting; gate ② replaces it with the provider's own count.
 pub fn estimate_tokens(chars: usize) -> u64 {
     (chars as u64).div_ceil(3)
+}
+
+/// Runtime wiring for automatic compaction (gates 1-6). Call at a run-owned
+/// checkpoint boundary: a settled provider turn with no unsettled tools.
+/// Summarization is injected so tests can stub it and the runtime can bind
+/// the session's provider later. Every rejection feeds the breaker (gate 5);
+/// a tripped breaker or a below-threshold context (gate 1) leaves the session
+/// untouched. Gate 6 progress flows on the run's progress channel between the
+/// transactional pre_compact and post_compact events the store already emits.
+/// Returns whether a checkpoint was committed.
+/// One run's compaction knobs at the checkpoint boundary.
+pub struct CompactRequest<'a> {
+    pub session: &'a str,
+    pub run: &'a str,
+    /// The settled assistant boundary the checkpoint cuts through.
+    pub boundary: u64,
+    pub budget: &'a Budget,
+    /// Summarizer passes carry at most this many selected messages.
+    pub per_pass: usize,
+    pub breaker: &'a mut Breaker,
+    /// The run's progress channel; gate-6 notices flow here.
+    pub progress: &'a mpsc::Sender<Value>,
+}
+
+pub async fn maybe_compact<S, F>(
+    store: &Store,
+    request: CompactRequest<'_>,
+    mut summarize: S,
+) -> Result<bool, Error>
+where
+    S: FnMut(String) -> F,
+    F: Future<Output = Result<String, String>>,
+{
+    let CompactRequest {
+        session,
+        run,
+        boundary,
+        budget,
+        per_pass,
+        breaker,
+        progress,
+    } = request;
+    let channel = |kind: &str| json!({"session_id": session, "run_id": run, "kind": kind});
+    if !breaker.allows() {
+        let _ = progress.send(channel("compaction.skipped")).await;
+        return Ok(false);
+    }
+    let context = store.last_context_tokens(session).await?;
+    let messages = store.selected_history(session).await?;
+    let chars: usize = messages
+        .iter()
+        .map(|message| message.content.to_string().len())
+        .sum();
+    if !budget.should_compact(context, estimate_tokens(chars)) {
+        return Ok(false);
+    }
+    let plan = plan_summary(messages.len(), per_pass);
+    let _ = progress
+        .send(json!({
+            "session_id": session, "run_id": run,
+            "kind": "compaction.started", "segments": plan.segments.len(),
+        }))
+        .await;
+    let mut parts = Vec::new();
+    for (nth, (start, end)) in plan.segments.iter().enumerate() {
+        let body = messages[*start..*end]
+            .iter()
+            .map(|message| format!("- {}: {}", message.role, message.content))
+            .collect::<Vec<_>>()
+            .join("\n");
+        match summarize(format!(
+            "Summarize this portion of the conversation:\n{body}"
+        ))
+        .await
+        {
+            Ok(part) => {
+                parts.push(part);
+                let _ = progress
+                    .send(json!({
+                        "session_id": session, "run_id": run,
+                        "kind": "compaction.progress", "segment": nth + 1, "total": plan.segments.len(),
+                    }))
+                    .await;
+            }
+            Err(reason) => {
+                breaker.rejected();
+                let _ = progress
+                    .send(json!({
+                        "session_id": session, "run_id": run,
+                        "kind": "compaction.failed", "reason": reason,
+                    }))
+                    .await;
+                return Ok(false);
+            }
+        }
+    }
+    let id = format!("cut_{run}");
+    match store
+        .compact_for_run(session, run, &id, boundary, parts.join("\n\n"))
+        .await
+    {
+        Ok(_) => {
+            let _ = progress.send(channel("compaction.finished")).await;
+            Ok(true)
+        }
+        Err(error) => {
+            breaker.rejected();
+            let _ = progress
+                .send(json!({
+                    "session_id": session, "run_id": run,
+                    "kind": "compaction.failed", "reason": error.to_string(),
+                }))
+                .await;
+            Ok(false)
+        }
+    }
 }
 
 /// Gate 5: the compaction circuit breaker. After `threshold` consecutive
