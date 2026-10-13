@@ -610,6 +610,26 @@ async fn execute(
         } else {
             json!({"status":"skipped","reason":"state_read_policy"})
         };
+        // Gate ④ of automatic context management: elide oversized tool output
+        // from the outgoing request only. Stored history is untouched, and the
+        // knob rides the same `--context-limits` configuration that enables
+        // compaction, so an unconfigured runtime sends exactly what it did
+        // before.
+        if let Some(limits) = &*inner.context.lock().await {
+            if let Some(budget) = limits.prune_chars {
+                let (elided, dropped) = crate::context_trigger::prune_history(
+                    &mut history,
+                    budget,
+                    limits.protect_turns,
+                );
+                if elided > 0 {
+                    let _ = inner.progress.send(json!({
+                        "session_id": session, "run_id": run, "step": step,
+                        "kind": "context.pruned", "payloads": elided, "characters": dropped,
+                    }));
+                }
+            }
+        }
         let started = inner
             .store
             .record(
