@@ -39,3 +39,45 @@ test("native sessions respect the anchor predicate and search", () => {
   ).toEqual([id("ses_b")])
   expect(selectNativeSessions({ sessions: page, order: "desc", search: "amma", limit: 5 }).map((s) => s.id)).toEqual([id("ses_c")])
 })
+
+test("anchored previous pages flip the traversal and restore the requested order", () => {
+  // desc full order is [ses_a(300), ses_c(200), ses_b(200)]; the page-1 tail
+  // anchor (ses_b, 200) must page the strictly newer side in asc traversal,
+  // where ses_c (same time, larger id) is the adjacent element.
+  expect(
+    selectNativeSessions({
+      sessions: page,
+      order: "desc",
+      anchor: { id: id("ses_b"), time: 200, direction: "previous" },
+      limit: 1,
+    }).map((s) => s.id),
+  ).toEqual([id("ses_c")])
+  // Nothing newer than the newest element: an empty previous page.
+  expect(
+    selectNativeSessions({
+      sessions: page,
+      order: "desc",
+      anchor: { id: id("ses_a"), time: 300, direction: "previous" },
+      limit: 5,
+    }).map((s) => s.id),
+  ).toEqual([])
+})
+
+test("anchored paging mirrors the catalog in ascending order too", () => {
+  expect(
+    selectNativeSessions({
+      sessions: page,
+      order: "asc",
+      anchor: { id: id("ses_b"), time: 200, direction: "next" },
+      limit: 5,
+    }).map((s) => s.id),
+  ).toEqual([id("ses_c"), id("ses_a")])
+  expect(
+    selectNativeSessions({
+      sessions: page,
+      order: "asc",
+      anchor: { id: id("ses_a"), time: 300, direction: "previous" },
+      limit: 1,
+    }).map((s) => s.id),
+  ).toEqual([id("ses_c")])
+})
