@@ -37,10 +37,10 @@ for (const [signal, code] of [
     shutdownStarted = true
     const force = setTimeout(() => process.exit(code), 5_000)
     void (async () => {
-      const { appRuntimeUsed } = await import("@/effect/app-runtime-usage")
-      if (!appRuntimeUsed.value) return
-      const { AppRuntime } = await import("@/effect/app-runtime")
-      await AppRuntime.dispose()
+      const { cliRuntimeUsed } = await import("@/cli/cli-runtime-usage")
+      if (!cliRuntimeUsed.value) return
+      const { CliRuntime } = await import("@/cli/cli-runtime")
+      await CliRuntime.dispose()
     })()
       .catch(() => undefined)
       .finally(() => {

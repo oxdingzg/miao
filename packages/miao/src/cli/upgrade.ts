@@ -9,8 +9,7 @@ import { Global } from "@miao/core/global"
 import { ConfigV1 } from "@miao/core/v1/config/config"
 import { Flock } from "@miao/core/util/flock"
 import { errorMessage } from "@/util/error"
-import { ConfigParse } from "@/config/parse"
-import { ConfigVariable } from "@/config/variable"
+import { readGlobalConfig } from "./global-config"
 
 // How long a cached "latest version" is trusted before refreshing in the
 // background. Startup never waits on the network (see upgrade()).
@@ -77,24 +76,6 @@ async function acquireUpgradeLock() {
   }
 }
 
-/**
- * Read only the global config files, merging later names over earlier ones —
- * the same order the app-layer Config service uses. The updater only needs
- * `autoupdate`, so this skips plugin resolution and the instance graph.
- */
-async function readGlobalConfig(): Promise<ConfigV1.Info> {
-  let result: ConfigV1.Info = {}
-  for (const name of ["config.json", "opencode.json", "opencode.jsonc", "miao.json", "miao.jsonc"]) {
-    const file = path.join(Global.Path.config, name)
-    const text = await Bun.file(file)
-      .text()
-      .catch(() => undefined)
-    if (!text) continue
-    const expanded = await ConfigVariable.substitute({ text, type: "path", path: file })
-    result = { ...result, ...ConfigParse.schema(ConfigV1.Info, ConfigParse.jsonc(expanded, file), file) }
-  }
-  return result
-}
 
 /**
  * Check for updates and, by default, upgrade in the background. The running

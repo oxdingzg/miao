@@ -9,7 +9,6 @@ import { effectCmd } from "../../effect-cmd"
 export const SkillCommand = effectCmd({
   command: "skill",
   describe: "list all available skills",
-  instance: false,
   builder: (yargs) => yargs,
   handler: () =>
     Effect.gen(function* () {

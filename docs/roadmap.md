@@ -209,6 +209,15 @@ Most V2 endpoints exist (`pty.shells`, `project.update`, `vcs.diff`, `fs.content
         instance bootstrap no longer runs on any command path, so
         `InstanceStore`/`InstanceBootstrap` are one step from deletion (only the app layer and
         the test fixture still build them).
+        Landed: the CLI runtime is now core-only. `cli/cli-runtime.ts` assembles the global
+        core nodes (Database, EventV2, FSUtil, Blob, Npm, GitCli, Ripgrep, ModelsCatalog,
+        McpAuth, SessionStore/Projector/Schedule, RuntimeFlags, EventV2Bridge, ProjectMetadata,
+        Installation) plus the location map and `SessionExecutionLocal`, and `effect-cmd.ts`
+        runs every handler on it with `CliServices` as the only ambient services; the
+        `instance` option is gone, `cli/global-config.ts` (shared with the updater) replaces
+        the V1 config read in `network.ts`, and `effect/app-runtime.ts` +
+        `effect/app-node-builder-v1.ts` are deleted. What still references the V1 graph is only
+        the instance subsystem, the V1 service modules themselves, and their tests.
       - The V1 workspace/adapters subsystem has no production caller (`Workspace.Service` is
         only referenced by tests), so its runtime is deleted: `control-plane/workspace.ts`,
         `workspace-adapter-runtime.ts`, `util.ts`, and `dev/*`. The V1 workspace plugin API is
