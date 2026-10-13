@@ -183,7 +183,7 @@ Most V2 endpoints exist (`pty.shells`, `project.update`, `vcs.diff`, `fs.content
       `providers login` still runs the V1 `Auth`/`Plugin` auth-hook flow and is
       the last V1 command surface. Remaining V1 consumers: `providers login` and
       the control-plane worktree adapter.
-- [ ] Migrate `providers login` onto core `Integration`: the registry (populated by the
+- [x] Migrate `providers login` onto core `Integration`: the registry (populated by the
       models-catalog plugin, one integration per provider) exposes the login methods that
       V1 got from plugin auth hooks, plus `connection.key` for API keys, `connection.oauth` +
       `attempt.status`/`attempt.complete` (+ optional `code`) for OAuth, and `adoptLegacy`
@@ -192,6 +192,14 @@ Most V2 endpoints exist (`pty.shells`, `project.update`, `vcs.diff`, `fs.content
       Decide the fate of the legacy `login <url>` well-known flow (`fetch
       /.well-known/opencode` + spawn auth command + store token) — it has no V2 counterpart
       and likely belongs in the same retirement as `auth.json`.
+      Landed: the command opens a location scope, awaits the plugin boot barrier, offers the
+      integration's key/oauth methods (with `--method` and a picker), drives `connection.key`
+      or `connection.oauth` + `attempt.status` polling (prompting for the code in `code`
+      mode), and awaited-approval. The V1 enabled/disabled provider lists are gone (V2 has no
+      such config; the migration folds them into `provider`), so no config read remains. Both
+      edge flows were retired as no V2 path can resolve their credentials: the
+      `login <url>` well-known flow and the "Other" custom-provider key path (their helpers
+      and tests are deleted).
 - [ ] Remove the `packages/miao` `app-runtime` V1 layer: migrate `effect-cmd.ts` commands and the
       control-plane worktree adapter to core services, then delete the V1 graph.
 - [ ] Confirm V2 endpoints cover app behaviors that were silently disabled on V2 (global config

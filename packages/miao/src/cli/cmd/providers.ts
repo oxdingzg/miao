@@ -1,238 +1,29 @@
 import type { Argv } from "yargs"
-import { Auth } from "../../auth"
 import { cmd } from "./cmd"
-import { CliError, effectCmd, fail } from "../effect-cmd"
+import { effectCmd, fail } from "../effect-cmd"
 import { UI } from "../ui"
 import * as Prompt from "../effect/prompt"
 import { ModelsCatalog } from "@miao/core/models-catalog"
 import { Credential } from "@miao/core/credential"
+import { Integration } from "@miao/core/integration"
+import { PluginV2 } from "@miao/core/plugin"
 import { LayerNode } from "@miao/core/effect/layer-node"
+import { Location } from "@miao/core/location"
+import { LocationServiceMap, locationServiceMapLayer } from "@miao/core/location-services"
+import { AbsolutePath } from "@miao/core/schema"
+import { Deferred, Effect, Option } from "effect"
 
-import { map, pipe, sortBy, values } from "remeda"
-import { Config } from "@/config/config"
-import { Plugin } from "../../plugin"
-import type { Hooks } from "@miao/plugin"
-import { Process } from "@/util/process"
-import { errorMessage } from "@/util/error"
-import { text } from "node:stream/consumers"
-import { Effect, Option } from "effect"
-
-type PluginAuth = NonNullable<Hooks["auth"]>
+const locationScope = <A, E, R>(effect: Effect.Effect<A, E, R>) =>
+  effect.pipe(
+    Effect.provide(
+      LocationServiceMap.Service.get(Location.Ref.make({ directory: AbsolutePath.make(process.cwd()) })),
+    ),
+    Effect.provide(locationServiceMapLayer),
+  )
 
 const promptValue = <Value>(value: Option.Option<Value>) => {
   if (Option.isNone(value)) return Effect.die(new UI.CancelledError())
   return Effect.succeed(value.value)
-}
-
-const put = Effect.fn("Cli.providers.put")(function* (key: string, info: Auth.Info) {
-  const auth = yield* Auth.Service
-  yield* Effect.orDie(auth.set(key, info))
-})
-
-const cliTry = <Value>(message: string, fn: () => PromiseLike<Value>) =>
-  Effect.tryPromise({
-    try: fn,
-    catch: (error) => new CliError({ message: message + errorMessage(error) }),
-  })
-
-const handlePluginAuth = Effect.fn("Cli.providers.pluginAuth")(function* (
-  plugin: { auth: PluginAuth },
-  provider: string,
-  methodName?: string,
-) {
-  const index = yield* Effect.gen(function* () {
-    if (!methodName) {
-      if (plugin.auth.methods.length <= 1) return 0
-      return yield* promptValue(
-        yield* Prompt.select({
-          message: "Login method",
-          options: plugin.auth.methods.map((x, index) => ({
-            label: x.label,
-            value: index,
-          })),
-        }),
-      )
-    }
-    const match = plugin.auth.methods.findIndex((x) => x.label.toLowerCase() === methodName.toLowerCase())
-    if (match === -1) {
-      return yield* fail(
-        `Unknown method "${methodName}" for ${provider}. Available: ${plugin.auth.methods.map((x) => x.label).join(", ")}`,
-      )
-    }
-    return match
-  })
-  const method = plugin.auth.methods[index]
-
-  yield* Effect.sleep("10 millis")
-  const inputs: Record<string, string> = {}
-  if (method.prompts) {
-    for (const prompt of method.prompts) {
-      if (prompt.when) {
-        const value = inputs[prompt.when.key]
-        if (value === undefined) continue
-        const matches = prompt.when.op === "eq" ? value === prompt.when.value : value !== prompt.when.value
-        if (!matches) continue
-      }
-      if (prompt.condition && !prompt.condition(inputs)) continue
-      if (prompt.type === "select") {
-        const value = yield* Prompt.select({
-          message: prompt.message,
-          options: prompt.options,
-        })
-        inputs[prompt.key] = yield* promptValue(value)
-        continue
-      }
-      const value = yield* Prompt.text({
-        message: prompt.message,
-        placeholder: prompt.placeholder,
-        validate: prompt.validate ? (v) => prompt.validate!(v ?? "") : undefined,
-      })
-      inputs[prompt.key] = yield* promptValue(value)
-    }
-  }
-
-  if (method.type === "oauth") {
-    const authorize = yield* cliTry("Failed to authorize: ", () => method.authorize(inputs))
-
-    if (authorize.url) {
-      yield* Prompt.log.info("Go to: " + authorize.url)
-    }
-
-    if (authorize.method === "auto") {
-      if (authorize.instructions) {
-        yield* Prompt.log.info(authorize.instructions)
-      }
-      const spinner = Prompt.spinner()
-      yield* spinner.start("Waiting for authorization...")
-      const result = yield* cliTry("Failed to authorize: ", () => authorize.callback())
-      if (result.type === "failed") {
-        yield* spinner.stop("Failed to authorize", 1)
-      }
-      if (result.type === "success") {
-        const saveProvider = result.provider ?? provider
-        if ("refresh" in result) {
-          const { type: _, provider: __, refresh, access, expires, ...extraFields } = result
-          yield* put(saveProvider, {
-            type: "oauth",
-            refresh,
-            access,
-            expires,
-            ...extraFields,
-          })
-        }
-        if ("key" in result) {
-          yield* put(saveProvider, {
-            type: "api",
-            key: result.key,
-            ...(result.metadata ? { metadata: result.metadata } : {}),
-          })
-        }
-        yield* spinner.stop("Login successful")
-      }
-    }
-
-    if (authorize.method === "code") {
-      const code = yield* Prompt.text({
-        message: "Paste the authorization code here: ",
-        validate: (x) => (x && x.length > 0 ? undefined : "Required"),
-      })
-      const authorizationCode = yield* promptValue(code)
-      const result = yield* cliTry("Failed to authorize: ", () => authorize.callback(authorizationCode))
-      if (result.type === "failed") {
-        yield* Prompt.log.error("Failed to authorize")
-      }
-      if (result.type === "success") {
-        const saveProvider = result.provider ?? provider
-        if ("refresh" in result) {
-          const { type: _, provider: __, refresh, access, expires, ...extraFields } = result
-          yield* put(saveProvider, {
-            type: "oauth",
-            refresh,
-            access,
-            expires,
-            ...extraFields,
-          })
-        }
-        if ("key" in result) {
-          yield* put(saveProvider, {
-            type: "api",
-            key: result.key,
-            ...(result.metadata ? { metadata: result.metadata } : {}),
-          })
-        }
-        yield* Prompt.log.success("Login successful")
-      }
-    }
-
-    yield* Prompt.outro("Done")
-    return true
-  }
-
-  if (method.type === "api") {
-    const key = yield* Prompt.password({
-      message: "Enter your API key",
-      validate: (x) => (x && x.length > 0 ? undefined : "Required"),
-    })
-    const apiKey = yield* promptValue(key)
-
-    const metadata = Object.keys(inputs).length ? { metadata: inputs } : {}
-    const authorizeApi = method.authorize
-    if (!authorizeApi) {
-      yield* put(provider, {
-        type: "api",
-        key: apiKey,
-        ...metadata,
-      })
-      yield* Prompt.outro("Done")
-      return true
-    }
-
-    const result = yield* cliTry("Failed to authorize: ", () => authorizeApi(inputs))
-    if (result.type === "failed") {
-      yield* Prompt.log.error("Failed to authorize")
-    }
-    if (result.type === "success") {
-      const saveProvider = result.provider ?? provider
-      const merged = { ...(metadata.metadata ?? {}), ...(result.metadata ?? {}) }
-      yield* put(saveProvider, {
-        type: "api",
-        key: result.key ?? apiKey,
-        ...(Object.keys(merged).length ? { metadata: merged } : {}),
-      })
-      yield* Prompt.log.success("Login successful")
-    }
-    yield* Prompt.outro("Done")
-    return true
-  }
-
-  return false
-})
-
-export function resolvePluginProviders(input: {
-  hooks: Hooks[]
-  existingProviders: Record<string, unknown>
-  disabled: Set<string>
-  enabled?: Set<string>
-  providerNames: Record<string, string | undefined>
-}): Array<{ id: string; name: string }> {
-  const seen = new Set<string>()
-  const result: Array<{ id: string; name: string }> = []
-
-  for (const hook of input.hooks) {
-    if (!hook.auth) continue
-    const id = hook.auth.provider
-    if (seen.has(id)) continue
-    seen.add(id)
-    if (Object.hasOwn(input.existingProviders, id)) continue
-    if (input.disabled.has(id)) continue
-    if (input.enabled && !input.enabled.has(id)) continue
-    result.push({
-      id,
-      name: input.providerNames[id] ?? id,
-    })
-  }
-
-  return result
 }
 
 export const ProvidersCommand = cmd({
@@ -292,19 +83,15 @@ export const ProvidersListCommand = effectCmd({
 })
 
 export const ProvidersLoginCommand = effectCmd({
-  command: "login [url]",
+  command: "login [provider]",
   describe: "log in to a provider",
-  // URL login skips instance bootstrap, which would load remote config with the stale token and crash before re-auth.
-  instance: (args) => !loginTarget(args.url).url,
+  // The core integration registry is location-scoped; the handler opens its own
+  // scope, so no instance bootstrap is needed.
+  instance: false,
   builder: (yargs: Argv) =>
     yargs
-      .positional("url", {
-        describe: "provider id/name or an HTTP(S) auth-provider URL",
-        type: "string",
-      })
-      .option("provider", {
-        alias: ["p"],
-        describe: "provider id or name to log in to (skips provider selection)",
+      .positional("provider", {
+        describe: "provider id or name to log in to",
         type: "string",
       })
       .option("method", {
@@ -312,182 +99,159 @@ export const ProvidersLoginCommand = effectCmd({
         describe: "login method label (skips method selection)",
         type: "string",
       }),
-  handler: Effect.fn("Cli.providers.login")(function* (args) {
-    const authSvc = yield* Auth.Service
+  handler: (args) =>
+    Effect.gen(function* () {
+      UI.empty()
+      yield* Prompt.intro("Add credential")
 
-    UI.empty()
-    yield* Prompt.intro("Add credential")
-    const target = loginTarget(args.url)
-    if (target.url) {
-      const url = target.url
-      const wellknown = (yield* cliTry(`Failed to load auth provider metadata from ${url}: `, () =>
-        fetch(`${url}/.well-known/opencode`).then((x) => x.json()),
-      )) as {
-        auth: { command: string[]; env: string }
+      // The catalog plugin registers one integration per provider; without its
+      // boot barrier the registry is empty (same trap as `debug v2`).
+      yield* Deferred.await((yield* PluginV2.Service).booted)
+
+      const modelsCatalog = yield* ModelsCatalog.Service
+      yield* Effect.ignore(modelsCatalog.refresh(true))
+      const catalog = yield* modelsCatalog.get()
+
+      const integrations = yield* Integration.Service
+      const infos = yield* integrations.list()
+      const priority: Record<string, number> = {
+        opencode: 0,
+        openai: 1,
+        "github-copilot": 2,
+        google: 3,
+        anthropic: 4,
+        openrouter: 5,
+        vercel: 6,
       }
-      yield* Prompt.log.info(`Running \`${wellknown.auth.command.join(" ")}\``)
-      const abort = new AbortController()
-      const proc = Process.spawn(wellknown.auth.command, { stdout: "pipe", stderr: "inherit", abort: abort.signal })
-      if (!proc.stdout) {
-        yield* Prompt.log.error("Failed")
+      const options = infos
+        .filter((info) => info.methods.some((method) => method.type !== "env"))
+        .toSorted(
+          (a, b) =>
+            (priority[a.id] ?? 99) - (priority[b.id] ?? 99) ||
+            (catalog[a.id]?.name ?? a.name ?? a.id).localeCompare(catalog[b.id]?.name ?? b.name ?? b.id),
+        )
+        .map((info) => ({
+          label: catalog[info.id]?.name ?? info.name ?? info.id,
+          value: info.id as string,
+          hint: (
+            {
+              opencode: "recommended",
+              openai: "ChatGPT Plus/Pro or API key",
+            } as Record<string, string | undefined>
+          )[info.id],
+        }))
+
+      if (options.length === 0) {
+        yield* Prompt.log.error("No provider with login methods is available")
         yield* Prompt.outro("Done")
         return
       }
-      const [exit, token] = yield* cliTry("Failed to run auth provider command: ", () =>
-        Promise.all([proc.exited, text(proc.stdout!)]),
-      ).pipe(Effect.ensuring(Effect.sync(() => abort.abort())))
-      if (exit !== 0) {
-        yield* Prompt.log.error("Failed")
+
+      const requested = args.provider
+      const match = requested
+        ? (options.find((option) => option.value === requested) ??
+          options.find((option) => option.label.toLowerCase() === requested.toLowerCase()))
+        : undefined
+      if (requested && !match) return yield* fail(`Unknown provider "${requested}"`)
+      const providerID =
+        match?.value ??
+        (yield* promptValue(
+          yield* Prompt.autocomplete({
+            message: "Select provider",
+            maxItems: 8,
+            options,
+          }),
+        ))
+
+      const info = yield* integrations.get(Integration.ID.make(providerID))
+      if (!info) return yield* fail(`Provider "${providerID}" is not available`)
+      const methods = info.methods.filter((method) => method.type === "key" || method.type === "oauth")
+      if (methods.length === 0) return yield* fail(`No login methods available for "${providerID}"`)
+
+      const label = (method: (typeof methods)[number]) => method.label ?? method.type
+      const requestedMethod = args.method
+      const requestedIndex = requestedMethod
+        ? methods.findIndex((method) => label(method).toLowerCase() === requestedMethod.toLowerCase())
+        : -1
+      if (requestedMethod && requestedIndex === -1) {
+        return yield* fail(
+          `Unknown method "${requestedMethod}" for ${providerID}. Available: ${methods.map(label).join(", ")}`,
+        )
+      }
+      const method =
+        requestedIndex !== -1
+          ? methods[requestedIndex]
+          : methods[
+              yield* promptValue(
+                yield* Prompt.select({
+                  message: "Login method",
+                  options: methods.map((method, index) => ({ label: label(method), value: index })),
+                }),
+              )
+            ]
+
+      if (method.type === "key") {
+        if (providerID === "opencode" || providerID === "opencode-go") {
+          yield* Prompt.log.info("Create an api key at https://opencode.ai/auth")
+        }
+        if (providerID === "vercel") {
+          yield* Prompt.log.info("You can create an api key at https://vercel.link/ai-gateway-token")
+        }
+        const apiKey = yield* promptValue(
+          yield* Prompt.password({
+            message: "Enter your API key",
+            validate: (x) => (x && x.length > 0 ? undefined : "Required"),
+          }),
+        )
+        yield* integrations.connection
+          .key({ integrationID: info.id, key: apiKey })
+          .pipe(Effect.catch((error) => fail(error.message)))
         yield* Prompt.outro("Done")
         return
       }
-      yield* Effect.orDie(authSvc.set(url, { type: "wellknown", key: wellknown.auth.env, token: token.trim() }))
-      yield* Prompt.log.success("Logged into " + url)
+
+      const attempt = yield* integrations.connection
+        .oauth({ integrationID: info.id, methodID: method.id, inputs: {} })
+        .pipe(Effect.catch((error) => fail(error.message)))
+      if (attempt.url) yield* Prompt.log.info("Go to: " + attempt.url)
+      if (attempt.instructions) yield* Prompt.log.info(attempt.instructions)
+      if (attempt.mode === "code") {
+        const code = yield* promptValue(
+          yield* Prompt.text({
+            message: "Paste the authorization code here: ",
+            validate: (x) => (x && x.length > 0 ? undefined : "Required"),
+          }),
+        )
+        yield* integrations.attempt
+          .complete({ attemptID: attempt.attemptID, code })
+          .pipe(Effect.catch((error) => fail(error.message)))
+      }
+
+      const spinner = Prompt.spinner()
+      yield* spinner.start("Waiting for authorization...")
+      const status = yield* awaitAttempt(integrations, attempt.attemptID)
+      if (status.status === "complete") {
+        yield* spinner.stop("Login successful")
+      } else {
+        yield* spinner.stop("Failed to authorize", 1)
+        yield* Prompt.log.error("message" in status ? status.message : `Authorization ${status.status}`)
+      }
       yield* Prompt.outro("Done")
-      return
-    }
-
-    const cfgSvc = yield* Config.Service
-    const pluginSvc = yield* Plugin.Service
-    const modelsCatalog = yield* ModelsCatalog.Service
-    yield* Effect.ignore(modelsCatalog.refresh(true))
-
-    const config = yield* cfgSvc.get()
-
-    const disabled = new Set(config.disabled_providers ?? [])
-    const enabled = config.enabled_providers ? new Set(config.enabled_providers) : undefined
-
-    const allProviders = yield* modelsCatalog.get()
-    const providers: Record<string, (typeof allProviders)[string]> = {}
-    for (const [key, value] of Object.entries(allProviders)) {
-      if ((enabled ? enabled.has(key) : true) && !disabled.has(key)) providers[key] = value
-    }
-    const hooks = yield* pluginSvc.list()
-
-    const priority: Record<string, number> = {
-      opencode: 0,
-      openai: 1,
-      "github-copilot": 2,
-      google: 3,
-      anthropic: 4,
-      openrouter: 5,
-      vercel: 6,
-    }
-    const pluginProviders = resolvePluginProviders({
-      hooks,
-      existingProviders: providers,
-      disabled,
-      enabled,
-      providerNames: Object.fromEntries(Object.entries(config.provider ?? {}).map(([id, p]) => [id, p.name])),
-    })
-    const options = [
-      ...pipe(
-        providers,
-        values(),
-        sortBy(
-          (x) => priority[x.id] ?? 99,
-          (x) => x.name ?? x.id,
-        ),
-        map((x) => ({
-          label: x.name,
-          value: x.id,
-          hint: {
-            opencode: "recommended",
-            openai: "ChatGPT Plus/Pro or API key",
-          }[x.id],
-        })),
-      ),
-      ...pluginProviders.map((x) => ({
-        label: x.name,
-        value: x.id,
-        hint: "plugin",
-      })),
-    ]
-
-    let provider: string
-    const requestedProvider = args.provider ?? target.provider
-    if (requestedProvider) {
-      const input = requestedProvider
-      const byID = options.find((x) => x.value === input)
-      const byName = options.find((x) => x.label.toLowerCase() === input.toLowerCase())
-      const match = byID ?? byName
-      if (!match) {
-        return yield* fail(`Unknown provider "${input}"`)
-      }
-      provider = match.value
-    } else {
-      provider = yield* promptValue(
-        yield* Prompt.autocomplete({
-          message: "Select provider",
-          maxItems: 8,
-          options: [...options, { value: "other", label: "Other" }],
-        }),
-      )
-    }
-
-    const plugin = hooks.findLast((x) => x.auth?.provider === provider)
-    if (plugin && plugin.auth) {
-      const handled = yield* handlePluginAuth({ auth: plugin.auth! }, provider, args.method)
-      if (handled) return
-    }
-
-    if (provider === "other") {
-      provider = (yield* promptValue(
-        yield* Prompt.text({
-          message: "Enter provider id",
-          validate: (x) => (x && x.match(/^[0-9a-z-]+$/) ? undefined : "a-z, 0-9 and hyphens only"),
-        }),
-      )).replace(/^@ai-sdk\//, "")
-
-      const customPlugin = hooks.findLast((x) => x.auth?.provider === provider)
-      if (customPlugin && customPlugin.auth) {
-        const handled = yield* handlePluginAuth({ auth: customPlugin.auth! }, provider, args.method)
-        if (handled) return
-      }
-
-      yield* Prompt.log.warn(
-        `This only stores a credential for ${provider} - you will need configure it in miao.json, check the docs for examples.`,
-      )
-    }
-
-    if (provider === "amazon-bedrock") {
-      yield* Prompt.log.info(
-        "Amazon Bedrock authentication priority:\n" +
-          "  1. Bearer token (AWS_BEARER_TOKEN_BEDROCK or /connect)\n" +
-          "  2. AWS credential chain (profile, access keys, IAM roles, EKS IRSA)\n\n" +
-          "Configure via miao.json options (profile, region, endpoint) or\n" +
-          "AWS environment variables (AWS_PROFILE, AWS_REGION, AWS_ACCESS_KEY_ID, AWS_WEB_IDENTITY_TOKEN_FILE).",
-      )
-    }
-
-    if (provider === "opencode" || provider === "opencode-go") {
-      yield* Prompt.log.info("Create an api key at https://opencode.ai/auth")
-    }
-
-    if (provider === "vercel") {
-      yield* Prompt.log.info("You can create an api key at https://vercel.link/ai-gateway-token")
-    }
-
-    if (["cloudflare", "cloudflare-ai-gateway"].includes(provider)) {
-      yield* Prompt.log.info(
-        "Cloudflare AI Gateway can be configured with CLOUDFLARE_GATEWAY_ID, CLOUDFLARE_ACCOUNT_ID, and CLOUDFLARE_API_TOKEN environment variables. Read more: https://opencode.ai/docs/providers/#cloudflare-ai-gateway",
-      )
-    }
-
-    const key = yield* Prompt.password({
-      message: "Enter your API key",
-      validate: (x) => (x && x.length > 0 ? undefined : "Required"),
-    })
-    const apiKey = yield* promptValue(key)
-    yield* Effect.orDie(authSvc.set(provider, { type: "api", key: apiKey }))
-
-    yield* Prompt.outro("Done")
-  }),
+    }).pipe(locationScope),
 })
 
-export function loginTarget(input?: string) {
-  if (input && /^https?:\/\//i.test(input)) return { url: input.replace(/\/+$/, ""), provider: undefined }
-  return { url: undefined, provider: input }
+/**
+ * Poll a pending OAuth attempt until it settles. The core attempt expires on
+ * its own, so the loop terminates even when the user never finishes.
+ */
+function awaitAttempt(integrations: Integration.Interface, attemptID: Integration.AttemptID) {
+  return Effect.gen(function* () {
+    while (true) {
+      const status = yield* integrations.attempt.status(attemptID)
+      if (status.status !== "pending") return status
+      yield* Effect.sleep("1 seconds")
+    }
+  })
 }
 
 export const ProvidersLogoutCommand = effectCmd({
