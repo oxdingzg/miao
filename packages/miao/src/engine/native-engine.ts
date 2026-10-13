@@ -92,6 +92,17 @@ export const fromOwners = (owners: Owners): NativeEngine.Interface => {
       read<Readonly<Record<string, unknown>>>(input, (connection) =>
         connection.client.request("snapshot", { session_id: input.sessionID }),
       ).pipe(Effect.map((value) => (typeof value === "object" && value !== null ? value : {}))),
+    interrupt: (input) =>
+      read(input, (connection) => connection.client.request("cancel", { session_id: input.sessionID })).pipe(
+        Effect.asVoid,
+      ),
+    rename: (input) =>
+      read(input, async (connection) => {
+        // Rust's rename can initialize a Session; the product command operates
+        // only on an existing owner, so missing identity must fail first.
+        await connection.client.request("snapshot", { session_id: input.sessionID })
+        return connection.client.request("rename", { session_id: input.sessionID, title: input.title })
+      }).pipe(Effect.asVoid),
     sessions: (input) =>
       // `sessions` is a unit command: it takes no params.
       read<readonly unknown[]>(input, (connection) => connection.client.request("sessions")).pipe(

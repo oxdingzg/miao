@@ -31,6 +31,19 @@ export interface Interface {
     storage: AbsolutePath
     location: Location.Ref
   }) => Effect.Effect<Readonly<Record<string, unknown>>, ConflictError>
+  /** Interrupt the engine-owned execution; an idle Session is a no-op. */
+  readonly interrupt: (input: {
+    sessionID: SessionID
+    storage: AbsolutePath
+    location: Location.Ref
+  }) => Effect.Effect<void, ConflictError>
+  /** Change the engine's durable title, never the TypeScript catalog's copy. */
+  readonly rename: (input: {
+    sessionID: SessionID
+    storage: AbsolutePath
+    location: Location.Ref
+    title: string
+  }) => Effect.Effect<void, ConflictError>
   /** Every engine-owned Session in one storage. */
   readonly sessions: (input: {
     storage: AbsolutePath
