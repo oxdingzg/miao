@@ -14,6 +14,7 @@ import { HttpApiBuilder, HttpApiSchema } from "effect/unstable/httpapi"
 import { Api } from "../api"
 import { Project } from "@miao/core/project"
 import { NativeEngine } from "../native-engine"
+import { requireTypescriptOwner } from "../native-command"
 import { SessionEnginePlacement } from "@miao/core/session/engine-placement"
 import { nativeExecution, nativeTodos } from "../native-state"
 import { nativeSessionEvents } from "../native-events"
@@ -214,6 +215,7 @@ export const SessionHandler = HttpApiBuilder.group(Api, "server.session", (handl
       .handle(
         "session.switchAgent",
         Effect.fn(function* (ctx) {
+          yield* requireTypescriptOwner(ctx.params.sessionID, "session.switchAgent")
           yield* session.switchAgent({ sessionID: ctx.params.sessionID, agent: ctx.payload.agent }).pipe(
             Effect.catchTag("Session.NotFoundError", (error) =>
               Effect.fail(
@@ -231,6 +233,7 @@ export const SessionHandler = HttpApiBuilder.group(Api, "server.session", (handl
       .handle(
         "session.switchModel",
         Effect.fn(function* (ctx) {
+          yield* requireTypescriptOwner(ctx.params.sessionID, "session.switchModel")
           yield* session.switchModel({ sessionID: ctx.params.sessionID, model: ctx.payload.model }).pipe(
             Effect.catchTag("Session.NotFoundError", (error) =>
               Effect.fail(
@@ -315,6 +318,7 @@ export const SessionHandler = HttpApiBuilder.group(Api, "server.session", (handl
       .handle(
         "session.skill",
         Effect.fn(function* (ctx) {
+          yield* requireTypescriptOwner(ctx.params.sessionID, "session.skill")
           yield* session
             .skill({
               sessionID: ctx.params.sessionID,
@@ -337,6 +341,7 @@ export const SessionHandler = HttpApiBuilder.group(Api, "server.session", (handl
       .handle(
         "session.shell",
         Effect.fn(function* (ctx) {
+          yield* requireTypescriptOwner(ctx.params.sessionID, "session.shell")
           yield* session
             .shell({
               sessionID: ctx.params.sessionID,
@@ -359,6 +364,7 @@ export const SessionHandler = HttpApiBuilder.group(Api, "server.session", (handl
       .handle(
         "session.compact",
         Effect.fn(function* (ctx) {
+          yield* requireTypescriptOwner(ctx.params.sessionID, "session.compact")
           yield* session.compact({ sessionID: ctx.params.sessionID }).pipe(
             Effect.catchTag("Session.NotFoundError", (error) =>
               Effect.fail(
@@ -408,6 +414,7 @@ export const SessionHandler = HttpApiBuilder.group(Api, "server.session", (handl
       .handle(
         "session.revert.stage",
         Effect.fn(function* (ctx) {
+          yield* requireTypescriptOwner(ctx.params.sessionID, "session.revert.stage")
           return {
             data: yield* session.revert.stage({ ...ctx.params, ...ctx.payload }).pipe(
               Effect.catchTag(
@@ -447,6 +454,7 @@ export const SessionHandler = HttpApiBuilder.group(Api, "server.session", (handl
       .handle(
         "session.revert.clear",
         Effect.fn(function* (ctx) {
+          yield* requireTypescriptOwner(ctx.params.sessionID, "session.revert.clear")
           yield* session.revert.clear(ctx.params.sessionID).pipe(
             Effect.catchTag(
               "Session.NotFoundError",
@@ -476,6 +484,7 @@ export const SessionHandler = HttpApiBuilder.group(Api, "server.session", (handl
       .handle(
         "session.revert.commit",
         Effect.fn(function* (ctx) {
+          yield* requireTypescriptOwner(ctx.params.sessionID, "session.revert.commit")
           yield* session.revert.commit(ctx.params.sessionID).pipe(
             Effect.catchTag(
               "Session.NotFoundError",
@@ -566,6 +575,7 @@ export const SessionHandler = HttpApiBuilder.group(Api, "server.session", (handl
       .handle(
         "session.archive",
         Effect.fn(function* (ctx) {
+          yield* requireTypescriptOwner(ctx.params.sessionID, "session.archive")
           yield* session.archive({ sessionID: ctx.params.sessionID, archived: ctx.payload.archived }).pipe(
             Effect.catchTag("Session.NotFoundError", (error) =>
               Effect.fail(
@@ -581,6 +591,7 @@ export const SessionHandler = HttpApiBuilder.group(Api, "server.session", (handl
       .handle(
         "session.remove",
         Effect.fn(function* (ctx) {
+          yield* requireTypescriptOwner(ctx.params.sessionID, "session.remove")
           yield* session.remove(ctx.params.sessionID).pipe(
             Effect.catchTag("Session.NotFoundError", (error) =>
               Effect.fail(
@@ -596,6 +607,7 @@ export const SessionHandler = HttpApiBuilder.group(Api, "server.session", (handl
       .handle(
         "session.command",
         Effect.fn(function* (ctx) {
+          yield* requireTypescriptOwner(ctx.params.sessionID, "session.command")
           // Plugins add commands such as /init and /review while a location boots; wait for them.
           yield* booted
           yield* session
@@ -656,6 +668,7 @@ export const SessionHandler = HttpApiBuilder.group(Api, "server.session", (handl
               }),
             }
           }
+          yield* requireTypescriptOwner(ctx.params.sessionID, "session.fork")
           return {
             data: yield* session.fork({ sessionID: ctx.params.sessionID, messageID: ctx.payload.messageID }).pipe(
               Effect.catchTag("Session.NotFoundError", (error) =>
@@ -719,6 +732,7 @@ export const SessionHandler = HttpApiBuilder.group(Api, "server.session", (handl
       .handle(
         "session.inputCancel",
         Effect.fn(function* (ctx) {
+          yield* requireTypescriptOwner(ctx.params.sessionID, "session.inputCancel")
           const cancelled = yield* session
             .cancelInput({ sessionID: ctx.params.sessionID, messageID: ctx.params.messageID })
             .pipe(
