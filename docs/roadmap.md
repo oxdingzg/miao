@@ -177,8 +177,12 @@ Most V2 endpoints exist (`pty.shells`, `project.update`, `vcs.diff`, `fs.content
       git-file track/patch/diff. `mcp` now reads the merged V2 config and drives
       the core `MCP`/`McpAuth` services (auth status derives from stored tokens;
       the OAuth flow opens the browser itself, so the URL handoff is gone), so
-      its add/list/auth/logout/debug paths leave the V1 graph. Remaining V1
-      consumers: `providers` and the control-plane worktree adapter.
+      its add/list/auth/logout/debug paths leave the V1 graph. `providers list` and
+      `logout` read and remove core `Credential` records directly (the V1
+      `Auth` store's `auth.json` is legacy; core holds them in the database);
+      `providers login` still runs the V1 `Auth`/`Plugin` auth-hook flow and is
+      the last V1 command surface. Remaining V1 consumers: `providers login` and
+      the control-plane worktree adapter.
 - [ ] Remove the `packages/miao` `app-runtime` V1 layer: migrate `effect-cmd.ts` commands and the
       control-plane worktree adapter to core services, then delete the V1 graph.
 - [ ] Confirm V2 endpoints cover app behaviors that were silently disabled on V2 (global config
