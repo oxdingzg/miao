@@ -36,6 +36,22 @@ export interface Interface {
     storage: AbsolutePath
     location: Location.Ref
   }) => Effect.Effect<readonly unknown[], ConflictError>
+  /**
+   * Translate the engine's durable journal after an exclusive sequence into
+   * product events, so a replay reconstructs what live delivery published.
+   */
+  readonly events: (input: {
+    sessionID: SessionID
+    storage: AbsolutePath
+    location: Location.Ref
+    after: number
+  }) => Effect.Effect<readonly NativeDurableEvent[], ConflictError>
+}
+
+export interface NativeDurableEvent {
+  readonly seq: number
+  readonly type: string
+  readonly data: unknown
 }
 
 /**
