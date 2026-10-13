@@ -87,8 +87,7 @@ async fn boundary(store: &Store) -> u64 {
         .as_array()
         .unwrap()
         .iter()
-        .filter(|message| message["role"] == "assistant")
-        .last()
+        .rfind(|message| message["role"] == "assistant")
         .unwrap()["seq"]
         .as_u64()
         .unwrap()
