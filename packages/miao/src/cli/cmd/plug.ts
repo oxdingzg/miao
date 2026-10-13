@@ -10,7 +10,7 @@ import { Filesystem } from "@/util/filesystem"
 import { Process } from "@/util/process"
 import { UI } from "../ui"
 import { effectCmd } from "../effect-cmd"
-import { InstanceRef } from "@/effect/instance-ref"
+import { projectContext } from "../project-context"
 
 type Spin = {
   start: (msg: string) => void
@@ -179,6 +179,7 @@ export const PluginCommand = effectCmd({
   command: "plugin <module>",
   aliases: ["plug"],
   describe: "install plugin and update config",
+  instance: false,
   builder: (yargs) =>
     yargs
       .positional("module", {
@@ -214,8 +215,7 @@ export const PluginCommand = effectCmd({
       force: Boolean(args.force),
     })
 
-    const ctx = yield* InstanceRef
-    if (!ctx) return
+    const ctx = yield* projectContext()
     const ok = yield* Effect.promise(() =>
       run({
         vcs: ctx.project.vcs,

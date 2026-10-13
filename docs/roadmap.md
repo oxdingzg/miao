@@ -204,11 +204,12 @@ Most V2 endpoints exist (`pty.shells`, `project.update`, `vcs.diff`, `fs.content
       control-plane worktree adapter to core services, then delete the V1 graph.
       Inventory from the completed survey:
       - Commands still reading the V1 instance through `InstanceRef` / `InstanceStore`: `agent`
-        and `plug`. (`debug rg` and `marketplace` read the process working directory; `stats`,
-        `session list`, `export`, `pr`, `mcp add`, and `import` resolve the project through the
-        new `cli/project-context.ts` helper and set `instance: false`.) `agent create`/`list`
-        also use the V1 `Agent`/`Provider` services, and `plug` patches project config through
-        the promise path, so both need their own slice rather than a pure context swap.
+        only. (`debug rg` and `marketplace` read the process working directory; `stats`,
+        `session list`, `export`, `pr`, `mcp add`, `import`, and `plugin` resolve the project
+        through the new `cli/project-context.ts` helper and set `instance: false`.) `agent
+        create` also calls the V1 `Agent.Service.generate`/`list` (an LLM-backed agent
+        generator with no V2 counterpart yet), so it needs a V2 design rather than a pure
+        context swap.
       - The V1 workspace/adapters subsystem has no production caller (`Workspace.Service` is
         only referenced by tests), so `control-plane/workspace.ts`, `workspace-context.ts`,
         `workspace-adapter-runtime.ts`, `types.ts`, `util.ts`, `adapters/*`, and `dev/*` are
