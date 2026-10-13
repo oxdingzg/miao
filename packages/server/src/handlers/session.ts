@@ -1,3 +1,4 @@
+import path from "node:path"
 import { Image } from "@miao/core/image"
 import { Database } from "@miao/core/database/database"
 import { SessionV2 } from "@miao/core/session"
@@ -87,12 +88,29 @@ export const SessionHandler = HttpApiBuilder.group(Api, "server.session", (handl
       .handle(
         "session.create",
         Effect.fn(function* (ctx) {
+          const location = ctx.payload.location ?? { directory: AbsolutePath.make(process.cwd()) }
+          // New Sessions are born on the engine only when the operator pointed
+          // the server at an engine storage root and a native transport is
+          // composed; the placement catalog then routes every surface for that
+          // identity. Everything else stays TypeScript-owned.
+          const native = Option.getOrUndefined(yield* Effect.serviceOption(NativeEngine.Service))
+          const root = process.env.MIAO_ENGINE_STORAGE
+          const nativeStorage =
+            native && root
+              ? AbsolutePath.make(
+                  path.join(
+                    root,
+                    `${new Bun.CryptoHasher("sha256").update(location.directory).digest("hex")}.db`,
+                  ),
+                )
+              : undefined
           return {
             data: yield* session.create({
               id: ctx.payload.id,
               agent: ctx.payload.agent,
               model: ctx.payload.model,
-              location: ctx.payload.location ?? { directory: AbsolutePath.make(process.cwd()) },
+              location,
+              ...(nativeStorage ? { nativeStorage } : {}),
             }),
           }
         }),
