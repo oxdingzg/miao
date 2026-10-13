@@ -52,7 +52,6 @@ export const DebugCommand = cmd({
 const WaitCommand = effectCmd({
   command: "wait",
   describe: "wait indefinitely (for debugging)",
-  instance: false,
   handler: Effect.fn("Cli.debug.wait")(function* () {
     yield* Effect.sleep(Duration.days(1))
   }),
@@ -61,7 +60,6 @@ const WaitCommand = effectCmd({
 const InfoCommand = effectCmd({
   command: "info",
   describe: "show debug information",
-  instance: false,
   handler: () =>
     Effect.gen(function* () {
       const config = yield* Config.Service

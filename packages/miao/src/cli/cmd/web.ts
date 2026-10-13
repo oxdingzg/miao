@@ -34,7 +34,6 @@ export const WebCommand = effectCmd({
   describe: "start miao server and open web interface",
   // Server loads instances per-request via x-opencode-directory header — no
   // ambient project InstanceContext needed at startup.
-  instance: false,
   handler: Effect.fn("Cli.web")(function* (args) {
     const { Server } = yield* Effect.promise(() => import("../../server/server"))
     if (!Flag.MIAO_SERVER_PASSWORD) {

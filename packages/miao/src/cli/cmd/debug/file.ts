@@ -16,7 +16,6 @@ const filesystem = <A, E, R>(effect: Effect.Effect<A, E, R>) =>
 const FileSearchCommand = effectCmd({
   command: "search <query>",
   describe: "search files by query",
-  instance: false,
   builder: (yargs) =>
     yargs.positional("query", {
       type: "string",
@@ -32,7 +31,6 @@ const FileSearchCommand = effectCmd({
 const FileReadCommand = effectCmd({
   command: "read <path>",
   describe: "read file contents as JSON",
-  instance: false,
   builder: (yargs) =>
     yargs.positional("path", {
       type: "string",
@@ -54,7 +52,6 @@ const FileReadCommand = effectCmd({
 const FileListCommand = effectCmd({
   command: "list <path>",
   describe: "list files in a directory",
-  instance: false,
   builder: (yargs) =>
     yargs.positional("path", {
       type: "string",

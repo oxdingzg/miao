@@ -37,7 +37,6 @@ export const ImportCommand = effectCmd({
       type: "string",
       demandOption: true,
     }),
-  instance: false,
   handler: Effect.fn("Cli.import")(function* (args) {
     const ctx = yield* projectContext()
     if (args.file.startsWith("http://") || args.file.startsWith("https://"))

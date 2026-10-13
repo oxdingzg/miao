@@ -179,7 +179,6 @@ export const PluginCommand = effectCmd({
   command: "plugin <module>",
   aliases: ["plug"],
   describe: "install plugin and update config",
-  instance: false,
   builder: (yargs) =>
     yargs
       .positional("module", {

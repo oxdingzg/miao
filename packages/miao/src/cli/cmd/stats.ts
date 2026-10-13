@@ -47,7 +47,6 @@ interface StatsReport {
 export const StatsCommand = effectCmd({
   command: "stats",
   describe: "show token usage and cost statistics",
-  instance: false,
   builder: (yargs) =>
     yargs
       .option("days", {

@@ -1,7 +1,6 @@
 import type { Argv } from "yargs"
 import { Effect, Schema } from "effect"
-import type { AppServices } from "@/effect/app-runtime"
-import type { InstanceStore } from "@/project/instance-store"
+import type { CliServices } from "./cli-runtime"
 import { cmd, type WithDoubleDash } from "./cmd/cmd"
 
 /**
@@ -22,49 +21,20 @@ interface EffectCmdOpts<Args, A> {
   aliases?: string | readonly string[]
   describe: string | false
   builder?: (yargs: Argv) => Argv<Args>
-  /**
-   * Whether the command needs a project InstanceContext. Defaults to true.
-   *
-   * `true` (default): wraps the handler in `InstanceStore.Service.provide({directory})`
-   * so `InstanceRef` resolves to a loaded `InstanceContext`. Auto-disposes via
-   * `Effect.ensuring(store.dispose(ctx))` on every Exit (matches the legacy
-   * `bootstrap()` finally-disposal). Runs InstanceBootstrap (config + plugin
-   * init + LSP/File/etc forks) eagerly.
-   *
-   * `false`: skip the instance entirely. Saves the InstanceBootstrap work and
-   * suppresses the `server.instance.disposed` IPC event. The handler runs
-   * directly under AppRuntime — it can yield any `AppServices` but must not
-   * yield `InstanceRef` (it'd be undefined, causing a defect).
-   *
-   * Function form: `(args) => boolean` decides per-invocation. Useful for
-   * commands like `run --attach <url>` where one flag flips between local
-   * (needs instance) and remote (doesn't).
-   *
-   * Use `false` for commands that don't read project state (e.g. `models`,
-   * `serve`, `web`, `account`, `db`, `upgrade`).
-   */
-  instance?: boolean | ((args: Args) => boolean)
-  /** Defaults to process.cwd(). Override for commands that take a directory positional. */
-  directory?: (args: Args) => string
-  handler: (args: WithDoubleDash<Args>) => Effect.Effect<A, CliError, AppServices | InstanceStore.Service>
+  handler: (args: WithDoubleDash<Args>) => Effect.Effect<A, CliError, CliServices>
 }
 
 /**
  * Effect-native CLI command builder. Wraps yargs `cmd()` so the handler body is
- * an `Effect` with `InstanceRef` provided and any `AppServices` yieldable.
- *
- * The handler is wrapped in `Effect.ensuring(store.dispose(ctx))` so the loaded
- * InstanceContext is disposed (runDisposers + IPC `server.instance.disposed`)
- * on every Exit — success, typed failure, defect, or interruption. Matches the
- * legacy `bootstrap()` finally-disposal semantics without per-handler boilerplate.
+ * an `Effect` running on the core-only CLI runtime — it can yield any
+ * `CliServices`, and project/worktree context comes from
+ * `cli/project-context.ts` rather than the retired V1 instance bootstrap.
  *
  * Errors propagate to the existing top-level handler in `src/index.ts`; use
  * `fail("...")` for user-visible domain failures (clean exit, formatted message).
  *
  * Handlers are typically `Effect.fn("Cli.<name>")(function*(args) { ... })`,
- * which adds a named tracing span per CLI invocation. Once all commands use
- * `effectCmd`, swapping the underlying `cmd()` factory for effect/cli's
- * `Command.make(...)` won't touch any handler bodies.
+ * which adds a named tracing span per CLI invocation.
  */
 export const effectCmd = <Args, A>(opts: EffectCmdOpts<Args, A>) =>
   cmd<{}, Args>({
@@ -73,24 +43,9 @@ export const effectCmd = <Args, A>(opts: EffectCmdOpts<Args, A>) =>
     describe: opts.describe,
     builder: opts.builder as never,
     async handler(rawArgs) {
-      const { AppRuntime } = await import("@/effect/app-runtime")
+      const { CliRuntime } = await import("./cli-runtime")
       // yargs typing wraps Args in ArgumentsCamelCase<WithDoubleDash<...>>; cast at the boundary.
       const args = rawArgs as unknown as WithDoubleDash<Args>
-      const useInstance = typeof opts.instance === "function" ? opts.instance(args) : opts.instance !== false
-      if (!useInstance) {
-        await AppRuntime.runPromise(opts.handler(args))
-        return
-      }
-      const { InstanceStore } = await import("@/project/instance-store")
-      const { InstanceRef } = await import("@/effect/instance-ref")
-      const directory = opts.directory?.(args) ?? process.cwd()
-      const { store, ctx } = await AppRuntime.runPromise(
-        InstanceStore.Service.use((store) => store.load({ directory }).pipe(Effect.map((ctx) => ({ store, ctx })))),
-      )
-      try {
-        await AppRuntime.runPromise(opts.handler(args).pipe(Effect.provideService(InstanceRef, ctx)))
-      } finally {
-        await AppRuntime.runPromise(store.dispose(ctx))
-      }
+      await CliRuntime.runPromise(opts.handler(args))
     },
   })

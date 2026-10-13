@@ -331,7 +331,6 @@ function analyze(samples: Sample[], pid: number): Finding[] {
 const SnapshotCommand = effectCmd({
   command: "$0",
   describe: "report current process, system, and database health",
-  instance: false,
   handler: Effect.fn("Cli.doctor")(function* () {
     const { header, byPid } = read(7 * 24 * 3_600_000)
 
@@ -502,7 +501,6 @@ const ReportCommand = cmd({
 export const DoctorCommand = effectCmd({
   command: "doctor",
   describe: "process, storage, and system health",
-  instance: false,
   builder: (yargs: Argv) => yargs.command(SnapshotCommand).command(ReportCommand).demandCommand(),
   handler: Effect.fn("Cli.doctor.root")(function* () {}),
 })

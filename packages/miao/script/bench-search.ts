@@ -1,9 +1,8 @@
 import { Effect } from "effect"
 import { Fff } from "@miao/core/filesystem/fff.bun"
-import { AppRuntime } from "@/effect/app-runtime"
+import { CliRuntime } from "@/cli/cli-runtime"
 import { FileSystem } from "@miao/core/filesystem"
 import { AbsolutePath } from "@miao/core/schema"
-import { InstanceStore } from "@/project/instance-store"
 
 const dir = AbsolutePath.make(process.cwd())
 
@@ -15,10 +14,7 @@ const FILE_LIMIT = 100
 const GREP_LIMIT = 50
 const GLOB_LIMIT = 50
 
-const run = <A, R>(effect: Effect.Effect<A, unknown, R>) =>
-  AppRuntime.runPromise(
-    InstanceStore.Service.use((store) => store.provide({ directory: dir }, effect as never)),
-  ) as Promise<A>
+const run = <A, R>(effect: Effect.Effect<A, unknown, R>) => CliRuntime.runPromise(effect as never) as Promise<A>
 
 // --- raw Fff picker ---
 const t0 = performance.now()
