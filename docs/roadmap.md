@@ -214,14 +214,14 @@ Most V2 endpoints exist (`pty.shells`, `project.update`, `vcs.diff`, `fs.content
         `AgentV2.all()`.
       - The V1 workspace/adapters subsystem has no production caller (`Workspace.Service` is
         only referenced by tests), so its runtime is deleted: `control-plane/workspace.ts`,
-        `workspace-adapter-runtime.ts`, `util.ts`, and `dev/*`. What survives is `types.ts`
-        (the `Workspace` view model that `public-schemas.ts` keeps in the generated legacy SDK —
-        shape and identifier unchanged, verified by `check:generated`) and `adapters/` (the
-        plugin `experimental_workspace.register` target, itself now dead). They are entangled
-        with the instance plumbing: `effect/instance-state.ts`, `effect/bridge.ts`,
-        `effect/run-service.ts`, and `project/instance-store.ts` all import
-        `control-plane/workspace-context.ts`, so that module moves with the instance group when
-        the whole group is deleted.
+        `workspace-adapter-runtime.ts`, `util.ts`, and `dev/*`. The V1 workspace plugin API is
+        retired with it: `PluginInput.experimental_workspace` and its `WorkspaceAdapter` types
+        are gone from `@miao/plugin`, `example-workspace.ts`, `control-plane/adapters/` and its
+        test are deleted, and the three plugin tests that stubbed the field are updated. Only
+        `control-plane/types.ts` (the `Workspace` view model that `public-schemas.ts` keeps in
+        the generated legacy SDK — shape and identifier unchanged, `check:generated` passes) and
+        `control-plane/workspace-context.ts` (imported by the instance plumbing) remain; the
+        latter moves with the instance group when that group is deleted.
       - After those, `effect/app-runtime.ts`, `effect/app-node-builder-v1.ts`,
         `project/bootstrap.ts`, `project/bootstrap-service.ts`, and the remaining V1 service
         modules (v1 config/provider/plugin/lsp/skill/snapshot/auth/worktree/…) have no
@@ -399,37 +399,67 @@ boundaries (#112) and outgoing receipts are shown. A → B delivery works in the
 
 ### 2.13 Engine context management and automatic compaction
 
-**Status:** not started. The engine owns compaction **persistence** but not the decision:
-`src/history.rs::compact` commits a checkpoint (`through_message_seq` plus a caller-supplied
-`summary`) into `engine_compaction`, requires an idle Session and a closed assistant boundary, is
-idempotent and conflict-checked, and emits `pre_compact` / `history.compacted` / `post_compact`;
-`recall` reads across the checkpoint and `session_state` survives it. Nothing in `crates/miao-engine`
-decides **when** or **what** to summarize: `should_compact`, `context_window`, `count_tokens` and
-tool-output pruning do not appear in its sources, and `README.md` lists context selection and
-compaction among what "remain[s] to be wired". The one history budget that exists (2 MB / 1000
-messages in `history.rs`) is a transport bound, not context management. The TS path now carries the
-behavior the engine needs (see the landed list above).
+**Status:** landed. The runtime runs automatic compaction with tool-output pruning behind an
+explicit configuration; every checklist item below is done. The decisions live in
+`src/context_trigger.rs` and are wired into the run loop: `ContextLimits` (`--context-limits <json>`,
+camelCase `window`/`ratio`/`headroom`/`per_pass`, plus `prune_chars`/`protect_turns`) is the product's
+opt-in — absent, the trigger is off and nothing in the loop changes (#735, #742).
+`context_trigger::maybe_compact` gates on the breaker, anchors on the newest `usage` event's
+normalized per-turn usage plus the message seq it counted (`Store::context_anchor`, gate ① — every
+provider adapter normalizes to camelCase `inputTokens`/`outputTokens` in `src/usage.rs`), plans one summary pass over the warm
+prefix the next turn would re-send (`plan_summary`, gate ③, with the bounded segmented fallback when
+the prefix exceeds `per_pass`; the default 1000 equals the history selection's message cap, so any
+selectable prefix is one call), and commits exactly one checkpoint through the run-owned
+`history.rs::compact_for_run` contract — active run, settled provider turn, no outstanding tool
+dispatch, closed assistant boundary, no backward move, idempotent per id (#734). `history.rs::compact`
+stays the idle-only operator path. A refusal never fails the drain or drops history: every rejection
+feeds `Breaker` and the next attempt is skipped once three consecutive summaries fail (#730, #735);
+an explicit `compact` that commits a checkpoint resets that streak (#740). Gate ④ is applied:
+`prune_history` elides oversized tool results from the outgoing request only, keeping the newest
+`protect_turns` user messages whole and marking the cut explicitly (#742). Ephemeral
+`compaction.started` (segments) / `compaction.progress` (segment i/n) / `compaction.skipped` /
+`compaction.failed` (reason) / `compaction.finished` and `context.pruned` notices sit between the
+durable `pre_compact` and `post_compact` events (gate ⑥). Gate ② prices exactly the
+messages appended after that marker: `CompactRequest` carries a counter the runtime binds to the
+session provider's own endpoint, and an unsupported or refused count falls back to the delta's char
+estimate.
 
-- [ ] Anchor the trigger on `src/usage.rs`'s normalized per-turn usage plus the messages appended
-      since that report, with the headroom spelled out (prune protection + summary output + slack)
-      and the later of that and a configured ratio as the limit.
-- [ ] Count a request before sending it through the provider's own endpoint where one exists
-      (Anthropic `/messages/count_tokens`, Gemini `:countTokens`), falling back to the estimate and
-      never failing a turn on a refused count.
-- [ ] Summarize once over the warm request prefix, keeping the bounded staged recovery only for a
+- [x] Anchor the trigger on the newest `usage` event's normalized per-turn usage plus the messages
+      appended since that report, with the headroom spelled out (prune protection + summary output +
+      slack) and the later of that and a configured ratio as the limit. Each usage report records
+      `context_message_seq`, so the appended term is exact.
+- [x] Count a request before sending it through the provider's own endpoint where one exists
+      (Anthropic `/messages/count_tokens`; other adapters report `Unsupported`), falling back to the
+      estimate and never failing a turn on a refused count (`resolve_pending_tokens`, the injected
+      counter in `CompactRequest`, `tests/context_wire.rs`).
+- [x] Summarize once over the warm request prefix, keeping the bounded staged recovery only for a
       prefix that no longer fits, and reuse the existing checkpoint contract (idle-only, closed
       boundary, idempotent, pre/post events).
-- [ ] Prune tool output in the context selection so the protected output of one step bounds the
-      prompt.
-- [ ] Trip a breaker after N refused summaries, reset by an explicit `compact` request.
-- [ ] Publish progress between `pre_compact` and `post_compact` (slice i/n, characters covered) so a
-      client can render it.
+- [x] Prune tool output in the context selection so the protected output of one step bounds the
+      prompt. `prune_history` applies `prune_tool_output` to the outgoing request only: the newest
+      `protect_turns` (default 2) user messages keep their output, each payload over `prune_chars`
+      keeps a bounded head and tail around an explicit elision mark, and stored history is untouched
+      (`tests/context_prune.rs`).
+- [x] Trip a breaker after N refused summaries, reset by an explicit `compact` request. Three
+      consecutive rejections trip it; an explicit `compact` that commits a checkpoint resets it
+      (`Runtime::reset_compaction_breaker`, called from the host's `compact` dispatch,
+      `tests/compaction_breaker.rs`).
+- [x] Publish progress between `pre_compact` and `post_compact` (slice i/n, characters covered) so a
+      client can render it. Progress is ephemeral (segment i/n counts, not characters).
 - **Acceptance:** a 1M-window engine Session compacts in one provider call; no compaction crosses the
   headroom; a refused summary trips the breaker without dropping history; progress is observable;
-  `cargo test -p miao-engine` covers each item above.
-- **Evidence:** `crates/miao-engine/README.md`, `src/history.rs::compact`, `src/usage.rs`,
-  `PROTOCOL.md` (`compact`, `pre_compact`/`post_compact`), and the TS implementation in
-  `packages/core/src/session/compaction.ts`.
+  `cargo test -p miao-engine` covers each item above. The decision functions have unit tests
+  (`src/context_trigger.rs`), pruning and the breaker reset have integration tests
+  (`tests/context_prune.rs`, `tests/compaction_breaker.rs`, `tests/context_wire.rs`), and
+  `tests/compaction_acceptance.rs` drives a real drain through the runtime and asserts the acceptance
+  facts end to end: one provider call compacts the crossed session, the checkpoint lands through the
+  durable lifecycle with the next turn starting from the summary alone, progress is observable, and a
+  second crossed turn compacts again. The literal 1M-window live model run is still not recorded, and
+  remains the one acceptance item without evidence.
+- **Evidence:** `crates/miao-engine/README.md`, `src/context_trigger.rs`, `src/runtime.rs` (the
+  settled-boundary call site), `src/history.rs::compact_for_run`, `src/usage.rs` (normalized usage),
+  `--context-limits`, `PROTOCOL.md` (`compact`, `pre_compact`/`post_compact`), and the TS
+  implementation in `packages/core/src/session/compaction.ts`.
 
 ### 2.14 Compaction client surface and restore budget
 
