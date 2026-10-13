@@ -369,7 +369,16 @@ const layer = Layer.effectDiscard(
     )
     yield* events.project(SessionEvent.Info.Created, (event) =>
       Effect.gen(function* () {
-        yield* SessionEnginePlacement.claim(db, { sessionID: event.data.info.id, placement: { engine: "ts" } }).pipe(
+        // The creation event names the owner: a nativeStorage binds the identity
+        // to the engine's storage, everything else stays TypeScript-owned.
+        const placement = event.data.nativeStorage
+          ? {
+              engine: "rust" as const,
+              storage: event.data.nativeStorage,
+              location: event.data.info.location,
+            }
+          : { engine: "ts" as const }
+        yield* SessionEnginePlacement.claim(db, { sessionID: event.data.info.id, placement }).pipe(
           Effect.orDie,
         )
         const stored = yield* db

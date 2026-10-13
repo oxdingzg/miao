@@ -12,6 +12,7 @@ import { Location } from "@miao/core/location"
 import { ModelV2 } from "@miao/core/model"
 import { ProjectV2 } from "@miao/core/project"
 import { ProjectTable } from "@miao/core/project/sql"
+import { SessionEnginePlacementTable } from "@miao/core/session/engine-placement.sql"
 import { ProviderV2 } from "@miao/core/provider"
 import { AbsolutePath } from "@miao/core/schema"
 import { SessionV2 } from "@miao/core/session"
@@ -986,3 +987,36 @@ describe("SessionV2.create", () => {
     }),
   )
 })
+
+  it.effect("a session born with native storage claims a rust placement", () =>
+    Effect.gen(function* () {
+      const session = yield* SessionV2.Service
+      const { db } = yield* Database.Service
+      const created = yield* session.create({
+        location,
+        nativeStorage: AbsolutePath.make("/tmp/engine/native.db"),
+      })
+      const row = yield* db
+        .select()
+        .from(SessionEnginePlacementTable)
+        .where(eq(SessionEnginePlacementTable.session_id, created.id))
+        .get()
+        .pipe(Effect.orDie)
+      expect(row).toMatchObject({ engine: "rust", native_storage: "/tmp/engine/native.db" })
+    }),
+  )
+
+  it.effect("a session without native storage stays TypeScript-owned", () =>
+    Effect.gen(function* () {
+      const session = yield* SessionV2.Service
+      const { db } = yield* Database.Service
+      const created = yield* session.create({ location })
+      const row = yield* db
+        .select()
+        .from(SessionEnginePlacementTable)
+        .where(eq(SessionEnginePlacementTable.session_id, created.id))
+        .get()
+        .pipe(Effect.orDie)
+      expect(row).toMatchObject({ engine: "ts", native_storage: null })
+    }),
+  )

@@ -180,6 +180,11 @@ pub struct Request {
 #[derive(Deserialize)]
 #[serde(tag = "method", content = "params", rename_all = "snake_case")]
 pub enum Command {
+    /// Create an idle Session without admitting a prompt or invoking a model.
+    Initialize {
+        session_id: String,
+        title: String,
+    },
     Admit {
         input: Input,
         #[serde(default = "yes")]
