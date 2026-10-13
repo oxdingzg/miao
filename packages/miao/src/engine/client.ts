@@ -248,6 +248,13 @@ export class EngineClient {
       pending.resolve(message.result)
       return
     }
+    // Unsupported or malformed RPCs can fail before the engine decodes an ID.
+    // Such errors carry id:null; silently dropping them leaves every caller
+    // waiting forever, notably when a product starts an older engine binary.
+    if (message.error) {
+      this.fail(new EngineError(message.error.code ?? "engine_error", message.error.message ?? "miao-engine error"))
+      return
+    }
     if (message.method === "event") for (const handler of this.eventHandlers) handler(message.params as EngineEvent)
     if (message.method === "progress")
       for (const handler of this.progressHandlers) handler(message.params as EngineProgress)

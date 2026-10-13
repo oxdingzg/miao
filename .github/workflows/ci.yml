@@ -38,7 +38,9 @@ jobs:
           tar -xzf "$RUNNER_TEMP/actionlint.tar.gz" -C "$RUNNER_TEMP" actionlint
           "$RUNNER_TEMP/actionlint" -shellcheck=''
       - name: Verify classification and fail-closed gate policy
-        run: python3 .github/scripts/test_ci_gate.py
+        run: |
+          python3 .github/scripts/test_ci_gate.py
+          python3 .github/scripts/test_release_ci.py
       - id: paths
         env:
           EVENT_NAME: ${{ github.event_name }}
