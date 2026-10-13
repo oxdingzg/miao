@@ -134,6 +134,13 @@ impl Host {
                 .answer_question(&self.controller, &session_id, answer)
                 .await
                 .map(|_| json!({ "accepted": true })),
+            Command::RejectQuestion {
+                session_id,
+                rejection,
+            } => runtime
+                .reject_question(&self.controller, &session_id, rejection)
+                .await
+                .map(|_| json!({ "accepted": true })),
             Command::State { session_id } => runtime.store().state(&session_id).await,
             Command::UpdateState {
                 session_id,

@@ -1,5 +1,6 @@
 import { Context, Effect } from "effect"
 import type { OpenCodeEvent } from "@miao/protocol/groups/event"
+import type { Question } from "@miao/schema/question"
 import type { ConflictError } from "@miao/protocol/errors"
 import type { Location } from "@miao/schema/location"
 import type { SessionID } from "@miao/schema/session-id"
@@ -32,6 +33,12 @@ export interface Interface {
     storage: AbsolutePath
     location: Location.Ref
   }) => Effect.Effect<Readonly<Record<string, unknown>>, ConflictError>
+  readonly rejectQuestion: (input: {
+    sessionID: SessionID
+    storage: AbsolutePath
+    location: Location.Ref
+    requestID: Question.ID
+  }) => Effect.Effect<void, ConflictError>
   /** Every engine-owned Session in one storage. */
   readonly sessions: (input: {
     storage: AbsolutePath

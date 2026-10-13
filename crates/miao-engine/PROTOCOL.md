@@ -123,3 +123,12 @@ live committed events and ephemeral `progress` frames. The durable `seq` cursor
 is authoritative, so replay→live has no gap or duplicate and a lagged progress
 subscriber only receives a `resync` frame; a slow client can never block the
 provider or the run loop.
+
+### Question rejection
+
+`reject_question` takes `session_id` and `rejection` (`question_id`, `input_hash`).
+It durably resolves only the corresponding pending question as `rejected` and
+lets the tool/result loop continue. It never cancels the Session. The engine
+checks the original input binding, location, active run and expiry in the same
+transaction. An exact rejection retry preserves the cursor; cross-session,
+changed-hash and already-answered requests fail.

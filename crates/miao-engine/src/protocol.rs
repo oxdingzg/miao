@@ -236,6 +236,10 @@ pub enum Command {
         session_id: String,
         answer: Answer,
     },
+    RejectQuestion {
+        session_id: String,
+        rejection: crate::question::Rejection,
+    },
     State {
         session_id: String,
     },

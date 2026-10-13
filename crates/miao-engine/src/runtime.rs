@@ -227,6 +227,25 @@ impl Runtime {
         self.inner.store.answer_question(session, answer).await
     }
 
+    pub async fn reject_question(
+        &self,
+        controller: &Controller,
+        session: &str,
+        rejection: crate::question::Rejection,
+    ) -> Result<(), Error> {
+        if controller.runtime_id != self.inner.id {
+            return Err(Error::Invalid("question controller mismatch".into()));
+        }
+        if self.inner.stop.is_cancelled() {
+            return Err(Error::Closed);
+        }
+        if self.inner.store.location(session).await?.as_deref() != Some(self.inner.tools.location())
+        {
+            return Err(Error::Invalid("question Location mismatch".into()));
+        }
+        self.inner.store.reject_question(session, rejection).await
+    }
+
     pub fn store(&self) -> &Store {
         &self.inner.store
     }

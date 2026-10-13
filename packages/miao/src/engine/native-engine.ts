@@ -3,7 +3,7 @@ import { ClientEvents } from "@miao/server/client-events"
 import { NativeEngine } from "@miao/server/native-engine"
 import { ConflictError } from "@miao/protocol/errors"
 import { Location } from "@miao/schema/location"
-import { Effect, Layer } from "effect"
+import { Effect, Layer, Schema } from "effect"
 import { EngineError, type EngineOptions } from "./client"
 import { makeEngineOwners } from "./owners"
 import { replayJournal } from "./journal"
@@ -93,6 +93,16 @@ export const fromOwners = (owners: Owners): NativeEngine.Interface => {
       read<Readonly<Record<string, unknown>>>(input, (connection) =>
         connection.client.request("snapshot", { session_id: input.sessionID }),
       ).pipe(Effect.map((value) => (typeof value === "object" && value !== null ? value : {}))),
+    rejectQuestion: (input) =>
+      read(input, async (connection) => {
+        const value = await connection.client.request("questions", { session_id: input.sessionID })
+        const pending = Schema.decodeUnknownSync(
+          Schema.Array(Schema.Struct({ question_id: Schema.String, input_hash: Schema.String })),
+        )(value)
+        const binding = pending.find((request) => `que_${request.question_id}` === input.requestID)
+        if (!binding) throw new EngineError("question_not_found", "No pending question in this Session")
+        return connection.client.request("reject_question", { session_id: input.sessionID, rejection: binding })
+      }).pipe(Effect.asVoid),
     sessions: (input) =>
       // `sessions` is a unit command: it takes no params.
       read<readonly unknown[]>(input, (connection) => connection.client.request("sessions")).pipe(
