@@ -25,6 +25,7 @@ const locationScope = <A, E, R>(effect: Effect.Effect<A, E, R>) =>
 const CaptureCommand = effectCmd({
   command: "capture",
   describe: "capture the current filesystem state as a content-addressed tree",
+  instance: false,
   handler: () =>
     Effect.gen(function* () {
       const snapshot = yield* Snapshot.Service
@@ -36,6 +37,7 @@ const CaptureCommand = effectCmd({
 const FilesCommand = effectCmd({
   command: "files <from> <to>",
   describe: "list project-relative paths changed between two captured trees",
+  instance: false,
   builder: (yargs) =>
     yargs.positional("from", { type: "string", demandOption: true }).positional("to", {
       type: "string",
@@ -54,6 +56,7 @@ const FilesCommand = effectCmd({
 const DiffCommand = effectCmd({
   command: "diff <from> <to>",
   describe: "show per-file diffs between two captured trees",
+  instance: false,
   builder: (yargs) =>
     yargs
       .positional("from", { type: "string", demandOption: true })
