@@ -57,6 +57,11 @@ impl Host {
                 .set_mode(&session_id, mode)
                 .await
                 .map(|_| json!({ "accepted": true, "mode": mode })),
+            Command::Rename { session_id, title } => runtime
+                .store()
+                .rename(&session_id, &title)
+                .await
+                .map(|_| json!({ "accepted": true, "title": title })),
             Command::Cancel { session_id } => runtime
                 .cancel(&session_id)
                 .await

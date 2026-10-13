@@ -172,6 +172,26 @@ impl Store {
                         [],
                     )?;
                 }
+                let has_title:bool=conn.query_row("SELECT EXISTS(SELECT 1 FROM pragma_table_info('engine_session') WHERE name='title')",[],|r|r.get(0))?;
+                if !has_title {
+                    conn.execute(
+                        "ALTER TABLE engine_session ADD COLUMN title TEXT NOT NULL DEFAULT ''",
+                        [],
+                    )?;
+                }
+                // Nullable on purpose: sessions that predate the columns keep an
+                // unknown creation/update time instead of a fabricated one.
+                for column in ["created_at_ms", "updated_at_ms"] {
+                    let has_time:bool=conn.query_row(
+                        "SELECT EXISTS(SELECT 1 FROM pragma_table_info('engine_session') WHERE name=?1)",
+                        [column],|r|r.get(0))?;
+                    if !has_time {
+                        conn.execute(
+                            &format!("ALTER TABLE engine_session ADD COLUMN {column} INTEGER"),
+                            [],
+                        )?;
+                    }
+                }
                 let has_checkpoint:bool=conn.query_row("SELECT EXISTS(SELECT 1 FROM pragma_table_info('engine_message') WHERE name='checkpoint')",[],|r|r.get(0))?;
                 if !has_checkpoint {
                     conn.execute("ALTER TABLE engine_message ADD COLUMN checkpoint TEXT", [])?;
@@ -316,14 +336,39 @@ impl Store {
                 CollaborationMode::Plan => "plan",
             };
             tx.execute(
-                "INSERT OR IGNORE INTO engine_session(id,next_seq) VALUES(?1,0)",
-                [&session],
+                "INSERT OR IGNORE INTO engine_session(id,next_seq,created_at_ms) VALUES(?1,0,?2)",
+                params![session, crate::approval::now_ms() as i64],
             )?;
             tx.execute(
                 "UPDATE engine_session SET mode=?2 WHERE id=?1",
                 params![session, value],
             )?;
             let event = append(&tx, &session, "session.mode", json!({"mode":value}))?;
+            tx.commit()?;
+            Ok(event)
+        })
+        .await
+    }
+
+    /// Set the Session title. Records a durable event so replay and other
+    /// clients observe the same title.
+    pub async fn rename(&self, session: &str, title: &str) -> Result<Event, Error> {
+        if title.len() > 1024 {
+            return Err(Error::Invalid("session title is too long".into()));
+        }
+        let (session, title) = (session.to_owned(), title.to_owned());
+        self.call(move |conn| {
+            let tx = conn.transaction()?;
+            let now = crate::approval::now_ms() as i64;
+            tx.execute(
+                "INSERT OR IGNORE INTO engine_session(id,next_seq,created_at_ms) VALUES(?1,0,?2)",
+                params![session, now],
+            )?;
+            tx.execute(
+                "UPDATE engine_session SET title=?2, updated_at_ms=?3 WHERE id=?1",
+                params![session, title, now],
+            )?;
+            let event = append(&tx, &session, "session.renamed", json!({"title":title}))?;
             tx.commit()?;
             Ok(event)
         })
@@ -363,8 +408,8 @@ impl Store {
         let session = session.to_owned();
         self.call(move |conn| {
             conn.execute(
-                "INSERT OR IGNORE INTO engine_session(id,next_seq) VALUES(?1,0)",
-                [session],
+                "INSERT OR IGNORE INTO engine_session(id,next_seq,created_at_ms) VALUES(?1,0,?2)",
+                params![session, crate::approval::now_ms() as i64],
             )?;
             Ok(())
         })
@@ -551,7 +596,11 @@ impl Store {
             let wakeups=crate::wakeup::pending(&tx,&session)?;
             let crons=crate::cron::pending(&tx,&session)?;
             let mode:String=tx.query_row("SELECT mode FROM engine_session WHERE id=?1",[&session],|r|r.get(0)).optional()?.unwrap_or_else(||"build".into());
-            let snapshot=json!({"session_id":session,"cursor":cursor,"location":location,"mode":mode,"messages":messages,"pending":pending,"active_run":active,"approvals":approvals,"context":context,"state":state,"questions":questions,"wakeups":wakeups,"crons":crons});
+            let (title,created_at_ms,updated_at_ms):(String,Option<i64>,Option<i64>)=tx.query_row(
+                "SELECT title,created_at_ms,updated_at_ms FROM engine_session WHERE id=?1",
+                [&session],|r|Ok((r.get(0)?,r.get(1)?,r.get(2)?)),
+            )?;
+            let snapshot=json!({"session_id":session,"cursor":cursor,"location":location,"mode":mode,"title":title,"created_at_ms":created_at_ms,"updated_at_ms":updated_at_ms,"messages":messages,"pending":pending,"active_run":active,"approvals":approvals,"context":context,"state":state,"questions":questions,"wakeups":wakeups,"crons":crons});
             if serde_json::to_vec(&snapshot)?.len()>4*1024*1024{return Err(Error::Invalid("snapshot exceeds limit; use events pagination".into()));}
             tx.commit()?;Ok(snapshot)
         }).await
@@ -599,7 +648,10 @@ impl Store {
             if seq!=0&&!tx.query_row("SELECT EXISTS(SELECT 1 FROM engine_message WHERE session_id=?1 AND seq=?2)",params![parent,seq],|r|r.get::<_,bool>(0))? {return Err(Error::Invalid("fork cursor must be a committed message boundary".into()));}
             let messages=projected(&tx,&parent,seq)?;
             closed_prefix(&messages)?;
-            tx.execute("INSERT INTO engine_session(id) VALUES(?1)",[&target])?;
+            tx.execute(
+                "INSERT INTO engine_session(id,created_at_ms) VALUES(?1,?2)",
+                params![target, crate::approval::now_ms() as i64],
+            )?;
             tx.execute("INSERT INTO engine_lineage VALUES(?1,?2,?3)",params![target,parent,seq])?;
             tx.execute("INSERT INTO engine_location SELECT ?1,root FROM engine_location WHERE session_id=?2",params![target,parent])?;
             append(&tx,&target,"session.forked",json!({"parent_session_id":parent,"message_seq":seq}))?;
