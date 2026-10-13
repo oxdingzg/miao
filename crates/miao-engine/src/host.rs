@@ -67,10 +67,16 @@ impl Host {
                 through_message_seq,
                 summary,
             } => {
-                runtime
+                let result = runtime
                     .store()
                     .compact(&session_id, &compaction_id, through_message_seq, summary)
-                    .await
+                    .await;
+                // An explicit operator compact also closes the automatic
+                // trigger's breaker, so a failing summarizer gets a fresh try.
+                if result.is_ok() {
+                    runtime.reset_compaction_breaker().await;
+                }
+                result
             }
             Command::Recall {
                 session_id,
