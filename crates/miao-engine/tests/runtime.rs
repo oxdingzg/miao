@@ -265,3 +265,65 @@ async fn wrong_session_cannot_commit_assistant_dispatch_and_settlement_is_atomic
         .iter()
         .any(|e| e.kind == "run.finished"));
 }
+
+/// Replies with gate-2-normalized usage far above any sane threshold so the
+/// configured limits trip on the first settled turn; summarizer requests are
+/// recognized by their system prompt and answered with fixed text.
+struct BigUsage;
+
+#[async_trait]
+impl Provider for BigUsage {
+    async fn stream(
+        &self,
+        request: ModelRequest,
+        _progress: mpsc::Sender<Value>,
+        _cancel: CancellationToken,
+    ) -> Result<Reply, ProviderError> {
+        if request.system.starts_with("Summarize the conversation") {
+            return Ok(Reply {
+                content: json!([{"type": "text", "text": "the summary"}]),
+                usage: json!({}),
+                needs_tools: false,
+            });
+        }
+        Ok(Reply {
+            content: json!([{"type": "text", "text": "done"}]),
+            usage: json!({"inputTokens": 1_000_000, "outputTokens": 1}),
+            needs_tools: false,
+        })
+    }
+}
+
+#[tokio::test]
+async fn configured_context_limits_compact_at_the_settled_boundary() {
+    let dir = tempfile::tempdir().unwrap();
+    let store = Store::open(dir.path().join("engine.db")).await.unwrap();
+    let runtime = Runtime::new(
+        store.clone(),
+        Arc::new(BigUsage),
+        Tools::new(dir.path()).await.unwrap(),
+    )
+    .await
+    .unwrap();
+    runtime
+        .set_context_limits(Some(miao_engine::context_trigger::ContextLimits {
+            window: 1_000,
+            ratio: 0.5,
+            headroom: 0,
+            per_pass: 10,
+        }))
+        .await;
+    runtime
+        .admit(input("prompt", Delivery::Steer), true)
+        .await
+        .unwrap();
+    finished(&store, "completed").await;
+    let events = store.events("s", 0, 1000).await.unwrap();
+    assert!(events.iter().any(|event| event.kind == "history.compacted"));
+    // Gate-6 progress notices are runtime progress (ephemeral); the durable
+    // markers are the store's own pre_compact/post_compact events.
+    assert!(events.iter().any(|event| event.kind == "post_compact"));
+    let selected = store.selected_history("s").await.unwrap();
+    assert_eq!(selected.len(), 1);
+    assert!(selected[0].content.to_string().contains("history-summary"));
+}
