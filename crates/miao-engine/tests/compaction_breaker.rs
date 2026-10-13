@@ -114,6 +114,8 @@ async fn an_explicit_compact_restarts_the_tripped_breaker() {
             ratio: 0.5,
             headroom: 100_000,
             per_pass: 1000,
+            prune_chars: None,
+            protect_turns: 2,
         }))
         .await;
 
