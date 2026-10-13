@@ -313,6 +313,23 @@ async fn two_engine_attach_preserves_tools_snapshots_ack_retry_and_replay() {
         .await;
     client.engines[0].finished_after(watermark).await;
     let complete = client.engines[0].ledger().await;
+    // Frames appended after the run.finished one reach the ledger before the
+    // subscription delivers them, so drain the stream to the ledger's end
+    // before comparing, exactly as the replay assertion above does. Comparing
+    // on the run.finished frame alone raced the tail on slow runners.
+    let end = complete.last().unwrap()["seq"].as_u64().unwrap();
+    tokio::time::timeout(WAIT, async {
+        while client.engines[0]
+            .events
+            .last()
+            .and_then(|event| event["seq"].as_u64())
+            .is_none_or(|seq| seq < end)
+        {
+            client.engines[0].frame().await;
+        }
+    })
+    .await
+    .unwrap();
     assert_eq!(client.engines[0].events, complete);
     assert!(complete
         .windows(2)

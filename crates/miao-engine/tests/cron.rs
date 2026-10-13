@@ -119,9 +119,15 @@ async fn setup(
         )
         .await
         .unwrap();
-    tokio::time::timeout(std::time::Duration::from_secs(5), provider.ready.notified())
-        .await
-        .unwrap();
+    // Real time, not the virtual clock `advance` moves: a loaded runner needs
+    // the same patience here that every other engine test grants a durable
+    // wait (30s), and Windows runners are the slowest of them.
+    tokio::time::timeout(
+        std::time::Duration::from_secs(30),
+        provider.ready.notified(),
+    )
+    .await
+    .unwrap();
     (runtime, store, provider)
 }
 async fn advance(seconds: u64) {
@@ -130,7 +136,7 @@ async fn advance(seconds: u64) {
     tokio::time::resume();
 }
 async fn next_ready(store: &Store, after: u64) -> Value {
-    tokio::time::timeout(std::time::Duration::from_secs(3), async {
+    tokio::time::timeout(std::time::Duration::from_secs(30), async {
         loop {
             let cron = store.crons("s").await.unwrap().remove(0);
             if cron["next_occurrence_ms"]
@@ -207,15 +213,21 @@ async fn recurring_occurrences_admit_distinct_inputs_without_catch_up_bursts() {
     let id = original["cron_id"].as_str().unwrap();
     let first = original["first_occurrence_ms"].as_u64().unwrap();
     advance(121).await;
-    tokio::time::timeout(std::time::Duration::from_secs(3), provider.fired.notified())
-        .await
-        .unwrap();
+    tokio::time::timeout(
+        std::time::Duration::from_secs(30),
+        provider.fired.notified(),
+    )
+    .await
+    .unwrap();
     next_ready(&store, first).await;
     // Several missed hours produce one late occurrence, not a replay burst.
     advance(4 * 3600).await;
-    tokio::time::timeout(std::time::Duration::from_secs(3), provider.fired.notified())
-        .await
-        .unwrap();
+    tokio::time::timeout(
+        std::time::Duration::from_secs(30),
+        provider.fired.notified(),
+    )
+    .await
+    .unwrap();
     let cron = next_ready(&store, first + 3600 * 1000).await;
     assert_eq!(cron["fired_count"], 2);
     assert!(!runtime.cancel_cron("other", id).await.unwrap());
@@ -247,9 +259,12 @@ async fn queued_backlog_coalesces_and_timer_survives_turn_cancel() {
     assert_eq!(store.crons("s").await.unwrap()[0]["state"], "scheduled");
     // Explicitly resume the one already-admitted input, not the missed tick.
     runtime.resume("s").await.unwrap();
-    tokio::time::timeout(std::time::Duration::from_secs(3), provider.fired.notified())
-        .await
-        .unwrap();
+    tokio::time::timeout(
+        std::time::Duration::from_secs(30),
+        provider.fired.notified(),
+    )
+    .await
+    .unwrap();
     assert!(runtime.cancel_cron("s", id).await.unwrap());
     runtime.shutdown().await;
 }
@@ -275,11 +290,14 @@ async fn nonrecurring_expiry_recovery_and_fork_have_no_hidden_replay() {
             advance(8 * 24 * 3600).await;
         } else {
             advance(121).await;
-            tokio::time::timeout(std::time::Duration::from_secs(3), provider.fired.notified())
-                .await
-                .unwrap();
+            tokio::time::timeout(
+                std::time::Duration::from_secs(30),
+                provider.fired.notified(),
+            )
+            .await
+            .unwrap();
         }
-        tokio::time::timeout(std::time::Duration::from_secs(3), async {
+        tokio::time::timeout(std::time::Duration::from_secs(30), async {
             loop {
                 if store.crons("s").await.unwrap()[0]["state"] != "scheduled" {
                     break;
