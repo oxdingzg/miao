@@ -137,9 +137,10 @@ provider credentials; passing fixtures is not claimed as real-model quality acce
 
 The [roadmap](docs/roadmap.md) maintains implementation, task-efficiency and product-integration
 status in one place. PTY, background jobs, Windows enforcement, Gemini, LSP core, image input,
-Context Epoch, explicit compaction, MCP, the worker protocol host and three-platform tests already
-have implementations. Automatic context management, representative efficiency evaluation, the
-complete product facade, actual extension integration and shipping delivery still have gaps.
+Context Epoch, explicit compaction, automatic context management (except the provider-side count),
+MCP, the worker protocol host and three-platform tests already have implementations. Representative
+efficiency evaluation, the complete product facade, actual extension integration and shipping
+delivery still have gaps.
 
 The following describes the early file-tool slice; see inventory and source for the current tool
 surface. `read_file` is a read-only tool with canonical
@@ -250,8 +251,8 @@ and sources are unchanged the epoch is reused; on change an immutable epoch is a
 `provider.started` links to it; a fork inherits the epoch at its message checkpoint. The system does
 not embed volatile Session/run IDs, and the three adapters each map it to their native
 system/instructions input. Only the workspace producer is implemented today; ancestor/user
-instructions, skills/references/persona, full context selection, and compaction remain to be wired
-in.
+instructions, skills/references/persona and full context selection remain to be wired in;
+automatic compaction (with tool-output pruning) runs behind `--context-limits` (see below).
 
 ## Read-only credential compatibility and subscription profile
 
@@ -310,8 +311,43 @@ tail of opaque/tool records; an oversized window reports an explicit budget erro
 streaming-based, allowing an old prefix that already exceeds the selection budget to be compacted
 into a checkpoint; the summary is at most 32 KiB. A default fork inherits the currently effective
 checkpoint and maps the message cursor; an explicit history fork inherits only the checkpoint that
-already existed at that point. This is not automatic LLM summarization or a task-quality guarantee;
-automatic policy, model role routing, and context-quality evaluation remain to be implemented.
+already existed at that point. This checkpoint command is an operator projection, not a
+task-quality guarantee; context-quality evaluation remains to be implemented.
+
+## Automatic context management
+
+`--context-limits <json>` enables the runtime-owned trigger for the Session's own turns. Absent, the
+run loop compacts and prunes nothing:
+
+```json
+{ "window": 1000000, "ratio": 0.8, "headroom": 120000, "per_pass": 1000, "prune_chars": 40000 }
+```
+
+At every settled provider-turn boundary (turn committed, every tool settled, closed assistant
+boundary) the runtime asks `src/context_trigger.rs` whether the context has crossed the limit. The
+anchor is the newest `usage` event's normalized per-turn usage — every adapter writes camelCase
+`inputTokens`/`outputTokens` (`src/usage.rs`) — plus the highest message seq that report counted
+(`context_message_seq`); the messages appended since it are priced by the provider's own counting
+endpoint where one exists, falling back to their char estimate (≈3 chars/token). A usage event
+recorded before the marker existed reports no anchor, so the trigger stays off rather than inventing
+one. The limit is the later of the window ratio and the explicit headroom, so an unknown window never
+triggers.
+
+When it triggers, the runtime summarizes the warm prefix the next turn would re-send — one pass per
+`per_pass` messages, each message in exactly one pass — and commits exactly one checkpoint through the
+run-owned contract (active run, settled provider turn, no outstanding tool dispatch, closed assistant
+boundary, idempotent per checkpoint id). Ephemeral `compaction.started` / `compaction.progress` /
+`compaction.skipped` / `compaction.failed` / `compaction.finished` notices flow on the progress
+channel; the durable `pre_compact` / `history.compacted` / `post_compact` events come from the shared
+checkpoint write. A refused or failed summary records no checkpoint, leaves the history untouched and
+feeds a breaker that stops further attempts after three consecutive failures; an explicit `compact`
+that commits a checkpoint resets it.
+
+`prune_chars` (absent leaves tool output whole) bounds tool output in the outgoing request: the newest
+`protect_turns` (default 2) user messages keep their output whatever it costs, and above them every
+tool-result payload larger than `prune_chars` keeps a bounded head and tail around an explicit elision
+mark that says the prune is routine and not a low-context signal. Stored history is never rewritten; a
+prune that drops anything sends an ephemeral `context.pruned` notice.
 
 ## MCP stdio client (explicit external authority)
 
