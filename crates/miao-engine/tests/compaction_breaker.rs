@@ -33,7 +33,10 @@ impl Provider for Refusing {
         _: mpsc::Sender<Value>,
         _: CancellationToken,
     ) -> Result<Reply, ProviderError> {
-        if request.system.starts_with("Summarize the conversation portion") {
+        if request
+            .system
+            .starts_with("Summarize the conversation portion")
+        {
             self.summaries.fetch_add(1, Ordering::SeqCst);
             return Err(ProviderError::Transport);
         }
