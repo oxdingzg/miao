@@ -82,7 +82,6 @@ export const removeSession: (
 export const SessionListCommand = effectCmd({
   command: "list",
   describe: "list sessions",
-  instance: false,
   builder: (yargs) =>
     yargs
       .option("max-count", {

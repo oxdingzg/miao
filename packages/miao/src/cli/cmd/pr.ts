@@ -8,7 +8,6 @@ import { projectContext } from "../project-context"
 export const PrCommand = effectCmd({
   command: "pr <number>",
   describe: "fetch and checkout a GitHub PR branch, then run miao",
-  instance: false,
   builder: (yargs) =>
     yargs.positional("number", {
       type: "number",

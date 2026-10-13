@@ -26,7 +26,6 @@ export const LSPCommand = cmd({
 const DiagnosticsCommand = effectCmd({
   command: "diagnostics <file>",
   describe: "get diagnostics for a file",
-  instance: false,
   builder: (yargs) => yargs.positional("file", { type: "string", demandOption: true }),
   handler: (args) =>
     Effect.gen(function* () {

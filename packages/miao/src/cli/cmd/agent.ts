@@ -72,7 +72,6 @@ const AgentCreateCommand = effectCmd({
         alias: ["m"],
         describe: "model to use in the format of provider/model",
       }),
-  instance: false,
   handler: Effect.fn("Cli.agent.create")(function* (args) {
     const ctx = yield* projectContext()
     const prepared = yield* locationScope(
@@ -285,7 +284,6 @@ const AgentCreateCommand = effectCmd({
 const AgentListCommand = effectCmd({
   command: "list",
   describe: "list all available agents",
-  instance: false,
   handler: Effect.fn("Cli.agent.list")(function* () {
     const agents = yield* locationScope(AgentV2.Service.use((agent) => agent.all()))
     const sorted = [...agents].sort((a, b) => a.id.localeCompare(b.id))
