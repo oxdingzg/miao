@@ -50,34 +50,33 @@ function number(value: unknown): number | undefined {
 /**
  * Select native Sessions for a listing page using exactly the key the
  * TypeScript catalog pages by: `time.created` then `id`, filtered by the same
- * anchor predicate and direction. `limit` truncates after ordering, so the
- * caller can merge this prefix with the TypeScript prefix of the same size and
- * keep the correct page overall.
+ * anchor predicate and direction. A previous page flips the traversal order,
+ * pages in the flipped order, and reverses back into the requested order —
+ * mirroring the catalog so both sources cut the merged page at the same
+ * element. `limit` truncates after ordering, so the caller can merge this
+ * prefix with the TypeScript prefix of the same size and keep the correct page
+ * overall.
  */
 export function selectNativeSessions(input: {
   sessions: readonly SessionInfo.Info[]
   order: "asc" | "desc"
-  anchor?: { readonly id: string; readonly time: number }
+  anchor?: { readonly id: string; readonly time: number; readonly direction?: "previous" | "next" }
   search?: string
   limit: number
 }): readonly SessionInfo.Info[] {
   const { anchor, order } = input
+  const direction = anchor?.direction ?? "next"
+  const traversal = direction === "previous" ? (order === "asc" ? "desc" : "asc") : order
   const wanted = input.search ? input.sessions.filter((session) => session.title.includes(input.search!)) : input.sessions
   const anchored = anchor
     ? wanted.filter((session) => {
         const time = DateTime.toEpochMillis(session.time.created)
-        if (time !== anchor.time) return order === "asc" ? time > anchor.time : time < anchor.time
-        return order === "asc" ? session.id > anchor.id : session.id < anchor.id
+        if (time !== anchor.time) return traversal === "asc" ? time > anchor.time : time < anchor.time
+        return traversal === "asc" ? session.id > anchor.id : session.id < anchor.id
       })
     : wanted
-  return [...anchored]
-    .sort((left, right) => {
-      const delta = DateTime.toEpochMillis(left.time.created) - DateTime.toEpochMillis(right.time.created)
-      if (delta !== 0) return order === "asc" ? delta : -delta
-      const ids = left.id < right.id ? -1 : left.id > right.id ? 1 : 0
-      return order === "asc" ? ids : -ids
-    })
-    .slice(0, input.limit)
+  const listed = [...anchored].sort(compareSessions(traversal)).slice(0, input.limit)
+  return direction === "previous" ? listed.toReversed() : listed
 }
 
 /** The catalog's paging comparator, shared by selection and the final merge. */
@@ -97,15 +96,17 @@ export function compareSessions(order: "asc" | "desc") {
  * contribute a `limit`-sized prefix before the merge is trimmed, which keeps
  * the page correct.
  *
- * Only the first page merges: an anchored request pages the TypeScript catalog
- * alone until a merged cursor is designed, which is recorded as remaining work.
+ * Every page merges: an anchored request passes the cursor's anchor here, so
+ * the catalog prefix and the native prefix are cut at the same element and the
+ * merged page continues seamlessly across sources in both directions.
  */
-export const mergeNativeFirstPage = Effect.fn("NativeSession.mergeFirstPage")(function* (input: {
+export const mergeNativeSessions = Effect.fn("NativeSession.mergeSessions")(function* (input: {
   native: NativeEngine.Interface
   db: Database.Interface["db"]
   sessions: readonly SessionInfo.Info[]
   limit: number
   order: "asc" | "desc"
+  anchor?: { readonly id: string; readonly time: number; readonly direction?: "previous" | "next" }
   directory?: AbsolutePath
   project?: Project.ID
   search?: string
@@ -134,6 +135,7 @@ export const mergeNativeFirstPage = Effect.fn("NativeSession.mergeFirstPage")(fu
   const selected = selectNativeSessions({
     sessions: entries,
     order: input.order,
+    anchor: input.anchor,
     search: input.search,
     limit: input.limit,
   })

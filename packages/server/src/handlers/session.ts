@@ -13,7 +13,7 @@ import { HttpApiBuilder, HttpApiSchema } from "effect/unstable/httpapi"
 import { Api } from "../api"
 import { Project } from "@miao/core/project"
 import { NativeEngine } from "../native-engine"
-import { mergeNativeFirstPage, nativeSessionInfo } from "../native-session"
+import { mergeNativeSessions, nativeSessionInfo } from "../native-session"
 import { booted } from "../location"
 import { SessionsCursor } from "@miao/protocol/groups/session"
 import {
@@ -52,20 +52,24 @@ export const SessionHandler = HttpApiBuilder.group(Api, "server.session", (handl
               : ctx.query
           const limit = ctx.query.limit ?? DefaultSessionsLimit
           const sessions = yield* session.list({ ...query, workspaceID: query.workspace, limit })
-          // Native Sessions live in the engine's storage, not this catalog. They
-          // join the first page under the same (time, id) key; anchored paging
-          // stays on the catalog until a merged cursor is designed.
+          // Native Sessions live in the engine's storage, not this catalog.
+          // They join every page under the same `(time, id)` anchor: both
+          // sources cut at the same element, so the merged page continues
+          // seamlessly across sources in both directions.
           const native = yield* Effect.serviceOption(NativeEngine.Service)
           const projects = Option.getOrUndefined(yield* Effect.serviceOption(Project.Service))
           const merged =
-            Option.isSome(native) && projects !== undefined && ctx.query.cursor === undefined
-              ? yield* mergeNativeFirstPage({
+            Option.isSome(native) && projects !== undefined
+              ? yield* mergeNativeSessions({
                   native: native.value,
                   db,
                   sessions,
                   limit,
                   order: query.order ?? "desc",
                   search: query.search,
+                  anchor: "anchor" in query ? query.anchor : undefined,
+                  directory: "directory" in query ? query.directory : undefined,
+                  project: "project" in query ? query.project : undefined,
                   projects,
                 }).pipe(Effect.orDie)
               : sessions
