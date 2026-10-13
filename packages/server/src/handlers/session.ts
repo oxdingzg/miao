@@ -56,8 +56,9 @@ export const SessionHandler = HttpApiBuilder.group(Api, "server.session", (handl
           // join the first page under the same (time, id) key; anchored paging
           // stays on the catalog until a merged cursor is designed.
           const native = yield* Effect.serviceOption(NativeEngine.Service)
+          const projects = Option.getOrUndefined(yield* Effect.serviceOption(Project.Service))
           const merged =
-            Option.isSome(native) && ctx.query.cursor === undefined
+            Option.isSome(native) && projects !== undefined && ctx.query.cursor === undefined
               ? yield* mergeNativeFirstPage({
                   native: native.value,
                   db,
@@ -65,7 +66,7 @@ export const SessionHandler = HttpApiBuilder.group(Api, "server.session", (handl
                   limit,
                   order: query.order ?? "desc",
                   search: query.search,
-                  projects: yield* Project.Service,
+                  projects,
                 }).pipe(Effect.orDie)
               : sessions
           const first = merged[0]
