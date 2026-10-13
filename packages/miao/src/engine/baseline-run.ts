@@ -730,9 +730,10 @@ async function seedSharedCredentials(source: string, target: string) {
 
 function tsConfig() {
   return JSON.stringify({
+    // evaluate() lets the last matching rule decide, so the deny comes last.
     permissions: [
-      { action: "*", resource: "protected/**", effect: "deny" },
       { action: "*", resource: "**", effect: "allow" },
+      { action: "*", resource: "protected/**", effect: "deny" },
     ],
   })
 }
