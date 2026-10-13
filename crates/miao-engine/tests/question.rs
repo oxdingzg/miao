@@ -78,7 +78,7 @@ async fn setup_choices(
     (runtime, store, done)
 }
 async fn requested(store: &Store) -> Value {
-    tokio::time::timeout(std::time::Duration::from_secs(3), async {
+    let outcome = tokio::time::timeout(std::time::Duration::from_secs(3), async {
         loop {
             if let Some(request) = store.questions("s").await.unwrap().into_iter().next() {
                 return request;
@@ -86,8 +86,19 @@ async fn requested(store: &Store) -> Value {
             tokio::time::sleep(std::time::Duration::from_millis(2)).await;
         }
     })
-    .await
-    .unwrap()
+    .await;
+    match outcome {
+        Ok(value) => value,
+        Err(error) => {
+            let events = store.events("s", 0, 100).await.map(|events| {
+                events
+                    .into_iter()
+                    .map(|event| event.kind)
+                    .collect::<Vec<_>>()
+            });
+            panic!("event wait timed out: {error}; committed event kinds: {events:?}");
+        }
+    }
 }
 fn answer(request: &Value, choice: &str) -> Answer {
     Answer {
