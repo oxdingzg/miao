@@ -5,7 +5,7 @@ import { Flag } from "@miao/core/flag/flag"
 import { Server } from "../../src/server/server"
 import { withTimeout } from "../../src/util/timeout"
 import { resetDatabase } from "../fixture/db"
-import { disposeAllInstances, tmpdir } from "../fixture/fixture"
+import { tmpdir } from "../fixture/fixture"
 
 const original = {
   MIAO_SERVER_PASSWORD: Flag.MIAO_SERVER_PASSWORD,
@@ -23,7 +23,7 @@ afterEach(async () => {
   else process.env.MIAO_SERVER_PASSWORD = original.envPassword
   if (original.envUsername === undefined) delete process.env.MIAO_SERVER_USERNAME
   else process.env.MIAO_SERVER_USERNAME = original.envUsername
-  await disposeAllInstances()
+
   await resetDatabase()
 })
 
@@ -302,7 +302,6 @@ describe("HttpApi Server.listen", () => {
     expect(output).not.toContain("Sent HTTP response")
   })
 
-
   test("port 0 prefers 4096 when free", async () => {
     if (!(await isPortFree(4096))) return
     const listener = await startListener()
@@ -347,10 +346,7 @@ describe("HttpApi Server.listen", () => {
       expect(ambiguous.status).toBe(404)
 
       const directoryScoped = await fetch(
-        new URL(
-          `/api/pty/${info.id}/connect-token?location[directory]=${encodeURIComponent(tmp.path)}`,
-          listener.url,
-        ),
+        new URL(`/api/pty/${info.id}/connect-token?location[directory]=${encodeURIComponent(tmp.path)}`, listener.url),
         {
           method: "POST",
           headers: { authorization: authorization(), "x-opencode-ticket": "1" },

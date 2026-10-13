@@ -6,7 +6,7 @@ import { Credential } from "@miao/core/credential"
 import { Integration } from "@miao/core/integration"
 import { SkillV2 } from "@miao/core/skill"
 import { InstanceDisposed } from "@/server/event"
-import { Question } from "@/question"
+import { QuestionV1 } from "@miao/schema/question-v1"
 import { makeApi } from "@miao/protocol/api"
 import { LocationMiddleware } from "@miao/server/location"
 import { SessionLocationMiddleware } from "@miao/server/middleware/session-location"
@@ -35,8 +35,8 @@ export const OpenCodeHttpApi = HttpApi.make("miao")
   .addHttpApi(ServerApi)
   .annotate(HttpApi.AdditionalSchemas, [
     EventSchema,
-    Question.Replied,
-    Question.Rejected,
+    QuestionV1.Replied,
+    QuestionV1.Rejected,
     Credential.Value,
     Integration.Inputs,
     Integration.Method,

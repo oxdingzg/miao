@@ -2,17 +2,14 @@ import { afterEach, describe, expect, test } from "bun:test"
 import { Context } from "effect"
 import { HttpApiApp } from "../../src/server/routes/instance/httpapi/server"
 import { resetDatabase } from "../fixture/db"
-import { disposeAllInstances, tmpdir } from "../fixture/fixture"
+import { tmpdir } from "../fixture/fixture"
 
 const context = Context.empty() as Context.Context<unknown>
 
 function request(route: string, directory: string, init: RequestInit = {}) {
   const headers = new Headers(init.headers)
   headers.set("x-opencode-directory", directory)
-  return HttpApiApp.webHandler().handler(
-    new Request(`http://localhost${route}`, { ...init, headers }),
-    context,
-  )
+  return HttpApiApp.webHandler().handler(new Request(`http://localhost${route}`, { ...init, headers }), context)
 }
 
 const createSession = async (directory: string) => {
@@ -76,7 +73,6 @@ const readFrame = async (
 }
 
 afterEach(async () => {
-  await disposeAllInstances()
   await resetDatabase()
 })
 

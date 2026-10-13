@@ -1,3 +1,4 @@
+import { TestInstance } from "../fixture/fixture"
 import { describe, expect } from "bun:test"
 import { inArray } from "drizzle-orm"
 import { Effect } from "effect"
@@ -7,7 +8,6 @@ import { LayerNode } from "@miao/core/effect/layer-node"
 import { SessionV2 } from "@miao/core/session"
 import { SessionExecution } from "@miao/core/session/execution"
 import { SessionTable } from "@miao/core/session/sql"
-import { InstanceRef } from "@/effect/instance-ref"
 import { removeSession } from "../../src/cli/cmd/session"
 import { testEffect } from "../lib/effect"
 
@@ -17,7 +17,7 @@ describe("miao session delete", () => {
   it.instance("removes a V2 session together with its subagent sessions", () =>
     Effect.gen(function* () {
       const { db } = yield* Database.Service
-      const ctx = yield* InstanceRef
+      const ctx = yield* TestInstance
       if (!ctx) throw new Error("no instance")
       const ids = ["ses_cmd_root", "ses_cmd_child", "ses_cmd_grandchild", "ses_cmd_other"].map((id) =>
         SessionV2.ID.make(id),
