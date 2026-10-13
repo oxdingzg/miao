@@ -22,7 +22,21 @@ export interface EngineOptions {
   authFile?: string
   policyFile?: string
   toolReplayFile?: string
+  /** Automatic compaction limits (roadmap §2.13); absent keeps it off. */
+  contextLimits?: { window: number; ratio: number; headroom: number; perPass: number }
   env?: Record<string, string | undefined>
+}
+
+/** The argv the child engine is spawned with; pure so tests can assert it. */
+export function engineArgs(options: EngineOptions): string[] {
+  const args = ["serve", "--db", options.db, "--workspace", options.workspace, "--model", options.model]
+  if (options.provider) args.push("--provider", options.provider)
+  if (options.endpoint) args.push("--endpoint", options.endpoint)
+  if (options.authFile) args.push("--auth-file", options.authFile)
+  if (options.policyFile) args.push("--policy", options.policyFile)
+  if (options.toolReplayFile) args.push("--tool-replay", options.toolReplayFile)
+  if (options.contextLimits) args.push("--context-limits", JSON.stringify(options.contextLimits))
+  return args
 }
 
 export interface EngineEvent {
@@ -71,12 +85,7 @@ export class EngineClient {
   }
 
   static start(options: EngineOptions): EngineClient {
-    const args = ["serve", "--db", options.db, "--workspace", options.workspace, "--model", options.model]
-    if (options.provider) args.push("--provider", options.provider)
-    if (options.endpoint) args.push("--endpoint", options.endpoint)
-    if (options.authFile) args.push("--auth-file", options.authFile)
-    if (options.policyFile) args.push("--policy", options.policyFile)
-    if (options.toolReplayFile) args.push("--tool-replay", options.toolReplayFile)
+    const args = engineArgs(options)
     return new EngineClient(
       spawn([options.binary, ...args], {
         stdin: "pipe",

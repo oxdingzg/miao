@@ -15,10 +15,12 @@ import { makeEngineOwners } from "./owners"
 const options = (): Omit<EngineOptions, "db" | "workspace"> | undefined => {
   const binary = process.env.MIAO_ENGINE_BIN
   if (!binary) return undefined
+  const limits = process.env.MIAO_CONTEXT_LIMITS
   return {
     binary,
     model: process.env.MIAO_ENGINE_MODEL ?? "",
     provider: process.env.MIAO_ENGINE_PROVIDER,
+    contextLimits: limits ? JSON.parse(limits) : undefined,
     env: { ...process.env },
   }
 }
