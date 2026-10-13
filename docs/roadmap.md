@@ -203,13 +203,14 @@ Most V2 endpoints exist (`pty.shells`, `project.update`, `vcs.diff`, `fs.content
 - [ ] Remove the `packages/miao` `app-runtime` V1 layer: migrate `effect-cmd.ts` commands and the
       control-plane worktree adapter to core services, then delete the V1 graph.
       Inventory from the completed survey:
-      - Commands still reading the V1 instance through `InstanceRef` / `InstanceStore`: `stats`,
-        `agent`, `plug`, `pr`, `mcp add`, `export`, `session`, `import`. (`debug rg` and
-        `marketplace` now read the process working directory and set `instance: false`.) Each
-        remaining one needs the core equivalent of what it reads from the instance
-        (project metadata, worktree, session store) before the bootstrap can go; core
-        `Project.resolve` supplies the project id/directory/vcs, but the V1 `ctx.worktree`
-        root has no direct V2 resolver yet and must be designed.
+      - Commands still reading the V1 instance through `InstanceRef` / `InstanceStore`: `agent`,
+        `plug`, `pr`, `mcp add`, `import`. (`debug rg` and `marketplace` read the process working
+        directory; `stats`, `session list`, and `export` now resolve the project through the new
+        `cli/project-context.ts` helper — core `ProjectRegistry.registerDirectory` for the
+        registered project plus the checkout it returns as the worktree — and set
+        `instance: false`.) The remaining five each need project/worktree/vcs too and can use the
+        same helper; `mcp add`, `plug`, and `import` also write project config, so check their
+        paths.
       - The V1 workspace/adapters subsystem has no production caller (`Workspace.Service` is
         only referenced by tests), so `control-plane/workspace.ts`, `workspace-context.ts`,
         `workspace-adapter-runtime.ts`, `types.ts`, `util.ts`, `adapters/*`, and `dev/*` are

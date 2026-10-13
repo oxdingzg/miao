@@ -3,7 +3,7 @@ import { effectCmd } from "../effect-cmd"
 import { Database } from "@miao/core/database/database"
 import { SessionStats } from "@miao/core/session/stats"
 import { Project } from "@miao/schema/project"
-import { InstanceRef } from "@/effect/instance-ref"
+import { projectContext } from "../project-context"
 
 interface StatsReport {
   totalSessions: number
@@ -47,6 +47,7 @@ interface StatsReport {
 export const StatsCommand = effectCmd({
   command: "stats",
   describe: "show token usage and cost statistics",
+  instance: false,
   builder: (yargs) =>
     yargs
       .option("days", {
@@ -65,8 +66,7 @@ export const StatsCommand = effectCmd({
         type: "string",
       }),
   handler: Effect.fn("Cli.stats")(function* (args) {
-    const ctx = yield* InstanceRef
-    if (!ctx) return
+    const ctx = yield* projectContext()
     const stats = yield* aggregateSessionStats(args.days, args.project, ctx.project)
     let modelLimit: number | undefined
     if (args.models === true) {
