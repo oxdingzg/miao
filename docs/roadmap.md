@@ -183,6 +183,15 @@ Most V2 endpoints exist (`pty.shells`, `project.update`, `vcs.diff`, `fs.content
       `providers login` still runs the V1 `Auth`/`Plugin` auth-hook flow and is
       the last V1 command surface. Remaining V1 consumers: `providers login` and
       the control-plane worktree adapter.
+- [ ] Migrate `providers login` onto core `Integration`: the registry (populated by the
+      models-catalog plugin, one integration per provider) exposes the login methods that
+      V1 got from plugin auth hooks, plus `connection.key` for API keys, `connection.oauth` +
+      `attempt.status`/`attempt.complete` (+ optional `code`) for OAuth, and `adoptLegacy`
+      for existing `auth.json` records. Provider filtering (enabled/disabled plus the
+      opencode/openai priority order) and the interactive prompts stay in the command.
+      Decide the fate of the legacy `login <url>` well-known flow (`fetch
+      /.well-known/opencode` + spawn auth command + store token) — it has no V2 counterpart
+      and likely belongs in the same retirement as `auth.json`.
 - [ ] Remove the `packages/miao` `app-runtime` V1 layer: migrate `effect-cmd.ts` commands and the
       control-plane worktree adapter to core services, then delete the V1 graph.
 - [ ] Confirm V2 endpoints cover app behaviors that were silently disabled on V2 (global config
