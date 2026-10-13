@@ -11,6 +11,41 @@ at `docs/releases/vX.Y.Z.md` and `docs/releases/vX.Y.Z.zh.md`; both are required
 
 ## [Unreleased]
 
+## [0.2.7] - 2026-10-13
+
+### Added
+- **server**: birth sessions on the engine under an explicit opt-in (#774) (`e801c54f7`)
+- **server**: read native execution status and todos from the engine (#784) (`b8bc33852`)
+- **server**: page native history by durable sequence groups (#779) (`80f8f3472`)
+- **server**: serve native session events over the SSE endpoint (#778) (`2293a9269`)
+- **credential**: own device login and enforce one daemon per database (#780) (`e3749d9c4`)
+- **credential**: add the standalone credential daemon and engine daemon source (#776) (`6d438c95a`)
+- **server**: merge native sessions into anchored listing pages (#775) (`da6404a88`)
+- **server**: merge native sessions into the first listing page (#766) (`733f51571`)
+- **server**: serve native session reads from the engine snapshot (#760) (`18898ea2e`)
+- **server**: expose the durable event log over a cursor replay route (#768) (`07c749149`)
+- **core**: bound eager tool execution and add a settlement concurrency permit (#764) (`e300f5c1a`)
+- **server**: select native sessions on the catalog paging key (#762) (`5db716f5f`)
+- **core**: list native session bindings with their storage (#761) (`0d815833b`)
+- **engine**: anchor the compaction trigger on counted usage (gate 2) (#755) (`1fc830fde`)
+- **engine**: store session titles and creation time (#751) (`ab00b468f`)
+- **engine**: elide oversized tool output from the outgoing request (#742) (`358b4c7b8`)
+
+### Changed
+- **miao**: remove the retired V1 service and instance graph (#783) (`abbefdfab`)
+- **miao**: run the CLI on a core-only runtime (#777) (`9df1b9776`)
+- **miao**: set instance: false on every remaining effectCmd command (#773) (`5e3c7cdcf`)
+- **miao**: land the debug lsp migration onto core LSP (#772) (`f17ade56c`)
+- **miao**: import the public client schemas from the schema view modules (#771) (`88a3ec271`)
+- **miao**: retire the V1 workspace plugin API (#767) (`8f6630025`)
+- **miao**: reimplement agent create and list on core (#763) (`8d9ccb847`)
+- **miao**: delete the retired V1 workspace runtime (#758) (`d1d3d5074`)
+
+### Fixed
+- **server**: exclude native catalog projections before session paging (#789) (`19a5ec7ee`)
+- **miao**: let the engine's own credential and knob surface cross the boundary (#770) (`7bb2e7631`)
+- **engine**: reset the compaction breaker on an explicit compact (#740) (`3706826b9`)
+
 ## [0.2.5] - 2026-10-11
 
 ### Added
