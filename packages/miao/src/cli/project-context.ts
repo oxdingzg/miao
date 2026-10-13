@@ -7,6 +7,9 @@ import { ProjectDirectories } from "@miao/core/project/directories"
 import { ProjectMetadata } from "@miao/core/project/metadata"
 import { ProjectRegistry } from "@miao/core/project/registry"
 import { LayerNode } from "@miao/core/effect/layer-node"
+import { Location } from "@miao/core/location"
+import { LocationServiceMap, locationServiceMapLayer } from "@miao/core/location-services"
+import { AbsolutePath } from "@miao/core/schema"
 import type { Project } from "@miao/schema/project"
 
 export interface ProjectContext {
@@ -32,4 +35,13 @@ export const projectContext = (directory: string = process.cwd()) =>
     Effect.provide(
       LayerNode.compile(LayerNode.group([ProjectV2.node, ProjectDirectories.node, ProjectMetadata.node])),
     ),
+  )
+
+/** Open the working directory's location scope; core services resolve inside it. */
+export const locationScope = <A, E, R>(effect: Effect.Effect<A, E, R>) =>
+  effect.pipe(
+    Effect.provide(
+      LocationServiceMap.Service.get(Location.Ref.make({ directory: AbsolutePath.make(process.cwd()) })),
+    ),
+    Effect.provide(locationServiceMapLayer),
   )
