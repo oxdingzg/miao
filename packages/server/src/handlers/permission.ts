@@ -1,9 +1,10 @@
 import { Location } from "@miao/core/location"
 import { PermissionV2 } from "@miao/core/permission"
 import { PermissionSaved } from "@miao/core/permission/saved"
-import { Effect } from "effect"
+import { Effect, Option } from "effect"
 import { HttpApiBuilder, HttpApiSchema } from "effect/unstable/httpapi"
 import { Api } from "../api"
+import { NativeEngine } from "../native-engine"
 import { PermissionNotFoundError, SessionNotFoundError } from "@miao/protocol/errors"
 import { response } from "../location"
 
@@ -52,6 +53,11 @@ export const PermissionHandler = HttpApiBuilder.group(Api, "server.permission", 
       .handle(
         "session.permission.list",
         Effect.fn(function* (ctx) {
+          const native = yield* Effect.serviceOption(NativeEngine.Service)
+          const placement = Option.getOrUndefined(yield* Effect.serviceOption(NativeEngine.Placement))
+          if (Option.isSome(native) && placement) {
+            return { data: yield* native.value.permissions({ sessionID: ctx.params.sessionID, ...placement }) }
+          }
           const permission = yield* PermissionV2.Service
           return { data: yield* permission.forSession(ctx.params.sessionID) }
         }),
@@ -59,6 +65,14 @@ export const PermissionHandler = HttpApiBuilder.group(Api, "server.permission", 
       .handle(
         "session.permission.get",
         Effect.fn(function* (ctx) {
+          const native = yield* Effect.serviceOption(NativeEngine.Service)
+          const placement = Option.getOrUndefined(yield* Effect.serviceOption(NativeEngine.Placement))
+          if (Option.isSome(native) && placement) {
+            const pending = yield* native.value.permissions({ sessionID: ctx.params.sessionID, ...placement })
+            const request = pending.find((request) => request.id === ctx.params.requestID)
+            if (!request) return yield* missingRequest(ctx.params.requestID)
+            return { data: request }
+          }
           const request = yield* (yield* PermissionV2.Service).get(ctx.params.requestID)
           if (!request || request.sessionID !== ctx.params.sessionID) return yield* missingRequest(ctx.params.requestID)
           return { data: request }
@@ -67,6 +81,17 @@ export const PermissionHandler = HttpApiBuilder.group(Api, "server.permission", 
       .handle(
         "session.permission.reply",
         Effect.fn(function* (ctx) {
+          const native = yield* Effect.serviceOption(NativeEngine.Service)
+          const placement = Option.getOrUndefined(yield* Effect.serviceOption(NativeEngine.Placement))
+          if (Option.isSome(native) && placement) {
+            yield* native.value.replyPermission({
+              sessionID: ctx.params.sessionID,
+              requestID: ctx.params.requestID,
+              ...ctx.payload,
+              ...placement,
+            })
+            return HttpApiSchema.NoContent.make()
+          }
           const permission = yield* PermissionV2.Service
           const request = yield* permission.get(ctx.params.requestID)
           if (!request || request.sessionID !== ctx.params.sessionID) return yield* missingRequest(ctx.params.requestID)

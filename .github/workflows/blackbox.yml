@@ -36,6 +36,4 @@ jobs:
         working-directory: packages/miao
         env:
           MIAO_ENGINE_BIN: ${{ github.workspace }}/crates/miao-engine/target/debug/miao-engine
-        # Discover every native transport test, so adding a surface cannot
-        # accidentally leave its live test skipped in unit CI.
         run: bun test test/engine
