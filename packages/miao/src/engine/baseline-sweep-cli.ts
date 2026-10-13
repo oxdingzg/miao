@@ -19,6 +19,7 @@ common:
   --model MODEL             provider model (default openai/gpt-6.1-sol)
   --revision SHA40          source revision the engine was built from
   --timeout-ms N            per-run timeout (default 300000)
+  --pause-ms N              pause between runs, e.g. to pace a provider (default 0)
 
 rust:
   --binary PATH             miao-engine binary
@@ -47,6 +48,7 @@ interface Options {
   model: string
   revision: string
   timeoutMs: number
+  pauseMs: number
   binary?: string
   provider?: string
   policy?: string
@@ -78,6 +80,7 @@ const results: BaselineRun[] = []
 let failed = 0
 for (const task of options.tasks) {
   for (let repetition = 0; repetition < options.repetitions; repetition++) {
+    if (options.pauseMs > 0 && results.length > 0) await Bun.sleep(options.pauseMs)
     const root = path.join(options.out, "runs", `${options.engine}-${task}-${repetition}`)
     const started = Date.now()
     const result =
@@ -201,6 +204,7 @@ function readOptions(args: string[]): Options {
     model: values.get("model") ?? "openai/gpt-6.1-sol",
     revision,
     timeoutMs: Number(values.get("timeout-ms") ?? 300_000),
+    pauseMs: Number(values.get("pause-ms") ?? 0),
     binary: values.get("binary"),
     provider: values.get("provider"),
     policy: values.get("policy"),
