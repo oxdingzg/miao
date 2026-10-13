@@ -2,7 +2,7 @@ import { afterEach, describe, expect } from "bun:test"
 import { Effect, Layer } from "effect"
 import { HttpClientResponse } from "effect/unstable/http"
 import { resetDatabase } from "../fixture/db"
-import { disposeAllInstances, TestInstance } from "../fixture/fixture"
+import { TestInstance } from "../fixture/fixture"
 import { testEffect } from "../lib/effect"
 import { httpApiLayer, requestInDirectory } from "./httpapi-layer"
 
@@ -11,7 +11,6 @@ const it = testEffect(httpApiLayer)
 const text = (response: HttpClientResponse.HttpClientResponse) => response.text
 
 afterEach(async () => {
-  await disposeAllInstances()
   await resetDatabase()
 })
 

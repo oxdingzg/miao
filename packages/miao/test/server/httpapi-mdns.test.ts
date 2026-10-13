@@ -2,7 +2,6 @@ import { afterEach, describe, expect, mock, test } from "bun:test"
 import { Flag } from "@miao/core/flag/flag"
 import { withTimeout } from "../../src/util/timeout"
 import { resetDatabase } from "../fixture/db"
-import { disposeAllInstances } from "../fixture/fixture"
 
 type Event = { kind: "publish"; port: number; name: string } | { kind: "unpublishAll" } | { kind: "destroy" }
 const events: Event[] = []
@@ -34,7 +33,7 @@ afterEach(async () => {
   events.length = 0
   Flag.MIAO_SERVER_PASSWORD = original.MIAO_SERVER_PASSWORD
   Flag.MIAO_SERVER_USERNAME = original.MIAO_SERVER_USERNAME
-  await disposeAllInstances()
+
   await resetDatabase()
 })
 

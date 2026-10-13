@@ -9,7 +9,7 @@ import { LspView } from "@miao/schema/lsp-view"
 import { McpView } from "@miao/schema/mcp-view"
 import { ProviderAuthView } from "@miao/schema/provider-auth-view"
 import { ProviderView } from "@miao/schema/provider-view"
-import { Workspace } from "@/control-plane/types"
+import { Workspace } from "./workspace-view"
 
 export { FileContent, FileNode }
 
