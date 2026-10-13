@@ -156,6 +156,22 @@ import { llmClient } from "../../effect/app-node-platform"
 
 /** Cap on how many times one identical (name, input) tool call may execute in a drain. */
 const MAX_IDENTICAL_TOOL_CALLS = 5
+
+/**
+ * Cap on how many tool calls one drain may execute in total, across distinct
+ * calls. Eager local execution starts every call as soon as the provider
+ * streams it, so a provider emitting a runaway batch would otherwise run all
+ * of them; a normal agentic turn stays in the low tens.
+ */
+const MAX_TOOL_CALLS_PER_DRAIN = 100
+
+/**
+ * Cap on eager tool settlements running at the same time. Durable publication
+ * already serializes behind one permit; without an execution bound a wide
+ * provider turn forks unbounded fibers against it and nothing slows the
+ * provider side down.
+ */
+const MAX_CONCURRENT_SETTLEMENTS = 8
 type Promotion = SessionInput.Delivery | "notification" | "notification-steer"
 
 /**
@@ -296,6 +312,9 @@ const layer = Layer.effect(
     const toolInputCorrections = new Map<string, number>()
     // Repeated identical tool calls per Session drain; reset at each drain start.
     const repeatedToolCalls = new Map<string, number>()
+    // Total executed tool calls per Session drain, bounded by MAX_TOOL_CALLS_PER_DRAIN;
+    // reset at each drain start next to the repeated-call counter it widens.
+    const toolCallsPerDrain = new Map<string, number>()
     const readSettings = Effect.fnUntraced(function* () {
       const documents = (yield* config.entries()).filter((entry): entry is Config.Document => entry.type === "document")
       let ttl: number | undefined
@@ -549,6 +568,10 @@ const layer = Layer.effect(
       // outlives a turn: every fiber it gates is joined before the attempt
       // returns, so the next turn starts with it free.
       const exclusivePermit = yield* Semaphore.make(1)
+      // Eager settlements share this bound; the exclusive permit composes on
+      // top of it so an exclusive call holds the concurrency slot only while it
+      // actually runs.
+      const settlementPermits = yield* Semaphore.make(MAX_CONCURRENT_SETTLEMENTS)
       let needsContinuation = false
       let currentStep = step
       if (promotion) {
@@ -958,6 +981,17 @@ const layer = Layer.effect(
               return
             }
             needsContinuation = true
+            const executed = (toolCallsPerDrain.get(session.id) ?? 0) + 1
+            toolCallsPerDrain.set(session.id, executed)
+            if (executed > MAX_TOOL_CALLS_PER_DRAIN) {
+              yield* withPublication(
+                publisher.failTool(
+                  event.id,
+                  `Refusing to run ${event.name}: this turn has already executed ${MAX_TOOL_CALLS_PER_DRAIN} tool calls. Stop calling tools and report what you have.`,
+                ),
+              )
+              return
+            }
             const signature = `${session.id}\u0000${event.name}\u0000${signatureInput(event.input)}`
             const executions = (repeatedToolCalls.get(signature) ?? 0) + 1
             repeatedToolCalls.set(signature, executions)
@@ -989,13 +1023,16 @@ const layer = Layer.effect(
               ),
             )
             yield* Effect.uninterruptibleMask((restore) =>
-              // The wait for the permit sits inside `restore`, so clearing the
-              // fiber set interrupts a queued exclusive call instead of letting
-              // every waiter take the permit in turn just to be interrupted.
+              // The wait for the permits sits inside `restore`, so clearing the
+              // fiber set interrupts a queued call instead of letting every
+              // waiter take its permit in turn just to be interrupted. The
+              // exclusive permit wraps the concurrency bound: an exclusive
+              // call queues for exclusivity first and holds a concurrency slot
+              // only from the moment it may start running.
               restore(
                 toolMaterialization.concurrency(event.name) === "exclusive"
-                  ? exclusivePermit.withPermit(settleAndPublish)
-                  : settleAndPublish,
+                  ? exclusivePermit.withPermit(settlementPermits.withPermit(settleAndPublish))
+                  : settlementPermits.withPermit(settleAndPublish),
               ).pipe(FiberSet.run(toolFibers)),
             )
           }).pipe(
@@ -1882,6 +1919,7 @@ const layer = Layer.effect(
               .pipe(Effect.orDie)
           const repeatedPrefix = `${input.sessionID}\u0000`
           for (const key of repeatedToolCalls.keys()) if (key.startsWith(repeatedPrefix)) repeatedToolCalls.delete(key)
+          toolCallsPerDrain.delete(input.sessionID)
             if (delegation) yield* delegation.recover(input.sessionID)
           const hasSteer = yield* SessionInput.hasPending(db, input.sessionID, "steer")
           const hasQueue = hasSteer ? false : yield* SessionInput.hasPending(db, input.sessionID, "queue")
