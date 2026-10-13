@@ -765,7 +765,7 @@ async fn execute(
                         .record(
                             session,
                             "usage",
-                            json!({"run_id":run,"step":step,"usage":partial.usage,"partial":true}),
+                            json!({"run_id":run,"step":step,"usage":partial.usage,"partial":true,"context_message_seq":inner.store.max_message_seq(session).await?}),
                         )
                         .await?;
                     if partial
@@ -846,7 +846,7 @@ async fn execute(
             .record(
                 session,
                 "usage",
-                json!({"run_id":run,"step":step,"usage":reply.usage}),
+                json!({"run_id":run,"step":step,"usage":reply.usage,"context_message_seq":inner.store.max_message_seq(session).await?}),
             )
             .await?;
         let assistant_boundary = inner
@@ -1210,6 +1210,23 @@ async fn execute(
             let mut notify = |notice: Value| {
                 let _ = inner.progress.send(notice);
             };
+            // Gate ②: the runtime owns the provider, so the counter that prices
+            // the messages appended since the anchor is bound here.
+            let counting = Arc::clone(&inner.provider);
+            let mut count = move |messages: Vec<crate::protocol::Message>| -> std::pin::Pin<
+                Box<dyn std::future::Future<Output = crate::provider::CountTokens> + Send>,
+            > {
+                let counting = Arc::clone(&counting);
+                Box::pin(async move {
+                    counting
+                        .count_tokens(&ModelRequest {
+                            system: String::new(),
+                            messages,
+                            tools: Vec::new(),
+                        })
+                        .await
+                })
+            };
             let mut breaker = inner.breaker.lock().await;
             let _ = crate::context_trigger::maybe_compact(
                 &inner.store,
@@ -1221,6 +1238,7 @@ async fn execute(
                     per_pass: limits.per_pass,
                     breaker: &mut breaker,
                     notify: &mut notify,
+                    count: &mut count,
                 },
                 &mut summarize,
             )

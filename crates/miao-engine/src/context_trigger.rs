@@ -119,6 +119,14 @@ pub struct CompactRequest<'a, P: FnMut(Value)> {
     pub breaker: &'a mut Breaker,
     /// Gate-6 notices flow through this sink.
     pub notify: &'a mut P,
+    /// Counts the messages appended since the anchor through the provider's own
+    /// endpoint where it has one (gate ②); the runtime binds the session
+    /// provider. A refused or unsupported count is not an error.
+    pub count: &'a mut (dyn FnMut(
+        Vec<Message>,
+    ) -> std::pin::Pin<
+        Box<dyn std::future::Future<Output = crate::provider::CountTokens> + Send>,
+    > + Send),
 }
 
 pub async fn maybe_compact<S, F, P>(
@@ -139,19 +147,36 @@ where
         per_pass,
         breaker,
         notify,
+        count,
     } = request;
     let channel = |kind: &str| json!({"session_id": session, "run_id": run, "kind": kind});
     if !breaker.allows() {
         notify(channel("compaction.skipped"));
         return Ok(false);
     }
-    let context = store.last_context_tokens(session).await?;
+    // Gate ①: the anchor is the newest usage report's normalized context plus
+    // the message it counted. Only the messages appended after that report are
+    // still uncounted, and for those gate ② prefers the provider's own count
+    // over the char estimate. No marker means the report predates the anchor,
+    // so nothing is invented and the trigger stays off.
+    let Some((context, counted_through)) = store.context_anchor(session).await? else {
+        return Ok(false);
+    };
+    let (pending, pending_chars) = store.pending_context(session, counted_through).await?;
+    if pending.is_empty() {
+        return Ok(false);
+    }
+    let counted = count(pending).await;
+    if !budget.should_compact(
+        Some(context),
+        resolve_pending_tokens(counted, pending_chars as usize),
+    ) {
+        return Ok(false);
+    }
+    // The summary covers the warm prefix the next turn would re-send, which is
+    // the selected history rather than the uncounted delta.
     let messages = store.selected_history(session).await?;
-    let chars: usize = messages
-        .iter()
-        .map(|message| message.content.to_string().len())
-        .sum();
-    if !budget.should_compact(context, estimate_tokens(chars)) {
+    if messages.is_empty() {
         return Ok(false);
     }
     let plan = plan_summary(messages.len(), per_pass);
@@ -395,6 +420,77 @@ pub fn resolve_pending_tokens(counted: crate::provider::CountTokens, chars: usiz
 }
 
 impl Store {
+    /// The highest committed message seq, recorded inside each usage event so a
+    /// later turn knows exactly which messages that report already counted.
+    pub async fn max_message_seq(&self, session: &str) -> Result<u64, Error> {
+        let session = session.to_owned();
+        self.call(move |conn| {
+            Ok(conn.query_row(
+                "SELECT COALESCE(MAX(seq),0) FROM engine_message WHERE session_id=?1",
+                [&session],
+                |row| row.get(0),
+            )?)
+        })
+        .await
+    }
+
+    /// The gate-① anchor: the newest usage event's normalized context tokens
+    /// plus the highest message seq that report counted. An event without the
+    /// marker predates the anchor, so it reports `None` rather than inventing
+    /// one; the trigger stays off until a later turn reports a marked usage.
+    pub async fn context_anchor(&self, session: &str) -> Result<Option<(u64, u64)>, Error> {
+        let session = session.to_owned();
+        self.call(move |conn| {
+            let data: Option<String> = conn
+                .query_row(
+                    "SELECT data FROM engine_event WHERE session_id=?1 AND kind='usage' ORDER BY seq DESC LIMIT 1",
+                    [&session],
+                    |row| row.get(0),
+                )
+                .optional()?;
+            let Some(data) = data else { return Ok(None) };
+            let event = serde_json::from_str::<Value>(&data)?;
+            let Some(through) = event["context_message_seq"].as_u64() else {
+                return Ok(None);
+            };
+            let usage = &event["usage"];
+            let input = usage["inputTokens"].as_u64().unwrap_or(0);
+            let output = usage["outputTokens"].as_u64().unwrap_or(0);
+            Ok(Some((input.saturating_add(output), through)))
+        })
+        .await
+    }
+
+    /// The messages committed after the anchor's count, plus their serialized
+    /// chars: exactly the delta the provider still has to count.
+    pub async fn pending_context(
+        &self,
+        session: &str,
+        counted_through: u64,
+    ) -> Result<(Vec<Message>, u64), Error> {
+        let session = session.to_owned();
+        self.call(move |conn| {
+            let mut stmt = conn.prepare(
+                "SELECT role,content,recorded_at_ms FROM engine_message WHERE session_id=?1 AND seq>?2 AND reverted=0 ORDER BY seq",
+            )?;
+            let mut rows = stmt.query(rusqlite::params![session, counted_through])?;
+            let mut chars = 0usize;
+            let mut messages = Vec::new();
+            while let Some(row) = rows.next()? {
+                let content: String = row.get(1)?;
+                chars += content.len();
+                messages.push(Message {
+                    role: row.get(0)?,
+                    content: serde_json::from_str(&content)?,
+                    checkpoint: None,
+                    recorded_at_ms: row.get(2)?,
+                });
+            }
+            Ok((messages, chars as u64))
+        })
+        .await
+    }
+
     /// Normalized context anchor from the newest `usage` event, or `None`
     /// before the first provider turn.
     pub async fn last_context_tokens(&self, session: &str) -> Result<Option<u64>, Error> {
