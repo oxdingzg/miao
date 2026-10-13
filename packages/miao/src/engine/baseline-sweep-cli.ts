@@ -24,6 +24,7 @@ rust:
   --binary PATH             miao-engine binary
   --provider NAME           provider protocol (e.g. subscription-responses)
   --policy FILE             policy override (default: protected/** deny contract)
+  --endpoint URL            provider base URL override
   --credential-db FILE      product credential database (read-only)
   --credential-id ID        credential row
   --credential-integration NAME
@@ -48,6 +49,7 @@ interface Options {
   binary?: string
   provider?: string
   policy?: string
+  endpoint?: string
   credentialDatabase?: string
   credentialID?: string
   credentialIntegration?: string
@@ -87,6 +89,7 @@ for (const task of options.tasks) {
             model: options.model,
             provider: options.provider,
             policyFile: options.policy,
+            endpoint: options.endpoint,
             credentialDatabase: options.credentialDatabase,
             credentialID: options.credentialID,
             credentialIntegration: options.credentialIntegration,
@@ -198,6 +201,7 @@ function readOptions(args: string[]): Options {
     binary: values.get("binary"),
     provider: values.get("provider"),
     policy: values.get("policy"),
+    endpoint: values.get("endpoint"),
     credentialDatabase: values.get("credential-db"),
     credentialID: values.get("credential-id"),
     credentialIntegration: values.get("credential-integration"),

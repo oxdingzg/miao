@@ -73,6 +73,8 @@ export interface BaselineRustInput {
   credentialID?: string
   credentialIntegration?: string
   policyFile?: string
+  /** Provider base URL override; the subscription default applies otherwise. */
+  endpoint?: string
   timeoutMs?: number
   env?: Record<string, string | undefined>
   binarySha256?: string
@@ -106,7 +108,13 @@ export async function runBaselineRust(input: BaselineRustInput): Promise<Baselin
   const progress: Array<{ item: EngineProgress; atMs: number }> = []
   const observed = new Map<number, number>()
   const session = `ses_${randomUUID()}`
-  const policy = interruptPolicy(task.id)
+  // The interrupted-turn fixture needs a provider stream that breaks mid-body:
+  // a host cancel never records provider.interrupted, while a truncated stream
+  // does, and the engine must continue without re-running the settled tool.
+  const proxy =
+    task.id === "stream-interruption"
+      ? await startInterruptionProxy(input.endpoint ?? "https://chatgpt.com/backend-api/codex/responses")
+      : undefined
   const error = await runEnginePrompt({
     binary: input.binary,
     db: path.join(input.root, "engine.db"),
@@ -117,13 +125,12 @@ export async function runBaselineRust(input: BaselineRustInput): Promise<Baselin
     credentialID: input.credentialID,
     credentialIntegration: input.credentialIntegration,
     policyFile: input.policyFile ?? (await writeBaselinePolicy(input.root)),
+    endpoint: proxy?.endpoint ?? input.endpoint,
     env: input.env,
     session,
     prompt: task.prompt,
     approve: "deny",
     timeoutMs: input.timeoutMs ?? 300_000,
-    resolveInterrupted: true,
-    interrupt: policy,
     onEvent: (event) => {
       observed.set(event.seq, Date.now())
       events.push(event)
@@ -133,6 +140,7 @@ export async function runBaselineRust(input: BaselineRustInput): Promise<Baselin
     () => null,
     (failure: unknown) => (failure instanceof Error ? failure.message : String(failure)),
   )
+  proxy?.stop()
   const assessment = await assessBaselineArtifacts(workspace, task.id)
   const verifiedAtMs = Date.now()
   return finishBaselineRun({
@@ -344,7 +352,9 @@ function rejectionReason(input: FinishedBaselineRun, evidence: BaselineEvidence)
 }
 
 function baselineOutcome(input: FinishedBaselineRun, evidence: BaselineEvidence): BaselineSample["outcome"] {
-  const expected = input.task === "stream-interruption" ? "interrupted" : "completed"
+  // Every frozen task ends completed; the interrupted-turn task proves the
+  // interruption through its provider.interrupted receipt and its artifact.
+  const expected = "completed"
   const receipts = new Set(evidence.receipts)
   const passed =
     evidence.terminal === expected &&
@@ -360,54 +370,22 @@ function contractTaskHash(task: string) {
   return entry.taskHash
 }
 
-function interruptPolicy(task: string) {
-  if (task !== "stream-interruption") return undefined
-  const actionProviders = new Set<string>()
-  const dispatched = new Map<string, string>()
-  let armed = false
-  return (signal: EngineEvent | EngineProgress) => {
-    if (signal.kind === "message.committed") {
-      const data = BlackboxTape.json((signal as EngineEvent).data)
-      if (BlackboxTape.isObject(data) && data.role === "assistant" && Array.isArray(data.content))
-        for (const block of data.content) {
-          if (!BlackboxTape.isObject(block) || block.type !== "tool_use") continue
-          if (typeof block.id !== "string" || block.name !== "run_command") continue
-          if (JSON.stringify(block.input).includes("action.ts")) actionProviders.add(block.id)
-        }
-    }
-    if (signal.kind === "tool.dispatched") {
-      const data = BlackboxTape.json((signal as EngineEvent).data)
-      if (
-        BlackboxTape.isObject(data) &&
-        typeof data.call_id === "string" &&
-        typeof data.provider_id === "string"
-      )
-        dispatched.set(data.call_id, data.provider_id)
-    }
-    if (signal.kind === "tool.completed") {
-      const data = BlackboxTape.json((signal as EngineEvent).data)
-      const provider = BlackboxTape.isObject(data) && typeof data.call_id === "string" ? dispatched.get(data.call_id) : undefined
-      if (provider && actionProviders.has(provider)) armed = true
-    }
-    if (!armed) return false
-    return signal.kind === "provider.delta" || signal.kind === "tool.input.delta"
-  }
-}
-
 /// The engine records a bounded provider error body on the durable result; keep
 /// it on the evidence so a failed live run stays diagnosable after the fact.
 function providerFailureDetail(events: EngineEvent[]) {
-  return (
-    events
-      .filter((event) => event.kind === "provider.request.result")
-      .flatMap((event) => {
-        const data = BlackboxTape.json(event.data)
-        return BlackboxTape.isObject(data) && typeof data.response_body === "string" && data.response_body
-          ? [data.response_body]
-          : []
-      })
-      .at(-1) ?? null
-  )
+  const messages = events.flatMap((event) => {
+    if (event.kind !== "provider.failed") return []
+    const data = BlackboxTape.json(event.data)
+    return BlackboxTape.isObject(data) && typeof data.message === "string" ? [data.message] : []
+  })
+  const bodies = events.flatMap((event) => {
+    if (event.kind !== "provider.request.result") return []
+    const data = BlackboxTape.json(event.data)
+    return BlackboxTape.isObject(data) && typeof data.response_body === "string" && data.response_body
+      ? [data.response_body]
+      : []
+  })
+  return [...messages.slice(-1), ...bodies.slice(-1)].join(": ").slice(0, 600) || null
 }
 
 function terminalFromEvents(events: EngineEvent[]): BaselineEvidence["terminal"] {
@@ -550,6 +528,146 @@ function enginePhases(
       : []),
     { phase: "verified", atMs: verifiedAtMs, clock: "observed" },
   ]
+}
+
+/**
+ * Raw TCP passthrough in front of the provider. The first request is forwarded
+ * untouched; the second one (the turn after the action tool settled) is cut by
+ * a FIN as soon as a response item completes, so the engine's HTTP client sees
+ * a real body transport error with a partial reply and records
+ * provider.interrupted before continuing. Later requests, including the
+ * continuation retry, pass through untouched.
+ */
+export async function startInterruptionProxy(target: string) {
+  const url = new URL(target)
+  const secure = url.protocol === "https:"
+  const port = Number(url.port || (secure ? 443 : 80))
+  interface Connection {
+    upstream?: Bun.Socket
+    ready: boolean
+    pending: Buffer[]
+    head: Buffer
+    headDone: boolean
+    armed: boolean
+    cut: boolean
+    scan: string
+  }
+  const connections = new Map<Bun.Socket, Connection>()
+  // The engine may issue the turns on separate keep-alive connections, so the
+  // request ordinal is global to the proxy rather than per connection.
+  let requests = 0
+  // Exactly one response is ever cut: arming every later connection would break
+  // the engine's own continuation request and exhaust its recovery budget.
+  let cutDone = false
+
+  const flush = (state: Connection) => {
+    if (!state.ready || !state.upstream) return
+    for (const buffered of state.pending) state.head = Buffer.concat([state.head, buffered])
+    state.pending = []
+    forwardHead(state)
+  }
+
+  // Bytes stay in Buffers end to end: the head is the only text that changes
+  // (the engine dials 127.0.0.1, so its request line and Host must point at the
+  // real provider), and a string round-trip would corrupt a non-ASCII body.
+  const forwardHead = (state: Connection) => {
+    if (!state.upstream || state.headDone) return
+    const end = state.head.indexOf("\r\n\r\n")
+    if (end < 0) return
+    const raw = state.head
+    state.head = Buffer.alloc(0)
+    const head = raw
+      .subarray(0, end)
+      .toString("latin1")
+      .replace(/^(POST|GET|PUT|DELETE|PATCH) \S+ HTTP\/1\.1/, `$1 ${url.pathname}${url.search} HTTP/1.1`)
+      .replace(/\r\nHost: [^\r\n]*/i, `\r\nHost: ${url.host}`)
+    state.headDone = true
+    state.upstream.write(Buffer.concat([Buffer.from(head, "latin1"), raw.subarray(end)]))
+    const heads = head.match(/POST \/\S* HTTP\/1\.1/g)
+    if (!heads) return
+    requests += heads.length
+    if (requests === 2 && !cutDone) state.armed = true
+  }
+
+  const server = Bun.listen({
+    hostname: "127.0.0.1",
+    port: 0,
+    socket: {
+      async open(client) {
+        const state: Connection = {
+          ready: false,
+          pending: [],
+          head: Buffer.alloc(0),
+          headDone: false,
+          armed: false,
+          cut: false,
+          scan: "",
+        }
+        connections.set(client, state)
+        await Bun.connect({
+          hostname: url.hostname,
+          port,
+          tls: secure,
+          socket: {
+            open(upstream) {
+              // A TLS write before this callback is dropped by Bun, so the
+              // upstream handle is published and the buffer flushed here.
+              state.upstream = upstream
+              state.ready = true
+              flush(state)
+            },
+            data(source, data) {
+              if (!state.armed || state.cut) {
+                client.write(data)
+                return
+              }
+              state.scan = (state.scan + Buffer.from(data).toString("latin1")).slice(-16384)
+              client.write(data)
+              // The continuation contract needs every parsed item finalized and
+              // a non-empty partial reply; the first completed output item is
+              // the only window that guarantees both, so cut right after it.
+              if (!state.scan.includes('"type":"response.output_item.done"')) return
+              state.cut = true
+              cutDone = true
+              client.end()
+              source.end()
+            },
+            close() {
+              client.end()
+            },
+            error() {
+              client.end()
+            },
+          },
+        })
+      },
+      data(client, data) {
+        const state = connections.get(client)
+        if (!state) return
+        if (!state.ready || !state.upstream) {
+          state.pending.push(Buffer.from(data))
+          return
+        }
+        if (state.headDone) {
+          state.upstream.write(data)
+          return
+        }
+        state.head = Buffer.concat([state.head, Buffer.from(data)])
+        forwardHead(state)
+      },
+      close(client) {
+        const state = connections.get(client)
+        connections.delete(client)
+        state?.upstream?.end()
+      },
+      error(client) {
+        const state = connections.get(client)
+        connections.delete(client)
+        state?.upstream?.end()
+      },
+    },
+  })
+  return { endpoint: `http://127.0.0.1:${server.port}/responses`, stop: () => server.stop(true) }
 }
 
 async function seedSharedCredentials(source: string, target: string) {

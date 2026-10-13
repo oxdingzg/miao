@@ -20,10 +20,6 @@ export interface EngineRunOptions extends EngineOptions {
   timeoutMs?: number
   onEvent?: (event: EngineEvent) => void
   onProgress?: (progress: EngineProgress) => void
-  /** Cancel the admitted run once this returns true for a committed event or progress item. */
-  interrupt?: (signal: EngineEvent | EngineProgress) => boolean
-  /** Resolve an interrupted terminal outcome instead of throwing. */
-  resolveInterrupted?: boolean
   blackbox?: BlackboxTape.Recorder | BlackboxTape.Replay
 }
 
@@ -32,7 +28,6 @@ export interface EngineRunResult {
   text: string
   events: EngineEvent[]
   admittedSeq: number
-  interruptedRequested: boolean
   terminal: {
     reason: "completed" | "failed" | "interrupted"
     runId: string | null
@@ -55,7 +50,6 @@ export async function runEnginePrompt(options: EngineRunOptions): Promise<Engine
   let failure: Error | undefined
   let admittedSeq: number | undefined
   let completed: { after: number; until: number } | undefined
-  let interruptedRequested = false
   let terminalOutcome: EngineRunResult["terminal"] | undefined
   let timeoutTimer: ReturnType<typeof setTimeout> | undefined
 
@@ -98,8 +92,7 @@ export async function runEnginePrompt(options: EngineRunOptions): Promise<Engine
         "provider.failed"
           ? new EngineError("provider_failed", "the provider turn failed")
           : new EngineError("engine_run_failed", "the engine run failed")
-    if (reason === "interrupted" && !options.resolveInterrupted)
-      failure = new EngineError("engine_interrupted", "the engine run was interrupted")
+    if (reason === "interrupted") failure = new EngineError("engine_interrupted", "the engine run was interrupted")
     if (reason !== "completed" && reason !== "failed" && reason !== "interrupted")
       failure = new EngineError("engine_outcome_missing", "the engine run has no authoritative terminal outcome")
     if (outcome.some((event) => event.kind === "question.requested"))
@@ -109,10 +102,6 @@ export async function runEnginePrompt(options: EngineRunOptions): Promise<Engine
 
   client.onEvent((event) => {
     events.push(event)
-    if (!interruptedRequested && options.interrupt?.(event)) {
-      interruptedRequested = true
-      void client.cancel(session).catch(() => undefined)
-    }
     if (options.blackbox) {
       const projected = trace.project(event)
       if (options.blackbox instanceof BlackboxTape.Replay) {
@@ -150,15 +139,7 @@ export async function runEnginePrompt(options: EngineRunOptions): Promise<Engine
     settle()
   })
 
-  if (options.onProgress || options.interrupt) {
-    client.onProgress((item) => {
-      options.onProgress?.(item)
-      if (!interruptedRequested && options.interrupt?.(item)) {
-        interruptedRequested = true
-        void client.cancel(session).catch(() => undefined)
-      }
-    })
-  }
+  if (options.onProgress) client.onProgress(options.onProgress)
 
   try {
     await client.subscribe(session, 0)
@@ -192,7 +173,6 @@ export async function runEnginePrompt(options: EngineRunOptions): Promise<Engine
       text: assistantText(events, completed),
       events,
       admittedSeq: admittedSeq ?? 0,
-      interruptedRequested,
       terminal: terminalOutcome,
     }
   } finally {

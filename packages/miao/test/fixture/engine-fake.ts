@@ -11,7 +11,12 @@ const send = (value: unknown) => process.stdout.write(JSON.stringify(value) + "\
 // An optional scripted run for harness tests: each step may emit one progress
 // or event message, with an optional delay before it. Without it the fake keeps
 // its original echo behavior.
-type FakeStep = { delayMs?: number; progress?: unknown; event?: unknown }
+type FakeStep = {
+  delayMs?: number
+  progress?: unknown
+  event?: unknown
+  writeFile?: { path: string; text: string }
+}
 const script: { steps: FakeStep[]; cancelSteps?: FakeStep[] } | undefined = process.env.ENGINE_FAKE_SCRIPT
   ? await Bun.file(process.env.ENGINE_FAKE_SCRIPT).json()
   : undefined
@@ -69,6 +74,7 @@ function handle(request: { id: number; method: string; params: Record<string, un
 async function emitSteps(steps: FakeStep[], session: string, inputID: string) {
   for (const step of steps) {
     if (step.delayMs) await Bun.sleep(step.delayMs)
+    if (step.writeFile) await Bun.write(step.writeFile.path, step.writeFile.text)
     if (step.progress !== undefined) send({ method: "progress", params: substitute(step.progress, session, inputID) })
     if (step.event !== undefined) send({ method: "event", params: substitute(step.event, session, inputID) })
   }

@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test"
 import { readdir } from "node:fs/promises"
 import path from "node:path"
-import { runBaselineRust } from "@/engine/baseline-run"
+import { runBaselineRust, startInterruptionProxy } from "@/engine/baseline-run"
 import { baselineContract } from "@/engine/baseline"
 import { tmpdir } from "../fixture/fixture"
 
@@ -34,12 +34,19 @@ async function script(root: string, steps: unknown[], cancelSteps?: unknown[]) {
   return file
 }
 
-async function run(root: string, task: string, steps: unknown[], cancelSteps?: unknown[], timeoutMs = 5000) {
-  const file = await script(root, steps, cancelSteps)
+async function run(
+  root: string,
+  task: string,
+  steps: unknown[] | ((runRoot: string) => unknown[]),
+  cancelSteps?: unknown[],
+  timeoutMs = 5000,
+) {
+  const runRoot = path.join(root, `run-${task}-${Math.random().toString(36).slice(2)}`)
+  const file = await script(root, typeof steps === "function" ? steps(runRoot) : steps, cancelSteps)
   return runBaselineRust({
     revision,
     binary: fake,
-    root: path.join(root, `run-${task}-${Math.random().toString(36).slice(2)}`),
+    root: runRoot,
     task,
     repetition: 0,
     model: "fixture-model",
@@ -136,42 +143,110 @@ test("requires a durable permission denial instead of an unchanged file", async 
   expect(result.evidence.receipts).toEqual(["permission.denied"])
 })
 
-test("interrupts the action turn only on host cancellation and keeps the interrupted evidence", async () => {
+test("passes the interrupted-turn task when the stream broke and the artifact survived", async () => {
   await using tmp = await tmpdir()
-  const result = await run(
-    tmp.path,
-    "stream-interruption",
-    [
-      ...base,
-      event(4, "provider.request", { run_id: "run", step: 0, attempt: 1, profile: profile() }),
-      event(5, "usage", { run_id: "run", step: 0, usage: { inputTokens: 50, outputTokens: 20 } }),
-      event(6, "message.committed", {
-        role: "assistant",
-        content: [
-          {
-            type: "tool_use",
-            id: "provider-call",
-            name: "run_command",
-            input: { command: "bun action.ts" },
-          },
-        ],
-      }),
-      event(7, "tool.dispatched", { run_id: "run", call_id: "call", provider_id: "provider-call" }),
-      event(8, "tool.completed", { call_id: "call", result: { output: "" }, is_error: false }),
-      { progress: { session_id: "$SESSION", run_id: "run", kind: "provider.delta", data: { kind: "text.delta", text: "o" } } },
-    ],
-    [
-      event(9, "provider.interrupted", { run_id: "run", step: 1, unexecuted_calls: [] }),
-      event(10, "usage", { run_id: "run", step: 1, usage: { inputTokens: 60, outputTokens: 4, partial: true } }),
-      event(11, "run.finished", { run_id: "run", reason: "interrupted" }),
-      event(12, "stop", { run_id: "run" }),
-    ],
-  )
-  expect(result.evidence.terminal).toBe("interrupted")
+  const result = await run(tmp.path, "stream-interruption", (runRoot) => [
+    ...base,
+    event(4, "provider.request", { run_id: "run", step: 0, attempt: 1, profile: profile() }),
+    event(5, "usage", { run_id: "run", step: 0, usage: { inputTokens: 50, outputTokens: 20 } }),
+    event(6, "message.committed", {
+      role: "assistant",
+      content: [{ type: "tool_use", id: "provider-call", name: "run_command", input: { command: "bun action.ts" } }],
+    }),
+    event(7, "tool.dispatched", { run_id: "run", call_id: "call", provider_id: "provider-call" }),
+    event(8, "tool.completed", { call_id: "call", result: { output: "" }, is_error: false }),
+    { writeFile: { path: path.join(runRoot, "workspace", "audit.log"), text: "once\n" } },
+    event(9, "provider.failed", { run_id: "run", step: 1, message: "provider response transport failed; outcome is not replayable" }),
+    event(10, "provider.recovery.continuation", { run_id: "run", step: 1 }),
+    event(11, "provider.interrupted", { run_id: "run", step: 1, unexecuted_calls: 0 }),
+    event(12, "usage", { run_id: "run", step: 1, usage: { inputTokens: 60, outputTokens: 4, partial: true } }),
+    event(13, "message.committed", {
+      role: "assistant",
+      content: [{ type: "text", text: "the action ran once; the interrupted summary was recovered" }],
+    }),
+    event(14, "run.finished", { run_id: "run", reason: "completed" }),
+    event(15, "stop", { run_id: "run" }),
+  ])
+  expect(result.rejection).toBeNull()
+  expect(result.evidence.terminal).toBe("completed")
   expect(result.evidence.receipts).toEqual(["provider.interrupted"])
   expect(result.evidence.attempts).toHaveLength(2)
-  expect(result.sample?.outcome).toBe("failed")
+  expect(result.sample?.outcome).toBe("passed")
 })
+
+test("fails the interrupted-turn task without the transport interruption receipt", async () => {
+  await using tmp = await tmpdir()
+  const result = await run(tmp.path, "stream-interruption", (runRoot) => [
+    ...base,
+    event(4, "provider.request", { run_id: "run", step: 0, attempt: 1, profile: profile() }),
+    event(5, "usage", { run_id: "run", step: 0, usage: { inputTokens: 50, outputTokens: 20 } }),
+    event(6, "message.committed", {
+      role: "assistant",
+      content: [{ type: "tool_use", id: "provider-call", name: "run_command", input: { command: "bun action.ts" } }],
+    }),
+    event(7, "tool.dispatched", { run_id: "run", call_id: "call", provider_id: "provider-call" }),
+    event(8, "tool.completed", { call_id: "call", result: { output: "" }, is_error: false }),
+    { writeFile: { path: path.join(runRoot, "workspace", "audit.log"), text: "once\n" } },
+    event(9, "message.committed", { role: "assistant", content: [{ type: "text", text: "ran once" }] }),
+    event(10, "run.finished", { run_id: "run", reason: "completed" }),
+    event(11, "stop", { run_id: "run" }),
+  ])
+  expect(result.sample?.outcome).toBe("failed")
+  expect(result.assessment.artifactPass).toBe(true)
+  expect(result.evidence.receipts).toEqual([])
+})
+
+test("truncates the second provider turn mid-body through the interruption proxy", async () => {
+  const encoder = new TextEncoder()
+  let requests = 0
+  const upstream = Bun.serve({
+    port: 0,
+    fetch() {
+      requests += 1
+      const first = requests === 1
+      return new Response(
+        new ReadableStream({
+          async start(controller) {
+            controller.enqueue(
+              encoder.encode('event: response.output_item.done\ndata: {"type":"response.output_item.done","item":{"type":"reasoning"}}\n\n'),
+            )
+            if (!first) await Bun.sleep(2_000)
+            controller.enqueue(encoder.encode('event: response.completed\ndata: {"type":"response.completed"}\n\n'))
+            controller.close()
+          },
+        }),
+        { headers: { "content-type": "text/event-stream" } },
+      )
+    },
+  })
+  const proxy = await startInterruptionProxy(`http://127.0.0.1:${upstream.port}/responses`)
+  const port = Number(new URL(proxy.endpoint).port)
+  const call = async () => {
+    const chunks: Uint8Array[] = []
+    const socket = await Bun.connect({
+      hostname: "127.0.0.1",
+      port,
+      socket: {
+        data(_socket, data) {
+          chunks.push(new Uint8Array(data))
+        },
+        close() {},
+        error() {},
+      },
+    })
+    socket.write("POST /responses HTTP/1.1\r\nHost: 127.0.0.1\r\nContent-Length: 2\r\n\r\n{}")
+    await Bun.sleep(1_200)
+    socket.end()
+    return Buffer.concat(chunks).toString("latin1")
+  }
+  const first = await call()
+  expect(first).toContain("response.completed")
+  const second = await call()
+  expect(second).toContain("output_item.done")
+  expect(second).not.toContain("response.completed")
+  proxy.stop()
+  upstream.stop(true)
+}, 15000)
 
 test("rejects samples whose provider receipts disagree on the effective profile", async () => {
   await using tmp = await tmpdir()
@@ -208,6 +283,7 @@ test(
   },
   15000,
 )
+
 test("writes the baseline permission policy with protected writes denied", async () => {
   await using tmp = await tmpdir()
   await run(tmp.path, "permission-denial", [
