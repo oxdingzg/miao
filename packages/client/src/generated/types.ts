@@ -1472,6 +1472,7 @@ export type SessionsHistoryOutput = {
           }
           readonly slug: string
           readonly version: string
+          readonly nativeStorage?: string
         }
       }
     | {
@@ -2149,6 +2150,7 @@ export type SessionsEventsOutput =
         }
         readonly slug: string
         readonly version: string
+        readonly nativeStorage?: string
       }
     }
   | {
@@ -4602,6 +4604,7 @@ export type EventsDurableOutput =
         }
         readonly slug: string
         readonly version: string
+        readonly nativeStorage?: string
       }
     }
   | {
