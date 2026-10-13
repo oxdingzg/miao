@@ -64,7 +64,9 @@ async fn daemon_source_loads_and_rotates_inside_the_margin() {
     let socket = dir.path().join("credential.sock");
     let listener = tokio::net::UnixListener::bind(&socket).unwrap();
     let daemon = Arc::new(
-        Daemon::new(db.clone(), profile, "miao-engine/test".into()).with_margin_ms(60_000),
+        Daemon::new(db.clone(), profile, "miao-engine/test".into())
+            .with_margin_ms(60_000)
+            .with_profile(profile::copilot("https://github.com".into())),
     );
     tokio::spawn(daemon.serve(listener));
     tokio::time::sleep(std::time::Duration::from_millis(20)).await;
@@ -116,4 +118,22 @@ async fn daemon_source_loads_and_rotates_inside_the_margin() {
     let credential = source.load().await.unwrap();
     let _ = credential;
     let _ = client::discover(&socket).await.unwrap();
+    let connection = Connection::open(&db).unwrap();
+    connection.execute("INSERT INTO credential VALUES('cred_copilot','github-copilot','GitHub','{\"type\":\"oauth\",\"access\":\"fixture-gh\",\"refresh\":\"fixture-gh\",\"expires\":0,\"methodID\":\"github-copilot-device\"}')",[]).unwrap();
+    let source = Source::Daemon {
+        socket: socket.clone(),
+        id: "cred_copilot".into(),
+        integration: "github-copilot".into(),
+    };
+    source.load().await.unwrap();
+    connection.execute("INSERT INTO credential VALUES('cred_expired','openai','Expired','{\"type\":\"oauth\",\"access\":\"stale\",\"expires\":1}')",[]).unwrap();
+    let source = Source::Daemon {
+        socket,
+        id: "cred_expired".into(),
+        integration: "openai".into(),
+    };
+    assert!(matches!(
+        source.load().await,
+        Err(miao_engine::credential::Error::Expired)
+    ));
 }

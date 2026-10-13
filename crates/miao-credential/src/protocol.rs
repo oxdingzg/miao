@@ -26,6 +26,8 @@ pub enum Request {
         integration: String,
     },
     LoginStart {
+        #[serde(default = "default_integration")]
+        integration: String,
         credential_id: String,
         label: String,
     },
@@ -63,4 +65,8 @@ pub fn err(id: u64, error: &Error) -> String {
         "{{\"id\":{id},\"error\":{{\"code\":\"{}\"}}}}\n",
         error.code()
     )
+}
+
+fn default_integration() -> String {
+    "openai".into()
 }

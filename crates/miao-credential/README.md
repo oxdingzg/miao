@@ -108,3 +108,23 @@ The handoff requires an idle old broker: a token request already in flight
 cannot be undone by changing SQLite ownership. Storage guards prevent stale
 writes, but cannot revoke such an external request. No real user credentials
 are moved by tests or by installing this code.
+
+## Provider profiles
+
+One daemon owns the database lease and registers multiple integration profiles.
+OpenAI and GitHub Copilot are enabled by default. The Console integration is
+explicitly enabled with `serve --console-server URL` (and optional
+`--console-client-id ID`). Select the login integration with
+`login --integration openai|opencode|github-copilot`.
+
+- OpenAI uses its device/code exchange and form-encoded refresh endpoint.
+- Console uses JSON device and refresh requests, loads account/organization
+  metadata, and preserves the selected organization through token rotations.
+- Copilot uses GitHub device authorization. Its token is non-expiring in the
+  existing repository contract (`expires: 0`), and no refresh endpoint is
+  called. `serve --github-server URL` selects an Enterprise issuer.
+
+Each pending login retains its selected profile. Unknown integrations are
+rejected rather than routed to another integration's token endpoint. The
+Console credential's recorded server must match the configured issuer on
+refresh.

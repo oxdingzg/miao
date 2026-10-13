@@ -51,7 +51,14 @@ fn parse_options(args: &[String], allowed: &[&str]) -> Result<Option<String>, St
 #[cfg(unix)]
 fn serve(args: &[String]) -> Result<(), String> {
     let mut options = std::collections::HashMap::new();
-    let allowed = ["--db", "--socket", "--refresh-margin-ms"];
+    let allowed = [
+        "--db",
+        "--socket",
+        "--refresh-margin-ms",
+        "--console-server",
+        "--console-client-id",
+        "--github-server",
+    ];
     let mut index = 0;
     while index + 1 < args.len() {
         let flag = args[index].clone();
@@ -79,8 +86,20 @@ fn serve(args: &[String]) -> Result<(), String> {
         .enable_all()
         .build()
         .map_err(|error| format!("tokio runtime failed: {error}"))?;
-    runtime.block_on(async move {
-        let mut daemon = Daemon::new(PathBuf::from(db), profile::openai(), user_agent());
+    runtime.block_on(async {
+        let github = options
+            .get("--github-server")
+            .cloned()
+            .unwrap_or_else(|| "https://github.com".into());
+        let mut daemon = Daemon::new(PathBuf::from(db), profile::openai(), user_agent())
+            .with_profile(profile::copilot(github));
+        if let Some(server) = options.get("--console-server") {
+            let client = options
+                .get("--console-client-id")
+                .cloned()
+                .unwrap_or_else(|| "opencode-cli".into());
+            daemon = daemon.with_profile(profile::console(server.clone(), client));
+        }
         if let Some(margin_ms) = margin_ms {
             daemon = daemon.with_margin_ms(margin_ms);
         }
@@ -122,7 +141,7 @@ fn login(args: &[String]) -> Result<(), String> {
         return Err("missing option value".into());
     }
     for pair in args.as_chunks::<2>().0 {
-        if !["--socket", "--credential-id", "--label"].contains(&pair[0].as_str())
+        if !["--socket", "--credential-id", "--label", "--integration"].contains(&pair[0].as_str())
             || options.insert(pair[0].clone(), pair[1].clone()).is_some()
         {
             return Err("unknown or duplicate option".into());
@@ -140,12 +159,16 @@ fn login(args: &[String]) -> Result<(), String> {
         .enable_all()
         .build()
         .map_err(|e| e.to_string())?;
+    let integration = options
+        .get("--integration")
+        .map(String::as_str)
+        .unwrap_or("openai");
     runtime.block_on(async {
         use miao_credential::client;
         let path = std::path::Path::new(socket);
         let started = client::request(
             path,
-            serde_json::json!({"id":1,"op":"login_start","credential_id":id,"label":label})
+            serde_json::json!({"id":1,"op":"login_start","integration":integration,"credential_id":id,"label":label})
                 .to_string(),
         )
         .await

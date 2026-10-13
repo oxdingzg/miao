@@ -15,6 +15,7 @@ struct DeviceCode {
 }
 
 pub struct Pending {
+    standard: bool,
     device_id: String,
     user_code: String,
     deadline: Instant,
@@ -30,7 +31,7 @@ impl Pending {
 
 pub async fn begin(profile: &profile::Profile, agent: &str) -> Result<(Pending, Value), Error> {
     if profile.integration != "openai" {
-        return Err(Error::Integration);
+        return begin_standard(profile, agent).await;
     }
     let response = profile::http_client()?
         .post(format!(
@@ -58,6 +59,7 @@ pub async fn begin(profile: &profile::Profile, agent: &str) -> Result<(Pending, 
     let public = json!({"url": format!("{}/codex/device", profile.issuer), "user_code": code.user_code, "interval_ms": interval.as_millis() as u64});
     Ok((
         Pending {
+            standard: false,
             device_id: code.device_auth_id,
             user_code: code.user_code,
             deadline: Instant::now() + Duration::from_secs(900),
@@ -80,6 +82,9 @@ pub async fn poll(
         return Ok(None);
     }
     pending.next_poll = Instant::now() + pending.interval;
+    if pending.standard {
+        return poll_standard(pending, profile, agent).await;
+    }
     let response = profile::http_client()?
         .post(format!("{}/api/accounts/deviceauth/token", profile.issuer))
         .header("User-Agent", agent)
@@ -132,6 +137,167 @@ pub async fn poll(
     {
         value["metadata"] = json!({"accountID":account});
     }
+    Ok(Some(value))
+}
+
+async fn begin_standard(
+    profile: &profile::Profile,
+    agent: &str,
+) -> Result<(Pending, Value), Error> {
+    let path = match profile.integration.as_str() {
+        "opencode" => "/auth/device/code",
+        "github-copilot" => "/login/device/code",
+        _ => return Err(Error::Integration),
+    };
+    let response = profile::http_client()?
+        .post(format!("{}{path}", profile.issuer))
+        .header("User-Agent", agent)
+        .header("Accept", "application/json")
+        .json(&if profile.integration == "github-copilot" {
+            json!({"client_id":profile.client_id,"scope":"read:user"})
+        } else {
+            json!({"client_id":profile.client_id})
+        })
+        .send()
+        .await
+        .map_err(|_| Error::RefreshUnavailable)?;
+    if !response.status().is_success() {
+        return Err(Error::LoginRejected);
+    }
+    let code: Value = response.json().await.map_err(|_| Error::LoginRejected)?;
+    let device_id = code["device_code"]
+        .as_str()
+        .filter(|s| !s.is_empty() && s.len() <= 4096)
+        .ok_or(Error::LoginRejected)?
+        .to_owned();
+    let user_code = code["user_code"]
+        .as_str()
+        .filter(|s| !s.is_empty() && s.len() <= 256)
+        .ok_or(Error::LoginRejected)?
+        .to_owned();
+    let verification = code
+        .get("verification_uri_complete")
+        .or_else(|| code.get("verification_uri"))
+        .and_then(Value::as_str)
+        .ok_or(Error::LoginRejected)?;
+    let url = reqwest::Url::parse(&format!("{}/", profile.issuer))
+        .and_then(|base| base.join(verification))
+        .map_err(|_| Error::LoginRejected)?;
+    if !matches!(url.scheme(), "https" | "http") {
+        return Err(Error::LoginRejected);
+    }
+    let safety = if profile.integration == "github-copilot" {
+        3
+    } else {
+        0
+    };
+    let interval =
+        Duration::from_secs(code["interval"].as_u64().unwrap_or(5).clamp(1, 60) + safety);
+    let public =
+        json!({"url":url.as_str(),"user_code":user_code,"interval_ms":interval.as_millis() as u64});
+    let next_poll = if profile.integration == "opencode" {
+        Instant::now() + interval
+    } else {
+        Instant::now()
+    };
+    Ok((
+        Pending {
+            standard: true,
+            device_id,
+            user_code,
+            deadline: Instant::now()
+                + Duration::from_secs(code["expires_in"].as_u64().unwrap_or(900).clamp(1, 3600)),
+            next_poll,
+            interval,
+        },
+        public,
+    ))
+}
+
+async fn poll_standard(
+    pending: &mut Pending,
+    profile: &profile::Profile,
+    agent: &str,
+) -> Result<Option<Value>, Error> {
+    let path = match profile.integration.as_str() {
+        "opencode" => "/auth/device/token",
+        "github-copilot" => "/login/oauth/access_token",
+        _ => return Err(Error::Integration),
+    };
+    let response = profile::http_client()?.post(format!("{}{path}",profile.issuer)).header("User-Agent",agent).header("Accept","application/json")
+        .json(&json!({"grant_type":"urn:ietf:params:oauth:grant-type:device_code","client_id":profile.client_id,"device_code":pending.device_id}))
+        .send().await.map_err(|_| Error::RefreshUnavailable)?;
+    let success = response.status().is_success();
+    let body: Value = response.json().await.map_err(|_| Error::LoginRejected)?;
+    match body.get("error").and_then(Value::as_str) {
+        Some("authorization_pending") => return Ok(None),
+        Some("slow_down") => {
+            pending.interval += Duration::from_secs(5);
+            pending.next_poll = Instant::now() + pending.interval;
+            return Ok(None);
+        }
+        Some(_) => return Err(Error::LoginRejected),
+        None => (),
+    }
+    if !success {
+        return Err(Error::LoginRejected);
+    }
+    if profile.integration == "github-copilot" {
+        let token = body["access_token"]
+            .as_str()
+            .filter(|s| !s.is_empty())
+            .ok_or(Error::LoginRejected)?;
+        let mut value = json!({"type":"oauth","methodID":"github-copilot-device","access":token,"refresh":token,"expires":0});
+        if profile.issuer != "https://github.com" {
+            let url = reqwest::Url::parse(&profile.issuer).map_err(|_| Error::LoginRejected)?;
+            value["metadata"] =
+                json!({"enterpriseUrl":url.host_str().ok_or(Error::LoginRejected)?});
+        }
+        return Ok(Some(value));
+    }
+    let tokens: profile::TokenResponse =
+        serde_json::from_value(body).map_err(|_| Error::LoginRejected)?;
+    if tokens.access_token.is_empty() || tokens.refresh_token.as_deref().is_none_or(str::is_empty) {
+        return Err(Error::LoginRejected);
+    }
+    let client = profile::http_client()?;
+    let user: Value = client
+        .get(format!("{}/api/user", profile.issuer))
+        .bearer_auth(&tokens.access_token)
+        .send()
+        .await
+        .map_err(|_| Error::RefreshUnavailable)?
+        .error_for_status()
+        .map_err(|_| Error::LoginRejected)?
+        .json()
+        .await
+        .map_err(|_| Error::LoginRejected)?;
+    let mut orgs: Vec<Value> = client
+        .get(format!("{}/api/orgs", profile.issuer))
+        .bearer_auth(&tokens.access_token)
+        .send()
+        .await
+        .map_err(|_| Error::RefreshUnavailable)?
+        .error_for_status()
+        .map_err(|_| Error::LoginRejected)?
+        .json()
+        .await
+        .map_err(|_| Error::LoginRejected)?;
+    if !user["id"].is_string() || !user["email"].is_string() {
+        return Err(Error::LoginRejected);
+    }
+    orgs.sort_by(|a, b| {
+        a["name"]
+            .as_str()
+            .cmp(&b["name"].as_str())
+            .then_with(|| a["id"].as_str().cmp(&b["id"].as_str()))
+    });
+    let mut value = json!({"type":"oauth","methodID":"device","metadata":{"server":profile.issuer,"accountID":user["id"],"email":user["email"]}});
+    if let Some(org) = orgs.first() {
+        value["metadata"]["orgID"] = org["id"].clone();
+        value["metadata"]["orgName"] = org["name"].clone();
+    }
+    profile::apply_tokens(&mut value, &tokens, crate::store::now_ms());
     Ok(Some(value))
 }
 

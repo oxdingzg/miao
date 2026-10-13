@@ -54,7 +54,7 @@ pub fn discover(path: &Path) -> Result<Vec<Metadata>, Error> {
         let expires = parsed.get("expires").and_then(Value::as_u64);
         output.push(Metadata {
             id,
-            integration,
+            integration: integration.clone(),
             label,
             kind: match kind {
                 Some("key" | "api") => "key".into(),
@@ -62,7 +62,8 @@ pub fn discover(path: &Path) -> Result<Vec<Metadata>, Error> {
                 _ => "unsupported".into(),
             },
             expires_at_ms: expires,
-            expired: expires.is_some_and(|expires| expires <= now_ms()),
+            expired: expires.is_some_and(|expires| expires <= now_ms())
+                && !(integration == "github-copilot" && expires == Some(0)),
         });
     }
     Ok(output)

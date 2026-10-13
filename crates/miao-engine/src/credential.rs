@@ -150,7 +150,14 @@ impl Source {
                     miao_credential::Error::RefreshRejected => Error::RefreshRejected,
                     _ => Error::Io,
                 })?;
-            return parse(&credential);
+            let mut value = parse(&credential)?;
+            // The repository's Copilot device flow stores zero as its explicit
+            // non-expiring sentinel; other OAuth profiles still require expiry.
+            if integration == "github-copilot" && value.expires == Some(0) {
+                value.expires = None;
+            }
+            value.validate()?;
+            return Ok(value);
         }
         let source = self.clone();
         tokio::task::spawn_blocking(move || {
