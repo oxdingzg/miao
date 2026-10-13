@@ -1,6 +1,6 @@
 import { cmd } from "./cmd"
 import { ConfigV1 } from "@miao/core/v1/config/config"
-import { effectCmd } from "../effect-cmd"
+import { effectCmd, fail } from "../effect-cmd"
 import { Cause } from "effect"
 import { Client } from "@modelcontextprotocol/sdk/client/index.js"
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js"
@@ -8,10 +8,10 @@ import { UnauthorizedError } from "@modelcontextprotocol/sdk/client/auth.js"
 import { LATEST_PROTOCOL_VERSION } from "@modelcontextprotocol/sdk/types.js"
 import * as prompts from "@clack/prompts"
 import { UI } from "../ui"
-import { MCP } from "../../mcp"
 import { McpAuth } from "@miao/core/mcp/auth"
 import { McpOAuthProvider } from "@miao/core/mcp/oauth-provider"
-import { Config } from "@/config/config"
+import { Config } from "@miao/core/config"
+import { MCP } from "@miao/core/mcp"
 import { ConfigMCPV1 } from "@miao/core/v1/config/mcp"
 import { InstanceRef } from "@/effect/instance-ref"
 import { InstallationVersion } from "@miao/core/installation/version"
@@ -20,8 +20,11 @@ import { Global } from "@miao/core/global"
 import { modify, applyEdits } from "jsonc-parser"
 import { Filesystem } from "@/util/filesystem"
 import { Effect } from "effect"
+import { Location } from "@miao/core/location"
+import { LocationServiceMap, locationServiceMapLayer } from "@miao/core/location-services"
+import { AbsolutePath } from "@miao/core/schema"
 
-function getAuthStatusIcon(status: MCP.AuthStatus): string {
+function getAuthStatusIcon(status: AuthStatus): string {
   switch (status) {
     case "authenticated":
       return "✓"
@@ -32,7 +35,7 @@ function getAuthStatusIcon(status: MCP.AuthStatus): string {
   }
 }
 
-function getAuthStatusText(status: MCP.AuthStatus): string {
+function getAuthStatusText(status: AuthStatus): string {
   switch (status) {
     case "authenticated":
       return "authenticated"
@@ -43,53 +46,82 @@ function getAuthStatusText(status: MCP.AuthStatus): string {
   }
 }
 
-type McpEntry = NonNullable<ConfigV1.Info["mcp"]>[string]
-
 type McpConfigured = ConfigMCPV1.Info
-function isMcpConfigured(config: McpEntry): config is McpConfigured {
+type AuthStatus = "authenticated" | "expired" | "not_authenticated"
+
+const locationScope = <A, E, R>(effect: Effect.Effect<A, E, R>) =>
+  effect.pipe(
+    Effect.provide(
+      LocationServiceMap.Service.get(Location.Ref.make({ directory: AbsolutePath.make(process.cwd()) })),
+    ),
+    Effect.provide(locationServiceMapLayer),
+  )
+
+function isMcpConfigured(config: unknown): config is McpConfigured {
   return typeof config === "object" && config !== null && "type" in config
 }
 
 type McpRemote = Extract<McpConfigured, { type: "remote" }>
-function isMcpRemote(config: McpEntry): config is McpRemote {
+function isMcpRemote(config: unknown): config is McpRemote {
   return isMcpConfigured(config) && config.type === "remote"
 }
 
-function configuredServers(config: ConfigV1.Info) {
-  return Object.entries(config.mcp ?? {}).filter((entry): entry is [string, McpConfigured] => isMcpConfigured(entry[1]))
+function configuredServers(config: { mcp?: unknown }) {
+  return Object.entries((config.mcp as Record<string, unknown> | undefined) ?? {}).filter(
+    (entry): entry is [string, McpConfigured] => isMcpConfigured(entry[1]),
+  )
 }
 
-function oauthServers(config: ConfigV1.Info) {
+function oauthServers(config: { mcp?: unknown }) {
   return configuredServers(config).filter(
     (entry): entry is [string, McpRemote] => isMcpRemote(entry[1]) && entry[1].oauth !== false,
   )
 }
 
+function resolvedMerged() {
+  return Effect.gen(function* () {
+    const config = yield* Config.Service
+    return Config.merge(yield* config.entries())
+  })
+}
+
+function deriveAuthStatus(mcpAuth: McpAuth.Interface, name: string, server: McpRemote): Effect.Effect<AuthStatus> {
+  return Effect.gen(function* () {
+    const entry = yield* mcpAuth.getForUrl(name, server.url)
+    if (!entry?.tokens) return "not_authenticated"
+    if (entry.tokens.expiresAt && entry.tokens.expiresAt < Date.now() / 1000) return "expired"
+    return "authenticated"
+  })
+}
+
 function listState() {
   return Effect.gen(function* () {
-    const cfg = yield* Config.Service
+    const config = yield* resolvedMerged()
     const mcp = yield* MCP.Service
-    const config = yield* cfg.get()
+    const mcpAuth = yield* McpAuth.Service
     const statuses = yield* mcp.status()
-    const stored = yield* Effect.all(
-      Object.fromEntries(configuredServers(config).map(([name]) => [name, mcp.hasStoredTokens(name)])),
+    const stored = (yield* Effect.all(
+      Object.fromEntries(
+        configuredServers(config).map(([name]) => [name, Effect.map(mcpAuth.get(name), (entry) => !!entry?.tokens)]),
+      ),
       { concurrency: "unbounded" },
-    )
+    )) as Record<string, boolean>
     return { config, statuses, stored }
-  })
+  }).pipe(locationScope)
 }
 
 function authState() {
   return Effect.gen(function* () {
-    const cfg = yield* Config.Service
-    const mcp = yield* MCP.Service
-    const config = yield* cfg.get()
-    const auth = yield* Effect.all(
-      Object.fromEntries(oauthServers(config).map(([name]) => [name, mcp.getAuthStatus(name)])),
+    const config = yield* resolvedMerged()
+    const mcpAuth = yield* McpAuth.Service
+    const auth = (yield* Effect.all(
+      Object.fromEntries(
+        oauthServers(config).map(([name, server]) => [name, deriveAuthStatus(mcpAuth, name, server)]),
+      ),
       { concurrency: "unbounded" },
-    )
+    )) as Record<string, AuthStatus>
     return { config, auth }
-  })
+  }).pipe(locationScope)
 }
 
 export const McpCommand = cmd({
@@ -182,7 +214,7 @@ export const McpAuthCommand = effectCmd({
     prompts.intro("MCP OAuth Authentication")
 
     const { config, auth } = yield* authState()
-    const mcpServers = config.mcp ?? {}
+    const mcpServers = (config.mcp as Record<string, unknown> | undefined) ?? {}
     const servers = oauthServers(config)
 
     if (servers.length === 0) {
@@ -238,7 +270,7 @@ export const McpAuthCommand = effectCmd({
     }
 
     // Check if already authenticated
-    const authStatus = auth[serverName] ?? (yield* MCP.Service.use((mcp) => mcp.getAuthStatus(serverName)))
+    const authStatus = auth[serverName] ?? "not_authenticated"
     if (authStatus === "authenticated") {
       const confirm = yield* Effect.promise(() =>
         prompts.confirm({
@@ -256,22 +288,19 @@ export const McpAuthCommand = effectCmd({
     const spinner = prompts.spinner()
     spinner.start("Starting OAuth flow...")
 
-    yield* MCP.Service.use((mcp) =>
-      mcp.authenticate(serverName, (url) => {
-        spinner.stop("Authorize in your browser:")
-        prompts.log.info(url)
-        spinner.start("Waiting for authorization...")
-      }),
-    ).pipe(
-      Effect.tap((status) =>
-        Effect.sync(() => {
-          if (status.status === "connected") {
-            spinner.stop("Authentication successful!")
-          } else if (status.status === "needs_client_registration") {
-            spinner.stop("Authentication failed", 1)
-            prompts.log.error(status.error)
-            prompts.log.info("Add clientId to your MCP server config:")
-            prompts.log.info(`
+    // The core flow opens the browser on this host, waits for the local
+    // callback, stores the tokens, and reconnects — no manual URL handoff.
+    const status = yield* locationScope(MCP.Service.use((mcp) => mcp.authenticate(serverName))).pipe(
+      Effect.catch((error) => fail(`${error._tag === "MCP.NotFoundError" ? "MCP server not found" : "Server does not support OAuth"}: ${error.name}`)),
+    )
+    yield* Effect.sync(() => {
+      if (status.status === "connected") {
+        spinner.stop("Authentication successful!")
+      } else if (status.status === "needs_client_registration") {
+        spinner.stop("Authentication failed", 1)
+        prompts.log.error(status.error)
+        prompts.log.info("Add clientId to your MCP server config:")
+        prompts.log.info(`
   "mcp": {
     "${serverName}": {
       "type": "remote",
@@ -282,22 +311,13 @@ export const McpAuthCommand = effectCmd({
       }
     }
   }`)
-          } else if (status.status === "failed") {
-            spinner.stop("Authentication failed", 1)
-            prompts.log.error(status.error)
-          } else {
-            spinner.stop("Unexpected status: " + status.status, 1)
-          }
-        }),
-      ),
-      Effect.catchCause((cause) =>
-        Effect.sync(() => {
-          spinner.stop("Authentication failed", 1)
-          const error = Cause.squash(cause)
-          prompts.log.error(error instanceof Error ? error.message : String(error))
-        }),
-      ),
-    )
+      } else if (status.status === "failed") {
+        spinner.stop("Authentication failed", 1)
+        prompts.log.error(status.error)
+      } else {
+        spinner.stop("Unexpected status: " + status.status, 1)
+      }
+    })
 
     prompts.outro("Done")
   }),
@@ -385,7 +405,7 @@ export const McpLogoutCommand = effectCmd({
       return
     }
 
-    yield* MCP.Service.use((mcp) => mcp.removeAuth(serverName))
+    yield* McpAuth.Service.use((auth) => auth.remove(serverName))
     prompts.log.success(`Removed OAuth credentials for ${serverName}`)
     prompts.outro("Done")
   }),
@@ -666,16 +686,15 @@ export const McpDebugCommand = effectCmd({
       demandOption: true,
     }),
   handler: Effect.fn("Cli.mcp.debug")(function* (args) {
-    const config = yield* Config.Service.use((cfg) => cfg.get())
-    const mcp = yield* MCP.Service
-    const auth = yield* McpAuth.Service
-    const serverConfig = config.mcp?.[args.name]
+    const config = yield* locationScope(resolvedMerged())
+    const mcpAuth = yield* locationScope(McpAuth.Service)
+    const serverConfig = (config.mcp as Record<string, unknown> | undefined)?.[args.name]
     const authInfo =
       serverConfig && isMcpRemote(serverConfig) && serverConfig.oauth !== false
-        ? yield* Effect.all({
-            authStatus: mcp.getAuthStatus(args.name),
-            entry: auth.get(args.name),
-          })
+        ? {
+            authStatus: yield* deriveAuthStatus(mcpAuth, args.name, serverConfig),
+            entry: yield* mcpAuth.get(args.name),
+          }
         : undefined
     yield* Effect.promise(async () => {
       UI.empty()
@@ -777,7 +796,7 @@ export const McpDebugCommand = effectCmd({
             {
               onRedirect: async () => {},
             },
-            auth,
+            mcpAuth,
           )
 
           prompts.log.info("Testing OAuth flow (without completing authorization)...")
