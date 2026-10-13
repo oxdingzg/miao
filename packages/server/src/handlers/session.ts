@@ -13,7 +13,7 @@ import { HttpApiBuilder, HttpApiSchema } from "effect/unstable/httpapi"
 import { Api } from "../api"
 import { Project } from "@miao/core/project"
 import { NativeEngine } from "../native-engine"
-import { nativeSessionInfo } from "../native-session"
+import { mergeNativeFirstPage, nativeSessionInfo } from "../native-session"
 import { booted } from "../location"
 import { SessionsCursor } from "@miao/protocol/groups/session"
 import {
@@ -50,15 +50,28 @@ export const SessionHandler = HttpApiBuilder.group(Api, "server.session", (handl
                   Effect.mapError(() => new InvalidCursorError({ message: "Invalid cursor" })),
                 )
               : ctx.query
-          const sessions = yield* session.list({
-            ...query,
-            workspaceID: query.workspace,
-            limit: ctx.query.limit ?? DefaultSessionsLimit,
-          })
-          const first = sessions[0]
-          const last = sessions.at(-1)
+          const limit = ctx.query.limit ?? DefaultSessionsLimit
+          const sessions = yield* session.list({ ...query, workspaceID: query.workspace, limit })
+          // Native Sessions live in the engine's storage, not this catalog. They
+          // join the first page under the same (time, id) key; anchored paging
+          // stays on the catalog until a merged cursor is designed.
+          const native = yield* Effect.serviceOption(NativeEngine.Service)
+          const merged =
+            Option.isSome(native) && ctx.query.cursor === undefined
+              ? yield* mergeNativeFirstPage({
+                  native: native.value,
+                  db,
+                  sessions,
+                  limit,
+                  order: query.order ?? "desc",
+                  search: query.search,
+                  projects: yield* Project.Service,
+                }).pipe(Effect.orDie)
+              : sessions
+          const first = merged[0]
+          const last = merged.at(-1)
           return {
-            data: sessions,
+            data: merged,
             cursor: {
               previous: first
                 ? SessionsCursor.make({
