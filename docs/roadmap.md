@@ -202,6 +202,27 @@ Most V2 endpoints exist (`pty.shells`, `project.update`, `vcs.diff`, `fs.content
       and tests are deleted).
 - [ ] Remove the `packages/miao` `app-runtime` V1 layer: migrate `effect-cmd.ts` commands and the
       control-plane worktree adapter to core services, then delete the V1 graph.
+      Inventory from the completed survey:
+      - Commands still reading the V1 instance through `InstanceRef` / `InstanceStore`: `stats`,
+        `marketplace`, `agent`, `plug`, `pr`, `mcp add`, `export`, `session`, `import`,
+        `debug ripgrep`. Each needs the core equivalent of what it reads from the instance
+        (project metadata, session store, config entries) before the bootstrap can go.
+      - The V1 workspace/adapters subsystem has no production caller (`Workspace.Service` is
+        only referenced by tests), so `control-plane/workspace.ts`, `workspace-context.ts`,
+        `workspace-adapter-runtime.ts`, `types.ts`, `util.ts`, `adapters/*`, and `dev/*` are
+        deletions rather than migrations. They are entangled with the instance plumbing:
+        `effect/instance-state.ts`, `effect/bridge.ts`, `effect/run-service.ts`, and
+        `project/instance-store.ts` all import `WorkspaceContext`, so the whole group moves
+        together.
+      - After those, `effect/app-runtime.ts`, `effect/app-node-builder-v1.ts`,
+        `project/bootstrap.ts`, `project/bootstrap-service.ts`, and the remaining V1 service
+        modules (v1 config/provider/plugin/lsp/skill/snapshot/auth/worktree/…) have no
+        consumers and can be deleted; `effect-cmd.ts` then assembles a core-only runtime.
+      - `server/routes/instance/httpapi/public-schemas.ts` still imports the V1 `Workspace`
+        module for the OpenAPI document; that reference must switch to a protocol/schema
+        source before the module is deleted.
+      This is a multi-PR cutover: land the command migrations first, then the instance/workspace
+      deletion, then the app-layer deletion.
 - [ ] Confirm V2 endpoints cover app behaviors that were silently disabled on V2 (global config
       read, project rename, directory picker, custom providers).
 - **Acceptance:** `packages/miao` is only the CLI shell; the server mounts `/api/*` only; no V1
