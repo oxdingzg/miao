@@ -34,6 +34,23 @@ export const find = Effect.fn("SessionEnginePlacement.find")(function* (db: Db, 
   )
 })
 
+/** Every Session bound to the native engine, with the storage that owns it. */
+export const list = Effect.fn("SessionEnginePlacement.list")(function* (db: Db) {
+  const rows = yield* db
+    .select()
+    .from(SessionEnginePlacementTable)
+    .where(eq(SessionEnginePlacementTable.engine, "rust"))
+    .all()
+    .pipe(Effect.orDie)
+  return rows.flatMap((row) => {
+    const placement = Schema.decodeUnknownOption(Placement)(
+      row.engine === "ts" ? { engine: "ts" } : { engine: "rust", storage: row.native_storage, location: row.location },
+    )
+    if (placement._tag === "None" || placement.value.engine !== "rust") return []
+    return [{ sessionID: row.session_id, engine: placement.value.engine, storage: placement.value.storage, location: placement.value.location }]
+  })
+})
+
 /** Exact retries adopt a binding; a different engine, storage, or Location cannot take it over. */
 export const claim = Effect.fn("SessionEnginePlacement.claim")(function* (
   db: Db,

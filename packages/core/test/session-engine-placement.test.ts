@@ -156,3 +156,23 @@ test("upgrade pins existing TS sessions without copying transcript facts", async
     }),
   )
 })
+
+test("listing returns only native bindings with their owning storage", async () => {
+  await using tmp = await tmpdir()
+  const storage = path.join(tmp.path, "product.db")
+  const nativeSession = SessionV2.ID.create()
+  const tsSession = SessionV2.ID.create()
+  const placement = native(tmp.path)
+  await run(
+    storage,
+    Effect.gen(function* () {
+      const database = yield* Database.Service
+      yield* SessionEnginePlacement.claim(database.db, { sessionID: nativeSession, placement })
+      yield* SessionEnginePlacement.claim(database.db, { sessionID: tsSession, placement: { engine: "ts" } })
+      const listed = yield* SessionEnginePlacement.list(database.db)
+      expect(listed.map((entry) => entry.sessionID)).toEqual([nativeSession])
+      expect(listed[0]?.storage).toBe(placement.storage)
+      expect(listed[0]?.location).toEqual(placement.location)
+    }),
+  )
+})
