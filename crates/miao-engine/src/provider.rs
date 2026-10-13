@@ -88,6 +88,10 @@ pub(crate) fn decode_tool_call(
     }
 }
 
+pub(crate) fn valid_model(model: &str) -> bool {
+    !model.is_empty() && model.len() <= 512 && !model.chars().any(char::is_control)
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct Identity {
     pub protocol: String,
@@ -160,6 +164,11 @@ pub trait Provider: Send + Sync {
     fn reply_identity(&self, _reply: &Reply) -> Option<Identity> {
         self.identity()
     }
+    /// Select another model on this exact route without changing endpoint or
+    /// credential ownership. Custom/composite providers opt in explicitly.
+    fn for_model(&self, _model: &str) -> Option<Arc<dyn Provider>> {
+        None
+    }
     fn protected_resources(&self) -> Vec<std::path::PathBuf> {
         vec![]
     }
@@ -189,6 +198,7 @@ pub enum CountTokens {
     Failed(String),
 }
 
+#[derive(Clone)]
 pub struct Anthropic {
     client: reqwest::Client,
     endpoint: String,
@@ -239,6 +249,14 @@ impl Anthropic {
 
 #[async_trait]
 impl Provider for Anthropic {
+    fn for_model(&self, model: &str) -> Option<Arc<dyn Provider>> {
+        if !valid_model(model) {
+            return None;
+        }
+        let mut selected = self.clone();
+        selected.model = model.to_owned();
+        Some(Arc::new(selected))
+    }
     fn identity(&self) -> Option<Identity> {
         Some(Identity {
             protocol: "anthropic-messages".into(),
