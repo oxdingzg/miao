@@ -3,7 +3,7 @@ import { Database } from "@miao/core/database/database"
 import { SessionV2 } from "@miao/core/session"
 import { SessionImageNormalize } from "@miao/core/session/image-normalize"
 import { SessionUsageStore } from "@miao/core/session/usage-store"
-import { Clock, DateTime, Effect, Option, Stream } from "effect"
+import { Clock, DateTime, Effect, Option, Schema, Stream } from "effect"
 import { BackgroundJob } from "@miao/core/background-job"
 import { SessionBackgroundJobs } from "@miao/core/session/background-jobs"
 import { SessionSchedule } from "@miao/core/session/schedule"
@@ -14,6 +14,7 @@ import { Api } from "../api"
 import { Project } from "@miao/core/project"
 import { NativeEngine } from "../native-engine"
 import { nativeSessionEvents } from "../native-events"
+import { SessionEvent } from "@miao/schema/session-event"
 import { mergeNativeSessions, nativeSessionInfo } from "../native-session"
 import { booted } from "../location"
 import { SessionsCursor } from "@miao/protocol/groups/session"
@@ -725,6 +726,26 @@ export const SessionHandler = HttpApiBuilder.group(Api, "server.session", (handl
       .handle(
         "session.history",
         Effect.fn(function* (ctx) {
+          const native = Option.getOrUndefined(yield* Effect.serviceOption(NativeEngine.Service))
+          const placement = Option.getOrUndefined(yield* Effect.serviceOption(NativeEngine.Placement))
+          if (native && placement) {
+            const page = yield* native
+              .history({
+                ...placement,
+                sessionID: ctx.params.sessionID,
+                after: ctx.query.after ?? 0,
+                limit: ctx.query.limit ?? DefaultSessionHistoryLimit,
+              })
+              .pipe(Effect.orDie)
+            const decode = Schema.decodeUnknownOption(Schema.toType(SessionEvent.Durable))
+            return {
+              data: page.events
+                .map((event) => decode(event))
+                .filter(Option.isSome)
+                .map((event) => event.value),
+              hasMore: page.hasMore,
+            }
+          }
           return yield* session
             .history({
               sessionID: ctx.params.sessionID,

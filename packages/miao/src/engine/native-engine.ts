@@ -109,15 +109,24 @@ export const fromOwners = (owners: Owners): NativeEngine.Interface => {
       read<readonly unknown[]>(input, (connection) => connection.client.request("sessions")).pipe(
         Effect.map((value) => (Array.isArray(value) ? value : [])),
       ),
+    history: (input) =>
+      read<NativeEngine.NativeJournalPage & { readonly hasMore: boolean }>(input, (connection) =>
+        replayJournal({
+          ...input,
+          engineID: input.storage,
+          request: (method, params) => connection.client.request(method, params),
+        }),
+      ),
     events: (input) =>
       connect(input).pipe(
         Effect.flatMap((connection) =>
           Effect.tryPromise({
-            try: () => replayJournal({
-              ...input,
-              engineID: input.storage,
-              request: (method, params) => connection.client.request(method, params),
-            }),
+            try: () =>
+              replayJournal({
+                ...input,
+                engineID: input.storage,
+                request: (method, params) => connection.client.request(method, params),
+              }),
             catch: (error) => refusal(input.sessionID, error),
           }),
         ),
