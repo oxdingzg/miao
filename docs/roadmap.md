@@ -203,15 +203,12 @@ Most V2 endpoints exist (`pty.shells`, `project.update`, `vcs.diff`, `fs.content
 - [ ] Remove the `packages/miao` `app-runtime` V1 layer: migrate `effect-cmd.ts` commands and the
       control-plane worktree adapter to core services, then delete the V1 graph.
       Inventory from the completed survey:
-      - Commands reading the V1 instance: none. (`stats`, `session list`, `export`, `pr`,
-        `mcp add`, `import`, `plugin`, `agent`, `debug rg`, and `marketplace` all resolve the
-        project through `cli/project-context.ts` or `process.cwd()` and set `instance: false`.)
-        `agent create` was reimplemented on core: it resolves a model from `Catalog`
-        (`model.get`/`model.default`), gets the `LanguageModelV3` from `AISDK.language`, and
-        runs `generateObject` with the existing prompt and schema — the V1
-        `Agent.Service.generate` (now dead) and its prompt file are the only V1 agent pieces
-        left, and they go with the module when the V1 graph is deleted. `agent list` reads
-        `AgentV2.all()`.
+      - Commands reading the V1 instance: none. Every `effectCmd` command now sets
+        `instance: false` (project/worktree resolution goes through
+        `cli/project-context.ts`, which wraps `ProjectRegistry.registerDirectory`) — the V1
+        instance bootstrap no longer runs on any command path, so
+        `InstanceStore`/`InstanceBootstrap` are one step from deletion (only the app layer and
+        the test fixture still build them).
       - The V1 workspace/adapters subsystem has no production caller (`Workspace.Service` is
         only referenced by tests), so its runtime is deleted: `control-plane/workspace.ts`,
         `workspace-adapter-runtime.ts`, `util.ts`, and `dev/*`. The V1 workspace plugin API is

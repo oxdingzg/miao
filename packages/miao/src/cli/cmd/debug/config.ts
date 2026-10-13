@@ -10,6 +10,7 @@ import { redactConfig } from "./redact"
 export const ConfigCommand = effectCmd({
   command: "config",
   describe: "show resolved configuration",
+  instance: false,
   handler: () =>
     Effect.gen(function* () {
       const config = yield* Config.Service
