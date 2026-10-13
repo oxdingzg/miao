@@ -214,14 +214,14 @@ Most V2 endpoints exist (`pty.shells`, `project.update`, `vcs.diff`, `fs.content
         `AgentV2.all()`.
       - The V1 workspace/adapters subsystem has no production caller (`Workspace.Service` is
         only referenced by tests), so its runtime is deleted: `control-plane/workspace.ts`,
-        `workspace-adapter-runtime.ts`, `util.ts`, and `dev/*`. What survives is `types.ts`
-        (the `Workspace` view model that `public-schemas.ts` keeps in the generated legacy SDK —
-        shape and identifier unchanged, verified by `check:generated`) and `adapters/` (the
-        plugin `experimental_workspace.register` target, itself now dead). They are entangled
-        with the instance plumbing: `effect/instance-state.ts`, `effect/bridge.ts`,
-        `effect/run-service.ts`, and `project/instance-store.ts` all import
-        `control-plane/workspace-context.ts`, so that module moves with the instance group when
-        the whole group is deleted.
+        `workspace-adapter-runtime.ts`, `util.ts`, and `dev/*`. The V1 workspace plugin API is
+        retired with it: `PluginInput.experimental_workspace` and its `WorkspaceAdapter` types
+        are gone from `@miao/plugin`, `example-workspace.ts`, `control-plane/adapters/` and its
+        test are deleted, and the three plugin tests that stubbed the field are updated. Only
+        `control-plane/types.ts` (the `Workspace` view model that `public-schemas.ts` keeps in
+        the generated legacy SDK — shape and identifier unchanged, `check:generated` passes) and
+        `control-plane/workspace-context.ts` (imported by the instance plumbing) remain; the
+        latter moves with the instance group when that group is deleted.
       - After those, `effect/app-runtime.ts`, `effect/app-node-builder-v1.ts`,
         `project/bootstrap.ts`, `project/bootstrap-service.ts`, and the remaining V1 service
         modules (v1 config/provider/plugin/lsp/skill/snapshot/auth/worktree/…) have no
