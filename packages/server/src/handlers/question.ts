@@ -1,7 +1,8 @@
 import { QuestionV2 } from "@miao/core/question"
-import { Effect } from "effect"
+import { Effect, Option } from "effect"
 import { HttpApiBuilder, HttpApiSchema } from "effect/unstable/httpapi"
 import { Api } from "../api"
+import { NativeEngine } from "../native-engine"
 import { QuestionNotFoundError } from "@miao/protocol/errors"
 import { response } from "../location"
 
@@ -32,6 +33,11 @@ export const QuestionHandler = HttpApiBuilder.group(Api, "server.question", (han
       .handle(
         "session.question.list",
         Effect.fn(function* (ctx) {
+          const native = yield* Effect.serviceOption(NativeEngine.Service)
+          const placement = Option.getOrUndefined(yield* Effect.serviceOption(NativeEngine.Placement))
+          if (Option.isSome(native) && placement) {
+            return { data: yield* native.value.questions({ sessionID: ctx.params.sessionID, ...placement }) }
+          }
           const requests = yield* (yield* QuestionV2.Service).list()
           return { data: requests.filter((request) => request.sessionID === ctx.params.sessionID) }
         }),
@@ -39,6 +45,17 @@ export const QuestionHandler = HttpApiBuilder.group(Api, "server.question", (han
       .handle(
         "session.question.reply",
         Effect.fn(function* (ctx) {
+          const native = yield* Effect.serviceOption(NativeEngine.Service)
+          const placement = Option.getOrUndefined(yield* Effect.serviceOption(NativeEngine.Placement))
+          if (Option.isSome(native) && placement) {
+            yield* native.value.replyQuestion({
+              sessionID: ctx.params.sessionID,
+              requestID: ctx.params.requestID,
+              ...ctx.payload,
+              ...placement,
+            })
+            return HttpApiSchema.NoContent.make()
+          }
           yield* withOwnedQuestion(ctx.params.sessionID, ctx.params.requestID, (question) =>
             question
               .reply({ requestID: ctx.params.requestID, answers: ctx.payload.answers })
