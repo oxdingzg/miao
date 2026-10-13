@@ -280,25 +280,83 @@ function readNonEmptyString(data: object, key: string): string | undefined {
   return value
 }
 
-/** The product `session.next.text.delta` payload for one live text fragment. */
-export type SessionTextDelta = {
-  sessionID: SessionID
-  timestamp: DateTime.Utc
-  assistantMessageID: SessionMessage.ID
-  textID: string
-  delta: string
+export type StreamAnchor = {
+  seq: number
+  recordedAtMs: number | null
+  nextDelta: number
+  /** Provider block index to part identity, in first-seen order. */
+  parts: Map<number, { kind: "text" | "reasoning"; ordinal: number }>
+  textParts: number
+  reasoningParts: number
+  /** Provider tool-call index to engine call id, learned from `tool.start`. */
+  calls: Map<number, string>
 }
 
+export function streamAnchor(seq: number, recordedAtMs: number | null): StreamAnchor {
+  return {
+    seq,
+    recordedAtMs,
+    nextDelta: 0,
+    parts: new Map(),
+    textParts: 0,
+    reasoningParts: 0,
+    calls: new Map(),
+  }
+}
+
+/** One live provider fragment translated for clients, or nothing. */
+export type StreamedFragment =
+  | {
+      type: "session.next.text.delta"
+      data: {
+        sessionID: SessionID
+        timestamp: DateTime.Utc
+        assistantMessageID: SessionMessage.ID
+        textID: string
+        delta: string
+      }
+    }
+  | {
+      type: "session.next.reasoning.delta"
+      data: {
+        sessionID: SessionID
+        timestamp: DateTime.Utc
+        assistantMessageID: SessionMessage.ID
+        reasoningID: string
+        delta: string
+      }
+    }
+  | {
+      type: "session.next.tool.input.started"
+      data: {
+        sessionID: SessionID
+        timestamp: DateTime.Utc
+        assistantMessageID: SessionMessage.ID
+        callID: string
+        name: string
+      }
+    }
+  | {
+      type: "session.next.tool.input.delta"
+      data: {
+        sessionID: SessionID
+        timestamp: DateTime.Utc
+        assistantMessageID: SessionMessage.ID
+        callID: string
+        delta: string
+      }
+    }
+
 /**
- * Maps one normalized provider text fragment onto the product text delta. The
- * part id is minted from the step's durable start anchor, so the part a client
- * renders while streaming is the part the commit finalizes. Undefined when the
- * frame is not a text fragment or the anchor has not been observed yet.
+ * Maps one normalized provider fragment onto the product stream events. Part
+ * ids are minted from the step's durable start anchor, so the parts a client
+ * renders while streaming are the parts the commit finalizes; per-kind
+ * ordinals follow the provider block index in first-seen order, and
+ * index-less protocols extend their single stream. Tool fragments key by the
+ * call id learned from the fragment's `tool.start`. Undefined when the frame
+ * is not a fragment or the anchor has not been observed yet.
  */
-export function translateTextDelta(
-  progress: EngineProgress,
-  anchor: { seq: number; recordedAtMs: number | null },
-): SessionTextDelta | undefined {
+export function translateDelta(progress: EngineProgress, anchor: StreamAnchor): StreamedFragment | undefined {
   if (anchor.recordedAtMs === null) return undefined
   if (typeof progress.session_id !== "string") return undefined
   const sessionID = adoptSession(progress.session_id)
@@ -306,16 +364,65 @@ export function translateTextDelta(
   if (typeof frame !== "object" || frame === null || !("delta" in frame)) return undefined
   const data = frame.delta
   if (typeof data !== "object" || data === null) return undefined
-  if (!("kind" in data) || data.kind !== "text.delta") return undefined
-  if (!("text" in data) || typeof data.text !== "string") return undefined
-  const text = data.text
-  return {
-    sessionID,
-    timestamp: DateTime.makeUnsafe(anchor.recordedAtMs),
-    assistantMessageID: messageID(sessionID, anchor.seq),
-    textID: `text_${anchor.seq}_0`,
-    delta: text,
+  if (!("kind" in data)) return undefined
+  const fragment = data as { kind: string; index?: number; text?: string; delta?: string; id?: string; name?: string }
+  const assistantMessageID = messageID(sessionID, anchor.seq)
+  const timestamp = DateTime.makeUnsafe(anchor.recordedAtMs)
+  const index = typeof fragment.index === "number" && Number.isSafeInteger(fragment.index) ? fragment.index : undefined
+  if (fragment.kind === "text.delta" || fragment.kind === "reasoning.delta") {
+    if (typeof fragment.text !== "string") return undefined
+    const ordinal = partOrdinal(anchor, index, fragment.kind === "text.delta" ? "text" : "reasoning")
+    return fragment.kind === "text.delta"
+      ? {
+          type: "session.next.text.delta",
+          data: {
+            sessionID,
+            timestamp,
+            assistantMessageID,
+            textID: `text_${anchor.seq}_${ordinal}`,
+            delta: fragment.text,
+          },
+        }
+      : {
+          type: "session.next.reasoning.delta",
+          data: {
+            sessionID,
+            timestamp,
+            assistantMessageID,
+            reasoningID: `reasoning_${anchor.seq}_${ordinal}`,
+            delta: fragment.text,
+          },
+        }
   }
+  if (fragment.kind === "tool.start") {
+    if (typeof fragment.index !== "number" || typeof fragment.id !== "string" || typeof fragment.name !== "string") {
+      return undefined
+    }
+    anchor.calls.set(fragment.index, fragment.id)
+    return {
+      type: "session.next.tool.input.started",
+      data: { sessionID, timestamp, assistantMessageID, callID: fragment.id, name: fragment.name },
+    }
+  }
+  if (fragment.kind === "tool.input.delta") {
+    if (typeof fragment.index !== "number" || typeof fragment.delta !== "string") return undefined
+    const callID = anchor.calls.get(fragment.index)
+    if (callID === undefined) return undefined
+    return {
+      type: "session.next.tool.input.delta",
+      data: { sessionID, timestamp, assistantMessageID, callID, delta: fragment.delta },
+    }
+  }
+  return undefined
+}
+
+function partOrdinal(anchor: StreamAnchor, index: number | undefined, kind: "text" | "reasoning"): number {
+  if (index === undefined) return kind === "text" ? anchor.textParts : anchor.reasoningParts
+  const existing = anchor.parts.get(index)
+  if (existing) return existing.ordinal
+  const ordinal = kind === "text" ? anchor.textParts++ : anchor.reasoningParts++
+  anchor.parts.set(index, { kind, ordinal })
+  return ordinal
 }
 
 /** The product `session.next.retried` payload for one bounded retry of a failed attempt. */

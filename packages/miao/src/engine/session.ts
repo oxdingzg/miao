@@ -19,8 +19,10 @@ import {
   translateRetried,
   translateRunFailure,
   translateQuestion,
-  translateTextDelta,
+  streamAnchor,
+  translateDelta,
   translateTools,
+  type StreamAnchor,
 } from "./bridge"
 
 /** One bridged product event ready to publish onto the product event bus. */
@@ -54,7 +56,7 @@ export class EngineSession {
   }
 
   /** The durable step-start sequence, keyed by session/run/step: a streamed part's id anchor. */
-  readonly #anchors = new Map<string, { seq: number; recordedAtMs: number | null; nextDelta: number }>()
+  readonly #anchors = new Map<string, StreamAnchor>()
 
   #progressUpdate(progress: EngineProgress): void {
     if (progress.kind !== "provider.delta") return
@@ -75,15 +77,15 @@ export class EngineSession {
       typeof recorded === "number" &&
       Number.isSafeInteger(recorded) &&
       recorded >= 0
-        ? { seq, recordedAtMs: recorded, nextDelta: 0 }
+        ? streamAnchor(seq, recorded)
         : undefined)
     if (!anchor || anchor.seq <= (this.#settledThrough.get(sessionID) ?? 0)) return
     this.#anchors.set(key, anchor)
-    const data = translateTextDelta(progress, anchor)
-    if (!data) return
+    const fragment = translateDelta(progress, anchor)
+    if (!fragment) return
     this.#publish({
-      type: "session.next.text.delta",
-      data,
+      type: fragment.type,
+      data: fragment.data,
       source: { sessionID, seq: anchor.seq, index: anchor.nextDelta++, recordedAtMs: anchor.recordedAtMs },
     })
   }
@@ -290,11 +292,7 @@ export class EngineSession {
         typeof step === "number" &&
         !this.#anchors.has(`${event.session_id}/${run}/${step}`)
       )
-        this.#anchors.set(`${event.session_id}/${run}/${step}`, {
-          seq: event.seq,
-          recordedAtMs: event.recorded_at_ms ?? null,
-          nextDelta: 0,
-        })
+        this.#anchors.set(`${event.session_id}/${run}/${step}`, streamAnchor(event.seq, event.recorded_at_ms ?? null))
     }
     const status = this.#status.update(event)
     if (status) publish({ type: "session.next.status", data: status })
