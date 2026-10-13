@@ -176,3 +176,59 @@ test("listing returns only native bindings with their owning storage", async () 
     }),
   )
 })
+
+test("listing excludes native catalog projections before limit and anchors", async () => {
+  await using tmp = await tmpdir()
+  await run(
+    ":memory:",
+    Effect.gen(function* () {
+      const database = yield* Database.Service
+      const sessions = yield* SessionV2.Service
+      const oldest = yield* sessions.create({ location: { directory: AbsolutePath.make(tmp.path) } })
+      const middle = yield* sessions.create({ location: { directory: AbsolutePath.make(tmp.path) } })
+      const projected = yield* sessions.create({ location: { directory: AbsolutePath.make(tmp.path) } })
+      for (const [info, time] of [
+        [oldest, 100],
+        [middle, 200],
+        [projected, 300],
+      ] as const) {
+        yield* database.db.update(SessionTable).set({ time_created: time }).where(eq(SessionTable.id, info.id)).run()
+      }
+      // Seed the dual projection produced by native creation: the catalog row
+      // remains metadata only while placement makes the engine authoritative.
+      yield* database.db
+        .update(SessionEnginePlacementTable)
+        .set({
+          engine: "rust",
+          native_storage: native(tmp.path).storage,
+          location: native(tmp.path).location,
+        })
+        .where(eq(SessionEnginePlacementTable.session_id, projected.id))
+        .run()
+      // Imported TS sessions may have no synthesized binding and remain visible.
+      yield* database.db
+        .delete(SessionEnginePlacementTable)
+        .where(eq(SessionEnginePlacementTable.session_id, oldest.id))
+        .run()
+      expect((yield* sessions.list({ order: "desc", limit: 1 })).map((info) => info.id)).toEqual([middle.id])
+      expect((yield* sessions.list({ order: "asc", limit: 1 })).map((info) => info.id)).toEqual([oldest.id])
+      expect(
+        (yield* sessions.list({
+          order: "desc",
+          limit: 1,
+          anchor: { id: middle.id, time: 200, direction: "next" },
+        })).map((info) => info.id),
+      ).toEqual([oldest.id])
+      expect(
+        (yield* sessions.list({
+          order: "desc",
+          limit: 1,
+          anchor: { id: oldest.id, time: 100, direction: "previous" },
+        })).map((info) => info.id),
+      ).toEqual([middle.id])
+      expect(
+        (yield* sessions.list({ directory: AbsolutePath.make(tmp.path), limit: 10 })).map((info) => info.id),
+      ).not.toContain(projected.id)
+    }),
+  )
+})
