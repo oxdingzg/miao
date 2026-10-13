@@ -1,0 +1,665 @@
+import { createHash, randomUUID } from "node:crypto"
+import { mkdir } from "node:fs/promises"
+import path from "node:path"
+import type { Schema } from "effect"
+import { BlackboxTape } from "@miao/core/blackbox/tape"
+import { assessBaselineArtifacts, baselineContract, baselineTask, initializeBaselineWorkspace } from "./baseline"
+import type { BaselineSample } from "./baseline-report"
+import type { EngineEvent, EngineProgress } from "./client"
+import { runEnginePrompt } from "./run"
+
+/**
+ * Executes one frozen baseline task against one engine and produces a report
+ * sample bound to its evidence. Every attempt, receipt, profile fingerprint,
+ * and phase timestamp comes from durable engine events or the TypeScript
+ * blackbox bundle; nothing is inferred from the agent's own claims.
+ */
+
+export interface BaselineAttempt {
+  inputTokens: number | null
+  outputTokens: number | null
+  cacheReadTokens: number | null
+  cacheWriteTokens: number | null
+  reasoningTokens: number | null
+  cost: number | null
+}
+
+export interface BaselinePhase {
+  phase: string
+  /** Absolute epoch milliseconds from the durable clock or the runner's observation. */
+  atMs: number
+  clock: "recorded" | "observed"
+}
+
+export interface BaselineEvidence {
+  engine: "rust" | "typescript"
+  revision: string
+  task: string
+  repetition: number
+  terminal: "completed" | "failed" | "interrupted" | null
+  error: string | null
+  receipts: string[]
+  attempts: BaselineAttempt[]
+  phases: BaselinePhase[]
+  profile: BaselineSample["profile"] | null
+  profileReceipts: number
+  toolCalls: number
+  textHash: string
+  startedAtMs: number
+  admissionMs: number | null
+  elapsedMs: number
+}
+
+export interface BaselineRun {
+  sample: BaselineSample | null
+  rejection: string | null
+  evidence: BaselineEvidence
+  assessment: Awaited<ReturnType<typeof assessBaselineArtifacts>>
+  answer: string
+}
+
+export interface BaselineRustInput {
+  revision: string
+  binary: string
+  /** New directory owned by this run; the workspace is created inside it. */
+  root: string
+  task: string
+  repetition: number
+  model: string
+  provider?: string
+  credentialDatabase?: string
+  credentialID?: string
+  credentialIntegration?: string
+  policyFile?: string
+  timeoutMs?: number
+  env?: Record<string, string | undefined>
+}
+
+export interface BaselineTsInput {
+  revision: string
+  /** New directory owned by this run; the workspace is created inside it. */
+  root: string
+  task: string
+  repetition: number
+  model: string
+  /** Absolute path to packages/miao/src/index.ts. */
+  entry: string
+  bun?: string
+  timeoutMs?: number
+}
+
+const digest = (value: string) => createHash("sha256").update(value).digest("hex")
+const fingerprint = (value: unknown) => digest(BlackboxTape.canonical(BlackboxTape.json(value)))
+
+export async function runBaselineRust(input: BaselineRustInput): Promise<BaselineRun> {
+  const task = baselineTask(input.task)
+  const workspace = path.join(input.root, "workspace")
+  await mkdir(input.root, { recursive: true })
+  await initializeBaselineWorkspace(workspace, task.id)
+  const startedAtMs = Date.now()
+  const events: EngineEvent[] = []
+  const progress: Array<{ item: EngineProgress; atMs: number }> = []
+  const observed = new Map<number, number>()
+  const session = `ses_${randomUUID()}`
+  const policy = interruptPolicy(task.id)
+  const error = await runEnginePrompt({
+    binary: input.binary,
+    db: path.join(input.root, "engine.db"),
+    workspace,
+    model: input.model,
+    provider: input.provider,
+    credentialDatabase: input.credentialDatabase,
+    credentialID: input.credentialID,
+    credentialIntegration: input.credentialIntegration,
+    policyFile: input.policyFile,
+    env: input.env,
+    session,
+    prompt: task.prompt,
+    approve: "deny",
+    timeoutMs: input.timeoutMs ?? 300_000,
+    resolveInterrupted: true,
+    interrupt: policy,
+    onEvent: (event) => {
+      observed.set(event.seq, Date.now())
+      events.push(event)
+    },
+    onProgress: (item) => progress.push({ item, atMs: Date.now() }),
+  }).then(
+    () => null,
+    (failure: unknown) => (failure instanceof Error ? failure.message : String(failure)),
+  )
+  const assessment = await assessBaselineArtifacts(workspace, task.id)
+  const verifiedAtMs = Date.now()
+  return finishBaselineRun({
+    engine: "rust",
+    revision: input.revision,
+    task: task.id,
+    repetition: input.repetition,
+    startedAtMs,
+    verifiedAtMs,
+    error,
+    assessment,
+    answer: committedText(events),
+    terminal: terminalFromEvents(events),
+    attempts: events.flatMap(usageAttempt),
+    receipts: engineReceipts(events),
+    profile: engineProfile(events),
+    phases: enginePhases(events, progress, observed, verifiedAtMs),
+    toolCalls: events.filter((event) => event.kind === "tool.completed").length,
+    admissionMs: admittedAt(events, observed),
+    requiredReceipts: task.requiredReceipts,
+    answerContains: task.answerContains,
+  })
+}
+
+export async function runBaselineTs(input: BaselineTsInput): Promise<BaselineRun> {
+  const task = baselineTask(input.task)
+  const workspace = path.join(input.root, "workspace")
+  await mkdir(input.root, { recursive: true })
+  await initializeBaselineWorkspace(workspace, task.id)
+  const blackbox = path.join(input.root, "blackbox")
+  const startedAtMs = Date.now()
+  const child = Bun.spawn(
+    [
+      input.bun ?? "bun",
+      input.entry,
+      "run",
+      task.prompt,
+      "--format",
+      "json",
+      "-m",
+      input.model,
+    ],
+    {
+      cwd: workspace,
+      stdin: "ignore",
+      stdout: "pipe",
+      stderr: "pipe",
+      env: {
+        ...process.env,
+        MIAO_DB: path.join(input.root, "miao.db"),
+        MIAO_CONFIG_CONTENT: tsConfig(),
+        MIAO_CONFIG_DIR: path.join(input.root, "config"),
+        MIAO_DISABLE_PROJECT_CONFIG: "1",
+        MIAO_BLACKBOX_RECORD: blackbox,
+        NO_COLOR: "1",
+      },
+    },
+  )
+  const parts: Array<Record<string, Schema.Json>> = []
+  let session: string | undefined
+  let interrupted = false
+  const stdout = readJsonLines(child.stdout, (message) => {
+    if (typeof message.sessionID === "string") session = message.sessionID
+    if (message.type === "tool_use" || message.type === "text" || message.type === "step_start") parts.push(message)
+    if (task.id === "stream-interruption" && !interrupted && actionTool(message)) {
+      interrupted = true
+      child.kill("SIGINT")
+    }
+  })
+  const stderr = new Response(child.stderr).text()
+  const timeoutMs = input.timeoutMs ?? 300_000
+  const timer = setTimeout(() => child.kill("SIGKILL"), timeoutMs)
+  const exit = await child.exited
+  const exitAtMs = Date.now()
+  clearTimeout(timer)
+  await stdout
+  const stderrText = await stderr
+  const assessment = await assessBaselineArtifacts(workspace, task.id)
+  const verifiedAtMs = Date.now()
+  const bundle = session
+    ? await BlackboxTape.load(path.join(blackbox, `${session}.json`)).catch(() => undefined)
+    : undefined
+  const interactions = bundle?.interactions ?? []
+  const terminal = interrupted && exit === 130 ? "interrupted" : exit === 0 ? "completed" : "failed"
+  return finishBaselineRun({
+    engine: "typescript",
+    revision: input.revision,
+    task: task.id,
+    repetition: input.repetition,
+    startedAtMs,
+    verifiedAtMs,
+    error: exit === 0 ? null : stderrText.trim().slice(-400) || `exit ${exit}`,
+    assessment,
+    answer: parts
+      .filter((part) => part.type === "text")
+      .flatMap((part) => {
+        const value = part.part
+        return BlackboxTape.isObject(value) && typeof value.text === "string" ? [value.text] : []
+      })
+      .join("\n"),
+    terminal,
+    attempts: interactions.filter((item) => item.lane === "llm").map(interactionAttempt),
+    receipts: [
+      ...(tsPermissionDenied(parts, stderrText) ? ["permission.denied"] : []),
+      ...(parts.some(tsToolError) ? ["tool.error"] : []),
+      ...(interactions.some((item) => item.lane === "llm" && item.outcome === "cancelled")
+        ? ["provider.interrupted"]
+        : []),
+    ],
+    profile: tsProfile(interactions),
+    phases: tsPhases(parts, exitAtMs, verifiedAtMs),
+    toolCalls: interactions.filter((item) => item.lane === "tool").length,
+    admissionMs: null,
+    requiredReceipts: task.requiredReceipts,
+    answerContains: task.answerContains,
+  })
+}
+
+interface FinishedBaselineRun {
+  engine: "rust" | "typescript"
+  revision: string
+  task: string
+  repetition: number
+  startedAtMs: number
+  verifiedAtMs: number
+  error: string | null
+  assessment: BaselineRun["assessment"]
+  answer: string
+  terminal: BaselineEvidence["terminal"]
+  attempts: BaselineAttempt[]
+  receipts: string[]
+  profile: ReturnType<typeof engineProfile>
+  phases: BaselinePhase[]
+  toolCalls: number
+  admissionMs: number | null
+  requiredReceipts: string[]
+  answerContains: string[]
+}
+
+function finishBaselineRun(input: FinishedBaselineRun): BaselineRun {
+  const profile = input.profile
+  const evidence: BaselineEvidence = {
+    engine: input.engine,
+    revision: input.revision,
+    task: input.task,
+    repetition: input.repetition,
+    terminal: input.terminal,
+    error: input.error,
+    receipts: input.receipts,
+    attempts: input.attempts,
+    phases: input.phases,
+    profile: profile?.profile ?? null,
+    profileReceipts: profile?.receipts ?? 0,
+    toolCalls: input.toolCalls,
+    textHash: digest(input.answer),
+    startedAtMs: input.startedAtMs,
+    admissionMs: input.admissionMs,
+    elapsedMs: input.verifiedAtMs - input.startedAtMs,
+  }
+  const rejection = rejectionReason(input, evidence)
+  if (rejection)
+    return { sample: null, rejection, evidence, assessment: input.assessment, answer: input.answer }
+  const outcome = baselineOutcome(input, evidence)
+  const sample: BaselineSample = {
+    task: input.task,
+    engine: input.engine,
+    repetition: input.repetition,
+    suiteHash: baselineContract().suiteHash,
+    taskHash: contractTaskHash(input.task),
+    profile: evidence.profile!,
+    revision: input.revision,
+    artifactHash: fingerprint({
+      artifactPass: input.assessment.artifactPass,
+      unexpected: input.assessment.unexpected,
+      immutable: input.assessment.immutable,
+      expected: input.assessment.expected,
+      check: input.assessment.check,
+    }),
+    receiptHash: fingerprint(evidence),
+    outcome,
+    elapsedMs: evidence.elapsedMs,
+    attempts: evidence.attempts.map((attempt) => ({
+      inputTokens: attempt.inputTokens,
+      outputTokens: attempt.outputTokens,
+      cost: attempt.cost,
+    })),
+  }
+  return { sample, rejection: null, evidence, assessment: input.assessment, answer: input.answer }
+}
+
+function rejectionReason(input: FinishedBaselineRun, evidence: BaselineEvidence) {
+  if (evidence.revision.length !== 40) return "missing 40-hex source revision"
+  if (!evidence.profile) return "missing effective profile fingerprint from provider receipts"
+  if (evidence.terminal === null) return `no terminal outcome: ${input.error ?? "unknown"}`
+  if (evidence.attempts.length === 0) return "no provider attempt usage was recorded"
+  return null
+}
+
+function baselineOutcome(input: FinishedBaselineRun, evidence: BaselineEvidence): BaselineSample["outcome"] {
+  const expected = input.task === "stream-interruption" ? "interrupted" : "completed"
+  const receipts = new Set(evidence.receipts)
+  const passed =
+    evidence.terminal === expected &&
+    input.assessment.artifactPass &&
+    input.answerContains.every((fragment) => input.answer.includes(fragment)) &&
+    input.requiredReceipts.every((name) => receipts.has(name))
+  return passed ? "passed" : "failed"
+}
+
+function contractTaskHash(task: string) {
+  const entry = baselineContract().tasks.find((item) => item.id === task)
+  if (!entry) throw new Error(`Unknown baseline task: ${task}`)
+  return entry.taskHash
+}
+
+function interruptPolicy(task: string) {
+  if (task !== "stream-interruption") return undefined
+  const actionProviders = new Set<string>()
+  const dispatched = new Map<string, string>()
+  let armed = false
+  return (signal: EngineEvent | EngineProgress) => {
+    if (signal.kind === "message.committed") {
+      const data = BlackboxTape.json((signal as EngineEvent).data)
+      if (BlackboxTape.isObject(data) && data.role === "assistant" && Array.isArray(data.content))
+        for (const block of data.content) {
+          if (!BlackboxTape.isObject(block) || block.type !== "tool_use") continue
+          if (typeof block.id !== "string" || block.name !== "run_command") continue
+          if (JSON.stringify(block.input).includes("action.ts")) actionProviders.add(block.id)
+        }
+    }
+    if (signal.kind === "tool.dispatched") {
+      const data = BlackboxTape.json((signal as EngineEvent).data)
+      if (
+        BlackboxTape.isObject(data) &&
+        typeof data.call_id === "string" &&
+        typeof data.provider_id === "string"
+      )
+        dispatched.set(data.call_id, data.provider_id)
+    }
+    if (signal.kind === "tool.completed") {
+      const data = BlackboxTape.json((signal as EngineEvent).data)
+      const provider = BlackboxTape.isObject(data) && typeof data.call_id === "string" ? dispatched.get(data.call_id) : undefined
+      if (provider && actionProviders.has(provider)) armed = true
+    }
+    if (!armed) return false
+    return signal.kind === "provider.delta" || signal.kind === "tool.input.delta"
+  }
+}
+
+function terminalFromEvents(events: EngineEvent[]): BaselineEvidence["terminal"] {
+  const finished = events.findLast((event) => event.kind === "run.finished")
+  const data = finished ? BlackboxTape.json(finished.data) : undefined
+  const reason = BlackboxTape.isObject(data) ? data.reason : undefined
+  return reason === "completed" || reason === "failed" || reason === "interrupted" ? reason : null
+}
+
+function admittedAt(events: EngineEvent[], observed: Map<number, number>) {
+  const admitted = events.find((event) => event.kind === "input.admitted")
+  if (!admitted) return null
+  return admitted.recorded_at_ms ?? observed.get(admitted.seq) ?? null
+}
+
+function committedText(events: EngineEvent[]) {
+  return events
+    .filter((event) => event.kind === "message.committed")
+    .flatMap((event) => {
+      const data = BlackboxTape.json(event.data)
+      if (!BlackboxTape.isObject(data) || data.role !== "assistant" || !Array.isArray(data.content)) return []
+      return data.content.flatMap((block) =>
+        BlackboxTape.isObject(block) && block.type === "text" && typeof block.text === "string" ? [block.text] : [],
+      )
+    })
+    .join("\n")
+}
+
+function usageAttempt(event: EngineEvent): BaselineAttempt[] {
+  if (event.kind !== "usage") return []
+  const data = BlackboxTape.json(event.data)
+  if (!BlackboxTape.isObject(data) || !BlackboxTape.isObject(data.usage)) return []
+  const usage = data.usage
+  return [
+    {
+      inputTokens: numberOrNull(usage.inputTokens),
+      outputTokens: numberOrNull(usage.outputTokens),
+      cacheReadTokens: numberOrNull(usage.cacheReadInputTokens),
+      cacheWriteTokens: numberOrNull(usage.cacheWriteInputTokens),
+      reasoningTokens: numberOrNull(usage.reasoningTokens),
+      cost: null,
+    },
+  ]
+}
+
+function numberOrNull(value: unknown) {
+  return typeof value === "number" && Number.isFinite(value) && value >= 0 ? value : null
+}
+
+function engineReceipts(events: EngineEvent[]) {
+  return [
+    ...(events.some((event) => event.kind === "permission_denied") ? ["permission.denied"] : []),
+    ...(events.some((event) => event.kind === "tool.completed" && toolFailed(event.data)) ? ["tool.error"] : []),
+    ...(events.some((event) => event.kind === "provider.interrupted") ? ["provider.interrupted"] : []),
+  ]
+}
+
+function toolFailed(value: unknown) {
+  const data = BlackboxTape.json(value)
+  if (!BlackboxTape.isObject(data)) return false
+  if (data.is_error === true) return true
+  return BlackboxTape.isObject(data.result) && typeof data.result.error === "string"
+}
+
+function engineProfile(events: EngineEvent[]) {
+  const profiles = events.flatMap((event) => {
+    if (event.kind !== "provider.request") return []
+    const data = BlackboxTape.json(event.data)
+    return BlackboxTape.isObject(data) && BlackboxTape.isObject(data.profile) ? [data.profile] : []
+  })
+  if (profiles.length === 0) return null
+  const normalized = profiles.map(normalizeProfile)
+  if (normalized.some((item) => item === null)) return null
+  const first = normalized[0]!
+  if (!normalized.every((item) => sameProfile(item!, first))) return null
+  return { profile: first, receipts: profiles.length }
+}
+
+function normalizeProfile(value: Schema.Json | undefined): BaselineSample["profile"] | null {
+  if (!BlackboxTape.isObject(value)) return null
+  const { model, modelParametersHash, agentManifestHash, permissionHash, toolSurfaceHash } = value
+  const hashes = [modelParametersHash, agentManifestHash, permissionHash, toolSurfaceHash]
+  if (typeof model !== "string" || !model) return null
+  if (!hashes.every((hash) => typeof hash === "string" && /^[a-f0-9]{64}$/.test(hash))) return null
+  return {
+    model,
+    modelParametersHash: modelParametersHash as string,
+    agentManifestHash: agentManifestHash as string,
+    permissionHash: permissionHash as string,
+    toolSurfaceHash: toolSurfaceHash as string,
+  }
+}
+
+function sameProfile(left: BaselineSample["profile"], right: BaselineSample["profile"]) {
+  return (
+    left.model === right.model &&
+    left.modelParametersHash === right.modelParametersHash &&
+    left.agentManifestHash === right.agentManifestHash &&
+    left.permissionHash === right.permissionHash &&
+    left.toolSurfaceHash === right.toolSurfaceHash
+  )
+}
+
+const PHASE_KINDS = new Set([
+  "input.admitted",
+  "input.promoted",
+  "run.started",
+  "provider.request",
+  "provider.request.result",
+  "approval.requested",
+  "approval.resolved",
+  "tool.dispatched",
+  "tool.completed",
+  "run.usage",
+  "run.finished",
+  "stop",
+  "provider.interrupted",
+])
+
+function enginePhases(
+  events: EngineEvent[],
+  progress: Array<{ item: EngineProgress; atMs: number }>,
+  observed: Map<number, number>,
+  verifiedAtMs: number,
+): BaselinePhase[] {
+  const durable = events
+    .filter((event) => PHASE_KINDS.has(event.kind))
+    .map((event) => ({
+      phase: event.kind,
+      atMs: event.recorded_at_ms ?? observed.get(event.seq) ?? Date.now(),
+      clock: event.recorded_at_ms === null || event.recorded_at_ms === undefined ? ("observed" as const) : ("recorded" as const),
+    }))
+  const firstDelta = progress.find((entry) => entry.item.kind === "provider.delta")
+  const firstProviderError = progress.find((entry) => entry.item.kind === "runtime.error")
+  return [
+    ...durable,
+    ...(firstDelta ? [{ phase: "first-output", atMs: firstDelta.atMs, clock: "observed" as const }] : []),
+    ...(firstProviderError
+      ? [{ phase: "runtime.error", atMs: firstProviderError.atMs, clock: "observed" as const }]
+      : []),
+    { phase: "verified", atMs: verifiedAtMs, clock: "observed" },
+  ]
+}
+
+function tsConfig() {
+  return JSON.stringify({
+    permissions: [
+      { action: "*", resource: "protected/**", effect: "deny" },
+      { action: "*", resource: "**", effect: "allow" },
+    ],
+  })
+}
+
+async function readJsonLines(
+  stream: ReadableStream<Uint8Array>,
+  handle: (message: Record<string, Schema.Json>) => void,
+): Promise<void> {
+  const decoder = new TextDecoder()
+  const reader = stream.getReader()
+  let buffer = ""
+  for (;;) {
+    const { done, value } = await reader.read()
+    if (done) break
+    buffer += decoder.decode(value, { stream: true })
+    let index = buffer.indexOf("\n")
+    while (index >= 0) {
+      const line = buffer.slice(0, index).trim()
+      buffer = buffer.slice(index + 1)
+      if (line) {
+        const message = BlackboxTape.json(JSON.parse(line))
+        if (BlackboxTape.isObject(message)) handle(message)
+      }
+      index = buffer.indexOf("\n")
+    }
+  }
+}
+
+function actionTool(message: Record<string, Schema.Json>) {
+  if (message.type !== "tool_use") return false
+  const part = message.part
+  if (!BlackboxTape.isObject(part) || part.tool !== "bash" || !BlackboxTape.isObject(part.state)) return false
+  if (part.state.status !== "completed" && part.state.status !== "error") return false
+  return JSON.stringify(part.state.input ?? null).includes("action.ts")
+}
+
+function tsToolError(message: Record<string, Schema.Json>) {
+  if (message.type !== "tool_use") return false
+  const part = message.part
+  return BlackboxTape.isObject(part) && BlackboxTape.isObject(part.state) && part.state.status === "error"
+}
+
+function tsPermissionDenied(parts: Array<Record<string, Schema.Json>>, stderr: string) {
+  const denied = (value: unknown) => {
+    if (typeof value !== "string") return false
+    return /permission denied|denied by|rejected by the user|denied/i.test(value)
+  }
+  return parts.some((message) => {
+    const part = message.part
+    if (!BlackboxTape.isObject(part) || !BlackboxTape.isObject(part.state)) return false
+    return denied(part.state.error)
+  }) || denied(stderr)
+}
+
+function interactionAttempt(interaction: BlackboxTape.Interaction): BaselineAttempt {
+  const usage = interaction.frames
+    .flatMap((frame) => {
+      if (!BlackboxTape.isObject(frame.value)) return []
+      const record = frame.value
+      if (record.type !== "finish" && record.type !== "step-finish") return []
+      return BlackboxTape.isObject(record.usage) ? [record.usage] : []
+    })
+    .at(-1)
+  if (!usage)
+    return {
+      inputTokens: null,
+      outputTokens: null,
+      cacheReadTokens: null,
+      cacheWriteTokens: null,
+      reasoningTokens: null,
+      cost: null,
+    }
+  return {
+    inputTokens: numberOrNull(usage.inputTokens),
+    outputTokens: numberOrNull(usage.outputTokens),
+    cacheReadTokens: numberOrNull(usage.cacheReadInputTokens),
+    cacheWriteTokens: numberOrNull(usage.cacheWriteInputTokens),
+    reasoningTokens: numberOrNull(usage.reasoningTokens),
+    cost: null,
+  }
+}
+
+function tsProfile(interactions: ReadonlyArray<BlackboxTape.Interaction>) {
+  const requests = interactions
+    .filter((interaction) => interaction.lane === "llm")
+    .flatMap((interaction) => (BlackboxTape.isObject(interaction.request) ? [interaction.request] : []))
+  if (requests.length === 0) return null
+  const normalized = requests.map((request) => {
+    if (!BlackboxTape.isObject(request.model) || typeof request.model.id !== "string") return null
+    const execution = BlackboxTape.isObject(request.execution) ? request.execution : {}
+    return normalizeProfile({
+      model: request.model.id,
+      modelParametersHash: fingerprint({
+        protocol: "openai-responses",
+        parameters: {
+          generation: request.generation ?? null,
+          providerOptions: request.providerOptions ?? null,
+          responseFormat: request.responseFormat ?? null,
+          cache: request.cache ?? null,
+          toolChoice: request.toolChoice ?? null,
+        },
+      }),
+      agentManifestHash: execution.agentManifestHash ?? null,
+      permissionHash: execution.permissionHash ?? null,
+      toolSurfaceHash: fingerprint({
+        protocol: "openai-responses",
+        present: "tools" in request,
+        tools: request.tools ?? null,
+      }),
+    })
+  })
+  if (normalized.some((item) => item === null)) return null
+  const first = normalized[0]!
+  if (!normalized.every((item) => sameProfile(item!, first))) return null
+  return { profile: first, receipts: requests.length }
+}
+
+function tsPhases(
+  parts: Array<Record<string, Schema.Json>>,
+  exitAtMs: number,
+  verifiedAtMs: number,
+): BaselinePhase[] {
+  const observed = parts.flatMap((message) => {
+    if (typeof message.timestamp !== "number") return []
+    const part = message.part
+    const phase =
+      message.type === "step_start"
+        ? "step-start"
+        : BlackboxTape.isObject(part) && part.type === "tool"
+          ? "tool-part"
+          : "first-output"
+    return [{ phase, atMs: message.timestamp, clock: "observed" as const }]
+  })
+  return [
+    ...observed,
+    { phase: "exit", atMs: exitAtMs, clock: "observed" },
+    { phase: "verified", atMs: verifiedAtMs, clock: "observed" },
+  ]
+}

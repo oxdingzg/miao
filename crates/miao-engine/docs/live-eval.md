@@ -67,11 +67,43 @@ completed effects produce an observable failing artifact instead of being hidden
 by an idempotent overwrite.
 
 Artifact success is not an execution or quality verdict. The verifier always
-returns `executionVerdict: "unverified"`; actual durable backend receipts,
-terminal outcome, answer checks, fixed model/agent/permission parameters,
-all-attempt usage, and wall-clock samples are still required by the comparison
-runner. In particular, unchanged protected files alone do not prove a permission
-denial, and an audit marker alone does not prove stream recovery.
+returns `executionVerdict: "unverified"`; the comparison runner supplies the
+missing evidence: durable receipts, the terminal outcome, answer checks, the
+effective model/agent/permission/tool-surface fingerprints, every provider
+attempt's usage, and wall-clock phase samples. In particular, unchanged
+protected files alone do not prove a permission denial, and an audit marker
+alone does not prove stream recovery: those verdicts require the engine's
+`permission_denied`/`provider.interrupted` events or the TypeScript blackbox's
+cancelled provider interaction.
+
+## Comparison runner
+
+`packages/miao/src/engine/baseline-run.ts` executes one frozen task against one
+engine and returns a report sample bound to its evidence. The Rust path drives
+`miao-engine serve` over stdio, requires the policy to deny writes under
+`protected/`, and reads per-attempt usage, provider-request profiles, receipts,
+and recording-time phases from durable events. The TypeScript path runs the
+checkout's own `miao run --format json` headlessly with an isolated database,
+config, and blackbox recording; usage, profiles, and interruption evidence come
+from that recording, while receipts come from the settled part stream.
+
+The interrupted-turn task cancels through the host once the action command has
+settled and a new provider stream starts, so the receipt proves host-initiated
+cancellation rather than a scripted outcome. Runs without a terminal outcome, a
+single effective profile, or at least one provider attempt are rejected with an
+explicit reason instead of being reported as failed samples.
+
+Sweeps run from `packages/miao` (one engine per invocation):
+
+```sh
+bun src/engine/baseline-sweep-cli.ts --engine rust --out /tmp/baseline \
+  --binary ~/.local/bin/miao-engine --revision <40-hex source revision> \
+  --model openai/gpt-6.1-sol --provider subscription-responses \
+  --credential-db ~/.local/share/miao/miao.db --credential-id <id> \
+  --credential-integration openai --repetitions 8
+
+bun src/engine/baseline-phases-cli.ts /tmp/baseline/evidence
+```
 
 The oracle calibration tests run from `packages/miao`:
 
