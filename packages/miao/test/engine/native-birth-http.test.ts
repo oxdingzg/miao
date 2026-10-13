@@ -39,7 +39,7 @@ if (binary)
                 url: "http://127.0.0.1:1",
                 settings: { apiKey: "fixture-only" },
               },
-              models: { fixture: { name: "Fixture" } },
+              models: { fixture: { name: "Fixture" }, other: { name: "Other" } },
             },
           },
           formatter: false,
@@ -74,6 +74,22 @@ if (binary)
       const get = await fetch(url + "/api/session/" + body.id, { headers })
       expect(get.status).toBe(200)
       expect(await get.json()).toEqual(created)
+      const shell = await fetch(url + "/api/session/" + body.id + "/shell", {
+        method: "POST",
+        headers,
+        body: JSON.stringify({ command: "echo native-ownership > escaped.txt", resume: false }),
+      })
+      expect(shell.status).toBe(409)
+      expect(await shell.text()).toContain("session.shell")
+      expect(await Bun.file(path.join(directory, "escaped.txt")).exists()).toBe(false)
+      const model = await fetch(url + "/api/session/" + body.id + "/model", {
+        method: "POST",
+        headers,
+        body: JSON.stringify({ model: { providerID: "fixture", id: "other" } }),
+      })
+      expect(model.status).toBe(409)
+      expect(await model.text()).toContain("session.switchModel")
+
       // Exact retry adopts the original engine identity, including title/time.
       const retry = await fetch(url + "/api/session", { method: "POST", headers, body: JSON.stringify(body) })
       expect(retry.status).toBe(200)
