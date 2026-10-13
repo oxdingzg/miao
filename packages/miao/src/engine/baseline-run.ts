@@ -75,6 +75,8 @@ export interface BaselineRustInput {
   policyFile?: string
   /** Provider base URL override; the subscription default applies otherwise. */
   endpoint?: string
+  /** Evaluation ablation control; `false` disables stale-edit recovery. */
+  editRecovery?: boolean
   timeoutMs?: number
   env?: Record<string, string | undefined>
   binarySha256?: string
@@ -126,6 +128,7 @@ export async function runBaselineRust(input: BaselineRustInput): Promise<Baselin
     credentialIntegration: input.credentialIntegration,
     policyFile: input.policyFile ?? (await writeBaselinePolicy(input.root)),
     endpoint: proxy?.endpoint ?? input.endpoint,
+    editRecovery: input.editRecovery,
     env: input.env,
     session,
     prompt: task.prompt,
