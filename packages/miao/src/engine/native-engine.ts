@@ -38,7 +38,7 @@ import { replayJournal } from "./journal"
  * keep the explicit refusal. The model identity is required from the operator
  * because the engine cannot invent provider credentials or catalog facts.
  */
-const options = (
+export const nativeEngineOptions = (
   environment: Record<string, string | undefined> = process.env,
 ): Omit<EngineOptions, "db" | "workspace"> | undefined => {
   const binary = environment.MIAO_ENGINE_BIN
@@ -48,6 +48,11 @@ const options = (
     binary,
     model: environment.MIAO_ENGINE_MODEL ?? "",
     provider: environment.MIAO_ENGINE_PROVIDER,
+    endpoint: environment.MIAO_ENGINE_ENDPOINT,
+    // A writable workspace is an explicit operator policy, never a blanket
+    // change to the engine's read-only default or permission decisions.
+    policyFile: environment.MIAO_ENGINE_POLICY,
+
     contextLimits: limits ? JSON.parse(limits) : undefined,
     // ADR-09: the product's credential database is the explicit channel; the
     // engine only reads it. Named provider keys are the single-key fallback.
@@ -58,7 +63,7 @@ const options = (
 }
 
 /** Whether the composition root should build the native transport at all. */
-export const configured = (): boolean => options() !== undefined
+export const configured = (): boolean => nativeEngineOptions() !== undefined
 
 const refusal = (sessionID: string, error: unknown) =>
   new ConflictError({
@@ -121,6 +126,14 @@ export const fromOwners = (owners: Owners): NativeEngine.Interface => {
       read<Readonly<Record<string, unknown>>>(input, (connection) =>
         connection.client.request("snapshot", { session_id: input.sessionID }),
       ).pipe(Effect.map((value) => (typeof value === "object" && value !== null ? value : {}))),
+    interruptIf: (input) =>
+      read(input, async (connection) => {
+        const result = await connection.client.request("cancel_if", {
+          session_id: input.sessionID,
+          run_id: input.executionID,
+        })
+        return Schema.decodeUnknownSync(Schema.Struct({ accepted: Schema.Boolean }))(result).accepted
+      }),
     interrupt: (input) =>
       read(input, (connection) => connection.client.request("cancel", { session_id: input.sessionID })).pipe(
         Effect.asVoid,
@@ -208,6 +221,8 @@ export const fromOwners = (owners: Owners): NativeEngine.Interface => {
           session_id: input.sessionID,
           rejection: { question_id: binding.question_id, input_hash: binding.input_hash },
         })
+
+
       }).pipe(Effect.asVoid),
     sessions: (input) =>
       // `sessions` is a unit command: it takes no params.
@@ -242,7 +257,7 @@ export const fromOwners = (owners: Owners): NativeEngine.Interface => {
 const layer = Layer.effect(
   NativeEngine.Service,
   Effect.gen(function* () {
-    const configuration = options()
+    const configuration = nativeEngineOptions()
     if (!configuration) return yield* Effect.die("NativeEngine layer built without MIAO_ENGINE_BIN")
     const owners = yield* makeEngineOwners(configuration)
     return fromOwners(owners)

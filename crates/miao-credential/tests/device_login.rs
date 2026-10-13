@@ -124,7 +124,7 @@ async fn device_flow_stays_in_daemon_and_persists_account_metadata() {
 async fn second_daemon_cannot_own_the_same_database_through_another_socket() {
     let dir = tempfile::tempdir().unwrap();
     let db = dir.path().join("db");
-    Connection::open(&db).unwrap();
+    Connection::open(&db).unwrap().execute("CREATE TABLE credential(id TEXT PRIMARY KEY,integration_id TEXT,label TEXT,value TEXT)", []).unwrap();
     let first = Arc::new(Daemon::new(db.clone(), profile::openai(), "test".into()));
     let a = tokio::net::UnixListener::bind(dir.path().join("a")).unwrap();
     let task = tokio::spawn(first.serve(a));

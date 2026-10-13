@@ -15,10 +15,12 @@ use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::Arc;
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
-use tokio::net::{UnixListener, UnixStream};
+#[cfg(unix)]
+use tokio::net::UnixListener;
 use tokio::sync::Mutex;
 
 struct Login {
+    profile: profile::Profile,
     pending: crate::login::Pending,
     id: String,
     label: String,
@@ -26,23 +28,30 @@ struct Login {
 
 pub struct Daemon {
     db: PathBuf,
-    profile: profile::Profile,
+    profiles: HashMap<String, profile::Profile>,
     margin_ms: u64,
     user_agent: String,
     row_locks: Mutex<HashMap<String, Arc<Mutex<()>>>>,
     logins: Mutex<HashMap<String, Login>>,
+    socket: Mutex<Option<PathBuf>>,
 }
 
 impl Daemon {
     pub fn new(db: PathBuf, profile: profile::Profile, user_agent: String) -> Self {
         Self {
             db,
-            profile,
+            profiles: HashMap::from([(profile.integration.clone(), profile)]),
             margin_ms: REFRESH_MARGIN_MS,
             user_agent,
             row_locks: Mutex::new(HashMap::new()),
             logins: Mutex::new(HashMap::new()),
+            socket: Mutex::new(None),
         }
+    }
+
+    pub fn with_profile(mut self, profile: profile::Profile) -> Self {
+        self.profiles.insert(profile.integration.clone(), profile);
+        self
     }
 
     /// The CLI exposes the margin so a deployment can trade token lifetime
@@ -56,6 +65,7 @@ impl Daemon {
     /// Serves until the listener fails. Each connection is handled to
     /// completion before the next is accepted: the protocol is one
     /// request/one reply per line, and clients are local trusted processes.
+    #[cfg(unix)]
     pub async fn serve(self: Arc<Self>, listener: UnixListener) -> std::io::Result<()> {
         let _lease = self.lease()?;
         self.run(listener).await
@@ -63,6 +73,7 @@ impl Daemon {
 
     /// Acquire ownership before removing a stale socket: another daemon must
     /// never be disconnected while it still owns the database.
+    #[cfg(unix)]
     pub async fn bind_and_serve(self: Arc<Self>, socket: &std::path::Path) -> std::io::Result<()> {
         use std::os::unix::fs::{FileTypeExt, PermissionsExt};
         let _lease = self.lease()?;
@@ -79,22 +90,29 @@ impl Daemon {
 
     fn lease(&self) -> std::io::Result<std::fs::File> {
         use fs2::FileExt;
+        #[cfg(unix)]
         use std::os::unix::fs::OpenOptionsExt;
         let path = std::fs::canonicalize(&self.db)?;
         let mut lock = path.into_os_string();
         lock.push(".credential-owner.lock");
-        let file = std::fs::OpenOptions::new()
-            .read(true)
-            .write(true)
-            .create(true)
-            .truncate(false)
-            .mode(0o600)
-            .open(lock)?;
+        let mut options = std::fs::OpenOptions::new();
+        options.read(true).write(true).create(true).truncate(false);
+        #[cfg(unix)]
+        options.mode(0o600);
+        let file = options.open(lock)?;
         file.try_lock_exclusive()?;
         Ok(file)
     }
 
+    #[cfg(unix)]
     async fn run(self: Arc<Self>, listener: UnixListener) -> std::io::Result<()> {
+        store::ensure_ownership(&self.db).map_err(std::io::Error::other)?;
+        let path = listener
+            .local_addr()?
+            .as_pathname()
+            .ok_or_else(|| std::io::Error::other("unnamed credential socket"))?
+            .to_path_buf();
+        *self.socket.lock().await = Some(std::fs::canonicalize(path)?);
         loop {
             let (stream, _address) = listener.accept().await?;
             let daemon = self.clone();
@@ -107,8 +125,30 @@ impl Daemon {
         }
     }
 
-    async fn handle_connection(&self, stream: UnixStream) -> std::io::Result<()> {
-        let (reader, mut writer) = stream.into_split();
+    #[cfg(windows)]
+    pub async fn bind_and_serve(self: Arc<Self>, name: &std::path::Path) -> std::io::Result<()> {
+        let _lease = self.lease()?;
+        store::ensure_ownership(&self.db).map_err(std::io::Error::other)?;
+        *self.socket.lock().await = Some(name.to_path_buf());
+        let mut server = crate::windows_pipe::create(name, true)?;
+        loop {
+            server.connect().await?;
+            // Create the waiting instance before serving the connected one,
+            // so another client does not have to wait for this request to end.
+            let next = crate::windows_pipe::create(name, false)?;
+            let connected = std::mem::replace(&mut server, next);
+            let daemon = self.clone();
+            tokio::spawn(async move {
+                let _ = daemon.handle_connection(connected).await;
+            });
+        }
+    }
+
+    async fn handle_connection<S>(&self, stream: S) -> std::io::Result<()>
+    where
+        S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Unpin + Send,
+    {
+        let (reader, mut writer) = tokio::io::split(stream);
         let mut lines = BufReader::new(reader).lines();
         while let Some(line) = lines.next_line().await? {
             if line.trim().is_empty() {
@@ -146,10 +186,24 @@ impl Daemon {
                 reply(frame.id, payload)
             }
             Request::LoginStart {
+                integration,
                 credential_id,
                 label,
-            } => reply(frame.id, self.login_start(credential_id, label).await),
+            } => reply(
+                frame.id,
+                self.login_start(credential_id, label, integration).await,
+            ),
             Request::LoginPoll { handle } => reply(frame.id, self.login_poll(&handle).await),
+            Request::Adopt {
+                credential_id,
+                integration,
+            } => {
+                let result = self
+                    .adopt(&credential_id, &integration)
+                    .await
+                    .map(|()| serde_json::json!({"status":"owned", "credential_id":credential_id}));
+                reply(frame.id, result)
+            }
             Request::Discover => {
                 let payload = store::discover(&self.db).map(|rows| {
                     serde_json::to_value(rows).unwrap_or_else(|_| serde_json::json!([]))
@@ -159,7 +213,38 @@ impl Daemon {
         }
     }
 
-    async fn login_start(&self, id: String, label: String) -> Result<Value, Error> {
+    async fn adopt(&self, id: &str, integration: &str) -> Result<(), Error> {
+        if !self.profiles.contains_key(integration) {
+            return Err(Error::Integration);
+        }
+        let lock = {
+            let mut locks = self.row_locks.lock().await;
+            locks
+                .entry(id.to_owned())
+                .or_insert_with(|| Arc::new(Mutex::new(())))
+                .clone()
+        };
+        let _guard = lock.lock().await;
+        let socket = self.socket.lock().await.clone().ok_or(Error::Io)?;
+        store::claim(
+            &self.db,
+            id,
+            integration,
+            socket.to_str().ok_or(Error::Invalid)?,
+        )
+    }
+
+    async fn login_start(
+        &self,
+        id: String,
+        label: String,
+        integration: String,
+    ) -> Result<Value, Error> {
+        let profile = self
+            .profiles
+            .get(&integration)
+            .ok_or(Error::Integration)?
+            .clone();
         if id.is_empty() || id.len() > 256 || label.len() > 1024 {
             return Err(Error::Invalid);
         }
@@ -170,12 +255,13 @@ impl Daemon {
         if pending.len() >= 32 {
             return Err(Error::LoginRejected);
         }
-        let (state, mut public) = crate::login::begin(&self.profile, &self.user_agent).await?;
+        let (state, mut public) = crate::login::begin(&profile, &self.user_agent).await?;
         let handle = uuid::Uuid::new_v4().to_string();
         public["handle"] = handle.clone().into();
         pending.insert(
             handle,
             Login {
+                profile,
                 pending: state,
                 id,
                 label,
@@ -187,18 +273,20 @@ impl Daemon {
     async fn login_poll(&self, handle: &str) -> Result<Value, Error> {
         let mut pending = self.logins.lock().await;
         let login = pending.get_mut(handle).ok_or(Error::LoginRejected)?;
-        match crate::login::poll(&mut login.pending, &self.profile, &self.user_agent).await {
+        match crate::login::poll(&mut login.pending, &login.profile, &self.user_agent).await {
             Ok(None) => Ok(serde_json::json!({"status":"pending"})),
             Ok(Some(value)) => {
                 // The code can only be exchanged once. Remove the pending
                 // handle even if insertion fails; never replay that code.
                 let login = pending.remove(handle).ok_or(Error::LoginRejected)?;
+                let socket = self.socket.lock().await.clone().ok_or(Error::Io)?;
                 store::insert_login(
                     &self.db,
                     &login.id,
-                    &self.profile.integration,
+                    &login.profile.integration,
                     &login.label,
                     &value,
+                    socket.to_str().ok_or(Error::Invalid)?,
                 )?;
                 Ok(serde_json::json!({"status":"complete", "credential_id":login.id}))
             }
@@ -217,7 +305,7 @@ impl Daemon {
         let value = store::load(&self.db, credential_id, integration)?;
         let expires = value.get("expires").and_then(Value::as_u64);
         let due = matches!(expires, Some(expires) if expires <= now_ms() + self.margin_ms);
-        if !due {
+        if !due || (integration == "github-copilot" && expires == Some(0)) {
             return Ok(value);
         }
         let refresh_token = value.get("refresh").and_then(Value::as_str);
@@ -251,8 +339,12 @@ impl Daemon {
         integration: &str,
         value: Value,
     ) -> Result<Value, Error> {
-        if integration != self.profile.integration {
+        if !self.profiles.contains_key(integration) {
             return Err(Error::Integration);
+        }
+        let socket = self.socket.lock().await.clone().ok_or(Error::Io)?;
+        if value["metadata"]["miaoCredentialSocket"].as_str() != socket.to_str() {
+            return Err(Error::NotRefreshable);
         }
         let refresh_token = value
             .get("refresh")
@@ -282,7 +374,15 @@ impl Daemon {
                 return Ok(current);
             }
         }
-        let tokens = profile::refresh(&self.profile, &refresh_token, &self.user_agent).await?;
+        let profile = self.profiles.get(integration).ok_or(Error::Integration)?;
+        if integration == "opencode"
+            && value["metadata"]["server"]
+                .as_str()
+                .is_some_and(|server| server != profile.issuer)
+        {
+            return Err(Error::Integration);
+        }
+        let tokens = profile::refresh(profile, &refresh_token, &self.user_agent).await?;
         let mut next = current;
         profile::apply_tokens(&mut next, &tokens, now_ms());
         store::store_refreshed(&self.db, credential_id, integration, next.clone())?;

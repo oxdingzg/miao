@@ -5,7 +5,7 @@ use miao_engine::{
     provider::{Provider, ProviderError, Reply},
     runtime::Runtime,
     store::Store,
-    tools::Tools,
+    tools::{ToolError, Tools},
     worker::Registry,
 };
 use serde_json::{json, Value};
@@ -57,6 +57,10 @@ async fn fake_worker(stream: DuplexStream) {
             }
             "tool.call" => {
                 let text = message["params"]["input"]["text"].clone();
+                if text == "fail" {
+                    send(&mut write, &json!({"id":id,"error":{"code":"fixture_error"}})).await;
+                    continue;
+                }
                 send(&mut write, &json!({"id":id,"result":{"result":{"echoed":text}}})).await
             }
             _ => {}
@@ -103,6 +107,27 @@ async fn worker_lists_and_calls_a_tool() {
         .call("worker__echo", json!({}), CancellationToken::new())
         .await
         .is_err());
+    assert!(registry
+        .call(
+            "worker__echo",
+            json!({"text":"fail"}),
+            CancellationToken::new()
+        )
+        .await
+        .is_err());
+    assert!(
+        !registry.definitions().is_empty(),
+        "a valid tool error is not a transport failure"
+    );
+    let next = registry
+        .call(
+            "worker__echo",
+            json!({"text":"again"}),
+            CancellationToken::new(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(next["echoed"], "again");
 }
 
 struct Caller;
@@ -190,4 +215,253 @@ async fn worker_call_passes_runtime_authorization() {
     .unwrap();
     runtime.shutdown().await;
     assert_eq!(result["echoed"], "hi", "{result}");
+}
+
+#[derive(Clone, Copy)]
+enum Fault {
+    NoReads,
+    Oversized,
+    Truncated,
+}
+
+async fn faulty_registry(
+    workspace: &std::path::Path,
+    fault: Fault,
+) -> (Arc<Registry>, tokio::task::JoinHandle<()>) {
+    let (client, server) = tokio::io::duplex(128);
+    let task = tokio::spawn(async move {
+        let (read, mut write) = tokio::io::split(server);
+        let mut read = BufReader::new(read);
+        let hello = recv(&mut read).await.unwrap();
+        send(&mut write, &json!({"id":hello["id"],"result":{"protocol":1,"operations":["tool.list","tool.call","shutdown"]}})).await;
+        let list = recv(&mut read).await.unwrap();
+        send(&mut write, &json!({"id":list["id"],"result":{"tools":[{"name":"echo","description":"fixture","input_schema":{"type":"object","properties":{"text":{"type":"string"}},"required":["text"],"additionalProperties":false}}]}})).await;
+        match fault {
+            Fault::NoReads => {
+                // Keep the transport open but stop reading. A sufficiently large
+                // call blocks write_all; cancellation must cover that phase.
+                std::future::pending::<()>().await;
+                drop((read, write));
+            }
+            Fault::Oversized => {
+                recv(&mut read).await.unwrap();
+                // No newline: an unbounded read_line would wait and accumulate
+                // past the advertised limit rather than reject immediately.
+                let _ = write.write_all(&vec![b'x'; 256 * 1024 + 1]).await;
+                std::future::pending::<()>().await;
+                drop((read, write));
+            }
+            Fault::Truncated => {
+                recv(&mut read).await.unwrap();
+                write.write_all(b"{\"id\":3,\"result\":").await.unwrap();
+            }
+        }
+    });
+    let (read, write) = tokio::io::split(client);
+    let registry = Arc::new(Registry::connect_io(read, write, workspace).await.unwrap());
+    (registry, task)
+}
+
+#[tokio::test]
+async fn oversized_unterminated_frame_is_rejected_before_allocation_grows() {
+    let workspace = tempfile::tempdir().unwrap();
+    let (registry, peer) = faulty_registry(workspace.path(), Fault::Oversized).await;
+    let result = tokio::time::timeout(
+        std::time::Duration::from_secs(1),
+        registry.call(
+            "worker__echo",
+            json!({"text":"hi"}),
+            CancellationToken::new(),
+        ),
+    )
+    .await;
+    peer.abort();
+    assert!(result
+        .expect("oversized frame must fail without waiting for newline")
+        .is_err());
+    assert!(
+        registry.definitions().is_empty(),
+        "failed worker remains advertised"
+    );
+}
+
+#[tokio::test]
+async fn cancellation_interrupts_a_call_blocked_on_outbound_write() {
+    let workspace = tempfile::tempdir().unwrap();
+    let (registry, peer) = faulty_registry(workspace.path(), Fault::NoReads).await;
+    let cancel = CancellationToken::new();
+    let call = registry.call(
+        "worker__echo",
+        json!({"text":"x".repeat(128 * 1024)}),
+        cancel.clone(),
+    );
+    tokio::pin!(call);
+    tokio::select! {
+        result = &mut call => panic!("call should be blocked, not {result:?}"),
+        _ = tokio::time::sleep(std::time::Duration::from_millis(20)) => {},
+    }
+    cancel.cancel();
+    let result = tokio::time::timeout(std::time::Duration::from_secs(1), &mut call).await;
+    peer.abort();
+    assert!(matches!(
+        result.expect("blocked write ignored cancellation"),
+        Err(ToolError::Interrupted)
+    ));
+    assert!(registry.definitions().is_empty());
+}
+
+#[tokio::test(start_paused = true)]
+async fn timeout_degrades_worker_without_leaving_a_reusable_partial_transport() {
+    let workspace = tempfile::tempdir().unwrap();
+    let (registry, peer) = faulty_registry(workspace.path(), Fault::NoReads).await;
+    let result = registry
+        .call(
+            "worker__echo",
+            json!({"text":"hi"}),
+            CancellationToken::new(),
+        )
+        .await;
+    peer.abort();
+    assert!(result.is_err());
+    assert!(registry.definitions().is_empty());
+    assert!(registry.resource("worker__echo").is_none());
+    assert!(registry
+        .call(
+            "worker__echo",
+            json!({"text":"hi"}),
+            CancellationToken::new()
+        )
+        .await
+        .is_err());
+}
+
+#[tokio::test]
+async fn truncated_frame_degrades_the_worker() {
+    let workspace = tempfile::tempdir().unwrap();
+    let (registry, peer) = faulty_registry(workspace.path(), Fault::Truncated).await;
+    assert!(registry
+        .call(
+            "worker__echo",
+            json!({"text":"hi"}),
+            CancellationToken::new()
+        )
+        .await
+        .is_err());
+    peer.await.unwrap();
+    assert!(registry.definitions().is_empty());
+}
+
+#[cfg(unix)]
+#[tokio::test]
+async fn cancelling_a_stalled_spawned_worker_reaps_its_process() {
+    let workspace = tempfile::tempdir().unwrap();
+    let hello =
+        json!({"id":1,"result":{"protocol":1,"operations":["tool.list","tool.call","shutdown"]}});
+    let catalog = json!({"id":2,"result":{"tools":[{"name":"echo","description":"fixture","input_schema":{"type":"object","properties":{"text":{"type":"string"}},"required":["text"],"additionalProperties":false}}]}});
+    let script = format!("printf '%s\n' \"$$\" > pid.txt; read hello; printf '%s\n' '{}'; read list; printf '%s\n' '{}'; exec sleep 60", hello, catalog);
+    let registry = Registry::connect(
+        miao_engine::worker::Config {
+            argv: vec!["sh".into(), "-c".into(), script],
+            env: Default::default(),
+        },
+        workspace.path(),
+    )
+    .await
+    .unwrap();
+    let pid: i32 = std::fs::read_to_string(workspace.path().join("pid.txt"))
+        .unwrap()
+        .trim()
+        .parse()
+        .unwrap();
+    let cancel = CancellationToken::new();
+    let call = registry.call(
+        "worker__echo",
+        json!({"text":"x".repeat(128*1024)}),
+        cancel.clone(),
+    );
+    tokio::pin!(call);
+    tokio::select! {
+        result = &mut call => panic!("call should block, not {result:?}"),
+        _ = tokio::time::sleep(std::time::Duration::from_millis(20)) => {},
+    }
+    cancel.cancel();
+    let result = tokio::time::timeout(std::time::Duration::from_secs(3), &mut call)
+        .await
+        .expect("spawned worker did not stop");
+    assert!(matches!(result, Err(ToolError::Interrupted)));
+    assert_eq!(
+        unsafe { libc::kill(pid, 0) },
+        -1,
+        "worker process remains alive"
+    );
+    assert_eq!(
+        std::io::Error::last_os_error().raw_os_error(),
+        Some(libc::ESRCH)
+    );
+    assert!(registry.definitions().is_empty());
+}
+
+#[tokio::test]
+async fn missing_optional_worker_does_not_prevent_engine_admission() {
+    use std::process::Stdio;
+    use tokio::io::AsyncReadExt;
+    let dir = tempfile::tempdir().unwrap();
+    let workspace = dir.path().join("workspace");
+    std::fs::create_dir(&workspace).unwrap();
+    let config = dir.path().join("worker.json");
+    std::fs::write(
+        &config,
+        serde_json::to_vec(&json!({"argv":[dir.path().join("missing-worker").to_str().unwrap()]}))
+            .unwrap(),
+    )
+    .unwrap();
+    let mut child = tokio::process::Command::new(env!("CARGO_BIN_EXE_miao-engine"))
+        .arg("serve")
+        .arg("--db")
+        .arg(dir.path().join("engine.db"))
+        .arg("--workspace")
+        .arg(&workspace)
+        .args(["--model", "fixture", "--provider", "openai-responses"])
+        .arg("--worker-config")
+        .arg(config)
+        .env("OPENAI_API_KEY", "fixture")
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .kill_on_drop(true)
+        .spawn()
+        .unwrap();
+    let mut input = child.stdin.take().unwrap();
+    let mut output = BufReader::new(child.stdout.take().unwrap()).lines();
+    let lines = format!(
+        "{}\n{}\n",
+        json!({"id":1,"method":"admit","params":{"input":{"session_id":"s","input_id":"one","prompt":"admit only"},"resume":false}}),
+        json!({"id":2,"method":"shutdown"})
+    );
+    input.write_all(lines.as_bytes()).await.unwrap();
+    drop(input);
+    tokio::time::timeout(std::time::Duration::from_secs(5), async {
+        let reply: Value = serde_json::from_str(
+            &output
+                .next_line()
+                .await
+                .unwrap()
+                .expect("engine exited before admission"),
+        )
+        .unwrap();
+        assert_eq!(reply["id"], 1, "{reply}");
+        assert_eq!(reply["result"]["pending"], true, "{reply}");
+        assert!(child.wait().await.unwrap().success());
+        let mut errors = String::new();
+        child
+            .stderr
+            .take()
+            .unwrap()
+            .read_to_string(&mut errors)
+            .await
+            .unwrap();
+        assert!(errors.contains("extension worker unavailable"), "{errors}");
+    })
+    .await
+    .unwrap();
 }

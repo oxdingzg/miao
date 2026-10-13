@@ -198,7 +198,10 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
     }
     let source = if let Some(socket) = options.get("--credential-socket") {
         Source::Daemon {
+            #[cfg(unix)]
             socket: tokio::fs::canonicalize(socket).await?,
+            #[cfg(windows)]
+            socket: std::path::PathBuf::from(socket),
             id: options
                 .get("--credential-id")
                 .ok_or("--credential-id is required")?
@@ -359,12 +362,11 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
         }
         let config = serde_json::from_slice::<miao_engine::worker::Config>(&bytes)
             .map_err(|_| "invalid Worker host config")?;
-        let registry =
-            miao_engine::worker::Registry::connect(config, std::path::Path::new(tools.location()))
-                .await?;
-        tools = tools
-            .with_protected_resource(&path)
-            .with_worker(Arc::new(registry));
+        tools = tools.with_protected_resource(&path);
+        match miao_engine::worker::Registry::connect(config, std::path::Path::new(tools.location())).await {
+            Ok(registry) => tools = tools.with_worker(Arc::new(registry)),
+            Err(error) => eprintln!("miao-engine extension worker unavailable: {error}; built-in tools remain available"),
+        }
     }
     if let Some(path) = options.get("--hooks-config") {
         let path = tokio::fs::canonicalize(path).await?;

@@ -520,6 +520,7 @@ dependencies = [
  "thiserror",
  "tokio",
  "uuid",
+ "windows-sys 0.52.0",
 ]
 
 [[package]]

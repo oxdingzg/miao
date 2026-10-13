@@ -206,6 +206,10 @@ pub enum Command {
     Cancel {
         session_id: String,
     },
+    CancelIf {
+        session_id: String,
+        run_id: String,
+    },
     Compact {
         session_id: String,
         compaction_id: String,
