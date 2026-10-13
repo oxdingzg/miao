@@ -432,6 +432,20 @@ async fn send_all(progress: &mpsc::Sender<Value>, notices: &[Value]) -> Result<(
     Ok(())
 }
 
+/// The provider's error body is the only diagnostic for an opaque HTTP status.
+/// Keep it bounded, and never let a slow or endless body block the failure.
+async fn failure_detail(response: &mut reqwest::Response) -> Option<String> {
+    let mut detail = Vec::new();
+    while detail.len() < 1024 {
+        match tokio::time::timeout(std::time::Duration::from_secs(2), response.chunk()).await {
+            Ok(Ok(Some(chunk))) => detail.extend_from_slice(&chunk),
+            _ => break,
+        }
+    }
+    detail.truncate(1024);
+    (!detail.is_empty()).then(|| String::from_utf8_lossy(&detail).into_owned())
+}
+
 pub(crate) async fn request_with_retry(
     protocol: &str,
     client: &reqwest::Client,
@@ -469,11 +483,27 @@ pub(crate) async fn request_with_retry(
             Err(ProviderError::Interrupted) => (None, "interrupted_unknown"),
             Err(_) => (None, "transport_unknown"),
         };
-        crate::runtime_profile::result(request_seq, status, outcome).await?;
         let error = match response {
-            Ok(response) if response.status().is_success() => return Ok(response),
-            Ok(response) => ProviderError::Http(response.status().as_u16()),
-            Err(error) => error,
+            Ok(response) if response.status().is_success() => {
+                crate::runtime_profile::result(request_seq, status, outcome, None).await?;
+                return Ok(response);
+            }
+            Ok(mut response) => {
+                let status = response.status().as_u16();
+                let detail = failure_detail(&mut response).await;
+                crate::runtime_profile::result(
+                    request_seq,
+                    Some(status),
+                    outcome,
+                    detail.as_deref(),
+                )
+                .await?;
+                ProviderError::Http(status)
+            }
+            Err(error) => {
+                crate::runtime_profile::result(request_seq, status, outcome, None).await?;
+                error
+            }
         };
         if !matches!(
             error,
