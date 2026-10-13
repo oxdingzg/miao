@@ -66,6 +66,15 @@ jobs:
       - name: Clippy
         run: cargo clippy --all-targets -- -D warnings
 
+      - name: Credential daemon format
+        run: cargo fmt --manifest-path ../miao-credential/Cargo.toml --check
+
+      - name: Credential daemon clippy
+        run: cargo clippy --manifest-path ../miao-credential/Cargo.toml --all-targets -- -D warnings
+
+      - name: Credential daemon tests
+        run: cargo test --manifest-path ../miao-credential/Cargo.toml --locked
+
       - name: Test
         run: cargo test
 

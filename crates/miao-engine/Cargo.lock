@@ -1139,6 +1139,21 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "cf8baf1c55e62ffcace7a9f06f4bd9cd3f0c4beb022d3b367256b91b87513d98"
 
 [[package]]
+name = "miao-credential"
+version = "0.0.1"
+dependencies = [
+ "base64 0.22.1",
+ "fs2",
+ "reqwest",
+ "rusqlite",
+ "serde",
+ "serde_json",
+ "thiserror",
+ "tokio",
+ "uuid",
+]
+
+[[package]]
 name = "miao-engine"
 version = "0.0.1"
 dependencies = [
@@ -1155,6 +1170,7 @@ dependencies = [
  "globset",
  "jsonschema",
  "libc",
+ "miao-credential",
  "miao-sandbox",
  "percent-encoding",
  "regex",
