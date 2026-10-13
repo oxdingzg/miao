@@ -685,10 +685,10 @@ impl Store {
             let messages=projected(&tx,&parent,seq)?;
             closed_prefix(&messages)?;
             // A fork must not escape the parent's read-only collaboration mode.
-            let (mode,title):(String,String)=tx.query_row("SELECT mode,title FROM engine_session WHERE id=?1",[&parent],|row|Ok((row.get(0)?,row.get(1)?)))?;
+            let mode:String=tx.query_row("SELECT mode FROM engine_session WHERE id=?1",[&parent],|row|row.get(0))?;
             tx.execute(
-                "INSERT INTO engine_session(id,created_at_ms,mode,title) VALUES(?1,?2,?3,?4)",
-                params![target, crate::approval::now_ms() as i64, mode, title],
+                "INSERT INTO engine_session(id,created_at_ms,mode) VALUES(?1,?2,?3)",
+                params![target, crate::approval::now_ms() as i64, mode],
             )?;
             tx.execute("INSERT INTO engine_lineage VALUES(?1,?2,?3)",params![target,parent,seq])?;
             tx.execute("INSERT INTO engine_location SELECT ?1,root FROM engine_location WHERE session_id=?2",params![target,parent])?;

@@ -137,6 +137,9 @@ export const fromOwners = (owners: Owners): NativeEngine.Interface => {
           target_session_id: input.targetSessionID,
           ...(boundary === undefined ? {} : { message_seq: boundary }),
         })
+        // Engine forks start with their own empty title; preserving the source
+        // title is a product choice, not a global change for engine/subagents.
+        await connection.client.request("rename", { session_id: input.targetSessionID, title: snapshot.title })
       }),
     sessions: (input) =>
       // `sessions` is a unit command: it takes no params.
