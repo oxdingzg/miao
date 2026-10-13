@@ -103,7 +103,9 @@ jobs:
           workspaces: crates/miao-engine
 
       - name: Test
-        run: cargo test
+        # SQLite-backed event waits compete for disk on hosted Windows runners.
+        # Serialize these tests rather than relax their event deadlines.
+        run: cargo test -- --test-threads=1
 
   artifacts:
     name: engine artifact (${{ matrix.target }})
