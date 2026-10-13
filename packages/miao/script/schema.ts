@@ -1,6 +1,5 @@
 #!/usr/bin/env bun
 
-import { Config } from "@/config/config"
 import { Config as ConfigV2 } from "@miao/core/config"
 import { ConfigV1 } from "@miao/core/v1/config/config"
 import { TuiConfig } from "@miao/tui/config"
