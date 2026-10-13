@@ -318,6 +318,41 @@ impl Store {
         .await
     }
 
+    /// Initialize identity and location without an inbox row. Retries preserve
+    /// title edits and timestamps; another location cannot adopt the identity.
+    pub async fn initialize(&self, session: &str, title: &str, root: &str) -> Result<Value, Error> {
+        if session.is_empty() || title.len() > 1024 {
+            return Err(Error::Invalid("invalid Session identity or title".into()));
+        }
+        let (session, title, root) = (session.to_owned(), title.to_owned(), root.to_owned());
+        self.call(move |conn| {
+            let tx = conn.transaction()?;
+            let exists: bool = tx.query_row(
+                "SELECT EXISTS(SELECT 1 FROM engine_session WHERE id=?1)",
+                [&session], |row| row.get(0),
+            )?;
+            if exists {
+                let existing: Option<String> = tx.query_row(
+                    "SELECT root FROM engine_location WHERE session_id=?1",
+                    [&session], |row| row.get(0),
+                ).optional()?;
+                if existing.as_deref() != Some(root.as_str()) {
+                    return Err(Error::Conflict);
+                }
+                return Ok(json!({"session_id":session,"duplicate":true}));
+            }
+            let now = crate::approval::now_ms() as i64;
+            tx.execute(
+                "INSERT INTO engine_session(id,next_seq,title,created_at_ms,updated_at_ms) VALUES(?1,0,?2,?3,?3)",
+                params![session,title,now],
+            )?;
+            tx.execute("INSERT INTO engine_location(session_id,root) VALUES(?1,?2)", params![session,root])?;
+            append(&tx, &session, "session.initialized", json!({"title":title,"location":root}))?;
+            tx.commit()?;
+            Ok(json!({"session_id":session,"duplicate":false}))
+        }).await
+    }
+
     /// The Session's collaboration mode. A Session without a row defaults to
     /// Build, matching the schema default.
     pub async fn mode(&self, session: &str) -> Result<CollaborationMode, Error> {

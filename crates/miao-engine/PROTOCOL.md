@@ -130,3 +130,12 @@ provider or the run loop.
 run and cancels that owner's token as one serialized command. It returns
 `accepted: false` for a missing, idle, already-cancelled or changed run. A stale
 run ID cannot cancel the next run; a failed match also preserves pending wakes.
+
+### Idle Session initialization
+
+`initialize` takes `session_id` and `title`. It creates an idle identity in the
+engine database and binds it to the engine workspace, without admitting an input
+or scheduling model execution. `snapshot` and `sessions` immediately see it.
+An exact retry returns `duplicate: true` and preserves edited metadata and the
+journal cursor; reusing an identity belonging to another workspace fails.
+The product initializes identity before publishing its durable native placement.

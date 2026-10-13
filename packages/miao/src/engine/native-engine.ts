@@ -72,6 +72,10 @@ export const fromOwners = (owners: Owners): NativeEngine.Interface => {
       Effect.mapError((error) => refusal(input.storage, error)),
     )
   return {
+    initialize: (input) =>
+      read(input, (connection) =>
+        connection.client.request("initialize", { session_id: input.sessionID, title: input.title }),
+      ).pipe(Effect.asVoid),
     admit: (input) =>
       connect(input).pipe(
         Effect.flatMap((connection) =>
