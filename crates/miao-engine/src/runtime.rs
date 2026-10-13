@@ -67,6 +67,7 @@ struct Background {
 enum Command {
     Wake(bool),
     Cancel(oneshot::Sender<bool>),
+    CancelIf(String, oneshot::Sender<Result<bool, Error>>),
     Approve(Response, oneshot::Sender<Result<(), Error>>),
 }
 
@@ -355,6 +356,24 @@ impl Runtime {
         result.await.map_err(|_| Error::Closed)
     }
 
+    /// Check and cancel inside the owning actor. A stale UI execution ID must
+    /// never cancel a new run admitted after the caller observed the old one.
+    pub async fn cancel_if(&self, session: &str, run: &str) -> Result<bool, Error> {
+        let commands = {
+            let actors = self.inner.actors.lock().await;
+            actors.get(session).map(|actor| actor.commands.clone())
+        };
+        let Some(commands) = commands else {
+            return Ok(false);
+        };
+        let (reply, result) = oneshot::channel();
+        commands
+            .send(Command::CancelIf(run.to_owned(), reply))
+            .await
+            .map_err(|_| Error::Closed)?;
+        result.await.map_err(|_| Error::Closed)?
+    }
+
     pub async fn cancel_job(&self, session: &str, id: &str) -> Result<bool, Error> {
         cancel_background(&self.inner, session, id).await
     }
@@ -420,6 +439,20 @@ async fn coordinate(session: String, inner: Arc<Inner>, mut commands: mpsc::Rece
                     if let Some(cancel)=&active { cancel.cancel(); }
                     let _=reply.send(active.is_some());
                 }
+                Some(Command::CancelIf(expected,reply)) => {
+                    // The actor cannot start another drain during this check:
+                    // the active token and durable run belong to the same owner.
+                    let result = match inner.store.active_run(&session).await {
+                        Ok(Some(run)) if run == expected && active.as_ref().is_some_and(|token| !token.is_cancelled()) => {
+                            wake = None;
+                            if let Some(token) = &active { token.cancel(); }
+                            Ok(true)
+                        }
+                        Ok(_) => Ok(false),
+                        Err(error) => Err(error),
+                    };
+                    let _ = reply.send(result);
+                },
                 Some(Command::Approve(response,reply))=>{
                     let result=if active.as_ref().is_none_or(|token|token.is_cancelled()){Err(Error::ApprovalResolved)}else{inner.store.resolve_approval(&session,response).await.map(|_|())};
                     let _=reply.send(result);

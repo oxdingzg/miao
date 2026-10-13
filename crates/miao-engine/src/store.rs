@@ -304,6 +304,20 @@ impl Store {
         .await
     }
 
+    pub async fn active_run(&self, session: &str) -> Result<Option<String>, Error> {
+        let session = session.to_owned();
+        self.call(move |conn| {
+            Ok(conn
+                .query_row(
+                    "SELECT id FROM engine_run WHERE session_id=?1 AND state='running'",
+                    [&session],
+                    |row| row.get(0),
+                )
+                .optional()?)
+        })
+        .await
+    }
+
     /// The Session's collaboration mode. A Session without a row defaults to
     /// Build, matching the schema default.
     pub async fn mode(&self, session: &str) -> Result<CollaborationMode, Error> {

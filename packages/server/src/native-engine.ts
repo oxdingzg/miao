@@ -2,6 +2,7 @@ import { Context, Effect } from "effect"
 import type { OpenCodeEvent } from "@miao/protocol/groups/event"
 import type { ConflictError } from "@miao/protocol/errors"
 import type { Location } from "@miao/schema/location"
+import type { SessionExecution } from "@miao/schema/session-execution"
 import type { SessionID } from "@miao/schema/session-id"
 import type { SessionInput } from "@miao/schema/session-input"
 import type { SessionMessage } from "@miao/schema/session-message"
@@ -32,6 +33,12 @@ export interface Interface {
     storage: AbsolutePath
     location: Location.Ref
   }) => Effect.Effect<Readonly<Record<string, unknown>>, ConflictError>
+  readonly interruptIf: (input: {
+    sessionID: SessionID
+    storage: AbsolutePath
+    location: Location.Ref
+    executionID: SessionExecution.ID
+  }) => Effect.Effect<boolean, ConflictError>
   /** Every engine-owned Session in one storage. */
   readonly sessions: (input: {
     storage: AbsolutePath

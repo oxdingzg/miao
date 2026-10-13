@@ -3,7 +3,7 @@ import { ClientEvents } from "@miao/server/client-events"
 import { NativeEngine } from "@miao/server/native-engine"
 import { ConflictError } from "@miao/protocol/errors"
 import { Location } from "@miao/schema/location"
-import { Effect, Layer } from "effect"
+import { Effect, Layer, Schema } from "effect"
 import { EngineError, type EngineOptions } from "./client"
 import { makeEngineOwners } from "./owners"
 import { replayJournal } from "./journal"
@@ -93,6 +93,14 @@ export const fromOwners = (owners: Owners): NativeEngine.Interface => {
       read<Readonly<Record<string, unknown>>>(input, (connection) =>
         connection.client.request("snapshot", { session_id: input.sessionID }),
       ).pipe(Effect.map((value) => (typeof value === "object" && value !== null ? value : {}))),
+    interruptIf: (input) =>
+      read(input, async (connection) => {
+        const result = await connection.client.request("cancel_if", {
+          session_id: input.sessionID,
+          run_id: input.executionID,
+        })
+        return Schema.decodeUnknownSync(Schema.Struct({ accepted: Schema.Boolean }))(result).accepted
+      }),
     sessions: (input) =>
       // `sessions` is a unit command: it takes no params.
       read<readonly unknown[]>(input, (connection) => connection.client.request("sessions")).pipe(
