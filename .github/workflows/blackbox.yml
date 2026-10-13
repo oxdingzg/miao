@@ -36,4 +36,6 @@ jobs:
         working-directory: packages/miao
         env:
           MIAO_ENGINE_BIN: ${{ github.workspace }}/crates/miao-engine/target/debug/miao-engine
-        run: bun test test/engine/blackbox.test.ts test/engine/blackbox-cli.test.ts test/engine/native-tool-replay.test.ts test/engine/session-native.test.ts test/engine/run-output.test.ts test/engine/blackbox-protocol-cli.test.ts test/engine/wire-observation-cli.test.ts test/engine/connection.test.ts test/engine/owners.test.ts test/engine/native-reads.test.ts test/engine/native-state-live.test.ts test/engine/assistant-identity.test.ts test/engine/runtime-profile.test.ts test/engine/product-admission.test.ts test/engine/provider-receipts.test.ts test/engine/run-failure.test.ts test/engine/retry.test.ts
+        # Discover every native transport test, so adding a surface cannot
+        # accidentally leave its live test skipped in unit CI.
+        run: bun test test/engine

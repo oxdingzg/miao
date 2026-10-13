@@ -41,6 +41,9 @@ impl Host {
     pub async fn dispatch(&mut self, command: Command) -> Result<Value, Error> {
         let runtime = &self.runtime;
         match command {
+            Command::Initialize { session_id, title } => {
+                runtime.initialize(&session_id, &title).await
+            }
             Command::Admit {
                 input,
                 resume,
