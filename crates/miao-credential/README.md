@@ -83,6 +83,65 @@ is rejected before it can take over an existing socket. Only stale socket
 files may be removed; regular files and symlinks are rejected. The process
 lease is distinct from the per-row refresh mutex.
 
-TS broker row ownership transfer is still a separate migration step: the
-process lease prevents two daemon writers, but does not freeze an existing TS
-broker. Do not treat the lease as a completed cross-broker ownership transfer.
+## Ownership handoff
+
+After draining provider turns and stopping the old broker, run:
+
+```sh
+miao-credential adopt --socket /path/to/credential.sock --credential-id cred_X --integration openai
+```
+
+The adoption transaction keeps the same credential ID, tokens, method and
+account metadata, writes `metadata.miaoCredentialSocket`, and installs a durable
+owner record. SQLite guards refuse updates/deletes from ordinary connections.
+The daemon releases that guard only inside its own write transaction and
+restores it before commit; rollback restores it too. Newly device-authorized
+credentials are inserted with ownership in the same transaction.
+
+Restart the updated TS runtime after adoption. It reads the ownership marker
+before selecting a refresh implementation and resolves through the socket.
+Owner unavailability is an authorization failure, never a fallback to TS
+refresh. Its mutation/replacement APIs refuse daemon-owned identities.
+The daemon refuses to refresh unadopted OAuth rows.
+
+The handoff requires an idle old broker: a token request already in flight
+cannot be undone by changing SQLite ownership. Storage guards prevent stale
+writes, but cannot revoke such an external request. No real user credentials
+are moved by tests or by installing this code.
+
+## Provider profiles
+
+One daemon owns the database lease and registers multiple integration profiles.
+OpenAI and GitHub Copilot are enabled by default. The Console integration is
+explicitly enabled with `serve --console-server URL` (and optional
+`--console-client-id ID`). Select the login integration with
+`login --integration openai|opencode|github-copilot`.
+
+- OpenAI uses its device/code exchange and form-encoded refresh endpoint.
+- Console uses JSON device and refresh requests, loads account/organization
+  metadata, and preserves the selected organization through token rotations.
+- Copilot uses GitHub device authorization. Its token is non-expiring in the
+  existing repository contract (`expires: 0`), and no refresh endpoint is
+  called. `serve --github-server URL` selects an Enterprise issuer.
+
+Each pending login retains its selected profile. Unknown integrations are
+rejected rather than routed to another integration's token endpoint. The
+Console credential's recorded server must match the configured issuer on
+refresh.
+
+## Windows transport
+
+The same daemon and JSONL protocol run over a local named pipe on Windows:
+
+```powershell
+miao-credential serve --db C:\data\miao.db --socket \\.\pipe\miao-credential
+miao-credential login --socket \\.\pipe\miao-credential --credential-id cred_device
+```
+
+The pipe has a protected DACL granting access only to the current Windows user
+and SYSTEM, rejects remote clients and acquires the same database lease before
+binding. Clients retry a busy pipe within a bounded request timeout. TS uses
+its existing `node:net` path transport; engine socket selection does not try to
+canonicalize named pipes as disk files. Database-source engine reads also
+follow the durable ownership marker, so adoption does not require changing an
+existing credential database selection.

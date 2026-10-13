@@ -70,6 +70,13 @@ async fn start_daemon(db: PathBuf, margin_ms: u64) -> PathBuf {
     tokio::spawn(daemon.serve(listener));
     // Give the accept loop a beat so a connect never races the bind.
     tokio::time::sleep(std::time::Duration::from_millis(20)).await;
+    client::request(
+        &socket,
+        serde_json::json!({"id":1,"op":"adopt","credential_id":"cred_1","integration":"openai"})
+            .to_string(),
+    )
+    .await
+    .unwrap();
     socket
 }
 
@@ -110,7 +117,9 @@ async fn get_refreshes_a_row_inside_the_margin() {
         );
         tokio::spawn(daemon.serve(listener));
         tokio::time::sleep(std::time::Duration::from_millis(20)).await;
-        dir.path().join("credential.sock")
+        let socket = dir.path().join("credential.sock");
+        client::request(&socket, serde_json::json!({"id":1,"op":"adopt","credential_id":"cred_1","integration":"openai"}).to_string()).await.unwrap();
+        socket
     };
 
     let credential = client::get(&socket, "cred_1", "openai").await.unwrap();
@@ -153,7 +162,9 @@ async fn concurrent_refreshes_share_one_token_request() {
         );
         tokio::spawn(daemon.serve(listener));
         tokio::time::sleep(std::time::Duration::from_millis(20)).await;
-        dir.path().join("credential.sock")
+        let socket = dir.path().join("credential.sock");
+        client::request(&socket, serde_json::json!({"id":1,"op":"adopt","credential_id":"cred_1","integration":"openai"}).to_string()).await.unwrap();
+        socket
     };
 
     let first = client::refresh(&socket, "cred_1", "openai");
@@ -183,7 +194,9 @@ async fn refresh_rejection_is_reported_as_refresh_rejected() {
         );
         tokio::spawn(daemon.serve(listener));
         tokio::time::sleep(std::time::Duration::from_millis(20)).await;
-        dir.path().join("credential.sock")
+        let socket = dir.path().join("credential.sock");
+        client::request(&socket, serde_json::json!({"id":1,"op":"adopt","credential_id":"cred_1","integration":"openai"}).to_string()).await.unwrap();
+        socket
     };
 
     let error = client::refresh(&socket, "cred_1", "openai")

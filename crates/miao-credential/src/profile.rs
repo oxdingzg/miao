@@ -17,6 +17,22 @@ pub fn openai() -> Profile {
     }
 }
 
+pub fn console(issuer: String, client_id: String) -> Profile {
+    Profile {
+        integration: "opencode".into(),
+        issuer,
+        client_id,
+    }
+}
+
+pub fn copilot(issuer: String) -> Profile {
+    Profile {
+        integration: "github-copilot".into(),
+        issuer,
+        client_id: "Ov23li8tweQw6odWQebz".into(),
+    }
+}
+
 #[derive(Clone, Debug)]
 pub struct Profile {
     pub integration: String,
@@ -46,17 +62,18 @@ pub async fn refresh(
     if refresh_token.is_empty() || refresh_token.len() > 16384 {
         return Err(Error::NotRefreshable);
     }
-    let url = format!("{}/oauth/token", profile.issuer);
-    let form = [
-        ("grant_type", "refresh_token"),
-        ("refresh_token", refresh_token),
-        ("client_id", profile.client_id.as_str()),
-    ];
-    let response = http_client()?
-        .post(&url)
+    let client = http_client()?;
+    let request = match profile.integration.as_str() {
+        "openai" => client.post(format!("{}/oauth/token", profile.issuer)).form(&[
+            ("grant_type","refresh_token"), ("refresh_token",refresh_token), ("client_id",profile.client_id.as_str())]),
+        "opencode" => client.post(format!("{}/auth/device/token", profile.issuer)).json(&serde_json::json!({
+            "grant_type":"refresh_token", "refresh_token":refresh_token, "client_id":profile.client_id })),
+        // Copilot credentials are non-expiring; no refresh endpoint exists.
+        "github-copilot" => return Err(Error::NotRefreshable),
+        _ => return Err(Error::Integration),
+    };
+    let response = request
         .header("User-Agent", user_agent)
-        .form(&form)
-        .timeout(std::time::Duration::from_secs(30))
         .send()
         .await
         .map_err(|_| Error::RefreshUnavailable)?;

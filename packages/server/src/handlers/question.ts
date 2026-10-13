@@ -67,6 +67,16 @@ export const QuestionHandler = HttpApiBuilder.group(Api, "server.question", (han
       .handle(
         "session.question.reject",
         Effect.fn(function* (ctx) {
+          const native = yield* Effect.serviceOption(NativeEngine.Service)
+          const placement = Option.getOrUndefined(yield* Effect.serviceOption(NativeEngine.Placement))
+          if (Option.isSome(native) && placement) {
+            yield* native.value.rejectQuestion({
+              sessionID: ctx.params.sessionID,
+              requestID: ctx.params.requestID,
+              ...placement,
+            })
+            return HttpApiSchema.NoContent.make()
+          }
           yield* withOwnedQuestion(ctx.params.sessionID, ctx.params.requestID, (question) =>
             question
               .reject(ctx.params.requestID)

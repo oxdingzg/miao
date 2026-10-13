@@ -206,6 +206,10 @@ pub enum Command {
     Cancel {
         session_id: String,
     },
+    CancelIf {
+        session_id: String,
+        run_id: String,
+    },
     Compact {
         session_id: String,
         compaction_id: String,
@@ -240,6 +244,10 @@ pub enum Command {
     AnswerQuestion {
         session_id: String,
         answer: Answer,
+    },
+    RejectQuestion {
+        session_id: String,
+        rejection: crate::question::Rejection,
     },
     State {
         session_id: String,

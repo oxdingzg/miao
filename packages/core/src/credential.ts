@@ -10,6 +10,7 @@ import { FSUtil } from "./fs-util"
 import { Global } from "./global"
 import { makeGlobalNode } from "./effect/app-node"
 import { CredentialTable } from "./credential/sql"
+import { CredentialDaemon } from "./credential/daemon"
 import { DatabaseFile } from "./database/file"
 import { Flag } from "./flag/flag"
 
@@ -63,6 +64,14 @@ export class SharedReadOnlyError extends Schema.TaggedErrorClass<SharedReadOnlyE
 }) {
   override get message() {
     return "Inherited credentials are read-only in this channel; manage them in the stable miao runtime or create a separate connection."
+  }
+}
+
+export class DaemonOwnedError extends Schema.TaggedErrorClass<DaemonOwnedError>()("Credential.DaemonOwned", {
+  id: ID,
+}) {
+  override get message() {
+    return "Credential is owned by the daemon; the TS broker cannot mutate it"
   }
 }
 
@@ -210,6 +219,13 @@ const layer = Layer.effect(
       yield* db
         .transaction((tx) =>
           Effect.gen(function* () {
+            const existing = yield* tx
+              .select()
+              .from(CredentialTable)
+              .where(eq(CredentialTable.integration_id, credential.integrationID))
+              .all()
+            const owned = existing.find((row) => CredentialDaemon.socket(decode(row.value)))
+            if (owned) yield* Effect.die(new DaemonOwnedError({ id: owned.id }))
             yield* tx.delete(CredentialTable).where(eq(CredentialTable.integration_id, credential.integrationID)).run()
             yield* tx
               .insert(CredentialTable)
@@ -227,7 +243,9 @@ const layer = Layer.effect(
     })
     const update = Effect.fn("Credential.update")(function* (id: ID, updates: Partial<Pick<Info, "label" | "value">>) {
       if (!updates.label && !updates.value) return
-      if ((yield* get(id))?.source === "shared") yield* Effect.die(new SharedReadOnlyError({ id }))
+      const current = yield* get(id)
+      if (current && CredentialDaemon.socket(current.value)) yield* Effect.die(new DaemonOwnedError({ id }))
+      if (current?.source === "shared") yield* Effect.die(new SharedReadOnlyError({ id }))
       yield* db
         .update(CredentialTable)
         .set({ label: updates.label, value: updates.value })
@@ -236,7 +254,9 @@ const layer = Layer.effect(
         .pipe(Effect.orDie)
     })
     const remove = Effect.fn("Credential.remove")(function* (id: ID) {
-      if ((yield* get(id))?.source === "shared") yield* Effect.die(new SharedReadOnlyError({ id }))
+      const current = yield* get(id)
+      if (current && CredentialDaemon.socket(current.value)) yield* Effect.die(new DaemonOwnedError({ id }))
+      if (current?.source === "shared") yield* Effect.die(new SharedReadOnlyError({ id }))
       yield* db.delete(CredentialTable).where(eq(CredentialTable.id, id)).run().pipe(Effect.orDie)
     })
 

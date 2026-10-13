@@ -884,6 +884,21 @@ export const SessionHandler = HttpApiBuilder.group(Api, "server.session", (handl
       .handle(
         "session.interruptIf",
         Effect.fn(function* (ctx) {
+          const native = yield* Effect.serviceOption(NativeEngine.Service)
+          const placement = Option.getOrUndefined(yield* Effect.serviceOption(NativeEngine.Placement))
+          if (Option.isSome(native) && placement) {
+            const interrupted = yield* native.value.interruptIf({
+              sessionID: ctx.params.sessionID,
+              executionID: ctx.params.executionID,
+              ...placement,
+            })
+            if (!interrupted)
+              return yield* new ConflictError({
+                message: "Session execution changed or is no longer active",
+                resource: ctx.params.sessionID,
+              })
+            return HttpApiSchema.NoContent.make()
+          }
           const interrupted = yield* Effect.uninterruptible(
             session.interruptIf(ctx.params.sessionID, ctx.params.executionID),
           )

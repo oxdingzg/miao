@@ -11,12 +11,10 @@ pub mod profile;
 pub mod protocol;
 pub mod store;
 
-// The daemon and its client speak a unix-socket protocol; on platforms
-// without unix sockets the storage/protocol/profile layers still compile so
-// the crate and its tests build everywhere.
-#[cfg(unix)]
+// Unix sockets and Windows named pipes carry the same local protocol.
+#[cfg(any(unix, windows))]
 pub mod client;
-#[cfg(unix)]
+#[cfg(any(unix, windows))]
 pub mod daemon;
 
 #[derive(Debug, thiserror::Error, PartialEq)]
@@ -65,3 +63,6 @@ impl Error {
 /// A credential row becomes eligible for refresh this long before its stored
 /// expiry, so a provider turn never starts with a token that dies mid-turn.
 pub const REFRESH_MARGIN_MS: u64 = 5 * 60 * 1000;
+
+#[cfg(windows)]
+mod windows_pipe;
