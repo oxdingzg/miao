@@ -169,8 +169,10 @@ Most V2 endpoints exist (`pty.shells`, `project.update`, `vcs.diff`, `fs.content
 - [x] Move the first command bodies onto core services via the location-scope pattern
       (`debug v2` was already the template): `models` reads the booted `Catalog` provider/model
       list and `debug skill` lists `SkillV2`, so neither touches the V1 provider or skill
-      services. Remaining V1 consumers: `mcp`, `providers`, `debug config/index/lsp/snapshot`,
-      and the control-plane worktree adapter.
+      services. `debug config` prints the redacted core `Config.merge(entries)` and
+      `debug info` derives its plugin list from the merged V2 config plus auto-discovered
+      files, so neither touches the V1 config service. Remaining V1 consumers: `mcp`,
+      `providers`, `debug lsp/snapshot`, and the control-plane worktree adapter.
 - [ ] Remove the `packages/miao` `app-runtime` V1 layer: migrate `effect-cmd.ts` commands and the
       control-plane worktree adapter to core services, then delete the V1 graph.
 - [ ] Confirm V2 endpoints cover app behaviors that were silently disabled on V2 (global config

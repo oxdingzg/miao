@@ -29,7 +29,9 @@ describe("debug config redaction", () => {
       const env = { MIAO_CONFIG_CONTENT: content }
       const result = yield* opencode.spawn(["debug", "config"], { env })
       opencode.expectExit(result, 0, "debug config")
-      expect(JSON.parse(result.stdout).provider.example.options).toMatchObject({
+      // The V2 projection renames `provider` to `providers` and moves the
+      // resolved connection options under `request.body`.
+      expect(JSON.parse(result.stdout).providers.example.request.body).toMatchObject({
         apiKey: "***",
         timeout: 1200,
         headers: { Authorization: "***", "X-API-Key": "***" },
