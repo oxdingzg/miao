@@ -202,6 +202,9 @@ export async function runBaselineTs(input: BaselineTsInput): Promise<BaselineRun
       stderr: "pipe",
       env: {
         ...process.env,
+        // miao run resolves its project root from PWD before cwd, so the
+        // inherited value would otherwise point the whole run at the caller.
+        PWD: workspace,
         XDG_DATA_HOME: data,
         MIAO_CONFIG_CONTENT: tsConfig(),
         MIAO_CONFIG_DIR: path.join(input.root, "config"),
