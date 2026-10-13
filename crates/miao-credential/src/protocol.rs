@@ -21,6 +21,13 @@ pub enum Request {
         integration: String,
     },
     Discover,
+    LoginStart {
+        credential_id: String,
+        label: String,
+    },
+    LoginPoll {
+        handle: String,
+    },
 }
 
 #[derive(Debug, Deserialize)]

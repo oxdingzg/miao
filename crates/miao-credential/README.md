@@ -20,6 +20,7 @@ what they read is fresh enough to survive a provider turn.
 ```sh
 miao-credential serve --db /path/to/miao.db --socket /path/to/credential.sock
 miao-credential discover --db /path/to/miao.db
+miao-credential login --socket /path/to/credential.sock --credential-id cred_device --label Work
 ```
 
 - `serve` binds the socket with `0600` permissions: the daemon speaks full
@@ -66,3 +67,22 @@ Errors come back as `{"id":N,"error":{"code":"..."}}` with stable codes:
 - During migration the legacy TS broker may still write rows the daemon does
   not own yet; `busy_timeout` covers that window, and per-row ownership moves
   to the daemon as migration lands.
+
+## Device login and process ownership
+
+`login` runs the OpenAI headless flow through the daemon. The client prints the
+verification URL and user code, then polls an opaque handle. The device secret,
+PKCE verifier, code exchange, account metadata extraction and credential insert
+all happen inside the daemon. The handle expires after 15 minutes, polling
+respects the server interval plus a three-second margin, and a completed handle
+cannot be consumed twice. An existing credential ID is never overwritten.
+
+The daemon holds a database-path lease for its entire serving lifetime. A
+second daemon, including one using a different socket for the same database,
+is rejected before it can take over an existing socket. Only stale socket
+files may be removed; regular files and symlinks are rejected. The process
+lease is distinct from the per-row refresh mutex.
+
+TS broker row ownership transfer is still a separate migration step: the
+process lease prevents two daemon writers, but does not freeze an existing TS
+broker. Do not treat the lease as a completed cross-broker ownership transfer.

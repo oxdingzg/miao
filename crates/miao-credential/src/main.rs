@@ -5,8 +5,12 @@
 //! normalized listing as the engine's read-only bridge, for inspection
 //! without going through the socket.
 
-use miao_credential::{daemon::Daemon, profile, store};
+use miao_credential::store;
+#[cfg(unix)]
+use miao_credential::{daemon::Daemon, profile};
+#[cfg(unix)]
 use std::path::PathBuf;
+#[cfg(unix)]
 use std::sync::Arc;
 
 fn main() {
@@ -14,6 +18,7 @@ fn main() {
     let error = match args.first().map(String::as_str) {
         Some("serve") => serve(&args[1..]),
         Some("discover") => discover(&args[1..]),
+        Some("login") => login(&args[1..]),
         _ => Err("usage: miao-credential serve --db PATH --socket PATH [--refresh-margin-ms N]\n       miao-credential discover --db PATH".into()),
     };
     if let Err(error) = error {
@@ -42,6 +47,7 @@ fn parse_options(args: &[String], allowed: &[&str]) -> Result<Option<String>, St
     Ok(options.get("--db").cloned())
 }
 
+#[cfg(unix)]
 fn serve(args: &[String]) -> Result<(), String> {
     let mut options = std::collections::HashMap::new();
     let allowed = ["--db", "--socket", "--refresh-margin-ms"];
@@ -77,10 +83,12 @@ fn serve(args: &[String]) -> Result<(), String> {
         if let Some(margin_ms) = margin_ms {
             daemon = daemon.with_margin_ms(margin_ms);
         }
-        let listener = bind(socket).map_err(|error| format!("bind {socket}: {error}"))?;
+        if let Some(parent) = std::path::Path::new(socket).parent() {
+            std::fs::create_dir_all(parent).map_err(|error| error.to_string())?;
+        }
         eprintln!("miao-credential serving on {socket}");
         Arc::new(daemon)
-            .serve(listener)
+            .bind_and_serve(std::path::Path::new(socket))
             .await
             .map_err(|error| format!("serve failed: {error}"))
     })
@@ -96,24 +104,93 @@ fn discover(args: &[String]) -> Result<(), String> {
     Ok(())
 }
 
-/// Binds the socket with restrictive permissions: the daemon speaks full
-/// credential values, so only the owning user may talk to it or reach it
-/// through its directory.
-fn bind(socket: &str) -> std::io::Result<tokio::net::UnixListener> {
-    let path = std::path::Path::new(socket);
-    if let Some(parent) = path.parent() {
-        std::fs::create_dir_all(parent)?;
-    }
-    let _ = std::fs::remove_file(path);
-    let listener = tokio::net::UnixListener::bind(path)?;
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::PermissionsExt;
-        let _ = std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o600));
-    }
-    Ok(listener)
-}
-
+#[cfg(unix)]
 fn user_agent() -> String {
     format!("miao-credential/{}", env!("CARGO_PKG_VERSION"))
+}
+
+#[cfg(not(unix))]
+fn serve(_args: &[String]) -> Result<(), String> {
+    Err("credential daemon requires Unix sockets".into())
+}
+
+#[cfg(unix)]
+fn login(args: &[String]) -> Result<(), String> {
+    let mut options = std::collections::HashMap::new();
+    if !args.len().is_multiple_of(2) {
+        return Err("missing option value".into());
+    }
+    for pair in args.as_chunks::<2>().0 {
+        if !["--socket", "--credential-id", "--label"].contains(&pair[0].as_str())
+            || options.insert(pair[0].clone(), pair[1].clone()).is_some()
+        {
+            return Err("unknown or duplicate option".into());
+        }
+    }
+    let socket = options.get("--socket").ok_or("--socket is required")?;
+    let id = options
+        .get("--credential-id")
+        .ok_or("--credential-id is required")?;
+    let label = options
+        .get("--label")
+        .map(String::as_str)
+        .unwrap_or("OpenAI device login");
+    let runtime = tokio::runtime::Builder::new_multi_thread()
+        .enable_all()
+        .build()
+        .map_err(|e| e.to_string())?;
+    runtime.block_on(async {
+        use miao_credential::client;
+        let path = std::path::Path::new(socket);
+        let started = client::request(
+            path,
+            serde_json::json!({"id":1,"op":"login_start","credential_id":id,"label":label})
+                .to_string(),
+        )
+        .await
+        .map_err(|e| e.to_string())?;
+        let public = started.get("ok").ok_or("device login start rejected")?;
+        let handle = public
+            .get("handle")
+            .and_then(serde_json::Value::as_str)
+            .ok_or("missing login handle")?;
+        let url = public
+            .get("url")
+            .and_then(serde_json::Value::as_str)
+            .ok_or("missing login URL")?;
+        let code = public
+            .get("user_code")
+            .and_then(serde_json::Value::as_str)
+            .ok_or("missing user code")?;
+        let interval = public
+            .get("interval_ms")
+            .and_then(serde_json::Value::as_u64)
+            .ok_or("missing poll interval")?;
+        println!("Open {url} and enter code {code}");
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(900);
+        while std::time::Instant::now() < deadline {
+            let reply = client::request(
+                path,
+                serde_json::json!({"id":1,"op":"login_poll","handle":handle}).to_string(),
+            )
+            .await
+            .map_err(|e| e.to_string())?;
+            let status = reply
+                .get("ok")
+                .and_then(|v| v.get("status"))
+                .and_then(serde_json::Value::as_str)
+                .ok_or("device login rejected")?;
+            if status == "complete" {
+                println!("Credential {id} saved by daemon");
+                return Ok(());
+            }
+            tokio::time::sleep(std::time::Duration::from_millis(interval)).await;
+        }
+        Err("device login timed out".into())
+    })
+}
+
+#[cfg(not(unix))]
+fn login(_args: &[String]) -> Result<(), String> {
+    Err("credential daemon requires Unix sockets".into())
 }

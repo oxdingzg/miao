@@ -18,12 +18,19 @@ use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 use tokio::net::{UnixListener, UnixStream};
 use tokio::sync::Mutex;
 
+struct Login {
+    pending: crate::login::Pending,
+    id: String,
+    label: String,
+}
+
 pub struct Daemon {
     db: PathBuf,
     profile: profile::Profile,
     margin_ms: u64,
     user_agent: String,
     row_locks: Mutex<HashMap<String, Arc<Mutex<()>>>>,
+    logins: Mutex<HashMap<String, Login>>,
 }
 
 impl Daemon {
@@ -34,6 +41,7 @@ impl Daemon {
             margin_ms: REFRESH_MARGIN_MS,
             user_agent,
             row_locks: Mutex::new(HashMap::new()),
+            logins: Mutex::new(HashMap::new()),
         }
     }
 
@@ -49,6 +57,44 @@ impl Daemon {
     /// completion before the next is accepted: the protocol is one
     /// request/one reply per line, and clients are local trusted processes.
     pub async fn serve(self: Arc<Self>, listener: UnixListener) -> std::io::Result<()> {
+        let _lease = self.lease()?;
+        self.run(listener).await
+    }
+
+    /// Acquire ownership before removing a stale socket: another daemon must
+    /// never be disconnected while it still owns the database.
+    pub async fn bind_and_serve(self: Arc<Self>, socket: &std::path::Path) -> std::io::Result<()> {
+        use std::os::unix::fs::{FileTypeExt, PermissionsExt};
+        let _lease = self.lease()?;
+        if let Ok(metadata) = std::fs::symlink_metadata(socket) {
+            if !metadata.file_type().is_socket() {
+                return Err(std::io::Error::other("socket path is not a socket"));
+            }
+            std::fs::remove_file(socket)?;
+        }
+        let listener = UnixListener::bind(socket)?;
+        std::fs::set_permissions(socket, std::fs::Permissions::from_mode(0o600))?;
+        self.run(listener).await
+    }
+
+    fn lease(&self) -> std::io::Result<std::fs::File> {
+        use fs2::FileExt;
+        use std::os::unix::fs::OpenOptionsExt;
+        let path = std::fs::canonicalize(&self.db)?;
+        let mut lock = path.into_os_string();
+        lock.push(".credential-owner.lock");
+        let file = std::fs::OpenOptions::new()
+            .read(true)
+            .write(true)
+            .create(true)
+            .truncate(false)
+            .mode(0o600)
+            .open(lock)?;
+        file.try_lock_exclusive()?;
+        Ok(file)
+    }
+
+    async fn run(self: Arc<Self>, listener: UnixListener) -> std::io::Result<()> {
         loop {
             let (stream, _address) = listener.accept().await?;
             let daemon = self.clone();
@@ -99,11 +145,66 @@ impl Daemon {
                     .map(|expires| serde_json::json!({ "expires": expires }));
                 reply(frame.id, payload)
             }
+            Request::LoginStart {
+                credential_id,
+                label,
+            } => reply(frame.id, self.login_start(credential_id, label).await),
+            Request::LoginPoll { handle } => reply(frame.id, self.login_poll(&handle).await),
             Request::Discover => {
                 let payload = store::discover(&self.db).map(|rows| {
                     serde_json::to_value(rows).unwrap_or_else(|_| serde_json::json!([]))
                 });
                 reply(frame.id, payload)
+            }
+        }
+    }
+
+    async fn login_start(&self, id: String, label: String) -> Result<Value, Error> {
+        if id.is_empty() || id.len() > 256 || label.len() > 1024 {
+            return Err(Error::Invalid);
+        }
+        // Holding this mutex through the start request enforces the admission
+        // cap even when multiple clients start authorization together.
+        let mut pending = self.logins.lock().await;
+        pending.retain(|_, login| !login.pending.expired());
+        if pending.len() >= 32 {
+            return Err(Error::LoginRejected);
+        }
+        let (state, mut public) = crate::login::begin(&self.profile, &self.user_agent).await?;
+        let handle = uuid::Uuid::new_v4().to_string();
+        public["handle"] = handle.clone().into();
+        pending.insert(
+            handle,
+            Login {
+                pending: state,
+                id,
+                label,
+            },
+        );
+        Ok(public)
+    }
+
+    async fn login_poll(&self, handle: &str) -> Result<Value, Error> {
+        let mut pending = self.logins.lock().await;
+        let login = pending.get_mut(handle).ok_or(Error::LoginRejected)?;
+        match crate::login::poll(&mut login.pending, &self.profile, &self.user_agent).await {
+            Ok(None) => Ok(serde_json::json!({"status":"pending"})),
+            Ok(Some(value)) => {
+                // The code can only be exchanged once. Remove the pending
+                // handle even if insertion fails; never replay that code.
+                let login = pending.remove(handle).ok_or(Error::LoginRejected)?;
+                store::insert_login(
+                    &self.db,
+                    &login.id,
+                    &self.profile.integration,
+                    &login.label,
+                    &value,
+                )?;
+                Ok(serde_json::json!({"status":"complete", "credential_id":login.id}))
+            }
+            Err(error) => {
+                pending.remove(handle);
+                Err(error)
             }
         }
     }

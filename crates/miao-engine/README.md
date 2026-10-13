@@ -277,8 +277,9 @@ miao-engine serve --db /path/to/engine.db --workspace /path/to/project --model M
   the source: the daemon is the single refresh writer for its rows and
   refreshes them inside a five-minute margin, so a subscription survives
   without the TS broker. Database and Legacy sources stay read-only with the
-  broker as their writer. Still not implemented: interactive device login in
-  the daemon, cross-broker row migration, and live-account task acceptance.
+  broker as their writer. The daemon also supports OpenAI device login via
+  `miao-credential login --socket ... --credential-id ...`. Cross-broker row
+  migration and live-account task acceptance remain.
 
 ## Durable background jobs
 

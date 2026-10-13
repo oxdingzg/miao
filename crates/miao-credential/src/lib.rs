@@ -6,6 +6,7 @@
 //! migration) reduced to a client. The SQLite row remains the shared source of
 //! truth; readers keep re-reading it each turn exactly as before.
 
+pub mod login;
 pub mod profile;
 pub mod protocol;
 pub mod store;
@@ -36,6 +37,8 @@ pub enum Error {
     Io,
     #[error("unsupported or unavailable credential database")]
     Database,
+    #[error("device authorization failed or expired")]
+    LoginRejected,
     #[error("daemon protocol violation")]
     Protocol,
 }
@@ -54,6 +57,7 @@ impl Error {
             Error::Io => "io",
             Error::Database => "database",
             Error::Protocol => "protocol",
+            Error::LoginRejected => "login_rejected",
         }
     }
 }
