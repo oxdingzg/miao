@@ -10,7 +10,13 @@ use crate::{
 };
 use serde::Deserialize;
 use serde_json::{json, Value};
-use std::{collections::BTreeMap, path::Path, process::Stdio, time::Duration};
+use std::{
+    collections::BTreeMap,
+    path::Path,
+    process::Stdio,
+    sync::atomic::{AtomicBool, Ordering},
+    time::Duration,
+};
 use tokio::{
     io::{AsyncBufReadExt, AsyncRead, AsyncWrite, AsyncWriteExt, BufReader},
     process::{Child, Command},
@@ -23,6 +29,8 @@ const MESSAGE_LIMIT: usize = 256 * 1024;
 const CATALOG_LIMIT: usize = 64;
 const HANDSHAKE_TIMEOUT: Duration = Duration::from_secs(15);
 const CALL_TIMEOUT: Duration = Duration::from_secs(60);
+const CANCEL_TIMEOUT: Duration = Duration::from_millis(200);
+const STOP_TIMEOUT: Duration = Duration::from_secs(1);
 
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -37,6 +45,7 @@ struct Client {
     write: Box<dyn AsyncWrite + Unpin + Send>,
     next: u64,
     closed: bool,
+    frame_bytes: Vec<u8>,
 }
 impl Client {
     fn new(
@@ -48,6 +57,7 @@ impl Client {
             write: Box::new(write),
             next: 1,
             closed: false,
+            frame_bytes: Vec::new(),
         }
     }
     async fn send(&mut self, message: &Value) -> Result<(), Error> {
@@ -62,16 +72,30 @@ impl Client {
     }
     async fn frame(&mut self) -> Result<Option<Value>, Error> {
         loop {
-            let mut line = String::new();
-            if self.read.read_line(&mut line).await? == 0 {
+            let bytes = self.read.fill_buf().await?;
+            if bytes.is_empty() {
                 self.closed = true;
+                if !self.frame_bytes.is_empty() {
+                    return Err(Error::Invalid("incomplete worker frame".into()));
+                }
                 return Ok(None);
             }
-            let line = line.trim();
-            if line.is_empty() {
+            let end = bytes.iter().position(|byte| *byte == b'\n');
+            let count = end.map_or(bytes.len(), |index| index + 1);
+            if self.frame_bytes.len() + count > MESSAGE_LIMIT {
+                self.closed = true;
+                return Err(Error::Invalid("worker frame exceeds bound".into()));
+            }
+            self.frame_bytes.extend_from_slice(&bytes[..count]);
+            self.read.consume(count);
+            if end.is_none() {
                 continue;
             }
-            return Ok(Some(serde_json::from_str(line)?));
+            let line = std::mem::take(&mut self.frame_bytes);
+            if line.iter().all(u8::is_ascii_whitespace) {
+                continue;
+            }
+            return Ok(Some(serde_json::from_slice(&line)?));
         }
     }
     /// Send a request and read until its reply, skipping notifications. Bounded by
@@ -107,7 +131,8 @@ struct Tool {
 pub struct Registry {
     tools: BTreeMap<String, Tool>,
     client: Mutex<Client>,
-    child: Option<Child>,
+    child: Mutex<Option<Child>>,
+    available: AtomicBool,
 }
 impl Registry {
     pub async fn connect(config: Config, workspace: &Path) -> Result<Self, Error> {
@@ -152,7 +177,8 @@ impl Registry {
         let mut registry = Self {
             tools: BTreeMap::new(),
             client: Mutex::new(Client::new(read, write)),
-            child: Some(child),
+            child: Mutex::new(Some(child)),
+            available: AtomicBool::new(true),
         };
         registry.initialize(workspace).await?;
         Ok(registry)
@@ -166,7 +192,8 @@ impl Registry {
         let mut registry = Self {
             tools: BTreeMap::new(),
             client: Mutex::new(Client::new(read, write)),
-            child: None,
+            child: Mutex::new(None),
+            available: AtomicBool::new(true),
         };
         registry.initialize(workspace).await?;
         Ok(registry)
@@ -188,6 +215,9 @@ impl Registry {
             tokio::time::timeout(HANDSHAKE_TIMEOUT, client.round_trip("tool.list", json!({})))
                 .await
                 .map_err(|_| Error::Invalid("worker catalog timed out".into()))??;
+        if serde_json::to_vec(&catalog)?.len() > 65536 {
+            return Err(Error::Invalid("worker catalog exceeds bound".into()));
+        }
         let tools = catalog["tools"]
             .as_array()
             .cloned()
@@ -237,6 +267,9 @@ impl Registry {
     }
 
     pub fn definitions(&self) -> Vec<ToolDefinition> {
+        if !self.available.load(Ordering::Acquire) {
+            return Vec::new();
+        }
         self.tools
             .values()
             .map(|tool| tool.definition.clone())
@@ -244,12 +277,18 @@ impl Registry {
     }
 
     pub fn resource(&self, name: &str) -> Option<String> {
+        if !self.available.load(Ordering::Acquire) {
+            return None;
+        }
         self.tools
             .get(name)
             .map(|tool| format!("@worker/{}", tool.native))
     }
 
     pub fn validate(&self, name: &str, input: &Value) -> Result<(), ToolError> {
+        if !self.available.load(Ordering::Acquire) {
+            return Err(ToolError::Unsupported);
+        }
         let tool = self.tools.get(name).ok_or(ToolError::Unsupported)?;
         if !input.is_object() || !tool.validator.is_valid(input) {
             return Err(ToolError::InvalidInput);
@@ -277,63 +316,119 @@ impl Registry {
         {
             return Err(ToolError::InvalidInput);
         }
+        // The deadline covers queueing, sending, and reading. A peer that never
+        // reads stdin must not make write_all uncancellable or unbounded.
+        let deadline = tokio::time::Instant::now() + CALL_TIMEOUT;
         let mut client = tokio::select! {
             biased;
-            _=cancel.cancelled()=>return Err(ToolError::Interrupted),
-            client=self.client.lock()=>client,
+            _ = cancel.cancelled() => return Err(ToolError::Interrupted),
+            client = tokio::time::timeout_at(deadline, self.client.lock()) => {
+                client.map_err(|_| ToolError::External("worker queue timed out".into()))?
+            },
         };
+        if !self.available.load(Ordering::Acquire) {
+            return Err(ToolError::Unsupported);
+        }
         let id = client.next;
         client.next += 1;
-        client
-            .send(&json!({"id":id,"method":"tool.call","params":{"name":native,"input":input}}))
-            .await
-            .map_err(|_| ToolError::External("worker transport failed".into()))?;
-        let deadline = tokio::time::Instant::now() + CALL_TIMEOUT;
-        loop {
-            let remaining = deadline.saturating_duration_since(tokio::time::Instant::now());
-            let frame = tokio::select! {
-                biased;
-                _=cancel.cancelled()=>{
-                    let _=client.send(&json!({"method":"cancel","params":{"id":id}})).await;
-                    return Err(ToolError::Interrupted);
-                }
-                frame=tokio::time::timeout(remaining, client.frame())=>{
-                    frame.map_err(|_| ToolError::External("worker call timed out".into()))?
+        let message = json!({"id":id,"method":"tool.call","params":{"name":native,"input":input}});
+        if serde_json::to_vec(&message)
+            .map_err(|_| ToolError::InvalidInput)?
+            .len()
+            > MESSAGE_LIMIT
+        {
+            return Err(ToolError::InvalidInput);
+        }
+        let mut healthy_reply = false;
+        let result = {
+            let operation = async {
+                client
+                    .send(&message)
+                    .await
+                    .map_err(|_| ToolError::External("worker transport failed".into()))?;
+                loop {
+                    let frame = client
+                        .frame()
+                        .await
                         .map_err(|_| ToolError::External("worker transport failed".into()))?
-                        .ok_or_else(|| ToolError::External("worker closed".into()))?
+                        .ok_or_else(|| ToolError::External("worker closed".into()))?;
+                    if frame["id"].as_u64() != Some(id) {
+                        continue;
+                    }
+                    if frame.get("error").is_some_and(|error| !error.is_null()) {
+                        healthy_reply = true;
+                        return Err(ToolError::External("worker call failed".into()));
+                    }
+                    let result = frame
+                        .get("result")
+                        .cloned()
+                        .ok_or_else(|| ToolError::External("worker reply has no result".into()))?;
+                    let result = result.get("result").cloned().unwrap_or(result);
+                    if serde_json::to_vec(&result)
+                        .map_err(|_| ToolError::External("worker result invalid".into()))?
+                        .len()
+                        > MESSAGE_LIMIT
+                    {
+                        return Err(ToolError::External(
+                            "worker result exceeds output budget".into(),
+                        ));
+                    }
+                    healthy_reply = true;
+                    return Ok(result);
                 }
             };
-            if frame["id"].as_u64() != Some(id) {
-                continue;
+            tokio::select! {
+                biased;
+                _ = cancel.cancelled() => Err(ToolError::Interrupted),
+                result = tokio::time::timeout_at(deadline, operation) => {
+                    result.unwrap_or_else(|_| Err(ToolError::External("worker call timed out".into())))
+                },
             }
-            if frame.get("error").is_some() {
-                return Err(ToolError::External("worker call failed".into()));
+        };
+        if result.is_err() && !healthy_reply {
+            // A dropped write/read may leave a partial frame. Never reuse that
+            // transport or replay an externally dispatched call.
+            self.available.store(false, Ordering::Release);
+            if matches!(&result, Err(ToolError::Interrupted)) {
+                let _ = tokio::time::timeout(
+                    CANCEL_TIMEOUT,
+                    client.send(&json!({"method":"cancel","params":{"id":id}})),
+                )
+                .await;
             }
-            let result = frame.get("result").cloned().unwrap_or(Value::Null);
-            let result = result.get("result").cloned().unwrap_or(result);
-            if serde_json::to_vec(&result)
-                .map_err(|_| ToolError::External("worker result invalid".into()))?
-                .len()
-                > MESSAGE_LIMIT
-            {
-                return Err(ToolError::External(
-                    "worker result exceeds output budget".into(),
-                ));
-            }
-            return Ok(result);
+            client.closed = true;
+            drop(client);
+            self.terminate().await;
+        }
+        result
+    }
+
+    async fn terminate(&self) {
+        let mut child = self.child.lock().await;
+        if let Some(child) = child.as_mut() {
+            let _ = child.start_kill();
+            let _ = tokio::time::timeout(STOP_TIMEOUT, child.wait()).await;
         }
     }
 
     pub async fn shutdown(&self) {
-        let mut client = self.client.lock().await;
-        if !client.closed {
-            let _ = client.send(&json!({"method":"shutdown"})).await;
+        self.available.store(false, Ordering::Release);
+        if let Ok(mut client) = tokio::time::timeout(CANCEL_TIMEOUT, self.client.lock()).await {
+            if !client.closed {
+                let _ = tokio::time::timeout(
+                    CANCEL_TIMEOUT,
+                    client.send(&json!({"method":"shutdown"})),
+                )
+                .await;
+                client.closed = true;
+            }
         }
+        self.terminate().await;
     }
 }
 impl Drop for Registry {
     fn drop(&mut self) {
-        if let Some(child) = self.child.as_mut() {
+        if let Some(child) = self.child.get_mut().as_mut() {
             let _ = child.start_kill();
         }
     }

@@ -83,6 +83,26 @@ worker -> engine   {"id":3,"result":{"result":{}}}
 engine -> worker   {"id":4,"method":"shutdown"}
 ```
 
+## Worker failure boundary
+
+The call deadline covers mutex queueing, writing the request, and reading the
+reply. Cancellation must also interrupt a blocked write when a worker stops
+reading stdin. The best-effort `cancel` notification itself is time-bounded.
+
+Incoming JSONL frames are bounded while reading, including notifications and
+frames with no newline. A later result-size check alone cannot bound allocation.
+A transport/frame failure, cancellation after dispatch, or call timeout makes
+that worker unavailable: remove its tools from the next catalog, stop its child
+process, and never reuse a partial transport or automatically replay its call.
+A valid worker tool error leaves the transport available for another explicit
+call. Invalid host-config JSON still fails configuration loading; a configured
+worker that cannot start/handshake degrades alone with a diagnostic, preserving
+engine admission and built-in tools.
+
+Regression evidence: `tests/worker.rs` covers blocked writes, oversized
+unterminated/truncated frames, timeouts, tool errors, a real spawned-worker
+cancellation/reaping, and startup with a missing optional worker.
+
 ## Consequences
 
 - The engine gains custom-tool coverage without embedding a script host, and a

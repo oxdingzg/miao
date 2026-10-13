@@ -57,7 +57,7 @@ fn input() -> Input {
     }
 }
 async fn approval(store: &Store) -> Approval {
-    tokio::time::timeout(std::time::Duration::from_secs(5), async {
+    let outcome = tokio::time::timeout(std::time::Duration::from_secs(5), async {
         loop {
             if let Some(event) = store
                 .events("s", 0, 100)
@@ -71,8 +71,19 @@ async fn approval(store: &Store) -> Approval {
             tokio::time::sleep(std::time::Duration::from_millis(2)).await;
         }
     })
-    .await
-    .unwrap()
+    .await;
+    match outcome {
+        Ok(value) => value,
+        Err(error) => {
+            let events = store.events("s", 0, 100).await.map(|events| {
+                events
+                    .into_iter()
+                    .map(|event| event.kind)
+                    .collect::<Vec<_>>()
+            });
+            panic!("event wait timed out: {error}; committed event kinds: {events:?}");
+        }
+    }
 }
 async fn finished(store: &Store) {
     tokio::time::timeout(std::time::Duration::from_secs(5), async {
