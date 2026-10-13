@@ -23,6 +23,9 @@ export type V2SessionReduction = {
 export function createV2SessionReducer() {
   // Preserve stream ordinals across history loads and subsequent live events.
   const streams = new Map<string, { text: (string | undefined)[]; reasoning: (string | undefined)[] }>()
+  // Compaction summaries stream as unsettled assistant drafts; these are the draft
+  // message ids still awaiting `compaction.ended`, keyed like `streams`.
+  const compactions = new Set<string>()
 
   const stream = (sessionID: string, assistantMessageID: string, source: readonly SessionMessageInfo[]) => {
     const key = `${sessionID}:${assistantMessageID}`
@@ -449,14 +452,48 @@ export function createV2SessionReducer() {
             time: { ...tool.time, completed: event.data.timestamp },
           }
         })
-      // Retries surface through the session status; compaction streams into the timeline only once
-      // it settles, matching the server projection.
+      // Retries surface through the session status.
       case "session.next.retried":
-      case "session.next.compaction.started":
-      case "session.next.compaction.delta":
         return result([...source])
-      case "session.next.compaction.ended":
+      // The summary streams into the transcript as plain assistant text while the
+      // compaction runs; `ended` swaps the draft for the settled checkpoint record,
+      // so the settled transcript keeps showing the divider alone.
+      case "session.next.compaction.started": {
+        compactions.add(`${sessionID}:${event.data.messageID}`)
         return append({
+          id: event.data.messageID,
+          type: "assistant",
+          agent: null,
+          model: null,
+          content: [{ type: "text", id: `${event.data.messageID}:summary`, text: "" }],
+          time: { created: event.data.timestamp },
+        })
+      }
+      case "session.next.compaction.delta": {
+        // A settled checkpoint outranks a late delta (no producer emits both, but a
+        // duplicate must never resurrect the draft).
+        if (source.some((item) => item.id === event.data.messageID && item.type === "compaction"))
+          return result([...source])
+        compactions.add(`${sessionID}:${event.data.messageID}`)
+        return updateAssistant(
+          ensureAssistant(source, event.data.messageID, event.data.timestamp),
+          event.data.messageID,
+          sessionID,
+          (item) => ({
+            ...item,
+            content: item.content.some((part) => part.type === "text" && part.id === `${item.id}:summary`)
+              ? item.content.map((part) =>
+                  part.type === "text" && part.id === `${item.id}:summary`
+                    ? { ...part, text: part.text + event.data.text }
+                    : part,
+                )
+              : [...item.content, { type: "text", id: `${item.id}:summary`, text: event.data.text }],
+          }),
+        )
+      }
+      case "session.next.compaction.ended": {
+        compactions.delete(`${sessionID}:${event.data.messageID}`)
+        const settled: SessionMessageInfo = {
           id: event.data.messageID,
           type: "compaction",
           metadata: wire(event.metadata),
@@ -464,7 +501,24 @@ export function createV2SessionReducer() {
           summary: event.data.text,
           recent: event.data.recent,
           time: { created: event.data.timestamp },
-        })
+        }
+        return source.some((item) => item.id === settled.id)
+          ? result(update(source, settled.id, () => settled), [settled.id])
+          : append(settled)
+      }
+      // A refused or failed summary never publishes `ended`, so the drain leaving
+      // the compacting phase drops whatever draft it left behind.
+      case "session.next.status": {
+        if (compactions.size === 0) return
+        if (event.data.status.type === "busy" && event.data.status.phase === "compacting") return
+        const drafts = [...compactions].filter((key) => key.startsWith(`${sessionID}:`))
+        if (drafts.length === 0) return
+        drafts.forEach((key) => compactions.delete(key))
+        return result(
+          source.filter((item) => !drafts.includes(`${sessionID}:${item.id}`)),
+          drafts.map((key) => key.slice(sessionID.length + 1)),
+        )
+      }
       default:
         return
     }
@@ -475,6 +529,9 @@ export function createV2SessionReducer() {
     clear(sessionID: string) {
       for (const id of streams.keys()) {
         if (id.startsWith(`${sessionID}:`)) streams.delete(id)
+      }
+      for (const key of compactions) {
+        if (key.startsWith(`${sessionID}:`)) compactions.delete(key)
       }
     },
   }

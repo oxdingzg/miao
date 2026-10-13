@@ -390,10 +390,11 @@ behavior the engine needs (see the landed list above).
 - [ ] Give the first turn after a compaction a restore budget for re-reading the files the summary
       says matter, bounded per file and per compaction, so a checkpoint does not cost the model its
       working set.
-- [ ] Optional polish: render the streaming summary text mid-flight. `.delta` is published, but with
-      the phase and slice progress visible (#709 #715) neither client needs it to see that work is
-      happening; the transcript showing the settled checkpoint is the deliberate projection, so this
-      is a rendering preference, not a gap.
+- [x] Optional polish: render the streaming summary text mid-flight. The app folds `.delta` fragments
+      into an unsettled draft the transcript renders as plain assistant text and swaps for the settled
+      checkpoint on `ended` (a refused or failed summary publishes no `ended`, so the app drops the
+      draft when the drain leaves the `compacting` phase); the TUI keeps its refresh-on-`ended`
+      projection, where the phase and slice progress (#709 #715) already carry the wait.
 - **Acceptance:** the first turn after a checkpoint can re-read the working set within its budget
   without re-compacting. Visibility acceptance is met (#709 #715): both clients show the phase and
   slice progress while a compaction runs.
