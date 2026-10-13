@@ -194,6 +194,10 @@ pub enum Command {
         session_id: String,
         mode: CollaborationMode,
     },
+    Rename {
+        session_id: String,
+        title: String,
+    },
     Cancel {
         session_id: String,
     },
