@@ -11,7 +11,7 @@ use miao_engine::{
 use serde_json::{json, Value};
 use tokio::sync::mpsc;
 
-async fn seeded() -> (tempfile::TempDir, Store) {
+async fn seeded() -> (tempfile::TempDir, Store, u64) {
     let dir = tempfile::tempdir().unwrap();
     let store = Store::open(dir.path().join("engine.db")).await.unwrap();
     store
@@ -34,7 +34,24 @@ async fn seeded() -> (tempfile::TempDir, Store) {
         .await
         .unwrap();
     store.promote("s", true).await.unwrap();
-    (dir, store)
+    store.start_run("s", "run").await.unwrap();
+    let started = store
+        .record("s", "provider.started", json!({"run_id":"run","step":0}))
+        .await
+        .unwrap();
+    let boundary = store
+        .assistant_reply_profiled(
+            "s",
+            "run",
+            0,
+            Some(started.seq),
+            json!([{"type":"text","text":"answer one"}]),
+            None,
+        )
+        .await
+        .unwrap()
+        .seq;
+    (dir, store, boundary)
 }
 
 fn budget() -> Budget {
@@ -47,7 +64,7 @@ fn budget() -> Budget {
 
 #[tokio::test]
 async fn below_threshold_leaves_the_session_untouched() {
-    let (_dir, store) = seeded().await;
+    let (_dir, store, boundary) = seeded().await;
     let (progress, mut progress_rx) = mpsc::channel(16);
     let mut breaker = Breaker::new(2);
     let mut calls = 0;
@@ -56,7 +73,7 @@ async fn below_threshold_leaves_the_session_untouched() {
         CompactRequest {
             session: "s",
             run: "run",
-            boundary: 3,
+            boundary,
             budget: &budget(),
             per_pass: 8,
             breaker: &mut breaker,
@@ -77,7 +94,7 @@ async fn below_threshold_leaves_the_session_untouched() {
 
 #[tokio::test]
 async fn trigger_summarizes_by_plan_and_commits_the_run_checkpoint() {
-    let (_dir, store) = seeded().await;
+    let (_dir, store, boundary) = seeded().await;
     store
         .record(
             "s",
@@ -93,7 +110,7 @@ async fn trigger_summarizes_by_plan_and_commits_the_run_checkpoint() {
         CompactRequest {
             session: "s",
             run: "run",
-            boundary: 3,
+            boundary,
             budget: &budget(),
             per_pass: 1,
             breaker: &mut breaker,
@@ -117,6 +134,7 @@ async fn trigger_summarizes_by_plan_and_commits_the_run_checkpoint() {
         kinds,
         vec![
             "compaction.started",
+            "compaction.progress",
             "compaction.progress",
             "compaction.progress",
             "compaction.finished"
@@ -149,7 +167,7 @@ async fn trigger_summarizes_by_plan_and_commits_the_run_checkpoint() {
 
 #[tokio::test]
 async fn a_failing_summarizer_trips_the_breaker_and_keeps_history() {
-    let (_dir, store) = seeded().await;
+    let (_dir, store, boundary) = seeded().await;
     store
         .record(
             "s",
@@ -159,13 +177,13 @@ async fn a_failing_summarizer_trips_the_breaker_and_keeps_history() {
         .await
         .unwrap();
     let (progress, mut progress_rx) = mpsc::channel(16);
-    let mut breaker = Breaker::new(2);
+    let mut breaker = Breaker::new(1);
     let committed = maybe_compact(
         &store,
         CompactRequest {
             session: "s",
             run: "run",
-            boundary: 3,
+            boundary,
             budget: &budget(),
             per_pass: 1,
             breaker: &mut breaker,
@@ -190,7 +208,7 @@ async fn a_failing_summarizer_trips_the_breaker_and_keeps_history() {
         CompactRequest {
             session: "s",
             run: "run",
-            boundary: 3,
+            boundary,
             budget: &budget(),
             per_pass: 1,
             breaker: &mut breaker,
@@ -221,7 +239,7 @@ async fn a_failing_summarizer_trips_the_breaker_and_keeps_history() {
 async fn gate_two_estimates_pending_from_the_unsent_prompt() {
     // The trigger must also see messages a provider has not counted yet: a
     // small anchored context plus a large pending prompt still crosses.
-    let (_dir, store) = seeded().await;
+    let (_dir, store, _boundary) = seeded().await;
     store
         .record(
             "s",
