@@ -1,4 +1,5 @@
 import { Context, Effect } from "effect"
+import type { OpenCodeEvent } from "@miao/protocol/groups/event"
 import type { ConflictError } from "@miao/protocol/errors"
 import type { Location } from "@miao/schema/location"
 import type { SessionID } from "@miao/schema/session-id"
@@ -45,13 +46,12 @@ export interface Interface {
     storage: AbsolutePath
     location: Location.Ref
     after: number
-  }) => Effect.Effect<readonly NativeDurableEvent[], ConflictError>
+  }) => Effect.Effect<NativeJournalPage, ConflictError>
 }
 
-export interface NativeDurableEvent {
-  readonly seq: number
-  readonly type: string
-  readonly data: unknown
+export interface NativeJournalPage {
+  readonly events: readonly OpenCodeEvent[]
+  readonly cursor: number
 }
 
 /**

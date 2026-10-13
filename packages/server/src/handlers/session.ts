@@ -3,7 +3,7 @@ import { Database } from "@miao/core/database/database"
 import { SessionV2 } from "@miao/core/session"
 import { SessionImageNormalize } from "@miao/core/session/image-normalize"
 import { SessionUsageStore } from "@miao/core/session/usage-store"
-import { Clock, DateTime, Effect, Option, Schema, Stream } from "effect"
+import { Clock, DateTime, Effect, Option, Stream } from "effect"
 import { BackgroundJob } from "@miao/core/background-job"
 import { SessionBackgroundJobs } from "@miao/core/session/background-jobs"
 import { SessionSchedule } from "@miao/core/session/schedule"
@@ -13,8 +13,7 @@ import { HttpApiBuilder, HttpApiSchema } from "effect/unstable/httpapi"
 import { Api } from "../api"
 import { Project } from "@miao/core/project"
 import { NativeEngine } from "../native-engine"
-import { ClientEvents } from "../client-events"
-import { SessionEvent } from "@miao/schema/session-event"
+import { nativeSessionEvents } from "../native-events"
 import { mergeNativeSessions, nativeSessionInfo } from "../native-session"
 import { booted } from "../location"
 import { SessionsCursor } from "@miao/protocol/groups/session"
@@ -742,52 +741,17 @@ export const SessionHandler = HttpApiBuilder.group(Api, "server.session", (handl
       )
       .handle(
         "session.events",
-        Effect.fn((ctx) =>
-          Effect.gen(function* () {
-            const native = Option.getOrUndefined(yield* Effect.serviceOption(NativeEngine.Service))
-            const placement = Option.getOrUndefined(yield* Effect.serviceOption(NativeEngine.Placement))
-            const clients = Option.getOrUndefined(yield* Effect.serviceOption(ClientEvents.Service))
-            if (!native || !placement) {
-              return session.events({ sessionID: ctx.params.sessionID, after: ctx.query.after }).pipe(Stream.orDie)
-            }
-            // The engine journal is the durable authority for a native Session;
-            // translate it through the same pipeline live delivery uses, then
-            // continue with live events past the replayed watermark.
-            const journal = yield* native
-              .events({
-                sessionID: ctx.params.sessionID,
-                storage: placement.storage,
-                location: placement.location,
-                after: ctx.query.after ?? 0,
-              })
-              .pipe(Effect.orDie)
-            const watermark = journal.at(-1)?.seq ?? ctx.query.after ?? 0
-            const live = clients
-              ? (yield* clients.allBounded(256)).pipe(
-                  Stream.filter((event) => {
-                    const data = event.data as { sessionID?: unknown }
-                    const engine = (event.metadata as { engine?: { seq?: unknown } } | undefined)?.engine
-                    return (
-                      data.sessionID === ctx.params.sessionID &&
-                      typeof engine?.seq === "number" &&
-                      engine.seq > watermark
-                    )
-                  }),
-                  Stream.map((event) => ({ type: event.type, data: event.data })),
-                )
-              : Stream.make()
-            // Bridged delivery spans the product event vocabulary, while this
-            // endpoint declares durable Session events only.
-            const decode = Schema.decodeUnknownOption(SessionEvent.Durable)
-            return Stream.make(...journal).pipe(
-              Stream.concat(live),
-              Stream.map((event) => decode({ type: event.type, data: event.data })),
-              Stream.filter(Option.isSome),
-              Stream.map((event) => event.value),
-              Stream.orDie,
-            )
-          }),
-        ),
+        Effect.fn(function* (ctx) {
+          const native = Option.getOrUndefined(yield* Effect.serviceOption(NativeEngine.Service))
+          const placement = Option.getOrUndefined(yield* Effect.serviceOption(NativeEngine.Placement))
+          if (native && placement)
+            return nativeSessionEvents(native, {
+              ...placement,
+              sessionID: ctx.params.sessionID,
+              after: ctx.query.after ?? 0,
+            }).pipe(Stream.orDie)
+          return session.events({ sessionID: ctx.params.sessionID, after: ctx.query.after }).pipe(Stream.orDie)
+        }),
       )
       .handle(
         "session.execution",

@@ -6,7 +6,7 @@ import { Location } from "@miao/schema/location"
 import { Effect, Layer } from "effect"
 import { EngineError, type EngineOptions } from "./client"
 import { makeEngineOwners } from "./owners"
-import { EngineTranslator, isReplayEvent } from "./session"
+import { replayJournal } from "./journal"
 
 /**
  * Production native transport, opt-in through the engine binary environment:
@@ -99,43 +99,19 @@ export const fromOwners = (owners: Owners): NativeEngine.Interface => {
         Effect.map((value) => (Array.isArray(value) ? value : [])),
       ),
     events: (input) =>
-      connect(input)
-        .pipe(
-          Effect.flatMap((connection) =>
-            Effect.tryPromise({
-              try: async () => {
-                // One translator across pages: the bridges pair up journalled
-                // events, so their state must survive page boundaries.
-                const translated: NativeEngine.NativeDurableEvent[] = []
-                const replay = new EngineTranslator((event) =>
-                  translated.push({ seq: event.source.seq, type: event.type, data: event.data }),
-                )
-                // The engine answers 100 rows per call; a short page ends the
-                // journal as of this read.
-                let after = input.after
-                while (true) {
-                  const page: unknown = await connection.client.request("events", {
-                    session_id: input.sessionID,
-                    after,
-                  })
-                  if (!Array.isArray(page))
-                    throw new EngineError("engine_replay_invalid", "native journal page is not an array")
-                  for (const raw of page) {
-                    if (!isReplayEvent(raw, input.sessionID))
-                      throw new EngineError("engine_replay_invalid", "native journal row is invalid")
-                    if (raw.seq <= after) continue
-                    replay.dispatch(raw)
-                    after = raw.seq
-                  }
-                  if (page.length < 100) break
-                }
-                return translated
-              },
-              catch: (error) => refusal(input.sessionID, error),
+      connect(input).pipe(
+        Effect.flatMap((connection) =>
+          Effect.tryPromise({
+            try: () => replayJournal({
+              ...input,
+              engineID: input.storage,
+              request: (method, params) => connection.client.request(method, params),
             }),
-          ),
-        )
-        .pipe(Effect.mapError((error) => refusal(input.sessionID, error))),
+            catch: (error) => refusal(input.sessionID, error),
+          }),
+        ),
+        Effect.mapError((error) => refusal(input.sessionID, error)),
+      ),
   }
 }
 const layer = Layer.effect(
