@@ -7,7 +7,7 @@ import { SessionExecution } from "@miao/core/session/execution"
 import { SessionTable } from "@miao/core/session/sql"
 import { Database } from "@miao/core/database/database"
 import { AppNodeBuilder } from "@miao/core/effect/app-node-builder"
-import { InstanceRef } from "@/effect/instance-ref"
+import { projectContext } from "../project-context"
 import { and, desc, eq, isNull } from "drizzle-orm"
 import { UI } from "../ui"
 import { Locale } from "@/util/locale"
@@ -82,6 +82,7 @@ export const removeSession: (
 export const SessionListCommand = effectCmd({
   command: "list",
   describe: "list sessions",
+  instance: false,
   builder: (yargs) =>
     yargs
       .option("max-count", {
@@ -96,8 +97,7 @@ export const SessionListCommand = effectCmd({
         default: "table",
       }),
   handler: Effect.fn("Cli.session.list")(function* (args) {
-    const ctx = yield* InstanceRef
-    if (!ctx) return
+    const ctx = yield* projectContext()
     const { db } = yield* Database.Service
     const sessions = yield* db
       .select()

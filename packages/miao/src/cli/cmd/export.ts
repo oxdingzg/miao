@@ -6,7 +6,7 @@ import { SessionTable } from "@miao/core/session/sql"
 import { SessionStore } from "@miao/core/session/store"
 import { SessionV1Read } from "@miao/core/session/v1-read"
 import { sessionContextToMessages } from "@miao/tui/context/session-v2-write"
-import { InstanceRef } from "@/effect/instance-ref"
+import { projectContext } from "../project-context"
 import { effectCmd, fail } from "../effect-cmd"
 import { UI } from "../ui"
 import * as prompts from "@clack/prompts"
@@ -231,6 +231,7 @@ function sanitize(data: Archive) {
 export const ExportCommand = effectCmd({
   command: "export [sessionID]",
   describe: "export session data as JSON or JSONL",
+  instance: false,
   builder: (yargs) =>
     yargs
       .positional("sessionID", {
@@ -254,7 +255,7 @@ export const ExportCommand = effectCmd({
 
 const run = Effect.fn("Cli.export.body")(function* (args: { sessionID?: string; sanitize?: boolean; format?: string }) {
   const { db } = yield* Database.Service
-  const ctx = yield* InstanceRef
+  const ctx = yield* projectContext()
   let sessionID = args.sessionID ? SessionSchema.ID.make(args.sessionID) : undefined
   process.stderr.write(`Exporting session: ${sessionID ?? "latest"}\n`)
 
@@ -269,7 +270,7 @@ const run = Effect.fn("Cli.export.body")(function* (args: { sessionID?: string; 
     const sessions = yield* db
       .select({ id: SessionTable.id, title: SessionTable.title, updated: SessionTable.time_updated })
       .from(SessionTable)
-      .where(ctx ? eq(SessionTable.project_id, ctx.project.id) : undefined)
+      .where(eq(SessionTable.project_id, ctx.project.id))
       .orderBy(desc(SessionTable.time_updated))
       .all()
       .pipe(Effect.orDie)
