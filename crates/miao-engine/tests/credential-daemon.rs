@@ -86,7 +86,14 @@ async fn daemon_source_loads_and_rotates_inside_the_margin() {
         id: "cred_1".into(),
         integration: "openai".into(),
     };
-    let _credential = source.load().await.unwrap();
+    // A database source carrying the ownership marker routes to the daemon
+    // before inspecting the stale snapshot's expiry, without another CLI flag.
+    let inherited = Source::Database {
+        path: db.clone(),
+        id: "cred_1".into(),
+        integration: "openai".into(),
+    };
+    let _credential = inherited.load().await.unwrap();
     // The daemon refreshed inside the margin before handing the value over:
     // the stored row already carries the rotated tokens.
     let stored = Connection::open(&db).unwrap();

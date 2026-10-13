@@ -15,7 +15,8 @@ use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::Arc;
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
-use tokio::net::{UnixListener, UnixStream};
+#[cfg(unix)]
+use tokio::net::UnixListener;
 use tokio::sync::Mutex;
 
 struct Login {
@@ -64,6 +65,7 @@ impl Daemon {
     /// Serves until the listener fails. Each connection is handled to
     /// completion before the next is accepted: the protocol is one
     /// request/one reply per line, and clients are local trusted processes.
+    #[cfg(unix)]
     pub async fn serve(self: Arc<Self>, listener: UnixListener) -> std::io::Result<()> {
         let _lease = self.lease()?;
         self.run(listener).await
@@ -71,6 +73,7 @@ impl Daemon {
 
     /// Acquire ownership before removing a stale socket: another daemon must
     /// never be disconnected while it still owns the database.
+    #[cfg(unix)]
     pub async fn bind_and_serve(self: Arc<Self>, socket: &std::path::Path) -> std::io::Result<()> {
         use std::os::unix::fs::{FileTypeExt, PermissionsExt};
         let _lease = self.lease()?;
@@ -87,21 +90,21 @@ impl Daemon {
 
     fn lease(&self) -> std::io::Result<std::fs::File> {
         use fs2::FileExt;
+        #[cfg(unix)]
         use std::os::unix::fs::OpenOptionsExt;
         let path = std::fs::canonicalize(&self.db)?;
         let mut lock = path.into_os_string();
         lock.push(".credential-owner.lock");
-        let file = std::fs::OpenOptions::new()
-            .read(true)
-            .write(true)
-            .create(true)
-            .truncate(false)
-            .mode(0o600)
-            .open(lock)?;
+        let mut options = std::fs::OpenOptions::new();
+        options.read(true).write(true).create(true).truncate(false);
+        #[cfg(unix)]
+        options.mode(0o600);
+        let file = options.open(lock)?;
         file.try_lock_exclusive()?;
         Ok(file)
     }
 
+    #[cfg(unix)]
     async fn run(self: Arc<Self>, listener: UnixListener) -> std::io::Result<()> {
         store::ensure_ownership(&self.db).map_err(std::io::Error::other)?;
         let path = listener
@@ -122,8 +125,30 @@ impl Daemon {
         }
     }
 
-    async fn handle_connection(&self, stream: UnixStream) -> std::io::Result<()> {
-        let (reader, mut writer) = stream.into_split();
+    #[cfg(windows)]
+    pub async fn bind_and_serve(self: Arc<Self>, name: &std::path::Path) -> std::io::Result<()> {
+        let _lease = self.lease()?;
+        store::ensure_ownership(&self.db).map_err(std::io::Error::other)?;
+        *self.socket.lock().await = Some(name.to_path_buf());
+        let mut server = crate::windows_pipe::create(name, true)?;
+        loop {
+            server.connect().await?;
+            // Create the waiting instance before serving the connected one,
+            // so another client does not have to wait for this request to end.
+            let next = crate::windows_pipe::create(name, false)?;
+            let connected = std::mem::replace(&mut server, next);
+            let daemon = self.clone();
+            tokio::spawn(async move {
+                let _ = daemon.handle_connection(connected).await;
+            });
+        }
+    }
+
+    async fn handle_connection<S>(&self, stream: S) -> std::io::Result<()>
+    where
+        S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Unpin + Send,
+    {
+        let (reader, mut writer) = tokio::io::split(stream);
         let mut lines = BufReader::new(reader).lines();
         while let Some(line) = lines.next_line().await? {
             if line.trim().is_empty() {

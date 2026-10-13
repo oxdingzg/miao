@@ -128,44 +128,24 @@ impl Source {
             Self::Daemon { socket, .. } => Some(socket),
         }
     }
-    /// Read again at each provider turn. Database and Legacy sources stay
-    /// read-only: their owning broker remains the refresh writer, and an
-    /// expired snapshot fails explicitly rather than competing to refresh.
-    /// The Daemon source is the one exception — the daemon refreshes the row
-    /// inside the margin before the engine ever sees the value.
+    /// Re-read at every provider turn. An owned database row follows its
+    /// durable daemon marker before validating the stale snapshot's expiry.
+    /// Unowned database and legacy sources stay read-only and keep their
+    /// existing broker as refresh writer; no fallback competes with an owner.
     pub async fn load(&self) -> Result<Credential, Error> {
-        #[cfg(unix)]
+        #[cfg(any(unix, windows))]
         if let Self::Daemon {
             socket,
             id,
             integration,
         } = self
         {
-            let credential = miao_credential::client::get(socket, id, integration)
-                .await
-                .map_err(|error| match error {
-                    miao_credential::Error::Missing => Error::Missing,
-                    miao_credential::Error::Integration => Error::Integration,
-                    miao_credential::Error::Invalid => Error::Invalid,
-                    miao_credential::Error::RefreshRejected => Error::RefreshRejected,
-                    _ => Error::Io,
-                })?;
-            let mut value = parse(&credential)?;
-            // The repository's Copilot device flow stores zero as its explicit
-            // non-expiring sentinel; other OAuth profiles still require expiry.
-            if integration == "github-copilot" && value.expires == Some(0) {
-                value.expires = None;
-            }
-            value.validate()?;
-            return Ok(value);
+            return load_daemon(socket, id, integration).await;
         }
         let source = self.clone();
-        tokio::task::spawn_blocking(move || {
-            let credential = match source {
-                Self::Static(credential) => credential,
-                #[cfg(unix)]
-                Self::Daemon { .. } => unreachable!("handled above"),
-                #[cfg(not(unix))]
+        let (credential, owner) = tokio::task::spawn_blocking(move || {
+            let loaded = match source {
+                Self::Static(credential) => (credential, None),
                 Self::Daemon { .. } => return Err(Error::Invalid),
                 Self::Database {
                     path,
@@ -176,32 +156,70 @@ impl Source {
                     let row: Option<(String, String)> = connection
                         .query_row(
                             "SELECT integration_id,value FROM credential WHERE id=?1",
-                            [id],
+                            [&id],
                             |r| Ok((r.get(0)?, r.get(1)?)),
                         )
                         .optional()
                         .map_err(|_| Error::Database)?;
-                    let (stored, value) = row.ok_or(Error::Missing)?;
+                    let (stored, encoded) = row.ok_or(Error::Missing)?;
                     if stored != integration {
                         return Err(Error::Integration);
                     }
-                    if value.len() > 131072 {
+                    if encoded.len() > 131072 {
                         return Err(Error::Invalid);
                     }
-                    parse(&serde_json::from_str::<Value>(&value).map_err(|_| Error::Invalid)?)?
+                    let value: Value =
+                        serde_json::from_str(&encoded).map_err(|_| Error::Invalid)?;
+                    let owner = value["metadata"]["miaoCredentialSocket"]
+                        .as_str()
+                        .filter(|name| !name.is_empty())
+                        .map(|name| (PathBuf::from(name), id, integration));
+                    (parse(&value)?, owner)
                 }
                 Self::Legacy { path, integration } => {
                     let values = legacy(&path)?;
-                    parse(values.get(&integration).ok_or(Error::Missing)?)?
+                    (
+                        parse(values.get(&integration).ok_or(Error::Missing)?)?,
+                        None,
+                    )
                 }
             };
-            credential.validate()?;
-            Ok(credential)
+            Ok::<_, Error>(loaded)
         })
         .await
-        .map_err(|_| Error::Io)?
+        .map_err(|_| Error::Io)??;
+        if let Some((socket, id, integration)) = owner {
+            #[cfg(any(unix, windows))]
+            return load_daemon(&socket, &id, &integration).await;
+            #[cfg(not(any(unix, windows)))]
+            {
+                let _ = (socket, id, integration);
+                return Err(Error::Invalid);
+            }
+        }
+        credential.validate()?;
+        Ok(credential)
     }
 }
+#[cfg(any(unix, windows))]
+async fn load_daemon(socket: &Path, id: &str, integration: &str) -> Result<Credential, Error> {
+    let credential = miao_credential::client::get(socket, id, integration)
+        .await
+        .map_err(|error| match error {
+            miao_credential::Error::Missing => Error::Missing,
+            miao_credential::Error::Integration => Error::Integration,
+            miao_credential::Error::Invalid => Error::Invalid,
+            miao_credential::Error::RefreshRejected => Error::RefreshRejected,
+            _ => Error::Io,
+        })?;
+    let mut value = parse(&credential)?;
+    if integration == "github-copilot" && value.expires == Some(0) {
+        value.expires = None;
+    }
+    value.validate()?;
+    Ok(value)
+}
+
 fn parse(value: &Value) -> Result<Credential, Error> {
     let credential = match value["type"].as_str() {
         Some("key" | "api") => Credential::key(value["key"].as_str().ok_or(Error::Invalid)?.into()),
