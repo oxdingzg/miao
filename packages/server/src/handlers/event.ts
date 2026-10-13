@@ -27,41 +27,72 @@ export const EventHandler = HttpApiBuilder.group(Api, "server.event", (handlers)
   Effect.gen(function* () {
     const events = yield* EventV2.Service
     const clients = yield* ClientEvents.Service
-    return handlers.handleRaw("event.subscribe", () =>
-      Effect.gen(function* () {
-        const connected = {
-          id: EventV2.ID.create(),
-          type: "server.connected",
-          data: {},
-        }
-        const output = Stream.unwrap(
-          Effect.gen(function* () {
-            // Acquiring the bounded stream installs its listener before readiness is observable.
-            const live = yield* EventV2.allBounded(events, subscriberCapacity)
-            const external = yield* clients.allBounded(subscriberCapacity)
-            return Stream.make(connected).pipe(
-              Stream.concat(live.pipe(Stream.merge(external, { haltStrategy: "either" }))),
-            )
-          }),
-        ).pipe(
-          Stream.map((event) => encodeEvent(event)),
-          Stream.filter(Option.isSome),
-          Stream.map((event) => eventData(event.value)),
-          Stream.pipeThroughChannel(Sse.encode()),
-        )
-        const heartbeat = Stream.tick("15 seconds").pipe(Stream.map(() => ": heartbeat\n\n"))
-        return HttpServerResponse.stream(
-          output.pipe(Stream.merge(heartbeat, { haltStrategy: "left" }), Stream.encodeText),
-          {
-            contentType: "text/event-stream",
-            headers: {
-              "Cache-Control": "no-cache, no-transform",
-              "X-Accel-Buffering": "no",
-              "X-Content-Type-Options": "nosniff",
+    return handlers
+      .handleRaw("event.subscribe", () =>
+        Effect.gen(function* () {
+          const connected = {
+            id: EventV2.ID.create(),
+            type: "server.connected",
+            data: {},
+          }
+          const output = Stream.unwrap(
+            Effect.gen(function* () {
+              // Acquiring the bounded stream installs its listener before readiness is observable.
+              const live = yield* EventV2.allBounded(events, subscriberCapacity)
+              const external = yield* clients.allBounded(subscriberCapacity)
+              return Stream.make(connected).pipe(
+                Stream.concat(live.pipe(Stream.merge(external, { haltStrategy: "either" }))),
+              )
+            }),
+          ).pipe(
+            Stream.map((event) => encodeEvent(event)),
+            Stream.filter(Option.isSome),
+            Stream.map((event) => eventData(event.value)),
+            Stream.pipeThroughChannel(Sse.encode()),
+          )
+          const heartbeat = Stream.tick("15 seconds").pipe(Stream.map(() => ": heartbeat\n\n"))
+          return HttpServerResponse.stream(
+            output.pipe(Stream.merge(heartbeat, { haltStrategy: "left" }), Stream.encodeText),
+            {
+              contentType: "text/event-stream",
+              headers: {
+                "Cache-Control": "no-cache, no-transform",
+                "X-Accel-Buffering": "no",
+                "X-Content-Type-Options": "nosniff",
+              },
             },
-          },
-        )
-      }),
-    )
+          )
+        }),
+      )
+      .handleRaw("event.durable", (ctx) =>
+        Effect.gen(function* () {
+          // handleRaw sees the raw request, so the cursor query is parsed here
+          // the way `pty.connect` parses its own; the endpoint schema keeps the
+          // generated client typed.
+          const url = new URL(ctx.request.url, "http://localhost")
+          const aggregateID = url.searchParams.get("aggregateID") ?? ""
+          const rawAfter = url.searchParams.get("after")
+          const parsed = rawAfter === null ? Number.NaN : Number(rawAfter)
+          const after = Number.isSafeInteger(parsed) ? parsed : -1
+          const output = events.durable({ aggregateID, after }).pipe(
+            Stream.map((event) => encodeEvent(event)),
+            Stream.filter(Option.isSome),
+            Stream.map((event) => eventData(event.value)),
+            Stream.pipeThroughChannel(Sse.encode()),
+          )
+          const heartbeat = Stream.tick("15 seconds").pipe(Stream.map(() => ": heartbeat\n\n"))
+          return HttpServerResponse.stream(
+            output.pipe(Stream.merge(heartbeat, { haltStrategy: "left" }), Stream.encodeText),
+            {
+              contentType: "text/event-stream",
+              headers: {
+                "Cache-Control": "no-cache, no-transform",
+                "X-Accel-Buffering": "no",
+                "X-Content-Type-Options": "nosniff",
+              },
+            },
+          )
+        }),
+      )
   }),
 )
