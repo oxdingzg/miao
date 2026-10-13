@@ -12,6 +12,13 @@ def run(**fields):
 
 
 class ReleaseCITest(unittest.TestCase):
+    def test_builds_and_publication_share_the_verified_commit(self):
+        workflow = Path(__file__).resolve().parents[1].joinpath("workflows/release.yml").read_text()
+        self.assertIn("ref: ${{ inputs.commit || github.sha }}", workflow)
+        self.assertIn("commit: ${{ steps.commit.outputs.sha }}", workflow)
+        self.assertEqual(workflow.count("ref: ${{ needs.version.outputs.commit }}"), 2)
+        self.assertNotIn("ref: main", workflow)
+
     def test_exact_main_push_passes(self):
         self.assertEqual(release.require_success([run()], "release-sha", "test.yml"), "https://example.invalid/run/1")
 
