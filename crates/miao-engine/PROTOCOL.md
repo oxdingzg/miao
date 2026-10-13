@@ -132,3 +132,12 @@ lets the tool/result loop continue. It never cancels the Session. The engine
 checks the original input binding, location, active run and expiry in the same
 transaction. An exact rejection retry preserves the cursor; cross-session,
 changed-hash and already-answered requests fail.
+
+### Idle Session initialization
+
+`initialize` takes `session_id` and `title`. It creates an idle identity in the
+engine database and binds it to the engine workspace, without admitting an input
+or scheduling model execution. `snapshot` and `sessions` immediately see it.
+An exact retry returns `duplicate: true` and preserves edited metadata and the
+journal cursor; reusing an identity belonging to another workspace fails.
+The product initializes identity before publishing its durable native placement.
