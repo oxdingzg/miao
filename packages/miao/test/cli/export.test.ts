@@ -1,3 +1,4 @@
+import { TestInstance } from "../fixture/fixture"
 import { describe, expect } from "bun:test"
 import { eq, sql } from "drizzle-orm"
 import { DateTime, Effect } from "effect"
@@ -11,7 +12,6 @@ import { ProviderV2 } from "@miao/core/provider"
 import { SessionSchema } from "@miao/core/session/schema"
 import { MessageTable, PartTable, SessionMessageTable, SessionTable } from "@miao/core/session/sql"
 import { SessionStore } from "@miao/core/session/store"
-import { InstanceRef } from "@/effect/instance-ref"
 import { archive } from "../../src/cli/cmd/export"
 import { importArchive } from "../../src/cli/cmd/import"
 import { testEffect } from "../lib/effect"
@@ -126,7 +126,7 @@ const legacy = (directory: string) => {
 
 const createLegacySession = Effect.fn("test.createLegacySession")(function* (id: string) {
   const { db } = yield* Database.Service
-  const ctx = yield* InstanceRef
+  const ctx = yield* TestInstance
   if (!ctx) throw new Error("no instance")
   const sessionID = SessionSchema.ID.make(id)
   yield* db
@@ -225,7 +225,7 @@ describe("session archive", () => {
     () =>
       Effect.gen(function* () {
         const database = yield* Database.Service
-        const ctx = yield* InstanceRef
+        const ctx = yield* TestInstance
         if (!ctx) throw new Error("no instance")
         const sessionID = yield* createLegacySession("ses_archive_roundtrip")
         yield* SessionBackfill.backfill(database.db)
@@ -252,7 +252,7 @@ describe("session archive", () => {
     Effect.gen(function* () {
       const database = yield* Database.Service
       const store = yield* SessionStore.Service
-      const ctx = yield* InstanceRef
+      const ctx = yield* TestInstance
       if (!ctx) throw new Error("no instance")
       const sessionID = SessionSchema.ID.make("ses_archive_v1")
       const v1 = {
@@ -308,7 +308,7 @@ describe("session archive", () => {
   it.instance("exports a V2-native compaction as a V1 summary reply", () =>
     Effect.gen(function* () {
       const database = yield* Database.Service
-      const ctx = yield* InstanceRef
+      const ctx = yield* TestInstance
       if (!ctx) throw new Error("no instance")
       const sessionID = SessionSchema.ID.make("ses_archive_v2_compaction")
       yield* database.db
@@ -390,7 +390,7 @@ describe("session archive", () => {
 
   it.instance("refuses an archive newer than it understands", () =>
     Effect.gen(function* () {
-      const ctx = yield* InstanceRef
+      const ctx = yield* TestInstance
       if (!ctx) throw new Error("no instance")
       const exit = yield* importArchive({ version: 99, info: {}, messages: [] }, ctx).pipe(Effect.exit)
       expect(exit._tag).toBe("Failure")

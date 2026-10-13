@@ -152,101 +152,29 @@ legacy adapters, and stay. Remaining are genuine V1-shaped leftovers:
   app state; no legacy-route mocks in tests.
 
 ### 1.3 Non-session legacy routes and server teardown
-Most V2 endpoints exist (`pty.shells`, `project.update`, `vcs.diff`, `fs.content`, `config.update`,
-`workspace.reset` via `/api/worktree`, `project.initGit`, `project` persistence). Remaining:
-- [x] Move project persistence into core (#35, #36).
-- [x] Delete the legacy `packages/miao` `Project` facade (#46).
-- [x] Drop the dead V1 `@/storage` service and the `@/background/job` instance wrapper from the
-      app layer; the background-job engine cases moved to `packages/core/test/background-job.test.ts`.
-      The release server already assembles V2-only through `packages/server` (`assembly.ts`), and
-      `RuntimeHost` builds a core-only execution runtime.
-- [x] Decouple the remaining non-harness consumers from `AppRuntime`: the updater reads global
-      config directly (same file order as the Config service), the TUI SIGUSR2 reload only emits
-      the local disposed event (the window process holds no instances), exit paths dispose only
-      when AppRuntime was used, and the unused `bootstrap`/`InstanceRuntime` Promise bridge is
-      deleted. `AppRuntime` remains only inside `effect-cmd.ts` plus the control-plane worktree
-      adapter.
-- [x] Move the first command bodies onto core services via the location-scope pattern
-      (`debug v2` was already the template): `models` reads the booted `Catalog` provider/model
-      list and `debug skill` lists `SkillV2`, so neither touches the V1 provider or skill
-      services. `debug config` prints the redacted core `Config.merge(entries)` and
-      `debug info` derives its plugin list from the merged V2 config plus auto-discovered
-      files, so neither touches the V1 config service. `debug lsp` drives the core LSP
-      service (symbols now take a file to select the server) and `debug snapshot` is
-      redefined onto core capture/files/diff tree semantics, replacing the V1
-      git-file track/patch/diff. `mcp` now reads the merged V2 config and drives
-      the core `MCP`/`McpAuth` services (auth status derives from stored tokens;
-      the OAuth flow opens the browser itself, so the URL handoff is gone), so
-      its add/list/auth/logout/debug paths leave the V1 graph. `providers list` and
-      `logout` read and remove core `Credential` records directly (the V1
-      `Auth` store's `auth.json` is legacy; core holds them in the database);
-      `providers login` still runs the V1 `Auth`/`Plugin` auth-hook flow and is
-      the last V1 command surface. Remaining V1 consumers: `providers login` and
-      the control-plane worktree adapter.
-- [x] Migrate `providers login` onto core `Integration`: the registry (populated by the
-      models-catalog plugin, one integration per provider) exposes the login methods that
-      V1 got from plugin auth hooks, plus `connection.key` for API keys, `connection.oauth` +
-      `attempt.status`/`attempt.complete` (+ optional `code`) for OAuth, and `adoptLegacy`
-      for existing `auth.json` records. Provider filtering (enabled/disabled plus the
-      opencode/openai priority order) and the interactive prompts stay in the command.
-      Decide the fate of the legacy `login <url>` well-known flow (`fetch
-      /.well-known/opencode` + spawn auth command + store token) — it has no V2 counterpart
-      and likely belongs in the same retirement as `auth.json`.
-      Landed: the command opens a location scope, awaits the plugin boot barrier, offers the
-      integration's key/oauth methods (with `--method` and a picker), drives `connection.key`
-      or `connection.oauth` + `attempt.status` polling (prompting for the code in `code`
-      mode), and awaited-approval. The V1 enabled/disabled provider lists are gone (V2 has no
-      such config; the migration folds them into `provider`), so no config read remains. Both
-      edge flows were retired as no V2 path can resolve their credentials: the
-      `login <url>` well-known flow and the "Other" custom-provider key path (their helpers
-      and tests are deleted).
-- [ ] Remove the `packages/miao` `app-runtime` V1 layer: migrate `effect-cmd.ts` commands and the
-      control-plane worktree adapter to core services, then delete the V1 graph.
-      Inventory from the completed survey:
-      - Commands reading the V1 instance: none. Every `effectCmd` command now sets
-        `instance: false` (project/worktree resolution goes through
-        `cli/project-context.ts`, which wraps `ProjectRegistry.registerDirectory`) — the V1
-        instance bootstrap no longer runs on any command path, so
-        `InstanceStore`/`InstanceBootstrap` are one step from deletion (only the app layer and
-        the test fixture still build them).
-        Landed: the CLI runtime is now core-only. `cli/cli-runtime.ts` assembles the global
-        core nodes (Database, EventV2, FSUtil, Blob, Npm, GitCli, Ripgrep, ModelsCatalog,
-        McpAuth, SessionStore/Projector/Schedule, RuntimeFlags, EventV2Bridge, ProjectMetadata,
-        Installation) plus the location map and `SessionExecutionLocal`, and `effect-cmd.ts`
-        runs every handler on it with `CliServices` as the only ambient services; the
-        `instance` option is gone, `cli/global-config.ts` (shared with the updater) replaces
-        the V1 config read in `network.ts`, and `effect/app-runtime.ts` +
-        `effect/app-node-builder-v1.ts` are deleted. What still references the V1 graph is only
-        the instance subsystem, the V1 service modules themselves, and their tests.
-      - The V1 workspace/adapters subsystem has no production caller (`Workspace.Service` is
-        only referenced by tests), so its runtime is deleted: `control-plane/workspace.ts`,
-        `workspace-adapter-runtime.ts`, `util.ts`, and `dev/*`. The V1 workspace plugin API is
-        retired with it: `PluginInput.experimental_workspace` and its `WorkspaceAdapter` types
-        are gone from `@miao/plugin`, `example-workspace.ts`, `control-plane/adapters/` and its
-        test are deleted, and the three plugin tests that stubbed the field are updated. Only
-        `control-plane/types.ts` (the `Workspace` view model that `public-schemas.ts` keeps in
-        the generated legacy SDK — shape and identifier unchanged, `check:generated` passes) and
-        `control-plane/workspace-context.ts` (imported by the instance plumbing) remain; the
-        latter moves with the instance group when that group is deleted.
-      - After those, `effect/app-runtime.ts`, `effect/app-node-builder-v1.ts`,
-        `project/bootstrap.ts`, `project/bootstrap-service.ts`, and the remaining V1 service
-        modules (v1 config/provider/plugin/lsp/skill/snapshot/auth/worktree/…) have no
-        consumers and can be deleted; `effect-cmd.ts` then assembles a core-only runtime.
-      - `server/routes/instance/httpapi/public-schemas.ts` still imports the V1 `Workspace`
-        module for the OpenAPI document; that reference must switch to a protocol/schema
-        source before the module is deleted.
-        Landed: `public-schemas.ts` now imports every view model from the `@miao/schema/*-view`
-        modules directly (`ProviderView`, `CommandView`, `AgentView`, `AuthView`,
-        `ProviderAuthView`, `FormatView`, `LspView`, plus the new `McpView` that carries the V1
-        MCP status union moved out of the V1 MCP module) and only `@/control-plane/types` for the
-        workspace view model, so it no longer keeps the V1 service modules alive.
-        `check:generated` passes with no diff.
-      This is a multi-PR cutover: land the command migrations first, then the instance/workspace
-      deletion, then the app-layer deletion.
+
+- [x] Move project persistence into core (#35, #36) and delete the legacy Project facade (#46).
+- [x] Migrate the command surface to core Location-scoped services and project registration.
+      `effect-cmd.ts` runs on the core-only `CliRuntime` (#777); the V1 instance bootstrap and
+      its command options are gone. The release server uses the V2 `packages/server` assembly.
+- [x] Remove the V1 service graph and instance/workspace plumbing from `packages/miao`:
+      provider, plugin runtime/auth hooks, config service, agent service, LSP, MCP, auth,
+      skill, snapshot, worktree, formatter, command, question, permission and image services;
+      InstanceStore/InstanceState/InstanceRef, bootstrap, callback bridge and run-service.
+      Keep the CLI/TUI config readers, plugin installation/marketplace/TUI loader, and
+      schema view models that remain in active use. CLI generation keeps its prompt locally.
+- [x] Preserve the generated SDK view-model shapes while removing service-module imports
+      (#771). The remaining workspace view schema now lives beside `public-schemas.ts`;
+      no V1 control-plane runtime remains. `check:generated` verifies byte-identical output.
+- [x] Replace surviving test fixture instance machinery with core project registration.
+      Retire tests and fakes for deleted V1 implementations. Keep TUI config migration,
+      V1-document lowering, plugin installation, server routing, and CLI archive tests.
+      Event forwarding uses the explicit event Location rather than ambient V1 instance refs.
 - [ ] Confirm V2 endpoints cover app behaviors that were silently disabled on V2 (global config
       read, project rename, directory picker, custom providers).
-- **Acceptance:** `packages/miao` is only the CLI shell; the server mounts `/api/*` only; no V1
-  project code remains.
+- **Runtime retirement acceptance:** `packages/miao` composes the CLI/TUI shell and V2 server;
+  the server mounts `/api/*`; no V1 project/instance runtime or duplicate service graph remains.
+  Legacy config decoders and SDK view schemas are retained as data compatibility boundaries.
 
 ---
 

@@ -63,7 +63,7 @@ and do not add a barrel `index.ts`. Consumers import the specific sibling:
 
 ```ts
 import { ConfigAgent } from "@/config/agent"
-import { InstanceState } from "@/effect/instance-state"
+import { Location } from "@miao/core/location"
 ```
 
 Barrels in multi-sibling directories force every import through the barrel to
@@ -96,29 +96,13 @@ See `specs/effect/migration.md` for the compact pattern reference and examples.
 - Use `Schema.Defect` instead of `unknown` for defect-like causes.
 - In `Effect.gen` / `Effect.fn`, prefer `yield* new MyError(...)` over `yield* Effect.fail(new MyError(...))` for direct early-failure branches.
 
-## Runtime vs InstanceState
+## Runtime and Location scope
 
-- Use `makeRuntime` (from `src/effect/run-service.ts`) for all services. It returns `{ runPromise, runFork, runCallback }` backed by a shared `memoMap` that deduplicates layers.
-- Use `InstanceState` (from `src/effect/instance-state.ts`) for per-directory or per-project state that needs per-instance cleanup. It uses `ScopedCache` keyed by directory — each open project gets its own state, automatically cleaned up on disposal.
-- If two open directories should not share one copy of the service, it needs `InstanceState`.
-- Do the work directly in the `InstanceState.make` closure — `ScopedCache` handles run-once semantics. Don't add fibers, `ensure()` callbacks, or `started` flags on top.
-- Use `Effect.addFinalizer` or `Effect.acquireRelease` inside the `InstanceState.make` closure for cleanup (subscriptions, process teardown, etc.).
-- Use `Effect.forkScoped` inside the closure for background stream consumers — the fiber is interrupted when the instance is disposed.
-- To make a service's `init()` non-blocking, fork `InstanceState.get(state)` at the `init()` call site (e.g. `Effect.forkIn(scope)`), not by forking work inside the `InstanceState.make` closure. Forking inside the closure leaves state incomplete for other methods that read it.
-- `src/project/bootstrap.ts` already wraps every service `init()` in `Effect.forkDetach`, so `init()` is fire-and-forget in production. Keep `init()` methods synchronous internally; the caller controls concurrency.
-
-## Effect v4 beta API
-
-- `Effect.fork` and `Effect.forkDaemon` do not exist. Use `Effect.forkIn(scope)` to fork a fiber into a specific scope.
-
-## Preferred Effect services
-
-- In effectified services, prefer yielding existing Effect services over dropping down to ad hoc platform APIs.
-- Prefer `FileSystem.FileSystem` instead of raw `fs/promises` for effectful file I/O.
-- Prefer `ChildProcessSpawner.ChildProcessSpawner` with `ChildProcess.make(...)` instead of custom process wrappers.
-- Prefer `HttpClient.HttpClient` instead of raw `fetch`.
-- Prefer `Path.Path`, `Config`, `Clock`, and `DateTime` when those concerns are already inside Effect code.
-- For background loops or scheduled tasks, use `Effect.repeat` or `Effect.schedule` with `Effect.forkScoped` in the layer definition.
+- The CLI uses `CliRuntime` from `src/cli/cli-runtime.ts`; command handlers run through `effectCmd`.
+- Use core `makeRuntime` from `@miao/core/effect/runtime` for service-backed callback boundaries.
+- Keep per-directory services Location-scoped via core `LocationServiceMap`. Resolve project and checkout metadata through `src/cli/project-context.ts`.
+- The V1 InstanceStore/InstanceRef/InstanceState/bootstrap graph has been retired. Do not reintroduce ambient instance context.
+- Use `Effect.addFinalizer` and `Effect.forkScoped` for scope-owned cleanup and consumers.
 
 ## Effect.cached for deduplication
 
@@ -126,6 +110,4 @@ Use `Effect.cached` when multiple concurrent callers should share a single in-fl
 
 ## Callback boundaries
 
-Use `EffectBridge` for native or external callbacks (`@parcel/watcher`, `node-pty`, native `fs.watch`, plugin callbacks, etc.) that need to re-enter Effect services with instance/workspace context.
-
-Plain async code should pass explicit context or stay inside an Effect fiber; do not add ambient instance context shims.
+Keep callbacks inside a service-owned Effect scope or pass explicit Location context. Do not add ambient V1 instance or workspace context shims.
