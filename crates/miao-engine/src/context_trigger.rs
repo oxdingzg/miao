@@ -67,7 +67,8 @@ pub fn estimate_tokens(chars: usize) -> u64 {
 /// One run's compaction knobs at the checkpoint boundary.
 /// Effective context limits from the product configuration. `None` keeps
 /// automatic compaction off entirely.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct ContextLimits {
     /// Effective context window for the provider.
     pub window: u64,
@@ -80,6 +81,12 @@ pub struct ContextLimits {
 }
 
 impl ContextLimits {
+    /// Parse the wire form the product spawner passes as
+    /// `--context-limits <json>` (camelCase fields).
+    pub fn from_wire(json: &str) -> Result<Self, String> {
+        serde_json::from_str(json).map_err(|error| format!("invalid --context-limits: {error}"))
+    }
+
     pub fn budget(&self) -> Budget {
         Budget {
             window: Some(self.window),
@@ -415,6 +422,19 @@ mod tests {
                 segments: vec![]
             }
         );
+    }
+
+    #[test]
+    fn wire_form_parses_camel_case_and_rejects_garbage() {
+        let limits = ContextLimits::from_wire(
+            r#"{"window":200000,"ratio":0.85,"headroom":20000,"perPass":50}"#,
+        )
+        .unwrap();
+        assert_eq!(limits.window, 200_000);
+        assert_eq!((limits.ratio * 100.0) as u64, 85);
+        assert_eq!(limits.headroom, 20_000);
+        assert_eq!(limits.per_pass, 50);
+        assert!(ContextLimits::from_wire(r#"{"ratio":0.5}"#).is_err());
     }
 
     #[test]

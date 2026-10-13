@@ -1141,6 +1141,65 @@ async fn execute(
             return Ok(());
         }
         let mut promoted = inner.store.promote(session, !reply.needs_tools).await?;
+        // Automatic context management at the settled boundary (roadmap
+        // §2.13). Off unless the runtime was configured with limits.
+        if let Some(limits) = &*inner.context.lock().await {
+            let provider = Arc::clone(&inner.provider);
+            let stop = inner.stop.clone();
+            let mut summarize = move |body: String| {
+                let provider = Arc::clone(&provider);
+                let stop = stop.clone();
+                async move {
+                    let (tx, _rx) = mpsc::channel(16);
+                    let request = ModelRequest {
+                        system: "Summarize the conversation portion you are given. Reply with only the summary text.".into(),
+                        messages: vec![Message {
+                            role: "user".into(),
+                            content: json!([{"type": "text", "text": body}]),
+                            checkpoint: None,
+                            recorded_at_ms: None,
+                        }],
+                        tools: vec![],
+                    };
+                    let reply = provider
+                        .stream(request, tx, stop.child_token())
+                        .await
+                        .map_err(|error| error.to_string())?;
+                    let text = reply
+                        .content
+                        .as_array()
+                        .into_iter()
+                        .flatten()
+                        .filter_map(|block| block["text"].as_str())
+                        .collect::<Vec<_>>()
+                        .join("");
+                    if text.is_empty() {
+                        Err("summarizer returned no text".into())
+                    } else {
+                        Ok(text)
+                    }
+                }
+            };
+            let mut notify = |notice: Value| {
+                let _ = inner.progress.send(notice);
+            };
+            let mut breaker = inner.breaker.lock().await;
+            let compacted = crate::context_trigger::maybe_compact(
+                &inner.store,
+                crate::context_trigger::CompactRequest {
+                    session,
+                    run,
+                    boundary: assistant_boundary,
+                    budget: &limits.budget(),
+                    per_pass: limits.per_pass,
+                    breaker: &mut breaker,
+                    notify: &mut notify,
+                },
+                &mut summarize,
+            )
+            .await;
+            eprintln!("COMPACTION_DEBUG committed={compacted:?}");
+        }
         if !reply.needs_tools && promoted.is_empty() && state_allowed {
             let state = inner.store.state(session).await?;
             let goal = &state["goal"]["value"];
@@ -1210,64 +1269,6 @@ async fn execute(
                 goal_stalls = 0;
                 goal_signature = None;
             }
-        }
-        // Automatic context management at the settled boundary (roadmap
-        // §2.13). Off unless the runtime was configured with limits.
-        if let Some(limits) = &*inner.context.lock().await {
-            let provider = Arc::clone(&inner.provider);
-            let stop = inner.stop.clone();
-            let mut summarize = move |body: String| {
-                let provider = Arc::clone(&provider);
-                let stop = stop.clone();
-                async move {
-                    let (tx, _rx) = mpsc::channel(16);
-                    let request = ModelRequest {
-                        system: "Summarize the conversation portion you are given. Reply with only the summary text.".into(),
-                        messages: vec![Message {
-                            role: "user".into(),
-                            content: json!([{"type": "text", "text": body}]),
-                            checkpoint: None,
-                            recorded_at_ms: None,
-                        }],
-                        tools: vec![],
-                    };
-                    let reply = provider
-                        .stream(request, tx, stop.child_token())
-                        .await
-                        .map_err(|error| error.to_string())?;
-                    let text = reply
-                        .content
-                        .as_array()
-                        .into_iter()
-                        .flatten()
-                        .filter_map(|block| block["text"].as_str())
-                        .collect::<Vec<_>>()
-                        .join("");
-                    if text.is_empty() {
-                        Err("summarizer returned no text".into())
-                    } else {
-                        Ok(text)
-                    }
-                }
-            };
-            let mut notify = |notice: Value| {
-                let _ = inner.progress.send(notice);
-            };
-            let mut breaker = inner.breaker.lock().await;
-            let _ = crate::context_trigger::maybe_compact(
-                &inner.store,
-                crate::context_trigger::CompactRequest {
-                    session,
-                    run,
-                    boundary: assistant_boundary,
-                    budget: &limits.budget(),
-                    per_pass: limits.per_pass,
-                    breaker: &mut breaker,
-                    notify: &mut notify,
-                },
-                &mut summarize,
-            )
-            .await;
         }
         step += 1;
     }
