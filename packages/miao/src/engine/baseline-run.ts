@@ -49,10 +49,13 @@ export interface BaselineEvidence {
   loops: { continuations: string[]; stopped: string[] }
   toolCalls: number
   /**
-   * Read batches the engine ran together: count and summed tool window. The
-   * TypeScript engine has no read batch, and older evidence predates the field.
+   * Read batches the engine ran together: how many batches, how many settled
+   * reads they carried, and the wall time they took as the runner observed it.
+   * The TypeScript engine has no read batch, and older evidence predates the
+   * field. Engine event payloads stay deterministic, so this is measured from
+   * the runner's own receipt times rather than from a duration in the event.
    */
-  parallel?: { batches: number; toolElapsedMs: number }
+  parallel?: { batches: number; batchedReads: number; batchWallMs: number }
   textHash: string
   binarySha256: string | null
   startedAtMs: number
@@ -235,15 +238,7 @@ export async function runBaselineRust(input: BaselineRustInput): Promise<Baselin
     profile: engineProfile(events),
     phases: enginePhases(events, progress, observed, verifiedAtMs),
     toolCalls: events.filter((event) => event.kind === "tool.completed").length,
-    parallel: {
-      batches: events.filter((event) => event.kind === "tool.parallel.started").length,
-      toolElapsedMs: events
-        .filter((event) => event.kind === "tool.completed")
-        .reduce((total, event) => {
-          const elapsed = (event.data as { elapsed_ms?: unknown } | null)?.elapsed_ms
-          return total + (typeof elapsed === "number" ? elapsed : 0)
-        }, 0),
-    },
+    parallel: observedReadBatches(events, observed),
     admissionMs: admittedAt(events, observed),
     requiredReceipts: task.requiredReceipts,
     answerContains: task.answerContains,
@@ -390,7 +385,7 @@ interface FinishedBaselineRun {
   profile: ReturnType<typeof engineProfile>
   phases: BaselinePhase[]
   toolCalls: number
-  parallel?: { batches: number; toolElapsedMs: number }
+  parallel?: { batches: number; batchedReads: number; batchWallMs: number }
   admissionMs: number | null
   requiredReceipts: string[]
   answerContains: string[]
@@ -546,6 +541,40 @@ function numberOrNull(value: unknown) {
 
 /// Loop classification counts: how many provider turns were continued or
 /// stopped for a classified reason (empty completion, no progress, budget).
+/// A read batch's wall time and read count, as the runner observed them: from
+/// the batch's start event to the settlement of its last read. The batch event
+/// names its calls, so the reads it owns are counted exactly.
+function observedReadBatches(events: EngineEvent[], observed: Map<number, number>) {
+  const windows: number[] = []
+  let batchedReads = 0
+  let current: { start: number; expected: number; reads: number; at: number } | null = null
+  const close = () => {
+    if (!current) return
+    windows.push(Math.max(0, current.at - current.start))
+    batchedReads += current.reads
+    current = null
+  }
+  for (const event of events) {
+    const at = observed.get(event.seq) ?? 0
+    if (event.kind === "tool.parallel.started") {
+      close()
+      const calls = (event.data as { call_ids?: unknown } | null)?.call_ids
+      current = { start: at, expected: Array.isArray(calls) ? calls.length : 0, reads: 0, at }
+      continue
+    }
+    if (event.kind === "tool.completed" && current && current.reads < current.expected) {
+      current.reads += 1
+      current.at = at
+    }
+  }
+  close()
+  return {
+    batches: windows.length,
+    batchedReads,
+    batchWallMs: windows.reduce((total, window) => total + window, 0),
+  }
+}
+
 function engineLoops(events: EngineEvent[]) {
   const reason = (event: EngineEvent) => {
     const data = BlackboxTape.json(event.data)

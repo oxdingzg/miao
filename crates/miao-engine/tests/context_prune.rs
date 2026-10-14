@@ -119,21 +119,6 @@ async fn oversized_tool_output_is_elided_from_the_request_only() {
         captured.len()
     );
 
-    // A settled tool reports the window it ran in, which is what makes
-    // per-turn overlap and the critical path measurable from events.
-    let completed = store
-        .events("s", 0, 400)
-        .await
-        .unwrap()
-        .into_iter()
-        .find(|event| event.kind == "tool.completed")
-        .expect("a tool settled");
-    assert!(
-        completed.data["elapsed_ms"].as_u64().is_some(),
-        "{}",
-        completed.data
-    );
-
     // Stored history keeps the whole payload.
     let stored = store.snapshot("s").await.unwrap().to_string();
     assert!(!stored.contains("elided by context management"));

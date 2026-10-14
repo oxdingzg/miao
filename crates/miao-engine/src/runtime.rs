@@ -978,20 +978,12 @@ async fn execute(
                             "unsupported invalid tool input correction".into(),
                         ));
                     }
-                    inner.store.tool_result(session, run, id, json!({"error":"Invalid JSON tool arguments. This call was not executed. Supply a valid JSON object for this call only; do not repeat completed operations."}), true, 0).await?;
+                    inner.store.tool_result(session, run, id, json!({"error":"Invalid JSON tool arguments. This call was not executed. Supply a valid JSON object for this call only; do not repeat completed operations."}), true).await?;
                     inner.store.record(session, "tool.input_error", json!({"run_id":run,"step":step,"call_id":id,"tool":name,"reason":"invalid_json","attempt":input_corrections})).await?;
                     continue;
                 }
                 let batched = reads.contains_key(id);
-                // The tool's own running window, reset at the dispatch
-                // boundary so approval waits are not counted as tool time. A
-                // batched read reports the window the batch measured for it.
-                let mut tool_started = std::time::Instant::now();
-                let mut batched_elapsed: Option<u64> = None;
-                let (output, is_error) = if let Some((output, is_error, elapsed_ms)) =
-                    reads.remove(id)
-                {
-                    batched_elapsed = Some(elapsed_ms);
+                let (output, is_error) = if let Some((output, is_error)) = reads.remove(id) {
                     (output, is_error)
                 } else {
                     inner
@@ -1032,7 +1024,6 @@ async fn execute(
                                 (json!({"error":blocked}), true)
                             } else {
                                 inner.store.mark_dispatched(session, run, id).await?;
-                                tool_started = std::time::Instant::now();
                                 let prepared_external =
                                     prepared.access() == crate::permission::Access::External;
                                 let replayed = if let Some(replay) = &inner.tool_replay {
@@ -1197,15 +1188,7 @@ async fn execute(
                 if !batched {
                     inner
                         .store
-                        .tool_result(
-                            session,
-                            run,
-                            id,
-                            output,
-                            is_error,
-                            batched_elapsed
-                                .unwrap_or_else(|| tool_started.elapsed().as_millis() as u64),
-                        )
+                        .tool_result(session, run, id, output, is_error)
                         .await?;
                     inner
                         .store
@@ -2350,7 +2333,7 @@ async fn execute_read_batch(
     run: &str,
     content: &Value,
     cancel: CancellationToken,
-) -> Result<HashMap<String, (Value, bool, u64)>, Error> {
+) -> Result<HashMap<String, (Value, bool)>, Error> {
     if cancel.is_cancelled() || !inner.tools.hooks().is_empty() || inner.tool_replay.is_some() {
         return Ok(HashMap::new());
     }
@@ -2412,30 +2395,29 @@ async fn execute_read_batch(
     let mut pending = futures_util::stream::iter(prepared.into_iter().map(|(id, tool)| {
         let cancel = cancel.child_token();
         async move {
-            let started = std::time::Instant::now();
             let result = inner
                 .tools
                 .execute_prepared(tool, &inner.policy, cancel)
                 .await;
-            (id, result, started.elapsed().as_millis() as u64)
+            (id, result)
         }
     }))
     .buffer_unordered(4);
     let mut results = HashMap::new();
-    while let Some((id, result, elapsed_ms)) = pending.next().await {
+    while let Some((id, result)) = pending.next().await {
         let outcome = match result {
-            Ok(output) => (output, false, elapsed_ms),
-            Err(error) => (json!({"error":error.to_string()}), true, elapsed_ms),
+            Ok(output) => (output, false),
+            Err(error) => (json!({"error":error.to_string()}), true),
         };
         results.insert(id, outcome);
     }
     // Settle every admitted read before the runner can return on cancellation
     // or a repeat limit; projected receipts preserve the provider's call order.
     for (id, name) in order {
-        let (output, is_error, elapsed_ms) = &results[&id];
+        let (output, is_error) = &results[&id];
         inner
             .store
-            .tool_result(session, run, &id, output.clone(), *is_error, *elapsed_ms)
+            .tool_result(session, run, &id, output.clone(), *is_error)
             .await?;
         inner
             .store
