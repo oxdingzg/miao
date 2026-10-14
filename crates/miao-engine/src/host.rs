@@ -104,6 +104,8 @@ impl Host {
                             query,
                             limit,
                             before_message_seq,
+                            tool_use_id: None,
+                            offset: 0,
                         },
                     )
                     .await
