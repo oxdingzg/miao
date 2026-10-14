@@ -2044,12 +2044,35 @@ async fn delegate(
             })
         })
         .unwrap_or_default();
+    // Delegation outcome evidence (roadmap A10): the child's billed totals and
+    // turn count ride the deterministic SubagentStop payload so a report can
+    // price parent+child without reconstructing provenance. Wall-clock cost
+    // stays on the ephemeral progress feed — the replayed journal pins
+    // payloads, and durations are not reproducible.
+    let mut billed_input = 0u64;
+    let mut billed_output = 0u64;
+    let mut turns = 0u64;
+    for event in inner
+        .store
+        .events(&child, 0, 10_000)
+        .await
+        .unwrap_or_default()
+    {
+        if event.kind != "usage" || event.data["partial"].as_bool() == Some(true) {
+            continue;
+        }
+        turns += 1;
+        billed_input += event.data["usage"]["inputTokens"].as_u64().unwrap_or(0);
+        billed_output += event.data["usage"]["outputTokens"].as_u64().unwrap_or(0);
+    }
     inner
         .store
         .record(
             parent,
             crate::events::Lifecycle::SubagentStop.name(),
-            json!({"run_id":run,"subagent_id":child,"call_id":call,"reason":"completed"}),
+            json!({"run_id":run,"subagent_id":child,"call_id":call,"reason":"completed",
+                   "tokens":{"input":billed_input,"output":billed_output},
+                   "turns":turns}),
         )
         .await
         .map_err(|_| ToolError::External("subagent stop could not be recorded".into()))?;
