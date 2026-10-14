@@ -933,7 +933,10 @@ async fn execute(
             )
             .await?;
         if let Some(ttft_ms) = ttft_ms {
-            let _ = inner.store.record_timing(session, run, step as u64, ttft_ms).await;
+            let _ = inner
+                .store
+                .record_timing(session, run, step as u64, ttft_ms)
+                .await;
             let _ = inner.progress.send(
                 json!({"session_id":session,"run_id":run,"step":step,"kind":"provider.ttft","ttft_ms":ttft_ms}),
             );

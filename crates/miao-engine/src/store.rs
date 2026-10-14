@@ -1610,7 +1610,7 @@ impl Store {
             let mut turns = 0u64;
             let mut partial_turns = 0u64;
             let mut tokens = json!({"input":0,"output":0,"cacheRead":0,"cacheWrite":0,"nonCached":0});
-            let mut ttft: Vec<u64> = {
+            let ttft: Vec<u64> = {
                 let mut stmt = conn.prepare(
                     "SELECT ttft_ms FROM engine_timing WHERE session_id=?1 ORDER BY run_id,step",
                 )?;
