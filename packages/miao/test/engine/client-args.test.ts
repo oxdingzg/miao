@@ -20,6 +20,13 @@ test("context limits ride the spawn args only when configured", () => {
   })
 })
 
+test("the prompt-cache policy rides the spawn args only when set", () => {
+  expect(engineArgs(base)).not.toContain("--prompt-cache")
+  const at = engineArgs({ ...base, promptCache: true }).indexOf("--prompt-cache")
+  expect(engineArgs({ ...base, promptCache: true })[at + 1]).toBe("on")
+  expect(engineArgs({ ...base, promptCache: false })[at + 1]).toBe("off")
+})
+
 test("the credential channel rides the spawn args only when configured", () => {
   expect(engineArgs(base)).not.toContain("--credential-db")
   const configured = engineArgs({

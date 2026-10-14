@@ -17,6 +17,7 @@ pub fn build(
     endpoint: Option<&str>,
     source: Source,
     model: String,
+    prompt_cache: bool,
 ) -> Result<Arc<dyn Provider>, ProviderError> {
     match name {
         "anthropic" => Ok(Arc::new(
@@ -27,7 +28,8 @@ pub fn build(
                 source,
                 model,
             )
-            .map_err(|_| ProviderError::Transport)?,
+            .map_err(|_| ProviderError::Transport)?
+            .with_prompt_cache(prompt_cache),
         )),
         "openai-chat" => Ok(Arc::new(
             OpenAIChat::with_source(
