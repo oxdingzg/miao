@@ -408,3 +408,30 @@ reference point the efficiency work measures against.
 Reading tokens cannot be split out of the per-attempt totals: the engine
 accounts usage per provider turn, not per tool, so tool calls stand in as the
 retrieval-effort proxy.
+
+## Short-anchor syntax and edit-wording ablation (2026-10-14)
+
+A2's remaining acceptance asked for an independent evaluation of a model-visible
+edit syntax and its reminder wording, so two engine revisions were compared on
+the v3 edit carriers: main with the existing exact-match guidance, and a variant
+that accepted `anchor`/`new_text` as a concise alternative and told the model to
+name the replaced text by the shortest substring that occurs exactly once.
+
+| task | arm | passed | p50 | turns/run | input tokens | output tokens | tools/run | receipts |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| multi-file | exact match | 4/4 | 32.8 s | 6.0 | 73,624 | 2,369 | 10.0 | - |
+| multi-file | shortest anchor | 3/4 | 39.0 s | 8.0 | 106,216 | 3,259 | 12.5 | tool.error |
+| typed-repair | exact match | 4/4 | 25.1 s | 5.0 | 57,246 | 1,581 | 5.5 | - |
+| typed-repair | shortest anchor | 4/4 | 34.7 s | 6.3 | 77,140 | 2,471 | 7.3 | tool.error |
+
+The shortest-anchor wording loses on every axis: 33-38% more turns, 35-44% more
+billed input, 38-56% more output, a new class of rejected edits (`tool.error`),
+and one lost run. The rejections are the mechanism: a fragment chosen for being
+short is more often ambiguous, so the model spends turns repairing edits the
+longer exact match never failed on. An N=8 sweep of the same variant could not be
+used as the comparison: nine of its thirty-two runs produced no judged sample in
+a provider-side window this measurement does not attribute to the change.
+
+The concise `anchor`/`new_text` form stays in the schema, so a model that writes
+those names spontaneously is accepted rather than rejected, but the
+measured-good exact-match guidance is restored verbatim.
