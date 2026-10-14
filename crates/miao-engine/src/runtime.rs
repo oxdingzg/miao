@@ -1424,22 +1424,9 @@ async fn execute(
         if !reply.needs_tools && promoted.is_empty() && !goal_stopped_this_turn {
             let command = inner.verification.lock().await.clone();
             if let Some(command) = command {
-                if verification_failures >= 2 {
-                    inner
-                        .store
-                        .record(
-                            session,
-                            "loop.stopped",
-                            json!({"run_id":run,"reason":"verification-failed"}),
-                        )
-                        .await?;
-                    return Err(Error::Invalid(
-                        "verification failed after the retry budget".into(),
-                    ));
-                }
                 let detail = match inner
                     .tools
-                    .prepare("run_command", json!({"command":command}))
+                    .prepare("bash", json!({"command":command}))
                     .await
                 {
                     Err(error) => Some(error.to_string()),
@@ -1469,6 +1456,21 @@ async fn execute(
                             json!({"run_id":run,"attempt":verification_failures}),
                         )
                         .await?;
+                    // One repair chance: the second consecutive failure closes
+                    // the run instead of admitting another continuation.
+                    if verification_failures >= 2 {
+                        inner
+                            .store
+                            .record(
+                                session,
+                                "loop.stopped",
+                                json!({"run_id":run,"reason":"verification-failed"}),
+                            )
+                            .await?;
+                        return Err(Error::Invalid(
+                            "verification failed after the retry budget".into(),
+                        ));
+                    }
                     let input_id = format!("verify:{run}:{verification_failures}");
                     let admission = inner
                         .store

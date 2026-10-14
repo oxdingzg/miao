@@ -30,9 +30,12 @@ impl Provider for Quiet {
     }
 }
 
+/// The completion check runs through the process sandbox, so the policy has to
+/// allow process execution and the registry needs the sandbox runner.
 fn policy() -> Policy {
     Policy::new(Config {
         mode: Mode::Workspace,
+        allow_process: true,
         rules: vec![Rule {
             tool: "*".into(),
             path: "**".into(),
@@ -43,18 +46,16 @@ fn policy() -> Policy {
     .unwrap()
 }
 
-#[tokio::test]
-async fn a_failing_completion_check_continues_then_closes_with_a_classification() {
-    let dir = tempfile::tempdir().unwrap();
-    let store = Store::open(dir.path().join("engine.db")).await.unwrap();
-    let tools = Tools::new(dir.path()).await.unwrap();
+async fn launch(root: &std::path::Path, command: &str) -> (Runtime, Store) {
+    let store = Store::open(root.join("engine.db")).await.unwrap();
+    let tools = Tools::new(root)
+        .await
+        .unwrap()
+        .with_process_runner(env!("CARGO_BIN_EXE_miao-engine").into());
     let runtime = Runtime::with_policy(store.clone(), Arc::new(Quiet), tools, policy())
         .await
         .unwrap();
-    let exe = std::env::current_exe().unwrap();
-    runtime
-        .verify_with(Some(format!("{} --definitely-invalid-flag", exe.display())))
-        .await;
+    runtime.verify_with(Some(command.into())).await;
     runtime
         .admit(
             Input {
@@ -67,7 +68,11 @@ async fn a_failing_completion_check_continues_then_closes_with_a_classification(
         )
         .await
         .unwrap();
-    let reason = tokio::time::timeout(std::time::Duration::from_secs(10), async {
+    (runtime, store)
+}
+
+async fn reason(store: &Store) -> String {
+    tokio::time::timeout(std::time::Duration::from_secs(20), async {
         loop {
             let events = store.events("s", 0, 300).await.unwrap();
             if let Some(finished) = events.iter().find(|event| event.kind == "run.finished") {
@@ -80,82 +85,56 @@ async fn a_failing_completion_check_continues_then_closes_with_a_classification(
         }
     })
     .await
-    .unwrap();
-    let kinds = store
+    .unwrap()
+}
+
+async fn kinds(store: &Store) -> Vec<(String, Value)> {
+    store
         .events("s", 0, 300)
         .await
         .unwrap()
         .into_iter()
         .map(|event| (event.kind, event.data))
-        .collect::<Vec<_>>();
-    assert_eq!(reason, "failed");
+        .collect()
+}
+
+#[tokio::test]
+async fn a_failing_completion_check_continues_once_then_closes_with_a_classification() {
+    let dir = tempfile::tempdir().unwrap();
+    let (runtime, store) = launch(dir.path(), "echo verification-boom; exit 1").await;
+    assert_eq!(reason(&store).await, "failed");
+    let events = kinds(&store).await;
     assert_eq!(
-        kinds
+        events
             .iter()
             .filter(|(kind, _)| kind == "verification.failed")
             .count(),
         2
     );
     assert_eq!(
-        kinds
+        events
             .iter()
             .filter(|(kind, data)| kind == "loop.continuation"
                 && data["reason"] == "verification-failed")
             .count(),
         1
     );
-    assert!(kinds
+    assert!(events
         .iter()
         .any(|(kind, data)| kind == "loop.stopped" && data["reason"] == "verification-failed"));
+    // The repair prompt carries the bounded output of the failed command.
+    let history = serde_json::to_string(&store.history("s").await.unwrap()).unwrap();
+    assert!(history.contains("verification-boom"), "{history}");
     runtime.shutdown().await;
 }
 
 #[tokio::test]
 async fn a_passing_completion_check_lets_the_run_finish() {
     let dir = tempfile::tempdir().unwrap();
-    let store = Store::open(dir.path().join("engine.db")).await.unwrap();
-    let tools = Tools::new(dir.path()).await.unwrap();
-    let runtime = Runtime::with_policy(store.clone(), Arc::new(Quiet), tools, policy())
-        .await
-        .unwrap();
-    let exe = std::env::current_exe().unwrap();
-    // The libtest harness accepts --list and exits zero.
-    runtime
-        .verify_with(Some(format!("{} --list", exe.display())))
-        .await;
-    runtime
-        .admit(
-            Input {
-                session_id: "s".into(),
-                input_id: "one".into(),
-                prompt: "finish the task".into(),
-                delivery: Delivery::Steer,
-            },
-            true,
-        )
-        .await
-        .unwrap();
-    let reason = tokio::time::timeout(std::time::Duration::from_secs(10), async {
-        loop {
-            let events = store.events("s", 0, 300).await.unwrap();
-            if let Some(finished) = events.iter().find(|event| event.kind == "run.finished") {
-                return finished.data["reason"]
-                    .as_str()
-                    .unwrap_or_default()
-                    .to_owned();
-            }
-            tokio::time::sleep(std::time::Duration::from_millis(5)).await;
-        }
-    })
-    .await
-    .unwrap();
-    let events = store.events("s", 0, 300).await.unwrap();
-    assert_eq!(reason, "completed");
-    assert!(events
-        .iter()
-        .any(|event| event.kind == "verification.passed"));
-    assert!(!events
-        .iter()
-        .any(|event| event.kind == "verification.failed"));
+    let (runtime, store) = launch(dir.path(), "echo verification-ok").await;
+    assert_eq!(reason(&store).await, "completed");
+    let events = kinds(&store).await;
+    assert!(events.iter().any(|(kind, _)| kind == "verification.passed"));
+    assert!(!events.iter().any(|(kind, _)| kind == "verification.failed"));
     runtime.shutdown().await;
 }
