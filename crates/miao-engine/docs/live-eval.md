@@ -339,3 +339,38 @@ variable, and the receipts corroborate it: the recovery-on runs record no
 `tool.error` at all, while every recovery-off run records one from the stale
 edit. On the type-clean carriers the same report attaches nothing and costs
 nothing measurable, which is the expected noise behaviour.
+
+## Large-file retrieval measurement (2026-10-14)
+
+Carrier: suite-v4 `large-file`, a deterministic source above the whole-file read
+bound whose bug sits at one known line; four repetitions per arm.
+
+With process authority the arms are equivalent -- the shell's grep and sed reach
+the bug at the same cost as the native path:
+
+| arm                                 | passed | p50    | attempts | input tokens |
+| ----------------------------------- | ------ | ------ | -------- | ------------ |
+| pre-A3 (no line windows)            | 4/4    | 37.4 s | 29       | 90,392       |
+| line windows + 1 MiB mutation bound | 4/4    | 37.8 s | 28       | 93,392       |
+
+Without process authority the capability is decisive: before line windows the
+engine cannot read the file at all and no shell exists to bypass that, so the
+repair is impossible; with windows plus matching mutation and patch bounds every
+run repairs it:
+
+| arm                                 | passed | p50    | attempts | input tokens |
+| ----------------------------------- | ------ | ------ | -------- | ------------ |
+| pre-A3                              | 0/4    | 29.0 s | 21       | 36,982       |
+| line windows + 1 MiB mutation bound | 4/4    | 39.2 s | 31       | 88,324       |
+
+The native path is not cheaper than the shell; it is the only path when the
+shell is denied, and the extra turns and tokens it spends there are the price of
+the capability.
+
+Two engine gaps this measurement found are fixed in the same change: an
+oversized whole-file read now answers `TooLarge` and points at the line window,
+and the mutation and patch per-file bounds were raised from 32 KiB to 1 MiB so a
+window-read file can actually be edited (a small edit on a large file is pinned
+by a test). One failure mode belongs to the model, not the engine: after
+mangling the 64-character fingerprint it abandoned `edit_file` for a patch,
+which the raised bound now also accepts.

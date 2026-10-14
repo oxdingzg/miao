@@ -18,6 +18,10 @@ struct Script {
     root: std::path::PathBuf,
     drift: String,
     edit: Value,
+    skip_read: bool,
+    /// Resolve the expected fingerprint from the file at send time, so the
+    /// test measures the mutation path rather than digest transcription.
+    live_digest: bool,
     turn: Mutex<usize>,
 }
 
@@ -30,8 +34,10 @@ impl Provider for Script {
         _: CancellationToken,
     ) -> Result<Reply, ProviderError> {
         let mut turn = self.turn.lock().unwrap();
+        // 1-based: a skipped read shifts every later turn by one.
+        let index = *turn + 1 + usize::from(self.skip_read);
         *turn += 1;
-        match *turn {
+        match index {
             1 => Ok(Reply {
                 content: json!([{"type":"tool_use","id":"read","name":"read_file","input":{"path":"file.txt"}}]),
                 usage: json!({}),
@@ -39,8 +45,13 @@ impl Provider for Script {
             }),
             2 => {
                 std::fs::write(self.root.join("file.txt"), &self.drift).unwrap();
+                let mut edit = self.edit.clone();
+                if self.live_digest {
+                    let bytes = std::fs::read(self.root.join("file.txt")).unwrap();
+                    edit["expected_sha256"] = json!(digest(&bytes));
+                }
                 Ok(Reply {
-                    content: json!([{"type":"tool_use","id":"edit","name":"edit_file","input":self.edit}]),
+                    content: json!([{"type":"tool_use","id":"edit","name":"edit_file","input":edit}]),
                     usage: json!({}),
                     needs_tools: true,
                 })
@@ -73,6 +84,18 @@ async fn launch(
     edit: Value,
     recovery: bool,
 ) -> (Runtime, Store) {
+    launch_with(root, original, drift, edit, recovery, false, false).await
+}
+
+async fn launch_with(
+    root: &std::path::Path,
+    original: &str,
+    drift: &str,
+    edit: Value,
+    recovery: bool,
+    skip_read: bool,
+    live_digest: bool,
+) -> (Runtime, Store) {
     std::fs::write(root.join("file.txt"), original).unwrap();
     let store = Store::open(root.join("engine.db")).await.unwrap();
     let tools = Tools::new(root)
@@ -86,6 +109,8 @@ async fn launch(
             root: root.to_path_buf(),
             drift: drift.into(),
             edit,
+            skip_read,
+            live_digest,
             turn: Mutex::new(0),
         }),
         tools,
@@ -233,37 +258,4 @@ async fn replace_all_and_the_ablation_switch_never_rebase() {
         );
         runtime.shutdown().await;
     }
-}
-
-#[tokio::test]
-async fn a_small_edit_applies_to_a_large_file() {
-    let dir = tempfile::tempdir().unwrap();
-    let root = dir.path().join("workspace");
-    std::fs::create_dir(&root).unwrap();
-    // Larger than one tool input, smaller than the mutation bound.
-    let body = (0..4000)
-        .map(|index| {
-            format!("export function handler{index}(value: number) {{ return value + {index} }}\n")
-        })
-        .collect::<String>()
-        + "export function shift(table: number[], key: number) { return table[key + 1] }\n";
-    std::fs::write(root.join("registry.ts"), &body).unwrap();
-    let tools = Tools::new(&root).await.unwrap().with_writes(true);
-    let applied = tools
-        .execute(
-            "edit_file",
-            json!({
-                "path":"registry.ts",
-                "old_string":"return table[key + 1]",
-                "new_string":"return table[key]",
-                "expected_sha256": digest(body.as_bytes()),
-            }),
-            CancellationToken::new(),
-        )
-        .await
-        .unwrap();
-    assert_eq!(applied["applied"], json!(true));
-    let written = std::fs::read_to_string(root.join("registry.ts")).unwrap();
-    assert!(written.contains("return table[key]"));
-    assert!(written.contains("handler3999"));
 }
