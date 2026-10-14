@@ -119,13 +119,6 @@ export async function runBaselineRust(input: BaselineRustInput): Promise<Baselin
   const progress: Array<{ item: EngineProgress; atMs: number }> = []
   const observed = new Map<number, number>()
   const session = `ses_${randomUUID()}`
-  // The interrupted-turn fixture needs a provider stream that breaks mid-body:
-  // a host cancel never records provider.interrupted, while a truncated stream
-  // does, and the engine must continue without re-running the settled tool.
-  const proxy =
-    task.id === "stream-interruption"
-      ? await startInterruptionProxy(input.endpoint ?? "https://chatgpt.com/backend-api/codex/responses")
-      : undefined
   const drifts = new Map(Object.entries(input.drifts ?? {}))
   const drifted = new Set<string>()
   const readCalls = new Map<string, string>()
@@ -157,33 +150,49 @@ export async function runBaselineRust(input: BaselineRustInput): Promise<Baselin
     drifted.add(target)
     writeFileSync(path.join(workspace, target), drifts.get(target)!)
   }
-  const error = await runEnginePrompt({
-    binary: input.binary,
-    db: path.join(input.root, "engine.db"),
-    workspace,
-    model: input.model,
-    provider: input.provider,
-    credentialDatabase: input.credentialDatabase,
-    credentialID: input.credentialID,
-    credentialIntegration: input.credentialIntegration,
-    policyFile: input.policyFile ?? (await writeBaselinePolicy(input.root)),
-    endpoint: proxy?.endpoint ?? input.endpoint,
-    editRecovery: input.editRecovery,
-    env: input.env,
-    session,
-    prompt: task.prompt,
-    approve: "deny",
-    timeoutMs: input.timeoutMs ?? 300_000,
-    onEvent: (event) => {
-      observed.set(event.seq, Date.now())
-      events.push(event)
-      applyDrift(event)
-    },
-    onProgress: (item) => progress.push({ item, atMs: Date.now() }),
-  }).then(
-    () => null,
-    (failure: unknown) => (failure instanceof Error ? failure.message : String(failure)),
-  )
+  // The interrupted-turn fixture needs a provider stream that breaks mid-body:
+  // a host cancel never records provider.interrupted, while a truncated stream
+  // does, and the engine must continue without re-running the settled tool.
+  const proxy =
+    task.id === "stream-interruption"
+      ? await startInterruptionProxy(input.endpoint ?? "https://chatgpt.com/backend-api/codex/responses")
+      : undefined
+  let error: string | null = null
+  // Each follow-up is admitted on the same Session after the previous run
+  // settles, so history accumulates the way a long interactive Session does.
+  for (const prompt of [task.prompt, ...(task.followups ?? [])]) {
+    const failure = await runEnginePrompt({
+      binary: input.binary,
+      db: path.join(input.root, "engine.db"),
+      workspace,
+      model: input.model,
+      provider: input.provider,
+      credentialDatabase: input.credentialDatabase,
+      credentialID: input.credentialID,
+      credentialIntegration: input.credentialIntegration,
+      policyFile: input.policyFile ?? (await writeBaselinePolicy(input.root)),
+      endpoint: proxy?.endpoint ?? input.endpoint,
+      editRecovery: input.editRecovery,
+      env: input.env,
+      session,
+      prompt,
+      approve: "deny",
+      timeoutMs: input.timeoutMs ?? 300_000,
+      onEvent: (event) => {
+        observed.set(event.seq, Date.now())
+        events.push(event)
+        applyDrift(event)
+      },
+      onProgress: (item) => progress.push({ item, atMs: Date.now() }),
+    }).then(
+      () => null,
+      (reason: unknown) => (reason instanceof Error ? reason.message : String(reason)),
+    )
+    if (failure) {
+      error = failure
+      break
+    }
+  }
   proxy?.stop()
   const assessment = await assessBaselineArtifacts(workspace, task.id)
   const verifiedAtMs = Date.now()
@@ -225,18 +234,20 @@ export async function runBaselineTs(input: BaselineTsInput): Promise<BaselineRun
   await mkdir(path.join(data, "miao"), { recursive: true })
   if (input.credentialDatabase) await seedSharedCredentials(input.credentialDatabase, path.join(data, "miao", "miao.db"))
   const startedAtMs = Date.now()
-  const child = Bun.spawn(
-    [
-      input.bun ?? "bun",
-      input.entry,
-      "run",
-      task.prompt,
-      "--format",
-      "json",
-      "-m",
-      input.model,
-    ],
-    {
+  const parts: Array<Record<string, Schema.Json>> = []
+  const drifts = new Map(Object.entries(input.drifts ?? {}))
+  const drifted = new Set<string>()
+  let session: string | undefined
+  let interrupted = false
+  let exit = 0
+  let stderrText = ""
+  const timeoutMs = input.timeoutMs ?? 300_000
+  // Each follow-up continues the same Session in the same workspace, so the
+  // run accumulates history instead of starting over.
+  for (const prompt of [task.prompt, ...(task.followups ?? [])]) {
+    const args = [input.bun ?? "bun", input.entry, "run", prompt, "--format", "json", "-m", input.model]
+    if (session) args.push("--session", session)
+    const child = Bun.spawn(args, {
       cwd: workspace,
       stdin: "ignore",
       stdout: "pipe",
@@ -255,44 +266,40 @@ export async function runBaselineTs(input: BaselineTsInput): Promise<BaselineRun
       },
     },
   )
-  const parts: Array<Record<string, Schema.Json>> = []
-  let session: string | undefined
-  let interrupted = false
-  const drifts = new Map(Object.entries(input.drifts ?? {}))
-  const drifted = new Set<string>()
-  const stdout = readJsonLines(child.stdout, (message) => {
-    if (typeof message.sessionID === "string") session = message.sessionID
-    if (message.type === "tool_use" || message.type === "text" || message.type === "step_start") parts.push(message)
-    if (drifts.size > 0 && message.type === "tool_use") {
-      const part = message.part
-      const state = BlackboxTape.isObject(part) && BlackboxTape.isObject(part.state) ? part.state : undefined
-      const request = state && BlackboxTape.isObject(state.input) ? state.input : undefined
-      const tracked = request && typeof request.path === "string" ? request.path : undefined
-      if (
-        BlackboxTape.isObject(part) &&
-        part.tool === "read" &&
-        state?.status === "completed" &&
-        tracked &&
-        drifts.has(tracked) &&
-        !drifted.has(tracked)
-      ) {
-        drifted.add(tracked)
-        writeFileSync(path.join(workspace, tracked), drifts.get(tracked)!)
+    const stdout = readJsonLines(child.stdout, (message) => {
+      if (typeof message.sessionID === "string") session = message.sessionID
+      if (message.type === "tool_use" || message.type === "text" || message.type === "step_start") parts.push(message)
+      if (drifts.size > 0 && message.type === "tool_use") {
+        const part = message.part
+        const state = BlackboxTape.isObject(part) && BlackboxTape.isObject(part.state) ? part.state : undefined
+        const request = state && BlackboxTape.isObject(state.input) ? state.input : undefined
+        const tracked = request && typeof request.path === "string" ? request.path : undefined
+        if (
+          BlackboxTape.isObject(part) &&
+          part.tool === "read" &&
+          state?.status === "completed" &&
+          tracked &&
+          drifts.has(tracked) &&
+          !drifted.has(tracked)
+        ) {
+          drifted.add(tracked)
+          writeFileSync(path.join(workspace, tracked), drifts.get(tracked)!)
+        }
       }
-    }
-    if (task.id === "stream-interruption" && !interrupted && actionTool(message)) {
-      interrupted = true
-      child.kill("SIGINT")
-    }
-  })
-  const stderr = new Response(child.stderr).text()
-  const timeoutMs = input.timeoutMs ?? 300_000
-  const timer = setTimeout(() => child.kill("SIGKILL"), timeoutMs)
-  const exit = await child.exited
+      if (task.id === "stream-interruption" && !interrupted && actionTool(message)) {
+        interrupted = true
+        child.kill("SIGINT")
+      }
+    })
+    const stderr = new Response(child.stderr).text()
+    const timer = setTimeout(() => child.kill("SIGKILL"), timeoutMs)
+    exit = await child.exited
+    clearTimeout(timer)
+    await stdout
+    stderrText = await stderr
+    if (exit !== 0) break
+  }
   const exitAtMs = Date.now()
-  clearTimeout(timer)
-  await stdout
-  const stderrText = await stderr
   const assessment = await assessBaselineArtifacts(workspace, task.id)
   const verifiedAtMs = Date.now()
   const bundle = session
