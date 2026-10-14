@@ -435,3 +435,29 @@ a provider-side window this measurement does not attribute to the change.
 The concise `anchor`/`new_text` form stays in the schema, so a model that writes
 those names spontaneously is accepted rather than rejected, but the
 measured-good exact-match guidance is restored verbatim.
+
+## Prefix-cache policy and measured cache reads (2026-10-14)
+
+`--prompt-cache on|off` (#827) carries an explicit policy into the provider: `on`
+marks the stable prefix -- system prompt and tool catalog -- with a cacheable
+breakpoint for the provider that requires one. `off` stays the default, so no
+provider's caching behavior changes unless a caller asks for it.
+
+The frozen suite-v3 carriers were run without the mark (the sweep provider caches
+prefixes on its own), and each attempt's durable usage records the provider's
+cache accounting, so these shares cost no extra provider time to measure:
+
+| task | runs | cache read tokens | billed input tokens | share |
+| --- | --- | --- | --- | --- |
+| small-edit | 8/8 | 13,952 | 124,041 | 11.2% |
+| multi-line-edit | 8/8 | 21,632 | 121,157 | 17.9% |
+| multi-file | 8/8 | 38,656 | 146,576 | 26.4% |
+| typed-repair | 8/8 | 37,120 | 115,699 | 32.1% |
+
+Reads cover 11-32% of billed input and the provider reported no cache writes, so
+the write side stays invisible to this provider. The share grows with the number
+of turns a run takes, because the prefix is re-sent every turn, which is why the
+longest carrier shows the highest share. Whether a turn's prefix is byte-identical
+to the previous turn's is asserted separately by `tests/prefix_stability.rs`.
+Billed cache write and TTFT remain unmeasured per provider: the sweep provider
+reports neither.
