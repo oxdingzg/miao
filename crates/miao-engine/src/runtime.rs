@@ -1888,6 +1888,55 @@ fn severity(decision: Decision) -> u8 {
 /// prompt, run it concurrently, and return its final assistant message. Bounded
 /// by a lineage depth limit and a process-global concurrency permit; cancelling
 /// the parent cancels the child. The child inherits the workspace and policy.
+/// The read-only reference block a delegation carries: each handle is resolved
+/// against the delegating Session's archive and the whole block is bounded.
+async fn reference_block(
+    inner: &Arc<Inner>,
+    parent: &str,
+    references: &[crate::subagent::Reference],
+) -> String {
+    let mut block = String::new();
+    for reference in references {
+        let handle = reference.tool_use_id.as_str();
+        let resolved = inner
+            .store
+            .archived_output(parent, handle, reference.offset as usize)
+            .await;
+        match resolved {
+            Ok(value) => match value["text"]
+                .as_str()
+                .filter(|_| !value["message_seq"].is_null())
+            {
+                Some(text) => block.push_str(&format!(
+                    "--- {handle} window {}:\n{text}\n",
+                    reference.offset
+                )),
+                None => block.push_str(&format!(
+                    "--- {handle} window {}: not found in the delegating Session\n",
+                    reference.offset
+                )),
+            },
+            Err(_) => block.push_str(&format!(
+                "--- {handle} window {}: unavailable\n",
+                reference.offset
+            )),
+        }
+    }
+    if block.is_empty() {
+        return String::new();
+    }
+    let header = "Referenced material from the delegating Session (read-only; it is not part of your history):\n";
+    let room = crate::subagent::REFERENCE_BYTES.saturating_sub(header.len());
+    if block.len() > room {
+        let mut end = room;
+        while end > 0 && !block.is_char_boundary(end) {
+            end -= 1;
+        }
+        return format!("{header}{}[references truncated]\n", &block[..end]);
+    }
+    format!("{header}{block}")
+}
+
 async fn delegate(
     inner: &Arc<Inner>,
     parent: &str,
@@ -1938,13 +1987,16 @@ async fn delegate(
         .await
         .map_err(|_| ToolError::External("subagent start could not be recorded".into()))?;
 
+    // A child forks empty, so material of the delegating Session reaches it by
+    // reference: each handle is resolved here and injected as a bounded window.
+    let references = reference_block(inner, parent, &task.references).await;
     let admission = inner
         .store
         .admit_attachments_at(
             Input {
                 session_id: child.clone(),
                 input_id: format!("{call}:subagent"),
-                prompt: task.prompt,
+                prompt: format!("{references}{}", task.prompt),
                 delivery: crate::protocol::Delivery::Steer,
             },
             Vec::new(),
