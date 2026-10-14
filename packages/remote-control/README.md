@@ -120,7 +120,10 @@ The generated local SDK exposes `client["server.runtime"].configure`. This is th
 The shipped default Hub is `https://hub.mtty.dev`. With an account there, the
 desktop Remote Control dialog needs no local configuration: it offers **使用默认
 Hub** for one-step login and **指定其他 Hub** for a public or self-hosted relay,
-prefilled with the default address. Selecting a default does not log in,
+prefilled with the default address. The default Hub also ships its browser
+pairing entry (`https://hub.mtty.dev/control/`), so both **使用 App 扫码** and
+**使用浏览器扫码** work out of the box; a custom Hub opts in with an explicit
+`browserURL`. Selecting a default does not log in,
 register a host, or grant a phone access: complete desktop account login and
 locally approve the device grant before opening a remote session.
 

@@ -19,7 +19,10 @@ test("loads a private operator default and normalizes only its origin", () =>
   }))
 test("missing settings fall back to the shipped default Hub", () =>
   fixture(async (file) => {
-    expect(await ControlClientSettings.read(file)).toEqual({ defaultHubURL: "https://hub.mtty.dev" })
+    expect(await ControlClientSettings.read(file)).toEqual({
+      defaultHubURL: "https://hub.mtty.dev",
+      browserURL: "https://hub.mtty.dev/control/",
+    })
   }))
 test("a browser URL on another Hub requires an explicit default Hub", () =>
   fixture(async (file) => {

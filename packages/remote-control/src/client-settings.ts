@@ -13,6 +13,9 @@ export type Settings = typeof Settings.Type
 /** Shipped default Hub: an account there is enough, no local configuration required. */
 export const defaultHubURL = "https://hub.mtty.dev"
 
+/** The shipped Hub hosts the browser pairing bundle; other Hubs must opt in explicitly. */
+const defaultBrowserURL = "https://hub.mtty.dev/control/"
+
 /** Operator defaults contain no credentials and stay outside the checkout. */
 export async function read(filename: string, environmentHub?: string): Promise<Settings> {
   if (environmentHub) return { defaultHubURL: origin(environmentHub) }
@@ -20,7 +23,7 @@ export async function read(filename: string, environmentHub?: string): Promise<S
     if (typeof error === "object" && error !== null && "code" in error && error.code === "ENOENT") return undefined
     throw error
   })
-  if (!file) return { defaultHubURL: defaultHubURL }
+  if (!file) return { defaultHubURL: defaultHubURL, browserURL: defaultBrowserURL }
   try {
     const stat = await file.stat()
     if (
@@ -33,9 +36,14 @@ export async function read(filename: string, environmentHub?: string): Promise<S
       onExcessProperty: "error",
     })(await file.readFile("utf8"))
     if (Option.isNone(decoded)) throw new Error("Invalid Remote Control client settings")
+    const hub = decoded.value.defaultHubURL ? origin(decoded.value.defaultHubURL) : defaultHubURL
     const result: Settings = {
-      defaultHubURL: decoded.value.defaultHubURL ? origin(decoded.value.defaultHubURL) : defaultHubURL,
-      ...(decoded.value.browserURL ? { browserURL: browser(decoded.value.browserURL) } : {}),
+      defaultHubURL: hub,
+      ...(decoded.value.browserURL
+        ? { browserURL: browser(decoded.value.browserURL) }
+        : hub === defaultHubURL
+          ? { browserURL: defaultBrowserURL }
+          : {}),
     }
     if (result.defaultHubURL && result.browserURL && new URL(result.browserURL).origin !== result.defaultHubURL)
       throw new Error("Browser pairing URL must use the default Hub origin")
