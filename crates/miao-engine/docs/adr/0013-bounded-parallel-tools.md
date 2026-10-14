@@ -15,11 +15,13 @@ follows committed results.
 
 ## Decision
 
-- **Only declared reads run in parallel.** `read_file`, `list_files`, `glob`,
-  and `grep` may run concurrently when one turn requests two to sixteen of
-  them; every other tool stays serial, and anything absent from that set is
-  serial by default, so an unknown or newly added tool -- including
-  `read_image` -- is handled conservatively.
+- **Only declared reads run in parallel.** A call joins the batch by its own
+  declaration, not its name: it must prepare as `Access::Read` against a
+  named resource and be policy-allowed. Two to sixteen such calls in one
+  turn run concurrently; every tool that declares a write — or declares
+  nothing — conflicts with the batch and stays serial, so an unknown or
+  newly added tool is handled conservatively. `read_image` declares a read
+  resource like its siblings and joins the set.
 - **Preparation stays ordered and serial.** Permission checks, approvals,
   argument validation, and replay lookup run for every call in request order
   before any of them executes, so an approval prompt and its binding never
@@ -46,7 +48,9 @@ follows committed results.
   payloads, because the blackbox tape replay pins those payloads exactly and a
   wall-clock value is not reproducible; the evaluation runner measures the
   batch from its own receipt times instead (batch count, the reads the batch
-  named, and the observed window).
-- Path-level resource declarations and conflict-aware scheduling stay open:
-  this decision does not let a write overlap anything, and does not schedule
-  across turns.
+  named, and the observed window). The `tool.parallel.started` event names
+  each member's declared resource, so a run's read-set lineage is auditable.
+- Scheduling inside one turn is now declaration-driven; still open: mixed-turn
+  partitioning (batching the declared reads of a turn that also carries
+  writes, which today keeps the whole turn serial) and scheduling across
+  turns. Writes never overlap anything.
