@@ -245,9 +245,48 @@ fn read(
     let permissions = metadata.permissions();
     let file = parent.open(name)?;
     let mut bytes = Vec::new();
-    file.take(32769).read_to_end(&mut bytes)?;
+    // The read bound must follow MAX_MUTATION_BYTES; a fixed 32 KiB take would
+    // silently truncate a larger file and make its fingerprint unmatchable.
+    file.take(MAX_MUTATION_BYTES as u64 + 1)
+        .read_to_end(&mut bytes)?;
     if bytes.len() > MAX_MUTATION_BYTES || std::str::from_utf8(&bytes).is_err() {
         return Err(ToolError::InvalidFile);
     }
     Ok((Some(bytes), Some(permissions)))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_small_edit_applies_to_a_large_file() {
+        let dir = tempfile::tempdir().unwrap();
+        // Larger than one tool input, smaller than the mutation bound.
+        let body = (0..4000)
+            .map(|index| {
+                format!(
+                    "export function handler{index}(value: number) {{ return value + {index} }}\n"
+                )
+            })
+            .collect::<String>()
+            + "export function shift(table: number[], key: number) { return table[key + 1] }\n";
+        std::fs::write(dir.path().join("registry.ts"), &body).unwrap();
+        let root = Dir::open_ambient_dir(dir.path(), cap_std::ambient_authority()).unwrap();
+        let mutation = Mutation::parse(
+            "edit_file",
+            json!({
+                "path":"registry.ts",
+                "old_string":"return table[key + 1]",
+                "new_string":"return table[key]",
+                "expected_sha256": digest(body.as_bytes()),
+            }),
+        )
+        .unwrap();
+        let applied = apply(&root, Path::new("registry.ts"), mutation, None).unwrap();
+        assert_eq!(applied["applied"], json!(true), "tool result: {applied}");
+        let written = std::fs::read_to_string(dir.path().join("registry.ts")).unwrap();
+        assert!(written.contains("return table[key]"));
+        assert!(written.contains("handler3999"));
+    }
 }
