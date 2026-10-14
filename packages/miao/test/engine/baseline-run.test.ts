@@ -353,3 +353,24 @@ test("injects the drift once the model's read of that path settles", async () =>
   expect(roots).toHaveLength(1)
   expect(await Bun.file(path.join(tmp.path, roots[0], "workspace", "src", "add.ts")).text()).toBe(drift)
 })
+
+test("records loop classification counts from the engine events", async () => {
+  await using tmp = await tmpdir()
+  const result = await run(tmp.path, "read-only", [
+    ...base,
+    event(4, "loop.continuation", { run_id: "run", admitted_seq: 9, reason: "empty-completion" }),
+    event(5, "loop.stopped", { run_id: "run", reason: "empty-completion" }),
+    event(6, "provider.request", { run_id: "run", step: 0, attempt: 1, profile: profile() }),
+    event(7, "usage", { run_id: "run", step: 0, usage: { inputTokens: 10, outputTokens: 1 } }),
+    event(8, "message.committed", {
+      role: "assistant",
+      content: [{ type: "text", text: "src/catalog.ts exports configureRelay with capacity 7" }],
+    }),
+    event(9, "run.finished", { run_id: "run", reason: "completed" }),
+    event(10, "stop", { run_id: "run" }),
+  ])
+  expect(result.evidence.loops).toEqual({
+    continuations: ["empty-completion"],
+    stopped: ["empty-completion"],
+  })
+})
