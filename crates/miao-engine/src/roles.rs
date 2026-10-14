@@ -1,0 +1,299 @@
+//! Purpose-role model bindings (ADR-14). Three named roles — `summarize`,
+//! `retrieve`, `verify` — may each bind a model id on the Session's own
+//! provider; credentials and placement stay with the Session. An unbound
+//! role, or a binding the provider rejects, runs on the primary model, and
+//! every substitution is recorded rather than silent.
+
+use crate::provider::Provider;
+use serde_json::json;
+use std::sync::Arc;
+
+#[derive(Debug, Clone, Default, PartialEq)]
+pub struct Bindings {
+    pub summarize: Option<String>,
+    pub retrieve: Option<String>,
+    pub verify: Option<String>,
+}
+
+impl Bindings {
+    pub fn binding(&self, role: &str) -> Option<&str> {
+        match role {
+            "summarize" => self.summarize.as_deref(),
+            "retrieve" => self.retrieve.as_deref(),
+            "verify" => self.verify.as_deref(),
+            _ => None,
+        }
+    }
+}
+
+/// What the engine actually does with a role binding.
+#[derive(Debug, Clone, PartialEq)]
+pub enum Resolution {
+    /// No binding: the role runs on the primary model.
+    Primary,
+    /// The provider accepted the binding.
+    Bound { model: String },
+    /// The provider rejected the binding; the primary runs instead and the
+    /// substitution is part of the evidence.
+    Substituted { requested: String },
+}
+
+impl Resolution {
+    pub fn to_evidence(&self) -> serde_json::Value {
+        match self {
+            Resolution::Primary => json!({"binding": null, "using": "primary"}),
+            Resolution::Bound { model } => json!({"binding": model, "using": "bound"}),
+            Resolution::Substituted { requested } => {
+                json!({"binding": requested, "using": "primary", "substituted": true})
+            }
+        }
+    }
+}
+
+/// Bind `role` to a provider instance. `for_model` keeps credentials,
+/// endpoint, and placement on the Session's own route, so a rejected model id
+/// is the only way a binding fails, and it fails into a recorded substitution.
+pub fn resolve(
+    primary: &Arc<dyn Provider>,
+    binding: Option<&str>,
+) -> (Arc<dyn Provider>, Resolution) {
+    match binding {
+        None => (Arc::clone(primary), Resolution::Primary),
+        Some(model) => match primary.for_model(model) {
+            Some(provider) => (
+                provider,
+                Resolution::Bound {
+                    model: model.to_owned(),
+                },
+            ),
+            None => (
+                Arc::clone(primary),
+                Resolution::Substituted {
+                    requested: model.to_owned(),
+                },
+            ),
+        },
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::protocol::ModelRequest;
+    use crate::provider::{CountTokens, ProviderError, Reply};
+    use serde_json::Value;
+    use tokio_util::sync::CancellationToken;
+
+    struct Fixed {
+        accepts: Vec<String>,
+        model: String,
+        fail_stream: bool,
+    }
+
+    impl Fixed {
+        fn primary(accepts: Vec<String>) -> Arc<dyn Provider> {
+            Arc::new(Fixed {
+                accepts,
+                model: "primary".into(),
+                fail_stream: false,
+            })
+        }
+    }
+
+    #[async_trait::async_trait]
+    impl Provider for Fixed {
+        fn identity(&self) -> Option<crate::provider::Identity> {
+            Some(crate::provider::Identity {
+                protocol: "test".into(),
+                model: self.model.clone(),
+            })
+        }
+        fn for_model(&self, model: &str) -> Option<Arc<dyn Provider>> {
+            self.accepts
+                .iter()
+                .any(|accepted| accepted == model)
+                .then(|| {
+                    Arc::new(Fixed {
+                        accepts: self.accepts.clone(),
+                        model: model.to_owned(),
+                        fail_stream: self.fail_stream,
+                    }) as Arc<dyn Provider>
+                })
+        }
+        async fn stream(
+            &self,
+            _: ModelRequest,
+            _: tokio::sync::mpsc::Sender<Value>,
+            _: CancellationToken,
+        ) -> Result<Reply, ProviderError> {
+            if self.fail_stream {
+                return Err(ProviderError::Transport);
+            }
+            Ok(Reply {
+                content: json!([{"type": "text", "text": "ok summary"}]),
+                usage: json!({}),
+                needs_tools: false,
+            })
+        }
+        async fn count_tokens(&self, _: &ModelRequest) -> CountTokens {
+            unreachable!("resolve never counts")
+        }
+    }
+
+    #[test]
+    fn unbound_roles_resolve_to_primary_without_evidence_noise() {
+        let primary = Fixed::primary(vec![]);
+        let (provider, resolution) = resolve(&primary, None);
+        assert!(Arc::ptr_eq(&provider, &primary));
+        assert_eq!(resolution, Resolution::Primary);
+        assert_eq!(resolution.to_evidence()["using"], "primary");
+    }
+
+    #[test]
+    fn an_accepted_binding_selects_that_model_on_the_same_route() {
+        let primary = Fixed::primary(vec!["glm-5.3-flash".into()]);
+        let (provider, resolution) = resolve(&primary, Some("glm-5.3-flash"));
+        assert_eq!(
+            provider.identity().unwrap().model,
+            "glm-5.3-flash",
+            "the bound model serves the role"
+        );
+        assert_eq!(
+            resolution,
+            Resolution::Bound {
+                model: "glm-5.3-flash".into()
+            }
+        );
+    }
+
+    #[test]
+    fn a_rejected_binding_substitutes_the_primary_and_records_it() {
+        let primary = Fixed::primary(vec![]);
+        let (provider, resolution) = resolve(&primary, Some("nope"));
+        assert!(Arc::ptr_eq(&provider, &primary));
+        assert_eq!(
+            resolution,
+            Resolution::Substituted {
+                requested: "nope".into()
+            }
+        );
+        let evidence = resolution.to_evidence();
+        assert_eq!(evidence["using"], "primary");
+        assert_eq!(evidence["substituted"], true);
+    }
+
+    #[tokio::test]
+    async fn a_failed_role_attempt_escalates_once_to_the_primary() {
+        let dir = tempfile::tempdir().unwrap();
+        let store = crate::store::Store::open(dir.path().join("engine.db"))
+            .await
+            .unwrap();
+        store
+            .admit(crate::protocol::Input {
+                session_id: "s".into(),
+                input_id: "seed".into(),
+                prompt: "task".into(),
+                delivery: crate::protocol::Delivery::Steer,
+            })
+            .await
+            .unwrap();
+        let role: Arc<dyn Provider> = Arc::new(Fixed {
+            accepts: vec![],
+            model: "mini".into(),
+            fail_stream: true,
+        });
+        let primary = Fixed::primary(vec![]);
+        let stop = CancellationToken::new();
+        let text =
+            summarize_with_escalation(&role, &primary, &store, "s", "r1", &stop, "condense this")
+                .await
+                .unwrap();
+        assert_eq!(text, "ok summary");
+        let events = store.events("s", 0, 100).await.unwrap();
+        let escalated = events
+            .iter()
+            .find(|event| event.kind == "role.escalated")
+            .unwrap();
+        assert_eq!(escalated.data["role"], "summarize");
+        assert_eq!(escalated.data["run_id"], "r1");
+    }
+
+    #[test]
+    fn bindings_are_looked_up_by_role_name() {
+        let bindings = Bindings {
+            summarize: Some("a".into()),
+            verify: Some("c".into()),
+            ..Bindings::default()
+        };
+        assert_eq!(bindings.binding("summarize"), Some("a"));
+        assert_eq!(bindings.binding("retrieve"), None);
+        assert_eq!(bindings.binding("verify"), Some("c"));
+        assert_eq!(bindings.binding("primary"), None);
+    }
+}
+
+/// One summarizer attempt against one provider: send the retention-directed
+/// summarization request and collect the reply text.
+async fn summarize_with(
+    provider: &Arc<dyn Provider>,
+    stop: &tokio_util::sync::CancellationToken,
+    body: &str,
+) -> Result<String, String> {
+    use crate::protocol::{Message, ModelRequest};
+    let (tx, _rx) = tokio::sync::mpsc::channel(16);
+    let request = ModelRequest {
+        system: "Summarize the conversation portion you are given. Preserve verbatim: the active objective, open tasks, verification commands and their results, file paths, identifiers, and decisions. Reply with only the summary text.".into(),
+        messages: vec![Message {
+            role: "user".into(),
+            content: json!([{"type": "text", "text": body}]),
+            checkpoint: None,
+            recorded_at_ms: None,
+        }],
+        tools: vec![],
+    };
+    let reply = provider
+        .stream(request, tx, stop.child_token())
+        .await
+        .map_err(|error| error.to_string())?;
+    let text = reply
+        .content
+        .as_array()
+        .into_iter()
+        .flatten()
+        .filter_map(|block| block["text"].as_str())
+        .collect::<Vec<_>>()
+        .join("");
+    if text.is_empty() {
+        Err("summarizer returned no text".into())
+    } else {
+        Ok(text)
+    }
+}
+
+/// The `summarize` role's attempt with ADR-14's single escalation: the bound
+/// provider goes first; when it fails — provider error or unusable output —
+/// the primary retries once and the escalation lands in the evidence instead
+/// of failing the turn.
+pub async fn summarize_with_escalation(
+    role_provider: &Arc<dyn Provider>,
+    primary: &Arc<dyn Provider>,
+    store: &crate::store::Store,
+    session: &str,
+    run: &str,
+    stop: &tokio_util::sync::CancellationToken,
+    body: &str,
+) -> Result<String, String> {
+    match summarize_with(role_provider, stop, body).await {
+        Ok(text) => Ok(text),
+        Err(first) => {
+            let _ = store
+                .record(
+                    session,
+                    "role.escalated",
+                    json!({"run_id":run,"role":"summarize","reason":first}),
+                )
+                .await;
+            summarize_with(primary, stop, body).await
+        }
+    }
+}
