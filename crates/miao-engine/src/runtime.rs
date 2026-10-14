@@ -978,11 +978,14 @@ async fn execute(
                             "unsupported invalid tool input correction".into(),
                         ));
                     }
-                    inner.store.tool_result(session, run, id, json!({"error":"Invalid JSON tool arguments. This call was not executed. Supply a valid JSON object for this call only; do not repeat completed operations."}), true).await?;
+                    inner.store.tool_result(session, run, id, json!({"error":"Invalid JSON tool arguments. This call was not executed. Supply a valid JSON object for this call only; do not repeat completed operations."}), true, 0).await?;
                     inner.store.record(session, "tool.input_error", json!({"run_id":run,"step":step,"call_id":id,"tool":name,"reason":"invalid_json","attempt":input_corrections})).await?;
                     continue;
                 }
                 let batched = reads.contains_key(id);
+                // The tool's own running window; a call served from this
+                // turn's read cache reports the near-zero time it really took.
+                let tool_started = std::time::Instant::now();
                 let (output, is_error) = if let Some(result) = reads.remove(id) {
                     result
                 } else {
@@ -1188,7 +1191,14 @@ async fn execute(
                 if !batched {
                     inner
                         .store
-                        .tool_result(session, run, id, output, is_error)
+                        .tool_result(
+                            session,
+                            run,
+                            id,
+                            output,
+                            is_error,
+                            tool_started.elapsed().as_millis() as u64,
+                        )
                         .await?;
                     inner
                         .store
@@ -2417,7 +2427,7 @@ async fn execute_read_batch(
         let (output, is_error) = &results[&id];
         inner
             .store
-            .tool_result(session, run, &id, output.clone(), *is_error)
+            .tool_result(session, run, &id, output.clone(), *is_error, 0)
             .await?;
         inner
             .store

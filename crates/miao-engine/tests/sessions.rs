@@ -130,9 +130,10 @@ async fn active_parent_requires_closed_explicit_message_boundary() {
     store.fork("parent", "early", Some(user)).await.unwrap();
     assert_eq!(store.history("early").await.unwrap().len(), 1);
     let closed = store
-        .tool_result("parent", "run", "call", json!({"text":"value"}), false)
+        .tool_result("parent", "run", "call", json!({"text":"value"}), false, 0)
         .await
         .unwrap();
+    assert_eq!(closed.data["elapsed_ms"], json!(0));
     store
         .fork("parent", "late", Some(closed.seq))
         .await
