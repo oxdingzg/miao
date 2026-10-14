@@ -23,7 +23,18 @@ const files = (await readdir(directory)).filter((file) => file.endsWith(".json")
 const runs: { evidence: BaselineEvidence; outcome: string | null }[] = []
 for (const file of files) {
   const parsed = await Bun.file(path.join(directory, file)).json()
-  if (parsed.evidence) runs.push({ evidence: parsed.evidence, outcome: parsed.sample?.outcome ?? null })
+  // Evidence recorded before a field existed simply reports its default.
+  if (parsed.evidence)
+    runs.push({
+      evidence: {
+        loops: { continuations: [], stopped: [] },
+        toolCalls: 0,
+        receipts: [],
+        attempts: [],
+        ...parsed.evidence,
+      },
+      outcome: parsed.sample?.outcome ?? null,
+    })
 }
 
 const groups = new Map<string, typeof runs>()
