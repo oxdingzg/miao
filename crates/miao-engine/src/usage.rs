@@ -147,3 +147,58 @@ pub fn gemini(raw: &Value) -> Value {
         .or_else(|| input.zip(output).map(|(input, output)| input + output));
     finish(usage, "gemini", raw, total)
 }
+
+/// The billed cache axes of a normalized usage object, for per-turn lineage
+/// events and the session usage report. Absent axes stay absent: a provider
+/// that reports no cache breakdown must never read as a zero-cache hit.
+pub fn cache_lineage(usage: &Value) -> Value {
+    let pick = |key: &str| usage.get(key).and_then(Value::as_u64);
+    let read = pick("cacheReadInputTokens");
+    let write = pick("cacheWriteInputTokens");
+    let non_cached = pick("nonCachedInputTokens");
+    let mut out = serde_json::Map::new();
+    if let Some(value) = read {
+        out.insert("read".into(), json!(value));
+    }
+    if let Some(value) = write {
+        out.insert("write".into(), json!(value));
+    }
+    if let Some(value) = non_cached {
+        out.insert("nonCached".into(), json!(value));
+    }
+    if let Some(read) = read {
+        if let Some(input) = pick("inputTokens") {
+            if input > 0 {
+                let ratio = (read as f64 / input as f64 * 1000.0).round() / 1000.0;
+                out.insert("hitRatio".into(), json!(ratio));
+            }
+        }
+    }
+    Value::Object(out)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn cache_lineage_reports_present_axes_and_hit_ratio() {
+        let usage = json!({
+            "inputTokens": 200, "outputTokens": 10,
+            "nonCachedInputTokens": 50, "cacheReadInputTokens": 150, "cacheWriteInputTokens": 25,
+        });
+        let lineage = cache_lineage(&usage);
+        assert_eq!(lineage["read"], 150);
+        assert_eq!(lineage["write"], 25);
+        assert_eq!(lineage["nonCached"], 50);
+        assert_eq!(lineage["hitRatio"], 0.75);
+    }
+
+    #[test]
+    fn cache_lineage_stays_empty_without_a_breakdown() {
+        assert_eq!(
+            cache_lineage(&json!({"inputTokens": 10, "outputTokens": 1})),
+            json!({})
+        );
+    }
+}

@@ -1574,3 +1574,97 @@ pub(crate) fn track_tools(
     }
     Ok(())
 }
+
+impl Store {
+    /// Cache lineage and latency evidence for one session: billed token
+    /// totals across every recorded turn, time-to-first-token stats, and the
+    /// provider/model that served each turn (roadmap A5). Computed from the
+    /// durable `usage` and `provider.started` rows in one ordered scan.
+    pub async fn usage_report(&self, session: &str) -> Result<Value, Error> {
+        let session = session.to_owned();
+        self.call(move |conn| {
+            let mut turns = 0u64;
+            let mut partial_turns = 0u64;
+            let mut tokens = json!({"input":0,"output":0,"cacheRead":0,"cacheWrite":0,"nonCached":0});
+            let mut ttft: Vec<u64> = Vec::new();
+            let mut identity: std::collections::HashMap<(String, String), (String, String)> =
+                std::collections::HashMap::new();
+            let mut per_identity: std::collections::HashMap<(String, String), u64> =
+                std::collections::HashMap::new();
+            let mut stmt = conn.prepare(
+                "SELECT kind,data FROM engine_event WHERE session_id=?1 AND kind IN ('usage','provider.started') ORDER BY seq",
+            )?;
+            let mut rows = stmt.query(params![session])?;
+            while let Some(row) = rows.next()? {
+                let kind: String = row.get(0)?;
+                let data: Value = serde_json::from_str(&row.get::<_, String>(1)?)?;
+                let key = (
+                    data["run_id"].as_str().unwrap_or_default().to_owned(),
+                    data["step"].as_u64().unwrap_or_default().to_string(),
+                );
+                match kind.as_str() {
+                    "provider.started" => {
+                        if let Some(id) = data["identity"].as_object() {
+                            identity.insert(
+                                key,
+                                (
+                                    id.get("protocol").and_then(Value::as_str).unwrap_or_default().to_owned(),
+                                    id.get("model").and_then(Value::as_str).unwrap_or_default().to_owned(),
+                                ),
+                            );
+                        }
+                    }
+                    _ => {
+                        if data["partial"].as_bool() == Some(true) {
+                            partial_turns += 1;
+                        } else {
+                            turns += 1;
+                        }
+                        if let Some(value) = data["ttft_ms"].as_u64() {
+                            ttft.push(value);
+                        }
+                        let usage = &data["usage"];
+                        for (field, key) in [
+                            ("inputTokens", "input"),
+                            ("outputTokens", "output"),
+                            ("cacheReadInputTokens", "cacheRead"),
+                            ("cacheWriteInputTokens", "cacheWrite"),
+                            ("nonCachedInputTokens", "nonCached"),
+                        ] {
+                            if let Some(value) = usage[field].as_u64() {
+                                tokens[key] = json!(tokens[key].as_u64().unwrap_or(0) + value);
+                            }
+                        }
+                        if let Some((provider, model)) = identity.get(&key) {
+                            *per_identity
+                                .entry((provider.clone(), model.clone()))
+                                .or_insert(0) += 1;
+                        }
+                    }
+                }
+            }
+            let lineage = per_identity
+                .into_iter()
+                .map(|((protocol, model), served)| json!({"protocol":protocol,"model":model,"turns":served}))
+                .collect::<Vec<_>>();
+            let ttft_stats = if ttft.is_empty() {
+                json!(null)
+            } else {
+                let sum: u128 = ttft.iter().map(|v| *v as u128).sum();
+                json!({
+                    "count": ttft.len(),
+                    "avg": sum / ttft.len() as u128,
+                    "min": ttft.iter().min(),
+                    "max": ttft.iter().max(),
+                })
+            };
+            Ok(json!({
+                "turns": turns,
+                "partialTurns": partial_turns,
+                "tokens": tokens,
+                "ttftMs": ttft_stats,
+                "lineage": lineage,
+            }))
+        }).await
+    }
+}
