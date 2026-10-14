@@ -1253,7 +1253,7 @@ async fn execute(
                 async move {
                     let (tx, _rx) = mpsc::channel(16);
                     let request = ModelRequest {
-                        system: "Summarize the conversation portion you are given. Reply with only the summary text.".into(),
+                        system: "Summarize the conversation portion you are given. Preserve verbatim: the active objective, open tasks, verification commands and their results, file paths, identifiers, and decisions. Reply with only the summary text.".into(),
                         messages: vec![Message {
                             role: "user".into(),
                             content: json!([{"type": "text", "text": body}]),
