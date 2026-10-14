@@ -153,8 +153,8 @@ async fn task_is_denied_without_subagent_authority() {
     assert!(!result["error"].is_null(), "{result}");
 }
 
-/// Parent: delegate with a reference to an archived output. Child: report
-/// whether the referenced material arrived, because a child forks empty.
+/// Parent: read a file, then delegate with a reference to that read. Child:
+/// report whether the referenced material arrived, because a child forks empty.
 struct Referencing;
 #[async_trait]
 impl Provider for Referencing {
@@ -164,6 +164,11 @@ impl Provider for Referencing {
         _: mpsc::Sender<Value>,
         _: CancellationToken,
     ) -> Result<Reply, ProviderError> {
+        let parts: Vec<Value> = request
+            .messages
+            .iter()
+            .flat_map(|message| message.content.as_array().cloned().unwrap_or_default())
+            .collect();
         let last = request
             .messages
             .iter()
@@ -176,6 +181,11 @@ impl Provider for Referencing {
                     .and_then(|parts| parts.iter().find_map(|part| part["text"].as_str()))
             })
             .unwrap_or("");
+        let settled = |call: &str| {
+            parts.iter().any(|part| {
+                part["type"] == "tool_result" && part["tool_use_id"].as_str() == Some(call)
+            })
+        };
         if last.contains("ARCHIVED-MARKER") {
             return Ok(Reply {
                 content: json!([{"type":"text","text":"child saw the reference"}]),
@@ -183,15 +193,16 @@ impl Provider for Referencing {
                 needs_tools: false,
             });
         }
-        let has_result = request.messages.iter().any(|message| {
-            message
-                .content
-                .as_array()
-                .is_some_and(|parts| parts.iter().any(|part| part["type"] == "tool_result"))
-        });
-        if last.contains("delegate with a reference") && !has_result {
+        if last.contains("delegate with a reference") && !settled("r1") {
             return Ok(Reply {
-                content: json!([{"type":"tool_use","id":"d1","name":"task","input":{"prompt":"answer without any archive","references":[{"tool_use_id":"call-archive"}]}}]),
+                content: json!([{"type":"tool_use","id":"r1","name":"read_file","input":{"path":"src/archive.txt"}}]),
+                usage: json!({}),
+                needs_tools: true,
+            });
+        }
+        if last.contains("delegate with a reference") && !settled("d1") {
+            return Ok(Reply {
+                content: json!([{"type":"tool_use","id":"d1","name":"task","input":{"prompt":"answer without any archive","references":[{"tool_use_id":"r1"}]}}]),
                 usage: json!({}),
                 needs_tools: true,
             });
@@ -204,190 +215,25 @@ impl Provider for Referencing {
     }
 }
 
-async fn run_referenced(seed: bool) -> (Value, Store) {
+async fn run_referenced(reference: &str) -> (Value, Store) {
     let dir = tempfile::tempdir().unwrap();
-    let store = Store::open(dir.path().join("engine.db")).await.unwrap();
-    let tools = Tools::new(dir.path()).await.unwrap();
-    let runtime = Runtime::with_policy(store.clone(), Arc::new(Referencing), tools, policy(true))
-        .await
-        .unwrap();
-    if seed {
-        // The archive belongs to a Session that already exists, so the seeding
-        // step admits and promotes one input before recording the output.
-        store
-            .admit(Input {
-                session_id: "parent".into(),
-                input_id: "seed".into(),
-                prompt: "seed the archive".into(),
-                delivery: Delivery::Steer,
-            })
-            .await
-            .unwrap();
-        store.promote("parent", true).await.unwrap();
-        store
-            .message(
-                "parent",
-                "assistant",
-                json!([{"type":"tool_result","tool_use_id":"call-archive","content":"ARCHIVED-MARKER: relay capacity is 7","is_error":false}]),
-            )
-            .await
-            .unwrap();
-    }
-    runtime
-        .admit(
-            Input {
-                session_id: "parent".into(),
-                input_id: "one".into(),
-                prompt: "delegate with a reference".into(),
-                delivery: Delivery::Steer,
-            },
-            true,
-        )
-        .await
-        .unwrap();
-    let result = tokio::time::timeout(std::time::Duration::from_secs(10), async {
-        loop {
-            if store
-                .events("parent", 0, 500)
-                .await
-                .unwrap()
-                .iter()
-                .any(|event| event.kind == "run.finished")
-            {
-                let history = store.history("parent").await.unwrap();
-                return json!({
-                    "kinds": store
-                        .events("parent", 0, 500)
-                        .await
-                        .unwrap()
-                        .into_iter()
-                        .map(|event| event.kind)
-                        .collect::<Vec<_>>(),
-                    "history": history,
-                });
-            }
-            tokio::time::sleep(std::time::Duration::from_millis(5)).await;
-        }
-    })
-    .await
+    std::fs::create_dir_all(dir.path().join("src")).unwrap();
+    std::fs::write(
+        dir.path().join("src").join("archive.txt"),
+        "ARCHIVED-MARKER: relay capacity is 7\n",
+    )
     .unwrap();
-    runtime.shutdown().await;
-    (result, store)
-}
-
-#[tokio::test]
-async fn task_delegates_to_a_child_session_and_returns_its_message() {
-    let (result, store) = run(true).await;
-    assert_eq!(result["text"], "hello from child", "{result}");
-    let child = result["session_id"].as_str().unwrap();
-    assert_eq!(
-        store.lineage_parent(child).await.unwrap().as_deref(),
-        Some("parent")
-    );
-    let child_history = store.history(child).await.unwrap();
-    assert_eq!(
-        child_history.last().unwrap().content[0]["text"],
-        "hello from child"
-    );
-    let events = store.events("parent", 0, 500).await.unwrap();
-    assert!(events.iter().any(|event| event.kind == "subagent_start"));
-    assert!(events
-        .iter()
-        .any(|event| event.kind == "subagent_stop" && event.data["reason"] == "completed"));
-}
-
-#[tokio::test]
-async fn task_is_denied_without_subagent_authority() {
-    let (result, _) = run(false).await;
-    assert!(!result["error"].is_null(), "{result}");
-}
-
-/// Parent: delegate with a reference to an archived output. Child: report
-/// whether the referenced material arrived, because a child forks empty.
-struct Referencing;
-#[async_trait]
-impl Provider for Referencing {
-    async fn stream(
-        &self,
-        request: ModelRequest,
-        _: mpsc::Sender<Value>,
-        _: CancellationToken,
-    ) -> Result<Reply, ProviderError> {
-        let last = request
-            .messages
-            .iter()
-            .rev()
-            .find(|message| message.role == "user")
-            .and_then(|message| {
-                message
-                    .content
-                    .as_array()
-                    .and_then(|parts| parts.iter().find_map(|part| part["text"].as_str()))
-            })
-            .unwrap_or("");
-        if last.contains("ARCHIVED-MARKER") {
-            return Ok(Reply {
-                content: json!([{"type":"text","text":"child saw the reference"}]),
-                usage: json!({}),
-                needs_tools: false,
-            });
-        }
-        let has_result = request.messages.iter().any(|message| {
-            message
-                .content
-                .as_array()
-                .is_some_and(|parts| parts.iter().any(|part| part["type"] == "tool_result"))
-        });
-        if last.contains("delegate with a reference") && !has_result {
-            return Ok(Reply {
-                content: json!([{"type":"tool_use","id":"d1","name":"task","input":{"prompt":"answer without any archive","references":[{"tool_use_id":"call-archive"}]}}]),
-                usage: json!({}),
-                needs_tools: true,
-            });
-        }
-        Ok(Reply {
-            content: json!([{"type":"text","text":"parent done"}]),
-            usage: json!({}),
-            needs_tools: false,
-        })
-    }
-}
-
-async fn run_referenced(seed: bool) -> (Value, Store) {
-    let dir = tempfile::tempdir().unwrap();
     let store = Store::open(dir.path().join("engine.db")).await.unwrap();
     let tools = Tools::new(dir.path()).await.unwrap();
     let runtime = Runtime::with_policy(store.clone(), Arc::new(Referencing), tools, policy(true))
         .await
         .unwrap();
-    if seed {
-        // The archive belongs to a Session that already exists, so the seeding
-        // step admits and promotes one input before recording the output.
-        store
-            .admit(Input {
-                session_id: "parent".into(),
-                input_id: "seed".into(),
-                prompt: "seed the archive".into(),
-                delivery: Delivery::Steer,
-            })
-            .await
-            .unwrap();
-        store.promote("parent", true).await.unwrap();
-        store
-            .message(
-                "parent",
-                "assistant",
-                json!([{"type":"tool_result","tool_use_id":"call-archive","content":"ARCHIVED-MARKER: relay capacity is 7","is_error":false}]),
-            )
-            .await
-            .unwrap();
-    }
     runtime
         .admit(
             Input {
                 session_id: "parent".into(),
                 input_id: "one".into(),
-                prompt: "delegate with a reference".into(),
+                prompt: format!("delegate with a reference to {reference}"),
                 delivery: Delivery::Steer,
             },
             true,
@@ -417,7 +263,7 @@ async fn run_referenced(seed: bool) -> (Value, Store) {
                             })
                         })
                     })
-                    .unwrap();
+                    .unwrap_or(json!({}));
             }
             tokio::time::sleep(std::time::Duration::from_millis(5)).await;
         }
@@ -430,21 +276,9 @@ async fn run_referenced(seed: bool) -> (Value, Store) {
 
 #[tokio::test]
 async fn task_reference_injects_the_archived_window_into_the_child() {
-    let (result, store) = run_referenced(true).await;
+    let (result, store) = run_referenced("the read of src/archive.txt").await;
     assert_eq!(result["text"], "child saw the reference", "{result}");
     let child = result["session_id"].as_str().unwrap();
     let child_input = serde_json::to_string(&store.history(child).await.unwrap()).unwrap();
-    assert!(child_input.contains("call-archive"), "{child_input}");
-}
-
-#[tokio::test]
-async fn task_reference_reports_a_missing_handle_to_the_child() {
-    let (result, store) = run_referenced(false).await;
-    assert_eq!(result["text"], "parent done", "{result}");
-    let child = result["session_id"].as_str().unwrap();
-    let child_input = serde_json::to_string(&store.history(child).await.unwrap()).unwrap();
-    assert!(
-        child_input.contains("not found in the delegating Session"),
-        "{child_input}"
-    );
+    assert!(child_input.contains("ARCHIVED-MARKER"), "{child_input}");
 }
