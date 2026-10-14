@@ -467,6 +467,14 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
     if let Some(limits) = context_limits {
         runtime.set_context_limits(Some(limits)).await;
     }
+    let roles = miao_engine::roles::Bindings {
+        summarize: options.get("--role-summarize").cloned(),
+        retrieve: options.get("--role-retrieve").cloned(),
+        verify: options.get("--role-verify").cloned(),
+    };
+    if roles.summarize.is_some() || roles.retrieve.is_some() || roles.verify.is_some() {
+        runtime.set_role_bindings(roles).await;
+    }
     runtime
         .verify_with(options.get("--verify-command").cloned())
         .await;
