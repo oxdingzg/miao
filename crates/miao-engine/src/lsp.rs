@@ -491,6 +491,14 @@ impl Registry {
         Ok((server, uri(path)?, language, text))
     }
 
+    /// Prime the server for a file a tool merely read: open the document and
+    /// let its first diagnostics land in the cache, so a follow-up edit's
+    /// wait is already served. Errors are ignored; warming must never fail the
+    /// read that started it.
+    pub async fn warm(&self, path: &Path) {
+        let _ = self.diagnostics(path).await;
+    }
+
     pub async fn diagnostics(&self, path: &Path) -> Result<Value, ToolError> {
         let (server, uri, language, text) = self
             .document(path)

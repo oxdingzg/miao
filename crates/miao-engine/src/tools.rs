@@ -128,6 +128,7 @@ pub struct Tools {
     hooks: Arc<Vec<crate::hooks::Hook>>,
     edit_snapshots: Arc<std::sync::Mutex<Snapshots>>,
     edit_recovery: bool,
+    lsp_diagnostics: bool,
 }
 
 impl Tools {
@@ -168,6 +169,7 @@ impl Tools {
             hooks: Arc::new(vec![]),
             edit_snapshots: Arc::new(std::sync::Mutex::new(Snapshots::new())),
             edit_recovery: true,
+            lsp_diagnostics: true,
         })
     }
 
@@ -315,6 +317,13 @@ impl Tools {
         self.mcp = Some(registry);
         self
     }
+    /// Evaluation ablation switch: `false` disables the read warm-up and the
+    /// post-edit diagnostics report while every other path stays identical.
+    pub fn with_lsp_diagnostics(mut self, enabled: bool) -> Self {
+        self.lsp_diagnostics = enabled;
+        self
+    }
+
     pub fn with_lsp(mut self, registry: Arc<crate::lsp::Registry>) -> Self {
         self.lsp = Some(registry);
         self
@@ -778,7 +787,7 @@ impl Tools {
             } else {
                 None
             };
-            let applied = tokio::task::spawn_blocking(move || {
+            let mut applied = tokio::task::spawn_blocking(move || {
                 let _lease = lease;
                 apply(&directory, &relative, mutation, snapshot)
             })
@@ -803,6 +812,24 @@ impl Tools {
                             .map(|needle| String::from_utf8_lossy(&current).matches(needle.as_str()).count()),
                     });
                     return Ok(stale);
+                }
+            }
+            // Errors and warnings from the file the mutation just changed, so
+            // the model can repair them in the same turn instead of discovering
+            // them a query later. Bounded: a noisy server cannot flood context.
+            if self.lsp_diagnostics && matches!(prepared.name.as_str(), "edit_file" | "write_file")
+            {
+                if let (Ok(value), Some(registry)) = (applied.as_mut(), self.lsp.clone()) {
+                    if let Some(report) = registry
+                        .diagnostics(&prepared.path)
+                        .await
+                        .ok()
+                        .and_then(|result| report_diagnostics(&result))
+                    {
+                        if let Value::Object(fields) = value {
+                            fields.insert("diagnostics".into(), report);
+                        }
+                    }
                 }
             }
             return applied;
@@ -1124,6 +1151,15 @@ impl Tools {
                     if let Ok(mut snapshots) = self.edit_snapshots.lock() {
                         snapshots.register(path.to_string_lossy().into_owned(), text.clone());
                     }
+                    if self.lsp_diagnostics {
+                        if let Some(registry) = self.lsp.clone() {
+                            // Fire-and-forget: a read must never wait on a
+                            // language server, and warming never fails it.
+                            tokio::spawn(async move {
+                                registry.warm(&path).await;
+                            });
+                        }
+                    }
                     Ok(json!({"text":text,"sha256":sha256}))
                 }
                 "list_files" => {
@@ -1152,4 +1188,31 @@ impl Tools {
         };
         tokio::select! {_=cancel.cancelled()=>Err(ToolError::Interrupted),result=task=>result}
     }
+}
+
+/// Bounded error/warning report from an LSP diagnostics payload.
+fn report_diagnostics(value: &Value) -> Option<Value> {
+    let entries = value.get("diagnostics")?.as_array()?;
+    let report: Vec<Value> = entries
+        .iter()
+        .filter_map(|diagnostic| {
+            let severity = diagnostic.get("severity")?.as_u64()?;
+            if severity > 2 {
+                return None;
+            }
+            let line = diagnostic
+                .get("range")?
+                .get("start")?
+                .get("line")?
+                .as_u64()?;
+            let message = diagnostic.get("message")?.as_str()?;
+            Some(json!({
+                "line": line,
+                "severity": severity,
+                "message": message.chars().take(200).collect::<String>(),
+            }))
+        })
+        .take(20)
+        .collect();
+    (!report.is_empty()).then(|| json!(report))
 }

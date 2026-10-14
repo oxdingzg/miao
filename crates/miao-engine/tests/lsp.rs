@@ -1,7 +1,7 @@
 use async_trait::async_trait;
 use miao_engine::{
     lsp::Registry,
-    permission::{Config, Decision, Mode, Policy, Rule},
+    permission::{digest, Config, Decision, Mode, Policy, Rule},
     protocol::{Delivery, Input, ModelRequest},
     provider::{Provider, ProviderError, Reply},
     runtime::Runtime,
@@ -143,12 +143,27 @@ async fn fake_server(stream: DuplexStream) {
 }
 
 async fn run(root: &Path, registry: Arc<Registry>, name: &'static str, input: Value) -> Value {
+    run_with(root, registry, name, input, true).await
+}
+
+async fn run_with(
+    root: &Path,
+    registry: Arc<Registry>,
+    name: &'static str,
+    input: Value,
+    lsp_diagnostics: bool,
+) -> Value {
     // A distinct store per call: an exact retry against a shared store would
     // reconcile the first admission and suppress this tool call.
-    let store = Store::open(root.join(format!("engine-{name}.db")))
+    let store = Store::open(root.join(format!("engine-{name}-{lsp_diagnostics}.db")))
         .await
         .unwrap();
-    let tools = Tools::new(root).await.unwrap().with_lsp(registry);
+    let tools = Tools::new(root)
+        .await
+        .unwrap()
+        .with_writes(true)
+        .with_lsp_diagnostics(lsp_diagnostics)
+        .with_lsp(registry);
     let runtime = Runtime::with_policy(
         store.clone(),
         Arc::new(Executor { name, input }),
@@ -467,4 +482,122 @@ async fn edited_documents_refresh_diagnostics_and_queries_without_reopening() {
     );
     registry.shutdown().await;
     peer.await.unwrap();
+}
+
+/// Test fixture language server: records every opened/changed document and
+/// publishes one error for it.
+async fn reporting_server(
+    stream: DuplexStream,
+    opened: tokio::sync::mpsc::UnboundedSender<String>,
+    message: String,
+) {
+    let (read, mut write) = tokio::io::split(stream);
+    let mut read = BufReader::new(read);
+    while let Some(frame) = read_frame(&mut read).await {
+        if let (Some(id), Some(method)) = (frame.get("id"), frame.get("method")) {
+            let result = match method.as_str().unwrap_or_default() {
+                "initialize" => json!({"capabilities":{}}),
+                _ => Value::Null,
+            };
+            write_frame(
+                &mut write,
+                &json!({"jsonrpc":"2.0","id":id,"result":result}),
+            )
+            .await;
+            continue;
+        }
+        match frame["method"].as_str().unwrap_or_default() {
+            "textDocument/didOpen" | "textDocument/didChange" => {
+                let uri = frame["params"]["textDocument"]["uri"].clone();
+                let _ = opened.send(frame["method"].as_str().unwrap_or_default().to_owned());
+                write_frame(
+                    &mut write,
+                    &json!({"jsonrpc":"2.0","method":"textDocument/publishDiagnostics","params":{
+                        "uri":uri,
+                        "diagnostics":[{
+                            "range":{"start":{"line":0,"character":0},"end":{"line":0,"character":1}},
+                            "severity":1,
+                            "message":message,
+                        }]
+                    }}),
+                )
+                .await;
+            }
+            "shutdown" => {
+                write_frame(
+                    &mut write,
+                    &json!({"jsonrpc":"2.0","id":frame["id"],"result":Value::Null}),
+                )
+                .await
+            }
+            _ => {}
+        }
+    }
+}
+
+#[tokio::test]
+async fn read_file_warms_the_language_server_for_the_next_edit() {
+    let dir = tempfile::tempdir().unwrap();
+    std::fs::write(dir.path().join("file.rs"), "fn main() {}\n").unwrap();
+    let (client, server) = tokio::io::duplex(1 << 20);
+    let (client_read, client_write) = tokio::io::split(client);
+    let (opened, mut events) = tokio::sync::mpsc::unbounded_channel();
+    tokio::spawn(reporting_server(server, opened, "warm fixture".into()));
+    let registry = Arc::new(
+        Registry::connect_io("rust".into(), vec!["rs".into()], client_read, client_write)
+            .await
+            .unwrap(),
+    );
+
+    let read = run(
+        dir.path(),
+        registry.clone(),
+        "read_file",
+        json!({"path":"file.rs"}),
+    )
+    .await;
+    assert!(read["text"].as_str().unwrap().contains("fn main"));
+    // The warm-up is fire-and-forget, so wait briefly for the didOpen.
+    let opened = tokio::time::timeout(std::time::Duration::from_secs(5), events.recv())
+        .await
+        .expect("warm-up opened the document")
+        .unwrap();
+    assert_eq!(opened, "textDocument/didOpen");
+
+    // The warmed document is cached, so the edit's diagnostics arrive at once.
+    let edit = run(
+        dir.path(),
+        registry.clone(),
+        "edit_file",
+        json!({
+            "path":"file.rs",
+            "old_string":"fn main() {}",
+            "new_string":"fn main() { let _ = 1; }",
+            "expected_sha256": digest(b"fn main() {}\n"),
+        }),
+    )
+    .await;
+    assert_eq!(edit["diagnostics"][0]["message"], "warm fixture");
+    assert_eq!(edit["diagnostics"][0]["severity"], 1);
+
+    // The ablation performs no LSP work at all.
+    let ablated = run_with(
+        dir.path(),
+        registry.clone(),
+        "edit_file",
+        json!({
+            "path":"file.rs",
+            "old_string":"let _ = 1;",
+            "new_string":"let _ = 2;",
+            "expected_sha256": digest(b"fn main() { let _ = 1; }\n"),
+        }),
+        false,
+    )
+    .await;
+    assert!(ablated.get("diagnostics").is_none());
+    // The write hook still notifies an already-open document, which is not
+    // warm-up work; the ablation must not open (warm) any document itself.
+    while let Ok(event) = events.try_recv() {
+        assert_ne!(event, "textDocument/didOpen", "the ablation must not warm");
+    }
 }

@@ -35,6 +35,8 @@ export interface EngineOptions {
   credentialIntegration?: string
   /** Evaluation ablation control; `false` disables stale-edit recovery. */
   editRecovery?: boolean
+  /** Evaluation ablation control; `false` disables LSP warm-up and post-edit diagnostics. */
+  lspDiagnostics?: boolean
   env?: Record<string, string | undefined>
 }
 
@@ -109,6 +111,7 @@ export function engineArgs(options: EngineOptions): string[] {
   if (options.credentialID) args.push("--credential-id", options.credentialID)
   if (options.credentialIntegration) args.push("--credential-integration", options.credentialIntegration)
   if (options.editRecovery === false) args.push("--edit-recovery", "off")
+  if (options.lspDiagnostics === false) args.push("--lsp-diagnostics", "off")
   return args
 }
 

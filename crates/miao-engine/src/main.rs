@@ -304,6 +304,11 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
             None | Some("on") => true,
             Some("off") => false,
             Some(_) => return Err("--edit-recovery must be on or off".into()),
+        })
+        .with_lsp_diagnostics(match options.get("--lsp-diagnostics").map(String::as_str) {
+            None | Some("on") => true,
+            Some("off") => false,
+            Some(_) => return Err("--lsp-diagnostics must be on or off".into()),
         });
     if let Some(path) = source.path() {
         if policy.process_enabled() && path.starts_with(std::path::Path::new(tools.location())) {
