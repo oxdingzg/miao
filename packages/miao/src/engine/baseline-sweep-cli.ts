@@ -27,6 +27,7 @@ rust:
   --policy FILE             policy override (default: protected/** deny contract)
   --endpoint URL            provider base URL override
   --edit-recovery on|off    stale-edit recovery ablation (default: on)
+  --drift-file FILE         JSON map of workspace path to drift content
   --credential-db FILE      product credential database (read-only)
   --credential-id ID        credential row
   --credential-integration NAME
@@ -54,6 +55,7 @@ interface Options {
   policy?: string
   endpoint?: string
   editRecovery?: boolean
+  driftFile?: string
   credentialDatabase?: string
   credentialID?: string
   credentialIntegration?: string
@@ -69,6 +71,7 @@ if (args.length === 0 || args.includes("--help") || args.includes("-h")) {
 }
 const options = readOptions(args)
 const env = options.envFile ? await Bun.file(options.envFile).json() : undefined
+const drifts = options.driftFile ? await Bun.file(options.driftFile).json() : undefined
 const binarySha256 =
   options.engine === "rust"
     ? new Bun.CryptoHasher("sha256").update(await Bun.file(options.binary!).arrayBuffer()).digest("hex")
@@ -96,6 +99,7 @@ for (const task of options.tasks) {
             policyFile: options.policy,
             endpoint: options.endpoint,
             editRecovery: options.editRecovery,
+            drifts,
             credentialDatabase: options.credentialDatabase,
             credentialID: options.credentialID,
             credentialIntegration: options.credentialIntegration,
@@ -112,6 +116,7 @@ for (const task of options.tasks) {
             entry: options.entry!,
             bun: options.bun,
             credentialDatabase: options.credentialDatabase,
+            drifts,
             timeoutMs: options.timeoutMs,
           })
     results.push(result)
@@ -209,6 +214,7 @@ function readOptions(args: string[]): Options {
     provider: values.get("provider"),
     policy: values.get("policy"),
     endpoint: values.get("endpoint"),
+    driftFile: values.get("drift-file"),
     editRecovery: values.get("edit-recovery") === undefined ? undefined : values.get("edit-recovery") !== "off",
     credentialDatabase: values.get("credential-db"),
     credentialID: values.get("credential-id"),
