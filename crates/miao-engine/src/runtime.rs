@@ -700,6 +700,7 @@ async fn execute(
                     &mut history,
                     budget,
                     limits.protect_turns,
+                    limits.prune_total_chars,
                 );
                 if elided > 0 {
                     let _ = inner.progress.send(json!({

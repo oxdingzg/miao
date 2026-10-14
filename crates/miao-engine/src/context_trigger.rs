@@ -82,6 +82,10 @@ pub struct ContextLimits {
     /// before it is elided. Absent leaves tool output whole (pruning off).
     #[serde(default)]
     pub prune_chars: Option<usize>,
+    /// Serialized chars the elidable tool results may keep in total. Absent
+    /// leaves selection per-payload, which elides every candidate.
+    #[serde(default)]
+    pub prune_total_chars: Option<usize>,
     /// Newest user-role messages whose tool output is never elided.
     #[serde(default = "default_protect_turns")]
     pub protect_turns: usize,
@@ -449,28 +453,36 @@ pub fn prune_history(
     messages: &mut [Message],
     budget: usize,
     protect_turns: usize,
+    total: Option<usize>,
 ) -> (usize, usize) {
+    // Selection is budget-aware. The candidates are the payloads above the
+    // per-payload budget outside the protected turns; with a total target
+    // configured, only as many of them -- oldest first, because the work in
+    // flight is least likely to still need the oldest -- are elided as make the
+    // remaining candidates fit that target. Without one, every candidate is.
+    let candidates = prune_candidates(messages, budget, protect_turns);
+    let required = total.map_or(usize::MAX, |target| {
+        candidates
+            .iter()
+            .map(|(_, _, len)| *len)
+            .sum::<usize>()
+            .saturating_sub(target)
+    });
     let mut elided = 0;
     let mut dropped = 0;
-    let mut turns = 0;
-    for message in messages.iter_mut().rev() {
-        if message.role == "user" {
-            turns += 1;
+    for (index, block, len) in candidates {
+        if dropped >= required {
+            break;
         }
-        if turns <= protect_turns {
-            continue;
-        }
-        for block in message.content.as_array_mut().into_iter().flatten() {
-            if block["type"] != "tool_result" {
-                continue;
-            }
-            let Some(content) = block["content"].as_str() else {
+        let pruned = {
+            let value = &messages[index].content[block];
+            let Some(content) = value["content"].as_str() else {
                 continue;
             };
             let Prune::Elide {
                 keep_head,
                 keep_tail,
-            } = prune_tool_output(content.len(), budget, false)
+            } = prune_tool_output(len, budget, false)
             else {
                 continue;
             };
@@ -478,25 +490,66 @@ pub fn prune_history(
             let tail = content.len() - ceil_boundary_from_end(content, keep_tail);
             // Pruning stays recoverable: the marker names the handle that
             // restores the elided middle, so nothing is silently lost.
-            let note = match block["tool_use_id"].as_str() {
+            let note = match value["tool_use_id"].as_str() {
                 Some(id) if id.len() <= 128 => format!(
                     "[the elided middle is recoverable on demand: recall {{\"tool_use_id\":\"{id}\"}}]\n"
                 ),
                 _ => String::new(),
             };
-            let pruned = format!(
+            format!(
                 "{}{}{}{}",
                 &content[..head],
                 PRUNE_MARK,
                 note,
                 &content[tail..]
-            );
-            dropped += content.len() - pruned.len();
-            block["content"] = json!(pruned);
-            elided += 1;
-        }
+            )
+        };
+        dropped += len - pruned.len();
+        messages[index].content[block]["content"] = json!(pruned);
+        elided += 1;
     }
     (elided, dropped)
+}
+
+/// The payloads elision may consider: above the per-payload budget and outside
+/// the newest `protect_turns` user-role messages, oldest first, each with its
+/// message index, content-block index, and byte length.
+fn prune_candidates(
+    messages: &[Message],
+    budget: usize,
+    protect_turns: usize,
+) -> Vec<(usize, usize, usize)> {
+    let turns_total = messages
+        .iter()
+        .filter(|message| message.role == "user")
+        .count();
+    let protected_from = turns_total.saturating_sub(protect_turns);
+    let mut turns = 0;
+    let mut candidates = Vec::new();
+    for (index, message) in messages.iter().enumerate() {
+        if message.role == "user" {
+            turns += 1;
+        }
+        if turns > protected_from {
+            continue;
+        }
+        for (block, part) in message.content.as_array().into_iter().flatten().enumerate() {
+            if part["type"] != "tool_result" {
+                continue;
+            }
+            let Some(content) = part["content"].as_str() else {
+                continue;
+            };
+            if !matches!(
+                prune_tool_output(content.len(), budget, false),
+                Prune::Elide { .. }
+            ) {
+                continue;
+            }
+            candidates.push((index, block, content.len()));
+        }
+    }
+    candidates
 }
 
 /// The largest char boundary at or below `index`.
@@ -692,7 +745,7 @@ mod tests {
             },
         ];
         // The newest user message keeps its output; the older one is elided.
-        let (elided, dropped) = prune_history(&mut messages, 1000, 1);
+        let (elided, dropped) = prune_history(&mut messages, 1000, 1, None);
         assert_eq!(elided, 1);
         assert!(dropped > 0);
         let kept = messages[2].content[0]["content"].as_str().unwrap();
@@ -701,6 +754,38 @@ mod tests {
         assert!(pruned.contains("elided by context management"), "{pruned}");
         assert!(pruned.len() < 4000);
 
+        let payload = |text: &str| Message {
+            role: "user".into(),
+            content: json!([{"type":"tool_result","tool_use_id":"call","content":text.repeat(4000)}]),
+            checkpoint: None,
+            recorded_at_ms: None,
+        };
+
+        // Three 4000-byte candidates sum to 12000 against a total target of
+        // 8000, so selection elides oldest-first only until the excess of 4000
+        // is covered: the newest candidate keeps its output whole.
+        let mut messages = vec![payload("a"), payload("b"), payload("c")];
+        let (elided, dropped) = prune_history(&mut messages, 1000, 0, Some(8000));
+        assert_eq!(elided, 2);
+        assert!(dropped >= 4000, "{dropped}");
+        for index in [0, 1] {
+            let text = messages[index].content[0]["content"].as_str().unwrap();
+            assert!(text.contains("elided by context management"), "{index}");
+        }
+        assert_eq!(
+            messages[2].content[0]["content"].as_str().unwrap().len(),
+            4000
+        );
+
+        // A target the candidates already fit elides nothing at all.
+        let mut fitting = vec![payload("a"), payload("b"), payload("c")];
+        assert_eq!(prune_history(&mut fitting, 1000, 0, Some(20000)), (0, 0));
+        assert!(fitting.iter().all(|message| message.content[0]["content"]
+            .as_str()
+            .unwrap()
+            .len()
+            == 4000));
+
         // Within budget nothing is touched, and protecting every turn is a no-op.
         let mut small = vec![Message {
             role: "user".into(),
@@ -708,8 +793,8 @@ mod tests {
             checkpoint: None,
             recorded_at_ms: None,
         }];
-        assert_eq!(prune_history(&mut small, 1000, 0), (0, 0));
-        assert_eq!(prune_history(&mut messages, 1000, 3), (0, 0));
+        assert_eq!(prune_history(&mut small, 1000, 0, None), (0, 0));
+        assert_eq!(prune_history(&mut messages, 1000, 3, None), (0, 0));
     }
 
     #[test]
