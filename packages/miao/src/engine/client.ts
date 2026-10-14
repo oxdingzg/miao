@@ -44,6 +44,11 @@ export interface EngineOptions {
    * Absent leaves each provider's own caching behavior untouched.
    */
   promptCache?: boolean
+  /**
+   * Command line the engine runs before a run may finish, e.g. a type check or
+   * a focused test command; a failure becomes a classified continuation.
+   */
+  verifyCommand?: string
   env?: Record<string, string | undefined>
 }
 
@@ -121,6 +126,7 @@ export function engineArgs(options: EngineOptions): string[] {
   if (options.lspDiagnostics === false) args.push("--lsp-diagnostics", "off")
   if (options.lspConfigFile) args.push("--lsp-config", options.lspConfigFile)
   if (options.promptCache !== undefined) args.push("--prompt-cache", options.promptCache ? "on" : "off")
+  if (options.verifyCommand) args.push("--verify-command", options.verifyCommand)
   return args
 }
 

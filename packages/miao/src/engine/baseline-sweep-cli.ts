@@ -28,6 +28,8 @@ rust:
   --endpoint URL            provider base URL override
   --edit-recovery on|off    stale-edit recovery ablation (default: on)
   --lsp-diagnostics on|off  LSP warm-up and post-edit diagnostics ablation (default: on)
+  --verify-command CMD      completion check the engine must pass before a run finishes
+  --prompt-cache on|off     explicit prefix-cache policy (default: off)
   --lsp-config FILE         LSP host config for the measured runs
   --drift-file FILE         JSON map of workspace path to drift content
   --credential-db FILE      product credential database (read-only)
@@ -59,6 +61,8 @@ interface Options {
   editRecovery?: boolean
   lspDiagnostics?: boolean
   lspConfigFile?: string
+  verifyCommand?: string
+  promptCache?: boolean
   driftFile?: string
   credentialDatabase?: string
   credentialID?: string
@@ -105,6 +109,8 @@ for (const task of options.tasks) {
             editRecovery: options.editRecovery,
             lspDiagnostics: options.lspDiagnostics,
             lspConfigFile: options.lspConfigFile,
+            verifyCommand: options.verifyCommand,
+            promptCache: options.promptCache,
             drifts,
             credentialDatabase: options.credentialDatabase,
             credentialID: options.credentialID,
@@ -223,6 +229,8 @@ function readOptions(args: string[]): Options {
     driftFile: values.get("drift-file"),
     editRecovery: values.get("edit-recovery") === undefined ? undefined : values.get("edit-recovery") !== "off",
     lspDiagnostics: values.get("lsp-diagnostics") === undefined ? undefined : values.get("lsp-diagnostics") !== "off",
+    verifyCommand: values.get("verify-command") ?? undefined,
+    promptCache: values.get("prompt-cache") === undefined ? undefined : values.get("prompt-cache") === "on",
     lspConfigFile: values.get("lsp-config"),
     credentialDatabase: values.get("credential-db"),
     credentialID: values.get("credential-id"),

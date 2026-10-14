@@ -27,6 +27,14 @@ test("the prompt-cache policy rides the spawn args only when set", () => {
   expect(engineArgs({ ...base, promptCache: false })[at + 1]).toBe("off")
 })
 
+test("the completion check rides the spawn args only when configured", () => {
+  expect(engineArgs(base)).not.toContain("--verify-command")
+  const configured = engineArgs({ ...base, verifyCommand: "bun run check" })
+  const at = configured.indexOf("--verify-command")
+  expect(at).toBeGreaterThan(-1)
+  expect(configured[at + 1]).toBe("bun run check")
+})
+
 test("the credential channel rides the spawn args only when configured", () => {
   expect(engineArgs(base)).not.toContain("--credential-db")
   const configured = engineArgs({

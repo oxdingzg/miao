@@ -461,3 +461,20 @@ longest carrier shows the highest share. Whether a turn's prefix is byte-identic
 to the previous turn's is asserted separately by `tests/prefix_stability.rs`.
 Billed cache write and TTFT remain unmeasured per provider: the sweep provider
 reports neither.
+
+## Ablation forwarding correction (2026-10-14)
+
+The post-edit diagnostics measurement above recorded `--lsp-diagnostics on`
+against `off` as equivalent. That comparison cannot carry that meaning: the
+evaluation runner declared `lspDiagnostics` and `lspConfigFile` but never passed
+them to the engine client, so both arms ran the default configuration. The
+on-arm's absolute numbers stand, and the mechanism stays pinned by the LSP
+fixture tests, which drive the runtime directly; the arm comparison is
+withdrawn.
+
+The runner now forwards every ablation it declares (`lspDiagnostics`,
+`lspConfigFile`) plus the two newer engine surfaces (`verifyCommand`,
+`promptCache`), with a client-args test for the new spawn argument. Re-running
+the offline arm through the fixed runner rejected its multi-file samples
+(`missing effective profile fingerprint from provider receipts`), so no
+corrected number is recorded here: the next ablation run owns that measurement.
