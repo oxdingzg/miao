@@ -210,7 +210,7 @@ async fn interrupted_committed_tool_calls_have_unknown_results_without_rerun() {
     assert_eq!(history.last().unwrap().content[0]["tool_use_id"], "call");
     assert_eq!(history.last().unwrap().content[0]["is_error"], true);
     assert!(store
-        .tool_result("s", "run", "call", json!({}), false)
+        .tool_result("s", "run", "call", json!({}), false, 0)
         .await
         .is_err());
     assert!(store.recover().await.unwrap().is_empty());
@@ -238,11 +238,11 @@ async fn wrong_session_cannot_commit_assistant_dispatch_and_settlement_is_atomic
     assert!(store.history("other").await.unwrap().is_empty());
     store.assistant_reply("s", "run", None, tool).await.unwrap();
     assert!(store
-        .tool_result("other", "run", "call", json!({}), false)
+        .tool_result("other", "run", "call", json!({}), false, 0)
         .await
         .is_err());
     store
-        .tool_result("s", "run", "call", json!({"text":"contents"}), false)
+        .tool_result("s", "run", "call", json!({"text":"contents"}), false, 0)
         .await
         .unwrap();
     assert_eq!(
@@ -250,7 +250,7 @@ async fn wrong_session_cannot_commit_assistant_dispatch_and_settlement_is_atomic
         "call"
     );
     assert!(store
-        .tool_result("s", "run", "call", json!({}), false)
+        .tool_result("s", "run", "call", json!({}), false, 0)
         .await
         .is_err());
     assert!(store
