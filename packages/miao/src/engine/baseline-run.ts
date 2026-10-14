@@ -1,5 +1,6 @@
 import { Database } from "bun:sqlite"
 import { createHash, randomUUID } from "node:crypto"
+import { writeFileSync } from "node:fs"
 import { chmod, mkdir } from "node:fs/promises"
 import path from "node:path"
 import type { Schema } from "effect"
@@ -77,6 +78,12 @@ export interface BaselineRustInput {
   endpoint?: string
   /** Evaluation ablation control; `false` disables stale-edit recovery. */
   editRecovery?: boolean
+  /**
+   * Drift experiment control: after the model reads one of these workspace
+   * paths, the runner rewrites it with the given content before the model's
+   * next turn, so a stale edit is exercised without changing the oracle.
+   */
+  drifts?: Record<string, string>
   timeoutMs?: number
   env?: Record<string, string | undefined>
   binarySha256?: string
@@ -94,6 +101,8 @@ export interface BaselineTsInput {
   bun?: string
   /** Stable credential store copied into the run's shared store (read-only). */
   credentialDatabase?: string
+  /** Drift experiment control; see BaselineRustInput.drifts. */
+  drifts?: Record<string, string>
   timeoutMs?: number
 }
 
@@ -117,6 +126,37 @@ export async function runBaselineRust(input: BaselineRustInput): Promise<Baselin
     task.id === "stream-interruption"
       ? await startInterruptionProxy(input.endpoint ?? "https://chatgpt.com/backend-api/codex/responses")
       : undefined
+  const drifts = new Map(Object.entries(input.drifts ?? {}))
+  const drifted = new Set<string>()
+  const readCalls = new Map<string, string>()
+  const callProviders = new Map<string, string>()
+  // The drift lands the moment the model's read of that path settles, so the
+  // following edit carries a stale fingerprint against changed content.
+  const applyDrift = (event: EngineEvent) => {
+    if (drifts.size === 0) return
+    const data = BlackboxTape.json(event.data)
+    if (event.kind === "message.committed") {
+      if (!BlackboxTape.isObject(data) || data.role !== "assistant" || !Array.isArray(data.content)) return
+      for (const block of data.content) {
+        if (!BlackboxTape.isObject(block) || block.type !== "tool_use" || block.name !== "read_file") continue
+        const request = BlackboxTape.isObject(block.input) ? block.input : {}
+        if (typeof block.id === "string" && typeof request.path === "string" && drifts.has(request.path))
+          readCalls.set(block.id, request.path)
+      }
+      return
+    }
+    if (event.kind === "tool.dispatched") {
+      if (BlackboxTape.isObject(data) && typeof data.call_id === "string" && typeof data.provider_id === "string")
+        callProviders.set(data.call_id, data.provider_id)
+      return
+    }
+    if (event.kind !== "tool.completed") return
+    const callId = BlackboxTape.isObject(data) && typeof data.call_id === "string" ? data.call_id : undefined
+    const target = callId ? readCalls.get(callProviders.get(callId) ?? "") : undefined
+    if (!target || drifted.has(target)) return
+    drifted.add(target)
+    writeFileSync(path.join(workspace, target), drifts.get(target)!)
+  }
   const error = await runEnginePrompt({
     binary: input.binary,
     db: path.join(input.root, "engine.db"),
@@ -137,6 +177,7 @@ export async function runBaselineRust(input: BaselineRustInput): Promise<Baselin
     onEvent: (event) => {
       observed.set(event.seq, Date.now())
       events.push(event)
+      applyDrift(event)
     },
     onProgress: (item) => progress.push({ item, atMs: Date.now() }),
   }).then(
@@ -217,9 +258,28 @@ export async function runBaselineTs(input: BaselineTsInput): Promise<BaselineRun
   const parts: Array<Record<string, Schema.Json>> = []
   let session: string | undefined
   let interrupted = false
+  const drifts = new Map(Object.entries(input.drifts ?? {}))
+  const drifted = new Set<string>()
   const stdout = readJsonLines(child.stdout, (message) => {
     if (typeof message.sessionID === "string") session = message.sessionID
     if (message.type === "tool_use" || message.type === "text" || message.type === "step_start") parts.push(message)
+    if (drifts.size > 0 && message.type === "tool_use") {
+      const part = message.part
+      const state = BlackboxTape.isObject(part) && BlackboxTape.isObject(part.state) ? part.state : undefined
+      const request = state && BlackboxTape.isObject(state.input) ? state.input : undefined
+      const tracked = request && typeof request.path === "string" ? request.path : undefined
+      if (
+        BlackboxTape.isObject(part) &&
+        part.tool === "read" &&
+        state?.status === "completed" &&
+        tracked &&
+        drifts.has(tracked) &&
+        !drifted.has(tracked)
+      ) {
+        drifted.add(tracked)
+        writeFileSync(path.join(workspace, tracked), drifts.get(tracked)!)
+      }
+    }
     if (task.id === "stream-interruption" && !interrupted && actionTool(message)) {
       interrupted = true
       child.kill("SIGINT")

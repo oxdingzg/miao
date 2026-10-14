@@ -40,6 +40,7 @@ async function run(
   steps: unknown[] | ((runRoot: string) => unknown[]),
   cancelSteps?: unknown[],
   timeoutMs = 5000,
+  extras: { drifts?: Record<string, string> } = {},
 ) {
   const runRoot = path.join(root, `run-${task}-${Math.random().toString(36).slice(2)}`)
   const file = await script(root, typeof steps === "function" ? steps(runRoot) : steps, cancelSteps)
@@ -52,6 +53,7 @@ async function run(
     model: "fixture-model",
     timeoutMs,
     env: { ENGINE_FAKE_SCRIPT: file },
+    ...extras,
   })
 }
 
@@ -303,4 +305,32 @@ test("writes the baseline permission policy with protected writes denied", async
   ])
   expect(policy.mode).toBe("workspace")
   expect(policy.allow_process).toBe(true)
+})
+
+test("injects the drift once the model's read of that path settles", async () => {
+  await using tmp = await tmpdir()
+  const drift = "export function add(a: number, b: number) {\n  return (a - b)\n}\n"
+  await run(
+    tmp.path,
+    "small-edit",
+    [
+      ...base,
+      event(4, "provider.request", { run_id: "run", step: 0, attempt: 1, profile: profile() }),
+      event(5, "usage", { run_id: "run", step: 0, usage: { inputTokens: 10, outputTokens: 1 } }),
+      event(6, "message.committed", {
+        role: "assistant",
+        content: [{ type: "tool_use", id: "read-call", name: "read_file", input: { path: "src/add.ts" } }],
+      }),
+      event(7, "tool.dispatched", { run_id: "run", call_id: "c1", provider_id: "read-call" }),
+      event(8, "tool.completed", { call_id: "c1", result: { text: "old" }, is_error: false }),
+      event(9, "run.finished", { run_id: "run", reason: "completed" }),
+      event(10, "stop", { run_id: "run" }),
+    ],
+    undefined,
+    5000,
+    { drifts: { "src/add.ts": drift } },
+  )
+  const roots = (await readdir(tmp.path)).filter((name) => name.startsWith("run-small-edit-"))
+  expect(roots).toHaveLength(1)
+  expect(await Bun.file(path.join(tmp.path, roots[0], "workspace", "src", "add.ts")).text()).toBe(drift)
 })
