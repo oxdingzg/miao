@@ -166,7 +166,6 @@ type OpenAIChatRequestMessage = LLMRequest["messages"][number]
 
 interface ParserState {
   readonly tools: ToolStream.State<number>
-  readonly toolCallEvents: ReadonlyArray<LLMEvent>
   readonly usage?: Usage
   readonly finishReason?: FinishReason
   readonly lifecycle: Lifecycle.State
@@ -481,17 +480,13 @@ const step = (state: ParserState, event: OpenAIChatEvent) =>
       events.push(...result.events)
     }
 
-    // Finalize accumulated tool inputs eagerly when finish_reason arrives so
-    // JSON parse failures fail the stream at the boundary rather than at halt.
-    const finished =
-      finishReason !== undefined && state.finishReason === undefined && Object.keys(tools).length > 0
-        ? yield* ToolStream.finishAll(ADAPTER, tools)
-        : undefined
-
+    // finish_reason does not mean the tool arguments are complete: some
+    // OpenAI-compatible providers deliver it before the last calls' argument
+    // deltas. Keep accumulating every frame and finalize the pending calls at
+    // stream halt instead, so late arguments land in the emitted tool calls.
     return [
       {
-        tools: finished?.tools ?? tools,
-        toolCallEvents: finished?.events ?? state.toolCallEvents,
+        tools,
         usage,
         finishReason,
         lifecycle,
@@ -502,24 +497,30 @@ const step = (state: ParserState, event: OpenAIChatEvent) =>
     ] as const
   })
 
-const finishEvents = (state: ParserState): ReadonlyArray<LLMEvent> => {
-  const events: LLMEvent[] = []
-  const hasToolCalls = state.toolCallEvents.length > 0
-  const reason = state.finishReason === "stop" && hasToolCalls ? "tool-calls" : state.finishReason
-  const metadata = state.reasoningOpaque ? { copilot: { reasoningOpaque: state.reasoningOpaque } } : undefined
-  let lifecycle = state.toolCallEvents.length ? Lifecycle.stepStart(state.lifecycle, events) : state.lifecycle
-  lifecycle = Lifecycle.reasoningEnd(lifecycle, events, `reasoning-${state.reasoningIndex ?? 0}`, metadata)
-  lifecycle = Lifecycle.textEnd(lifecycle, events, "text-0", metadata)
-  events.push(
-    ...state.toolCallEvents.map((event) =>
+const finishEvents = (state: ParserState) =>
+  Effect.gen(function* () {
+    const events: LLMEvent[] = []
+    const metadata = state.reasoningOpaque ? { copilot: { reasoningOpaque: state.reasoningOpaque } } : undefined
+    // finish_reason does not mean the tool arguments are complete: some
+    // OpenAI-compatible providers deliver it before the last calls' argument
+    // deltas. Finalize whatever is still pending at halt so late arguments
+    // land in the emitted tool calls. Without finish_reason the stream is a
+    // truncated response: nothing is finalized and the retryable stream
+    // failure handles the attempt.
+    const flushed = state.finishReason === undefined ? [] : (yield* ToolStream.finishAll(ADAPTER, state.tools)).events
+    const calls = flushed.filter(LLMEvent.is.toolCall).length
+    const reason = state.finishReason === "stop" && calls > 0 ? "tool-calls" : state.finishReason
+    let lifecycle = calls > 0 ? Lifecycle.stepStart(state.lifecycle, events) : state.lifecycle
+    lifecycle = Lifecycle.reasoningEnd(lifecycle, events, `reasoning-${state.reasoningIndex ?? 0}`, metadata)
+    lifecycle = Lifecycle.textEnd(lifecycle, events, "text-0", metadata)
+    events.push(...flushed.map((event) =>
       LLMEvent.is.toolCall(event) && metadata
         ? LLMEvent.toolCall({ id: event.id, name: event.name, input: event.input, providerMetadata: metadata })
         : event,
-    ),
-  )
-  if (reason) Lifecycle.finish(lifecycle, events, { reason, usage: state.usage, providerMetadata: metadata })
-  return events
-}
+    ))
+    if (reason) Lifecycle.finish(lifecycle, events, { reason, usage: state.usage, providerMetadata: metadata })
+    return events
+  })
 
 // =============================================================================
 // Protocol And OpenAI Route
@@ -539,7 +540,7 @@ export const protocol = Protocol.make({
   media: IMAGE_MIMES,
   stream: {
     event: Protocol.jsonEvent(OpenAIChatEvent),
-    initial: () => ({ tools: ToolStream.empty<number>(), toolCallEvents: [], lifecycle: Lifecycle.initial() }),
+    initial: () => ({ tools: ToolStream.empty<number>(), lifecycle: Lifecycle.initial() }),
     step,
     onHalt: finishEvents,
   },
