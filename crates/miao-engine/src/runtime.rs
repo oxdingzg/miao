@@ -2396,14 +2396,9 @@ async fn execute_read_batch(
         .filter(|block| block["type"] == "tool_use")
         .collect();
     if !(2..=16).contains(&blocks.len())
-        || blocks.iter().any(|block| {
-            block["input_error"].is_string()
-                || block["provider_executed"] == true
-                || !matches!(
-                    block["name"].as_str(),
-                    Some("read_file" | "list_files" | "glob" | "grep")
-                )
-        })
+        || blocks
+            .iter()
+            .any(|block| block["input_error"].is_string() || block["provider_executed"] == true)
     {
         return Ok(HashMap::new());
     }
@@ -2415,7 +2410,12 @@ async fn execute_read_batch(
         let Ok(tool) = inner.tools.prepare(name, block["input"].clone()).await else {
             return Ok(HashMap::new());
         };
+        // Membership is declaration-driven (ADR-13): a call joins the batch
+        // when its own declaration says it only reads a named resource, not
+        // because of its name. Anything that declares a write — or anything
+        // undeclared — conflicts with the batch and stays serial.
         if tool.access() != crate::permission::Access::Read
+            || tool.resource().is_empty()
             || inner
                 .policy
                 .evaluate(tool.name(), tool.resource(), tool.access())
@@ -2428,7 +2428,14 @@ async fn execute_read_batch(
     if cancel.is_cancelled() {
         return Ok(HashMap::new());
     }
-    inner.store.record(session, "tool.parallel.started", json!({"run_id":run,"call_ids":prepared.iter().map(|(id,_)| id).collect::<Vec<_>>(),"concurrency":4})).await?;
+    inner
+        .store
+        .record(
+            session,
+            "tool.parallel.started",
+            json!({"run_id":run,"call_ids":prepared.iter().map(|(id,_)| id).collect::<Vec<_>>(),"resources":prepared.iter().map(|(_,tool)| tool.resource()).collect::<Vec<_>>(),"concurrency":4}),
+        )
+        .await?;
     for (id, tool) in &prepared {
         inner
             .store

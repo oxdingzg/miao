@@ -61,7 +61,7 @@ async fn execute(root: &std::path::Path, calls: Value, denied: bool) -> Store {
     let runtime = Runtime::with_policy(
         store.clone(),
         Arc::new(Batch(calls)),
-        Tools::new(root).await.unwrap(),
+        Tools::new(root).await.unwrap().with_writes(true),
         policy,
     )
     .await
@@ -383,4 +383,60 @@ async fn cancellation_settles_every_dispatched_read_without_unknown_results() {
         .iter()
         .any(|event| event.kind == "run.finished" && event.data["reason"] == "interrupted"));
     runtime.shutdown().await;
+}
+
+#[tokio::test]
+async fn batch_membership_follows_declarations_not_names() {
+    // read_image declares a read resource like its siblings, so the scheduler
+    // admits it by declaration; the batch event names what each member reads.
+    let dir = tempfile::tempdir().unwrap();
+    std::fs::write(dir.path().join("a"), "alpha").unwrap();
+    let store = execute(
+        dir.path(),
+        json!([
+            call("one", "read_file", json!({"path":"a"})),
+            call("two", "read_image", json!({"path":"a"})),
+        ]),
+        false,
+    )
+    .await;
+    let events = store.events("s", 0, 1000).await.unwrap();
+    let batch = events
+        .iter()
+        .find(|event| event.kind == "tool.parallel.started")
+        .unwrap();
+    assert_eq!(batch.data["call_ids"], json!(["one", "two"]));
+    let resources = batch.data["resources"].as_array().unwrap();
+    assert_eq!(resources.len(), 2);
+    assert!(resources
+        .iter()
+        .all(|resource| !resource.as_str().unwrap_or_default().is_empty()));
+}
+
+#[tokio::test]
+async fn a_declared_write_conflicts_with_the_batch_and_stays_serial() {
+    // A write in the same turn conflicts with everything: the whole turn
+    // settles serially and no batch is announced.
+    let dir = tempfile::tempdir().unwrap();
+    std::fs::write(dir.path().join("a"), "alpha").unwrap();
+    let store = execute(
+        dir.path(),
+        json!([
+            call("one", "read_file", json!({"path":"a"})),
+            call("two", "write_file", json!({"path":"z","content":"z"})),
+        ]),
+        false,
+    )
+    .await;
+    let events = store.events("s", 0, 1000).await.unwrap();
+    assert!(!events
+        .iter()
+        .any(|event| event.kind == "tool.parallel.started"));
+    assert_eq!(
+        events
+            .iter()
+            .filter(|event| event.kind == "tool.completed")
+            .count(),
+        2
+    );
 }
