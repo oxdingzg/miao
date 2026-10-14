@@ -250,7 +250,7 @@ async fn an_archived_tool_output_comes_back_by_handle_across_bounded_windows() {
         .unwrap();
     assert_eq!(next["offset"], first["next_offset"]);
     assert_eq!(next["truncated"], false);
-    assert_eq!(next["next_offset"], Value::Null);
+    assert_eq!(next["next_offset"], json!(null));
     // Both windows together restore the whole stored output, including the
     // middle a single search preview never returns.
     let restored = format!("{}{}", window, next["text"].as_str().unwrap());
@@ -258,8 +258,8 @@ async fn an_archived_tool_output_comes_back_by_handle_across_bounded_windows() {
     assert!(restored.contains("MARKER-MIDDLE"));
 
     let missing = store.recall("s", handle("call-missing", 0)).await.unwrap();
-    assert_eq!(missing["message_seq"], Value::Null);
-    assert_eq!(missing["text"], Value::Null);
+    assert_eq!(missing["message_seq"], json!(null));
+    assert_eq!(missing["text"], json!(null));
     assert_eq!(missing["exhausted"], true);
     assert!(store.recall("other", handle("call-1", 0)).await.unwrap()["text"].is_null());
 }
