@@ -78,6 +78,8 @@ export interface BaselineRustInput {
   endpoint?: string
   /** Evaluation ablation control; `false` disables stale-edit recovery. */
   editRecovery?: boolean
+  /** Evaluation ablation control; `false` disables LSP warm-up and post-edit diagnostics. */
+  lspDiagnostics?: boolean
   /**
    * Drift experiment control: after the model reads one of these workspace
    * paths, the runner rewrites it with the given content before the model's

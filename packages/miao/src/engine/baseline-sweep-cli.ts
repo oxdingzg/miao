@@ -27,6 +27,7 @@ rust:
   --policy FILE             policy override (default: protected/** deny contract)
   --endpoint URL            provider base URL override
   --edit-recovery on|off    stale-edit recovery ablation (default: on)
+  --lsp-diagnostics on|off  LSP warm-up and post-edit diagnostics ablation (default: on)
   --drift-file FILE         JSON map of workspace path to drift content
   --credential-db FILE      product credential database (read-only)
   --credential-id ID        credential row
@@ -55,6 +56,7 @@ interface Options {
   policy?: string
   endpoint?: string
   editRecovery?: boolean
+  lspDiagnostics?: boolean
   driftFile?: string
   credentialDatabase?: string
   credentialID?: string
@@ -99,6 +101,7 @@ for (const task of options.tasks) {
             policyFile: options.policy,
             endpoint: options.endpoint,
             editRecovery: options.editRecovery,
+            lspDiagnostics: options.lspDiagnostics,
             drifts,
             credentialDatabase: options.credentialDatabase,
             credentialID: options.credentialID,
@@ -216,6 +219,7 @@ function readOptions(args: string[]): Options {
     endpoint: values.get("endpoint"),
     driftFile: values.get("drift-file"),
     editRecovery: values.get("edit-recovery") === undefined ? undefined : values.get("edit-recovery") !== "off",
+    lspDiagnostics: values.get("lsp-diagnostics") === undefined ? undefined : values.get("lsp-diagnostics") !== "off",
     credentialDatabase: values.get("credential-db"),
     credentialID: values.get("credential-id"),
     credentialIntegration: values.get("credential-integration"),
