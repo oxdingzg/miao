@@ -130,6 +130,42 @@ const tasks: BaselineTask[] = [
     answerContains: ["LONG_SESSION_OK"],
     requiredReceipts: [],
   },
+  {
+    id: "multi-line-edit",
+    prompt:
+      "Repair running totals in src/ledger.ts: every entry must add to the total, never subtract. Keep the exported shape and the test; run the test and summarize the fix.",
+    files: {
+      "src/ledger.ts":
+        "export interface Entry {\n  amount: number\n}\n\nexport function total(entries: Entry[]): number {\n  let sum = 0\n  for (const entry of entries) {\n    sum -= entry.amount\n  }\n  return sum\n}\n",
+      "test/oracle.test.ts":
+        "import { expect, test } from 'bun:test'\nimport { total } from '../src/ledger'\ntest('totals add', () => { expect(total([{ amount: 4 }, { amount: 6 }])).toBe(10); expect(total([])).toBe(0); expect(total([{ amount: -3 }])).toBe(-3) })\n",
+    },
+    editable: ["src/ledger.ts"],
+    expected: {},
+    check: ["bun", "test", "test/oracle.test.ts"],
+    answerContains: [],
+    requiredReceipts: [],
+  },
+  {
+    id: "typed-repair",
+    prompt:
+      "Repair src/calc.ts: the test must pass and the file must stay type-consistent -- the running total is a number, not a string. Keep the exported signature, run the test, and summarize.",
+    files: {
+      "src/calc.ts":
+        "export function average(values: number[]): number {\n  const total: string = values.reduce((sum, value) => sum + value, 0)\n  if (values.length === 0) return 0\n  return Number(total) / values.length\n}\n",
+      "test/oracle.test.ts":
+        "import { expect, test } from 'bun:test'\nimport { average } from '../src/calc'\ntest('average of values', () => { expect(average([2, 4])).toBe(3); expect(average([])).toBe(0) })\n",
+    },
+    editable: ["src/calc.ts"],
+    expected: {},
+    check: [
+      "bash",
+      "-lc",
+      "bun test test/oracle.test.ts && ! grep -q 'total: string' src/calc.ts && echo TYPED_REPAIR_OK",
+    ],
+    answerContains: [],
+    requiredReceipts: [],
+  },
 ]
 
 const digest = (value: string) => createHash("sha256").update(value).digest("hex")
@@ -138,8 +174,9 @@ const digest = (value: string) => createHash("sha256").update(value).digest("hex
 export function baselineContract() {
   const suite = tasks.map((task) => baselineTask(task.id))
   return {
-    // v2 adds the long-session task; v1 samples are foreign to this contract.
-    version: 2,
+    // v2 added the long-session task; v3 adds the multi-line-edit and
+    // typed-repair measurement carriers. Older samples are foreign.
+    version: 3,
     suiteHash: digest(JSON.stringify(suite)),
     tasks: suite.map((task) => ({ id: task.id, taskHash: digest(JSON.stringify(task)) })),
   }
