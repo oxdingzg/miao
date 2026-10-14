@@ -212,6 +212,18 @@ async fn run_referenced(seed: bool) -> (Value, Store) {
         .await
         .unwrap();
     if seed {
+        // The archive belongs to a Session that already exists, so the seeding
+        // step admits and promotes one input before recording the output.
+        store
+            .admit(Input {
+                session_id: "parent".into(),
+                input_id: "seed".into(),
+                prompt: "seed the archive".into(),
+                delivery: Delivery::Steer,
+            })
+            .await
+            .unwrap();
+        store.promote("parent", true).await.unwrap();
         store
             .message(
                 "parent",
