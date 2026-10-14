@@ -263,3 +263,26 @@ The suite-v2 `long-session` task passed on its first live run: one initial input
 plus four follow-ups on the same Session, 59 provider attempts, 44 tool calls,
 78.7 s, workspace test exit 0, and the answer carries `LONG_SESSION_OK`. This
 closes the R0 long-Session coverage item.
+
+## Post-edit diagnostics measurement (2026-10-14)
+
+Arms: `small-edit` and `multi-file`, eight repetitions each against a real
+TypeScript language server (`typescript-language-server`, host config outside
+the workspace), `--lsp-diagnostics on` versus `off`, engine revision
+`44d8bffe3`.
+
+| task       | diagnostics on                        | diagnostics off                       |
+| ---------- | ------------------------------------- | ------------------------------------- |
+| small-edit | 8/8 · p50 25.1 s · 45 attempts · 121.8k/2.3k | 8/8 · p50 24.7 s · 45 attempts · 121.8k/2.3k |
+| multi-file | 8/8 · p50 30.4 s · 48 attempts · 141.1k/4.3k | 8/8 · p50 32.1 s · 48 attempts · 140.8k/4.4k |
+
+The two arms are equivalent, and the small-edit input tokens are identical to
+the byte, so no diagnostics report was attached in those runs: the frozen edits
+are type-clean, and the report only carries error- and warning-severity
+diagnostics. What the arm comparison does show is the cost side: with the read
+warm-up in place, the edit's synchronous diagnostics wait added no measurable
+latency (p50 within noise), and the ablation changed nothing else. The report
+path itself is pinned by the LSP fixture tests (a real diagnostic attaches as
+`diagnostics`; the ablation skips warm-up and report). Demonstrating the
+repair-loop value needs a fixture whose edit introduces a typed error, which is
+the same fixture-gap the A2 and A3 measurements record.
