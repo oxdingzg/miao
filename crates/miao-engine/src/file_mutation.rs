@@ -88,7 +88,12 @@ impl Drop for Staged<'_> {
 /// Blocking commit section: callers must join it even when cancellation arrives.
 /// Engine writers serialize externally. Existing-file checks are optimistic
 /// against non-cooperating external writers, not a universal filesystem CAS.
-pub(crate) fn apply(root: &Dir, relative: &Path, mutation: Mutation) -> Result<Value, ToolError> {
+pub(crate) fn apply(
+    root: &Dir,
+    relative: &Path,
+    mutation: Mutation,
+    snapshot: Option<String>,
+) -> Result<Value, ToolError> {
     let parent_path = relative
         .parent()
         .filter(|p| !p.as_os_str().is_empty())
@@ -100,12 +105,49 @@ pub(crate) fn apply(root: &Dir, relative: &Path, mutation: Mutation) -> Result<V
         Mutation::Write(v) => v.expected_sha256.clone(),
         Mutation::Edit(v) => Some(v.expected_sha256.clone()),
     };
-    if original.as_ref().map(|bytes| digest(bytes)).as_deref() != expected.as_deref() {
-        return Err(ToolError::StaleFile);
-    }
-    let text = match mutation {
-        Mutation::Write(v) => v.text,
-        Mutation::Edit(v) => {
+    let current = original.as_ref().map(|bytes| digest(bytes));
+    // A stale edit whose intent is unambiguous is rebased onto the current
+    // content by unique context anchors before the failure is returned.
+    let rebase = if current.as_deref() != expected.as_deref() {
+        match (&mutation, snapshot.as_deref()) {
+            (Mutation::Edit(v), Some(snapshot)) if !v.replace_all => {
+                let text = match original.as_ref() {
+                    Some(bytes) => {
+                        std::str::from_utf8(bytes).map_err(|_| ToolError::InvalidFile)?
+                    }
+                    None => return Err(ToolError::StaleFile),
+                };
+                match crate::edit_recovery::recover(snapshot, text, &v.old_string, &v.new_string) {
+                    crate::edit_recovery::Recovery::Recovered { replaced, note } => {
+                        Some((replaced, note))
+                    }
+                    crate::edit_recovery::Recovery::Refused(reason) => {
+                        return Err(ToolError::StaleEditRecovery(reason.as_str()))
+                    }
+                    crate::edit_recovery::Recovery::Inapplicable => {
+                        return Err(ToolError::StaleFile)
+                    }
+                }
+            }
+            _ => return Err(ToolError::StaleFile),
+        }
+    } else {
+        None
+    };
+    // The digest of the drift the rebase read, kept for the result payload;
+    // the post-write read below must not shadow it.
+    let drift = current;
+    // A rebased edit is committed against the drift it read, so the final
+    // compare-and-swap still rejects a concurrent external write.
+    let expected = if rebase.is_some() {
+        drift.clone()
+    } else {
+        expected
+    };
+    let text = match (&rebase, mutation) {
+        (Some((replaced, _)), _) => replaced.clone(),
+        (None, Mutation::Write(v)) => v.text,
+        (None, Mutation::Edit(v)) => {
             let text = String::from_utf8(original.as_ref().ok_or(ToolError::StaleFile)?.clone())
                 .map_err(|_| ToolError::InvalidFile)?;
             let count = text.matches(&v.old_string).count();
@@ -134,8 +176,8 @@ pub(crate) fn apply(root: &Dir, relative: &Path, mutation: Mutation) -> Result<V
     }
     file.sync_all()?;
     drop(file);
-    let (current, _) = read(&parent, Path::new(name))?;
-    if current.as_ref().map(|bytes| digest(bytes)).as_deref() != expected.as_deref() {
+    let (committed, _) = read(&parent, Path::new(name))?;
+    if committed.as_ref().map(|bytes| digest(bytes)).as_deref() != expected.as_deref() {
         return Err(ToolError::StaleFile);
     }
     if original.is_none() {
@@ -162,9 +204,22 @@ pub(crate) fn apply(root: &Dir, relative: &Path, mutation: Mutation) -> Result<V
         .map(|error| error.to_string());
     #[cfg(not(unix))]
     let durability_error: Option<String> = None;
-    Ok(
-        json!({"sha256":digest(text.as_bytes()),"bytes":text.len(),"applied":true,"durability":if durability_error.is_some(){"unknown"}else if cfg!(unix){"synced"}else{"file_synced"},"durability_error":durability_error}),
-    )
+    let durability = if durability_error.is_some() {
+        "unknown"
+    } else if cfg!(unix) {
+        "synced"
+    } else {
+        "file_synced"
+    };
+    let mut result = json!({"sha256":digest(text.as_bytes()),"bytes":text.len(),"applied":true,"durability":durability,"durability_error":durability_error});
+    if let Some((_, note)) = rebase {
+        // The diff the model gets must show the rebase and the drift it
+        // replaced, not just the requested span.
+        result["rebased"] = json!(true);
+        result["note"] = json!(note);
+        result["previous_sha256"] = json!(drift);
+    }
+    Ok(result)
 }
 
 fn read(
