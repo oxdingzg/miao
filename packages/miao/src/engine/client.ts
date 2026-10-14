@@ -39,6 +39,11 @@ export interface EngineOptions {
   lspDiagnostics?: boolean
   /** Absolute path to an LSP host config; must live outside the workspace. */
   lspConfigFile?: string
+  /**
+   * Explicit prefix-cache policy for the first model turn's stable prefix.
+   * Absent leaves each provider's own caching behavior untouched.
+   */
+  promptCache?: boolean
   env?: Record<string, string | undefined>
 }
 
@@ -115,6 +120,7 @@ export function engineArgs(options: EngineOptions): string[] {
   if (options.editRecovery === false) args.push("--edit-recovery", "off")
   if (options.lspDiagnostics === false) args.push("--lsp-diagnostics", "off")
   if (options.lspConfigFile) args.push("--lsp-config", options.lspConfigFile)
+  if (options.promptCache !== undefined) args.push("--prompt-cache", options.promptCache ? "on" : "off")
   return args
 }
 
