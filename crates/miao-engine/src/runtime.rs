@@ -983,9 +983,11 @@ async fn execute(
                     continue;
                 }
                 let batched = reads.contains_key(id);
-                // The tool's own running window; a call served from this
-                // turn's read cache reports the near-zero time it really took.
-                let tool_started = std::time::Instant::now();
+                // The tool's own running window, reset at the dispatch
+                // boundary so approval waits are not counted as tool time. A
+                // call served from this turn's read cache reports the time
+                // preparation really took.
+                let mut tool_started = std::time::Instant::now();
                 let (output, is_error) = if let Some(result) = reads.remove(id) {
                     result
                 } else {
@@ -1027,6 +1029,7 @@ async fn execute(
                                 (json!({"error":blocked}), true)
                             } else {
                                 inner.store.mark_dispatched(session, run, id).await?;
+                                tool_started = std::time::Instant::now();
                                 let prepared_external =
                                     prepared.access() == crate::permission::Access::External;
                                 let replayed = if let Some(replay) = &inner.tool_replay {
