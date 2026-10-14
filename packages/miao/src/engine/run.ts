@@ -1,5 +1,5 @@
 import { randomUUID } from "crypto"
-import { EngineClient, EngineError, type EngineEvent, type EngineOptions } from "./client"
+import { EngineClient, EngineError, type EngineEvent, type EngineOptions, type EngineProgress } from "./client"
 import { BlackboxTape } from "@miao/core/blackbox/tape"
 import { EngineTrace } from "../blackbox/engine-trace"
 import { EngineTools } from "../blackbox/engine-tools"
@@ -19,6 +19,7 @@ export interface EngineRunOptions extends EngineOptions {
   approve?: "allow" | "deny"
   timeoutMs?: number
   onEvent?: (event: EngineEvent) => void
+  onProgress?: (progress: EngineProgress) => void
   blackbox?: BlackboxTape.Recorder | BlackboxTape.Replay
 }
 
@@ -26,6 +27,11 @@ export interface EngineRunResult {
   session: string
   text: string
   events: EngineEvent[]
+  admittedSeq: number
+  terminal: {
+    reason: "completed" | "failed" | "interrupted"
+    runId: string | null
+  }
 }
 
 export async function runEnginePrompt(options: EngineRunOptions): Promise<EngineRunResult> {
@@ -44,6 +50,7 @@ export async function runEnginePrompt(options: EngineRunOptions): Promise<Engine
   let failure: Error | undefined
   let admittedSeq: number | undefined
   let completed: { after: number; until: number } | undefined
+  let terminalOutcome: EngineRunResult["terminal"] | undefined
   let timeoutTimer: ReturnType<typeof setTimeout> | undefined
 
   const settle = () => {
@@ -76,6 +83,9 @@ export async function runEnginePrompt(options: EngineRunOptions): Promise<Engine
     const outcome = scoped.filter((event) => event.seq > promoted.seq && event.seq <= terminal.seq)
     const data = BlackboxTape.json(terminal.data)
     const reason = BlackboxTape.isObject(data) ? data.reason : undefined
+    const runId = BlackboxTape.isObject(data) && typeof data.run_id === "string" ? data.run_id : null
+    if (reason === "completed" || reason === "failed" || reason === "interrupted")
+      terminalOutcome = { reason, runId }
     if (reason === "failed")
       failure =
         outcome.findLast((event) => event.kind === "provider.started" || event.kind === "provider.failed")?.kind ===
@@ -129,6 +139,8 @@ export async function runEnginePrompt(options: EngineRunOptions): Promise<Engine
     settle()
   })
 
+  if (options.onProgress) client.onProgress(options.onProgress)
+
   try {
     await client.subscribe(session, 0)
     const admission = BlackboxTape.json(
@@ -155,7 +167,14 @@ export async function runEnginePrompt(options: EngineRunOptions): Promise<Engine
     if (recordingFailure) throw recordingFailure
     if (failure) throw failure
     if (!completed) throw new EngineError("engine_outcome_missing", "the admitted input has no completed output range")
-    return { session, text: assistantText(events, completed), events }
+    if (!terminalOutcome) throw new EngineError("engine_outcome_missing", "the engine run has no authoritative terminal outcome")
+    return {
+      session,
+      text: assistantText(events, completed),
+      events,
+      admittedSeq: admittedSeq ?? 0,
+      terminal: terminalOutcome,
+    }
   } finally {
     if (timeoutTimer !== undefined) clearTimeout(timeoutTimer)
     await client.close()

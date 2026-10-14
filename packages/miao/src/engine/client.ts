@@ -33,6 +33,8 @@ export interface EngineOptions {
   credentialDatabase?: string
   credentialID?: string
   credentialIntegration?: string
+  /** Evaluation ablation control; `false` disables stale-edit recovery. */
+  editRecovery?: boolean
   env?: Record<string, string | undefined>
 }
 
@@ -106,6 +108,7 @@ export function engineArgs(options: EngineOptions): string[] {
   if (options.credentialDatabase) args.push("--credential-db", options.credentialDatabase)
   if (options.credentialID) args.push("--credential-id", options.credentialID)
   if (options.credentialIntegration) args.push("--credential-integration", options.credentialIntegration)
+  if (options.editRecovery === false) args.push("--edit-recovery", "off")
   return args
 }
 
