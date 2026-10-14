@@ -228,3 +228,38 @@ Reading the table:
 Long-Session coverage is still open: the frozen fixture has one prompt per
 task, so the R0 requirement needs either a multi-input fixture or a separately
 recorded long-session run before A1 is complete.
+
+## Stale-edit recovery measurement (2026-10-14)
+
+Mechanism: read-registered snapshots plus anchored rebase on the stale path
+(#804); the drift control rewrites a workspace path the moment its read settles
+(#805). Arms: `small-edit`, `multi-file`, and `test-repair`, eight repetitions
+each with one drifted source file, `--edit-recovery on` versus `off` (engine
+revisions `c3aaac1f` and `ae435bf8`; the only engine difference is the serve
+option whitelist fix).
+
+| task        | recovery on                             | recovery off                            |
+| ----------- | --------------------------------------- | --------------------------------------- |
+| small-edit  | 8/8 · p50 24.9 s · 59 attempts · 169.5k/3.3k | 6/8, 1 rejected · p50 28.1 s · 51/7 runs · 144.9k/2.7k |
+| multi-file  | 8/8 · 32.7 s · 64 · 200.3k/5.0k         | 8/8 · 36.2 s · 64 · 201.2k/5.3k         |
+| test-repair | 8/8 · 33.3 s · 70 · 219.4k/4.3k         | 8/8 · 38.1 s · 71 · 222.0k/4.5k         |
+
+Reading the events of a drifted run shows why the two arms converge: the frozen
+edit targets are single-line files, so the read registers a one-line snapshot.
+When the drift changes that line, the rebase has no usable context anchor and
+refuses with `unanchored` -- the documented rule that a position is never
+guessed -- and the model pays one re-read turn in both arms. The measured
+differences are therefore mostly that refusal path: a 10-13% p50 edge for
+recovery on, and `small-edit` holding 8/8 against 6/8, with attempts and tokens
+inside noise. The anchored rebase itself is pinned by the deterministic tests
+(multi-line snapshots rebase between unique anchors; ambiguous, unanchored, and
+disproportionate drift keeps the stale failure; `replace_all` never rebases).
+Quantifying the live benefit needs a multi-line editable fixture, which is the
+next candidate addition to the suite.
+
+## Long-session live record (2026-10-14)
+
+The suite-v2 `long-session` task passed on its first live run: one initial input
+plus four follow-ups on the same Session, 59 provider attempts, 44 tool calls,
+78.7 s, workspace test exit 0, and the answer carries `LONG_SESSION_OK`. This
+closes the R0 long-Session coverage item.
