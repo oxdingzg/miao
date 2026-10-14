@@ -358,10 +358,9 @@ async fn readonly_or_deny_and_invalid_parent_paths_cannot_mutate_files() {
 
 #[tokio::test]
 async fn anchor_form_replaces_the_unique_fragment_and_rejects_ambiguous_or_mixed_forms() {
-    let dir = tempfile::tempdir().unwrap();
-    let file = dir.path().join("ledger.ts");
     let original = "export function total(entries: Entry[]): number {\n  let sum = 0\n  for (const entry of entries) {\n    sum -= entry.amount\n  }\n  return sum\n}\n";
-    std::fs::write(&file, original).unwrap();
+    let dir = tempfile::tempdir().unwrap();
+    std::fs::write(dir.path().join("ledger.ts"), original).unwrap();
     let (runtime, store) = launch(
         dir.path(),
         "edit_file",
@@ -371,14 +370,15 @@ async fn anchor_form_replaces_the_unique_fragment_and_rejects_ambiguous_or_mixed
     .await;
     finished(&store).await;
     assert_eq!(
-        std::fs::read_to_string(&file).unwrap(),
+        std::fs::read_to_string(dir.path().join("ledger.ts")).unwrap(),
         original.replace("sum -= entry.amount", "sum += entry.amount")
     );
     assert!(edit_result(&store).await["applied"].as_bool().unwrap());
     runtime.shutdown().await;
 
     // Anchor statistics on a rejected edit follow the anchor form too.
-    std::fs::write(&file, "sum sum").unwrap();
+    let dir = tempfile::tempdir().unwrap();
+    std::fs::write(dir.path().join("ledger.ts"), "sum sum").unwrap();
     let (runtime, store) = launch(
         dir.path(),
         "edit_file",
@@ -387,11 +387,16 @@ async fn anchor_form_replaces_the_unique_fragment_and_rejects_ambiguous_or_mixed
     )
     .await;
     finished(&store).await;
-    assert_eq!(std::fs::read_to_string(&file).unwrap(), "sum sum");
+    assert_eq!(
+        std::fs::read_to_string(dir.path().join("ledger.ts")).unwrap(),
+        "sum sum"
+    );
     assert_eq!(edit_result(&store).await["old_string_occurrences"], 2);
     runtime.shutdown().await;
 
     // Naming both pairs leaves the edit ambiguous, so nothing is written.
+    let dir = tempfile::tempdir().unwrap();
+    std::fs::write(dir.path().join("ledger.ts"), "sum sum").unwrap();
     let (runtime, store) = launch(
         dir.path(),
         "edit_file",
@@ -400,7 +405,10 @@ async fn anchor_form_replaces_the_unique_fragment_and_rejects_ambiguous_or_mixed
     )
     .await;
     finished(&store).await;
-    assert_eq!(std::fs::read_to_string(&file).unwrap(), "sum sum");
+    assert_eq!(
+        std::fs::read_to_string(dir.path().join("ledger.ts")).unwrap(),
+        "sum sum"
+    );
     assert_eq!(
         store.history("s").await.unwrap()[2].content[0]["is_error"],
         true
