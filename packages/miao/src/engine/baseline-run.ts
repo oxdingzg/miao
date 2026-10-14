@@ -80,6 +80,8 @@ export interface BaselineRustInput {
   editRecovery?: boolean
   /** Evaluation ablation control; `false` disables LSP warm-up and post-edit diagnostics. */
   lspDiagnostics?: boolean
+  /** Absolute path to an LSP host config used by the measured run. */
+  lspConfigFile?: string
   /**
    * Drift experiment control: after the model reads one of these workspace
    * paths, the runner rewrites it with the given content before the model's

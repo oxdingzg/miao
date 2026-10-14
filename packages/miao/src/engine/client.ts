@@ -37,6 +37,8 @@ export interface EngineOptions {
   editRecovery?: boolean
   /** Evaluation ablation control; `false` disables LSP warm-up and post-edit diagnostics. */
   lspDiagnostics?: boolean
+  /** Absolute path to an LSP host config; must live outside the workspace. */
+  lspConfigFile?: string
   env?: Record<string, string | undefined>
 }
 
@@ -112,6 +114,7 @@ export function engineArgs(options: EngineOptions): string[] {
   if (options.credentialIntegration) args.push("--credential-integration", options.credentialIntegration)
   if (options.editRecovery === false) args.push("--edit-recovery", "off")
   if (options.lspDiagnostics === false) args.push("--lsp-diagnostics", "off")
+  if (options.lspConfigFile) args.push("--lsp-config", options.lspConfigFile)
   return args
 }
 
