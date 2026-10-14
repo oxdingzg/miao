@@ -131,6 +131,7 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
             "--fallback-endpoint",
             "--provider",
             "--policy",
+            "--edit-recovery",
             "--tool-replay",
             "--mcp-config",
             "--lsp-config",
