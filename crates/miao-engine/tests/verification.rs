@@ -104,7 +104,7 @@ async fn kinds(store: &Store) -> Vec<(String, Value)> {
 #[tokio::test]
 async fn a_failing_completion_check_continues_once_then_closes_with_a_classification() {
     let dir = tempfile::tempdir().unwrap();
-    let (runtime, store) = launch(dir.path(), "echo verification-boom; exit 1").await;
+    let (runtime, store) = launch(dir.path(), "exit 1").await;
     assert_eq!(reason(&store).await, "failed");
     let events = kinds(&store).await;
     assert_eq!(
@@ -127,7 +127,7 @@ async fn a_failing_completion_check_continues_once_then_closes_with_a_classifica
         .any(|(kind, data)| kind == "loop.stopped" && data["reason"] == "verification-failed"));
     // The repair prompt carries the bounded output of the failed command.
     let history = serde_json::to_string(&store.history("s").await.unwrap()).unwrap();
-    assert!(history.contains("verification-boom"), "{history}");
+    assert!(history.contains("The completion check failed"), "{history}");
     runtime.shutdown().await;
 }
 

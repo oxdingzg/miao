@@ -1424,9 +1424,18 @@ async fn execute(
         if !reply.needs_tools && promoted.is_empty() && !goal_stopped_this_turn {
             let command = inner.verification.lock().await.clone();
             if let Some(command) = command {
+                // The configured value is a command line, so the check runs
+                // through the platform shell inside the sandbox: cmd on
+                // Windows, sh elsewhere. bash.exe is not guaranteed to exist or
+                // to be reachable there.
+                let argv = if cfg!(windows) {
+                    json!(["cmd", "/c", command])
+                } else {
+                    json!(["sh", "-c", command])
+                };
                 let detail = match inner
                     .tools
-                    .prepare("bash", json!({"command":command}))
+                    .prepare("run_command", json!({"argv":argv}))
                     .await
                 {
                     Err(error) => Some(error.to_string()),
