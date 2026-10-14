@@ -125,9 +125,20 @@ async fn oversized_tool_output_is_elided_from_the_request_only() {
     assert!(stored.contains(&"abcdefgh".repeat(100)), "history intact");
 
     // The mark names the handle that restores the elided middle on demand.
+    let request: Value = serde_json::from_str(&captured).unwrap();
+    let content = request
+        .as_array()
+        .unwrap()
+        .iter()
+        .flat_map(|message| message["content"].as_array().cloned().unwrap_or_default())
+        .find(|part| part["type"] == "tool_result")
+        .unwrap()["content"]
+        .as_str()
+        .unwrap()
+        .to_owned();
     assert!(
-        captured.contains(r#"recall {"tool_use_id":"call"}"#),
-        "the elision mark carries the recovery handle: {captured}"
+        content.contains(r#"recall {\"tool_use_id\":\"call\"}"#),
+        "the elision mark carries the recovery handle: {content}"
     );
     let restored = store
         .recall(
