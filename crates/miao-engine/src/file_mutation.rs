@@ -25,6 +25,48 @@ pub(crate) struct EditInput {
     pub replace_all: bool,
 }
 
+/// The replaced text may be named explicitly or through the concise anchor
+/// form; both normalize to the same exact-match edit.
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct EditWire {
+    path: String,
+    #[serde(default)]
+    old_string: Option<String>,
+    #[serde(default)]
+    new_string: Option<String>,
+    #[serde(default)]
+    anchor: Option<String>,
+    #[serde(default)]
+    new_text: Option<String>,
+    expected_sha256: String,
+    #[serde(default)]
+    replace_all: bool,
+}
+impl EditWire {
+    fn normalize(self) -> Result<EditInput, ToolError> {
+        // One pair only: mixing the short and long names leaves the intent of
+        // the other pair unclear.
+        match (self.anchor, self.new_text, self.old_string, self.new_string) {
+            (Some(anchor), Some(new_text), None, None) => Ok(EditInput {
+                path: self.path,
+                old_string: anchor,
+                new_string: new_text,
+                expected_sha256: self.expected_sha256,
+                replace_all: self.replace_all,
+            }),
+            (None, None, Some(old_string), Some(new_string)) => Ok(EditInput {
+                path: self.path,
+                old_string,
+                new_string,
+                expected_sha256: self.expected_sha256,
+                replace_all: self.replace_all,
+            }),
+            _ => Err(ToolError::InvalidInput),
+        }
+    }
+}
+
 pub(crate) enum Mutation {
     Write(WriteInput),
     Edit(EditInput),
@@ -35,9 +77,11 @@ impl Mutation {
             "write_file" => {
                 Self::Write(serde_json::from_value(input).map_err(|_| ToolError::InvalidInput)?)
             }
-            "edit_file" => {
-                Self::Edit(serde_json::from_value(input).map_err(|_| ToolError::InvalidInput)?)
-            }
+            "edit_file" => Self::Edit(
+                serde_json::from_value::<EditWire>(input)
+                    .map_err(|_| ToolError::InvalidInput)?
+                    .normalize()?,
+            ),
             _ => return Err(ToolError::Unsupported),
         };
         let hash = match &mutation {

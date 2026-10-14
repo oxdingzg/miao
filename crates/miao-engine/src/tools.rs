@@ -785,7 +785,12 @@ impl Tools {
                 .map_err(|_| ToolError::Io(std::io::Error::other("file commit worker failed")))?;
             }
             let mutation = Mutation::parse(&prepared.name, prepared.input.clone())?;
-            let anchor = prepared.input["old_string"].as_str().map(str::to_owned);
+            // The rebase statistics describe the text the model asked to
+            // replace, whichever form named it.
+            let anchor = match &mutation {
+                Mutation::Edit(edit) => Some(edit.old_string.clone()),
+                Mutation::Write(_) => None,
+            };
             let snapshot = if self.edit_recovery && prepared.name == "edit_file" {
                 self.edit_snapshots.lock().ok().and_then(|snapshots| {
                     snapshots
@@ -1029,7 +1034,7 @@ impl Tools {
             definitions.extend([
                 ToolDefinition{name:"write_file".into(),description:"Write UTF-8 text (max 32768 bytes) under workspace. expected_sha256=null creates only; existing files require the current SHA-256 from read_file. Requires permission approval.".into(),input_schema:json!({"type":"object","properties":{"path":{"type":"string"},"text":{"type":"string"},"expected_sha256":{"type":["string","null"]}},"required":["path","text","expected_sha256"],"additionalProperties":false})},
                 ToolDefinition{name:"apply_patch".into(),description:"Apply a strict V4A multi-file patch (Add/Update/Delete File sections with @@ hunks) as one transaction: all-or-nothing, context must match exactly, BOM/CRLF preserved, max 32 files/256 KiB patch/1 MiB per file. Requires permission approval for the whole patch.".into(),input_schema:json!({"type":"object","properties":{"patch":{"type":"string"}},"required":["patch"],"additionalProperties":false})},
-                        ToolDefinition{name:"edit_file".into(),description:"Conditionally replace an exact text match using the SHA-256 from read_file. Ambiguous matches fail unless replace_all=true. Requires permission approval.".into(),input_schema:json!({"type":"object","properties":{"path":{"type":"string"},"old_string":{"type":"string"},"new_string":{"type":"string"},"expected_sha256":{"type":"string"},"replace_all":{"type":"boolean"}},"required":["path","old_string","new_string","expected_sha256"],"additionalProperties":false})},
+                        ToolDefinition{name:"edit_file".into(),description:"Conditionally replace text using the SHA-256 from read_file. Name the replaced text by the shortest substring that occurs exactly once in the file, passed as anchor, and pass its replacement as new_text; old_string/new_string is the same match. An absent or ambiguous match fails unless replace_all=true replaces every occurrence. Requires permission approval.".into(),input_schema:json!({"type":"object","properties":{"path":{"type":"string"},"anchor":{"type":"string"},"new_text":{"type":"string"},"old_string":{"type":"string"},"new_string":{"type":"string"},"expected_sha256":{"type":"string"},"replace_all":{"type":"boolean"}},"required":["path","expected_sha256"],"additionalProperties":false})},
             ]);
         }
         if self.process_enabled {
