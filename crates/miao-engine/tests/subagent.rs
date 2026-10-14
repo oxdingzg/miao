@@ -186,13 +186,22 @@ impl Provider for Referencing {
                 part["type"] == "tool_result" && part["tool_use_id"].as_str() == Some(call)
             })
         };
-        if last.contains("ARCHIVED-MARKER") {
+        // The child's first message is the injected reference block, which the
+        // delegating Session never sees.
+        if last.contains("Referenced material from the delegating Session") {
+            let text = if last.contains("ARCHIVED-MARKER") {
+                "child saw the reference"
+            } else {
+                "child missed the reference"
+            };
             return Ok(Reply {
-                content: json!([{"type":"text","text":"child saw the reference"}]),
+                content: json!([{"type":"text","text":text}]),
                 usage: json!({}),
                 needs_tools: false,
             });
         }
+        // The parent is scripted by phase: reading first, then delegating with
+        // the read's handle and one handle that does not exist.
         if last.contains("delegate with a reference") && !settled("r1") {
             return Ok(Reply {
                 content: json!([{"type":"tool_use","id":"r1","name":"read_file","input":{"path":"src/archive.txt"}}]),
@@ -200,9 +209,9 @@ impl Provider for Referencing {
                 needs_tools: true,
             });
         }
-        if last.contains("delegate with a reference") && !settled("d1") {
+        if settled("r1") && !settled("d1") {
             return Ok(Reply {
-                content: json!([{"type":"tool_use","id":"d1","name":"task","input":{"prompt":"answer without any archive","references":[{"tool_use_id":"r1"}]}}]),
+                content: json!([{"type":"tool_use","id":"d1","name":"task","input":{"prompt":"answer without any archive","references":[{"tool_use_id":"r1"},{"tool_use_id":"call-missing"}]}}]),
                 usage: json!({}),
                 needs_tools: true,
             });
@@ -259,7 +268,8 @@ async fn run_referenced(reference: &str) -> (Value, Store) {
                                 part["content"]
                                     .as_str()
                                     .filter(|_| part["type"] == "tool_result")
-                                    .map(|text| serde_json::from_str::<Value>(text).unwrap())
+                                    .and_then(|text| serde_json::from_str::<Value>(text).ok())
+                                    .filter(|value| !value["session_id"].is_null())
                             })
                         })
                     })
@@ -281,4 +291,9 @@ async fn task_reference_injects_the_archived_window_into_the_child() {
     let child = result["session_id"].as_str().unwrap();
     let child_input = serde_json::to_string(&store.history(child).await.unwrap()).unwrap();
     assert!(child_input.contains("ARCHIVED-MARKER"), "{child_input}");
+    // The handle that does not exist is reported to the child, not fatal.
+    assert!(
+        child_input.contains("not found in the delegating Session"),
+        "{child_input}"
+    );
 }
