@@ -31,7 +31,8 @@ impl Provider for Quiet {
 }
 
 /// The completion check runs through the process sandbox, so the policy has to
-/// allow process execution and the registry needs the sandbox runner.
+/// allow process execution, the registry needs the sandbox runner, and the
+/// engine database has to sit outside the model-writable workspace.
 fn policy() -> Policy {
     Policy::new(Config {
         mode: Mode::Workspace,
@@ -47,8 +48,10 @@ fn policy() -> Policy {
 }
 
 async fn launch(root: &std::path::Path, command: &str) -> (Runtime, Store) {
+    let workspace = root.join("workspace");
+    std::fs::create_dir_all(&workspace).unwrap();
     let store = Store::open(root.join("engine.db")).await.unwrap();
-    let tools = Tools::new(root)
+    let tools = Tools::new(&workspace)
         .await
         .unwrap()
         .with_process_runner(env!("CARGO_BIN_EXE_miao-engine").into());
