@@ -165,6 +165,11 @@ async fn native_reads_dispatch_together_and_project_results_in_call_order() {
         "beta"
     );
     assert!(results.iter().all(|result| result["is_error"] == false));
+    // Each batched read settles with the window the batch measured for it.
+    assert!(events
+        .iter()
+        .filter(|event| event.kind == "tool.completed")
+        .all(|event| event.data["elapsed_ms"].as_u64().is_some()));
 }
 
 #[tokio::test]

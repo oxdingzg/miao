@@ -48,6 +48,11 @@ export interface BaselineEvidence {
   /** Loop classification: continuation and stop reasons observed in the run. */
   loops: { continuations: string[]; stopped: string[] }
   toolCalls: number
+  /**
+   * Read batches the engine ran together: count and summed tool window. The
+   * TypeScript engine has no read batch, and older evidence predates the field.
+   */
+  parallel?: { batches: number; toolElapsedMs: number }
   textHash: string
   binarySha256: string | null
   startedAtMs: number
@@ -230,6 +235,15 @@ export async function runBaselineRust(input: BaselineRustInput): Promise<Baselin
     profile: engineProfile(events),
     phases: enginePhases(events, progress, observed, verifiedAtMs),
     toolCalls: events.filter((event) => event.kind === "tool.completed").length,
+    parallel: {
+      batches: events.filter((event) => event.kind === "tool.parallel.started").length,
+      toolElapsedMs: events
+        .filter((event) => event.kind === "tool.completed")
+        .reduce((total, event) => {
+          const elapsed = (event.data as { elapsed_ms?: unknown } | null)?.elapsed_ms
+          return total + (typeof elapsed === "number" ? elapsed : 0)
+        }, 0),
+    },
     admissionMs: admittedAt(events, observed),
     requiredReceipts: task.requiredReceipts,
     answerContains: task.answerContains,
@@ -376,6 +390,7 @@ interface FinishedBaselineRun {
   profile: ReturnType<typeof engineProfile>
   phases: BaselinePhase[]
   toolCalls: number
+  parallel?: { batches: number; toolElapsedMs: number }
   admissionMs: number | null
   requiredReceipts: string[]
   answerContains: string[]
@@ -399,6 +414,7 @@ function finishBaselineRun(input: FinishedBaselineRun): BaselineRun {
     profileReceipts: profile?.receipts ?? 0,
     loops: input.loops,
     toolCalls: input.toolCalls,
+    parallel: input.parallel,
     textHash: digest(input.answer),
     binarySha256: input.binarySha256 ?? null,
     startedAtMs: input.startedAtMs,
