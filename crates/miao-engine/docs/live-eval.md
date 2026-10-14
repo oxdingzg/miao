@@ -506,12 +506,17 @@ and a denied read, both stay serial).
 Measuring the saving needs a carrier whose single turn asks for several reads.
 Eight runs of the `read-only` carrier did not produce one: it issues one read per
 turn (three to four tools per run, no `tool.parallel.started` in any of them), so
-no batch formed and no overlap exists to report. The runner now records what it
-observed -- batch count, the reads the batch named, and the batch's wall window
--- so the figure arrives with the carrier that exercises it. Per-read durations
-are not recorded in event payloads: the blackbox tape replay pins those payloads
-exactly, and an earlier attempt to carry `elapsed_ms` there turned main red until
-it was moved to the runner.
+no batch formed and no overlap exists to report.
+
+The `multi-read` carrier supplies the turn that does: naming three files in one
+prompt makes one turn request three reads, and all eight runs of it formed
+exactly one batch carrying all three, settling them inside an observed window of
+0-1 ms per run, where a serial engine would have needed three separate windows.
+The carrier is frozen as suite v5, and the runner records what it observes --
+batch count, the reads the batch named, and the batch's wall window. Per-read
+durations stay out of event payloads: the blackbox tape replay pins those
+payloads exactly, and carrying `elapsed_ms` there turned main red until it was
+moved to the runner.
 
 ## Elision selection (2026-10-15)
 
