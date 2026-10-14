@@ -190,6 +190,15 @@
   "read_file": {
     "additionalProperties": false,
     "properties": {
+      "limit": {
+        "maximum": 2000,
+        "minimum": 1,
+        "type": "integer"
+      },
+      "offset": {
+        "minimum": 1,
+        "type": "integer"
+      },
       "path": {
         "type": "string"
       }
