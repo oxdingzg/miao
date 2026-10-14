@@ -50,6 +50,8 @@ struct Inner {
     stop: CancellationToken,
     progress: broadcast::Sender<Value>,
     context: Mutex<Option<ContextLimits>>,
+    /// Task-specific verification command run before a run may finish.
+    verification: Mutex<Option<String>>,
     breaker: Mutex<context_trigger::Breaker>,
 }
 
@@ -161,6 +163,7 @@ impl Runtime {
                 stop: CancellationToken::new(),
                 progress,
                 context: Mutex::new(None),
+                verification: Mutex::new(None),
                 breaker: Mutex::new(crate::context_trigger::Breaker::new(3)),
             }),
         })
@@ -174,6 +177,12 @@ impl Runtime {
 
     /// Configure automatic context management (roadmap §2.13). `None` keeps it
     /// off; without limits the run loop never attempts a checkpoint.
+    /// Require this command to pass before a run may finish; see the
+    /// completion check in the turn loop.
+    pub async fn verify_with(&self, command: Option<String>) {
+        *self.inner.verification.lock().await = command;
+    }
+
     pub async fn set_context_limits(&self, limits: Option<ContextLimits>) {
         *self.inner.context.lock().await = limits;
     }
@@ -609,6 +618,8 @@ async fn execute(
     let mut transport_continuations = 0;
     // Consecutive provider turns that produced neither text nor tool calls.
     let mut empty_completions = 0;
+    // Consecutive failed completion checks for the configured verification.
+    let mut verification_failures = 0;
     let mut repeats = HashMap::<String, u32>::new();
     let mut internal_inputs = HashSet::new();
     let mut goal_iterations = 0;
@@ -876,6 +887,7 @@ async fn execute(
                             repeats.clear();
                             transport_continuations = 0;
                             empty_completions = 0;
+                            verification_failures = 0;
                             goal_iterations = 0;
                             goal_stalls = 0;
                             goal_signature = None;
@@ -1405,6 +1417,101 @@ async fn execute(
                 ));
             }
         }
+        // Task-specific completion check: when a verification command is
+        // configured, a run may not finish until it passes. A failure is a
+        // classified continuation carrying the bounded output, and the retry
+        // budget turns a persistent failure into a classified closure.
+        if !reply.needs_tools && promoted.is_empty() && !goal_stopped_this_turn {
+            let command = inner.verification.lock().await.clone();
+            if let Some(command) = command {
+                // The configured value is a command line, so the check runs
+                // through the platform shell inside the sandbox: cmd on
+                // Windows, sh elsewhere. bash.exe is not guaranteed to exist or
+                // to be reachable there.
+                let argv = if cfg!(windows) {
+                    json!(["cmd", "/c", command])
+                } else {
+                    json!(["sh", "-c", command])
+                };
+                let detail = match inner
+                    .tools
+                    .prepare("run_command", json!({"argv":argv}))
+                    .await
+                {
+                    Err(error) => Some(error.to_string()),
+                    Ok(prepared) => match inner
+                        .tools
+                        .execute_prepared(prepared, &inner.policy, cancel.child_token())
+                        .await
+                    {
+                        Err(error) => Some(error.to_string()),
+                        Ok(value) => {
+                            let failed = value.get("error").is_some()
+                                || value
+                                    .get("exit_code")
+                                    .and_then(Value::as_i64)
+                                    .is_none_or(|code| code != 0);
+                            failed.then(|| json!(value).to_string())
+                        }
+                    },
+                };
+                if let Some(detail) = detail {
+                    verification_failures += 1;
+                    inner
+                        .store
+                        .record(
+                            session,
+                            "verification.failed",
+                            json!({"run_id":run,"attempt":verification_failures}),
+                        )
+                        .await?;
+                    // One repair chance: the second consecutive failure closes
+                    // the run instead of admitting another continuation.
+                    if verification_failures >= 2 {
+                        inner
+                            .store
+                            .record(
+                                session,
+                                "loop.stopped",
+                                json!({"run_id":run,"reason":"verification-failed"}),
+                            )
+                            .await?;
+                        return Err(Error::Invalid(
+                            "verification failed after the retry budget".into(),
+                        ));
+                    }
+                    let input_id = format!("verify:{run}:{verification_failures}");
+                    let admission = inner
+                        .store
+                        .admit(Input {
+                            session_id: session.into(),
+                            input_id: input_id.clone(),
+                            prompt: format!(
+                                "The completion check failed:\n{}\nRepair the cause, then stop.",
+                                &detail[..detail.len().min(500)]
+                            ),
+                            delivery: crate::protocol::Delivery::Steer,
+                        })
+                        .await?;
+                    internal_inputs.insert(input_id);
+                    inner
+                        .store
+                        .record(
+                            session,
+                            "loop.continuation",
+                            json!({"run_id":run,"admitted_seq":admission.admitted_seq,"reason":"verification-failed"}),
+                        )
+                        .await?;
+                    promoted = inner.store.promote(session, true).await?;
+                    record_promotions(inner, session, run, &promoted).await?;
+                } else {
+                    inner
+                        .store
+                        .record(session, "verification.passed", json!({"run_id":run}))
+                        .await?;
+                }
+            }
+        }
         if !reply.needs_tools && promoted.is_empty() {
             if let Some(replay) = &inner.tool_replay {
                 replay.assert_consumed().await?;
@@ -1424,6 +1531,7 @@ async fn execute(
                 input_corrections = 0;
                 transport_continuations = 0;
                 empty_completions = 0;
+                verification_failures = 0;
                 repeats.clear();
                 goal_iterations = 0;
                 goal_stalls = 0;
