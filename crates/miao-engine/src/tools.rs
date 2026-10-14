@@ -52,7 +52,13 @@ pub enum ToolError {
 #[serde(deny_unknown_fields)]
 struct ReadInput {
     path: String,
+    offset: Option<usize>,
+    limit: Option<usize>,
 }
+
+/// A ranged read returns at most this many lines, and never more than the
+/// whole-file byte bound, so one window cannot flood the context.
+const MAX_READ_LINES: usize = 2000;
 
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -948,8 +954,8 @@ impl Tools {
     pub fn definitions(&self) -> Vec<ToolDefinition> {
         let mut definitions=vec![ToolDefinition {
             name:"read_file".into(),
-            description:"Read a UTF-8 file under the configured workspace. Maximum 32768 bytes.".into(),
-            input_schema:json!({"type":"object","properties":{"path":{"type":"string"}},"required":["path"],"additionalProperties":false}),
+            description:"Read a UTF-8 file under the configured workspace. Maximum 32768 bytes; for larger files pass a 1-based line offset and a line limit (up to 2000 lines) to read one window.".into(),
+            input_schema:json!({"type":"object","properties":{"path":{"type":"string"},"offset":{"type":"integer","minimum":1},"limit":{"type":"integer","minimum":1,"maximum":2000}},"required":["path"],"additionalProperties":false}),
         },ToolDefinition {
             name:"list_files".into(),
             description:"List immediate entries of a workspace directory. Does not recurse or follow symlinks; output is bounded.".into(),
@@ -1136,29 +1142,92 @@ impl Tools {
                     let input: ReadInput =
                         serde_json::from_value(input).map_err(|_| ToolError::InvalidInput)?;
                     let path = self.contained(&input.path).await?;
-                    let file = tokio::fs::File::open(&path).await?;
-                    let metadata = file.metadata().await?;
-                    if !metadata.is_file() || metadata.len() > 32768 {
+                    let metadata = tokio::fs::metadata(&path).await?;
+                    if !metadata.is_file() {
+                        return Err(ToolError::InvalidFile);
+                    }
+                    // A line range makes a large file readable; the whole-file
+                    // path keeps its historical 32 KiB bound.
+                    let ranged = input.offset.is_some() || input.limit.is_some();
+                    if ranged {
+                        if input.offset == Some(0) || input.limit == Some(0) {
+                            return Err(ToolError::InvalidInput);
+                        }
+                        if metadata.len() > 1024 * 1024 {
+                            return Err(ToolError::InvalidFile);
+                        }
+                    } else if metadata.len() > 32768 {
                         return Err(ToolError::InvalidFile);
                     }
                     let mut bytes = Vec::new();
-                    file.take(32769).read_to_end(&mut bytes).await?;
-                    if bytes.len() > 32768 {
+                    tokio::fs::File::open(&path)
+                        .await?
+                        .take(1024 * 1024 + 1)
+                        .read_to_end(&mut bytes)
+                        .await?;
+                    if bytes.len() > 1024 * 1024 || (!ranged && bytes.len() > 32768) {
                         return Err(ToolError::InvalidFile);
                     }
                     let sha256 = digest(&bytes);
                     let text = String::from_utf8(bytes).map_err(|_| ToolError::InvalidFile)?;
-                    if let Ok(mut snapshots) = self.edit_snapshots.lock() {
-                        snapshots.register(path.to_string_lossy().into_owned(), text.clone());
-                    }
-                    if self.lsp_diagnostics {
-                        if let Some(registry) = self.lsp.clone() {
+                    if let Some(registry) = self.lsp.clone() {
+                        if self.lsp_diagnostics {
                             // Fire-and-forget: a read must never wait on a
                             // language server, and warming never fails it.
+                            let warmed = path.clone();
                             tokio::spawn(async move {
-                                registry.warm(&path).await;
+                                registry.warm(&warmed).await;
                             });
                         }
+                    }
+                    let (visible, window) = if ranged {
+                        let offset = input.offset.unwrap_or(1);
+                        let limit = input.limit.unwrap_or(MAX_READ_LINES).min(MAX_READ_LINES);
+                        let total = text.lines().count();
+                        let mut window = String::new();
+                        let mut lines = 0usize;
+                        for line in text.lines().skip(offset - 1).take(limit) {
+                            let extra = line.len() + usize::from(!window.is_empty());
+                            if lines > 0 && window.len() + extra > 32768 {
+                                break;
+                            }
+                            if !window.is_empty() {
+                                window.push('\n');
+                            }
+                            window.push_str(line);
+                            lines += 1;
+                        }
+                        let truncated = offset.saturating_sub(1) + lines < total;
+                        (
+                            window,
+                            json!({
+                                "offset": offset,
+                                "lines": lines,
+                                "total_lines": total,
+                                "truncated": truncated
+                            }),
+                        )
+                    } else {
+                        (text.clone(), Value::Null)
+                    };
+                    // The edit-rebase snapshot only records text the model
+                    // actually saw: a full read, or a window that covered the
+                    // whole file.
+                    let covered_everything = !ranged
+                        || (window["offset"] == json!(1) && window["truncated"] == json!(false));
+                    if covered_everything {
+                        if let Ok(mut snapshots) = self.edit_snapshots.lock() {
+                            snapshots.register(path.to_string_lossy().into_owned(), text.clone());
+                        }
+                    }
+                    if ranged {
+                        let mut result = json!({"text": visible, "sha256": sha256});
+                        if let (Value::Object(fields), Value::Object(window_fields)) =
+                            (&mut result, window)
+                        {
+                            fields.extend(window_fields);
+                        }
+                        return Ok(result);
                     }
                     Ok(json!({"text":text,"sha256":sha256}))
                 }
