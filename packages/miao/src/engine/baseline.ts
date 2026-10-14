@@ -4,7 +4,13 @@ import path from "node:path"
 
 export interface BaselineTask {
   id: string
+  /** First input; `followups` continue the same Session after it settles. */
   prompt: string
+  /**
+   * Additional inputs delivered after each earlier input's run completes, so a
+   * long Session with accumulated history is exercised rather than one prompt.
+   */
+  followups?: readonly string[]
   files: Record<string, string>
   editable: string[]
   expected: Record<string, string>
@@ -107,6 +113,23 @@ const tasks: BaselineTask[] = [
     answerContains: [],
     requiredReceipts: ["provider.interrupted"],
   },
+  {
+    id: "long-session",
+    prompt:
+      "Create src/unit.ts exporting a constant unit equal to 21. Do not touch anything else.",
+    followups: [
+      "Create src/double.ts that imports unit from './unit' and exports double() returning unit times two.",
+      "Create test/long.test.ts that asserts double() equals 42 and prints the exact marker LONG_SESSION_OK when it passes; run it.",
+      "If the test fails, repair the source files (never the test), then run it again.",
+      "Summarize the files you created and repeat the exact printed marker.",
+    ],
+    files: {},
+    editable: ["src/unit.ts", "src/double.ts", "test/long.test.ts"],
+    expected: {},
+    check: ["bun", "test", "test/long.test.ts"],
+    answerContains: ["LONG_SESSION_OK"],
+    requiredReceipts: [],
+  },
 ]
 
 const digest = (value: string) => createHash("sha256").update(value).digest("hex")
@@ -115,7 +138,8 @@ const digest = (value: string) => createHash("sha256").update(value).digest("hex
 export function baselineContract() {
   const suite = tasks.map((task) => baselineTask(task.id))
   return {
-    version: 1,
+    // v2 adds the long-session task; v1 samples are foreign to this contract.
+    version: 2,
     suiteHash: digest(JSON.stringify(suite)),
     tasks: suite.map((task) => ({ id: task.id, taskHash: digest(JSON.stringify(task)) })),
   }

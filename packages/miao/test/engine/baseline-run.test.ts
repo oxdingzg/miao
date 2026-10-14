@@ -307,6 +307,25 @@ test("writes the baseline permission policy with protected writes denied", async
   expect(policy.allow_process).toBe(true)
 })
 
+test("continues a multi-input task on the same session for every follow-up", async () => {
+  await using tmp = await tmpdir()
+  const result = await run(tmp.path, "long-session", [
+    ...base,
+    event(4, "provider.request", { run_id: "run", step: 0, attempt: 1, profile: profile() }),
+    event(5, "usage", { run_id: "run", step: 0, usage: { inputTokens: 10, outputTokens: 1 } }),
+    event(6, "message.committed", {
+      role: "assistant",
+      content: [{ type: "text", text: "LONG_SESSION_OK" }],
+    }),
+    event(7, "run.finished", { run_id: "run", reason: "completed" }),
+    event(8, "stop", { run_id: "run" }),
+  ])
+  expect(result.sample).not.toBeNull()
+  // One input plus four follow-ups, each replayed by the fake engine.
+  expect(result.answer.match(/LONG_SESSION_OK/g)).toHaveLength(5)
+  expect(result.evidence.attempts).toHaveLength(5)
+})
+
 test("injects the drift once the model's read of that path settles", async () => {
   await using tmp = await tmpdir()
   const drift = "export function add(a: number, b: number) {\n  return (a - b)\n}\n"
