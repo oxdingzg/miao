@@ -312,3 +312,25 @@ A live sweep cannot force the model into an empty completion honestly, so the
 recorded N=8 baselines show an empty `loops` list on normal tasks: the
 classification exists, and its incidence on well-behaved tasks is zero -- which
 is itself the wanted outcome.
+
+## Suite-v3 carriers: anchored rebase and typed repair (2026-10-14)
+
+The v3 carriers give A2 and A7 the measurement their earlier single-line
+fixtures could not produce. Eight repetitions per arm, engine revision
+`9255cc52f`; the only difference between the arms is the mechanism switch.
+
+| arm                            | passed | p50     | attempts/run | input tokens | output tokens |
+| ------------------------------ | ------ | ------- | ------------ | ------------ | ------------- |
+| multi-line-edit, recovery on   | 8/8    | 22.3 s  | 6.0          | 142,227      | 2,878         |
+| multi-line-edit, recovery off  | 8/8    | 27.1 s  | 7.6          | 181,949      | 3,387         |
+| typed-repair, diagnostics on   | 8/8    | 20.7 s  | 5.0          | 115,933      | 3,216         |
+| typed-repair, diagnostics off  | 8/8    | 21.6 s  | 5.2          | 122,002      | 3,308         |
+
+With drift injected into a multi-line target, the anchored rebase removes about
+1.6 provider turns per run (-21%), 22% of the input tokens, and 18% of the p50
+latency, at the same 8/8 success. The post-edit diagnostics report removes about
+0.2 turns per run (-4%), 5% of the input tokens, and 4% of the p50 latency on a
+type-inconsistent repair, also at 8/8. The gaps are attributable because the
+arms share the same binary, profile, and task; the mechanism switch is the only
+variable. On the type-clean carriers the same report attaches nothing and costs
+nothing measurable, which is the expected noise behaviour.
