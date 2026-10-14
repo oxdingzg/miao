@@ -374,3 +374,37 @@ window-read file can actually be edited (a small edit on a large file is pinned
 by a test). One failure mode belongs to the model, not the engine: after
 mangling the 64-character fingerprint it abandoned `edit_file` for a patch,
 which the raised bound now also accepts.
+
+## Wider reporting view (2026-10-14)
+
+`baseline-summary-cli` prints one row per engine and task with pass rate, p50,
+provider turns, tokens, tool calls, receipts, and loop classifications; it
+tolerates evidence recorded before a field existed. The recorded v1 baseline
+reads as follows (eight repetitions per task):
+
+| engine | task | passed | p50 | turns/run | input tokens | output tokens | tools/run | receipts |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| rust | read-only | 8/8 | 12.7 s | 5.0 | 98,346 | 1,150 | 4.0 | tool.error |
+| rust | small-edit | 8/8 | 15.1 s | 5.5 | 118,330 | 2,259 | 5.9 | - |
+| rust | multi-file | 8/8 | 22.2 s | 6.0 | 141,426 | 4,489 | 10.3 | - |
+| rust | test-repair | 8/8 | 21.6 s | 6.6 | 155,716 | 3,222 | 8.0 | - |
+| rust | permission-denial | 8/8 | 5.2 s | 2.0 | 37,608 | 489 | 1.0 | permission.denied, tool.error |
+| rust | tool-error | 8/8 | 7.2 s | 3.0 | 57,496 | 376 | 2.0 | tool.error |
+| rust | stream-interruption | 3/8 | 8.3 s | 2.1 | 41,238 | 544 | 1.8 | provider.interrupted |
+| typescript | read-only | 8/8 | 16.7 s | 5.0 | 379,298 | 1,269 | 5.3 | - |
+| typescript | small-edit | 8/8 | 22.3 s | 6.3 | 477,465 | 2,443 | 8.0 | - |
+| typescript | multi-file | 8/8 | 22.1 s | 6.0 | 473,906 | 3,493 | 9.5 | - |
+| typescript | test-repair | 8/8 | 21.7 s | 7.0 | 553,906 | 2,783 | 9.0 | - |
+| typescript | permission-denial | 0/8 | 11.4 s | 3.0 | 224,603 | 985 | 2.0 | tool.error |
+| typescript | tool-error | 8/8 | 9.4 s | 3.0 | 224,712 | 360 | 2.0 | tool.error |
+| typescript | stream-interruption | 0/8 | 4.5 s | 1.0 | 74,416 | 160 | 1.0 | - |
+
+The same view over the suite-v3 and suite-v4 carriers is the measurement table
+in the earlier sections. The clearest reading is read-only retrieval: the same
+success on the same task costs the Rust engine about a quarter of the input
+tokens (98k against 379k) and slightly fewer turns and tool calls, which is the
+reference point the efficiency work measures against.
+
+Reading tokens cannot be split out of the per-attempt totals: the engine
+accounts usage per provider turn, not per tool, so tool calls stand in as the
+retrieval-effort proxy.
