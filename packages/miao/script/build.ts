@@ -10,6 +10,7 @@ import { createSolidTransformPlugin } from "@opentui/solid/bun-plugin"
 const __filename = fileURLToPath(import.meta.url)
 const __dirname = path.dirname(__filename)
 const dir = path.resolve(__dirname, "..")
+const entitlements = path.join(__dirname, "miao.entitlements")
 
 process.chdir(dir)
 
@@ -219,9 +220,16 @@ for (const item of targets) {
   }).finally(() => restore?.())
 
   // Embedding the bundle invalidates the linker's ad-hoc signature, and macOS 27+
-  // SIGKILLs binaries with invalid pages. Re-sign ad-hoc after every local darwin compile.
+  // SIGKILLs binaries with invalid pages. Re-sign after every darwin compile — with
+  // the Developer ID identity when one is available so release binaries pass
+  // Gatekeeper, ad-hoc otherwise.
   if (item.os === "darwin" && process.platform === "darwin") {
-    await $`codesign --force --sign - dist/${name}/bin/miao`
+    const identity = await developerIdIdentity()
+    if (identity) {
+      await $`codesign --force --options runtime --timestamp --entitlements ${entitlements} --sign ${identity} dist/${name}/bin/miao`
+    } else {
+      await $`codesign --force --sign - dist/${name}/bin/miao`
+    }
   }
 
   // Ship the catalog next to the binary so a fresh install works offline; the
@@ -275,6 +283,16 @@ if (Script.release) {
       archives.push(`./dist/${key}.zip`)
     }
   }
+  // Bare executables cannot carry a staple ticket; submitting the zip registers
+  // the binary's cdhash and Gatekeeper checks it online at first launch.
+  const notary = notaryCredentials()
+  if (notary) {
+    for (const key of Object.keys(binaries).filter((item) => item.includes("darwin"))) {
+      const archive = `./dist/${key}.zip`
+      await $`xcrun notarytool submit ${archive} --key ${notary.key} --key-id ${notary.keyId} --issuer ${notary.issuer} --wait`
+    }
+  }
+
   // Upload only the archives this platform produced; a `--single` build never
   // has both `.zip` and `.tar.gz`, and Bun's shell errors on an unmatched glob.
   if (archives.length) {
@@ -283,3 +301,23 @@ if (Script.release) {
 }
 
 export { binaries }
+
+// Function declarations hoist: the build loop above runs during module evaluation.
+async function developerIdIdentity() {
+  const fromEnv = process.env.MIAO_CODESIGN_IDENTITY?.trim()
+  if (fromEnv) return fromEnv
+  const { stdout } = await $`security find-identity -v -p codesigning`.quiet()
+  return stdout
+    .toString()
+    .split("\n")
+    .find((line) => line.includes("Developer ID Application"))
+    ?.match(/"(.+)"/)?.[1]
+}
+
+function notaryCredentials() {
+  const key = process.env.APPLE_API_KEY_P8?.trim()
+  const keyId = process.env.APPLE_API_KEY_ID?.trim()
+  const issuer = process.env.APPLE_API_ISSUER?.trim()
+  if (!key || !keyId || !issuer) return undefined
+  return { key, keyId, issuer }
+}
