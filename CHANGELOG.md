@@ -11,6 +11,12 @@ at `docs/releases/vX.Y.Z.md` and `docs/releases/vX.Y.Z.zh.md`; both are required
 
 ## [Unreleased]
 
+## [0.2.8] - 2026-10-14
+
+### Fixed
+- **tui**: render the device pairing QR with explicit per-cell colors (#824) (`d2e809acb`)
+
+
 ## [0.2.7] - 2026-10-13
 
 ### Added
