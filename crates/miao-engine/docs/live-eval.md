@@ -289,3 +289,26 @@ path itself is pinned by the LSP fixture tests (a real diagnostic attaches as
 `diagnostics`; the ablation skips warm-up and report). Demonstrating the
 repair-loop value needs a fixture whose edit introduces a typed error, which is
 the same fixture-gap the A2 and A3 measurements record.
+
+## Failure classification and wasted turns (2026-10-14)
+
+Vocabulary: `loop.continuation` names why a run continued on its own
+(`empty-completion` and the transport-recovery continuation), `loop.stopped`
+names why a self-driven loop closed (`empty-completion`, `no-progress`, and the
+goal loop's `budget`/`max-iterations`). The runner records both reason lists per
+run as `evidence.loops`, so sweep reports can count wasted turns and classified
+closures directly.
+
+Behavior pinned by tests rather than a live sweep:
+
+- An empty provider completion (no text, no tool calls) admits one bounded
+  reminder and continues; a second consecutive one is a classified closure and
+  the run fails, instead of the previous silent completion (`empty_completion`
+  tests).
+- A real user input resets the empty-completion counter; an autonomous goal that
+  classified its own stall keeps its closure (`goal_continuation` tests).
+
+A live sweep cannot force the model into an empty completion honestly, so the
+recorded N=8 baselines show an empty `loops` list on normal tasks: the
+classification exists, and its incidence on well-behaved tasks is zero -- which
+is itself the wanted outcome.
