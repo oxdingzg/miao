@@ -846,7 +846,7 @@ async fn execute(
                         .record(
                             session,
                             "usage",
-                            json!({"run_id":run,"step":step,"usage":partial.usage,"partial":true,"ttft_ms":ttft_ms,"cache":crate::usage::cache_lineage(&partial.usage),"context_message_seq":inner.store.max_message_seq(session).await?}),
+                            json!({"run_id":run,"step":step,"usage":partial.usage,"partial":true,"cache":crate::usage::cache_lineage(&partial.usage),"context_message_seq":inner.store.max_message_seq(session).await?}),
                         )
                         .await?;
                     if partial
@@ -929,9 +929,15 @@ async fn execute(
             .record(
                 session,
                 "usage",
-                json!({"run_id":run,"step":step,"usage":reply.usage,"ttft_ms":ttft_ms,"cache":crate::usage::cache_lineage(&reply.usage),"context_message_seq":inner.store.max_message_seq(session).await?}),
+                json!({"run_id":run,"step":step,"usage":reply.usage,"cache":crate::usage::cache_lineage(&reply.usage),"context_message_seq":inner.store.max_message_seq(session).await?}),
             )
             .await?;
+        if let Some(ttft_ms) = ttft_ms {
+            let _ = inner.store.record_timing(session, run, step as u64, ttft_ms).await;
+            let _ = inner.progress.send(
+                json!({"session_id":session,"run_id":run,"step":step,"kind":"provider.ttft","ttft_ms":ttft_ms}),
+            );
+        }
         let assistant_boundary = inner
             .store
             .assistant_reply_profiled(

@@ -26,7 +26,7 @@ async fn usage_report_aggregates_turns_tokens_ttft_and_lineage() {
         .record(
             "s",
             "usage",
-            json!({"run_id":"r1","step":0,"ttft_ms":900,
+            json!({"run_id":"r1","step":0,
                    "usage":{"inputTokens":200,"outputTokens":10,"cacheReadInputTokens":150,"nonCachedInputTokens":50}}),
         )
         .await
@@ -43,12 +43,14 @@ async fn usage_report_aggregates_turns_tokens_ttft_and_lineage() {
         .record(
             "s",
             "usage",
-            json!({"run_id":"r1","step":1,"ttft_ms":300,"partial":true,
+            json!({"run_id":"r1","step":1,"partial":true,
                    "usage":{"inputTokens":100,"outputTokens":2}}),
         )
         .await
         .unwrap();
 
+    store.record_timing("s", "r1", 0, 900).await.unwrap();
+    store.record_timing("s", "r1", 1, 300).await.unwrap();
     let report = store.usage_report("s").await.unwrap();
     assert_eq!(report["turns"], 1);
     assert_eq!(report["partialTurns"], 1);
