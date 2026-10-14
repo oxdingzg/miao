@@ -186,11 +186,7 @@ where
     }));
     let mut parts = Vec::new();
     for (nth, (start, end)) in plan.segments.iter().enumerate() {
-        let body = messages[*start..*end]
-            .iter()
-            .map(|message| format!("- {}: {}", message.role, message.content))
-            .collect::<Vec<_>>()
-            .join("\n");
+        let body = summarizer_body(&messages[*start..*end], SUMMARIZER_MESSAGE_CHARS);
         match summarize(format!(
             "Summarize this portion of the conversation:\n{body}"
         ))
@@ -215,7 +211,7 @@ where
     }
     let id = format!("cut_{run}");
     match store
-        .compact_for_run(session, run, &id, boundary, parts.join("\n\n"))
+        .compact_for_run(session, run, &id, boundary, checkpoint_summary(store, &parts, session).await)
         .await
     {
         Ok(_) => {
@@ -231,6 +227,135 @@ where
             Ok(false)
         }
     }
+}
+
+/// Per-message cap on what one summarizer pass reads from a stored message.
+/// Oversized tool outputs are named by their recall handle instead of being
+/// paid for twice (the summary pass would re-read what pruning already
+/// elided from the outgoing request).
+pub const SUMMARIZER_MESSAGE_CHARS: usize = 2_000;
+
+/// `commit_compaction` rejects checkpoints above this size, so the assembly
+/// truncates the summarized part rather than failing the whole compaction.
+pub const MAX_CHECKPOINT_CHARS: usize = 32_768;
+
+/// The serialized text of one message, bounded for a summarizer pass. Text
+/// blocks are capped at a char boundary; oversized tool results are replaced
+/// by their recall handle, so nothing is lost that pruning has not already
+/// archived.
+fn message_excerpt(message: &Message, budget: usize) -> String {
+    let blocks = message.content.as_array().into_iter().flatten();
+    let mut parts = Vec::new();
+    for block in blocks {
+        match block["type"].as_str() {
+            Some("text") => {
+                let text = block["text"].as_str().unwrap_or_default();
+                parts.push(bounded(text, budget));
+            }
+            Some("tool_result") => {
+                let content = block["content"].as_str().unwrap_or_default();
+                if content.len() <= budget {
+                    parts.push(content.to_owned());
+                } else {
+                    let handle = match block["tool_use_id"].as_str() {
+                        Some(id) if id.len() <= 128 && !id.is_empty() => {
+                            format!(r#"[tool output archived — recall {{"tool_use_id":"{id}"}} to restore]"#)
+                        }
+                        _ => "[oversized tool output omitted]".to_owned(),
+                    };
+                    parts.push(handle);
+                }
+            }
+            _ => {}
+        }
+    }
+    format!("- {}: {}", message.role, parts.join(" "))
+}
+
+/// The largest char boundary at or below `budget`, with an explicit marker
+/// when anything was cut.
+fn bounded(text: &str, budget: usize) -> String {
+    if text.len() <= budget {
+        return text.to_owned();
+    }
+    let mut cut = budget.min(text.len());
+    while !text.is_char_boundary(cut) {
+        cut -= 1;
+    }
+    format!("{}…[truncated]", &text[..cut])
+}
+
+/// One summarizer pass's input: one bounded line per message.
+pub fn summarizer_body(messages: &[Message], per_message_chars: usize) -> String {
+    messages
+        .iter()
+        .map(|message| message_excerpt(message, per_message_chars))
+        .collect::<Vec<_>>()
+        .join("\n")
+}
+
+/// Durable state carried verbatim into every checkpoint, independent of
+/// summarizer quality: the active objective and the open tasks. Completed or
+/// cancelled tasks are history, not state, and stay out.
+pub fn durable_state_block(state: &serde_json::Value) -> String {
+    let mut lines = Vec::new();
+    let goal = &state["goal"]["value"];
+    if goal["objective"].as_str().is_some_and(|o| !o.is_empty()) {
+        lines.push(format!(
+            "Objective: {} (status: {})",
+            goal["objective"].as_str().unwrap_or_default(),
+            goal["status"].as_str().unwrap_or("unknown")
+        ));
+    }
+    let todos = state["todos"]["value"]["todos"].as_array();
+    let open = todos
+        .into_iter()
+        .flatten()
+        .filter(|todo| todo["status"].as_str() != Some("completed") && todo["status"].as_str() != Some("cancelled"))
+        .filter_map(|todo| todo["content"].as_str())
+        .collect::<Vec<_>>();
+    if !open.is_empty() {
+        lines.push("Open tasks:".to_owned());
+        lines.extend(open.iter().map(|task| format!("- [ ] {task}")));
+    }
+    if lines.is_empty() {
+        return String::new();
+    }
+    format!("## Durable state (carried verbatim)\n{}", lines.join("\n"))
+}
+
+/// The checkpoint text: summarized parts plus the durable-state block, within
+/// the size `commit_compaction` accepts. The durable block is the part that
+/// must never be lost, so overflow truncates the summarized part instead.
+pub async fn checkpoint_summary(store: &Store, parts: &[String], session: &str) -> String {
+    let mut summary = parts.join("\n\n");
+    let durable = store
+        .state(session)
+        .await
+        .map(|state| durable_state_block(&state))
+        .unwrap_or_default();
+    if durable.is_empty() {
+        return bounded_to(&summary, MAX_CHECKPOINT_CHARS);
+    }
+    let combined = format!("{summary}\n\n{durable}");
+    if combined.len() <= MAX_CHECKPOINT_CHARS {
+        return combined;
+    }
+    let keep = MAX_CHECKPOINT_CHARS.saturating_sub(durable.len() + 2);
+    summary = bounded_to(&summary, keep);
+    format!("{summary}\n\n{durable}")
+}
+
+/// The largest char-boundary prefix within `max` chars.
+fn bounded_to(text: &str, max: usize) -> String {
+    if text.len() <= max {
+        return text.to_owned();
+    }
+    let mut cut = max;
+    while !text.is_char_boundary(cut) {
+        cut -= 1;
+    }
+    text[..cut].to_owned()
 }
 
 /// Gate 5: the compaction circuit breaker. After `threshold` consecutive
@@ -729,6 +854,81 @@ mod tests {
         assert_eq!(estimate_tokens(0), 0);
         assert_eq!(estimate_tokens(1), 1);
         assert_eq!(estimate_tokens(6), 2);
+    }
+
+    #[test]
+    fn summarizer_body_bounds_messages_and_names_archived_outputs() {
+        let messages = vec![
+            Message {
+                role: "user".into(),
+                content: json!([{"type": "text", "text": "x".repeat(150)}]),
+                checkpoint: None,
+                recorded_at_ms: None,
+            },
+            Message {
+                role: "user".into(),
+                content: json!([{"type": "tool_result", "tool_use_id": "call_big", "content": "y".repeat(10_000)}]),
+                checkpoint: None,
+                recorded_at_ms: None,
+            },
+        ];
+        let body = summarizer_body(&messages, 100);
+        assert!(body.contains("- user:"), "{body}");
+        assert!(body.contains("…[truncated]"), "{body}");
+        assert!(body.contains(r#"recall {"tool_use_id":"call_big"} to restore"#), "{body}");
+        // The archived payload's body never reaches the summarizer.
+        assert!(body.len() < 1_000, "{body}");
+    }
+
+    #[test]
+    fn durable_state_block_carries_goal_and_open_tasks_verbatim() {
+        let state = json!({
+            "goal": {"value": {"objective": "land the fix", "status": "active"}},
+            "todos": {"value": {"todos": [
+                {"content": "write test", "status": "pending", "priority": "high"},
+                {"content": "done item", "status": "completed", "priority": "low"},
+                {"content": "dropped item", "status": "cancelled", "priority": "low"}
+            ]}}
+        });
+        let block = durable_state_block(&state);
+        assert!(block.contains("Objective: land the fix (status: active)"), "{block}");
+        assert!(block.contains("- [ ] write test"), "{block}");
+        assert!(!block.contains("done item"), "{block}");
+        assert!(!block.contains("dropped item"), "{block}");
+
+        // No durable state, no block: explicit compact keeps its plain summary.
+        assert_eq!(durable_state_block(&json!({})), "");
+    }
+
+    #[tokio::test]
+    async fn checkpoint_summary_keeps_the_durable_block_within_the_limit() {
+        let dir = tempfile::tempdir().unwrap();
+        let store = Store::open(dir.path().join("engine.db")).await.unwrap();
+        store
+            .admit(crate::protocol::Input {
+                session_id: "s".into(),
+                input_id: "one".into(),
+                prompt: "task".into(),
+                delivery: crate::protocol::Delivery::Steer,
+            })
+            .await
+            .unwrap();
+        store
+            .update_state(
+                "s",
+                "op-goal",
+                crate::state::Mutation {
+                    kind: "goal",
+                    value: json!({"objective": "finish", "status": "active"}),
+                    expected: None,
+                },
+            )
+            .await
+            .unwrap();
+        let huge = vec!["z".repeat(MAX_CHECKPOINT_CHARS); 2];
+        let summary = checkpoint_summary(&store, &huge, "s").await;
+        assert!(summary.len() <= MAX_CHECKPOINT_CHARS, "{}", summary.len());
+        assert!(summary.ends_with("finish (status: active)") || summary.contains("Objective: finish"), "{summary}");
     }
 
     #[tokio::test]
