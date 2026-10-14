@@ -232,34 +232,46 @@ async fn an_archived_tool_output_comes_back_by_handle_across_bounded_windows() {
         )
         .await
         .unwrap();
-    let first = store.recall("s", handle("call-1", 0)).await.unwrap();
+
+    // Pages follow next_offset until the stored output is exhausted.
+    let mut restored = String::new();
+    let mut offset = 0u64;
+    let mut pages = 0;
+    let mut first = None;
+    loop {
+        let page = store
+            .recall("s", handle("call-1", offset as usize))
+            .await
+            .unwrap();
+        assert_eq!(page["offset"].as_u64().unwrap(), offset);
+        if first.is_none() {
+            first = Some(page.clone());
+        }
+        restored.push_str(page["text"].as_str().unwrap());
+        pages += 1;
+        assert!(pages < 16, "paging must terminate");
+        if !page["truncated"].as_bool().unwrap() {
+            assert_eq!(page["next_offset"], json!(null));
+            break;
+        }
+        offset = page["next_offset"].as_u64().unwrap();
+    }
+    let first = first.unwrap();
+    assert!(pages > 1, "the payload needs more than one window");
     assert_eq!(first["message_seq"], recorded.seq);
     assert_eq!(first["is_error"], true);
     assert_eq!(first["offset"], 0);
     assert_eq!(first["total_bytes"].as_u64().unwrap(), payload.len() as u64);
-    assert_eq!(first["truncated"], true);
-    let window = first["text"].as_str().unwrap();
-    assert_eq!(window.len(), 32768);
-    assert!(window.is_char_boundary(window.len()));
-    let next = store
-        .recall(
-            "s",
-            handle("call-1", first["next_offset"].as_u64().unwrap() as usize),
-        )
-        .await
-        .unwrap();
-    assert_eq!(next["offset"], first["next_offset"]);
-    assert_eq!(next["truncated"], false);
-    assert_eq!(next["next_offset"], json!(null));
-    // Both windows together restore the whole stored output, including the
+    assert_eq!(first["text"].as_str().unwrap().len(), 32768);
+    assert_eq!(first["truncated"], json!(true));
+    // Every window together restores the whole stored output, including the
     // middle a single search preview never returns.
-    let restored = format!("{}{}", window, next["text"].as_str().unwrap());
     assert_eq!(restored.len(), payload.len());
     assert!(restored.contains("MARKER-MIDDLE"));
 
     let missing = store.recall("s", handle("call-missing", 0)).await.unwrap();
     assert_eq!(missing["message_seq"], json!(null));
     assert_eq!(missing["text"], json!(null));
-    assert_eq!(missing["exhausted"], true);
+    assert_eq!(missing["exhausted"], json!(true));
     assert!(store.recall("other", handle("call-1", 0)).await.unwrap()["text"].is_null());
 }
