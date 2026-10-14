@@ -332,5 +332,7 @@ latency, at the same 8/8 success. The post-edit diagnostics report removes about
 0.2 turns per run (-4%), 5% of the input tokens, and 4% of the p50 latency on a
 type-inconsistent repair, also at 8/8. The gaps are attributable because the
 arms share the same binary, profile, and task; the mechanism switch is the only
-variable. On the type-clean carriers the same report attaches nothing and costs
+variable, and the receipts corroborate it: the recovery-on runs record no
+`tool.error` at all, while every recovery-off run records one from the stale
+edit. On the type-clean carriers the same report attaches nothing and costs
 nothing measurable, which is the expected noise behaviour.
