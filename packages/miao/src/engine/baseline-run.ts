@@ -84,6 +84,10 @@ export interface BaselineRustInput {
   lspDiagnostics?: boolean
   /** Absolute path to an LSP host config used by the measured run. */
   lspConfigFile?: string
+  /** Completion-check command line, when the measured run configures one. */
+  verifyCommand?: string
+  /** Explicit prefix-cache policy for the measured run. */
+  promptCache?: boolean
   /**
    * Drift experiment control: after the model reads one of these workspace
    * paths, the runner rewrites it with the given content before the model's
@@ -179,6 +183,12 @@ export async function runBaselineRust(input: BaselineRustInput): Promise<Baselin
       policyFile: input.policyFile ?? (await writeBaselinePolicy(input.root)),
       endpoint: proxy?.endpoint ?? input.endpoint,
       editRecovery: input.editRecovery,
+      // Every ablation the runner declares has to reach the engine, or both
+      // arms of a measurement silently run the same configuration.
+      lspDiagnostics: input.lspDiagnostics,
+      lspConfigFile: input.lspConfigFile,
+      verifyCommand: input.verifyCommand,
+      promptCache: input.promptCache,
       env: input.env,
       session,
       prompt,
