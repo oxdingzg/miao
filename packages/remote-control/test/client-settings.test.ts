@@ -17,9 +17,14 @@ test("loads a private operator default and normalizes only its origin", () =>
     await writeFile(file, JSON.stringify({ defaultHubURL: "https://relay.example.invalid/" }), { mode: 0o600 })
     expect(await ControlClientSettings.read(file)).toEqual({ defaultHubURL: "https://relay.example.invalid" })
   }))
-test("missing settings leave custom/self-hosted selection available", () =>
+test("missing settings fall back to the shipped default Hub", () =>
   fixture(async (file) => {
-    expect(await ControlClientSettings.read(file)).toEqual({})
+    expect(await ControlClientSettings.read(file)).toEqual({ defaultHubURL: "https://hub.mtty.dev" })
+  }))
+test("a browser URL on another Hub requires an explicit default Hub", () =>
+  fixture(async (file) => {
+    await writeFile(file, JSON.stringify({ browserURL: "https://other.example.invalid/control/" }), { mode: 0o600 })
+    await expect(ControlClientSettings.read(file)).rejects.toThrow("must use the default Hub origin")
   }))
 test("explicit environment overrides the private default", () =>
   fixture(async (file) => {

@@ -10,6 +10,9 @@ const Settings = Schema.Struct({
 })
 export type Settings = typeof Settings.Type
 
+/** Shipped default Hub: an account there is enough, no local configuration required. */
+export const defaultHubURL = "https://hub.mtty.dev"
+
 /** Operator defaults contain no credentials and stay outside the checkout. */
 export async function read(filename: string, environmentHub?: string): Promise<Settings> {
   if (environmentHub) return { defaultHubURL: origin(environmentHub) }
@@ -17,7 +20,7 @@ export async function read(filename: string, environmentHub?: string): Promise<S
     if (typeof error === "object" && error !== null && "code" in error && error.code === "ENOENT") return undefined
     throw error
   })
-  if (!file) return {}
+  if (!file) return { defaultHubURL: defaultHubURL }
   try {
     const stat = await file.stat()
     if (
@@ -31,7 +34,7 @@ export async function read(filename: string, environmentHub?: string): Promise<S
     })(await file.readFile("utf8"))
     if (Option.isNone(decoded)) throw new Error("Invalid Remote Control client settings")
     const result: Settings = {
-      ...(decoded.value.defaultHubURL ? { defaultHubURL: origin(decoded.value.defaultHubURL) } : {}),
+      defaultHubURL: decoded.value.defaultHubURL ? origin(decoded.value.defaultHubURL) : defaultHubURL,
       ...(decoded.value.browserURL ? { browserURL: browser(decoded.value.browserURL) } : {}),
     }
     if (result.defaultHubURL && result.browserURL && new URL(result.browserURL).origin !== result.defaultHubURL)
