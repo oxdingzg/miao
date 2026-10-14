@@ -123,6 +123,37 @@ async fn oversized_tool_output_is_elided_from_the_request_only() {
     let stored = store.snapshot("s").await.unwrap().to_string();
     assert!(!stored.contains("elided by context management"));
     assert!(stored.contains(&"abcdefgh".repeat(100)), "history intact");
+
+    // The mark names the handle that restores the elided middle on demand.
+    assert!(
+        captured.contains(r#"recall {"tool_use_id":"call"}"#),
+        "the elision mark carries the recovery handle: {captured}"
+    );
+    let restored = store
+        .recall(
+            "s",
+            miao_engine::recall::Query {
+                query: String::new(),
+                limit: 10,
+                before_message_seq: None,
+                tool_use_id: Some("call".into()),
+                offset: 0,
+            },
+        )
+        .await
+        .unwrap();
+    assert_eq!(restored["truncated"], false, "{restored}");
+    assert_eq!(
+        restored["total_bytes"],
+        restored["text"].as_str().unwrap().len()
+    );
+    assert!(
+        restored["text"]
+            .as_str()
+            .unwrap()
+            .contains(&"abcdefgh".repeat(100)),
+        "the elided middle comes back by handle"
+    );
 }
 
 #[tokio::test]

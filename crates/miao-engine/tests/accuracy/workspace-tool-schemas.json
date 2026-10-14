@@ -276,15 +276,19 @@
         "minimum": 1,
         "type": "integer"
       },
+      "offset": {
+        "minimum": 0,
+        "type": "integer"
+      },
       "query": {
         "maxLength": 512,
-        "minLength": 1,
+        "type": "string"
+      },
+      "tool_use_id": {
+        "maxLength": 128,
         "type": "string"
       }
     },
-    "required": [
-      "query"
-    ],
     "type": "object"
   },
   "session_state": {

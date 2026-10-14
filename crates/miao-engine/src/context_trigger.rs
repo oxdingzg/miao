@@ -340,7 +340,21 @@ pub fn prune_history(
             };
             let head = floor_boundary(content, keep_head);
             let tail = content.len() - ceil_boundary_from_end(content, keep_tail);
-            let pruned = format!("{}{}{}", &content[..head], PRUNE_MARK, &content[tail..]);
+            // Pruning stays recoverable: the marker names the handle that
+            // restores the elided middle, so nothing is silently lost.
+            let note = match block["tool_use_id"].as_str() {
+                Some(id) if id.len() <= 128 => format!(
+                    "[the elided middle is recoverable on demand: recall {{\"tool_use_id\":\"{id}\"}}]\n"
+                ),
+                _ => String::new(),
+            };
+            let pruned = format!(
+                "{}{}{}{}",
+                &content[..head],
+                PRUNE_MARK,
+                note,
+                &content[tail..]
+            );
             dropped += content.len() - pruned.len();
             block["content"] = json!(pruned);
             elided += 1;
