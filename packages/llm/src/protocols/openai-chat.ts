@@ -11,17 +11,18 @@ import {
   type JsonSchema,
   type LLMRequest,
   type MediaPart,
+  type ProviderMetadata,
   type ReasoningPart,
   type TextPart,
   type ToolCallPart,
   type ToolDefinition,
   type ToolContent,
 } from "../schema"
-import { isRecord, JsonObject, optionalArray, optionalNull, ProviderShared } from "./shared"
+import { decodeJson, isRecord, JsonObject, optionalArray, optionalNull, ProviderShared } from "./shared"
 import { OpenAIOptions } from "./utils/openai-options"
 import { Lifecycle } from "./utils/lifecycle"
 import { ToolSchemaProjection } from "./utils/tool-schema"
-import { ToolStream } from "./utils/tool-stream"
+import { ToolStream, type PendingTool } from "./utils/tool-stream"
 
 const ADAPTER = "openai-chat"
 const IMAGE_MIMES = new Set<string>(ProviderShared.IMAGE_MIMES)
@@ -166,7 +167,6 @@ type OpenAIChatRequestMessage = LLMRequest["messages"][number]
 
 interface ParserState {
   readonly tools: ToolStream.State<number>
-  readonly toolCallEvents: ReadonlyArray<LLMEvent>
   readonly usage?: Usage
   readonly finishReason?: FinishReason
   readonly lifecycle: Lifecycle.State
@@ -481,17 +481,13 @@ const step = (state: ParserState, event: OpenAIChatEvent) =>
       events.push(...result.events)
     }
 
-    // Finalize accumulated tool inputs eagerly when finish_reason arrives so
-    // JSON parse failures fail the stream at the boundary rather than at halt.
-    const finished =
-      finishReason !== undefined && state.finishReason === undefined && Object.keys(tools).length > 0
-        ? yield* ToolStream.finishAll(ADAPTER, tools)
-        : undefined
-
+    // finish_reason does not mean the tool arguments are complete: some
+    // OpenAI-compatible providers deliver it before the last calls' argument
+    // deltas. Keep accumulating every frame and finalize the pending calls at
+    // stream halt instead, so late arguments land in the emitted tool calls.
     return [
       {
-        tools: finished?.tools ?? tools,
-        toolCallEvents: finished?.events ?? state.toolCallEvents,
+        tools,
         usage,
         finishReason,
         lifecycle,
@@ -504,21 +500,61 @@ const step = (state: ParserState, event: OpenAIChatEvent) =>
 
 const finishEvents = (state: ParserState): ReadonlyArray<LLMEvent> => {
   const events: LLMEvent[] = []
-  const hasToolCalls = state.toolCallEvents.length > 0
-  const reason = state.finishReason === "stop" && hasToolCalls ? "tool-calls" : state.finishReason
   const metadata = state.reasoningOpaque ? { copilot: { reasoningOpaque: state.reasoningOpaque } } : undefined
-  let lifecycle = state.toolCallEvents.length ? Lifecycle.stepStart(state.lifecycle, events) : state.lifecycle
+  const flushed = flushPendingTools(state, metadata)
+  const reason = state.finishReason === "stop" && flushed.calls > 0 ? "tool-calls" : state.finishReason
+  let lifecycle = flushed.calls > 0 ? Lifecycle.stepStart(state.lifecycle, events) : state.lifecycle
   lifecycle = Lifecycle.reasoningEnd(lifecycle, events, `reasoning-${state.reasoningIndex ?? 0}`, metadata)
   lifecycle = Lifecycle.textEnd(lifecycle, events, "text-0", metadata)
-  events.push(
-    ...state.toolCallEvents.map((event) =>
-      LLMEvent.is.toolCall(event) && metadata
-        ? LLMEvent.toolCall({ id: event.id, name: event.name, input: event.input, providerMetadata: metadata })
-        : event,
-    ),
-  )
-  if (reason) Lifecycle.finish(lifecycle, events, { reason, usage: state.usage, providerMetadata: metadata })
+  events.push(...flushed.events)
+  // A flushed malformed input already terminates the turn through its
+  // provider-error event; a finish after it would pretend the turn completed.
+  if (reason && !flushed.failed)
+    Lifecycle.finish(lifecycle, events, { reason, usage: state.usage, providerMetadata: metadata })
   return events
+}
+
+/**
+ * Finalize every tool call still pending at stream halt, but only when the
+ * provider completed the turn (`finish_reason` was seen). A stream that ends
+ * without it is a truncated response: its partial calls stay unfinalized and
+ * the retryable stream failure handles the attempt. `onHalt` cannot run
+ * Effects, so the accumulated JSON is parsed synchronously; the failure shape
+ * mirrors `ProviderShared.parseToolInput` and surfaces as an in-band provider
+ * error rather than a thrown stream failure.
+ */
+const flushPendingTools = (
+  state: ParserState,
+  metadata: ProviderMetadata | undefined,
+): { readonly events: ReadonlyArray<LLMEvent>; readonly calls: number; readonly failed: boolean } => {
+  if (state.finishReason === undefined) return { events: [], calls: 0, failed: false }
+  const events: LLMEvent[] = []
+  let calls = 0
+  for (const tool of Object.values<PendingTool | undefined>(state.tools)) {
+    if (!tool) continue
+    events.push(LLMEvent.toolInputEnd({ id: tool.id, name: tool.name, providerMetadata: tool.providerMetadata }))
+    let input: unknown
+    try {
+      input = decodeJson(tool.input || "{}")
+    } catch {
+      return {
+        events: [
+          ...events,
+          LLMEvent.providerError({
+            message: `Invalid JSON input for ${ADAPTER} tool call ${tool.name}`,
+            providerMetadata: metadata,
+          }),
+        ],
+        calls,
+        failed: true,
+      }
+    }
+    events.push(
+      LLMEvent.toolCall({ id: tool.id, name: tool.name, input, providerMetadata: metadata ?? tool.providerMetadata }),
+    )
+    calls++
+  }
+  return { events, calls, failed: false }
 }
 
 // =============================================================================
@@ -539,7 +575,7 @@ export const protocol = Protocol.make({
   media: IMAGE_MIMES,
   stream: {
     event: Protocol.jsonEvent(OpenAIChatEvent),
-    initial: () => ({ tools: ToolStream.empty<number>(), toolCallEvents: [], lifecycle: Lifecycle.initial() }),
+    initial: () => ({ tools: ToolStream.empty<number>(), lifecycle: Lifecycle.initial() }),
     step,
     onHalt: finishEvents,
   },
