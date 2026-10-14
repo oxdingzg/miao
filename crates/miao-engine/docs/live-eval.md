@@ -494,3 +494,21 @@ measurably on type-clean edits, which is the cost side of A7's claim. The report
 path itself is pinned by the LSP fixture tests, which drive the runtime directly;
 the repair-loop value on an edit that introduces a typed error remains the owed
 measurement.
+
+## Read-batch parallelism (2026-10-14)
+
+A6's first step is already in the engine: a turn that requests two to sixteen
+declared reads (`read_file`, `list_files`, `glob`, `grep`, all read-access and
+allowed) dispatches them together under a bound of four and settles them in call
+order, with `tests/read_batch.rs` pinning the barrier cases (a mixed write turn,
+and a denied read, both stay serial).
+
+Measuring the saving needs a carrier whose single turn asks for several reads.
+Eight runs of the `read-only` carrier did not produce one: it issues one read per
+turn (three to four tools per run, no `tool.parallel.started` in any of them), so
+no batch formed and no overlap exists to report. The runner now records what it
+observed -- batch count, the reads the batch named, and the batch's wall window
+-- so the figure arrives with the carrier that exercises it. Per-read durations
+are not recorded in event payloads: the blackbox tape replay pins those payloads
+exactly, and an earlier attempt to carry `elapsed_ms` there turned main red until
+it was moved to the runner.
