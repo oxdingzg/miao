@@ -607,6 +607,8 @@ async fn execute(
     let mut allowance = 25;
     let mut input_corrections = 0;
     let mut transport_continuations = 0;
+    // Consecutive provider turns that produced neither text nor tool calls.
+    let mut empty_completions = 0;
     let mut repeats = HashMap::<String, u32>::new();
     let mut internal_inputs = HashSet::new();
     let mut goal_iterations = 0;
@@ -873,6 +875,7 @@ async fn execute(
                             input_corrections = 0;
                             repeats.clear();
                             transport_continuations = 0;
+                            empty_completions = 0;
                             goal_iterations = 0;
                             goal_stalls = 0;
                             goal_signature = None;
@@ -1303,6 +1306,7 @@ async fn execute(
             )
             .await;
         }
+        let mut goal_stopped_this_turn = false;
         if !reply.needs_tools && promoted.is_empty() && state_allowed {
             let state = inner.store.state(session).await?;
             let goal = &state["goal"]["value"];
@@ -1327,6 +1331,7 @@ async fn execute(
                     None
                 };
                 if let Some(reason) = reason {
+                    goal_stopped_this_turn = true;
                     inner
                         .store
                         .record(
@@ -1349,6 +1354,57 @@ async fn execute(
                 }
             }
         }
+        // An empty completion is a wasted turn: the provider ended its turn
+        // with neither text nor tool calls, so nothing advanced. One bounded
+        // reminder continues the run; a second consecutive empty completion is
+        // a classified closure instead of a silent one.
+        let reply_text_empty = reply.content.as_array().is_none_or(|blocks| {
+            blocks.iter().all(|block| {
+                block["type"] != "text"
+                    || block["text"]
+                        .as_str()
+                        .is_none_or(|text| text.trim().is_empty())
+            })
+        });
+        if !reply.needs_tools && promoted.is_empty() && !goal_stopped_this_turn && reply_text_empty
+        {
+            if empty_completions == 0 {
+                empty_completions += 1;
+                let input_id = format!("empty:{run}");
+                let admission = inner
+                    .store
+                    .admit(Input {
+                        session_id: session.into(),
+                        input_id: input_id.clone(),
+                        prompt: "Your previous reply contained neither text nor tool calls, so nothing advanced. Continue the task now: act with a tool, or state the final result explicitly.".into(),
+                        delivery: crate::protocol::Delivery::Queue,
+                    })
+                    .await?;
+                internal_inputs.insert(input_id);
+                inner
+                    .store
+                    .record(
+                        session,
+                        "loop.continuation",
+                        json!({"run_id":run,"admitted_seq":admission.admitted_seq,"reason":"empty-completion"}),
+                    )
+                    .await?;
+                promoted = inner.store.promote(session, true).await?;
+                record_promotions(inner, session, run, &promoted).await?;
+            } else {
+                inner
+                    .store
+                    .record(
+                        session,
+                        "loop.stopped",
+                        json!({"run_id":run,"reason":"empty-completion"}),
+                    )
+                    .await?;
+                return Err(Error::Invalid(
+                    "provider returned an empty completion twice".into(),
+                ));
+            }
+        }
         if !reply.needs_tools && promoted.is_empty() {
             if let Some(replay) = &inner.tool_replay {
                 replay.assert_consumed().await?;
@@ -1367,6 +1423,7 @@ async fn execute(
                 allowance = 25;
                 input_corrections = 0;
                 transport_continuations = 0;
+                empty_completions = 0;
                 repeats.clear();
                 goal_iterations = 0;
                 goal_stalls = 0;
