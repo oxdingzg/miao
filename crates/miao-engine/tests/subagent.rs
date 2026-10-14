@@ -260,10 +260,10 @@ async fn run_referenced(seed: bool) -> (Value, Store) {
                     .rev()
                     .find_map(|message| {
                         message.content.as_array().and_then(|parts| {
-                            parts.iter().find_map(|part| {
+                            parts.iter().rev().find_map(|part| {
                                 part["content"]
                                     .as_str()
-                                    .filter(|text| text.contains("session_id"))
+                                    .filter(|_| part["type"] == "tool_result")
                                     .map(|text| serde_json::from_str::<Value>(text).unwrap())
                             })
                         })
