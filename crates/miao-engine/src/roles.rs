@@ -204,10 +204,18 @@ mod tests {
         });
         let primary = Fixed::primary(vec![]);
         let stop = CancellationToken::new();
-        let text =
-            summarize_with_escalation(&role, &primary, &store, "s", "r1", &stop, "condense this")
-                .await
-                .unwrap();
+        let text = summarize_with_escalation(
+            &role,
+            &primary,
+            &store,
+            "s",
+            "r1",
+            &stop,
+            "condense this",
+            true,
+        )
+        .await
+        .unwrap();
         assert_eq!(text, "ok summary");
         let events = store.events("s", 0, 100).await.unwrap();
         let escalated = events
@@ -216,6 +224,44 @@ mod tests {
             .unwrap();
         assert_eq!(escalated.data["role"], "summarize");
         assert_eq!(escalated.data["run_id"], "r1");
+    }
+
+    #[tokio::test]
+    async fn an_attempt_already_on_the_primary_does_not_retry_itself() {
+        let dir = tempfile::tempdir().unwrap();
+        let store = crate::store::Store::open(dir.path().join("engine.db"))
+            .await
+            .unwrap();
+        store
+            .admit(crate::protocol::Input {
+                session_id: "s".into(),
+                input_id: "seed".into(),
+                prompt: "task".into(),
+                delivery: crate::protocol::Delivery::Steer,
+            })
+            .await
+            .unwrap();
+        let failing: Arc<dyn Provider> = Arc::new(Fixed {
+            accepts: vec![],
+            model: "primary".into(),
+            fail_stream: true,
+        });
+        let stop = CancellationToken::new();
+        let error = summarize_with_escalation(
+            &failing,
+            &failing,
+            &store,
+            "s",
+            "r1",
+            &stop,
+            "condense this",
+            false,
+        )
+        .await
+        .unwrap_err();
+        assert_eq!(error, "provider transport failed");
+        let events = store.events("s", 0, 100).await.unwrap();
+        assert!(!events.iter().any(|event| event.kind == "role.escalated"));
     }
 
     #[test]
@@ -273,7 +319,9 @@ async fn summarize_with(
 /// The `summarize` role's attempt with ADR-14's single escalation: the bound
 /// provider goes first; when it fails — provider error or unusable output —
 /// the primary retries once and the escalation lands in the evidence instead
-/// of failing the turn.
+/// of failing the turn. `escalate` is false when the attempt already ran on
+/// the primary model (no binding, or a substituted one): that attempt does not
+/// retry itself.
 pub async fn summarize_with_escalation(
     role_provider: &Arc<dyn Provider>,
     primary: &Arc<dyn Provider>,
@@ -282,10 +330,11 @@ pub async fn summarize_with_escalation(
     run: &str,
     stop: &tokio_util::sync::CancellationToken,
     body: &str,
+    escalate: bool,
 ) -> Result<String, String> {
     match summarize_with(role_provider, stop, body).await {
         Ok(text) => Ok(text),
-        Err(first) => {
+        Err(first) if escalate => {
             let _ = store
                 .record(
                     session,
@@ -295,5 +344,6 @@ pub async fn summarize_with_escalation(
                 .await;
             summarize_with(primary, stop, body).await
         }
+        Err(first) => Err(first),
     }
 }

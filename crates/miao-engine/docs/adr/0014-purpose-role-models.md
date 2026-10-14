@@ -27,7 +27,9 @@ than one model has run.
   substitution it did make.
 - **One escalation.** If a role's attempt fails -- provider error, or output the
   caller cannot use -- the engine retries that role once on the primary model
-  and records the escalation in the evidence instead of failing the turn.
+  and records the escalation in the evidence instead of failing the turn. An
+  attempt that already ran on the primary model -- no binding, or a substituted
+  one -- does not retry itself; only an accepted binding earns the escalation.
 - **Cost attribution stays per attempt.** Every attempt already records model,
   tokens, and latency; an auxiliary attempt also records its role, so a report
   aggregates by role and by model without reconstructing provenance.
