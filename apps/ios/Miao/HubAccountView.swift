@@ -31,7 +31,7 @@ struct HubAccountView: View {
                         Button("退出登录", role: .destructive) { password = ""; Task { await model.signOut() } }
                             .disabled(model.accountBusy)
                     } else {
-                        TextField("HTTPS 中继地址", text: $origin).textContentType(.URL)
+                        TextField("HTTPS 中继地址（留空用默认）", text: $origin).textContentType(.URL)
                             .keyboardType(.URL).textInputAutocapitalization(.never).autocorrectionDisabled()
                             .accessibilityIdentifier("hubOrigin")
                         TextField("邮箱", text: $email).textContentType(.username)
@@ -41,13 +41,13 @@ struct HubAccountView: View {
                         Button("登录") {
                             let secret = password; password = ""
                             Task { await model.signIn(origin: origin, email: email, password: secret) }
-                        }.disabled(model.accountBusy || origin.isEmpty || email.isEmpty || password.isEmpty)
+                        }.disabled(model.accountBusy || email.isEmpty || password.isEmpty)
                             .accessibilityIdentifier("hubSignIn")
                         Button("用 GitHub 登录") { model.accountURL = origin; Task { await model.signInWithOAuth(provider: "github") } }
                             .disabled(model.accountBusy)
                             .accessibilityIdentifier("hubOAuthGithub")
                         if model.accountBusy { ProgressView("正在登录…") }
-                        Text("填写电脑配置的中继地址和账号。登录后可扫码配对，或让已信任的签名设备批准本设备注册。")
+                        Text("默认使用 \(model.defaultAccountURL)，有该站账号即可登录；要自建中继请填写其地址。登录后可扫码配对，或让已信任的签名设备批准本设备注册。")
                             .font(.footnote).foregroundStyle(.secondary)
                         if model.revocationPending {
                             Button("重试退出登录") { Task { await model.signOut() } }.disabled(model.accountBusy)
@@ -165,7 +165,8 @@ struct HubAccountView: View {
             }
             .onAppear {
                 wasSignedIn = model.accountSignedIn
-                origin = model.accountURL.isEmpty ? model.defaultAccountURL : model.accountURL
+                // Empty means the default Hub; a previously used origin stays visible.
+                origin = model.accountURL
             }
             // A sign-in this sheet performed returns the person to the
             // workbench, rather than leaving them on a page whose only news is

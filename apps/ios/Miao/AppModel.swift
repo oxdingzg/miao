@@ -19,9 +19,13 @@ final class AppModel {
     var pairing: String?
     var fingerprint: String?
     var accountURL = ""
-    /// Build-time default relay origin (`MIAO_HUB_ORIGIN`), so a preconfigured
-    /// build lands on its own Hub without asking the user to type it.
-    var defaultAccountURL: String { (Bundle.main.object(forInfoDictionaryKey: "MiaoHubOrigin") as? String) ?? "" }
+    /// Build-time default relay origin (`MIAO_HUB_ORIGIN`), falling back to the
+    /// shipped Hub so an account there needs no local configuration. The login
+    /// field stays empty for it; typing another origin selects that Hub instead.
+    var defaultAccountURL: String {
+        let configured = (Bundle.main.object(forInfoDictionaryKey: "MiaoHubOrigin") as? String) ?? ""
+        return configured.isEmpty ? "https://hub.mtty.dev" : configured
+    }
     var accountSignedIn = false
     var accountBusy = false
     var revocationPending = false
@@ -318,7 +322,10 @@ final class AppModel {
         let generation = accountEpoch
         defer { if generation == accountEpoch { accountBusy = false } }
         do {
-            guard let url = URL(string: origin.trimmingCharacters(in: .whitespacesAndNewlines)) else { throw HubAccountError.invalidEndpoint }
+            // An empty origin means the shipped default Hub.
+            let raw = origin.trimmingCharacters(in: .whitespacesAndNewlines)
+            let resolved = raw.isEmpty ? defaultAccountURL : raw
+            guard let url = URL(string: resolved) else { throw HubAccountError.invalidEndpoint }
             let next = try HubAccount(origin: url, keychainService: accountService, allowLoopbackHTTP: AppTestConfiguration.allowLoopbackHTTP)
             accountSignedIn = false; discoveredHosts = []
             await clearEnrollment()
