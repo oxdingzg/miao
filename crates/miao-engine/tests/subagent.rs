@@ -39,7 +39,7 @@ impl Provider for Scripted {
         if text.contains("say hello") {
             return Ok(Reply {
                 content: json!([{"type":"text","text":"hello from child"}]),
-                usage: json!({}),
+                usage: json!({"inputTokens": 30, "outputTokens": 5, "totalTokens": 35}),
                 needs_tools: false,
             });
         }
@@ -142,9 +142,16 @@ async fn task_delegates_to_a_child_session_and_returns_its_message() {
     );
     let events = store.events("parent", 0, 500).await.unwrap();
     assert!(events.iter().any(|event| event.kind == "subagent_start"));
-    assert!(events
+    let stop = events
         .iter()
-        .any(|event| event.kind == "subagent_stop" && event.data["reason"] == "completed"));
+        .find(|event| event.kind == "subagent_stop" && event.data["reason"] == "completed")
+        .unwrap();
+    // Delegation outcome evidence (A10): the child's billed totals and turn
+    // count ride the deterministic stop payload, so a report can price
+    // parent+child without reconstructing provenance.
+    assert_eq!(stop.data["tokens"]["input"], 30);
+    assert_eq!(stop.data["tokens"]["output"], 5);
+    assert!(stop.data["turns"].as_u64().unwrap_or(0) >= 1);
 }
 
 #[tokio::test]
