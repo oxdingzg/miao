@@ -1,14 +1,13 @@
-import { RGBA } from "@opentui/core"
 import { useTerminalDimensions } from "@opentui/solid"
 import type { OpenCode } from "@miao/client"
 import type { RemoteAccess } from "@miao/schema/remote-access"
 import { createHash } from "node:crypto"
 import { createMemo, createSignal, For, onCleanup, onMount, Show } from "solid-js"
-import { renderUnicodeCompact } from "uqr"
 import { useClipboard } from "../context/clipboard"
 import { useTheme } from "../context/theme"
 import { useDialog } from "../ui/dialog"
 import { DialogSelect, type DialogSelectOption } from "../ui/dialog-select"
+import { deviceQRRuns } from "../util/device-qr"
 
 export type DeviceApi = Pick<
   ReturnType<typeof OpenCode.make>["server.runtime"],
@@ -140,15 +139,16 @@ export function DialogDevices(props: {
   })
   const qr = createMemo(() => {
     const value = link()
-    return value ? renderUnicodeCompact(value, { border: 1 }).split("\n") : []
+    return value ? deviceQRRuns(value) : []
   })
+  const qrWidth = createMemo(() => qr()[0]?.reduce((width, run) => width + run.text.length, 0) ?? 0)
   // The dialog is a fixed 116-column box; compare against the box, not the raw
   // terminal, so a wide terminal with a narrow dialog no longer hides the code.
   const fits = createMemo(() => {
     if (!invitation()) return false
     const width = Math.min(dimensions().width, 120)
     const height = Math.min(dimensions().height, 64)
-    return (qr()[0]?.length ?? 0) <= width - 4 && qr().length + 8 <= height - 4
+    return qrWidth() <= width - 4 && qr().length + 8 <= height - 4
   })
 
   const options = createMemo((): DialogSelectOption<string>[] => {
@@ -497,8 +497,10 @@ export function DialogDevices(props: {
             <box>
               <For each={qr()}>
                 {(line) => (
-                  <text fg={RGBA.fromHex("#ffffff")} bg={RGBA.fromHex("#000000")}>
-                    {line}
+                  <text>
+                    <For each={line}>
+                      {(run) => <span style={{ fg: run.fg, bg: run.bg }}>{run.text}</span>}
+                    </For>
                   </text>
                 )}
               </For>
