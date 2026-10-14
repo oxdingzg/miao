@@ -40,6 +40,8 @@ pub enum ToolError {
     ProtectedResource,
     #[error("file content changed or expected fingerprint does not match")]
     StaleFile,
+    #[error("file is {0} bytes, above the 32768-byte whole-file bound; pass a 1-based offset and a line limit to read one window")]
+    TooLarge(usize),
     #[error("the file drifted since the read and recovery was {0}")]
     StaleEditRecovery(&'static str),
     #[error("old_string is absent or ambiguous; use an exact match or replace_all")]
@@ -1026,7 +1028,7 @@ impl Tools {
         if self.writes {
             definitions.extend([
                 ToolDefinition{name:"write_file".into(),description:"Write UTF-8 text (max 32768 bytes) under workspace. expected_sha256=null creates only; existing files require the current SHA-256 from read_file. Requires permission approval.".into(),input_schema:json!({"type":"object","properties":{"path":{"type":"string"},"text":{"type":"string"},"expected_sha256":{"type":["string","null"]}},"required":["path","text","expected_sha256"],"additionalProperties":false})},
-                ToolDefinition{name:"apply_patch".into(),description:"Apply a strict V4A multi-file patch (Add/Update/Delete File sections with @@ hunks) as one transaction: all-or-nothing, context must match exactly, BOM/CRLF preserved, max 32 files/256 KiB patch/32 KiB per file. Requires permission approval for the whole patch.".into(),input_schema:json!({"type":"object","properties":{"patch":{"type":"string"}},"required":["patch"],"additionalProperties":false})},
+                ToolDefinition{name:"apply_patch".into(),description:"Apply a strict V4A multi-file patch (Add/Update/Delete File sections with @@ hunks) as one transaction: all-or-nothing, context must match exactly, BOM/CRLF preserved, max 32 files/256 KiB patch/1 MiB per file. Requires permission approval for the whole patch.".into(),input_schema:json!({"type":"object","properties":{"patch":{"type":"string"}},"required":["patch"],"additionalProperties":false})},
                         ToolDefinition{name:"edit_file".into(),description:"Conditionally replace an exact text match using the SHA-256 from read_file. Ambiguous matches fail unless replace_all=true. Requires permission approval.".into(),input_schema:json!({"type":"object","properties":{"path":{"type":"string"},"old_string":{"type":"string"},"new_string":{"type":"string"},"expected_sha256":{"type":"string"},"replace_all":{"type":"boolean"}},"required":["path","old_string","new_string","expected_sha256"],"additionalProperties":false})},
             ]);
         }
@@ -1157,7 +1159,9 @@ impl Tools {
                             return Err(ToolError::InvalidFile);
                         }
                     } else if metadata.len() > 32768 {
-                        return Err(ToolError::InvalidFile);
+                        // Guide the model to the window instead of a bare
+                        // refusal: without it a large file looks unreadable.
+                        return Err(ToolError::TooLarge(metadata.len() as usize));
                     }
                     let mut bytes = Vec::new();
                     tokio::fs::File::open(&path)

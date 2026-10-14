@@ -7,7 +7,10 @@ use std::path::Path;
 
 const MAX_PATCH: usize = 262144;
 const MAX_FILES: usize = 32;
-const MAX_FILE: usize = 32768;
+// Per-file bound for patched files: matches the mutation and line-window
+// bounds so a large file can be patched, while the patch text itself stays
+// bounded separately.
+const MAX_FILE: usize = 1024 * 1024;
 
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]

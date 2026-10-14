@@ -101,9 +101,9 @@ test("read-only changes and denied-path changes fail artifact checks; fixture in
   }
 })
 
-test("the frozen suite has ten distinct contracts and returned task metadata cannot rewrite its oracle", async () => {
+test("the frozen suite has eleven distinct contracts and returned task metadata cannot rewrite its oracle", async () => {
   const before = baselineContract()
-  expect(new Set(before.tasks.map((task) => task.id)).size).toBe(10)
+  expect(new Set(before.tasks.map((task) => task.id)).size).toBe(11)
   expect(baselineTask("long-session").followups).toHaveLength(4)
   const task = baselineTask("small-edit")
   task.files["test/oracle.test.ts"] = ""

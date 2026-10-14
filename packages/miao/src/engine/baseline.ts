@@ -22,6 +22,19 @@ export interface BaselineTask {
 const instructions =
   "Work only in this workspace. Preserve AGENTS.md, package.json, and test/oracle.test.ts. Do not add configuration or replace the test runner.\n"
 const packageFile = '{"name":"engine-baseline-fixture","type":"module","private":true}\n'
+// The large-file carrier: a deterministic source bigger than the whole-file
+// read bound, with the bug hidden among uniform-generated neighbours so only a
+// fingerprinted edit can repair it.
+const LARGE_SOURCE =
+  [
+    "// generated registry module -- do not reorder",
+    ...Array.from(
+      { length: 1600 },
+      (_, index) => `export function handler${index}(value: number) { return value + ${index} }`,
+    ),
+    "export function shift(table: number[], key: number) { return table[key + 1] }",
+  ].join("\n") + "\n"
+
 const tasks: BaselineTask[] = [
   {
     id: "read-only",
@@ -166,6 +179,21 @@ const tasks: BaselineTask[] = [
     answerContains: [],
     requiredReceipts: [],
   },
+  {
+    id: "large-file",
+    prompt:
+      "Fix the lookup bug in src/registry.ts: shift(table, key) must return the element at key, not the next one. The file is large, so inspect it with line-window reads (offset and limit) and edit only the lookup expression; keep every other export intact, run the test, and summarize.",
+    files: {
+      "src/registry.ts": LARGE_SOURCE,
+      "test/oracle.test.ts":
+        "import { expect, test } from 'bun:test'\nimport { shift, handler7 } from '../src/registry'\ntest('lookup at the key', () => { expect(shift([10, 20, 30], 0)).toBe(10); expect(shift([10, 20, 30], 2)).toBe(30); expect(handler7(1)).toBe(8) })\n",
+    },
+    editable: ["src/registry.ts"],
+    expected: {},
+    check: ["bash", "-lc", "bun test test/oracle.test.ts && grep -qF 'return table[key]' src/registry.ts && echo LARGE_FILE_OK"],
+    answerContains: [],
+    requiredReceipts: [],
+  },
 ]
 
 const digest = (value: string) => createHash("sha256").update(value).digest("hex")
@@ -174,9 +202,10 @@ const digest = (value: string) => createHash("sha256").update(value).digest("hex
 export function baselineContract() {
   const suite = tasks.map((task) => baselineTask(task.id))
   return {
-    // v2 added the long-session task; v3 adds the multi-line-edit and
-    // typed-repair measurement carriers. Older samples are foreign.
-    version: 3,
+    // v2 added the long-session task; v3 added the multi-line-edit and
+    // typed-repair carriers; v4 adds the large-file carrier. Older samples are
+    // foreign.
+    version: 4,
     suiteHash: digest(JSON.stringify(suite)),
     tasks: suite.map((task) => ({ id: task.id, taskHash: digest(JSON.stringify(task)) })),
   }

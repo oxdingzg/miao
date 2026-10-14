@@ -222,9 +222,11 @@ fn patch_parsing_is_strict_and_bounded() {
     }
     let good = parse(PATCH).unwrap();
     assert_eq!(good.len(), 3);
+    // Larger than the whole patch bound (256 KiB); the per-file bound is
+    // 1 MiB so a large file can be updated by a bounded patch.
     let big = format!(
         "*** Begin Patch\n*** Add File: a.txt\n+{}\n*** End Patch",
-        "x".repeat(40000)
+        "x".repeat(300_000)
     );
     assert!(matches!(parse(&big), Err(ToolError::InvalidInput)));
 }
