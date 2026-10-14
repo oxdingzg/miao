@@ -51,20 +51,23 @@ The local install keeps the previous binary for a one-step rollback:
 - The capability matrix cleared or a documented acceptance of replacements.
 - A rollback drill executed on the shipping channel, not only the preview.
 
-## Frozen eight-task fixture contract
+## Frozen ten-task fixture contract
 
 `packages/miao/src/engine/baseline.ts` defines an explicit versioned suite with
 UTF-8 fixture contents, prompts, immutable oracle/config files, edit allowlists,
 and suite/task SHA-256 fingerprints. Every attempt initializes a fresh directory;
-existing workspaces are never overwritten. The eight classes are read-only
+existing workspaces are never overwritten. The ten classes are read-only
 navigation, small edit, multi-file repair, failing-test repair, permission denial,
-tool-error recovery, interrupted-turn recovery, and long-session delivery. The
-long-session task carries four follow-ups that continue the same Session after
-each earlier input settles, so accumulated history and the queue boundary are
-part of the measured run; the oracle still checks only the final artifact and
-the final answer. Suite version 2 adds it, so version 1 samples (including the
-2026-10-14 recorded baseline) are foreign to this contract and must not be
-paired with it.
+tool-error recovery, interrupted-turn recovery, long-session delivery,
+multi-line edit, and typed repair. The long-session task carries four follow-ups
+that continue the same Session after each earlier input settles, so accumulated
+history and the queue boundary are part of the measured run; the oracle still
+checks only the final artifact and the final answer. Suite version 3 adds the
+multi-line edit (a multi-line source with unique anchors, the drift-injection
+carrier for the A2 evaluation) and typed repair (a runtime-correct module with a
+type-consistency oracle, the carrier for the A7 post-edit diagnostics
+evaluation). Version 1 and version 2 samples are foreign to this contract and
+must not be paired with it.
 
 The artifact verifier checks immutable files, unexpected files/symlinks, expected
 outputs, and real workspace test subprocess exit codes. It refuses to execute a
