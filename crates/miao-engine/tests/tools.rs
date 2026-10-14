@@ -33,14 +33,28 @@ async fn read_is_bounded_and_cannot_escape_workspace() {
             .await,
         Err(ToolError::OutsideWorkspace)
     ));
-    for file in ["large", "binary"] {
-        assert!(matches!(
-            tools
-                .execute("read_file", json!({"path":file}), CancellationToken::new())
-                .await,
-            Err(ToolError::InvalidFile)
-        ));
-    }
+    assert!(matches!(
+        tools
+            .execute(
+                "read_file",
+                json!({"path":"binary"}),
+                CancellationToken::new()
+            )
+            .await,
+        Err(ToolError::InvalidFile)
+    ));
+    // An oversized whole-file read guides the model to a line window instead
+    // of a bare refusal.
+    assert!(matches!(
+        tools
+            .execute(
+                "read_file",
+                json!({"path":"large"}),
+                CancellationToken::new()
+            )
+            .await,
+        Err(ToolError::TooLarge(_))
+    ));
     assert!(matches!(
         tools
             .execute("bash", json!({}), CancellationToken::new())

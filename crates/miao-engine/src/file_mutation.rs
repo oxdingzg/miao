@@ -161,7 +161,7 @@ pub(crate) fn apply(
             }
         }
     };
-    if text.len() > 32768 {
+    if text.len() > MAX_MUTATION_BYTES {
         return Err(ToolError::InvalidFile);
     }
     let temporary = format!(".miao-engine-{}.tmp", uuid::Uuid::new_v4());
@@ -222,6 +222,11 @@ pub(crate) fn apply(
     Ok(result)
 }
 
+/// Existing files and mutation results may be much larger than a single tool
+/// input; the per-string input bounds stay at 32 KiB, but a small edit must be
+/// applicable to a large file. Matches the 1 MiB line-window read bound.
+const MAX_MUTATION_BYTES: usize = 1024 * 1024;
+
 fn read(
     parent: &Dir,
     name: &Path,
@@ -231,14 +236,17 @@ fn read(
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok((None, None)),
         Err(e) => return Err(e.into()),
     };
-    if !metadata.is_file() || metadata.file_type().is_symlink() || metadata.len() > 32768 {
+    if !metadata.is_file()
+        || metadata.file_type().is_symlink()
+        || metadata.len() > MAX_MUTATION_BYTES as u64
+    {
         return Err(ToolError::InvalidFile);
     }
     let permissions = metadata.permissions();
     let file = parent.open(name)?;
     let mut bytes = Vec::new();
     file.take(32769).read_to_end(&mut bytes)?;
-    if bytes.len() > 32768 || std::str::from_utf8(&bytes).is_err() {
+    if bytes.len() > MAX_MUTATION_BYTES || std::str::from_utf8(&bytes).is_err() {
         return Err(ToolError::InvalidFile);
     }
     Ok((Some(bytes), Some(permissions)))

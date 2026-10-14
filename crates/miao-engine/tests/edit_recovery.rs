@@ -234,3 +234,36 @@ async fn replace_all_and_the_ablation_switch_never_rebase() {
         runtime.shutdown().await;
     }
 }
+
+#[tokio::test]
+async fn a_small_edit_applies_to_a_large_file() {
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path().join("workspace");
+    std::fs::create_dir(&root).unwrap();
+    // Larger than one tool input, smaller than the mutation bound.
+    let body = (0..4000)
+        .map(|index| {
+            format!("export function handler{index}(value: number) {{ return value + {index} }}\n")
+        })
+        .collect::<String>()
+        + "export function shift(table: number[], key: number) { return table[key + 1] }\n";
+    std::fs::write(root.join("registry.ts"), &body).unwrap();
+    let tools = Tools::new(&root).await.unwrap().with_writes(true);
+    let applied = tools
+        .execute(
+            "edit_file",
+            json!({
+                "path":"registry.ts",
+                "old_string":"return table[key + 1]",
+                "new_string":"return table[key]",
+                "expected_sha256": digest(body.as_bytes()),
+            }),
+            CancellationToken::new(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(applied["applied"], json!(true));
+    let written = std::fs::read_to_string(root.join("registry.ts")).unwrap();
+    assert!(written.contains("return table[key]"));
+    assert!(written.contains("handler3999"));
+}
