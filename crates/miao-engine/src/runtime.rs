@@ -1270,6 +1270,10 @@ async fn execute(
             }
             let stop = inner.stop.clone();
             let store = inner.store.clone();
+            // An attempt already on the primary model — no binding, or a
+            // substituted one — does not escalate to itself (ADR-14): only
+            // an accepted binding earns the single retry on the primary.
+            let escalate = matches!(resolution, crate::roles::Resolution::Bound { .. });
             let mut summarize = move |body: String| {
                 let role_provider = Arc::clone(&role_provider);
                 let primary = Arc::clone(&primary);
@@ -1284,6 +1288,7 @@ async fn execute(
                         run,
                         &stop,
                         &body,
+                        escalate,
                     )
                     .await
                 }
