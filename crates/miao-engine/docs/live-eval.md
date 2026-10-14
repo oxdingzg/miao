@@ -474,7 +474,23 @@ withdrawn.
 
 The runner now forwards every ablation it declares (`lspDiagnostics`,
 `lspConfigFile`) plus the two newer engine surfaces (`verifyCommand`,
-`promptCache`), with a client-args test for the new spawn argument. Re-running
-the offline arm through the fixed runner rejected its multi-file samples
-(`missing effective profile fingerprint from provider receipts`), so no
-corrected number is recorded here: the next ablation run owns that measurement.
+`promptCache`), with a client-args test for the new spawn argument. A direct check shows why the flag could not work: the engine refused
+`--lsp-diagnostics off` as an unknown option, and the sweep's dropped forwarding
+had hidden that. Both are fixed, and the ablation re-run now genuinely runs one
+arm with warm-up and post-edit reports and one without:
+
+| task | arm | passed | p50 | turns/run | tools/run | input tokens | output tokens |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| multi-file | off | 6/8 | 47.8 s | 6.0 | 10.2 | 196,329 | 4,730 |
+| multi-file | on | 7/8 | 43.7 s | 6.8 | 11.8 | 222,664 | 5,752 |
+| small-edit | off | 8/8 | 36.8 s | 6.9 | 7.0 | 210,161 | 3,155 |
+| small-edit | on | 8/8 | 35.3 s | 6.9 | 6.9 | 209,717 | 3,145 |
+
+The arms differ only within the variance these frozen carriers already show:
+small-edit passes 8/8 on both sides with turns, tools, and tokens matched to
+within a few percent, and multi-file splits 6/8 (off) against 7/8 (on). So with
+warm-up and the post-edit report in place, neither latency nor token cost moves
+measurably on type-clean edits, which is the cost side of A7's claim. The report
+path itself is pinned by the LSP fixture tests, which drive the runtime directly;
+the repair-loop value on an edit that introduces a typed error remains the owed
+measurement.
