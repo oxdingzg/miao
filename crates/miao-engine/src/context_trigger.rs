@@ -211,7 +211,13 @@ where
     }
     let id = format!("cut_{run}");
     match store
-        .compact_for_run(session, run, &id, boundary, checkpoint_summary(store, &parts, session).await)
+        .compact_for_run(
+            session,
+            run,
+            &id,
+            boundary,
+            checkpoint_summary(store, &parts, session).await,
+        )
         .await
     {
         Ok(_) => {
@@ -259,7 +265,9 @@ fn message_excerpt(message: &Message, budget: usize) -> String {
                 } else {
                     let handle = match block["tool_use_id"].as_str() {
                         Some(id) if id.len() <= 128 && !id.is_empty() => {
-                            format!(r#"[tool output archived — recall {{"tool_use_id":"{id}"}} to restore]"#)
+                            format!(
+                                r#"[tool output archived — recall {{"tool_use_id":"{id}"}} to restore]"#
+                            )
                         }
                         _ => "[oversized tool output omitted]".to_owned(),
                     };
@@ -311,7 +319,10 @@ pub fn durable_state_block(state: &serde_json::Value) -> String {
     let open = todos
         .into_iter()
         .flatten()
-        .filter(|todo| todo["status"].as_str() != Some("completed") && todo["status"].as_str() != Some("cancelled"))
+        .filter(|todo| {
+            todo["status"].as_str() != Some("completed")
+                && todo["status"].as_str() != Some("cancelled")
+        })
         .filter_map(|todo| todo["content"].as_str())
         .collect::<Vec<_>>();
     if !open.is_empty() {
@@ -875,7 +886,10 @@ mod tests {
         let body = summarizer_body(&messages, 100);
         assert!(body.contains("- user:"), "{body}");
         assert!(body.contains("…[truncated]"), "{body}");
-        assert!(body.contains(r#"recall {"tool_use_id":"call_big"} to restore"#), "{body}");
+        assert!(
+            body.contains(r#"recall {"tool_use_id":"call_big"} to restore"#),
+            "{body}"
+        );
         // The archived payload's body never reaches the summarizer.
         assert!(body.len() < 1_000, "{body}");
     }
@@ -891,7 +905,10 @@ mod tests {
             ]}}
         });
         let block = durable_state_block(&state);
-        assert!(block.contains("Objective: land the fix (status: active)"), "{block}");
+        assert!(
+            block.contains("Objective: land the fix (status: active)"),
+            "{block}"
+        );
         assert!(block.contains("- [ ] write test"), "{block}");
         assert!(!block.contains("done item"), "{block}");
         assert!(!block.contains("dropped item"), "{block}");
@@ -928,7 +945,10 @@ mod tests {
         let huge = vec!["z".repeat(MAX_CHECKPOINT_CHARS); 2];
         let summary = checkpoint_summary(&store, &huge, "s").await;
         assert!(summary.len() <= MAX_CHECKPOINT_CHARS, "{}", summary.len());
-        assert!(summary.ends_with("finish (status: active)") || summary.contains("Objective: finish"), "{summary}");
+        assert!(
+            summary.ends_with("finish (status: active)") || summary.contains("Objective: finish"),
+            "{summary}"
+        );
     }
 
     #[tokio::test]
