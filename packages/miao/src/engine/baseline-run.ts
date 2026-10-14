@@ -45,6 +45,8 @@ export interface BaselineEvidence {
   phases: BaselinePhase[]
   profile: BaselineSample["profile"] | null
   profileReceipts: number
+  /** Loop classification: continuation and stop reasons observed in the run. */
+  loops: { continuations: string[]; stopped: string[] }
   toolCalls: number
   textHash: string
   binarySha256: string | null
@@ -214,6 +216,7 @@ export async function runBaselineRust(input: BaselineRustInput): Promise<Baselin
     terminal: terminalFromEvents(events),
     attempts: events.flatMap(usageAttempt),
     receipts: engineReceipts(events),
+    loops: engineLoops(events),
     profile: engineProfile(events),
     phases: enginePhases(events, progress, observed, verifiedAtMs),
     toolCalls: events.filter((event) => event.kind === "tool.completed").length,
@@ -337,6 +340,7 @@ export async function runBaselineTs(input: BaselineTsInput): Promise<BaselineRun
         ? ["provider.interrupted"]
         : []),
     ],
+    loops: { continuations: [], stopped: [] },
     profile: tsProfile(interactions),
     phases: tsPhases(parts, exitAtMs, verifiedAtMs),
     toolCalls: interactions.filter((item) => item.lane === "tool").length,
@@ -365,6 +369,7 @@ interface FinishedBaselineRun {
   admissionMs: number | null
   requiredReceipts: string[]
   answerContains: string[]
+  loops: { continuations: string[]; stopped: string[] }
   binarySha256?: string
 }
 
@@ -382,6 +387,7 @@ function finishBaselineRun(input: FinishedBaselineRun): BaselineRun {
     phases: input.phases,
     profile: profile?.profile ?? null,
     profileReceipts: profile?.receipts ?? 0,
+    loops: input.loops,
     toolCalls: input.toolCalls,
     textHash: digest(input.answer),
     binarySha256: input.binarySha256 ?? null,
@@ -510,6 +516,21 @@ function usageAttempt(event: EngineEvent): BaselineAttempt[] {
 
 function numberOrNull(value: unknown) {
   return typeof value === "number" && Number.isFinite(value) && value >= 0 ? value : null
+}
+
+/// Loop classification counts: how many provider turns were continued or
+/// stopped for a classified reason (empty completion, no progress, budget).
+function engineLoops(events: EngineEvent[]) {
+  const reason = (event: EngineEvent) => {
+    const data = BlackboxTape.json(event.data)
+    return BlackboxTape.isObject(data) && typeof data.reason === "string" ? data.reason : "unknown";
+  };
+  return {
+    continuations: events
+      .filter((event) => event.kind === "loop.continuation")
+      .map(reason),
+    stopped: events.filter((event) => event.kind === "loop.stopped").map(reason),
+  };
 }
 
 function engineReceipts(events: EngineEvent[]) {
