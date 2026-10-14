@@ -137,7 +137,7 @@ async fn oversized_tool_output_is_elided_from_the_request_only() {
         .unwrap()
         .to_owned();
     assert!(
-        content.contains(r#"recall {\"tool_use_id\":\"call\"}"#),
+        content.contains(r#"recall {"tool_use_id":"call"}"#),
         "the elision mark carries the recovery handle: {content}"
     );
     let restored = store
