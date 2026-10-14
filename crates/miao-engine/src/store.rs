@@ -1020,7 +1020,6 @@ impl Store {
         provider_id: &str,
         result: Value,
         is_error: bool,
-        elapsed_ms: u64,
     ) -> Result<Event, Error> {
         let (session, run, id) = (session.to_owned(), run.to_owned(), provider_id.to_owned());
         self.call(move |conn| {
@@ -1038,9 +1037,7 @@ impl Store {
                 result["image_attached"] = json!(true);
                 Some(attachment.part())
             } else { None };
-            // The settlement carries the window the tool spent running, so
-            // per-turn overlap and the critical path are derivable from events.
-            append(&tx,&session,"tool.completed",json!({"call_id":key,"result":result,"result_json":serde_json::to_string(&result)?,"is_error":is_error,"elapsed_ms":elapsed_ms}))?;
+            append(&tx,&session,"tool.completed",json!({"call_id":key,"result":result,"result_json":serde_json::to_string(&result)?,"is_error":is_error}))?;
             let mut content = vec![json!({"type":"tool_result","tool_use_id":id,"content":serde_json::to_string(&result)?,"is_error":is_error})];
             if let Some(image) = image { content.push(image); }
             let event=project_message(&tx,&session,"user",json!(content),None,None)?;
