@@ -600,18 +600,17 @@ describe("OpenAI Chat route", () => {
     }),
   )
 
-  it.effect("reports malformed pending tool input as a provider error at halt", () =>
+  it.effect("fails the stream on malformed pending tool input at halt", () =>
     Effect.gen(function* () {
       const body = sseEvents(
         deltaChunk({ tool_calls: [{ index: 0, id: "call_1", function: { name: "lookup", arguments: '{"que' } }] }),
         finishChunk("tool_calls"),
       )
-      const response = yield* LLMClient.generate(request).pipe(Effect.provide(fixedResponse(body)))
-      const errors = response.events.filter(LLMEvent.is.providerError)
-      expect(errors.map((error) => error.message)).toEqual([
-        "Invalid JSON input for openai-chat tool call lookup",
-      ])
-      expect(response.events.some(LLMEvent.is.finish)).toBe(false)
+      // A malformed flushed input must fail exactly like the old eager
+      // finalize did, so the runner's tool-argument correction loop engages.
+      const error = yield* LLMClient.generate(request).pipe(Effect.provide(fixedResponse(body)), Effect.flip)
+      expect(error.reason).toMatchObject({ _tag: "InvalidProviderOutput" })
+      expect(error.message).toContain("Invalid JSON input for openai-chat tool call lookup")
     }),
   )
 

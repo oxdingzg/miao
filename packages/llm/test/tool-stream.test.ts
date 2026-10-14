@@ -83,4 +83,37 @@ describe("ToolStream", () => {
       })
     }),
   )
+
+  it.effect("preserves providerExecuted and clears all tools", () =>
+    Effect.gen(function* () {
+      const first: ToolStream.State<number> = ToolStream.start(ToolStream.empty<number>(), 0, {
+        id: "call_1",
+        name: "lookup",
+        input: "{}",
+      })
+      const tools = ToolStream.start(first, 1, {
+        id: "call_2",
+        name: "web_search",
+        input: '{"query":"docs"}',
+        providerExecuted: true,
+      })
+      const finished = yield* ToolStream.finishAll(ADAPTER, tools)
+
+      expect(finished).toEqual({
+        tools: {},
+        events: [
+          { type: "tool-input-end", id: "call_1", name: "lookup" },
+          { type: "tool-call", id: "call_1", name: "lookup", input: {} },
+          { type: "tool-input-end", id: "call_2", name: "web_search" },
+          {
+            type: "tool-call",
+            id: "call_2",
+            name: "web_search",
+            input: { query: "docs" },
+            providerExecuted: true,
+          },
+        ],
+      })
+    }),
+  )
 })

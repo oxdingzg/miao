@@ -211,4 +211,28 @@ export const finishWithInput = <K extends StreamKey>(route: string, tools: State
     }
   })
 
+/**
+ * Finalize every pending tool call at once. OpenAI Chat has this shape: it does
+ * not emit per-tool stop events, so all accumulated calls finish when the
+ * choice's turn completes. A call whose accumulated input is not valid JSON
+ * fails with the same `InvalidProviderOutput` shape `parseToolInput` produces.
+ */
+export const finishAll = <K extends StreamKey>(route: string, tools: State<K>) =>
+  Effect.gen(function* () {
+    const pending = Object.values<PendingTool | undefined>(tools).filter(
+      (tool): tool is PendingTool => tool !== undefined,
+    )
+    return {
+      tools: empty<K>(),
+      events: yield* Effect.forEach(pending, (tool) =>
+        toolCall(route, tool).pipe(
+          Effect.map((call) => [
+            LLMEvent.toolInputEnd({ id: tool.id, name: tool.name, providerMetadata: tool.providerMetadata }),
+            call,
+          ]),
+        ),
+      ).pipe(Effect.map((events) => events.flat())),
+    }
+  })
+
 export * as ToolStream from "./tool-stream"

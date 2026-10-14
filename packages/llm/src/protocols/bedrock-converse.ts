@@ -652,7 +652,7 @@ export const protocol = Protocol.make({
       reasoningSignatures: {},
     }),
     step,
-    onHalt,
+    onHalt: (state) => Effect.succeed(onHalt(state)),
   },
 })
 
