@@ -603,6 +603,28 @@ test("closing an invitation cancels it and persistent access only covers the cur
   }
 })
 
+test("custom invite picks scope and duration with all-sessions default", async () => {
+  await using tmp = await tmpdir()
+  const control = deviceControl()
+  const view = await mount(tmp.path, environment({ devices: control.api }))
+  try {
+    await openDevices(view)
+    await view.app.mockInput.typeText("自定义范围与时长")
+    await view.app.mockInput.pressEnter()
+    await view.until((value) => value.includes("选择授权范围") && value.includes("全部会话"))
+    await view.app.mockInput.pressEnter()
+    await view.until((value) => value.includes("选择授权时长") && value.includes("7 天（默认）"))
+    await view.app.mockInput.pressEnter()
+    await view.until((value) => value.includes("二维码到期"))
+    expect(control.state.policy?.projectIDs).toEqual(["proj_current"])
+    expect(control.state.policy?.sessionIDs).toEqual([])
+    expect(control.state.policy?.permissions).toContain("session.create")
+    expect(control.state.policy!.expiresAt - Date.now()).toBeLessThanOrEqual(7 * 86_400_000)
+  } finally {
+    view.cleanup()
+  }
+})
+
 test("revocation confirms the observed grant version and leaves execution running", async () => {
   await using tmp = await tmpdir()
   const control = deviceControl()
@@ -739,6 +761,10 @@ test("account trust and cancellation require separate local confirmations and us
     await openDevices(view)
     await view.until((frame) => frame.includes("为签名根信任账号"))
     await view.app.mockInput.typeText("签名根")
+    await view.app.mockInput.pressEnter()
+    await view.until((frame) => frame.includes("全部会话"))
+    await view.app.mockInput.pressEnter()
+    await view.until((frame) => frame.includes("90 天（默认）"))
     await view.app.mockInput.pressEnter()
     await view.until((frame) => frame.includes("确认信任账号设备"))
     expect(calls).toEqual([])
