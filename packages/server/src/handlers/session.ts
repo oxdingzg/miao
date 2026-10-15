@@ -501,6 +501,19 @@ export const SessionHandler = HttpApiBuilder.group(Api, "server.session", (handl
       .handle(
         "session.context",
         Effect.fn(function* (ctx) {
+          const placement = Option.getOrUndefined(yield* Effect.serviceOption(NativeEngine.Placement))
+          if (placement) {
+            const native = Option.getOrUndefined(yield* Effect.serviceOption(NativeEngine.Service))
+            if (!native)
+              return yield* new ConflictError({ message: "Native engine is unavailable for context history" })
+            return {
+              data: yield* native.transcript({
+                ...placement,
+                sessionID: ctx.params.sessionID,
+                selected: true,
+              }),
+            }
+          }
           return {
             data: yield* session.context(ctx.params.sessionID).pipe(
               Effect.catchTag("Session.NotFoundError", (error) =>

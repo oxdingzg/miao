@@ -342,7 +342,7 @@ export const makeSessionGroup = <I extends HttpApiMiddleware.AnyId, S>(sessionLo
       HttpApiEndpoint.get("session.context", "/api/session/:sessionID/context", {
         params: { sessionID: Session.ID },
         success: Schema.Struct({ data: Schema.Array(SessionMessage.Message) }),
-        error: [SessionNotFoundError, UnknownError],
+        error: [ConflictError, SessionNotFoundError, UnknownError],
       })
         .middleware(sessionLocationMiddleware)
         .annotateMerge(

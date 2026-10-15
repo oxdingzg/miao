@@ -24,6 +24,54 @@ import { ConfigToolOutput } from "./config/tool-output"
 import { ConfigWatcher } from "./config/watcher"
 
 // The V2 config schema, shared so clients can type /api/config against it.
+/**
+ * Engine process settings (B1): read from the **global** config file only —
+ * the engine is one process serving every Location, so project documents do
+ * not configure it. The operator's environment overrides any key.
+ */
+export class Engine extends Schema.Class<Engine>("Config.Engine")({
+  provider: Schema.String.pipe(Schema.optional).annotate({
+    description: "Provider id the engine's primary model resolves against",
+  }),
+  model: Schema.String.pipe(Schema.optional).annotate({
+    description: "The engine's primary model id",
+  }),
+  endpoint: Schema.String.pipe(Schema.optional).annotate({
+    description: "Provider endpoint override for the engine's route",
+  }),
+  fallback_model: Schema.String.pipe(Schema.optional).annotate({
+    description: "Model id retried once when the primary route fails at the transport level",
+  }),
+  roles: Schema.Struct({
+    summarize: Schema.String.pipe(Schema.optional),
+    retrieve: Schema.String.pipe(Schema.optional),
+    verify: Schema.String.pipe(Schema.optional),
+  })
+    .pipe(Schema.optional)
+    .annotate({
+      description: "Purpose-role model bindings (ADR-14), resolved on the engine's own route",
+    }),
+  prompt_cache: Schema.Boolean.pipe(Schema.optional).annotate({
+    description: "Prompt-cache policy for providers that support it (default provider-dependent)",
+  }),
+  verify_command: Schema.String.pipe(Schema.optional).annotate({
+    description: "Completion check the engine runs before ending an edit turn",
+  }),
+  lsp_config: Schema.String.pipe(Schema.optional).annotate({
+    description: "Native engine LSP host configuration file; relative paths resolve against the global config directory",
+  }),
+  context_limits: Schema.Struct({
+    window: Schema.Finite,
+    ratio: Schema.Finite,
+    headroom: Schema.Finite,
+    perPass: Schema.Finite,
+  })
+    .pipe(Schema.optional)
+    .annotate({
+      description: "Automatic compaction trigger (roadmap §2.13); absent keeps it off",
+    }),
+}) {}
+
 export class Info extends Schema.Class<Info>("Config.Info")({
   $schema: Schema.optional(Schema.String).annotate({
     description: "JSON schema reference for configuration validation",
@@ -33,6 +81,9 @@ export class Info extends Schema.Class<Info>("Config.Info")({
   }),
   model: Schema.String.pipe(Schema.optional).annotate({
     description: "Default model to use when no session or agent model is selected",
+  }),
+  engine: Engine.pipe(Schema.optional).annotate({
+    description: "Engine process settings (global config file only; environment overrides)",
   }),
   default_agent: Schema.String.pipe(Schema.optional).annotate({
     description: "Default primary agent to use when no session agent is selected",

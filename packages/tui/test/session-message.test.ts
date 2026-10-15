@@ -95,3 +95,39 @@ test("derives inbound and completed outbound messages from the transcript in ord
     { id: "prt_out", direction: "out", peer: "@peer", body: "first line\nsecond line" },
   ])
 })
+
+test("shows the resolved peer, wake receipt, and reason without guessing an acknowledgment", () => {
+  const entries = sessionMessageEntries([{ id: "msg", role: "assistant" }], () => [
+    {
+      id: "prt",
+      sessionID: "ses_self",
+      messageID: "msg",
+      type: "tool",
+      callID: "call",
+      tool: "send_message",
+      state: {
+        status: "completed",
+        input: {
+          to: "@peer",
+          message: "Check deployment conflict",
+          wake: "always",
+          reason: "Shared pending deployment",
+        },
+        output: "",
+        title: "",
+        metadata: { sessionID: id, wake: "not_requested" },
+        time: { start: 0, end: 1 },
+      },
+    } as Part,
+  ])
+  expect(entries).toEqual([
+    {
+      id: "prt",
+      direction: "out",
+      peer: id,
+      body: "Check deployment conflict",
+      reason: "Shared pending deployment",
+      wake: "not_requested",
+    },
+  ])
+})

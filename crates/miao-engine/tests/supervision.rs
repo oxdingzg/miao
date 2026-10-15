@@ -36,6 +36,27 @@ impl Provider for Fixture {
                 })
             }
             "panic" => panic!("fixture provider panic"),
+            "notice" => {
+                progress
+                    .send(json!({"kind":"provider.attempt","protocol":"fixture","attempt":0,"status":200,"outcome":"headers_received","detail":null}))
+                    .await
+                    .unwrap();
+                Ok(Reply {
+                    content: json!([{"type":"text","text":"done"}]),
+                    usage: json!({}),
+                    needs_tools: false,
+                })
+            }
+            // One attempt's notice, then no answer at all: the retry budget for
+            // a turn that produced nothing must survive the notice.
+            "notice-then-transport" => {
+                let call = self.calls.fetch_add(1, Ordering::SeqCst);
+                progress
+                    .send(json!({"kind":"provider.attempt","protocol":"fixture","attempt":call,"status":null,"outcome":"transport_unknown","detail":null}))
+                    .await
+                    .unwrap();
+                Err(ProviderError::Transport)
+            }
             "pending" => {
                 cancel.cancelled().await;
                 Err(ProviderError::Interrupted)
@@ -182,4 +203,69 @@ async fn provider_panic_is_reconciled_without_interrupting_another_session() {
         .any(|e| e.kind == "run.finished"));
     runtime.shutdown().await;
     assert_eq!(terminal(&store, "other").await, "interrupted");
+}
+
+/// An attempt describes the request, not its answer: the evaluation runner reads
+/// it from the progress feed under its own kind, exactly where `context.*`
+/// reports already travel. Counting durable events alone saw nothing, because a
+/// sweep cannot read the engine's store.
+#[tokio::test]
+async fn attempt_notices_reach_the_progress_feed_as_their_own_kind() {
+    let dir = tempfile::tempdir().unwrap();
+    let store = Store::open(dir.path().join("engine.db")).await.unwrap();
+    let runtime = Runtime::new(
+        store.clone(),
+        Arc::new(Fixture {
+            calls: AtomicUsize::new(0),
+        }),
+        Tools::new(dir.path()).await.unwrap(),
+    )
+    .await
+    .unwrap();
+    let mut progress = runtime.progress();
+    runtime.admit(input("s", "notice"), true).await.unwrap();
+    assert_eq!(terminal(&store, "s").await, "completed");
+    let mut notices = Vec::new();
+    let mut deltas = Vec::new();
+    while let Ok(item) = progress.try_recv() {
+        match item["kind"].as_str() {
+            Some("provider.attempt") => notices.push(item),
+            Some("provider.delta") => deltas.push(item),
+            _ => {}
+        }
+    }
+    assert_eq!(notices.len(), 1, "{notices:?}");
+    assert_eq!(notices[0]["protocol"], "fixture");
+    assert_eq!(notices[0]["outcome"], "headers_received");
+    assert!(
+        deltas.is_empty(),
+        "a notice is not provider output: {deltas:?}"
+    );
+    runtime.shutdown().await;
+}
+
+/// The retry budget belongs to a turn that produced nothing. A notice about the
+/// attempt arrives before that verdict and must not consume it: the turn keeps
+/// its retries, so the provider is called three times before it fails.
+#[tokio::test]
+async fn attempt_notice_does_not_disarm_the_pre_output_transport_retry() {
+    let dir = tempfile::tempdir().unwrap();
+    let store = Store::open(dir.path().join("engine.db")).await.unwrap();
+    let provider = Arc::new(Fixture {
+        calls: AtomicUsize::new(0),
+    });
+    let runtime = Runtime::new(
+        store.clone(),
+        provider.clone(),
+        Tools::new(dir.path()).await.unwrap(),
+    )
+    .await
+    .unwrap();
+    runtime
+        .admit(input("s", "notice-then-transport"), true)
+        .await
+        .unwrap();
+    assert_eq!(terminal(&store, "s").await, "failed");
+    assert_eq!(provider.calls.load(Ordering::SeqCst), 3);
+    runtime.shutdown().await;
 }

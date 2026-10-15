@@ -11,8 +11,11 @@ import {
   translateQuestion,
   translateQuestionResolved,
   translateStatus,
+  translateStepEnded,
   translateTools,
+  translateUsage,
 } from "@/engine/bridge"
+import { messageID } from "@/engine/identity"
 import type { EngineEvent } from "@/engine/client"
 
 const event = (kind: string): EngineEvent => ({ session_id: "ses_test", seq: 1, kind, data: {} })
@@ -282,4 +285,54 @@ test("an expired or cancelled question is rejected and malformed resolutions are
     translateQuestionResolved({ ...base, data: { question_id: "q1", state: "answered", answers: ["a"] } }),
   ).toBeUndefined()
   expect(translateQuestionResolved({ ...base, data: { question_id: "q1", state: "pending" } })).toBeUndefined()
+})
+
+test("buffers billed usage from the journal and drops partials", () => {
+  const usageData: object = {
+    run_id: "r1",
+    step: 0,
+    usage: { inputTokens: 30, outputTokens: 5, cacheReadInputTokens: 12 },
+  }
+  const usageEvent: EngineEvent = {
+    session_id: "ses_test",
+    seq: 3,
+    kind: "usage",
+    recorded_at_ms: 10,
+    data: usageData,
+  }
+  const billed = translateUsage(usageEvent)
+  expect(billed?.runID).toBe("r1")
+  expect(billed?.usage.tokens).toEqual({ input: 30, output: 5, reasoning: 0, cache: { read: 12, write: 0 } })
+  const partial: EngineEvent = { ...usageEvent, data: { ...usageData, partial: true } }
+  expect(translateUsage(partial)).toBeUndefined()
+})
+
+test("settles a step on the committed assistant message", () => {
+  const commit: EngineEvent = {
+    session_id: "ses_test",
+    seq: 7,
+    kind: "message.committed",
+    recorded_at_ms: 20,
+    data: { role: "assistant", finish: "tool-calls", content: [] },
+  }
+  const ended = translateStepEnded(
+    commit,
+    { tokens: { input: 30, output: 5, reasoning: 0, cache: { read: 12, write: 0 } } },
+    95,
+  )
+  expect(`${ended?.sessionID}`).toBe("ses_test")
+  expect(ended?.assistantMessageID).toBe(messageID("ses_test", 7))
+  expect(ended?.finish).toBe("tool-calls")
+  expect(ended?.tokens).toEqual({ input: 30, output: 5, reasoning: 0, cache: { read: 12, write: 0 } })
+  expect(ended?.ttft).toBe(95)
+
+  // No buffered usage settles with zeroed tokens and no ttft claim.
+  const bare = translateStepEnded(commit, undefined, undefined)
+  expect(bare?.tokens.input).toBe(0)
+  expect(bare?.ttft).toBeUndefined()
+
+  // A user commit never settles a step.
+  const userData: object = { role: "user", content: [] }
+  const user: EngineEvent = { ...commit, data: userData }
+  expect(translateStepEnded(user, undefined, undefined)).toBeUndefined()
 })

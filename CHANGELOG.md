@@ -11,6 +11,52 @@ at `docs/releases/vX.Y.Z.md` and `docs/releases/vX.Y.Z.zh.md`; both are required
 
 ## [Unreleased]
 
+## [0.2.10] - 2026-10-15
+
+### Added
+
+- feat(miao): pass native LSP host configuration to the engine (#869) (`6ae2090df`)
+- feat(eval): record why a compaction step ended (#866) (`93ea2f336`)
+- feat(engine): add verified Windows install and rollback (#864) (`738994f57`)
+- feat(engine): batch leading reads in mixed tool turns (#860) (`eb12c84ab`)
+- feat(miao): engine settings map from the global config document (#857) (`b25bd9200`)
+- chore: report branches a closed pull request left behind (#859) (`98abcb184`)
+
+### Fixed
+
+- fix(release): let the released binary load its own render library (#887) (`5b2cf26db`)
+- fix(engine): hydrate native session history without TS shadow writes (#881) (`99b06320f`)
+- fix(core): preserve tool access across long session continuations (#882) (`e229beda9`)
+- fix(release): give a platform job time to build the engine (#874) (`fe3cc9a1b`)
+- fix(core): recover titles for image-first sessions (#872) (`41e0f81c4`)
+- fix(core): make peer messaging wake policy explicit (#867) (`b861d0b2a`)
+- fix(engine): align release archives with verified installation (#862) (`03dd1a2bc`)
+- fix(engine): report ACP cancellation and provider failure honestly (#861) (`8dceb2b78`)
+## [0.2.9] - 2026-10-15
+
+### Added
+- **engine**: ship the engine binary through the release channel (#854) (`c5f8fc0d3`)
+- **eval**: drive context limits from the sweep and record what they cost (#851) (`5584de2e7`)
+- **miao**: settle product steps with usage evidence from the engine journal (#850) (`476e7e48b`)
+- **engine**: honest ACP authenticate, resume, and close semantics (#852) (`aa3fbfaa0`)
+- **engine**: per-turn TTFT and cache lineage in usage evidence (#842) (`87b0a15f9`)
+- **engine**: purpose-role model bindings with one escalation (ADR-14) (#845) (`0c44279b8`)
+- **engine**: select elisions by the budget, oldest output first (#846) (`6fde41f68`)
+- **miao**: map fallback model and role bindings through the engine config (#848) (`5aeb3a7d5`)
+- **engine**: delegation outcome evidence on subagent settlement (#847) (`5be4bb394`)
+- **engine**: schedule read batches by declared resources, not names (#844) (`8c67bf457`)
+- **engine**: let a delegation reference the parent's archived output (#843) (`a82ea6e09`)
+- **engine**: keep durable state and bounded inputs in compaction summaries (#839) (`2be34a602`)
+- **release**: codesign and notarize macOS release binaries (#840) (`de838d280`)
+- **engine**: report each tool's running window in its settlement (#834) (`a6be07060`)
+- **remote-control**: ship the default Hub's browser pairing entry (#833) (`51e6e8e14`)
+
+### Fixed
+- **engine**: bound one summarizer pass so a silent provider cannot hold a turn (#855) (`173b27ece`)
+- **llm**: finalize streamed tool calls at stream halt, not at the finish frame (#836) (`56278699b`)
+- **engine**: keep settlements deterministic and measure read batches runner-side (#837) (`e580b0960`)
+- **eval**: forward every engine ablation the runner declares (#830) (`943f79622`)
+
 ## [0.2.8] - 2026-10-14
 
 ### Fixed

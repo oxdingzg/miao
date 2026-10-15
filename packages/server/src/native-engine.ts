@@ -42,6 +42,13 @@ export interface Interface {
     storage: AbsolutePath
     location: Location.Ref
   }) => Effect.Effect<Readonly<Record<string, unknown>>, ConflictError>
+  /** Captured, read-only product transcript from native storage. */
+  readonly transcript: (input: {
+    sessionID: SessionID
+    storage: AbsolutePath
+    location: Location.Ref
+    selected: boolean
+  }) => Effect.Effect<readonly SessionMessage.Message[], ConflictError>
   readonly interruptIf: (input: {
     sessionID: SessionID
     storage: AbsolutePath

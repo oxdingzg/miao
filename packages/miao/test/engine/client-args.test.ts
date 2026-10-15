@@ -27,6 +27,26 @@ test("the prompt-cache policy rides the spawn args only when set", () => {
   expect(engineArgs({ ...base, promptCache: false })[at + 1]).toBe("off")
 })
 
+test("the fallback model rides the spawn args only when configured", () => {
+  expect(engineArgs(base)).not.toContain("--fallback-model")
+  const configured = engineArgs({ ...base, fallbackModel: "glm-5.3-air" })
+  const at = configured.indexOf("--fallback-model")
+  expect(configured[at + 1]).toBe("glm-5.3-air")
+})
+
+test("purpose-role bindings ride the spawn args only when configured", () => {
+  expect(engineArgs(base)).not.toContain("--role-summarize")
+  const configured = engineArgs({
+    ...base,
+    roles: { summarize: "glm-5.3-flash", verify: "glm-5.3-air" },
+  })
+  const summarize = configured.indexOf("--role-summarize")
+  expect(configured[summarize + 1]).toBe("glm-5.3-flash")
+  expect(configured).not.toContain("--role-retrieve")
+  const verify = configured.indexOf("--role-verify")
+  expect(configured[verify + 1]).toBe("glm-5.3-air")
+})
+
 test("the completion check rides the spawn args only when configured", () => {
   expect(engineArgs(base)).not.toContain("--verify-command")
   const configured = engineArgs({ ...base, verifyCommand: "bun run check" })

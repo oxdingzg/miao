@@ -310,3 +310,38 @@ async fn settled_provider_failure_allows_only_closed_prefix_checkpoint() {
         .unwrap();
     store.finish_run("s", "run", "failed").await.unwrap();
 }
+
+#[tokio::test]
+async fn snapshot_captures_visibility_and_compaction_selection_together() {
+    let dir = tempfile::tempdir().unwrap();
+    let store = Store::open(dir.path().join("engine.db")).await.unwrap();
+    let boundary = seed(&store).await;
+    let initial = store.snapshot("s").await.unwrap();
+    assert!(initial["selection"].is_null());
+    let checkpoint = initial["messages"][0]["checkpoint"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    store
+        .compact(
+            "s",
+            "cut_snapshot",
+            boundary,
+            "completed task summary".into(),
+        )
+        .await
+        .unwrap();
+    store
+        .message("s", "user", json!([{"type":"text","text":"next task"}]))
+        .await
+        .unwrap();
+    let captured = store.snapshot("s").await.unwrap();
+    assert_eq!(captured["selection"]["through_seq"], boundary);
+    assert_eq!(captured["selection"]["summary"], "completed task summary");
+    assert!(captured["selection"]["seq"].as_u64().unwrap() <= captured["cursor"].as_u64().unwrap());
+    assert_eq!(captured["messages"].as_array().unwrap().len(), 3);
+    store.revert("s", &checkpoint).await.unwrap();
+    let reverted = store.snapshot("s").await.unwrap();
+    assert!(reverted["selection"].is_null());
+    assert!(reverted["messages"].as_array().unwrap().is_empty());
+}

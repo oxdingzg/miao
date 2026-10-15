@@ -1738,7 +1738,7 @@ describe("SessionRunnerLLM", () => {
       responses = [
         [
           LLMEvent.stepStart({ index: 0 }),
-          LLMEvent.toolCall({ id: "sender-report", name: "send_message", input: { to: otherSessionID, message: "Important peer finding" } }),
+          LLMEvent.toolCall({ id: "sender-report", name: "send_message", input: { to: otherSessionID, message: "Important peer finding", wake: "always", reason: "Explicit peer coordination requested" } }),
           LLMEvent.stepFinish({ index: 0, reason: "tool-calls" }),
           LLMEvent.finish({ reason: "tool-calls" }),
         ],
@@ -3435,7 +3435,7 @@ describe("SessionRunnerLLM", () => {
     }),
   )
 
-  it.effect("bounds the total tool calls executed within a drain", () =>
+  it.effect("does not impose a default total tool-call limit on a drain", () =>
     Effect.gen(function* () {
       yield* setup
       const session = yield* SessionV2.Service
@@ -3464,11 +3464,11 @@ describe("SessionRunnerLLM", () => {
 
       yield* session.resume(sessionID)
 
-      expect(executions).toHaveLength(100)
+      expect(executions).toHaveLength(101)
       const context = yield* (yield* SessionStore.Service).context(sessionID)
       const fanOut = context.find((entry) => entry.type === "assistant" && entry.finish === "tool-calls")
-      const rejected = fanOut?.type === "assistant" ? fanOut.content.at(-1) : undefined
-      expect(rejected).toMatchObject({ type: "tool", id: "call-many-100", state: { status: "error" } })
+      const last = fanOut?.type === "assistant" ? fanOut.content.at(-1) : undefined
+      expect(last).toMatchObject({ type: "tool", id: "call-many-100", state: { status: "completed" } })
     }),
   )
 
@@ -3515,6 +3515,181 @@ describe("SessionRunnerLLM", () => {
       expect(executions).toHaveLength(16)
       expect(maxActiveToolExecutions).toBe(8)
       expect(requests).toHaveLength(2)
+    }),
+  )
+
+  it.effect("continues past one hundred distinct tool calls across provider turns", () =>
+    Effect.gen(function* () {
+      yield* setup
+      const session = yield* SessionV2.Service
+      yield* session.prompt({ sessionID, prompt: Prompt.make({ text: "Complete a long task" }), resume: false })
+      executions.length = 0
+      responses = [
+        ...Array.from({ length: 11 }, (_unused, turn) => [
+          LLMEvent.stepStart({ index: 0 }),
+          ...Array.from({ length: 10 }, (_unused, call) =>
+            LLMEvent.toolCall({ id: `long-${turn}-${call}`, name: "echo", input: { text: `${turn}-${call}` } }),
+          ),
+          LLMEvent.stepFinish({ index: 0, reason: "tool-calls" }),
+          LLMEvent.finish({ reason: "tool-calls" }),
+        ]),
+        fragmentFixture("text", "long-done", ["All work completed"]).completeEvents,
+      ]
+      yield* session.resume(sessionID)
+      expect(executions).toHaveLength(110)
+      expect(requests).toHaveLength(12)
+      expect(JSON.stringify(yield* session.context(sessionID))).not.toContain("Refusing to run")
+    }),
+  )
+
+  for (const delivery of ["steer", "queue"] as const) {
+    it.effect(`resets repeated-call protection when a new ${delivery} input promotes`, () =>
+      Effect.gen(function* () {
+        yield* setup
+        const session = yield* SessionV2.Service
+        yield* session.prompt({ sessionID, prompt: Prompt.make({ text: "Repeat until guarded" }), resume: false })
+        const admit = session.prompt({
+          sessionID,
+          prompt: Prompt.make({ text: "Run it again for this new request" }),
+          delivery,
+          resume: false,
+        })
+        executions.length = 0
+        responses = [
+          [
+            LLMEvent.stepStart({ index: 0 }),
+            ...Array.from({ length: 6 }, (_unused, index) =>
+              LLMEvent.toolCall({ id: `before-${index}`, name: "echo", input: { text: "same" } }),
+            ),
+            LLMEvent.stepFinish({ index: 0, reason: "tool-calls" }),
+            LLMEvent.finish({ reason: "tool-calls" }),
+          ],
+          ...(delivery === "queue" ? [fragmentFixture("text", "before-idle", ["Guard reached"]).completeEvents] : []),
+          [
+            LLMEvent.stepStart({ index: 0 }),
+            LLMEvent.toolCall({ id: "after-new-input", name: "echo", input: { text: "same" } }),
+            LLMEvent.stepFinish({ index: 0, reason: "tool-calls" }),
+            LLMEvent.finish({ reason: "tool-calls" }),
+          ],
+          fragmentFixture("text", "after-idle", ["Recovered"]).completeEvents,
+        ]
+        if (delivery === "queue") {
+          yield* admit
+          yield* session.resume(sessionID)
+        } else {
+          streamGate = yield* Deferred.make<void>()
+          streamStarted = yield* Deferred.make<void>()
+          const run = yield* session.resume(sessionID).pipe(Effect.forkChild)
+          yield* Deferred.await(streamStarted)
+          yield* admit
+          yield* Deferred.succeed(streamGate, undefined)
+          yield* Fiber.join(run)
+        }
+        expect(executions).toEqual(Array(6).fill("same"))
+        const context = yield* session.context(sessionID)
+        const tools = context.flatMap((message) =>
+          message.type === "assistant" ? message.content.filter((part) => part.type === "tool") : [],
+        )
+        expect(tools.find((tool) => tool.id === "before-5")).toMatchObject({ state: { status: "error" } })
+        expect(tools.find((tool) => tool.id === "after-new-input")).toMatchObject({ state: { status: "completed" } })
+      }),
+    )
+  }
+
+  it.effect("does not reset repeated-call protection for background notifications", () =>
+    Effect.gen(function* () {
+      yield* setup
+      const session = yield* SessionV2.Service
+      const events = yield* EventV2.Service
+      const child = yield* session.create({
+        parentID: sessionID,
+        agent: AgentV2.ID.make("build"),
+        location: { directory: AbsolutePath.make("/project") },
+      })
+      yield* events.publish(SessionEvent.DelegationStarted, {
+        sessionID,
+        id: "repeat-report",
+        childSessionID: child.id,
+        promptMessageID: SessionMessage.ID.create(),
+        agent: "build",
+        prompt: "Find facts",
+        description: "facts",
+        owner: "finished-owner",
+        timestamp: yield* DateTime.now,
+      })
+      yield* events.publish(SessionEvent.DelegationEnded, {
+        sessionID,
+        id: "repeat-report",
+        status: "completed",
+        text: "BACKGROUND REPORT",
+        timestamp: yield* DateTime.now,
+      })
+      yield* session.prompt({
+        sessionID,
+        prompt: Prompt.make({ text: "Work without repeating forever" }),
+        resume: false,
+      })
+      executions.length = 0
+      const calls = (count: number, prefix: string) => [
+        LLMEvent.stepStart({ index: 0 }),
+        ...Array.from({ length: count }, (_unused, index) =>
+          LLMEvent.toolCall({ id: `${prefix}-${index}`, name: "echo", input: { text: "same" } }),
+        ),
+        LLMEvent.stepFinish({ index: 0, reason: "tool-calls" }),
+        LLMEvent.finish({ reason: "tool-calls" }),
+      ]
+      responses = [
+        calls(5, "before-notice"),
+        calls(1, "after-notice"),
+        fragmentFixture("text", "notice-done", ["Stopped repeating"]).completeEvents,
+      ]
+      yield* session.resume(sessionID)
+      expect(executions).toHaveLength(5)
+      expect(JSON.stringify(requests[1]?.messages)).toContain("BACKGROUND REPORT")
+      expect(JSON.stringify(yield* session.context(sessionID))).toContain("Refusing to run echo again")
+    }),
+  )
+
+  it.effect("executes tools after the runner's own queued continuation passes one hundred calls", () =>
+    Effect.gen(function* () {
+      yield* setup
+      const session = yield* SessionV2.Service
+      const todos = yield* SessionTodo.Service
+      yield* todos.update({
+        sessionID,
+        todos: [{ content: "Finish the long task", status: "in_progress", priority: "high" }],
+      })
+      yield* session.prompt({ sessionID, prompt: Prompt.make({ text: "Continue until finished" }), resume: false })
+      executions.length = 0
+      const calls = (prefix: string) => [
+        LLMEvent.stepStart({ index: 0 }),
+        ...Array.from({ length: 60 }, (_unused, index) =>
+          LLMEvent.toolCall({ id: `${prefix}-${index}`, name: "echo", input: { text: `${prefix}-${index}` } }),
+        ),
+        LLMEvent.stepFinish({ index: 0, reason: "tool-calls" }),
+        LLMEvent.finish({ reason: "tool-calls" }),
+      ]
+      responses = [
+        calls("first"),
+        fragmentFixture("text", "partial", ["More remains"]).completeEvents,
+        calls("continued"),
+      ]
+      responseFor = () =>
+        requests.length === 4
+          ? Stream.unwrap(
+              todos
+                .update({
+                  sessionID,
+                  todos: [{ content: "Finish the long task", status: "completed", priority: "high" }],
+                })
+                .pipe(Effect.as(Stream.fromIterable(fragmentFixture("text", "finished", ["All done"]).completeEvents))),
+            )
+          : Stream.fromIterable(responses?.shift() ?? [])
+      yield* session.resume(sessionID)
+      expect(executions).toHaveLength(120)
+      expect(requests).toHaveLength(4)
+      expect(userTexts(requests[2]!).some((text) => text.startsWith("keep going"))).toBe(true)
+      expect((yield* todos.get(sessionID))[0]?.status).toBe("completed")
     }),
   )
 
@@ -4204,72 +4379,102 @@ describe("SessionRunnerLLM", () => {
     }),
   )
 
-  it.effect("delivers a message to a peer session and wakes it", () =>
-    Effect.gen(function* () {
-      yield* setup
-      const agent = yield* AgentV2.Service
-      yield* agent.transform((editor) =>
-        editor.update(AgentV2.ID.make("build"), (build) => {
-          build.mode = "primary"
-        }),
-      )
-      const runner = yield* SessionRunner.Service
-      const session = yield* SessionV2.Service
-      const { db } = yield* Database.Service
-      yield* insertSession(otherSessionID)
-      yield* session.prompt({ sessionID, prompt: Prompt.make({ text: "Ping peer" }), resume: false })
-
-      requests.length = 0
-      responses = [
-        [
-          LLMEvent.stepStart({ index: 0 }),
-          LLMEvent.toolCall({
-            id: "call-message",
-            name: "send_message",
-            // Resolved by slug, not by Session ID.
-            input: { to: `@${otherSessionID}`, message: "hello peer" },
+  for (const policy of [
+    { name: "default idle", unfinished: false, completed: false, wake: undefined, expected: false },
+    { name: "default unfinished", unfinished: true, completed: false, wake: undefined, expected: true },
+    { name: "never unfinished", unfinished: true, completed: false, wake: "never", expected: false },
+    { name: "always idle", unfinished: false, completed: false, wake: "always", expected: true },
+    { name: "if_active completed", unfinished: false, completed: true, wake: "if_active", expected: false },
+  ] as const) {
+    it.effect(`peer messaging: ${policy.name}`, () =>
+      Effect.gen(function* () {
+        yield* setup
+        const agent = yield* AgentV2.Service
+        yield* agent.transform((editor) =>
+          editor.update(AgentV2.ID.make("build"), (build) => {
+            build.mode = "primary"
           }),
-          LLMEvent.stepFinish({ index: 0, reason: "tool-calls" }),
-          LLMEvent.finish({ reason: "tool-calls" }),
-        ],
-        [
-          LLMEvent.stepStart({ index: 0 }),
-          LLMEvent.textStart({ id: "text-done" }),
-          LLMEvent.textDelta({ id: "text-done", text: "Done" }),
-          LLMEvent.textEnd({ id: "text-done" }),
-          LLMEvent.stepFinish({ index: 0, reason: "stop" }),
-          LLMEvent.finish({ reason: "stop" }),
-        ],
-      ]
-      const wakes: string[] = []
-      yield* runner.run({ sessionID, force: true, wake: (id) => Effect.sync(() => wakes.push(id)) })
+        )
+        const runner = yield* SessionRunner.Service
+        const session = yield* SessionV2.Service
+        const { db } = yield* Database.Service
+        yield* insertSession(otherSessionID)
+        if (policy.unfinished || policy.completed) {
+          const todos = yield* SessionTodo.Service
+          yield* todos.update({
+            sessionID: otherSessionID,
+            todos: [
+              { content: "Shared operation", status: policy.completed ? "completed" : "waiting", priority: "high" },
+            ],
+          })
+        }
+        yield* session.prompt({ sessionID, prompt: Prompt.make({ text: "Ping peer" }), resume: false })
 
-      expect(wakes).toEqual([otherSessionID])
-      expect(
-        permissionAsserts.some((entry) => entry.action === "message" && entry.resources.includes(otherSessionID)),
-      ).toBe(true)
-      expect(yield* SessionInput.hasPending(db, otherSessionID, "steer")).toBe(true)
+        requests.length = 0
+        responses = [
+          [
+            LLMEvent.stepStart({ index: 0 }),
+            LLMEvent.toolCall({
+              id: "call-message",
+              name: "send_message",
+              // Resolved by slug, not by Session ID.
+              input: {
+                to: `@${otherSessionID}`,
+                message: "hello peer",
+                ...(policy.wake ? { wake: policy.wake } : {}),
+                ...(policy.wake === "always"
+                  ? { reason: "User requested peer coordination for a shared operation" }
+                  : {}),
+              },
+            }),
+            LLMEvent.stepFinish({ index: 0, reason: "tool-calls" }),
+            LLMEvent.finish({ reason: "tool-calls" }),
+          ],
+          [
+            LLMEvent.stepStart({ index: 0 }),
+            LLMEvent.textStart({ id: "text-done" }),
+            LLMEvent.textDelta({ id: "text-done", text: "Done" }),
+            LLMEvent.textEnd({ id: "text-done" }),
+            LLMEvent.stepFinish({ index: 0, reason: "stop" }),
+            LLMEvent.finish({ reason: "stop" }),
+          ],
+        ]
+        const wakes: string[] = []
+        yield* runner.run({ sessionID, force: true, wake: (id) => Effect.sync(() => wakes.push(id)) })
 
-      // Draining the target materializes the attributed message in its transcript.
-      responses = [
-        [
-          LLMEvent.stepStart({ index: 0 }),
-          LLMEvent.textStart({ id: "text-ack" }),
-          LLMEvent.textDelta({ id: "text-ack", text: "Ack" }),
-          LLMEvent.textEnd({ id: "text-ack" }),
-          LLMEvent.stepFinish({ index: 0, reason: "stop" }),
-          LLMEvent.finish({ reason: "stop" }),
-        ],
-      ]
-      yield* runner.run({ sessionID: otherSessionID, force: true })
+        expect(wakes).toEqual(policy.expected ? [otherSessionID] : [])
+        expect(
+          permissionAsserts.some((entry) => entry.action === "message" && entry.resources.includes(otherSessionID)),
+        ).toBe(true)
+        expect(yield* SessionInput.hasPending(db, otherSessionID, "steer")).toBe(true)
 
-      const context = yield* session.context(otherSessionID)
-      const first = context[0]
-      expect(first).toMatchObject({ type: "user" })
-      expect(first?.type === "user" ? first.text : "").toContain(`<message from session="${sessionID}">`)
-      expect(first?.type === "user" ? first.text : "").toContain("hello peer")
-    }),
-  )
+        const sent = (yield* session.context(sessionID))
+          .flatMap((message) => (message.type === "assistant" ? message.content : []))
+          .find((part) => part.type === "tool" && part.name === "send_message")
+        expect(sent).toMatchObject({
+          state: { structured: { sessionID: otherSessionID, wake: policy.expected ? "requested" : "not_requested" } },
+        })
+        // Draining the target materializes the attributed message in its transcript.
+        responses = [
+          [
+            LLMEvent.stepStart({ index: 0 }),
+            LLMEvent.textStart({ id: "text-ack" }),
+            LLMEvent.textDelta({ id: "text-ack", text: "Ack" }),
+            LLMEvent.textEnd({ id: "text-ack" }),
+            LLMEvent.stepFinish({ index: 0, reason: "stop" }),
+            LLMEvent.finish({ reason: "stop" }),
+          ],
+        ]
+        yield* runner.run({ sessionID: otherSessionID, force: true })
+
+        const context = yield* session.context(otherSessionID)
+        const first = context[0]
+        expect(first).toMatchObject({ type: "user" })
+        expect(first?.type === "user" ? first.text : "").toContain(`<message from session="${sessionID}">`)
+        expect(first?.type === "user" ? first.text : "").toContain("hello peer")
+      }),
+    )
+  }
 
   for (const delivery of [undefined, "queue"] as const) {
     it.effect(`peer messages ${delivery ?? "default"} preserve tools and use the intended delivery boundary`, () =>
@@ -4292,7 +4497,7 @@ describe("SessionRunnerLLM", () => {
           [LLMEvent.stepStart({ index: 0 }), LLMEvent.toolCall({ id: "sender-report", name: "send_message", input: { to: otherSessionID, message: "Important peer finding", ...(delivery ? { delivery } : {}) } }), LLMEvent.stepFinish({ index: 0, reason: "tool-calls" }), LLMEvent.finish({ reason: "tool-calls" })],
           [], [], [],
         ]
-        const target = yield* runner.run({ sessionID: otherSessionID, force: true }).pipe(Effect.forkChild)
+        const target = yield* session.resume(otherSessionID).pipe(Effect.forkChild)
         yield* Deferred.await(toolExecutionsStarted)
         const wakes: string[] = []
         yield* runner.run({ sessionID, force: true, wake: (id) => Effect.sync(() => wakes.push(id)) })
@@ -4352,6 +4557,57 @@ describe("SessionRunnerLLM", () => {
     }),
   )
 
+  it.effect("rejects explicit wake without a reason before admission", () =>
+    Effect.gen(function* () {
+      yield* setup
+      const agent = yield* AgentV2.Service
+      yield* agent.transform((editor) =>
+        editor.update(AgentV2.ID.make("build"), (build) => {
+          build.mode = "primary"
+        }),
+      )
+      const runner = yield* SessionRunner.Service
+      const session = yield* SessionV2.Service
+      yield* session.prompt({ sessionID, prompt: Prompt.make({ text: "Ping nobody" }), resume: false })
+
+      yield* insertSession(otherSessionID)
+      requests.length = 0
+      responses = [
+        [
+          LLMEvent.stepStart({ index: 0 }),
+          LLMEvent.toolCall({
+            id: "call-missing",
+            name: "send_message",
+            input: { to: otherSessionID, message: "hi", wake: "always", reason: "  " },
+          }),
+          LLMEvent.stepFinish({ index: 0, reason: "tool-calls" }),
+          LLMEvent.finish({ reason: "tool-calls" }),
+        ],
+        [
+          LLMEvent.stepStart({ index: 0 }),
+          LLMEvent.stepFinish({ index: 0, reason: "stop" }),
+          LLMEvent.finish({ reason: "stop" }),
+        ],
+      ]
+      yield* runner.run({ sessionID, force: true })
+
+      const context = yield* session.context(sessionID)
+      const tool = context
+        .flatMap((message) => (message.type === "assistant" ? message.content : []))
+        .find((item) => item.type === "tool" && item.name === "send_message")
+      expect(tool).toMatchObject({
+        type: "tool",
+        name: "send_message",
+        state: {
+          status: "error",
+          error: { type: "unknown", message: "wake: always requires a concrete coordination reason." },
+        },
+      })
+      const database = yield* Database.Service
+      expect(yield* SessionInput.hasPending(database.db, otherSessionID, "steer")).toBe(false)
+    }),
+  )
+
   it.effect("refuses to overflow a peer session inbox", () =>
     Effect.gen(function* () {
       yield* setup
@@ -4405,45 +4661,79 @@ describe("SessionRunnerLLM", () => {
     }),
   )
 
-  it.effect("lists sibling sessions for discovery", () =>
-    Effect.gen(function* () {
-      yield* setup
-      const agent = yield* AgentV2.Service
-      yield* agent.transform((editor) =>
-        editor.update(AgentV2.ID.make("build"), (build) => {
-          build.mode = "primary"
-        }),
-      )
-      const runner = yield* SessionRunner.Service
-      const session = yield* SessionV2.Service
-      yield* insertSession(otherSessionID)
-      yield* session.prompt({ sessionID, prompt: Prompt.make({ text: "Who is around?" }), resume: false })
+  for (const discovery of [
+    { includeHistory: false, unfinished: false },
+    { includeHistory: true, unfinished: false },
+    { includeHistory: false, unfinished: true },
+  ]) {
+    it.effect(`lists sibling sessions history=${discovery.includeHistory} unfinished=${discovery.unfinished}`, () =>
+      Effect.gen(function* () {
+        yield* setup
+        const agent = yield* AgentV2.Service
+        yield* agent.transform((editor) =>
+          editor.update(AgentV2.ID.make("build"), (build) => {
+            build.mode = "primary"
+          }),
+        )
+        const runner = yield* SessionRunner.Service
+        const session = yield* SessionV2.Service
+        yield* insertSession(otherSessionID)
+        if (discovery.unfinished) {
+          const todos = yield* SessionTodo.Service
+          yield* todos.update({
+            sessionID: otherSessionID,
+            todos: [{ content: "Shared pending deployment", status: "waiting", priority: "high" }],
+          })
+        }
+        yield* session.prompt({ sessionID, prompt: Prompt.make({ text: "Who is around?" }), resume: false })
 
-      requests.length = 0
-      responses = [
-        [
-          LLMEvent.stepStart({ index: 0 }),
-          LLMEvent.toolCall({ id: "call-list", name: "list_sessions", input: {} }),
-          LLMEvent.stepFinish({ index: 0, reason: "tool-calls" }),
-          LLMEvent.finish({ reason: "tool-calls" }),
-        ],
-        [
-          LLMEvent.stepStart({ index: 0 }),
-          LLMEvent.stepFinish({ index: 0, reason: "stop" }),
-          LLMEvent.finish({ reason: "stop" }),
-        ],
-      ]
-      yield* runner.run({ sessionID, force: true })
+        requests.length = 0
+        responses = [
+          [
+            LLMEvent.stepStart({ index: 0 }),
+            LLMEvent.toolCall({
+              id: "call-list",
+              name: "list_sessions",
+              input: { includeHistory: discovery.includeHistory },
+            }),
+            LLMEvent.stepFinish({ index: 0, reason: "tool-calls" }),
+            LLMEvent.finish({ reason: "tool-calls" }),
+          ],
+          [
+            LLMEvent.stepStart({ index: 0 }),
+            LLMEvent.stepFinish({ index: 0, reason: "stop" }),
+            LLMEvent.finish({ reason: "stop" }),
+          ],
+        ]
+        yield* runner.run({ sessionID, force: true })
 
-      const context = yield* session.context(sessionID)
-      const tool = context
-        .flatMap((message) => (message.type === "assistant" ? message.content : []))
-        .find((item) => item.type === "tool" && item.name === "list_sessions")
-      expect(tool).toMatchObject({ type: "tool", name: "list_sessions", state: { status: "completed" } })
-      expect(JSON.stringify(tool)).toContain(String(otherSessionID))
-      expect(JSON.stringify(tool)).toContain(`@${otherSessionID}`)
-    }),
-  )
+        const context = yield* session.context(sessionID)
+        const tool = context
+          .flatMap((message) => (message.type === "assistant" ? message.content : []))
+          .find((item) => item.type === "tool" && item.name === "list_sessions")
+        expect(tool).toMatchObject({ type: "tool", name: "list_sessions", state: { status: "completed" } })
+        if (discovery.includeHistory || discovery.unfinished) {
+          expect(JSON.stringify(tool)).toContain(String(otherSessionID))
+          expect(JSON.stringify(tool)).toContain(`@${otherSessionID}`)
+          expect(tool).toMatchObject({
+            state: {
+              structured: {
+                sessions: [
+                  {
+                    execution: discovery.unfinished ? "idle" : "unknown",
+                    task: discovery.unfinished ? "unfinished" : "unknown",
+                    backgroundJobs: 0,
+                  },
+                ],
+              },
+            },
+          })
+        } else {
+          expect(tool).toMatchObject({ state: { structured: { sessions: [] } } })
+        }
+      }),
+    )
+  }
 
   it.effect("reads a peer session's transcript and pages back with its cursor", () =>
     Effect.gen(function* () {
@@ -7059,6 +7349,46 @@ describe("SessionRunnerLLM", () => {
     }),
   )
 
+  it.effect("resets the configured step allowance for queued input after the final text-only turn", () =>
+    Effect.gen(function* () {
+      yield* setup
+      const agents = yield* AgentV2.Service
+      yield* agents.transform((editor) =>
+        editor.update(AgentV2.ID.make("build"), (agent) => {
+          agent.steps = 2
+        }),
+      )
+      const session = yield* SessionV2.Service
+      yield* session.prompt({ sessionID, prompt: Prompt.make({ text: "First request" }), resume: false })
+      yield* session.prompt({
+        sessionID,
+        prompt: Prompt.make({ text: "Next request" }),
+        delivery: "queue",
+        resume: false,
+      })
+      executions.length = 0
+      const calls = (id: string) => [
+        LLMEvent.stepStart({ index: 0 }),
+        LLMEvent.toolCall({ id, name: "echo", input: { text: id } }),
+        LLMEvent.stepFinish({ index: 0, reason: "tool-calls" }),
+        LLMEvent.finish({ reason: "tool-calls" }),
+      ]
+      responses = [
+        calls("first"),
+        fragmentFixture("text", "first-limit", ["First summary"]).completeEvents,
+        calls("next"),
+        fragmentFixture("text", "next-limit", ["Next summary"]).completeEvents,
+      ]
+      yield* session.resume(sessionID)
+      expect(requests).toHaveLength(4)
+      expect(requests[1]?.toolChoice).toMatchObject({ type: "none" })
+      expect(requests[2]?.tools).not.toEqual([])
+      expect(requests[2]?.toolChoice).toBeUndefined()
+      expect(requests[3]?.toolChoice).toMatchObject({ type: "none" })
+      expect(executions).toEqual(["first", "next"])
+    }),
+  )
+
   it.effect("projects provider errors as terminal assistant step failures", () =>
     Effect.gen(function* () {
       yield* setup
@@ -8223,6 +8553,78 @@ describe("SessionRunnerLLM", () => {
         expect(titleRequests()).toHaveLength(1)
       }),
     )
+
+    for (const text of ["[Image 1] 定位锚点丢失是什么原因", "[Image 1]", "[Image 1] 帮我看看这张图片"]) {
+      it.effect(`titles an image-first prompt: ${text}`, () => Effect.gen(function* () {
+        yield* setup
+        yield* titleAgent
+        yield* setTitle(defaultTitle)
+        const session = yield* SessionV2.Service
+        response = fragmentFixture("text", "image-main", ["The screenshot shows that the localization anchor is missing."]).completeEvents
+        titleResponse = fragmentFixture("text", "image-title", ["定位锚点丢失排查"]).completeEvents
+        yield* session.prompt({ sessionID, resume: false, prompt: Prompt.make({ text,
+          files: [{ uri: "data:image/png;base64,aGVsbG8=", mime: "image/png", name: "screenshot" }],
+        }) })
+        yield* session.resume(sessionID)
+        yield* settle
+        expect(yield* currentTitle).toBe("定位锚点丢失排查")
+        expect(titleRequests()).toHaveLength(1)
+        const prompt = userTexts(titleRequests()[0]).join("\n")
+        expect(prompt).not.toContain("[Image 1]")
+        if (text.includes("定位锚点")) expect(prompt).toContain("定位锚点丢失是什么原因")
+        else expect(prompt).toContain("The screenshot shows that the localization anchor is missing.")
+      }))
+    }
+
+    it.effect("falls back from an unsupported title model and remembers its rejection for later Sessions", () => Effect.gen(function* () {
+      yield* setup
+      yield* titleAgent
+      yield* setTitle(defaultTitle)
+      const agents = yield* AgentV2.Service
+      yield* agents.transform((editor) => editor.update(AgentV2.ID.make("title"), (agent) => {
+        agent.model = { providerID: ProviderV2.ID.make("fake"), id: ModelV2.ID.make("replacement") }
+      }))
+      responseFor = (request) => {
+        if (request.system.some((part) => part.text === TITLE_SYSTEM)) {
+          if (request.model.id === "replacement") return Stream.fail(new LLMError({ module: "test", method: "title",
+            reason: new InvalidRequestReason({ message: "The requested model is not supported with this account" }),
+          }))
+          return Stream.fromIterable(fragmentFixture("text", "fallback-title", ["定位锚点丢失排查"]).completeEvents)
+        }
+        return Stream.fromIterable(fragmentFixture("text", "fallback-main", ["Main answer"]).completeEvents)
+      }
+      const session = yield* SessionV2.Service
+      yield* session.prompt({ sessionID, resume: false, prompt: Prompt.make({ text: "定位锚点丢失是什么原因" }) })
+      yield* session.resume(sessionID)
+      yield* settle
+      expect(yield* currentTitle).toBe("定位锚点丢失排查")
+      expect(titleRequests().map((request) => String(request.model.id))).toEqual(["replacement", "fake-model"])
+      yield* insertSession(otherSessionID)
+      const database = yield* Database.Service
+      yield* database.db.update(SessionTable).set({ title: defaultTitle }).where(eq(SessionTable.id, otherSessionID)).run().pipe(Effect.orDie)
+      yield* session.prompt({ sessionID: otherSessionID, resume: false, prompt: Prompt.make({ text: "另一个定位问题" }) })
+      yield* session.resume(otherSessionID)
+      yield* settle
+      expect(titleRequests().map((request) => String(request.model.id))).toEqual(["replacement", "fake-model", "fake-model"])
+    }))
+
+    it.effect("does not retry a failed title during successive tool turns of the same input", () => Effect.gen(function* () {
+      yield* setup
+      yield* titleAgent
+      yield* setTitle(defaultTitle)
+      titleResponse = [LLMEvent.providerError({ message: "title unavailable" })]
+      responses = [
+        [LLMEvent.stepStart({ index: 0 }), LLMEvent.toolCall({ id: "first-tool", name: "echo", input: { text: "first" } }), LLMEvent.stepFinish({ index: 0, reason: "tool-calls" }), LLMEvent.finish({ reason: "tool-calls" })],
+        [LLMEvent.stepStart({ index: 0 }), LLMEvent.toolCall({ id: "second-tool", name: "echo", input: { text: "second" } }), LLMEvent.stepFinish({ index: 0, reason: "tool-calls" }), LLMEvent.finish({ reason: "tool-calls" })],
+        fragmentFixture("text", "tool-answer", ["Done"]).completeEvents,
+      ]
+      const session = yield* SessionV2.Service
+      yield* session.prompt({ sessionID, resume: false, prompt: Prompt.make({ text: "Use two tools" }) })
+      yield* session.resume(sessionID)
+      yield* settle
+      expect(titleRequests()).toHaveLength(1)
+      expect(yield* currentTitle).toBe(defaultTitle)
+    }))
 
     it.effect("keeps manual titles, skips child Sessions, and survives title failures", () =>
       Effect.gen(function* () {

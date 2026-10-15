@@ -286,7 +286,9 @@ const layer = Layer.effect(
                 model.enabled &&
                 model.status === "active" &&
                 model.capabilities.input.some((item) => item.startsWith("text")) &&
-                model.capabilities.output.some((item) => item.startsWith("text")),
+                model.capabilities.output.some((item) => item.startsWith("text")) &&
+                // Auxiliary calls produce text; image input does not imply image generation.
+                model.capabilities.output.every((item) => item.startsWith("text")),
             ),
             Array.map((model) => ({
               model,
