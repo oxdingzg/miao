@@ -258,10 +258,10 @@ async fn prompt(conn: &Arc<Conn>, id: Value, params: Value) {
 
     let mut calls = HashSet::new();
     let mut planned: HashMap<String, String> = HashMap::new();
-    let mut finished = false;
+    let mut finished = None;
     loop {
         emit_history(conn, &session, &mut seen, &mut calls).await;
-        if finished {
+        if finished.is_some() {
             break;
         }
         if let Ok(events) = conn.runtime.store().events(&session, cursor, 64).await {
@@ -323,16 +323,28 @@ async fn prompt(conn: &Arc<Conn>, id: Value, params: Value) {
                             .await;
                         }
                     }
-                    "run.finished" => finished = true,
+                    "run.finished" => {
+                        finished =
+                            Some(event.data["reason"].as_str().unwrap_or("failed").to_owned());
+                    }
                     _ => {}
                 }
             }
         }
-        if !finished {
+        if finished.is_none() {
             tokio::time::sleep(Duration::from_millis(25)).await;
         }
     }
-    conn.reply(id, json!({ "stopReason": "end_turn" })).await;
+    match finished.as_deref() {
+        Some("completed") => conn.reply(id, json!({ "stopReason": "end_turn" })).await,
+        Some("interrupted" | "cancelled") => {
+            conn.reply(id, json!({ "stopReason": "cancelled" })).await;
+        }
+        _ => {
+            conn.fail(id, INTERNAL_ERROR, "session execution failed")
+                .await
+        }
+    }
 }
 
 /// Replay a Session's committed conversation as `session/update` chunks, then
