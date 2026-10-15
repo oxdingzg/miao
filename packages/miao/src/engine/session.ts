@@ -6,23 +6,26 @@ import { SessionID } from "@miao/schema/session-id"
 import { EngineClient, EngineError, type EngineEvent, type EngineProgress } from "./client"
 import { adoptSession, messageID } from "./identity"
 import {
+  type BufferedUsage,
+  PromptBridge,
   StatusBridge,
   ToolBridge,
-  PromptBridge,
+  streamAnchor,
   translateApproval,
   translateApprovalResolved,
   translateAssistantIdentity,
-  translateMessage,
   translateCopiedPrompt,
+  translateDelta,
+  translateMessage,
   translateProviderRequest,
   translateProviderRequestResult,
+  translateQuestion,
   translateQuestionResolved,
   translateRetried,
   translateRunFailure,
-  translateQuestion,
-  streamAnchor,
-  translateDelta,
+  translateStepEnded,
   translateTools,
+  translateUsage,
   type StreamAnchor,
 } from "./bridge"
 
@@ -46,18 +49,21 @@ export class EngineTranslator {
   #prompts = new PromptBridge()
   #settledThrough = new Map<string, number>()
   #anchors = new Map<string, StreamAnchor>()
+  #usage = new Map<string, { runID: string; step: number; usage: BufferedUsage }>()
+  #ttft = new Map<string, number>()
 
   constructor(publish: EnginePublish) {
     this.#publish = publish
   }
 
   dispatch(event: EngineEvent): void {
-    // The index is per event type, so suppressing an unrelated status update
-    // cannot change a message's identity on replay.
-    const counts = new Map<string, number>()
+    // One ordinal per published event within this journal event, in
+    // publication order: two events of the same commit must never share a
+    // source triple, or reconnect identity dedupes them away. Translation is
+    // deterministic, so replay reproduces the same ordinals.
+    let ordinal = 0
     const publish = (output: { type: string; data: unknown }) => {
-      const index = counts.get(output.type) ?? 0
-      counts.set(output.type, index + 1)
+      const index = ordinal++
       this.#publish({
         ...output,
         source: {
@@ -121,7 +127,12 @@ export class EngineTranslator {
     const status = this.#status.update(event)
     if (status) publish({ type: "session.next.status", data: status })
     const admitted = this.#prompts.project(event) ?? translateCopiedPrompt(event)
-    if (admitted) publish({ type: "session.next.prompt.admitted", data: admitted })
+    if (admitted) {
+      publish({ type: "session.next.prompt.admitted", data: admitted })
+      // The bridge projects native promotion, not admission alone. Rendering
+      // reducers wait for prompted before making a user message visible.
+      publish({ type: "session.next.prompted", data: admitted })
+    }
     const identity = translateAssistantIdentity(event)
     if (identity) publish({ type: "session.next.assistant.identity", data: identity })
     const failure = translateRunFailure(event)
@@ -132,8 +143,18 @@ export class EngineTranslator {
     if (request) publish({ type: "session.next.provider.request", data: request })
     const requestResult = translateProviderRequestResult(event)
     if (requestResult) publish({ type: "session.next.provider.request.result", data: requestResult })
+    const billed = translateUsage(event)
+    if (billed) this.#usage.set(event.session_id, billed)
     for (const text of translateMessage(event)) publish({ type: "session.next.text.ended", data: text })
     for (const call of translateTools(event)) publish({ type: "session.next.tool.called", data: call })
+    const usage = this.#usage.get(event.session_id)
+    const ttft = this.#ttft.get(event.session_id)
+    const ended = translateStepEnded(event, usage?.usage, ttft)
+    if (ended) {
+      publish({ type: "session.next.step.ended", data: ended })
+      this.#usage.delete(event.session_id)
+      this.#ttft.delete(event.session_id)
+    }
     const result = this.#tools.result(event)
     if (result) publish({ type: result.type, data: result })
     const asked = translateApproval(event)
@@ -148,6 +169,12 @@ export class EngineTranslator {
 
   /** Live-only delta fragments, anchored to the durable step-start sequence. */
   progress(progress: EngineProgress): void {
+    if (progress.kind === "provider.ttft") {
+      const sessionID = progress.session_id
+      const ttft = progress.ttft_ms
+      if (typeof sessionID === "string" && typeof ttft === "number" && ttft >= 0) this.#ttft.set(sessionID, ttft)
+      return
+    }
     if (progress.kind !== "provider.delta") return
     const sessionID = progress.session_id
     if (typeof sessionID !== "string") return

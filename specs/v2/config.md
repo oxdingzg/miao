@@ -266,6 +266,8 @@ Keep agent-local `options` provisionally using the same structured provider opti
 
 Retain `description`, `hidden`, and `steps`; they define an agent's discoverability, visibility, and iteration budget rather than model request parameters. Rename legacy agent `prompt` to `system`, making clear that it supplies persistent system-level agent content without colliding with top-level ambient `instructions`. Remove deprecated `maxSteps` in favor of `steps`.
 
+`steps` is an optional positive provider-turn limit for each promoted input, including the final text-only summary turn. It does not count individual tool calls, and omitting it leaves provider turns unlimited. Within a running drain, new steering or queued user input resets the allowance; background notification promotion does not. A new drain starts a fresh process-local allowance. There is no fixed total-call ceiling for a Session drain. Identical-call protection, concurrent settlement bounds, session cost limits, and autonomous-loop limits apply independently.
+
 ```jsonc
 {
   "agents": {

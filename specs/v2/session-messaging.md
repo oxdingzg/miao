@@ -2,72 +2,85 @@
 
 ## Goal
 
-Let one Session send a message to another Session, so agents can coordinate — a
-`SendMessage`-style capability like Claude Code's. This is a harness feature, not a model
-capability: the runtime owns session discovery and delivery, and exposes one tool the model calls.
+Let agents coordinate focused work across Sessions in the same project while keeping
+historical discovery separate from starting model execution. A matching title is not
+evidence that another Session is currently using a resource.
 
-## Why it fits V2 already
+## Discovery
 
-V2 has the substrate: durable per-session `session_input` inbox, `SessionExecution.wake`, the
-`SessionRunCoordinator`, and session-scoped tool registration (`specs/v2/session-scoped-tools.md`).
-Messaging is "admit a synthetic input into another Session, then wake it".
+`list_sessions({ includeHistory?: boolean })` returns up to 50 peers, prioritizing
+active execution or unfinished work. Historical idle Sessions are included only with
+`includeHistory: true`; use `read_session_context` to consult their findings first.
+Filtering and prioritization happen before the result cap.
 
-## Design
+Each result includes:
 
-- **Tool**: a session-scoped `send_message` tool (`{ to, message }`) registered by the runner, like
-  `task`. `to` is a Session ID or a short handle (`@name`), resolved through a session registry.
-- **Delivery**: resolve the target Session, then `SessionInput.admit` a synthetic message
-  (`delivery: "queue"`) tagged with the sender, and `SessionExecution.wake(target)`. The target's
-  next turn sees it as a `<message from session=…>` system/synthetic message. If the target is not
-  running, the durable inbox holds it until it resumes.
-- **Discovery**: a `list_sessions` (or handle registry) so a sender can find peers; the same
-  registry backs `@name` resolution. Reuse the existing `session.list` / `session.children`.
-- **Direction**: parent→child, child→parent, and peer→peer within the same project. Cross-project
-  messaging denied by default.
-- **Bounds**: permission action `message` (allow/ask/deny per target), a per-Session inbound queue
-  cap, and cost accounting so a messaging loop cannot run away (reuse the `loop` guards for the
-  receiving drain).
+- Session ID, `@slug`, title, optional parent ID, and last activity time.
+- Execution observation: `busy`, `idle`, or `unknown`. This is process-local;
+  another window's absence from the local coordinator is **not** proof of idleness.
+- Task observation: `unfinished`, `completed`, or `unknown`, derived from persisted
+  todos and the latest goal, plus the objective or first unfinished task.
+- Number of running background jobs observed in the current registry. This is not
+  a cross-process inventory.
 
-## Wake seam (implemented)
+Persisted task records can be stale. Neither task state nor a peer's reply replaces
+live inspection of a shared machine, deployment, or job.
 
-`SessionExecution.wake` lives on the process-global execution service, which depends on the
-per-Location runner (`LocationServiceMap` → `SessionRunner`). A runner-owned tool therefore cannot
-depend on `SessionExecution` directly: the location → global → location edge would cycle, and an
-unbound global node cannot be resolved inside the lazily-built location graph. Waking on every
-`PromptAdmitted` is also wrong, because `prompt` with `resume: false` deliberately admits without
-running.
+## Delivery and wake policy
 
-Instead the runner receives the wake capability as a callback:
+`send_message({ to, message, delivery?, wake?, reason? })` resolves a Session ID or
+`@slug` within the sender's project. It admits one attributed input to the target's
+durable `session_input` inbox, without claiming ownership of that Session.
 
-- `SessionRunner.run` accepts an optional `wake?: (sessionID) => Effect<void>`.
-- `SessionExecutionLocal`'s drain passes `coordinator.wake`.
-- `runSendMessage` admits a queued input to the target and calls `wake` when present; callers that
-  only record durable input omit it and the message is delivered on the target's next drain.
+Delivery and execution are separate:
 
-Only explicit messaging wakes a peer, so `resume: false` semantics are unchanged.
+- `delivery: "steer"` (default) promotes at the next safe provider-turn boundary.
+- `delivery: "queue"` waits until the recipient would otherwise become idle.
+- `wake: "if_active"` (default) requests execution only when the peer has locally
+  active execution, unfinished todos/a goal, or an observed running background job.
+- `wake: "always"` explicitly requests execution even for an idle historical peer.
+  A nonblank `reason` is required: explicit user direction, an unresolved dependency,
+  or unfinished shared work, rather than title similarity alone.
+- `wake: "never"` leaves mail without requesting execution. An already-running drain
+  can still read it at its normal delivery boundary.
 
-## Non-goals
+Without a wake request, the input remains available for later execution. Senders
+must not wait for its reply. A requested wake is advisory, not confirmation that
+execution started or a reply will arrive, including when another window owns the
+recipient. Existing tools are not interrupted.
 
-- No cross-machine/cluster routing yet (process-local drains only, matching the V2 execution model).
-- No free-form broadcast; delivery is explicit and addressed.
+The receipt contains the resolved `sessionID` and `wake: "requested" | "not_requested"`.
+The TUI sidebar displays that actual receipt and the coordination reason, retaining
+legacy transcript rendering when older receipts have no wake field. It does not
+infer acknowledgments from unrelated messages.
 
-## Acceptance
+## Execution seam
 
-- A parent Session sends a message to a child (and vice versa); the receiver's transcript shows the
-  message attributed to the sender, and the receiver continues.
-- A message to an idle Session is delivered on its next drain; to a missing Session it fails clearly.
-- Permission rule denies cross-project targets.
+`SessionRunner.run` receives an optional `wake` callback from the process-global
+execution owner. Messaging calls that callback only when the chosen policy permits
+it; admit-only callers omit it. The runner optionally observes an execution service
+already provided by its caller, without adding an execution-node dependency to the
+Location service graph. If unavailable, it does not invent a live status.
 
-## Status
+No `PromptAdmitted` subscriber automatically starts work: `resume: false` remains
+admit-only, and passive mail cannot silently become an execution request.
 
-Landed: the session-scoped `send_message` tool (`{ to, message }`) resolves a Session ID or an
-`@slug` handle within the sender's project, rejects a missing target or a target in another
-project, refuses to exceed the per-Session inbound queue cap (`MAX_INBOUND_QUEUE`), admits a queued
-input attributed as `<message from session="…">`, and wakes the target through the runner's `wake`
-callback. The companion `list_sessions` tool enumerates sibling Sessions in the project so a
-sender can discover an `@slug` target. Delivery asserts the `message` permission action per target
-(default ask; explicit deny uses the shared user-declined path). Covered by
-`packages/core/test/session-runner.test.ts`.
+## Coordination boundaries
 
-Still open: loop-guard cost accounting for a receiving drain and a per-target `save` policy for the
-`message` action.
+Messages should name the resource, planned operation, timing, and question, near the
+actual conflicting action. Recipients handle the request within existing authority;
+a peer message does not authorize restarting completed tasks or taking on unrelated
+work. Existing authorized work continues normally. Avoid acknowledgments of
+acknowledgments and repeated resolved requests.
+
+Cross-project messages are rejected. The `message` permission action is checked per
+target, and `MAX_INBOUND_QUEUE` bounds pending inputs. There is no broadcast or
+cross-machine execution routing.
+
+## Verification
+
+`packages/core/test/session-runner.test.ts` covers default idle/unfinished/completed
+peers, explicit and passive wake policies, missing reasons, active steer/queue
+boundaries, discovery filtering, inbox bounds, and unchanged wake allowances.
+`packages/tui/test/session-message.test.ts` covers legacy envelopes and actual receipt
+presentation data, including resolved peers and reasons.

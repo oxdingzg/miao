@@ -9,7 +9,7 @@ import { ProviderShared } from "../../src/protocols/shared"
 import { Auth, LLMClient } from "../../src/route"
 import { it } from "../lib/effect"
 import { dynamicResponse, fixedResponse, truncatedStream } from "../lib/http"
-import { deltaChunk, usageChunk } from "../lib/openai-chunks"
+import { deltaChunk, finishChunk, toolCallChunk, usageChunk } from "../lib/openai-chunks"
 import { sseEvents } from "../lib/sse"
 
 const TargetJson = Schema.fromJsonString(Schema.Unknown)
@@ -574,6 +574,43 @@ describe("OpenAI Chat route", () => {
           usage,
         },
       ])
+    }),
+  )
+
+  it.effect("finalizes tool calls whose arguments arrive after finish_reason", () =>
+    Effect.gen(function* () {
+      // GLM's OpenAI-compatible endpoint delivers finish_reason before the
+      // last tool calls' argument deltas. Those late deltas are real input:
+      // the pending calls must finalize from them at stream halt instead of
+      // being cut off with empty arguments.
+      const body = sseEvents(
+        toolCallChunk("call_1", "lookup", '{"query":"weather"}', 0),
+        deltaChunk({ tool_calls: [{ index: 1, id: "call_2", function: { name: "forecast", arguments: "" } }] }),
+        finishChunk("tool_calls"),
+        deltaChunk({ tool_calls: [{ index: 1, function: { arguments: '{"city":"Paris"}' } }] }),
+        usageChunk({ prompt_tokens: 5, completion_tokens: 9, total_tokens: 14 }),
+      )
+      const response = yield* LLMClient.generate(request).pipe(Effect.provide(fixedResponse(body)))
+      const calls = response.events.filter(LLMEvent.is.toolCall)
+      expect(calls.map((call) => [call.name, call.input])).toEqual([
+        ["lookup", { query: "weather" }],
+        ["forecast", { city: "Paris" }],
+      ])
+      expect(response.events.some(LLMEvent.is.finish)).toBe(true)
+    }),
+  )
+
+  it.effect("fails the stream on malformed pending tool input at halt", () =>
+    Effect.gen(function* () {
+      const body = sseEvents(
+        deltaChunk({ tool_calls: [{ index: 0, id: "call_1", function: { name: "lookup", arguments: '{"que' } }] }),
+        finishChunk("tool_calls"),
+      )
+      // A malformed flushed input must fail exactly like the old eager
+      // finalize did, so the runner's tool-argument correction loop engages.
+      const error = yield* LLMClient.generate(request).pipe(Effect.provide(fixedResponse(body)), Effect.flip)
+      expect(error.reason).toMatchObject({ _tag: "InvalidProviderOutput" })
+      expect(error.message).toContain("Invalid JSON input for openai-chat tool call lookup")
     }),
   )
 

@@ -64,6 +64,20 @@ impl Query {
     }
 }
 impl Store {
+    /// One window of an archived tool output of `session`, addressed by handle.
+    /// Delegation reads the delegating Session's archive through this too, so a
+    /// child never needs access to the parent's messages.
+    pub async fn archived_output(
+        &self,
+        session: &str,
+        tool_use_id: &str,
+        offset: usize,
+    ) -> Result<Value, Error> {
+        let (session, tool_use_id) = (session.to_owned(), tool_use_id.to_owned());
+        self.call(move |conn| archived_window(conn, &session, &tool_use_id, offset))
+            .await
+    }
+
     /// Search immutable messages, never a generated compaction summary. A scan
     /// page has an explicit cursor even if its bounded window has no matches.
     /// With a handle instead of a query, one archived tool output comes back.
@@ -73,7 +87,7 @@ impl Store {
         let session = session.to_owned();
         let handle = query.tool_use_id.clone();
         self.call(move |conn| match handle.as_deref() {
-            Some(handle) => archived_output(conn, &session, handle, query.offset),
+            Some(handle) => archived_window(conn, &session, handle, query.offset),
             None => search_history(conn, &session, &query),
         })
         .await
@@ -136,7 +150,7 @@ fn search_history(conn: &Connection, session: &str, query: &Query) -> Result<Val
 
 /// One window of the newest stored tool result carrying `handle`, plus the
 /// cursor a deeper page needs when the bounded scan did not reach it.
-fn archived_output(
+fn archived_window(
     conn: &Connection,
     session: &str,
     handle: &str,

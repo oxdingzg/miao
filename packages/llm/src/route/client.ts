@@ -336,12 +336,25 @@ function makeFromTransport<Body, Prepared, Frame, Event, State>(
               terminal ? Stream.takeUntil(terminal) : (stream) => stream,
             )
             const completed = yield* Ref.make(false)
-            return events.pipe(
+            const parser = protocol.stream
+            const latest = yield* Ref.make(parser.initial(request))
+            const stepped = events.pipe(
               Stream.mapAccumEffect(
-                () => protocol.stream.initial(request),
-                protocol.stream.step,
-                protocol.stream.onHalt ? { onHalt: protocol.stream.onHalt } : undefined,
+                () => parser.initial(request),
+                (state, event) => Effect.tap(parser.step(state, event), ([next]) => Ref.set(latest, next)),
               ),
+            )
+            // The halt flush may fail the stream (a malformed flushed tool
+            // input must fail as InvalidProviderOutput so the runner's
+            // tool-argument correction loop engages), so it runs as a final
+            // effectful element instead of a sync mapAccumEffect onHalt.
+            const streamed: Stream.Stream<LLMEvent, LLMError> = parser.onHalt
+              ? Stream.concat(
+                  stepped,
+                  Stream.fromIterableEffect(Effect.flatMap(Ref.get(latest), parser.onHalt)),
+                )
+              : stepped
+            return streamed.pipe(
               // A provider that ends the stream without a terminal frame has not
               // completed the turn. Fail retryably so an attempt that has
               // published nothing is retried, instead of presenting a partial

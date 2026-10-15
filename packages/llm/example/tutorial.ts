@@ -195,7 +195,7 @@ const FakeProtocol = Protocol.make<FakeBody, string, string, void>({
     event: Schema.String,
     initial: () => undefined,
     step: (_, frame) => Effect.succeed([undefined, [{ type: "text-delta", id: "text-0", text: frame }]] as const),
-    onHalt: () => [{ type: "finish", reason: "stop" }],
+    onHalt: () => Effect.succeed([{ type: "finish", reason: "stop" } as const]),
   },
 })
 

@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+  <dict>
+    <!-- JavaScriptCore generates code at runtime, which hardened runtime blocks
+         without these entitlements. -->
+    <key>com.apple.security.cs.allow-jit</key>
+    <true/>
+    <key>com.apple.security.cs.allow-unsigned-executable-memory</key>
+    <true/>
+    <!-- The TUI's render library is extracted from the binary's own resources
+         into a temporary directory and loaded from there. Hardened runtime
+         library validation refuses it because it is not signed with this Team
+         ID, which made 0.2.9 fail to start on macOS; disabling that one check is
+         the supported way to load a dylib an app ships as data. -->
+    <key>com.apple.security.cs.disable-library-validation</key>
+    <true/>
+  </dict>
+</plist>

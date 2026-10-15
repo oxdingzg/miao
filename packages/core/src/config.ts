@@ -48,6 +48,9 @@ export function latest<K extends keyof Info>(entries: readonly Entry[], key: K):
 /** Config file names read from each config directory, lowest to highest priority. */
 export const fileNames = ["miao.json", "miao.jsonc", "opencode.json", "opencode.jsonc"] as const
 
+/** Best-effort JSONC text parse for readers outside the Config service (the engine's global-file read). */
+export const parseJsonc = (text: string): unknown => parse(text, [], { allowTrailingComma: true })
+
 const decodeOptions = { errors: "all", onExcessProperty: "ignore", propertyOrder: "original" } as const
 const decodeInfo = Schema.decodeUnknownOption(Info, decodeOptions)
 const decodeV1Info = Schema.decodeUnknownOption(ConfigV1.Info, decodeOptions)

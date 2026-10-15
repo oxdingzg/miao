@@ -248,10 +248,14 @@ export function createTranscriptWindow<T extends { id: string }>(
         content > 0 &&
         (metrics.scrollTop + metrics.viewportHeight <= leading - margin ||
           metrics.scrollTop >= leading + content + margin)
-      // A real collapse can settle below the peak forever. Preserve a covered
-      // reader, but allow the normal two-pass recovery when only a spacer is
-      // visible; otherwise idle frames can never repair the blank viewport.
-      if (measuredAtBottom && anchored && !atHighWater && !stranded) {
+      const covered =
+        metrics.scrollTop >= leading - margin &&
+        metrics.scrollTop + metrics.viewportHeight <= leading + content + margin
+      // A real collapse can settle below the peak forever. Protect a fully
+      // covered reader, not merely one touching the mounted block: otherwise
+      // a few remaining tool rows freeze a large trailing spacer in view while
+      // the always-mounted activity footer makes the UI appear alive.
+      if (measuredAtBottom && anchored && !atHighWater && covered) {
         lastScrollTop = metrics.scrollTop
         return
       }
@@ -299,8 +303,7 @@ export function createTranscriptWindow<T extends { id: string }>(
       // it cannot oscillate with the measured height it reads.
       const rows = average > 0 ? average : estimate()
       const need = Math.ceil((metrics.scrollTop + metrics.viewportHeight + margin - leading) / rows)
-      if (anchored && !stranded && need > 0)
-        setCoverCount((previous) => Math.max(previous, Math.min(need, maxWindow)))
+      if (anchored && !stranded && need > 0) setCoverCount((previous) => Math.max(previous, Math.min(need, maxWindow)))
       const moving = lastScrollTop !== undefined && Math.abs(metrics.scrollTop - lastScrollTop) > 0.5
       // A fast drag, a scrollbar jump, or a streamed reflow can leave the
       // viewport entirely outside the mounted block. The stepped chase below

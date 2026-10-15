@@ -2,7 +2,7 @@ use crate::{
     approval::{now_ms, Approval, Response},
     context_trigger::{self, ContextLimits},
     permission::{input_digest, Config, Decision, Policy},
-    protocol::{Admission, Attachment, Error, Input, Message, ModelRequest},
+    protocol::{Admission, Attachment, Error, Input, ModelRequest},
     provider::{Provider, ProviderError},
     store::{RuntimeLease, Store},
     tool_replay::ToolReplay,
@@ -50,6 +50,7 @@ struct Inner {
     stop: CancellationToken,
     progress: broadcast::Sender<Value>,
     context: Mutex<Option<ContextLimits>>,
+    roles: Mutex<crate::roles::Bindings>,
     /// Task-specific verification command run before a run may finish.
     verification: Mutex<Option<String>>,
     breaker: Mutex<context_trigger::Breaker>,
@@ -163,6 +164,7 @@ impl Runtime {
                 stop: CancellationToken::new(),
                 progress,
                 context: Mutex::new(None),
+                roles: Mutex::new(crate::roles::Bindings::default()),
                 verification: Mutex::new(None),
                 breaker: Mutex::new(crate::context_trigger::Breaker::new(3)),
             }),
@@ -185,6 +187,13 @@ impl Runtime {
 
     pub async fn set_context_limits(&self, limits: Option<ContextLimits>) {
         *self.inner.context.lock().await = limits;
+    }
+
+    /// Purpose-role model bindings (ADR-14): a binding is a model id on the
+    /// Session's own provider. Unbound roles — and roles the provider
+    /// rejects — run on the primary model.
+    pub async fn set_role_bindings(&self, roles: crate::roles::Bindings) {
+        *self.inner.roles.lock().await = roles;
     }
 
     /// An explicit operator `compact` is the automatic trigger's breaker reset:
@@ -373,6 +382,23 @@ impl Runtime {
             },
         );
         Ok(commands)
+    }
+
+    /// Detach a Session's actor (ACP `session/close`): cancel any running
+    /// drain, remove the attachment, and await the coordinator so the bounded
+    /// attachment table frees immediately. Unattached sessions report false.
+    pub async fn detach(&self, session: &str) -> Result<bool, Error> {
+        let _ = self.cancel(session).await?;
+        let actor = {
+            let mut actors = self.inner.actors.lock().await;
+            actors.remove(session)
+        };
+        let Some(actor) = actor else {
+            return Ok(false);
+        };
+        drop(actor.commands);
+        let _ = actor.join.await;
+        Ok(true)
     }
 
     pub async fn cancel(&self, session: &str) -> Result<bool, Error> {
@@ -700,6 +726,7 @@ async fn execute(
                     &mut history,
                     budget,
                     limits.protect_turns,
+                    limits.prune_total_chars,
                 );
                 if elided > 0 {
                     let _ = inner.progress.send(json!({
@@ -714,7 +741,7 @@ async fn execute(
             .record(
                 session,
                 "provider.started",
-                json!({"run_id":run,"step":step,"context_epoch":context_epoch,"policy_revision":inner.policy.revision(),"state_selection":state_selection}),
+                json!({"run_id":run,"step":step,"context_epoch":context_epoch,"policy_revision":inner.policy.revision(),"state_selection":state_selection,"identity":inner.provider.identity().map(|i|json!({"protocol":i.protocol,"model":i.model}))}),
             )
             .await?;
         // Durable history retains null plus the error marker for unavailable
@@ -743,10 +770,12 @@ async fn execute(
         // a transient reset (for example a proxy dropping the stream) does not
         // fail the turn.
         let mut produced = false;
+        let mut ttft_ms: Option<u64> = None;
         let mut attempts = 0;
         let transport_budget = crate::provider::Budget::new();
         let reply = loop {
             let (send, mut receive) = mpsc::channel(64);
+            let attempt_started = std::time::Instant::now();
             let response = crate::runtime_profile::scoped(
                 crate::runtime_profile::Scope {
                     store: inner.store.clone(),
@@ -780,7 +809,18 @@ async fn execute(
                                 "run_id":run,"step":step,
                                 "attempt":delta["attempt"],"reason":delta["reason"],"status":delta["status"],
                             })).await?;
+                        } else if delta["kind"] == "provider.attempt" {
+                            // An attempt describes the request, not the answer it may
+                            // produce: it travels on the ephemeral progress channel
+                            // under its own kind, where an evaluation runner can
+                            // observe every attempt. It is not provider output, so it
+                            // never counts as `produced` and never disarms the
+                            // pre-output transport retry.
+                            let _=inner.progress.send(json!({"session_id":session,"run_id":run,"step":step,"kind":"provider.attempt","protocol":delta["protocol"],"attempt":delta["attempt"],"status":delta["status"],"outcome":delta["outcome"],"detail":delta["detail"]}));
                         } else {
+                            if !produced {
+                                ttft_ms = Some(attempt_started.elapsed().as_millis() as u64);
+                            }
                             produced |= crate::first_event::semantic_event(delta.get("raw").unwrap_or(&delta));
                             let _=inner.progress.send(json!({"session_id":session,"run_id":run,"step":step,"kind":"provider.delta","anchor_seq":started.seq,"recorded_at_ms":started.recorded_at_ms,"data":delta}));
                         }
@@ -795,7 +835,12 @@ async fn execute(
                         "run_id":run,"step":step,
                         "attempt":delta["attempt"],"reason":delta["reason"],"status":delta["status"],
                     })).await?;
+                } else if delta["kind"] == "provider.attempt" {
+                    let _=inner.progress.send(json!({"session_id":session,"run_id":run,"step":step,"kind":"provider.attempt","protocol":delta["protocol"],"attempt":delta["attempt"],"status":delta["status"],"outcome":delta["outcome"],"detail":delta["detail"]}));
                 } else {
+                    if !produced {
+                        ttft_ms = Some(attempt_started.elapsed().as_millis() as u64);
+                    }
                     produced |=
                         crate::first_event::semantic_event(delta.get("raw").unwrap_or(&delta));
                     let _ =
@@ -837,7 +882,7 @@ async fn execute(
                         .record(
                             session,
                             "usage",
-                            json!({"run_id":run,"step":step,"usage":partial.usage,"partial":true,"context_message_seq":inner.store.max_message_seq(session).await?}),
+                            json!({"run_id":run,"step":step,"usage":partial.usage,"partial":true,"cache":crate::usage::cache_lineage(&partial.usage),"context_message_seq":inner.store.max_message_seq(session).await?}),
                         )
                         .await?;
                     if partial
@@ -920,9 +965,18 @@ async fn execute(
             .record(
                 session,
                 "usage",
-                json!({"run_id":run,"step":step,"usage":reply.usage,"context_message_seq":inner.store.max_message_seq(session).await?}),
+                json!({"run_id":run,"step":step,"usage":reply.usage,"cache":crate::usage::cache_lineage(&reply.usage),"context_message_seq":inner.store.max_message_seq(session).await?}),
             )
             .await?;
+        if let Some(ttft_ms) = ttft_ms {
+            let _ = inner
+                .store
+                .record_timing(session, run, step as u64, ttft_ms)
+                .await;
+            let _ = inner.progress.send(
+                json!({"session_id":session,"run_id":run,"step":step,"kind":"provider.ttft","ttft_ms":ttft_ms}),
+            );
+        }
         let assistant_boundary = inner
             .store
             .assistant_reply_profiled(
@@ -983,8 +1037,8 @@ async fn execute(
                     continue;
                 }
                 let batched = reads.contains_key(id);
-                let (output, is_error) = if let Some(result) = reads.remove(id) {
-                    result
+                let (output, is_error) = if let Some((output, is_error)) = reads.remove(id) {
+                    (output, is_error)
                 } else {
                     inner
                         .store
@@ -1245,40 +1299,45 @@ async fn execute(
         // Automatic context management at the settled boundary (roadmap
         // §2.13). Off unless the runtime was configured with limits.
         if let Some(limits) = &*inner.context.lock().await {
-            let provider = Arc::clone(&inner.provider);
+            let primary = Arc::clone(&inner.provider);
+            let bindings = inner.roles.lock().await.clone();
+            let (role_provider, resolution) =
+                crate::roles::resolve(&primary, bindings.binding("summarize"));
+            if resolution != crate::roles::Resolution::Primary {
+                let _ = inner
+                    .store
+                    .record(
+                        session,
+                        "role.bound",
+                        json!({"run_id":run,"role":"summarize","resolution":resolution.to_evidence()}),
+                    )
+                    .await;
+            }
             let stop = inner.stop.clone();
+            let store = inner.store.clone();
+            // An attempt already on the primary model — no binding, or a
+            // substituted one — does not escalate to itself (ADR-14): only
+            // an accepted binding earns the single retry on the primary.
+            let escalate = matches!(resolution, crate::roles::Resolution::Bound { .. });
             let mut summarize = move |body: String| {
-                let provider = Arc::clone(&provider);
+                let role_provider = Arc::clone(&role_provider);
+                let primary = Arc::clone(&primary);
                 let stop = stop.clone();
+                let store = store.clone();
                 async move {
-                    let (tx, _rx) = mpsc::channel(16);
-                    let request = ModelRequest {
-                        system: "Summarize the conversation portion you are given. Reply with only the summary text.".into(),
-                        messages: vec![Message {
-                            role: "user".into(),
-                            content: json!([{"type": "text", "text": body}]),
-                            checkpoint: None,
-                            recorded_at_ms: None,
-                        }],
-                        tools: vec![],
-                    };
-                    let reply = provider
-                        .stream(request, tx, stop.child_token())
-                        .await
-                        .map_err(|error| error.to_string())?;
-                    let text = reply
-                        .content
-                        .as_array()
-                        .into_iter()
-                        .flatten()
-                        .filter_map(|block| block["text"].as_str())
-                        .collect::<Vec<_>>()
-                        .join("");
-                    if text.is_empty() {
-                        Err("summarizer returned no text".into())
-                    } else {
-                        Ok(text)
-                    }
+                    crate::roles::summarize_with_escalation(
+                        &role_provider,
+                        &primary,
+                        &crate::roles::Settlement {
+                            store: &store,
+                            session,
+                            run,
+                        },
+                        &stop,
+                        &body,
+                        escalate,
+                    )
+                    .await
                 }
             };
             let mut notify = |notice: Value| {
@@ -1888,6 +1947,55 @@ fn severity(decision: Decision) -> u8 {
 /// prompt, run it concurrently, and return its final assistant message. Bounded
 /// by a lineage depth limit and a process-global concurrency permit; cancelling
 /// the parent cancels the child. The child inherits the workspace and policy.
+/// The read-only reference block a delegation carries: each handle is resolved
+/// against the delegating Session's archive and the whole block is bounded.
+async fn reference_block(
+    inner: &Arc<Inner>,
+    parent: &str,
+    references: &[crate::subagent::Reference],
+) -> String {
+    let mut block = String::new();
+    for reference in references {
+        let handle = reference.tool_use_id.as_str();
+        let resolved = inner
+            .store
+            .archived_output(parent, handle, reference.offset as usize)
+            .await;
+        match resolved {
+            Ok(value) => match value["text"]
+                .as_str()
+                .filter(|_| !value["message_seq"].is_null())
+            {
+                Some(text) => block.push_str(&format!(
+                    "--- {handle} window {}:\n{text}\n",
+                    reference.offset
+                )),
+                None => block.push_str(&format!(
+                    "--- {handle} window {}: not found in the delegating Session\n",
+                    reference.offset
+                )),
+            },
+            Err(_) => block.push_str(&format!(
+                "--- {handle} window {}: unavailable\n",
+                reference.offset
+            )),
+        }
+    }
+    if block.is_empty() {
+        return String::new();
+    }
+    let header = "Referenced material from the delegating Session (read-only; it is not part of your history):\n";
+    let room = crate::subagent::REFERENCE_BYTES.saturating_sub(header.len());
+    if block.len() > room {
+        let mut end = room;
+        while end > 0 && !block.is_char_boundary(end) {
+            end -= 1;
+        }
+        return format!("{header}{}[references truncated]\n", &block[..end]);
+    }
+    format!("{header}{block}")
+}
+
 async fn delegate(
     inner: &Arc<Inner>,
     parent: &str,
@@ -1938,13 +2046,16 @@ async fn delegate(
         .await
         .map_err(|_| ToolError::External("subagent start could not be recorded".into()))?;
 
+    // A child forks empty, so material of the delegating Session reaches it by
+    // reference: each handle is resolved here and injected as a bounded window.
+    let references = reference_block(inner, parent, &task.references).await;
     let admission = inner
         .store
         .admit_attachments_at(
             Input {
                 session_id: child.clone(),
                 input_id: format!("{call}:subagent"),
-                prompt: task.prompt,
+                prompt: format!("{references}{}", task.prompt),
                 delivery: crate::protocol::Delivery::Steer,
             },
             Vec::new(),
@@ -1992,12 +2103,35 @@ async fn delegate(
             })
         })
         .unwrap_or_default();
+    // Delegation outcome evidence (roadmap A10): the child's billed totals and
+    // turn count ride the deterministic SubagentStop payload so a report can
+    // price parent+child without reconstructing provenance. Wall-clock cost
+    // stays on the ephemeral progress feed — the replayed journal pins
+    // payloads, and durations are not reproducible.
+    let mut billed_input = 0u64;
+    let mut billed_output = 0u64;
+    let mut turns = 0u64;
+    for event in inner
+        .store
+        .events(&child, 0, 10_000)
+        .await
+        .unwrap_or_default()
+    {
+        if event.kind != "usage" || event.data["partial"].as_bool() == Some(true) {
+            continue;
+        }
+        turns += 1;
+        billed_input += event.data["usage"]["inputTokens"].as_u64().unwrap_or(0);
+        billed_output += event.data["usage"]["outputTokens"].as_u64().unwrap_or(0);
+    }
     inner
         .store
         .record(
             parent,
             crate::events::Lifecycle::SubagentStop.name(),
-            json!({"run_id":run,"subagent_id":child,"call_id":call,"reason":"completed"}),
+            json!({"run_id":run,"subagent_id":child,"call_id":call,"reason":"completed",
+                   "tokens":{"input":billed_input,"output":billed_output},
+                   "turns":turns}),
         )
         .await
         .map_err(|_| ToolError::External("subagent stop could not be recorded".into()))?;
@@ -2343,40 +2477,48 @@ async fn execute_read_batch(
         .flatten()
         .filter(|block| block["type"] == "tool_use")
         .collect();
-    if !(2..=16).contains(&blocks.len())
-        || blocks.iter().any(|block| {
-            block["input_error"].is_string()
-                || block["provider_executed"] == true
-                || !matches!(
-                    block["name"].as_str(),
-                    Some("read_file" | "list_files" | "glob" | "grep")
-                )
-        })
-    {
-        return Ok(HashMap::new());
-    }
+    // Mixed-turn partitioning (ADR-13): only the prefix of declared reads
+    // before the first non-member batches. A write — or anything the batch
+    // cannot admit — ends the prefix, and everything from there settles
+    // serially in request order, so a later read never runs ahead of an
+    // earlier write.
     let mut prepared = Vec::new();
     for block in blocks {
         let (Some(id), Some(name)) = (block["id"].as_str(), block["name"].as_str()) else {
-            return Ok(HashMap::new());
+            break;
         };
+        if block["input_error"].is_string() || block["provider_executed"] == true {
+            break;
+        }
         let Ok(tool) = inner.tools.prepare(name, block["input"].clone()).await else {
-            return Ok(HashMap::new());
+            break;
         };
+        // Membership is declaration-driven (ADR-13): a call joins the batch
+        // when its own declaration says it only reads a named resource, not
+        // because of its name. Anything that declares a write — or anything
+        // undeclared — conflicts with the batch and stays serial.
         if tool.access() != crate::permission::Access::Read
+            || tool.resource().is_empty()
             || inner
                 .policy
                 .evaluate(tool.name(), tool.resource(), tool.access())
                 != Decision::Allow
         {
-            return Ok(HashMap::new());
+            break;
         }
         prepared.push((id.to_owned(), tool));
     }
-    if cancel.is_cancelled() {
+    if !(2..=16).contains(&prepared.len()) || cancel.is_cancelled() {
         return Ok(HashMap::new());
     }
-    inner.store.record(session, "tool.parallel.started", json!({"run_id":run,"call_ids":prepared.iter().map(|(id,_)| id).collect::<Vec<_>>(),"concurrency":4})).await?;
+    inner
+        .store
+        .record(
+            session,
+            "tool.parallel.started",
+            json!({"run_id":run,"call_ids":prepared.iter().map(|(id,_)| id).collect::<Vec<_>>(),"resources":prepared.iter().map(|(_,tool)| tool.resource()).collect::<Vec<_>>(),"concurrency":4}),
+        )
+        .await?;
     for (id, tool) in &prepared {
         inner
             .store
@@ -2405,11 +2547,11 @@ async fn execute_read_batch(
     .buffer_unordered(4);
     let mut results = HashMap::new();
     while let Some((id, result)) = pending.next().await {
-        let result = match result {
+        let outcome = match result {
             Ok(output) => (output, false),
             Err(error) => (json!({"error":error.to_string()}), true),
         };
-        results.insert(id, result);
+        results.insert(id, outcome);
     }
     // Settle every admitted read before the runner can return on cancellation
     // or a repeat limit; projected receipts preserve the provider's call order.

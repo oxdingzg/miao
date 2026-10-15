@@ -252,6 +252,9 @@ pub enum Command {
     State {
         session_id: String,
     },
+    Usage {
+        session_id: String,
+    },
     UpdateState {
         session_id: String,
         operation_id: String,

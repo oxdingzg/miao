@@ -494,3 +494,148 @@ measurably on type-clean edits, which is the cost side of A7's claim. The report
 path itself is pinned by the LSP fixture tests, which drive the runtime directly;
 the repair-loop value on an edit that introduces a typed error remains the owed
 measurement.
+
+## Read-batch parallelism (2026-10-14)
+
+A6's first step is already in the engine: a turn that requests two to sixteen
+declared reads (`read_file`, `list_files`, `glob`, `grep`, all read-access and
+allowed) dispatches them together under a bound of four and settles them in call
+order, with `tests/read_batch.rs` pinning the barrier cases (a mixed write turn,
+and a denied read, both stay serial).
+
+Measuring the saving needs a carrier whose single turn asks for several reads.
+Eight runs of the `read-only` carrier did not produce one: it issues one read per
+turn (three to four tools per run, no `tool.parallel.started` in any of them), so
+no batch formed and no overlap exists to report.
+
+The `multi-read` carrier supplies the turn that does: naming three files in one
+prompt makes one turn request three reads, and all eight runs of it formed
+exactly one batch carrying all three, settling them inside an observed window of
+0-1 ms per run, where a serial engine would have needed three separate windows.
+The carrier is frozen as suite v5, and the runner records what it observes --
+batch count, the reads the batch named, and the batch's wall window. Per-read
+durations stay out of event payloads: the blackbox tape replay pins those
+payloads exactly, and carrying `elapsed_ms` there turned main red until it was
+moved to the runner.
+
+## Elision selection (2026-10-15)
+
+Gate 4 of automatic context management stays opt-in: it runs only when
+`--context-limits` sets `prune_chars`, so an unconfigured runtime still sends
+exactly what it did before. Selection within that gate is now budget-aware. With
+`prune_total_chars` set, only as many payloads above the per-payload budget are
+elided -- oldest first, because the work in flight is least likely to still need
+the oldest -- as cover the excess over the total target, so a request that fits
+keeps every payload whole; without a target the previous per-payload behavior
+stands. The unit tests pin all three cases (a target that requires two elisions
+and leaves the newest candidate whole, a target everything already fits, and the
+protected newest turns).
+
+## Automatic context management (2026-10-15)
+
+Automatic compaction and elision are opt-in behind `--context-limits`, and that
+option was **missing from the CLI whitelist**: the engine refused it as an
+unknown option, so every measured run that tried to enable it died before its
+first provider call and the feature was reachable only from in-process tests.
+The flag is allowed now, the runner forwards the limits it declares, and the
+evidence records the outcomes (`context.compaction`) plus the archive lookups
+that restore an elided output (`context.recallCalls`).
+
+Two configurations were measured on the `long-session` carrier (five inputs in
+one Session, four repetitions), and neither produced a compaction:
+
+| limits | runs | passed | turns/run | tools/run | input tokens | output tokens | wall |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| window 32000, ratio 0.5, headroom 2000 | 4 | 3 | 56-62 | 42-47 | 175,978-198,243 | 2,474-3,384 | 50-88 s |
+| window 4000, ratio 0.25, headroom 500 | 4 | 0 | 1 | 1 | 2,494 | 37 | 300 s (harness limit) |
+
+Neither configuration's compaction count is known from that table: the
+compaction reports arrive as *progress* rather than as durable events, and the
+evidence counted events, so its counters were blind. The field reads progress
+now, and a later run owns those numbers.
+
+What the runs did establish is that the gate fires at those limits and that
+every summarizer pass fails. Before the bound below, four runs stalled after
+their first tool call for the harness's full 300 s limit. With the bound in
+place and the counters reading progress, the same carrier reports what happens:
+one run fired the gate eleven times (eleven attempts, eleven failures, five
+skipped by the breaker) and still passed in 274.8 s with 56 turns and 47 tools,
+and a second attempted three times before failing behaviourally. So the gate
+triggers, the summarizer request against this provider never answers inside its
+20 s bound, and the bound is what keeps the turn alive -- at a cost of about
+20 s per attempt, which is most of that run's wall time.
+
+
+## The summarizer call itself is the compaction defect (2026-10-15)
+
+With the gate reachable and its pass bounded, the failure was at last named: every
+compaction ends `compaction.failed: summary timeout` (three attempts, three
+timeouts and several breaker skips in a single `small-edit` run, and eleven
+attempts in the long-session carrier before). The reason is the bound added in
+#855, so the summarizer call does not return inside twenty seconds.
+
+That is not what the gateway does. A logging proxy in front of the real endpoint
+shows each summarizer request answered with a complete Responses stream --
+`response.output_text.delta` for 161 characters-worth of events, an
+`output_text.done`, a `response.output_item.done` carrying a `message` item, and a
+`response.completed` -- in 4.5 to 6.3 seconds. The same run without the proxy
+reports the identical timeout, so the proxy is not the cause.
+
+The two facts together leave the engine's own provider call for this request
+shape: it receives the stream but never returns, which is what a reader that waits
+for the connection to close rather than for the completed event would do. That is
+the defect the next change owns; the bound keeps a stalled call from holding a
+turn, and the breaker stops retrying it.
+
+### Correction: the pass bound is not the cause (2026-10-15, later)
+
+Raising the pass bound from twenty seconds to a hundred and fifty does not change
+the outcome. The same low-limit session still reports `compaction.failed: summary
+timeout` and never finishes, so a summarizer call exceeds even that. The provider's
+own limits are sixty seconds to the first event and a hundred and twenty of idle,
+and the retry scope allows three attempts, so an attempt that never receives a
+first event spends three first-event budgets -- which is what the timings look
+like. A logging proxy with the same forwarded headers answers the same request in
+about five seconds, and the summarizer runs on the primary provider because no role
+binding is configured, so the stall is in the engine's own summary request path
+before any event arrives. The change that raised the bound was closed rather than
+merged, since it made each failed pass more expensive without fixing anything.
+
+The next instrument is already in the code: `request_with_retry` records each
+attempt's status and outcome in the runtime profile, and the evidence has to carry
+that for a sweep to read it.
+
+### The attempt notices do not reach the runner yet (2026-10-15, later)
+
+The instrument built to name the compaction stall was probed and returned nothing:
+a `small-edit` run whose turns all succeeded records `provider.attempts: []`, so the
+notices never reach the evaluation runner even though `context.*` progress from the
+same engine does. The engine writes each attempt's status and outcome into its
+durable store, and the retry path now announces them as progress as well, so the
+missing link is the transport between the engine and the runner rather than the
+record itself.
+
+That matters for the reading above: with no attempts visible, the probe cannot say
+whether the summary call receives no first event, and the conclusion that the stall
+sits in the request path rests on timings alone rather than on a recorded attempt.
+The next step is to make one attempt visible end-to-end -- a turn's attempt is
+enough -- and only then read the summary's. The change that announced the attempts
+was parked rather than merged: it interacts with the retry accounting that
+`tests/first_event.rs` pins, which is a separate thing to understand first.
+
+### The attempt instrument reports through the transport it was waiting for (2026-10-15, later)
+
+The notice was parked for two reasons that turned out to be one: nothing is
+readable until one attempt travels end to end, and the same hunk passed the
+retry test on Linux while the continuous integration runs failed on macOS and
+Windows. The runner consumed the provider's own stream channel and treated every
+frame that was not a retry as streamed output, so a notice travelled as
+`provider.delta` -- where no evidence reads it -- and counted as the turn's
+first output, which disarmed the pre-output transport retry. That is what the
+platform-dependent retry accounting was measuring.
+
+Notices now report on the ephemeral progress feed under their own kind, beside
+the `context.*` reports that already travel there, and the runner reads every
+attempt into the evidence as `providerAttempts` (protocol, ordinal, status,
+outcome). What remains is the measurement this instrument was for: naming why
+the summarizer request stalls before any event arrives.

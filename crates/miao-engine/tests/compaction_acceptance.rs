@@ -116,6 +116,7 @@ async fn a_crossed_limit_compacts_in_one_call_and_the_next_turn_starts_from_it()
             headroom: 0,
             per_pass: 1000,
             prune_chars: None,
+            prune_total_chars: None,
             protect_turns: 2,
         }))
         .await;

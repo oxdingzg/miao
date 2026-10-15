@@ -12,6 +12,7 @@ use crate::store::Store;
 use rusqlite::OptionalExtension;
 use serde_json::{json, Value};
 use std::future::Future;
+use std::time::Duration;
 
 /// Explicit trigger configuration from the product layer.
 #[derive(Debug, Clone)]
@@ -82,6 +83,10 @@ pub struct ContextLimits {
     /// before it is elided. Absent leaves tool output whole (pruning off).
     #[serde(default)]
     pub prune_chars: Option<usize>,
+    /// Serialized chars the elidable tool results may keep in total. Absent
+    /// leaves selection per-payload, which elides every candidate.
+    #[serde(default)]
+    pub prune_total_chars: Option<usize>,
     /// Newest user-role messages whose tool output is never elided.
     #[serde(default = "default_protect_turns")]
     pub protect_turns: usize,
@@ -128,6 +133,10 @@ pub struct CompactRequest<'a, P: FnMut(Value)> {
         Box<dyn std::future::Future<Output = crate::provider::CountTokens> + Send>,
     > + Send),
 }
+
+/// How long one summarizer pass may take before the gate gives up on it.
+/// A provider that accepts the request and never answers must not hold a turn.
+const SUMMARY_TIMEOUT: Duration = Duration::from_secs(20);
 
 pub async fn maybe_compact<S, F, P>(
     store: &Store,
@@ -186,24 +195,33 @@ where
     }));
     let mut parts = Vec::new();
     for (nth, (start, end)) in plan.segments.iter().enumerate() {
-        let body = messages[*start..*end]
-            .iter()
-            .map(|message| format!("- {}: {}", message.role, message.content))
-            .collect::<Vec<_>>()
-            .join("\n");
-        match summarize(format!(
-            "Summarize this portion of the conversation:\n{body}"
-        ))
+        let body = summarizer_body(&messages[*start..*end], SUMMARIZER_MESSAGE_CHARS);
+        // A summarizer that never returns must not hold the turn: the call is
+        // bounded, and a timeout degrades like any other summary failure.
+        match tokio::time::timeout(
+            SUMMARY_TIMEOUT,
+            summarize(format!(
+                "Summarize this portion of the conversation:\n{body}"
+            )),
+        )
         .await
         {
-            Ok(part) => {
+            Err(_) => {
+                breaker.rejected();
+                notify(json!({
+                    "session_id": session, "run_id": run,
+                    "kind": "compaction.failed", "reason": "summary timeout",
+                }));
+                return Ok(false);
+            }
+            Ok(Ok(part)) => {
                 parts.push(part);
                 notify(json!({
                     "session_id": session, "run_id": run,
                     "kind": "compaction.progress", "segment": nth + 1, "total": plan.segments.len(),
                 }));
             }
-            Err(reason) => {
+            Ok(Err(reason)) => {
                 breaker.rejected();
                 notify(json!({
                     "session_id": session, "run_id": run,
@@ -215,7 +233,13 @@ where
     }
     let id = format!("cut_{run}");
     match store
-        .compact_for_run(session, run, &id, boundary, parts.join("\n\n"))
+        .compact_for_run(
+            session,
+            run,
+            &id,
+            boundary,
+            checkpoint_summary(store, &parts, session).await,
+        )
         .await
     {
         Ok(_) => {
@@ -231,6 +255,140 @@ where
             Ok(false)
         }
     }
+}
+
+/// Per-message cap on what one summarizer pass reads from a stored message.
+/// Oversized tool outputs are named by their recall handle instead of being
+/// paid for twice (the summary pass would re-read what pruning already
+/// elided from the outgoing request).
+pub const SUMMARIZER_MESSAGE_CHARS: usize = 2_000;
+
+/// `commit_compaction` rejects checkpoints above this size, so the assembly
+/// truncates the summarized part rather than failing the whole compaction.
+pub const MAX_CHECKPOINT_CHARS: usize = 32_768;
+
+/// The serialized text of one message, bounded for a summarizer pass. Text
+/// blocks are capped at a char boundary; oversized tool results are replaced
+/// by their recall handle, so nothing is lost that pruning has not already
+/// archived.
+fn message_excerpt(message: &Message, budget: usize) -> String {
+    let blocks = message.content.as_array().into_iter().flatten();
+    let mut parts = Vec::new();
+    for block in blocks {
+        match block["type"].as_str() {
+            Some("text") => {
+                let text = block["text"].as_str().unwrap_or_default();
+                parts.push(bounded(text, budget));
+            }
+            Some("tool_result") => {
+                let content = block["content"].as_str().unwrap_or_default();
+                if content.len() <= budget {
+                    parts.push(content.to_owned());
+                } else {
+                    let handle = match block["tool_use_id"].as_str() {
+                        Some(id) if id.len() <= 128 && !id.is_empty() => {
+                            format!(
+                                r#"[tool output archived — recall {{"tool_use_id":"{id}"}} to restore]"#
+                            )
+                        }
+                        _ => "[oversized tool output omitted]".to_owned(),
+                    };
+                    parts.push(handle);
+                }
+            }
+            _ => {}
+        }
+    }
+    format!("- {}: {}", message.role, parts.join(" "))
+}
+
+/// The largest char boundary at or below `budget`, with an explicit marker
+/// when anything was cut.
+fn bounded(text: &str, budget: usize) -> String {
+    if text.len() <= budget {
+        return text.to_owned();
+    }
+    let mut cut = budget.min(text.len());
+    while !text.is_char_boundary(cut) {
+        cut -= 1;
+    }
+    format!("{}…[truncated]", &text[..cut])
+}
+
+/// One summarizer pass's input: one bounded line per message.
+pub fn summarizer_body(messages: &[Message], per_message_chars: usize) -> String {
+    messages
+        .iter()
+        .map(|message| message_excerpt(message, per_message_chars))
+        .collect::<Vec<_>>()
+        .join("\n")
+}
+
+/// Durable state carried verbatim into every checkpoint, independent of
+/// summarizer quality: the active objective and the open tasks. Completed or
+/// cancelled tasks are history, not state, and stay out.
+pub fn durable_state_block(state: &serde_json::Value) -> String {
+    let mut lines = Vec::new();
+    let goal = &state["goal"]["value"];
+    if goal["objective"].as_str().is_some_and(|o| !o.is_empty()) {
+        lines.push(format!(
+            "Objective: {} (status: {})",
+            goal["objective"].as_str().unwrap_or_default(),
+            goal["status"].as_str().unwrap_or("unknown")
+        ));
+    }
+    let todos = state["todos"]["value"]["todos"].as_array();
+    let open = todos
+        .into_iter()
+        .flatten()
+        .filter(|todo| {
+            todo["status"].as_str() != Some("completed")
+                && todo["status"].as_str() != Some("cancelled")
+        })
+        .filter_map(|todo| todo["content"].as_str())
+        .collect::<Vec<_>>();
+    if !open.is_empty() {
+        lines.push("Open tasks:".to_owned());
+        lines.extend(open.iter().map(|task| format!("- [ ] {task}")));
+    }
+    if lines.is_empty() {
+        return String::new();
+    }
+    format!("## Durable state (carried verbatim)\n{}", lines.join("\n"))
+}
+
+/// The checkpoint text: summarized parts plus the durable-state block, within
+/// the size `commit_compaction` accepts. The durable block is the part that
+/// must never be lost, so overflow truncates the summarized part instead.
+pub async fn checkpoint_summary(store: &Store, parts: &[String], session: &str) -> String {
+    let mut summary = parts.join("\n\n");
+    let durable = store
+        .state(session)
+        .await
+        .map(|state| durable_state_block(&state))
+        .unwrap_or_default();
+    if durable.is_empty() {
+        return bounded_to(&summary, MAX_CHECKPOINT_CHARS);
+    }
+    let combined = format!("{summary}\n\n{durable}");
+    if combined.len() <= MAX_CHECKPOINT_CHARS {
+        return combined;
+    }
+    let keep = MAX_CHECKPOINT_CHARS.saturating_sub(durable.len() + 2);
+    summary = bounded_to(&summary, keep);
+    format!("{summary}\n\n{durable}")
+}
+
+/// The largest char-boundary prefix within `max` chars.
+fn bounded_to(text: &str, max: usize) -> String {
+    if text.len() <= max {
+        return text.to_owned();
+    }
+    let mut cut = max;
+    while !text.is_char_boundary(cut) {
+        cut -= 1;
+    }
+    text[..cut].to_owned()
 }
 
 /// Gate 5: the compaction circuit breaker. After `threshold` consecutive
@@ -313,28 +471,36 @@ pub fn prune_history(
     messages: &mut [Message],
     budget: usize,
     protect_turns: usize,
+    total: Option<usize>,
 ) -> (usize, usize) {
+    // Selection is budget-aware. The candidates are the payloads above the
+    // per-payload budget outside the protected turns; with a total target
+    // configured, only as many of them -- oldest first, because the work in
+    // flight is least likely to still need the oldest -- are elided as make the
+    // remaining candidates fit that target. Without one, every candidate is.
+    let candidates = prune_candidates(messages, budget, protect_turns);
+    let required = total.map_or(usize::MAX, |target| {
+        candidates
+            .iter()
+            .map(|(_, _, len)| *len)
+            .sum::<usize>()
+            .saturating_sub(target)
+    });
     let mut elided = 0;
     let mut dropped = 0;
-    let mut turns = 0;
-    for message in messages.iter_mut().rev() {
-        if message.role == "user" {
-            turns += 1;
+    for (index, block, len) in candidates {
+        if dropped >= required {
+            break;
         }
-        if turns <= protect_turns {
-            continue;
-        }
-        for block in message.content.as_array_mut().into_iter().flatten() {
-            if block["type"] != "tool_result" {
-                continue;
-            }
-            let Some(content) = block["content"].as_str() else {
+        let pruned = {
+            let value = &messages[index].content[block];
+            let Some(content) = value["content"].as_str() else {
                 continue;
             };
             let Prune::Elide {
                 keep_head,
                 keep_tail,
-            } = prune_tool_output(content.len(), budget, false)
+            } = prune_tool_output(len, budget, false)
             else {
                 continue;
             };
@@ -342,25 +508,66 @@ pub fn prune_history(
             let tail = content.len() - ceil_boundary_from_end(content, keep_tail);
             // Pruning stays recoverable: the marker names the handle that
             // restores the elided middle, so nothing is silently lost.
-            let note = match block["tool_use_id"].as_str() {
+            let note = match value["tool_use_id"].as_str() {
                 Some(id) if id.len() <= 128 => format!(
                     "[the elided middle is recoverable on demand: recall {{\"tool_use_id\":\"{id}\"}}]\n"
                 ),
                 _ => String::new(),
             };
-            let pruned = format!(
+            format!(
                 "{}{}{}{}",
                 &content[..head],
                 PRUNE_MARK,
                 note,
                 &content[tail..]
-            );
-            dropped += content.len() - pruned.len();
-            block["content"] = json!(pruned);
-            elided += 1;
-        }
+            )
+        };
+        dropped += len - pruned.len();
+        messages[index].content[block]["content"] = json!(pruned);
+        elided += 1;
     }
     (elided, dropped)
+}
+
+/// The payloads elision may consider: above the per-payload budget and outside
+/// the newest `protect_turns` user-role messages, oldest first, each with its
+/// message index, content-block index, and byte length.
+fn prune_candidates(
+    messages: &[Message],
+    budget: usize,
+    protect_turns: usize,
+) -> Vec<(usize, usize, usize)> {
+    let turns_total = messages
+        .iter()
+        .filter(|message| message.role == "user")
+        .count();
+    let protected_from = turns_total.saturating_sub(protect_turns);
+    let mut turns = 0;
+    let mut candidates = Vec::new();
+    for (index, message) in messages.iter().enumerate() {
+        if message.role == "user" {
+            turns += 1;
+        }
+        if turns > protected_from {
+            continue;
+        }
+        for (block, part) in message.content.as_array().into_iter().flatten().enumerate() {
+            if part["type"] != "tool_result" {
+                continue;
+            }
+            let Some(content) = part["content"].as_str() else {
+                continue;
+            };
+            if !matches!(
+                prune_tool_output(content.len(), budget, false),
+                Prune::Elide { .. }
+            ) {
+                continue;
+            }
+            candidates.push((index, block, content.len()));
+        }
+    }
+    candidates
 }
 
 /// The largest char boundary at or below `index`.
@@ -556,7 +763,7 @@ mod tests {
             },
         ];
         // The newest user message keeps its output; the older one is elided.
-        let (elided, dropped) = prune_history(&mut messages, 1000, 1);
+        let (elided, dropped) = prune_history(&mut messages, 1000, 1, None);
         assert_eq!(elided, 1);
         assert!(dropped > 0);
         let kept = messages[2].content[0]["content"].as_str().unwrap();
@@ -565,6 +772,38 @@ mod tests {
         assert!(pruned.contains("elided by context management"), "{pruned}");
         assert!(pruned.len() < 4000);
 
+        let payload = |text: &str| Message {
+            role: "user".into(),
+            content: json!([{"type":"tool_result","tool_use_id":"call","content":text.repeat(4000)}]),
+            checkpoint: None,
+            recorded_at_ms: None,
+        };
+
+        // Three 4000-byte candidates sum to 12000 against a total target of
+        // 8000, so selection elides oldest-first only until the excess of 4000
+        // is covered: the newest candidate keeps its output whole.
+        let mut messages = vec![payload("a"), payload("b"), payload("c")];
+        let (elided, dropped) = prune_history(&mut messages, 1000, 0, Some(8000));
+        assert_eq!(elided, 2);
+        assert!(dropped >= 4000, "{dropped}");
+        for index in [0, 1] {
+            let text = messages[index].content[0]["content"].as_str().unwrap();
+            assert!(text.contains("elided by context management"), "{index}");
+        }
+        assert_eq!(
+            messages[2].content[0]["content"].as_str().unwrap().len(),
+            4000
+        );
+
+        // A target the candidates already fit elides nothing at all.
+        let mut fitting = vec![payload("a"), payload("b"), payload("c")];
+        assert_eq!(prune_history(&mut fitting, 1000, 0, Some(20000)), (0, 0));
+        assert!(fitting.iter().all(|message| message.content[0]["content"]
+            .as_str()
+            .unwrap()
+            .len()
+            == 4000));
+
         // Within budget nothing is touched, and protecting every turn is a no-op.
         let mut small = vec![Message {
             role: "user".into(),
@@ -572,8 +811,8 @@ mod tests {
             checkpoint: None,
             recorded_at_ms: None,
         }];
-        assert_eq!(prune_history(&mut small, 1000, 0), (0, 0));
-        assert_eq!(prune_history(&mut messages, 1000, 3), (0, 0));
+        assert_eq!(prune_history(&mut small, 1000, 0, None), (0, 0));
+        assert_eq!(prune_history(&mut messages, 1000, 3, None), (0, 0));
     }
 
     #[test]
@@ -729,6 +968,90 @@ mod tests {
         assert_eq!(estimate_tokens(0), 0);
         assert_eq!(estimate_tokens(1), 1);
         assert_eq!(estimate_tokens(6), 2);
+    }
+
+    #[test]
+    fn summarizer_body_bounds_messages_and_names_archived_outputs() {
+        let messages = vec![
+            Message {
+                role: "user".into(),
+                content: json!([{"type": "text", "text": "x".repeat(150)}]),
+                checkpoint: None,
+                recorded_at_ms: None,
+            },
+            Message {
+                role: "user".into(),
+                content: json!([{"type": "tool_result", "tool_use_id": "call_big", "content": "y".repeat(10_000)}]),
+                checkpoint: None,
+                recorded_at_ms: None,
+            },
+        ];
+        let body = summarizer_body(&messages, 100);
+        assert!(body.contains("- user:"), "{body}");
+        assert!(body.contains("…[truncated]"), "{body}");
+        assert!(
+            body.contains(r#"recall {"tool_use_id":"call_big"} to restore"#),
+            "{body}"
+        );
+        // The archived payload's body never reaches the summarizer.
+        assert!(body.len() < 1_000, "{body}");
+    }
+
+    #[test]
+    fn durable_state_block_carries_goal_and_open_tasks_verbatim() {
+        let state = json!({
+            "goal": {"value": {"objective": "land the fix", "status": "active"}},
+            "todos": {"value": {"todos": [
+                {"content": "write test", "status": "pending", "priority": "high"},
+                {"content": "done item", "status": "completed", "priority": "low"},
+                {"content": "dropped item", "status": "cancelled", "priority": "low"}
+            ]}}
+        });
+        let block = durable_state_block(&state);
+        assert!(
+            block.contains("Objective: land the fix (status: active)"),
+            "{block}"
+        );
+        assert!(block.contains("- [ ] write test"), "{block}");
+        assert!(!block.contains("done item"), "{block}");
+        assert!(!block.contains("dropped item"), "{block}");
+
+        // No durable state, no block: explicit compact keeps its plain summary.
+        assert_eq!(durable_state_block(&json!({})), "");
+    }
+
+    #[tokio::test]
+    async fn checkpoint_summary_keeps_the_durable_block_within_the_limit() {
+        let dir = tempfile::tempdir().unwrap();
+        let store = Store::open(dir.path().join("engine.db")).await.unwrap();
+        store
+            .admit(crate::protocol::Input {
+                session_id: "s".into(),
+                input_id: "one".into(),
+                prompt: "task".into(),
+                delivery: crate::protocol::Delivery::Steer,
+            })
+            .await
+            .unwrap();
+        store
+            .update_state(
+                "s",
+                "op-goal",
+                crate::state::Mutation {
+                    kind: "goal",
+                    value: json!({"objective": "finish", "status": "active"}),
+                    expected: None,
+                },
+            )
+            .await
+            .unwrap();
+        let huge = vec!["z".repeat(MAX_CHECKPOINT_CHARS); 2];
+        let summary = checkpoint_summary(&store, &huge, "s").await;
+        assert!(summary.len() <= MAX_CHECKPOINT_CHARS, "{}", summary.len());
+        assert!(
+            summary.ends_with("finish (status: active)") || summary.contains("Objective: finish"),
+            "{summary}"
+        );
     }
 
     #[tokio::test]

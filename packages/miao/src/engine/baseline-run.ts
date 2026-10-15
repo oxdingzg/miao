@@ -7,7 +7,7 @@ import type { Schema } from "effect"
 import { BlackboxTape } from "@miao/core/blackbox/tape"
 import { assessBaselineArtifacts, baselineContract, baselineTask, initializeBaselineWorkspace } from "./baseline"
 import type { BaselineSample } from "./baseline-report"
-import type { EngineEvent, EngineProgress } from "./client"
+import type { EngineEvent, EngineOptions, EngineProgress } from "./client"
 import { runEnginePrompt } from "./run"
 
 /**
@@ -48,6 +48,38 @@ export interface BaselineEvidence {
   /** Loop classification: continuation and stop reasons observed in the run. */
   loops: { continuations: string[]; stopped: string[] }
   toolCalls: number
+  /**
+   * Automatic context management the run exercised: compaction outcomes and
+   * the archive lookups (recall calls), which is what a long task costs beyond
+   * its turns. Older evidence predates the field.
+   */
+  context?: {
+    compaction: Record<string, number>
+    /** Why a compaction step ended the way it did, e.g. "failed: summary timeout". */
+    reasons: string[]
+    recallCalls: number
+  }
+  /**
+   * Read batches the engine ran together: how many batches, how many settled
+   * reads they carried, and the wall time they took as the runner observed it.
+   * The TypeScript engine has no read batch, and older evidence predates the
+   * field. Engine event payloads stay deterministic, so this is measured from
+   * the runner's own receipt times rather than from a duration in the event.
+   */
+  parallel?: { batches: number; batchedReads: number; batchWallMs: number }
+  /**
+   * Provider attempts the runner observed end to end, in arrival order. Every
+   * attempt is durable in the engine's own store, which a sweep cannot read, so
+   * the engine reports each one on the progress feed; older evidence predates
+   * the field.
+   */
+  providerAttempts?: Array<{
+    attempt: number | null
+    protocol: string | null
+    status: number | null
+    outcome: string | null
+    detail: string | null
+  }>
   textHash: string
   binarySha256: string | null
   startedAtMs: number
@@ -88,6 +120,11 @@ export interface BaselineRustInput {
   verifyCommand?: string
   /** Explicit prefix-cache policy for the measured run. */
   promptCache?: boolean
+  /**
+   * Context limits for the measured run, which is what turns automatic
+   * compaction and elision on. Absent leaves the runtime unconfigured.
+   */
+  contextLimits?: EngineOptions["contextLimits"]
   /**
    * Drift experiment control: after the model reads one of these workspace
    * paths, the runner rewrites it with the given content before the model's
@@ -189,6 +226,7 @@ export async function runBaselineRust(input: BaselineRustInput): Promise<Baselin
       lspConfigFile: input.lspConfigFile,
       verifyCommand: input.verifyCommand,
       promptCache: input.promptCache,
+      contextLimits: input.contextLimits,
       env: input.env,
       session,
       prompt,
@@ -230,6 +268,9 @@ export async function runBaselineRust(input: BaselineRustInput): Promise<Baselin
     profile: engineProfile(events),
     phases: enginePhases(events, progress, observed, verifiedAtMs),
     toolCalls: events.filter((event) => event.kind === "tool.completed").length,
+    context: observedContextManagement(events, progress),
+    parallel: observedReadBatches(events, observed),
+    providerAttempts: observedProviderAttempts(progress),
     admissionMs: admittedAt(events, observed),
     requiredReceipts: task.requiredReceipts,
     answerContains: task.answerContains,
@@ -376,6 +417,9 @@ interface FinishedBaselineRun {
   profile: ReturnType<typeof engineProfile>
   phases: BaselinePhase[]
   toolCalls: number
+  parallel?: { batches: number; batchedReads: number; batchWallMs: number }
+  context?: { compaction: Record<string, number>; reasons: string[]; recallCalls: number }
+  providerAttempts?: BaselineEvidence["providerAttempts"]
   admissionMs: number | null
   requiredReceipts: string[]
   answerContains: string[]
@@ -399,6 +443,9 @@ function finishBaselineRun(input: FinishedBaselineRun): BaselineRun {
     profileReceipts: profile?.receipts ?? 0,
     loops: input.loops,
     toolCalls: input.toolCalls,
+    parallel: input.parallel,
+    context: input.context,
+    providerAttempts: input.providerAttempts,
     textHash: digest(input.answer),
     binarySha256: input.binarySha256 ?? null,
     startedAtMs: input.startedAtMs,
@@ -530,6 +577,78 @@ function numberOrNull(value: unknown) {
 
 /// Loop classification counts: how many provider turns were continued or
 /// stopped for a classified reason (empty completion, no progress, budget).
+/// Automatic context management the run exercised: compaction reports by kind
+/// -- they arrive as progress, not as durable events, so counting events alone
+/// saw nothing -- and the recall calls that restore an archived output.
+function observedContextManagement(
+  events: EngineEvent[],
+  progress: Array<{ item: EngineProgress; atMs: number }>,
+) {
+  const compaction: Record<string, number> = {}
+  const reasons: string[] = []
+  for (const { item } of progress) {
+    if (!item.kind?.startsWith("compaction.")) continue
+    compaction[item.kind] = (compaction[item.kind] ?? 0) + 1
+    // The reason is what names the failure; a count alone cannot.
+    if (typeof item.reason === "string") reasons.push(`${item.kind}: ${item.reason}`)
+  }
+  const recallCalls = events.filter((event) => {
+    const data = event.data as { tool?: unknown } | null
+    return data?.tool === "recall"
+  }).length
+  return { compaction, reasons, recallCalls }
+}
+
+/// Provider attempts the runner observed, in arrival order. An attempt is
+/// durable in the engine's store, but a sweep cannot read that store, so the
+/// engine reports each one on the progress feed: counting its own events alone
+/// saw an empty list even when the turn succeeded.
+function observedProviderAttempts(progress: Array<{ item: EngineProgress }>) {
+  return progress
+    .filter(({ item }) => item.kind === "provider.attempt")
+    .map(({ item }) => ({
+      attempt: typeof item.attempt === "number" ? item.attempt : null,
+      protocol: typeof item.protocol === "string" ? item.protocol : null,
+      status: typeof item.status === "number" ? item.status : null,
+      outcome: typeof item.outcome === "string" ? item.outcome : null,
+      detail: typeof item.detail === "string" ? item.detail : null,
+    }))
+}
+
+/// A read batch's wall time and read count, as the runner observed them: from
+/// the batch's start event to the settlement of its last read. The batch event
+/// names its calls, so the reads it owns are counted exactly.
+function observedReadBatches(events: EngineEvent[], observed: Map<number, number>) {
+  const windows: number[] = []
+  let batchedReads = 0
+  let current: { start: number; expected: number; reads: number; at: number } | null = null
+  const close = () => {
+    if (!current) return
+    windows.push(Math.max(0, current.at - current.start))
+    batchedReads += current.reads
+    current = null
+  }
+  for (const event of events) {
+    const at = observed.get(event.seq) ?? 0
+    if (event.kind === "tool.parallel.started") {
+      close()
+      const calls = (event.data as { call_ids?: unknown } | null)?.call_ids
+      current = { start: at, expected: Array.isArray(calls) ? calls.length : 0, reads: 0, at }
+      continue
+    }
+    if (event.kind === "tool.completed" && current && current.reads < current.expected) {
+      current.reads += 1
+      current.at = at
+    }
+  }
+  close()
+  return {
+    batches: windows.length,
+    batchedReads,
+    batchWallMs: windows.reduce((total, window) => total + window, 0),
+  }
+}
+
 function engineLoops(events: EngineEvent[]) {
   const reason = (event: EngineEvent) => {
     const data = BlackboxTape.json(event.data)
