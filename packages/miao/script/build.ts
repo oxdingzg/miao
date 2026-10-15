@@ -271,19 +271,27 @@ for (const item of targets) {
 
 /**
  * Build the engine binary for this platform (B5) and archive it at the repo
- * root next to the CLI archives. A failed engine build never blocks the CLI
- * release; the platform just ships without the engine asset.
+ * root next to the CLI archives. Build failures fail the release rather than
+ * uploading a stale binary or silently omitting an advertised platform asset.
  */
 async function buildEngineArchive(): Promise<string | undefined> {
   const os = ({ darwin: "darwin", linux: "linux", win32: "windows" } as Record<string, string | undefined>)[process.platform]
   const arch = process.arch === "arm64" ? "arm64" : "x64"
   if (!os) return undefined
-  await $`cargo build --release --bin miao-engine`.cwd("crates/miao-engine").nothrow()
+  const crate = path.resolve(dir, "../../crates/miao-engine")
+  await $`cargo build --locked --release --bin miao-engine`.cwd(crate)
   const suffix = process.platform === "win32" ? ".exe" : ""
-  const bin = `crates/miao-engine/target/release/miao-engine${suffix}`
-  if (!(await Bun.file(bin).exists())) {
-    console.error("engine build produced no binary; the release ships without the engine asset")
-    return undefined
+  const bin = path.join(crate, "target/release", `miao-engine${suffix}`)
+  const version = (await $`${bin} --version`.text()).trim()
+  if (version !== `miao-engine ${Script.version}`)
+    throw new Error(`engine version mismatch: ${version}; expected miao-engine ${Script.version}`)
+  if (process.platform === "darwin") {
+    const identity = await developerIdIdentity()
+    if (identity) {
+      await $`codesign --force --options runtime --timestamp --sign ${identity} ${bin}`
+    } else {
+      await $`codesign --force --sign - ${bin}`
+    }
   }
   const name = `miao-engine-${os}-${arch}`
   if (process.platform === "win32") {
@@ -294,7 +302,7 @@ async function buildEngineArchive(): Promise<string | undefined> {
   await $`mkdir -p ${staging} && cp ${bin} ${staging}/`
   // darwin uses a zip so the archive is notarizable with the CLI archives.
   if (process.platform === "darwin") {
-    await $`zip -r ${name}.zip miao-engine`.cwd(staging)
+    await $`zip -r ../${name}.zip miao-engine`.cwd(staging)
     return `./${staging}.zip`
   }
   await $`tar -czf ../${name}.tar.gz miao-engine`.cwd(staging)
@@ -331,7 +339,7 @@ if (Script.release) {
 
   for (const archive of archives) {
     const hash = new Bun.CryptoHasher("sha256").update(await Bun.file(archive.slice(2)).arrayBuffer()).digest("hex")
-    await Bun.write(`${archive}.sha256`, `${hash}  ${archive.slice(2)}\n`)
+    await Bun.write(`${archive}.sha256`, `${hash}  ${path.basename(archive)}\n`)
   }
 
   // Upload only the archives this platform produced; a `--single` build never
