@@ -53,7 +53,12 @@ export interface BaselineEvidence {
    * the archive lookups (recall calls), which is what a long task costs beyond
    * its turns. Older evidence predates the field.
    */
-  context?: { compaction: Record<string, number>; recallCalls: number }
+  context?: {
+    compaction: Record<string, number>
+    /** Why a compaction step ended the way it did, e.g. "failed: summary timeout". */
+    reasons: string[]
+    recallCalls: number
+  }
   /**
    * Read batches the engine ran together: how many batches, how many settled
    * reads they carried, and the wall time they took as the runner observed it.
@@ -564,15 +569,18 @@ function observedContextManagement(
   progress: Array<{ item: EngineProgress; atMs: number }>,
 ) {
   const compaction: Record<string, number> = {}
+  const reasons: string[] = []
   for (const { item } of progress) {
     if (!item.kind?.startsWith("compaction.")) continue
     compaction[item.kind] = (compaction[item.kind] ?? 0) + 1
+    // The reason is what names the failure; a count alone cannot.
+    if (typeof item.reason === "string") reasons.push(`${item.kind}: ${item.reason}`)
   }
   const recallCalls = events.filter((event) => {
     const data = event.data as { tool?: unknown } | null
     return data?.tool === "recall"
   }).length
-  return { compaction, recallCalls }
+  return { compaction, reasons, recallCalls }
 }
 
 /// A read batch's wall time and read count, as the runner observed them: from
