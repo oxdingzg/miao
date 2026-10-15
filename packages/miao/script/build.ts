@@ -278,9 +278,18 @@ async function buildEngineArchive(): Promise<string | undefined> {
   const os = ({ darwin: "darwin", linux: "linux", win32: "windows" } as Record<string, string | undefined>)[process.platform]
   const arch = process.arch === "arm64" ? "arm64" : "x64"
   if (!os) return undefined
-  await $`cargo build --release --bin miao-engine`.cwd("crates/miao-engine").nothrow()
+  // This script runs from packages/miao, so the engine crate and its target
+  // directory resolve from the repository root rather than from here: the
+  // relative form looked for packages/miao/crates/miao-engine and failed every
+  // platform's release at the spawn.
+  const crate = path.resolve(dir, "../../crates/miao-engine")
+  if (!existsSync(crate)) {
+    console.error("engine crate not found; the release ships without the engine asset")
+    return undefined
+  }
+  await $`cargo build --release --bin miao-engine`.cwd(crate).nothrow()
   const suffix = process.platform === "win32" ? ".exe" : ""
-  const bin = `crates/miao-engine/target/release/miao-engine${suffix}`
+  const bin = path.join(crate, `target/release/miao-engine${suffix}`)
   if (!(await Bun.file(bin).exists())) {
     console.error("engine build produced no binary; the release ships without the engine asset")
     return undefined
