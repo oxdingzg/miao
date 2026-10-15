@@ -476,3 +476,105 @@ async fn lists_sessions() {
     assert!(ids.contains(&first), "{ids:?}");
     assert!(ids.contains(&second), "{ids:?}");
 }
+
+/// The three lifecycle arms keep their promises: only the advertised auth
+/// method authenticates, resuming requires an existing session (it creates
+/// nothing), and closing settles and stays idempotent.
+#[tokio::test]
+async fn honest_authenticate_resume_and_close_semantics() {
+    let (endpoint, _requests, _server) = common::endpoint(vec![]).await;
+    let dir = tempfile::tempdir().unwrap();
+    let db = dir.path().join("engine.db");
+    let mut child = Command::new(env!("CARGO_BIN_EXE_miao-engine"))
+        .args([
+            "acp",
+            "--db",
+            db.to_str().unwrap(),
+            "--workspace",
+            dir.path().to_str().unwrap(),
+            "--model",
+            "fixture",
+            "--provider",
+            "openai-chat",
+            "--endpoint",
+            &endpoint,
+        ])
+        .env("OPENAI_API_KEY", "fixture")
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::inherit())
+        .kill_on_drop(true)
+        .spawn()
+        .unwrap();
+    let mut stdin = child.stdin.take().unwrap();
+    let mut stdout = BufReader::new(child.stdout.take().unwrap()).lines();
+
+    send(
+        &mut stdin,
+        json!({"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":1,"clientCapabilities":{}}}),
+    )
+    .await;
+    let initialized = read_response(&mut stdout, 1).await;
+    assert_eq!(initialized["result"]["protocolVersion"], 1);
+
+    // An undeclared method id is a client error, not a silent success.
+    send(
+        &mut stdin,
+        json!({"jsonrpc":"2.0","id":2,"method":"authenticate","params":{"methodId":"not-offered"}}),
+    )
+    .await;
+    let rejected = read_response(&mut stdout, 2).await;
+    assert!(rejected["error"].is_object(), "{rejected}");
+    send(
+        &mut stdin,
+        json!({"jsonrpc":"2.0","id":3,"method":"authenticate","params":{"methodId":"miao-login"}}),
+    )
+    .await;
+    assert_eq!(read_response(&mut stdout, 3).await["result"], json!({}));
+
+    // Resuming a session that does not exist creates nothing.
+    send(
+        &mut stdin,
+        json!({"jsonrpc":"2.0","id":4,"method":"session/resume","params":{"sessionId":"ses_absent"}}),
+    )
+    .await;
+    let missing = read_response(&mut stdout, 4).await;
+    assert_eq!(
+        missing["error"]["message"], "session not found",
+        "{missing}"
+    );
+
+    send(
+        &mut stdin,
+        json!({"jsonrpc":"2.0","id":5,"method":"session/new","params":{"cwd":dir.path().to_str().unwrap(),"mcpServers":[]}}),
+    )
+    .await;
+    let created = read_response(&mut stdout, 5).await;
+    let session = created["result"]["sessionId"].as_str().unwrap().to_string();
+    send(
+        &mut stdin,
+        json!({"jsonrpc":"2.0","id":6,"method":"session/resume","params":{"sessionId":session}}),
+    )
+    .await;
+    assert_eq!(read_response(&mut stdout, 6).await["result"], json!({}));
+
+    // Closing settles and is idempotent — an unknown session closes cleanly.
+    send(
+        &mut stdin,
+        json!({"jsonrpc":"2.0","id":7,"method":"session/close","params":{"sessionId":session}}),
+    )
+    .await;
+    assert_eq!(read_response(&mut stdout, 7).await["result"], json!({}));
+    send(
+        &mut stdin,
+        json!({"jsonrpc":"2.0","id":8,"method":"session/close","params":{"sessionId":session}}),
+    )
+    .await;
+    assert_eq!(read_response(&mut stdout, 8).await["result"], json!({}));
+    send(
+        &mut stdin,
+        json!({"jsonrpc":"2.0","id":9,"method":"session/close","params":{"sessionId":"ses_absent"}}),
+    )
+    .await;
+    assert_eq!(read_response(&mut stdout, 9).await["result"], json!({}));
+}

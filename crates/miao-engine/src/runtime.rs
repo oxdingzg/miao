@@ -384,6 +384,23 @@ impl Runtime {
         Ok(commands)
     }
 
+    /// Detach a Session's actor (ACP `session/close`): cancel any running
+    /// drain, remove the attachment, and await the coordinator so the bounded
+    /// attachment table frees immediately. Unattached sessions report false.
+    pub async fn detach(&self, session: &str) -> Result<bool, Error> {
+        let _ = self.cancel(session).await?;
+        let actor = {
+            let mut actors = self.inner.actors.lock().await;
+            actors.remove(session)
+        };
+        let Some(actor) = actor else {
+            return Ok(false);
+        };
+        drop(actor.commands);
+        let _ = actor.join.await;
+        Ok(true)
+    }
+
     pub async fn cancel(&self, session: &str) -> Result<bool, Error> {
         let commands = {
             let actors = self.inner.actors.lock().await;

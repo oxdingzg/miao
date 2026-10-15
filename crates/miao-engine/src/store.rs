@@ -1698,4 +1698,25 @@ impl Store {
             }))
         }).await
     }
+
+    /// Whether the Session exists in the durable ledger — the probe ACP
+    /// `session/resume` uses, since resuming creates nothing.
+    pub async fn exists(&self, session: &str) -> Result<bool, Error> {
+        let session = session.to_owned();
+        self.call(move |conn| {
+            let found: Option<String> = conn
+                .query_row(
+                    "SELECT id FROM engine_session WHERE id=?1",
+                    params![session],
+                    |row| row.get(0),
+                )
+                .map(Some)
+                .or_else(|error| match error {
+                    rusqlite::Error::QueryReturnedNoRows => Ok(None),
+                    other => Err(other),
+                })?;
+            Ok(found.is_some())
+        })
+        .await
+    }
 }

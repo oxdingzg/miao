@@ -31,6 +31,7 @@ use tokio::{
 
 const AUTH_METHOD: &str = "miao-login";
 const JSONRPC: &str = "2.0";
+const INVALID_REQUEST: i64 = -32602;
 const METHOD_NOT_FOUND: i64 = -32601;
 const INVALID_PARAMS: i64 = -32602;
 const INTERNAL_ERROR: i64 = -32603;
@@ -155,7 +156,17 @@ async fn request(conn: &Arc<Conn>, id: Value, method: &str, params: Value) {
             )
             .await;
         }
-        "authenticate" => conn.reply(id, json!({})).await,
+        "authenticate" => {
+            // The declared method list is honest: only the method
+            // `initialize` advertises may authenticate.
+            match params.get("methodId").and_then(Value::as_str) {
+                Some(method) if method == AUTH_METHOD => conn.reply(id, json!({})).await,
+                _ => {
+                    conn.fail(id, INVALID_REQUEST, "unsupported authentication method")
+                        .await
+                }
+            }
+        }
         "session/new" => {
             let session = format!("ses_{}", uuid::Uuid::new_v4().simple());
             if let Err(error) = conn.runtime.store().ensure(&session).await {
@@ -166,9 +177,29 @@ async fn request(conn: &Arc<Conn>, id: Value, method: &str, params: Value) {
         }
         "session/prompt" => prompt(conn, id, params).await,
         "session/load" => load(conn, id, params).await,
-        "session/resume" => conn.reply(id, json!({})).await,
+        "session/resume" => {
+            // Resuming attaches an existing Session; it creates nothing — a
+            // missing session is a client error (session/new creates).
+            let Some(session) = params.get("sessionId").and_then(Value::as_str) else {
+                conn.fail(id, INVALID_REQUEST, "sessionId is required")
+                    .await;
+                return;
+            };
+            match conn.runtime.store().exists(session).await {
+                Ok(true) => conn.reply(id, json!({})).await,
+                Ok(false) => conn.fail(id, INVALID_REQUEST, "session not found").await,
+                Err(error) => conn.fail(id, INTERNAL_ERROR, &error.to_string()).await,
+            }
+        }
         "session/fork" => fork(conn, id, params).await,
-        "session/close" => conn.reply(id, json!({})).await,
+        "session/close" => {
+            // Closing settles the run and frees the bounded attachment; it is
+            // idempotent, and unknown sessions still close cleanly.
+            if let Some(session) = params.get("sessionId").and_then(Value::as_str) {
+                let _ = conn.runtime.detach(session).await;
+            }
+            conn.reply(id, json!({})).await
+        }
         "session/list" => list(conn, id).await,
         "session/set_mode" => mode(conn, id, params).await,
         other => {
