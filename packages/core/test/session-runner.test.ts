@@ -3435,7 +3435,7 @@ describe("SessionRunnerLLM", () => {
     }),
   )
 
-  it.effect("bounds the total tool calls executed within a drain", () =>
+  it.effect("does not impose a default total tool-call limit on a drain", () =>
     Effect.gen(function* () {
       yield* setup
       const session = yield* SessionV2.Service
@@ -3464,11 +3464,11 @@ describe("SessionRunnerLLM", () => {
 
       yield* session.resume(sessionID)
 
-      expect(executions).toHaveLength(100)
+      expect(executions).toHaveLength(101)
       const context = yield* (yield* SessionStore.Service).context(sessionID)
       const fanOut = context.find((entry) => entry.type === "assistant" && entry.finish === "tool-calls")
-      const rejected = fanOut?.type === "assistant" ? fanOut.content.at(-1) : undefined
-      expect(rejected).toMatchObject({ type: "tool", id: "call-many-100", state: { status: "error" } })
+      const last = fanOut?.type === "assistant" ? fanOut.content.at(-1) : undefined
+      expect(last).toMatchObject({ type: "tool", id: "call-many-100", state: { status: "completed" } })
     }),
   )
 
@@ -3515,6 +3515,181 @@ describe("SessionRunnerLLM", () => {
       expect(executions).toHaveLength(16)
       expect(maxActiveToolExecutions).toBe(8)
       expect(requests).toHaveLength(2)
+    }),
+  )
+
+  it.effect("continues past one hundred distinct tool calls across provider turns", () =>
+    Effect.gen(function* () {
+      yield* setup
+      const session = yield* SessionV2.Service
+      yield* session.prompt({ sessionID, prompt: Prompt.make({ text: "Complete a long task" }), resume: false })
+      executions.length = 0
+      responses = [
+        ...Array.from({ length: 11 }, (_unused, turn) => [
+          LLMEvent.stepStart({ index: 0 }),
+          ...Array.from({ length: 10 }, (_unused, call) =>
+            LLMEvent.toolCall({ id: `long-${turn}-${call}`, name: "echo", input: { text: `${turn}-${call}` } }),
+          ),
+          LLMEvent.stepFinish({ index: 0, reason: "tool-calls" }),
+          LLMEvent.finish({ reason: "tool-calls" }),
+        ]),
+        fragmentFixture("text", "long-done", ["All work completed"]).completeEvents,
+      ]
+      yield* session.resume(sessionID)
+      expect(executions).toHaveLength(110)
+      expect(requests).toHaveLength(12)
+      expect(JSON.stringify(yield* session.context(sessionID))).not.toContain("Refusing to run")
+    }),
+  )
+
+  for (const delivery of ["steer", "queue"] as const) {
+    it.effect(`resets repeated-call protection when a new ${delivery} input promotes`, () =>
+      Effect.gen(function* () {
+        yield* setup
+        const session = yield* SessionV2.Service
+        yield* session.prompt({ sessionID, prompt: Prompt.make({ text: "Repeat until guarded" }), resume: false })
+        const admit = session.prompt({
+          sessionID,
+          prompt: Prompt.make({ text: "Run it again for this new request" }),
+          delivery,
+          resume: false,
+        })
+        executions.length = 0
+        responses = [
+          [
+            LLMEvent.stepStart({ index: 0 }),
+            ...Array.from({ length: 6 }, (_unused, index) =>
+              LLMEvent.toolCall({ id: `before-${index}`, name: "echo", input: { text: "same" } }),
+            ),
+            LLMEvent.stepFinish({ index: 0, reason: "tool-calls" }),
+            LLMEvent.finish({ reason: "tool-calls" }),
+          ],
+          ...(delivery === "queue" ? [fragmentFixture("text", "before-idle", ["Guard reached"]).completeEvents] : []),
+          [
+            LLMEvent.stepStart({ index: 0 }),
+            LLMEvent.toolCall({ id: "after-new-input", name: "echo", input: { text: "same" } }),
+            LLMEvent.stepFinish({ index: 0, reason: "tool-calls" }),
+            LLMEvent.finish({ reason: "tool-calls" }),
+          ],
+          fragmentFixture("text", "after-idle", ["Recovered"]).completeEvents,
+        ]
+        if (delivery === "queue") {
+          yield* admit
+          yield* session.resume(sessionID)
+        } else {
+          streamGate = yield* Deferred.make<void>()
+          streamStarted = yield* Deferred.make<void>()
+          const run = yield* session.resume(sessionID).pipe(Effect.forkChild)
+          yield* Deferred.await(streamStarted)
+          yield* admit
+          yield* Deferred.succeed(streamGate, undefined)
+          yield* Fiber.join(run)
+        }
+        expect(executions).toEqual(Array(6).fill("same"))
+        const context = yield* session.context(sessionID)
+        const tools = context.flatMap((message) =>
+          message.type === "assistant" ? message.content.filter((part) => part.type === "tool") : [],
+        )
+        expect(tools.find((tool) => tool.id === "before-5")).toMatchObject({ state: { status: "error" } })
+        expect(tools.find((tool) => tool.id === "after-new-input")).toMatchObject({ state: { status: "completed" } })
+      }),
+    )
+  }
+
+  it.effect("does not reset repeated-call protection for background notifications", () =>
+    Effect.gen(function* () {
+      yield* setup
+      const session = yield* SessionV2.Service
+      const events = yield* EventV2.Service
+      const child = yield* session.create({
+        parentID: sessionID,
+        agent: AgentV2.ID.make("build"),
+        location: { directory: AbsolutePath.make("/project") },
+      })
+      yield* events.publish(SessionEvent.DelegationStarted, {
+        sessionID,
+        id: "repeat-report",
+        childSessionID: child.id,
+        promptMessageID: SessionMessage.ID.create(),
+        agent: "build",
+        prompt: "Find facts",
+        description: "facts",
+        owner: "finished-owner",
+        timestamp: yield* DateTime.now,
+      })
+      yield* events.publish(SessionEvent.DelegationEnded, {
+        sessionID,
+        id: "repeat-report",
+        status: "completed",
+        text: "BACKGROUND REPORT",
+        timestamp: yield* DateTime.now,
+      })
+      yield* session.prompt({
+        sessionID,
+        prompt: Prompt.make({ text: "Work without repeating forever" }),
+        resume: false,
+      })
+      executions.length = 0
+      const calls = (count: number, prefix: string) => [
+        LLMEvent.stepStart({ index: 0 }),
+        ...Array.from({ length: count }, (_unused, index) =>
+          LLMEvent.toolCall({ id: `${prefix}-${index}`, name: "echo", input: { text: "same" } }),
+        ),
+        LLMEvent.stepFinish({ index: 0, reason: "tool-calls" }),
+        LLMEvent.finish({ reason: "tool-calls" }),
+      ]
+      responses = [
+        calls(5, "before-notice"),
+        calls(1, "after-notice"),
+        fragmentFixture("text", "notice-done", ["Stopped repeating"]).completeEvents,
+      ]
+      yield* session.resume(sessionID)
+      expect(executions).toHaveLength(5)
+      expect(JSON.stringify(requests[1]?.messages)).toContain("BACKGROUND REPORT")
+      expect(JSON.stringify(yield* session.context(sessionID))).toContain("Refusing to run echo again")
+    }),
+  )
+
+  it.effect("executes tools after the runner's own queued continuation passes one hundred calls", () =>
+    Effect.gen(function* () {
+      yield* setup
+      const session = yield* SessionV2.Service
+      const todos = yield* SessionTodo.Service
+      yield* todos.update({
+        sessionID,
+        todos: [{ content: "Finish the long task", status: "in_progress", priority: "high" }],
+      })
+      yield* session.prompt({ sessionID, prompt: Prompt.make({ text: "Continue until finished" }), resume: false })
+      executions.length = 0
+      const calls = (prefix: string) => [
+        LLMEvent.stepStart({ index: 0 }),
+        ...Array.from({ length: 60 }, (_unused, index) =>
+          LLMEvent.toolCall({ id: `${prefix}-${index}`, name: "echo", input: { text: `${prefix}-${index}` } }),
+        ),
+        LLMEvent.stepFinish({ index: 0, reason: "tool-calls" }),
+        LLMEvent.finish({ reason: "tool-calls" }),
+      ]
+      responses = [
+        calls("first"),
+        fragmentFixture("text", "partial", ["More remains"]).completeEvents,
+        calls("continued"),
+      ]
+      responseFor = () =>
+        requests.length === 4
+          ? Stream.unwrap(
+              todos
+                .update({
+                  sessionID,
+                  todos: [{ content: "Finish the long task", status: "completed", priority: "high" }],
+                })
+                .pipe(Effect.as(Stream.fromIterable(fragmentFixture("text", "finished", ["All done"]).completeEvents))),
+            )
+          : Stream.fromIterable(responses?.shift() ?? [])
+      yield* session.resume(sessionID)
+      expect(executions).toHaveLength(120)
+      expect(requests).toHaveLength(4)
+      expect(userTexts(requests[2]!).some((text) => text.startsWith("keep going"))).toBe(true)
+      expect((yield* todos.get(sessionID))[0]?.status).toBe("completed")
     }),
   )
 
@@ -7171,6 +7346,46 @@ describe("SessionRunnerLLM", () => {
       expect(requests[1]?.tools).not.toEqual([])
       expect(requests[2]?.toolChoice).toMatchObject({ type: "none" })
       expect(executions).toEqual(["before", "after"])
+    }),
+  )
+
+  it.effect("resets the configured step allowance for queued input after the final text-only turn", () =>
+    Effect.gen(function* () {
+      yield* setup
+      const agents = yield* AgentV2.Service
+      yield* agents.transform((editor) =>
+        editor.update(AgentV2.ID.make("build"), (agent) => {
+          agent.steps = 2
+        }),
+      )
+      const session = yield* SessionV2.Service
+      yield* session.prompt({ sessionID, prompt: Prompt.make({ text: "First request" }), resume: false })
+      yield* session.prompt({
+        sessionID,
+        prompt: Prompt.make({ text: "Next request" }),
+        delivery: "queue",
+        resume: false,
+      })
+      executions.length = 0
+      const calls = (id: string) => [
+        LLMEvent.stepStart({ index: 0 }),
+        LLMEvent.toolCall({ id, name: "echo", input: { text: id } }),
+        LLMEvent.stepFinish({ index: 0, reason: "tool-calls" }),
+        LLMEvent.finish({ reason: "tool-calls" }),
+      ]
+      responses = [
+        calls("first"),
+        fragmentFixture("text", "first-limit", ["First summary"]).completeEvents,
+        calls("next"),
+        fragmentFixture("text", "next-limit", ["Next summary"]).completeEvents,
+      ]
+      yield* session.resume(sessionID)
+      expect(requests).toHaveLength(4)
+      expect(requests[1]?.toolChoice).toMatchObject({ type: "none" })
+      expect(requests[2]?.tools).not.toEqual([])
+      expect(requests[2]?.toolChoice).toBeUndefined()
+      expect(requests[3]?.toolChoice).toMatchObject({ type: "none" })
+      expect(executions).toEqual(["first", "next"])
     }),
   )
 
