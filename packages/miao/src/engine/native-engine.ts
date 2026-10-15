@@ -64,6 +64,9 @@ export const nativeEngineOptions = (
     ? environment.MIAO_ENGINE_PROMPT_CACHE === "on"
     : merged.promptCache
   merged.verifyCommand = environment.MIAO_ENGINE_VERIFY_COMMAND ?? merged.verifyCommand
+  merged.lspConfigFile = environment.MIAO_ENGINE_LSP_CONFIG
+    ? path.resolve(environment.MIAO_ENGINE_LSP_CONFIG)
+    : merged.lspConfigFile
   merged.contextLimits = limits ? JSON.parse(limits) : merged.contextLimits
   return {
     binary: merged.binary,
@@ -82,6 +85,7 @@ export const nativeEngineOptions = (
     roles: merged.roles,
     promptCache: merged.promptCache,
     verifyCommand: merged.verifyCommand,
+    lspConfigFile: merged.lspConfigFile,
     contextLimits: merged.contextLimits,
   }
 }
@@ -108,6 +112,7 @@ export const engineSettings = async (globalConfig: string): Promise<Omit<EngineO
       roles: engine.roles,
       promptCache: engine.prompt_cache,
       verifyCommand: engine.verify_command,
+      lspConfigFile: engine.lsp_config ? path.resolve(globalConfig, engine.lsp_config) : undefined,
       contextLimits: engine.context_limits,
     }
   }

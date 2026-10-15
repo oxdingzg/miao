@@ -57,6 +57,9 @@ export class Engine extends Schema.Class<Engine>("Config.Engine")({
   verify_command: Schema.String.pipe(Schema.optional).annotate({
     description: "Completion check the engine runs before ending an edit turn",
   }),
+  lsp_config: Schema.String.pipe(Schema.optional).annotate({
+    description: "Native engine LSP host configuration file; relative paths resolve against the global config directory",
+  }),
   context_limits: Schema.Struct({
     window: Schema.Finite,
     ratio: Schema.Finite,
