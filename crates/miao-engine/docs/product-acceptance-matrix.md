@@ -1,0 +1,57 @@
+# Native product acceptance matrix
+
+This is the evidence checklist for switch-plan G3, G4 and G6. Crate tests,
+facade tests, real-client acceptance and published-artifact drills are separate
+columns of evidence. A passing implementation test does not close a product
+gate or authorize the default switch.
+
+## Client lifecycle (G3)
+
+| Behavior | Existing automated evidence | Product acceptance still required |
+| --- | --- | --- |
+| Prompt and streamed answer | `tests/acp.rs`; product `native-coding-http.test.ts` | Native-owned Session in the daily TUI and an external ACP client |
+| Approval and denial | ACP request_permission scenario; product approval/reply tests | Visible pending approval, grant and denial in each actual client |
+| Cancellation | `tests/acp_client_matrix.rs`: incomplete HTTP response, cancelled prompt reply, successful continuation (#861) | Cancel from the TUI and external client; verify no later tool dispatch |
+| Provider failure | ACP HTTP 400 followed by a successful new prompt; failure is a JSON-RPC error, not end_turn (#861) | Visible error and usable next prompt in actual clients |
+| Process restart/resume | ACP process replacement on the same DB: prior context retained, prior answer not streamed twice (#861) | Client reconnect without duplicate messages or cross-engine takeover |
+| Slow client | HTTP SSE/cursor and restore coverage | Bound the real client's backlog, disconnect it and resume from its cursor |
+| Step accounting | Product bridge and native journal tests (#850) | TUI consumes tokens/cache/TTFT; native pricing is still zero until price resolution lands |
+
+These deterministic peers use no paid model calls. Their oracle is the observed
+wire response, committed history and next provider request, rather than a
+second implementation of the engine logic.
+
+## Installation and confinement (G4)
+
+| Platform | Installer evidence | Still required |
+| --- | --- | --- |
+| macOS | Real ZIP/download/checksum/upgrade/rollback fixture drill; corrupted and missing manifests fail before replacing pointers (#862) | Published engine archive, notarization/Gatekeeper and actual engine upgrade/rollback |
+| Linux | Real tar.gz/download/checksum/upgrade/rollback fixture drill on a Linux host (#862) | Published engine archive and actual engine upgrade/rollback |
+| Windows | Real executable install/upgrade/rollback/invalid-source drill on Windows PowerShell 5.1; no symlink privilege required (#864) | Verified published ZIP download, PowerShell 7 drill and actual engine upgrade/rollback |
+
+Fixture executables prove installer behavior, not engine confinement. The
+engine process/sandbox tests remain the confinement evidence, and must be
+repeated against the distributed binaries. The v0.2.9 draft had no engine
+assets at inspection time; publication acceptance is open.
+
+## Capability families (G6)
+
+| Capability | Engine implementation evidence | Product gap / acceptance task |
+| --- | --- | --- |
+| Read/edit/patch with approvals | coding and patch tests; product native coding HTTP tests | Actual TUI edit, refusal, undo and retry with preserved contents |
+| LSP | `tests/lsp.rs`; explicit installed-server scenario | Verify the global LSP config reaches the native process and diagnostics appear in the product |
+| MCP | `tests/mcp.rs` | Attach a user-configured MCP service, exercise tools and cancellation in the actual client |
+| Plugins/workflows | `tests/worker.rs`, hooks tests | Inventory used plugins/workflows; run each through the compatibility worker, including failure and restart |
+| Credentials | credential-store tests and read-only engine ownership | Expiry/refresh through the product-owned writer; never create a second refresh authority |
+| Session-owned terminals | Unix terminal and guardian tests | Unix TUI terminal workflow; Windows engine terminal tools are not advertised yet |
+| Delegation | subagent/reference tests and settlement token evidence | Actual client child-session rendering, cancellation and parent/child cost attribution |
+| Role routing | roles tests and one escalation | Summarize consumer exists; retrieve/verify consumers and live quality/cost evidence remain open |
+| Global configuration | native-engine-config tests (#857) | Real startup using the global engine section; environment overrides must remain explicit |
+
+## Closing a row
+
+Record the commit and artifact identifier, platform/client version, exact
+scenario, observable outcome and failure/recovery evidence. For a required
+capability that remains unavailable (notably Windows native terminals), record
+an explicitly accepted replacement or keep G6 open. Do not delete the legacy
+execution path on the strength of this table alone.

@@ -5,6 +5,10 @@ authority; this document turns them into ordered gates with an evidence owner
 for each, and defines the switch and retirement sequence with rollback at
 every step. Status markers are as of 2026-10-15.
 
+The [product acceptance matrix](product-acceptance-matrix.md) separates
+implementation tests from real-client and published-artifact evidence for
+G3/G4/G6. Use its open rows before declaring any of these gates closed.
+
 ## Gate ladder
 
 | # | Gate (maps to R4) | Evidence owner | Status |
