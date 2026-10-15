@@ -373,6 +373,27 @@ describe("CatalogV2", () => {
     }),
   )
 
+  it.effect("auxiliary selection accepts vision input but excludes media generation output", () => Effect.gen(function* () {
+    const catalog = yield* Catalog.Service
+    const providerID = ProviderV2.ID.make("media")
+    yield* catalog.transform((editor) => {
+      editor.provider.update(providerID, () => {})
+      editor.model.update(providerID, ModelV2.ID.make("image-output"), (model) => {
+        model.capabilities.input = ["text", "image"]
+        model.capabilities.output = ["text", "image"]
+        model.cost = [{ input: 0, output: 0, cache: { read: 0, write: 0 } }]
+        model.time.released = Date.now()
+      })
+      editor.model.update(providerID, ModelV2.ID.make("vision-text"), (model) => {
+        model.capabilities.input = ["text", "image"]
+        model.capabilities.output = ["text"]
+        model.cost = [{ input: 1, output: 1, cache: { read: 0, write: 0 } }]
+        model.time.released = Date.now()
+      })
+    })
+    expect((yield* catalog.model.small(providerID))?.id).toBe(ModelV2.ID.make("vision-text"))
+  }))
+
   it.effect("small model prefers a model the plan prices at zero over a metered one", () =>
     Effect.gen(function* () {
       const catalog = yield* Catalog.Service
