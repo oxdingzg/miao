@@ -60,6 +60,8 @@ jobs:
           $userPath = [Environment]::GetEnvironmentVariable("Path", "User")
           if (-not (($userPath -split ";") -contains "$HOME\.miao\bin")) { throw "user PATH was not updated: $userPath" }
           & "$HOME\.miao\bin\miao.exe" --version
+      - name: Exercise dedicated engine install and rollback
+        run: ./script/test-install-engine.ps1
       - name: Re-run is a no-op for the same version
         run: Get-Content -Raw ./install.ps1 | Invoke-Expression
       - name: Install a pinned version through parameters
