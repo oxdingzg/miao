@@ -21,8 +21,9 @@ test("replay envelopes survive the public durable codec and preserve reconnect i
     method === "snapshot" ? { session_id: sessionID, cursor: 2 } : [row(1, "first"), row(2, "second")]
   const full = await replayJournal({ sessionID, location, engineID: "store", after: 0, request })
   const resumed = await replayJournal({ sessionID, location, engineID: "store", after: 1, request })
-  expect(resumed.events).toHaveLength(1)
-  expect(resumed.events[0]).toEqual(full.events[1])
+  // One committed assistant row now settles text plus the step's usage evidence.
+  expect(resumed.events).toHaveLength(2)
+  expect(resumed.events[0]).toEqual(full.events[2])
   expect(resumed.cursor).toBe(2)
   const wire = await Effect.runPromise(
     Schema.encodeEffect(SessionEvent.Durable)(
@@ -76,11 +77,11 @@ test("history pages skip unprojected rows and keep a native sequence group intac
   ]
   const request = async (method: string) => (method === "snapshot" ? { session_id: sessionID, cursor: 4 } : journal)
   const first = await replayJournal({ sessionID, location, engineID: "store", after: 0, limit: 1, request })
-  expect(first.events).toHaveLength(2)
+  expect(first.events).toHaveLength(3)
   expect(first.cursor).toBe(2)
   expect(first.hasMore).toBe(true)
   const second = await replayJournal({ sessionID, location, engineID: "store", after: first.cursor, limit: 1, request })
-  expect(second.events).toHaveLength(1)
+  expect(second.events).toHaveLength(2)
   expect(second.hasMore).toBe(false)
   expect(second.events[0].id).not.toBe(first.events[0].id)
   const end = await replayJournal({ sessionID, location, engineID: "store", after: 4, limit: 1, request })
