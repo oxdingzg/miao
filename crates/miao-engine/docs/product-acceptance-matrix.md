@@ -48,6 +48,16 @@ assets at inspection time; publication acceptance is open.
 | Role routing | roles tests and one escalation | Summarize consumer exists; retrieve/verify consumers and live quality/cost evidence remain open |
 | Global configuration | native-engine-config tests (#857) | Real startup using the global engine section; environment overrides must remain explicit |
 
+### Native LSP configuration
+
+The global `engine.lsp_config` field selects the native engine's existing LSP
+host configuration file. Relative paths resolve against the global config
+directory, rather than a Session workspace. `MIAO_ENGINE_LSP_CONFIG` is the
+operator override (resolved against the process working directory). The
+resolved path reaches the child as `--lsp-config`; it does not automatically
+translate the TypeScript runner's LSP definitions or prove diagnostics are
+rendered in a real client. Keep that product acceptance row open until tested.
+
 ## Closing a row
 
 Record the commit and artifact identifier, platform/client version, exact
