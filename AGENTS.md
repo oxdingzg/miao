@@ -43,7 +43,11 @@ miao is a derivative of opencode under the MIT licence, and most of its code sti
 Use a type prefix from the conventional-commit set plus a short subject:
 `feat/`, `fix/`, `docs/`, `chore/`, `refactor/`, or `test/`, then a few
 hyphen-separated words. Keep the branch short-lived and delete it after the
-pull request merges.
+pull request merges — and also when a pull request is closed rather than merged.
+GitHub deletes a head branch on merge but not on close, so a superseded pull
+request is where a branch gets left behind; `bun script/branch-hygiene.ts`
+reports every remote branch without an open pull request and how far it trails
+`main`.
 
 Examples: `fix/session-recovery`, `fix/scroll-state`, `chore/regenerate-sdk`.
 
