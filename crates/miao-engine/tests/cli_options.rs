@@ -6,12 +6,18 @@ use std::process::Command;
 #[test]
 fn engine_flags_the_runtime_reads_are_accepted_options() {
     let dir = tempfile::tempdir().unwrap();
-    let cases: [&[&str]; 5] = [
+    let cases: [&[&str]; 6] = [
         &["--lsp-diagnostics", "off"],
         &["--lsp-config", "/nonexistent/lsp.json"],
         &["--prompt-cache", "on"],
         &["--verify-command", "true"],
         &["--edit-recovery", "off"],
+        // Automatic context management is opt-in through this flag, which was
+        // missing from the whitelist until it was measured.
+        &[
+            "--context-limits",
+            "{\"window\":32000,\"ratio\":0.5,\"headroom\":2000,\"perPass\":8}",
+        ],
     ];
     for case in cases {
         let output = Command::new(env!("CARGO_BIN_EXE_miao-engine"))
