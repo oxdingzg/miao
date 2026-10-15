@@ -20,6 +20,11 @@ import { Script } from "@miao/script"
 import pkg from "../package.json"
 
 const singleFlag = process.argv.includes("--single")
+// One macOS runner builds both darwin architectures, so the release does not
+// depend on the Intel pool, whose jobs have taken ten times as long as their
+// arm64 siblings (and never finished inside their budget). The engine archives
+// are cross-compiled to match.
+const darwinFlag = process.argv.includes("--darwin")
 const baselineFlag = process.argv.includes("--baseline")
 const skipInstall = process.argv.includes("--skip-install")
 const sourcemapsFlag = process.argv.includes("--sourcemaps")
@@ -116,7 +121,9 @@ const allTargets: {
   },
 ]
 
-const targets = singleFlag
+const targets = darwinFlag
+  ? allTargets.filter((item) => item.os === "darwin" && item.abi === undefined)
+  : singleFlag
   ? allTargets.filter((item) => {
       if (item.os !== process.platform || item.arch !== process.arch) {
         return false
@@ -274,39 +281,58 @@ for (const item of targets) {
  * root next to the CLI archives. Build failures fail the release rather than
  * uploading a stale binary or silently omitting an advertised platform asset.
  */
-async function buildEngineArchive(): Promise<string | undefined> {
+async function buildEngineArchive(): Promise<string[]> {
   const os = ({ darwin: "darwin", linux: "linux", win32: "windows" } as Record<string, string | undefined>)[process.platform]
-  const arch = process.arch === "arm64" ? "arm64" : "x64"
-  if (!os) return undefined
+  if (!os) return []
+  // The darwin build produces both architectures on one runner, so the archive
+  // set does not wait on the Intel pool, whose jobs have taken ten times as long
+  // as their arm64 siblings and never finished inside their budget. Every other
+  // platform builds its host target as before.
+  const wanted = darwinFlag
+    ? [
+        { target: "aarch64-apple-darwin" as string | undefined, arch: "arm64" },
+        { target: "x86_64-apple-darwin" as string | undefined, arch: "x64" },
+      ]
+    : [{ target: undefined as string | undefined, arch: process.arch === "arm64" ? "arm64" : "x64" }]
   const crate = path.resolve(dir, "../../crates/miao-engine")
-  await $`cargo build --locked --release --bin miao-engine`.cwd(crate)
-  const suffix = process.platform === "win32" ? ".exe" : ""
-  const bin = path.join(crate, "target/release", `miao-engine${suffix}`)
-  const version = (await $`${bin} --version`.text()).trim()
-  if (version !== `miao-engine ${Script.version}`)
-    throw new Error(`engine version mismatch: ${version}; expected miao-engine ${Script.version}`)
-  if (process.platform === "darwin") {
-    const identity = await developerIdIdentity()
-    if (identity) {
-      await $`codesign --force --options runtime --timestamp --sign ${identity} ${bin}`
-    } else {
-      await $`codesign --force --sign - ${bin}`
+  const archives: string[] = []
+  for (const { target, arch } of wanted) {
+    await $`cargo build --locked --release --bin miao-engine ${target ? ["--target", target] : []}`.cwd(crate)
+    const suffix = process.platform === "win32" ? ".exe" : ""
+    const bin = path.join(crate, "target", ...(target ? [target] : []), "release", `miao-engine${suffix}`)
+    // A cross-built binary cannot run here, so only the host target asserts its
+    // version; the same crate produced both.
+    if (!target) {
+      const version = (await $`${bin} --version`.text()).trim()
+      if (version !== `miao-engine ${Script.version}`)
+        throw new Error(`engine version mismatch: ${version}; expected miao-engine ${Script.version}`)
     }
+    if (process.platform === "darwin") {
+      const identity = await developerIdIdentity()
+      if (identity) {
+        await $`codesign --force --options runtime --timestamp --sign ${identity} ${bin}`
+      } else {
+        await $`codesign --force --sign - ${bin}`
+      }
+    }
+    const name = `miao-engine-${os}-${arch}`
+    if (process.platform === "win32") {
+      await $`powershell -NoProfile -Command ${`Compress-Archive -Path ${bin} -DestinationPath dist/${name}.zip -Force`}`
+      archives.push(`./dist/${name}.zip`)
+      continue
+    }
+    const staging = `dist/${name}`
+    await $`mkdir -p ${staging} && cp ${bin} ${staging}/`
+    // darwin uses a zip so the archive is notarizable with the CLI archives.
+    if (process.platform === "darwin") {
+      await $`zip -r ../${name}.zip miao-engine`.cwd(staging)
+      archives.push(`./dist/${name}.zip`)
+      continue
+    }
+    await $`tar -czf ../${name}.tar.gz miao-engine`.cwd(staging)
+    archives.push(`./dist/${name}.tar.gz`)
   }
-  const name = `miao-engine-${os}-${arch}`
-  if (process.platform === "win32") {
-    await $`powershell -NoProfile -Command ${`Compress-Archive -Path ${bin} -DestinationPath dist/${name}.zip -Force`}`
-    return `./dist/${name}.zip`
-  }
-  const staging = `dist/${name}`
-  await $`mkdir -p ${staging} && cp ${bin} ${staging}/`
-  // darwin uses a zip so the archive is notarizable with the CLI archives.
-  if (process.platform === "darwin") {
-    await $`zip -r ../${name}.zip miao-engine`.cwd(staging)
-    return `./${staging}.zip`
-  }
-  await $`tar -czf ../${name}.tar.gz miao-engine`.cwd(staging)
-  return `./${staging}.tar.gz`
+  return archives
 }
 
 if (Script.release) {
@@ -325,8 +351,7 @@ if (Script.release) {
   }
   // The engine binary rides the same release channel (B5): one archive per
   // platform, built from this commit alongside the CLI.
-  const engineArchive = await buildEngineArchive()
-  if (engineArchive) archives.push(engineArchive)
+  archives.push(...(await buildEngineArchive()))
 
   // Bare executables cannot carry a staple ticket; submitting the zip registers
   // the binary's cdhash and Gatekeeper checks it online at first launch.
