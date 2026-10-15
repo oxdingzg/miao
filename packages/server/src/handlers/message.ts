@@ -1,6 +1,7 @@
 import { SessionMessage } from "@miao/core/session/message"
 import { SessionV2 } from "@miao/core/session"
-import { Effect, Schema } from "effect"
+import { Effect, Option, Schema } from "effect"
+import { NativeEngine } from "../native-engine"
 import { HttpApiBuilder } from "effect/unstable/httpapi"
 import { Api } from "../api"
 import { InvalidCursorError, SessionNotFoundError, UnknownError } from "@miao/protocol/errors"
@@ -38,6 +39,33 @@ export const MessageHandler = HttpApiBuilder.group(Api, "server.message", (handl
           catch: () => new InvalidCursorError({ message: "Invalid cursor" }),
         })
         const order = decoded?.order ?? ctx.query.order ?? "desc"
+        const placement = Option.getOrUndefined(yield* Effect.serviceOption(NativeEngine.Placement))
+        if (placement) {
+          const native = yield* NativeEngine.Service
+          const transcript = yield* native.transcript({
+            ...placement,
+            sessionID: ctx.params.sessionID,
+            selected: false,
+          })
+          const ordered = order === "asc" ? [...transcript] : [...transcript].reverse()
+          const index = decoded ? ordered.findIndex((message) => message.id === decoded.id) : -1
+          if (decoded && index < 0)
+            return yield* new InvalidCursorError({ message: "Cursor message is not visible in this native Session" })
+          const limit = ctx.query.limit ?? DefaultMessagesLimit
+          const messages =
+            decoded?.direction === "previous"
+              ? ordered.slice(Math.max(0, index - limit), index)
+              : ordered.slice(index + 1, index + 1 + limit)
+          const first = messages[0]
+          const last = messages.at(-1)
+          return {
+            data: messages,
+            cursor: {
+              previous: first ? cursor.encode(first, order, "previous") : undefined,
+              next: last ? cursor.encode(last, order, "next") : undefined,
+            },
+          }
+        }
         const messages = yield* session
           .messages({
             sessionID: ctx.params.sessionID,

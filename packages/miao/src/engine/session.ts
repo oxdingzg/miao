@@ -127,7 +127,12 @@ export class EngineTranslator {
     const status = this.#status.update(event)
     if (status) publish({ type: "session.next.status", data: status })
     const admitted = this.#prompts.project(event) ?? translateCopiedPrompt(event)
-    if (admitted) publish({ type: "session.next.prompt.admitted", data: admitted })
+    if (admitted) {
+      publish({ type: "session.next.prompt.admitted", data: admitted })
+      // The bridge projects native promotion, not admission alone. Rendering
+      // reducers wait for prompted before making a user message visible.
+      publish({ type: "session.next.prompted", data: admitted })
+    }
     const identity = translateAssistantIdentity(event)
     if (identity) publish({ type: "session.next.assistant.identity", data: identity })
     const failure = translateRunFailure(event)
@@ -167,8 +172,7 @@ export class EngineTranslator {
     if (progress.kind === "provider.ttft") {
       const sessionID = progress.session_id
       const ttft = progress.ttft_ms
-      if (typeof sessionID === "string" && typeof ttft === "number" && ttft >= 0)
-        this.#ttft.set(sessionID, ttft)
+      if (typeof sessionID === "string" && typeof ttft === "number" && ttft >= 0) this.#ttft.set(sessionID, ttft)
       return
     }
     if (progress.kind !== "provider.delta") return

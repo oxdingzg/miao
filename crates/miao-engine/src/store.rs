@@ -627,6 +627,14 @@ impl Store {
             let cursor:u64=tx.query_row("SELECT next_seq FROM engine_session WHERE id=?1",[&session],|r|r.get(0)).optional()?.ok_or_else(||Error::Invalid("Session does not exist".into()))?;
             let location:Option<String>=tx.query_row("SELECT root FROM engine_location WHERE session_id=?1",[&session],|r|r.get(0)).optional()?;
             let messages=projected(&tx,&session,cursor)?;
+            // Context readers need the cut and summary from the same transaction
+            // as the visible messages. A second selected-history read could race
+            // a compaction/revert and produce a mixed-generation transcript.
+            let selection:Option<(u64,String,u64,Option<u64>)>=tx.query_row(
+                "SELECT c.through_seq,c.summary,c.created_seq,e.recorded_at_ms FROM engine_compaction c JOIN engine_event e ON e.session_id=c.session_id AND e.seq=c.created_seq WHERE c.session_id=?1 ORDER BY c.created_seq DESC LIMIT 1",
+                [&session],|r|Ok((r.get(0)?,r.get(1)?,r.get(2)?,r.get(3)?)),
+            ).optional()?;
+            let selection=selection.map(|(through,summary,seq,time)|json!({"through_seq":through,"summary":summary,"seq":seq,"recorded_at_ms":time}));
             let parent:Option<String>=tx.query_row("SELECT parent_session_id FROM engine_lineage WHERE session_id=?1",[&session],|row|row.get(0)).optional()?;
             let active:Option<String>=tx.query_row("SELECT id FROM engine_run WHERE session_id=?1 AND state='running'",[&session],|r|r.get(0)).optional()?;
             let pending={
@@ -651,7 +659,7 @@ impl Store {
                 "SELECT title,created_at_ms,updated_at_ms FROM engine_session WHERE id=?1",
                 [&session],|r|Ok((r.get(0)?,r.get(1)?,r.get(2)?)),
             )?;
-            let snapshot=json!({"session_id":session,"parent_session_id":parent,"cursor":cursor,"location":location,"mode":mode,"title":title,"created_at_ms":created_at_ms,"updated_at_ms":updated_at_ms,"messages":messages,"pending":pending,"active_run":active,"approvals":approvals,"context":context,"state":state,"questions":questions,"wakeups":wakeups,"crons":crons});
+            let snapshot=json!({"session_id":session,"parent_session_id":parent,"cursor":cursor,"location":location,"mode":mode,"title":title,"created_at_ms":created_at_ms,"updated_at_ms":updated_at_ms,"messages":messages,"selection":selection,"pending":pending,"active_run":active,"approvals":approvals,"context":context,"state":state,"questions":questions,"wakeups":wakeups,"crons":crons});
             if serde_json::to_vec(&snapshot)?.len()>4*1024*1024{return Err(Error::Invalid("snapshot exceeds limit; use events pagination".into()));}
             tx.commit()?;Ok(snapshot)
         }).await

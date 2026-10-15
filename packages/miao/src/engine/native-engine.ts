@@ -35,6 +35,7 @@ const QuestionBindings = Schema.Array(
 )
 
 import { replayJournal } from "./journal"
+import { readTranscript } from "./transcript"
 
 /**
  * Production native transport, opt-in through the engine binary environment:
@@ -95,7 +96,9 @@ export const nativeEngineOptions = (
  * process serving every Location, so project documents do not configure it.
  * Files later in {@link fileNames} win, matching the Config service merge.
  */
-export const engineSettings = async (globalConfig: string): Promise<Omit<EngineOptions, "db" | "workspace"> | undefined> => {
+export const engineSettings = async (
+  globalConfig: string,
+): Promise<Omit<EngineOptions, "db" | "workspace"> | undefined> => {
   let settings: Omit<EngineOptions, "db" | "workspace"> | undefined = undefined
   for (const name of Config.fileNames) {
     const file = path.join(globalConfig, name)
@@ -183,6 +186,14 @@ export const fromOwners = (owners: Owners): NativeEngine.Interface => {
       read<Readonly<Record<string, unknown>>>(input, (connection) =>
         connection.client.request("snapshot", { session_id: input.sessionID }),
       ).pipe(Effect.map((value) => (typeof value === "object" && value !== null ? value : {}))),
+    transcript: (input) =>
+      read(input, (connection) =>
+        readTranscript({
+          ...input,
+          engineID: input.storage,
+          request: (method, params) => connection.client.request(method, params),
+        }),
+      ),
     interruptIf: (input) =>
       read(input, async (connection) => {
         const result = await connection.client.request("cancel_if", {
@@ -278,8 +289,6 @@ export const fromOwners = (owners: Owners): NativeEngine.Interface => {
           session_id: input.sessionID,
           rejection: { question_id: binding.question_id, input_hash: binding.input_hash },
         })
-
-
       }).pipe(Effect.asVoid),
     fork: (input) =>
       read(input, async (connection) => {
