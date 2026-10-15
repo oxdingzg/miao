@@ -23,7 +23,18 @@ export interface EngineOptions {
   policyFile?: string
   toolReplayFile?: string
   /** Automatic compaction limits (roadmap §2.13); absent keeps it off. */
-  contextLimits?: { window: number; ratio: number; headroom: number; perPass: number }
+  contextLimits?: {
+    window: number
+    ratio: number
+    headroom: number
+    perPass: number
+    /** Per-payload elision budget; absent leaves tool output whole. */
+    pruneChars?: number
+    /** Total elision budget; absent elides every candidate. */
+    pruneTotalChars?: number
+    /** Newest user-role messages whose tool output is never elided. */
+    protectTurns?: number
+  }
   /** Transport-failure fallback model on the same route. */
   fallbackModel?: string
   /** Purpose-role model bindings (ADR-14): model ids on the engine's own route. */
