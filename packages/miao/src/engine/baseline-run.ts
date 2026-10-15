@@ -67,6 +67,19 @@ export interface BaselineEvidence {
    * the runner's own receipt times rather than from a duration in the event.
    */
   parallel?: { batches: number; batchedReads: number; batchWallMs: number }
+  /**
+   * Provider attempts the runner observed end to end, in arrival order. Every
+   * attempt is durable in the engine's own store, which a sweep cannot read, so
+   * the engine reports each one on the progress feed; older evidence predates
+   * the field.
+   */
+  providerAttempts?: Array<{
+    attempt: number | null
+    protocol: string | null
+    status: number | null
+    outcome: string | null
+    detail: string | null
+  }>
   textHash: string
   binarySha256: string | null
   startedAtMs: number
@@ -257,6 +270,7 @@ export async function runBaselineRust(input: BaselineRustInput): Promise<Baselin
     toolCalls: events.filter((event) => event.kind === "tool.completed").length,
     context: observedContextManagement(events, progress),
     parallel: observedReadBatches(events, observed),
+    providerAttempts: observedProviderAttempts(progress),
     admissionMs: admittedAt(events, observed),
     requiredReceipts: task.requiredReceipts,
     answerContains: task.answerContains,
@@ -405,6 +419,7 @@ interface FinishedBaselineRun {
   toolCalls: number
   parallel?: { batches: number; batchedReads: number; batchWallMs: number }
   context?: { compaction: Record<string, number>; reasons: string[]; recallCalls: number }
+  providerAttempts?: BaselineEvidence["providerAttempts"]
   admissionMs: number | null
   requiredReceipts: string[]
   answerContains: string[]
@@ -430,6 +445,7 @@ function finishBaselineRun(input: FinishedBaselineRun): BaselineRun {
     toolCalls: input.toolCalls,
     parallel: input.parallel,
     context: input.context,
+    providerAttempts: input.providerAttempts,
     textHash: digest(input.answer),
     binarySha256: input.binarySha256 ?? null,
     startedAtMs: input.startedAtMs,
@@ -581,6 +597,22 @@ function observedContextManagement(
     return data?.tool === "recall"
   }).length
   return { compaction, reasons, recallCalls }
+}
+
+/// Provider attempts the runner observed, in arrival order. An attempt is
+/// durable in the engine's store, but a sweep cannot read that store, so the
+/// engine reports each one on the progress feed: counting its own events alone
+/// saw an empty list even when the turn succeeded.
+function observedProviderAttempts(progress: Array<{ item: EngineProgress }>) {
+  return progress
+    .filter(({ item }) => item.kind === "provider.attempt")
+    .map(({ item }) => ({
+      attempt: typeof item.attempt === "number" ? item.attempt : null,
+      protocol: typeof item.protocol === "string" ? item.protocol : null,
+      status: typeof item.status === "number" ? item.status : null,
+      outcome: typeof item.outcome === "string" ? item.outcome : null,
+      detail: typeof item.detail === "string" ? item.detail : null,
+    }))
 }
 
 /// A read batch's wall time and read count, as the runner observed them: from

@@ -809,6 +809,14 @@ async fn execute(
                                 "run_id":run,"step":step,
                                 "attempt":delta["attempt"],"reason":delta["reason"],"status":delta["status"],
                             })).await?;
+                        } else if delta["kind"] == "provider.attempt" {
+                            // An attempt describes the request, not the answer it may
+                            // produce: it travels on the ephemeral progress channel
+                            // under its own kind, where an evaluation runner can
+                            // observe every attempt. It is not provider output, so it
+                            // never counts as `produced` and never disarms the
+                            // pre-output transport retry.
+                            let _=inner.progress.send(json!({"session_id":session,"run_id":run,"step":step,"kind":"provider.attempt","protocol":delta["protocol"],"attempt":delta["attempt"],"status":delta["status"],"outcome":delta["outcome"],"detail":delta["detail"]}));
                         } else {
                             if !produced {
                                 ttft_ms = Some(attempt_started.elapsed().as_millis() as u64);
@@ -827,6 +835,8 @@ async fn execute(
                         "run_id":run,"step":step,
                         "attempt":delta["attempt"],"reason":delta["reason"],"status":delta["status"],
                     })).await?;
+                } else if delta["kind"] == "provider.attempt" {
+                    let _=inner.progress.send(json!({"session_id":session,"run_id":run,"step":step,"kind":"provider.attempt","protocol":delta["protocol"],"attempt":delta["attempt"],"status":delta["status"],"outcome":delta["outcome"],"detail":delta["detail"]}));
                 } else {
                     if !produced {
                         ttft_ms = Some(attempt_started.elapsed().as_millis() as u64);
