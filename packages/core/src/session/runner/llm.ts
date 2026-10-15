@@ -155,16 +155,8 @@ import { llmClient } from "../../effect/app-node-platform"
  * explicit loop starts the next provider turn after local settlement. Configured agent step limits bound the loop.
  */
 
-/** Cap on how many times one identical (name, input) tool call may execute in a drain. */
+/** Cap on identical tool calls between promoted user inputs. */
 const MAX_IDENTICAL_TOOL_CALLS = 5
-
-/**
- * Cap on how many tool calls one drain may execute in total, across distinct
- * calls. Eager local execution starts every call as soon as the provider
- * streams it, so a provider emitting a runaway batch would otherwise run all
- * of them; a normal agentic turn stays in the low tens.
- */
-const MAX_TOOL_CALLS_PER_DRAIN = 100
 
 /**
  * Cap on eager tool settlements running at the same time. Durable publication
@@ -311,11 +303,13 @@ const layer = Layer.effect(
     const seenModelSwitches = new Map<string, number>()
     const streamContinuations = new Map<string, number>()
     const toolInputCorrections = new Map<string, number>()
-    // Repeated identical tool calls per Session drain; reset at each drain start.
+    // A new input may legitimately ask for the same operation again. Drain
+    // boundaries are scheduler details, not user-request boundaries.
     const repeatedToolCalls = new Map<string, number>()
-    // Total executed tool calls per Session drain, bounded by MAX_TOOL_CALLS_PER_DRAIN;
-    // reset at each drain start next to the repeated-call counter it widens.
-    const toolCallsPerDrain = new Map<string, number>()
+    const resetToolRepeats = (sessionID: SessionSchema.ID) => {
+      const prefix = `${sessionID}\u0000`
+      for (const key of repeatedToolCalls.keys()) if (key.startsWith(prefix)) repeatedToolCalls.delete(key)
+    }
     const readSettings = Effect.fnUntraced(function* () {
       const documents = (yield* config.entries()).filter((entry): entry is Config.Document => entry.type === "document")
       let ttl: number | undefined
@@ -598,7 +592,10 @@ const layer = Layer.effect(
           if (promoted === 0)
             yield* SessionDelegationStore.promoteNext(db, events, initialSession.id, promotion === "notification")
         }
-        if (promoted > 0) currentStep = 1
+        if (promoted > 0) {
+          currentStep = 1
+          resetToolRepeats(initialSession.id)
+        }
       }
       const commandChanged = yield* prepareCommands(sessionID)
       const session = commandChanged ? yield* getSession(sessionID) : initialSession
@@ -983,17 +980,6 @@ const layer = Layer.effect(
               return
             }
             needsContinuation = true
-            const executed = (toolCallsPerDrain.get(session.id) ?? 0) + 1
-            toolCallsPerDrain.set(session.id, executed)
-            if (executed > MAX_TOOL_CALLS_PER_DRAIN) {
-              yield* withPublication(
-                publisher.failTool(
-                  event.id,
-                  `Refusing to run ${event.name}: this turn has already executed ${MAX_TOOL_CALLS_PER_DRAIN} tool calls. Stop calling tools and report what you have.`,
-                ),
-              )
-              return
-            }
             const signature = `${session.id}\u0000${event.name}\u0000${signatureInput(event.input)}`
             const executions = (repeatedToolCalls.get(signature) ?? 0) + 1
             repeatedToolCalls.set(signature, executions)
@@ -1001,7 +987,7 @@ const layer = Layer.effect(
               yield* withPublication(
                 publisher.failTool(
                   event.id,
-                  `Refusing to run ${event.name} again: the same call has already executed ${MAX_IDENTICAL_TOOL_CALLS} times in this turn. Stop repeating it and change approach, or explain the blocker.`,
+                  `Refusing to run ${event.name} again: the same call has already executed ${MAX_IDENTICAL_TOOL_CALLS} times for this input. Stop repeating it and change approach, or explain the blocker.`,
                 ),
               )
               return
@@ -1971,9 +1957,7 @@ const layer = Layer.effect(
                 ),
               })
               .pipe(Effect.orDie)
-          const repeatedPrefix = `${input.sessionID}\u0000`
-          for (const key of repeatedToolCalls.keys()) if (key.startsWith(repeatedPrefix)) repeatedToolCalls.delete(key)
-          toolCallsPerDrain.delete(input.sessionID)
+          resetToolRepeats(input.sessionID)
             if (delegation) yield* delegation.recover(input.sessionID)
           const hasSteer = yield* SessionInput.hasPending(db, input.sessionID, "steer")
           const hasQueue = hasSteer ? false : yield* SessionInput.hasPending(db, input.sessionID, "queue")
