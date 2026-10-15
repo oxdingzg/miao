@@ -301,13 +301,15 @@ async function buildEngineArchive(): Promise<string | undefined> {
   }
   const staging = `dist/${name}`
   await $`mkdir -p ${staging} && cp ${bin} ${staging}/`
-  // darwin uses a zip so the archive is notarizable with the CLI archives.
+  // darwin uses a zip so the archive is notarizable with the CLI archives. Both
+  // branches write next to the CLI archives rather than into the staging
+  // directory, which is where the hash and upload that follow look for them.
   if (process.platform === "darwin") {
-    await $`zip -r ${name}.zip miao-engine`.cwd(staging)
-    return `./${staging}.zip`
+    await $`zip -r ../${name}.zip miao-engine`.cwd(staging)
+    return `./dist/${name}.zip`
   }
   await $`tar -czf ../${name}.tar.gz miao-engine`.cwd(staging)
-  return `./${staging}.tar.gz`
+  return `./dist/${name}.tar.gz`
 }
 
 if (Script.release) {
