@@ -25,7 +25,8 @@ test("journal replay translates committed assistant text with per-event provenan
   // The assistant settlement trails its own text events and carries the
   // step's usage evidence (zeroed when the journal recorded no usage).
   expect(outputs[1].type).toBe("session.next.step.ended")
-  expect(outputs[1].source).toEqual({ sessionID: "ses_replay", seq: 7, index: 0, recordedAtMs: 420 })
+  // The settlement publishes after the text events, so its source ordinal is 1.
+  expect(outputs[1].source).toEqual({ sessionID: "ses_replay", seq: 7, index: 1, recordedAtMs: 420 })
   const settlement = outputs[1].data as {
     assistantMessageID?: unknown
     finish?: unknown
