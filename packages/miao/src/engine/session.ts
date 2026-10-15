@@ -6,23 +6,26 @@ import { SessionID } from "@miao/schema/session-id"
 import { EngineClient, EngineError, type EngineEvent, type EngineProgress } from "./client"
 import { adoptSession, messageID } from "./identity"
 import {
+  type BufferedUsage,
+  PromptBridge,
   StatusBridge,
   ToolBridge,
-  PromptBridge,
+  streamAnchor,
   translateApproval,
   translateApprovalResolved,
   translateAssistantIdentity,
-  translateMessage,
   translateCopiedPrompt,
+  translateDelta,
+  translateMessage,
   translateProviderRequest,
   translateProviderRequestResult,
+  translateQuestion,
   translateQuestionResolved,
   translateRetried,
   translateRunFailure,
-  translateQuestion,
-  streamAnchor,
-  translateDelta,
+  translateStepEnded,
   translateTools,
+  translateUsage,
   type StreamAnchor,
 } from "./bridge"
 
@@ -46,6 +49,8 @@ export class EngineTranslator {
   #prompts = new PromptBridge()
   #settledThrough = new Map<string, number>()
   #anchors = new Map<string, StreamAnchor>()
+  #usage = new Map<string, { runID: string; step: number; usage: BufferedUsage }>()
+  #ttft = new Map<string, number>()
 
   constructor(publish: EnginePublish) {
     this.#publish = publish
@@ -132,8 +137,18 @@ export class EngineTranslator {
     if (request) publish({ type: "session.next.provider.request", data: request })
     const requestResult = translateProviderRequestResult(event)
     if (requestResult) publish({ type: "session.next.provider.request.result", data: requestResult })
+    const billed = translateUsage(event)
+    if (billed) this.#usage.set(event.session_id, billed)
     for (const text of translateMessage(event)) publish({ type: "session.next.text.ended", data: text })
     for (const call of translateTools(event)) publish({ type: "session.next.tool.called", data: call })
+    const usage = this.#usage.get(event.session_id)
+    const ttft = this.#ttft.get(event.session_id)
+    const ended = translateStepEnded(event, usage?.usage, ttft)
+    if (ended) {
+      publish({ type: "session.next.step.ended", data: ended })
+      this.#usage.delete(event.session_id)
+      this.#ttft.delete(event.session_id)
+    }
     const result = this.#tools.result(event)
     if (result) publish({ type: result.type, data: result })
     const asked = translateApproval(event)
@@ -148,6 +163,13 @@ export class EngineTranslator {
 
   /** Live-only delta fragments, anchored to the durable step-start sequence. */
   progress(progress: EngineProgress): void {
+    if (progress.kind === "provider.ttft") {
+      const sessionID = progress.session_id
+      const ttft = progress.ttft_ms
+      if (typeof sessionID === "string" && typeof ttft === "number" && ttft >= 0)
+        this.#ttft.set(sessionID, ttft)
+      return
+    }
     if (progress.kind !== "provider.delta") return
     const sessionID = progress.session_id
     if (typeof sessionID !== "string") return

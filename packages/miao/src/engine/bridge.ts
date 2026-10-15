@@ -292,6 +292,87 @@ export type StreamAnchor = {
   calls: Map<number, string>
 }
 
+/** The billed usage one engine step reported, buffered until its assistant message commits. */
+export type BufferedUsage = {
+  tokens: { input: number; output: number; reasoning: number; cache: { read: number; write: number } }
+}
+
+/**
+ * Buffer the billed usage an engine `usage` event reports for its step. The
+ * engine journals usage before the assistant message commits, so the values
+ * wait here until `translateStepEnded` attaches them to the settlement.
+ */
+export function translateUsage(
+  event: EngineEvent,
+): { runID: string; step: number; usage: BufferedUsage } | undefined {
+  if (event.kind !== "usage") return undefined
+  if (typeof event.data !== "object" || event.data === null) return undefined
+  const partial = "partial" in event.data ? event.data["partial"] : undefined
+  if (partial === true) return undefined
+  if (!hasRecordedTime(event)) return undefined
+  const runID = readNonEmptyString(event.data, "run_id")
+  const step = readCount(event.data, "step")
+  if (runID === undefined || step === undefined) return undefined
+  const usage = "usage" in event.data ? event.data["usage"] : undefined
+  if (typeof usage !== "object" || usage === null) return undefined
+  return {
+    runID,
+    step,
+    usage: {
+      tokens: {
+        input: readCount(usage, "inputTokens") ?? 0,
+        output: readCount(usage, "outputTokens") ?? 0,
+        reasoning: readCount(usage, "reasoningTokens") ?? 0,
+        cache: {
+          read: readCount(usage, "cacheReadInputTokens") ?? 0,
+          write: readCount(usage, "cacheWriteInputTokens") ?? 0,
+        },
+      },
+    },
+  }
+}
+
+/** The product `session.next.step.ended` payload for one settled assistant step. */
+export type SessionStepEnded = {
+  sessionID: SessionID
+  timestamp: DateTime.Utc
+  assistantMessageID: SessionMessage.ID
+  finish: string
+  cost: number
+  tokens: { input: number; output: number; reasoning: number; cache: { read: number; write: number } }
+  ttft?: number
+}
+
+/**
+ * Map the committed assistant message to the product `session.next.step.ended`,
+ * attaching the step's buffered usage and time-to-first-token. The engine
+ * journals no pricing, so `cost` is 0 until the product's price table maps
+ * native model identities (the B1 config-mapping slice).
+ */
+export function translateStepEnded(
+  event: EngineEvent,
+  usage: BufferedUsage | undefined,
+  ttft: number | undefined,
+): SessionStepEnded | undefined {
+  if (event.kind !== "message.committed") return undefined
+  if (typeof event.data !== "object" || event.data === null) return undefined
+  if (!("role" in event.data) || event.data.role !== "assistant") return undefined
+  if (!hasRecordedTime(event)) return undefined
+  const rawFinish = "finish" in event.data ? event.data.finish : undefined
+  const finish = typeof rawFinish === "string" && rawFinish ? rawFinish : "stop"
+  const anchor = anchorSeq(event)
+  const assistantMessageID = messageID(event.session_id, anchor ?? event.seq)
+  return {
+    sessionID: adoptSession(event.session_id),
+    timestamp: eventTimestamp(event),
+    assistantMessageID,
+    finish,
+    cost: 0,
+    tokens: usage?.tokens ?? { input: 0, output: 0, reasoning: 0, cache: { read: 0, write: 0 } },
+    ...(ttft !== undefined && Number.isSafeInteger(ttft) && ttft >= 0 ? { ttft } : {}),
+  }
+}
+
 export function streamAnchor(seq: number, recordedAtMs: number | null): StreamAnchor {
   return {
     seq,
