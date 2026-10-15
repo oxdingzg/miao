@@ -2,7 +2,7 @@ import { Session } from "@miao/schema/session"
 import { SessionMessage } from "@miao/schema/session-message"
 import { Schema } from "effect"
 import { HttpApiEndpoint, HttpApiGroup, OpenApi } from "effect/unstable/httpapi"
-import { InvalidCursorError, SessionNotFoundError, UnknownError } from "../errors"
+import { ConflictError, InvalidCursorError, SessionNotFoundError, UnknownError } from "../errors"
 
 export const SessionMessagesQuery = Schema.Struct({
   limit: Schema.optional(
@@ -33,7 +33,7 @@ export const MessageGroup = HttpApiGroup.make("server.message")
           next: Schema.String.pipe(Schema.optional),
         }),
       }).annotate({ identifier: "SessionMessagesResponse" }),
-      error: [InvalidCursorError, SessionNotFoundError, UnknownError],
+      error: [ConflictError, InvalidCursorError, SessionNotFoundError, UnknownError],
     }).annotateMerge(
       OpenApi.annotations({
         identifier: "v2.session.messages",
