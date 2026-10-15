@@ -23,6 +23,22 @@ type Confirmation =
   | { readonly type: "trust"; readonly grant: RemoteAccess.Grant; readonly policy: RemoteAccess.Policy }
   | { readonly type: "clear-account" }
 
+type Picker = {
+  readonly kind: "invite" | "trust" | "auto"
+  readonly grant?: RemoteAccess.Grant
+  readonly stage: "scope" | "duration"
+  readonly scope: "all" | "current"
+}
+
+const durations = [
+  { value: 3_600_000, title: "1 小时" },
+  { value: 28_800_000, title: "8 小时" },
+  { value: 86_400_000, title: "24 小时" },
+  { value: 7 * 86_400_000, title: "7 天" },
+  { value: 30 * 86_400_000, title: "30 天" },
+  { value: 90 * 86_400_000, title: "90 天" },
+]
+
 /** Local owner approval stays in this component so opening a confirmation cannot cancel the invitation. */
 export function DialogDevices(props: {
   readonly browserURL?: string
@@ -42,6 +58,7 @@ export function DialogDevices(props: {
   const [invitation, setInvitation] = createSignal<RemoteAccess.Invitation>()
   const [browserMode, setBrowserMode] = createSignal(!!props.browserURL)
   const [confirmation, setConfirmation] = createSignal<Confirmation>()
+  const [picker, setPicker] = createSignal<Picker>()
   const [busy, setBusy] = createSignal(false)
   const [error, setError] = createSignal<string>()
   const [notice, setNotice] = createSignal<string>()
@@ -220,6 +237,81 @@ export function DialogDevices(props: {
       "session.rename",
       "session.selection",
     ]
+    const custom = picker()
+    if (custom) {
+      if (custom.stage === "scope")
+        return [
+          ...(props.projectID
+            ? [
+                {
+                  value: "scope-all",
+                  title: "全部会话（默认）",
+                  description: "本窗口拥有和新建的会话都可控",
+                  onSelect: () => setPicker({ ...custom, scope: "all", stage: "duration" }),
+                },
+              ]
+            : []),
+          ...(props.sessionID
+            ? [
+                {
+                  value: "scope-current",
+                  title: "仅当前会话",
+                  description: "只授权正在查看的这一个会话",
+                  onSelect: () => setPicker({ ...custom, scope: "current", stage: "duration" }),
+                },
+              ]
+            : []),
+          ...(!props.projectID && !props.sessionID
+            ? [
+                {
+                  value: "scope-grant",
+                  title: "沿用设备请求的范围（默认）",
+                  description: "这个窗口没有可识别的项目或会话",
+                  onSelect: () => setPicker({ ...custom, stage: "duration" }),
+                },
+              ]
+            : []),
+          { value: "picker-back", title: "返回", onSelect: () => setPicker(undefined) },
+        ]
+      const fallback = custom.kind === "invite" ? 7 * 86_400_000 : 90 * 86_400_000
+      const ordered = [...durations].sort((a, b) => (b.value === fallback ? 1 : 0) - (a.value === fallback ? 1 : 0))
+      return [
+        ...ordered.map(
+          (duration): DialogSelectOption<string> => ({
+            value: `duration:${duration.value}`,
+            title: duration.title + (duration.value === fallback ? "（默认）" : ""),
+            description: custom.kind === "invite" ? "生成配对链接或二维码" : "确认后写入账号信任策略",
+            onSelect: () => {
+              const all = custom.scope === "all" && props.projectID
+              const grant = custom.grant
+              if (custom.kind === "invite") {
+                invite({
+                  permissions: [...write, "session.create"],
+                  projectIDs: all ? [props.projectID!] : [],
+                  sessionIDs: all || !props.sessionID ? [] : [props.sessionID!],
+                  expiresAt: Date.now() + duration.value,
+                })
+              } else if (grant) {
+                setConfirmation({
+                  type: "trust",
+                  grant,
+                  policy: {
+                    permissions: grant.permissions.filter((permission) => permission !== "session.create"),
+                    projectIDs: all ? [props.projectID!] : custom.scope === "current" ? [] : grant.projectIDs,
+                    sessionIDs:
+                      !all && custom.scope === "current" && props.sessionID ? [props.sessionID!] : grant.sessionIDs,
+                    expiresAt: Date.now() + duration.value,
+                    ...(custom.kind === "auto" ? { autoAdmit: true } : {}),
+                  },
+                })
+              }
+              setPicker(undefined)
+            },
+          }),
+        ),
+        { value: "picker-back", title: "返回", onSelect: () => setPicker({ ...custom, stage: "scope" }) },
+      ]
+    }
     return [
       ...(issued
         ? [
@@ -302,6 +394,16 @@ export function DialogDevices(props: {
                   },
                 ]
               : []),
+            ...(props.projectID || props.sessionID
+              ? [
+                  {
+                    value: "invite-custom",
+                    title: "自定义范围与时长…",
+                    description: "选择可控会话范围（默认全部）和有效期",
+                    onSelect: () => setPicker({ kind: "invite", stage: "scope", scope: "all" }),
+                  },
+                ]
+              : []),
           ]),
       ...pending().map(
         (candidate): DialogSelectOption<string> => ({
@@ -346,18 +448,8 @@ export function DialogDevices(props: {
               value: "trust-account:" + grant.id,
               title: "以 " + label(grant.label) + " 为签名根信任账号",
               category: "账号信任",
-              description: "90 天、当前项目/会话范围；不自动授权创建会话",
-              onSelect: () =>
-                setConfirmation({
-                  type: "trust" as const,
-                  grant,
-                  policy: {
-                    permissions: grant.permissions.filter((permission) => permission !== "session.create"),
-                    projectIDs: grant.projectIDs,
-                    sessionIDs: grant.sessionIDs,
-                    expiresAt: Date.now() + 90 * 86400000,
-                  },
-                }),
+              description: "默认全部会话 90 天；可选择范围与有效期",
+              onSelect: () => setPicker({ kind: "trust", grant, stage: "scope", scope: "all" }),
             }))
         : []),
       ...(trust() &&
@@ -407,19 +499,8 @@ export function DialogDevices(props: {
               value: "auto-account:" + grant.id,
               title: "开启同账号自动接入（以 " + label(grant.label) + " 为签名根）",
               category: "账号信任",
-              description: "90 天、当前范围；登录同一账号的设备免扫码自动可见",
-              onSelect: () =>
-                setConfirmation({
-                  type: "trust" as const,
-                  grant,
-                  policy: {
-                    permissions: grant.permissions.filter((permission) => permission !== "session.create"),
-                    projectIDs: grant.projectIDs,
-                    sessionIDs: grant.sessionIDs,
-                    expiresAt: Date.now() + 90 * 86400000,
-                    autoAdmit: true,
-                  },
-                }),
+              description: "默认全部会话 90 天；登录同一账号的设备免扫码自动可见",
+              onSelect: () => setPicker({ kind: "auto", grant, stage: "scope", scope: "all" }),
             }))
         : []),
       { value: "refresh", title: "刷新状态", onSelect: () => perform(refresh) },
@@ -509,8 +590,21 @@ export function DialogDevices(props: {
           <text fg={theme.textMuted}>二维码到期：{new Date(invitation()!.expiresAt).toLocaleTimeString()}</text>
         </Show>
       </box>
-      {/* Reset search when issuing or confirming an invitation without disposing its lifecycle. */}
-      <Show keyed when={confirmation() ? "确认设备授权" : invitation() ? "扫码配对" : "Web / iOS 设备"}>
+      {/* Reset search when issuing, configuring, or confirming an invitation without disposing its lifecycle. */}
+      <Show
+        keyed
+        when={
+          confirmation()
+            ? "确认设备授权"
+            : picker()
+              ? picker()!.stage === "scope"
+                ? "选择授权范围"
+                : "选择授权时长"
+              : invitation()
+                ? "扫码配对"
+                : "Web / iOS 设备"
+        }
+      >
         {(title) => (
           <DialogSelect
             title={title}
