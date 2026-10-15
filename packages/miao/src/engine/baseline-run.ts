@@ -404,7 +404,7 @@ interface FinishedBaselineRun {
   phases: BaselinePhase[]
   toolCalls: number
   parallel?: { batches: number; batchedReads: number; batchWallMs: number }
-  context?: { compaction: Record<string, number>; recallCalls: number }
+  context?: { compaction: Record<string, number>; reasons: string[]; recallCalls: number }
   admissionMs: number | null
   requiredReceipts: string[]
   answerContains: string[]
