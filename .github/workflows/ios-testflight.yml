@@ -1,0 +1,106 @@
+name: ios-testflight
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: ios-testflight
+  cancel-in-progress: false
+jobs:
+  upload:
+    runs-on: macos-14
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+      - name: Verify required secrets are configured
+        env:
+          APPLE_DISTRIBUTION_P12: ${{ secrets.APPLE_DISTRIBUTION_P12 }}
+          APPLE_DISTRIBUTION_P12_PASSWORD: ${{ secrets.APPLE_DISTRIBUTION_P12_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
+          ASC_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
+          ASC_KEY_P8: ${{ secrets.ASC_KEY_P8 }}
+          KEYCHAIN_PASSWORD: ${{ secrets.KEYCHAIN_PASSWORD }}
+        run: |
+          missing=0
+          for name in APPLE_DISTRIBUTION_P12 APPLE_DISTRIBUTION_P12_PASSWORD APPLE_TEAM_ID ASC_KEY_ID ASC_ISSUER_ID ASC_KEY_P8 KEYCHAIN_PASSWORD; do
+            if [ -z "${!name}" ]; then
+              echo "::error::Missing repository secret $name"
+              missing=1
+            fi
+          done
+          exit "$missing"
+      - name: Install signing certificate
+        env:
+          APPLE_DISTRIBUTION_P12: ${{ secrets.APPLE_DISTRIBUTION_P12 }}
+          APPLE_DISTRIBUTION_P12_PASSWORD: ${{ secrets.APPLE_DISTRIBUTION_P12_PASSWORD }}
+          KEYCHAIN_PASSWORD: ${{ secrets.KEYCHAIN_PASSWORD }}
+        run: |
+          p12="$RUNNER_TEMP/distribution.p12"
+          echo -n "$APPLE_DISTRIBUTION_P12" | base64 --decode -o "$p12"
+          keychain="$RUNNER_TEMP/build.keychain"
+          security create-keychain -p "$KEYCHAIN_PASSWORD" "$keychain"
+          security set-keychain-settings -lut 21600 "$keychain"
+          security unlock-keychain -p "$KEYCHAIN_PASSWORD" "$keychain"
+          security import "$p12" -P "$APPLE_DISTRIBUTION_P12_PASSWORD" -A -t cert -f pkcs12 -k "$keychain"
+          security set-key-partition-list -S apple-tool:,apple: -k "$KEYCHAIN_PASSWORD" "$keychain"
+          security list-keychain -d user -s "$keychain" login.keychain
+      - name: Install App Store Connect API key
+        env:
+          ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
+          ASC_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
+          ASC_KEY_P8: ${{ secrets.ASC_KEY_P8 }}
+        run: |
+          mkdir -p "$RUNNER_TEMP/private_keys"
+          echo -n "$ASC_KEY_P8" | base64 --decode -o "$RUNNER_TEMP/private_keys/AuthKey_${ASC_KEY_ID}.p8"
+          python3 - "$RUNNER_TEMP/private_keys/AuthKey_${ASC_KEY_ID}.p8" "$ASC_KEY_ID" "$ASC_ISSUER_ID" "$RUNNER_TEMP/asc.json" <<'PY'
+          import json, sys
+          key_path, key_id, issuer_id, out = sys.argv[1:5]
+          with open(key_path, encoding="utf-8") as handle:
+              key = handle.read()
+          with open(out, "w", encoding="utf-8") as handle:
+              json.dump({"key_id": key_id, "issuer_id": issuer_id, "key": key, "in_house": False}, handle)
+          PY
+      - name: Archive the app
+        env:
+          MIAO_DEVELOPMENT_TEAM: ${{ secrets.APPLE_TEAM_ID }}
+          ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
+          ASC_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
+        run: >-
+          sh apps/ios/scripts/build-app.sh -configuration Release
+          -destination 'generic/platform=iOS'
+          -archivePath "$RUNNER_TEMP/Miao.xcarchive"
+          CURRENT_PROJECT_VERSION="$GITHUB_RUN_ID"
+          -allowProvisioningUpdates
+          -authenticationKeyPath "$RUNNER_TEMP/private_keys/AuthKey_${ASC_KEY_ID}.p8"
+          -authenticationKeyID "$ASC_KEY_ID"
+          -authenticationKeyIssuerID "$ASC_ISSUER_ID"
+          archive
+      - name: Export the signed ipa
+        env:
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
+          ASC_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
+        run: |
+          python3 - "$RUNNER_TEMP/ExportOptions.plist" "$APPLE_TEAM_ID" <<'PY'
+          import plistlib, sys
+          out, team = sys.argv[1:3]
+          with open(out, "wb") as handle:
+              plistlib.dump(
+                  {"method": "app-store", "teamID": team, "signingStyle": "automatic", "uploadSymbols": True},
+                  handle,
+                  fmt=plistlib.FMT_XML,
+              )
+          PY
+          xcodebuild -exportArchive \
+            -archivePath "$RUNNER_TEMP/Miao.xcarchive" \
+            -exportPath "$RUNNER_TEMP/export" \
+            -exportOptionsPlist "$RUNNER_TEMP/ExportOptions.plist" \
+            -allowProvisioningUpdates \
+            -authenticationKeyPath "$RUNNER_TEMP/private_keys/AuthKey_${ASC_KEY_ID}.p8" \
+            -authenticationKeyID "$ASC_KEY_ID" \
+            -authenticationKeyIssuerID "$ASC_ISSUER_ID"
+      - name: Upload to TestFlight
+        run: |
+          gem install fastlane --no-document
+          fastlane pilot upload --api_key_path "$RUNNER_TEMP/asc.json" --ipa "$RUNNER_TEMP/export/Miao.ipa" --skip_waiting
