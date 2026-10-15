@@ -25,14 +25,18 @@ second implementation of the engine logic.
 
 | Platform | Installer evidence | Still required |
 | --- | --- | --- |
-| macOS | Real ZIP/download/checksum/upgrade/rollback fixture drill; corrupted and missing manifests fail before replacing pointers (#862) | Published engine archive, notarization/Gatekeeper and actual engine upgrade/rollback |
-| Linux | Real tar.gz/download/checksum/upgrade/rollback fixture drill on a Linux host (#862) | Published engine archive and actual engine upgrade/rollback |
-| Windows | Real executable install/upgrade/rollback/invalid-source drill on Windows PowerShell 5.1; no symlink privilege required (#864) | Verified published ZIP download, PowerShell 7 drill and actual engine upgrade/rollback |
+| macOS | ZIP/checksum fixture drill (#862); verified CI 0.2.9 binary install/upgrade/rollback from tag-built 0.2.8; arm64 and translated x64 startup | Published archive, notarization/Gatekeeper, native Intel hardware and data downgrade compatibility |
+| Linux | tar.gz/checksum fixture drill (#862); verified musl CI binary install/upgrade/rollback from tag-built 0.2.8 | Published archive, distributed-binary confinement and data downgrade compatibility |
+| Windows | Installer fixture CI under PowerShell 5.1/7 (#864); real x64 CI binary install/upgrade/rollback from tag-built 0.2.8 under PS5.1 | Published ZIP verification, actual-artifact PS7 drill, confinement and data downgrade compatibility |
 
 Fixture executables prove installer behavior, not engine confinement. The
 engine process/sandbox tests remain the confinement evidence, and must be
 repeated against the distributed binaries. The v0.2.9 draft had no engine
 assets at inspection time; publication acceptance is open.
+
+The [0.2.9 artifact acceptance report](artifact-acceptance-0.2.9.md) records
+the exact run, commit and hashes for the real binary drills above. It explicitly
+does not mark release publication or database downgrade verified.
 
 ## Capability families (G6)
 
