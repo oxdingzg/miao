@@ -269,6 +269,38 @@ for (const item of targets) {
   binaries[name] = Script.version
 }
 
+/**
+ * Build the engine binary for this platform (B5) and archive it at the repo
+ * root next to the CLI archives. A failed engine build never blocks the CLI
+ * release; the platform just ships without the engine asset.
+ */
+async function buildEngineArchive(): Promise<string | undefined> {
+  const os = ({ darwin: "darwin", linux: "linux", win32: "windows" } as Record<string, string | undefined>)[process.platform]
+  const arch = process.arch === "arm64" ? "arm64" : "x64"
+  if (!os) return undefined
+  await $`cargo build --release --bin miao-engine`.cwd("crates/miao-engine").nothrow()
+  const suffix = process.platform === "win32" ? ".exe" : ""
+  const bin = `crates/miao-engine/target/release/miao-engine${suffix}`
+  if (!(await Bun.file(bin).exists())) {
+    console.error("engine build produced no binary; the release ships without the engine asset")
+    return undefined
+  }
+  const name = `miao-engine-${os}-${arch}`
+  if (process.platform === "win32") {
+    await $`powershell -NoProfile -Command ${`Compress-Archive -Path ${bin} -DestinationPath dist/${name}.zip -Force`}`
+    return `./dist/${name}.zip`
+  }
+  const staging = `dist/${name}`
+  await $`mkdir -p ${staging} && cp ${bin} ${staging}/`
+  // darwin uses a zip so the archive is notarizable with the CLI archives.
+  if (process.platform === "darwin") {
+    await $`zip -r ${name}.zip miao-engine`.cwd(staging)
+    return `./${staging}.zip`
+  }
+  await $`tar -czf ../${name}.tar.gz miao-engine`.cwd(staging)
+  return `./${staging}.tar.gz`
+}
+
 if (Script.release) {
   const archives: string[] = []
   for (const key of Object.keys(binaries)) {
@@ -283,20 +315,30 @@ if (Script.release) {
       archives.push(`./dist/${key}.zip`)
     }
   }
+  // The engine binary rides the same release channel (B5): one archive per
+  // platform, built from this commit alongside the CLI.
+  const engineArchive = await buildEngineArchive()
+  if (engineArchive) archives.push(engineArchive)
+
   // Bare executables cannot carry a staple ticket; submitting the zip registers
   // the binary's cdhash and Gatekeeper checks it online at first launch.
   const notary = notaryCredentials()
   if (notary) {
-    for (const key of Object.keys(binaries).filter((item) => item.includes("darwin"))) {
-      const archive = `./dist/${key}.zip`
+    for (const archive of archives.filter((item) => item.includes("darwin"))) {
       await $`xcrun notarytool submit ${archive} --key ${notary.key} --key-id ${notary.keyId} --issuer ${notary.issuer} --wait`
     }
+  }
+
+  for (const archive of archives) {
+    const hash = new Bun.CryptoHasher("sha256").update(await Bun.file(archive.slice(2)).arrayBuffer()).digest("hex")
+    await Bun.write(`${archive}.sha256`, `${hash}  ${archive.slice(2)}\n`)
   }
 
   // Upload only the archives this platform produced; a `--single` build never
   // has both `.zip` and `.tar.gz`, and Bun's shell errors on an unmatched glob.
   if (archives.length) {
-    await $`gh release upload v${Script.version} ${archives} --clobber --repo ${process.env.GH_REPO}`
+    const manifests = archives.map((archive) => `${archive}.sha256`)
+    await $`gh release upload v${Script.version} ${archives} ${manifests} --clobber --repo ${process.env.GH_REPO}`
   }
 }
 

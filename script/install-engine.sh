@@ -1,17 +1,52 @@
 #!/usr/bin/env bash
-# Install a locally built miao-engine without touching the release-managed miao
-# command or the miao-preview build. Compile on a build host, then:
-#   ./script/install-engine.sh --binary /path/to/miao-engine
+# Install a miao-engine without touching the release-managed miao command or
+# the miao-preview build. Two sources:
+#   ./script/install-engine.sh --binary /path/to/miao-engine   (a local build;
+#     compile on a build host first)
+#   ./script/install-engine.sh --release [tag]                 (the GitHub
+#     release channel; tag defaults to latest, checksum verified)
 #
 # Keeps one previous install for a one-step rollback and smoke-tests --version.
 set -euo pipefail
 BIN_DIR="${HOME}/.local/share/miao-engine/bin"
 LINK="${HOME}/.local/bin/miao-engine"
-if [[ "${1:-}" != "--binary" || -z "${2:-}" || $# != 2 ]]; then
-  echo 'Usage: ./script/install-engine.sh --binary /path/to/miao-engine' >&2
+MODE="${1:-}"
+SRC=""
+if [[ "$MODE" == "--release" ]]; then
+  TAG="${2:-latest}"
+  OS=$(uname -s)
+  ARCH=$(uname -m)
+  case "$OS" in Darwin) OS_TAG=darwin ;; Linux) OS_TAG=linux ;; *) echo "unsupported os: $OS" >&2; exit 1 ;; esac
+  case "$ARCH" in arm64|aarch64) ARCH_TAG=arm64 ;; x86_64) ARCH_TAG=x64 ;; *) echo "unsupported arch: $ARCH" >&2; exit 1 ;; esac
+  ASSET="miao-engine-${OS_TAG}-${ARCH_TAG}.tar.gz"
+  BASE="https://github.com/oxdingzg/miao/releases"
+  if [[ "$TAG" == "latest" ]]; then
+    URL="$BASE/latest/download/$ASSET"
+    SHAS_URL="$BASE/latest/download/$ASSET.sha256"
+  else
+    URL="$BASE/download/$TAG/$ASSET"
+    SHAS_URL="$BASE/download/$TAG/$ASSET.sha256"
+  fi
+  TMP="$(mktemp -d)"
+  trap 'rm -rf "$TMP"' EXIT
+  curl -fsSL "$URL" -o "$TMP/$ASSET"
+  if curl -fsSL "$SHAS_URL" -o "$TMP/$ASSET.sha256"; then
+    (cd "$TMP" && (sha256sum -c "$ASSET.sha256" >/dev/null 2>&1 || shasum -a 256 -c "$ASSET.sha256" >/dev/null 2>&1)) || {
+      echo "checksum mismatch for $ASSET" >&2
+      exit 1
+    }
+  else
+    echo "no checksum manifest for $ASSET; skipping verification" >&2
+  fi
+  tar -xzf "$TMP/$ASSET" -C "$TMP"
+  SRC="$TMP/miao-engine"
+elif [[ "$MODE" == "--binary" ]]; then
+  [[ -z "${2:-}" || $# != 2 ]] && { echo 'Usage: ./script/install-engine.sh --binary /path/to/miao-engine' >&2; exit 1; }
+  SRC="$2"
+else
+  echo 'Usage: ./script/install-engine.sh (--binary /path/to/miao-engine | --release [tag])' >&2
   exit 1
 fi
-SRC="$2"
 if [[ ! -x "$SRC" ]]; then
   echo "not an executable: $SRC" >&2
   exit 1
