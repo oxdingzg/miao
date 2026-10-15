@@ -7,7 +7,7 @@ import type { Schema } from "effect"
 import { BlackboxTape } from "@miao/core/blackbox/tape"
 import { assessBaselineArtifacts, baselineContract, baselineTask, initializeBaselineWorkspace } from "./baseline"
 import type { BaselineSample } from "./baseline-report"
-import type { EngineEvent, EngineProgress } from "./client"
+import type { EngineEvent, EngineOptions, EngineProgress } from "./client"
 import { runEnginePrompt } from "./run"
 
 /**
@@ -48,6 +48,12 @@ export interface BaselineEvidence {
   /** Loop classification: continuation and stop reasons observed in the run. */
   loops: { continuations: string[]; stopped: string[] }
   toolCalls: number
+  /**
+   * Automatic context management the run exercised: compaction outcomes and
+   * the archive lookups (recall calls), which is what a long task costs beyond
+   * its turns. Older evidence predates the field.
+   */
+  context?: { compaction: Record<string, number>; recallCalls: number }
   /**
    * Read batches the engine ran together: how many batches, how many settled
    * reads they carried, and the wall time they took as the runner observed it.
@@ -96,6 +102,11 @@ export interface BaselineRustInput {
   verifyCommand?: string
   /** Explicit prefix-cache policy for the measured run. */
   promptCache?: boolean
+  /**
+   * Context limits for the measured run, which is what turns automatic
+   * compaction and elision on. Absent leaves the runtime unconfigured.
+   */
+  contextLimits?: EngineOptions["contextLimits"]
   /**
    * Drift experiment control: after the model reads one of these workspace
    * paths, the runner rewrites it with the given content before the model's
@@ -197,6 +208,7 @@ export async function runBaselineRust(input: BaselineRustInput): Promise<Baselin
       lspConfigFile: input.lspConfigFile,
       verifyCommand: input.verifyCommand,
       promptCache: input.promptCache,
+      contextLimits: input.contextLimits,
       env: input.env,
       session,
       prompt,
@@ -238,6 +250,7 @@ export async function runBaselineRust(input: BaselineRustInput): Promise<Baselin
     profile: engineProfile(events),
     phases: enginePhases(events, progress, observed, verifiedAtMs),
     toolCalls: events.filter((event) => event.kind === "tool.completed").length,
+    context: observedContextManagement(events),
     parallel: observedReadBatches(events, observed),
     admissionMs: admittedAt(events, observed),
     requiredReceipts: task.requiredReceipts,
@@ -386,6 +399,7 @@ interface FinishedBaselineRun {
   phases: BaselinePhase[]
   toolCalls: number
   parallel?: { batches: number; batchedReads: number; batchWallMs: number }
+  context?: { compaction: Record<string, number>; recallCalls: number }
   admissionMs: number | null
   requiredReceipts: string[]
   answerContains: string[]
@@ -410,6 +424,7 @@ function finishBaselineRun(input: FinishedBaselineRun): BaselineRun {
     loops: input.loops,
     toolCalls: input.toolCalls,
     parallel: input.parallel,
+    context: input.context,
     textHash: digest(input.answer),
     binarySha256: input.binarySha256 ?? null,
     startedAtMs: input.startedAtMs,
@@ -541,6 +556,21 @@ function numberOrNull(value: unknown) {
 
 /// Loop classification counts: how many provider turns were continued or
 /// stopped for a classified reason (empty completion, no progress, budget).
+/// Automatic context management the run exercised: compaction events by kind,
+/// and the recall calls that restore an archived output by handle.
+function observedContextManagement(events: EngineEvent[]) {
+  const compaction: Record<string, number> = {}
+  for (const event of events) {
+    if (!event.kind.startsWith("compaction.")) continue
+    compaction[event.kind] = (compaction[event.kind] ?? 0) + 1
+  }
+  const recallCalls = events.filter((event) => {
+    const data = event.data as { tool?: unknown } | null
+    return data?.tool === "recall"
+  }).length
+  return { compaction, recallCalls }
+}
+
 /// A read batch's wall time and read count, as the runner observed them: from
 /// the batch's start event to the settlement of its last read. The batch event
 /// names its calls, so the reads it owns are counted exactly.
