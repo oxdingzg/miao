@@ -512,3 +512,16 @@ observed -- batch count, the reads the batch named, and the batch's wall window
 are not recorded in event payloads: the blackbox tape replay pins those payloads
 exactly, and an earlier attempt to carry `elapsed_ms` there turned main red until
 it was moved to the runner.
+
+## Elision selection (2026-10-15)
+
+Gate 4 of automatic context management stays opt-in: it runs only when
+`--context-limits` sets `prune_chars`, so an unconfigured runtime still sends
+exactly what it did before. Selection within that gate is now budget-aware. With
+`prune_total_chars` set, only as many payloads above the per-payload budget are
+elided -- oldest first, because the work in flight is least likely to still need
+the oldest -- as cover the excess over the total target, so a request that fits
+keeps every payload whole; without a target the previous per-payload behavior
+stands. The unit tests pin all three cases (a target that requires two elisions
+and leaves the newest candidate whole, a target everything already fits, and the
+protected newest turns).

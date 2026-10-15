@@ -312,6 +312,7 @@ async fn configured_context_limits_compact_at_the_settled_boundary() {
             headroom: 0,
             per_pass: 10,
             prune_chars: None,
+            prune_total_chars: None,
             protect_turns: 2,
         }))
         .await;
