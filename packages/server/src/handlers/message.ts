@@ -4,7 +4,7 @@ import { Effect, Option, Schema } from "effect"
 import { NativeEngine } from "../native-engine"
 import { HttpApiBuilder } from "effect/unstable/httpapi"
 import { Api } from "../api"
-import { InvalidCursorError, SessionNotFoundError, UnknownError } from "@miao/protocol/errors"
+import { ConflictError, InvalidCursorError, SessionNotFoundError, UnknownError } from "@miao/protocol/errors"
 
 const DefaultMessagesLimit = 50
 
@@ -41,7 +41,8 @@ export const MessageHandler = HttpApiBuilder.group(Api, "server.message", (handl
         const order = decoded?.order ?? ctx.query.order ?? "desc"
         const placement = Option.getOrUndefined(yield* Effect.serviceOption(NativeEngine.Placement))
         if (placement) {
-          const native = yield* NativeEngine.Service
+          const native = Option.getOrUndefined(yield* Effect.serviceOption(NativeEngine.Service))
+          if (!native) return yield* new ConflictError({ message: "Native engine is unavailable for message history" })
           const transcript = yield* native.transcript({
             ...placement,
             sessionID: ctx.params.sessionID,
