@@ -156,6 +156,7 @@ impl Store {
                     CREATE TABLE IF NOT EXISTS engine_message(session_id TEXT NOT NULL REFERENCES engine_session(id), seq INTEGER NOT NULL, role TEXT NOT NULL, content TEXT NOT NULL, checkpoint TEXT, PRIMARY KEY(session_id,seq));
                     CREATE TABLE IF NOT EXISTS engine_run(id TEXT PRIMARY KEY, session_id TEXT NOT NULL REFERENCES engine_session(id), state TEXT NOT NULL);
                     CREATE UNIQUE INDEX IF NOT EXISTS engine_active_run ON engine_run(session_id) WHERE state='running';
+                    CREATE TABLE IF NOT EXISTS engine_timing(session_id TEXT NOT NULL REFERENCES engine_session(id), run_id TEXT NOT NULL, step INTEGER NOT NULL, ttft_ms INTEGER NOT NULL, PRIMARY KEY(session_id,run_id,step));
                     CREATE TABLE IF NOT EXISTS engine_tool(id TEXT PRIMARY KEY, run_id TEXT NOT NULL REFERENCES engine_run(id), name TEXT NOT NULL, input TEXT NOT NULL, state TEXT NOT NULL);
                     CREATE TABLE IF NOT EXISTS engine_location(session_id TEXT PRIMARY KEY REFERENCES engine_session(id),root TEXT NOT NULL);
                     CREATE TABLE IF NOT EXISTS engine_approval(id TEXT PRIMARY KEY,session_id TEXT NOT NULL REFERENCES engine_session(id),run_id TEXT NOT NULL REFERENCES engine_run(id),call_id TEXT NOT NULL REFERENCES engine_tool(id),binding TEXT NOT NULL,expires_at INTEGER NOT NULL,state TEXT NOT NULL);
@@ -1573,4 +1574,128 @@ pub(crate) fn track_tools(
         }
     }
     Ok(())
+}
+
+impl Store {
+    /// Record one turn's time-to-first-token. Wall-clock values never enter
+    /// the event ledger — the blackbox replay pins journal payloads exactly
+    /// and cannot reproduce them — so latencies live in this side table and
+    /// surface only through `usage_report`.
+    pub async fn record_timing(
+        &self,
+        session: &str,
+        run: &str,
+        step: u64,
+        ttft_ms: u64,
+    ) -> Result<(), Error> {
+        let (session, run) = (session.to_owned(), run.to_owned());
+        self.call(move |conn| {
+            conn.execute(
+                "INSERT OR IGNORE INTO engine_timing(session_id,run_id,step,ttft_ms) VALUES(?1,?2,?3,?4)",
+                params![session, run, step, ttft_ms],
+            )?;
+            Ok(())
+        })
+        .await
+    }
+
+    /// Cache lineage and latency evidence for one session: billed token
+    /// totals across every recorded turn, time-to-first-token stats, and the
+    /// provider/model that served each turn (roadmap A5). Tokens and lineage
+    /// come from the durable `usage` and `provider.started` rows; TTFT comes
+    /// from the `engine_timing` side table, never from replayed payloads.
+    pub async fn usage_report(&self, session: &str) -> Result<Value, Error> {
+        let session = session.to_owned();
+        self.call(move |conn| {
+            let mut turns = 0u64;
+            let mut partial_turns = 0u64;
+            let mut tokens = json!({"input":0,"output":0,"cacheRead":0,"cacheWrite":0,"nonCached":0});
+            let ttft: Vec<u64> = {
+                let mut stmt = conn.prepare(
+                    "SELECT ttft_ms FROM engine_timing WHERE session_id=?1 ORDER BY run_id,step",
+                )?;
+                let mut rows = stmt.query(params![session])?;
+                let mut values = Vec::new();
+                while let Some(row) = rows.next()? {
+                    values.push(row.get::<_, u64>(0)?);
+                }
+                values
+            };
+            let mut identity: std::collections::HashMap<(String, String), (String, String)> =
+                std::collections::HashMap::new();
+            let mut per_identity: std::collections::HashMap<(String, String), u64> =
+                std::collections::HashMap::new();
+            let mut stmt = conn.prepare(
+                "SELECT kind,data FROM engine_event WHERE session_id=?1 AND kind IN ('usage','provider.started') ORDER BY seq",
+            )?;
+            let mut rows = stmt.query(params![session])?;
+            while let Some(row) = rows.next()? {
+                let kind: String = row.get(0)?;
+                let data: Value = serde_json::from_str(&row.get::<_, String>(1)?)?;
+                let key = (
+                    data["run_id"].as_str().unwrap_or_default().to_owned(),
+                    data["step"].as_u64().unwrap_or_default().to_string(),
+                );
+                match kind.as_str() {
+                    "provider.started" => {
+                        if let Some(id) = data["identity"].as_object() {
+                            identity.insert(
+                                key,
+                                (
+                                    id.get("protocol").and_then(Value::as_str).unwrap_or_default().to_owned(),
+                                    id.get("model").and_then(Value::as_str).unwrap_or_default().to_owned(),
+                                ),
+                            );
+                        }
+                    }
+                    _ => {
+                        if data["partial"].as_bool() == Some(true) {
+                            partial_turns += 1;
+                        } else {
+                            turns += 1;
+                        }
+                        let usage = &data["usage"];
+                        for (field, key) in [
+                            ("inputTokens", "input"),
+                            ("outputTokens", "output"),
+                            ("cacheReadInputTokens", "cacheRead"),
+                            ("cacheWriteInputTokens", "cacheWrite"),
+                            ("nonCachedInputTokens", "nonCached"),
+                        ] {
+                            if let Some(value) = usage[field].as_u64() {
+                                tokens[key] = json!(tokens[key].as_u64().unwrap_or(0) + value);
+                            }
+                        }
+                        if let Some((provider, model)) = identity.get(&key) {
+                            *per_identity
+                                .entry((provider.clone(), model.clone()))
+                                .or_insert(0) += 1;
+                        }
+                    }
+                }
+            }
+            let lineage = per_identity
+                .into_iter()
+                .map(|((protocol, model), served)| json!({"protocol":protocol,"model":model,"turns":served}))
+                .collect::<Vec<_>>();
+            let ttft_stats = if ttft.is_empty() {
+                json!(null)
+            } else {
+                let sum: u128 = ttft.iter().map(|v| *v as u128).sum();
+                json!({
+                    "count": ttft.len(),
+                    "avg": sum / ttft.len() as u128,
+                    "min": ttft.iter().min(),
+                    "max": ttft.iter().max(),
+                })
+            };
+            Ok(json!({
+                "turns": turns,
+                "partialTurns": partial_turns,
+                "tokens": tokens,
+                "ttftMs": ttft_stats,
+                "lineage": lineage,
+            }))
+        }).await
+    }
 }

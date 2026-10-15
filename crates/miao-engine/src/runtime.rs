@@ -724,7 +724,7 @@ async fn execute(
             .record(
                 session,
                 "provider.started",
-                json!({"run_id":run,"step":step,"context_epoch":context_epoch,"policy_revision":inner.policy.revision(),"state_selection":state_selection}),
+                json!({"run_id":run,"step":step,"context_epoch":context_epoch,"policy_revision":inner.policy.revision(),"state_selection":state_selection,"identity":inner.provider.identity().map(|i|json!({"protocol":i.protocol,"model":i.model}))}),
             )
             .await?;
         // Durable history retains null plus the error marker for unavailable
@@ -753,10 +753,12 @@ async fn execute(
         // a transient reset (for example a proxy dropping the stream) does not
         // fail the turn.
         let mut produced = false;
+        let mut ttft_ms: Option<u64> = None;
         let mut attempts = 0;
         let transport_budget = crate::provider::Budget::new();
         let reply = loop {
             let (send, mut receive) = mpsc::channel(64);
+            let attempt_started = std::time::Instant::now();
             let response = crate::runtime_profile::scoped(
                 crate::runtime_profile::Scope {
                     store: inner.store.clone(),
@@ -791,6 +793,9 @@ async fn execute(
                                 "attempt":delta["attempt"],"reason":delta["reason"],"status":delta["status"],
                             })).await?;
                         } else {
+                            if !produced {
+                                ttft_ms = Some(attempt_started.elapsed().as_millis() as u64);
+                            }
                             produced |= crate::first_event::semantic_event(delta.get("raw").unwrap_or(&delta));
                             let _=inner.progress.send(json!({"session_id":session,"run_id":run,"step":step,"kind":"provider.delta","anchor_seq":started.seq,"recorded_at_ms":started.recorded_at_ms,"data":delta}));
                         }
@@ -806,6 +811,9 @@ async fn execute(
                         "attempt":delta["attempt"],"reason":delta["reason"],"status":delta["status"],
                     })).await?;
                 } else {
+                    if !produced {
+                        ttft_ms = Some(attempt_started.elapsed().as_millis() as u64);
+                    }
                     produced |=
                         crate::first_event::semantic_event(delta.get("raw").unwrap_or(&delta));
                     let _ =
@@ -847,7 +855,7 @@ async fn execute(
                         .record(
                             session,
                             "usage",
-                            json!({"run_id":run,"step":step,"usage":partial.usage,"partial":true,"context_message_seq":inner.store.max_message_seq(session).await?}),
+                            json!({"run_id":run,"step":step,"usage":partial.usage,"partial":true,"cache":crate::usage::cache_lineage(&partial.usage),"context_message_seq":inner.store.max_message_seq(session).await?}),
                         )
                         .await?;
                     if partial
@@ -930,9 +938,18 @@ async fn execute(
             .record(
                 session,
                 "usage",
-                json!({"run_id":run,"step":step,"usage":reply.usage,"context_message_seq":inner.store.max_message_seq(session).await?}),
+                json!({"run_id":run,"step":step,"usage":reply.usage,"cache":crate::usage::cache_lineage(&reply.usage),"context_message_seq":inner.store.max_message_seq(session).await?}),
             )
             .await?;
+        if let Some(ttft_ms) = ttft_ms {
+            let _ = inner
+                .store
+                .record_timing(session, run, step as u64, ttft_ms)
+                .await;
+            let _ = inner.progress.send(
+                json!({"session_id":session,"run_id":run,"step":step,"kind":"provider.ttft","ttft_ms":ttft_ms}),
+            );
+        }
         let assistant_boundary = inner
             .store
             .assistant_reply_profiled(
