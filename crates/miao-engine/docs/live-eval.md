@@ -530,3 +530,33 @@ keeps every payload whole; without a target the previous per-payload behavior
 stands. The unit tests pin all three cases (a target that requires two elisions
 and leaves the newest candidate whole, a target everything already fits, and the
 protected newest turns).
+
+## Automatic context management (2026-10-15)
+
+Automatic compaction and elision are opt-in behind `--context-limits`, and that
+option was **missing from the CLI whitelist**: the engine refused it as an
+unknown option, so every measured run that tried to enable it died before its
+first provider call and the feature was reachable only from in-process tests.
+The flag is allowed now, the runner forwards the limits it declares, and the
+evidence records the outcomes (`context.compaction`) plus the archive lookups
+that restore an elided output (`context.recallCalls`).
+
+Two configurations were measured on the `long-session` carrier (five inputs in
+one Session, four repetitions), and neither produced a compaction:
+
+| limits | runs | passed | turns/run | tools/run | input tokens | output tokens | wall |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| window 32000, ratio 0.5, headroom 2000 | 4 | 3 | 56-62 | 42-47 | 175,978-198,243 | 2,474-3,384 | 50-88 s |
+| window 4000, ratio 0.25, headroom 500 | 4 | 0 | 1 | 1 | 2,494 | 37 | 300 s (harness limit) |
+
+The first configuration never triggers: the gate fires when one request's
+estimated context passes `window x ratio`, which is 16 k tokens here, while this
+carrier's requests stay far below it. The numbers are a usable baseline of the
+long task itself, not of compaction.
+
+The second configuration is worse than untriggered: at roughly a thousand tokens
+the gate does fire, and every run then **stalls after its first tool call** --
+one attempt, one tool, and then nothing until the harness's 300 s limit, with a
+`tool.error` receipt in three of four runs. That is a hang rather than a
+degradation, it is the gap A4 still owes, and the reproduction is this table's
+second row: the `long-session` carrier with those limits.
