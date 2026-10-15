@@ -302,9 +302,7 @@ export type BufferedUsage = {
  * engine journals usage before the assistant message commits, so the values
  * wait here until `translateStepEnded` attaches them to the settlement.
  */
-export function translateUsage(
-  event: EngineEvent,
-): { runID: string; step: number; usage: BufferedUsage } | undefined {
+export function translateUsage(event: EngineEvent): { runID: string; step: number; usage: BufferedUsage } | undefined {
   if (event.kind !== "usage") return undefined
   if (typeof event.data !== "object" || event.data === null) return undefined
   const partial = "partial" in event.data ? event.data["partial"] : undefined
@@ -683,7 +681,7 @@ export function translateTools(event: EngineEvent): SessionToolCalled[] {
   if (!Array.isArray(content)) return []
   const blocks: unknown[] = content
   const sessionID = adoptSession(event.session_id)
-  const assistantMessageID = messageID(event.session_id, event.seq)
+  const assistantMessageID = messageID(event.session_id, anchorSeq(event) ?? event.seq)
   return blocks.flatMap((block) => {
     if (typeof block !== "object" || block === null) return []
     if (!("type" in block) || block.type !== "tool_use") return []
@@ -773,7 +771,7 @@ export class ToolBridge {
     if (!("content" in event.data) || !Array.isArray(event.data.content)) return
     const blocks: unknown[] = event.data.content
     const sessionID = adoptSession(event.session_id)
-    const assistantMessageID = messageID(event.session_id, event.seq)
+    const assistantMessageID = messageID(event.session_id, anchorSeq(event) ?? event.seq)
     for (const block of blocks) {
       if (typeof block !== "object" || block === null) continue
       if (!("type" in block) || block.type !== "tool_use") continue

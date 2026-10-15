@@ -148,6 +148,15 @@ for (const writable of [false, true]) {
         }
         expect(history).toContain("completed-native-coding-turn")
         expect(history).toContain("native-output.txt")
+        const context = await fetch(url + "/api/session/" + body.id + "/context", { headers })
+        expect(context.status).toBe(200)
+        const transcript = await context.json()
+        expect(JSON.stringify(transcript.data)).toContain("completed-native-coding-turn")
+        const states = transcript.data.flatMap(
+          (message: { content?: { type: string; state?: { status: string } }[] }) =>
+            message.content?.filter((part) => part.type === "tool").map((part) => part.state?.status) ?? [],
+        )
+        expect(states).toContain(writable ? "completed" : "error")
         expect(calls).toBe(2)
         const writtenFile = Bun.file(path.join(directory, "native-output.txt"))
         expect(await writtenFile.exists()).toBe(writable)
