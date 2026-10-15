@@ -554,11 +554,14 @@ compaction reports arrive as *progress* rather than as durable events, and the
 evidence counted events, so its counters were blind. The field reads progress
 now, and a later run owns those numbers.
 
-What the run did establish is that the gate can hold a turn. With the same
-limits as the table's second row, four runs stalled after their first tool call
-for the harness's full 300 s limit before the fix below, and after it the same
-carrier completes: one run passed in 271 s with 59 turns and 44 tools, and one
-failed behaviourally in 70 s. The mechanism is the unbounded summarizer await --
-every compaction pass asked the summarizer to answer and waited forever -- and
-the fix is the bound plus the existing failure path.
+What the runs did establish is that the gate fires at those limits and that
+every summarizer pass fails. Before the bound below, four runs stalled after
+their first tool call for the harness's full 300 s limit. With the bound in
+place and the counters reading progress, the same carrier reports what happens:
+one run fired the gate eleven times (eleven attempts, eleven failures, five
+skipped by the breaker) and still passed in 274.8 s with 56 turns and 47 tools,
+and a second attempted three times before failing behaviourally. So the gate
+triggers, the summarizer request against this provider never answers inside its
+20 s bound, and the bound is what keeps the turn alive -- at a cost of about
+20 s per attempt, which is most of that run's wall time.
 
