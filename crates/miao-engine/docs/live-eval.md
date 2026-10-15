@@ -565,3 +565,24 @@ triggers, the summarizer request against this provider never answers inside its
 20 s bound, and the bound is what keeps the turn alive -- at a cost of about
 20 s per attempt, which is most of that run's wall time.
 
+
+## The summarizer call itself is the compaction defect (2026-10-15)
+
+With the gate reachable and its pass bounded, the failure was at last named: every
+compaction ends `compaction.failed: summary timeout` (three attempts, three
+timeouts and several breaker skips in a single `small-edit` run, and eleven
+attempts in the long-session carrier before). The reason is the bound added in
+#855, so the summarizer call does not return inside twenty seconds.
+
+That is not what the gateway does. A logging proxy in front of the real endpoint
+shows each summarizer request answered with a complete Responses stream --
+`response.output_text.delta` for 161 characters-worth of events, an
+`output_text.done`, a `response.output_item.done` carrying a `message` item, and a
+`response.completed` -- in 4.5 to 6.3 seconds. The same run without the proxy
+reports the identical timeout, so the proxy is not the cause.
+
+The two facts together leave the engine's own provider call for this request
+shape: it receives the stream but never returns, which is what a reader that waits
+for the connection to close rather than for the completed event would do. That is
+the defect the next change owns; the bound keeps a stalled call from holding a
+turn, and the breaker stops retrying it.
