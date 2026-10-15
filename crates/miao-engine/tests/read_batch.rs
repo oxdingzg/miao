@@ -440,3 +440,67 @@ async fn a_declared_write_conflicts_with_the_batch_and_stays_serial() {
         2
     );
 }
+
+#[tokio::test]
+async fn partitions_a_mixed_turn_into_a_read_prefix_and_a_serial_tail() {
+    // Two declared reads lead the turn and batch; the write ends the prefix.
+    // The tail settles serially in request order, so the read after the write
+    // observes the written file.
+    let dir = tempfile::tempdir().unwrap();
+    std::fs::write(dir.path().join("a"), "alpha").unwrap();
+    let store = execute(
+        dir.path(),
+        json!([
+            call("one", "read_file", json!({"path":"a"})),
+            call("two", "read_file", json!({"path":"a"})),
+            call(
+                "three",
+                "write_file",
+                json!({"path":"b","text":"written","expected_sha256":null})
+            ),
+            call("four", "read_file", json!({"path":"b"})),
+        ]),
+        false,
+    )
+    .await;
+    let events = store.events("s", 0, 1000).await.unwrap();
+    let batch = events
+        .iter()
+        .find(|event| event.kind == "tool.parallel.started")
+        .unwrap();
+    assert_eq!(batch.data["call_ids"], json!(["one", "two"]));
+    // The settlement order keeps the barrier: the trailing read ran after the
+    // write completed. The events vector is seq-ordered, so positions are the
+    // settlement order.
+    let completed: Vec<String> = events
+        .iter()
+        .filter(|event| event.kind == "tool.completed")
+        .map(|event| {
+            event.data["call_id"]
+                .as_str()
+                .unwrap_or_default()
+                .to_owned()
+        })
+        .collect();
+    let tail = |id: &str| {
+        completed
+            .iter()
+            .position(|call| call.ends_with(&format!("/{id}")))
+            .unwrap_or_else(|| panic!("{id} never settled"))
+    };
+    assert!(
+        tail("three") < tail("four"),
+        "the write must settle before the read that follows it"
+    );
+    let history = store.history("s").await.unwrap();
+    let result = history
+        .iter()
+        .flat_map(|message| message.content.as_array().unwrap())
+        .find(|block| block["type"] == "tool_result" && block["tool_use_id"] == "four")
+        .unwrap();
+    assert_eq!(result["is_error"], false);
+    assert_eq!(
+        serde_json::from_str::<Value>(result["content"].as_str().unwrap()).unwrap()["text"],
+        "written"
+    );
+}

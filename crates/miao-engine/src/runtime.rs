@@ -2467,20 +2467,21 @@ async fn execute_read_batch(
         .flatten()
         .filter(|block| block["type"] == "tool_use")
         .collect();
-    if !(2..=16).contains(&blocks.len())
-        || blocks
-            .iter()
-            .any(|block| block["input_error"].is_string() || block["provider_executed"] == true)
-    {
-        return Ok(HashMap::new());
-    }
+    // Mixed-turn partitioning (ADR-13): only the prefix of declared reads
+    // before the first non-member batches. A write — or anything the batch
+    // cannot admit — ends the prefix, and everything from there settles
+    // serially in request order, so a later read never runs ahead of an
+    // earlier write.
     let mut prepared = Vec::new();
     for block in blocks {
         let (Some(id), Some(name)) = (block["id"].as_str(), block["name"].as_str()) else {
-            return Ok(HashMap::new());
+            break;
         };
+        if block["input_error"].is_string() || block["provider_executed"] == true {
+            break;
+        }
         let Ok(tool) = inner.tools.prepare(name, block["input"].clone()).await else {
-            return Ok(HashMap::new());
+            break;
         };
         // Membership is declaration-driven (ADR-13): a call joins the batch
         // when its own declaration says it only reads a named resource, not
@@ -2493,11 +2494,11 @@ async fn execute_read_batch(
                 .evaluate(tool.name(), tool.resource(), tool.access())
                 != Decision::Allow
         {
-            return Ok(HashMap::new());
+            break;
         }
         prepared.push((id.to_owned(), tool));
     }
-    if cancel.is_cancelled() {
+    if !(2..=16).contains(&prepared.len()) || cancel.is_cancelled() {
         return Ok(HashMap::new());
     }
     inner

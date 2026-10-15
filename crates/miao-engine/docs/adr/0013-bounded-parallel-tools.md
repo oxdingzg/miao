@@ -28,6 +28,12 @@ follows committed results.
   depend on which read finished first.
 - **Execution is bounded.** At most four read calls run at once. The bound is a
   constant rather than a policy knob until a measurement justifies one.
+- **Mixed turns preserve barriers.** Only the leading prefix of two to sixteen
+  admitted reads batches. The first write, unknown tool, denied call, invalid
+  argument, or provider-executed call ends that prefix. The remaining calls
+  execute serially in request order: a read after a write sees the write's
+  result, and no write overlaps the batch. A prefix shorter than two stays
+  serial; an oversized prefix stays serial rather than changing the bound.
 - **Settlement stays ordered.** Results are committed in call order with the
   same `tool_result` and PostToolUse events as today, so a reader of the event
   stream cannot distinguish parallel execution from a fast serial one. The batch
@@ -50,7 +56,6 @@ follows committed results.
   batch from its own receipt times instead (batch count, the reads the batch
   named, and the observed window). The `tool.parallel.started` event names
   each member's declared resource, so a run's read-set lineage is auditable.
-- Scheduling inside one turn is now declaration-driven; still open: mixed-turn
-  partitioning (batching the declared reads of a turn that also carries
-  writes, which today keeps the whole turn serial) and scheduling across
-  turns. Writes never overlap anything.
+- Scheduling inside one turn is declaration-driven and batches safe read
+  prefixes of mixed turns. Scheduling across turns stays open. Writes never
+  overlap anything.
