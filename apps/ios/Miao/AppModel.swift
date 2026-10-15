@@ -619,6 +619,7 @@ final class AppModel {
         case HubAccountError.invalidEndpoint: return "请输入电脑配置的 HTTPS 中继地址"
         case HubAccountError.authenticationRequired: return "登录已失效，请重新登录中继"
         case HubAccountError.invalidCredentials, HubAccountError.rejected(401), HubAccountError.rejected(403): return "登录未成功，请核对邮箱、密码和中继地址"
+        case HubAccountError.rejected(404): return "这个中继不支持此功能，请更新 App 或核对中继地址"
         case HubAccountError.storage: return "设备凭证暂时不可用，请解锁后重试"
         default: return "暂时无法连接中继，请检查网络后重试"
         }
