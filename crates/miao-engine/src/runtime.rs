@@ -2,7 +2,7 @@ use crate::{
     approval::{now_ms, Approval, Response},
     context_trigger::{self, ContextLimits},
     permission::{input_digest, Config, Decision, Policy},
-    protocol::{Admission, Attachment, Error, Input, Message, ModelRequest},
+    protocol::{Admission, Attachment, Error, Input, ModelRequest},
     provider::{Provider, ProviderError},
     store::{RuntimeLease, Store},
     tool_replay::ToolReplay,
@@ -50,6 +50,7 @@ struct Inner {
     stop: CancellationToken,
     progress: broadcast::Sender<Value>,
     context: Mutex<Option<ContextLimits>>,
+    roles: Mutex<crate::roles::Bindings>,
     /// Task-specific verification command run before a run may finish.
     verification: Mutex<Option<String>>,
     breaker: Mutex<context_trigger::Breaker>,
@@ -163,6 +164,7 @@ impl Runtime {
                 stop: CancellationToken::new(),
                 progress,
                 context: Mutex::new(None),
+                roles: Mutex::new(crate::roles::Bindings::default()),
                 verification: Mutex::new(None),
                 breaker: Mutex::new(crate::context_trigger::Breaker::new(3)),
             }),
@@ -185,6 +187,13 @@ impl Runtime {
 
     pub async fn set_context_limits(&self, limits: Option<ContextLimits>) {
         *self.inner.context.lock().await = limits;
+    }
+
+    /// Purpose-role model bindings (ADR-14): a binding is a model id on the
+    /// Session's own provider. Unbound roles — and roles the provider
+    /// rejects — run on the primary model.
+    pub async fn set_role_bindings(&self, roles: crate::roles::Bindings) {
+        *self.inner.roles.lock().await = roles;
     }
 
     /// An explicit operator `compact` is the automatic trigger's breaker reset:
@@ -1246,40 +1255,45 @@ async fn execute(
         // Automatic context management at the settled boundary (roadmap
         // §2.13). Off unless the runtime was configured with limits.
         if let Some(limits) = &*inner.context.lock().await {
-            let provider = Arc::clone(&inner.provider);
+            let primary = Arc::clone(&inner.provider);
+            let bindings = inner.roles.lock().await.clone();
+            let (role_provider, resolution) =
+                crate::roles::resolve(&primary, bindings.binding("summarize"));
+            if resolution != crate::roles::Resolution::Primary {
+                let _ = inner
+                    .store
+                    .record(
+                        session,
+                        "role.bound",
+                        json!({"run_id":run,"role":"summarize","resolution":resolution.to_evidence()}),
+                    )
+                    .await;
+            }
             let stop = inner.stop.clone();
+            let store = inner.store.clone();
+            // An attempt already on the primary model — no binding, or a
+            // substituted one — does not escalate to itself (ADR-14): only
+            // an accepted binding earns the single retry on the primary.
+            let escalate = matches!(resolution, crate::roles::Resolution::Bound { .. });
             let mut summarize = move |body: String| {
-                let provider = Arc::clone(&provider);
+                let role_provider = Arc::clone(&role_provider);
+                let primary = Arc::clone(&primary);
                 let stop = stop.clone();
+                let store = store.clone();
                 async move {
-                    let (tx, _rx) = mpsc::channel(16);
-                    let request = ModelRequest {
-                        system: "Summarize the conversation portion you are given. Preserve verbatim: the active objective, open tasks, verification commands and their results, file paths, identifiers, and decisions. Reply with only the summary text.".into(),
-                        messages: vec![Message {
-                            role: "user".into(),
-                            content: json!([{"type": "text", "text": body}]),
-                            checkpoint: None,
-                            recorded_at_ms: None,
-                        }],
-                        tools: vec![],
-                    };
-                    let reply = provider
-                        .stream(request, tx, stop.child_token())
-                        .await
-                        .map_err(|error| error.to_string())?;
-                    let text = reply
-                        .content
-                        .as_array()
-                        .into_iter()
-                        .flatten()
-                        .filter_map(|block| block["text"].as_str())
-                        .collect::<Vec<_>>()
-                        .join("");
-                    if text.is_empty() {
-                        Err("summarizer returned no text".into())
-                    } else {
-                        Ok(text)
-                    }
+                    crate::roles::summarize_with_escalation(
+                        &role_provider,
+                        &primary,
+                        &crate::roles::Settlement {
+                            store: &store,
+                            session,
+                            run,
+                        },
+                        &stop,
+                        &body,
+                        escalate,
+                    )
+                    .await
                 }
             };
             let mut notify = |notice: Value| {

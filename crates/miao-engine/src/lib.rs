@@ -26,6 +26,7 @@ pub mod protocol;
 pub mod provider;
 pub mod question;
 pub mod recall;
+pub mod roles;
 pub mod routing;
 pub mod runtime;
 mod search;
