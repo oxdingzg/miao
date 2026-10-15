@@ -60,6 +60,10 @@ export const nativeEngineOptions = (
     credentialDatabase: environment.MIAO_ENGINE_CREDENTIAL_DB,
     credentialID: environment.MIAO_ENGINE_CREDENTIAL_ID,
     credentialIntegration: environment.MIAO_ENGINE_CREDENTIAL_INTEGRATION,
+    fallbackModel: environment.MIAO_ENGINE_FALLBACK_MODEL,
+    roles: environment.MIAO_ENGINE_ROLES
+      ? (JSON.parse(environment.MIAO_ENGINE_ROLES) as EngineOptions["roles"])
+      : undefined,
   }
 }
 

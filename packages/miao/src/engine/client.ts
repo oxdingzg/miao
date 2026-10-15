@@ -24,6 +24,10 @@ export interface EngineOptions {
   toolReplayFile?: string
   /** Automatic compaction limits (roadmap §2.13); absent keeps it off. */
   contextLimits?: { window: number; ratio: number; headroom: number; perPass: number }
+  /** Transport-failure fallback model on the same route. */
+  fallbackModel?: string
+  /** Purpose-role model bindings (ADR-14): model ids on the engine's own route. */
+  roles?: { summarize?: string; retrieve?: string; verify?: string }
   /**
    * The product's own credential database (ADR-09: the product owns refresh and
    * writes; the engine only reads). Together with `credentialID` and
@@ -127,6 +131,10 @@ export function engineArgs(options: EngineOptions): string[] {
   if (options.lspConfigFile) args.push("--lsp-config", options.lspConfigFile)
   if (options.promptCache !== undefined) args.push("--prompt-cache", options.promptCache ? "on" : "off")
   if (options.verifyCommand) args.push("--verify-command", options.verifyCommand)
+  if (options.fallbackModel) args.push("--fallback-model", options.fallbackModel)
+  if (options.roles?.summarize) args.push("--role-summarize", options.roles.summarize)
+  if (options.roles?.retrieve) args.push("--role-retrieve", options.roles.retrieve)
+  if (options.roles?.verify) args.push("--role-verify", options.roles.verify)
   return args
 }
 
