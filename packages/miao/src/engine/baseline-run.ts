@@ -250,7 +250,7 @@ export async function runBaselineRust(input: BaselineRustInput): Promise<Baselin
     profile: engineProfile(events),
     phases: enginePhases(events, progress, observed, verifiedAtMs),
     toolCalls: events.filter((event) => event.kind === "tool.completed").length,
-    context: observedContextManagement(events),
+    context: observedContextManagement(events, progress),
     parallel: observedReadBatches(events, observed),
     admissionMs: admittedAt(events, observed),
     requiredReceipts: task.requiredReceipts,
@@ -556,13 +556,17 @@ function numberOrNull(value: unknown) {
 
 /// Loop classification counts: how many provider turns were continued or
 /// stopped for a classified reason (empty completion, no progress, budget).
-/// Automatic context management the run exercised: compaction events by kind,
-/// and the recall calls that restore an archived output by handle.
-function observedContextManagement(events: EngineEvent[]) {
+/// Automatic context management the run exercised: compaction reports by kind
+/// -- they arrive as progress, not as durable events, so counting events alone
+/// saw nothing -- and the recall calls that restore an archived output.
+function observedContextManagement(
+  events: EngineEvent[],
+  progress: Array<{ item: EngineProgress; atMs: number }>,
+) {
   const compaction: Record<string, number> = {}
-  for (const event of events) {
-    if (!event.kind.startsWith("compaction.")) continue
-    compaction[event.kind] = (compaction[event.kind] ?? 0) + 1
+  for (const { item } of progress) {
+    if (!item.kind?.startsWith("compaction.")) continue
+    compaction[item.kind] = (compaction[item.kind] ?? 0) + 1
   }
   const recallCalls = events.filter((event) => {
     const data = event.data as { tool?: unknown } | null

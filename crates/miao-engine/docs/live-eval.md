@@ -549,14 +549,19 @@ one Session, four repetitions), and neither produced a compaction:
 | window 32000, ratio 0.5, headroom 2000 | 4 | 3 | 56-62 | 42-47 | 175,978-198,243 | 2,474-3,384 | 50-88 s |
 | window 4000, ratio 0.25, headroom 500 | 4 | 0 | 1 | 1 | 2,494 | 37 | 300 s (harness limit) |
 
-The first configuration never triggers: the gate fires when one request's
-estimated context passes `window x ratio`, which is 16 k tokens here, while this
-carrier's requests stay far below it. The numbers are a usable baseline of the
-long task itself, not of compaction.
+Neither configuration's compaction count is known from that table: the
+compaction reports arrive as *progress* rather than as durable events, and the
+evidence counted events, so its counters were blind. The field reads progress
+now, and a later run owns those numbers.
 
-The second configuration is worse than untriggered: at roughly a thousand tokens
-the gate does fire, and every run then **stalls after its first tool call** --
-one attempt, one tool, and then nothing until the harness's 300 s limit, with a
-`tool.error` receipt in three of four runs. That is a hang rather than a
-degradation, it is the gap A4 still owes, and the reproduction is this table's
-second row: the `long-session` carrier with those limits.
+What the runs did establish is that the gate fires at those limits and that
+every summarizer pass fails. Before the bound below, four runs stalled after
+their first tool call for the harness's full 300 s limit. With the bound in
+place and the counters reading progress, the same carrier reports what happens:
+one run fired the gate eleven times (eleven attempts, eleven failures, five
+skipped by the breaker) and still passed in 274.8 s with 56 turns and 47 tools,
+and a second attempted three times before failing behaviourally. So the gate
+triggers, the summarizer request against this provider never answers inside its
+20 s bound, and the bound is what keeps the turn alive -- at a cost of about
+20 s per attempt, which is most of that run's wall time.
+
