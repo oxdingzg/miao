@@ -604,3 +604,19 @@ merged, since it made each failed pass more expensive without fixing anything.
 The next instrument is already in the code: `request_with_retry` records each
 attempt's status and outcome in the runtime profile, and the evidence has to carry
 that for a sweep to read it.
+
+### The attempt notices do not reach the runner yet (2026-10-15, later)
+
+The instrument below was built and probed, and the probe returned nothing: a
+`small-edit` run whose turns all succeeded records `provider.attempts: []`, so
+the notices never reach the evaluation runner even though `context.*` progress
+from the same engine does. The engine writes each attempt's status and outcome to
+its durable store, and `request_with_retry` now announces them as progress as
+well, so the missing link is the transport between the engine and the runner, not
+the record.
+
+That matters for the reading above: with no attempts visible, the probe cannot
+say whether the summary call receives no first event, and the earlier conclusion
+that the stall sits in the request path rests on timings alone rather than on a
+recorded attempt. The next step is therefore to make one attempt visible
+end-to-end -- a turn's attempt is enough -- and only then read the summary's.
