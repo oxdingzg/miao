@@ -448,8 +448,9 @@ async fn failure_detail(response: &mut reqwest::Response) -> Option<String> {
 
 /// Publish one attempt's fate beside the profile record it writes to the store.
 /// The store is durable but a sweep cannot read it, so the same fact travels as
-/// progress, where the evaluation runner's evidence can.
-async fn announce(
+/// progress, where the evaluation runner's evidence can. Best effort: a full
+/// channel drops the notice rather than holding the request that produced it.
+fn announce(
     progress: &mpsc::Sender<Value>,
     protocol: &str,
     attempt: usize,
@@ -457,16 +458,14 @@ async fn announce(
     outcome: &str,
     detail: Option<&str>,
 ) {
-    let _ = progress
-        .send(json!({
-            "kind": "provider.attempt",
-            "protocol": protocol,
-            "attempt": attempt,
-            "status": status,
-            "outcome": outcome,
-            "detail": detail,
-        }))
-        .await;
+    let _ = progress.try_send(json!({
+        "kind": "provider.attempt",
+        "protocol": protocol,
+        "attempt": attempt,
+        "status": status,
+        "outcome": outcome,
+        "detail": detail,
+    }));
 }
 
 pub(crate) async fn request_with_retry(
@@ -509,7 +508,7 @@ pub(crate) async fn request_with_retry(
         let error = match response {
             Ok(response) if response.status().is_success() => {
                 crate::runtime_profile::result(request_seq, status, outcome, None).await?;
-                announce(progress, protocol, attempt, status, outcome, None).await;
+                announce(progress, protocol, attempt, status, outcome, None);
                 return Ok(response);
             }
             Ok(mut response) => {
@@ -522,13 +521,19 @@ pub(crate) async fn request_with_retry(
                     detail.as_deref(),
                 )
                 .await?;
-                announce(progress, protocol, attempt, Some(status), outcome, detail.as_deref())
-                    .await;
+                announce(
+                    progress,
+                    protocol,
+                    attempt,
+                    Some(status),
+                    outcome,
+                    detail.as_deref(),
+                );
                 ProviderError::Http(status)
             }
             Err(error) => {
                 crate::runtime_profile::result(request_seq, status, outcome, None).await?;
-                announce(progress, protocol, attempt, status, outcome, None).await;
+                announce(progress, protocol, attempt, status, outcome, None);
                 error
             }
         };
