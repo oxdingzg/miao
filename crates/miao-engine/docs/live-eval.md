@@ -586,3 +586,21 @@ shape: it receives the stream but never returns, which is what a reader that wai
 for the connection to close rather than for the completed event would do. That is
 the defect the next change owns; the bound keeps a stalled call from holding a
 turn, and the breaker stops retrying it.
+
+### Correction: the pass bound is not the cause (2026-10-15, later)
+
+Raising the pass bound from twenty seconds to a hundred and fifty does not change
+the outcome. The same low-limit session still reports `compaction.failed: summary
+timeout` and never finishes, so a summarizer call exceeds even that. The provider's
+own limits are sixty seconds to the first event and a hundred and twenty of idle,
+and the retry scope allows three attempts, so an attempt that never receives a
+first event spends three first-event budgets -- which is what the timings look
+like. A logging proxy with the same forwarded headers answers the same request in
+about five seconds, and the summarizer runs on the primary provider because no role
+binding is configured, so the stall is in the engine's own summary request path
+before any event arrives. The change that raised the bound was closed rather than
+merged, since it made each failed pass more expensive without fixing anything.
+
+The next instrument is already in the code: `request_with_retry` records each
+attempt's status and outcome in the runtime profile, and the evidence has to carry
+that for a sweep to read it.
