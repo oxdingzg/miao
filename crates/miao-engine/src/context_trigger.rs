@@ -12,6 +12,7 @@ use crate::store::Store;
 use rusqlite::OptionalExtension;
 use serde_json::{json, Value};
 use std::future::Future;
+use std::time::Duration;
 
 /// Explicit trigger configuration from the product layer.
 #[derive(Debug, Clone)]
@@ -133,6 +134,10 @@ pub struct CompactRequest<'a, P: FnMut(Value)> {
     > + Send),
 }
 
+/// How long one summarizer pass may take before the gate gives up on it.
+/// A provider that accepts the request and never answers must not hold a turn.
+const SUMMARY_TIMEOUT: Duration = Duration::from_secs(20);
+
 pub async fn maybe_compact<S, F, P>(
     store: &Store,
     request: CompactRequest<'_, P>,
@@ -191,19 +196,32 @@ where
     let mut parts = Vec::new();
     for (nth, (start, end)) in plan.segments.iter().enumerate() {
         let body = summarizer_body(&messages[*start..*end], SUMMARIZER_MESSAGE_CHARS);
-        match summarize(format!(
-            "Summarize this portion of the conversation:\n{body}"
-        ))
+        // A summarizer that never returns must not hold the turn: the call is
+        // bounded, and a timeout degrades like any other summary failure.
+        match tokio::time::timeout(
+            SUMMARY_TIMEOUT,
+            summarize(format!(
+                "Summarize this portion of the conversation:\n{body}"
+            )),
+        )
         .await
         {
-            Ok(part) => {
+            Err(_) => {
+                breaker.rejected();
+                notify(json!({
+                    "session_id": session, "run_id": run,
+                    "kind": "compaction.failed", "reason": "summary timeout",
+                }));
+                return Ok(false);
+            }
+            Ok(Ok(part)) => {
                 parts.push(part);
                 notify(json!({
                     "session_id": session, "run_id": run,
                     "kind": "compaction.progress", "segment": nth + 1, "total": plan.segments.len(),
                 }));
             }
-            Err(reason) => {
+            Ok(Err(reason)) => {
                 breaker.rejected();
                 notify(json!({
                     "session_id": session, "run_id": run,
