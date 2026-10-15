@@ -11,6 +11,27 @@ at `docs/releases/vX.Y.Z.md` and `docs/releases/vX.Y.Z.zh.md`; both are required
 
 ## [Unreleased]
 
+## [0.2.10] - 2026-10-15
+
+### Added
+
+- feat(miao): pass native LSP host configuration to the engine (#869) (`6ae2090df`)
+- feat(eval): record why a compaction step ended (#866) (`93ea2f336`)
+- feat(engine): add verified Windows install and rollback (#864) (`738994f57`)
+- feat(engine): batch leading reads in mixed tool turns (#860) (`eb12c84ab`)
+- feat(miao): engine settings map from the global config document (#857) (`b25bd9200`)
+- chore: report branches a closed pull request left behind (#859) (`98abcb184`)
+
+### Fixed
+
+- fix(release): let the released binary load its own render library (#887) (`5b2cf26db`)
+- fix(engine): hydrate native session history without TS shadow writes (#881) (`99b06320f`)
+- fix(core): preserve tool access across long session continuations (#882) (`e229beda9`)
+- fix(release): give a platform job time to build the engine (#874) (`fe3cc9a1b`)
+- fix(core): recover titles for image-first sessions (#872) (`41e0f81c4`)
+- fix(core): make peer messaging wake policy explicit (#867) (`b861d0b2a`)
+- fix(engine): align release archives with verified installation (#862) (`03dd1a2bc`)
+- fix(engine): report ACP cancellation and provider failure honestly (#861) (`8dceb2b78`)
 ## [0.2.9] - 2026-10-15
 
 ### Added

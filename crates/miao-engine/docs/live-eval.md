@@ -622,3 +622,20 @@ The next step is to make one attempt visible end-to-end -- a turn's attempt is
 enough -- and only then read the summary's. The change that announced the attempts
 was parked rather than merged: it interacts with the retry accounting that
 `tests/first_event.rs` pins, which is a separate thing to understand first.
+
+### The attempt instrument reports through the transport it was waiting for (2026-10-15, later)
+
+The notice was parked for two reasons that turned out to be one: nothing is
+readable until one attempt travels end to end, and the same hunk passed the
+retry test on Linux while the continuous integration runs failed on macOS and
+Windows. The runner consumed the provider's own stream channel and treated every
+frame that was not a retry as streamed output, so a notice travelled as
+`provider.delta` -- where no evidence reads it -- and counted as the turn's
+first output, which disarmed the pre-output transport retry. That is what the
+platform-dependent retry accounting was measuring.
+
+Notices now report on the ephemeral progress feed under their own kind, beside
+the `context.*` reports that already travel there, and the runner reads every
+attempt into the evidence as `providerAttempts` (protocol, ordinal, status,
+outcome). What remains is the measurement this instrument was for: naming why
+the summarizer request stalls before any event arrives.
