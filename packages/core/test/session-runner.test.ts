@@ -8339,6 +8339,78 @@ describe("SessionRunnerLLM", () => {
       }),
     )
 
+    for (const text of ["[Image 1] 定位锚点丢失是什么原因", "[Image 1]", "[Image 1] 帮我看看这张图片"]) {
+      it.effect(`titles an image-first prompt: ${text}`, () => Effect.gen(function* () {
+        yield* setup
+        yield* titleAgent
+        yield* setTitle(defaultTitle)
+        const session = yield* SessionV2.Service
+        response = fragmentFixture("text", "image-main", ["The screenshot shows that the localization anchor is missing."]).completeEvents
+        titleResponse = fragmentFixture("text", "image-title", ["定位锚点丢失排查"]).completeEvents
+        yield* session.prompt({ sessionID, resume: false, prompt: Prompt.make({ text,
+          files: [{ uri: "data:image/png;base64,aGVsbG8=", mime: "image/png", name: "screenshot" }],
+        }) })
+        yield* session.resume(sessionID)
+        yield* settle
+        expect(yield* currentTitle).toBe("定位锚点丢失排查")
+        expect(titleRequests()).toHaveLength(1)
+        const prompt = userTexts(titleRequests()[0]).join("\n")
+        expect(prompt).not.toContain("[Image 1]")
+        if (text.includes("定位锚点")) expect(prompt).toContain("定位锚点丢失是什么原因")
+        else expect(prompt).toContain("The screenshot shows that the localization anchor is missing.")
+      }))
+    }
+
+    it.effect("falls back from an unsupported title model and remembers its rejection for later Sessions", () => Effect.gen(function* () {
+      yield* setup
+      yield* titleAgent
+      yield* setTitle(defaultTitle)
+      const agents = yield* AgentV2.Service
+      yield* agents.transform((editor) => editor.update(AgentV2.ID.make("title"), (agent) => {
+        agent.model = { providerID: ProviderV2.ID.make("fake"), id: ModelV2.ID.make("replacement") }
+      }))
+      responseFor = (request) => {
+        if (request.system.some((part) => part.text === TITLE_SYSTEM)) {
+          if (request.model.id === "replacement") return Stream.fail(new LLMError({ module: "test", method: "title",
+            reason: new InvalidRequestReason({ message: "The requested model is not supported with this account" }),
+          }))
+          return Stream.fromIterable(fragmentFixture("text", "fallback-title", ["定位锚点丢失排查"]).completeEvents)
+        }
+        return Stream.fromIterable(fragmentFixture("text", "fallback-main", ["Main answer"]).completeEvents)
+      }
+      const session = yield* SessionV2.Service
+      yield* session.prompt({ sessionID, resume: false, prompt: Prompt.make({ text: "定位锚点丢失是什么原因" }) })
+      yield* session.resume(sessionID)
+      yield* settle
+      expect(yield* currentTitle).toBe("定位锚点丢失排查")
+      expect(titleRequests().map((request) => String(request.model.id))).toEqual(["replacement", "fake-model"])
+      yield* insertSession(otherSessionID)
+      const database = yield* Database.Service
+      yield* database.db.update(SessionTable).set({ title: defaultTitle }).where(eq(SessionTable.id, otherSessionID)).run().pipe(Effect.orDie)
+      yield* session.prompt({ sessionID: otherSessionID, resume: false, prompt: Prompt.make({ text: "另一个定位问题" }) })
+      yield* session.resume(otherSessionID)
+      yield* settle
+      expect(titleRequests().map((request) => String(request.model.id))).toEqual(["replacement", "fake-model", "fake-model"])
+    }))
+
+    it.effect("does not retry a failed title during successive tool turns of the same input", () => Effect.gen(function* () {
+      yield* setup
+      yield* titleAgent
+      yield* setTitle(defaultTitle)
+      titleResponse = [LLMEvent.providerError({ message: "title unavailable" })]
+      responses = [
+        [LLMEvent.stepStart({ index: 0 }), LLMEvent.toolCall({ id: "first-tool", name: "echo", input: { text: "first" } }), LLMEvent.stepFinish({ index: 0, reason: "tool-calls" }), LLMEvent.finish({ reason: "tool-calls" })],
+        [LLMEvent.stepStart({ index: 0 }), LLMEvent.toolCall({ id: "second-tool", name: "echo", input: { text: "second" } }), LLMEvent.stepFinish({ index: 0, reason: "tool-calls" }), LLMEvent.finish({ reason: "tool-calls" })],
+        fragmentFixture("text", "tool-answer", ["Done"]).completeEvents,
+      ]
+      const session = yield* SessionV2.Service
+      yield* session.prompt({ sessionID, resume: false, prompt: Prompt.make({ text: "Use two tools" }) })
+      yield* session.resume(sessionID)
+      yield* settle
+      expect(titleRequests()).toHaveLength(1)
+      expect(yield* currentTitle).toBe(defaultTitle)
+    }))
+
     it.effect("keeps manual titles, skips child Sessions, and survives title failures", () =>
       Effect.gen(function* () {
         yield* setup

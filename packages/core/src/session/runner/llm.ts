@@ -352,6 +352,8 @@ const layer = Layer.effect(
     // placeholder.
     const titleFibers = yield* FiberSet.make<void>()
     const titled = new Set<string>()
+    const titlePrompts = new Map<string, SessionMessage.ID>()
+    const unavailableTitleModels = new Set<string>()
     const generateTitle = Effect.fn("SessionRunner.generateTitle")(
       function* (input: {
         readonly session: SessionSchema.Info
@@ -367,22 +369,29 @@ const layer = Layer.effect(
         // title is a one-line answer, so it pins the cheapest tier its model
         // declares instead of paying the Session's chosen effort.
         const selected = agent.model ? yield* models.resolve({ ...input.session, model: agent.model }) : undefined
-        const model = selected?.model ?? input.small ?? input.model
+        const preferred = selected?.model ?? input.small ?? input.model
         const info = selected?.info ?? (input.small === undefined ? input.info : undefined)
-        const title = yield* SessionTitle.generate({
+        const attempt = (model: Model, info?: ModelV2.Info) => SessionTitle.generate({
           llm,
           model,
           http: input.http,
           system: agent.system,
           prompt: input.prompt,
-          providerOptions:
-            info === undefined
-              ? undefined
-              : ModelVariants.auxReasoningOptions(
-                  info.api.type === "aisdk" ? info.api.package : undefined,
-                  info.variants.length > 0 ? info.variants : ModelVariants.generate(info),
-                ),
-        })
+          providerOptions: info === undefined ? undefined : ModelVariants.auxReasoningOptions(
+            info.api.type === "aisdk" ? info.api.package : undefined,
+            info.variants.length > 0 ? info.variants : ModelVariants.generate(info),
+          ),
+        }).pipe(Effect.catch((error) => {
+          // A permanent provider rejection will not improve on the next tool turn
+          // or in another Session using this Location's same model catalog.
+          if (error.reason._tag === "InvalidRequest" && /model.*(?:not supported|not found|not available|does not exist)|unsupported.*model/i.test(error.reason.message))
+            unavailableTitleModels.add(`${model.provider}/${model.id}`)
+          return Effect.logWarning("failed to generate title", { model: model.id, error }).pipe(Effect.as(undefined))
+        }))
+        const primary = preferred.provider === input.model.provider && preferred.id === input.model.id
+        const initial = unavailableTitleModels.has(`${preferred.provider}/${preferred.id}`)
+          ? undefined : yield* attempt(preferred, info)
+        const title = initial ?? (primary ? undefined : yield* attempt(input.model, input.info))
         if (!title) return false
         // The user may have renamed the Session while the title model ran.
         const current = yield* store.get(input.session.id)
@@ -797,29 +806,21 @@ const layer = Layer.effect(
         toolChoice: isLastStep ? "none" : undefined,
       })
       const requestBuildMs = Date.now() - requestBuildStartedAt
-      // Title a root Session that still has its placeholder title once its first
-      // real user prompt reaches the model. The prompt count is not pinned to
-      // one: a Session whose earlier drain never reached this point (or whose
-      // first attempt failed) still gets titled on a later turn, while the
-      // placeholder check keeps a titled or renamed Session from being retitled.
-      const users = context.filter((message) => message.type === "user")
-      if (!session.parentID && users.length > 0 && SessionTitle.isDefault(session.title) && !titled.has(session.id)) {
-        const sessionID = session.id
-        titled.add(sessionID)
-        yield* FiberSet.run(
-          titleFibers,
-          generateTitle({
-              session,
-              prompt: users[0].text,
-              model,
-              small: summarizeModel,
-              info: resolved.info,
-              http: request.http,
-            }).pipe(
-            Effect.tap((published) => (published ? Effect.void : Effect.sync(() => titled.delete(sessionID)))),
-          ),
-        )
-      }
+      // One attempt per admitted user prompt, not one per tool/provider turn.
+      // Image-only prompts defer until the main model has produced visible text.
+      const maybeTitle = (history: ReadonlyArray<SessionMessage.Message>) => Effect.gen(function* () {
+        const user = history.findLast((message) => message.type === "user")
+        if (session.parentID || !SessionTitle.isDefault(session.title) || titled.has(session.id) ||
+          !user || titlePrompts.get(session.id) === user.id) return
+        const prompt = SessionTitle.prompt(history)
+        if (!prompt) return
+        titlePrompts.set(session.id, user.id)
+        titled.add(session.id)
+        yield* FiberSet.run(titleFibers, generateTitle({
+          session, prompt, model, small: summarizeModel, info: resolved.info, http: request.http,
+        }).pipe(Effect.tap((published) => published ? Effect.void : Effect.sync(() => titled.delete(session.id)))))
+      })
+      yield* maybeTitle(context)
       const compactStartedAt = Date.now()
       if (SessionCompactRequest.consume(session.id)) {
         // A manual compaction is the user's reset: give the breaker a fresh try.
@@ -1355,6 +1356,7 @@ const layer = Layer.effect(
           if (stream._tag === "Failure") return yield* Effect.failCause(stream.cause)
           if (settled._tag === "Failure" && Cause.hasInterrupts(settled.cause))
             return yield* Effect.failCause(settled.cause)
+          if (!publisher.hasProviderError()) yield* maybeTitle(yield* getContext(session.id))
           return { needsContinuation: !publisher.hasProviderError() && needsContinuation, step: currentStep }
         }),
       )
