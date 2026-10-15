@@ -2,7 +2,7 @@ use crate::{
     approval::{now_ms, Approval, Response},
     context_trigger::{self, ContextLimits},
     permission::{input_digest, Config, Decision, Policy},
-    protocol::{Admission, Attachment, Error, Input, Message, ModelRequest},
+    protocol::{Admission, Attachment, Error, Input, ModelRequest},
     provider::{Provider, ProviderError},
     store::{RuntimeLease, Store},
     tool_replay::ToolReplay,
@@ -1284,9 +1284,11 @@ async fn execute(
                     crate::roles::summarize_with_escalation(
                         &role_provider,
                         &primary,
-                        &store,
-                        session,
-                        run,
+                        &crate::roles::Settlement {
+                            store: &store,
+                            session,
+                            run,
+                        },
                         &stop,
                         &body,
                         escalate,

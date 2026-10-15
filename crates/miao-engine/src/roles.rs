@@ -76,6 +76,83 @@ pub fn resolve(
     }
 }
 
+/// One summarizer attempt against one provider: send the retention-directed
+/// summarization request and collect the reply text.
+async fn summarize_with(
+    provider: &Arc<dyn Provider>,
+    stop: &tokio_util::sync::CancellationToken,
+    body: &str,
+) -> Result<String, String> {
+    use crate::protocol::{Message, ModelRequest};
+    let (tx, _rx) = tokio::sync::mpsc::channel(16);
+    let request = ModelRequest {
+        system: "Summarize the conversation portion you are given. Preserve verbatim: the active objective, open tasks, verification commands and their results, file paths, identifiers, and decisions. Reply with only the summary text.".into(),
+        messages: vec![Message {
+            role: "user".into(),
+            content: json!([{"type": "text", "text": body}]),
+            checkpoint: None,
+            recorded_at_ms: None,
+        }],
+        tools: vec![],
+    };
+    let reply = provider
+        .stream(request, tx, stop.child_token())
+        .await
+        .map_err(|error| error.to_string())?;
+    let text = reply
+        .content
+        .as_array()
+        .into_iter()
+        .flatten()
+        .filter_map(|block| block["text"].as_str())
+        .collect::<Vec<_>>()
+        .join("");
+    if text.is_empty() {
+        Err("summarizer returned no text".into())
+    } else {
+        Ok(text)
+    }
+}
+
+/// The `summarize` role's attempt with ADR-14's single escalation: the bound
+/// provider goes first; when it fails — provider error or unusable output —
+/// the primary retries once and the escalation lands in the evidence instead
+/// of failing the turn. `escalate` is false when the attempt already ran on
+/// the primary model (no binding, or a substituted one): that attempt does not
+/// retry itself.
+/// Where an auxiliary attempt records its evidence: the delegating Session's
+/// store, the Session itself, and the run that asked for the role.
+pub struct Settlement<'a> {
+    pub store: &'a crate::store::Store,
+    pub session: &'a str,
+    pub run: &'a str,
+}
+
+pub async fn summarize_with_escalation(
+    role_provider: &Arc<dyn Provider>,
+    primary: &Arc<dyn Provider>,
+    settlement: &Settlement<'_>,
+    stop: &tokio_util::sync::CancellationToken,
+    body: &str,
+    escalate: bool,
+) -> Result<String, String> {
+    match summarize_with(role_provider, stop, body).await {
+        Ok(text) => Ok(text),
+        Err(first) if escalate => {
+            let _ = settlement
+                .store
+                .record(
+                    settlement.session,
+                    "role.escalated",
+                    json!({"run_id":settlement.run,"role":"summarize","reason":first}),
+                )
+                .await;
+            summarize_with(primary, stop, body).await
+        }
+        Err(first) => Err(first),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -207,9 +284,11 @@ mod tests {
         let text = summarize_with_escalation(
             &role,
             &primary,
-            &store,
-            "s",
-            "r1",
+            &Settlement {
+                store: &store,
+                session: "s",
+                run: "r1",
+            },
             &stop,
             "condense this",
             true,
@@ -250,9 +329,11 @@ mod tests {
         let error = summarize_with_escalation(
             &failing,
             &failing,
-            &store,
-            "s",
-            "r1",
+            &Settlement {
+                store: &store,
+                session: "s",
+                run: "r1",
+            },
             &stop,
             "condense this",
             false,
@@ -275,75 +356,5 @@ mod tests {
         assert_eq!(bindings.binding("retrieve"), None);
         assert_eq!(bindings.binding("verify"), Some("c"));
         assert_eq!(bindings.binding("primary"), None);
-    }
-}
-
-/// One summarizer attempt against one provider: send the retention-directed
-/// summarization request and collect the reply text.
-async fn summarize_with(
-    provider: &Arc<dyn Provider>,
-    stop: &tokio_util::sync::CancellationToken,
-    body: &str,
-) -> Result<String, String> {
-    use crate::protocol::{Message, ModelRequest};
-    let (tx, _rx) = tokio::sync::mpsc::channel(16);
-    let request = ModelRequest {
-        system: "Summarize the conversation portion you are given. Preserve verbatim: the active objective, open tasks, verification commands and their results, file paths, identifiers, and decisions. Reply with only the summary text.".into(),
-        messages: vec![Message {
-            role: "user".into(),
-            content: json!([{"type": "text", "text": body}]),
-            checkpoint: None,
-            recorded_at_ms: None,
-        }],
-        tools: vec![],
-    };
-    let reply = provider
-        .stream(request, tx, stop.child_token())
-        .await
-        .map_err(|error| error.to_string())?;
-    let text = reply
-        .content
-        .as_array()
-        .into_iter()
-        .flatten()
-        .filter_map(|block| block["text"].as_str())
-        .collect::<Vec<_>>()
-        .join("");
-    if text.is_empty() {
-        Err("summarizer returned no text".into())
-    } else {
-        Ok(text)
-    }
-}
-
-/// The `summarize` role's attempt with ADR-14's single escalation: the bound
-/// provider goes first; when it fails — provider error or unusable output —
-/// the primary retries once and the escalation lands in the evidence instead
-/// of failing the turn. `escalate` is false when the attempt already ran on
-/// the primary model (no binding, or a substituted one): that attempt does not
-/// retry itself.
-pub async fn summarize_with_escalation(
-    role_provider: &Arc<dyn Provider>,
-    primary: &Arc<dyn Provider>,
-    store: &crate::store::Store,
-    session: &str,
-    run: &str,
-    stop: &tokio_util::sync::CancellationToken,
-    body: &str,
-    escalate: bool,
-) -> Result<String, String> {
-    match summarize_with(role_provider, stop, body).await {
-        Ok(text) => Ok(text),
-        Err(first) if escalate => {
-            let _ = store
-                .record(
-                    session,
-                    "role.escalated",
-                    json!({"run_id":run,"role":"summarize","reason":first}),
-                )
-                .await;
-            summarize_with(primary, stop, body).await
-        }
-        Err(first) => Err(first),
     }
 }
