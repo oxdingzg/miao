@@ -13,13 +13,16 @@ LINK="${HOME}/.local/bin/miao-engine"
 MODE="${1:-}"
 SRC=""
 if [[ "$MODE" == "--release" ]]; then
+  [[ $# -le 2 ]] || { echo "too many release arguments" >&2; exit 1; }
   TAG="${2:-latest}"
   OS=$(uname -s)
   ARCH=$(uname -m)
   case "$OS" in Darwin) OS_TAG=darwin ;; Linux) OS_TAG=linux ;; *) echo "unsupported os: $OS" >&2; exit 1 ;; esac
   case "$ARCH" in arm64|aarch64) ARCH_TAG=arm64 ;; x86_64) ARCH_TAG=x64 ;; *) echo "unsupported arch: $ARCH" >&2; exit 1 ;; esac
-  ASSET="miao-engine-${OS_TAG}-${ARCH_TAG}.tar.gz"
-  BASE="https://github.com/oxdingzg/miao/releases"
+  EXT=tar.gz
+  [[ "$OS_TAG" != darwin ]] || EXT=zip
+  ASSET="miao-engine-${OS_TAG}-${ARCH_TAG}.${EXT}"
+  BASE="${MIAO_ENGINE_RELEASE_BASE_URL:-https://github.com/oxdingzg/miao/releases}"
   if [[ "$TAG" == "latest" ]]; then
     URL="$BASE/latest/download/$ASSET"
     SHAS_URL="$BASE/latest/download/$ASSET.sha256"
@@ -30,15 +33,17 @@ if [[ "$MODE" == "--release" ]]; then
   TMP="$(mktemp -d)"
   trap 'rm -rf "$TMP"' EXIT
   curl -fsSL "$URL" -o "$TMP/$ASSET"
-  if curl -fsSL "$SHAS_URL" -o "$TMP/$ASSET.sha256"; then
-    (cd "$TMP" && (sha256sum -c "$ASSET.sha256" >/dev/null 2>&1 || shasum -a 256 -c "$ASSET.sha256" >/dev/null 2>&1)) || {
-      echo "checksum mismatch for $ASSET" >&2
-      exit 1
-    }
+  curl -fsSL "$SHAS_URL" -o "$TMP/$ASSET.sha256"
+  if command -v sha256sum >/dev/null 2>&1; then
+    (cd "$TMP" && sha256sum -c "$ASSET.sha256")
   else
-    echo "no checksum manifest for $ASSET; skipping verification" >&2
+    (cd "$TMP" && shasum -a 256 -c "$ASSET.sha256")
   fi
-  tar -xzf "$TMP/$ASSET" -C "$TMP"
+  if [[ "$EXT" == zip ]]; then
+    unzip -q "$TMP/$ASSET" -d "$TMP"
+  else
+    tar -xzf "$TMP/$ASSET" -C "$TMP"
+  fi
   SRC="$TMP/miao-engine"
 elif [[ "$MODE" == "--binary" ]]; then
   [[ -z "${2:-}" || $# != 2 ]] && { echo 'Usage: ./script/install-engine.sh --binary /path/to/miao-engine' >&2; exit 1; }
