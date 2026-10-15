@@ -1738,7 +1738,7 @@ describe("SessionRunnerLLM", () => {
       responses = [
         [
           LLMEvent.stepStart({ index: 0 }),
-          LLMEvent.toolCall({ id: "sender-report", name: "send_message", input: { to: otherSessionID, message: "Important peer finding" } }),
+          LLMEvent.toolCall({ id: "sender-report", name: "send_message", input: { to: otherSessionID, message: "Important peer finding", wake: "always", reason: "Explicit peer coordination requested" } }),
           LLMEvent.stepFinish({ index: 0, reason: "tool-calls" }),
           LLMEvent.finish({ reason: "tool-calls" }),
         ],
@@ -4204,72 +4204,102 @@ describe("SessionRunnerLLM", () => {
     }),
   )
 
-  it.effect("delivers a message to a peer session and wakes it", () =>
-    Effect.gen(function* () {
-      yield* setup
-      const agent = yield* AgentV2.Service
-      yield* agent.transform((editor) =>
-        editor.update(AgentV2.ID.make("build"), (build) => {
-          build.mode = "primary"
-        }),
-      )
-      const runner = yield* SessionRunner.Service
-      const session = yield* SessionV2.Service
-      const { db } = yield* Database.Service
-      yield* insertSession(otherSessionID)
-      yield* session.prompt({ sessionID, prompt: Prompt.make({ text: "Ping peer" }), resume: false })
-
-      requests.length = 0
-      responses = [
-        [
-          LLMEvent.stepStart({ index: 0 }),
-          LLMEvent.toolCall({
-            id: "call-message",
-            name: "send_message",
-            // Resolved by slug, not by Session ID.
-            input: { to: `@${otherSessionID}`, message: "hello peer" },
+  for (const policy of [
+    { name: "default idle", unfinished: false, completed: false, wake: undefined, expected: false },
+    { name: "default unfinished", unfinished: true, completed: false, wake: undefined, expected: true },
+    { name: "never unfinished", unfinished: true, completed: false, wake: "never", expected: false },
+    { name: "always idle", unfinished: false, completed: false, wake: "always", expected: true },
+    { name: "if_active completed", unfinished: false, completed: true, wake: "if_active", expected: false },
+  ] as const) {
+    it.effect(`peer messaging: ${policy.name}`, () =>
+      Effect.gen(function* () {
+        yield* setup
+        const agent = yield* AgentV2.Service
+        yield* agent.transform((editor) =>
+          editor.update(AgentV2.ID.make("build"), (build) => {
+            build.mode = "primary"
           }),
-          LLMEvent.stepFinish({ index: 0, reason: "tool-calls" }),
-          LLMEvent.finish({ reason: "tool-calls" }),
-        ],
-        [
-          LLMEvent.stepStart({ index: 0 }),
-          LLMEvent.textStart({ id: "text-done" }),
-          LLMEvent.textDelta({ id: "text-done", text: "Done" }),
-          LLMEvent.textEnd({ id: "text-done" }),
-          LLMEvent.stepFinish({ index: 0, reason: "stop" }),
-          LLMEvent.finish({ reason: "stop" }),
-        ],
-      ]
-      const wakes: string[] = []
-      yield* runner.run({ sessionID, force: true, wake: (id) => Effect.sync(() => wakes.push(id)) })
+        )
+        const runner = yield* SessionRunner.Service
+        const session = yield* SessionV2.Service
+        const { db } = yield* Database.Service
+        yield* insertSession(otherSessionID)
+        if (policy.unfinished || policy.completed) {
+          const todos = yield* SessionTodo.Service
+          yield* todos.update({
+            sessionID: otherSessionID,
+            todos: [
+              { content: "Shared operation", status: policy.completed ? "completed" : "waiting", priority: "high" },
+            ],
+          })
+        }
+        yield* session.prompt({ sessionID, prompt: Prompt.make({ text: "Ping peer" }), resume: false })
 
-      expect(wakes).toEqual([otherSessionID])
-      expect(
-        permissionAsserts.some((entry) => entry.action === "message" && entry.resources.includes(otherSessionID)),
-      ).toBe(true)
-      expect(yield* SessionInput.hasPending(db, otherSessionID, "steer")).toBe(true)
+        requests.length = 0
+        responses = [
+          [
+            LLMEvent.stepStart({ index: 0 }),
+            LLMEvent.toolCall({
+              id: "call-message",
+              name: "send_message",
+              // Resolved by slug, not by Session ID.
+              input: {
+                to: `@${otherSessionID}`,
+                message: "hello peer",
+                ...(policy.wake ? { wake: policy.wake } : {}),
+                ...(policy.wake === "always"
+                  ? { reason: "User requested peer coordination for a shared operation" }
+                  : {}),
+              },
+            }),
+            LLMEvent.stepFinish({ index: 0, reason: "tool-calls" }),
+            LLMEvent.finish({ reason: "tool-calls" }),
+          ],
+          [
+            LLMEvent.stepStart({ index: 0 }),
+            LLMEvent.textStart({ id: "text-done" }),
+            LLMEvent.textDelta({ id: "text-done", text: "Done" }),
+            LLMEvent.textEnd({ id: "text-done" }),
+            LLMEvent.stepFinish({ index: 0, reason: "stop" }),
+            LLMEvent.finish({ reason: "stop" }),
+          ],
+        ]
+        const wakes: string[] = []
+        yield* runner.run({ sessionID, force: true, wake: (id) => Effect.sync(() => wakes.push(id)) })
 
-      // Draining the target materializes the attributed message in its transcript.
-      responses = [
-        [
-          LLMEvent.stepStart({ index: 0 }),
-          LLMEvent.textStart({ id: "text-ack" }),
-          LLMEvent.textDelta({ id: "text-ack", text: "Ack" }),
-          LLMEvent.textEnd({ id: "text-ack" }),
-          LLMEvent.stepFinish({ index: 0, reason: "stop" }),
-          LLMEvent.finish({ reason: "stop" }),
-        ],
-      ]
-      yield* runner.run({ sessionID: otherSessionID, force: true })
+        expect(wakes).toEqual(policy.expected ? [otherSessionID] : [])
+        expect(
+          permissionAsserts.some((entry) => entry.action === "message" && entry.resources.includes(otherSessionID)),
+        ).toBe(true)
+        expect(yield* SessionInput.hasPending(db, otherSessionID, "steer")).toBe(true)
 
-      const context = yield* session.context(otherSessionID)
-      const first = context[0]
-      expect(first).toMatchObject({ type: "user" })
-      expect(first?.type === "user" ? first.text : "").toContain(`<message from session="${sessionID}">`)
-      expect(first?.type === "user" ? first.text : "").toContain("hello peer")
-    }),
-  )
+        const sent = (yield* session.context(sessionID))
+          .flatMap((message) => (message.type === "assistant" ? message.content : []))
+          .find((part) => part.type === "tool" && part.name === "send_message")
+        expect(sent).toMatchObject({
+          state: { structured: { sessionID: otherSessionID, wake: policy.expected ? "requested" : "not_requested" } },
+        })
+        // Draining the target materializes the attributed message in its transcript.
+        responses = [
+          [
+            LLMEvent.stepStart({ index: 0 }),
+            LLMEvent.textStart({ id: "text-ack" }),
+            LLMEvent.textDelta({ id: "text-ack", text: "Ack" }),
+            LLMEvent.textEnd({ id: "text-ack" }),
+            LLMEvent.stepFinish({ index: 0, reason: "stop" }),
+            LLMEvent.finish({ reason: "stop" }),
+          ],
+        ]
+        yield* runner.run({ sessionID: otherSessionID, force: true })
+
+        const context = yield* session.context(otherSessionID)
+        const first = context[0]
+        expect(first).toMatchObject({ type: "user" })
+        expect(first?.type === "user" ? first.text : "").toContain(`<message from session="${sessionID}">`)
+        expect(first?.type === "user" ? first.text : "").toContain("hello peer")
+      }),
+    )
+  }
 
   for (const delivery of [undefined, "queue"] as const) {
     it.effect(`peer messages ${delivery ?? "default"} preserve tools and use the intended delivery boundary`, () =>
@@ -4292,7 +4322,7 @@ describe("SessionRunnerLLM", () => {
           [LLMEvent.stepStart({ index: 0 }), LLMEvent.toolCall({ id: "sender-report", name: "send_message", input: { to: otherSessionID, message: "Important peer finding", ...(delivery ? { delivery } : {}) } }), LLMEvent.stepFinish({ index: 0, reason: "tool-calls" }), LLMEvent.finish({ reason: "tool-calls" })],
           [], [], [],
         ]
-        const target = yield* runner.run({ sessionID: otherSessionID, force: true }).pipe(Effect.forkChild)
+        const target = yield* session.resume(otherSessionID).pipe(Effect.forkChild)
         yield* Deferred.await(toolExecutionsStarted)
         const wakes: string[] = []
         yield* runner.run({ sessionID, force: true, wake: (id) => Effect.sync(() => wakes.push(id)) })
@@ -4352,6 +4382,57 @@ describe("SessionRunnerLLM", () => {
     }),
   )
 
+  it.effect("rejects explicit wake without a reason before admission", () =>
+    Effect.gen(function* () {
+      yield* setup
+      const agent = yield* AgentV2.Service
+      yield* agent.transform((editor) =>
+        editor.update(AgentV2.ID.make("build"), (build) => {
+          build.mode = "primary"
+        }),
+      )
+      const runner = yield* SessionRunner.Service
+      const session = yield* SessionV2.Service
+      yield* session.prompt({ sessionID, prompt: Prompt.make({ text: "Ping nobody" }), resume: false })
+
+      yield* insertSession(otherSessionID)
+      requests.length = 0
+      responses = [
+        [
+          LLMEvent.stepStart({ index: 0 }),
+          LLMEvent.toolCall({
+            id: "call-missing",
+            name: "send_message",
+            input: { to: otherSessionID, message: "hi", wake: "always", reason: "  " },
+          }),
+          LLMEvent.stepFinish({ index: 0, reason: "tool-calls" }),
+          LLMEvent.finish({ reason: "tool-calls" }),
+        ],
+        [
+          LLMEvent.stepStart({ index: 0 }),
+          LLMEvent.stepFinish({ index: 0, reason: "stop" }),
+          LLMEvent.finish({ reason: "stop" }),
+        ],
+      ]
+      yield* runner.run({ sessionID, force: true })
+
+      const context = yield* session.context(sessionID)
+      const tool = context
+        .flatMap((message) => (message.type === "assistant" ? message.content : []))
+        .find((item) => item.type === "tool" && item.name === "send_message")
+      expect(tool).toMatchObject({
+        type: "tool",
+        name: "send_message",
+        state: {
+          status: "error",
+          error: { type: "unknown", message: "wake: always requires a concrete coordination reason." },
+        },
+      })
+      const database = yield* Database.Service
+      expect(yield* SessionInput.hasPending(database.db, otherSessionID, "steer")).toBe(false)
+    }),
+  )
+
   it.effect("refuses to overflow a peer session inbox", () =>
     Effect.gen(function* () {
       yield* setup
@@ -4405,45 +4486,79 @@ describe("SessionRunnerLLM", () => {
     }),
   )
 
-  it.effect("lists sibling sessions for discovery", () =>
-    Effect.gen(function* () {
-      yield* setup
-      const agent = yield* AgentV2.Service
-      yield* agent.transform((editor) =>
-        editor.update(AgentV2.ID.make("build"), (build) => {
-          build.mode = "primary"
-        }),
-      )
-      const runner = yield* SessionRunner.Service
-      const session = yield* SessionV2.Service
-      yield* insertSession(otherSessionID)
-      yield* session.prompt({ sessionID, prompt: Prompt.make({ text: "Who is around?" }), resume: false })
+  for (const discovery of [
+    { includeHistory: false, unfinished: false },
+    { includeHistory: true, unfinished: false },
+    { includeHistory: false, unfinished: true },
+  ]) {
+    it.effect(`lists sibling sessions history=${discovery.includeHistory} unfinished=${discovery.unfinished}`, () =>
+      Effect.gen(function* () {
+        yield* setup
+        const agent = yield* AgentV2.Service
+        yield* agent.transform((editor) =>
+          editor.update(AgentV2.ID.make("build"), (build) => {
+            build.mode = "primary"
+          }),
+        )
+        const runner = yield* SessionRunner.Service
+        const session = yield* SessionV2.Service
+        yield* insertSession(otherSessionID)
+        if (discovery.unfinished) {
+          const todos = yield* SessionTodo.Service
+          yield* todos.update({
+            sessionID: otherSessionID,
+            todos: [{ content: "Shared pending deployment", status: "waiting", priority: "high" }],
+          })
+        }
+        yield* session.prompt({ sessionID, prompt: Prompt.make({ text: "Who is around?" }), resume: false })
 
-      requests.length = 0
-      responses = [
-        [
-          LLMEvent.stepStart({ index: 0 }),
-          LLMEvent.toolCall({ id: "call-list", name: "list_sessions", input: {} }),
-          LLMEvent.stepFinish({ index: 0, reason: "tool-calls" }),
-          LLMEvent.finish({ reason: "tool-calls" }),
-        ],
-        [
-          LLMEvent.stepStart({ index: 0 }),
-          LLMEvent.stepFinish({ index: 0, reason: "stop" }),
-          LLMEvent.finish({ reason: "stop" }),
-        ],
-      ]
-      yield* runner.run({ sessionID, force: true })
+        requests.length = 0
+        responses = [
+          [
+            LLMEvent.stepStart({ index: 0 }),
+            LLMEvent.toolCall({
+              id: "call-list",
+              name: "list_sessions",
+              input: { includeHistory: discovery.includeHistory },
+            }),
+            LLMEvent.stepFinish({ index: 0, reason: "tool-calls" }),
+            LLMEvent.finish({ reason: "tool-calls" }),
+          ],
+          [
+            LLMEvent.stepStart({ index: 0 }),
+            LLMEvent.stepFinish({ index: 0, reason: "stop" }),
+            LLMEvent.finish({ reason: "stop" }),
+          ],
+        ]
+        yield* runner.run({ sessionID, force: true })
 
-      const context = yield* session.context(sessionID)
-      const tool = context
-        .flatMap((message) => (message.type === "assistant" ? message.content : []))
-        .find((item) => item.type === "tool" && item.name === "list_sessions")
-      expect(tool).toMatchObject({ type: "tool", name: "list_sessions", state: { status: "completed" } })
-      expect(JSON.stringify(tool)).toContain(String(otherSessionID))
-      expect(JSON.stringify(tool)).toContain(`@${otherSessionID}`)
-    }),
-  )
+        const context = yield* session.context(sessionID)
+        const tool = context
+          .flatMap((message) => (message.type === "assistant" ? message.content : []))
+          .find((item) => item.type === "tool" && item.name === "list_sessions")
+        expect(tool).toMatchObject({ type: "tool", name: "list_sessions", state: { status: "completed" } })
+        if (discovery.includeHistory || discovery.unfinished) {
+          expect(JSON.stringify(tool)).toContain(String(otherSessionID))
+          expect(JSON.stringify(tool)).toContain(`@${otherSessionID}`)
+          expect(tool).toMatchObject({
+            state: {
+              structured: {
+                sessions: [
+                  {
+                    execution: discovery.unfinished ? "idle" : "unknown",
+                    task: discovery.unfinished ? "unfinished" : "unknown",
+                    backgroundJobs: 0,
+                  },
+                ],
+              },
+            },
+          })
+        } else {
+          expect(tool).toMatchObject({ state: { structured: { sessions: [] } } })
+        }
+      }),
+    )
+  }
 
   it.effect("reads a peer session's transcript and pages back with its cursor", () =>
     Effect.gen(function* () {

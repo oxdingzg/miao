@@ -9,7 +9,11 @@ const id = "internal:sidebar-messages"
 const MAX = 8
 
 function summarize(body: string) {
-  const line = body.split("\n").find((value) => value.trim().length > 0)?.trim() ?? ""
+  const line =
+    body
+      .split("\n")
+      .find((value) => value.trim().length > 0)
+      ?.trim() ?? ""
   return line.length > 48 ? `${line.slice(0, 47)}…` : line
 }
 
@@ -25,9 +29,8 @@ function View(props: { api: TuiPluginApi; session_id: string }) {
   const theme = () => props.api.theme.current
   const [open, setOpen] = createSignal(true)
   const items = createMemo(() =>
-    sessionMessageEntries(
-      props.api.state.session.messages(props.session_id),
-      (messageID) => props.api.state.part(messageID),
+    sessionMessageEntries(props.api.state.session.messages(props.session_id), (messageID) =>
+      props.api.state.part(messageID),
     ).slice(-MAX),
   )
   const shown = createMemo(() => (open() ? items() : items().slice(-2)))
@@ -45,12 +48,24 @@ function View(props: { api: TuiPluginApi; session_id: string }) {
         </box>
         <For each={shown()}>
           {(entry) => (
-            <box flexDirection="row" gap={1}>
-              <text fg={entry.direction === "in" ? theme().success : theme().textMuted}>
-                {entry.direction === "in" ? "←" : "→"}
-              </text>
-              <text fg={theme().text}>{peerLabel(props.api, entry.peer)}</text>
-              <text fg={theme().textMuted}>{summarize(entry.body)}</text>
+            <box flexDirection="column">
+              <box flexDirection="row" gap={1}>
+                <text fg={entry.direction === "in" ? theme().success : theme().textMuted}>
+                  {entry.direction === "in" ? "←" : "→"}
+                </text>
+                <text fg={theme().text}>{peerLabel(props.api, entry.peer)}</text>
+                <text fg={theme().textMuted}>{summarize(entry.body)}</text>
+              </box>
+              <Show when={entry.wake}>
+                <text fg={theme().textMuted}>
+                  {entry.wake === "requested"
+                    ? "Wake requested · reply not confirmed"
+                    : "Mail left · no wake requested"}
+                </text>
+              </Show>
+              <Show when={entry.reason}>
+                <text fg={theme().textMuted}>Reason: {entry.reason}</text>
+              </Show>
             </box>
           )}
         </For>

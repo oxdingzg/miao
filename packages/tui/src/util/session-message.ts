@@ -15,6 +15,8 @@ export interface SessionMessageEntry {
   /** Source session id for an inbound message, or the send target for an outbound one. */
   peer: string
   body: string
+  reason?: string
+  wake?: "requested" | "not_requested"
 }
 
 /**
@@ -30,9 +32,20 @@ export function sessionMessageEntries(
   return messages.flatMap((message) =>
     parts(message.id).flatMap((part): SessionMessageEntry[] => {
       if (part.type === "tool" && part.tool === "send_message" && part.state.status === "completed") {
-        const input = part.state.input as { to?: unknown; message?: unknown }
+        const input = part.state.input as { to?: unknown; message?: unknown; reason?: unknown }
         if (typeof input.to !== "string" || typeof input.message !== "string") return []
-        return [{ id: part.id, direction: "out", peer: input.to, body: input.message }]
+        const wake = part.state.metadata?.wake
+        const target = part.state.metadata?.sessionID
+        return [
+          {
+            id: part.id,
+            direction: "out",
+            peer: typeof target === "string" ? target : input.to,
+            body: input.message,
+            ...(typeof input.reason === "string" ? { reason: input.reason } : {}),
+            ...(wake === "requested" || wake === "not_requested" ? { wake } : {}),
+          },
+        ]
       }
       if (message.role !== "user" || part.type !== "text") return []
       const parsed = parseSessionMessage(part.text)
