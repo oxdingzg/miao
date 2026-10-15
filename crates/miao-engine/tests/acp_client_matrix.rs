@@ -237,3 +237,27 @@ async fn cancellation_settles_a_stalled_provider_and_allows_continuation() {
     client.terminate().await;
     server.await.unwrap();
 }
+
+#[tokio::test]
+async fn a_slow_stdio_reader_receives_the_complete_answer_once() {
+    // Larger than a typical pipe buffer: the agent must retain output while
+    // the client deliberately stops consuming stdout, then settle completely.
+    let answer = "slow-client-data-".repeat(8192);
+    let (endpoint, mut requests, server) = common::endpoint(vec![(200, text_reply(&answer))]).await;
+    let root = tempfile::tempdir().unwrap();
+    let mut client = Client::start(root.path(), &endpoint).await;
+    let session = client.new_session().await;
+    client.prompt(3, &session, "deliver a large answer").await;
+    tokio::time::timeout(Duration::from_secs(15), requests.recv())
+        .await
+        .unwrap()
+        .unwrap();
+    // Intentional client backpressure, not synchronization by arbitrary sleep:
+    // receipt above proves the provider request was admitted before the pause.
+    tokio::time::sleep(Duration::from_millis(250)).await;
+    let (reply, text) = client.response(3).await;
+    assert_eq!(reply["result"]["stopReason"], "end_turn");
+    assert_eq!(text, answer);
+    client.terminate().await;
+    server.await.unwrap();
+}
