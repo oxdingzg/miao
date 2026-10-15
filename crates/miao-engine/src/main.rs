@@ -115,7 +115,7 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
     }
     let mode = args.first().map(String::as_str);
     if !matches!(mode, Some("serve" | "acp")) {
-        eprintln!("Usage: miao-engine serve --db PATH --workspace PATH --model MODEL [--provider anthropic|openai-chat|openai-responses|subscription-responses|gemini] [--endpoint URL] [--policy PATH] [--verify-command COMMAND] [--prompt-cache on|off] [--lsp-diagnostics on|off] [--http ADDR [--http-token TOKEN]]\n       miao-engine acp --db PATH --workspace PATH --model MODEL [--provider ...] [--endpoint URL] [--policy PATH] [--verify-command COMMAND] [--prompt-cache on|off] [--lsp-diagnostics on|off]\n       miao-engine export --db PATH --session ID [--after CURSOR]\n       miao-engine doctor [--db PATH]\nUse ANTHROPIC_API_KEY, OPENAI_API_KEY or GEMINI_API_KEY for the selected provider. An explicit engine database is required.");
+        eprintln!("Usage: miao-engine serve --db PATH --workspace PATH --model MODEL [--provider anthropic|openai-chat|openai-responses|subscription-responses|gemini] [--endpoint URL] [--policy PATH] [--verify-command COMMAND] [--prompt-cache on|off] [--lsp-diagnostics on|off] [--context-limits JSON] [--http ADDR [--http-token TOKEN]]\n       miao-engine acp --db PATH --workspace PATH --model MODEL [--provider ...] [--endpoint URL] [--policy PATH] [--verify-command COMMAND] [--prompt-cache on|off] [--lsp-diagnostics on|off]\n       miao-engine export --db PATH --session ID [--after CURSOR]\n       miao-engine doctor [--db PATH]\nUse ANTHROPIC_API_KEY, OPENAI_API_KEY or GEMINI_API_KEY for the selected provider. An explicit engine database is required.");
         std::process::exit(2);
     }
     let acp = mode == Some("acp");
@@ -138,6 +138,7 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
             "--mcp-config",
             "--lsp-config",
             "--lsp-diagnostics",
+            "--context-limits",
             "--hooks-config",
             "--context-config",
             "--skills-config",
@@ -466,6 +467,14 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
     .await?;
     if let Some(limits) = context_limits {
         runtime.set_context_limits(Some(limits)).await;
+    }
+    let roles = miao_engine::roles::Bindings {
+        summarize: options.get("--role-summarize").cloned(),
+        retrieve: options.get("--role-retrieve").cloned(),
+        verify: options.get("--role-verify").cloned(),
+    };
+    if roles.summarize.is_some() || roles.retrieve.is_some() || roles.verify.is_some() {
+        runtime.set_role_bindings(roles).await;
     }
     runtime
         .verify_with(options.get("--verify-command").cloned())

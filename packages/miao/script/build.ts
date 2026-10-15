@@ -10,6 +10,7 @@ import { createSolidTransformPlugin } from "@opentui/solid/bun-plugin"
 const __filename = fileURLToPath(import.meta.url)
 const __dirname = path.dirname(__filename)
 const dir = path.resolve(__dirname, "..")
+const entitlements = path.join(__dirname, "miao.entitlements")
 
 process.chdir(dir)
 
@@ -19,6 +20,11 @@ import { Script } from "@miao/script"
 import pkg from "../package.json"
 
 const singleFlag = process.argv.includes("--single")
+// One macOS runner builds both darwin architectures, so the release does not
+// depend on the Intel pool, whose jobs have taken ten times as long as their
+// arm64 siblings (and never finished inside their budget). The engine archives
+// are cross-compiled to match.
+const darwinFlag = process.argv.includes("--darwin")
 const baselineFlag = process.argv.includes("--baseline")
 const skipInstall = process.argv.includes("--skip-install")
 const sourcemapsFlag = process.argv.includes("--sourcemaps")
@@ -115,7 +121,9 @@ const allTargets: {
   },
 ]
 
-const targets = singleFlag
+const targets = darwinFlag
+  ? allTargets.filter((item) => item.os === "darwin" && item.abi === undefined)
+  : singleFlag
   ? allTargets.filter((item) => {
       if (item.os !== process.platform || item.arch !== process.arch) {
         return false
@@ -219,9 +227,16 @@ for (const item of targets) {
   }).finally(() => restore?.())
 
   // Embedding the bundle invalidates the linker's ad-hoc signature, and macOS 27+
-  // SIGKILLs binaries with invalid pages. Re-sign ad-hoc after every local darwin compile.
+  // SIGKILLs binaries with invalid pages. Re-sign after every darwin compile — with
+  // the Developer ID identity when one is available so release binaries pass
+  // Gatekeeper, ad-hoc otherwise.
   if (item.os === "darwin" && process.platform === "darwin") {
-    await $`codesign --force --sign - dist/${name}/bin/miao`
+    const identity = await developerIdIdentity()
+    if (identity) {
+      await $`codesign --force --options runtime --timestamp --entitlements ${entitlements} --sign ${identity} dist/${name}/bin/miao`
+    } else {
+      await $`codesign --force --sign - dist/${name}/bin/miao`
+    }
   }
 
   // Ship the catalog next to the binary so a fresh install works offline; the
@@ -261,6 +276,65 @@ for (const item of targets) {
   binaries[name] = Script.version
 }
 
+/**
+ * Build the engine binary for this platform (B5) and archive it at the repo
+ * root next to the CLI archives. Build failures fail the release rather than
+ * uploading a stale binary or silently omitting an advertised platform asset.
+ */
+async function buildEngineArchive(): Promise<string[]> {
+  const os = ({ darwin: "darwin", linux: "linux", win32: "windows" } as Record<string, string | undefined>)[process.platform]
+  if (!os) return []
+  // The darwin build produces both architectures on one runner, so the archive
+  // set does not wait on the Intel pool, whose jobs have taken ten times as long
+  // as their arm64 siblings and never finished inside their budget. Every other
+  // platform builds its host target as before.
+  const wanted = darwinFlag
+    ? [
+        { target: "aarch64-apple-darwin" as string | undefined, arch: "arm64" },
+        { target: "x86_64-apple-darwin" as string | undefined, arch: "x64" },
+      ]
+    : [{ target: undefined as string | undefined, arch: process.arch === "arm64" ? "arm64" : "x64" }]
+  const crate = path.resolve(dir, "../../crates/miao-engine")
+  const archives: string[] = []
+  for (const { target, arch } of wanted) {
+    await $`cargo build --locked --release --bin miao-engine ${target ? ["--target", target] : []}`.cwd(crate)
+    const suffix = process.platform === "win32" ? ".exe" : ""
+    const bin = path.join(crate, "target", ...(target ? [target] : []), "release", `miao-engine${suffix}`)
+    // A cross-built binary cannot run here, so only the host target asserts its
+    // version; the same crate produced both.
+    if (!target) {
+      const version = (await $`${bin} --version`.text()).trim()
+      if (version !== `miao-engine ${Script.version}`)
+        throw new Error(`engine version mismatch: ${version}; expected miao-engine ${Script.version}`)
+    }
+    if (process.platform === "darwin") {
+      const identity = await developerIdIdentity()
+      if (identity) {
+        await $`codesign --force --options runtime --timestamp --sign ${identity} ${bin}`
+      } else {
+        await $`codesign --force --sign - ${bin}`
+      }
+    }
+    const name = `miao-engine-${os}-${arch}`
+    if (process.platform === "win32") {
+      await $`powershell -NoProfile -Command ${`Compress-Archive -Path ${bin} -DestinationPath dist/${name}.zip -Force`}`
+      archives.push(`./dist/${name}.zip`)
+      continue
+    }
+    const staging = `dist/${name}`
+    await $`mkdir -p ${staging} && cp ${bin} ${staging}/`
+    // darwin uses a zip so the archive is notarizable with the CLI archives.
+    if (process.platform === "darwin") {
+      await $`zip -r ../${name}.zip miao-engine`.cwd(staging)
+      archives.push(`./dist/${name}.zip`)
+      continue
+    }
+    await $`tar -czf ../${name}.tar.gz miao-engine`.cwd(staging)
+    archives.push(`./dist/${name}.tar.gz`)
+  }
+  return archives
+}
+
 if (Script.release) {
   const archives: string[] = []
   for (const key of Object.keys(binaries)) {
@@ -275,11 +349,50 @@ if (Script.release) {
       archives.push(`./dist/${key}.zip`)
     }
   }
+  // The engine binary rides the same release channel (B5): one archive per
+  // platform, built from this commit alongside the CLI.
+  archives.push(...(await buildEngineArchive()))
+
+  // Bare executables cannot carry a staple ticket; submitting the zip registers
+  // the binary's cdhash and Gatekeeper checks it online at first launch.
+  const notary = notaryCredentials()
+  if (notary) {
+    for (const archive of archives.filter((item) => item.includes("darwin"))) {
+      await $`xcrun notarytool submit ${archive} --key ${notary.key} --key-id ${notary.keyId} --issuer ${notary.issuer} --wait`
+    }
+  }
+
+  for (const archive of archives) {
+    const hash = new Bun.CryptoHasher("sha256").update(await Bun.file(archive.slice(2)).arrayBuffer()).digest("hex")
+    await Bun.write(`${archive}.sha256`, `${hash}  ${path.basename(archive)}\n`)
+  }
+
   // Upload only the archives this platform produced; a `--single` build never
   // has both `.zip` and `.tar.gz`, and Bun's shell errors on an unmatched glob.
   if (archives.length) {
-    await $`gh release upload v${Script.version} ${archives} --clobber --repo ${process.env.GH_REPO}`
+    const manifests = archives.map((archive) => `${archive}.sha256`)
+    await $`gh release upload v${Script.version} ${archives} ${manifests} --clobber --repo ${process.env.GH_REPO}`
   }
 }
 
 export { binaries }
+
+// Function declarations hoist: the build loop above runs during module evaluation.
+async function developerIdIdentity() {
+  const fromEnv = process.env.MIAO_CODESIGN_IDENTITY?.trim()
+  if (fromEnv) return fromEnv
+  const { stdout } = await $`security find-identity -v -p codesigning`.quiet()
+  return stdout
+    .toString()
+    .split("\n")
+    .find((line) => line.includes("Developer ID Application"))
+    ?.match(/"(.+)"/)?.[1]
+}
+
+function notaryCredentials() {
+  const key = process.env.APPLE_API_KEY_P8?.trim()
+  const keyId = process.env.APPLE_API_KEY_ID?.trim()
+  const issuer = process.env.APPLE_API_ISSUER?.trim()
+  if (!key || !keyId || !issuer) return undefined
+  return { key, keyId, issuer }
+}

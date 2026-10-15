@@ -48,6 +48,24 @@ const tasks: BaselineTask[] = [
     requiredReceipts: [],
   },
   {
+    // The read-batch carrier: naming three files in one prompt makes a single
+    // turn request three reads, which the engine dispatches together. A turn
+    // that reads one file at a time (as `read-only` does) never batches.
+    id: "multi-read",
+    prompt:
+      "Read src/alpha.ts, src/beta.ts, and src/gamma.ts as they are, then report the three exported constant names and values in order. Do not modify any files.",
+    files: {
+      "src/alpha.ts": "export const alpha = 11\n",
+      "src/beta.ts": "export const beta = 22\n",
+      "src/gamma.ts": "export const gamma = 33\n",
+    },
+    editable: [],
+    expected: {},
+    check: null,
+    answerContains: ["alpha", "11", "beta", "22", "gamma", "33"],
+    requiredReceipts: [],
+  },
+  {
     id: "small-edit",
     prompt:
       "Repair addition in src/add.ts. Preserve the public signature and tests, run the existing test, and summarize the fix.",
@@ -205,7 +223,7 @@ export function baselineContract() {
     // v2 added the long-session task; v3 added the multi-line-edit and
     // typed-repair carriers; v4 adds the large-file carrier. Older samples are
     // foreign.
-    version: 4,
+    version: 5,
     suiteHash: digest(JSON.stringify(suite)),
     tasks: suite.map((task) => ({ id: task.id, taskHash: digest(JSON.stringify(task)) })),
   }

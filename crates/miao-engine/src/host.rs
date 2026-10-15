@@ -151,6 +151,7 @@ impl Host {
                 .await
                 .map(|_| json!({ "accepted": true })),
             Command::State { session_id } => runtime.store().state(&session_id).await,
+            Command::Usage { session_id } => runtime.store().usage_report(&session_id).await,
             Command::UpdateState {
                 session_id,
                 operation_id,

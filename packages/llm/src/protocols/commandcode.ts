@@ -494,7 +494,7 @@ export const protocol = Protocol.make({
     event: Protocol.jsonEvent(CommandCodeEvent),
     initial: (): ParserState => ({ lifecycle: Lifecycle.initial(), finished: false }),
     step,
-    onHalt: finishEvents,
+    onHalt: (state) => Effect.succeed(finishEvents(state)),
   },
 })
 

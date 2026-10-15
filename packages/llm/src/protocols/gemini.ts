@@ -511,7 +511,7 @@ export const protocol = Protocol.make({
     event: Protocol.jsonEvent(GeminiEvent),
     initial: () => ({ hasToolCalls: false, nextToolCallId: 0, lifecycle: Lifecycle.initial() }),
     step,
-    onHalt: finish,
+    onHalt: (state) => Effect.succeed(finish(state)),
   },
 })
 

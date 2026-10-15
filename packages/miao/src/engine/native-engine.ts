@@ -1,9 +1,12 @@
+import path from "node:path"
+import { Config } from "@miao/core/config"
+import { Global } from "@miao/core/global"
 import { makeGlobalNode } from "@miao/core/effect/app-node"
 import { ClientEvents } from "@miao/server/client-events"
 import { NativeEngine } from "@miao/server/native-engine"
 import { ConflictError } from "@miao/protocol/errors"
 import { Location } from "@miao/schema/location"
-import { Effect, Layer, Schema } from "effect"
+import { Effect, Layer, Option, Schema } from "effect"
 import { EngineError, type EngineOptions, type EngineEvent } from "./client"
 import { makeEngineOwners } from "./owners"
 import { engineMessageSequence } from "./message-sequence"
@@ -41,26 +44,79 @@ import { replayJournal } from "./journal"
  */
 export const nativeEngineOptions = (
   environment: Record<string, string | undefined> = process.env,
+  settings: Omit<EngineOptions, "db" | "workspace"> | undefined = undefined,
 ): Omit<EngineOptions, "db" | "workspace"> | undefined => {
   const binary = environment.MIAO_ENGINE_BIN
   if (!binary) return undefined
   const limits = environment.MIAO_CONTEXT_LIMITS
-  return {
+  // Precedence: the operator's environment overrides the global config file
+  // key by key; an absent key falls through to the configured value.
+  const merged: Omit<EngineOptions, "db" | "workspace"> = {
+    ...settings,
     binary,
-    model: environment.MIAO_ENGINE_MODEL ?? "",
-    provider: environment.MIAO_ENGINE_PROVIDER,
-    endpoint: environment.MIAO_ENGINE_ENDPOINT,
+    model: environment.MIAO_ENGINE_MODEL ?? settings?.model ?? "",
+  }
+  if (environment.MIAO_ENGINE_PROVIDER) merged.provider = environment.MIAO_ENGINE_PROVIDER
+  if (environment.MIAO_ENGINE_ENDPOINT) merged.endpoint = environment.MIAO_ENGINE_ENDPOINT
+  if (environment.MIAO_ENGINE_FALLBACK_MODEL) merged.fallbackModel = environment.MIAO_ENGINE_FALLBACK_MODEL
+  if (environment.MIAO_ENGINE_ROLES) merged.roles = JSON.parse(environment.MIAO_ENGINE_ROLES)
+  merged.promptCache = environment.MIAO_ENGINE_PROMPT_CACHE
+    ? environment.MIAO_ENGINE_PROMPT_CACHE === "on"
+    : merged.promptCache
+  merged.verifyCommand = environment.MIAO_ENGINE_VERIFY_COMMAND ?? merged.verifyCommand
+  merged.lspConfigFile = environment.MIAO_ENGINE_LSP_CONFIG
+    ? path.resolve(environment.MIAO_ENGINE_LSP_CONFIG)
+    : merged.lspConfigFile
+  merged.contextLimits = limits ? JSON.parse(limits) : merged.contextLimits
+  return {
+    binary: merged.binary,
+    model: merged.model,
+    provider: merged.provider,
+    endpoint: merged.endpoint,
     // A writable workspace is an explicit operator policy, never a blanket
     // change to the engine's read-only default or permission decisions.
     policyFile: environment.MIAO_ENGINE_POLICY,
-
-    contextLimits: limits ? JSON.parse(limits) : undefined,
     // ADR-09: the product's credential database is the explicit channel; the
     // engine only reads it. Named provider keys are the single-key fallback.
     credentialDatabase: environment.MIAO_ENGINE_CREDENTIAL_DB,
     credentialID: environment.MIAO_ENGINE_CREDENTIAL_ID,
     credentialIntegration: environment.MIAO_ENGINE_CREDENTIAL_INTEGRATION,
+    fallbackModel: merged.fallbackModel,
+    roles: merged.roles,
+    promptCache: merged.promptCache,
+    verifyCommand: merged.verifyCommand,
+    lspConfigFile: merged.lspConfigFile,
+    contextLimits: merged.contextLimits,
   }
+}
+
+/**
+ * The global config document's `engine` section (B1): the engine is one
+ * process serving every Location, so project documents do not configure it.
+ * Files later in {@link fileNames} win, matching the Config service merge.
+ */
+export const engineSettings = async (globalConfig: string): Promise<Omit<EngineOptions, "db" | "workspace"> | undefined> => {
+  let settings: Omit<EngineOptions, "db" | "workspace"> | undefined = undefined
+  for (const name of Config.fileNames) {
+    const file = path.join(globalConfig, name)
+    if (!(await Bun.file(file).exists())) continue
+    const info = Option.getOrUndefined(Config.decodeDocument(Config.parseJsonc(await Bun.file(file).text())))
+    const engine = info?.engine
+    if (!engine) continue
+    settings = {
+      binary: "",
+      model: engine.model ?? "",
+      provider: engine.provider,
+      endpoint: engine.endpoint,
+      fallbackModel: engine.fallback_model,
+      roles: engine.roles,
+      promptCache: engine.prompt_cache,
+      verifyCommand: engine.verify_command,
+      lspConfigFile: engine.lsp_config ? path.resolve(globalConfig, engine.lsp_config) : undefined,
+      contextLimits: engine.context_limits,
+    }
+  }
+  return settings
 }
 
 /** Whether the composition root should build the native transport at all. */
@@ -301,13 +357,15 @@ export const fromOwners = (owners: Owners): NativeEngine.Interface => {
 const layer = Layer.effect(
   NativeEngine.Service,
   Effect.gen(function* () {
-    const configuration = nativeEngineOptions()
+    const global = yield* Global.Service
+    const settings = yield* Effect.promise(() => engineSettings(global.config))
+    const configuration = nativeEngineOptions(process.env, settings)
     if (!configuration) return yield* Effect.die("NativeEngine layer built without MIAO_ENGINE_BIN")
     const owners = yield* makeEngineOwners(configuration)
     return fromOwners(owners)
   }),
 )
 
-export const node = makeGlobalNode({ service: NativeEngine.Service, layer, deps: [ClientEvents.node] })
+export const node = makeGlobalNode({ service: NativeEngine.Service, layer, deps: [ClientEvents.node, Global.node] })
 
 export * as NativeEngineNode from "./native-engine"

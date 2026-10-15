@@ -25,3 +25,4 @@ overview and `../PROTOCOL.md` for the stdio wire contract.
 - `adr/0011-client-contract.md` — where compatibility sits; the direct-replacement shape.
 - `adr/0012-extension-worker-interface.md` — M3 worker transport, handshake and capability names.
 - `adr/0013-bounded-parallel-tools.md` — same-turn read parallelism, ordered settlement.
+- `adr/0014-purpose-role-models.md` — role bindings, escalation, and cost attribution.

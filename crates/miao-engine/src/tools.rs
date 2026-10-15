@@ -921,7 +921,7 @@ impl Tools {
         if !self.delegation_enabled {
             return Vec::new();
         }
-        vec![ToolDefinition{name:"task".into(),description:"Delegate a self-contained task to a child Session and return its final message. The child inherits this Session's workspace and permission policy, has its own run and cancellation, and is bounded by a subagent depth and concurrency limit. Requires explicit subagent authority.".into(),input_schema:json!({"type":"object","properties":{"prompt":{"type":"string","minLength":1,"maxLength":65536},"session_id":{"type":"string","maxLength":256}},"required":["prompt"],"additionalProperties":false})}]
+        vec![ToolDefinition{name:"task".into(),description:"Delegate a self-contained task to a child Session and return its final message. The child inherits this Session's workspace and permission policy, has its own run and cancellation, and is bounded by a subagent depth and concurrency limit. A child starts without this Session's history, so pass references (at most four) naming archived tool outputs by tool_use_id, with an optional offset, instead of restating their content. Requires explicit subagent authority.".into(),input_schema:json!({"type":"object","properties":{"prompt":{"type":"string","minLength":1,"maxLength":65536},"session_id":{"type":"string","maxLength":256},"references":{"type":"array","maxItems":4,"items":{"type":"object","properties":{"tool_use_id":{"type":"string","maxLength":128},"offset":{"type":"integer","minimum":0}},"required":["tool_use_id"],"additionalProperties":false}}},"required":["prompt"],"additionalProperties":false})}]
     }
 
     fn lsp_definitions(&self) -> Vec<ToolDefinition> {
