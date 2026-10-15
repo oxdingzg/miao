@@ -134,9 +134,12 @@ pub struct CompactRequest<'a, P: FnMut(Value)> {
     > + Send),
 }
 
-/// How long one summarizer pass may take before the gate gives up on it.
-/// A provider that accepts the request and never answers must not hold a turn.
-const SUMMARY_TIMEOUT: Duration = Duration::from_secs(20);
+/// How long one summarizer pass may take before the gate gives up on it. The
+/// bound sits above the provider's own limits (a 60 s first-event deadline and a
+/// 120 s idle timeout) so a pass that spends that time legitimately -- a retried
+/// request, or a stream the gateway keeps open after its completed event -- still
+/// finishes, while a truly silent provider cannot hold a turn indefinitely.
+const SUMMARY_TIMEOUT: Duration = Duration::from_secs(150);
 
 pub async fn maybe_compact<S, F, P>(
     store: &Store,
