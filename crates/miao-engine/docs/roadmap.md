@@ -130,7 +130,7 @@ Complete B5/B6 and satisfy all of the following:
 
 The earlier M0–M4 labels remain historical infrastructure milestones: M0/M1 core gates passed; M2 engine-side work passed but clients remain incomplete; M3 foundations exist but role/extension product benefits are not fully verified; M4 delivery is partial. **These labels do not replace R0–R4 task-efficiency gates.**
 
-Current priority queue: **A1 → A2/A3/A7/A8 → A4/A5/A6 → data-driven A9/A10 selection**. Advance the minimum viable B1/B2 path in parallel, and close B3–B6 according to actual dependencies. Do not assume optimization benefits or completion dates.
+Current priority queue: **A1 → A2/A3/A7/A8 → A4/A5/A6 → data-driven A9/A10 selection** (A1/A2/A7/A8 and A4/A5/A6 are complete; A9/A10 selection now reads the recorded evidence). Advance the minimum viable B1/B2 path in parallel, and close B3–B6 according to actual dependencies. Do not assume optimization benefits or completion dates.
 
 ## 7. Shared measurement and adoption rules
 
