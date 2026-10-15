@@ -57,12 +57,13 @@ export class EngineTranslator {
   }
 
   dispatch(event: EngineEvent): void {
-    // The index is per event type, so suppressing an unrelated status update
-    // cannot change a message's identity on replay.
-    const counts = new Map<string, number>()
+    // One ordinal per published event within this journal event, in
+    // publication order: two events of the same commit must never share a
+    // source triple, or reconnect identity dedupes them away. Translation is
+    // deterministic, so replay reproduces the same ordinals.
+    let ordinal = 0
     const publish = (output: { type: string; data: unknown }) => {
-      const index = counts.get(output.type) ?? 0
-      counts.set(output.type, index + 1)
+      const index = ordinal++
       this.#publish({
         ...output,
         source: {
