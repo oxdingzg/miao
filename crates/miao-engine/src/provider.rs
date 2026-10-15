@@ -446,6 +446,29 @@ async fn failure_detail(response: &mut reqwest::Response) -> Option<String> {
     (!detail.is_empty()).then(|| String::from_utf8_lossy(&detail).into_owned())
 }
 
+/// Publish one attempt's fate beside the profile record it writes to the store.
+/// The store is durable but a sweep cannot read it, so the same fact travels as
+/// progress, where the evaluation runner's evidence can.
+async fn announce(
+    progress: &mpsc::Sender<Value>,
+    protocol: &str,
+    attempt: usize,
+    status: Option<u16>,
+    outcome: &str,
+    detail: Option<&str>,
+) {
+    let _ = progress
+        .send(json!({
+            "kind": "provider.attempt",
+            "protocol": protocol,
+            "attempt": attempt,
+            "status": status,
+            "outcome": outcome,
+            "detail": detail,
+        }))
+        .await;
+}
+
 pub(crate) async fn request_with_retry(
     protocol: &str,
     client: &reqwest::Client,
@@ -486,6 +509,7 @@ pub(crate) async fn request_with_retry(
         let error = match response {
             Ok(response) if response.status().is_success() => {
                 crate::runtime_profile::result(request_seq, status, outcome, None).await?;
+                announce(progress, protocol, attempt, status, outcome, None).await;
                 return Ok(response);
             }
             Ok(mut response) => {
@@ -498,10 +522,13 @@ pub(crate) async fn request_with_retry(
                     detail.as_deref(),
                 )
                 .await?;
+                announce(progress, protocol, attempt, Some(status), outcome, detail.as_deref())
+                    .await;
                 ProviderError::Http(status)
             }
             Err(error) => {
                 crate::runtime_profile::result(request_seq, status, outcome, None).await?;
+                announce(progress, protocol, attempt, status, outcome, None).await;
                 error
             }
         };

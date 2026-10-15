@@ -59,6 +59,7 @@ export interface BaselineEvidence {
     reasons: string[]
     recallCalls: number
   }
+  provider?: { attempts: Array<{ status: number | null; outcome: string; detail?: string }> }
   /**
    * Read batches the engine ran together: how many batches, how many settled
    * reads they carried, and the wall time they took as the runner observed it.
@@ -256,6 +257,7 @@ export async function runBaselineRust(input: BaselineRustInput): Promise<Baselin
     phases: enginePhases(events, progress, observed, verifiedAtMs),
     toolCalls: events.filter((event) => event.kind === "tool.completed").length,
     context: observedContextManagement(events, progress),
+    provider: observedProviderAttempts(progress),
     parallel: observedReadBatches(events, observed),
     admissionMs: admittedAt(events, observed),
     requiredReceipts: task.requiredReceipts,
@@ -405,6 +407,12 @@ interface FinishedBaselineRun {
   toolCalls: number
   parallel?: { batches: number; batchedReads: number; batchWallMs: number }
   context?: { compaction: Record<string, number>; reasons: string[]; recallCalls: number }
+  /**
+   * What the provider made of each attempt, from the engine's own notices: a
+   * status and an outcome, plus the failure detail when there was one. The store
+   * records the same facts durably, but a sweep cannot read it.
+   */
+  provider?: { attempts: Array<{ status: number | null; outcome: string; detail?: string }> }
   admissionMs: number | null
   requiredReceipts: string[]
   answerContains: string[]
@@ -561,6 +569,18 @@ function numberOrNull(value: unknown) {
 
 /// Loop classification counts: how many provider turns were continued or
 /// stopped for a classified reason (empty completion, no progress, budget).
+/// Each provider attempt the engine announced, in order.
+function observedProviderAttempts(progress: Array<{ item: EngineProgress; atMs: number }>) {
+  const attempts = progress
+    .filter(({ item }) => item.kind === "provider.attempt")
+    .map(({ item }) => ({
+      status: typeof item.status === "number" ? item.status : null,
+      outcome: typeof item.outcome === "string" ? item.outcome : "unknown",
+      ...(typeof item.detail === "string" && item.detail ? { detail: item.detail.slice(0, 200) } : {}),
+    }))
+  return { attempts }
+}
+
 /// Automatic context management the run exercised: compaction reports by kind
 /// -- they arrive as progress, not as durable events, so counting events alone
 /// saw nothing -- and the recall calls that restore an archived output.
