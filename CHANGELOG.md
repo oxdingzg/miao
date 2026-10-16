@@ -13,7 +13,14 @@ at `docs/releases/vX.Y.Z.md` and `docs/releases/vX.Y.Z.zh.md`; both are required
 
 ## [0.2.14] - 2026-10-16
 
+### Added
+- **ui**: visible Session/message times, project-level auto-accept and opt-in per-turn changed files (#934, #936, #939).
+- **core**: multiple provider credentials with active-account selection through API/CLI (#944).
+
 ### Fixed
+- **engine**: retain Session affinity for Responses prefix caching (#933).
+- **core**: gate MCP tool catalogs by capabilities and normalize permission metadata (#930, #932).
+- **core**: literal snapshot paths, scope containment and atomic store creation (#945).
 - **server**: restore shared native event delivery and usage/pricing projection (#910, #911, #915, #918).
 - **tui**: recover visible Session state and pending requests after reconnect (#916).
 - **engine**: honor guarded Windows process working directories (#919).
