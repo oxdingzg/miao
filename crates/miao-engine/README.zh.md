@@ -26,6 +26,25 @@ cargo build --manifest-path crates/miao-engine/Cargo.toml
 
 使用 `--http 127.0.0.1:PORT` 启用 loopback HTTP 控制面，复用同一命令表（`POST /rpc` 与 `GET /events` SSE 事件流，revision `engine-http-0`）；认证用 bearer token，取自 `--http-token` 或 `MIAO_ENGINE_HTTP_TOKEN`，缺省时启动生成并打印到 stderr。非 loopback 地址被拒绝，TLS 交给本地反代。
 
+### 可选的 Responses 缓存控制
+
+`--responses-cache-contract JSON` 声明精确 wire model、规范化 endpoint URL（含 query）与认证类型（`api` 或 `subscription`）对应的缓存能力。只声明已验证的部署能力，不根据模型名称推断。集成的原生引擎读取全局配置 `engine.responses_cache_contract`，也可用 `MIAO_ENGINE_RESPONSES_CACHE_CONTRACT` 覆盖整个契约。
+
+```json
+{
+  "model": "wire-model",
+  "endpoint": "https://api.example/v1/responses",
+  "authentication": "api",
+  "profile": "breakpoints",
+  "mode": "implicit",
+  "ttl": "30m"
+}
+```
+
+`breakpoints` profile 将稳定 system 从 `instructions` 移到首个 developer `input_text`，附显式 breakpoint，默认保留尾部隐式缓存。`system:false` 不附标记；`mode:explicit` 要求非空且已标记的 system；`mode:disabled` 发送无标记的 explicit-only 模式。TTL 仅支持 `30m`。
+
+`legacy` profile 接受可选 `retention:in_memory|24h`，不能混用现代 TTL 或 mode 控制。普通模型默认配置拒绝会抑制生成的 `prewarm:true`。模型、端点、认证或协议不匹配时在发送前拒绝；同模型辅助角色保留契约，其他角色模型和 fallback 不继承。不配置契约时保留原请求形状。契约声明请求能力，实际命中仍需查看 provider usage 与缓存诊断。
+
 `acp` 模式在 stdio 上提供 ACP（newline-delimited JSON-RPC 2.0），供编辑器直接对接：`miao-engine acp --db PATH --workspace PATH --model MODEL [--provider ...] [--endpoint URL] [--policy PATH]`。当前实现 `initialize`/`authenticate`/`session/new`/`session/prompt`/`session/cancel`，把引擎审批映射为 `session/request_permission` 往返，把已提交的工具调用流式推送为 `tool_call`/`tool_call_update`，支持 `session/load`（历史回放）/`session/fork`/`session/resume`/`session/close`/`session/set_mode`，并把已提交的 todos 推送为 `plan`，支持 `session/list`；config/usage 更新为后续切片。
 
 本地安装（不触碰 release 管理的 `miao` 与 `miao-preview`）：在构建机编译后 `./script/install-engine.sh --binary /path/to/miao-engine`。安装到 `~/.local/bin/miao-engine`（版本化于 `~/.local/share/miao-engine/bin`），保留一次旧版本用于一步回滚，并以 `--version` 冒烟。

@@ -27,6 +27,7 @@ pub struct OpenAIResponses {
     endpoint: String,
     source: Source,
     model: String,
+    cache_contract: Option<crate::responses_cache::Contract>,
 }
 impl OpenAIResponses {
     pub fn new(endpoint: String, key: String, model: String) -> Result<Self, reqwest::Error> {
@@ -52,7 +53,22 @@ impl OpenAIResponses {
             source,
             model,
             profile,
+            cache_contract: None,
         })
+    }
+    pub fn with_cache_contract(
+        mut self,
+        contract: crate::responses_cache::Contract,
+    ) -> Result<Self, String> {
+        let endpoint = reqwest::Url::parse(&self.endpoint)
+            .map_err(|_| "invalid Responses endpoint".to_owned())?;
+        contract.validate(
+            &self.model,
+            &endpoint,
+            matches!(self.profile, Profile::Subscription),
+        )?;
+        self.cache_contract = Some(contract);
+        Ok(self)
     }
 }
 #[async_trait]
@@ -63,6 +79,13 @@ impl Provider for OpenAIResponses {
         }
         let mut selected = self.clone();
         selected.model = model.to_owned();
+        if selected
+            .cache_contract
+            .as_ref()
+            .is_some_and(|contract| contract.model != model)
+        {
+            selected.cache_contract = None;
+        }
         Some(std::sync::Arc::new(selected))
     }
     fn identity(&self) -> Option<crate::provider::Identity> {
@@ -118,6 +141,11 @@ impl OpenAIResponses {
         let mut body = json!({"model":self.model,"instructions":request.system,"input":input,"tools":tools,"stream":true,"store":false,"include":["reasoning.encrypted_content"]});
         if let Some(key) = &cache_key {
             body["prompt_cache_key"] = json!(key);
+        }
+        if let Some(contract) = &self.cache_contract {
+            contract
+                .project(&mut body, &request.system)
+                .map_err(ProviderError::Stream)?;
         }
         if without_tools {
             body["tool_choice"] = json!("none");

@@ -38,6 +38,37 @@ Use `--http 127.0.0.1:PORT` to enable the loopback HTTP control plane, reusing t
 bearer token taken from `--http-token` or `MIAO_ENGINE_HTTP_TOKEN`, generated at startup and printed
 to stderr when absent. Non-loopback addresses are rejected, and TLS is left to a local reverse proxy.
 
+### Optional Responses cache controls
+
+`--responses-cache-contract JSON` declares cache capabilities for an exact wire model, normalized
+endpoint URL (including its query), and authentication profile (`api` or `subscription`). Declare
+only capabilities verified for that deployment. No capability is inferred from a model name.
+For the integrated native engine, set `engine.responses_cache_contract` in global config, or
+override the whole contract with `MIAO_ENGINE_RESPONSES_CACHE_CONTRACT`.
+
+```json
+{
+  "model": "wire-model",
+  "endpoint": "https://api.example/v1/responses",
+  "authentication": "api",
+  "profile": "breakpoints",
+  "mode": "implicit",
+  "ttl": "30m"
+}
+```
+
+The `breakpoints` profile moves the stable system text from `instructions` to the first developer
+`input_text` with an explicit breakpoint, while preserving implicit tail caching by default.
+`system:false` omits that marker; `mode:explicit` requires a nonempty marked system;
+`mode:disabled` emits explicit-only mode without a marker. Only `ttl:30m` is supported.
+The `legacy` profile accepts optional `retention:in_memory|24h` and cannot be combined with modern
+TTL or mode controls. Normal model defaults reject `prewarm:true`, which would suppress generation.
+
+Contracts fail before transport when bound to a different endpoint, model, authentication profile,
+or protocol. Same-model auxiliary roles retain the contract; other role models and fallback routes
+do not inherit it. Omitting a contract preserves the existing request shape. These controls declare
+request capabilities, not measured cache hits; use provider usage and cache diagnostics for results.
+
 `acp` mode provides ACP (newline-delimited JSON-RPC 2.0) on stdio for editors to integrate directly:
 `miao-engine acp --db PATH --workspace PATH --model MODEL [--provider ...] [--endpoint URL]
 [--policy PATH]`. The current implementation covers

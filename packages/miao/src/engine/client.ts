@@ -1,6 +1,7 @@
 import { spawn } from "bun"
 import { EOL } from "os"
 import type { ConfigMCP } from "@miao/schema/config/mcp"
+import type { ResponsesCacheContract } from "@miao/schema/config"
 import { prepareMcpConfig } from "./mcp-config"
 
 /**
@@ -41,6 +42,7 @@ export interface EngineOptions {
   }
   /** Transport-failure fallback model on the same route. */
   fallbackModel?: string
+  responsesCacheContract?: ResponsesCacheContract
   /** Purpose-role model bindings (ADR-14): model ids on the engine's own route. */
   roles?: { summarize?: string; retrieve?: string; verify?: string }
   /**
@@ -152,6 +154,8 @@ export function engineArgs(options: EngineOptions): string[] {
   if (options.mcpConfigFile) args.push("--mcp-config", options.mcpConfigFile)
   if (options.lspConfigFile) args.push("--lsp-config", options.lspConfigFile)
   if (options.promptCache !== undefined) args.push("--prompt-cache", options.promptCache ? "on" : "off")
+  if (options.responsesCacheContract)
+    args.push("--responses-cache-contract", JSON.stringify(options.responsesCacheContract))
   if (options.verifyCommand) args.push("--verify-command", options.verifyCommand)
   if (options.fallbackModel) args.push("--fallback-model", options.fallbackModel)
   if (options.roles?.summarize) args.push("--role-summarize", options.roles.summarize)
