@@ -149,3 +149,21 @@ or scheduling model execution. `snapshot` and `sessions` immediately see it.
 An exact retry returns `duplicate: true` and preserves edited metadata and the
 journal cursor; reusing an identity belonging to another workspace fails.
 The product initializes identity before publishing its durable native placement.
+
+### Explicit unknown-tool recovery
+
+`recoveries` takes `session_id` and optional exclusive `after` call ID. It returns
+`calls` (at most 100) and `has_more`; each call includes its ID, run ID, tool,
+`outcome: "unknown"` and nullable `resolution`. Original arguments are omitted.
+
+`resolve_recovery` takes `session_id`, `call_id`, a unique `operation_id` (1–128
+ASCII alphanumeric/underscore/hyphen characters), and `decision: "retry" |
+"abandon"`. It atomically records the controller decision and admits one steer
+input. The receipt includes `input_id` and `admitted_seq`; an exact retry returns
+the same receipt, while conflicting reuse fails. The original outcome remains
+unknown. A retry requests inspection and, if necessary, a fresh authorized tool
+call; it never replays the previous dispatch. An abandon requests continuation
+without retrying that operation. The Session must be idle and Location-bound.
+
+Neither command schedules model work. Use a separate explicit `resume` to
+promote the durable instruction. See [ADR-16](docs/adr/0016-explicit-tool-recovery.md).
