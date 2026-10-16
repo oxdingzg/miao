@@ -1,6 +1,6 @@
 export * as SessionCompaction from "./compaction"
 
-import { LLM, LLMError, LLMEvent, Message, type LLMRequest, type Model } from "@miao/llm"
+import { LLM, LLMError, LLMEvent, Message, ModelLimits, type LLMRequest, type Model } from "@miao/llm"
 import { DateTime, Effect, Stream } from "effect"
 import type { Config } from "../config"
 import type { EventV2 } from "../event"
@@ -185,6 +185,14 @@ const truncate = (value: string) =>
  * back to the default rather than changing behavior silently.
  */
 const normalizeThreshold = (value: number) => (value > 0 && value <= 1 ? value : DEFAULT_THRESHOLD)
+
+/**
+ * The window a request has to fit in. An endpoint rejects input above the ceiling
+ * it publishes for the model — the context minus the output it reserves, carried
+ * as `limit.input` — so a fit decision made against `context` alone plans for room
+ * the provider will not accept, and the request is refused instead of compacted.
+ */
+const fitWindow = (limits: ModelLimits | undefined) => limits?.input ?? limits?.context
 
 // Use the cheap model only when the summary request still fits its context;
 // otherwise the session model is the safe choice.
@@ -629,22 +637,35 @@ export const make = (dependencies: Dependencies) => {
 
   // The proactive strategy: one cached summary over the request prefix, and only
   // when the prefix can no longer hold the instruction at all the staged
-  // recovery, which re-embeds a truncated head. Overflow recovery keeps calling
-  // the staged path directly, because there the request is known not to fit.
+  // recovery, which re-embeds a truncated head.
   const compact = Effect.fn("SessionCompaction.compact")(function* (input: Input): Effect.fn.Return<Attempt> {
     const attempt = config.hotPrefix ? yield* hotAttempt(input) : summaryAttempt.skipped()
     return attempt.result === "skipped" ? yield* stagedAttempt(input) : attempt
   })
 
+  // Overflow recovery: the refused request carried the model's whole output
+  // allowance, while a summary reserves only its own, so the prefix the turn could
+  // not send can still be summarized in one cached call. Re-embedding the head in
+  // bounded slices is the fallback for a prefix that cannot hold the instruction at
+  // all — it costs one uncached request per slice, and a long history needs minutes
+  // of them, so a strategy that starts there abandons most Sessions mid-summary.
   const compactAfterOverflow = Effect.fn("SessionCompaction.compactAfterOverflow")(function* (
     input: Input,
     options?: { readonly allowSummaryOnly?: boolean },
   ) {
+    const attempt = config.hotPrefix ? yield* hotAttempt(input) : summaryAttempt.skipped()
+    if (attempt.result === "compacted") return true
     return (yield* stagedAttempt(input, options)).result === "compacted"
   })
 
   const budget = Effect.fn("SessionCompaction.budget")(function* (input: Input) {
-    const context = input.model.route.defaults.limits?.context ?? 0
+    // This turn's own request carries no output allowance, so the endpoint applies
+    // the model's default and refuses input above the ceiling it publishes for that
+    // case (`limit.input`, the context minus the reserved output). Planning against
+    // `context` therefore budgets room the provider will never accept: the request
+    // is refused outright instead of compacted, which is how a Session reaches the
+    // endpoint's ceiling with its own meter still reading room to spare.
+    const context = fitWindow(input.model.route.defaults.limits) ?? 0
     // Reserve what this turn can still generate, not the model's declared output
     // ceiling: `limits.output` is a catalog limit, and treating it as the reserve
     // shrinks the usable window to a fraction of the real context.
