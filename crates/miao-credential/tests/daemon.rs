@@ -188,8 +188,24 @@ async fn release_joins_rotation_and_returns_the_newest_tokens_to_the_broker() {
     let (finish, response) = std::sync::mpsc::channel();
     let server = std::thread::spawn(move || {
         let (mut stream, _) = listener.accept().unwrap();
-        let mut buffer = [0; 4096];
-        stream.read(&mut buffer).unwrap();
+        let mut header = Vec::new();
+        while !header.ends_with(b"\r\n\r\n") {
+            assert!(header.len() < 8192);
+            let mut byte = [0];
+            stream.read_exact(&mut byte).unwrap();
+            header.push(byte[0]);
+        }
+        let header = String::from_utf8(header).unwrap();
+        let length = header
+            .lines()
+            .find_map(|line| {
+                line.to_ascii_lowercase()
+                    .strip_prefix("content-length:")
+                    .map(|length| length.trim().parse::<usize>().unwrap())
+            })
+            .unwrap();
+        assert!(length < 8192);
+        stream.read_exact(&mut vec![0; length]).unwrap();
         started.send(()).unwrap();
         response
             .recv_timeout(std::time::Duration::from_secs(5))
