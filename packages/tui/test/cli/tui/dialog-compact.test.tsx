@@ -19,6 +19,7 @@ async function mountSelector(input: {
   height?: number
   current?: number
   count?: number
+  timestamps?: boolean
   anchor?: { left: number; top: number; width: number }
 }) {
   const state = path.join(input.root, "state")
@@ -50,6 +51,14 @@ async function mountSelector(input: {
         <DialogSelect
           compact
           title="Select model"
+          detail={
+            input.timestamps ? (
+              <box flexDirection="column">
+                <text>Created 10/16/2026, 10:25:00 GMT+08:00</text>
+                <text>Updated 10/16/2026, 14:27:00 GMT+08:00</text>
+              </box>
+            ) : undefined
+          }
           current={input.current ?? 20}
           options={Array.from({ length: input.count ?? 30 }, (_, value) => ({
             value,
@@ -288,3 +297,27 @@ test("a pointer resting over the list does not take the selection back from the 
     await selector.cleanup()
   }
 })
+
+for (const width of [100, 55]) {
+  test(`selector keeps precise session times separate from rows and keyboard hints at ${width} columns`, async () => {
+    await using tmp = await tmpdir()
+    const selector = await mountSelector({ root: tmp.path, keybinds: {}, width, timestamps: true, onSelect() {} })
+    try {
+      await renderUntil(selector.app, (frame) => frame.includes("Updated 10/16/2026") && frame.includes("Model 20"))
+      const frame = selector.app.captureCharFrame()
+      expect(frame).toContain("Created 10/16/2026, 10:25:00 GMT+08:00")
+      expect(frame).toContain("Updated 10/16/2026, 14:27:00 GMT+08:00")
+      expect(frame).toContain("Model 20")
+      expect(frame).toContain("Input stays visible")
+      const lines = frame.split("\n")
+      expect(lines.findIndex((line) => line.includes("Created"))).toBeGreaterThan(
+        lines.findIndex((line) => line.includes("Model 20")),
+      )
+      expect(lines.findIndex((line) => line.includes("Updated"))).toBeLessThan(
+        lines.findIndex((line) => line.includes("Input stays visible")),
+      )
+    } finally {
+      await selector.cleanup()
+    }
+  })
+}

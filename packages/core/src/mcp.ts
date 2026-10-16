@@ -294,7 +294,7 @@ function buildTools(
             aliases: [legacy],
             resources: ["*"],
             save: ["*"],
-            metadata: { server: serverID, tool: tool.name, input },
+            metadata: { server: serverID, tool: tool.name, input: input ?? {} },
             sessionID: context.sessionID,
             agent: context.agent,
             source: { type: "tool", messageID: context.assistantMessageID, callID: context.toolCallID },
