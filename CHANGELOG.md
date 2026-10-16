@@ -11,6 +11,12 @@ at `docs/releases/vX.Y.Z.md` and `docs/releases/vX.Y.Z.zh.md`; both are required
 
 ## [Unreleased]
 
+## [0.2.12] - 2026-10-16
+
+### Fixed
+- **core**: fit and recover requests against the endpoint's input ceiling (#894) (`33cf0cf9a`)
+- **core**: align context budgets and stop failed auto-continuations (#893) (`89ba4538e`)
+
 ## [0.2.11] - 2026-10-16
 
 ### Added
