@@ -171,6 +171,13 @@ const recoveryModel = Model.make({
   provider: "fake",
   route: OpenAIChat.route.with({ limits: { context: 20_000, output: 1_000 } }),
 })
+// A model whose endpoint accepts less input than its context advertises, the shape
+// a real catalog publishes as `limit.input`.
+const ceilingModel = Model.make({
+  id: "ceiling",
+  provider: "fake",
+  route: OpenAIChat.route.with({ limits: { context: 1_050_000, input: 922_000, output: 128_000 } }),
+})
 const authorizations: Tool.Context[] = []
 const executions: string[] = []
 const permissionAsserts: Array<{ action: string; resources: readonly string[] }> = []
@@ -3215,6 +3222,34 @@ describe("SessionRunnerLLM", () => {
       expect((yield* session.context(sessionID)).at(-1)).toMatchObject({ contextBudget: { source: "estimated" } })
       const { db } = yield* Database.Service
       expect(yield* SessionInput.hasPending(db, sessionID, "queue")).toBe(true)
+    }),
+  )
+
+  it.effect("compacts a request past the endpoint's declared input ceiling before sending it", () =>
+    Effect.gen(function* () {
+      yield* setup
+      const session = yield* SessionV2.Service
+      currentModel = ceilingModel
+      requests.length = 0
+      // About 900k estimated tokens: inside the 1,050,000 context the model
+      // advertises, past the 922,000 its endpoint accepts as input, and so past the
+      // input budget the harness derives from that ceiling.
+      responses = [
+        fragmentFixture("text", "text-summary", ["## Objective\n- Compress"]).completeEvents,
+        fragmentFixture("text", "text-final", ["Continued"]).completeEvents,
+      ]
+      yield* session.prompt({ sessionID, prompt: Prompt.make({ text: "x".repeat(3_600_000) }), resume: false })
+      yield* session.resume(sessionID)
+
+      // The summary reaches the provider first: the turn compacts instead of sending
+      // a request the endpoint refuses outright for size.
+      expect(requests).toHaveLength(2)
+      expect(userTexts(requests[0]).slice(-1)[0]).toContain("Summarize the conversation above")
+      expect(userTexts(requests[1])[0]).toContain("<summary>\n## Objective\n- Compress\n</summary>")
+      expect(yield* session.context(sessionID)).toMatchObject([
+        { type: "compaction", summary: "## Objective\n- Compress" },
+        { type: "assistant", finish: "stop" },
+      ])
     }),
   )
 
