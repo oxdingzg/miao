@@ -608,6 +608,8 @@ export const dict = {
   "toast.permissions.autoaccept.on.description": "İcazə sorğuları avtomatik təsdiqlənəcək",
   "toast.permissions.autoaccept.off.title": "İcazələrin avtomatik qəbulu dayandırıldı",
   "toast.permissions.autoaccept.off.description": "İcazə sorğuları təsdiq tələb edəcək",
+  "settings.permissions.autoaccept.project.title": "Bu layihə üçün icazələri avtomatik qəbul et",
+  "settings.permissions.autoaccept.project.description": "Bu layihədəki istənilən sessiyadan gələn yeni icazə sorğularını soruşmadan cavablandır. Sesiya və qovluq səviyyəsindəki seçimlər üstünlük tutur.",
   "toast.model.none.title": "Model seçilməyib",
   "toast.model.none.description": "Bu sessiyanı xülasə etmək üçün provayder qoşun",
   "toast.file.loadFailed.title": "Fayl yüklənə bilmədi",

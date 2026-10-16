@@ -607,6 +607,8 @@ export const dict = {
   "toast.permissions.autoaccept.on.description": "ခွင့်ပြုချက်တောင်းဆိုမှုများကို အလိုအလျောက် အတည်ပြုပေးမည်ဖြစ်သည်။",
   "toast.permissions.autoaccept.off.title": "ခွင့်ပြုချက်များကို အလိုအလျောက်လက်ခံခြင်းကို ရပ်ထားသည်။",
   "toast.permissions.autoaccept.off.description": "ခွင့်ပြုချက်တောင်းခံမှုများသည် အတည်ပြုချက် လိုအပ်မည်ဖြစ်သည်။",
+  "settings.permissions.autoaccept.project.title": "Auto-accept permissions for this project",
+  "settings.permissions.autoaccept.project.description": "Answer new permission requests from any session in this project without asking. Session and directory choices still win.",
   "toast.model.none.title": "မော်ဒယ်ကို ရွေးထားခြင်းမရှိပါ။",
   "toast.model.none.description": "ဤစက်ရှင်ကို အကျဉ်းချုပ်ရန် ဝန်ဆောင်မှုပေးသူကို ချိတ်ဆက်ပါ။",
   "toast.file.loadFailed.title": "ဖိုင်ကို တင်ရန် မအောင်မြင်ပါ။",

@@ -606,6 +606,8 @@ export const dict = {
   "toast.permissions.autoaccept.on.description": "Behörighetsförfrågningar kommer att godkännas automatiskt",
   "toast.permissions.autoaccept.off.title": "Slutade att automatiskt acceptera behörigheter",
   "toast.permissions.autoaccept.off.description": "Behörighetsförfrågningar kommer att kräva godkännande",
+  "settings.permissions.autoaccept.project.title": "Acceptera behörigheter automatiskt för det här projektet",
+  "settings.permissions.autoaccept.project.description": "Besvara nya behörighetsförfrågningar från valfri session i det här projektet utan att fråga. Val per session och katalog går före.",
   "toast.model.none.title": "Ingen modell har valts",
   "toast.model.none.description": "Anslut en leverantör för att sammanfatta denna session",
   "toast.file.loadFailed.title": "Det gick inte att ladda filen",

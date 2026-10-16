@@ -654,6 +654,8 @@ export const dict = {
   "toast.permissions.autoaccept.on.description": "Запити дозволів будуть автоматично схвалюватися",
   "toast.permissions.autoaccept.off.title": "Автоматичне прийняття дозволів зупинено",
   "toast.permissions.autoaccept.off.description": "Запити дозволів вимагатимуть схвалення",
+  "settings.permissions.autoaccept.project.title": "Автоматичне прийняття дозволів для цього проєкту",
+  "settings.permissions.autoaccept.project.description": "Відповідати на нові запити дозволів з будь-якої сесії цього проєкту без запитання. Вибір на рівні сесії та каталогу має пріоритет.",
 
   "toast.model.none.title": "Модель не вибрано",
   "toast.model.none.description": "Підключіть провайдера, щоб підсумувати цю сесію",

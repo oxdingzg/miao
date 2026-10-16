@@ -605,6 +605,8 @@ export const dict = {
   "toast.permissions.autoaccept.on.description": "Թույլտվության հարցումներն ավտոմատ կերպով կհաստատվեն",
   "toast.permissions.autoaccept.off.title": "Դադարեցվել է ավտոմատ ընդունելության թույլտվությունները",
   "toast.permissions.autoaccept.off.description": "Թույլտվության հարցումները կպահանջեն հաստատում",
+  "settings.permissions.autoaccept.project.title": "Այս նախագծի թույլտվությունների ավտոմատ ընդունում",
+  "settings.permissions.autoaccept.project.description": "Պատասխանել այս նախագծի ցանկացած նստաշրջանի նոր թույլտվության հարցումներին առանց հարցնելու։ Նստաշրջանի և դիրեկտորիայի մակարդակի ընտրությունները գերազանց են։",
   "toast.model.none.title": "Ընտրված չէ մոդել",
   "toast.model.none.description": "Միացրեք մատակարարին՝ այս նիստն ամփոփելու համար",
   "toast.file.loadFailed.title": "Չհաջողվեց բեռնել ֆայլը",

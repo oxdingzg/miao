@@ -598,6 +598,8 @@ export const dict = {
   "toast.permissions.autoaccept.on.description": "Loataotlused kinnitatakse automaatselt",
   "toast.permissions.autoaccept.off.title": "Lubade automaatne vastuvõtmine on peatatud",
   "toast.permissions.autoaccept.off.description": "Loataotlused nõuavad kinnitust",
+  "settings.permissions.autoaccept.project.title": "Selle projekti õiguste automaatne aktsepteerimine",
+  "settings.permissions.autoaccept.project.description": "Vasta selle projekti mis tahes seansi uutele õigustaotlustele küsimata. Seansi ja kataloogi tasandi valikud on siiski esmatähtsad.",
   "toast.model.none.title": "Ühtegi mudelit pole valitud",
   "toast.model.none.description": "Seansi kokkuvõtte tegemiseks ühendage teenusepakkuja",
   "toast.file.loadFailed.title": "Faili laadimine ebaõnnestus",
