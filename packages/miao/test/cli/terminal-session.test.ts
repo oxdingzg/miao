@@ -4,6 +4,8 @@ import path from "node:path"
 import { TerminalSession } from "@/cli/tui/terminal-session"
 import { tmpdir } from "../fixture/fixture"
 
+// Fixture shebangs bypass the package bunfig: its TUI preload can exhaust the
+// reporter's two-second child deadline before this small CLI stub even runs.
 async function reports(file: string, count: number) {
   const deadline = Date.now() + 5000
   while (Date.now() < deadline) {
@@ -29,7 +31,7 @@ test.skipIf(process.platform === "win32")(
     const file = path.join(directory.path, "reports.jsonl")
     await Bun.write(
       fixture,
-      `#!${process.execPath}\nimport { appendFileSync } from "node:fs"\nconst context = JSON.parse(await Bun.stdin.text())\nappendFileSync(${JSON.stringify(file)}, JSON.stringify({args:process.argv.slice(2), context}) + "\\n")\n`,
+      `#!${process.execPath} --config=/dev/null\nimport { appendFileSync } from "node:fs"\nconst context = JSON.parse(await Bun.stdin.text())\nappendFileSync(${JSON.stringify(file)}, JSON.stringify({args:process.argv.slice(2), context}) + "\\n")\n`,
     )
     await chmod(fixture, 0o700)
     const report = TerminalSession.reporter(
@@ -62,7 +64,7 @@ test.skipIf(process.platform === "win32")(
     const file = path.join(directory.path, "reports.jsonl")
     await Bun.write(
       fixture,
-      `#!${process.execPath}\nimport { appendFileSync } from "node:fs"\nconst context = JSON.parse(await Bun.stdin.text())\nappendFileSync(${JSON.stringify(file)}, JSON.stringify({args:process.argv.slice(2),context}) + "\\n")\n`,
+      `#!${process.execPath} --config=/dev/null\nimport { appendFileSync } from "node:fs"\nconst context = JSON.parse(await Bun.stdin.text())\nappendFileSync(${JSON.stringify(file)}, JSON.stringify({args:process.argv.slice(2),context}) + "\\n")\n`,
     )
     await chmod(fixture, 0o700)
     for (const outcome of ["completed", "incomplete", "error"] as const) {
@@ -91,7 +93,7 @@ test.skipIf(process.platform === "win32")(
     const file = path.join(directory.path, "reports.jsonl")
     await Bun.write(
       fixture,
-      `#!${process.execPath}\nimport { appendFileSync } from "node:fs"\nconst context = JSON.parse(await Bun.stdin.text())\nappendFileSync(${JSON.stringify(file)}, JSON.stringify({context}) + "\\n")\n`,
+      `#!${process.execPath} --config=/dev/null\nimport { appendFileSync } from "node:fs"\nconst context = JSON.parse(await Bun.stdin.text())\nappendFileSync(${JSON.stringify(file)}, JSON.stringify({context}) + "\\n")\n`,
     )
     await chmod(fixture, 0o700)
     TerminalSession.reporter(undefined, { MTTY_PANE_ID: "attached-pane", MTTY_CLI: fixture })!({
