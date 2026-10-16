@@ -670,6 +670,7 @@ async fn execute(
     // Consecutive failed completion checks for the configured verification.
     let mut verification_failures = 0;
     let mut repeats = HashMap::<String, u32>::new();
+    let mut verification_scope = crate::verification::Scope::default();
     let mut internal_inputs = HashSet::new();
     let mut goal_iterations = 0;
     let mut goal_stalls = 0;
@@ -1114,6 +1115,7 @@ async fn execute(
                                 (json!({"error":blocked}), true)
                             } else {
                                 inner.store.mark_dispatched(session, run, id).await?;
+                                verification_scope.observe(&prepared);
                                 let prepared_external =
                                     prepared.access() == crate::permission::Access::External;
                                 let replayed = if let Some(replay) = &inner.tool_replay {
@@ -1596,28 +1598,41 @@ async fn execute(
                 } else {
                     json!(["sh", "-c", command])
                 };
-                let detail = match inner
+                let started_at = now_ms();
+                let state = inner.store.state(session).await?;
+                let task_before = json!({"goal_revision":state["goal"]["revision"],"todos_revision":state["todos"]["revision"]});
+                let source_before = inner.tools.verification_source(&verification_scope).await;
+                inner.store.record(session,"verification.started",json!({"run_id":run,"attempt":verification_failures+1,"command":command,"cwd":inner.tools.location(),"started_at":started_at,"source":source_before,"task":task_before})).await?;
+                let result = match inner
                     .tools
                     .prepare("run_command", json!({"argv":argv}))
                     .await
                 {
-                    Err(error) => Some(error.to_string()),
+                    Err(error) => json!({"error":error.to_string()}),
                     Ok(prepared) => match inner
                         .tools
                         .execute_prepared(prepared, &inner.policy, cancel.child_token())
                         .await
                     {
-                        Err(error) => Some(error.to_string()),
-                        Ok(value) => {
-                            let failed = value.get("error").is_some()
-                                || value
-                                    .get("exit_code")
-                                    .and_then(Value::as_i64)
-                                    .is_none_or(|code| code != 0);
-                            failed.then(|| json!(value).to_string())
-                        }
+                        Err(error) => json!({"error":error.to_string()}),
+                        Ok(value) => value,
                     },
                 };
+                let source_after = inner.tools.verification_source(&verification_scope).await;
+                let state = inner.store.state(session).await?;
+                let task_after = json!({"goal_revision":state["goal"]["revision"],"todos_revision":state["todos"]["revision"]});
+                let task_stable = task_before == task_after;
+                let source_stable =
+                    source_before == source_after && source_after["complete"] == true;
+                let command_passed =
+                    result.get("error").is_none() && result["exit_code"].as_i64() == Some(0);
+                let cancelled = cancel.is_cancelled();
+                let accepted = command_passed && source_stable && task_stable && !cancelled;
+                let receipt = inner.store.record(session,"verification.completed",json!({"run_id":run,"attempt":verification_failures+1,"command":command,"started_at":started_at,"completed_at":now_ms(),"source_before":source_before,"source_after":source_after,"source_stable":source_stable,"task_before":task_before,"task_after":task_after,"task_stable":task_stable,"command_passed":command_passed,"accepted":accepted,"cancelled":cancelled,"result":result})).await?;
+                if cancel.is_cancelled() {
+                    return Ok(());
+                }
+                let detail = (!accepted).then(||json!({"result":result,"source_stable":source_stable,"task_stable":task_stable,"note":"A successful exit validates this check only at its recorded source/task scope; changed or unavailable tracked sources or changed task revisions require another check."}).to_string());
                 if let Some(detail) = detail {
                     verification_failures += 1;
                     inner
@@ -1625,7 +1640,7 @@ async fn execute(
                         .record(
                             session,
                             "verification.failed",
-                            json!({"run_id":run,"attempt":verification_failures}),
+                            json!({"run_id":run,"attempt":verification_failures,"receipt_seq":receipt.seq}),
                         )
                         .await?;
                     // One repair chance: the second consecutive failure closes
@@ -1651,7 +1666,7 @@ async fn execute(
                             input_id: input_id.clone(),
                             prompt: format!(
                                 "The completion check failed:\n{}\nRepair the cause, then stop.",
-                                &detail[..detail.len().min(500)]
+                                detail.chars().take(500).collect::<String>()
                             ),
                             delivery: crate::protocol::Delivery::Steer,
                         })
@@ -1670,7 +1685,11 @@ async fn execute(
                 } else {
                     inner
                         .store
-                        .record(session, "verification.passed", json!({"run_id":run}))
+                        .record(
+                            session,
+                            "verification.passed",
+                            json!({"run_id":run,"receipt_seq":receipt.seq}),
+                        )
                         .await?;
                 }
             }
