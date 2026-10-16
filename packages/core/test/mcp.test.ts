@@ -371,6 +371,18 @@ describe("MCP", () => {
     ),
   )
 
+  it.live("skips the tool catalog when the server does not advertise tools", () =>
+    withMCPService([server({ MOCK_MCP_NO_TOOLS: "1" })], (mcp, registry) =>
+      Effect.gen(function* () {
+        expect((yield* mcp.status()).mock).toEqual({ status: "connected" })
+        const materialized = yield* registry.materialize()
+        expect(
+          materialized.definitions.map((definition) => definition.name).filter((name) => name.startsWith("mcp__")),
+        ).toEqual([])
+      }),
+    ),
+  )
+
   it.live("disconnect disables a connected server and connect restores its tools", () =>
     withMCPService([server()], (mcp, registry) =>
       Effect.gen(function* () {

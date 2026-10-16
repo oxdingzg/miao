@@ -544,6 +544,23 @@ pub fn run(
     allow_network: bool,
     command: &[String],
 ) -> Result<i32, WinError> {
+    run_in(
+        workdirs,
+        allow_paths,
+        allow_network,
+        command,
+        workdirs.first().map(|dir| dir.as_path()),
+    )
+}
+
+/// The process cwd is placement, not an additional writable capability.
+pub fn run_in(
+    workdirs: &[std::path::PathBuf],
+    allow_paths: &[std::path::PathBuf],
+    allow_network: bool,
+    command: &[String],
+    cwd: Option<&Path>,
+) -> Result<i32, WinError> {
     // A process killed before cleanup can leave granted ACLs behind. Never
     // reuse its SID: otherwise another invocation could access its old paths.
     let name = wide(&format!(
@@ -702,8 +719,13 @@ pub fn run(
         .collect();
     let mut cmdline = cmdline;
 
-    let cwd = workdirs.first().map(|dir| {
-        dir.as_os_str()
+    let cwd = cwd.map(|dir| {
+        // Canonicalization produces verbatim paths. cmd.exe rejects those as
+        // UNC current directories and falls back to the Windows directory.
+        // Simplify only losslessly representable paths; ACL validation keeps
+        // using the canonical workdirs and must not grant a different path.
+        dunce::simplified(dir)
+            .as_os_str()
             .encode_wide()
             .chain(std::iter::once(0))
             .collect::<Vec<u16>>()
@@ -779,7 +801,7 @@ pub fn run(
 
     grants.restore();
     for value in capability_sids {
-        unsafe { LocalFree(Some(HLOCAL(value.0 as *mut c_void))) };
+        unsafe { LocalFree(Some(HLOCAL(value.0))) };
     }
 
     Ok(exit_code as i32)

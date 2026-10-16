@@ -181,3 +181,135 @@ async fn a_crossed_limit_compacts_in_one_call_and_the_next_turn_starts_from_it()
         .count();
     assert_eq!(compactions, 2, "one checkpoint per crossed turn");
 }
+
+struct ToolContinuation {
+    store: Store,
+    turns: AtomicUsize,
+    summaries: std::sync::Mutex<Vec<String>>,
+}
+
+#[async_trait]
+impl Provider for ToolContinuation {
+    async fn stream(
+        &self,
+        request: ModelRequest,
+        _: mpsc::Sender<Value>,
+        _: CancellationToken,
+    ) -> Result<Reply, ProviderError> {
+        if request
+            .system
+            .starts_with("Summarize the conversation portion")
+        {
+            self.summaries
+                .lock()
+                .unwrap()
+                .push(serde_json::to_string(&request.messages).unwrap());
+            return Ok(Reply {
+                content: json!([{"type":"text","text":"saved completed work"}]),
+                usage: json!({}),
+                needs_tools: false,
+            });
+        }
+        let turn = self.turns.fetch_add(1, Ordering::SeqCst);
+        if turn == 1 {
+            self.store
+                .admit(Input {
+                    session_id: "s".into(),
+                    input_id: "steer".into(),
+                    prompt: "NEWER-PROMPT".into(),
+                    delivery: Delivery::Steer,
+                })
+                .await
+                .unwrap();
+        }
+        if turn % 2 == 1 {
+            assert!(
+                request
+                    .messages
+                    .iter()
+                    .any(|message| message.content.to_string().contains("FILE-CONTENT")),
+                "tool results must reach the continuation"
+            );
+        }
+        Ok(Reply {
+            content: if turn.is_multiple_of(2) {
+                json!([{"type":"tool_use","id":format!("read-{turn}"),"name":"read_file","input":{"path":"file"}}])
+            } else {
+                json!([{"type":"text","text":format!("completed-{turn}")}])
+            },
+            usage: json!({"inputTokens":900_000,"outputTokens":1000}),
+            needs_tools: turn.is_multiple_of(2),
+        })
+    }
+}
+
+#[tokio::test]
+async fn tool_continuations_compact_only_closed_answers_before_promoting_steers() {
+    let dir = tempfile::tempdir().unwrap();
+    std::fs::write(dir.path().join("file"), "FILE-CONTENT").unwrap();
+    let store = Store::open(dir.path().join("engine.db")).await.unwrap();
+    let provider = Arc::new(ToolContinuation {
+        store: store.clone(),
+        turns: AtomicUsize::new(0),
+        summaries: std::sync::Mutex::new(Vec::new()),
+    });
+    let runtime = Runtime::new(
+        store.clone(),
+        provider.clone(),
+        Tools::new(dir.path()).await.unwrap(),
+    )
+    .await
+    .unwrap();
+    runtime
+        .set_context_limits(Some(ContextLimits {
+            window: 4000,
+            ratio: 0.25,
+            headroom: 500,
+            per_pass: 100,
+            prune_chars: None,
+            prune_total_chars: None,
+            protect_turns: 2,
+        }))
+        .await;
+    let mut progress = runtime.progress();
+    drain(&runtime, &store, "one", 1).await;
+    assert_eq!(provider.turns.load(Ordering::SeqCst), 4);
+    let summaries = provider.summaries.lock().unwrap().clone();
+    assert_eq!(
+        summaries.len(),
+        2,
+        "no summary requests for open tool continuations"
+    );
+    assert!(summaries[0].contains("FILE-CONTENT"));
+    assert!(summaries[0].contains("completed-1"));
+    assert!(
+        !summaries[0].contains("NEWER-PROMPT"),
+        "newer prompts must not be summarized ahead of the cut"
+    );
+    assert!(summaries[1].contains("NEWER-PROMPT"));
+    assert!(summaries[1].contains("completed-3"));
+    let events = store.events("s", 0, 1000).await.unwrap();
+    let cuts: Vec<_> = events
+        .iter()
+        .filter(|event| event.kind == "history.compacted")
+        .collect();
+    assert_eq!(
+        cuts.len(),
+        2,
+        "multiple checkpoints in the same run must not conflict"
+    );
+    assert_eq!(
+        events
+            .iter()
+            .filter(|event| event.kind == "run.started")
+            .count(),
+        1
+    );
+    assert!(
+        cuts[0].data["through_message_seq"].as_u64() < cuts[1].data["through_message_seq"].as_u64()
+    );
+    while let Ok(notice) = progress.try_recv() {
+        assert_ne!(notice["kind"], "compaction.failed", "{notice}");
+    }
+    assert_eq!(store.selected_history("s").await.unwrap().len(), 1);
+}

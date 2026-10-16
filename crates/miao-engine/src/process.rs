@@ -234,17 +234,13 @@ pub fn sandbox_runner(payload: &str) -> Result<(), Box<dyn std::error::Error>> {
     }
     #[cfg(target_os = "windows")]
     {
-        let _ = cwd;
         let workdirs = vec![workspace.clone(), temp.clone()];
-        let code = miao_sandbox::win::run(&workdirs, &[], spec.allow_network, &spec.argv).map_err(
-            |error| -> Box<dyn std::error::Error> {
-                let message = match error {
-                    miao_sandbox::win::WinError::Unavailable(message) => message,
-                    miao_sandbox::win::WinError::Start(message) => message,
-                };
-                Box::new(std::io::Error::other(message))
-            },
-        )?;
+        let code =
+            miao_sandbox::win::run_in(&workdirs, &[], spec.allow_network, &spec.argv, Some(&cwd))
+                .map_err(|error| match error {
+                miao_sandbox::win::WinError::Unavailable(message)
+                | miao_sandbox::win::WinError::Start(message) => std::io::Error::other(message),
+            })?;
         std::process::exit(code);
     }
     #[cfg(not(any(target_os = "macos", target_os = "linux", target_os = "windows")))]
