@@ -11,6 +11,20 @@ at `docs/releases/vX.Y.Z.md` and `docs/releases/vX.Y.Z.zh.md`; both are required
 
 ## [Unreleased]
 
+## [0.2.14] - 2026-10-16
+
+### Fixed
+- **server**: restore shared native event delivery and usage/pricing projection (#910, #911, #915, #918).
+- **tui**: recover visible Session state and pending requests after reconnect (#916).
+- **engine**: honor guarded Windows process working directories (#919).
+- **engine**: compact closed answers, preserve summary boundaries and ACP output (#937, #940).
+- **core**: preserve routing authority during concurrent Session creation (#925).
+- **engine**: close evaluation SSE readers before releasing persistent request budgets (#924, #928).
+
+### Validation
+- Independent ACP SDK lifecycle and host-capability checks (#912, #921, #923, #927).
+- Real TCP SSE isolation/cursor recovery and prebuilt artifact drills (#920, #922, #940).
+
 ## [0.2.13] - 2026-10-16
 
 ### Added
