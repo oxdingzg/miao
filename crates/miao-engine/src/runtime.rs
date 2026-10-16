@@ -547,7 +547,10 @@ fn boxed_drain(
     force: bool,
     cancel: CancellationToken,
 ) -> std::pin::Pin<Box<dyn std::future::Future<Output = Result<(), Error>> + Send>> {
-    Box::pin(drain(session, inner, force, cancel))
+    Box::pin(crate::cache_affinity::scoped(
+        session.clone(),
+        drain(session, inner, force, cancel),
+    ))
 }
 
 async fn drain(

@@ -1,3 +1,5 @@
+import { Locale } from "../../util/locale"
+import { useTheme } from "../../context/theme"
 import { createMemo } from "solid-js"
 import { useSync } from "../../context/sync"
 import { DialogSelect } from "../../ui/dialog-select"
@@ -14,6 +16,7 @@ export function DialogMessage(props: {
   setPrompt?: (prompt: PromptInfo) => void
 }) {
   const sync = useSync()
+  const { theme } = useTheme()
   const sdk = useSDK()
   const message = createMemo(() => {
     const found = sync.data.message[props.sessionID]?.find((x) => x.id === props.messageID)
@@ -25,6 +28,7 @@ export function DialogMessage(props: {
   return (
     <DialogSelect
       title="Message Actions"
+      footer={<text fg={theme.textMuted}>{Locale.preciseTime(message()?.time.created)}</text>}
       options={[
         {
           title: "Revert",

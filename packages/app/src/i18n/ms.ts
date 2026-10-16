@@ -601,6 +601,8 @@ export const dict = {
   "toast.permissions.autoaccept.on.description": "Permintaan kebenaran akan diluluskan secara automatik",
   "toast.permissions.autoaccept.off.title": "Penerimaan kebenaran automatik dihentikan",
   "toast.permissions.autoaccept.off.description": "Permintaan kebenaran memerlukan kelulusan",
+  "settings.permissions.autoaccept.project.title": "Terima kebenaran untuk projek ini secara automatik",
+  "settings.permissions.autoaccept.project.description": "Jawab permintaan kebenaran baharu daripada mana-mana sesi dalam projek ini tanpa bertanya. Pilihan peringkat sesi dan direktori tetap diutamakan.",
   "toast.model.none.title": "Tiada model dipilih",
   "toast.model.none.description": "Sambungkan penyedia untuk meringkaskan sesi ini",
   "toast.file.loadFailed.title": "Gagal memuat fail",

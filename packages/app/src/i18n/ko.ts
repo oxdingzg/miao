@@ -402,6 +402,8 @@ export const dict = {
   "toast.permissions.autoaccept.on.description": "권한 요청이 자동으로 승인됩니다",
   "toast.permissions.autoaccept.off.title": "권한 자동 수락 중지됨",
   "toast.permissions.autoaccept.off.description": "권한 요청에 승인이 필요합니다",
+  "settings.permissions.autoaccept.project.title": "이 프로젝트의 권한 자동 수락",
+  "settings.permissions.autoaccept.project.description": "이 프로젝트의 모든 세션에서 새 권한 요청을 묻지 않고 수락합니다. 세션 및 디렉터리 설정이 우선합니다.",
   "toast.model.none.title": "선택된 모델 없음",
   "toast.model.none.description": "이 세션을 요약하려면 공급자를 연결하세요",
   "toast.file.loadFailed.title": "파일 로드 실패",

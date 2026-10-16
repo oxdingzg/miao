@@ -601,6 +601,8 @@ export const dict: Record<string, string> = {
   "toast.permissions.autoaccept.on.description": "অনুমতি অনুরোধ স্বয়ংক্রিয়ভাবে অনুমোদিত হবে",
   "toast.permissions.autoaccept.off.title": "স্বয়ংক্রিয়ভাবে গ্রহণযোগ্য অনুমতি বন্ধ করা হয়েছে৷",
   "toast.permissions.autoaccept.off.description": "অনুমতি অনুরোধ অনুমোদন প্রয়োজন হবে",
+  "settings.permissions.autoaccept.project.title": "এই প্রকল্পের জন্য অনুমতিগুলি স্বয়ংক্রিয়ভাবে গ্রহণ করুন",
+  "settings.permissions.autoaccept.project.description": "এই প্রকল্পের যেকোনো সেশন থেকে নতুন অনুমতির অনুরোধের জবাব না জিজ্ঞেস করেই দিন। সেশন এবং ডিরেক্টরি স্তরের পছন্দগুলি প্রাধান্য পায়।",
   "toast.model.none.title": "কোনো মডেল নির্বাচন করা হয়নি",
   "toast.model.none.description": "এই সেশনের সংক্ষিপ্ত বিবরণ দিতে একজন প্রদানকারীকে সংযুক্ত করুন",
   "toast.file.loadFailed.title": "ফাইল লোড করতে ব্যর্থ হয়েছে",

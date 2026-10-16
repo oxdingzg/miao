@@ -605,6 +605,8 @@ export const dict = {
   "toast.permissions.autoaccept.on.description": "Зөвшөөрлийн хүсэлт автоматаар батлагдах болно",
   "toast.permissions.autoaccept.off.title": "Зөвшөөрлийг автоматаар хүлээн авахаа больсон",
   "toast.permissions.autoaccept.off.description": "Зөвшөөрлийн хүсэлтэд зөвшөөрөл шаардлагатай",
+  "settings.permissions.autoaccept.project.title": "Энэ төслийн зөвшөөрлийг автоматаар хүлээн зөвшөөрөх",
+  "settings.permissions.autoaccept.project.description": "Энэ төслийн аль ч сессиэс ирүүлсэн шинэ зөвшөөрлийн хүсэлтэд асуухгүйгээр хариулах. Сесси болон лавлах түвшний сонголт тэргүүлэх хэвээр байна.",
   "toast.model.none.title": "Ямар ч загвар сонгогдоогүй байна",
   "toast.model.none.description": "Энэ сессийг дүгнэхийн тулд үйлчилгээ үзүүлэгчийг холбоно уу",
   "toast.file.loadFailed.title": "Файлыг ачаалж чадсангүй",

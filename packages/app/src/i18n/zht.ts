@@ -633,6 +633,8 @@ export const dict = {
   "toast.permissions.autoaccept.on.description": "權限要求將自動獲准",
   "toast.permissions.autoaccept.off.title": "已停止自動接受權限",
   "toast.permissions.autoaccept.off.description": "權限要求將需要核准",
+  "settings.permissions.autoaccept.project.title": "自動接受本專案的權限請求",
+  "settings.permissions.autoaccept.project.description": "自動批准本專案內所有會話的權限請求。會話與目錄的選擇仍然優先。",
 
   "toast.model.none.title": "未選擇模型",
   "toast.model.none.description": "請先連線提供者以摘要此工作階段",

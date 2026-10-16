@@ -607,6 +607,8 @@ export const dict = {
   "toast.permissions.autoaccept.on.description": "Toestemmingsverzoeken worden automatisch goedgekeurd",
   "toast.permissions.autoaccept.off.title": "Machtigingen niet meer automatisch accepteren",
   "toast.permissions.autoaccept.off.description": "Machtigingsverzoeken moeten worden goedgekeurd",
+  "settings.permissions.autoaccept.project.title": "Machtigingen voor dit project automatisch accepteren",
+  "settings.permissions.autoaccept.project.description": "Beantwoord nieuwe machtigingsverzoeken van elke sessie in dit project zonder te vragen. Keuzes per sessie en map blijven voorrang krijgen.",
   "toast.model.none.title": "Geen model geselecteerd",
   "toast.model.none.description": "Maak verbinding met een aanbieder om deze sessie samen te vatten",
   "toast.file.loadFailed.title": "Kan bestand niet laden",
