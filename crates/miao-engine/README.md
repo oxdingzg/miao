@@ -17,6 +17,9 @@ they are not the current capability-gap checklist.
 Optional [stable extension tool disclosure](docs/tool-disclosure.md) keeps the provider tool surface
 fixed while discovering extension schemas and filtering results on demand (`--tool-disclosure compact`).
 
+Search and diagnostic results carry [source revision provenance](docs/revision-bound-observations.md)
+so later edits and checks can distinguish observed content from stale or unversioned diagnostics.
+
 Build on a build host:
 
 ```sh
