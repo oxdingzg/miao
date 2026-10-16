@@ -3,7 +3,7 @@ use serde_json::Value;
 use std::{collections::BTreeMap, time::Duration};
 use tokio::time::Instant;
 
-/// Per-call wire budgets are independent of network activity and SSE frame size.
+/// Size and per-call argument inactivity budgets, independent of unrelated wire traffic.
 pub(crate) struct ToolInputBudget {
     max_bytes: usize,
     timeout: Duration,
@@ -50,8 +50,20 @@ impl ToolInputBudget {
             .entry(id)
             .or_insert_with(|| (0, Instant::now() + self.timeout));
         value.0 = value.0.saturating_add(bytes);
+        // Only new argument bytes extend this call. Pings, duplicate starts and
+        // activity for other calls cannot keep an unfinished call alive.
+        if bytes > 0 {
+            value.1 = Instant::now() + self.timeout;
+        }
         let bytes = value.0;
         self.size(bytes)
+    }
+
+    pub(crate) fn timeout_error(&self) -> ProviderError {
+        ProviderError::Stream(format!(
+            "tool input idle timeout: no argument progress for {}ms; incomplete local calls were not executed; preserve completed operations",
+            self.timeout.as_millis()
+        ))
     }
 
     fn size(&self, bytes: usize) -> Result<(), ProviderError> {
@@ -76,9 +88,7 @@ impl ToolInputBudget {
             .deadline()
             .is_some_and(|deadline| deadline <= Instant::now())
         {
-            return Err(ProviderError::Stream(
-                "tool input time budget exceeded".into(),
-            ));
+            return Err(self.timeout_error());
         }
         let Frame::Json(event) = frame else {
             return Ok(());
@@ -232,5 +242,53 @@ mod tests {
         finished.frame(&Frame::Json(json!({"type":"response.function_call_arguments.delta","output_index":0,"delta":"{}"}))).unwrap();
         finished.frame(&Frame::Json(json!({"type":"response.function_call_arguments.done","output_index":0,"arguments":"{}"}))).unwrap();
         assert!(finished.deadline().is_none());
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn active_arguments_can_exceed_two_minutes_on_each_streaming_protocol() {
+        let mut budget = ToolInputBudget::testing(1024, Duration::from_secs(120));
+        let events = [
+            json!({"type":"content_block_delta","index":0,"delta":{"type":"input_json_delta","partial_json":"x"}}),
+            json!({"type":"response.function_call_arguments.delta","output_index":0,"delta":"x"}),
+            json!({"choices":[{"index":0,"delta":{"tool_calls":[{"index":0,"function":{"arguments":"x"}}]}}]}),
+        ];
+        for event in &events {
+            budget.frame(&Frame::Json(event.clone())).unwrap();
+        }
+        for _ in 0..4 {
+            tokio::time::advance(Duration::from_secs(60)).await;
+            for event in &events {
+                budget.frame(&Frame::Json(event.clone())).unwrap();
+            }
+            assert!(budget.deadline().unwrap() > tokio::time::Instant::now());
+        }
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn empty_arguments_and_duplicate_starts_are_not_progress() {
+        let mut budget = ToolInputBudget::testing(1024, Duration::from_secs(120));
+        let start = json!({"type":"response.output_item.added","output_index":0,"item":{"type":"function_call"}});
+        budget.frame(&Frame::Json(start.clone())).unwrap();
+        let deadline = budget.deadline().unwrap();
+        tokio::time::advance(Duration::from_secs(60)).await;
+        budget.frame(&Frame::Json(start)).unwrap();
+        budget.frame(&Frame::Json(json!({"type":"response.function_call_arguments.delta","output_index":0,"delta":""}))).unwrap();
+        assert_eq!(budget.deadline(), Some(deadline));
+        tokio::time::advance(Duration::from_secs(61)).await;
+        assert!(budget.frame(&Frame::Done).is_err());
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn one_active_call_does_not_extend_another_calls_deadline() {
+        let mut budget = ToolInputBudget::testing(1024, Duration::from_secs(120));
+        for index in [0, 1] {
+            budget.frame(&Frame::Json(json!({"type":"response.output_item.added","output_index":index,"item":{"type":"function_call"}}))).unwrap();
+        }
+        let deadline = budget.deadline().unwrap();
+        tokio::time::advance(Duration::from_secs(90)).await;
+        budget.frame(&Frame::Json(json!({"type":"response.function_call_arguments.delta","output_index":1,"delta":"progress"}))).unwrap();
+        assert_eq!(budget.deadline(), Some(deadline));
+        tokio::time::advance(Duration::from_secs(31)).await;
+        assert!(budget.frame(&Frame::Done).is_err());
     }
 }
