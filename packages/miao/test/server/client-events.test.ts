@@ -5,7 +5,7 @@ import { LayerNode } from "@miao/core/effect/layer-node"
 import { EventTable } from "@miao/core/event/sql"
 import { OpenCodeEvent } from "@miao/protocol/groups/event"
 import { ClientEvents } from "@miao/server/client-events"
-import { DateTime, Deferred, Effect, Exit, Fiber, Option, Schema, Stream } from "effect"
+import { DateTime, Deferred, Effect, Exit, Fiber, Layer, Option, Schema, Stream } from "effect"
 import { eq } from "drizzle-orm"
 import { GlobalBus, type GlobalEvent } from "@/bus/global"
 import { EventForwarder } from "@/server/event-forwarder"
@@ -36,6 +36,25 @@ it.effect("fans out a durable-shaped product payload without requiring a databas
     yield* clients.publish(message)
     expect(Array.from(yield* first.pipe(Stream.take(1), Stream.runCollect))).toEqual([message])
     expect(Array.from(yield* second.pipe(Stream.take(1), Stream.runCollect))).toEqual([message])
+  }),
+)
+
+it.effect("shares one fan-out across separately built graphs", () =>
+  Effect.gen(function* () {
+    const clients = yield* ClientEvents.Service
+    // The native transport is built with `Layer.fresh` once per listener, so it
+    // holds a second ClientEvents instance. A publisher there must still reach a
+    // subscriber here, or native product events reach nobody.
+    const other = yield* ClientEvents.Service.pipe(Effect.provide(Layer.fresh(ClientEvents.layer)))
+    const received: OpenCodeEvent[] = []
+    const unsubscribe = yield* clients.listen((event) =>
+      Effect.sync(() => {
+        received.push(event)
+      }),
+    )
+    yield* Effect.addFinalizer(() => unsubscribe)
+    yield* other.publish(message)
+    expect(received).toEqual([message])
   }),
 )
 
