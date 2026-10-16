@@ -166,6 +166,16 @@ export const AssistantContent = Schema.Union([AssistantText, AssistantReasoning,
 )
 export type AssistantContent = AssistantText | AssistantReasoning | AssistantTool
 
+/** Sending-time budget, distinct from a previous turn's provider-reported usage. */
+export interface ContextBudget extends Schema.Schema.Type<typeof ContextBudget> {}
+export const ContextBudget = Schema.Struct({
+  input: Schema.Finite,
+  source: Schema.Literals(["estimated", "counted"]),
+  window: Schema.Finite,
+  limit: Schema.Finite,
+  observed: Schema.Finite.pipe(optional),
+}).annotate({ identifier: "Session.ContextBudget" })
+
 export interface Assistant extends Schema.Schema.Type<typeof Assistant> {}
 export const Assistant = Schema.Struct({
   ...Base,
@@ -173,6 +183,7 @@ export const Assistant = Schema.Struct({
   agent: Schema.NullOr(Schema.String),
   model: Schema.NullOr(Model.Ref),
   content: AssistantContent.pipe(Schema.Array),
+  contextBudget: ContextBudget.pipe(optional),
   snapshot: Schema.Struct({
     start: Schema.String.pipe(optional),
     end: Schema.String.pipe(optional),

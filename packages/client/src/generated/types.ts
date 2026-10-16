@@ -1057,6 +1057,13 @@ export type SessionsContextOutput = {
               }
             }
         >
+        readonly contextBudget?: {
+          readonly input: number
+          readonly source: "estimated" | "counted"
+          readonly window: number
+          readonly limit: number
+          readonly observed?: number
+        }
         readonly snapshot?: { readonly start?: string; readonly end?: string; readonly files?: ReadonlyArray<string> }
         readonly finish?: string
         readonly cost?: number
@@ -1788,6 +1795,13 @@ export type SessionsHistoryOutput = {
           readonly agent: string
           readonly model: { readonly id: string; readonly providerID: string; readonly variant?: string }
           readonly snapshot?: string
+          readonly contextBudget?: {
+            readonly input: number
+            readonly source: "estimated" | "counted"
+            readonly window: number
+            readonly limit: number
+            readonly observed?: number
+          }
         }
       }
     | {
@@ -2466,6 +2480,13 @@ export type SessionsEventsOutput =
         readonly agent: string
         readonly model: { readonly id: string; readonly providerID: string; readonly variant?: string }
         readonly snapshot?: string
+        readonly contextBudget?: {
+          readonly input: number
+          readonly source: "estimated" | "counted"
+          readonly window: number
+          readonly limit: number
+          readonly observed?: number
+        }
       }
     }
   | {
@@ -2926,6 +2947,13 @@ export type SessionsMessageOutput = {
               }
             }
         >
+        readonly contextBudget?: {
+          readonly input: number
+          readonly source: "estimated" | "counted"
+          readonly window: number
+          readonly limit: number
+          readonly observed?: number
+        }
         readonly snapshot?: { readonly start?: string; readonly end?: string; readonly files?: ReadonlyArray<string> }
         readonly finish?: string
         readonly cost?: number
@@ -3114,6 +3142,13 @@ export type MessagesListOutput = {
               }
             }
         >
+        readonly contextBudget?: {
+          readonly input: number
+          readonly source: "estimated" | "counted"
+          readonly window: number
+          readonly limit: number
+          readonly observed?: number
+        }
         readonly snapshot?: { readonly start?: string; readonly end?: string; readonly files?: ReadonlyArray<string> }
         readonly finish?: string
         readonly cost?: number
@@ -4920,6 +4955,13 @@ export type EventsDurableOutput =
         readonly agent: string
         readonly model: { readonly id: string; readonly providerID: string; readonly variant?: string }
         readonly snapshot?: string
+        readonly contextBudget?: {
+          readonly input: number
+          readonly source: "estimated" | "counted"
+          readonly window: number
+          readonly limit: number
+          readonly observed?: number
+        }
       }
     }
   | {

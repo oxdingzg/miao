@@ -17,7 +17,9 @@ export function value(messages: ReadonlyArray<SessionMessage.Message>) {
         messages.map((message) =>
           Object.fromEntries(
             Object.entries(message)
-              .filter(([key]) => !["id", "time", "snapshot", "ttft"].includes(key))
+              // Sending-time estimates depend on process-local calibration, just
+              // like timing; they are telemetry, not model-visible history.
+              .filter(([key]) => !["id", "time", "snapshot", "ttft", "contextBudget"].includes(key))
               .map(([key, data]) => [
                 key,
                 key === "error" && message.type === "assistant" && message.error

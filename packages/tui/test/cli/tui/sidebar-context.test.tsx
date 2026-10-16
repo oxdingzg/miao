@@ -1,7 +1,7 @@
 /** @jsxImportSource @opentui/solid */
 import { expect, test } from "bun:test"
 import { testRender } from "@opentui/solid"
-import type { TuiPluginApi, TuiSlotPlugin } from "@miao/plugin/tui"
+import type { TuiPluginApi, TuiSlotPlugin, TuiTranscriptAssistant } from "@miao/plugin/tui"
 import type { Session } from "@miao/schema/view-models"
 import contextPlugin from "../../../src/feature-plugins/sidebar/context"
 import { createTuiPluginApi } from "../../fixture/tui-plugin"
@@ -16,7 +16,7 @@ function provider(models: Record<string, unknown>): TuiPluginApi["state"]["provi
   return [{ id: "plan", models }] as unknown as TuiPluginApi["state"]["provider"]
 }
 
-async function render(providerView: TuiPluginApi["state"]["provider"]) {
+async function render(providerView: TuiPluginApi["state"]["provider"], extra?: Partial<TuiTranscriptAssistant>) {
   const session = { cost: 0, model: MODEL } as unknown as Session
   const api = createTuiPluginApi({
     state: {
@@ -24,12 +24,12 @@ async function render(providerView: TuiPluginApi["state"]["provider"]) {
       session: {
         get: () => session,
         messages: () => [
-          testAssistantMessage({
+          { ...testAssistantMessage({
             model: MODEL,
             created: 0,
             ttft: 3800,
             tokens: { input: 4000, output: 500, reasoning: 0, cache: { read: 226_000, write: 0 } },
-          }),
+          }), ...extra },
         ],
       },
     },
@@ -81,6 +81,24 @@ test("a priced model keeps quoting real amounts", async () => {
     expect(frame).toContain("$0.61 saved")
     expect(frame).toContain("$0.00 spent")
     expect(frame).not.toContain("— saved")
+  } finally {
+    app.renderer.destroy()
+  }
+})
+
+test("a rejected request shows its estimate and historical usage without a current percentage", async () => {
+  const app = await render(provider({ "plan-flash": { limit: LIMIT } }), {
+    contextBudget: { input: 500_000, window: 1_000_000, limit: 935_904, source: "estimated" },
+    error: { type: "unknown", message: "context_length_exceeded" }, finish: "error",
+  })
+  try {
+    const frame = app.captureCharFrame()
+    expect(frame).toContain("~500k input · estimated")
+    expect(frame).toContain("input budget 936k")
+    expect(frame).toContain("Request failed")
+    expect(frame).toContain("last successful input unknown")
+    expect(frame).not.toContain("% of configured window")
+    expect(frame).not.toContain("% used")
   } finally {
     app.renderer.destroy()
   }

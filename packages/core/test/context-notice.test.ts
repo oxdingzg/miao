@@ -39,7 +39,7 @@ describe("ContextNotice.usage", () => {
 
   test("reports the rounded percent with both token counts", () => {
     expect(ContextNotice.usage(237993, 1_000_000)).toBe(
-      "Context status: about 24% of the model context window is in use (237993 of 1000000 tokens).",
+      "The last successful provider request used about 24% of the configured context window (237993 of 1000000 tokens). This is a historical report, not a count of the next request.",
     )
     expect(ContextNotice.usage(712, 1000)).toContain("about 71%")
   })
