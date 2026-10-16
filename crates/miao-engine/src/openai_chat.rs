@@ -66,6 +66,28 @@ impl Provider for OpenAIChat {
         progress: mpsc::Sender<Value>,
         cancel: CancellationToken,
     ) -> Result<Reply, ProviderError> {
+        self.stream_mode(request, progress, cancel, false).await
+    }
+    fn supports_tool_free_stream(&self) -> bool {
+        true
+    }
+    async fn stream_without_tools(
+        &self,
+        request: ModelRequest,
+        progress: mpsc::Sender<Value>,
+        cancel: CancellationToken,
+    ) -> Result<Reply, ProviderError> {
+        self.stream_mode(request, progress, cancel, true).await
+    }
+}
+impl OpenAIChat {
+    async fn stream_mode(
+        &self,
+        request: ModelRequest,
+        progress: mpsc::Sender<Value>,
+        cancel: CancellationToken,
+        without_tools: bool,
+    ) -> Result<Reply, ProviderError> {
         let credential = self.source.load().await?;
         if credential.kind() != Kind::Key {
             return Err(ProviderError::AuthProfile);
@@ -75,7 +97,10 @@ impl Provider for OpenAIChat {
             messages.insert(0, json!({"role":"system","content":request.system}));
         }
         let tools:Vec<Value>=request.tools.iter().map(|tool|json!({"type":"function","function":{"name":tool.name,"description":tool.description,"parameters":tool.input_schema}})).collect();
-        let body = json!({"model":self.model,"messages":messages,"tools":tools,"stream":true,"stream_options":{"include_usage":true},"n":1});
+        let mut body = json!({"model":self.model,"messages":messages,"tools":tools,"stream":true,"stream_options":{"include_usage":true},"n":1});
+        if without_tools {
+            body["tool_choice"] = json!("none");
+        }
         let request = self
             .client
             .post(&self.endpoint)

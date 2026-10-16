@@ -82,14 +82,9 @@ async fn summarize_with(
     provider: &Arc<dyn Provider>,
     stop: &tokio_util::sync::CancellationToken,
     body: &str,
+    settlement: Option<&Settlement<'_>>,
 ) -> Result<String, String> {
     use crate::protocol::{Message, ModelRequest};
-    // The summarizer consumes only the final reply, so nobody reads the
-    // progress feed. The stream reader awaits send capacity per frame, so an
-    // unread bounded channel blocks it forever once a real summary emits more
-    // frames than the capacity holds; drain the feed for the duration.
-    let (tx, mut rx) = tokio::sync::mpsc::channel(16);
-    tokio::spawn(async move { while rx.recv().await.is_some() {} });
     let request = ModelRequest {
         system: "Summarize the conversation portion you are given. Preserve verbatim: the active objective, open tasks, verification commands and their results, file paths, identifiers, and decisions. Reply with only the summary text.".into(),
         messages: vec![Message {
@@ -100,23 +95,85 @@ async fn summarize_with(
         }],
         tools: vec![],
     };
-    let reply = provider
-        .stream(request, tx, stop.child_token())
-        .await
-        .map_err(|error| error.to_string())?;
+    request_summary(provider, stop, request, false, settlement).await
+}
+
+async fn request_summary(
+    provider: &Arc<dyn Provider>,
+    stop: &tokio_util::sync::CancellationToken,
+    request: crate::protocol::ModelRequest,
+    without_tools: bool,
+    settlement: Option<&Settlement<'_>>,
+) -> Result<String, String> {
+    // Progress must be drained even though only the final text is consumed.
+    let (tx, mut rx) = tokio::sync::mpsc::channel(16);
+    tokio::spawn(async move { while rx.recv().await.is_some() {} });
+    let path = if without_tools { "prefix" } else { "cold" };
+    if let Some(owner) = settlement {
+        owner.store.record(owner.session,"role.provider.started",json!({"run_id":owner.run,"role":"summarize","path":path,"identity":provider.identity()})).await.map_err(|error|error.to_string())?;
+    }
+    let result = if without_tools {
+        provider
+            .stream_without_tools(request, tx, stop.child_token())
+            .await
+    } else {
+        provider.stream(request, tx, stop.child_token()).await
+    };
+    let summary = result
+        .as_ref()
+        .map_err(|error| error.to_string())
+        .and_then(summary_text);
+    if let Some(owner) = settlement {
+        let observed = result.as_ref().ok().or_else(|| {
+            result
+                .as_ref()
+                .err()
+                .and_then(|error| error.continuation().map(|(reply, _)| reply))
+        });
+        owner.store.record(owner.session,"role.provider.completed",json!({"run_id":owner.run,"role":"summarize","path":path,"providerSuccess":result.is_ok(),"accepted":summary.is_ok(),"reason":summary.as_ref().err(),"identity":observed.and_then(|reply|provider.reply_identity(reply)),"usage":observed.map(|reply|&reply.usage)})).await.map_err(|error|error.to_string())?;
+    }
+    summary
+}
+
+fn summary_text(reply: &crate::provider::Reply) -> Result<String, String> {
+    if reply.needs_tools
+        || reply
+            .content
+            .as_array()
+            .into_iter()
+            .flatten()
+            .any(|block| block["type"] == "tool_use")
+    {
+        return Err("summarizer returned a tool call; no calls were dispatched".into());
+    }
     let text = reply
         .content
         .as_array()
         .into_iter()
         .flatten()
+        .filter(|block| block["type"] == "text")
         .filter_map(|block| block["text"].as_str())
         .collect::<Vec<_>>()
         .join("");
-    if text.is_empty() {
+    if text.trim().is_empty() {
         Err("summarizer returned no text".into())
     } else {
         Ok(text)
     }
+}
+
+pub(crate) async fn summarize_prefix(
+    provider: &Arc<dyn Provider>,
+    settlement: &Settlement<'_>,
+    stop: &tokio_util::sync::CancellationToken,
+    mut request: crate::protocol::ModelRequest,
+) -> Result<String, String> {
+    request.messages.push(crate::protocol::Message {
+        role:"user".into(),
+        content:json!([{"type":"text","text":"Summarize the conversation above for continuation. Preserve the active objective, constraints, open tasks, verification commands and results, exact file paths and identifiers, decisions, and recall handles for omitted tool output. Do not perform any tools or new work. Reply with only the summary text."}]),
+        checkpoint:None,recorded_at_ms:None,
+    });
+    request_summary(provider, stop, request, true, Some(settlement)).await
 }
 
 /// The `summarize` role's attempt with ADR-14's single escalation: the bound
@@ -141,7 +198,7 @@ pub async fn summarize_with_escalation(
     body: &str,
     escalate: bool,
 ) -> Result<String, String> {
-    match summarize_with(role_provider, stop, body).await {
+    match summarize_with(role_provider, stop, body, Some(settlement)).await {
         Ok(text) => Ok(text),
         Err(first) if escalate => {
             let _ = settlement
@@ -152,7 +209,7 @@ pub async fn summarize_with_escalation(
                     json!({"run_id":settlement.run,"role":"summarize","reason":first}),
                 )
                 .await;
-            summarize_with(primary, stop, body).await
+            summarize_with(primary, stop, body, Some(settlement)).await
         }
         Err(first) => Err(first),
     }
@@ -397,7 +454,7 @@ mod tests {
         let stop = CancellationToken::new();
         let text = tokio::time::timeout(
             std::time::Duration::from_secs(5),
-            summarize_with(&provider, &stop, "condense this"),
+            summarize_with(&provider, &stop, "condense this", None),
         )
         .await
         .expect("the summarizer must not stall on its own undrained progress feed")

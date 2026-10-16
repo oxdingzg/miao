@@ -83,6 +83,28 @@ impl Provider for OpenAIResponses {
         progress: mpsc::Sender<Value>,
         cancel: CancellationToken,
     ) -> Result<Reply, ProviderError> {
+        self.stream_mode(request, progress, cancel, false).await
+    }
+    fn supports_tool_free_stream(&self) -> bool {
+        true
+    }
+    async fn stream_without_tools(
+        &self,
+        request: ModelRequest,
+        progress: mpsc::Sender<Value>,
+        cancel: CancellationToken,
+    ) -> Result<Reply, ProviderError> {
+        self.stream_mode(request, progress, cancel, true).await
+    }
+}
+impl OpenAIResponses {
+    async fn stream_mode(
+        &self,
+        request: ModelRequest,
+        progress: mpsc::Sender<Value>,
+        cancel: CancellationToken,
+        without_tools: bool,
+    ) -> Result<Reply, ProviderError> {
         let credential = self.source.load().await?;
         if !matches!(
             (self.profile, credential.kind()),
@@ -96,6 +118,9 @@ impl Provider for OpenAIResponses {
         let mut body = json!({"model":self.model,"instructions":request.system,"input":input,"tools":tools,"stream":true,"store":false,"include":["reasoning.encrypted_content"]});
         if let Some(key) = &cache_key {
             body["prompt_cache_key"] = json!(key);
+        }
+        if without_tools {
+            body["tool_choice"] = json!("none");
         }
         let mut builder = self
             .client

@@ -144,6 +144,28 @@ impl Provider for Gemini {
         progress: mpsc::Sender<Value>,
         cancel: CancellationToken,
     ) -> Result<Reply, ProviderError> {
+        self.stream_mode(request, progress, cancel, false).await
+    }
+    fn supports_tool_free_stream(&self) -> bool {
+        true
+    }
+    async fn stream_without_tools(
+        &self,
+        request: ModelRequest,
+        progress: mpsc::Sender<Value>,
+        cancel: CancellationToken,
+    ) -> Result<Reply, ProviderError> {
+        self.stream_mode(request, progress, cancel, true).await
+    }
+}
+impl Gemini {
+    async fn stream_mode(
+        &self,
+        request: ModelRequest,
+        progress: mpsc::Sender<Value>,
+        cancel: CancellationToken,
+        without_tools: bool,
+    ) -> Result<Reply, ProviderError> {
         let credential = self.source.load().await?;
         if credential.kind() != Kind::Key {
             return Err(ProviderError::AuthProfile);
@@ -153,7 +175,7 @@ impl Provider for Gemini {
         let mut body = json!({"contents":contents,"generationConfig":{"candidateCount":1,"maxOutputTokens":8192},"systemInstruction":{"parts":[{"text":request.system}]}});
         if !declarations.is_empty() {
             body["tools"] = json!([{"functionDeclarations":declarations}]);
-            body["toolConfig"] = json!({"functionCallingConfig":{"mode":"AUTO"}});
+            body["toolConfig"] = json!({"functionCallingConfig":{"mode":if without_tools { "NONE" } else { "AUTO" }}});
         }
         let request = self
             .client

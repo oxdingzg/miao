@@ -141,11 +141,30 @@ const SUMMARY_TIMEOUT: Duration = Duration::from_secs(20);
 pub async fn maybe_compact<S, F, P>(
     store: &Store,
     request: CompactRequest<'_, P>,
-    mut summarize: S,
+    summarize: S,
 ) -> Result<bool, Error>
 where
     S: FnMut(String) -> F,
     F: Future<Output = Result<String, String>>,
+    P: FnMut(Value),
+{
+    maybe_compact_with_prefix(store, request, summarize, || async { None }).await
+}
+
+/// The optional prefix call retains the exact last provider request and only
+/// appends settled history plus a retention instruction. Unsupported adapters,
+/// oversized contexts and failed prefix attempts retain the bounded cold path.
+pub async fn maybe_compact_with_prefix<S, F, P, H, HF>(
+    store: &Store,
+    request: CompactRequest<'_, P>,
+    mut summarize: S,
+    mut prefix: H,
+) -> Result<bool, Error>
+where
+    S: FnMut(String) -> F,
+    F: Future<Output = Result<String, String>>,
+    H: FnMut() -> HF,
+    HF: Future<Output = Option<Result<String, String>>>,
     P: FnMut(Value),
 {
     let CompactRequest {
@@ -176,10 +195,8 @@ where
         return Ok(false);
     }
     let counted = count(pending).await;
-    if !budget.should_compact(
-        Some(context),
-        resolve_pending_tokens(counted, pending_chars as usize),
-    ) {
+    let pending_tokens = resolve_pending_tokens(counted, pending_chars as usize);
+    if !budget.should_compact(Some(context), pending_tokens) {
         return Ok(false);
     }
     // The summary covers the warm prefix the next turn would re-send, which is
@@ -194,40 +211,68 @@ where
         "kind": "compaction.started", "segments": plan.segments.len(),
     }));
     let mut parts = Vec::new();
-    for (nth, (start, end)) in plan.segments.iter().enumerate() {
-        let body = summarizer_body(&messages[*start..*end], SUMMARIZER_MESSAGE_CHARS);
-        // A summarizer that never returns must not hold the turn: the call is
-        // bounded, and a timeout degrades like any other summary failure.
-        match tokio::time::timeout(
-            SUMMARY_TIMEOUT,
-            summarize(format!(
-                "Summarize this portion of the conversation:\n{body}"
-            )),
-        )
-        .await
-        {
-            Err(_) => {
-                breaker.rejected();
-                notify(json!({
-                    "session_id": session, "run_id": run,
-                    "kind": "compaction.failed", "reason": "summary timeout",
-                }));
-                return Ok(false);
+    if budget.window.is_some_and(|window| {
+        context
+            .saturating_add(pending_tokens)
+            .saturating_add(budget.headroom)
+            < window
+    }) {
+        match tokio::time::timeout(SUMMARY_TIMEOUT, prefix()).await {
+            Ok(Some(Ok(summary))) if !summary.trim().is_empty() => {
+                parts.push(summary);
+                notify(
+                    json!({"session_id":session,"run_id":run,"kind":"compaction.progress","segment":1,"total":1,"path":"prefix"}),
+                );
             }
-            Ok(Ok(part)) => {
-                parts.push(part);
-                notify(json!({
-                    "session_id": session, "run_id": run,
-                    "kind": "compaction.progress", "segment": nth + 1, "total": plan.segments.len(),
-                }));
+            Ok(None) => {}
+            outcome => {
+                let reason = match outcome {
+                    Err(_) => "prefix summary timeout".to_owned(),
+                    Ok(Some(Err(reason))) => reason,
+                    _ => "prefix summary was empty".to_owned(),
+                };
+                notify(
+                    json!({"session_id":session,"run_id":run,"kind":"compaction.prefix.fallback","reason":reason}),
+                );
             }
-            Ok(Err(reason)) => {
-                breaker.rejected();
-                notify(json!({
-                    "session_id": session, "run_id": run,
-                    "kind": "compaction.failed", "reason": reason,
-                }));
-                return Ok(false);
+        }
+    }
+    if parts.is_empty() {
+        for (nth, (start, end)) in plan.segments.iter().enumerate() {
+            let body = summarizer_body(&messages[*start..*end], SUMMARIZER_MESSAGE_CHARS);
+            // A summarizer that never returns must not hold the turn: the call is
+            // bounded, and a timeout degrades like any other summary failure.
+            match tokio::time::timeout(
+                SUMMARY_TIMEOUT,
+                summarize(format!(
+                    "Summarize this portion of the conversation:\n{body}"
+                )),
+            )
+            .await
+            {
+                Err(_) => {
+                    breaker.rejected();
+                    notify(json!({
+                        "session_id": session, "run_id": run,
+                        "kind": "compaction.failed", "reason": "summary timeout",
+                    }));
+                    return Ok(false);
+                }
+                Ok(Ok(part)) => {
+                    parts.push(part);
+                    notify(json!({
+                        "session_id": session, "run_id": run,
+                        "kind": "compaction.progress", "segment": nth + 1, "total": plan.segments.len(),
+                    }));
+                }
+                Ok(Err(reason)) => {
+                    breaker.rejected();
+                    notify(json!({
+                        "session_id": session, "run_id": run,
+                        "kind": "compaction.failed", "reason": reason,
+                    }));
+                    return Ok(false);
+                }
             }
         }
     }

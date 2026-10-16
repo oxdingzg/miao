@@ -129,6 +129,25 @@ per-token-axis coverage. Its weighted `hitRatio` is `null` unless every billed o
 reports both inclusive input and cache reads. Legacy token sums remain compatible, while
 coverage distinguishes missing measurements from measured zero.
 
+## Cache-preserving summaries
+
+When a closed turn crosses the context threshold and has room for a summary, the runtime can
+reuse that turn's exact system, tool definitions and sent history. It appends only the newly
+settled messages and a retention instruction. An adapter must explicitly support a wire-level
+tool prohibition; custom or composite adapters opt out by default. A differently bound summary
+model retains the existing cold path rather than replaying model-specific history on another
+route. Oversized contexts and rejected, empty or timed-out warm summaries also fall back to
+the bounded cold summarizer. Existing closed-boundary and checkpoint rules still apply.
+
+The Responses/Chat adapters use `tool_choice: none`, Anthropic uses `{type: none}`, and Gemini
+uses function-calling mode `NONE`, without deleting the tool schema prefix. Replies that still
+request tools are rejected and no auxiliary tool calls are dispatched. This preserves a
+potential reusable prefix; it does not guarantee how a provider accounts for that prefix.
+
+`role.provider.started/completed` retain the auxiliary route, observed usage and semantic
+acceptance separately from main-turn usage, so summary calls do not advance the context anchor.
+An interrupted call without completed usage remains an unmeasured attempt, not a free call.
+
 ## Execution invariants
 
 - The same input id retries exactly and fully by Session, prompt, and delivery; a conflict produces no extra admission.
