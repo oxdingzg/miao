@@ -19,6 +19,20 @@ native history renders, a prompt typed into the TUI reaches the native provider,
 and its reply renders. This plain-prompt scenario does not close the remaining
 approval, interruption, external-client or capability rows below.
 
+**Open blocker (found 2026-10-16): a tool part blanks the real TUI.** With the
+published 0.2.11 engine under the current serve, a turn whose provider answers
+with a `write_file` tool call blanks the entire attached TUI frame: every pane
+capture is empty lines while the bun process stays alive, and stderr records
+nothing. The engine side of that turn is fully correct — the journal shows
+`tool.planned`, `message.committed`, `pre_tool_use`, `approval.requested` (with
+request id, input hash, policy revision and expiry) and the `permission_request`
+announcement to the serve, and under an allow rule the same turn executes the
+write without asking. The blank reproduces under both an ask rule and an allow
+rule, so it is the tool-part message rendering (or an event in its arrival
+window), not the permission dialog. This blocks the visible-approval,
+cancel-from-TUI and step-accounting rows until the render defect is fixed; the
+deterministic columns of those rows are unaffected.
+
 | Behavior | Existing automated evidence | Product acceptance still required |
 | --- | --- | --- |
 | Prompt and streamed answer | `tests/acp.rs`; product `native-coding-http.test.ts` | Native-owned Session in the daily TUI and an external ACP client |
