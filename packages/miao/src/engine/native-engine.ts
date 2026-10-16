@@ -186,6 +186,10 @@ export const fromOwners = (owners: Owners): NativeEngine.Interface => {
       read<Readonly<Record<string, unknown>>>(input, (connection) =>
         connection.client.request("snapshot", { session_id: input.sessionID }),
       ).pipe(Effect.map((value) => (typeof value === "object" && value !== null ? value : {}))),
+    usage: (input) =>
+      read<Readonly<Record<string, unknown>>>(input, (connection) =>
+        connection.client.request("usage", { session_id: input.sessionID }),
+      ).pipe(Effect.map((value) => (typeof value === "object" && value !== null ? value : {}))),
     transcript: (input) =>
       read(input, (connection) =>
         readTranscript({

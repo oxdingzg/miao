@@ -19,8 +19,8 @@ import { SessionEnginePlacement } from "@miao/core/session/engine-placement"
 import { nativeExecution, nativeTodos } from "../native-state"
 import { nativeSessionEvents } from "../native-events"
 import { SessionEvent } from "@miao/schema/session-event"
-import { mergeNativeSessions, nativeSessionInfo } from "../native-session"
-import { booted } from "../location"
+import { mergeNativeSessions, nativeSessionInfo, nativeSessionUsage } from "../native-session"
+import { booted, bootedCatalog } from "../location"
 import { SessionsCursor } from "@miao/protocol/groups/session"
 import {
   ConflictError,
@@ -71,6 +71,7 @@ export const SessionHandler = HttpApiBuilder.group(Api, "server.session", (handl
                   db,
                   sessions,
                   limit,
+                  models: yield* (yield* bootedCatalog).model.available(),
                   order: query.order ?? "desc",
                   search: query.search,
                   anchor: "anchor" in query ? query.anchor : undefined,
@@ -187,12 +188,18 @@ export const SessionHandler = HttpApiBuilder.group(Api, "server.session", (handl
               location: placement.location,
             })
             const project = yield* (yield* Project.Service).resolve(placement.location.directory)
+            const usage = nativeSessionUsage({
+              report: yield* native.value.usage({ sessionID: ctx.params.sessionID, ...placement }),
+              models: yield* (yield* bootedCatalog).model.available(),
+              snapshot,
+            })
             return {
               data: nativeSessionInfo({
                 sessionID: ctx.params.sessionID,
                 projectID: project.id,
                 location: placement.location,
                 snapshot,
+                usage,
               }),
             }
           }
