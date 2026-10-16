@@ -16,7 +16,7 @@ jobs:
         run: |
           python3 -m venv "$RUNNER_TEMP/venv"
           "$RUNNER_TEMP/venv/bin/pip" install --quiet pyjwt cryptography
-          APPLE_API_KEY_ID="$APPLE_API_KEY_ID" APPLE_API_ISSUER="$APPLE_API_ISSUER" APPLE_API_KEY_P8="$APPLE_API_KEY_P8" VENV="$RUNNER_TEMP/venv" python3 - <<'PY'
+          APPLE_API_KEY_ID="$APPLE_API_KEY_ID" APPLE_API_ISSUER="$APPLE_API_ISSUER" APPLE_API_KEY_P8="$APPLE_API_KEY_P8" VENV="$RUNNER_TEMP/venv" "$RUNNER_TEMP/venv/bin/python3" - <<'PY'
           import base64, json, os, time, urllib.request, urllib.error
 
           import jwt
