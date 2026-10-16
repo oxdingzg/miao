@@ -768,6 +768,11 @@ async fn execute(
             messages: history,
             tools: inner.tools.definitions(),
         };
+        let prefix_through = if inner.context.lock().await.is_some() {
+            Some(inner.store.max_message_seq(session).await?)
+        } else {
+            None
+        };
         // A transport failure before any streamed output is safe to replay; once
         // output has been emitted it is not. Retry the bounded pre-output case so
         // a transient reset (for example a proxy dropping the stream) does not
@@ -1343,6 +1348,13 @@ async fn execute(
             // substituted one — does not escalate to itself (ADR-14): only
             // an accepted binding earns the single retry on the primary.
             let escalate = matches!(resolution, crate::roles::Resolution::Bound { .. });
+            let prefix_provider = Arc::clone(&role_provider);
+            let prefix_allowed = prefix_provider.supports_tool_free_stream()
+                && prefix_provider
+                    .identity()
+                    .zip(primary.identity())
+                    .is_some_and(|(role, main)| role == main)
+                && prefix_through.is_some();
             let mut summarize = move |body: String| {
                 let role_provider = Arc::clone(&role_provider);
                 let primary = Arc::clone(&primary);
@@ -1385,7 +1397,34 @@ async fn execute(
                 })
             };
             let mut breaker = inner.breaker.lock().await;
-            let _ = crate::context_trigger::maybe_compact(
+            let mut prefix = || {
+                let provider = Arc::clone(&prefix_provider);
+                let store = inner.store.clone();
+                let stop = inner.stop.clone();
+                let mut snapshot = request.clone();
+                let permissions = json!({"policy":inner.policy.descriptor(),"boundary":inner.tools.authority_descriptor()});
+                async move {
+                    if !prefix_allowed {
+                        return None;
+                    }
+                    let tail = match store
+                        .pending_context(session, prefix_through.unwrap_or(0))
+                        .await
+                    {
+                        Ok((messages, _)) => messages,
+                        Err(error) => return Some(Err(error.to_string())),
+                    };
+                    snapshot.messages.extend(tail);
+                    Some(crate::runtime_profile::scoped(
+                        crate::runtime_profile::Scope {
+                            store:store.clone(),session:session.into(),run:run.into(),step,context_epoch,
+                            agent:json!({"name":"native-summary","semantics":"prefix-summary-v1"}),permissions,
+                        },
+                        crate::roles::summarize_prefix(&provider,&crate::roles::Settlement { store:&store,session,run },&stop,snapshot),
+                    ).await)
+                }
+            };
+            let _ = crate::context_trigger::maybe_compact_with_prefix(
                 &inner.store,
                 crate::context_trigger::CompactRequest {
                     session,
@@ -1398,6 +1437,7 @@ async fn execute(
                     count: &mut count,
                 },
                 &mut summarize,
+                &mut prefix,
             )
             .await;
         }
