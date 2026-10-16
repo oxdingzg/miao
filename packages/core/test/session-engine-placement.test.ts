@@ -68,6 +68,26 @@ test("native binding survives reopen, reconciles exact retries, and rejects chan
   )
 })
 
+test("a concurrent creator's projected row does not make the binding legacy", async () => {
+  await using tmp = await tmpdir()
+  const storage = path.join(tmp.path, "product.db")
+  const sessionID = SessionV2.ID.create()
+  const directory = AbsolutePath.make(tmp.path)
+  const placement = native(tmp.path)
+  // The winner of a creation race projects the Session row and binds the
+  // placement; the loser's claim must adopt instead of reading the projected
+  // row as a legacy TS Session.
+  await run(
+    storage,
+    Effect.gen(function* () {
+      const v2 = yield* SessionV2.Service
+      yield* v2.create({ id: sessionID, location: { directory }, nativeStorage: placement.storage })
+      const database = yield* Database.Service
+      expect(yield* SessionEnginePlacement.claim(database.db, { sessionID, placement })).toEqual(placement)
+    }),
+  )
+})
+
 test("real TS Session creation binds TS and cannot create over a native binding", async () => {
   await using tmp = await tmpdir()
   await run(

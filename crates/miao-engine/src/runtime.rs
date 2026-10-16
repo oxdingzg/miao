@@ -968,6 +968,13 @@ async fn execute(
                 json!({"run_id":run,"step":step,"usage":reply.usage,"cache":crate::usage::cache_lineage(&reply.usage),"context_message_seq":inner.store.max_message_seq(session).await?}),
             )
             .await?;
+        // The billed turn's settle wall-clock rides the timing side table, so
+        // usage reports can order turns in time without timestamps in replayed
+        // payloads.
+        let _ = inner
+            .store
+            .record_turn_time(session, run, step as u64, crate::approval::now_ms())
+            .await;
         if let Some(ttft_ms) = ttft_ms {
             let _ = inner
                 .store
@@ -1295,10 +1302,24 @@ async fn execute(
         if cancel.is_cancelled() {
             return Ok(());
         }
-        let mut promoted = inner.store.promote(session, !reply.needs_tools).await?;
-        // Automatic context management at the settled boundary (roadmap
-        // §2.13). Off unless the runtime was configured with limits.
-        if let Some(limits) = &*inner.context.lock().await {
+        // Settled tools do not close a provider continuation: its assistant
+        // message still contains tool_use blocks whose results follow the cut.
+        // Compact only a completed answer, before admitting newer prompts into
+        // the selected history summarized by this checkpoint.
+        let closed_answer = !reply.needs_tools
+            && reply.content.as_array().is_some_and(|parts| {
+                parts.iter().any(|part| {
+                    part["type"] == "text"
+                        && part["text"].as_str().is_some_and(|text| !text.is_empty())
+                })
+            });
+        if let Some(limits) = inner
+            .context
+            .lock()
+            .await
+            .as_ref()
+            .filter(|_| closed_answer)
+        {
             let primary = Arc::clone(&inner.provider);
             let bindings = inner.roles.lock().await.clone();
             let (role_provider, resolution) =
@@ -1377,6 +1398,7 @@ async fn execute(
             )
             .await;
         }
+        let mut promoted = inner.store.promote(session, !reply.needs_tools).await?;
         let mut goal_stopped_this_turn = false;
         if !reply.needs_tools && promoted.is_empty() && state_allowed {
             let state = inner.store.state(session).await?;

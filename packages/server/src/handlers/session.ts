@@ -1,6 +1,7 @@
 import path from "node:path"
 import { Image } from "@miao/core/image"
 import { Database } from "@miao/core/database/database"
+import { Catalog } from "@miao/core/catalog"
 import { SessionV2 } from "@miao/core/session"
 import { SessionImageNormalize } from "@miao/core/session/image-normalize"
 import { SessionUsageStore } from "@miao/core/session/usage-store"
@@ -19,7 +20,7 @@ import { SessionEnginePlacement } from "@miao/core/session/engine-placement"
 import { nativeExecution, nativeTodos } from "../native-state"
 import { nativeSessionEvents } from "../native-events"
 import { SessionEvent } from "@miao/schema/session-event"
-import { mergeNativeSessions, nativeSessionInfo } from "../native-session"
+import { mergeNativeSessions, nativeSessionInfo, nativeSessionUsage } from "../native-session"
 import { booted } from "../location"
 import { SessionsCursor } from "@miao/protocol/groups/session"
 import {
@@ -43,6 +44,14 @@ export const SessionHandler = HttpApiBuilder.group(Api, "server.session", (handl
     const session = yield* SessionV2.Service
     const db = (yield* Database.Service).db
     const events = yield* EventV2.Service
+    // Pricing is a product catalog fact; the constrained cli/listener
+    // assembly does not boot it, so missing pricing degrades the projection
+    // to zero cost with tokens still attributed.
+    const availableModels = Effect.gen(function* () {
+      const catalog = yield* Effect.serviceOption(Catalog.Service)
+      if (Option.isNone(catalog)) return []
+      return yield* catalog.value.model.available()
+    })
     const schedule = Option.getOrUndefined(yield* Effect.serviceOption(SessionSchedule.Service))
     const jobs = Option.getOrUndefined(yield* Effect.serviceOption(BackgroundJob.Service))
 
@@ -71,6 +80,7 @@ export const SessionHandler = HttpApiBuilder.group(Api, "server.session", (handl
                   db,
                   sessions,
                   limit,
+                  models: yield* availableModels,
                   order: query.order ?? "desc",
                   search: query.search,
                   anchor: "anchor" in query ? query.anchor : undefined,
@@ -186,20 +196,19 @@ export const SessionHandler = HttpApiBuilder.group(Api, "server.session", (handl
               storage: placement.storage,
               location: placement.location,
             })
-            const tokens = yield* native.value.tokens({
-              sessionID: ctx.params.sessionID,
-              storage: placement.storage,
-              location: placement.location,
+            const project = yield* (yield* Project.Service).resolve(placement.location.directory)
+            const usage = nativeSessionUsage({
+              report: yield* native.value.usage({ sessionID: ctx.params.sessionID, ...placement }),
+              models: yield* availableModels,
+              snapshot,
             })
-            const projects = yield* Project.Service
-            const project = yield* projects.resolve(placement.location.directory)
             return {
               data: nativeSessionInfo({
                 sessionID: ctx.params.sessionID,
                 projectID: project.id,
                 location: placement.location,
                 snapshot,
-                tokens,
+                usage,
               }),
             }
           }
