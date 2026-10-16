@@ -186,26 +186,10 @@ export const fromOwners = (owners: Owners): NativeEngine.Interface => {
       read<Readonly<Record<string, unknown>>>(input, (connection) =>
         connection.client.request("snapshot", { session_id: input.sessionID }),
       ).pipe(Effect.map((value) => (typeof value === "object" && value !== null ? value : {}))),
-    tokens: (input) =>
-      read(input, async (connection) => {
-        const report = Schema.decodeUnknownSync(
-          Schema.Struct({
-            tokens: Schema.Struct({
-              input: Schema.Number,
-              output: Schema.Number,
-              reasoning: Schema.Number.pipe(Schema.optional),
-              cacheRead: Schema.Number,
-              cacheWrite: Schema.Number,
-            }),
-          }),
-        )(await connection.client.request("usage", { session_id: input.sessionID }))
-        return {
-          input: report.tokens.input,
-          output: report.tokens.output,
-          reasoning: report.tokens.reasoning ?? 0,
-          cache: { read: report.tokens.cacheRead, write: report.tokens.cacheWrite },
-        }
-      }),
+    usage: (input) =>
+      read<Readonly<Record<string, unknown>>>(input, (connection) =>
+        connection.client.request("usage", { session_id: input.sessionID }),
+      ).pipe(Effect.map((value) => (typeof value === "object" && value !== null ? value : {}))),
     transcript: (input) =>
       read(input, (connection) =>
         readTranscript({

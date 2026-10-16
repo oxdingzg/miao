@@ -16,17 +16,34 @@ const rateFor = (costs: ModelV2.Info["cost"], contextTokens: number) =>
 
 const perMillion = (tokens: number, value: number) => (Math.max(0, finite(tokens)) * Math.max(0, finite(value))) / 1_000_000
 
-/** Dollar cost for one provider step at the model's tiered list rates. */
-export const of = (costs: ModelV2.Info["cost"], usage: Usage | undefined) => {
+type TurnUsage = {
+  inputTokens?: number
+  outputTokens?: number
+  nonCachedInputTokens?: number
+  reasoningTokens?: number
+  cacheReadInputTokens?: number
+  cacheWriteInputTokens?: number
+}
+
+/**
+ * Dollar cost for one billed turn at the model's tiered list rates. The plain
+ * shape lets projections of engine journals price recorded turns without
+ * depending on the provider event class.
+ */
+export const ofTurn = (costs: ModelV2.Info["cost"], usage: TurnUsage | undefined) => {
+  const visible = Math.max(0, finite(usage?.outputTokens) - finite(usage?.reasoningTokens))
   const rate = rateFor(costs, Math.max(0, finite(usage?.inputTokens)))
   if (!rate) return 0
   return Math.max(
     0,
     perMillion(usage?.nonCachedInputTokens ?? 0, rate.input) +
-      perMillion(usage?.visibleOutputTokens ?? 0, rate.output) +
+      perMillion(visible, rate.output) +
       // Reasoning tokens have no separate price; charge them at the output rate.
       perMillion(usage?.reasoningTokens ?? 0, rate.output) +
       perMillion(usage?.cacheReadInputTokens ?? 0, rate.cache.read) +
       perMillion(usage?.cacheWriteInputTokens ?? 0, rate.cache.write),
   )
 }
+
+/** Dollar cost for one provider step at the model's tiered list rates. */
+export const of = (costs: ModelV2.Info["cost"], usage: Usage | undefined) => ofTurn(costs, usage)
