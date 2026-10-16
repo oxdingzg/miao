@@ -186,13 +186,20 @@ export const SessionHandler = HttpApiBuilder.group(Api, "server.session", (handl
               storage: placement.storage,
               location: placement.location,
             })
-            const project = yield* (yield* Project.Service).resolve(placement.location.directory)
+            const tokens = yield* native.value.tokens({
+              sessionID: ctx.params.sessionID,
+              storage: placement.storage,
+              location: placement.location,
+            })
+            const projects = yield* Project.Service
+            const project = yield* projects.resolve(placement.location.directory)
             return {
               data: nativeSessionInfo({
                 sessionID: ctx.params.sessionID,
                 projectID: project.id,
                 location: placement.location,
                 snapshot,
+                tokens,
               }),
             }
           }
