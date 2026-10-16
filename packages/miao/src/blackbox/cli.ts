@@ -95,6 +95,8 @@ async function main() {
     const provider = option("--provider") ?? replay?.bundle.metadata.provider ?? "openai-chat"
     if (typeof prompt !== "string" || typeof model !== "string" || typeof provider !== "string")
       throw new Error("Provide --prompt and --model when recording")
+    const sessionID = replay?.bundle.metadata.sessionID ?? crypto.randomUUID()
+    if (typeof sessionID !== "string" || !sessionID) throw new Error("Invalid recorded Session identity")
     const endpointPath = engineEndpoint(provider, model)
     const recorder = replay
       ? undefined
@@ -103,6 +105,7 @@ async function main() {
           prompt,
           model,
           provider,
+          sessionID,
           binarySha256: new Bun.CryptoHasher("sha256").update(await Bun.file(binary).arrayBuffer()).digest("hex"),
           fixture: workspace,
         })
@@ -117,6 +120,7 @@ async function main() {
         model,
         provider,
         prompt,
+        session: sessionID,
         endpoint: new URL(endpointPath, proxy.server.url).toString(),
         blackbox: replay ?? recorder,
         policyFile: option("--policy"),

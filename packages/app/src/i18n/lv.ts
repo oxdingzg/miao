@@ -601,6 +601,8 @@ export const dict = {
   "toast.permissions.autoaccept.on.description": "Atļauju pieprasījumi tiks apstiprināti automātiski",
   "toast.permissions.autoaccept.off.title": "Automātiska atļauju apstiprināšana apturēta",
   "toast.permissions.autoaccept.off.description": "Atļauju pieprasījumiem būs nepieciešams apstiprinājums",
+  "settings.permissions.autoaccept.project.title": "Automātiski pieņemt šī projekta atļaujas",
+  "settings.permissions.autoaccept.project.description": "Atbildēt uz jauniem atļauju pieprasījumiem no jebkuras šī projekta sesijas bez jautāšanas. Sesijas un mapes līmeņa izvēles joprojām ir prioritāras.",
   "toast.model.none.title": "Nav izvēlēts modelis",
   "toast.model.none.description": "Pievienojiet nodrošinātāju, lai apkopotu šo sesiju",
   "toast.file.loadFailed.title": "Neizdevās ielādēt failu",
@@ -969,6 +971,8 @@ export const dict = {
     "Pārslēgties starp aģentiem redaktorā. Ja paslēpts, tiek izmantots Build aģents.",
   "settings.general.row.reasoningSummaries.title": "Rādīt pamatojuma kopsavilkumus",
   "settings.general.row.reasoningSummaries.description": "Rādīt modeļa pamatojuma kopsavilkumus laika joslā",
+  "settings.general.row.turnDiffs.title": "Rādīt mainītos failus katrai kārtai",
+  "settings.general.row.turnDiffs.description": "Uzskaita laika līnijā katras pabeigtās kārtas mainītos failus ar rindu skaitu un izvēršamām atšķirībām.",
   "settings.general.row.shellToolPartsExpanded.title": "Izvērst čaulas rīka daļas",
   "settings.general.row.shellToolPartsExpanded.description":
     "Pēc noklusējuma rādīt čaulas rīka daļas izvērstas laika joslā",

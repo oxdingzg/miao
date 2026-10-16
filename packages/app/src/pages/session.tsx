@@ -74,6 +74,9 @@ import {
 } from "@/pages/session/composer"
 import { createOpenReviewFile, createSessionTabs, createSizing, shouldShowFileTree } from "@/pages/session/helpers"
 import { MessageTimeline } from "@/pages/session/timeline/message-timeline"
+import { uniqueSummaryDiffs } from "@/pages/session/timeline/summary-diffs"
+import { createTurnDiffSource } from "@/pages/session/timeline/turn-diffs"
+import type { SummaryDiff } from "@/pages/session/timeline/timeline-row"
 import { createTimelineModel } from "@/pages/session/timeline/model"
 import { type DiffStyle, SessionReviewTab, type SessionReviewTabProps } from "@/pages/session/review-tab"
 import { useSessionLayout } from "@/pages/session/session-layout"
@@ -648,9 +651,53 @@ export default function Page() {
     return open
   }, desktopReviewOpen())
 
-  // Per-turn summary diffs need a V2 projection (SessionDiff over recorded
-  // events); until the server exposes them the turn review mode stays empty.
-  const turnDiffs = createMemo(() => [])
+  const showTurnDiffs = () => settings.general.showTurnDiffs()
+  const turnDiffSource = createTurnDiffSource((input) =>
+    sdk()
+      .api.sessions.diff({ sessionID: input.sessionID, messageID: input.messageID, patch: true })
+      .then((result) =>
+        result.map((diff) => ({
+          file: diff.path,
+          patch: diff.patch,
+          additions: diff.additions,
+          deletions: diff.deletions,
+          status: diff.status,
+        })),
+      ),
+  )
+  // miao runs one turn per user message, so a turn is finished once a later
+  // prompt exists, or when the session is no longer running.
+  const turnFinished = (messages: readonly { id: string }[], index: number, working: boolean) =>
+    !(index === messages.length - 1 && working)
+  const turnDiffs = createMemo<SummaryDiff[]>(() => {
+    if (!showTurnDiffs()) return []
+    const id = params.id
+    if (!id) return []
+    const msgs = visibleUserMessages()
+    const working = sync().data.session_working(id)
+    const collected: SummaryDiff[] = []
+    msgs.forEach((message, index) => {
+      if (!turnFinished(msgs, index, working)) return
+      turnDiffSource.load(id, message.id)
+      const diffs = turnDiffSource.get(id, message.id)
+      if (diffs) collected.push(...diffs)
+    })
+    return uniqueSummaryDiffs(collected)
+  })
+  const turnDecoratedUserMessages = createMemo(() => {
+    const msgs = visibleUserMessages()
+    if (!showTurnDiffs()) return msgs
+    const id = params.id
+    if (!id) return msgs
+    const working = sync().data.session_working(id)
+    return msgs.map((message, index) => {
+      if (!turnFinished(msgs, index, working)) return message
+      turnDiffSource.load(id, message.id)
+      const diffs = turnDiffSource.get(id, message.id)
+      if (!diffs?.length) return message
+      return { ...message, summary: { diffs } }
+    })
+  })
   const nogit = createMemo(() => {
     const project = sync().project
     return !!project && project.vcs !== "git"
@@ -2108,7 +2155,7 @@ export default function Page() {
                     const root = scroller
                     if (root) scheduleScrollState(root)
                   }}
-                  userMessages={visibleUserMessages()}
+                  userMessages={turnDecoratedUserMessages()}
                   setHistoryAnchor={(handlers) => {
                     captureHistoryAnchor = handlers.capture
                     restoreHistoryAnchor = handlers.restore

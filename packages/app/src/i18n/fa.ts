@@ -601,6 +601,8 @@ export const dict = {
   "toast.permissions.autoaccept.on.description": "درخواست‌های مجوز به‌طور خودکار تأیید می‌شوند",
   "toast.permissions.autoaccept.off.title": "پذیرش خودکار مجوزها متوقف شد",
   "toast.permissions.autoaccept.off.description": "درخواست های مجوز نیاز به تایید دارند",
+  "settings.permissions.autoaccept.project.title": "پذیرش خودکار مجوزها برای این پروژه",
+  "settings.permissions.autoaccept.project.description": "پاسخ به درخواست‌های مجوز جدید از هر نشست در این پروژه بدون پرسش. انتخاب‌های سطح نشست و پوشه همچنان اولویت دارند.",
   "toast.model.none.title": "هیچ مدلی انتخاب نشده است",
   "toast.model.none.description": "برای خلاصه کردن این جلسه یک ارائه دهنده را وصل کنید",
   "toast.file.loadFailed.title": "فایل بارگیری نشد",
@@ -961,6 +963,8 @@ export const dict = {
     "بین عوامل در آهنگساز جابجا شوید. هنگامی که مخفی می شود، به طور پیش فرض بر روی Build agent قرار می گیرد.",
   "settings.general.row.reasoningSummaries.title": "نمایش خلاصه های استدلال",
   "settings.general.row.reasoningSummaries.description": "نمایش خلاصه های استدلال مدل در جدول زمانی",
+  "settings.general.row.turnDiffs.title": "نمایش فایل‌های تغییر‌یافته در هر نوبت",
+  "settings.general.row.turnDiffs.description": "فایل‌های تغییر‌یافته هر نوبت کامل‌شده را با شمارش خطوط و تفاوت‌های قابل بازشدن در خط زمانی فهرست می‌کند.",
   "settings.general.row.shellToolPartsExpanded.title": "قطعات ابزار پوسته را گسترش دهید",
   "settings.general.row.shellToolPartsExpanded.description":
     "نمایش قطعات ابزار پوسته که به طور پیش‌فرض در تایم لاین گسترش یافته‌اند",

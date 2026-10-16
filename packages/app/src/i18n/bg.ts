@@ -606,6 +606,8 @@ export const dict = {
   "toast.permissions.autoaccept.on.description": "Заявките за разрешение ще бъдат автоматично одобрени",
   "toast.permissions.autoaccept.off.title": "Автоматичното приемане на разрешения е спряно",
   "toast.permissions.autoaccept.off.description": "Исканията за разрешение ще изискват одобрение",
+  "settings.permissions.autoaccept.project.title": "Автоматично приемане на разрешения за този проект",
+  "settings.permissions.autoaccept.project.description": "Отговаряне на нови заявки за разрешения от всяка сесия в този проект без питане. Изборът на ниво сесия и директория има предимство.",
   "toast.model.none.title": "Няма избран модел",
   "toast.model.none.description": "Свържете доставчик, за да обобщите тази сесия",
   "toast.file.loadFailed.title": "Неуспешно зареждане на файла",
@@ -973,6 +975,8 @@ export const dict = {
   "settings.general.row.reasoningSummaries.title": "Показване на обобщения на разсъжденията",
   "settings.general.row.reasoningSummaries.description":
     "Показване на обобщения на разсъжденията на модела във времевата линия",
+    "settings.general.row.turnDiffs.title": "Show changed files per turn",
+    "settings.general.row.turnDiffs.description": "List each finished turn's changed files with line counts and expandable diffs in the timeline.",
   "settings.general.row.shellToolPartsExpanded.title": "Разгънете shell части на инструмента",
   "settings.general.row.shellToolPartsExpanded.description":
     "Показване на shell части от инструмента, разширени по подразбиране във времевата линия",

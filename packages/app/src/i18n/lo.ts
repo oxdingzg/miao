@@ -598,6 +598,8 @@ export const dict = {
   "toast.permissions.autoaccept.on.description": "ການຮ້ອງຂໍການອະນຸຍາດຈະຖືກອະນຸມັດໂດຍອັດຕະໂນມັດ",
   "toast.permissions.autoaccept.off.title": "ຢຸດການອະນຸຍາດອັດຕະໂນມັດ",
   "toast.permissions.autoaccept.off.description": "ການຮ້ອງຂໍການອະນຸຍາດຈະຕ້ອງມີການອະນຸມັດ",
+  "settings.permissions.autoaccept.project.title": "Auto-accept permissions for this project",
+  "settings.permissions.autoaccept.project.description": "Answer new permission requests from any session in this project without asking. Session and directory choices still win.",
   "toast.model.none.title": "ບໍ່ໄດ້ເລືອກຕົວແບບ",
   "toast.model.none.description": "ເຊື່ອມຕໍ່ຜູ້ໃຫ້ບໍລິການເພື່ອສະຫຼຸບກອງປະຊຸມນີ້",
   "toast.file.loadFailed.title": "ລົ້ມເຫລວໃນການໂຫຼດໄຟລ໌",
@@ -956,6 +958,8 @@ export const dict = {
     "ສະຫຼັບລະຫວ່າງຕົວແທນໃນຕົວປະກອບ. ເມື່ອຖືກເຊື່ອງໄວ້, ເລີ່ມຕົ້ນທີ່ຈະສ້າງຕົວແທນ.",
   "settings.general.row.reasoningSummaries.title": "ສະແດງການສັງລວມເຫດຜົນ",
   "settings.general.row.reasoningSummaries.description": "ສະແດງສະຫຼຸບເຫດຜົນຂອງຕົວແບບໃນທາມລາຍ",
+  "settings.general.row.turnDiffs.title": "Show changed files per turn",
+  "settings.general.row.turnDiffs.description": "List each finished turn's changed files with line counts and expandable diffs in the timeline.",
   "settings.general.row.shellToolPartsExpanded.title": "ຂະຫຍາຍສ່ວນຂອງເຄື່ອງມື Shell",
   "settings.general.row.shellToolPartsExpanded.description":
     "ສະແດງສ່ວນຂອງເຄື່ອງມື Shell ແບບຂະຫຍາຍເປັນຄ່າເລີ່ມຕົ້ນໃນໄທມ໌ລາຍ",

@@ -545,6 +545,8 @@ export const dict = {
   "toast.permissions.autoaccept.on.description": "Forespørsler om tillatelse vil bli godkjent automatisk",
   "toast.permissions.autoaccept.off.title": "Stoppet automatisk akseptering av tillatelser",
   "toast.permissions.autoaccept.off.description": "Forespørsler om tillatelse vil kreve godkjenning",
+  "settings.permissions.autoaccept.project.title": "Godta tillatelser automatisk for dette prosjektet",
+  "settings.permissions.autoaccept.project.description": "Besvar nye tilatelsesforespørsler fra økter i dette prosjektet uten å spørre. Valg per økt og mappe går foran.",
 
   "toast.model.none.title": "Ingen modell valgt",
   "toast.model.none.description": "Koble til en leverandør for å oppsummere denne sesjonen",
@@ -793,6 +795,8 @@ export const dict = {
   "settings.general.row.followup.option.steer": "Styr",
   "settings.general.row.reasoningSummaries.title": "Vis resonneringssammendrag",
   "settings.general.row.reasoningSummaries.description": "Vis sammendrag av modellresonnering i tidslinjen",
+  "settings.general.row.turnDiffs.title": "Vis endrede filer per runde",
+  "settings.general.row.turnDiffs.description": "Lister opp i tidslinjen de endrede filene for hver fullførte runde, med linjetall og utfbare diff-er.",
   "settings.general.row.shellToolPartsExpanded.title": "Utvid shell-verktøydeler",
   "settings.general.row.shellToolPartsExpanded.description": "Vis shell-verktøydeler utvidet som standard i tidslinjen",
   "settings.general.row.editToolPartsExpanded.title": "Utvid edit-verktøydeler",

@@ -601,6 +601,8 @@ export const dict = {
   "toast.permissions.autoaccept.on.description": "ნებართვის მოთხოვნები ავტომატურად დამტკიცდება",
   "toast.permissions.autoaccept.off.title": "შეწყდა ნებართვების ავტომატური მიღება",
   "toast.permissions.autoaccept.off.description": "ნებართვის მოთხოვნა საჭიროებს დამტკიცებას",
+  "settings.permissions.autoaccept.project.title": "ამ პროექტის ნებართვების ავტომატური მიღება",
+  "settings.permissions.autoaccept.project.description": "პასუხი ამ პროექტის ნებისმიერი სესიიდან ახალ ნებართვის მოთხოვნებზე კითხვის გარეშე. სესიისა და დირექტორიის დონის არჩევანი მაინც უპირატესია.",
   "toast.model.none.title": "მოდელი არ არის არჩეული",
   "toast.model.none.description": "დააკავშირეთ პროვაიდერი ამ სესიის შესაჯამებლად",
   "toast.file.loadFailed.title": "ფაილის ჩატვირთვა ვერ მოხერხდა",
@@ -963,6 +965,8 @@ export const dict = {
     "გადართვა კომპოზიტორში აგენტებს შორის. როდესაც დამალულია, ნაგულისხმევად არის Build აგენტი.",
   "settings.general.row.reasoningSummaries.title": "მსჯელობის შეჯამების ჩვენება",
   "settings.general.row.reasoningSummaries.description": "მოდელების მსჯელობის რეზიუმეების ჩვენება ვადებში",
+  "settings.general.row.turnDiffs.title": "აჩვენე შეცვლილი ფაილები თითოეული ტურისთვის",
+  "settings.general.row.turnDiffs.description": "დროის ხაზზე ჩამოთვლის თითოეული დასრულებული ტურის შეცვლილ ფაილებს ხაზების რაოდენობით და გასაშლელი სხვაობებით.",
   "settings.general.row.shellToolPartsExpanded.title": "Shell ხელსაწყოს ნაწილების გაფართოება",
   "settings.general.row.shellToolPartsExpanded.description":
     "Shell ხელსაწყოს ნაწილების ნაგულისხმევად გაფართოებული ჩვენება ქრონოლოგიაში",

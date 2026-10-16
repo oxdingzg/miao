@@ -607,6 +607,8 @@ export const dict = {
   "toast.permissions.autoaccept.on.description": "ခွင့်ပြုချက်တောင်းဆိုမှုများကို အလိုအလျောက် အတည်ပြုပေးမည်ဖြစ်သည်။",
   "toast.permissions.autoaccept.off.title": "ခွင့်ပြုချက်များကို အလိုအလျောက်လက်ခံခြင်းကို ရပ်ထားသည်။",
   "toast.permissions.autoaccept.off.description": "ခွင့်ပြုချက်တောင်းခံမှုများသည် အတည်ပြုချက် လိုအပ်မည်ဖြစ်သည်။",
+  "settings.permissions.autoaccept.project.title": "Auto-accept permissions for this project",
+  "settings.permissions.autoaccept.project.description": "Answer new permission requests from any session in this project without asking. Session and directory choices still win.",
   "toast.model.none.title": "မော်ဒယ်ကို ရွေးထားခြင်းမရှိပါ။",
   "toast.model.none.description": "ဤစက်ရှင်ကို အကျဉ်းချုပ်ရန် ဝန်ဆောင်မှုပေးသူကို ချိတ်ဆက်ပါ။",
   "toast.file.loadFailed.title": "ဖိုင်ကို တင်ရန် မအောင်မြင်ပါ။",
@@ -979,6 +981,8 @@ export const dict = {
   "settings.general.row.reasoningSummaries.title": "ကျိုးကြောင်းဆင်ခြင်ခြင်း အနှစ်ချုပ်များကို ပြပါ။",
   "settings.general.row.reasoningSummaries.description":
     "အချိန်ဇယားတွင် မော်ဒယ် ကျိုးကြောင်းဆင်ခြင်ခြင်း အနှစ်ချုပ်များကို ပြသပါ။",
+    "settings.general.row.turnDiffs.title": "Show changed files per turn",
+    "settings.general.row.turnDiffs.description": "List each finished turn's changed files with line counts and expandable diffs in the timeline.",
   "settings.general.row.shellToolPartsExpanded.title": "shell tool အစိတ်အပိုင်းများကို ချဲ့ပါ။",
   "settings.general.row.shellToolPartsExpanded.description":
     "အချိန်ဇယားတွင် ပုံသေဖြင့် ချဲ့ထားသော shell tool အစိတ်အပိုင်းများကို ပြပါ။",

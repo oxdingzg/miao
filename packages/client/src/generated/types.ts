@@ -3411,7 +3411,7 @@ export type IntegrationsListOutput = {
       | { readonly type: "env"; readonly names: ReadonlyArray<string> }
     >
     readonly connections: ReadonlyArray<
-      | { readonly type: "credential"; readonly id: string; readonly label: string }
+      | { readonly type: "credential"; readonly id: string; readonly label: string; readonly active: boolean }
       | { readonly type: "env"; readonly name: string }
     >
   }>
@@ -3463,7 +3463,7 @@ export type IntegrationsGetOutput = {
       | { readonly type: "env"; readonly names: ReadonlyArray<string> }
     >
     readonly connections: ReadonlyArray<
-      | { readonly type: "credential"; readonly id: string; readonly label: string }
+      | { readonly type: "credential"; readonly id: string; readonly label: string; readonly active: boolean }
       | { readonly type: "env"; readonly name: string }
     >
   } | null
@@ -3584,6 +3584,37 @@ export type IntegrationsAttemptCancelInput = {
 
 export type IntegrationsAttemptCancelOutput = void
 
+export type CredentialsListInput = {
+  readonly location?: {
+    readonly location?: { readonly directory?: string | undefined; readonly workspace?: string | undefined } | undefined
+  }["location"]
+}
+
+export type CredentialsListOutput = {
+  readonly location: {
+    readonly directory: string
+    readonly workspaceID?: string
+    readonly project: { readonly id: string; readonly directory: string }
+  }
+  readonly data: ReadonlyArray<{
+    readonly id: string
+    readonly integrationID: string
+    readonly label: string
+    readonly value:
+      | {
+          readonly type: "oauth"
+          readonly methodID: string
+          readonly refresh: string
+          readonly access: string
+          readonly expires: number
+          readonly metadata?: { readonly [x: string]: JsonValue }
+        }
+      | { readonly type: "key"; readonly key: string; readonly metadata?: { readonly [x: string]: JsonValue } }
+    readonly source?: "shared"
+    readonly active: boolean
+  }>
+}
+
 export type CredentialsUpdateInput = {
   readonly credentialID: { readonly credentialID: string }["credentialID"]
   readonly location?: {
@@ -3593,6 +3624,15 @@ export type CredentialsUpdateInput = {
 }
 
 export type CredentialsUpdateOutput = void
+
+export type CredentialsActivateInput = {
+  readonly credentialID: { readonly credentialID: string }["credentialID"]
+  readonly location?: {
+    readonly location?: { readonly directory?: string | undefined; readonly workspace?: string | undefined } | undefined
+  }["location"]
+}
+
+export type CredentialsActivateOutput = void
 
 export type CredentialsRemoveInput = {
   readonly credentialID: { readonly credentialID: string }["credentialID"]

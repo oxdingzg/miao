@@ -609,6 +609,8 @@ export const dict = {
   "toast.permissions.autoaccept.on.description": "ހުއްދައަށް އެދޭ ފަރާތްތަކުން އޮޓޮމެޓިކުން ފާސްކުރެވޭނެއެވެ",
   "toast.permissions.autoaccept.off.title": "ހުއްދަތައް އޮޓޯ އެކްސެޕްޓްކުރުން ހުއްޓާލިއެވެ",
   "toast.permissions.autoaccept.off.description": "ހުއްދައަށް އެދޭ ފަރާތްތަކަށް ރުހުން ހޯދަން ޖެހޭނެއެވެ",
+  "settings.permissions.autoaccept.project.title": "Auto-accept permissions for this project",
+  "settings.permissions.autoaccept.project.description": "Answer new permission requests from any session in this project without asking. Session and directory choices still win.",
   "toast.model.none.title": "އެއްވެސް މޮޑެލްއެއް ހޮވިފައެއް ނުވެއެވެ",
   "toast.model.none.description": "މި ސެޝަން ޚުލާޞާ ކުރުމަށް ޕްރޮވައިޑަރަކާ ގުޅުވާށެވެ",
   "toast.file.loadFailed.title": "ފައިލް ލޯޑް ނުކުރެވުނެވެ",
@@ -979,6 +981,8 @@ export const dict = {
     "ކޮމްޕޯސަރުގައި ތިބި އޭޖެންޓުންގެ މެދުގައި ބަދަލުވުން. ފޮރުވާއިރު، ޑިފޯލްޓް ވާނީ ބިލްޑް އޭޖެންޓަށެވެ.",
   "settings.general.row.reasoningSummaries.title": "ރިޒަނިންގ ސުމާރީސް ދައްކާށެވެ",
   "settings.general.row.reasoningSummaries.description": "ޓައިމްލައިންގައި މޮޑެލް ރިޒަނިންގ ސުމާރީތައް ދައްކާލުން",
+  "settings.general.row.turnDiffs.title": "Show changed files per turn",
+  "settings.general.row.turnDiffs.description": "List each finished turn's changed files with line counts and expandable diffs in the timeline.",
   "settings.general.row.shellToolPartsExpanded.title": "ޝެލް ޓޫލް ބައިތައް ފުޅާކުރުން",
   "settings.general.row.shellToolPartsExpanded.description":
     "ޓައިމްލައިންގައި ޑިފޯލްޓްކޮށް ފުޅާކޮށްފައިވާ ޝެލް ޓޫލް ބައިތައް ދައްކާށެވެ",

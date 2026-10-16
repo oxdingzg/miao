@@ -604,6 +604,8 @@ export const dict = {
   "toast.permissions.autoaccept.on.description": "Дархостҳои иҷозат ба таври худкор тасдиқ карда мешаванд",
   "toast.permissions.autoaccept.off.title": "Қабули худкори иҷозатҳоро қатъ кард",
   "toast.permissions.autoaccept.off.description": "Дархостҳои иҷозат тасдиқро талаб мекунанд",
+  "settings.permissions.autoaccept.project.title": "Қабули худкори иҷозатҳо барои ин лоиҳа",
+  "settings.permissions.autoaccept.project.description": "Ба дархостҳои нави иҷозат аз ҳар сессияи ин лоиҳа бепурсидан ҷавоб диҳед. Интихобҳо дар сатҳи сессия ва директория бартарӣ доранд.",
   "toast.model.none.title": "Ягон модел интихоб нашудааст",
   "toast.model.none.description": "Барои ҷамъбасти ин сессия провайдерро пайваст кунед",
   "toast.file.loadFailed.title": "Файлро бор карда натавонист",
@@ -969,6 +971,8 @@ export const dict = {
     "Гузариш байни агентҳо дар оҳангсоз. Ҳангоми пинҳон, пешфарз ба Сохтани агент.",
   "settings.general.row.reasoningSummaries.title": "Ҷамъбасти далелҳоро нишон диҳед",
   "settings.general.row.reasoningSummaries.description": "Дар ҷадвали вақт хулосаҳои далелҳои моделиро нишон диҳед",
+  "settings.general.row.turnDiffs.title": "Намоиши файлҳои тағйирёфта барои ҳар давр",
+  "settings.general.row.turnDiffs.description": "Дар хати вақт файлҳои тағйирёфтаи ҳар даври анҷомёфта бо шумораи сатрҳо ва фарқҳои кушодашаванда рӯйхат мекунад.",
   "settings.general.row.shellToolPartsExpanded.title": "Қисмҳои shell асбобро васеъ кунед",
   "settings.general.row.shellToolPartsExpanded.description":
     "Дар ҷадвали вақт қисмҳои асбобҳои shell васеъшударо нишон диҳед",

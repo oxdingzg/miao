@@ -654,6 +654,8 @@ export const dict = {
   "toast.permissions.autoaccept.on.description": "Запити дозволів будуть автоматично схвалюватися",
   "toast.permissions.autoaccept.off.title": "Автоматичне прийняття дозволів зупинено",
   "toast.permissions.autoaccept.off.description": "Запити дозволів вимагатимуть схвалення",
+  "settings.permissions.autoaccept.project.title": "Автоматичне прийняття дозволів для цього проєкту",
+  "settings.permissions.autoaccept.project.description": "Відповідати на нові запити дозволів з будь-якої сесії цього проєкту без запитання. Вибір на рівні сесії та каталогу має пріоритет.",
 
   "toast.model.none.title": "Модель не вибрано",
   "toast.model.none.description": "Підключіть провайдера, щоб підсумувати цю сесію",
@@ -1060,6 +1062,8 @@ export const dict = {
     "Перемикатися між агентами в редакторі запиту. Якщо приховано, типовим є агент Build.",
   "settings.general.row.reasoningSummaries.title": "Показувати підсумки мислення",
   "settings.general.row.reasoningSummaries.description": "Відображати підсумки мислення моделі на часовій шкалі",
+  "settings.general.row.turnDiffs.title": "Показувати змінені файли за ходами",
+  "settings.general.row.turnDiffs.description": "Перелічує на шкалі часу змінені файли кожного завершеного ходу з підрахунком рядків і розгортаними відмінностями.",
   "settings.general.row.shellToolPartsExpanded.title": "Розгортати частини інструменту оболонки",
   "settings.general.row.shellToolPartsExpanded.description":
     "Показувати частини інструменту оболонки розгорнутими за замовчуванням на часовій шкалі",

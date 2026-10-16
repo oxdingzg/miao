@@ -27,6 +27,7 @@ export interface DialogSelectProps<T> {
   titleView?: JSX.Element
   placeholder?: string
   footer?: JSX.Element
+  detail?: JSX.Element
   emptyView?: JSX.Element
   options: DialogSelectOption<T>[]
   flat?: boolean
@@ -773,6 +774,11 @@ export function DialogSelect<T>(props: DialogSelectProps<T>) {
           </scrollbox>
         </Show>
       </box>
+      <Show when={props.detail}>
+        <box paddingRight={2} paddingLeft={4} flexShrink={0}>
+          {props.detail}
+        </box>
+      </Show>
       <Show when={props.footer || visibleActions().length} fallback={<box flexShrink={0} />}>
         <box paddingRight={2} paddingLeft={4} flexDirection="row" justifyContent="space-between" flexShrink={0}>
           <box flexDirection="row" gap={2}>
