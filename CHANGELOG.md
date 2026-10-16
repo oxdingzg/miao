@@ -11,7 +11,7 @@ at `docs/releases/vX.Y.Z.md` and `docs/releases/vX.Y.Z.zh.md`; both are required
 
 ## [Unreleased]
 
-## [0.2.14] - 2026-10-16
+## [0.2.14] - 2026-10-17
 
 ### Added
 - **engine**: guarded Windows ConPTY terminals and opt-in workspace custom tool workers (#947, #949).
