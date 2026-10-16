@@ -10,6 +10,7 @@ const Record = Schema.Union([
     ordinal: Schema.Number,
     status: Schema.Number,
     headersMs: Schema.Number,
+    errorCode: Schema.optional(Schema.String),
   }),
 ])
 
@@ -72,10 +73,13 @@ export function startBudgetProxy(input: { upstream: string; limit: number; ledge
         headers.delete("connection")
         headers.delete("transfer-encoding")
         try {
+          // Forward finite JSON with its original Content-Length, rather than
+          // relying on streamed request-body framing through an HTTPS proxy.
+          const body = await request.arrayBuffer()
           const response = await fetch(target, {
             method: "POST",
             headers,
-            body: request.body,
+            body,
             signal: request.signal,
             redirect: "error",
             ...(input.proxy ? { proxy: input.proxy } : {}),
@@ -87,8 +91,16 @@ export function startBudgetProxy(input: { upstream: string; limit: number; ledge
           for (const name of ["content-encoding", "content-length", "connection", "transfer-encoding"])
             outgoing.delete(name)
           return new Response(response.body, { status: response.status, headers: outgoing })
-        } catch {
-          write({ type: "response", ordinal, status: 0, headersMs: Date.now() - started })
+        } catch (error) {
+          const code =
+            error instanceof Error && "code" in error && typeof error.code === "string" ? error.code : "TransportError"
+          write({
+            type: "response",
+            ordinal,
+            status: 0,
+            headersMs: Date.now() - started,
+            errorCode: /^[A-Za-z0-9_]{1,64}$/.test(code) ? code : "TransportError",
+          })
           return new Response("evaluation upstream transport failed", { status: 502 })
         }
       },
