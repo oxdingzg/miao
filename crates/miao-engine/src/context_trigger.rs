@@ -231,7 +231,7 @@ where
             }
         }
     }
-    let id = format!("cut_{run}");
+    let id = format!("cut_{run}_{boundary}");
     match store
         .compact_for_run(
             session,
