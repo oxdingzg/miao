@@ -129,6 +129,14 @@ permission. This value is independent of Debug/Release because development
 exports of a Release archive can still require the sandbox environment. Signing
 profiles, push keys and team configuration remain outside the repository.
 
+`build-app.sh` derives both the `aps-environment` entitlement and the
+`MiaoPushEnvironment` value the App reports to the Hub from that variable: an
+App Store build is entitled `production`, while `sandbox` is entitled
+`development` because that is the entitlement Apple names for it. The
+`ios-testflight` workflow defaults to `production`, since a TestFlight build is
+a distribution build, and its `push_environment` dispatch input selects
+`sandbox` or `disabled` instead.
+
 The Hub must advertise both push registration and configured push delivery before
 the native client can enable notifications. Clicking a generic notification
 fetches its opaque context through the signed-in account, verifies the locally
