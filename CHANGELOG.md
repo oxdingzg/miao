@@ -11,6 +11,17 @@ at `docs/releases/vX.Y.Z.md` and `docs/releases/vX.Y.Z.zh.md`; both are required
 
 ## [Unreleased]
 
+## [0.2.13] - 2026-10-16
+
+### Added
+- **tui**: route operator-bound native sessions without TS selection (#904) (`aff98252b`)
+
+### Fixed
+- **engine**: drain the summarizer's unread progress feed (#905) (`e7e44d55e`)
+- **ios**: upload TestFlight builds from a macOS 26 runner (#902) (`7ee16f5fd`)
+- **release**: write releases with a dedicated token (#901) (`572bc0640`)
+- **ios**: default TestFlight signing to a cloud-managed certificate (#900) (`4a78f8bdf`)
+
 ## [0.2.12] - 2026-10-16
 
 ### Fixed

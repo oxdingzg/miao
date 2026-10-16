@@ -19,6 +19,29 @@ native history renders, a prompt typed into the TUI reaches the native provider,
 and its reply renders. This plain-prompt scenario does not close the remaining
 approval, interruption, external-client or capability rows below.
 
+**Open blocker (found 2026-10-16; diagnosis corrected the same day): a native
+Session publishes no live session events.** An attached client cannot follow or
+approve a native turn, because the serve's `/api/event` stream carries no
+`session.next.*` events for an engine-placed Session. The attached TUI shows the
+submitted prompt and then stays on "Preparing request" — the assistant message
+with its tool part never renders and the pending approval never surfaces — while
+the same deterministic provider turn against a TypeScript Session delivers
+`session.next.prompt.admitted`, `prompted`, `status`, `step.started`,
+`text.started`/`delta`/`ended` and `step.ended` on the same stream. This is
+observable without any TUI: subscribe to `/api/event` with the Session's
+directory header, submit a prompt, and compare a TypeScript Session with a
+native one.
+
+The engine and the read side of the native turn are correct. The journal shows
+`tool.planned`, `message.committed`, `pre_tool_use`, `approval.requested` (with
+request id, input hash, policy revision and expiry) and the `permission_request`
+announcement to the serve; the HTTP read projection (`/message`, `/context`)
+contains the assistant tool part; and under an allow rule the write executes
+without asking. Only the live stream is missing, which blocks the
+visible-approval, cancel-from-TUI and step-accounting rows until the serve
+publishes engine-originated session and approval events. The deterministic
+columns of those rows are unaffected.
+
 | Behavior | Existing automated evidence | Product acceptance still required |
 | --- | --- | --- |
 | Prompt and streamed answer | `tests/acp.rs`; product `native-coding-http.test.ts` | Native-owned Session in the daily TUI and an external ACP client |
@@ -37,14 +60,17 @@ second implementation of the engine logic.
 
 | Platform | Installer evidence | Still required |
 | --- | --- | --- |
-| macOS | ZIP/checksum fixture drill (#862); verified CI 0.2.9 binary install/upgrade/rollback from tag-built 0.2.8; arm64 and translated x64 startup | Published archive, notarization/Gatekeeper, native Intel hardware and data downgrade compatibility |
-| Linux | tar.gz/checksum fixture drill (#862); verified musl CI binary install/upgrade/rollback from tag-built 0.2.8 | Published archive, distributed-binary confinement and data downgrade compatibility |
-| Windows | Installer fixture CI under PowerShell 5.1/7 (#864); real x64 CI binary install/upgrade/rollback from tag-built 0.2.8 under PS5.1 | Published ZIP verification, actual-artifact PS7 drill, confinement and data downgrade compatibility |
+| macOS | ZIP/checksum fixture drill (#862); verified CI 0.2.9 binary install/upgrade/rollback from tag-built 0.2.8; arm64 and translated x64 startup; published 0.2.11 archive verified, Gatekeeper launch under quarantine passed ([0.2.11 report](artifact-acceptance-0.2.11.md)) | Native Intel hardware and data downgrade compatibility |
+| Linux | tar.gz/checksum fixture drill (#862); verified musl CI binary install/upgrade/rollback from tag-built 0.2.8; published 0.2.11 archive verified on the platform ([0.2.11 report](artifact-acceptance-0.2.11.md)) | Data downgrade compatibility |
+| Windows | Installer fixture CI under PowerShell 5.1/7 (#864); real x64 CI binary install/upgrade/rollback from tag-built 0.2.8 under PS5.1; published 0.2.11 ZIP verified, serve startup under PS5.1 ([0.2.11 report](artifact-acceptance-0.2.11.md)) | Actual-artifact PS7 drill (host has no `pwsh`), confinement and data downgrade compatibility |
 
 Fixture executables prove installer behavior, not engine confinement. The
 engine process/sandbox tests remain the confinement evidence, and must be
-repeated against the distributed binaries. The v0.2.9 draft had no engine
-assets at inspection time; publication acceptance is open.
+repeated against the distributed binaries. The v0.2.9 release had no engine
+assets at inspection time; v0.2.11 ships engine archives for every supported
+platform, and the [0.2.11 artifact acceptance report](artifact-acceptance-0.2.11.md)
+closes published-archive verification and macOS Gatekeeper behavior. What
+remains open is recorded there.
 
 The [0.2.9 artifact acceptance report](artifact-acceptance-0.2.9.md) records
 the exact run, commit and hashes for the real binary drills above. It explicitly
