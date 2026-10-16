@@ -331,6 +331,7 @@ export const locationLayer = Layer.effect(
           type: "credential" as const,
           id: credential.id,
           label: credential.label,
+          active: credential.active,
         }))
         .toReversed()
       const env = (entry?.methods ?? [])
