@@ -610,6 +610,8 @@ export const dict = {
   "toast.permissions.autoaccept.on.description": "अनुमति अनुरोध स्वचालित रूप से स्वीकृत हो जाएंगे",
   "toast.permissions.autoaccept.off.title": "अनुमतियों को स्वतः स्वीकार करना बंद कर दिया गया",
   "toast.permissions.autoaccept.off.description": "अनुमति अनुरोधों के लिए अनुमोदन की आवश्यकता होगी",
+  "settings.permissions.autoaccept.project.title": "इस प्रोजेक्ट के लिए अनुमतियाँ स्वतः स्वीकार करें",
+  "settings.permissions.autoaccept.project.description": "इस प्रोजेक्ट के किसी भी सत्र से नए अनुमति अनुरोधों का बिना पूछे उत्तर दें। सत्र और निर्देशिका स्तर के विकल्प पहले रखे जाते हैं।",
   "toast.model.none.title": "कोई मॉडल चयनित नहीं",
   "toast.model.none.description": "इस सेशन को सारांशित करने के लिए एक प्रोवाइडर कनेक्ट करें",
   "toast.file.loadFailed.title": "फ़ाइल लोड करने में विफल",
@@ -971,6 +973,8 @@ export const dict = {
     "कंपोज़र में एजेंट के बीच स्विच करें। छिपाए जाने पर, डिफ़ॉल्ट रूप से बिल्ड एजेंट हो जाता है।",
   "settings.general.row.reasoningSummaries.title": "तर्क सारांश दिखाएँ",
   "settings.general.row.reasoningSummaries.description": "टाइमलाइन में मॉडल तर्क सारांश प्रदर्शित करें",
+  "settings.general.row.turnDiffs.title": "प्रति चरण बदली गई फ़ाइलें दिखाएँ",
+  "settings.general.row.turnDiffs.description": "टाइमलाइन में प्रत्येक पूर्ण चरण की बदली गई फ़ाइलों को पंक्ति गणना और विस्तारणीय अंतरों के साथ सूचीबद्ध करता है।",
   "settings.general.row.shellToolPartsExpanded.title": "शेल टूल पार्ट्स का विस्तार करें",
   "settings.general.row.shellToolPartsExpanded.description":
     "टाइमलाइन में डिफ़ॉल्ट रूप से विस्तारित शेल टूल पार्ट्स दिखाएं",

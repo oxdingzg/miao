@@ -602,6 +602,8 @@ export const dict = {
   "toast.permissions.autoaccept.on.description": "Žádosti o povolení budou automaticky schváleny",
   "toast.permissions.autoaccept.off.title": "Zastaveno automatické přijímání oprávnění",
   "toast.permissions.autoaccept.off.description": "Žádosti o povolení budou vyžadovat schválení",
+  "settings.permissions.autoaccept.project.title": "Automaticky přijímat oprávnění pro tento projekt",
+  "settings.permissions.autoaccept.project.description": "Odpovídat na nové žádosti o oprávnění z jakékoli relace tohoto projektu bez dotazu. Volby pro relaci a adresář mají přednost.",
   "toast.model.none.title": "Není vybrán žádný model",
   "toast.model.none.description": "Chcete-li tuto relaci shrnout, připojte poskytovatele",
   "toast.file.loadFailed.title": "Soubor se nepodařilo načíst",
@@ -969,6 +971,8 @@ export const dict = {
     "Přepínání mezi agenty ve skladateli. Když je skrytý, výchozí nastavení je Sestavit agenta.",
   "settings.general.row.reasoningSummaries.title": "Ukažte shrnutí odůvodnění",
   "settings.general.row.reasoningSummaries.description": "Zobrazte souhrny zdůvodnění modelu na časové ose",
+  "settings.general.row.turnDiffs.title": "Zobrazit změněné soubory pro každé kolo",
+  "settings.general.row.turnDiffs.description": "Vypisuje na časové ose změněné soubory každého dokončeného kola s počty řádků a rozbalitelnými rozdíly.",
   "settings.general.row.shellToolPartsExpanded.title": "Rozbalte části nástroje shell",
   "settings.general.row.shellToolPartsExpanded.description":
     "Ve výchozím nastavení zobrazit na časové ose rozbalené části nástroje shell",

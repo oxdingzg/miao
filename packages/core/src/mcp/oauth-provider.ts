@@ -44,7 +44,7 @@ export class McpOAuthProvider implements OAuthClientProvider {
   get clientMetadata(): OAuthClientMetadata {
     return {
       redirect_uris: [this.redirectUrl],
-      client_name: "OpenCode",
+      client_name: "miao",
       client_uri: new URL(Flag.MIAO_WEB_UI_UPSTREAM).origin,
       grant_types: ["authorization_code", "refresh_token"],
       response_types: ["code"],

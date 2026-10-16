@@ -602,6 +602,8 @@ export const dict = {
   "toast.permissions.autoaccept.on.description": "Solicitações de permissão serão aprovadas automaticamente",
   "toast.permissions.autoaccept.off.title": "Parou de aceitar permissões automaticamente",
   "toast.permissions.autoaccept.off.description": "Solicitações de permissão exigirão aprovação",
+  "settings.permissions.autoaccept.project.title": "Aceitar permissões automaticamente para este projeto",
+  "settings.permissions.autoaccept.project.description": "Responde a novas solicitações de permissão de qualquer sessão deste projeto sem perguntar. Escolhas por sessão e diretório ainda têm prioridade.",
   "toast.model.none.title": "Nenhum modelo selecionado",
   "toast.model.none.description": "Conecte um provedor para resumir esta sessão",
   "toast.file.loadFailed.title": "Falha ao carregar arquivo",
@@ -888,6 +890,8 @@ export const dict = {
     "Alternar entre agentes na área de composição. Quando oculto, usa o agente Build como padrão.",
   "settings.general.row.reasoningSummaries.title": "Mostrar resumos de raciocínio",
   "settings.general.row.reasoningSummaries.description": "Exibir resumos de raciocínio do modelo na linha do tempo",
+  "settings.general.row.turnDiffs.title": "Mostrar arquivos alterados por turno",
+  "settings.general.row.turnDiffs.description": "Lista na linha do tempo os arquivos alterados de cada turno concluído, com contagem de linhas e diffs expansíveis.",
   "settings.general.row.shellToolPartsExpanded.title": "Expandir partes da ferramenta shell",
   "settings.general.row.shellToolPartsExpanded.description":
     "Mostrar partes da ferramenta shell expandidas por padrão na linha do tempo",

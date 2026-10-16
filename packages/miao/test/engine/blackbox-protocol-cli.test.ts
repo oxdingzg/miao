@@ -122,6 +122,9 @@ cases.forEach((entry) =>
         expect(new URL(requests[0].url).pathname).toBe("/actual-endpoint")
         const bundle = await BlackboxTape.load(file)
         expect(bundle.metadata.provider).toBe(entry.provider)
+        // Replay must adopt the recorded Session so transport cache identity
+        // remains exact instead of being ignored by request comparison.
+        expect(typeof bundle.metadata.sessionID).toBe("string")
         expect(bundle.interactions.filter((item) => item.lane === "provider").map((item) => item.request)).toEqual([
           { method: "POST", path: entry.path, body: requests[0].body },
         ])

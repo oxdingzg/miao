@@ -608,6 +608,8 @@ export const dict = {
   "toast.permissions.autoaccept.on.description": "Les demandes de permission seront approuvées automatiquement",
   "toast.permissions.autoaccept.off.title": "Acceptation automatique des permissions désactivée",
   "toast.permissions.autoaccept.off.description": "Les demandes de permission nécessiteront une approbation",
+  "settings.permissions.autoaccept.project.title": "Accepter automatiquement les permissions pour ce projet",
+  "settings.permissions.autoaccept.project.description": "Répondre aux nouvelles demandes de permission de toute session de ce projet sans demander. Les choix par session et par répertoire restent prioritaires.",
   "toast.model.none.title": "Aucun modèle sélectionné",
   "toast.model.none.description": "Connectez un fournisseur pour résumer cette session",
   "toast.file.loadFailed.title": "Échec du chargement du fichier",
@@ -895,6 +897,8 @@ export const dict = {
   "settings.general.row.reasoningSummaries.title": "Afficher les résumés de raisonnement",
   "settings.general.row.reasoningSummaries.description":
     "Afficher les résumés de raisonnement du modèle dans la chronologie",
+    "settings.general.row.turnDiffs.title": "Show changed files per turn",
+    "settings.general.row.turnDiffs.description": "List each finished turn's changed files with line counts and expandable diffs in the timeline.",
   "settings.general.row.shellToolPartsExpanded.title": "Développer les parties de l'outil shell",
   "settings.general.row.shellToolPartsExpanded.description":
     "Afficher les parties de l'outil shell développées par défaut dans la chronologie",

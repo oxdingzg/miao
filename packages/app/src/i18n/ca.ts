@@ -605,6 +605,8 @@ export const dict = {
   "toast.permissions.autoaccept.on.description": "Les sol·licituds de permís s'aprovaran automàticament",
   "toast.permissions.autoaccept.off.title": "S'ha aturat l'acceptació automàtica de permisos",
   "toast.permissions.autoaccept.off.description": "Les sol·licituds de permís requeriran aprovació",
+  "settings.permissions.autoaccept.project.title": "Accepta automàticament els permisos d'aquest projecte",
+  "settings.permissions.autoaccept.project.description": "Respon les noves sol·licituds de permís de qualsevol sessió d'aquest projecte sense preguntar. Les eleccions per sessió i directori tenen prioritat.",
   "toast.model.none.title": "No s'ha seleccionat cap model",
   "toast.model.none.description": "Connecteu un proveïdor per resumir aquesta sessió",
   "toast.file.loadFailed.title": "No s'ha pogut carregar el fitxer",
@@ -974,6 +976,8 @@ export const dict = {
     "Canvia entre agents del compositor. Quan s'amaga, el valor predeterminat és Build agent.",
   "settings.general.row.reasoningSummaries.title": "Mostra resums de raonament",
   "settings.general.row.reasoningSummaries.description": "Mostra els resums de raonament del model a la línia de temps",
+  "settings.general.row.turnDiffs.title": "Mostra els fitxers modificats per torn",
+  "settings.general.row.turnDiffs.description": "Llista a la cronologia els fitxers modificats de cada torn completat, amb recomptes de línies i diferències desplegables.",
   "settings.general.row.shellToolPartsExpanded.title": "Amplieu les peces de l'eina de closca",
   "settings.general.row.shellToolPartsExpanded.description":
     "Mostra les parts de l'eina d'intèrpret d'ordres ampliades per defecte a la línia de temps",

@@ -601,6 +601,8 @@ export const dict = {
   "toast.permissions.autoaccept.on.description": "Permintaan kebenaran akan diluluskan secara automatik",
   "toast.permissions.autoaccept.off.title": "Penerimaan kebenaran automatik dihentikan",
   "toast.permissions.autoaccept.off.description": "Permintaan kebenaran memerlukan kelulusan",
+  "settings.permissions.autoaccept.project.title": "Terima kebenaran untuk projek ini secara automatik",
+  "settings.permissions.autoaccept.project.description": "Jawab permintaan kebenaran baharu daripada mana-mana sesi dalam projek ini tanpa bertanya. Pilihan peringkat sesi dan direktori tetap diutamakan.",
   "toast.model.none.title": "Tiada model dipilih",
   "toast.model.none.description": "Sambungkan penyedia untuk meringkaskan sesi ini",
   "toast.file.loadFailed.title": "Gagal memuat fail",
@@ -963,6 +965,8 @@ export const dict = {
     "Tukar antara ejen dalam penyusun. Jika disembunyikan, lalai kepada ejen Build.",
   "settings.general.row.reasoningSummaries.title": "Papar ringkasan penaakulan",
   "settings.general.row.reasoningSummaries.description": "Papar ringkasan penaakulan model dalam garis masa",
+  "settings.general.row.turnDiffs.title": "Tunjukkan fail diubah setiap pusingan",
+  "settings.general.row.turnDiffs.description": "Senaraikan dalam garis masa fail yang diubah bagi setiap pusingan yang selesai, dengan kiraan baris dan perbezaan boleh kembang.",
   "settings.general.row.shellToolPartsExpanded.title": "Kembangkan bahagian alat shell",
   "settings.general.row.shellToolPartsExpanded.description":
     "Papar bahagian alat shell dikembangkan secara lalai dalam garis masa",

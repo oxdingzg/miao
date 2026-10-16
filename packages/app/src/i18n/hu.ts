@@ -606,6 +606,8 @@ export const dict = {
   "toast.permissions.autoaccept.on.description": "Az engedélykérések automatikusan jóváhagyásra kerülnek",
   "toast.permissions.autoaccept.off.title": "Az engedélyek automatikus elfogadása leállítva",
   "toast.permissions.autoaccept.off.description": "Az engedélykérésekhez jóváhagyás szükséges",
+  "settings.permissions.autoaccept.project.title": "Engedélyek automatikus elfogadása ehhez a projekthez",
+  "settings.permissions.autoaccept.project.description": "Új engedélykérelmek megválaszolása kérdés nélkül a projekt bármely munkamenetéből. A munkamenet- és könyvtárszintű választások elsőbbséget élveznek.",
   "toast.model.none.title": "Nincs kiválasztott modell",
   "toast.model.none.description": "Csatlakozzon egy szolgáltatóhoz a munkamenet összefoglalásához",
   "toast.file.loadFailed.title": "Nem sikerült betölteni a fájlt",
@@ -973,6 +975,8 @@ export const dict = {
     "Váltás az ágensek között a zeneszerzőben. Ha rejtett, alapértelmezés szerint Build agent.",
   "settings.general.row.reasoningSummaries.title": "Mutasson érvelési összefoglalókat",
   "settings.general.row.reasoningSummaries.description": "Modell indoklási összefoglalók megjelenítése az idővonalon",
+  "settings.general.row.turnDiffs.title": "Módosított fájlok megjelenítése körönként",
+  "settings.general.row.turnDiffs.description": "Felsorolja az idővonalon minden befejezett kör módosított fájljait sorszámokkal és kinyitható diff-ekkel.",
   "settings.general.row.shellToolPartsExpanded.title": "Shelleszköz részeinek kibontása",
   "settings.general.row.shellToolPartsExpanded.description":
     "Alapértelmezés szerint kibontott shell eszközrészek megjelenítése az idővonalon",

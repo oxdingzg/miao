@@ -228,10 +228,12 @@ async fn prompt(conn: &Arc<Conn>, id: Value, params: Value) {
         conn.fail(id, INVALID_PARAMS, "sessionId is required").await;
         return;
     };
+    // Client output follows immutable transcript history, not the provider's
+    // compacted selection: a checkpoint may hide the answer before it is sent.
     // Baseline the turn so a later prompt never replays an earlier one: text is
     // indexed by assistant message, events by the committed cursor.
     let mut seen = 0usize;
-    if let Ok(history) = conn.runtime.store().selected_history(&session).await {
+    if let Ok(history) = conn.runtime.store().history(&session).await {
         seen = history
             .iter()
             .filter(|message| message.role == "assistant")
@@ -363,7 +365,7 @@ async fn load(conn: &Arc<Conn>, id: Value, params: Value) {
 }
 
 async fn replay(conn: &Arc<Conn>, session: &str) {
-    let Ok(history) = conn.runtime.store().selected_history(session).await else {
+    let Ok(history) = conn.runtime.store().history(session).await else {
         return;
     };
     for message in &history {
@@ -536,7 +538,7 @@ async fn emit_history(
     seen: &mut usize,
     calls: &mut HashSet<String>,
 ) {
-    let Ok(history) = conn.runtime.store().selected_history(session).await else {
+    let Ok(history) = conn.runtime.store().history(session).await else {
         return;
     };
     let root = conn

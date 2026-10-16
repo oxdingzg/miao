@@ -644,6 +644,8 @@ export const dict = {
   "toast.permissions.autoaccept.on.description": "İzin istekleri otomatik olarak onaylanacak",
   "toast.permissions.autoaccept.off.title": "İzinleri otomatik kabul etme durduruldu",
   "toast.permissions.autoaccept.off.description": "İzin istekleri onay gerektirecek",
+  "settings.permissions.autoaccept.project.title": "Bu proje için izinleri otomatik kabul et",
+  "settings.permissions.autoaccept.project.description": "Bu projedeki herhangi bir oturumdan gelen yeni izin isteklerini sormadan yanıtla. Oturum ve dizin seçimleri önce gelir.",
 
   "toast.model.none.title": "Model seçilmedi",
   "toast.model.none.description": "Bu oturumu özetlemek için bir sağlayıcı bağlayın",
@@ -958,6 +960,8 @@ export const dict = {
     "Düzenleyicide ajanlar arasında geçiş yapın. Gizlendiğinde varsayılan olarak Build ajanı kullanılır.",
   "settings.general.row.reasoningSummaries.title": "Akıl yürütme özetlerini göster",
   "settings.general.row.reasoningSummaries.description": "Zaman çizelgesinde model akıl yürütme özetlerini görüntüle",
+  "settings.general.row.turnDiffs.title": "Tur başına değişen dosyaları göster",
+  "settings.general.row.turnDiffs.description": "Zaman çizelgesinde, tamamlanan her turun değişen dosyalarını satır sayıları ve açılabilir farklarla listeler.",
   "settings.general.row.shellToolPartsExpanded.title": "Kabuk araç bileşenlerini genişlet",
   "settings.general.row.shellToolPartsExpanded.description":
     "Zaman çizelgesinde kabuk araç bileşenlerini varsayılan olarak genişletilmiş göster",
