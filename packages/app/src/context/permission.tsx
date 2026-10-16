@@ -312,8 +312,9 @@ function createServerPermissionState(input: { sdk: ServerSDK; sync: ServerSync }
   async function shouldAutoRespondResolved(permission: PermissionV2Request, directory?: string) {
     const override = sessionAutoAccept(store.autoAccept, sessions(directory), permission, directory)
     if (override !== undefined) return override
-    const known = projectOfSession(permission.sessionID, directory)
-    if (known !== undefined) return shouldAutoRespond(permission, directory)
+    // Knowing the project does not prove that every ancestor is loaded. Resolve
+    // the lineage before falling back, so a distant parent's override wins.
+    if (input.sync.session.lineage.peek(permission.sessionID)) return shouldAutoRespond(permission, directory)
     const lineage = await input.sync.session.lineage.resolve(permission.sessionID).catch(() => undefined)
     if (meta.disposed || !lineage) return false
     return autoRespondsPermission(
