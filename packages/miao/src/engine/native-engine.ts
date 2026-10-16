@@ -70,6 +70,7 @@ export const nativeEngineOptions = (
     ? path.resolve(environment.MIAO_ENGINE_LSP_CONFIG)
     : merged.lspConfigFile
   merged.contextLimits = limits ? JSON.parse(limits) : merged.contextLimits
+  merged.mcpConfigFile = merged.mcpConfigFile
   return {
     binary: merged.binary,
     model: merged.model,
@@ -88,6 +89,7 @@ export const nativeEngineOptions = (
     promptCache: merged.promptCache,
     verifyCommand: merged.verifyCommand,
     lspConfigFile: merged.lspConfigFile,
+    mcpConfigFile: merged.mcpConfigFile,
     contextLimits: merged.contextLimits,
   }
 }
@@ -375,6 +377,51 @@ const layer = Layer.effect(
     const settings = yield* Effect.promise(() => engineSettings(global.config))
     const configuration = nativeEngineOptions(process.env, settings)
     if (!configuration) return yield* Effect.die("NativeEngine layer built without MIAO_ENGINE_BIN")
+    if (!configuration.mcpConfigFile) {
+      // The resolved config (files overlaid with MIAO_CONFIG_CONTENT) names
+      // local MCP servers; hand them to the engine in its own list format.
+      // Configuring MCP servers is the explicit authority the engine demands
+      // for them: without an operator policy, synthesize one that enables
+      // MCP and allows the workspace.
+      // The global config files overlaid with MIAO_CONFIG_CONTENT, matching
+      // the Config service's own precedence.
+      const documents = [
+        ...Config.fileNames.map((name) => path.join(global.config, name)),
+        ...(process.env.MIAO_CONFIG_CONTENT ? [process.env.MIAO_CONFIG_CONTENT] : []),
+      ]
+      let mcpServers: Record<string, { type: string; disabled?: boolean; command: string[]; environment?: Record<string, string> }> | undefined
+      for (const source of documents) {
+        const info = Option.getOrUndefined(Config.decodeDocument(Config.parseJsonc(source)))
+        if (info?.mcp?.servers) mcpServers = info.mcp.servers as typeof mcpServers
+      }
+      const servers = Object.entries(mcpServers ?? {}).filter(
+        ([, server]) => server.type === "local" && server.disabled !== true,
+      )
+      if (servers.length > 0) {
+        const mcpConfigFile = path.join(os.tmpdir(), "miao-engine-mcp-config.json")
+        yield* Effect.promise(() =>
+          Bun.write(mcpConfigFile, JSON.stringify(servers.map(([name, server]) => ({ name, argv: server.command, env: server.environment ?? {} })))),
+        )
+        configuration.mcpConfigFile = mcpConfigFile
+        if (!configuration.policyFile) {
+          const policyFile = path.join(os.tmpdir(), "miao-engine-policy.json")
+          yield* Effect.promise(() =>
+            Bun.write(
+              policyFile,
+              JSON.stringify({
+                mode: "workspace",
+                allow_process: true,
+                allow_background: true,
+                allow_subagents: true,
+                allow_mcp: true,
+                rules: [{ tool: "*", path: "**", decision: "allow" }],
+              }),
+            ),
+          )
+          configuration.policyFile = policyFile
+        }
+      }
+    }
     if (process.env.MIAO_ENGINE_WORKER === "1") {
       // Opt-in ADR-12 worker host: serve the workspace's custom tools to the
       // engine. The config lives outside any model-writable workspace (tmp),
@@ -386,7 +433,6 @@ const layer = Layer.effect(
         Bun.write(workerConfigFile, JSON.stringify({ argv: [process.execPath, host] }))
       )
       configuration.workerConfigFile = workerConfigFile
-      console.log("[worker-host] config written:", workerConfigFile)
     }
     const owners = yield* makeEngineOwners(configuration)
     return fromOwners(owners)
