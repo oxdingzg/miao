@@ -45,7 +45,11 @@ jobs:
       - id: version
         run: ./script/version.ts
         env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # The workflow token writes issues and runs, but this repository's
+          # release API refuses it (403 Resource not accessible by integration)
+          # even with contents: write, so release writes use a dedicated token
+          # and fall back to the workflow token when it is not configured.
+          GH_TOKEN: ${{ secrets.RELEASE_TOKEN || secrets.GITHUB_TOKEN }}
           MIAO_CHANNEL: latest
           GH_REPO: ${{ github.repository }}
 
@@ -131,7 +135,7 @@ jobs:
       - name: Build and upload this platform
         run: ./packages/miao/script/build.ts ${{ runner.os == 'macOS' && '--darwin' || '--single' }} ${{ runner.os == 'Windows' && '--baseline' || '' }}
         env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_TOKEN: ${{ secrets.RELEASE_TOKEN || secrets.GITHUB_TOKEN }}
           GH_REPO: ${{ needs.version.outputs.repo }}
           MIAO_VERSION: ${{ needs.version.outputs.version }}
           MIAO_RELEASE: ${{ needs.version.outputs.release }}
@@ -166,4 +170,4 @@ jobs:
           printf '%s' "$notes" | GH_REPO="$repo" bun script/release-notes.ts "$release" > body.md
           gh release edit "$release" --repo "$repo" --draft=false --notes-file body.md
         env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_TOKEN: ${{ secrets.RELEASE_TOKEN || secrets.GITHUB_TOKEN }}
