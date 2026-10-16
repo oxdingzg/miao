@@ -1,6 +1,8 @@
 use crate::{permission::digest, provider::ProviderError, store::Store};
 use serde_json::{json, Map, Value};
 
+mod cache;
+
 /// This evidence is supplied by the executing runtime, never inferred from a
 /// provider packet or a product's model/agent catalog.
 #[derive(Clone)]
@@ -44,12 +46,28 @@ pub(crate) async fn record(
         &scope.agent,
         &scope.permissions,
     )?;
+    let previous = scope
+        .store
+        .latest_event(&scope.session, "provider.request")
+        .await
+        .map_err(|_| {
+            ProviderError::Stream("previous request observation could not be loaded".into())
+        })?;
+    let cache = cache::observe(
+        protocol,
+        request,
+        &body,
+        &profile,
+        scope.context_epoch,
+        previous.as_ref(),
+    )?;
     // Recording is awaited before executing HTTP, so failed and retried attempts
     // remain observable even when no stream delta or successful reply exists.
     let event = scope.store.record(&scope.session, "provider.request", json!({
         "run_id": scope.run, "step": scope.step, "attempt": attempt,"phase":"prepared",
         "context_epoch":scope.context_epoch, "agent":scope.agent,"permissions":scope.permissions,
         "protocol": protocol, "request_body_sha256": digest(bytes), "profile": profile,
+        "cache_diagnostics": cache,
     })).await.map_err(|_| ProviderError::Stream("runtime request profile could not be recorded".into()))?;
     Ok(Some(event.seq))
 }
@@ -297,8 +315,81 @@ mod tests {
         assert_eq!(receipts[1].data["attempt"], 2);
         assert_eq!(receipts[0].data["step"], 2);
         assert_eq!(receipts[0].data["profile"]["coverage"], "runtime-and-wire");
+        assert_eq!(
+            receipts[0].data["cache_diagnostics"]["historyState"],
+            "initial"
+        );
+        assert_eq!(
+            receipts[1].data["cache_diagnostics"]["historyState"],
+            "unchanged"
+        );
+        assert_eq!(
+            receipts[1].data["cache_diagnostics"]["previousRequestSeq"],
+            receipts[0].seq
+        );
         let serialized = serde_json::to_string(&events).unwrap();
         assert!(!serialized.contains("private-query"));
         assert!(!serialized.contains("private-header"));
+    }
+
+    #[tokio::test]
+    async fn cache_report_distinguishes_missing_usage_from_zero_and_preserves_scope_lineage() {
+        let dir = tempfile::tempdir().unwrap();
+        let store = Store::open(dir.path().join("native.db")).await.unwrap();
+        store.ensure("session").await.unwrap();
+        let request = reqwest::Client::new()
+            .post("https://example.invalid/responses")
+            .json(&json!({"model":"m","input":[]}))
+            .build()
+            .unwrap();
+        for step in 1..=2 {
+            let scope = Scope {
+                store: store.clone(),
+                session: "session".into(),
+                run: format!("run-{step}"),
+                step,
+                context_epoch: 1,
+                agent: json!({}),
+                permissions: json!({}),
+            };
+            scoped(scope, record("openai-responses", &request, 1))
+                .await
+                .unwrap();
+        }
+        let report = store.usage_report("session").await.unwrap();
+        assert_eq!(report["turns"], 0);
+        assert_eq!(report["cacheDiagnostics"]["observedRequests"], 2);
+        assert_eq!(report["cacheDiagnostics"]["historyStates"]["unchanged"], 1);
+        assert_eq!(report["cacheDiagnostics"]["coverage"]["cacheRead"], 0);
+        assert!(report["cacheDiagnostics"]["hitRatio"].is_null());
+        store.record("session","usage",json!({"run_id":"run-2","step":2,"usage":{"inputTokens":100,"outputTokens":1,"cacheReadInputTokens":75}})).await.unwrap();
+        let report = store.usage_report("session").await.unwrap();
+        assert_eq!(report["turns"], 1);
+        assert_eq!(report["cacheDiagnostics"]["hitRatio"], 0.75);
+        store
+            .record(
+                "session",
+                "usage",
+                json!({"run_id":"run-3","step":3,"usage":{"inputTokens":100,"outputTokens":1}}),
+            )
+            .await
+            .unwrap();
+        let report = store.usage_report("session").await.unwrap();
+        assert_eq!(report["cacheDiagnostics"]["usageObservations"], 2);
+        assert_eq!(report["cacheDiagnostics"]["coverage"]["cacheRead"], 1);
+        assert_eq!(report["cacheDiagnostics"]["coverage"]["cacheWrite"], 0);
+        assert!(report["cacheDiagnostics"]["hitRatio"].is_null());
+        store.ensure("invalid").await.unwrap();
+        store
+            .record(
+                "invalid",
+                "usage",
+                json!({"run_id":"r","step":1,"usage":{"inputTokens":10,"cacheReadInputTokens":20}}),
+            )
+            .await
+            .unwrap();
+        let invalid = store.usage_report("invalid").await.unwrap();
+        assert_eq!(invalid["cacheDiagnostics"]["invalidBreakdowns"], 1);
+        assert!(invalid["cacheDiagnostics"]["hitRatio"].is_null());
     }
 }

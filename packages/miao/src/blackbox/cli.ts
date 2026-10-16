@@ -97,6 +97,10 @@ async function main() {
       throw new Error("Provide --prompt and --model when recording")
     const sessionID = replay?.bundle.metadata.sessionID ?? crypto.randomUUID()
     if (typeof sessionID !== "string" || !sessionID) throw new Error("Invalid recorded Session identity")
+    const recordedRequest = replay?.bundle.trace.find((event) => event.kind === "provider.request")?.data
+    const recordedCache = BlackboxTape.isObject(recordedRequest) ? recordedRequest.cache_diagnostics : undefined
+    const recordedSnapshot = BlackboxTape.isObject(recordedCache) ? recordedCache.snapshot : undefined
+    const withoutAccount = BlackboxTape.isObject(recordedSnapshot) && recordedSnapshot.accountHash === null
     const endpointPath = engineEndpoint(provider, model)
     const recorder = replay
       ? undefined
@@ -132,7 +136,7 @@ async function main() {
                 ANTHROPIC_API_KEY: "blackbox-offline",
                 GEMINI_API_KEY: "blackbox-offline",
                 OPENAI_ACCESS_TOKEN: "blackbox-offline",
-                OPENAI_ACCOUNT_ID: "blackbox-offline",
+                OPENAI_ACCOUNT_ID: withoutAccount ? undefined : "blackbox-offline",
               },
             }
           : {}),

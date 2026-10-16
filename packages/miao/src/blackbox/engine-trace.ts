@@ -30,6 +30,26 @@ export class EngineTrace {
             }
             const domain = domains[key]
             if (domain && typeof input === "string") return [key, this.#id(domain, input)]
+            if (
+              event.kind === "provider.request" &&
+              key === "cache_diagnostics" &&
+              BlackboxTape.isObject(input) &&
+              input.version === 1 &&
+              BlackboxTape.isObject(input.snapshot)
+            ) {
+              // Replay relocates the provider proxy and can substitute fixture
+              // credentials. Rename only these documented observation identities,
+              // preserving change patterns and every semantic prefix fingerprint.
+              const snapshot = { ...input.snapshot }
+              for (const [field, domain] of [
+                ["routeHash", "cache-route"],
+                ["accountHash", "cache-account"],
+              ] as const) {
+                const value = snapshot[field]
+                if (typeof value === "string") snapshot[field] = this.#id(domain, value)
+              }
+              return [key, { ...input, snapshot }]
+            }
             if (key === "content" && Array.isArray(input))
               return [
                 key,

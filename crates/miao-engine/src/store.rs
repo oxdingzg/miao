@@ -862,6 +862,26 @@ impl Store {
         }).await
     }
 
+    /// A bounded journal lookup for observations that survive runner restarts.
+    /// Do not page the entire transcript to find the preceding request.
+    pub(crate) async fn latest_event(
+        &self,
+        session: &str,
+        kind: &str,
+    ) -> Result<Option<Event>, Error> {
+        let (session, kind) = (session.to_owned(), kind.to_owned());
+        self.call(move |conn| {
+            let row = conn.query_row(
+                "SELECT seq,data,recorded_at_ms FROM engine_event WHERE session_id=?1 AND kind=?2 ORDER BY seq DESC LIMIT 1",
+                params![session, kind],
+                |row| Ok((row.get::<_, u64>(0)?, row.get::<_, String>(1)?, row.get::<_, Option<u64>>(2)?)),
+            ).optional()?;
+            row.map(|(seq, data, recorded_at_ms)| Ok(Event {
+                session_id: session, seq, kind, data: serde_json::from_str(&data)?, recorded_at_ms,
+            })).transpose()
+        }).await
+    }
+
     pub async fn start_run(&self, session: &str, run: &str) -> Result<Event, Error> {
         let (session, run) = (session.to_owned(), run.to_owned());
         self.call(move |conn| {
@@ -1648,6 +1668,11 @@ impl Store {
             let mut turns = 0u64;
             let mut partial_turns = 0u64;
             let mut tokens = json!({"input":0,"output":0,"cacheRead":0,"cacheWrite":0,"nonCached":0});
+            let mut coverage = json!({"input":0,"output":0,"cacheRead":0,"cacheWrite":0,"nonCached":0});
+            let mut requests = 0u64;
+            let mut invalid_cache_rows = 0u64;
+            let mut changes = std::collections::BTreeMap::<String,u64>::new();
+            let mut histories = std::collections::BTreeMap::<String,u64>::new();
             let turn_ms: std::collections::HashMap<(String, String), u64> = {
                 let mut stmt = conn.prepare(
                     "SELECT run_id,step,turn_ms FROM engine_timing WHERE session_id=?1 AND turn_ms IS NOT NULL",
@@ -1681,7 +1706,7 @@ impl Store {
             let mut tool_failures = 0u64;
             let mut turn_detail: Vec<Value> = Vec::new();
             let mut stmt = conn.prepare(
-                "SELECT kind,data FROM engine_event WHERE session_id=?1 AND kind IN ('usage','provider.started','tool.completed') ORDER BY seq",
+                "SELECT kind,data FROM engine_event WHERE session_id=?1 AND kind IN ('usage','provider.started','provider.request','tool.completed') ORDER BY seq",
             )?;
             let mut rows = stmt.query(params![session])?;
             while let Some(row) = rows.next()? {
@@ -1692,6 +1717,16 @@ impl Store {
                     data["step"].as_u64().unwrap_or_default().to_string(),
                 );
                 match kind.as_str() {
+                    "provider.request" => {
+                        requests += 1;
+                        let diagnostic = &data["cache_diagnostics"];
+                        if let Some(state) = diagnostic["historyState"].as_str() {
+                            *histories.entry(state.to_owned()).or_default() += 1;
+                        }
+                        for reason in diagnostic["changes"].as_array().into_iter().flatten().filter_map(Value::as_str) {
+                            *changes.entry(reason.to_owned()).or_default() += 1;
+                        }
+                    }
                     "provider.started" => {
                         if let Some(id) = data["identity"].as_object() {
                             identity.insert(
@@ -1716,6 +1751,12 @@ impl Store {
                             turns += 1;
                         }
                         let usage = &data["usage"];
+                        if usage["inputTokens"].as_u64().is_some_and(|input| {
+                            usage["cacheReadInputTokens"].as_u64().unwrap_or(0)
+                                .saturating_add(usage["cacheWriteInputTokens"].as_u64().unwrap_or(0)) > input
+                        }) {
+                            invalid_cache_rows += 1;
+                        }
                         for (field, key) in [
                             ("inputTokens", "input"),
                             ("outputTokens", "output"),
@@ -1725,6 +1766,7 @@ impl Store {
                         ] {
                             if let Some(value) = usage[field].as_u64() {
                                 tokens[key] = json!(tokens[key].as_u64().unwrap_or(0) + value);
+                                coverage[key] = json!(coverage[key].as_u64().unwrap_or(0) + 1);
                             }
                         }
                         if let Some((provider, model)) = identity.get(&key) {
@@ -1779,6 +1821,18 @@ impl Store {
                 "turns": turns,
                 "partialTurns": partial_turns,
                 "tokens": tokens,
+                "cacheDiagnostics": {
+                    "observedRequests":requests, "usageObservations":turns + partial_turns,
+                    "coverage":coverage, "observedChanges":changes, "historyStates":histories,
+                    "invalidBreakdowns":invalid_cache_rows,
+                    "serverCacheState":"unknown",
+                    "hitRatio": if turns + partial_turns > 0 && invalid_cache_rows == 0
+                        && coverage["input"].as_u64() == Some(turns + partial_turns)
+                        && coverage["cacheRead"].as_u64() == Some(turns + partial_turns)
+                        && tokens["input"].as_u64().unwrap_or(0) > 0 {
+                        Some(tokens["cacheRead"].as_f64().unwrap_or(0.0) / tokens["input"].as_f64().unwrap_or(1.0))
+                    } else { None },
+                },
                 "ttftMs": ttft_stats,
                 "lineage": lineage,
                 "tools": {"calls": tool_calls, "failures": tool_failures},
