@@ -639,3 +639,22 @@ the `context.*` reports that already travel there, and the runner reads every
 attempt into the evidence as `providerAttempts` (protocol, ordinal, status,
 outcome). What remains is the measurement this instrument was for: naming why
 the summarizer request stalls before any event arrives.
+
+### The stall is named: the summarizer never drained its own progress feed (2026-10-16)
+
+The working attempt evidence named a defect in the engine rather than in the
+transport. The summarizer consumes only the final reply, so nobody read the
+progress channel it handed to the provider. The stream reader awaits send
+capacity per frame, so once a real summary emitted more frames than the
+channel holds the reader blocked forever: the first event had already
+disarmed the first-event deadline, and the idle timeout only watches network
+bytes, which had all arrived. The gateway's five-second complete answer and
+the engine's endless wait were the same fact — a bounded channel with no
+reader. Every auto-compaction pass against a real model degraded to
+`compaction.failed: summary timeout` this way.
+
+`summarize_with` now drains the feed for the duration of the call, and the
+regression test pins a reply beyond the channel capacity: without the drain
+the call stalls until the test's five-second bound, with the drain the reply
+arrives (`roles::tests::a_summary_reply_beyond_the_progress_capacity_cannot_stall_the_call`).
+What stays unmeasured is long-task quality above the trigger.
