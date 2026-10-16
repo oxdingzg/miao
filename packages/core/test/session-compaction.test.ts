@@ -10,6 +10,10 @@ import { SessionSchema } from "@miao/core/session/schema"
 const model = (id: string, context: number) =>
   OpenAIChat.route.with({ limits: { context, output: 4_096 } }).model({ id })
 
+/** A model whose endpoint declares a smaller input ceiling than its context. */
+const capped = (id: string, context: number, input: number) =>
+  OpenAIChat.route.with({ limits: { context, input, output: 4_096 } }).model({ id })
+
 const compactionInput = (main: ReturnType<typeof model>, small: ReturnType<typeof model>) =>
   ({
     sessionID: SessionSchema.ID.make("ses_compaction_fallback"),
@@ -19,7 +23,10 @@ const compactionInput = (main: ReturnType<typeof model>, small: ReturnType<typeo
     request: LLM.request({ model: main, messages: [] }),
   }) as never
 
-const summarizeHarness = (attempts: Array<Stream.Stream<never, never>>) => {
+const summarizeHarness = (
+  attempts: Array<Stream.Stream<never, never>>,
+  config: unknown = [{ type: "document", info: { compaction: { summarize_small: true, keep: { tokens: 1 } } } }],
+) => {
   const requests: LLMRequest[] = []
   const published: string[] = []
   let index = 0
@@ -36,10 +43,19 @@ const summarizeHarness = (attempts: Array<Stream.Stream<never, never>>) => {
         return attempts[Math.min(index++, attempts.length - 1)] as never
       },
     },
-    config: [{ type: "document", info: { compaction: { summarize_small: true, keep: { tokens: 1 } } } }] as never,
+    config: config as never,
   })
   return { compaction, requests, published }
 }
+
+/**
+ * The staged strategy is the fallback for a prefix that cannot hold the instruction,
+ * so these cases turn the cached-prefix strategy off to pin that path.
+ */
+const stagedHarness = (attempts: Array<Stream.Stream<never, never>>) =>
+  summarizeHarness(attempts, [
+    { type: "document", info: { compaction: { summarize_small: true, hot_prefix: false, keep: { tokens: 1 } } } },
+  ])
 
 const empty = Stream.empty as Stream.Stream<never, never>
 const summary = (text: string) => Stream.make(LLMEvent.textDelta({ id: "c", text })) as Stream.Stream<never, never>
@@ -84,7 +100,7 @@ test("compaction falls back to the session model when the small model returns no
 test("compaction does not persist an empty summary from any model", async () => {
   const main = model("main", 100_000)
   const small = model("small", 100_000)
-  const { compaction, requests, published } = summarizeHarness([empty, empty])
+  const { compaction, requests, published } = stagedHarness([empty, empty])
 
   const ok = await Effect.runPromise(compaction.compactAfterOverflow(compactionInput(main, small)))
 
@@ -361,6 +377,23 @@ test("compaction ignores an out-of-range threshold instead of thrashing", async 
   expect(zero.requests).toHaveLength(0)
 })
 
+test("compaction plans against the endpoint's input ceiling, not the raw context", async () => {
+  // gpt-6.1-sol publishes context 1,050,000 with an input ceiling of 922,000: the
+  // output the model reserves is not usable input, and a request above the ceiling
+  // is refused outright. 930k sits inside `context` and still has to compact.
+  const main = capped("main", 1_050_000, 922_000)
+  const { compaction, requests } = customHarness([], summary("summary"))
+
+  expect(
+    await Effect.runPromise(compaction.compactIfNeeded(observedInput("ses_input_ceiling", main, 930_000))),
+  ).toBe(true)
+  expect(requests).toHaveLength(1)
+  expect(
+    await Effect.runPromise(compaction.compactIfNeeded(observedInput("ses_input_ceiling_below", main, 700_000))),
+  ).toBe(false)
+  expect(requests).toHaveLength(1)
+})
+
 test("compaction carries the configured ratio only as far as the window's headroom allows", async () => {
   const main = model("main", 1_000_000)
   const { compaction, requests } = customHarness([], summary("summary"))
@@ -591,7 +624,7 @@ const largeRecoveryInput = () => {
 
 test("overflow recovery summarizes every part of a large multilingual history under a bounded request budget", async () => {
   const { history, input } = largeRecoveryInput()
-  const { compaction, requests, published } = summarizeHarness([summary("anchored checkpoint")])
+  const { compaction, requests, published } = stagedHarness([summary("anchored checkpoint")])
   expect(await Effect.runPromise(compaction.compactAfterOverflow(input))).toBe(true)
   expect(requests.length).toBeGreaterThan(1)
   const segments = requests.map((request) => {
@@ -610,9 +643,23 @@ test("overflow recovery summarizes every part of a large multilingual history un
   expect(second.text).toContain("<prior-summary>\nanchored checkpoint")
 })
 
+test("overflow recovery summarizes the cached prefix in one call when the summary still fits", async () => {
+  // The refused turn could not carry the model's whole output allowance; the summary
+  // reserves only its own, so the prefix still fits and one cached call finishes the
+  // checkpoint instead of minutes of re-embedded slices.
+  const { input } = largeRecoveryInput()
+  const { compaction, requests, published } = summarizeHarness([summary("anchored checkpoint")])
+
+  expect(await Effect.runPromise(compaction.compactAfterOverflow(input))).toBe(true)
+  expect(requests).toHaveLength(1)
+  expect(requests[0].messages).toHaveLength(2)
+  expect(requests[0].toolChoice?.type).toBe("none")
+  expect(published).toEqual(["anchored checkpoint"])
+})
+
 test("a failed intermediate summary never replaces the original long conversation", async () => {
   const { input } = largeRecoveryInput()
-  const { compaction, requests, published } = summarizeHarness([summary("intermediate only"), empty])
+  const { compaction, requests, published } = stagedHarness([summary("intermediate only"), empty])
   expect(await Effect.runPromise(compaction.compactAfterOverflow(input))).toBe(false)
   expect(requests).toHaveLength(2)
   expect(published).toEqual([])
@@ -621,7 +668,7 @@ test("a failed intermediate summary never replaces the original long conversatio
 test("a staged compaction publishes its slice plan and then each slice", async () => {
   const { input } = largeRecoveryInput()
   const reports: Array<{ phase: string; progress?: { stage: number; stages: number } }> = []
-  const { compaction, requests } = summarizeHarness([summary("first"), summary("second")])
+  const { compaction, requests } = stagedHarness([summary("first"), summary("second")])
 
   expect(
     await Effect.runPromise(

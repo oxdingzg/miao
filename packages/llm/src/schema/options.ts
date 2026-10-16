@@ -123,6 +123,8 @@ export const mergeGenerationOptions = (...items: ReadonlyArray<GenerationOptions
 
 export class ModelLimits extends Schema.Class<ModelLimits>("LLM.ModelLimits")({
   context: Schema.optional(Schema.Number),
+  /** Input ceiling the endpoint enforces, when it is smaller than `context`. */
+  input: Schema.optional(Schema.Number),
   output: Schema.optional(Schema.Number),
 }) {}
 

@@ -3076,7 +3076,12 @@ describe("SessionRunnerLLM", () => {
       yield* session.resume(sessionID)
 
       expect(requests).toHaveLength(3)
-      expect(userTexts(requests[1])[0]).toContain("## Objective")
+      // The refused request is summarized in one cached call: the summary asks over
+      // the turn's own prefix with the instruction appended, instead of re-embedding
+      // the history a slice at a time.
+      expect(userTexts(requests[1])[0]).toContain("Earlier question")
+      expect(userTexts(requests[1]).slice(-1)[0]).toContain("Summarize the conversation above")
+      expect(requests[1].toolChoice?.type).toBe("none")
       expect(userTexts(requests[2])[0]).toContain("<summary>\n## Objective\n- Recover overflow\n</summary>")
       expect(yield* session.context(sessionID)).toMatchObject([
         { type: "compaction", summary: "## Objective\n- Recover overflow" },
@@ -3181,7 +3186,9 @@ describe("SessionRunnerLLM", () => {
       yield* session.prompt({ sessionID, prompt: Prompt.make({ text: "Continue" }), resume: false })
       yield* session.resume(sessionID)
 
-      expect(requests).toHaveLength(2)
+      // The refused request, its cached-prefix summary, and the staged slices that
+      // back it up: recovery fails on all of them, and none of it is runnable work.
+      expect(requests).toHaveLength(3)
       const context = yield* session.context(sessionID)
       expect(context.at(-1)).toMatchObject({ type: "assistant", finish: "error" })
       expect(context.some((message) => message.type === "user" && message.text.startsWith("keep going"))).toBe(false)
@@ -3221,7 +3228,10 @@ describe("SessionRunnerLLM", () => {
       yield* session.prompt({ sessionID, prompt: Prompt.make({ text: "Continue" }), resume: false })
       yield* session.resume(sessionID)
 
-      expect(requests).toHaveLength(2)
+      // The cached-prefix summary is refused too, so the bounded staged slices get
+      // their own attempt before the original overflow is published.
+      expect(requests).toHaveLength(3)
+      expect(userTexts(requests[2])[0]).toStartWith("Here is the conversation so far:")
       const context = yield* session.context(sessionID)
       expect(context.some((message) => message.type === "compaction")).toBe(false)
       expect(context.slice(-2)).toMatchObject([
