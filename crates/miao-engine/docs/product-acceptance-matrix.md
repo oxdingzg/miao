@@ -19,6 +19,31 @@ native history renders, a prompt typed into the TUI reaches the native provider,
 and its reply renders. This plain-prompt scenario does not close the remaining
 approval, interruption, external-client or capability rows below.
 
+**Resolved 2026-10-16: the native live event stream reaches attached clients.**
+The blocker described below was a wiring defect, not a missing bridge. The
+client-event fan-out registry lived inside each `ClientEvents` layer instance,
+and the native transport is built with `Layer.fresh` once per listener, so the
+bridge published product events into an instance that held no subscribers. The
+registry is process-scoped now, so publishing and subscribing meet on the
+process instead of on the layer; a regression test pins a publish across two
+separately built graphs and fails when the registry is instanced again.
+
+Verified in a real attached TUI over the published 0.2.13 engine with a
+deterministic provider: the pending approval renders, granting once lets the
+engine execute its `write_file` (`tool.completed` with `applied:true`), the tool
+block and its result render in the transcript, Esc interrupts a hanging call
+without a replacement provider request, and the Session then serves a new
+prompt. What remains open: the Session read projection still reports zero
+tokens and no usage for a native Session, although the engine journals them
+(`usage` with inputTokens 150/outputTokens 40, then `run.usage` with two steps),
+because `native-session.ts` returns zeros until the projection aggregates
+engine usage; the step-accounting row stays open for that reason, and approval
+and cancellation have not yet been exercised through an external ACP client
+rather than the TUI.
+
+<details>
+<summary>Original observation (2026-10-16, before the fix)</summary>
+
 **Open blocker (found 2026-10-16; diagnosis corrected the same day): a native
 Session publishes no live session events.** An attached client cannot follow or
 approve a native turn, because the serve's `/api/event` stream carries no
@@ -37,20 +62,19 @@ The engine and the read side of the native turn are correct. The journal shows
 request id, input hash, policy revision and expiry) and the `permission_request`
 announcement to the serve; the HTTP read projection (`/message`, `/context`)
 contains the assistant tool part; and under an allow rule the write executes
-without asking. Only the live stream is missing, which blocks the
-visible-approval, cancel-from-TUI and step-accounting rows until the serve
-publishes engine-originated session and approval events. The deterministic
-columns of those rows are unaffected.
+without asking. Only the live stream is missing.
+
+</details>
 
 | Behavior | Existing automated evidence | Product acceptance still required |
 | --- | --- | --- |
-| Prompt and streamed answer | `tests/acp.rs`; product `native-coding-http.test.ts` | Native-owned Session in the daily TUI and an external ACP client |
-| Approval and denial | ACP request_permission scenario; product approval/reply tests | Visible pending approval, grant and denial in each actual client |
-| Cancellation | `tests/acp_client_matrix.rs`: incomplete HTTP response, cancelled prompt reply, successful continuation (#861) | Cancel from the TUI and external client; verify no later tool dispatch |
+| Prompt and streamed answer | `tests/acp.rs`; product `native-coding-http.test.ts` | Daily TUI verified 2026-10-16 (live stream and rendered tool part); an external ACP client still required |
+| Approval and denial | ACP request_permission scenario; product approval/reply tests | Visible pending approval and grant verified in the TUI 2026-10-16; denial and an external ACP client still required |
+| Cancellation | `tests/acp_client_matrix.rs`: incomplete HTTP response, cancelled prompt reply, successful continuation (#861) | Cancel from the TUI verified 2026-10-16 (no later provider request, Session recovers); an external client still required |
 | Provider failure | ACP HTTP 400 followed by a successful new prompt; failure is a JSON-RPC error, not end_turn (#861) | Visible error and usable next prompt in actual clients |
 | Process restart/resume | ACP process replacement on the same DB: prior context retained, prior answer not streamed twice (#861) | Client reconnect without duplicate messages or cross-engine takeover |
 | Slow client | HTTP SSE/cursor and restore coverage | Bound the real client's backlog, disconnect it and resume from its cursor |
-| Step accounting | Product bridge and native journal tests (#850) | TUI consumes tokens/cache/TTFT; native pricing is still zero until price resolution lands |
+| Step accounting | Product bridge and native journal tests (#850) | TUI consumes tokens/cache/TTFT; native pricing is still zero until price resolution lands. The read projection still reports zero tokens for a native Session even though the engine journals usage, so this row is open |
 
 These deterministic peers use no paid model calls. Their oracle is the observed
 wire response, committed history and next provider request, rather than a

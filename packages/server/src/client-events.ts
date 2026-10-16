@@ -24,12 +24,22 @@ export interface Interface {
 
 export class Service extends Context.Service<Service, Interface>()("@miao/ClientEvents") {}
 
+/**
+ * The subscriber registry is process-scoped on purpose. Several graphs build
+ * this service: the HTTP assembly that streams `/api/event`, the event
+ * forwarder, and a fresh native transport layer per listener. A registry that
+ * each build owned privately meant the native bridge published product events
+ * into an instance with no subscribers, so an attached client never saw a
+ * native Session's stream or its pending approvals. Subscriptions remove
+ * themselves through their own finalizers, so sharing one set here does not
+ * outlive a graph.
+ */
+const subscribers = new Set<Subscriber>()
+
 /** Client fan-out only: no TS journal, projector, or replay owner is involved. */
 export const layer = Layer.effect(
   Service,
   Effect.gen(function* () {
-    const subscribers = new Set<Subscriber>()
-    yield* Effect.addFinalizer(() => Effect.sync(() => subscribers.clear()))
     const listen = (subscriber: Subscriber) =>
       Effect.sync(() => {
         subscribers.add(subscriber)
