@@ -592,6 +592,8 @@ export const dict = {
   "toast.permissions.autoaccept.on.description": "የፈቃድ ጥያቄዎች በራስ-ሰር ይጸድቃሉ",
   "toast.permissions.autoaccept.off.title": "በራስ-መቀበል ፍቃዶችን አቁሟል",
   "toast.permissions.autoaccept.off.description": "የፈቃድ ጥያቄዎች መጽደቅ ያስፈልጋቸዋል",
+  "settings.permissions.autoaccept.project.title": "Auto-accept permissions for this project",
+  "settings.permissions.autoaccept.project.description": "Answer new permission requests from any session in this project without asking. Session and directory choices still win.",
   "toast.model.none.title": "ምንም ሞዴል አልተመረጠም",
   "toast.model.none.description": "ይህን ክፍለ ጊዜ ለማጠቃለል አቅራቢን ያገናኙ",
   "toast.file.loadFailed.title": "ፋይሉን መጫን አልተቻለም",

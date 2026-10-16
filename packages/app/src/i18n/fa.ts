@@ -601,6 +601,8 @@ export const dict = {
   "toast.permissions.autoaccept.on.description": "درخواست‌های مجوز به‌طور خودکار تأیید می‌شوند",
   "toast.permissions.autoaccept.off.title": "پذیرش خودکار مجوزها متوقف شد",
   "toast.permissions.autoaccept.off.description": "درخواست های مجوز نیاز به تایید دارند",
+  "settings.permissions.autoaccept.project.title": "پذیرش خودکار مجوزها برای این پروژه",
+  "settings.permissions.autoaccept.project.description": "پاسخ به درخواست‌های مجوز جدید از هر نشست در این پروژه بدون پرسش. انتخاب‌های سطح نشست و پوشه همچنان اولویت دارند.",
   "toast.model.none.title": "هیچ مدلی انتخاب نشده است",
   "toast.model.none.description": "برای خلاصه کردن این جلسه یک ارائه دهنده را وصل کنید",
   "toast.file.loadFailed.title": "فایل بارگیری نشد",

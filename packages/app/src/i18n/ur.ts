@@ -613,6 +613,8 @@ export const dict = {
   "toast.permissions.autoaccept.on.description": "اجازت کی درخواستیں خود بخود منظور ہو جائیں گی۔",
   "toast.permissions.autoaccept.off.title": "اجازتوں کو خودکار طور پر قبول کرنا بند کر دیا گیا۔",
   "toast.permissions.autoaccept.off.description": "اجازت کی درخواستوں کو منظوری درکار ہوگی۔",
+  "settings.permissions.autoaccept.project.title": "اس پروجیکٹ کے لیے اجازتیں خودکار قبول کریں",
+  "settings.permissions.autoaccept.project.description": "اس پروجیکٹ کے کسی بھی سیشن سے نئی اجازت کی درخواستوں کا بغیر پوچھے جواب دیں۔ سیشن اور ڈائریکٹری سطح کے انتخاب کو ترجیح حاصل ہے۔",
   "toast.model.none.title": "کوئی ماڈل منتخب نہیں کیا گیا۔",
   "toast.model.none.description": "اس سیشن کا خلاصہ کرنے کے لیے فراہم کنندہ سے رابطہ کریں۔",
   "toast.file.loadFailed.title": "فائل لوڈ کرنے میں ناکام",

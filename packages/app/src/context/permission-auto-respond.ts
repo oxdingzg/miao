@@ -9,6 +9,10 @@ export function directoryAcceptKey(directory: string) {
   return `${base64Encode(directory)}/*`
 }
 
+export function projectAcceptKey(projectID: string) {
+  return `p/${projectID}`
+}
+
 function accepted(autoAccept: Record<string, boolean>, sessionID: string, directory?: string) {
   const key = acceptKey(sessionID, directory)
   return autoAccept[key] ?? autoAccept[sessionID]
@@ -17,6 +21,10 @@ function accepted(autoAccept: Record<string, boolean>, sessionID: string, direct
 export function isDirectoryAutoAccepting(autoAccept: Record<string, boolean>, directory: string) {
   const key = directoryAcceptKey(directory)
   return autoAccept[key] ?? false
+}
+
+export function isProjectAutoAccepting(autoAccept: Record<string, boolean>, projectID: string) {
+  return autoAccept[projectAcceptKey(projectID)] ?? false
 }
 
 function sessionLineage(session: { id: string; parentID?: string }[], sessionID: string) {
@@ -42,10 +50,16 @@ export function autoRespondsPermission(
   session: { id: string; parentID?: string }[],
   permission: { sessionID: string },
   directory?: string,
+  projectID?: string,
 ) {
   const value = sessionAutoAccept(autoAccept, session, permission, directory)
   if (value !== undefined) return value
-  return directory ? isDirectoryAutoAccepting(autoAccept, directory) : false
+  if (directory) {
+    const directoryValue = autoAccept[directoryAcceptKey(directory)]
+    if (directoryValue !== undefined) return directoryValue
+  }
+  if (projectID !== undefined) return isProjectAutoAccepting(autoAccept, projectID)
+  return false
 }
 
 export function sessionAutoAccept(
