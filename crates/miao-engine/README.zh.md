@@ -490,3 +490,7 @@ fail-closed 阻止派发，工具结果为 `blocked by tool_before hook (outcome
 
 钩子是 host 信任配置的守门/观测面，不是模型能力：不占 permission 规则、不需要 allow_process，
 也不给模型任何新 authority。目前没有 per-hook 网络、stdin 注入、run/turn 级事件或远程 hook。
+
+## 完成检查收据
+
+配置的完成检查会记录[版本绑定的验证收据](docs/verification-receipts.md)，包含实际退出码/输出、任务版本与有明确边界的源码覆盖范围。

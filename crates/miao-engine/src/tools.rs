@@ -439,6 +439,13 @@ impl Tools {
         self.root.to_str().expect("validated UTF-8 Location")
     }
 
+    pub(crate) async fn verification_source(&self, scope: &crate::verification::Scope) -> Value {
+        let directory = self.directory.clone();
+        let scope = scope.clone();
+        tokio::task::spawn_blocking(move || scope.snapshot(&directory)).await
+            .unwrap_or_else(|_| json!({"coverage":"native-write-targets","complete":false,"error":"source snapshot worker failed"}))
+    }
+
     pub async fn prepare(&self, name: &str, input: Value) -> Result<Prepared, ToolError> {
         let invocation = if self.compact_disclosure && name == "tool_call" {
             Some(crate::tool_catalog::Invocation::parse(input.clone())?)

@@ -39,6 +39,7 @@ pub mod terminal;
 pub mod tool_replay;
 pub mod tools;
 pub mod usage;
+mod verification;
 pub mod wakeup;
 pub mod worker;
 
