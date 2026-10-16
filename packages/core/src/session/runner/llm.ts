@@ -291,6 +291,7 @@ const layer = Layer.effect(
     // Request length the provider counted, so a compaction decision can price the
     // request as that exact count plus the messages appended since.
     const lastPromptMessages = new Map<string, number>()
+    const lastPromptPrefix = new Map<string, string>()
     // Highest context band already announced per session; reset when
     // compaction rewrites the history so the smaller window re-arms notices.
     const lastContextNotice = new Map<string, number>()
@@ -834,37 +835,39 @@ const layer = Layer.effect(
           turns.set(session.id, { at: Date.now(), afterCompaction: true })
           lastPromptTokens.delete(session.id)
           lastPromptMessages.delete(session.id)
+          lastPromptPrefix.delete(session.id)
           lastContextNotice.delete(session.id)
         }
         yield* recordCompaction(session.id, "overflow", Date.now() - compactStartedAt)
         return yield* Effect.die(stopAfterCompaction(currentStep))
       }
       const compactCheckedAt = Date.now()
-      if (
-        yield* compaction.compactIfNeeded({
-          sessionID: session.id,
-          entries,
-          report: phase,
-          model,
-          summarizeModel,
-          request,
-          observedTokens: lastPromptTokens.get(session.id),
-          observedMessages: lastPromptMessages.get(session.id),
-        })
-      ) {
+      const compactionInput = {
+        sessionID: session.id,
+        entries,
+        report: phase,
+        model,
+        summarizeModel,
+        request,
+        observedTokens: lastPromptTokens.get(session.id),
+        observedMessages: lastPromptMessages.get(session.id),
+        observedPrefix: lastPromptPrefix.get(session.id),
+      }
+      const contextBudget = yield* compaction.budget(compactionInput)
+      if (yield* compaction.compactIfNeeded(compactionInput, contextBudget)) {
         turns.set(session.id, { at: Date.now(), afterCompaction: true })
         lastPromptTokens.delete(session.id)
         lastPromptMessages.delete(session.id)
+        lastPromptPrefix.delete(session.id)
         lastContextNotice.delete(session.id)
         yield* recordCompaction(session.id, "threshold", Date.now() - compactCheckedAt)
         return yield* Effect.die(continueAfterCompaction(currentStep))
       }
-      // Models guess "nearly exhausted" from routine pruning markers without a
-      // real number (observed live); surface the provider-reported usage once
-      // per 10% band from 70% so the model works from facts.
+      // Notices use the same sending-time budget as compaction and the UI;
+      // an old provider report cannot describe a changed model or request prefix.
       const contextNotice = ContextNotice.notice({
-        observedTokens: lastPromptTokens.get(session.id) ?? 0,
-        context: model.route.defaults.limits?.context ?? 0,
+        observedTokens: contextBudget.input,
+        context: contextBudget.window,
         announced: lastContextNotice.get(session.id) ?? 0,
       })
       if (contextNotice?.announce) {
@@ -873,7 +876,7 @@ const layer = Layer.effect(
           sessionID: session.id,
           timestamp: yield* DateTime.now,
           messageID: SessionMessage.ID.create(),
-          text: `${ContextNotice.usage(contextNotice.observed, contextNotice.context)} Older tool outputs are archived automatically and compaction runs near the limit — keep working normally, no action is required.`,
+          text: `The request prepared for this turn was ${contextBudget.source} at ${contextBudget.input} input tokens against a configured window of ${contextBudget.window} and input budget of ${contextBudget.limit}. This is not a guarantee of the provider's actual limit. The harness handles routine archival and compaction; report a concrete blocker if provider recovery fails.`,
           metadata: { [ContextNotice.MARKER]: true },
         })
       }
@@ -901,6 +904,7 @@ const layer = Layer.effect(
         model: stepModel,
         cost: resolved.info.cost,
         snapshot: startSnapshot,
+        contextBudget,
         normalizeContent: normalizeToolContent,
         normalizeStructured: normalizeToolStructured,
       })
@@ -1131,17 +1135,22 @@ const layer = Layer.effect(
           }
           const failure =
             stream._tag === "Failure" ? Option.getOrUndefined(Cause.findErrorOption(stream.cause)) : undefined
+          const contextOverflow = isContextOverflowFailure(overflowFailure ?? failure)
+          if (contextOverflow) {
+            // A rejected request invalidates the calibration even if recovery fails.
+            lastPromptTokens.delete(session.id)
+            lastPromptMessages.delete(session.id)
+            lastPromptPrefix.delete(session.id)
+            lastContextNotice.delete(session.id)
+          }
           if (
             recoverOverflow &&
             !publisher.hasVisibleOutput() &&
-            isContextOverflowFailure(overflowFailure ?? failure) &&
+            contextOverflow &&
             (yield* restore(recoverOverflow({ sessionID: session.id, entries, model, summarizeModel, request, report: phase })))
           ) {
             turns.set(session.id, { at: Date.now(), afterCompaction: true })
             yield* recordCompaction(session.id, "recovery")
-            lastPromptTokens.delete(session.id)
-            lastPromptMessages.delete(session.id)
-            lastContextNotice.delete(session.id)
             return yield* Effect.die(continueAfterOverflowCompaction(currentStep))
           }
           if (overflowFailure) yield* publish(overflowFailure)
@@ -1198,6 +1207,7 @@ const layer = Layer.effect(
             // Feed the next compaction decision the provider's own count.
             lastPromptTokens.set(session.id, SessionRunnerMetrics.promptTokens(stepSettlement.tokens))
             lastPromptMessages.set(session.id, request.messages.length)
+            lastPromptPrefix.set(session.id, SessionCompaction.prefix(request))
             const cacheMissed = SessionRunnerMetrics.cacheMissed(stepSettlement.tokens)
             const endSnapshotStartedAt = Date.now()
             // A step that published no tool call cannot have mutated the
@@ -1343,7 +1353,11 @@ const layer = Layer.effect(
           if (settled._tag === "Failure" && Cause.hasInterrupts(settled.cause))
             return yield* Effect.failCause(settled.cause)
           if (!publisher.hasProviderError()) yield* maybeTitle(yield* getContext(session.id))
-          return { needsContinuation: !publisher.hasProviderError() && needsContinuation, step: currentStep }
+          return {
+            needsContinuation: !publisher.hasProviderError() && needsContinuation,
+            step: currentStep,
+            failed: publisher.hasProviderError(),
+          }
         }),
       )
     }, Effect.scoped)
@@ -1353,7 +1367,7 @@ const layer = Layer.effect(
       step: number,
       phase: ReportPhase,
       remaining?: number,
-    ) => Effect.Effect<{ readonly needsContinuation: boolean; readonly step: number }, RunError>
+    ) => Effect.Effect<{ readonly needsContinuation: boolean; readonly step: number; readonly failed?: boolean }, RunError>
 
     // Recovery after a compaction may compact again, including an
     // already-compacted history that still overflows, so it opts into
@@ -2010,8 +2024,13 @@ const layer = Layer.effect(
               break
             }
             let needsContinuation = true
+            let providerFailed = false
             while (needsContinuation) {
               const result = yield* runTurn(input.sessionID, promotion, step, report)
+              if (result.failed) {
+                providerFailed = true
+                break
+              }
               needsContinuation = result.needsContinuation
               step = result.step + 1
               promotion = "steer"
@@ -2068,6 +2087,11 @@ const layer = Layer.effect(
                 }
               }
             }
+            if (providerFailed) {
+              finishReason = "provider-error"
+              yield* Effect.logWarning("session.loop-stopped", { sessionID: input.sessionID, reason: finishReason })
+              break
+            }
               const queuedNext = yield* bounded("queued input")(SessionInput.hasPending(db, input.sessionID, "queue"))
               const notificationNext = queuedNext
                 ? false
@@ -2108,17 +2132,11 @@ const layer = Layer.effect(
                     })
                   } else {
                     loopIterations += 1
-                    // The loop prompt is where a stopped-but-not-done model
-                    // invents excuses; restate the real context facts so
-                    // "budget exhausted" cannot pass for one.
-                    const last = lastTurnModel.get(input.sessionID)
-                    const observedTokens = lastPromptTokens.get(input.sessionID) ?? 0
-                    const usage = ContextNotice.usage(observedTokens, last?.context ?? 0)
                     yield* SessionInput.admit(db, events, {
                       id: SessionMessage.ID.create(),
                       sessionID: input.sessionID,
                       prompt: Prompt.make({
-                        text: `${loop.continuePrompt}${usage ? ` ${usage}` : ""} Context and cost budgets are managed by the harness — archived tool outputs and automatic compaction are routine, and they never justify stopping. If you stop, name the concrete blocker; never cite context or budget exhaustion.`,
+                        text: `${loop.continuePrompt} The harness manages routine tool-output archival and context compaction. Continue while work is runnable. If execution is blocked by a provider error or failed recovery, report the concrete blocker.`,
                       }),
                       delivery: "queue",
                     })

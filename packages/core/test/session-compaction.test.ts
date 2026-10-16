@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test"
-import { LLM, LLMEvent, Message, type LLMRequest } from "@miao/llm"
+import { LLM, LLMEvent, Message, SystemPart, type LLMRequest } from "@miao/llm"
 import { OpenAIChat } from "@miao/llm/protocols/openai-chat"
 import { DateTime, Effect, Exit, Fiber, Stream } from "effect"
 import { SessionMessage } from "@miao/core/session/message"
@@ -391,6 +391,9 @@ test("compaction sizes the request from the provider's count plus what was appen
       request: LLM.request({ model: main, messages: [Message.user("counted"), appended] }),
       observedTokens: 900_000,
       observedMessages,
+      observedPrefix: SessionCompaction.prefix(
+        LLM.request({ model: main, messages: [Message.user("counted"), appended] }), observedMessages,
+      ),
     }) as never
 
   // The report covered the first message only, so the second is this request's own
@@ -675,3 +678,67 @@ test("an interrupted staged compaction stops without publishing a checkpoint", (
     expect(published).toEqual([])
   }).pipe(Effect.runPromise),
 )
+
+
+test("request calibration is invalidated by changed instructions, tools, route, or history", async () => {
+  const main = model("main", 1_000_000)
+  const { compaction } = customHarness([], summary("summary"))
+  const request = LLM.request({ model: main, messages: [Message.user("counted")] })
+  const observation = {
+    observedTokens: 900_000,
+    observedMessages: 1,
+    observedPrefix: SessionCompaction.prefix(request),
+  }
+  const changed = [
+    LLM.request({ ...request, system: [SystemPart.make("new instructions")] }),
+    LLM.request({ ...request, tools: [{ name: "new_tool", description: "new tool", inputSchema: { type: "object" } }] }),
+    LLM.request({ ...request, model: model("other", 1_000_000) }),
+    LLM.request({ ...request, model: model("main", 2_000_000) }),
+    LLM.request({ ...request, messages: [Message.user("rewritten"), Message.user("new")] }),
+    LLM.request({ ...request, messages: [] }),
+  ]
+  for (const next of changed) {
+    const budget = await Effect.runPromise(compaction.budget({
+      sessionID: SessionSchema.ID.make("ses_changed_prefix"), entries: [], model: next.model,
+      request: next, ...observation,
+    }))
+    expect(budget.input).toBeLessThan(100)
+    expect(budget.source).toBe("estimated")
+  }
+  const appended = Message.user("new content".repeat(100))
+  const budget = await Effect.runPromise(compaction.budget({
+    sessionID: SessionSchema.ID.make("ses_valid_prefix"), entries: [], model: main,
+    request: LLM.request({ ...request, messages: [...request.messages, appended] }), ...observation,
+  }))
+  expect(budget.input).toBe(900_000 + Token.measureValue([appended]))
+})
+
+test("a larger changed prefix cannot hide behind a small previous provider count", async () => {
+  const main = model("main", 100_000)
+  const { compaction, requests } = customHarness([], summary("summary"))
+  const request = LLM.request({ model: main, messages: [Message.user("counted")] })
+  expect(await Effect.runPromise(compaction.compactIfNeeded({
+    sessionID: SessionSchema.ID.make("ses_larger_prefix"), entries: overflowEntries() as never, model: main,
+    request: LLM.request({ ...request, system: [SystemPart.make("lorem ipsum ".repeat(30_000))],
+      messages: [...request.messages, Message.user("new")] }),
+    observedTokens: 100, observedMessages: 1, observedPrefix: SessionCompaction.prefix(request),
+  }))).toBe(true)
+  expect(requests.length).toBeGreaterThan(0)
+})
+
+test("the sending budget exposes provider counting and reserves generation space", async () => {
+  const main = model("main", 100_000)
+  let counts = 0
+  const compaction = SessionCompaction.make({
+    events: { publish: () => Effect.void } as never,
+    llm: { stream: () => Stream.empty, count: () => { counts++; return Effect.succeed(69_000) } },
+    config: [],
+  })
+  const request = LLM.request({ model: main, messages: [Message.user("counted")] })
+  const input = { sessionID: SessionSchema.ID.make("ses_sending_budget"), entries: [], model: main, request,
+    observedTokens: 68_000, observedMessages: 1, observedPrefix: SessionCompaction.prefix(request) }
+  const budget = await Effect.runPromise(compaction.budget(input))
+  expect(budget).toMatchObject({ input: 69_000, source: "counted", window: 100_000, limit: 70_000, observed: 68_000 })
+  expect(await Effect.runPromise(compaction.compactIfNeeded(input, budget))).toBe(false)
+  expect(counts).toBe(1)
+})

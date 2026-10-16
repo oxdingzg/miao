@@ -1,6 +1,7 @@
 import type { Session } from "@miao/schema/view-models"
 import type { TuiPlugin, TuiPluginApi, TuiTranscriptAssistant } from "@miao/plugin/tui"
 import type { BuiltinTuiPlugin } from "../builtins"
+import { contextUsage } from "../../util/context-usage"
 import { Currency } from "../../util/currency"
 import { cacheEconomy } from "../../util/cache-economy"
 import { CachePricing, isOffPeak, isTimeOfDayPriced, priceMultiplier } from "../../util/cache-pricing"
@@ -50,30 +51,17 @@ function View(props: { api: TuiPluginApi; session_id: string }) {
   const priced = (model?: { providerID?: string; id?: string }) =>
     Currency.priceable(props.api.state.provider, model?.providerID, model?.id)
 
-  const state = createMemo(() => {
+  const context = createMemo(() => contextUsage(msg()))
+  const cacheHit = createMemo(() => {
     const last = msg().findLast(
-      (item): item is TuiTranscriptAssistant => item.type === "assistant" && (item.tokens?.output ?? 0) > 0,
+      (item): item is TuiTranscriptAssistant => item.type === "assistant" && item.tokens !== undefined && !item.error,
     )
-    if (!last?.tokens) {
-      return {
-        tokens: 0,
-        percent: null,
-        cacheHit: null,
-      }
-    }
-
-    const tokens =
-      last.tokens.input + last.tokens.output + last.tokens.reasoning + last.tokens.cache.read + last.tokens.cache.write
-    const model = last.model ? props.api.state.provider.find((item) => item.id === last.model?.providerID)?.models[last.model.id] : undefined
-    const cacheTotal = last.tokens.cache.read + last.tokens.cache.write + last.tokens.input
-    return {
-      tokens,
-      percent: model?.limit.context ? Math.round((tokens / model.limit.context) * 100) : null,
-      cacheHit: cacheTotal > 0 ? Math.round((last.tokens.cache.read / cacheTotal) * 100) : null,
-    }
+    if (!last?.tokens) return null
+    const total = last.tokens.cache.read + last.tokens.cache.write + last.tokens.input
+    return total > 0 ? Math.round(last.tokens.cache.read / total * 100) : null
   })
 
-  // The turn above reports the current context; this reports what caching has
+  // Reported usage above belongs to a settled request; this reports what caching has
   // earned over the whole session, which is only visible across turns.
   const offPeakProviders = createMemo(() => props.api.kv.get(CachePricing.KV, CachePricing.DEFAULT))
   const assistants = createMemo(() =>
@@ -154,7 +142,7 @@ function View(props: { api: TuiPluginApi; session_id: string }) {
   // The hit rate alone says nothing about whether caching is still working, so
   // it carries the direction the recent turns moved in.
   const cached = createMemo(() => {
-    const hit = `${state().cacheHit ?? 0}% cached`
+    const hit = `${cacheHit() ?? 0}% cached`
     const direction = cacheTrend(assistants())
     return direction ? `${hit} ${TREND_ARROW[direction]}` : hit
   })
@@ -209,8 +197,30 @@ function View(props: { api: TuiPluginApi; session_id: string }) {
       <text fg={theme().text}>
         <b>Context</b>
       </text>
-      <text fg={theme().textMuted}>{state().tokens.toLocaleString()} tokens</text>
-      <text fg={theme().textMuted}>{state().percent ?? 0}% used</text>
+      <Show when={context().budget}>
+        {(budget) => (
+          <>
+            <text fg={theme().textMuted}>
+              {budget().source === "estimated" ? "~" : ""}{compact(budget().input)} input · {budget().source}
+            </text>
+            <text fg={theme().textMuted}>
+              input budget {budget().window > 0 ? compact(budget().limit) : "unknown"}
+            </text>
+          </>
+        )}
+      </Show>
+      <Show when={context().rejected}>
+        <text fg={theme().warning}>Request failed · usage unconfirmed</text>
+      </Show>
+      <Show when={context().compacted}>
+        <text fg={theme().textMuted}>Compacted · awaiting next request</text>
+      </Show>
+      <Show when={context().percent !== undefined}>
+        <text fg={theme().textMuted}>{context().percent}% of configured window</text>
+      </Show>
+      <text fg={theme().textMuted}>
+        last successful input {context().observed === undefined ? "unknown" : compact(context().observed ?? 0)}
+      </text>
       <text fg={theme().textMuted}>{cached()}</text>
       <text fg={theme().textMuted}>
         read {compact(economy().read)} · write {compact(economy().write)}

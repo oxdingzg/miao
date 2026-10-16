@@ -1,9 +1,9 @@
+import { contextLabel } from "../../util/context-usage"
 import { createMemo, createSignal, Show } from "solid-js"
 import { useRouteData } from "../../context/route"
 import { useSync } from "../../context/sync"
 import { useTheme } from "../../context/theme"
 import { SplitBorder } from "../../ui/border"
-import type { TranscriptAssistantMessage } from "@miao/schema/view-models"
 import { Locale } from "../../util/locale"
 import { Currency } from "../../util/currency"
 import { useKV } from "../../context/kv"
@@ -35,22 +35,14 @@ export function SubagentFooter() {
 
   const usage = createMemo(() => {
     const msg = messages()
-    const last = msg.findLast(
-      (item): item is TranscriptAssistantMessage => item.type === "assistant" && (item.tokens?.output ?? 0) > 0,
-    )
-    if (!last?.tokens) return
+    const context = contextLabel(msg, Locale.number)
+    if (!context) return
 
-    const tokens =
-      last.tokens.input + last.tokens.output + last.tokens.reasoning + last.tokens.cache.read + last.tokens.cache.write
-    if (tokens <= 0) return
-
-    const model = last.model ? sync.data.provider.find((item) => item.id === last.model?.providerID)?.models[last.model.id] : undefined
-    const pct = model?.limit.context ? `${Math.round((tokens / model.limit.context) * 100)}%` : undefined
     const cost = session()?.cost ?? 0
     const native = Currency.native(sync.data.provider, session()?.model?.providerID, session()?.model?.id)
 
     return {
-      context: pct ? `${Locale.number(tokens)} (${pct})` : Locale.number(tokens),
+      context,
       cost:
         cost > 0
           ? native
