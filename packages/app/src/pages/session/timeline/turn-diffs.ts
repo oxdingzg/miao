@@ -12,8 +12,9 @@ type Entry = { diffs?: SummaryDiff[]; failedAt?: number }
  * a failed fetch is retried only after a cool-off so a flaky endpoint cannot
  * turn the timeline into a request loop.
  */
-export function createTurnDiffSource(fetch: TurnDiffFetcher, options?: { retryAfterMs?: number }) {
+export function createTurnDiffSource(fetch: TurnDiffFetcher, options?: { retryAfterMs?: number; now?: () => number }) {
   const retryAfterMs = options?.retryAfterMs ?? RETRY_AFTER_MS
+  const now = options?.now ?? Date.now
   const entries = new Map<string, Entry>()
   const pending = new Set<string>()
   const [version, setVersion] = createSignal(0)
@@ -23,7 +24,7 @@ export function createTurnDiffSource(fetch: TurnDiffFetcher, options?: { retryAf
     if (pending.has(key)) return
     const entry = entries.get(key)
     if (entry?.diffs) return
-    if (entry?.failedAt && Date.now() - entry.failedAt < retryAfterMs) return
+    if (entry?.failedAt !== undefined && now() - entry.failedAt < retryAfterMs) return
     entries.delete(key)
     pending.add(key)
     fetch({ sessionID, messageID })
@@ -31,7 +32,7 @@ export function createTurnDiffSource(fetch: TurnDiffFetcher, options?: { retryAf
         entries.set(key, { diffs })
       })
       .catch(() => {
-        entries.set(key, { failedAt: Date.now() })
+        entries.set(key, { failedAt: now() })
       })
       .finally(() => {
         pending.delete(key)
