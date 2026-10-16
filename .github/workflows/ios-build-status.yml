@@ -30,3 +30,16 @@ jobs:
           PY
           gem install fastlane --no-document
           APPSTORE_BUILD_NUMBER_API_KEY_PATH="$RUNNER_TEMP/asc.json" FASTLANE_APP_IDENTIFIER=dev.miao.remote APPSTORE_PLATFORM=ios fastlane run latest_testflight_build_number
+          cat > "$RUNNER_TEMP/Fastfile" <<'RB'
+          default_platform(:ios)
+          lane :status do
+            token = Spaceship::ConnectAPI::Token.from_json_file(ENV["KEY_PATH"])
+            Spaceship::ConnectAPI.token = token
+            app = Spaceship::ConnectAPI::App.find("dev.miao.remote")
+            builds = Spaceship::ConnectAPI::Build.all(app_id: app.id, sorts: "-uploadedDate", includes: "betaAppReviewSubmission,buildBetaDetail", limit: 5)
+            builds.each do |b|
+              puts "STATUS version=#{b.version} build=#{b.build_version} uploaded=#{b.uploaded_date} processing=#{b.processing_state} encryption=#{b.uses_non_exempt_encryption}"
+            end
+          end
+          RB
+          KEY_PATH="$RUNNER_TEMP/asc.json" FASTLANE_SKIP_UPDATE_CHECK=1 "$(gem environment gemdir)/../ruby/gems/3.3.0/bin/fastlane" ios status 2>&1 | grep -E "STATUS|error|Error" || true
