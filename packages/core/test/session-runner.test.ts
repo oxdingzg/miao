@@ -1717,9 +1717,9 @@ describe("SessionRunnerLLM", () => {
       // machinery a budget must not let pay for itself.
       expect(requests.length).toBeGreaterThan(1)
       expect(yield* wakeAllowance(sessionID)).toBe(5)
-      // Every admitted continuation restates the real context facts, so a
-      // stalled model cannot dress "no progress" up as budget exhaustion.
-      expect(userTexts(requests.at(-1)!).some((text) => text.startsWith("keep going") && text.includes("never cite context or budget exhaustion"))).toBe(true)
+      // Continuations describe routine context management without inventing
+      // a current request size or instructing the model to ignore provider errors.
+      expect(userTexts(requests.at(-1)!).some((text) => text.startsWith("keep going") && text.includes("report the concrete blocker"))).toBe(true)
     }),
   )
 
@@ -2932,7 +2932,11 @@ describe("SessionRunnerLLM", () => {
       expect(userTexts(requests[1])[1]).toContain("restore budget of about 50,000 tokens")
 
       const context = yield* (yield* SessionStore.Service).context(sessionID)
-      expect(context.map((message) => message.type)).toEqual(["compaction", "assistant"])
+      expect(context.map((message) => message.type)).toEqual(["compaction", "synthetic", "assistant"])
+      expect(context[1].type).toBe("synthetic")
+      if (context[1].type !== "synthetic") throw new Error("expected context budget notice")
+      expect(context[1].text).toContain("was estimated")
+      expect(context[1].metadata?.["miao:context-notice"]).toBe(true)
       expect(context[0]).toMatchObject({
         type: "compaction",
         summary: "## Objective\n- Preserve the task",
@@ -3162,6 +3166,48 @@ describe("SessionRunnerLLM", () => {
         { type: "compaction", summary: "## Objective\n- Recover raw overflow" },
         { type: "assistant", finish: "stop" },
       ])
+    }),
+  )
+
+  it.effect("does not auto-continue runnable todos after failed overflow recovery", () =>
+    Effect.gen(function* () {
+      const session = yield* setupOverflowRecovery
+      const todos = yield* SessionTodo.Service
+      yield* todos.update({ sessionID, todos: [{ content: "Still runnable", status: "in_progress", priority: "high" }] })
+      responses = [
+        [LLMEvent.providerError({ message: "prompt too long", classification: "context-overflow" })],
+        [LLMEvent.providerError({ message: "summary unavailable" })],
+      ]
+      yield* session.prompt({ sessionID, prompt: Prompt.make({ text: "Continue" }), resume: false })
+      yield* session.resume(sessionID)
+
+      expect(requests).toHaveLength(2)
+      const context = yield* session.context(sessionID)
+      expect(context.at(-1)).toMatchObject({ type: "assistant", finish: "error" })
+      expect(context.some((message) => message.type === "user" && message.text.startsWith("keep going"))).toBe(false)
+      expect(yield* todos.get(sessionID)).toMatchObject([{ status: "in_progress" }])
+    }),
+  )
+
+  it.effect("does not auto-continue after a non-retryable provider rejection", () =>
+    Effect.gen(function* () {
+      yield* setup
+      const session = yield* SessionV2.Service
+      const todos = yield* SessionTodo.Service
+      yield* todos.update({ sessionID, todos: [{ content: "Still runnable", status: "pending", priority: "high" }] })
+      responses = [[LLMEvent.providerError({ message: "invalid request" })]]
+      yield* session.prompt({ sessionID, prompt: Prompt.make({ text: "Work" }), resume: false })
+      yield* session.prompt({ sessionID, prompt: Prompt.make({ text: "Queued follow-up" }), delivery: "queue", resume: false })
+      yield* session.resume(sessionID)
+      expect(requests).toHaveLength(1)
+      expect((yield* session.context(sessionID)).at(-1)).toMatchObject({
+        type: "assistant", error: { message: "invalid request" },
+        contextBudget: { source: "estimated" },
+      })
+      yield* replaySessionProjection(sessionID)
+      expect((yield* session.context(sessionID)).at(-1)).toMatchObject({ contextBudget: { source: "estimated" } })
+      const { db } = yield* Database.Service
+      expect(yield* SessionInput.hasPending(db, sessionID, "queue")).toBe(true)
     }),
   )
 

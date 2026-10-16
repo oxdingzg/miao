@@ -14,6 +14,7 @@ type Input = {
   readonly model: ModelV2.Ref
   readonly cost?: ModelV2.Info["cost"]
   readonly snapshot?: string
+  readonly contextBudget?: SessionMessage.ContextBudget
   /**
    * Applied to a settled tool result before it becomes durable. Every tool
    * reaches this one point, so the bound lives here rather than in each tool.

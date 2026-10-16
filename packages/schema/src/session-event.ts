@@ -244,6 +244,7 @@ export namespace Step {
       agent: Schema.String,
       model: Model.Ref,
       snapshot: Schema.String.pipe(optional),
+      contextBudget: SessionMessage.ContextBudget.pipe(optional),
     },
   })
   export type Started = typeof Started.Type

@@ -81,6 +81,8 @@ Rules:
 - Keep every section, even when empty.
 - Use terse bullets, not prose paragraphs.
 - Preserve exact file paths, symbols, commands, error strings, URLs, and identifiers when known.
+- Preserve runnable tasks and their dependencies, waiting job/run IDs and completion conditions, current branch and uncommitted work, PR URLs, and test results with the revision tested.
+- Keep an evidence index: paths or history identifiers for detailed outputs that can be retrieved later. Do not copy large logs into the summary or describe an unverified task as complete.
 - Do not mention the summary process or that context was compacted.`
 const SUMMARY_UPDATE_INSTRUCTIONS = `The <prior-summary> summarizes everything that happened before the <conversation>. Construct a new summary that combines both. The <prior-summary> is discarded after this: anything you do not carry into the new summary is lost.
 
@@ -141,6 +143,8 @@ type Input = {
    * only part the local estimate has to cover.
    */
   readonly observedMessages?: number
+  /** Fingerprint of the complete request prefix covered by the provider report. */
+  readonly observedPrefix?: string
   /**
    * Reports the drain phase while a summary is in flight. A compaction is neither
    * requesting nor streaming, and a long one must not look like an idle Session.
@@ -324,6 +328,17 @@ export const buildHotPrompt = () =>
     SUMMARY_TEMPLATE,
   ].join("\n\n")
 
+/** Model/route, instructions, tools and selected history must still match the report. */
+export const prefix = (request: LLMRequest, messages = request.messages.length) =>
+  Bun.hash(
+    JSON.stringify({
+      model: request.model,
+      system: request.system,
+      tools: request.tools,
+      messages: request.messages.slice(0, messages),
+    }),
+  ).toString(16)
+
 export const make = (dependencies: Dependencies) => {
   const config = settings(dependencies.config)
   // Precise BPE counting is opt-in. It changes threshold behavior, and a long run of
@@ -340,20 +355,19 @@ export const make = (dependencies: Dependencies) => {
    * provider reported), which compacted it that much too early.
    */
   const anchoredTokens = (input: Input) => {
+    const observed = input.observedTokens ?? 0
+    const boundary = input.observedMessages
+    if (
+      observed > 0 && boundary !== undefined && boundary <= input.request.messages.length &&
+      input.observedPrefix !== undefined && prefix(input.request, boundary) === input.observedPrefix
+    )
+      return observed + measureValue(input.request.messages.slice(boundary))
     const measured = measureValue({
       system: input.request.system,
       messages: input.request.messages,
       tools: input.request.tools,
     })
-    const observed = input.observedTokens ?? 0
-    if (observed <= 0) return measured
-    const boundary = input.observedMessages
-    if (boundary === undefined) return Math.max(observed, measured)
-    const appended = input.request.messages.slice(boundary)
-    // Nothing appended since the report: the report still describes this request,
-    // unless the prefix itself changed under it, which `measured` would catch.
-    if (appended.length === 0) return Math.max(observed, measured)
-    return observed + measureValue(appended)
+    return input.observedPrefix === undefined ? Math.max(observed, measured) : measured
   }
 
   /**
@@ -363,17 +377,17 @@ export const make = (dependencies: Dependencies) => {
    * estimated delta matters. Providers without a count endpoint are absent.
    */
   const exactTokens = Effect.fnUntraced(function* (input: Input, anchored: number, limit: number, context: number) {
-    if (dependencies.llm.count === undefined) return anchored
-    if (anchored <= limit - context * COUNT_MARGIN) return anchored
+    if (dependencies.llm.count === undefined) return { input: anchored, source: "estimated" as const }
+    if (anchored <= limit - context * COUNT_MARGIN) return { input: anchored, source: "estimated" as const }
     const counted = yield* dependencies.llm.count(input.request).pipe(Effect.orElseSucceed(() => undefined))
-    if (counted === undefined || counted <= 0) return anchored
+    if (counted === undefined || counted <= 0) return { input: anchored, source: "estimated" as const }
     yield* Effect.logInfo("session.compaction.count", {
       sessionID: input.sessionID,
       counted,
       anchored,
       limit,
     })
-    return counted
+    return { input: counted, source: "counted" as const }
   })
 
   // Consecutive proactive-compaction failures per Session. A provider that keeps
@@ -629,10 +643,8 @@ export const make = (dependencies: Dependencies) => {
     return (yield* stagedAttempt(input, options)).result === "compacted"
   })
 
-  const compactIfNeeded = Effect.fn("SessionCompaction.compactIfNeeded")(function* (input: Input) {
-    if (!config.auto) return false
-    const context = input.model.route.defaults.limits?.context
-    if (context === undefined || context <= 0) return false
+  const budget = Effect.fn("SessionCompaction.budget")(function* (input: Input) {
+    const context = input.model.route.defaults.limits?.context ?? 0
     // Reserve what this turn can still generate, not the model's declared output
     // ceiling: `limits.output` is a catalog limit, and treating it as the reserve
     // shrinks the usable window to a fraction of the real context.
@@ -644,14 +656,25 @@ export const make = (dependencies: Dependencies) => {
     // to about 94%, in the band other harnesses work in, while a small window still
     // fires at the configured ratio instead of at whatever the headroom leaves.
     const headroom = PROTECT_TOKENS + SUMMARY_OUTPUT_TOKENS + reserve
-    const limit = Math.max(context - headroom, context * config.threshold - reserve)
-    const size = yield* exactTokens(input, anchoredTokens(input), limit, context)
-    if (size <= limit) return false
+    const limit = context > 0 ? Math.max(0, Math.max(context - headroom, context * config.threshold - reserve)) : 0
+    const size = context > 0
+      ? yield* exactTokens(input, anchoredTokens(input), limit, context)
+      : { input: anchoredTokens(input), source: "estimated" as const }
+    return { ...size, window: context, limit, observed: input.observedTokens }
+  })
+
+  const compactIfNeeded = Effect.fn("SessionCompaction.compactIfNeeded")(function* (
+    input: Input,
+    current?: SessionMessage.ContextBudget,
+  ) {
+    if (!config.auto) return false
+    const size = current ?? (yield* budget(input))
+    if (size.window <= 0 || size.input <= size.limit) return false
     yield* Effect.logInfo("session.compaction.trigger", {
       sessionID: input.sessionID,
-      context,
-      limit,
-      size,
+      context: size.window,
+      limit: size.limit,
+      size: size.input,
       observed: input.observedTokens ?? 0,
     })
     const key = input.sessionID
@@ -674,6 +697,7 @@ export const make = (dependencies: Dependencies) => {
   }
 
   return {
+    budget,
     compact,
     compactIfNeeded,
     compactAfterOverflow,

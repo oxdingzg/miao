@@ -22,7 +22,7 @@ export type Notice = {
 export const usage = (observedTokens: number, context: number): string =>
   observedTokens <= 0 || context <= 0
     ? ""
-    : `Context status: about ${Math.round((observedTokens / context) * 100)}% of the model context window is in use (${observedTokens} of ${context} tokens).`
+    : `The last successful provider request used about ${Math.round((observedTokens / context) * 100)}% of the configured context window (${observedTokens} of ${context} tokens). This is a historical report, not a count of the next request.`
 
 /**
  * Models cannot introspect their remaining context; left to guess, they read
