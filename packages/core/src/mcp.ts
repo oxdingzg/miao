@@ -130,6 +130,15 @@ function message(error: unknown) {
 
 const MAX_LIST_PAGES = 1_000
 
+// Only ask servers that advertise tools: like the resources catalog below, the
+// SDK answers a list for an unadvertised capability with console noise and an
+// empty page, and some servers reject the call outright.
+async function listAdvertisedTools(client: Client): Promise<Connected["tools"]> {
+  if (!client.getServerCapabilities()?.tools) return []
+  const listed = await client.listTools().catch(() => ({ tools: [] as Connected["tools"] }))
+  return listed.tools
+}
+
 // Mirror the V1 MCP catalog: only ask servers that advertise resources, and walk
 // every page so a large catalog is not silently truncated.
 async function listResources(client: Client, timeout?: number): Promise<ResourceInfo[]> {
@@ -165,7 +174,7 @@ function connectLocal(server: ConfigMCP.Local, directory: string): Effect.Effect
     const outcome = yield* Effect.tryPromise({
       try: async () => {
         await withTimeout(client.connect(transport), server.timeout?.startup ?? DEFAULT_TIMEOUT)
-        const listed = await client.listTools().catch(() => ({ tools: [] as Connected["tools"] }))
+        const listed = { tools: await listAdvertisedTools(client) }
         const resources = await listResources(client, server.timeout?.request).catch(() => [] as ResourceInfo[])
         return { client, tools: listed.tools, resources } satisfies Connected
       },
@@ -206,7 +215,7 @@ function connectRemote(
       const outcome = yield* Effect.tryPromise({
         try: async () => {
           await withTimeout(client.connect(transport), server.timeout?.startup ?? DEFAULT_TIMEOUT)
-          const listed = await client.listTools().catch(() => ({ tools: [] as Connected["tools"] }))
+          const listed = { tools: await listAdvertisedTools(client) }
           const resources = await listResources(client, server.timeout?.request).catch(() => [] as ResourceInfo[])
           return { client, tools: listed.tools, resources } satisfies Connected
         },
@@ -285,7 +294,7 @@ function buildTools(
             aliases: [legacy],
             resources: ["*"],
             save: ["*"],
-            metadata: { server: serverID, tool: tool.name, input },
+            metadata: { server: serverID, tool: tool.name, input: input ?? {} },
             sessionID: context.sessionID,
             agent: context.agent,
             source: { type: "tool", messageID: context.assistantMessageID, callID: context.toolCallID },
