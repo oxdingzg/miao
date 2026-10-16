@@ -963,6 +963,8 @@ export const dict: Record<string, string> = {
     "কম্পোজারে এজেন্টদের মধ্যে স্যুইচ করুন। লুকানো হলে, বিল্ড এজেন্টে ডিফল্ট।",
   "settings.general.row.reasoningSummaries.title": "যুক্তির সারাংশ দেখান",
   "settings.general.row.reasoningSummaries.description": "টাইমলাইনে মডেল যুক্তির সারাংশ প্রদর্শন করুন",
+  "settings.general.row.turnDiffs.title": "প্রতি ধাপে পরিবর্তিত ফাইল দেখান",
+  "settings.general.row.turnDiffs.description": "টাইমলাইনে প্রতিটি সম্পূর্ণ ধাপের পরিবর্তিত ফাইলগুলি লাইন সংখ্যা এবং প্রসারণযোগ্য পার্থক্যসহ তালিকাভুক্ত করে।",
   "settings.general.row.shellToolPartsExpanded.title": "শেল টুল অংশ প্রসারিত",
   "settings.general.row.shellToolPartsExpanded.description": "টাইমলাইনে ডিফল্টরূপে প্রসারিত শেল টুল অংশগুলি দেখান",
   "settings.general.row.editToolPartsExpanded.title": "সম্পাদনা টুল অংশ প্রসারিত করুন",

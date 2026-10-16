@@ -978,6 +978,8 @@ export const dict = {
     "Chuyển đổi giữa các tác nhân trong trình soạn thảo. Khi ẩn, tác nhân mặc định là Build.",
   "settings.general.row.reasoningSummaries.title": "Hiển thị tóm tắt lý luận",
   "settings.general.row.reasoningSummaries.description": "Hiển thị tóm tắt lý luận mô hình trong dòng thời gian",
+  "settings.general.row.turnDiffs.title": "Hiện các tệp đã thay đổi theo lượt",
+  "settings.general.row.turnDiffs.description": "Liệt kê trên dòng thời gian các tệp thay đổi của từng lượt đã hoàn thành, kèm số dòng và phần khác biệt có thể mở rộng.",
   "settings.general.row.shellToolPartsExpanded.title": "Mở rộng các phần của công cụ shell",
   "settings.general.row.shellToolPartsExpanded.description":
     "Hiển thị các phần công cụ shell được mở rộng theo mặc định trong dòng thời gian",

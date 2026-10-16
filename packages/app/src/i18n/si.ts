@@ -961,6 +961,8 @@ export const dict: Record<string, string> = {
     "නිර්මාපකයේ නියෝජිතයන් අතර මාරු වන්න. සැඟවුණු විට, බිල්ඩ් ඒජන්ත වෙත පෙරනිමි වේ.",
   "settings.general.row.reasoningSummaries.title": "තර්ක සාරාංශ පෙන්වන්න",
   "settings.general.row.reasoningSummaries.description": "කාලරේඛාව තුළ ආකෘති තර්ක සාරාංශ සංදර්ශන කරන්න",
+  "settings.general.row.turnDiffs.title": "Show changed files per turn",
+  "settings.general.row.turnDiffs.description": "List each finished turn's changed files with line counts and expandable diffs in the timeline.",
   "settings.general.row.shellToolPartsExpanded.title": "ෂෙල් මෙවලම් කොටස් පුළුල් කරන්න",
   "settings.general.row.shellToolPartsExpanded.description":
     "කාලරේඛාව තුළ පෙරනිමියෙන් පුළුල් කළ ෂෙල් මෙවලම් කොටස් පෙන්වන්න",

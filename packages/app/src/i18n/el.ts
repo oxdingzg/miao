@@ -980,6 +980,8 @@ export const dict = {
     "Εναλλαγή μεταξύ πρακτόρων στον συνθέτη. Όταν είναι κρυφό, ορίζεται από προεπιλογή Build agent.",
   "settings.general.row.reasoningSummaries.title": "Εμφάνιση περιλήψεων συλλογισμών",
   "settings.general.row.reasoningSummaries.description": "Εμφάνιση περιλήψεων συλλογισμών μοντέλων στη γραμμή χρόνου",
+  "settings.general.row.turnDiffs.title": "Εμφάνιση αρχείων που άλλαξαν ανά γύρο",
+  "settings.general.row.turnDiffs.description": "Απαριθμεί στο χρονολόγιο τα αρχεία που άλλαξαν σε κάθε ολοκληρωμένο γύρο, με πλήθος γραμμών και αναπτυσσόμενες διαφορές.",
   "settings.general.row.shellToolPartsExpanded.title": "Ανάπτυξη εξαρτημάτων εργαλείου κελύφους",
   "settings.general.row.shellToolPartsExpanded.description":
     "Εμφάνιση εξαρτημάτων εργαλείου κελύφους που έχουν αναπτυχθεί από προεπιλογή στη γραμμή χρόνου",

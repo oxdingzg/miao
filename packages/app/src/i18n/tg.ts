@@ -971,6 +971,8 @@ export const dict = {
     "Гузариш байни агентҳо дар оҳангсоз. Ҳангоми пинҳон, пешфарз ба Сохтани агент.",
   "settings.general.row.reasoningSummaries.title": "Ҷамъбасти далелҳоро нишон диҳед",
   "settings.general.row.reasoningSummaries.description": "Дар ҷадвали вақт хулосаҳои далелҳои моделиро нишон диҳед",
+  "settings.general.row.turnDiffs.title": "Намоиши файлҳои тағйирёфта барои ҳар давр",
+  "settings.general.row.turnDiffs.description": "Дар хати вақт файлҳои тағйирёфтаи ҳар даври анҷомёфта бо шумораи сатрҳо ва фарқҳои кушодашаванда рӯйхат мекунад.",
   "settings.general.row.shellToolPartsExpanded.title": "Қисмҳои shell асбобро васеъ кунед",
   "settings.general.row.shellToolPartsExpanded.description":
     "Дар ҷадвали вақт қисмҳои асбобҳои shell васеъшударо нишон диҳед",

@@ -972,6 +972,8 @@ export const dict = {
     "Փոխարկեք կոմպոզիտորի գործակալների միջև։ Երբ թաքնված է, կանխադրված է Build agent:",
   "settings.general.row.reasoningSummaries.title": "Ցույց տալ հիմնավորման ամփոփագրերը",
   "settings.general.row.reasoningSummaries.description": "Ցուցադրել մոդելի հիմնավորման ամփոփագրերը ժամանակացույցում",
+  "settings.general.row.turnDiffs.title": "Ցույց տալ փոխված ֆայլերը ըստ քայլերի",
+  "settings.general.row.turnDiffs.description": "Ժամանակագծում թվարկում է ամեն ավարտված քայլի փոխված ֆայլերը տողերի հաշվով և ընդարձակվող տարբերություններով։",
   "settings.general.row.shellToolPartsExpanded.title": "Ընդարձակել Shell գործիքի մասերը",
   "settings.general.row.shellToolPartsExpanded.description":
     "Ցուցադրել ժամանակացույցում լռելյայնորեն ընդլայնված shell գործիքի մասերը",

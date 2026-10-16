@@ -971,6 +971,8 @@ export const dict = {
     "Pārslēgties starp aģentiem redaktorā. Ja paslēpts, tiek izmantots Build aģents.",
   "settings.general.row.reasoningSummaries.title": "Rādīt pamatojuma kopsavilkumus",
   "settings.general.row.reasoningSummaries.description": "Rādīt modeļa pamatojuma kopsavilkumus laika joslā",
+  "settings.general.row.turnDiffs.title": "Rādīt mainītos failus katrai kārtai",
+  "settings.general.row.turnDiffs.description": "Uzskaita laika līnijā katras pabeigtās kārtas mainītos failus ar rindu skaitu un izvēršamām atšķirībām.",
   "settings.general.row.shellToolPartsExpanded.title": "Izvērst čaulas rīka daļas",
   "settings.general.row.shellToolPartsExpanded.description":
     "Pēc noklusējuma rādīt čaulas rīka daļas izvērstas laika joslā",

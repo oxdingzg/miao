@@ -1046,6 +1046,8 @@ export const dict = {
     "Beralih antaragen di penyusun. Saat disembunyikan, Agen Build digunakan sebagai bawaan.",
   "settings.general.row.reasoningSummaries.title": "Tampilkan ringkasan penalaran",
   "settings.general.row.reasoningSummaries.description": "Tampilkan ringkasan penalaran model di linimasa",
+  "settings.general.row.turnDiffs.title": "Tampilkan file yang berubah per putaran",
+  "settings.general.row.turnDiffs.description": "Menampilkan daftar file yang berubah di setiap putaran yang selesai, dengan jumlah baris dan diff yang bisa dibuka di lini masa.",
   "settings.general.row.shellToolPartsExpanded.title": "Bentangkan bagian alat shell",
   "settings.general.row.shellToolPartsExpanded.description":
     "Tampilkan bagian alat shell yang dibentangkan secara bawaan di linimasa",

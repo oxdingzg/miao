@@ -970,6 +970,8 @@ export const dict = {
     "کمپوزر چ ایجنٹاں دے وچکار سوئچ کرو۔ جدوں لُکیا ہوندا اے، تے بلڈ ایجنٹ تے ڈیفالٹ ہوندا اے۔",
   "settings.general.row.reasoningSummaries.title": "استدلال دے خلاصے وکھاؤ",
   "settings.general.row.reasoningSummaries.description": "ٹائم لائن وچ ماڈل دی استدلال دے خلاصے وکھاؤ",
+  "settings.general.row.turnDiffs.title": "ਹਰ ਵਾਰ ਲਈ ਬਦਲੀਆਂ ਫ਼ਾਈਲਾਂ ਵਿਖਾਓ",
+  "settings.general.row.turnDiffs.description": "ਟਾਈਮਲਾਈਨ ਵਿੱਚ ਹਰ ਪੂਰੇ ਹੋਏ ਵਾਰ ਦੀਆਂ ਬਦਲੀਆਂ ਫ਼ਾਈਲਾਂ ਨੂੰ ਲਾਈਨ ਗਿਣਤੀ ਅਤੇ ਖੁੱਲ੍ਹਣ ਵਾਲੇ ਫ਼ਰਕਾਂ ਨਾਲ ਸੂਚੀਬੱਧ ਕਰਦਾ ਹੈ।",
   "settings.general.row.shellToolPartsExpanded.title": "شیل ٹول دے حصیاں نو ودھاؤ",
   "settings.general.row.shellToolPartsExpanded.description":
     "ٹائم لائن وچ ڈیفالٹ دے طور تے ودھائے گئے شیل ٹول دے حصے وکھاؤ",

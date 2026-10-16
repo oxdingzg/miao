@@ -980,6 +980,8 @@ export const dict = {
     "Perjunkite tarp kompozitoriaus agentų. Kai paslėpta, numatytasis kūrimo agentas.",
   "settings.general.row.reasoningSummaries.title": "Rodyti samprotavimų santraukas",
   "settings.general.row.reasoningSummaries.description": "Rodyti modelio motyvų santraukas laiko juostoje",
+  "settings.general.row.turnDiffs.title": "Rodyti pakeistus failus kiekvienam etapui",
+  "settings.general.row.turnDiffs.description": "Laiko juostoje išvardija kiekvieno užbaigto etapo pakeistus failus su eilučių skaičiumi ir išskleidžiamaisiais skirtumais.",
   "settings.general.row.shellToolPartsExpanded.title": "Išskleiskite apvalkalo įrankių dalis",
   "settings.general.row.shellToolPartsExpanded.description":
     "Rodyti pagal numatytuosius nustatymus išplėstas apvalkalo įrankio dalis laiko juostoje",

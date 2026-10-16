@@ -961,6 +961,8 @@ export const dict = {
     "ប្តូររវាងភ្នាក់ងារនៅក្នុងកម្មវិធីតែង។ នៅពេលលាក់ វាកំណត់លំនាំដើមទៅភ្នាក់ងារបង្កើត។",
   "settings.general.row.reasoningSummaries.title": "បង្ហាញការសង្ខេបហេតុផល",
   "settings.general.row.reasoningSummaries.description": "បង្ហាញសេចក្តីសង្ខេបហេតុផលរបស់ម៉ូដែលក្នុងបន្ទាត់ពេលវេលា",
+  "settings.general.row.turnDiffs.title": "Show changed files per turn",
+  "settings.general.row.turnDiffs.description": "List each finished turn's changed files with line counts and expandable diffs in the timeline.",
   "settings.general.row.shellToolPartsExpanded.title": "ពង្រីកផ្នែកឧបករណ៍សែល",
   "settings.general.row.shellToolPartsExpanded.description":
     "បង្ហាញផ្នែកឧបករណ៍សែលដែលបានពង្រីកតាមលំនាំដើមនៅក្នុងបន្ទាត់ពេលវេលា",

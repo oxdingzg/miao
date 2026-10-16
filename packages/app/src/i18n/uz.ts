@@ -976,6 +976,8 @@ export const dict = {
     "Kompozitorda agentlar o'rtasida almashish. Yashirin bo'lsa, birlamchi Build agenti bo'ladi.",
   "settings.general.row.reasoningSummaries.title": "Fikrlash xulosalarini ko'rsating",
   "settings.general.row.reasoningSummaries.description": "Vaqt jadvalida model asoslarini ko'rsatish",
+  "settings.general.row.turnDiffs.title": "Har bosqich uchun o'zgargan fayllarni ko'rsatish",
+  "settings.general.row.turnDiffs.description": "Vaqt chizig'ida har bir tugallangan bosqichning o'zgargan fayllarini qatorlar soni va yoyiladigan farqlar bilan sanab ko'rsatadi.",
   "settings.general.row.shellToolPartsExpanded.title": "Qobiq asboblari qismlarini kengaytiring",
   "settings.general.row.shellToolPartsExpanded.description":
     "Xronologiyada sukut bo'yicha kengaytirilgan qobiq asboblari qismlarini ko'rsatish",

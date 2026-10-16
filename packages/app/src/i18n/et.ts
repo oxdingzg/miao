@@ -961,6 +961,8 @@ export const dict = {
     "Helilooja agentide vahel vahetamine. Kui see on peidetud, on vaikimisi Agent.",
   "settings.general.row.reasoningSummaries.title": "Näita põhjenduste kokkuvõtteid",
   "settings.general.row.reasoningSummaries.description": "Kuva mudeli arutluskäigu kokkuvõtted ajaskaalal",
+  "settings.general.row.turnDiffs.title": "Kuva muudetud failid iga vooru kohta",
+  "settings.general.row.turnDiffs.description": "Loetleb ajajoonel iga lõpetatud vooru muudetud failid rea-arvude ja laiendatavate erinevustega.",
   "settings.general.row.shellToolPartsExpanded.title": "Laienda shellitööriista osi",
   "settings.general.row.shellToolPartsExpanded.description":
     "Kuva shellitööriista osad ajaskaalal vaikimisi laiendatuna",

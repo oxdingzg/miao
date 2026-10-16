@@ -965,6 +965,8 @@ export const dict: Record<string, string> = {
     "कम्पोजरमा एजेन्टहरू बीच स्विच गर्नुहोस्। लुकेको बेला, बिल्ड एजेन्टमा पूर्वनिर्धारित हुन्छ।",
   "settings.general.row.reasoningSummaries.title": "तर्क सारांशहरू देखाउनुहोस्",
   "settings.general.row.reasoningSummaries.description": "टाइमलाइनमा मोडेल तर्क सारांशहरू प्रदर्शन गर्नुहोस्",
+  "settings.general.row.turnDiffs.title": "प्रत्येक चरणमा परिवर्तित फाइलहरू देखाउनुहोस्",
+  "settings.general.row.turnDiffs.description": "समयरेखामा प्रत्येक पूर्ण चरणका परिवर्तित फाइलहरू पङ्क्ति सङ्ख्या र विस्तारयोग्य भिन्नतासहित सूचीबद्ध गर्छ।",
   "settings.general.row.shellToolPartsExpanded.title": "शेल उपकरणका भागहरू विस्तार गर्नुहोस्",
   "settings.general.row.shellToolPartsExpanded.description":
     "टाइमलाइनमा पूर्वनिर्धारित रूपमा विस्तारित शेल उपकरण भागहरू देखाउनुहोस्",

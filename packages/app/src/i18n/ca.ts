@@ -976,6 +976,8 @@ export const dict = {
     "Canvia entre agents del compositor. Quan s'amaga, el valor predeterminat és Build agent.",
   "settings.general.row.reasoningSummaries.title": "Mostra resums de raonament",
   "settings.general.row.reasoningSummaries.description": "Mostra els resums de raonament del model a la línia de temps",
+  "settings.general.row.turnDiffs.title": "Mostra els fitxers modificats per torn",
+  "settings.general.row.turnDiffs.description": "Llista a la cronologia els fitxers modificats de cada torn completat, amb recomptes de línies i diferències desplegables.",
   "settings.general.row.shellToolPartsExpanded.title": "Amplieu les peces de l'eina de closca",
   "settings.general.row.shellToolPartsExpanded.description":
     "Mostra les parts de l'eina d'intèrpret d'ordres ampliades per defecte a la línia de temps",

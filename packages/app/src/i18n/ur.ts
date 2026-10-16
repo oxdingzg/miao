@@ -975,6 +975,8 @@ export const dict = {
     "کمپوزر میں ایجنٹس تبدیل کریں۔ چھپانے پر Build ایجنٹ بطور طے شدہ استعمال ہوگا۔",
   "settings.general.row.reasoningSummaries.title": "استدلال کے خلاصے دکھائیں۔",
   "settings.general.row.reasoningSummaries.description": "ٹائم لائن میں ماڈل استدلال کے خلاصے ڈسپلے کریں۔",
+  "settings.general.row.turnDiffs.title": "ہر مرحلے کی تبدیل شدہ فائلیں دکھائیں",
+  "settings.general.row.turnDiffs.description": "ٹائم لائن میں ہر مکمل مرحلے کی تبدیل شدہ فائلوں کو سطر شمار اور پھیلنے والے فرق کے ساتھ فہرست کرتا ہے۔",
   "settings.general.row.shellToolPartsExpanded.title": "شیل ٹول کے حصے پھیلائیں",
   "settings.general.row.shellToolPartsExpanded.description":
     "ٹائم لائن میں شیل ٹول کے حصے بطور طے شدہ پھیلے ہوئے دکھائیں۔",
