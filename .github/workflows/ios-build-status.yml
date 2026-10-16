@@ -29,4 +29,4 @@ jobs:
               )
           PY
           gem install fastlane --no-document
-          fastlane run latest_testflight_build_number --api_key_path "\$RUNNER_TEMP/asc.json" --app_identifier dev.miao.remote --app_platform ios
+          fastlane run latest_testflight_build_number --api_key_path "$RUNNER_TEMP/asc.json" --app_identifier dev.miao.remote --app_platform ios
