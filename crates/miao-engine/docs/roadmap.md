@@ -96,6 +96,13 @@ Decide an independent credential broker, additional providers, full media/LSP/MC
 
 Recently landed product-integration evidence (2026-10-12), recorded without changing any status above:
 
+- B3 credential rollback: the standalone daemon's `release` IPC/CLI operation
+  joins in-flight refresh before atomically handing a row back to the product
+  broker. Tokens and unknown metadata are preserved; waiting refreshes recheck
+  ownership. Cross-platform SQL handoff and Unix socket/CLI race scenarios live
+  in `crates/miao-credential/tests/{ownership,daemon}.rs`. This closes the
+  reversible handoff mechanism, not real-account expiry/refresh acceptance.
+
 - A durable `session_engine_placement` catalog binds each Session's engine, native storage, and Location atomically; exact retries adopt the binding and cross-engine/storage/Location takeover is rejected. Location resolution now treats that catalog as the routing authority and never reads or heals TS metadata for a Rust-owned Session.
 - Client-only assistant-identity and per-attempt provider request/result receipts are delivered on the product stream, bound to their durable cursor, without writing the TS journal. They are evidence for clients; no product UI consumes them yet.
 - Strict offline replay preserves recorded partial-response bytes exactly, and WAL enablement retries when another window holds the database. A single all-Rust binary is the end-state direction of the existing migration design. Revise the ADR and use experience/startup/maintenance data to decide whether and when to migrate the shell.

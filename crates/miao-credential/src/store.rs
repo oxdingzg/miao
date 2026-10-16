@@ -179,6 +179,64 @@ pub fn claim(path: &Path, id: &str, integration: &str, socket: &str) -> Result<(
     transaction.commit().map_err(|_| Error::Database)
 }
 
+/// Hand an owned row back to the product broker without copying or reverting
+/// its tokens. The marker and SQL guard disappear in the same transaction.
+/// The caller holds the daemon's row lock, including across provider refresh.
+pub fn release(path: &Path, id: &str, integration: &str, socket: &str) -> Result<(), Error> {
+    let mut connection = open(path)?;
+    let transaction = connection
+        .transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)
+        .map_err(|_| Error::Database)?;
+    let (stored, encoded): (String, String) = transaction
+        .query_row(
+            "SELECT integration_id,value FROM credential WHERE id=?1",
+            [id],
+            |row| Ok((row.get(0)?, row.get(1)?)),
+        )
+        .optional()
+        .map_err(|_| Error::Database)?
+        .ok_or(Error::Missing)?;
+    if stored != integration {
+        return Err(Error::Integration);
+    }
+    if encoded.len() > 131072 {
+        return Err(Error::Invalid);
+    }
+    let mut value: Value = serde_json::from_str(&encoded).map_err(|_| Error::Invalid)?;
+    let owner: Option<String> = transaction
+        .query_row(
+            "SELECT socket FROM credential_daemon_owner WHERE credential_id=?1",
+            [id],
+            |row| row.get(0),
+        )
+        .optional()
+        .map_err(|_| Error::Database)?;
+    let marker = value["metadata"]["miaoCredentialSocket"].as_str();
+    if owner.is_none() && marker.is_none() {
+        return Ok(());
+    }
+    if owner.as_deref() != Some(socket) || marker != Some(socket) {
+        return Err(Error::NotRefreshable);
+    }
+    value["metadata"]
+        .as_object_mut()
+        .ok_or(Error::Invalid)?
+        .remove("miaoCredentialSocket");
+    transaction
+        .execute(
+            "DELETE FROM credential_daemon_owner WHERE credential_id=?1",
+            [id],
+        )
+        .map_err(|_| Error::Database)?;
+    transaction
+        .execute(
+            "UPDATE credential SET value=?1 WHERE id=?2",
+            rusqlite::params![value.to_string(), id],
+        )
+        .map_err(|_| Error::Database)?;
+    transaction.commit().map_err(|_| Error::Database)
+}
+
 /// Writes refreshed token fields back into one row's stored JSON. Unknown
 /// fields are preserved; `metadata` is never touched.
 pub fn store_refreshed(
