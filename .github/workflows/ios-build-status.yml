@@ -6,49 +6,27 @@ permissions:
 jobs:
   status:
     runs-on: macos-14
-    timeout-minutes: 10
+    timeout-minutes: 15
     steps:
-      - name: Query App Store Connect build status
+      - name: List recent TestFlight builds
         env:
           APPLE_API_KEY_ID: ${{ secrets.APPLE_API_KEY_ID }}
           APPLE_API_ISSUER: ${{ secrets.APPLE_API_ISSUER }}
           APPLE_API_KEY_P8: ${{ secrets.APPLE_API_KEY_P8 }}
         run: |
-          echo "key_id_length=${#APPLE_API_KEY_ID} issuer_length=${#APPLE_API_ISSUER} p8_bytes=$(printf '%s' "$APPLE_API_KEY_P8" | wc -c) p8_header=$(printf '%s' "$APPLE_API_KEY_P8" | base64 --decode | head -1)"
-          python3 -m venv "$RUNNER_TEMP/venv"
-          "$RUNNER_TEMP/venv/bin/pip" install --quiet pyjwt cryptography
-          APPLE_API_KEY_ID="$APPLE_API_KEY_ID" APPLE_API_ISSUER="$APPLE_API_ISSUER" APPLE_API_KEY_P8="$APPLE_API_KEY_P8" VENV="$RUNNER_TEMP/venv" "$RUNNER_TEMP/venv/bin/python3" - <<'PY'
-          import base64, json, os, time, urllib.request, urllib.error
-
-          import jwt
-
-          key = os.environ["VENV"] + "/AuthKey.p8"
-          with open(key, "wb") as handle:
-              handle.write(base64.b64decode(os.environ["APPLE_API_KEY_P8"]))
-          now = int(time.time())
-          token = jwt.encode(
-              {"iss": os.environ["APPLE_API_ISSUER"], "iat": now - 60, "exp": now + 1200},
-              open(key, "rb").read(),
-              algorithm="ES256",
-              headers={"kid": os.environ["APPLE_API_KEY_ID"]},
-          )
-
-          def api(path):
-              request = urllib.request.Request("https://api.appstoreconnect.apple.com" + path, headers={"Authorization": "Bearer " + token})
-              try:
-                  return json.load(urllib.request.urlopen(request))
-              except urllib.error.HTTPError as error:
-                  print("HTTP", error.code, error.read().decode()[:400])
-                  raise
-
-          apps = api("/v1/apps?filter%5BbundleId%5D=dev.miao.remote")
-          app_id = apps["data"][0]["id"]
-          builds = api("/v1/builds?filter%5Bapp%5D=" + app_id + "&sort=-uploadedDate&page%5Blimit%5D=5&include=betaAppReviewSubmission")
-          review = {i["id"]: i["attributes"].get("state") for i in builds.get("included", []) if i["type"] == "betaAppReviewSubmissions"}
-          for build in builds.get("data", []):
-              a = build["attributes"]
-              print("version", a.get("version"), "| uploaded", a.get("uploadedDate"), "| processing", a.get("processingState"), "| encryption-exempt", a.get("usesNonExemptEncryption"))
-              sub = (build.get("relationships", {}).get("betaAppReviewSubmission", {}) or {}).get("data")
-              if sub:
-                  print("   beta review:", review.get(sub.get("id")))
+          python3 - "$RUNNER_TEMP/asc.json" "$APPLE_API_KEY_ID" "$APPLE_API_ISSUER" "$APPLE_API_KEY_P8" <<'PY'
+          import base64, json, sys
+          out, key_id, issuer_id, p8_b64 = sys.argv[1:5]
+          with open(out, "w", encoding="utf-8") as handle:
+              json.dump(
+                  {
+                      "key_id": key_id,
+                      "issuer_id": issuer_id,
+                      "key": base64.b64decode(p8_b64).decode(),
+                      "in_house": False,
+                  },
+                  handle,
+              )
           PY
+          gem install fastlane --no-document
+          fastlane pilot builds --api_key_path "$RUNNER_TEMP/asc.json" --platform ios
