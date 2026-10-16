@@ -114,6 +114,10 @@ async fn glob_and_grep_return_workspace_paths_and_line_previews_without_shell() 
     assert_eq!(grep["matches"][0]["path"], "src/a.rs");
     assert_eq!(grep["matches"][0]["line"], 2);
     assert_eq!(grep["matches"][0]["text"], "Needle here");
+    assert_eq!(
+        grep["matches"][0]["sha256"],
+        miao_engine::permission::digest(b"first\r\nNeedle here\r\nlast")
+    );
 }
 
 #[tokio::test]
