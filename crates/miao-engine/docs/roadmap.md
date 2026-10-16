@@ -96,6 +96,15 @@ Decide an independent credential broker, additional providers, full media/LSP/MC
 
 Recently landed product-integration evidence (2026-10-12), recorded without changing any status above:
 
+- B2 explicit tool recovery: controller commands `recoveries` and
+  `resolve_recovery` provide paged unknown-outcome discovery and exactly one
+  durable retry/abandon instruction per call. They preserve the original
+  unknown outcome and never schedule work or replay a prior dispatch.
+  [ADR-16](adr/0016-explicit-tool-recovery.md) defines the ownership and
+  admission boundary; `tests/recovery_decisions.rs` covers Host dispatch,
+  explicit continuation, conflicting retries and original-effect preservation.
+  Product recovery UI and real-client restart acceptance remain open.
+
 - A durable `session_engine_placement` catalog binds each Session's engine, native storage, and Location atomically; exact retries adopt the binding and cross-engine/storage/Location takeover is rejected. Location resolution now treats that catalog as the routing authority and never reads or heals TS metadata for a Rust-owned Session.
 - Client-only assistant-identity and per-attempt provider request/result receipts are delivered on the product stream, bound to their durable cursor, without writing the TS journal. They are evidence for clients; no product UI consumes them yet.
 - Strict offline replay preserves recorded partial-response bytes exactly, and WAL enablement retries when another window holds the database. A single all-Rust binary is the end-state direction of the existing migration design. Revise the ADR and use experience/startup/maintenance data to decide whether and when to migrate the shell.
