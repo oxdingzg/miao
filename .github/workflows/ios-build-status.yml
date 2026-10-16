@@ -29,5 +29,4 @@ jobs:
               )
           PY
           gem install fastlane --no-document
-          fastlane action latest_testflight_build_number
-          fastlane run latest_testflight_build_number --api_key_path "$RUNNER_TEMP/asc.json" --app_identifier dev.miao.remote --app_platform ios
+          APPSTORE_BUILD_NUMBER_API_KEY_PATH="$RUNNER_TEMP/asc.json" FASTLANE_APP_IDENTIFIER=dev.miao.remote APPSTORE_PLATFORM=ios fastlane run latest_testflight_build_number
