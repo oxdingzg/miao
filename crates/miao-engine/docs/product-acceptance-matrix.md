@@ -37,14 +37,17 @@ second implementation of the engine logic.
 
 | Platform | Installer evidence | Still required |
 | --- | --- | --- |
-| macOS | ZIP/checksum fixture drill (#862); verified CI 0.2.9 binary install/upgrade/rollback from tag-built 0.2.8; arm64 and translated x64 startup | Published archive, notarization/Gatekeeper, native Intel hardware and data downgrade compatibility |
-| Linux | tar.gz/checksum fixture drill (#862); verified musl CI binary install/upgrade/rollback from tag-built 0.2.8 | Published archive, distributed-binary confinement and data downgrade compatibility |
-| Windows | Installer fixture CI under PowerShell 5.1/7 (#864); real x64 CI binary install/upgrade/rollback from tag-built 0.2.8 under PS5.1 | Published ZIP verification, actual-artifact PS7 drill, confinement and data downgrade compatibility |
+| macOS | ZIP/checksum fixture drill (#862); verified CI 0.2.9 binary install/upgrade/rollback from tag-built 0.2.8; arm64 and translated x64 startup; published 0.2.11 archive verified, Gatekeeper launch under quarantine passed ([0.2.11 report](artifact-acceptance-0.2.11.md)) | Native Intel hardware and data downgrade compatibility |
+| Linux | tar.gz/checksum fixture drill (#862); verified musl CI binary install/upgrade/rollback from tag-built 0.2.8; published 0.2.11 archive verified on the platform ([0.2.11 report](artifact-acceptance-0.2.11.md)) | Data downgrade compatibility |
+| Windows | Installer fixture CI under PowerShell 5.1/7 (#864); real x64 CI binary install/upgrade/rollback from tag-built 0.2.8 under PS5.1; published 0.2.11 ZIP verified, serve startup under PS5.1 ([0.2.11 report](artifact-acceptance-0.2.11.md)) | Actual-artifact PS7 drill (host has no `pwsh`), confinement and data downgrade compatibility |
 
 Fixture executables prove installer behavior, not engine confinement. The
 engine process/sandbox tests remain the confinement evidence, and must be
-repeated against the distributed binaries. The v0.2.9 draft had no engine
-assets at inspection time; publication acceptance is open.
+repeated against the distributed binaries. The v0.2.9 release had no engine
+assets at inspection time; v0.2.11 ships engine archives for every supported
+platform, and the [0.2.11 artifact acceptance report](artifact-acceptance-0.2.11.md)
+closes published-archive verification and macOS Gatekeeper behavior. What
+remains open is recorded there.
 
 The [0.2.9 artifact acceptance report](artifact-acceptance-0.2.9.md) records
 the exact run, commit and hashes for the real binary drills above. It explicitly
