@@ -50,6 +50,14 @@ installer and rollback behavior with real published bytes, not Windows direct
 release-endpoint connectivity or the installer's `-Release` download path.
 No system-wide PowerShell installation or execution-policy change was made.
 
+## Follow-up behavior drill
+
+The [state and file-write confinement report](artifact-state-acceptance-0.2.13.md)
+exercises the same ledger through 0.2.12→0.2.13→0.2.12 and real guarded process
+writes. macOS/Linux published binaries pass those bounded checks; the Windows
+published binary fails its positive write control and the #919 source build
+passes. This is additional scoped evidence, not closure of all gates below.
+
 ## Still open
 
 - Native Intel macOS hardware, as recorded in the prior acceptance reports.

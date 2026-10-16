@@ -92,13 +92,22 @@ impl Provider for OpenAIResponses {
         }
         let input = items(&request.messages, &self.model)?;
         let tools:Vec<Value>=request.tools.iter().map(|tool|json!({"type":"function","name":tool.name,"description":tool.description,"parameters":tool.input_schema})).collect();
-        let body = json!({"model":self.model,"instructions":request.system,"input":input,"tools":tools,"stream":true,"store":false,"include":["reasoning.encrypted_content"]});
+        let cache_key = crate::cache_affinity::key();
+        let mut body = json!({"model":self.model,"instructions":request.system,"input":input,"tools":tools,"stream":true,"store":false,"include":["reasoning.encrypted_content"]});
+        if let Some(key) = &cache_key {
+            body["prompt_cache_key"] = json!(key);
+        }
         let mut builder = self
             .client
             .post(&self.endpoint)
             .bearer_auth(credential.secret())
             .json(&body);
         if matches!(self.profile, Profile::Subscription) {
+            // The subscription backend routes its prefix cache by this header;
+            // a body key alone does not keep successive requests cache-affine.
+            if let Some(key) = &cache_key {
+                builder = builder.header("session-id", key);
+            }
             builder = builder.header("originator", "miao").header(
                 reqwest::header::USER_AGENT,
                 format!("miao-engine/{}", env!("MIAO_ENGINE_VERSION")),

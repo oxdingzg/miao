@@ -9,8 +9,8 @@ import { WorkspaceEvent } from "../src/workspace-event"
 
 describe("public event manifest", () => {
   test("owns the complete public event surface", () => {
-    expect(EventManifest.ServerDefinitions.length).toBe(77)
-    expect(EventManifest.Definitions.length).toBe(99)
+    expect(EventManifest.ServerDefinitions.length).toBe(130)
+    expect(EventManifest.Definitions.length).toBe(106)
     expect(SessionV1.Event.Definitions).toEqual([
       SessionV1.Event.Created,
       SessionV1.Event.Updated,
@@ -23,9 +23,13 @@ describe("public event manifest", () => {
       SessionV1.Event.Diff,
       SessionV1.Event.Error,
     ])
-    expect(EventManifest.Latest.size).toBe(99)
+    expect(EventManifest.Latest.size).toBe(106)
     // Durable background subagent handoff added the delegation pair.
-    expect(EventManifest.Durable.size).toBe(42)
+    expect(EventManifest.Durable.size).toBe(45)
+    // The `/api/event` surface carries the whole bridged `session.next.*`
+    // family: a type missing here fails `clientEvent` validation and kills
+    // live delivery for attached clients.
+    for (const definition of SessionEvent.Definitions) expect(EventManifest.ServerDefinitions).toContain(definition)
   })
 
   test("uses canonical definitions for current public events", () => {
@@ -43,11 +47,10 @@ describe("public event manifest", () => {
     expect(Reference.Event.Definitions).toEqual([Reference.Event.Updated])
     expect(EventManifest.Latest.has("ide.installed")).toBe(false)
     expect(IdeEvent.Definitions).toEqual([IdeEvent.Installed])
-    expect(EventManifest.Definitions.slice(53, 56)).toEqual([
-      SessionV1.Event.PartDelta,
-      SessionV1.Event.Diff,
-      SessionV1.Event.Error,
-    ])
+    // Position inside the inventory is not stable across family additions;
+    // pin the canonical V1 definitions by membership.
+    for (const definition of [SessionV1.Event.PartDelta, SessionV1.Event.Diff, SessionV1.Event.Error])
+      expect(EventManifest.Definitions).toContain(definition)
     expect(EventManifest.Durable.has("session.next.step.ended.1")).toBe(false)
     expect(EventManifest.Durable.get("session.next.step.ended.2")).toBe(SessionEvent.Step.Ended)
   })

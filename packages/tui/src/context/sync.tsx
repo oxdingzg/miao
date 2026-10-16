@@ -62,6 +62,30 @@ import path from "path"
 import { useKV } from "./kv"
 import { usePermission } from "./permission"
 
+function permissionRequest(request: Extract<TuiEvent, { type: "permission.v2.asked" }>["properties"]) {
+  return {
+    id: request.id,
+    sessionID: request.sessionID,
+    permission: request.action,
+    patterns: request.resources,
+    metadata: request.metadata ?? {},
+    always: request.save ?? [],
+    tool:
+      request.source?.type === "tool"
+        ? { messageID: request.source.messageID, callID: request.source.callID }
+        : undefined,
+  } as unknown as PermissionRequest
+}
+
+// A reply received during the read must not resurrect a request from its stale
+// snapshot; a newly asked request must survive even when absent from that read.
+function recoverRequests<T extends { id: string }>(snapshot: T[], current: T[], touched: Set<string>) {
+  return [
+    ...snapshot.filter((item) => !touched.has(item.id)),
+    ...current.filter((item) => touched.has(item.id)),
+  ].toSorted((a, b) => a.id.localeCompare(b.id))
+}
+
 function search<T>(items: T[], target: string, key: (item: T) => string) {
   let left = 0
   let right = items.length - 1
@@ -259,6 +283,9 @@ export const {
     // client, so without this gate each TUI would hydrate and re-render the
     // transcript of sessions it is not showing.
     const watchedSessions = new Set<string>()
+    const connection = { generation: 0 }
+    const recoveringSessions = new Set<string>()
+    const staleRequests = new Set<string>()
     const syncingSessions = new Map<string, Promise<void>>()
     const hydratingSessions = new Map<string, { messages: Set<string>; parts: Set<string> }>()
     // Older timeline pages stay out of the store until a reader asks for them, so
@@ -375,6 +402,56 @@ export const {
     })
     onCleanup(() => v2Refresh.dispose())
 
+    const requestReads = new Map<string, { permissions: Set<string>; questions: Set<string> }>()
+    const requestRefresh = createSessionRefreshScheduler({
+      refresh: async (sessionID) => {
+        if (!watchedSessions.has(sessionID)) return
+        const tracker = { permissions: new Set<string>(), questions: new Set<string>() }
+        requestReads.set(sessionID, tracker)
+        try {
+          const [permissions, questions] = await Promise.all([
+            sdk.api.permissions.list({ sessionID }),
+            sdk.api.questions.list({ sessionID }),
+          ])
+          if (requestReads.get(sessionID) !== tracker) return
+          const pending = permissions.filter((request) => !tracker.permissions.has(request.id))
+          if (permission.mode === "auto")
+            pending.forEach((request) => {
+              void sdk.api.permissions
+                .reply({ sessionID, requestID: request.id, reply: "once" })
+                .catch((error) => console.error("permission auto-reply failed", { error: errorMessage(error) }))
+            })
+          batch(() => {
+            setStore(
+              "permission",
+              sessionID,
+              reconcile(
+                recoverRequests(
+                  permission.mode === "auto" ? [] : mutableResponse(permissions).map(permissionRequest),
+                  store.permission[sessionID] ?? [],
+                  tracker.permissions,
+                ),
+              ),
+            )
+            setStore(
+              "question",
+              sessionID,
+              reconcile(
+                recoverRequests(mutableResponse(questions), store.question[sessionID] ?? [], tracker.questions),
+              ),
+            )
+          })
+        } finally {
+          if (requestReads.get(sessionID) === tracker) requestReads.delete(sessionID)
+        }
+      },
+      onError: (error) => console.error("Failed to recover pending requests", { error: errorMessage(error) }),
+    })
+    onCleanup(() => {
+      requestRefresh.dispose()
+      requestReads.clear()
+    })
+
     // A session created or renamed by another attached client still belongs in
     // this TUI's list. Refresh only the list for those, never the transcript.
     let refreshList: (() => Promise<void>) | undefined
@@ -418,6 +495,9 @@ export const {
       sessionMessages.delete(sessionID)
       fullSyncedSessions.delete(sessionID)
       watchedSessions.delete(sessionID)
+      recoveringSessions.delete(sessionID)
+      staleRequests.delete(sessionID)
+      requestReads.delete(sessionID)
       syncingSessions.delete(sessionID)
       hydratingSessions.delete(sessionID)
       olderHistory.delete(sessionID)
@@ -683,6 +763,21 @@ export const {
     // A durable boundary can project slightly behind a fragment that already
     // reached the store; keep the local text rather than rolling it back.
     event.subscribe((event, { workspace }) => {
+      switch (event.type) {
+        case "permission.v2.asked":
+          requestReads.get(event.properties.sessionID)?.permissions.add(event.properties.id)
+          break
+        case "permission.v2.replied":
+          requestReads.get(event.properties.sessionID)?.permissions.add(event.properties.requestID)
+          break
+        case "question.v2.asked":
+          requestReads.get(event.properties.sessionID)?.questions.add(event.properties.id)
+          break
+        case "question.v2.replied":
+        case "question.v2.rejected":
+          requestReads.get(event.properties.sessionID)?.questions.add(event.properties.requestID)
+          break
+      }
       if (
         RECOVERED_EVENTS.has(event.type) &&
         "sessionID" in event.properties &&
@@ -734,6 +829,26 @@ export const {
         }
       }
       switch (event.type) {
+        case "server.connected": {
+          // The live feed has no replay cursor. Reconstruct authoritative state
+          // on every new connection, including after subscriber overflow. Mark
+          // hidden histories stale but only fetch sessions currently on screen.
+          fullSyncedSessions.clear()
+          connection.generation += 1
+          requestReads.clear()
+          for (const sessionID of watchedSessions) {
+            recoveringSessions.add(sessionID)
+            staleRequests.add(sessionID)
+            streamText.clear(sessionID)
+          }
+          scheduleListRefresh()
+          for (const sessionID of pinnedSessions) {
+            v2Refresh.schedule(sessionID)
+            requestRefresh.schedule(sessionID)
+            staleRequests.delete(sessionID)
+          }
+          break
+        }
         case "session.next.status": {
           const input = event.properties
           const previous = store.session_status[input.sessionID]
@@ -837,18 +952,7 @@ export const {
           break
         case "permission.v2.asked": {
           const request = event.properties
-          const mapped = {
-            id: request.id,
-            sessionID: request.sessionID,
-            permission: request.action,
-            patterns: request.resources,
-            metadata: request.metadata ?? {},
-            always: request.save ?? [],
-            tool:
-              request.source?.type === "tool"
-                ? { messageID: request.source.messageID, callID: request.source.callID }
-                : undefined,
-          } as unknown as PermissionRequest
+          const mapped = permissionRequest(request)
           if (permission.mode === "auto") {
             void sdk.api.permissions
               .reply({
@@ -1413,12 +1517,15 @@ export const {
         async sync(sessionID: string) {
           // Opening a session marks it watched even if a sync is already in
           // flight, so its live events are applied from here on.
+          if (!watchedSessions.has(sessionID) || staleRequests.delete(sessionID)) requestRefresh.schedule(sessionID)
           watchedSessions.add(sessionID)
           lastViewed.set(sessionID, Date.now())
           if (fullSyncedSessions.has(sessionID)) return
           const syncing = syncingSessions.get(sessionID)
           if (syncing) return syncing
           const tracker = { messages: new Set<string>(), parts: new Set<string>() }
+          const generation = connection.generation
+          const recovering = recoveringSessions.has(sessionID)
           const started = performance.now()
           hydration.count += 1
           hydratingSessions.set(sessionID, tracker)
@@ -1491,6 +1598,10 @@ export const {
               messagesPromise,
               sdk.api.sessions.todo({ sessionID }).then((x) => ({ data: mutableResponse(x) })),
             ])
+            // A read begun on the previous connection cannot repair a gap that
+            // happened after it started. The reconnect refresh joins it, then
+            // reads again; hidden sessions remain invalidated until opened.
+            if (generation !== connection.generation) return
             batch(() => {
               const match = search(store.session, sessionID, (s) => s.id)
               // A snapshot fetched before a live rename must not revert it; the
@@ -1532,7 +1643,7 @@ export const {
                     // already holds streamed content (the server has not caught
                     // up); keep the local value. A non-empty snapshot is
                     // authoritative and replaces it.
-                    if (local?.type === "assistant") {
+                    if (!recovering && local?.type === "assistant") {
                       const localPart = local.content.find((item) => item.id === part.id)
                       if (
                         localPart &&
@@ -1564,6 +1675,7 @@ export const {
             v2Reducer.clear(sessionID)
             mergeStreamedTextIntoShadow(sessionID, messages.source)
             fullSyncedSessions.add(sessionID)
+            recoveringSessions.delete(sessionID)
             streamText.releaseEnded(sessionID)
             evictExcessSessions()
             capSessionMessages(sessionID)
