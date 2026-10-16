@@ -691,6 +691,33 @@ describe("OpenAI Responses route", () => {
     }),
   )
 
+  it.effect("separates reported cache writes from ordinary Responses input", () =>
+    Effect.gen(function* () {
+      for (const counts of [
+        { input: 100, read: 60, write: 25, ordinary: 15 },
+        { input: 50, read: 30, write: 0, ordinary: 20 },
+        { input: 50, read: 40, write: 25, ordinary: 0 },
+      ]) {
+        const raw = {
+          input_tokens: counts.input,
+          output_tokens: 7,
+          input_tokens_details: { cached_tokens: counts.read, cache_write_tokens: counts.write },
+        }
+        const response = yield* LLMClient.generate(request).pipe(
+          Effect.provide(fixedResponse(sseEvents({ type: "response.completed", response: { usage: raw } }))),
+        )
+        expect(response.usage).toMatchObject({
+          inputTokens: counts.input,
+          outputTokens: 7,
+          nonCachedInputTokens: counts.ordinary,
+          cacheReadInputTokens: counts.read,
+          cacheWriteInputTokens: counts.write,
+          providerMetadata: { openai: raw },
+        })
+      }
+    }),
+  )
+
   it.effect("parses text and usage stream fixtures", () =>
     Effect.gen(function* () {
       const body = sseEvents(
