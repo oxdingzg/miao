@@ -1,7 +1,7 @@
 import { spawn } from "bun"
 import { EOL } from "os"
 import type { ConfigMCP } from "@miao/schema/config/mcp"
-import type { ResponsesCacheContract } from "@miao/schema/config"
+import type { ResponsesCacheContract, ResponsesWebSocketContract } from "@miao/schema/config"
 import { prepareMcpConfig } from "./mcp-config"
 
 /**
@@ -43,6 +43,7 @@ export interface EngineOptions {
   /** Transport-failure fallback model on the same route. */
   fallbackModel?: string
   responsesCacheContract?: ResponsesCacheContract
+  responsesWebSocketContract?: ResponsesWebSocketContract
   toolDisclosure?: "full" | "compact"
   /** Purpose-role model bindings (ADR-14): model ids on the engine's own route. */
   roles?: { summarize?: string; retrieve?: string; verify?: string }
@@ -168,6 +169,8 @@ export function engineArgs(options: EngineOptions): string[] {
   if (options.promptCache !== undefined) args.push("--prompt-cache", options.promptCache ? "on" : "off")
   if (options.responsesCacheContract)
     args.push("--responses-cache-contract", JSON.stringify(options.responsesCacheContract))
+  if (options.responsesWebSocketContract)
+    args.push("--responses-websocket-contract", JSON.stringify(options.responsesWebSocketContract))
   if (options.verifyCommand) args.push("--verify-command", options.verifyCommand)
   if (options.fallbackModel) args.push("--fallback-model", options.fallbackModel)
   if (options.toolDisclosure) args.push("--tool-disclosure", options.toolDisclosure)

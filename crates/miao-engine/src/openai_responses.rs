@@ -28,6 +28,8 @@ pub struct OpenAIResponses {
     source: Source,
     model: String,
     cache_contract: Option<crate::responses_cache::Contract>,
+    websocket_contract: Option<crate::responses_websocket::Contract>,
+    websocket_pool: std::sync::Arc<crate::responses_websocket::Pool>,
 }
 impl OpenAIResponses {
     pub fn new(endpoint: String, key: String, model: String) -> Result<Self, reqwest::Error> {
@@ -54,6 +56,8 @@ impl OpenAIResponses {
             model,
             profile,
             cache_contract: None,
+            websocket_contract: None,
+            websocket_pool: std::sync::Arc::new(crate::responses_websocket::Pool::default()),
         })
     }
     pub fn with_cache_contract(
@@ -70,6 +74,20 @@ impl OpenAIResponses {
         self.cache_contract = Some(contract);
         Ok(self)
     }
+    pub fn with_websocket_contract(
+        mut self,
+        contract: crate::responses_websocket::Contract,
+    ) -> Result<Self, String> {
+        let endpoint =
+            reqwest::Url::parse(&self.endpoint).map_err(|_| "invalid Responses endpoint")?;
+        contract.validate(
+            &self.model,
+            &endpoint,
+            matches!(self.profile, Profile::Subscription),
+        )?;
+        self.websocket_contract = Some(contract);
+        Ok(self)
+    }
 }
 #[async_trait]
 impl Provider for OpenAIResponses {
@@ -79,6 +97,13 @@ impl Provider for OpenAIResponses {
         }
         let mut selected = self.clone();
         selected.model = model.to_owned();
+        if selected
+            .websocket_contract
+            .as_ref()
+            .is_some_and(|contract| contract.model != model)
+        {
+            selected.websocket_contract = None;
+        }
         if selected
             .cache_contract
             .as_ref()
@@ -170,6 +195,37 @@ impl OpenAIResponses {
             }
         }
         let request = builder.build().map_err(|_| ProviderError::Transport)?;
+        if let Some(contract) = &self.websocket_contract {
+            if let Some(reply) = crate::responses_websocket::try_stream(
+                &self.websocket_pool,
+                contract,
+                &request,
+                progress.clone(),
+                cancel.clone(),
+                ResponsesState {
+                    model: self.model.clone(),
+                    ..Default::default()
+                },
+                |reply| {
+                    items(
+                        &[Message {
+                            role: "assistant".into(),
+                            content: reply.content.clone(),
+                            checkpoint: None,
+                            recorded_at_ms: None,
+                        }],
+                        &self.model,
+                    )
+                },
+            )
+            .await?
+            {
+                return Ok(reply);
+            }
+            let _ = progress.try_send(
+                json!({"kind":"transport.http_fallback","from":"websocket","history":"full"}),
+            );
+        }
         let response = request_with_retry(
             "openai-responses",
             &self.client,
@@ -511,3 +567,7 @@ impl Parser for ResponsesState {
         })
     }
 }
+
+#[cfg(test)]
+#[path = "openai_responses_websocket_tests.rs"]
+mod websocket_tests;

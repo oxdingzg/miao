@@ -37,12 +37,26 @@ export class ResponsesCacheContract extends Schema.Class<ResponsesCacheContract>
   prewarm: optional(Schema.Literal(false)),
 }) {}
 
+/** Explicit Responses WebSocket deployment capability; absence preserves HTTP. */
+export class ResponsesWebSocketContract extends Schema.Class<ResponsesWebSocketContract>(
+  "Config.ResponsesWebSocketContract",
+)({
+  model: Schema.String,
+  endpoint: Schema.String,
+  authentication: Schema.Literals(["api", "subscription"]),
+  mode: Schema.Literals(["full", "delta"]),
+  beta: optional(Schema.Boolean),
+}) {}
+
 /**
  * Engine process settings (B1): read from the **global** config file only —
  * the engine is one process serving every Location, so project documents do
  * not configure it. The operator's environment overrides any key.
  */
 export class Engine extends Schema.Class<Engine>("Config.Engine")({
+  responses_websocket_contract: optional(ResponsesWebSocketContract).annotate({
+    parseOptions: { onExcessProperty: "error" },
+  }),
   tool_disclosure: optional(Schema.Literals(["full", "compact"])).annotate({
     description: "Extension tool disclosure: full schemas (default) or stable search/call bridge",
   }),

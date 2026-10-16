@@ -135,6 +135,21 @@ struct RetryScope {
     limit: usize,
 }
 tokio::task_local! {static RETRY_SCOPE:RetryScope;}
+pub(crate) fn transport_attempt() -> Result<(tokio::time::Instant, usize), ProviderError> {
+    let scope = RETRY_SCOPE
+        .try_with(Clone::clone)
+        .unwrap_or_else(|_| RetryScope {
+            budget: Budget::new(),
+            limit: 3,
+        });
+    if scope.limit == 0
+        || tokio::time::Instant::now() >= scope.budget.deadline
+        || !scope.budget.take()
+    {
+        return Err(ProviderError::Transport);
+    }
+    Ok((scope.budget.deadline, scope.budget.used()))
+}
 pub(crate) async fn scoped<F: std::future::Future<Output = Result<Reply, ProviderError>>>(
     budget: Arc<Budget>,
     limit: usize,
