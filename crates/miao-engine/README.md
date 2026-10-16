@@ -760,5 +760,8 @@ verifies that the same request does not write a file.
 
 ## Completion verification receipts
 
+Provider reporting also exposes [auxiliary usage and coverage](docs/auxiliary-usage.md) for complete
+and partial primary observations, role attempts and child outcome evidence.
+
 Configured completion commands produce [version-bound verification receipts](docs/verification-receipts.md)
 with actual exit/output, task revisions and bounded source coverage.

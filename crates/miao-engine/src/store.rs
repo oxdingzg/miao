@@ -1705,18 +1705,37 @@ impl Store {
             let mut tool_calls = 0u64;
             let mut tool_failures = 0u64;
             let mut turn_detail: Vec<Value> = Vec::new();
+            let mut provider_usage=crate::usage::Totals::default();
+            let mut auxiliary_usage=crate::usage::Totals::default();
+            let mut auxiliary_detail=Vec::new();
+            let mut provider_detail=Vec::new();
+            let mut auxiliary_accepted=0u64;
+            let mut auxiliary_failed=0u64;
+            let mut auxiliary_rejected=0u64;
+            let mut role_starts=std::collections::HashMap::<u64,Option<u64>>::new();
             let mut stmt = conn.prepare(
-                "SELECT kind,data FROM engine_event WHERE session_id=?1 AND kind IN ('usage','provider.started','provider.request','tool.completed') ORDER BY seq",
+                "SELECT seq,kind,data,recorded_at_ms FROM engine_event WHERE session_id=?1 AND kind IN ('usage','provider.started','provider.request','tool.completed','role.provider.started','role.provider.completed') ORDER BY seq",
             )?;
             let mut rows = stmt.query(params![session])?;
             while let Some(row) = rows.next()? {
-                let kind: String = row.get(0)?;
-                let data: Value = serde_json::from_str(&row.get::<_, String>(1)?)?;
+                let kind: String = row.get(1)?;
+                let data: Value = serde_json::from_str(&row.get::<_, String>(2)?)?;
                 let key = (
                     data["run_id"].as_str().unwrap_or_default().to_owned(),
                     data["step"].as_u64().unwrap_or_default().to_string(),
                 );
                 match kind.as_str() {
+                    "role.provider.started"=>{role_starts.insert(row.get::<_,u64>(0)?,row.get::<_,Option<u64>>(3)?);}
+                    "role.provider.completed"=>{
+                        let usage=crate::usage::observed(&data["usage"]);
+                        provider_usage.observe(&usage);auxiliary_usage.observe(&usage);
+                        auxiliary_accepted+=u64::from(data["accepted"]==true);
+                        auxiliary_failed+=u64::from(data["providerSuccess"]!=true);
+                        auxiliary_rejected+=u64::from(data["providerSuccess"]==true && data["accepted"]!=true);
+                        let duration=data["startedSeq"].as_u64().and_then(|seq|role_starts.get(&seq).copied().flatten()).zip(row.get::<_,Option<u64>>(3)?).and_then(|(start,end)|end.checked_sub(start));
+                        let detail=json!({"receiptSeq":row.get::<_,u64>(0)?,"kind":"auxiliary","runID":data["run_id"],"role":data["role"],"path":data["path"],"accepted":data["accepted"],"providerSuccess":data["providerSuccess"],"protocol":data["identity"]["protocol"],"model":data["identity"]["model"],"identitySource":data["identitySource"],"usage":usage,"durationMs":duration,"turnMs":row.get::<_,Option<u64>>(3)?});
+                        auxiliary_detail.push(detail.clone());provider_detail.push(detail);
+                    }
                     "provider.request" => {
                         requests += 1;
                         let diagnostic = &data["cache_diagnostics"];
@@ -1751,6 +1770,7 @@ impl Store {
                             turns += 1;
                         }
                         let usage = &data["usage"];
+                        provider_usage.observe(usage);
                         if usage["inputTokens"].as_u64().is_some_and(|input| {
                             usage["cacheReadInputTokens"].as_u64().unwrap_or(0)
                                 .saturating_add(usage["cacheWriteInputTokens"].as_u64().unwrap_or(0)) > input
@@ -1774,11 +1794,13 @@ impl Store {
                                 .entry((provider.clone(), model.clone()))
                                 .or_insert(0) += 1;
                         }
-                        if data["partial"].as_bool() != Some(true) {
+                        {
                             // Per-turn rows keep each turn's own context size so
                             // the product can price tiered rates per turn instead
                             // of against the summed input.
                             let mut detail = json!({
+                                "kind":"primary","partial":data["partial"]==true,
+                                "observedUsage":crate::usage::observed(usage),
                                 "runID": data["run_id"],
                                 "step": data["step"],
                                 "usage": {
@@ -1797,7 +1819,8 @@ impl Store {
                             if let Some(value) = turn_ms.get(&key) {
                                 detail["turnMs"] = json!(value);
                             }
-                            turn_detail.push(detail);
+                            provider_detail.push(detail.clone());
+                            if data["partial"] != true { turn_detail.push(detail); }
                         }
                     }
                 }
@@ -1818,6 +1841,9 @@ impl Store {
                 })
             };
             Ok(json!({
+                "providerUsage":provider_usage.report(),
+                "providerDetail":provider_detail,
+                "auxiliary":{"usage":auxiliary_usage.report(),"accepted":auxiliary_accepted,"semanticRejected":auxiliary_rejected,"providerFailed":auxiliary_failed,"turnsDetail":auxiliary_detail},
                 "turns": turns,
                 "partialTurns": partial_turns,
                 "tokens": tokens,
