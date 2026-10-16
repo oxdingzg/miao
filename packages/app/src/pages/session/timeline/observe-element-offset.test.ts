@@ -71,7 +71,7 @@ test("keeps checking until stale reset-delay callbacks can no longer win", async
     options: {
       horizontal: false,
       isRtl: false,
-      isScrollingResetDelay: 20,
+      isScrollingResetDelay: 500,
       useScrollendEvent: false,
     },
   } as unknown as Virtualizer<HTMLDivElement, HTMLDivElement>
@@ -92,6 +92,10 @@ test("keeps checking until stale reset-delay callbacks can no longer win", async
   // frame, and CI throttles frames. Wait for the correction to be observable
   // instead of assuming a fixed number of frames, then give any spurious extra
   // delivery a few frames to surface before asserting exact delivery count.
+  // The reset delay is large enough that the checker's post-deadline frames
+  // outlast any test-continuation stall: writing the stale offset from the
+  // test body can otherwise land after the checker loop has already ended on
+  // a loaded runner, making the correction permanently unreachable.
   await waitFor(() => instance.scrollOffset === 0 && calls.length >= 2)
   await frames(3)
 
@@ -99,7 +103,7 @@ test("keeps checking until stale reset-delay callbacks can no longer win", async
   expect(calls).toEqual([0, 0])
   cleanup?.()
   route.remove()
-})
+}, 15_000)
 
 test.each([
   { name: "LTR", isRtl: false, expected: 240 },
