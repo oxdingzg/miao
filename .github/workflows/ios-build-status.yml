@@ -23,9 +23,9 @@ jobs:
           payload=$(printf '{"iss":"%s","iat":%d,"exp":%d}' "$APPLE_API_ISSUER" "$iat" "$exp" | b64)
           sig=$(printf '%s.%s' "$header" "$payload" | openssl dgst -sha256 -sign "$key" -binary | b64)
           token="${header}.${payload}.${sig}"
-          apps=$(curl -sS -H "Authorization: Bearer $token" "https://api.appstoreconnect.apple.com/v1/apps?filter[bundleId]=dev.miao.remote")
+          apps=$(curl -sSg -H "Authorization: Bearer $token" "https://api.appstoreconnect.apple.com/v1/apps?filter[bundleId]=dev.miao.remote")
           app_id=$(echo "$apps" | python3 -c 'import json,sys; d=json.load(sys.stdin); print(d["data"][0]["id"])')
-          builds=$(curl -sS -H "Authorization: Bearer $token" "https://api.appstoreconnect.apple.com/v1/builds?filter[app]=$app_id&sort=-uploadedDate&page[limit]=5&include=betaAppReviewSubmission")
+          builds=$(curl -sSg -H "Authorization: Bearer $token" "https://api.appstoreconnect.apple.com/v1/builds?filter[app]=$app_id&sort=-uploadedDate&page[limit]=5&include=betaAppReviewSubmission")
           echo "$builds" | python3 -c '
           import json, sys
           d = json.load(sys.stdin)
