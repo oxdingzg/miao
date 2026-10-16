@@ -44,7 +44,7 @@ omitting them.
 ```
 
 Only the global documents feed this mapping; project documents cannot choose
-native host programs. Each owner materializes a private `0600` manifest outside
+native host programs. Each owner materializes a private manifest (`0600` on POSIX) outside
 the workspace, retains it for its child lifetime and removes it on exit or
 startup failure. An explicit MCP manifest overrides shared settings. Attachment
 does not grant individual tool calls: the native policy's tool decisions still
