@@ -19,6 +19,42 @@ native history renders, a prompt typed into the TUI reaches the native provider,
 and its reply renders. This plain-prompt scenario does not close the remaining
 approval, interruption, external-client or capability rows below.
 
+**Resolved 2026-10-16: the native live event stream reaches attached clients.**
+The blocker described below was a wiring defect, not a missing bridge. The
+client-event fan-out registry lived inside each `ClientEvents` layer instance,
+and the native transport is built with `Layer.fresh` once per listener, so the
+bridge published product events into an instance that held no subscribers. The
+registry is process-scoped now, so publishing and subscribing meet on the
+process instead of on the layer; a regression test pins a publish across two
+separately built graphs and fails when the registry is instanced again.
+
+Verified in a real attached TUI over the published 0.2.13 engine with a
+deterministic provider: the pending approval renders, granting once lets the
+engine execute its `write_file` (`tool.completed` with `applied:true`), the tool
+block and its result render in the transcript, Esc interrupts a hanging call
+without a replacement provider request, and the Session then serves a new
+prompt. The rejection path was also verified: Esc rejects the pending approval,
+no file is created, the ledger contains no `tool.dispatched`, and the next
+provider request carries the rejected tool result.
+
+Message-level usage already flows through the native journal translator and
+transcript reducer; `native-history-http.test.ts` verifies those tokens against
+the published engine. The missing Session GET lifetime token totals are now
+read from the existing engine usage report (#911), with two-turn/cache-read
+aggregation covered by the same HTTP acceptance test and no shadow TS history.
+Creation/listing keep their inexpensive defaults. Pricing and product
+per-model usage summaries remain separate work; the full cache/TTFT presentation
+matrix is not closed by a successful cumulative token assertion.
+
+The independent ACP SDK acceptance in #912 covers allow/reject, cancellation
+and continuation, and process replacement/resume over the executable's stdio
+entry point. This proves a separate protocol consumer, not integration inside
+a third-party editor UI. That UI integration and real-client backlog bounds
+remain open.
+
+<details>
+<summary>Original observation (2026-10-16, before the fix)</summary>
+
 **Open blocker (found 2026-10-16; diagnosis corrected the same day): a native
 Session publishes no live session events.** An attached client cannot follow or
 approve a native turn, because the serve's `/api/event` stream carries no
@@ -37,20 +73,19 @@ The engine and the read side of the native turn are correct. The journal shows
 request id, input hash, policy revision and expiry) and the `permission_request`
 announcement to the serve; the HTTP read projection (`/message`, `/context`)
 contains the assistant tool part; and under an allow rule the write executes
-without asking. Only the live stream is missing, which blocks the
-visible-approval, cancel-from-TUI and step-accounting rows until the serve
-publishes engine-originated session and approval events. The deterministic
-columns of those rows are unaffected.
+without asking. Only the live stream is missing.
+
+</details>
 
 | Behavior | Existing automated evidence | Product acceptance still required |
 | --- | --- | --- |
-| Prompt and streamed answer | `tests/acp.rs`; product `native-coding-http.test.ts` | Native-owned Session in the daily TUI and an external ACP client |
-| Approval and denial | ACP request_permission scenario; product approval/reply tests | Visible pending approval, grant and denial in each actual client |
-| Cancellation | `tests/acp_client_matrix.rs`: incomplete HTTP response, cancelled prompt reply, successful continuation (#861) | Cancel from the TUI and external client; verify no later tool dispatch |
+| Prompt and streamed answer | `tests/acp.rs`; product `native-coding-http.test.ts` | Daily TUI verified 2026-10-16 (live stream and rendered tool part); an external ACP client still required |
+| Approval and denial | ACP request_permission scenario; product approval/reply tests; independent ACP SDK allow/reject (#912) | Pending approval, grant and rejection verified in the TUI 2026-10-16; third-party editor UI still required |
+| Cancellation | `tests/acp_client_matrix.rs`: incomplete HTTP response, cancelled prompt reply, successful continuation (#861); independent ACP SDK cancel/continue (#912) | TUI cancel verified 2026-10-16 (no replacement provider request, Session recovers); third-party editor UI still required |
 | Provider failure | ACP HTTP 400 followed by a successful new prompt; failure is a JSON-RPC error, not end_turn (#861) | Visible error and usable next prompt in actual clients |
 | Process restart/resume | ACP process replacement on the same DB: prior context retained, prior answer not streamed twice (#861) | Client reconnect without duplicate messages or cross-engine takeover |
 | Slow client | HTTP SSE/cursor and restore coverage | Bound the real client's backlog, disconnect it and resume from its cursor |
-| Step accounting | Product bridge and native journal tests (#850) | TUI consumes tokens/cache/TTFT; native pricing is still zero until price resolution lands |
+| Step accounting | Product bridge and native journal tests (#850); HTTP history verifies per-message tokens, and Session GET verifies two-turn/cache totals (#911) | Full TUI cache/TTFT presentation and per-model usage summary still require acceptance; native pricing remains zero until price resolution lands |
 
 These deterministic peers use no paid model calls. Their oracle is the observed
 wire response, committed history and next provider request, rather than a
@@ -62,7 +97,7 @@ second implementation of the engine logic.
 | --- | --- | --- |
 | macOS | ZIP/checksum fixture drill (#862); verified CI 0.2.9 binary install/upgrade/rollback from tag-built 0.2.8; arm64 and translated x64 startup; published 0.2.11 archive verified, Gatekeeper launch under quarantine passed ([0.2.11 report](artifact-acceptance-0.2.11.md)) | Native Intel hardware and data downgrade compatibility |
 | Linux | tar.gz/checksum fixture drill (#862); verified musl CI binary install/upgrade/rollback from tag-built 0.2.8; published 0.2.11 archive verified on the platform ([0.2.11 report](artifact-acceptance-0.2.11.md)) | Data downgrade compatibility |
-| Windows | Installer fixture CI under PowerShell 5.1/7 (#864); real x64 CI binary install/upgrade/rollback from tag-built 0.2.8 under PS5.1; published 0.2.11 ZIP verified, serve startup under PS5.1 ([0.2.11 report](artifact-acceptance-0.2.11.md)) | Actual-artifact PS7 drill (host has no `pwsh`), confinement and data downgrade compatibility |
+| Windows | Installer fixture CI under PowerShell 5.1/7 (#864); real x64 CI binary install/upgrade/rollback from tag-built 0.2.8 under PS5.1; published 0.2.11 startup; published 0.2.12→0.2.13→rollback under PS7 7.6.7 with archive and slot hashes verified ([0.2.13 report](artifact-acceptance-0.2.13.md)) | Confinement and data downgrade compatibility; Windows direct release-endpoint connectivity not exercised by the PS7 drill |
 
 Fixture executables prove installer behavior, not engine confinement. The
 engine process/sandbox tests remain the confinement evidence, and must be

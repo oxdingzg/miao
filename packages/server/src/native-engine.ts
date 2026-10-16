@@ -8,6 +8,7 @@ import type { SessionExecution } from "@miao/schema/session-execution"
 import type { SessionID } from "@miao/schema/session-id"
 import type { SessionInput } from "@miao/schema/session-input"
 import type { SessionMessage } from "@miao/schema/session-message"
+import type { SessionInfo } from "@miao/schema/session-info"
 import type { AbsolutePath } from "@miao/core/schema"
 
 export interface Interface {

@@ -18,6 +18,7 @@ export function createEventSource() {
   let fn: ((event: GlobalEvent) => void) | undefined
   let stream: ReadableStreamDefaultController<Uint8Array> | undefined
   const pending: Uint8Array[] = []
+  let connections = 0
   const send = (event: GlobalEvent) => {
     if (!("properties" in event.payload)) return
     const chunk = new TextEncoder().encode(
@@ -46,8 +47,17 @@ export function createEventSource() {
     },
     // Writes only the `/api/event` stream, for a TUI attached over HTTP.
     send,
+    get connections() {
+      return connections
+    },
+    disconnect() {
+      if (!stream) throw new Error("SSE stream not connected")
+      stream.close()
+      stream = undefined
+    },
 
     response() {
+      connections += 1
       return new Response(
         new ReadableStream<Uint8Array>({
           start(controller) {
@@ -206,9 +216,12 @@ export function createFetch(override?: FetchHandler, events?: ReturnType<typeof 
     if (/^\/api\/session\/[^/]+\/message$/.test(url.pathname)) return json({ data: [], cursor: {} })
     if (/^\/api\/session\/[^/]+\/context$/.test(url.pathname)) return json({ data: [] })
     if (/^\/api\/session\/[^/]+\/todo$/.test(url.pathname)) return json({ data: [] })
+    if (/^\/api\/session\/[^/]+\/(permission|question)$/.test(url.pathname)) return json({ data: [] })
     if (/^\/api\/session\/[^/]+\/diff$/.test(url.pathname)) return json({ data: [] })
     if (/^\/api\/session\/[^/]+\/activity$/.test(url.pathname))
-      return json({ data: { observedAt: Date.now(), status: { type: "idle" }, pendingNotifications: 0, schedules: [], jobs: [] } })
+      return json({
+        data: { observedAt: Date.now(), status: { type: "idle" }, pendingNotifications: 0, schedules: [], jobs: [] },
+      })
     if (/^\/api\/session\/[^/]+\/status$/.test(url.pathname)) return json({ data: { type: "idle" } })
     if (/^\/api\/session\/[^/]+\/inputs$/.test(url.pathname)) return json({ data: [], hasMore: false })
     if (/^\/api\/session\/[^/]+$/.test(url.pathname))
