@@ -66,6 +66,9 @@ export const nativeEngineOptions = (
     ? environment.MIAO_ENGINE_PROMPT_CACHE === "on"
     : merged.promptCache
   merged.verifyCommand = environment.MIAO_ENGINE_VERIFY_COMMAND ?? merged.verifyCommand
+  merged.mcpConfigFile = environment.MIAO_ENGINE_MCP_CONFIG
+    ? path.resolve(environment.MIAO_ENGINE_MCP_CONFIG)
+    : merged.mcpConfigFile
   merged.lspConfigFile = environment.MIAO_ENGINE_LSP_CONFIG
     ? path.resolve(environment.MIAO_ENGINE_LSP_CONFIG)
     : merged.lspConfigFile
@@ -87,6 +90,8 @@ export const nativeEngineOptions = (
     roles: merged.roles,
     promptCache: merged.promptCache,
     verifyCommand: merged.verifyCommand,
+    mcpConfigFile: merged.mcpConfigFile,
+    mcpSettings: merged.mcpSettings,
     lspConfigFile: merged.lspConfigFile,
     contextLimits: merged.contextLimits,
   }
@@ -101,10 +106,12 @@ export const engineSettings = async (
   globalConfig: string,
 ): Promise<Omit<EngineOptions, "db" | "workspace"> | undefined> => {
   let settings: Omit<EngineOptions, "db" | "workspace"> | undefined = undefined
+  const documents: Config.Entry[] = []
   for (const name of Config.fileNames) {
     const file = path.join(globalConfig, name)
     if (!(await Bun.file(file).exists())) continue
     const info = Option.getOrUndefined(Config.decodeDocument(Config.parseJsonc(await Bun.file(file).text())))
+    if (info) documents.push(new Config.Document({ type: "document", info }))
     const engine = info?.engine
     if (!engine) continue
     settings = {
@@ -116,11 +123,13 @@ export const engineSettings = async (
       roles: engine.roles,
       promptCache: engine.prompt_cache,
       verifyCommand: engine.verify_command,
+      mcpConfigFile: engine.mcp_config ? path.resolve(globalConfig, engine.mcp_config) : undefined,
       lspConfigFile: engine.lsp_config ? path.resolve(globalConfig, engine.lsp_config) : undefined,
       contextLimits: engine.context_limits,
     }
   }
-  return settings
+  const mcpSettings = Option.getOrUndefined(Config.decodeDocument(Config.merge(documents)))?.mcp
+  return mcpSettings ? { ...(settings ?? { binary: "", model: "" }), mcpSettings } : settings
 }
 
 /** Whether the composition root should build the native transport at all. */
@@ -382,9 +391,7 @@ const layer = Layer.effect(
       // `hello` handshake.
       const workerConfigFile = path.join(os.tmpdir(), "miao-engine-worker-config.json")
       const host = path.resolve(import.meta.dir, "worker-host.ts")
-      yield* Effect.promise(() =>
-        Bun.write(workerConfigFile, JSON.stringify({ argv: [process.execPath, host] }))
-      )
+      yield* Effect.promise(() => Bun.write(workerConfigFile, JSON.stringify({ argv: [process.execPath, host] })))
       configuration.workerConfigFile = workerConfigFile
       console.log("[worker-host] config written:", workerConfigFile)
     }
