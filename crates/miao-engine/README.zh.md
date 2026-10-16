@@ -10,6 +10,8 @@
 
 可选的[稳定扩展工具披露](docs/tool-disclosure.md)通过 `--tool-disclosure compact` 固定顶层工具 schema，按需发现扩展能力并过滤结果；也可设置全局 `engine.tool_disclosure` 或 `MIAO_ENGINE_TOOL_DISCLOSURE`。
 
+检索和诊断结果附带[源码版本来源信息](docs/revision-bound-observations.md)，区分实际观察到的内容、过期诊断与未报告版本的诊断；这类观察本身不构成整体任务完成的证明。
+
 在构建环境执行：
 
 ```sh
@@ -490,3 +492,7 @@ fail-closed 阻止派发，工具结果为 `blocked by tool_before hook (outcome
 
 钩子是 host 信任配置的守门/观测面，不是模型能力：不占 permission 规则、不需要 allow_process，
 也不给模型任何新 authority。目前没有 per-hook 网络、stdin 注入、run/turn 级事件或远程 hook。
+
+## 完成检查收据
+
+配置的完成检查会记录[版本绑定的验证收据](docs/verification-receipts.md)，包含实际退出码/输出、任务版本与有明确边界的源码覆盖范围。
