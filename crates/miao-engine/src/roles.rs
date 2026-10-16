@@ -84,7 +84,12 @@ async fn summarize_with(
     body: &str,
 ) -> Result<String, String> {
     use crate::protocol::{Message, ModelRequest};
-    let (tx, _rx) = tokio::sync::mpsc::channel(16);
+    // The summarizer consumes only the final reply, so nobody reads the
+    // progress feed. The stream reader awaits send capacity per frame, so an
+    // unread bounded channel blocks it forever once a real summary emits more
+    // frames than the capacity holds; drain the feed for the duration.
+    let (tx, mut rx) = tokio::sync::mpsc::channel(16);
+    tokio::spawn(async move { while rx.recv().await.is_some() {} });
     let request = ModelRequest {
         system: "Summarize the conversation portion you are given. Preserve verbatim: the active objective, open tasks, verification commands and their results, file paths, identifiers, and decisions. Reply with only the summary text.".into(),
         messages: vec![Message {
@@ -343,6 +348,61 @@ mod tests {
         assert_eq!(error, "provider transport failed");
         let events = store.events("s", 0, 100).await.unwrap();
         assert!(!events.iter().any(|event| event.kind == "role.escalated"));
+    }
+
+    struct Chatty {
+        frames: usize,
+    }
+
+    #[async_trait::async_trait]
+    impl Provider for Chatty {
+        fn identity(&self) -> Option<crate::provider::Identity> {
+            Some(crate::provider::Identity {
+                protocol: "test".into(),
+                model: "chatty".into(),
+            })
+        }
+        fn for_model(&self, _: &str) -> Option<Arc<dyn Provider>> {
+            None
+        }
+        async fn stream(
+            &self,
+            _: ModelRequest,
+            progress: tokio::sync::mpsc::Sender<Value>,
+            _: CancellationToken,
+        ) -> Result<Reply, ProviderError> {
+            for nth in 0..self.frames {
+                if progress
+                    .send(json!({"kind":"delta","delta":{"type":"text","text":"x"},"nth":nth}))
+                    .await
+                    .is_err()
+                {
+                    return Err(ProviderError::Interrupted);
+                }
+            }
+            Ok(Reply {
+                content: json!([{"type": "text", "text": "ok summary"}]),
+                usage: json!({}),
+                needs_tools: false,
+            })
+        }
+        async fn count_tokens(&self, _: &ModelRequest) -> CountTokens {
+            unreachable!("the summarizer never counts")
+        }
+    }
+
+    #[tokio::test]
+    async fn a_summary_reply_beyond_the_progress_capacity_cannot_stall_the_call() {
+        let provider: Arc<dyn Provider> = Arc::new(Chatty { frames: 32 });
+        let stop = CancellationToken::new();
+        let text = tokio::time::timeout(
+            std::time::Duration::from_secs(5),
+            summarize_with(&provider, &stop, "condense this"),
+        )
+        .await
+        .expect("the summarizer must not stall on its own undrained progress feed")
+        .unwrap();
+        assert_eq!(text, "ok summary");
     }
 
     #[test]
