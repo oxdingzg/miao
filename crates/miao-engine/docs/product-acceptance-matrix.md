@@ -19,19 +19,28 @@ native history renders, a prompt typed into the TUI reaches the native provider,
 and its reply renders. This plain-prompt scenario does not close the remaining
 approval, interruption, external-client or capability rows below.
 
-**Open blocker (found 2026-10-16): a tool part blanks the real TUI.** With the
-published 0.2.11 engine under the current serve, a turn whose provider answers
-with a `write_file` tool call blanks the entire attached TUI frame: every pane
-capture is empty lines while the bun process stays alive, and stderr records
-nothing. The engine side of that turn is fully correct — the journal shows
+**Open blocker (found 2026-10-16; diagnosis corrected the same day): a native
+Session publishes no live session events.** An attached client cannot follow or
+approve a native turn, because the serve's `/api/event` stream carries no
+`session.next.*` events for an engine-placed Session. The attached TUI shows the
+submitted prompt and then stays on "Preparing request" — the assistant message
+with its tool part never renders and the pending approval never surfaces — while
+the same deterministic provider turn against a TypeScript Session delivers
+`session.next.prompt.admitted`, `prompted`, `status`, `step.started`,
+`text.started`/`delta`/`ended` and `step.ended` on the same stream. This is
+observable without any TUI: subscribe to `/api/event` with the Session's
+directory header, submit a prompt, and compare a TypeScript Session with a
+native one.
+
+The engine and the read side of the native turn are correct. The journal shows
 `tool.planned`, `message.committed`, `pre_tool_use`, `approval.requested` (with
 request id, input hash, policy revision and expiry) and the `permission_request`
-announcement to the serve, and under an allow rule the same turn executes the
-write without asking. The blank reproduces under both an ask rule and an allow
-rule, so it is the tool-part message rendering (or an event in its arrival
-window), not the permission dialog. This blocks the visible-approval,
-cancel-from-TUI and step-accounting rows until the render defect is fixed; the
-deterministic columns of those rows are unaffected.
+announcement to the serve; the HTTP read projection (`/message`, `/context`)
+contains the assistant tool part; and under an allow rule the write executes
+without asking. Only the live stream is missing, which blocks the
+visible-approval, cancel-from-TUI and step-accounting rows until the serve
+publishes engine-originated session and approval events. The deterministic
+columns of those rows are unaffected.
 
 | Behavior | Existing automated evidence | Product acceptance still required |
 | --- | --- | --- |
