@@ -99,6 +99,19 @@ export does not create a missing database, does not change execution state, and 
 second authoritative log. The read transaction pins a high-water mark; a very slow external export
 prolongs SQLite snapshot/WAL retention, so long-term analysis should read from the exported file.
 
+## Prompt-cache affinity
+
+Responses requests made by a Session carry a stable `prompt_cache_key`. The subscription profile
+also sends the same value in the `session-id` header so tool continuations and later user turns
+remain cache-affine. The key is a bounded digest of the Session ID: it survives process restarts,
+retries and context compaction, and differs for independent Sessions sharing one provider.
+It is transport metadata, not a system-prompt instruction or shared mutable provider setting.
+
+This routing is automatic for Responses; `--prompt-cache on|off` controls explicit Anthropic
+cache breakpoints instead. Neither setting guarantees a provider cache hit. Stable system/tool
+prefixes still matter; compare `cacheReadInputTokens` and `nonCachedInputTokens` from `run.usage`
+alongside total input, output, requests and task success rather than treating total input as cost.
+
 ## Execution invariants
 
 - The same input id retries exactly and fully by Session, prompt, and delivery; a conflict produces no extra admission.
