@@ -588,10 +588,11 @@ const layer = Layer.effect(
       scope: RelativePath
       ignores?: Repository
       maximumUntrackedFileBytes?: number
+      env?: Record<string, string>
     }) {
       // Embedded repositories are listed as `dir/`; update-index records them as gitlinks.
       const list = (args: string[]) =>
-        repositoryOperation("refresh", input.repository, args).pipe(
+        repositoryOperation("refresh", input.repository, args, { env: input.env }).pipe(
           Effect.map((result) => result.text.split("\0").filter(Boolean).map((file) => file.replace(/\/$/, ""))),
         )
       const [tracked, untracked] = yield* Effect.all(
@@ -633,6 +634,7 @@ const layer = Layer.effect(
       if (remove.length)
         yield* repositoryOperation("refresh", input.repository, ["update-index", "--force-remove", "-z", "--stdin"], {
           stdin: remove.join("\0") + "\0",
+          env: input.env,
         })
       if (stage.length) {
         // update-index drops a tracked file replaced by an embedded repository; a second
@@ -651,7 +653,7 @@ const layer = Layer.effect(
           "refresh",
           input.repository,
           ["update-index", "--add", "--remove", "--replace", "-z", "--stdin"],
-          { stdin: [...stage, ...embedded].join("\0") + "\0" },
+          { stdin: [...stage, ...embedded].join("\0") + "\0", env: input.env },
         )
       }
       return { skipped }
@@ -696,9 +698,13 @@ const layer = Layer.effect(
       )
     })
 
-    const writeTree = Effect.fn("Git.tree.write")(function* (repository: Repository) {
-      return TreeID.make((yield* repositoryOperation("write_tree", repository, ["write-tree"])).text.trim())
+    const writeTree = Effect.fn("Git.tree.write")(function* (repository: Repository, env?: Record<string, string>) {
+      return TreeID.make((yield* repositoryOperation("write_tree", repository, ["write-tree"], { env })).text.trim())
     })
+
+    // A corrupted store index must not break captures: these messages let a
+    // capture rebuild the index and retry the failed step once.
+    const corruptIndex = /bad index|index file.*(?:corrupt|smaller than expected)|index uses .* extension/i
 
     const captureTree = Effect.fn("Git.tree.capture")(
       (input: {
@@ -710,18 +716,61 @@ const layer = Layer.effect(
         locked(
           input.repository,
           Effect.gen(function* () {
-            const refreshStartedAt = Date.now()
-            yield* Effect.forEach(input.scopes, (scope) => refresh({ ...input, scope }), { discard: true })
-            const refreshMs = Date.now() - refreshStartedAt
-            const writeStartedAt = Date.now()
-            const tree = yield* writeTree(input.repository)
-            // The untracked walk inside refresh dominates slow captures on big
-            // trees; log only the captures worth attributing so the steady
-            // state stays out of the log.
-            const writeMs = Date.now() - writeStartedAt
-            if (refreshMs + writeMs >= 500)
-              yield* Effect.logInfo("session.snapshot", { refreshMs, writeTreeMs: writeMs, scopes: input.scopes.length })
-            return tree
+            const index = path.join(input.repository.gitDirectory, "index")
+            const temporary = path.join(input.repository.gitDirectory, `index.tmp-${randomUUID()}`)
+            const env = { GIT_INDEX_FILE: temporary }
+            // A fresh store may not have an index to copy.
+            yield* fs.copyFile(index, temporary).pipe(Effect.catch(() => Effect.void))
+            const rebuild = Effect.gen(function* () {
+              yield* fs.remove(index, { force: true }).pipe(Effect.catch(() => Effect.void))
+              yield* fs.remove(temporary, { force: true }).pipe(Effect.catch(() => Effect.void))
+              const head = yield* repositoryOperation("refresh", input.repository, ["rev-parse", "--verify", "HEAD"]).pipe(
+                Effect.exit,
+              )
+              yield* repositoryOperation(
+                "refresh",
+                input.repository,
+                Exit.isSuccess(head) ? ["read-tree", "HEAD"] : ["read-tree", "--empty"],
+                { env },
+              )
+            })
+            const retried = <A>(step: Effect.Effect<A, OperationError>) =>
+              Effect.catch(step, (error) =>
+                corruptIndex.test(error.message) ? Effect.flatMap(rebuild, () => step) : Effect.fail(error),
+              )
+            return yield* Effect.gen(function* () {
+              const refreshStartedAt = Date.now()
+              yield* Effect.forEach(input.scopes, (scope) => retried(refresh({ ...input, scope, env })), {
+                discard: true,
+              })
+              const refreshMs = Date.now() - refreshStartedAt
+              const writeStartedAt = Date.now()
+              const tree = yield* retried(writeTree(input.repository, env))
+              // The untracked walk inside refresh dominates slow captures on big
+              // trees; log only the captures worth attributing so the steady
+              // state stays out of the log.
+              const writeMs = Date.now() - writeStartedAt
+              if (refreshMs + writeMs >= 500)
+                yield* Effect.logInfo("session.snapshot", {
+                  refreshMs,
+                  writeTreeMs: writeMs,
+                  scopes: input.scopes.length,
+                })
+              // Publishing by rename makes the store index swap atomic for
+              // readers in other processes.
+              yield* fs.rename(temporary, index).pipe(
+                Effect.mapError(
+                  (cause) =>
+                    new OperationError({
+                      operation: "refresh",
+                      directory: input.repository.gitDirectory,
+                      message: "Failed to publish the captured snapshot index",
+                      cause,
+                    }),
+                ),
+              )
+              return tree
+            }).pipe(Effect.ensuring(fs.remove(temporary, { force: true }).pipe(Effect.catch(() => Effect.void))))
           }),
         ),
     )
