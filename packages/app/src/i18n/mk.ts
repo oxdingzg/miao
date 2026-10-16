@@ -604,6 +604,8 @@ export const dict = {
   "toast.permissions.autoaccept.on.description": "Барањата за дозвола ќе бидат автоматски одобрени",
   "toast.permissions.autoaccept.off.title": "Го прекина автоматското прифаќање дозволи",
   "toast.permissions.autoaccept.off.description": "Барањата за дозвола ќе бараат одобрување",
+  "settings.permissions.autoaccept.project.title": "Автоматично прифаќање на дозволите за овој проект",
+  "settings.permissions.autoaccept.project.description": "Одговарај на нови барања за дозволи од било која сесија на овој проект без прашање. Изборите на ниво сесија и директориум имаат предност.",
   "toast.model.none.title": "Не е избран модел",
   "toast.model.none.description": "Поврзете провајдер за да ја сумира оваа сесија",
   "toast.file.loadFailed.title": "Не успеа да се вчита датотеката",

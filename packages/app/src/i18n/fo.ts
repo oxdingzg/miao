@@ -601,6 +601,8 @@ export const dict = {
   "toast.permissions.autoaccept.on.description": "Loyvisumbønir verða sjálvvirkandi góðkendar",
   "toast.permissions.autoaccept.off.title": "Steðgað sjálvvirkandi góðkenning av loyvum",
   "toast.permissions.autoaccept.off.description": "Loyvisumbønir krevja góðkenning.",
+  "settings.permissions.autoaccept.project.title": "Goðggja rættindi sjálvvirkandi fyri hetta verkætlanini",
+  "settings.permissions.autoaccept.project.description": "Svara nýggjum rættindaumbønum frá hvørjum seti í hesum verkætlanini uttan at spyrja. Val á seta og mappu stuðla fram.",
   "toast.model.none.title": "Einki modell valt",
   "toast.model.none.description": "Set samband við ein veitara fyri at taka saman um hesa setuna",
   "toast.file.loadFailed.title": "Tað eydnaðist ikki at heinta fíluna",

@@ -602,6 +602,8 @@ export const dict = {
   "toast.permissions.autoaccept.on.description": "Zahteve za dovoljenje bodo samodejno odobrene",
   "toast.permissions.autoaccept.off.title": "Ustavljeno samodejno sprejemanje dovoljenj",
   "toast.permissions.autoaccept.off.description": "Zahteve za dovoljenje bodo zahtevale odobritev",
+  "settings.permissions.autoaccept.project.title": "Samodejno sprejmi dovoljenja za ta projekt",
+  "settings.permissions.autoaccept.project.description": "Odgovori na nove zahtevke za dovoljenja iz katere koli seje tega projekta brez vprašanja. Izbire na ravni seje in imenika imajo prednost.",
   "toast.model.none.title": "Noben model ni izbran",
   "toast.model.none.description": "Povežite ponudnika, da povzamete to sejo",
   "toast.file.loadFailed.title": "Datoteke ni bilo mogoče naložiti",

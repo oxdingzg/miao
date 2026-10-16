@@ -27,7 +27,7 @@ export function DialogTimeline(props: {
       result.push({
         title: message.text.replace(/\n/g, " "),
         value: message.id,
-        footer: Locale.time(message.time.created),
+        footer: Locale.todayTimeOrDateTime(message.time.created),
         onSelect: (dialog) => {
           dialog.replace(() => (
             <DialogMessage messageID={message.id} sessionID={props.sessionID} setPrompt={props.setPrompt} />

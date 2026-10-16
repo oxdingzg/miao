@@ -611,6 +611,8 @@ export const dict = {
   "toast.permissions.autoaccept.on.description": "Yêu cầu quyền sẽ được tự động phê duyệt",
   "toast.permissions.autoaccept.off.title": "Đã dừng quyền tự động chấp nhận",
   "toast.permissions.autoaccept.off.description": "Yêu cầu quyền sẽ cần được phê duyệt",
+  "settings.permissions.autoaccept.project.title": "Tự động chấp nhận quyền cho dự án này",
+  "settings.permissions.autoaccept.project.description": "Trả lời các yêu cầu quyền mới từ bất kỳ phiên nào trong dự án này mà không cần hỏi. Lựa chọn theo phiên và thư mục vẫn được ưu tiên.",
   "toast.model.none.title": "Không có mô hình nào được chọn",
   "toast.model.none.description": "Kết nối nhà cung cấp để tóm tắt phiên này",
   "toast.file.loadFailed.title": "Không tải được tệp",

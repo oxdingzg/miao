@@ -646,6 +646,8 @@ export const dict = {
   "toast.permissions.autoaccept.on.description": "权限请求将被自动批准",
   "toast.permissions.autoaccept.off.title": "已停止自动接受权限",
   "toast.permissions.autoaccept.off.description": "权限请求将需要批准",
+  "settings.permissions.autoaccept.project.title": "自动接受本项目的权限请求",
+  "settings.permissions.autoaccept.project.description": "自动批准本项目内所有会话的权限请求。会话与目录的选择仍然优先。",
   "toast.model.none.title": "未选择模型",
   "toast.model.none.description": "请先连接提供商以总结此会话",
   "toast.file.loadFailed.title": "加载文件失败",

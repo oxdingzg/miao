@@ -607,6 +607,8 @@ export const dict = {
   "toast.permissions.autoaccept.on.description": "Leidimų prašymai bus patvirtinti automatiškai",
   "toast.permissions.autoaccept.off.title": "Sustabdė automatinį leidimų priėmimą",
   "toast.permissions.autoaccept.off.description": "Reikės patvirtinti leidimo prašymus",
+  "settings.permissions.autoaccept.project.title": "Automatiškai priimti šio projekto teises",
+  "settings.permissions.autoaccept.project.description": "Atsakyti į naujus teisių prašymus iš bet kurio šio projekto seanso neklausiant. Seanso ir katalogo lygio pasirinkimai išlieka prioritetiniai.",
   "toast.model.none.title": "Nepasirinktas joks modelis",
   "toast.model.none.description": "Prisijunkite prie teikėjo, kad apibendrintumėte šią sesiją",
   "toast.file.loadFailed.title": "Nepavyko įkelti failo",

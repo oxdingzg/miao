@@ -601,6 +601,8 @@ export const dict = {
   "toast.permissions.autoaccept.on.description": "Atļauju pieprasījumi tiks apstiprināti automātiski",
   "toast.permissions.autoaccept.off.title": "Automātiska atļauju apstiprināšana apturēta",
   "toast.permissions.autoaccept.off.description": "Atļauju pieprasījumiem būs nepieciešams apstiprinājums",
+  "settings.permissions.autoaccept.project.title": "Automātiski pieņemt šī projekta atļaujas",
+  "settings.permissions.autoaccept.project.description": "Atbildēt uz jauniem atļauju pieprasījumiem no jebkuras šī projekta sesijas bez jautāšanas. Sesijas un mapes līmeņa izvēles joprojām ir prioritāras.",
   "toast.model.none.title": "Nav izvēlēts modelis",
   "toast.model.none.description": "Pievienojiet nodrošinātāju, lai apkopotu šo sesiju",
   "toast.file.loadFailed.title": "Neizdevās ielādēt failu",
