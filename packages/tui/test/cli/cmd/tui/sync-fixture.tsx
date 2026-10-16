@@ -22,9 +22,9 @@ export async function wait(fn: () => boolean, timeout = 2000) {
 
 type Ctx = { kv: ReturnType<typeof useKV>; project: ReturnType<typeof useProject>; sync: ReturnType<typeof useSync> }
 
-export async function mount(override?: FetchHandler, state?: string) {
-  const calls = createFetch(override)
+export async function mount(override?: FetchHandler, state?: string, input: { http?: boolean } = {}) {
   const events = createEventSource()
+  const calls = createFetch(override, input.http ? events : undefined)
   let sync!: ReturnType<typeof useSync>
   let project!: ReturnType<typeof useProject>
   let kv!: ReturnType<typeof useKV>
@@ -48,7 +48,12 @@ export async function mount(override?: FetchHandler, state?: string) {
     <TestTuiContexts paths={state ? { state } : undefined}>
       <ArgsProvider>
         <KVProvider>
-          <SDKProvider url="http://test" directory={directory} fetch={calls.fetch} events={events.source}>
+          <SDKProvider
+            url="http://test"
+            directory={directory}
+            fetch={calls.fetch}
+            events={input.http ? undefined : events.source}
+          >
             <PermissionProvider>
               <ProjectProvider>
                 <ExitProvider exit={() => {}}>
@@ -66,5 +71,5 @@ export async function mount(override?: FetchHandler, state?: string) {
 
   await ready
   await wait(() => sync.status === "complete")
-  return { app, emit: events.emit, kv, project, sync, session: calls.session }
+  return { app, emit: input.http ? events.send : events.emit, events, kv, project, sync, session: calls.session }
 }
