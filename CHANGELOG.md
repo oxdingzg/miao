@@ -14,10 +14,13 @@ at `docs/releases/vX.Y.Z.md` and `docs/releases/vX.Y.Z.zh.md`; both are required
 ## [0.2.14] - 2026-10-16
 
 ### Added
+- **engine**: guarded Windows ConPTY terminals and opt-in workspace custom tool workers (#947, #949).
 - **ui**: visible Session/message times, project-level auto-accept and opt-in per-turn changed files (#934, #936, #939).
 - **core**: multiple provider credentials with active-account selection through API/CLI (#944).
 
 ### Fixed
+- **core/engine**: treat tool-argument limits as idle budgets while streaming input progresses (#946).
+- **ci**: repair App Store build-state diagnostics and propagate failures (#948).
 - **engine**: retain Session affinity for Responses prefix caching (#933).
 - **core**: gate MCP tool catalogs by capabilities and normalize permission metadata (#930, #932).
 - **core**: literal snapshot paths, scope containment and atomic store creation (#945).
