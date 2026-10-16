@@ -961,6 +961,8 @@ export const dict = {
     "بین عوامل در آهنگساز جابجا شوید. هنگامی که مخفی می شود، به طور پیش فرض بر روی Build agent قرار می گیرد.",
   "settings.general.row.reasoningSummaries.title": "نمایش خلاصه های استدلال",
   "settings.general.row.reasoningSummaries.description": "نمایش خلاصه های استدلال مدل در جدول زمانی",
+  "settings.general.row.turnDiffs.title": "نمایش فایل‌های تغییر‌یافته در هر نوبت",
+  "settings.general.row.turnDiffs.description": "فایل‌های تغییر‌یافته هر نوبت کامل‌شده را با شمارش خطوط و تفاوت‌های قابل بازشدن در خط زمانی فهرست می‌کند.",
   "settings.general.row.shellToolPartsExpanded.title": "قطعات ابزار پوسته را گسترش دهید",
   "settings.general.row.shellToolPartsExpanded.description":
     "نمایش قطعات ابزار پوسته که به طور پیش‌فرض در تایم لاین گسترش یافته‌اند",

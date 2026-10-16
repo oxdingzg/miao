@@ -967,6 +967,8 @@ export const dict = {
     "Пребацивање између агената у композитору. Када је скривено, подразумевано је Буилд агент.",
   "settings.general.row.reasoningSummaries.title": "Прикажи резимее образложења",
   "settings.general.row.reasoningSummaries.description": "Приказ резимеа образложења модела на временској линији",
+  "settings.general.row.turnDiffs.title": "Прикажи промењене датотеке по кругу",
+  "settings.general.row.turnDiffs.description": "На временској линији наводи промењене датотеке сваког завршеног круга са бројем линија и расклопљивим разликама.",
   "settings.general.row.shellToolPartsExpanded.title": "Проширите shell делова алата",
   "settings.general.row.shellToolPartsExpanded.description":
     "Прикажи shell делове алата проширене подразумевано на временској линији",

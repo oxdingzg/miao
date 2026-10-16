@@ -972,6 +972,8 @@ export const dict = {
   "settings.general.row.reasoningSummaries.title": "Прикажи резимеа за расудување",
   "settings.general.row.reasoningSummaries.description":
     "Прикажи резимеа на расудувањето на моделите во временската линија",
+    "settings.general.row.turnDiffs.title": "Show changed files per turn",
+    "settings.general.row.turnDiffs.description": "List each finished turn's changed files with line counts and expandable diffs in the timeline.",
   "settings.general.row.shellToolPartsExpanded.title": "Проширете ги shell делови од алатот",
   "settings.general.row.shellToolPartsExpanded.description":
     "Прикажи shell делови од алатката стандардно проширени во временската линија",

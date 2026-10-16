@@ -966,6 +966,8 @@ export const dict = {
   "settings.general.row.reasoningSummaries.title": "Pikirleriň gysgaça mazmunyny görkeziň",
   "settings.general.row.reasoningSummaries.description":
     "Wagt görkezijisinde model pikirlenişiň gysgaça mazmunyny görkeziň",
+    "settings.general.row.turnDiffs.title": "Show changed files per turn",
+    "settings.general.row.turnDiffs.description": "List each finished turn's changed files with line counts and expandable diffs in the timeline.",
   "settings.general.row.shellToolPartsExpanded.title": "Shell gural böleklerini giňeltmek",
   "settings.general.row.shellToolPartsExpanded.description":
     "Wagt görkezijisinde deslapky görnüşde giňeldilen shell gural böleklerini görkeziň",

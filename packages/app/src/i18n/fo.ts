@@ -962,6 +962,8 @@ export const dict = {
     "Skift millum agentar í tónaskaldinum. Tá ið tað er fjalt, er tað forsett til Build agent.",
   "settings.general.row.reasoningSummaries.title": "Vís grundgevingarsamantektir",
   "settings.general.row.reasoningSummaries.description": "Vís modellgrundgevingarsamantektir í tíðarlinjuni",
+  "settings.general.row.turnDiffs.title": "Vís broyttar fílur fyri hvørja rund",
+  "settings.general.row.turnDiffs.description": "Upplistar á tíðarlinuni broyttar fílur frá hvørjum fullrættaði rund við linutali og útvíkjanligum mun.",
   "settings.general.row.shellToolPartsExpanded.title": "Víðka shell-tólpartar",
   "settings.general.row.shellToolPartsExpanded.description": "Vís shell-tólpartar víðkaðar sum standard í tíðarlinjuni",
   "settings.general.row.editToolPartsExpanded.title": "Víðka rætta tólpartar",

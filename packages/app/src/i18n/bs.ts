@@ -951,6 +951,8 @@ export const dict = {
   "settings.general.row.showCustomAgents.description": "Prikaži izbor agenta u uređivaču poruke",
   "settings.general.row.reasoningSummaries.title": "Prikaži sažetke rasuđivanja",
   "settings.general.row.reasoningSummaries.description": "Prikaži sažetke rasuđivanja modela na vremenskoj traci",
+  "settings.general.row.turnDiffs.title": "Prikaži promijenjene datoteke po krugu",
+  "settings.general.row.turnDiffs.description": "Na vremenskoj liniji navodi promijenjene datoteke svakog završenog kruga s brojem linija i proširivim razlikama.",
 
   "settings.general.row.shellToolPartsExpanded.title": "Proširi dijelove shell alata",
   "settings.general.row.shellToolPartsExpanded.description":

@@ -965,6 +965,8 @@ export const dict = {
     "Skiptu á milli fulltrúa í innsláttarreitnum. Þegar þeir eru faldir er Build-fulltrúinn sjálfgefinn.",
   "settings.general.row.reasoningSummaries.title": "Sýndu samantektir um rökstuðning",
   "settings.general.row.reasoningSummaries.description": "Birta rökstuðningssamantektir líkana á tímalínunni",
+  "settings.general.row.turnDiffs.title": "Sýndu breyttar skrár fyrir hverja umferð",
+  "settings.general.row.turnDiffs.description": "Listar á tímalínunum breyttar skrár hverrar lokiðrar umferðar með línufjölda og útvíkkanlegum mun.",
   "settings.general.row.shellToolPartsExpanded.title": "Stækkaðu hluta skeljaverkfæra",
   "settings.general.row.shellToolPartsExpanded.description": "Sýna hluta skelverkfæra stækkað sjálfgefið á tímalínunni",
   "settings.general.row.editToolPartsExpanded.title": "Stækkaðu breytingaverkfærahluta",

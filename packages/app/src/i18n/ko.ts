@@ -610,6 +610,8 @@ export const dict = {
   "settings.general.row.followup.option.steer": "즉시 반영",
   "settings.general.row.reasoningSummaries.title": "추론 요약 표시",
   "settings.general.row.reasoningSummaries.description": "타임라인에 모델 추론 요약 표시",
+  "settings.general.row.turnDiffs.title": "턴별 변경 파일 표시",
+  "settings.general.row.turnDiffs.description": "타임라인에 완료된 턴별 변경 파일을 줄 수와 펼칠 수 있는 차이와 함께 표시합니다.",
   "settings.general.row.shellToolPartsExpanded.title": "shell 도구 항목 펼치기",
   "settings.general.row.shellToolPartsExpanded.description":
     "타임라인에서 기본적으로 shell 도구 항목을 펼친 상태로 표시합니다",

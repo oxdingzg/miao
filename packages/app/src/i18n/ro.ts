@@ -969,6 +969,8 @@ export const dict = {
   "settings.general.row.reasoningSummaries.title": "Afișează rezumatele de raționament",
   "settings.general.row.reasoningSummaries.description":
     "Afișează rezumatele de raționament ale modelului în cronologie",
+    "settings.general.row.turnDiffs.title": "Show changed files per turn",
+    "settings.general.row.turnDiffs.description": "List each finished turn's changed files with line counts and expandable diffs in the timeline.",
   "settings.general.row.shellToolPartsExpanded.title": "Extinde părțile shell",
   "settings.general.row.shellToolPartsExpanded.description": "Afișează implicit părțile shell extinse în cronologie",
   "settings.general.row.editToolPartsExpanded.title": "Extinde părțile de editare",

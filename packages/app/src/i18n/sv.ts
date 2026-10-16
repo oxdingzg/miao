@@ -968,6 +968,8 @@ export const dict = {
     "Växla mellan agenter i inmatningsfältet. När alternativet är dolt används agenten Bygg som standard.",
   "settings.general.row.reasoningSummaries.title": "Visa resonemangssammanfattningar",
   "settings.general.row.reasoningSummaries.description": "Visa modellresonemangssammanfattningar i tidslinjen",
+  "settings.general.row.turnDiffs.title": "Visa ändrade filer per omgång",
+  "settings.general.row.turnDiffs.description": "Listar i tidslinjen de ändrade filerna för varje avslutad omgång, med radantal och utfällbara diffar.",
   "settings.general.row.shellToolPartsExpanded.title": "Expandera skalverktygsdelar",
   "settings.general.row.shellToolPartsExpanded.description":
     "Visa skalverktygsdelar expanderade som standard på tidslinjen",

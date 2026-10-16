@@ -971,6 +971,8 @@ export const dict = {
     "कंपोज़र में एजेंट के बीच स्विच करें। छिपाए जाने पर, डिफ़ॉल्ट रूप से बिल्ड एजेंट हो जाता है।",
   "settings.general.row.reasoningSummaries.title": "तर्क सारांश दिखाएँ",
   "settings.general.row.reasoningSummaries.description": "टाइमलाइन में मॉडल तर्क सारांश प्रदर्शित करें",
+  "settings.general.row.turnDiffs.title": "प्रति चरण बदली गई फ़ाइलें दिखाएँ",
+  "settings.general.row.turnDiffs.description": "टाइमलाइन में प्रत्येक पूर्ण चरण की बदली गई फ़ाइलों को पंक्ति गणना और विस्तारणीय अंतरों के साथ सूचीबद्ध करता है।",
   "settings.general.row.shellToolPartsExpanded.title": "शेल टूल पार्ट्स का विस्तार करें",
   "settings.general.row.shellToolPartsExpanded.description":
     "टाइमलाइन में डिफ़ॉल्ट रूप से विस्तारित शेल टूल पार्ट्स दिखाएं",
