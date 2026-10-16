@@ -1,5 +1,7 @@
 import { spawn } from "bun"
 import { EOL } from "os"
+import type { ConfigMCP } from "@miao/schema/config/mcp"
+import { prepareMcpConfig } from "./mcp-config"
 
 /**
  * Host-side client for the experimental Rust engine (`miao-engine serve`).
@@ -17,6 +19,8 @@ export interface EngineOptions {
   db: string
   workspace: string
   model: string
+  /** ADR-12 worker host config passed as `--worker-config`; absent keeps extension tools off. */
+  workerConfigFile?: string
   provider?: string
   endpoint?: string
   authFile?: string
@@ -52,6 +56,10 @@ export interface EngineOptions {
   editRecovery?: boolean
   /** Evaluation ablation control; `false` disables LSP warm-up and post-edit diagnostics. */
   lspDiagnostics?: boolean
+  /** Absolute path to an MCP host config; requires explicit allow_mcp policy authority. */
+  mcpConfigFile?: string
+  /** Trusted global MCP settings; materialized only with explicit native MCP policy authority. */
+  mcpSettings?: ConfigMCP.Info
   /** Absolute path to an LSP host config; must live outside the workspace. */
   lspConfigFile?: string
   /**
@@ -128,6 +136,8 @@ export function engineEnvironment(
 /** The argv the child engine is spawned with; pure so tests can assert it. */
 export function engineArgs(options: EngineOptions): string[] {
   const args = ["serve", "--db", options.db, "--workspace", options.workspace, "--model", options.model]
+  if (options.workerConfigFile) console.log("[worker-host] engine argv includes --worker-config")
+  if (options.workerConfigFile) args.push("--worker-config", options.workerConfigFile)
   if (options.provider) args.push("--provider", options.provider)
   if (options.endpoint) args.push("--endpoint", options.endpoint)
   if (options.authFile) args.push("--auth-file", options.authFile)
@@ -139,6 +149,7 @@ export function engineArgs(options: EngineOptions): string[] {
   if (options.credentialIntegration) args.push("--credential-integration", options.credentialIntegration)
   if (options.editRecovery === false) args.push("--edit-recovery", "off")
   if (options.lspDiagnostics === false) args.push("--lsp-diagnostics", "off")
+  if (options.mcpConfigFile) args.push("--mcp-config", options.mcpConfigFile)
   if (options.lspConfigFile) args.push("--lsp-config", options.lspConfigFile)
   if (options.promptCache !== undefined) args.push("--prompt-cache", options.promptCache ? "on" : "off")
   if (options.verifyCommand) args.push("--verify-command", options.verifyCommand)
@@ -188,22 +199,33 @@ export class EngineClient {
   private stderr = ""
   private closed = false
 
-  private constructor(private readonly child: Bun.Subprocess<"pipe", "pipe", "pipe">) {
+  private constructor(
+    private readonly child: Bun.Subprocess<"pipe", "pipe", "pipe">,
+    private readonly cleanup = () => {},
+  ) {
     void this.readStdout()
     void this.readStderr()
-    void this.child.exited.then(() => this.fail(new EngineError("engine_closed", "miao-engine exited")))
+    void this.child.exited.then(() => {
+      this.fail(new EngineError("engine_closed", "miao-engine exited"))
+      this.cleanup()
+    })
   }
 
   static start(options: EngineOptions): EngineClient {
-    const args = engineArgs(options)
-    return new EngineClient(
-      spawn([options.binary, ...args], {
+    const manifest = prepareMcpConfig(options)
+    try {
+      const args = engineArgs({ ...options, mcpConfigFile: manifest?.file ?? options.mcpConfigFile })
+      const child = spawn([options.binary, ...args], {
         stdin: "pipe",
         stdout: "pipe",
         stderr: "pipe",
         env: engineEnvironment(options.env),
-      }),
-    )
+      })
+      return new EngineClient(child, manifest?.dispose)
+    } catch (error) {
+      manifest?.dispose()
+      throw error
+    }
   }
 
   onEvent(handler: (event: EngineEvent) => void) {
@@ -259,7 +281,11 @@ export class EngineClient {
     if (this.closed) return
     this.closed = true
     this.child.stdin.end()
-    await this.child.exited
+    try {
+      await this.child.exited
+    } finally {
+      this.cleanup()
+    }
   }
 
   private fail(error: Error) {

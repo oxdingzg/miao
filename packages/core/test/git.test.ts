@@ -163,6 +163,36 @@ describe("Git trees", () => {
   )
 })
 
+describe("Git store creation", () => {
+  it.live("creates a store in an existing directory and adopts the winner of a create race", () =>
+    Effect.gen(function* () {
+      const root = yield* Effect.acquireRelease(
+        Effect.promise(() => tmpdir()),
+        (dir) => Effect.promise(() => dir[Symbol.asyncDispose]()),
+      )
+      const project = path.join(root.path, "project")
+      yield* Effect.promise(async () => {
+        await fs.mkdir(project)
+        await initRepo(project)
+        await fs.writeFile(path.join(project, "tracked.txt"), "one\n")
+        await $`git add .`.cwd(project).quiet()
+      })
+      const git = yield* Git.Service
+      const source = yield* git.repo.discover(AbsolutePath.make(project))
+      if (!source) throw new Error("Repository not found")
+      const storage = AbsolutePath.make(path.join(root.path, "storage"))
+      yield* Effect.promise(() => fs.mkdir(storage, { recursive: true }))
+      const created = yield* git.repo.create({ worktree: source.worktree, gitDirectory: storage, seed: source })
+      expect(yield* git.tree.write(created)).toBeString()
+      const adopted = yield* git.repo.create({ worktree: source.worktree, gitDirectory: storage, seed: source })
+      expect(adopted.gitDirectory).toBe(storage)
+      expect(yield* git.tree.write(adopted)).toBeString()
+      const siblings = yield* Effect.promise(() => fs.readdir(root.path))
+      expect(siblings.filter((entry) => entry.startsWith("storage"))).toEqual(["storage"])
+    }),
+  )
+})
+
 describe("Git batched diffs", () => {
   it.live("preserves patches and summaries for unusual names, binary files, and deletions", () =>
     Effect.gen(function* () {

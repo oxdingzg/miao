@@ -25,7 +25,7 @@ def require(condition, message):
         raise RuntimeError(message)
 
 
-def sse(text=None, command=None):
+def sse(text=None, command=None, input_tokens=2):
     delta = {"content": text}
     finish = "stop"
     if command is not None:
@@ -33,7 +33,7 @@ def sse(text=None, command=None):
                                 "function": {"name": "run_command", "arguments": json.dumps({"argv": command})}}]}
         finish = "tool_calls"
     return ("data: " + json.dumps({"choices": [{"index": 0, "delta": delta, "finish_reason": finish}]})
-            + "\n\ndata: " + json.dumps({"choices": [], "usage": {"prompt_tokens": 2, "completion_tokens": 1}})
+            + "\n\ndata: " + json.dumps({"choices": [], "usage": {"prompt_tokens": input_tokens, "completion_tokens": 1}})
             + "\n\ndata: [DONE]\n\n").encode()
 
 
@@ -73,12 +73,13 @@ class Fixture:
 
 
 class Agent:
-    def __init__(self, binary, root, endpoint):
+    def __init__(self, binary, root, endpoint, context_limits=None):
         self.workspace = str(root / "workspace")
         self.child = subprocess.Popen(
             [str(binary), "acp", "--db", str(root / "engine.db"), "--workspace", str(root / "workspace"),
              "--provider", "openai-chat", "--model", "fixture", "--endpoint", endpoint,
-             "--policy", str(root / "policy.json")],
+             "--policy", str(root / "policy.json"),
+             *(["--context-limits", json.dumps(context_limits)] if context_limits else [])],
             env={**os.environ, "OPENAI_API_KEY": "fixture-only"}, stdin=subprocess.PIPE,
             stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, encoding="utf-8",
         )
@@ -241,6 +242,41 @@ def confinement(binary):
     return {"checks": results, "scope": "workspace write allowed; outside write denied by the guarded process; network/PTY not tested"}
 
 
+def compaction(binary):
+    """Exercise the shipped executable, a real tool and a local SSE provider."""
+    with tempfile.TemporaryDirectory(prefix="miao-compaction-drill-") as temporary:
+        root = Path(temporary).resolve()
+        prepare(root)
+        command = ["cmd", "/d", "/c", "echo TOOL-RESULT"] if os.name == "nt" else ["/bin/sh", "-c", "printf TOOL-RESULT"]
+        replies = [reply for turn in range(2) for reply in [
+            sse(command=command, input_tokens=1900),
+            sse(text="answer-" + str(turn), input_tokens=1900),
+            sse(text="saved completed work"),
+        ]]
+        with Fixture(replies) as provider:
+            with Agent(binary, root, provider.endpoint, {
+                "window": 4000, "ratio": 0.25, "headroom": 500,
+                "perPass": 100, "protectTurns": 2,
+            }) as agent:
+                session = agent.session()
+                for turn in range(2):
+                    agent.prompt(session, "prompt-" + str(turn), "answer-" + str(turn))
+            rows = ledger(root)
+            cuts = [json.loads(data) for _, kind, data in rows if kind == "history.compacted"]
+            require(len(cuts) == 2, "two completed answers must produce two checkpoints")
+            require(cuts[0]["through_message_seq"] < cuts[1]["through_message_seq"], "checkpoint did not advance")
+            require(len(provider.calls) == 6, "unexpected summary retry or provider work")
+            for turn in range(2):
+                continued = json.dumps(provider.calls[turn * 3 + 1])
+                summarized = json.dumps(provider.calls[turn * 3 + 2])
+                require("TOOL-RESULT" in continued, "continuation lost its tool result")
+                require("answer-" + str(turn) in summarized and "TOOL-RESULT" in summarized,
+                        "summary did not cover the completed answer and tool result")
+            require("history-summary" in json.dumps(provider.calls[3]), "next prompt did not use its checkpoint")
+            return {"result": "PASS", "providerCalls": 6, "checkpoints": 2,
+                    "scope": "local fixture only; real guarded tools and closed-answer compaction; no paid provider calls"}
+
+
 def identity(binary):
     return {"version": subprocess.check_output([str(binary), "--version"], text=True).strip(),
             "sha256": hashlib.sha256(binary.read_bytes()).hexdigest()}
@@ -255,7 +291,8 @@ def main():
     binary, previous = args.binary.resolve(), args.previous.resolve()
     report = {"platform": platform.system(), "architecture": platform.machine(),
               "previous": identity(previous), "binary": identity(binary),
-              "compatibility": compatibility(previous, binary), "confinement": confinement(binary)}
+              "compatibility": compatibility(previous, binary), "confinement": confinement(binary),
+              "compaction": compaction(binary)}
     encoded = json.dumps(report, indent=2)
     if args.output:
         args.output.write_text(encoded + "\n", encoding="utf-8")

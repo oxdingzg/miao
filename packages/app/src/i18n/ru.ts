@@ -635,6 +635,8 @@ export const dict = {
   "toast.permissions.autoaccept.on.description": "Запросы на разрешения будут одобряться автоматически",
   "toast.permissions.autoaccept.off.title": "Автоматическое принятие разрешений остановлено",
   "toast.permissions.autoaccept.off.description": "Запросы на разрешения будут требовать одобрения",
+  "settings.permissions.autoaccept.project.title": "Автоприём разрешений для этого проекта",
+  "settings.permissions.autoaccept.project.description": "Отвечать на новые запросы разрешений из любой сессии этого проекта без вопроса. Выбор на уровне сессии и каталога имеет приоритет.",
 
   "toast.workspace.enabled.title": "Рабочие пространства включены",
   "toast.workspace.enabled.description": "В боковой панели теперь отображаются несколько рабочих деревьев",
@@ -955,6 +957,8 @@ export const dict = {
     "Показывать переключатель агентов в редакторе запросов. Если он скрыт, по умолчанию используется агент Build.",
   "settings.general.row.reasoningSummaries.title": "Показывать сводки рассуждений",
   "settings.general.row.reasoningSummaries.description": "Отображать сводки рассуждений модели в ленте",
+  "settings.general.row.turnDiffs.title": "Показывать изменённые файлы по ходам",
+  "settings.general.row.turnDiffs.description": "Показывает на шкале времени изменённые файлы каждого завершённого хода с подсчётом строк и раскрываемыми различиями.",
 
   "settings.general.row.shellToolPartsExpanded.title": "Разворачивать элементы инструмента shell",
   "settings.general.row.shellToolPartsExpanded.description":
@@ -1080,6 +1084,14 @@ export const dict = {
   "settings.providers.tag.config": "Конфигурация",
   "settings.providers.tag.custom": "Пользовательский",
   "settings.providers.tag.other": "Другое",
+  "settings.providers.accounts.title": "Аккаунты",
+  "settings.providers.accounts.use": "Использовать",
+  "settings.providers.accounts.remove": "Удалить",
+  "settings.providers.accounts.active": "Активный",
+  "settings.providers.accounts.activated.title": "Аккаунт переключён",
+  "settings.providers.accounts.activated.description": "{{provider}} теперь использует {{account}}.",
+  "settings.providers.accounts.removed.title": "Аккаунт удалён",
+  "settings.providers.accounts.removed.description": "Аккаунт {{account}} удалён из {{provider}}.",
   "settings.models.title": "Модели",
   "settings.models.description": "Настройки моделей будут доступны здесь.",
   "settings.agents.title": "Агенты",

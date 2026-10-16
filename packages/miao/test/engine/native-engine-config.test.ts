@@ -44,24 +44,57 @@ test("the environment overrides the configured engine key by key", () => {
   expect(options?.verifyCommand).toBe("bun run check")
 })
 
-test("native LSP host config resolves globally and reaches the child arguments", async () => {
-  const dir = mkdtempSync(path.join(tmpdir(), "native-lsp-config-"))
+for (const capability of ["mcp", "lsp"] as const) {
+  test(`native ${capability} host config resolves globally and reaches the child arguments`, async () => {
+    const dir = mkdtempSync(path.join(tmpdir(), `native-${capability}-config-`))
+    const field = capability === "mcp" ? "mcpConfigFile" : "lspConfigFile"
+    try {
+      writeFileSync(
+        path.join(dir, "miao.json"),
+        JSON.stringify({
+          engine: { model: "fixture", [`${capability}_config`]: "host.json" },
+        }),
+      )
+      const settings = await engineSettings(dir)
+      expect(settings?.[field]).toBe(path.resolve(dir, "host.json"))
+      const options = nativeEngineOptions({ MIAO_ENGINE_BIN: "engine" }, settings)
+      if (!options) throw new Error("configured binary must produce engine options")
+      const args = engineArgs({ ...options, db: "store.db", workspace: "workspace" })
+      expect(args[args.indexOf(`--${capability}-config`) + 1]).toBe(path.resolve(dir, "host.json"))
+      const overridden = nativeEngineOptions(
+        {
+          MIAO_ENGINE_BIN: "engine",
+          [`MIAO_ENGINE_${capability.toUpperCase()}_CONFIG`]: "operator.json",
+        },
+        settings,
+      )
+      expect(overridden?.[field]).toBe(path.resolve("operator.json"))
+      expect(nativeEngineOptions({ MIAO_ENGINE_BIN: "engine" })?.[field]).toBeUndefined()
+    } finally {
+      rmSync(dir, { recursive: true, force: true })
+    }
+  })
+}
+
+test("global MCP documents merge without requiring an engine section", async () => {
+  const dir = mkdtempSync(path.join(tmpdir(), "native-mcp-shared-"))
   try {
-    writeFileSync(path.join(dir, "miao.json"), JSON.stringify({
-      engine: { model: "fixture", lsp_config: "host-lsp.json" },
-    }))
+    writeFileSync(
+      path.join(dir, "miao.json"),
+      JSON.stringify({
+        mcp: { servers: { first: { type: "local", command: ["node", "first.js"] } } },
+      }),
+    )
+    writeFileSync(
+      path.join(dir, "miao.jsonc"),
+      JSON.stringify({
+        mcp: { servers: { second: { type: "local", command: ["node", "second.js"] } } },
+      }),
+    )
     const settings = await engineSettings(dir)
-    expect(settings?.lspConfigFile).toBe(path.resolve(dir, "host-lsp.json"))
-    const options = nativeEngineOptions({ MIAO_ENGINE_BIN: "engine" }, settings)
-    if (!options) throw new Error("configured binary must produce engine options")
-    const args = engineArgs({ ...options, db: "store.db", workspace: "workspace" })
-    expect(args[args.indexOf("--lsp-config") + 1]).toBe(path.resolve(dir, "host-lsp.json"))
-    const overridden = nativeEngineOptions({
-      MIAO_ENGINE_BIN: "engine",
-      MIAO_ENGINE_LSP_CONFIG: "operator-lsp.json",
-    }, settings)
-    expect(overridden?.lspConfigFile).toBe(path.resolve("operator-lsp.json"))
-    expect(nativeEngineOptions({ MIAO_ENGINE_BIN: "engine" })?.lspConfigFile).toBeUndefined()
+    expect(Object.keys(settings?.mcpSettings?.servers ?? {})).toEqual(["first", "second"])
+    const options = nativeEngineOptions({ MIAO_ENGINE_BIN: "engine", MIAO_ENGINE_MODEL: "fixture" }, settings)
+    expect(options?.mcpSettings?.servers?.second).toMatchObject({ command: ["node", "second.js"] })
   } finally {
     rmSync(dir, { recursive: true, force: true })
   }

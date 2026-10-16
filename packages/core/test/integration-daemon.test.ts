@@ -77,7 +77,7 @@ describe("daemon-owned credential", () => {
         Effect.promise<void>(() => new Promise((resolve) => server.close(() => resolve()))),
       )
       const credential = yield* credentials.create({ integrationID, value: owned(socket) })
-      const connection = { type: "credential" as const, id: credential.id, label: credential.label }
+      const connection = { type: "credential" as const, id: credential.id, label: credential.label, active: credential.active }
       const value = yield* integrations.connection.resolve(connection)
       expect(value?.type === "oauth" ? value.access : undefined).toBe("fresh")
       expect(localRefreshes).toBe(0)
@@ -87,13 +87,14 @@ describe("daemon-owned credential", () => {
     }),
   )
 
-  it.live("refuses local mutation, deletion and replacement of an owned identity", () =>
+  it.live("refuses local mutation, activation, deletion and replacement of an owned identity", () =>
     Effect.gen(function* () {
       const credentials = yield* Credential.Service
       const credential = yield* credentials.create({ integrationID, value: owned("/unused/owner.sock") })
       expect(
         Exit.isFailure(yield* credentials.update(credential.id, { value: owned("changed") }).pipe(Effect.exit)),
       ).toBe(true)
+      expect(Exit.isFailure(yield* credentials.activate(credential.id).pipe(Effect.exit))).toBe(true)
       expect(Exit.isFailure(yield* credentials.remove(credential.id).pipe(Effect.exit))).toBe(true)
       expect(
         Exit.isFailure(yield* credentials.create({ integrationID, value: owned("replacement") }).pipe(Effect.exit)),
@@ -120,7 +121,12 @@ describe("daemon-owned credential", () => {
       )
       const credential = yield* credentials.create({ integrationID, value: owned("/missing/miao-owner.sock") })
       const result = yield* integrations.connection
-        .resolve({ type: "credential", id: credential.id, label: credential.label })
+        .resolve({
+          type: "credential",
+          id: credential.id,
+          label: credential.label,
+          active: credential.active,
+        })
         .pipe(Effect.flip)
       expect(result).toBeInstanceOf(Integration.AuthorizationError)
       expect(refreshes).toBe(0)

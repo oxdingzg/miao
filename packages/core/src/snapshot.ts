@@ -2,7 +2,7 @@ export * as Snapshot from "./snapshot"
 
 import { makeLocationNode } from "./effect/app-node"
 import path from "path"
-import { Context, Effect, Layer, Schema } from "effect"
+import { Context, Effect, Layer, Option, Schema } from "effect"
 import { Config } from "./config"
 import { File } from "./file"
 import { FSUtil } from "./fs-util"
@@ -98,10 +98,32 @@ const layer = Layer.effect(
       : location.project.directory
     const gitDirectory = AbsolutePath.make(path.join(global.data, "snapshot", location.project.id, Hash.fast(worktree)))
 
+    // Temp indexes left behind by a crashed process are only recoverable
+    // garbage once they outlive any plausible capture.
+    const sweepTemporary = Effect.fn("Snapshot.sweepTemporary")(function* () {
+      const entries = yield* fs
+        .readDirectoryEntries(gitDirectory)
+        .pipe(Effect.catch(() => Effect.succeed<readonly FSUtil.DirEntry[]>([])))
+      const staleBefore = Date.now() - 24 * 60 * 60 * 1000
+      yield* Effect.forEach(
+        entries.filter((entry) => entry.type === "file" && entry.name.startsWith("index.tmp-")),
+        (entry) =>
+          Effect.gen(function* () {
+            const file = path.join(gitDirectory, entry.name)
+            const info = yield* fs.stat(file).pipe(Effect.catch(() => Effect.succeed(undefined)))
+            if (!info || Option.getOrElse(info.mtime, () => new Date(0)).getTime() >= staleBefore) return
+            yield* fs.remove(file, { force: true }).pipe(Effect.catch(() => Effect.void))
+          }),
+        { discard: true },
+      )
+    })
+    yield* sweepTemporary()
+
     const scope = Effect.fnUntraced(function* () {
-      const relative = path.relative(worktree, location.directory)
-      if (relative.startsWith("..") || path.isAbsolute(relative))
+      const directory = path.resolve(location.directory)
+      if (!FSUtil.contains(worktree, directory))
         return yield* new Error({ operation: "capture", message: "Location is outside the project" })
+      const relative = path.relative(worktree, directory)
       return RelativePath.make(relative.replaceAll("\\", "/") || ".")
     })
 

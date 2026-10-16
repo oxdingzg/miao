@@ -1,10 +1,11 @@
+import type { CredentialsListOutput } from "@miao/client"
 import { ButtonV2 } from "@miao/ui/v2/button-v2"
 import { Tag } from "@miao/ui/v2/badge-v2"
 import { useDialog } from "@miao/ui/context/dialog"
 import { ProviderIcon } from "@miao/ui/provider-icon"
 import { showToast } from "@/utils/toast"
 import { popularProviders, useProviders } from "@/hooks/use-providers"
-import { createMemo, type Accessor, type Component, For, Show } from "solid-js"
+import { createMemo, createResource, type Accessor, type Component, For, Show } from "solid-js"
 import { useLanguage } from "@/context/language"
 import { useServerSDK } from "@/context/server-sdk"
 import { removeProviderCredentials } from "@/utils/server"
@@ -16,6 +17,7 @@ import "./settings-v2.css"
 
 type ProviderSource = "env" | "api" | "config" | "custom"
 type ProviderItem = ReturnType<ReturnType<typeof useProviders>["connected"]>[number]
+type CredentialAccount = CredentialsListOutput["data"][number]
 
 const PROVIDER_NOTES = [
   { match: (id: string) => id === "opencode", key: "dialog.provider.miao.note" },
@@ -40,6 +42,58 @@ export const SettingsProvidersV2: Component<{
   const serverSync = useServerSync()
   const providers = useProviders(props.directory)
   const providerConnect = useProviderConnectController({ onBack: props.onBack })
+
+  const [credentials, refreshCredentials] = createResource(
+    () => serverSdk().api,
+    (api) => api.credentials.list().then((result) => result.data),
+  )
+
+  const accounts = (providerID: string) =>
+    (credentials.latest ?? []).filter((account) => account.integrationID === providerID)
+
+  const refreshAccounts = async () => {
+    await serverSync().refreshProviders().catch(() => undefined)
+    await refreshCredentials.refetch()
+  }
+
+  const accountError = (err: unknown) => {
+    const message = err instanceof Error ? err.message : String(err)
+    showToast({ title: language.t("common.requestFailed"), description: message })
+  }
+
+  const useAccount = (providerName: string, account: CredentialAccount) =>
+    serverSdk()
+      .api.credentials.activate({ credentialID: account.id })
+      .then(() => refreshAccounts())
+      .then(() => {
+        showToast({
+          variant: "success",
+          icon: "circle-check",
+          title: language.t("settings.providers.accounts.activated.title"),
+          description: language.t("settings.providers.accounts.activated.description", {
+            provider: providerName,
+            account: account.label,
+          }),
+        })
+      })
+      .catch(accountError)
+
+  const removeAccount = (providerName: string, account: CredentialAccount) =>
+    serverSdk()
+      .api.credentials.remove({ credentialID: account.id })
+      .then(() => refreshAccounts())
+      .then(() => {
+        showToast({
+          variant: "success",
+          icon: "circle-check",
+          title: language.t("settings.providers.accounts.removed.title"),
+          description: language.t("settings.providers.accounts.removed.description", {
+            provider: providerName,
+            account: account.label,
+          }),
+        })
+      })
+      .catch(accountError)
 
   const connect = (provider?: string) => {
     providerConnect.select(provider)
@@ -173,6 +227,43 @@ export const SettingsProvidersV2: Component<{
                       <ButtonV2 size="normal" variant="ghost-muted" onClick={() => void disconnect(item.id, item.name)}>
                         {language.t("common.disconnect")}
                       </ButtonV2>
+                    </Show>
+                    <Show when={accounts(item.id).length > 1}>
+                      <div class="settings-v2-provider-accounts" data-component="provider-accounts">
+                        <span class="settings-v2-provider-accounts-title">
+                          {language.t("settings.providers.accounts.title")}
+                        </span>
+                        <For each={accounts(item.id)}>
+                          {(account) => (
+                            <div class="settings-v2-provider-account" data-active={account.active || undefined}>
+                              <span class="settings-v2-provider-account-label truncate">{account.label}</span>
+                              <Show when={account.active}>
+                                <Tag>{language.t("settings.providers.accounts.active")}</Tag>
+                              </Show>
+                              <div class="settings-v2-provider-account-actions">
+                                <Show when={!account.active && account.source !== "shared"}>
+                                  <ButtonV2
+                                    size="normal"
+                                    variant="ghost-muted"
+                                    onClick={() => void useAccount(item.name, account)}
+                                  >
+                                    {language.t("settings.providers.accounts.use")}
+                                  </ButtonV2>
+                                </Show>
+                                <Show when={account.source !== "shared"}>
+                                  <ButtonV2
+                                    size="normal"
+                                    variant="ghost-muted"
+                                    onClick={() => void removeAccount(item.name, account)}
+                                  >
+                                    {language.t("settings.providers.accounts.remove")}
+                                  </ButtonV2>
+                                </Show>
+                              </div>
+                            </div>
+                          )}
+                        </For>
+                      </div>
                     </Show>
                   </div>
                 )}
