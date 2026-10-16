@@ -1,3 +1,4 @@
+import { useTerminalDimensions } from "@opentui/solid"
 import { useDialog } from "../ui/dialog"
 import { DialogSelect } from "../ui/dialog-select"
 import { useRoute } from "../context/route"
@@ -55,6 +56,11 @@ export function DialogSessionList() {
   const [toDelete, setToDelete] = createSignal<string>()
   const [deleted, setDeleted] = createSignal(new Set<string>())
   const [search, setSearch] = createDebouncedSignal("", 150)
+  const dimensions = useTerminalDimensions()
+  const [selected, setSelected] = createSignal<string>()
+  const [now, setNow] = createSignal(Date.now())
+  const clock = setInterval(() => setNow(Date.now()), 60_000)
+  onCleanup(() => clearInterval(clock))
   const deleteHint = useCommandShortcut("session.delete")
   const quickSwitch1 = useCommandShortcut("session.quick_switch.1")
   const quickSwitch9 = useCommandShortcut("session.quick_switch.9")
@@ -103,6 +109,10 @@ export function DialogSessionList() {
       .filter((session) => !deleted().has(session.id))
       .filter((session) => !query || session.title.toLowerCase().includes(query))
   })
+
+  const selectedSession = createMemo(() =>
+    sessions().find((session) => session.id === (selected() ?? currentSessionID())),
+  )
 
   onCleanup(
     event.on("session.deleted", (event) => {
@@ -262,7 +272,12 @@ export function DialogSessionList() {
         bg: isDeleting ? theme.error : undefined,
         value: x.id,
         category,
-        footer,
+        footer: [
+          dimensions().width >= 100 ? footer : "",
+          dimensions().width >= 60 ? Locale.relativeTime(x.time.updated, now()) : "",
+        ]
+          .filter(Boolean)
+          .join(" · "),
         gutter,
       }
     }
@@ -292,9 +307,16 @@ export function DialogSessionList() {
       preserveSelection={true}
       current={currentSessionID()}
       onFilter={setSearch}
-      onMove={() => {
+      onMove={(option) => {
+        setSelected(option.value)
         setToDelete(undefined)
       }}
+      detail={
+        <box flexDirection="column">
+          <text fg={theme.textMuted}>Created {Locale.preciseTime(selectedSession()?.time.created)}</text>
+          <text fg={theme.textMuted}>Updated {Locale.preciseTime(selectedSession()?.time.updated)}</text>
+        </box>
+      }
       onSelect={(option) => {
         route.navigate({
           type: "session",

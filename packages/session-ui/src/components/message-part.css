@@ -1,3 +1,9 @@
+[data-slot="message-time"] {
+  white-space: nowrap;
+  unicode-bidi: isolate;
+  font-variant-numeric: tabular-nums;
+}
+
 [data-component="assistant-message"] {
   content-visibility: auto;
   width: 100%;
@@ -167,10 +173,11 @@
     justify-content: flex-end;
     gap: 10px;
     width: 100%;
-    opacity: 0;
-    pointer-events: none;
-    transition: opacity 0.15s ease;
-    will-change: opacity;
+    button {
+      opacity: 0;
+      pointer-events: none;
+      transition: opacity 0.15s ease;
+    }
 
     [data-component="tooltip-trigger"] {
       display: inline-flex;
@@ -205,8 +212,8 @@
     text-align: end;
   }
 
-  &:hover [data-slot="user-message-copy-wrapper"],
-  &:focus-within [data-slot="user-message-copy-wrapper"] {
+  &:hover [data-slot="user-message-copy-wrapper"] button,
+  &:focus-within [data-slot="user-message-copy-wrapper"] button {
     opacity: 1;
     pointer-events: auto;
   }
@@ -235,10 +242,11 @@
     align-items: center;
     justify-content: flex-start;
     gap: 10px;
-    opacity: 0;
-    pointer-events: none;
-    transition: opacity 0.15s ease;
-    will-change: opacity;
+    button {
+      opacity: 0;
+      pointer-events: none;
+      transition: opacity 0.15s ease;
+    }
 
     [data-component="tooltip-trigger"] {
       display: inline-flex;
@@ -256,8 +264,8 @@
     gap: 12px;
   }
 
-  &:hover [data-slot="text-part-copy-wrapper"],
-  &:focus-within [data-slot="text-part-copy-wrapper"] {
+  &:hover [data-slot="text-part-copy-wrapper"] button,
+  &:focus-within [data-slot="text-part-copy-wrapper"] button {
     opacity: 1;
     pointer-events: auto;
   }
