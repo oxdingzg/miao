@@ -17,6 +17,8 @@ export interface EngineOptions {
   db: string
   workspace: string
   model: string
+  /** ADR-12 worker host config passed as `--worker-config`; absent keeps extension tools off. */
+  workerConfigFile?: string
   provider?: string
   endpoint?: string
   authFile?: string
@@ -128,6 +130,8 @@ export function engineEnvironment(
 /** The argv the child engine is spawned with; pure so tests can assert it. */
 export function engineArgs(options: EngineOptions): string[] {
   const args = ["serve", "--db", options.db, "--workspace", options.workspace, "--model", options.model]
+  if (options.workerConfigFile) console.log("[worker-host] engine argv includes --worker-config")
+  if (options.workerConfigFile) args.push("--worker-config", options.workerConfigFile)
   if (options.provider) args.push("--provider", options.provider)
   if (options.endpoint) args.push("--endpoint", options.endpoint)
   if (options.authFile) args.push("--auth-file", options.authFile)
@@ -196,14 +200,13 @@ export class EngineClient {
 
   static start(options: EngineOptions): EngineClient {
     const args = engineArgs(options)
-    return new EngineClient(
-      spawn([options.binary, ...args], {
-        stdin: "pipe",
-        stdout: "pipe",
-        stderr: "pipe",
-        env: engineEnvironment(options.env),
-      }),
-    )
+    const child = spawn([options.binary, ...args], {
+      stdin: "pipe",
+      stdout: "pipe",
+      stderr: "pipe",
+      env: engineEnvironment(options.env),
+    })
+    return new EngineClient(child)
   }
 
   onEvent(handler: (event: EngineEvent) => void) {

@@ -1,3 +1,4 @@
+import os from "node:os"
 import path from "node:path"
 import { Config } from "@miao/core/config"
 import { Global } from "@miao/core/global"
@@ -374,6 +375,19 @@ const layer = Layer.effect(
     const settings = yield* Effect.promise(() => engineSettings(global.config))
     const configuration = nativeEngineOptions(process.env, settings)
     if (!configuration) return yield* Effect.die("NativeEngine layer built without MIAO_ENGINE_BIN")
+    if (process.env.MIAO_ENGINE_WORKER === "1") {
+      // Opt-in ADR-12 worker host: serve the workspace's custom tools to the
+      // engine. The config lives outside any model-writable workspace (tmp),
+      // and its argv is static because the engine names the workspace in the
+      // `hello` handshake.
+      const workerConfigFile = path.join(os.tmpdir(), "miao-engine-worker-config.json")
+      const host = path.resolve(import.meta.dir, "worker-host.ts")
+      yield* Effect.promise(() =>
+        Bun.write(workerConfigFile, JSON.stringify({ argv: [process.execPath, host] }))
+      )
+      configuration.workerConfigFile = workerConfigFile
+      console.log("[worker-host] config written:", workerConfigFile)
+    }
     const owners = yield* makeEngineOwners(configuration)
     return fromOwners(owners)
   }),
