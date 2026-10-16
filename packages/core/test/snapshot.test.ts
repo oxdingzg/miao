@@ -268,6 +268,140 @@ describe("Snapshot", () => {
       (tmp) => Effect.promise(() => tmp[Symbol.asyncDispose]()),
     ),
   )
+
+  testEffect(Layer.empty).live("captures without leaving temporary index files behind", () =>
+    Effect.acquireUseRelease(
+      Effect.promise(() => tmpdir()),
+      (tmp) =>
+        Effect.gen(function* () {
+          const project = path.join(tmp.path, "project")
+          yield* Effect.promise(async () => {
+            await fs.mkdir(project)
+            await fs.writeFile(path.join(project, "tracked.txt"), "one\n")
+            await initGit(project)
+          })
+          const store = yield* storeDirectory(tmp.path, project)
+          const trees = yield* Effect.gen(function* () {
+            const snapshot = yield* Snapshot.Service
+            const before = yield* snapshot.capture()
+            expect(before).toBeDefined()
+            if (!before) return []
+            yield* Effect.promise(() => fs.writeFile(path.join(project, "tracked.txt"), "two\n"))
+            const after = yield* snapshot.capture()
+            expect(after).toBeDefined()
+            if (!after) return []
+            expect(yield* snapshot.files({ from: before, to: after })).toEqual([RelativePath.make("tracked.txt")])
+            return [before, after]
+          }).pipe(Effect.provide(snapshotLayer(tmp.path, project)))
+          expect(trees).toHaveLength(2)
+          const entries = yield* Effect.promise(() => fs.readdir(store))
+          expect(entries.filter((entry) => entry.startsWith("index.tmp-"))).toEqual([])
+          expect(entries).toContain("index")
+          expect(entries).toContain("HEAD")
+        }),
+      (tmp) => Effect.promise(() => tmp[Symbol.asyncDispose]()),
+    ),
+  )
+
+  testEffect(Layer.empty).live("recovers the next capture from a corrupted snapshot index", () =>
+    Effect.acquireUseRelease(
+      Effect.promise(() => tmpdir()),
+      (tmp) =>
+        Effect.gen(function* () {
+          const project = path.join(tmp.path, "project")
+          yield* Effect.promise(async () => {
+            await fs.mkdir(project)
+            await fs.writeFile(path.join(project, "tracked.txt"), "one\n")
+            await initGit(project)
+          })
+          const store = yield* storeDirectory(tmp.path, project)
+          yield* Effect.gen(function* () {
+            const snapshot = yield* Snapshot.Service
+            const before = yield* snapshot.capture()
+            expect(before).toBeDefined()
+            if (!before) return
+            yield* Effect.promise(() => fs.writeFile(path.join(store, "index"), "corrupted index"))
+            const recovered = yield* snapshot.capture()
+            expect(recovered).toBeDefined()
+            if (!recovered) return
+            expect(yield* snapshot.files({ from: before, to: recovered })).toEqual([])
+            yield* Effect.promise(() => fs.writeFile(path.join(project, "added.txt"), "added\n"))
+            const after = yield* snapshot.capture()
+            expect(after).toBeDefined()
+            if (!after) return
+            expect(yield* snapshot.files({ from: recovered, to: after })).toEqual([RelativePath.make("added.txt")])
+          }).pipe(Effect.provide(snapshotLayer(tmp.path, project)))
+          const entries = yield* Effect.promise(() => fs.readdir(store))
+          expect(entries.filter((entry) => entry.startsWith("index.tmp-"))).toEqual([])
+          expect(entries).toContain("index")
+        }),
+      (tmp) => Effect.promise(() => tmp[Symbol.asyncDispose]()),
+    ),
+  )
+
+  testEffect(Layer.empty).live("supports concurrent captures without leftover temporary index files", () =>
+    Effect.acquireUseRelease(
+      Effect.promise(() => tmpdir()),
+      (tmp) =>
+        Effect.gen(function* () {
+          const project = path.join(tmp.path, "project")
+          yield* Effect.promise(async () => {
+            await fs.mkdir(project)
+            await fs.writeFile(path.join(project, "tracked.txt"), "one\n")
+            await initGit(project)
+          })
+          const store = yield* storeDirectory(tmp.path, project)
+          const trees = yield* Effect.gen(function* () {
+            const snapshot = yield* Snapshot.Service
+            const [first, second] = yield* Effect.all([snapshot.capture(), snapshot.capture()], { concurrency: 2 })
+            expect(first).toBeDefined()
+            expect(second).toBeDefined()
+            if (!first || !second) return []
+            expect(yield* snapshot.files({ from: first, to: second })).toEqual([])
+            const third = yield* snapshot.capture()
+            expect(third).toBeDefined()
+            return [first, second, third]
+          }).pipe(Effect.provide(snapshotLayer(tmp.path, project)))
+          expect(trees).toHaveLength(3)
+          const entries = yield* Effect.promise(() => fs.readdir(store))
+          expect(entries.filter((entry) => entry.startsWith("index.tmp-"))).toEqual([])
+        }),
+      (tmp) => Effect.promise(() => tmp[Symbol.asyncDispose]()),
+    ),
+  )
+
+  testEffect(Layer.empty).live("sweeps stale temporary index files when the store initializes", () =>
+    Effect.acquireUseRelease(
+      Effect.promise(() => tmpdir()),
+      (tmp) =>
+        Effect.gen(function* () {
+          const project = path.join(tmp.path, "project")
+          yield* Effect.promise(async () => {
+            await fs.mkdir(project)
+            await fs.writeFile(path.join(project, "tracked.txt"), "one\n")
+            await initGit(project)
+          })
+          const store = yield* storeDirectory(tmp.path, project)
+          yield* Effect.promise(async () => {
+            await fs.mkdir(store, { recursive: true })
+            const stale = path.join(store, "index.tmp-old")
+            await fs.writeFile(stale, "stale")
+            const when = new Date(Date.now() - 2 * 24 * 60 * 60 * 1000)
+            await fs.utimes(stale, when, when)
+            await fs.writeFile(path.join(store, "index.tmp-new"), "fresh")
+          })
+          yield* Effect.gen(function* () {
+            const snapshot = yield* Snapshot.Service
+            expect(yield* snapshot.capture()).toBeDefined()
+          }).pipe(Effect.provide(snapshotLayer(tmp.path, project)))
+          const entries = yield* Effect.promise(() => fs.readdir(store))
+          expect(entries).not.toContain("index.tmp-old")
+          expect(entries).toContain("index.tmp-new")
+          expect(entries).toContain("index")
+        }),
+      (tmp) => Effect.promise(() => tmp[Symbol.asyncDispose]()),
+    ),
+  )
 })
 
 async function initGit(project: string) {
@@ -285,6 +419,19 @@ function snapshotLayer(data: string, directory: string) {
     [Location.node, Location.boundNode(Location.Ref.make({ directory: AbsolutePath.make(directory) }))],
     [Global.node, Global.layerWith({ data, config: path.join(data, "config") })],
   ])
+}
+
+function storeDirectory(data: string, directory: string) {
+  return Effect.gen(function* () {
+    const projectID = yield* Effect.gen(function* () {
+      return (yield* Location.Service).project.id
+    }).pipe(
+      Effect.provide(
+        AppNodeBuilder.build(Location.boundNode(Location.Ref.make({ directory: AbsolutePath.make(directory) }))),
+      ),
+    )
+    return path.join(data, "snapshot", projectID, Hash.fast(directory))
+  })
 }
 
 function read(file: string) {
