@@ -195,6 +195,10 @@ pub enum Command {
     Resume {
         session_id: String,
     },
+    SelectModel {
+        session_id: String,
+        binding: Option<crate::session_model::Binding>,
+    },
     Mode {
         session_id: String,
         mode: CollaborationMode,

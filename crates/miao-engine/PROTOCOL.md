@@ -149,3 +149,25 @@ or scheduling model execution. `snapshot` and `sessions` immediately see it.
 An exact retry returns `duplicate: true` and preserves edited metadata and the
 journal cursor; reusing an identity belonging to another workspace fails.
 The product initializes identity before publishing its durable native placement.
+
+### Session model selection
+
+`select_model` takes `session_id` and `binding` (`protocol`, canonical wire
+`model`), or `binding: null` to reset to the configured default. The Runtime
+validates that its configured provider can select that model without changing
+route, endpoint or credential source before committing `session.model.selected`.
+An identical selection is a no-op. Unsupported models/routes fail without
+changing the prior binding or waking the Session.
+
+The next provider-turn boundary reads the committed binding. A request already
+in flight retains its original provider, and another Session retains its own
+selection/default. Provider-start evidence, assistant identity, native token
+counting and compaction use the provider actually selected for that turn.
+`snapshot.model_selection` exposes the durable binding, or null for the default.
+A fork inherits selection at its explicit message boundary, or the parent's
+latest selection when no boundary was requested. Reverting transcript history
+does not alter this configuration binding.
+
+This command selects models on the configured provider route. Cross-route
+catalog routing and product model-picker wiring require their own facade
+integration; it does not infer endpoints or borrow credentials from model names.
