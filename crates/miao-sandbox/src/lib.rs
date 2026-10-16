@@ -8,6 +8,8 @@
 use std::path::{Path, PathBuf};
 
 #[cfg(windows)]
+pub mod pty;
+#[cfg(windows)]
 pub mod win;
 
 pub fn canonical(path: &Path) -> PathBuf {

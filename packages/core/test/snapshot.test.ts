@@ -83,6 +83,110 @@ describe("Snapshot", () => {
     ),
   )
 
+  testEffect(Layer.empty).live("captures and restores paths with glob metacharacters", () =>
+    Effect.acquireUseRelease(
+      Effect.promise(() => tmpdir()),
+      (tmp) =>
+        Effect.gen(function* () {
+          const project = path.join(tmp.path, "project")
+          const weird = path.join(project, "weird*dir")
+          yield* Effect.promise(async () => {
+            await fs.mkdir(weird, { recursive: true })
+            await fs.writeFile(path.join(weird, "a[b].txt"), "one\n")
+            await fs.writeFile(path.join(project, ":leading.txt"), "one\n")
+            await initGit(project)
+          })
+          yield* Effect.gen(function* () {
+            const snapshot = yield* Snapshot.Service
+            const before = yield* snapshot.capture()
+            expect(before).toBeDefined()
+            if (!before) return
+            yield* Effect.promise(async () => {
+              await fs.writeFile(path.join(weird, "a[b].txt"), "two\n")
+              await fs.writeFile(path.join(project, ":leading.txt"), "two\n")
+            })
+            const after = yield* snapshot.capture()
+            expect(after).toBeDefined()
+            if (!after) return
+            expect(yield* snapshot.files({ from: before, to: after })).toEqual([
+              RelativePath.make(":leading.txt"),
+              RelativePath.make("weird*dir/a[b].txt"),
+            ])
+            const plan = new Map([[RelativePath.make("weird*dir/a[b].txt"), before]])
+            expect(yield* snapshot.preview({ files: plan })).toHaveLength(1)
+            yield* snapshot.restore({ files: plan })
+            expect(yield* read(path.join(weird, "a[b].txt"))).toBe("one\n")
+            expect(yield* read(path.join(project, ":leading.txt"))).toBe("two\n")
+          }).pipe(Effect.provide(snapshotLayer(tmp.path, project)))
+        }),
+      (tmp) => Effect.promise(() => tmp[Symbol.asyncDispose]()),
+    ),
+  )
+
+  testEffect(Layer.empty).live("captures a Location in a project subdirectory named ..foo", () =>
+    Effect.acquireUseRelease(
+      Effect.promise(() => tmpdir()),
+      (tmp) =>
+        Effect.gen(function* () {
+          const project = path.join(tmp.path, "project")
+          const location = path.join(project, "..foo")
+          yield* Effect.promise(async () => {
+            await fs.mkdir(location, { recursive: true })
+            await fs.writeFile(path.join(location, "tracked.txt"), "one\n")
+            await initGit(project)
+          })
+          yield* Effect.gen(function* () {
+            const snapshot = yield* Snapshot.Service
+            const before = yield* snapshot.capture()
+            expect(before).toBeDefined()
+            if (!before) return
+            yield* Effect.promise(() => fs.writeFile(path.join(location, "tracked.txt"), "two\n"))
+            const after = yield* snapshot.capture()
+            expect(after).toBeDefined()
+            if (!after) return
+            expect(yield* snapshot.files({ from: before, to: after })).toEqual([
+              RelativePath.make("..foo/tracked.txt"),
+            ])
+          }).pipe(Effect.provide(snapshotLayer(tmp.path, location)))
+        }),
+      (tmp) => Effect.promise(() => tmp[Symbol.asyncDispose]()),
+    ),
+  )
+
+  testEffect(Layer.empty).live("captures onto a snapshot store whose directory already exists", () =>
+    Effect.acquireUseRelease(
+      Effect.promise(() => tmpdir()),
+      (tmp) =>
+        Effect.gen(function* () {
+          const project = path.join(tmp.path, "project")
+          yield* Effect.promise(async () => {
+            await fs.mkdir(project)
+            await fs.writeFile(path.join(project, "tracked.txt"), "one\n")
+            await initGit(project)
+          })
+          const projectID = yield* Effect.gen(function* () {
+            return (yield* Location.Service).project.id
+          }).pipe(
+            Effect.provide(
+              AppNodeBuilder.build(Location.boundNode(Location.Ref.make({ directory: AbsolutePath.make(project) }))),
+            ),
+          )
+          // A concurrent first capture may have created the store directory before this one.
+          const store = path.join(tmp.path, "snapshot", projectID, Hash.fast(project))
+          yield* Effect.promise(() => fs.mkdir(store, { recursive: true }))
+          const tree = yield* Effect.gen(function* () {
+            const snapshot = yield* Snapshot.Service
+            return yield* snapshot.capture()
+          }).pipe(Effect.provide(snapshotLayer(tmp.path, project)))
+          expect(tree).toBeDefined()
+          expect(yield* Effect.promise(() => fs.stat(path.join(store, "HEAD")))).toBeDefined()
+          const siblings = yield* Effect.promise(() => fs.readdir(path.join(store, "..")))
+          expect(siblings.filter((entry) => entry.includes(".init-"))).toEqual([])
+        }),
+      (tmp) => Effect.promise(() => tmp[Symbol.asyncDispose]()),
+    ),
+  )
+
   testEffect(Layer.empty).live("isolates snapshot indexes by canonical Git worktree", () =>
     Effect.acquireUseRelease(
       Effect.promise(() => tmpdir()),
@@ -165,6 +269,16 @@ describe("Snapshot", () => {
     ),
   )
 })
+
+async function initGit(project: string) {
+  await $`git init`.cwd(project).quiet()
+  await $`git config core.fsmonitor false`.cwd(project).quiet()
+  await $`git config commit.gpgsign false`.cwd(project).quiet()
+  await $`git config user.email test@opencode.test`.cwd(project).quiet()
+  await $`git config user.name Test`.cwd(project).quiet()
+  await $`git add .`.cwd(project).quiet()
+  await $`git commit -m initial`.cwd(project).quiet()
+}
 
 function snapshotLayer(data: string, directory: string) {
   return AppNodeBuilder.build(Snapshot.node, [
