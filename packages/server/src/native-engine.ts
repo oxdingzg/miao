@@ -43,12 +43,16 @@ export interface Interface {
     storage: AbsolutePath
     location: Location.Ref
   }) => Effect.Effect<Readonly<Record<string, unknown>>, ConflictError>
-  /** Lifetime billed tokens from the native journal, independent of transcript selection. */
-  readonly tokens: (input: {
+  /**
+   * The engine's usage report: billed turns, per-identity lineage, tool
+   * counts, and timing. Pricing is a product fact, so the raw report is
+   * projected by the caller through the model catalog.
+   */
+  readonly usage: (input: {
     sessionID: SessionID
     storage: AbsolutePath
     location: Location.Ref
-  }) => Effect.Effect<SessionInfo.Info["tokens"], ConflictError>
+  }) => Effect.Effect<Readonly<Record<string, unknown>>, ConflictError>
   /** Captured, read-only product transcript from native storage. */
   readonly transcript: (input: {
     sessionID: SessionID
