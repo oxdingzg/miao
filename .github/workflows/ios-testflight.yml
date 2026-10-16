@@ -20,10 +20,21 @@ concurrency:
   cancel-in-progress: false
 jobs:
   upload:
-    runs-on: macos-14
+    # App Store Connect rejects an upload built with an SDK older than iOS 26,
+    # and only the macOS 26 image carries Xcode 26.
+    runs-on: macos-26
     timeout-minutes: 60
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+      - name: Require an iOS 26 SDK
+        run: |
+          sdk="$(xcrun --sdk iphoneos --show-sdk-version)"
+          echo "Xcode $(xcodebuild -version | head -1 | cut -d' ' -f2) with the iPhoneOS $sdk SDK"
+          case "$sdk" in
+            2[6-9].*|[3-9][0-9].*) exit 0 ;;
+          esac
+          echo "::error::App Store Connect requires the iOS 26 SDK or later; this runner has iPhoneOS $sdk. Run on a macOS runner with Xcode 26 or newer."
+          exit 1
       - name: Verify the App Store Connect API key is configured
         env:
           APPLE_API_KEY_ID: ${{ secrets.APPLE_API_KEY_ID }}
