@@ -1490,7 +1490,9 @@ dependencies = [
 name = "miao-sandbox"
 version = "0.0.1"
 dependencies = [
+ "dunce",
  "landlock",
+ "libc",
  "windows",
 ]
 

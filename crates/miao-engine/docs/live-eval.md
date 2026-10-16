@@ -658,3 +658,55 @@ regression test pins a reply beyond the channel capacity: without the drain
 the call stalls until the test's five-second bound, with the drain the reply
 arrives (`roles::tests::a_summary_reply_beyond_the_progress_capacity_cannot_stall_the_call`).
 What stays unmeasured is long-task quality above the trigger.
+
+
+## Request-capped G5 pilot and compaction boundary regression (2026-10-16)
+
+This diagnostic pilot used a single persisted 24-request allowance, including
+failed upstream transports and retries, across all invocations. It is not a
+paired baseline or full-suite G5 acceptance. The binary was the published
+v0.2.13 macOS arm64 engine (revision
+`bc0b3055afdc3b443f172ef986478b3e19b81de3`, SHA-256
+`82a3610761d75c2c00afe51cc6ec65ce5ddcedbd4e95117bfdd3df867c130096`),
+using `gpt-6.1-sol` through `subscription-responses`, suite fingerprint
+`163e0e99705f41b9f3f6f3122f44ad2dd5221bb57880cb3d69f90f42efa99fbf`.
+
+| Phase | Result | Upstream requests | Wall time |
+| --- | --- | --- | --- |
+| Initial read-only transport | Rejected sample: three transport failures | 3 | Not a successful task sample |
+| Read-only retry | Passed | 5 | 12.735 s |
+| Multi-read | Passed: one batch of three reads | 2 | 7.109 s |
+| Low-threshold long Session | Failed; see below | 14 | 51.982 s |
+
+The ledger ended with exactly 24 attempt reservations and 24 response records.
+Six further requests were rejected locally without upstream forwarding. Prices
+were unknown, not zero. The initial successful read-only wrapper hung during
+SSE cleanup; #928 separately fixes and regression-tests terminal-but-open SSE
+shutdown. The remaining pilot printed both proxy-closed and final-accounting
+markers and exited normally. Process exit 0 does not mean every task passed.
+
+The low-threshold run used `window=4000`, `ratio=0.25`, `headroom=500`,
+`perPass=4`, `pruneChars=1024`, and `protectTurns=2`, with five inputs planned
+on one Session. It recorded four compaction starts, eight progress notices,
+four failures, and two skips. Three failures reported
+`compaction cannot cut a tool continuation`; the final summary failed after
+the request cap was reached. No successful compaction is claimed.
+
+Root cause: after tool execution, the runtime attempted to summarize and cut
+through the assistant message that *requested* those tools. Their results
+follow that message, so the transaction correctly refused to split the tool
+exchange. Summary requests had already been paid for before this rejection.
+Two related boundary errors were also found: promotion before summarization
+included newer prompts beyond the cut, and checkpoint IDs keyed only by run
+conflicted when one run completed multiple answers.
+
+The regression in `tests/compaction_acceptance.rs` drives real file reads and
+a deterministic provider through two tool continuations and two answers in
+one run, with a steer admitted while the first answer is in flight. Compaction
+waits for an answer that closes the exchange, summarizes before promotion,
+and identifies each checkpoint by run plus boundary. The test requires exactly
+two summary calls, both successful checkpoints, complete tool results at the
+provider, and exclusion of the newer prompt from the first summary. Against
+the original implementation it fails with four summary calls instead of two.
+This is offline mechanism evidence; it does not replace a new published-binary
+live acceptance run. The pilot allowance remains exhausted.
