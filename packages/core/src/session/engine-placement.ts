@@ -62,13 +62,17 @@ export const claim = Effect.fn("SessionEnginePlacement.claim")(function* (
       Effect.gen(function* () {
         // Old/imported TS rows remain TS-owned even if their binding has not yet
         // been synthesized. This check and the insert share the write transaction.
+        // A row whose binding already exists is a concurrent creator's authority,
+        // not a legacy row: re-claiming it with matching facts is idempotent, and
+        // only a session without any binding is legacy.
         const legacy = yield* db
           .select({ id: SessionTable.id })
           .from(SessionTable)
           .where(eq(SessionTable.id, input.sessionID))
           .get()
           .pipe(Effect.orDie)
-        if (legacy && placement.engine !== "ts") return yield* new Conflict({ sessionID: input.sessionID })
+        const bound = yield* find(db, input.sessionID)
+        if (legacy && !bound && placement.engine !== "ts") return yield* new Conflict({ sessionID: input.sessionID })
         yield* db
           .insert(SessionEnginePlacementTable)
           .values({
