@@ -11,6 +11,17 @@ at `docs/releases/vX.Y.Z.md` and `docs/releases/vX.Y.Z.zh.md`; both are required
 
 ## [Unreleased]
 
+## [0.2.11] - 2026-10-16
+
+### Added
+- **ios**: publish TestFlight builds from a manual workflow (#884) (`ac54576df`)
+- **tui**: pick remote access scope and duration with an all-sessions default (#878) (`743cdbc2b`)
+
+### Fixed
+- **ios**: map relay 404 to an unsupported-feature message instead of network failure (#877) (`16b2c8443`)
+- **engine**: let an attempt notice reach the evaluation runner (#890) (`c9c9f2f90`)
+- **tui**: recover partially covered transcripts after content collapse (#889) (`492de93a3`)
+
 ## [0.2.10] - 2026-10-15
 
 ### Added
