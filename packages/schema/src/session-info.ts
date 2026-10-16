@@ -54,6 +54,10 @@ export const Info = Schema.Struct({
   projectID: Project.ID,
   agent: Agent.ID.pipe(optional),
   model: Model.Ref.pipe(optional),
+  execution: Schema.Struct({
+    engine: Schema.Literals(["typescript", "rust"]),
+    selection: Schema.Literals(["session", "operator"]),
+  }).pipe(optional),
   cost: Schema.Finite,
   usage: Usage.pipe(optional),
   tokens: Schema.Struct({

@@ -7,6 +7,18 @@ gate or authorize the default switch.
 
 ## Client lifecycle (G3)
 
+Native Session information exposes `execution: { engine: "rust", selection:
+"operator" }`. The TUI admits plain prompts directly for this policy instead
+of applying its TypeScript agent/model preferences first. Its footer identifies
+the operator-bound native route, and selection actions do not overwrite local
+preferences for that Session. Other Session information may omit the field;
+legacy TypeScript preference selection then retains its existing behavior.
+
+A real attached full TUI has been exercised with a local deterministic provider:
+native history renders, a prompt typed into the TUI reaches the native provider,
+and its reply renders. This plain-prompt scenario does not close the remaining
+approval, interruption, external-client or capability rows below.
+
 | Behavior | Existing automated evidence | Product acceptance still required |
 | --- | --- | --- |
 | Prompt and streamed answer | `tests/acp.rs`; product `native-coding-http.test.ts` | Native-owned Session in the daily TUI and an external ACP client |

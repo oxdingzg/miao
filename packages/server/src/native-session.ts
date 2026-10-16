@@ -35,6 +35,7 @@ export function nativeSessionInfo(input: {
       ? { parentID: Schema.decodeUnknownSync(SessionID)(input.snapshot["parent_session_id"]) }
       : {}),
     projectID: input.projectID,
+    execution: { engine: "rust", selection: "operator" },
     cost: 0,
     tokens: { input: 0, output: 0, reasoning: 0, cache: { read: 0, write: 0 } },
     time: {
