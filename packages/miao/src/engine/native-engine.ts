@@ -62,6 +62,11 @@ export const nativeEngineOptions = (
   if (environment.MIAO_ENGINE_PROVIDER) merged.provider = environment.MIAO_ENGINE_PROVIDER
   if (environment.MIAO_ENGINE_ENDPOINT) merged.endpoint = environment.MIAO_ENGINE_ENDPOINT
   if (environment.MIAO_ENGINE_FALLBACK_MODEL) merged.fallbackModel = environment.MIAO_ENGINE_FALLBACK_MODEL
+  if (environment.MIAO_ENGINE_TOOL_DISCLOSURE) {
+    if (!["full", "compact"].includes(environment.MIAO_ENGINE_TOOL_DISCLOSURE))
+      throw new Error("MIAO_ENGINE_TOOL_DISCLOSURE must be full or compact")
+    merged.toolDisclosure = environment.MIAO_ENGINE_TOOL_DISCLOSURE === "compact" ? "compact" : "full"
+  }
   if (environment.MIAO_ENGINE_ROLES) merged.roles = JSON.parse(environment.MIAO_ENGINE_ROLES)
   if (environment.MIAO_ENGINE_RESPONSES_CACHE_CONTRACT)
     merged.responsesCacheContract = Schema.decodeUnknownSync(Schema.fromJsonString(ResponsesCacheContract), {
@@ -92,6 +97,7 @@ export const nativeEngineOptions = (
     credentialID: environment.MIAO_ENGINE_CREDENTIAL_ID,
     credentialIntegration: environment.MIAO_ENGINE_CREDENTIAL_INTEGRATION,
     fallbackModel: merged.fallbackModel,
+    toolDisclosure: merged.toolDisclosure,
     roles: merged.roles,
     responsesCacheContract: merged.responsesCacheContract,
     promptCache: merged.promptCache,
@@ -126,6 +132,7 @@ export const engineSettings = async (
       provider: engine.provider,
       endpoint: engine.endpoint,
       fallbackModel: engine.fallback_model,
+      toolDisclosure: engine.tool_disclosure,
       roles: engine.roles,
       responsesCacheContract: engine.responses_cache_contract,
       promptCache: engine.prompt_cache,

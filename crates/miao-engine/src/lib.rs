@@ -42,6 +42,7 @@ pub mod usage;
 pub mod wakeup;
 pub mod worker;
 
+pub mod tool_catalog;
 mod tool_input;
 
 mod first_event;

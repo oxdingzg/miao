@@ -83,6 +83,26 @@ test("global cache contracts reach the child and explicit environment overrides 
   }
 })
 
+test("compact tool disclosure reaches child arguments and validates environment overrides", async () => {
+  const dir = mkdtempSync(path.join(tmpdir(), "native-tool-disclosure-"))
+  try {
+    writeFileSync(path.join(dir, "miao.json"), JSON.stringify({ engine: { tool_disclosure: "compact" } }))
+    const settings = await engineSettings(dir)
+    const options = nativeEngineOptions({ MIAO_ENGINE_BIN: "engine" }, settings)
+    if (!options) throw new Error("expected engine options")
+    expect(options.toolDisclosure).toBe("compact")
+    const args = engineArgs({ ...options, db: "store.db", workspace: "workspace" })
+    expect(args[args.indexOf("--tool-disclosure") + 1]).toBe("compact")
+    expect(
+      nativeEngineOptions({ MIAO_ENGINE_BIN: "engine", MIAO_ENGINE_TOOL_DISCLOSURE: "full" }, settings)?.toolDisclosure,
+    ).toBe("full")
+    expect(() => nativeEngineOptions({ MIAO_ENGINE_BIN: "engine", MIAO_ENGINE_TOOL_DISCLOSURE: "invalid" })).toThrow()
+    expect(nativeEngineOptions({ MIAO_ENGINE_BIN: "engine" })?.toolDisclosure).toBeUndefined()
+  } finally {
+    rmSync(dir, { recursive: true, force: true })
+  }
+})
+
 for (const capability of ["mcp", "lsp"] as const) {
   test(`native ${capability} host config resolves globally and reaches the child arguments`, async () => {
     const dir = mkdtempSync(path.join(tmpdir(), `native-${capability}-config-`))

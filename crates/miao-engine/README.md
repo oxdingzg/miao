@@ -14,6 +14,9 @@ they are not the current capability-gap checklist.
 
 ## Running
 
+Optional [stable extension tool disclosure](docs/tool-disclosure.md) keeps the provider tool surface
+fixed while discovering extension schemas and filtering results on demand (`--tool-disclosure compact`).
+
 Build on a build host:
 
 ```sh
