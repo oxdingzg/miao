@@ -228,10 +228,18 @@ export function Prompt(props: PromptProps) {
   const hasRightContent = createMemo(() => Boolean(props.right))
 
   function openAgentList() {
+    if (local.selectionLocked()) {
+      toast.show({ message: "This native Session uses operator-configured agent/model settings", variant: "info" })
+      return
+    }
     keymap.dispatchCommand("agent.list")
   }
 
   function openModelList() {
+    if (local.selectionLocked()) {
+      toast.show({ message: "This native Session uses operator-configured agent/model settings", variant: "info" })
+      return
+    }
     dialog.replace(() => <DialogModel providerID={local.model.current()?.providerID} />)
   }
 
@@ -374,8 +382,9 @@ export function Prompt(props: PromptProps) {
       // not carry the acting agent/model themselves; the nearest assistant
       // message does.
       const agent = lastAssistantAgent()
-      const model = (sync.data.message[props.sessionID ?? ""] ?? [])
-        .findLast((m): m is TranscriptAssistantMessage => m.type === "assistant")?.model
+      const model = (sync.data.message[props.sessionID ?? ""] ?? []).findLast(
+        (m): m is TranscriptAssistantMessage => m.type === "assistant",
+      )?.model
       const isPrimaryAgent = local.agent.list().some((x) => x.name === agent)
       if (agent && isPrimaryAgent) {
         // Keep command line --agent if specified.
@@ -471,9 +480,7 @@ export function Prompt(props: PromptProps) {
           // kill the TUI: Bun exits the process on an unhandled rejection.
           void sdk.api.sessions
             .interrupt({ sessionID: props.sessionID })
-            .catch(() =>
-              toast.show({ message: "Interrupt failed: session runtime unreachable", variant: "error" }),
-            )
+            .catch(() => toast.show({ message: "Interrupt failed: session runtime unreachable", variant: "error" }))
           dialog.clear()
         },
       },
@@ -1028,7 +1035,8 @@ export function Prompt(props: PromptProps) {
       return true
     }
     const selectedModel = local.model.current()
-    if (!selectedModel) {
+    const operatorSelection = props.sessionID && sync.session.get(props.sessionID)?.execution?.selection === "operator"
+    if (!selectedModel && !operatorSelection) {
       void promptModelWarning()
       return false
     }
@@ -1052,6 +1060,7 @@ export function Prompt(props: PromptProps) {
     let sessionID = props.sessionID
     let finishMoveProgress = false
     if (sessionID == null) {
+      if (!selectedModel) return false
       const selectedWorkspace = workspace.selection()
       const workspaceID = selectedWorkspace?.type === "existing" ? selectedWorkspace.workspaceID : undefined
 
@@ -1112,9 +1121,9 @@ export function Prompt(props: PromptProps) {
 
     if (store.mode === "shell") {
       move.startSubmit()
-      void sdk.api.sessions.shell({ sessionID, command: inputText }).catch((error) =>
-        toast.show({ message: errorMessage(error), variant: "error" }),
-      )
+      void sdk.api.sessions
+        .shell({ sessionID, command: inputText })
+        .catch((error) => toast.show({ message: errorMessage(error), variant: "error" }))
       setStore("mode", "normal")
     } else if (
       inputText.startsWith("/") &&
@@ -1128,9 +1137,9 @@ export function Prompt(props: PromptProps) {
       const restOfInput = firstLineEnd === -1 ? "" : inputText.slice(firstLineEnd + 1)
       const args = firstLineArgs.join(" ") + (restOfInput ? "\n" + restOfInput : "")
 
-      void sdk.api.sessions.command({ sessionID, command: command.slice(1), arguments: args }).catch((error) =>
-        toast.show({ message: errorMessage(error), variant: "error" }),
-      )
+      void sdk.api.sessions
+        .command({ sessionID, command: command.slice(1), arguments: args })
+        .catch((error) => toast.show({ message: errorMessage(error), variant: "error" }))
     } else {
       move.startSubmit()
       const parts = [
@@ -1141,7 +1150,12 @@ export function Prompt(props: PromptProps) {
         },
         ...nonTextParts,
       ]
-      const request = sync.prompt.send({ sessionID, agent: agent.name, model: { ...selectedModel, variant }, parts })
+      const request = sync.prompt.send({
+        sessionID,
+        agent: agent.name,
+        model: selectedModel ? { ...selectedModel, variant } : undefined,
+        parts,
+      })
       request.catch((error) => {
         toast.show({
           title: "Failed to send prompt",
@@ -1494,7 +1508,11 @@ export function Prompt(props: PromptProps) {
                         onMouseUp={openAgentList}
                       >
                         <text fg={fadeColor(footerHover() === "agent" ? theme.text : highlight(), agentMetaAlpha())}>
-                          {store.mode === "shell" ? "Shell" : Locale.titlecase(agent().name)}
+                          {store.mode === "shell"
+                            ? "Shell"
+                            : local.selectionLocked()
+                              ? "Native"
+                              : Locale.titlecase(agent().name)}
                         </text>
                       </box>
                       <Show when={store.mode === "normal" && local.permission.mode === "auto"}>
@@ -1617,12 +1635,15 @@ export function Prompt(props: PromptProps) {
                     </Show>
                   </box>
                 </box>
-                <Show when={(status().type === "busy" || compaction()) && (turnElapsed() !== null && (turnElapsed() ?? 0) > 0)}>
+                <Show
+                  when={
+                    (status().type === "busy" || compaction()) && turnElapsed() !== null && (turnElapsed() ?? 0) > 0
+                  }
+                >
                   <text fg={theme.textMuted}>{Locale.duration(turnElapsed())}</text>
                 </Show>
                 <text fg={theme.text}>
-                  esc{" "}
-                  <span style={{ fg: theme.textMuted }}>interrupt</span>
+                  esc <span style={{ fg: theme.textMuted }}>interrupt</span>
                 </text>
               </box>
             </Match>

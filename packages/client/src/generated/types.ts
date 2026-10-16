@@ -542,6 +542,7 @@ export type SessionsListOutput = {
     readonly projectID: string
     readonly agent?: string
     readonly model?: { readonly id: string; readonly providerID: string; readonly variant?: string }
+    readonly execution?: { readonly engine: "typescript" | "rust"; readonly selection: "session" | "operator" }
     readonly cost: number
     readonly usage?: {
       readonly turns: number
@@ -623,6 +624,7 @@ export type SessionsCreateOutput = {
     readonly projectID: string
     readonly agent?: string
     readonly model?: { readonly id: string; readonly providerID: string; readonly variant?: string }
+    readonly execution?: { readonly engine: "typescript" | "rust"; readonly selection: "session" | "operator" }
     readonly cost: number
     readonly usage?: {
       readonly turns: number
@@ -680,6 +682,7 @@ export type SessionsGetOutput = {
     readonly projectID: string
     readonly agent?: string
     readonly model?: { readonly id: string; readonly providerID: string; readonly variant?: string }
+    readonly execution?: { readonly engine: "typescript" | "rust"; readonly selection: "session" | "operator" }
     readonly cost: number
     readonly usage?: {
       readonly turns: number
@@ -1160,6 +1163,7 @@ export type SessionsForkOutput = {
     readonly projectID: string
     readonly agent?: string
     readonly model?: { readonly id: string; readonly providerID: string; readonly variant?: string }
+    readonly execution?: { readonly engine: "typescript" | "rust"; readonly selection: "session" | "operator" }
     readonly cost: number
     readonly usage?: {
       readonly turns: number
@@ -1364,6 +1368,7 @@ export type SessionsChildrenOutput = {
     readonly projectID: string
     readonly agent?: string
     readonly model?: { readonly id: string; readonly providerID: string; readonly variant?: string }
+    readonly execution?: { readonly engine: "typescript" | "rust"; readonly selection: "session" | "operator" }
     readonly cost: number
     readonly usage?: {
       readonly turns: number
@@ -1433,6 +1438,7 @@ export type SessionsHistoryOutput = {
             readonly projectID: string
             readonly agent?: string
             readonly model?: { readonly id: string; readonly providerID: string; readonly variant?: string }
+            readonly execution?: { readonly engine: "typescript" | "rust"; readonly selection: "session" | "operator" }
             readonly cost: number
             readonly usage?: {
               readonly turns: number
@@ -2118,6 +2124,7 @@ export type SessionsEventsOutput =
           readonly projectID: string
           readonly agent?: string
           readonly model?: { readonly id: string; readonly providerID: string; readonly variant?: string }
+          readonly execution?: { readonly engine: "typescript" | "rust"; readonly selection: "session" | "operator" }
           readonly cost: number
           readonly usage?: {
             readonly turns: number
@@ -4593,6 +4600,7 @@ export type EventsDurableOutput =
           readonly projectID: string
           readonly agent?: string
           readonly model?: { readonly id: string; readonly providerID: string; readonly variant?: string }
+          readonly execution?: { readonly engine: "typescript" | "rust"; readonly selection: "session" | "operator" }
           readonly cost: number
           readonly usage?: {
             readonly turns: number

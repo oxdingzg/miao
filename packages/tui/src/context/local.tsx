@@ -76,6 +76,19 @@ export const { use: useLocal, provider: LocalProvider } = createSimpleContext({
     const event = useEvent()
     const permission = usePermission()
     const project = useProject()
+    const selectionLocked = createMemo(() => {
+      const current = route.data
+      return current.type === "session" && sync.session.get(current.sessionID)?.execution?.selection === "operator"
+    })
+    function rejectOperatorSelection() {
+      if (!selectionLocked()) return false
+      toast.show({
+        message: "This native Session uses operator-configured agent/model settings",
+        variant: "info",
+        duration: 3000,
+      })
+      return true
+    }
 
     function isModelValid(model: { providerID: string; modelID: string }) {
       const provider = sync.data.provider.find((item) => item.id === model.providerID)
@@ -113,6 +126,7 @@ export const { use: useLocal, provider: LocalProvider } = createSimpleContext({
           return agents().find((x) => x.name === agentStore.current) ?? agents().at(0)
         },
         set(name: string) {
+          if (rejectOperatorSelection()) return
           if (!agents().some((x) => x.name === name))
             return toast.show({
               variant: "warning",
@@ -122,6 +136,7 @@ export const { use: useLocal, provider: LocalProvider } = createSimpleContext({
           setAgentStore("current", name)
         },
         move(direction: 1 | -1) {
+          if (rejectOperatorSelection()) return
           batch(() => {
             const current = this.current()
             if (!current) return
@@ -242,6 +257,7 @@ export const { use: useLocal, provider: LocalProvider } = createSimpleContext({
       })
 
       const currentModel = createMemo(() => {
+        if (selectionLocked()) return undefined
         const a = agent.current()
         return (
           getFirstValidModel(
@@ -268,6 +284,7 @@ export const { use: useLocal, provider: LocalProvider } = createSimpleContext({
           return modelStore.favorite
         },
         parsed: createMemo(() => {
+          if (selectionLocked()) return { provider: "Operator configured", model: "Native runtime", reasoning: false }
           const value = currentModel()
           if (!value) {
             return {
@@ -285,6 +302,7 @@ export const { use: useLocal, provider: LocalProvider } = createSimpleContext({
           }
         }),
         cycle(direction: 1 | -1) {
+          if (rejectOperatorSelection()) return
           const current = currentModel()
           if (!current) return
           const recent = modelStore.recent
@@ -302,6 +320,7 @@ export const { use: useLocal, provider: LocalProvider } = createSimpleContext({
           save()
         },
         cycleFavorite(direction: 1 | -1) {
+          if (rejectOperatorSelection()) return
           const favorites = modelStore.favorite.filter((item) => isModelValid(item))
           if (!favorites.length) {
             toast.show({
@@ -332,6 +351,7 @@ export const { use: useLocal, provider: LocalProvider } = createSimpleContext({
           save()
         },
         set(model: { providerID: string; modelID: string }, options?: { recent?: boolean }) {
+          if (rejectOperatorSelection()) return
           batch(() => {
             if (!isModelValid(model)) {
               toast.show({
@@ -544,6 +564,7 @@ export const { use: useLocal, provider: LocalProvider } = createSimpleContext({
     })
 
     const result = {
+      selectionLocked,
       model,
       agent,
       mcp,
