@@ -42,6 +42,110 @@ const model = (api: Api, variants: ModelV2.Info["variants"] = []) =>
   })
 
 describe("SessionRunnerModel", () => {
+  it.effect("binds explicit cache settings without leaking deployment declarations to HTTP bodies", () =>
+    Effect.gen(function* () {
+      const base = model({ type: "aisdk", package: "@ai-sdk/openai", url: "https://gateway.test/v1" })
+      const catalog = ModelV2.Info.make({
+        ...base,
+        request: {
+          ...base.request,
+          body: {
+            ...base.request.body,
+            responsesCache: {
+              profile: "breakpoints",
+              model: "api-test-model",
+              endpoint: "https://gateway.test/v1/responses",
+            },
+            promptCacheOptions: { mode: "implicit", ttl: "30m" },
+          },
+        },
+      })
+      const resolved = yield* SessionRunnerModel.fromCatalogModel(catalog)
+      expect(resolved.route.defaults.http?.body).toEqual({ custom_extension: { enabled: true } })
+      const prepared = yield* LLMClient.prepare(LLM.request({ model: resolved, system: "stable", prompt: "question" }))
+      expect(prepared.body).toMatchObject({ prompt_cache_options: { mode: "implicit", ttl: "30m" } })
+      expect(prepared.body).not.toHaveProperty("responsesCache")
+      expect(prepared.body).not.toHaveProperty("promptCacheOptions")
+      expect(prepared.body).not.toHaveProperty("apiKey")
+    }),
+  )
+
+  it.effect("rejects invalid or cross-protocol cache declarations before sending", () =>
+    Effect.gen(function* () {
+      for (const [api, capability] of [
+        [{ type: "aisdk", package: "@ai-sdk/openai" }, { profile: "unknown" }],
+        [
+          { type: "aisdk", package: "@ai-sdk/anthropic" },
+          { profile: "breakpoints", model: "api-test-model", endpoint: "https://gateway.test/v1/responses" },
+        ],
+      ] as const) {
+        const base = model(api)
+        const error = yield* SessionRunnerModel.fromCatalogModel(
+          ModelV2.Info.make({
+            ...base,
+            request: { ...base.request, body: { responsesCache: capability } },
+          }),
+        ).pipe(Effect.flip)
+        expect(error.message).toContain("cache capability")
+      }
+    }),
+  )
+
+  it.effect("does not reuse API cache declarations after subscription rerouting", () =>
+    Effect.gen(function* () {
+      const base = model({ type: "aisdk", package: "@ai-sdk/openai" })
+      const catalog = ModelV2.Info.make({
+        ...base,
+        providerID: ProviderV2.ID.openai,
+        request: {
+          ...base.request,
+          body: {
+            responsesCache: {
+              profile: "breakpoints",
+              model: "api-test-model",
+              endpoint: "https://api.openai.com/v1/responses",
+            },
+          },
+        },
+      })
+      const resolved = yield* SessionRunnerModel.fromCatalogModel(
+        catalog,
+        Credential.OAuth.make({
+          type: "oauth",
+          access: "fixture",
+          refresh: "fixture",
+          expires: Date.now() + 60000,
+          methodID: Integration.MethodID.make("fixture"),
+        }),
+      )
+      const error = yield* LLMClient.prepare(LLM.request({ model: resolved, prompt: "question" })).pipe(Effect.flip)
+      expect(error.message).toContain("selected endpoint")
+    }),
+  )
+
+  it.effect("keeps generation-free prewarming out of normal model defaults", () =>
+    Effect.gen(function* () {
+      const base = model({ type: "aisdk", package: "@ai-sdk/openai" })
+      const error = yield* SessionRunnerModel.fromCatalogModel(
+        ModelV2.Info.make({
+          ...base,
+          request: {
+            ...base.request,
+            body: {
+              responsesCache: {
+                profile: "breakpoints",
+                model: "api-test-model",
+                endpoint: "https://api.openai.com/v1/responses",
+              },
+              promptCacheOptions: { prewarm: true },
+            },
+          },
+        }),
+      ).pipe(Effect.flip)
+      expect(error.message).toContain("normal model default")
+    }),
+  )
+
   it.effect("resolves a standard reasoning variant before catalog plugins finish", () =>
     Effect.gen(function* () {
       const catalog = ModelV2.Info.make({

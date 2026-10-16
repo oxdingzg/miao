@@ -170,6 +170,14 @@ export type ModelToolSchemaCompatibility = Schema.Schema.Type<typeof ModelToolSc
 
 export class ModelCompatibility extends Schema.Class<ModelCompatibility>("LLM.ModelCompatibility")({
   toolSchema: Schema.optional(ModelToolSchemaCompatibility),
+  /** Explicit deployment assertion; never inferred from a model-name prefix. */
+  responsesCache: Schema.optional(
+    Schema.Struct({
+      profile: Schema.Literals(["legacy", "breakpoints"]),
+      model: Schema.String,
+      endpoint: Schema.String,
+    }),
+  ),
 }) {}
 
 export namespace ModelCompatibility {
