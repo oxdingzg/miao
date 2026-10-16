@@ -52,11 +52,14 @@ export function startBudgetProxy(input: { upstream: string; limit: number; ledge
     }
     if (!records.length) write({ type: "budget", limit: input.limit, targetHash })
     const state = { used: attempts.length, rejected: 0, closed: false }
+    const lifetime = new AbortController()
+    const readers = new Map<ReadableStreamDefaultReader<Uint8Array>, ReadableStreamDefaultController<Uint8Array>>()
     const server = Bun.serve({
       hostname: "127.0.0.1",
       port: 0,
       idleTimeout: 0,
       async fetch(request) {
+        if (state.closed) return new Response("evaluation proxy is stopping", { status: 503 })
         if (request.method !== "POST") return new Response("provider proxy accepts POST only", { status: 405 })
         if (state.used >= input.limit) {
           state.rejected += 1
@@ -80,7 +83,7 @@ export function startBudgetProxy(input: { upstream: string; limit: number; ledge
             method: "POST",
             headers,
             body,
-            signal: request.signal,
+            signal: AbortSignal.any([request.signal, lifetime.signal]),
             redirect: "error",
             ...(input.proxy ? { proxy: input.proxy } : {}),
           })
@@ -90,7 +93,37 @@ export function startBudgetProxy(input: { upstream: string; limit: number; ledge
           // encoding/length or hop-by-hop headers with the decoded stream.
           for (const name of ["content-encoding", "content-length", "connection", "transfer-encoding"])
             outgoing.delete(name)
-          return new Response(response.body, { status: response.status, headers: outgoing })
+          if (state.closed) {
+            await response.body?.cancel()
+            return new Response("evaluation proxy is stopping", { status: 503 })
+          }
+          if (!response.body) return new Response(null, { status: response.status, headers: outgoing })
+          const reader = response.body.getReader()
+          const bodyStream = new ReadableStream<Uint8Array>({
+            start(controller) {
+              readers.set(reader, controller)
+            },
+            async pull(controller) {
+              try {
+                const next = await reader.read()
+                if (!readers.has(reader)) return
+                if (next.done) {
+                  readers.delete(reader)
+                  reader.releaseLock()
+                  controller.close()
+                  return
+                }
+                controller.enqueue(next.value)
+              } catch (error) {
+                if (readers.delete(reader)) controller.error(error)
+              }
+            },
+            async cancel(reason) {
+              readers.delete(reader)
+              await reader.cancel(reason).catch(() => undefined)
+            },
+          })
+          return new Response(bodyStream, { status: response.status, headers: outgoing })
         } catch (error) {
           const code =
             error instanceof Error && "code" in error && typeof error.code === "string" ? error.code : "TransportError"
@@ -116,7 +149,16 @@ export function startBudgetProxy(input: { upstream: string; limit: number; ledge
       async [Symbol.asyncDispose]() {
         if (state.closed) return
         state.closed = true
+        // Own and cancel readers explicitly: providers may leave SSE open after
+        // their terminal event. Direct body transfer can keep the proxy alive.
+        const cancelling = [...readers].map(([reader, output]) => {
+          readers.delete(reader)
+          output.close()
+          return reader.cancel().catch(() => undefined)
+        })
+        lifetime.abort()
         try {
+          await Promise.all(cancelling)
           await server.stop(true)
         } finally {
           release()
