@@ -17,6 +17,9 @@ they are not the current capability-gap checklist.
 Optional [stable extension tool disclosure](docs/tool-disclosure.md) keeps the provider tool surface
 fixed while discovering extension schemas and filtering results on demand (`--tool-disclosure compact`).
 
+Search and diagnostic results carry [source revision provenance](docs/revision-bound-observations.md)
+so later edits and checks can distinguish observed content from stale or unversioned diagnostics.
+
 Build on a build host:
 
 ```sh
@@ -754,3 +757,8 @@ the original Session, input hash and policy revision.
 CLI and HTTP API: create, submit a prompt, await and approve a native write once,
 observe the final history, and verify the file. Its unconfigured-policy case
 verifies that the same request does not write a file.
+
+## Completion verification receipts
+
+Configured completion commands produce [version-bound verification receipts](docs/verification-receipts.md)
+with actual exit/output, task revisions and bounded source coverage.

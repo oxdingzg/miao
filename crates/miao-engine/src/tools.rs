@@ -439,6 +439,13 @@ impl Tools {
         self.root.to_str().expect("validated UTF-8 Location")
     }
 
+    pub(crate) async fn verification_source(&self, scope: &crate::verification::Scope) -> Value {
+        let directory = self.directory.clone();
+        let scope = scope.clone();
+        tokio::task::spawn_blocking(move || scope.snapshot(&directory)).await
+            .unwrap_or_else(|_| json!({"coverage":"native-write-targets","complete":false,"error":"source snapshot worker failed"}))
+    }
+
     pub async fn prepare(&self, name: &str, input: Value) -> Result<Prepared, ToolError> {
         let invocation = if self.compact_disclosure && name == "tool_call" {
             Some(crate::tool_catalog::Invocation::parse(input.clone())?)
@@ -907,14 +914,17 @@ impl Tools {
             if self.lsp_diagnostics && matches!(prepared.name.as_str(), "edit_file" | "write_file")
             {
                 if let (Ok(value), Some(registry)) = (applied.as_mut(), self.lsp.clone()) {
-                    if let Some(report) = registry
-                        .diagnostics(&prepared.path)
-                        .await
-                        .ok()
-                        .and_then(|result| report_diagnostics(&result))
-                    {
+                    if let Ok(result) = registry.diagnostics(&prepared.path).await {
+                        let matches = result["source"]["sha256"] == value["sha256"];
+                        let mut source = result["source"].clone();
+                        source["matches_applied_revision"] = json!(matches);
                         if let Value::Object(fields) = value {
-                            fields.insert("diagnostics".into(), report);
+                            fields.insert("diagnostics_source".into(), source);
+                            if matches && result["source"]["stale"] == false {
+                                if let Some(report) = report_diagnostics(&result) {
+                                    fields.insert("diagnostics".into(), report);
+                                }
+                            }
                         }
                     }
                 }

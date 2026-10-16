@@ -87,6 +87,7 @@ struct Document {
     fingerprint: [u8; 32],
     version: u32,
     diagnostics: Option<Vec<Value>>,
+    diagnostics_version: Option<u64>,
 }
 
 impl Client {
@@ -190,6 +191,7 @@ impl Client {
                     fingerprint,
                     version,
                     diagnostics: None,
+                    diagnostics_version: None,
                 },
             );
             return Ok(());
@@ -208,6 +210,7 @@ impl Client {
                 fingerprint,
                 version: 1,
                 diagnostics: None,
+                diagnostics_version: None,
             },
         );
         Ok(())
@@ -231,6 +234,7 @@ impl Client {
         document.diagnostics = frame["params"]["diagnostics"]
             .as_array()
             .map(|items| items.iter().take(256).cloned().collect());
+        document.diagnostics_version = frame["params"]["version"].as_u64();
     }
 
     async fn request(
@@ -504,14 +508,29 @@ impl Registry {
             .document(path)
             .await
             .map_err(|_| ToolError::External("LSP diagnostics failed".into()))?;
-        let diagnostics = server
-            .client
-            .lock()
-            .await
+        let mut client = server.client.lock().await;
+        let diagnostics = client
             .diagnostics(&uri, &language, &text, Duration::from_secs(3))
             .await
             .map_err(|_| ToolError::External("LSP diagnostics failed".into()))?;
-        Ok(json!({"diagnostics": diagnostics}))
+        let document = client.opened.get(&uri).ok_or(ToolError::ResourceChanged)?;
+        let version = document.version;
+        let diagnostics_version = document.diagnostics_version;
+        drop(client);
+        let sha256 = crate::permission::digest(text.as_bytes());
+        // An external writer can change disk content while the server is answering.
+        let current_sha256 = self
+            .document(path)
+            .await
+            .ok()
+            .map(|(_, _, _, text)| crate::permission::digest(text.as_bytes()));
+        let stale = current_sha256.as_ref() != Some(&sha256);
+        Ok(json!({
+            "diagnostics": if stale { Vec::new() } else { diagnostics },
+            "source":{"sha256":sha256,"current_sha256":current_sha256,"document_version":version,
+                "diagnostics_version":diagnostics_version,"stale":stale,
+                "version_verified": !stale && diagnostics_version == Some(u64::from(version))}
+        }))
     }
 
     pub async fn definition(
