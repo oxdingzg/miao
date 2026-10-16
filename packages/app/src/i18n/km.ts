@@ -600,6 +600,8 @@ export const dict = {
   "toast.permissions.autoaccept.on.description": "សំណើការអនុញ្ញាតនឹងត្រូវបានអនុម័តដោយស្វ័យប្រវត្តិ",
   "toast.permissions.autoaccept.off.title": "បានបញ្ឈប់ការអនុញ្ញាតដោយស្វ័យប្រវត្តិ",
   "toast.permissions.autoaccept.off.description": "សំណើសុំការអនុញ្ញាតនឹងទាមទារការយល់ព្រម",
+  "settings.permissions.autoaccept.project.title": "Auto-accept permissions for this project",
+  "settings.permissions.autoaccept.project.description": "Answer new permission requests from any session in this project without asking. Session and directory choices still win.",
   "toast.model.none.title": "មិនបានជ្រើសរើសម៉ូដែលទេ។",
   "toast.model.none.description": "ភ្ជាប់អ្នកផ្តល់សេវាដើម្បីសង្ខេបសម័យនេះ។",
   "toast.file.loadFailed.title": "បរាជ័យក្នុងការផ្ទុកឯកសារ",

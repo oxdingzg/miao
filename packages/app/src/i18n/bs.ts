@@ -641,6 +641,8 @@ export const dict = {
   "toast.permissions.autoaccept.on.description": "Zahtjevi za dozvole će biti automatski odobreni",
   "toast.permissions.autoaccept.off.title": "Zaustavljeno automatsko prihvatanje dozvola",
   "toast.permissions.autoaccept.off.description": "Zahtjevi za dozvole će zahtijevati odobrenje",
+  "settings.permissions.autoaccept.project.title": "Automatski prihvati dozvole za ovaj projekat",
+  "settings.permissions.autoaccept.project.description": "Odgovori na nove zahtjeve za dozvole iz bilo koje sesije ovog projekta bez pitanja. Izbori na nivou sesije i direktorija imaju prednost.",
 
   "toast.model.none.title": "Nije odabran model",
   "toast.model.none.description": "Poveži provajdera da sažmeš ovu sesiju",

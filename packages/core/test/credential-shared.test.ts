@@ -89,8 +89,10 @@ it.live("inherited credentials are read-only and no copies or mutations are made
     const inherited = (yield* credentials.list(integrationID))[0]
     expect(inherited.source).toBe("shared")
     const edit = yield* credentials.update(inherited.id, { value: oauth("must-not-write") }).pipe(Effect.exit)
+    const promote = yield* credentials.activate(inherited.id).pipe(Effect.exit)
     const remove = yield* credentials.remove(inherited.id).pipe(Effect.exit)
     expect(Exit.isFailure(edit)).toBe(true)
+    expect(Exit.isFailure(promote)).toBe(true)
     expect(Exit.isFailure(remove)).toBe(true)
     const after = yield* Effect.promise(() => Bun.file(file).arrayBuffer())
     expect(new Uint8Array(after)).toEqual(new Uint8Array(before))
@@ -124,7 +126,7 @@ it.live("does not refresh inherited OAuth tokens, even when they have expired", 
       }),
     )
     const inherited = (yield* credentials.list(integrationID))[0]
-    const connection = { type: "credential" as const, id: inherited.id, label: inherited.label }
+    const connection = { type: "credential" as const, id: inherited.id, label: inherited.label, active: inherited.active }
     expect((yield* integrations.connection.resolve(connection))?.type).toBe("oauth")
     yield* Effect.sync(() => save(file, oauth("expired-access", 1)))
     const failed = yield* integrations.connection.resolve(connection).pipe(Effect.flip)

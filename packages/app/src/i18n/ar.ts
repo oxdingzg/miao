@@ -598,6 +598,8 @@ export const dict = {
   "toast.permissions.autoaccept.on.description": "ستتم الموافقة على طلبات الأذونات تلقائيًا",
   "toast.permissions.autoaccept.off.title": "تم إيقاف قبول الأذونات تلقائيًا",
   "toast.permissions.autoaccept.off.description": "ستتطلب طلبات الأذونات موافقة",
+  "settings.permissions.autoaccept.project.title": "قبول الأذونات تلقائيًا لهذا المشروع",
+  "settings.permissions.autoaccept.project.description": "الرد على طلبات الأذونات الجديدة من أي جلسة في هذا المشروع دون سؤال. تظل الاختيارات على مستوى الجلسة والمجلد ذات الأولوية.",
   "toast.model.none.title": "لم يتم تحديد نموذج",
   "toast.model.none.description": "قم بتوصيل موفر لتلخيص هذه الجلسة",
   "toast.file.loadFailed.title": "فشل تحميل الملف",

@@ -602,6 +602,8 @@ export const dict = {
   "toast.permissions.autoaccept.on.description": "Rugsat haýyşlary awtomatiki tassyklanar",
   "toast.permissions.autoaccept.off.title": "Awto-kabul ediş rugsatlary bes edildi",
   "toast.permissions.autoaccept.off.description": "Rugsat haýyşlary tassyklamagy talap eder",
+  "settings.permissions.autoaccept.project.title": "Auto-accept permissions for this project",
+  "settings.permissions.autoaccept.project.description": "Answer new permission requests from any session in this project without asking. Session and directory choices still win.",
   "toast.model.none.title": "Hiç hili model saýlanmady",
   "toast.model.none.description": "Bu sessiýany jemlemek üçin üpjün edijini birikdiriň",
   "toast.file.loadFailed.title": "Faýl ýükläp bilmedi",

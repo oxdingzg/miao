@@ -605,6 +605,8 @@ export const dict = {
   "toast.permissions.autoaccept.on.description": "Τα αιτήματα άδειας θα εγκρίνονται αυτόματα",
   "toast.permissions.autoaccept.off.title": "Διακοπή αυτόματης αποδοχής δικαιωμάτων",
   "toast.permissions.autoaccept.off.description": "Τα αιτήματα άδειας απαιτούν έγκριση",
+  "settings.permissions.autoaccept.project.title": "Αυτόματη αποδοχή δικαιωμάτων για αυτό το έργο",
+  "settings.permissions.autoaccept.project.description": "Απάντηση σε νέα αιτήματα δικαιωμάτων από οποιαδήποτε συνεδρία αυτού του έργου χωρίς ερώτηση. Οι επιλογές ανά συνεδρία και κατάλογο υπερισχύουν.",
   "toast.model.none.title": "Δεν έχει επιλεγεί μοντέλο",
   "toast.model.none.description": "Συνδέστε έναν πάροχο για να συνοψίσετε αυτήν τη συνεδρία",
   "toast.file.loadFailed.title": "Αποτυχία φόρτωσης αρχείου",

@@ -605,6 +605,8 @@ export const dict = {
   "toast.permissions.autoaccept.on.description": "Les sol·licituds de permís s'aprovaran automàticament",
   "toast.permissions.autoaccept.off.title": "S'ha aturat l'acceptació automàtica de permisos",
   "toast.permissions.autoaccept.off.description": "Les sol·licituds de permís requeriran aprovació",
+  "settings.permissions.autoaccept.project.title": "Accepta automàticament els permisos d'aquest projecte",
+  "settings.permissions.autoaccept.project.description": "Respon les noves sol·licituds de permís de qualsevol sessió d'aquest projecte sense preguntar. Les eleccions per sessió i directori tenen prioritat.",
   "toast.model.none.title": "No s'ha seleccionat cap model",
   "toast.model.none.description": "Connecteu un proveïdor per resumir aquesta sessió",
   "toast.file.loadFailed.title": "No s'ha pogut carregar el fitxer",

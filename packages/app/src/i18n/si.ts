@@ -600,6 +600,8 @@ export const dict: Record<string, string> = {
   "toast.permissions.autoaccept.on.description": "අවසර ඉල්ලීම් ස්වයංක්‍රීයව අනුමත වේ",
   "toast.permissions.autoaccept.off.title": "අවසර ස්වයංක්‍රීයව පිළිගැනීම නතර විය",
   "toast.permissions.autoaccept.off.description": "අවසර ඉල්ලීම් සඳහා අනුමැතිය අවශ්‍ය වනු ඇත",
+  "settings.permissions.autoaccept.project.title": "Auto-accept permissions for this project",
+  "settings.permissions.autoaccept.project.description": "Answer new permission requests from any session in this project without asking. Session and directory choices still win.",
   "toast.model.none.title": "ආකෘතියක් තෝරා නැත",
   "toast.model.none.description": "මෙම සැසිය සාරාංශ කිරීමට සැපයුම්කරුවෙකු සම්බන්ධ කරන්න",
   "toast.file.loadFailed.title": "ගොනුව පූරණය කිරීමට අසමත් විය",

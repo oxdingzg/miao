@@ -517,6 +517,8 @@ export const dict = {
   "toast.permissions.autoaccept.on.description": "Anmodninger om tilladelse godkendes automatisk",
   "toast.permissions.autoaccept.off.title": "Stoppet med at acceptere tilladelser automatisk",
   "toast.permissions.autoaccept.off.description": "Anmodninger om tilladelse vil kræve godkendelse",
+  "settings.permissions.autoaccept.project.title": "Acceptér tilladelser automatisk for dette projekt",
+  "settings.permissions.autoaccept.project.description": "Besvar nye tilladelsesanmodninger fra enhver session i dette projekt uden at spørge. Valg pr. session og mappe går forud.",
 
   "toast.workspace.enabled.title": "Arbejdsområder aktiveret",
   "toast.workspace.enabled.description": "Flere worktrees vises nu i sidepanelet",

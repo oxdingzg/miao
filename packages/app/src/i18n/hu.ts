@@ -606,6 +606,8 @@ export const dict = {
   "toast.permissions.autoaccept.on.description": "Az engedélykérések automatikusan jóváhagyásra kerülnek",
   "toast.permissions.autoaccept.off.title": "Az engedélyek automatikus elfogadása leállítva",
   "toast.permissions.autoaccept.off.description": "Az engedélykérésekhez jóváhagyás szükséges",
+  "settings.permissions.autoaccept.project.title": "Engedélyek automatikus elfogadása ehhez a projekthez",
+  "settings.permissions.autoaccept.project.description": "Új engedélykérelmek megválaszolása kérdés nélkül a projekt bármely munkamenetéből. A munkamenet- és könyvtárszintű választások elsőbbséget élveznek.",
   "toast.model.none.title": "Nincs kiválasztott modell",
   "toast.model.none.description": "Csatlakozzon egy szolgáltatóhoz a munkamenet összefoglalásához",
   "toast.file.loadFailed.title": "Nem sikerült betölteni a fájlt",

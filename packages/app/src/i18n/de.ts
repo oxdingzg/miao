@@ -493,6 +493,8 @@ export const dict = {
   "toast.permissions.autoaccept.on.description": "Berechtigungsanfragen werden automatisch genehmigt",
   "toast.permissions.autoaccept.off.title": "Automatische Akzeptanz von Berechtigungen gestoppt",
   "toast.permissions.autoaccept.off.description": "Berechtigungsanfragen erfordern eine Genehmigung",
+  "settings.permissions.autoaccept.project.title": "Berechtigungen für dieses Projekt automatisch annehmen",
+  "settings.permissions.autoaccept.project.description": "Neue Berechtigungsanfragen aus allen Sitzungen dieses Projekts ohne Nachfrage annehmen. Sitzungs- und Verzeichnisauswahl haben Vorrang.",
   "toast.model.none.title": "Kein Modell ausgewählt",
   "toast.model.none.description": "Verbinden Sie einen Anbieter, um diese Sitzung zusammenzufassen",
   "toast.file.loadFailed.title": "Datei konnte nicht geladen werden",

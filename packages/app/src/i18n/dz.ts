@@ -610,6 +610,8 @@ export const dict: Record<string, string> = {
   "toast.permissions.autoaccept.on.description": "གནང་བ་ཞུ་བ་ཚུ་ རང་བཞིན་གྱིས་ ཆ་འཇོག་འབད་འོང་།",
   "toast.permissions.autoaccept.off.title": "རང་བཞིན་དང་ལེན་གནང་བ་ཚུ་ བཀག་བཞག་ཡོདཔ།",
   "toast.permissions.autoaccept.off.description": "གནང་བ་ཞུ་བ་ཚུ་ལུ་ ཆ་འཇོག་དགོཔ་ཨིན།",
+  "settings.permissions.autoaccept.project.title": "Auto-accept permissions for this project",
+  "settings.permissions.autoaccept.project.description": "Answer new permission requests from any session in this project without asking. Session and directory choices still win.",
   "toast.model.none.title": "དཔེ་ཚད་སེལ་འཐུ་མ་འབད་བས།",
   "toast.model.none.description": "ལཱ་ཡུན་འདི་བཅུད་བསྡུས་འབད་ནིའི་དོན་ལུ་ བྱིན་མི་ཅིག་མཐུད།",
   "toast.file.loadFailed.title": "ཡིག་སྣོད་མངོན་གསལ་འབད་ནི་འཐུས་ཤོར་འབྱུང་ཡོདཔ།",

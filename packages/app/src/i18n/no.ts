@@ -545,6 +545,8 @@ export const dict = {
   "toast.permissions.autoaccept.on.description": "Forespørsler om tillatelse vil bli godkjent automatisk",
   "toast.permissions.autoaccept.off.title": "Stoppet automatisk akseptering av tillatelser",
   "toast.permissions.autoaccept.off.description": "Forespørsler om tillatelse vil kreve godkjenning",
+  "settings.permissions.autoaccept.project.title": "Godta tillatelser automatisk for dette prosjektet",
+  "settings.permissions.autoaccept.project.description": "Besvar nye tilatelsesforespørsler fra økter i dette prosjektet uten å spørre. Valg per økt og mappe går foran.",
 
   "toast.model.none.title": "Ingen modell valgt",
   "toast.model.none.description": "Koble til en leverandør for å oppsummere denne sesjonen",

@@ -635,6 +635,8 @@ export const dict = {
   "toast.permissions.autoaccept.on.description": "Запросы на разрешения будут одобряться автоматически",
   "toast.permissions.autoaccept.off.title": "Автоматическое принятие разрешений остановлено",
   "toast.permissions.autoaccept.off.description": "Запросы на разрешения будут требовать одобрения",
+  "settings.permissions.autoaccept.project.title": "Автоприём разрешений для этого проекта",
+  "settings.permissions.autoaccept.project.description": "Отвечать на новые запросы разрешений из любой сессии этого проекта без вопроса. Выбор на уровне сессии и каталога имеет приоритет.",
 
   "toast.workspace.enabled.title": "Рабочие пространства включены",
   "toast.workspace.enabled.description": "В боковой панели теперь отображаются несколько рабочих деревьев",

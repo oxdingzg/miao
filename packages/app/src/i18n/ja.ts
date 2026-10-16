@@ -600,6 +600,8 @@ export const dict = {
   "toast.permissions.autoaccept.on.description": "権限の要求は自動的に承認されます",
   "toast.permissions.autoaccept.off.title": "権限の自動承認を停止しました",
   "toast.permissions.autoaccept.off.description": "権限の要求には承認が必要になります",
+  "settings.permissions.autoaccept.project.title": "このプロジェクトの権限を自動承認",
+  "settings.permissions.autoaccept.project.description": "このプロジェクト内のすべてのセッションの権限リクエストを確認なしで承認します。セッションやディレクトリ単位の設定が優先されます。",
   "toast.model.none.title": "モデルが選択されていません",
   "toast.model.none.description": "このセッションを要約するにはプロバイダーを接続してください",
   "toast.file.loadFailed.title": "ファイルの読み込みに失敗しました",

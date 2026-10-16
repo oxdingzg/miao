@@ -29,6 +29,7 @@ import {
 } from "../content"
 import { useFileComponent } from "@miao/ui/context/file"
 import { useDialog } from "@miao/ui/context/dialog"
+import { createTimeFormatter } from "@miao/ui/i18n/time"
 import { type UiI18n, useI18n } from "@miao/ui/context/i18n"
 import { BasicTool, GenericTool } from "./basic-tool"
 import { Accordion } from "@miao/ui/accordion"
@@ -200,6 +201,23 @@ export interface MessagePartProps {
   showAssistantCopyPartID?: string | null
   turnDurationMs?: number
   useV2Actions?: boolean
+}
+
+function MessageTime(props: { timestamp: number | null | undefined }) {
+  const i18n = useI18n()
+  const formatter = createMemo(() => createTimeFormatter(i18n.locale()))
+  const known = () =>
+    typeof props.timestamp === "number" && Number.isFinite(props.timestamp) && Math.abs(props.timestamp) <= 8.64e15
+  return (
+    <time
+      data-slot="message-time"
+      class="text-12-regular text-text-weak cursor-default"
+      dateTime={known() ? new Date(props.timestamp!).toISOString() : undefined}
+      title={formatter().precise(props.timestamp)}
+    >
+      {formatter().compact(props.timestamp)}
+    </time>
+  )
 }
 
 function MessageActionButton(
@@ -1211,20 +1229,6 @@ export function UserMessageDisplay(props: {
 
   const agents = createMemo(() => (props.parts?.filter((p) => p.type === "agent") as AgentPart[]) ?? [])
 
-  const timefmt = createMemo(() => new Intl.DateTimeFormat(i18n.locale(), { timeStyle: "short" }))
-
-  const stamp = createMemo(() => {
-    const created = props.message.time?.created
-    if (typeof created !== "number") return ""
-    return timefmt().format(created)
-  })
-
-  // V2 user records carry no agent/model attribution; the meta head renders
-  // the timestamp only.
-  const metaHead = createMemo(() => "")
-
-  const metaTail = stamp
-
   const openImagePreview = (url: string, alt?: string) => {
     dialog.show(() => <ImagePreview src={url} alt={alt} />)
   }
@@ -1328,27 +1332,11 @@ export function UserMessageDisplay(props: {
         </div>
       </Show>
       <Show when={props.useV2Actions}>{renderAttachments()}</Show>
-      <Show when={text() || (props.useV2Actions && messageComments().length > 0)}>
+      <Show when={text() || attachments().length > 0 || (props.useV2Actions && messageComments().length > 0)}>
         <div data-slot="user-message-copy-wrapper">
-          <Show when={metaHead() || metaTail()}>
-            <span data-slot="user-message-meta-wrap">
-              <Show when={metaHead()}>
-                <span data-slot="user-message-meta" class="text-12-regular text-text-weak cursor-default">
-                  {metaHead()}
-                </span>
-              </Show>
-              <Show when={metaHead() && metaTail()}>
-                <span data-slot="user-message-meta-sep" class="text-12-regular text-text-weak cursor-default">
-                  {"\u00A0\u00B7\u00A0"}
-                </span>
-              </Show>
-              <Show when={metaTail()}>
-                <span data-slot="user-message-meta-tail" class="text-12-regular text-text-weak cursor-default">
-                  {metaTail()}
-                </span>
-              </Show>
-            </span>
-          </Show>
+          <span data-slot="user-message-meta-wrap">
+            <MessageTime timestamp={props.message.time?.created} />
+          </span>
           <Show when={props.actions?.revert}>
             <MessageActionButton
               icon="reset"
@@ -1737,6 +1725,12 @@ PART_MAPPING["text"] = function TextPartDisplay(props) {
             <Show when={meta()}>
               <span data-slot="text-part-meta" class="text-12-regular text-text-weak cursor-default">
                 {meta()}
+                <Show when={props.message.type === "assistant" && props.message.time.completed !== undefined}>
+                  {" · "}
+                  <MessageTime
+                    timestamp={props.message.type === "assistant" ? props.message.time.completed : undefined}
+                  />
+                </Show>
               </span>
             </Show>
           </div>

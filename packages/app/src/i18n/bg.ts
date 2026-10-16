@@ -606,6 +606,8 @@ export const dict = {
   "toast.permissions.autoaccept.on.description": "Заявките за разрешение ще бъдат автоматично одобрени",
   "toast.permissions.autoaccept.off.title": "Автоматичното приемане на разрешения е спряно",
   "toast.permissions.autoaccept.off.description": "Исканията за разрешение ще изискват одобрение",
+  "settings.permissions.autoaccept.project.title": "Автоматично приемане на разрешения за този проект",
+  "settings.permissions.autoaccept.project.description": "Отговаряне на нови заявки за разрешения от всяка сесия в този проект без питане. Изборът на ниво сесия и директория има предимство.",
   "toast.model.none.title": "Няма избран модел",
   "toast.model.none.description": "Свържете доставчик, за да обобщите тази сесия",
   "toast.file.loadFailed.title": "Неуспешно зареждане на файла",

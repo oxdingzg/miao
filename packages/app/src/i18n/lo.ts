@@ -598,6 +598,8 @@ export const dict = {
   "toast.permissions.autoaccept.on.description": "ການຮ້ອງຂໍການອະນຸຍາດຈະຖືກອະນຸມັດໂດຍອັດຕະໂນມັດ",
   "toast.permissions.autoaccept.off.title": "ຢຸດການອະນຸຍາດອັດຕະໂນມັດ",
   "toast.permissions.autoaccept.off.description": "ການຮ້ອງຂໍການອະນຸຍາດຈະຕ້ອງມີການອະນຸມັດ",
+  "settings.permissions.autoaccept.project.title": "Auto-accept permissions for this project",
+  "settings.permissions.autoaccept.project.description": "Answer new permission requests from any session in this project without asking. Session and directory choices still win.",
   "toast.model.none.title": "ບໍ່ໄດ້ເລືອກຕົວແບບ",
   "toast.model.none.description": "ເຊື່ອມຕໍ່ຜູ້ໃຫ້ບໍລິການເພື່ອສະຫຼຸບກອງປະຊຸມນີ້",
   "toast.file.loadFailed.title": "ລົ້ມເຫລວໃນການໂຫຼດໄຟລ໌",

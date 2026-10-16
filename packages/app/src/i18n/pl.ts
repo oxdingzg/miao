@@ -602,6 +602,8 @@ export const dict = {
   "toast.permissions.autoaccept.on.description": "Żądania uprawnień będą automatycznie zatwierdzane",
   "toast.permissions.autoaccept.off.title": "Zatrzymano automatyczne akceptowanie uprawnień",
   "toast.permissions.autoaccept.off.description": "Żądania uprawnień będą wymagały zatwierdzenia",
+  "settings.permissions.autoaccept.project.title": "Automatycznie akceptuj uprawnienia w tym projekcie",
+  "settings.permissions.autoaccept.project.description": "Odpowiadaj na nowe prośby o uprawnienia z dowolnej sesji tego projektu bez pytania. Wybory na poziomie sesji i katalogu mają pierwszeństwo.",
   "toast.model.none.title": "Nie wybrano modelu",
   "toast.model.none.description": "Połącz dostawcę, aby podsumować tę sesję",
   "toast.file.loadFailed.title": "Nie udało się załadować pliku",

@@ -605,6 +605,8 @@ export const dict = {
   "toast.permissions.autoaccept.on.description": "Leyfibeiðnir verða sjálfkrafa samþykktar",
   "toast.permissions.autoaccept.off.title": "Hætti að samþykkja heimildir sjálfkrafa",
   "toast.permissions.autoaccept.off.description": "Leyfisbeiðnir þurfa samþykki",
+  "settings.permissions.autoaccept.project.title": "Samþykkja heimildir fyrir þetta verkefni sjálfvirkt",
+  "settings.permissions.autoaccept.project.description": "Svaraðu nýjum heimildabeiðnum frá öllum setum í þessu verkefni án þess að spyrja. Val á setu og möppu fer samt fyrir.",
   "toast.model.none.title": "Engin gerð valin",
   "toast.model.none.description": "Tengdu þjónustuaðila til að draga saman þessa lotu",
   "toast.file.loadFailed.title": "Mistókst að hlaða skrá",

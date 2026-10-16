@@ -608,6 +608,8 @@ export const dict = {
   "toast.permissions.autoaccept.on.description": "Les demandes de permission seront approuvées automatiquement",
   "toast.permissions.autoaccept.off.title": "Acceptation automatique des permissions désactivée",
   "toast.permissions.autoaccept.off.description": "Les demandes de permission nécessiteront une approbation",
+  "settings.permissions.autoaccept.project.title": "Accepter automatiquement les permissions pour ce projet",
+  "settings.permissions.autoaccept.project.description": "Répondre aux nouvelles demandes de permission de toute session de ce projet sans demander. Les choix par session et par répertoire restent prioritaires.",
   "toast.model.none.title": "Aucun modèle sélectionné",
   "toast.model.none.description": "Connectez un fournisseur pour résumer cette session",
   "toast.file.loadFailed.title": "Échec du chargement du fichier",

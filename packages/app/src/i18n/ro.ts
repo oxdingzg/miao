@@ -601,6 +601,8 @@ export const dict = {
   "toast.permissions.autoaccept.on.description": "Solicitările de permisiune vor fi aprobate automat",
   "toast.permissions.autoaccept.off.title": "Oprire acceptare automată permisiuni",
   "toast.permissions.autoaccept.off.description": "Solicitările de permisiune vor necesita aprobare",
+  "settings.permissions.autoaccept.project.title": "Acceptă automat permisiunile pentru acest proiect",
+  "settings.permissions.autoaccept.project.description": "Răspunde la noile cereri de permisiune din orice sesiune a acestui proiect fără a întreba. Alegerile pe sesiune și director au prioritate.",
   "toast.model.none.title": "Niciun model selectat",
   "toast.model.none.description": "Conectează un furnizor pentru a rezuma această sesiune",
   "toast.file.loadFailed.title": "Nu s-a putut încărca fișierul",

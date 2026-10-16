@@ -604,6 +604,8 @@ export const dict = {
   "toast.permissions.autoaccept.on.description": "Ruxsat so'rovlari avtomatik ravishda tasdiqlanadi",
   "toast.permissions.autoaccept.off.title": "Ruxsatlarni avtomatik qabul qilish toʻxtatildi",
   "toast.permissions.autoaccept.off.description": "Ruxsat so'rovlari tasdiqlashni talab qiladi",
+  "settings.permissions.autoaccept.project.title": "Bu loyiha uchun ruxsatlarni avtomatik qabul qilish",
+  "settings.permissions.autoaccept.project.description": "Bu loyihadagi har qanday sessiyadan kelgan yangi ruxsat so'rovlariga so'ramasdan javob bering. Sesiya va katalog darajasidagi tanlovlar ustunlik qiladi.",
   "toast.model.none.title": "Hech qanday model tanlanmagan",
   "toast.model.none.description": "Ushbu seansni yakunlash uchun provayderni ulang",
   "toast.file.loadFailed.title": "Faylni yuklab boʻlmadi",

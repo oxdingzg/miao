@@ -40,7 +40,7 @@ export function DialogForkFromTimeline(props: { sessionID: string; onMove: (mess
       result.push({
         title: user.text.replace(/\n/g, " "),
         value: user.id,
-        footer: Locale.time(user.time.created),
+        footer: Locale.todayTimeOrDateTime(user.time.created),
         onSelect: async (dialog) => {
           const forked = await sdk.api.sessions
             .fork({ sessionID: props.sessionID, messageID: user.id })

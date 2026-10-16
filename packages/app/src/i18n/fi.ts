@@ -497,6 +497,8 @@ export const dict = {
   "toast.permissions.autoaccept.on.description": "Lupapyynnöt hyväksytään automaattisesti",
   "toast.permissions.autoaccept.off.title": "Lupien automaattinen hyväksyminen lopetettu",
   "toast.permissions.autoaccept.off.description": "Lupapyynnöt vaativat hyväksynnän",
+  "settings.permissions.autoaccept.project.title": "Hyväksy tämän projektin käyttöoikeudet automaattisesti",
+  "settings.permissions.autoaccept.project.description": "Vastaa uusiin käyttöoikeuspyyntöihin tämän projektin mistä tahansa istunnosta kysymättä. Istunnon ja hakemiston valinnat ovat edelleen etusijalla.",
   "toast.model.none.title": "Mallia ei ole valittu",
   "toast.model.none.description": "Yhdistä palveluntarjoaja tehdäksesi yhteenvedon tästä istunnosta",
   "toast.file.loadFailed.title": "Tiedoston lataaminen epäonnistui",

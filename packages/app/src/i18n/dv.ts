@@ -609,6 +609,8 @@ export const dict = {
   "toast.permissions.autoaccept.on.description": "ހުއްދައަށް އެދޭ ފަރާތްތަކުން އޮޓޮމެޓިކުން ފާސްކުރެވޭނެއެވެ",
   "toast.permissions.autoaccept.off.title": "ހުއްދަތައް އޮޓޯ އެކްސެޕްޓްކުރުން ހުއްޓާލިއެވެ",
   "toast.permissions.autoaccept.off.description": "ހުއްދައަށް އެދޭ ފަރާތްތަކަށް ރުހުން ހޯދަން ޖެހޭނެއެވެ",
+  "settings.permissions.autoaccept.project.title": "Auto-accept permissions for this project",
+  "settings.permissions.autoaccept.project.description": "Answer new permission requests from any session in this project without asking. Session and directory choices still win.",
   "toast.model.none.title": "އެއްވެސް މޮޑެލްއެއް ހޮވިފައެއް ނުވެއެވެ",
   "toast.model.none.description": "މި ސެޝަން ޚުލާޞާ ކުރުމަށް ޕްރޮވައިޑަރަކާ ގުޅުވާށެވެ",
   "toast.file.loadFailed.title": "ފައިލް ލޯޑް ނުކުރެވުނެވެ",
