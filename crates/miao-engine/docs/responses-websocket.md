@@ -30,6 +30,10 @@ Raw continuation IDs, prewarm controls and unknown contract fields are rejected.
   response has matching created/completed IDs and the next lowered history exactly extends the
   acknowledged input plus the accepted assistant output.
 
+The acknowledged output must also map losslessly to native history: function argument bytes and
+message/content boundaries must match. Compact completions with omitted outputs, reordered argument
+serialization or changed message grouping keep using full requests on the reusable socket.
+
 All actual non-input request parameters, ordered tools, system content and Context Epoch are checked.
 Credential/account generation, endpoint, model, authentication and beta header bind the connection.
 A role model with another model ID does not inherit the deployment assertion. History rewrites,

@@ -612,3 +612,87 @@ async fn completed_tool_calls_continue_with_only_the_matching_function_output() 
     drain.await.unwrap();
     server.await.unwrap();
 }
+
+#[tokio::test]
+async fn lossy_argument_bytes_message_grouping_and_compact_outputs_do_not_create_delta_proofs() {
+    let cases = [
+        (
+            vec![
+                json!({"type":"response.completed","response":{"id":"r","status":"completed","output":[{"type":"function_call","call_id":"c","name":"fixture","arguments":"{\"z\":1, \"a\":2}"}],"usage":{}}}),
+            ],
+            3,
+            true,
+        ),
+        (
+            vec![
+                json!({"type":"response.completed","response":{"id":"r","status":"completed","output":[{"type":"message","role":"assistant","content":[{"type":"output_text","text":"first"},{"type":"output_text","text":"second"}]}],"usage":{}}}),
+            ],
+            4,
+            false,
+        ),
+        (
+            vec![
+                json!({"type":"response.output_item.done","output_index":0,"item":{"type":"message","role":"assistant","content":[{"type":"output_text","text":"compact"}]}}),
+                json!({"type":"response.completed","response":{"id":"r","status":"completed","output":[],"usage":{}}}),
+            ],
+            3,
+            false,
+        ),
+    ];
+    for (frames, size, tool) in cases {
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let url = format!("http://{}/responses", listener.local_addr().unwrap());
+        let server = tokio::spawn(async move {
+            let (stream, _) = listener.accept().await.unwrap();
+            let mut ws = tokio_tungstenite::accept_async(stream).await.unwrap();
+            ws.next().await.unwrap().unwrap();
+            ws.send(tungstenite::Message::Text(created("r").to_string().into()))
+                .await
+                .unwrap();
+            for frame in frames {
+                ws.send(tungstenite::Message::Text(frame.to_string().into()))
+                    .await
+                    .unwrap();
+            }
+            let next: Value =
+                serde_json::from_str(&ws.next().await.unwrap().unwrap().into_text().unwrap())
+                    .unwrap();
+            assert!(next.get("previous_response_id").is_none());
+            assert_eq!(next["input"].as_array().unwrap().len(), size);
+            ws.send(tungstenite::Message::Text(
+                created("next").to_string().into(),
+            ))
+            .await
+            .unwrap();
+            ws.send(tungstenite::Message::Text(
+                completed("next", "done").to_string().into(),
+            ))
+            .await
+            .unwrap();
+        });
+        let provider = adapter(&url, Mode::Delta);
+        let mut history = vec![];
+        let tools = vec![ToolDefinition {
+            name: "fixture".into(),
+            description: "fixture".into(),
+            input_schema: json!({"type":"object","properties":{"a":{"type":"integer"},"z":{"type":"integer"}}}),
+        }];
+        call(&provider, "s", &mut history, "one", "rules", tools.clone()).await;
+        history.push(if tool {Message {role:"user".into(),content:json!([{"type":"tool_result","tool_use_id":"c","content":"result","is_error":false}]),checkpoint:None,recorded_at_ms:None}} else {message("user","next")});
+        let (tx, mut rx) = mpsc::channel(32);
+        let drain = tokio::spawn(async move { while rx.recv().await.is_some() {} });
+        let reply = crate::cache_affinity::scoped(
+            "s".into(),
+            provider.stream(
+                request(&history, "rules", tools),
+                tx,
+                CancellationToken::new(),
+            ),
+        )
+        .await
+        .unwrap();
+        assert_eq!(reply.content[0]["text"], "done");
+        drain.await.unwrap();
+        server.await.unwrap();
+    }
+}

@@ -124,6 +124,31 @@ struct Capture {
     frames: usize,
     received: usize,
     rejected_chain: bool,
+    confirmed_output: Option<Vec<Value>>,
+}
+
+/// Compare native history to acknowledged wire item boundaries and argument bytes.
+/// Compact completion packets cannot prove their omitted output sequence here.
+fn confirmed_output(response: &Value) -> Option<Vec<Value>> {
+    let items = response["output"]
+        .as_array()
+        .filter(|items| !items.is_empty())?;
+    let output:Vec<_>=items.iter().map(|item|match item["type"].as_str()? {
+        "message" if item["role"]=="assistant"=>{
+            let content:Vec<_>=item["content"].as_array()?.iter().map(|part| {
+                if part["type"]!="output_text" {return None;}
+                Some(json!({"type":"output_text","text":part["text"].as_str()?}))
+            }).collect::<Option<_>>()?;
+            Some(json!({"role":"assistant","content":content}))
+        }
+        "function_call"=>Some(json!({"type":"function_call","call_id":item["call_id"].as_str()?,"name":item["name"].as_str()?,"arguments":item["arguments"].as_str()?})),
+        "reasoning"=>Some(item.clone()),
+        _=>None,
+    }).collect::<Option<_>>()?;
+    serde_json::to_vec(&output)
+        .ok()
+        .filter(|bytes| bytes.len() <= 1024 * 1024)
+        .map(|_| output)
 }
 
 /// `None` means no generation was delivered, or a suffix was explicitly rejected
@@ -160,7 +185,7 @@ pub(crate) async fn try_stream<P: Parser>(
     endpoint
         .set_scheme(scheme)
         .map_err(|_| ProviderError::Transport)?;
-    let session = crate::cache_affinity::key();
+    let session = crate::cache_affinity::session_key();
     let affinity=session.as_ref().map(|session|digest(&serde_json::to_vec(&json!({"session":session,"endpoint":endpoint.as_str(),"model":contract.model,"authentication":contract.authentication,"beta":contract.beta,"authorization":request.headers().get(reqwest::header::AUTHORIZATION).and_then(|value|value.to_str().ok()),"account":request.headers().get("ChatGPT-Account-Id").and_then(|value|value.to_str().ok())})).unwrap()));
     let Some(slot) = pool.slot(affinity).await else {
         return Ok(None);
@@ -303,6 +328,7 @@ pub(crate) async fn try_stream<P: Parser>(
                             .as_str()
                             .filter(|id| !id.is_empty() && id.len() <= 256)
                             .map(str::to_owned);
+                        capture.confirmed_output = confirmed_output(&event["response"]);
                     }
                     capture.rejected_chain = capture.frames == 1
                         && event["type"] == "error"
@@ -339,14 +365,17 @@ pub(crate) async fn try_stream<P: Parser>(
                 && capture.created.is_some()
                 && capture.created == capture.completed
             {
-                let mut prefix = full_input;
-                prefix.extend(output(&reply)?);
-                if serde_json::to_vec(&prefix).is_ok_and(|bytes| bytes.len() <= 1024 * 1024) {
-                    slot.chain = Some(Chain {
-                        parameters,
-                        prefix,
-                        id: capture.completed.clone().unwrap(),
-                    });
+                let native_output = output(&reply)?;
+                if capture.confirmed_output.as_ref() == Some(&native_output) {
+                    let mut prefix = full_input;
+                    prefix.extend(native_output);
+                    if serde_json::to_vec(&prefix).is_ok_and(|bytes| bytes.len() <= 1024 * 1024) {
+                        slot.chain = Some(Chain {
+                            parameters,
+                            prefix,
+                            id: capture.completed.clone().unwrap(),
+                        });
+                    }
                 }
             }
             slot.socket = Some(socket);
