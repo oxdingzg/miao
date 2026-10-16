@@ -10,6 +10,7 @@ import { useTheme, type ColorScheme } from "@miao/ui/theme/context"
 import { useDialog } from "@miao/ui/context/dialog"
 import { useParams } from "@solidjs/router"
 import { useLanguage } from "@/context/language"
+import { useLayout } from "@/context/layout"
 import { usePermission } from "@/context/permission"
 import { usePlatform, type DisplayBackend } from "@/context/platform"
 import { useServerSync } from "@/context/server-sync"
@@ -124,6 +125,26 @@ export const SettingsGeneral: Component = () => {
   const themeOptions = createMemo<ThemeOption[]>(() => theme.ids().map((id) => ({ id, name: theme.name(id) })))
 
   const serverSync = useServerSync()
+  const layout = useLayout()
+
+  const project = createMemo(() => {
+    const value = dir()
+    if (!value) return undefined
+    return layout.projects.list().find((item) => [item.worktree, ...(item.sandboxes ?? [])].includes(value))
+  })
+
+  const projectDirectories = (item: { worktree: string; sandboxes?: string[] }) => [
+    item.worktree,
+    ...(item.sandboxes ?? []),
+  ]
+
+  const toggleProjectAccept = (checked: boolean) => {
+    const item = project()
+    const id = item?.id
+    if (!item || !id) return
+    if (permission.isAutoAcceptingProject(id) === checked) return
+    permission.toggleAutoAcceptProject(id, projectDirectories(item))
+  }
   const serverSdk = useServerSDK()
 
   const [shells] = createResource(
@@ -321,6 +342,19 @@ export const SettingsGeneral: Component = () => {
             <Switch checked={accepting()} disabled={!dir()} onChange={toggleAccept} />
           </div>
         </SettingsRow>
+
+        <Show when={project()?.id}>
+          {(id) => (
+            <SettingsRow
+              title={language.t("settings.permissions.autoaccept.project.title")}
+              description={language.t("settings.permissions.autoaccept.project.description")}
+            >
+              <div data-action="settings-auto-accept-project">
+                <Switch checked={permission.isAutoAcceptingProject(id())} onChange={toggleProjectAccept} />
+              </div>
+            </SettingsRow>
+          )}
+        </Show>
 
         <SettingsRow
           title={language.t("settings.general.row.shell.title")}

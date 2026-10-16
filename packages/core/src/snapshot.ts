@@ -99,9 +99,10 @@ const layer = Layer.effect(
     const gitDirectory = AbsolutePath.make(path.join(global.data, "snapshot", location.project.id, Hash.fast(worktree)))
 
     const scope = Effect.fnUntraced(function* () {
-      const relative = path.relative(worktree, location.directory)
-      if (relative.startsWith("..") || path.isAbsolute(relative))
+      const directory = path.resolve(location.directory)
+      if (!FSUtil.contains(worktree, directory))
         return yield* new Error({ operation: "capture", message: "Location is outside the project" })
+      const relative = path.relative(worktree, directory)
       return RelativePath.make(relative.replaceAll("\\", "/") || ".")
     })
 

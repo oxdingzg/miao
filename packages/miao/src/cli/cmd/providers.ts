@@ -47,10 +47,16 @@ export const ProvidersListCommand = effectCmd({
     UI.empty()
     yield* Prompt.intro("Credentials")
     const database = yield* modelsCatalog.get()
+    const accounts = Map.groupBy(credentials, (credential) => credential.integrationID)
 
-    for (const credential of credentials) {
-      const name = database[credential.integrationID]?.name || credential.integrationID
-      yield* Prompt.log.info(`${name} ${UI.Style.TEXT_DIM}${credential.value.type}`)
+    for (const [integrationID, group] of accounts) {
+      const name = database[integrationID]?.name || integrationID
+      for (const credential of [...group].toReversed()) {
+        const state = credential.active
+          ? `${UI.Style.TEXT_SUCCESS}active`
+          : `${UI.Style.TEXT_DIM}inactive`
+        yield* Prompt.log.info(`${name} ${UI.Style.TEXT_DIM}${credential.label} ${credential.value.type} ${state}`)
+      }
     }
 
     yield* Prompt.outro(`${credentials.length} credentials`)

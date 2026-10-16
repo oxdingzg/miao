@@ -1160,7 +1160,7 @@ const layer = Layer.effect(
           if (llmFailure && !publisher.hasProviderError()) {
             yield* withPublication(publisher.failUnsettledTools("Provider did not return a tool result", true))
             if (llmFailure.module === "SessionToolInputGuard")
-              yield* withPublication(publisher.failPreparedTools("Tool argument budget exceeded; incomplete local calls were not dispatched. Provider-managed side effects may be unknown."))
+              yield* withPublication(publisher.failPreparedTools("Tool arguments were not completed; this local call was not executed. Earlier completed operations are retained."))
             if (invalidToolInput || (llmFailure.reason._tag === "Transport" && llmFailure.reason.retryable))
               yield* withPublication(publisher.failPreparedTools("Provider stream interrupted before this tool call was complete; it was not executed"))
             const detail = retryDetail(llmFailure)

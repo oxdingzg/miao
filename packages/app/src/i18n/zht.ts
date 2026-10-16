@@ -633,6 +633,8 @@ export const dict = {
   "toast.permissions.autoaccept.on.description": "權限要求將自動獲准",
   "toast.permissions.autoaccept.off.title": "已停止自動接受權限",
   "toast.permissions.autoaccept.off.description": "權限要求將需要核准",
+  "settings.permissions.autoaccept.project.title": "自動接受本專案的權限請求",
+  "settings.permissions.autoaccept.project.description": "自動批准本專案內所有會話的權限請求。會話與目錄的選擇仍然優先。",
 
   "toast.model.none.title": "未選擇模型",
   "toast.model.none.description": "請先連線提供者以摘要此工作階段",
@@ -927,6 +929,8 @@ export const dict = {
   "settings.general.row.showCustomAgents.description": "在輸入區顯示代理程式選擇器",
   "settings.general.row.reasoningSummaries.title": "顯示推理摘要",
   "settings.general.row.reasoningSummaries.description": "在時間軸中顯示模型推理摘要",
+  "settings.general.row.turnDiffs.title": "顯示每輪變更的檔案",
+  "settings.general.row.turnDiffs.description": "在時間線中列出每輪完成後變更的檔案,包含行數統計和可展開的差異。",
 
   "settings.general.row.shellToolPartsExpanded.title": "展開 shell 工具區塊",
   "settings.general.row.shellToolPartsExpanded.description": "在時間軸中預設展開 shell 工具區塊",

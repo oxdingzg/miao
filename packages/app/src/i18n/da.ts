@@ -517,6 +517,8 @@ export const dict = {
   "toast.permissions.autoaccept.on.description": "Anmodninger om tilladelse godkendes automatisk",
   "toast.permissions.autoaccept.off.title": "Stoppet med at acceptere tilladelser automatisk",
   "toast.permissions.autoaccept.off.description": "Anmodninger om tilladelse vil kræve godkendelse",
+  "settings.permissions.autoaccept.project.title": "Acceptér tilladelser automatisk for dette projekt",
+  "settings.permissions.autoaccept.project.description": "Besvar nye tilladelsesanmodninger fra enhver session i dette projekt uden at spørge. Valg pr. session og mappe går forud.",
 
   "toast.workspace.enabled.title": "Arbejdsområder aktiveret",
   "toast.workspace.enabled.description": "Flere worktrees vises nu i sidepanelet",
@@ -828,6 +830,8 @@ export const dict = {
     "Skift mellem agenter i promptfeltet. Når vælgeren er skjult, bruges Build-agenten som standard.",
   "settings.general.row.reasoningSummaries.title": "Vis ræsonneringsoversigter",
   "settings.general.row.reasoningSummaries.description": "Vis oversigter over modellens ræsonnering på tidslinjen",
+  "settings.general.row.turnDiffs.title": "Vis ændrede filer per runde",
+  "settings.general.row.turnDiffs.description": "Viser på tidslinjen de ændrede filer for hver afsluttet runde med linjetal og udfoldelige diffs.",
 
   "settings.general.row.shellToolPartsExpanded.title": "Udvid shell-værktøjsdele",
   "settings.general.row.shellToolPartsExpanded.description": "Vis shell-værktøjsdele udvidet som standard i tidslinjen",

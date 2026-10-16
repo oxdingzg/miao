@@ -650,6 +650,8 @@ export const dict = {
   "toast.permissions.autoaccept.on.description": "Permintaan izin akan disetujui secara otomatis",
   "toast.permissions.autoaccept.off.title": "Berhenti menerima izin otomatis",
   "toast.permissions.autoaccept.off.description": "Permintaan izin akan memerlukan persetujuan",
+  "settings.permissions.autoaccept.project.title": "Setujui izin secara otomatis untuk proyek ini",
+  "settings.permissions.autoaccept.project.description": "Jawabi permintaan izin baru dari sesi mana pun di proyek ini tanpa bertanya. Pilihan per sesi dan direktori tetap diutamakan.",
 
   "toast.model.none.title": "Tidak ada model dipilih",
   "toast.model.none.description": "Hubungkan penyedia untuk meringkas sesi ini",
@@ -1044,6 +1046,8 @@ export const dict = {
     "Beralih antaragen di penyusun. Saat disembunyikan, Agen Build digunakan sebagai bawaan.",
   "settings.general.row.reasoningSummaries.title": "Tampilkan ringkasan penalaran",
   "settings.general.row.reasoningSummaries.description": "Tampilkan ringkasan penalaran model di linimasa",
+  "settings.general.row.turnDiffs.title": "Tampilkan file yang berubah per putaran",
+  "settings.general.row.turnDiffs.description": "Menampilkan daftar file yang berubah di setiap putaran yang selesai, dengan jumlah baris dan diff yang bisa dibuka di lini masa.",
   "settings.general.row.shellToolPartsExpanded.title": "Bentangkan bagian alat shell",
   "settings.general.row.shellToolPartsExpanded.description":
     "Tampilkan bagian alat shell yang dibentangkan secara bawaan di linimasa",
