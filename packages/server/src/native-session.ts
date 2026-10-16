@@ -15,9 +15,9 @@ import { NativeEngine } from "./native-engine"
  * project and Location because those are placement facts, not engine facts.
  *
  * Honesty rules, matching the agreed conventions: `cost` stays 0 (pricing is
- * a product catalog the engine does not own), `tokens` are 0 until the engine
- * reports usage, `agent`/`model` stay unknown (the engine knows collaboration
- * mode, not product identities), and a missing creation time renders as epoch
+ * a product catalog the engine does not own), `tokens` use the engine report
+ * when requested (creation/listing keep zero defaults), `agent`/`model` stay
+ * unknown (the engine knows collaboration mode, not product identities), and a missing creation time renders as epoch
  * only for Sessions that predate the metadata column.
  */
 export function nativeSessionInfo(input: {
@@ -25,6 +25,7 @@ export function nativeSessionInfo(input: {
   projectID: Project.ID
   location: Location.Ref
   snapshot: Readonly<Record<string, unknown>>
+  tokens?: SessionInfo.Info["tokens"]
 }): SessionInfo.Info {
   const created = number(input.snapshot["created_at_ms"])
   const updated = number(input.snapshot["updated_at_ms"])
@@ -37,7 +38,7 @@ export function nativeSessionInfo(input: {
     projectID: input.projectID,
     execution: { engine: "rust", selection: "operator" },
     cost: 0,
-    tokens: { input: 0, output: 0, reasoning: 0, cache: { read: 0, write: 0 } },
+    tokens: input.tokens ?? { input: 0, output: 0, reasoning: 0, cache: { read: 0, write: 0 } },
     time: {
       created: DateTime.makeUnsafe(created ?? 0),
       updated: DateTime.makeUnsafe(updated ?? created ?? 0),

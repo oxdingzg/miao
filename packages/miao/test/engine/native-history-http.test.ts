@@ -18,7 +18,7 @@ test.skipIf(!binary)(
       fetch() {
         calls++
         return new Response(
-          `data: ${JSON.stringify({ choices: [{ index: 0, delta: { content: "native-history-answer" }, finish_reason: "stop" }] })}\n\ndata: ${JSON.stringify({ choices: [], usage: { prompt_tokens: 10, completion_tokens: 5 } })}\n\ndata: [DONE]\n\n`,
+          `data: ${JSON.stringify({ choices: [{ index: 0, delta: { content: "native-history-answer" }, finish_reason: "stop" }] })}\n\ndata: ${JSON.stringify({ choices: [], usage: { prompt_tokens: 10, completion_tokens: 5, prompt_tokens_details: { cached_tokens: 3 } } })}\n\ndata: [DONE]\n\n`,
           { headers: { "content-type": "text/event-stream" } },
         )
       },
@@ -108,6 +108,9 @@ test.skipIf(!binary)(
         true,
       )
       expect(context[1].tokens).toMatchObject({ input: 10, output: 5 })
+      const info = await (await fetch(`${url}/api/session/${session}`, { headers })).json()
+      expect(info.data.tokens).toEqual({ input: 10, output: 5, reasoning: 0, cache: { read: 3, write: 0 } })
+      expect(info.data.cost).toBe(0)
       const first = await (await fetch(`${url}/api/session/${session}/message?limit=1&order=asc`, { headers })).json()
       expect(first.data.map((message: { id: string }) => message.id)).toEqual([context[0].id])
       const second = await (
@@ -145,6 +148,20 @@ test.skipIf(!binary)(
         db.close()
       }
       expect(calls).toBe(1)
+      const next = await fetch(`${url}/api/session/${session}/prompt`, {
+        method: "POST",
+        headers,
+        body: JSON.stringify({ id: "msg_native_history_second", prompt: { text: "second billed turn" } }),
+      })
+      expect(next.status).toBe(200)
+      let totals = info.data.tokens
+      for (let attempt = 0; attempt < 200; attempt++) {
+        totals = (await (await fetch(`${url}/api/session/${session}`, { headers })).json()).data.tokens
+        if (totals.output === 10) break
+        await Bun.sleep(20)
+      }
+      expect(totals).toMatchObject({ input: 20, output: 10, cache: { read: 6, write: 0 } })
+      expect(calls).toBe(2)
     } finally {
       reader.releaseLock()
       child.kill()
