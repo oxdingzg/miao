@@ -40,6 +40,7 @@ const cases = [
   },
   { provider: "openai-responses", path: "/responses", events: responses },
   { provider: "subscription-responses", path: "/responses", events: responses },
+  { provider: "subscription-responses", path: "/responses", events: responses, account: "fixture-account" },
   {
     provider: "gemini",
     path: "/v1beta/models/test-model:streamGenerateContent",
@@ -54,7 +55,7 @@ const cases = [
 
 cases.forEach((entry) =>
   real(
-    `actual native CLI ${entry.provider} records its endpoint and replays without live credentials`,
+    `actual native CLI ${entry.provider}${entry.account ? " with account" : ""} records its endpoint and replays without live credentials`,
     async () => {
       await using tmp = await tmpdir()
       const requests: { url: string; body: BlackboxTape.Interaction["request"] }[] = []
@@ -93,7 +94,7 @@ cases.forEach((entry) =>
               ANTHROPIC_API_KEY: command === "record-engine" ? "fixture-only" : undefined,
               GEMINI_API_KEY: command === "record-engine" ? "fixture-only" : undefined,
               OPENAI_ACCESS_TOKEN: command === "record-engine" ? "fixture-only" : undefined,
-              OPENAI_ACCOUNT_ID: undefined,
+              OPENAI_ACCOUNT_ID: command === "record-engine" ? entry.account : undefined,
             },
           },
         )

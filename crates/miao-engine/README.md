@@ -112,6 +112,23 @@ cache breakpoints instead. Neither setting guarantees a provider cache hit. Stab
 prefixes still matter; compare `cacheReadInputTokens` and `nonCachedInputTokens` from `run.usage`
 alongside total input, output, requests and task success rather than treating total input as cost.
 
+Each durable `provider.request` includes `cache_diagnostics`: bounded fingerprints of the
+observed system, ordered tools, history, route and available account/cache identifiers. Later
+requests compare against the preceding durable observation, including across runner restarts.
+An exact prefix digest distinguishes append-only history from rewrites even when the bounded
+per-message sample is exhausted. Content, authorization headers and query credentials are not
+recorded by this diagnostic.
+
+These are **client-observed changes**, not proven reasons for a server cache miss. A changed
+context epoch alone does not prove the prefix changed; a matching prefix does not prove a
+server cache entry exists. `serverCacheState` remains `unknown`. Account coverage is limited to
+an account header when the route provides one; opaque credential rotations cannot be inferred.
+
+The Session usage report's `cacheDiagnostics` includes observed-request/change counts and
+per-token-axis coverage. Its weighted `hitRatio` is `null` unless every billed observation
+reports both inclusive input and cache reads. Legacy token sums remain compatible, while
+coverage distinguishes missing measurements from measured zero.
+
 ## Execution invariants
 
 - The same input id retries exactly and fully by Session, prompt, and delivery; a conflict produces no extra admission.
