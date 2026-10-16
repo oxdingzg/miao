@@ -43,6 +43,9 @@ export class ResponsesCacheContract extends Schema.Class<ResponsesCacheContract>
  * not configure it. The operator's environment overrides any key.
  */
 export class Engine extends Schema.Class<Engine>("Config.Engine")({
+  tool_disclosure: optional(Schema.Literals(["full", "compact"])).annotate({
+    description: "Extension tool disclosure: full schemas (default) or stable search/call bridge",
+  }),
   provider: Schema.String.pipe(Schema.optional).annotate({
     description: "Provider id the engine's primary model resolves against",
   }),

@@ -1031,6 +1031,7 @@ async fn execute(
                 let name = block["name"]
                     .as_str()
                     .ok_or_else(|| Error::Invalid("tool name".into()))?;
+                let effective_name = inner.tools.effective_name(name, &block["input"]);
                 if cancel.is_cancelled() && !reads.contains_key(id) {
                     return Ok(());
                 }
@@ -1086,7 +1087,7 @@ async fn execute(
                                 inner,
                                 session,
                                 crate::events::Lifecycle::PreToolUse,
-                                name,
+                                effective_name,
                             )
                             .await?
                             {
@@ -1096,7 +1097,19 @@ async fn execute(
                                 let prepared_external =
                                     prepared.access() == crate::permission::Access::External;
                                 let replayed = if let Some(replay) = &inner.tool_replay {
-                                    Some(replay.take(session, name, prepared.input()).await?)
+                                    Some(
+                                        replay
+                                            .take(
+                                                session,
+                                                name,
+                                                if name == "tool_call" {
+                                                    &block["input"]
+                                                } else {
+                                                    prepared.input()
+                                                },
+                                            )
+                                            .await?,
+                                    )
                                 } else {
                                     None
                                 };
@@ -1268,7 +1281,13 @@ async fn execute(
                         )
                         .await?;
                 }
-                run_hooks(inner, session, crate::events::Lifecycle::PostToolUse, name).await?;
+                run_hooks(
+                    inner,
+                    session,
+                    crate::events::Lifecycle::PostToolUse,
+                    effective_name,
+                )
+                .await?;
                 if polling_terminal {
                     continue;
                 }
