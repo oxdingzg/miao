@@ -1,4 +1,3 @@
-import { Credential } from "@miao/core/credential"
 import { Integration } from "@miao/core/integration"
 import { Effect } from "effect"
 import { HttpApiBuilder, HttpApiSchema } from "effect/unstable/httpapi"
@@ -10,7 +9,7 @@ export const CredentialHandler = HttpApiBuilder.group(Api, "server.credential", 
     .handle(
       "credential.list",
       Effect.fn(function* () {
-        return yield* response((yield* Credential.Service).all())
+        return yield* response((yield* Integration.Service).connection.list())
       }),
     )
     .handle(
@@ -23,7 +22,7 @@ export const CredentialHandler = HttpApiBuilder.group(Api, "server.credential", 
     .handle(
       "credential.activate",
       Effect.fn(function* (ctx) {
-        yield* (yield* Credential.Service).activate(ctx.params.credentialID)
+        yield* (yield* Integration.Service).connection.activate(ctx.params.credentialID)
         return HttpApiSchema.NoContent.make()
       }),
     )

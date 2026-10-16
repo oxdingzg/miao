@@ -216,6 +216,10 @@ export interface Interface extends State.Transformable<Draft> {
     ) => Effect.Effect<void>
     /** Removes a stored credential connection. */
     readonly remove: (credentialID: Credential.ID) => Effect.Effect<void>
+    /** Lists every stored credential exposed as a connection. */
+    readonly list: () => Effect.Effect<Credential.Info[]>
+    /** Makes one stored credential the active connection for its integration. */
+    readonly activate: (credentialID: Credential.ID) => Effect.Effect<void>
   }
   readonly attempt: {
     /** Returns the current state of an OAuth attempt. */
@@ -578,6 +582,17 @@ export const locationLayer = Layer.effect(
         remove: Effect.fn("Integration.connection.remove")(function* (credentialID) {
           const credential = yield* credentials.get(credentialID)
           yield* credentials.remove(credentialID)
+          if (credential) {
+            yield* events.publish(Event.ConnectionUpdated, { integrationID: credential.integrationID })
+          }
+          yield* events.publish(Event.Updated, {})
+        }),
+        list: Effect.fn("Integration.connection.list")(function* () {
+          return yield* credentials.all()
+        }),
+        activate: Effect.fn("Integration.connection.activate")(function* (credentialID) {
+          const credential = yield* credentials.get(credentialID)
+          yield* credentials.activate(credentialID)
           if (credential) {
             yield* events.publish(Event.ConnectionUpdated, { integrationID: credential.integrationID })
           }
