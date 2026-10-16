@@ -86,7 +86,7 @@ second implementation of the engine logic.
 | --- | --- | --- |
 | macOS | ZIP/checksum fixture drill (#862); verified CI 0.2.9 binary install/upgrade/rollback from tag-built 0.2.8; arm64 and translated x64 startup; published 0.2.11 archive verified, Gatekeeper launch under quarantine passed ([0.2.11 report](artifact-acceptance-0.2.11.md)) | Native Intel hardware and data downgrade compatibility |
 | Linux | tar.gz/checksum fixture drill (#862); verified musl CI binary install/upgrade/rollback from tag-built 0.2.8; published 0.2.11 archive verified on the platform ([0.2.11 report](artifact-acceptance-0.2.11.md)) | Data downgrade compatibility |
-| Windows | Installer fixture CI under PowerShell 5.1/7 (#864); real x64 CI binary install/upgrade/rollback from tag-built 0.2.8 under PS5.1; published 0.2.11 ZIP verified, serve startup under PS5.1 ([0.2.11 report](artifact-acceptance-0.2.11.md)) | Actual-artifact PS7 drill (host has no `pwsh`), confinement and data downgrade compatibility |
+| Windows | Installer fixture CI under PowerShell 5.1/7 (#864); real x64 CI binary install/upgrade/rollback from tag-built 0.2.8 under PS5.1; published 0.2.11 startup; published 0.2.12→0.2.13→rollback under PS7 7.6.7 with archive and slot hashes verified ([0.2.13 report](artifact-acceptance-0.2.13.md)) | Confinement and data downgrade compatibility; Windows direct release-endpoint connectivity not exercised by the PS7 drill |
 
 Fixture executables prove installer behavior, not engine confinement. The
 engine process/sandbox tests remain the confinement evidence, and must be
