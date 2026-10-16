@@ -52,17 +52,23 @@ function mountReceipt(
   state: string,
   prompt: (request: Request) => Promise<Response> | Response,
   history: () => SessionMessage[] = () => [],
+  operatorSelection = false,
 ) {
+  const record = operatorSelection
+    ? { ...session, agent: undefined, model: undefined, execution: { engine: "rust", selection: "operator" } }
+    : session
   return mount((url, request) => {
-    if (url.pathname === "/api/session") return json({ data: [session] })
-    if (url.pathname === `/api/session/${sessionID}`) return json({ data: session })
+    if (url.pathname === "/api/session") return json({ data: [record] })
+    if (url.pathname === `/api/session/${sessionID}`) return json({ data: record })
     if (url.pathname === `/api/session/${sessionID}/context`) return json({ data: history() })
     if (url.pathname === `/api/session/${sessionID}/todo` || url.pathname === `/api/session/${sessionID}/diff`)
       return json({ data: [] })
     if (url.pathname === `/api/session/${sessionID}/status`) return json({ data: { type: "busy" } })
     // Sending applies the footer's model and agent to the session first.
     if (url.pathname === `/api/session/${sessionID}/model` || url.pathname === `/api/session/${sessionID}/agent`)
-      return new Response(null, { status: 204 })
+      return operatorSelection
+        ? json({ name: "ConflictError", data: { message: "native route is operator-configured" } }, { status: 409 })
+        : new Response(null, { status: 204 })
     if (url.pathname === `/api/session/${sessionID}/prompt`) {
       if (!request) throw new Error("Expected SDK request")
       return prompt(request)
@@ -374,3 +380,41 @@ test("clearing an in-flight receipt stops automatic retries", async () => {
     mounted.app.renderer.destroy()
   }
 })
+
+test.each([true, false])(
+  "operator-bound native prompt does not apply TS selection; catalog model present=%s",
+  async (withModel) => {
+    await using tmp = await tmpdir()
+    await Bun.write(`${tmp.path}/kv.json`, "{}")
+    let prompts = 0
+    const mounted = await mountReceipt(
+      tmp.path,
+      async (request) => {
+        prompts++
+        const body = await request.json()
+        return json({
+          data: {
+            id: body.id,
+            sessionID,
+            delivery: "steer",
+            admittedSeq: 1,
+            timeCreated: 2,
+            prompt: body.prompt,
+          },
+        })
+      },
+      () => [],
+      true,
+    )
+    try {
+      await mounted.sync.session.sync(sessionID)
+      await mounted.sync.prompt.send({ ...input, model: withModel ? input.model : undefined })
+      expect(prompts).toBe(1)
+      const receipt = Object.values(mounted.sync.prompt.data)[0]
+      expect(receipt.state).toBe("admitted")
+      expect(receipt.info.text).toBe("还没完成吗？")
+    } finally {
+      mounted.app.renderer.destroy()
+    }
+  },
+)

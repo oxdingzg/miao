@@ -75,8 +75,6 @@ function search<T>(items: T[], target: string, key: (item: T) => string) {
   return { found: false, index: left }
 }
 
-
-
 // Rough JS heap estimate of a value: string bytes, per-node overhead, and key
 // lengths. Walks nodes only (string length is O(1)), so it is cheap enough to
 // run from the 30s monitor sample. `seen` avoids counting shared references
@@ -206,8 +204,7 @@ export const {
       message: {
         [sessionID: string]: TuiTranscriptMessage[]
       }
-      part: {
-      }
+      part: {}
       lsp: LspStatus[]
       mcp: {
         [key: string]: McpStatus
@@ -495,7 +492,11 @@ export const {
         )
       })
       const shadow = sessionMessages.get(sessionID)
-      if (shadow) sessionMessages.set(sessionID, shadow.filter((message) => !ids.has(message.id)))
+      if (shadow)
+        sessionMessages.set(
+          sessionID,
+          shadow.filter((message) => !ids.has(message.id)),
+        )
     }
 
     // Text and reasoning fragments append in place. `touchPart` keeps an
@@ -815,7 +816,12 @@ export const {
           })
           if (!message) break
           if (event.type === "session.next.prompt.admitted") {
-            pendingPrompts.add({ info: message, sessionID: input.sessionID, state: "admitted", delivery: input.delivery })
+            pendingPrompts.add({
+              info: message,
+              sessionID: input.sessionID,
+              state: "admitted",
+              delivery: input.delivery,
+            })
             pendingPrompts.admit(input.messageID)
             break
           }
@@ -844,11 +850,13 @@ export const {
                 : undefined,
           } as unknown as PermissionRequest
           if (permission.mode === "auto") {
-            void sdk.api.permissions.reply({
-              sessionID: request.sessionID,
-              requestID: request.id,
-              reply: "once",
-            }).catch((error) => console.error("permission auto-reply failed", { error: errorMessage(error) }))
+            void sdk.api.permissions
+              .reply({
+                sessionID: request.sessionID,
+                requestID: request.id,
+                reply: "once",
+              })
+              .catch((error) => console.error("permission auto-reply failed", { error: errorMessage(error) }))
             break
           }
           const requests = store.permission[request.sessionID]
@@ -1101,7 +1109,9 @@ export const {
           if (store.status !== "complete") setStore("status", "partial")
           // non-blocking
           void Promise.all([
-            ...(args.continue ? [] : [sessionListPromise.then((sessions) => setStore("session", reconcile(sessions as Session[])))]),
+            ...(args.continue
+              ? []
+              : [sessionListPromise.then((sessions) => setStore("session", reconcile(sessions as Session[])))]),
             // The palette only shows names and descriptions; executing a command
             // resolves its template on the server.
             sdk.api.commands
@@ -1139,9 +1149,11 @@ export const {
               : []),
             sdk.api.vcs.get({ location: { workspace } }, {}).then((x) => setStore("vcs", reconcile(x.data))),
             project.workspace.sync(),
-          ]).then(() => {
-            setStore("status", "complete")
-          }).catch((error) => console.error("background refresh failed", { error: errorMessage(error) }))
+          ])
+            .then(() => {
+              setStore("status", "complete")
+            })
+            .catch((error) => console.error("background refresh failed", { error: errorMessage(error) }))
         })
         .catch(async (e) => {
           console.error("tui bootstrap failed", {
@@ -1168,16 +1180,27 @@ export const {
     // picked after the session started never takes effect. switchModel is a no-op
     // on the server when nothing changed; switchAgent records an event, so it is
     // only sent when the agent differs.
-    async function applySelection(input: {
-      sessionID: string
-      agent: string
-      model: { providerID: string; modelID: string; variant?: string }
-    }, signal: AbortSignal, retry: boolean) {
+    async function applySelection(
+      input: {
+        sessionID: string
+        agent: string
+        model?: { providerID: string; modelID: string; variant?: string }
+      },
+      signal: AbortSignal,
+      retry: boolean,
+    ) {
       const match = search(store.session, input.sessionID, (s) => s.id)
       // A lost agent-switch receipt must not append the switch a second time.
-      const session = retry
-        ? await sdk.api.sessions.get({ sessionID: input.sessionID }, { signal })
-        : match.found ? store.session[match.index] : undefined
+      const session =
+        retry || !match.found
+          ? await sdk.api.sessions.get({ sessionID: input.sessionID }, { signal })
+          : match.found
+            ? store.session[match.index]
+            : undefined
+      // Native Sessions have an operator-bound route. Footer preferences for
+      // TS Sessions must not invoke unsupported switches before admission.
+      if (session?.execution?.selection === "operator") return
+      if (!input.model) throw new Error("A TypeScript Session requires a selected model")
       if (input.agent && session?.agent !== input.agent)
         await sdk.api.sessions.switchAgent({ sessionID: input.sessionID, agent: input.agent }, { signal })
       if (!input.model.providerID || !input.model.modelID) return
@@ -1197,7 +1220,7 @@ export const {
         async send(input: {
           sessionID: string
           agent: string
-          model: { providerID: string; modelID: string; variant?: string }
+          model?: { providerID: string; modelID: string; variant?: string }
           parts: PromptInfo["parts"]
         }) {
           const id = SessionMessage.ID.create()
@@ -1240,21 +1263,29 @@ export const {
             received: () => !pendingPrompts.data[id] || pendingPrompts.data[id].state === "admitted",
             retry: (error, attempt) => {
               pendingPrompts.retry(id, attempt, errorMessage(error))
-              console.warn("session prompt transport retry", { sessionID: input.sessionID, messageID: id, attempt, error: errorData(error) })
+              console.warn("session prompt transport retry", {
+                sessionID: input.sessionID,
+                messageID: id,
+                attempt,
+                error: errorData(error),
+              })
             },
-          })
-            .then(
-              (response) => {
-                pendingPrompts.admit(id)
-                v2Refresh.schedule(input.sessionID)
-                return response
-              },
-              (error: unknown) => {
-                pendingPrompts.fail(id, errorMessage(error))
-                console.error("session prompt send failed", { sessionID: input.sessionID, messageID: id, error: errorData(error) })
-                throw error
-              },
-            )
+          }).then(
+            (response) => {
+              pendingPrompts.admit(id)
+              v2Refresh.schedule(input.sessionID)
+              return response
+            },
+            (error: unknown) => {
+              pendingPrompts.fail(id, errorMessage(error))
+              console.error("session prompt send failed", {
+                sessionID: input.sessionID,
+                messageID: id,
+                error: errorData(error),
+              })
+              throw error
+            },
+          )
         },
       },
       set: setStore,
@@ -1289,9 +1320,9 @@ export const {
           // the inbox.
           const inputsRead = signal?.aborted
             ? undefined
-            : result.session.syncInputs(sessionID, signal).catch((error) =>
-                console.error("session input sync failed", { error: errorMessage(error) }),
-              )
+            : result.session
+                .syncInputs(sessionID, signal)
+                .catch((error) => console.error("session input sync failed", { error: errorMessage(error) }))
           const observedCompaction = store.session_compaction[sessionID]?.messageID
           const response = await sdk.api.sessions.status({ sessionID }, { signal })
           const busy = response.type !== "idle"
