@@ -757,3 +757,8 @@ the original Session, input hash and policy revision.
 CLI and HTTP API: create, submit a prompt, await and approve a native write once,
 observe the final history, and verify the file. Its unconfigured-policy case
 verifies that the same request does not write a file.
+
+## Completion verification receipts
+
+Configured completion commands produce [version-bound verification receipts](docs/verification-receipts.md)
+with actual exit/output, task revisions and bounded source coverage.
