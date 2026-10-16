@@ -303,7 +303,7 @@ for (const width of [100, 55]) {
     await using tmp = await tmpdir()
     const selector = await mountSelector({ root: tmp.path, keybinds: {}, width, timestamps: true, onSelect() {} })
     try {
-      await renderUntil(selector.app, (frame) => frame.includes("Updated 10/16/2026"))
+      await renderUntil(selector.app, (frame) => frame.includes("Updated 10/16/2026") && frame.includes("Model 20"))
       const frame = selector.app.captureCharFrame()
       expect(frame).toContain("Created 10/16/2026, 10:25:00 GMT+08:00")
       expect(frame).toContain("Updated 10/16/2026, 14:27:00 GMT+08:00")
