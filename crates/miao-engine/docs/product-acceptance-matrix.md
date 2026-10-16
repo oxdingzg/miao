@@ -33,13 +33,24 @@ deterministic provider: the pending approval renders, granting once lets the
 engine execute its `write_file` (`tool.completed` with `applied:true`), the tool
 block and its result render in the transcript, Esc interrupts a hanging call
 without a replacement provider request, and the Session then serves a new
-prompt. What remains open: the Session read projection still reports zero
-tokens and no usage for a native Session, although the engine journals them
-(`usage` with inputTokens 150/outputTokens 40, then `run.usage` with two steps),
-because `native-session.ts` returns zeros until the projection aggregates
-engine usage; the step-accounting row stays open for that reason, and approval
-and cancellation have not yet been exercised through an external ACP client
-rather than the TUI.
+prompt. The rejection path was also verified: Esc rejects the pending approval,
+no file is created, the ledger contains no `tool.dispatched`, and the next
+provider request carries the rejected tool result.
+
+Message-level usage already flows through the native journal translator and
+transcript reducer; `native-history-http.test.ts` verifies those tokens against
+the published engine. The missing Session GET lifetime token totals are now
+read from the existing engine usage report (#911), with two-turn/cache-read
+aggregation covered by the same HTTP acceptance test and no shadow TS history.
+Creation/listing keep their inexpensive defaults. Pricing and product
+per-model usage summaries remain separate work; the full cache/TTFT presentation
+matrix is not closed by a successful cumulative token assertion.
+
+The independent ACP SDK acceptance in #912 covers allow/reject, cancellation
+and continuation, and process replacement/resume over the executable's stdio
+entry point. This proves a separate protocol consumer, not integration inside
+a third-party editor UI. That UI integration and real-client backlog bounds
+remain open.
 
 <details>
 <summary>Original observation (2026-10-16, before the fix)</summary>
@@ -69,12 +80,12 @@ without asking. Only the live stream is missing.
 | Behavior | Existing automated evidence | Product acceptance still required |
 | --- | --- | --- |
 | Prompt and streamed answer | `tests/acp.rs`; product `native-coding-http.test.ts` | Daily TUI verified 2026-10-16 (live stream and rendered tool part); an external ACP client still required |
-| Approval and denial | ACP request_permission scenario; product approval/reply tests | Visible pending approval and grant verified in the TUI 2026-10-16; denial and an external ACP client still required |
-| Cancellation | `tests/acp_client_matrix.rs`: incomplete HTTP response, cancelled prompt reply, successful continuation (#861) | Cancel from the TUI verified 2026-10-16 (no later provider request, Session recovers); an external client still required |
+| Approval and denial | ACP request_permission scenario; product approval/reply tests; independent ACP SDK allow/reject (#912) | Pending approval, grant and rejection verified in the TUI 2026-10-16; third-party editor UI still required |
+| Cancellation | `tests/acp_client_matrix.rs`: incomplete HTTP response, cancelled prompt reply, successful continuation (#861); independent ACP SDK cancel/continue (#912) | TUI cancel verified 2026-10-16 (no replacement provider request, Session recovers); third-party editor UI still required |
 | Provider failure | ACP HTTP 400 followed by a successful new prompt; failure is a JSON-RPC error, not end_turn (#861) | Visible error and usable next prompt in actual clients |
 | Process restart/resume | ACP process replacement on the same DB: prior context retained, prior answer not streamed twice (#861) | Client reconnect without duplicate messages or cross-engine takeover |
 | Slow client | HTTP SSE/cursor and restore coverage | Bound the real client's backlog, disconnect it and resume from its cursor |
-| Step accounting | Product bridge and native journal tests (#850) | TUI consumes tokens/cache/TTFT; native pricing is still zero until price resolution lands. The read projection still reports zero tokens for a native Session even though the engine journals usage, so this row is open |
+| Step accounting | Product bridge and native journal tests (#850); HTTP history verifies per-message tokens, and Session GET verifies two-turn/cache totals (#911) | Full TUI cache/TTFT presentation and per-model usage summary still require acceptance; native pricing remains zero until price resolution lands |
 
 These deterministic peers use no paid model calls. Their oracle is the observed
 wire response, committed history and next provider request, rather than a
