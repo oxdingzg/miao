@@ -1,7 +1,8 @@
 import { describe, expect } from "bun:test"
-import { Effect, Stream } from "effect"
+import { Effect, Fiber, Stream } from "effect"
 import { LLMError, LLMEvent } from "@miao/llm"
 import { SessionToolInputGuard } from "@miao/core/session/runner/tool-input-guard"
+import { TestClock } from "effect/testing"
 import { it } from "./lib/effect"
 
 const started = LLMEvent.toolInputStart({ id: "call", name: "edit" })
@@ -64,7 +65,7 @@ describe("SessionToolInputGuard", () => {
     Effect.gen(function* () {
       const stream = Stream.concat(Stream.make(started), Stream.never)
       const error = yield* SessionToolInputGuard.wrap(stream, { timeoutMs: 20 }).pipe(Stream.runDrain, Effect.flip)
-      expect(error.reason.message).toContain("exceeds 20ms")
+      expect(error.reason.message).toContain("idle limit 20ms")
       expect(error.retryable).toBe(false)
     }),
   )
@@ -102,4 +103,70 @@ describe("SessionToolInputGuard", () => {
       expect(yield* SessionToolInputGuard.wrap(stream, { timeoutMs: 10 }).pipe(Stream.runCollect)).toHaveLength(1)
     }),
   )
+
+  it.effect("allows an active argument stream beyond the default two-minute budget", () =>
+    Effect.gen(function* () {
+      const events = [
+        started,
+        ...Array.from({ length: 4 }, () => LLMEvent.toolInputDelta({ id: "call", name: "edit", text: "content" })),
+        LLMEvent.toolInputEnd({ id: "call", name: "edit" }),
+        LLMEvent.toolCall({ id: "call", name: "edit", input: { content: "content".repeat(4) } }),
+      ]
+      const stream = Stream.concat(
+        Stream.make(events[0]),
+        Stream.fromIterable(events.slice(1)).pipe(
+          Stream.mapEffect((event) => Effect.sleep("1 minute").pipe(Effect.as(event))),
+        ),
+      )
+      const fiber = yield* SessionToolInputGuard.wrap(stream).pipe(Stream.runCollect, Effect.forkChild)
+      yield* TestClock.adjust("7 minutes")
+      expect(yield* Fiber.join(fiber)).toEqual(events)
+    }),
+  )
+
+  it.effect("tracks inactivity separately for parallel calls", () =>
+    Effect.gen(function* () {
+      const stream = Stream.concat(
+        Stream.make(started, LLMEvent.toolInputStart({ id: "other", name: "write" })),
+        Stream.fromIterable(
+          Array.from({ length: 8 }, () => LLMEvent.toolInputDelta({ id: "other", name: "write", text: "progress" })),
+        ).pipe(Stream.mapEffect((event) => Effect.sleep(40).pipe(Effect.as(event)))),
+      )
+      const fiber = yield* SessionToolInputGuard.wrap(stream, { timeoutMs: 100 }).pipe(
+        Stream.runDrain,
+        Effect.flip,
+        Effect.forkChild,
+      )
+      yield* TestClock.adjust(400)
+      const error = yield* Fiber.join(fiber)
+      expect(error.reason.message).toContain("for edit: no argument progress")
+      expect(error.reason.message).toContain("idle limit 100ms")
+      expect(error.reason.message).toContain("not executed")
+    }),
+  )
+
+  for (const event of [
+    started,
+    LLMEvent.toolInputDelta({ id: "call", name: "edit", text: "" }),
+    LLMEvent.textDelta({ id: "answer", text: "Still working" }),
+    LLMEvent.reasoningDelta({ id: "reasoning", text: "thinking" }),
+  ]) {
+    it.effect(`${event.type} without argument bytes does not extend an unfinished call`, () =>
+      Effect.gen(function* () {
+        const stream = Stream.concat(
+          Stream.make(started),
+          Stream.fromIterable(Array.from({ length: 8 }, () => event)).pipe(
+            Stream.mapEffect((next) => Effect.sleep(40).pipe(Effect.as(next))),
+          ),
+        )
+        const fiber = yield* SessionToolInputGuard.wrap(stream, { timeoutMs: 100 }).pipe(
+          Stream.runDrain,
+          Effect.flip,
+          Effect.forkChild,
+        )
+        yield* TestClock.adjust(400)
+        expect((yield* Fiber.join(fiber)).reason.message).toContain("idle limit 100ms")
+      }),
+    )
+  }
 })
