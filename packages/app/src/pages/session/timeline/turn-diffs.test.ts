@@ -25,19 +25,26 @@ describe("createTurnDiffSource", () => {
       },
       { retryAfterMs: 10 },
     )
+    const realNow = Date.now
+    let now = 1_000
+    Date.now = () => now
+    try {
+      source.load("s", "m1")
+      await Bun.sleep(0)
+      expect(calls).toBe(1)
+      expect(source.get("s", "m1")).toBeUndefined()
 
-    source.load("s", "m1")
-    await Bun.sleep(5)
-    expect(calls).toBe(1)
-    expect(source.get("s", "m1")).toBeUndefined()
+      now += 5
+      source.load("s", "m1")
+      await Bun.sleep(0)
+      expect(calls).toBe(1)
 
-    source.load("s", "m1")
-    await Bun.sleep(5)
-    expect(calls).toBe(1)
-
-    await Bun.sleep(15)
-    source.load("s", "m1")
-    await Bun.sleep(5)
-    expect(calls).toBe(2)
+      now += 10
+      source.load("s", "m1")
+      await Bun.sleep(0)
+      expect(calls).toBe(2)
+    } finally {
+      Date.now = realNow
+    }
   })
 })
