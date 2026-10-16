@@ -8,6 +8,7 @@ export const CredentialInfo = Schema.Struct({
   type: Schema.Literal("credential"),
   id: Credential.ID,
   label: Schema.String,
+  active: Schema.Boolean,
 }).annotate({ identifier: "Connection.CredentialInfo" })
 
 export interface EnvInfo extends Schema.Schema.Type<typeof EnvInfo> {}

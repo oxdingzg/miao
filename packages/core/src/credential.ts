@@ -1,6 +1,6 @@
 export * as Credential from "./credential"
 
-import { asc, eq } from "drizzle-orm"
+import { and, asc, eq, ne } from "drizzle-orm"
 import path from "path"
 import { Context, Effect, Layer, Option, Schema } from "effect"
 import { Credential } from "@miao/schema/credential"
@@ -26,13 +26,8 @@ export type Key = Credential.Key
 export const Value = Credential.Value
 export type Value = Credential.Value
 
-export class Info extends Schema.Class<Info>("Credential.Info")({
-  id: ID,
-  integrationID: Integration.ID,
-  label: Schema.String,
-  value: Value,
-  source: Schema.optional(Schema.Literal("shared")),
-}) {}
+export const Info = Credential.Info
+export type Info = Credential.Info
 
 /** Preview sessions stay isolated, while inherited credentials stay with their
  * existing broker. Explicit DB overrides do not silently read another store. */
@@ -82,7 +77,8 @@ export interface Interface {
   readonly list: (integrationID: Integration.ID) => Effect.Effect<Info[]>
   /** Returns one stored credential by ID. */
   readonly get: (id: ID) => Effect.Effect<Info | undefined>
-  /** Replaces any credential for an integration and returns the new record. */
+  /** Adds a credential as the integration's active one; the same method and
+   * label replaces its existing row instead of stacking a duplicate. */
   readonly create: (input: {
     readonly integrationID: Integration.ID
     readonly value: Value
@@ -90,6 +86,8 @@ export interface Interface {
   }) => Effect.Effect<Info>
   /** Updates the label or secret value of a stored credential. */
   readonly update: (id: ID, updates: Partial<Pick<Info, "label" | "value">>) => Effect.Effect<void>
+  /** Makes one stored credential the active connection for its integration. */
+  readonly activate: (id: ID) => Effect.Effect<void>
   /** Removes a stored credential. */
   readonly remove: (id: ID) => Effect.Effect<void>
 }
@@ -141,6 +139,7 @@ const layer = Layer.effect(
                 label: row.label,
                 value: value.value,
                 source: "shared",
+                active: false,
               })
             })
           } finally {
@@ -165,6 +164,7 @@ const layer = Layer.effect(
         integrationID: row.integration_id,
         label: row.label,
         value: decode(row.value),
+        active: row.active ?? false,
       })
     }
 
@@ -172,7 +172,7 @@ const layer = Layer.effect(
       const local = (yield* db
         .select()
         .from(CredentialTable)
-        .orderBy(asc(CredentialTable.time_created))
+        .orderBy(asc(CredentialTable.active), asc(CredentialTable.time_created), asc(CredentialTable.id))
         .all()
         .pipe(Effect.orDie)).flatMap((row) => {
         const credential = stored(row)
@@ -185,7 +185,7 @@ const layer = Layer.effect(
         .select()
         .from(CredentialTable)
         .where(eq(CredentialTable.integration_id, integrationID))
-        .orderBy(asc(CredentialTable.time_created))
+        .orderBy(asc(CredentialTable.active), asc(CredentialTable.time_created), asc(CredentialTable.id))
         .all()
         .pipe(Effect.orDie)).flatMap((row) => {
         const credential = stored(row)
@@ -210,36 +210,49 @@ const layer = Layer.effect(
       readonly value: Value
       readonly label?: string
     }) {
-      const credential = new Info({
-        id: ID.create(),
-        integrationID: input.integrationID,
-        label: input.label ?? "default",
-        value: input.value,
-      })
-      yield* db
+      const label = input.label ?? "default"
+      const methodID = input.value.type === "oauth" ? input.value.methodID : undefined
+      const id = yield* db
         .transaction((tx) =>
           Effect.gen(function* () {
             const existing = yield* tx
               .select()
               .from(CredentialTable)
-              .where(eq(CredentialTable.integration_id, credential.integrationID))
+              .where(eq(CredentialTable.integration_id, input.integrationID))
               .all()
             const owned = existing.find((row) => CredentialDaemon.socket(decode(row.value)))
             if (owned) yield* Effect.die(new DaemonOwnedError({ id: owned.id }))
-            yield* tx.delete(CredentialTable).where(eq(CredentialTable.integration_id, credential.integrationID)).run()
+            const twin = existing.find((row) => row.label === label && (row.method_id ?? undefined) === methodID)
+            const id = twin?.id ?? ID.create()
+            if (twin) {
+              yield* tx
+                .update(CredentialTable)
+                .set({ value: input.value, method_id: methodID, active: true })
+                .where(eq(CredentialTable.id, twin.id))
+                .run()
+            } else {
+              yield* tx
+                .insert(CredentialTable)
+                .values({
+                  id,
+                  integration_id: input.integrationID,
+                  label,
+                  value: input.value,
+                  method_id: methodID,
+                  active: true,
+                })
+                .run()
+            }
             yield* tx
-              .insert(CredentialTable)
-              .values({
-                id: credential.id,
-                integration_id: credential.integrationID,
-                label: credential.label,
-                value: credential.value,
-              })
+              .update(CredentialTable)
+              .set({ active: false })
+              .where(and(eq(CredentialTable.integration_id, input.integrationID), ne(CredentialTable.id, id)))
               .run()
+            return id
           }),
         )
         .pipe(Effect.orDie)
-      return credential
+      return new Info({ id, integrationID: input.integrationID, label, value: input.value, active: true })
     })
     const update = Effect.fn("Credential.update")(function* (id: ID, updates: Partial<Pick<Info, "label" | "value">>) {
       if (!updates.label && !updates.value) return
@@ -253,14 +266,57 @@ const layer = Layer.effect(
         .run()
         .pipe(Effect.orDie)
     })
+    const activate = Effect.fn("Credential.activate")(function* (id: ID) {
+      const current = yield* get(id)
+      if (current && CredentialDaemon.socket(current.value)) yield* Effect.die(new DaemonOwnedError({ id }))
+      if (current?.source === "shared") yield* Effect.die(new SharedReadOnlyError({ id }))
+      if (!current) return
+      yield* db
+        .transaction((tx) =>
+          Effect.gen(function* () {
+            const rows = yield* tx
+              .select()
+              .from(CredentialTable)
+              .where(eq(CredentialTable.integration_id, current.integrationID))
+              .all()
+            const target = rows.find((row) => row.id === id)
+            if (!target) return
+            if (CredentialDaemon.socket(decode(target.value))) yield* Effect.die(new DaemonOwnedError({ id }))
+            for (const row of rows) {
+              if (row.id === id || row.active === false || CredentialDaemon.socket(decode(row.value))) continue
+              yield* tx.update(CredentialTable).set({ active: false }).where(eq(CredentialTable.id, row.id)).run()
+            }
+            yield* tx.update(CredentialTable).set({ active: true }).where(eq(CredentialTable.id, id)).run()
+          }),
+        )
+        .pipe(Effect.orDie)
+    })
     const remove = Effect.fn("Credential.remove")(function* (id: ID) {
       const current = yield* get(id)
       if (current && CredentialDaemon.socket(current.value)) yield* Effect.die(new DaemonOwnedError({ id }))
       if (current?.source === "shared") yield* Effect.die(new SharedReadOnlyError({ id }))
-      yield* db.delete(CredentialTable).where(eq(CredentialTable.id, id)).run().pipe(Effect.orDie)
+      yield* db
+        .transaction((tx) =>
+          Effect.gen(function* () {
+            const row = yield* tx.select().from(CredentialTable).where(eq(CredentialTable.id, id)).get()
+            yield* tx.delete(CredentialTable).where(eq(CredentialTable.id, id)).run()
+            if (!row?.integration_id || !row.active) return
+            const remaining = (yield* tx
+              .select()
+              .from(CredentialTable)
+              .where(eq(CredentialTable.integration_id, row.integration_id))
+              .all()).filter((item) => !CredentialDaemon.socket(decode(item.value)))
+            const newest = remaining.sort(
+              (a, b) => a.time_created - b.time_created || (a.id < b.id ? -1 : a.id > b.id ? 1 : 0),
+            ).at(-1)
+            if (newest)
+              yield* tx.update(CredentialTable).set({ active: true }).where(eq(CredentialTable.id, newest.id)).run()
+          }),
+        )
+        .pipe(Effect.orDie)
     })
 
-    const service = Service.of({ all, list, get, create, update, remove })
+    const service = Service.of({ all, list, get, create, update, activate, remove })
 
     // Bridge credentials connected before the V2 store existed: seed any
     // `auth.json` API key that this integration does not already have.

@@ -329,6 +329,13 @@ describe("Integration", () => {
               type: "credential",
               id: personal.id,
               label: "Personal",
+              active: true,
+            },
+            {
+              type: "credential",
+              id: work.id,
+              label: "Work",
+              active: false,
             },
             { type: "env", name: "INTEGRATION_TEST_ACME_KEY" },
           ])
@@ -336,6 +343,7 @@ describe("Integration", () => {
             type: "credential",
             id: personal.id,
             label: "Personal",
+            active: true,
           })
           expect(work.id).not.toBe(personal.id)
         }),
