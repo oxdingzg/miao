@@ -54,6 +54,8 @@ export interface EngineOptions {
   editRecovery?: boolean
   /** Evaluation ablation control; `false` disables LSP warm-up and post-edit diagnostics. */
   lspDiagnostics?: boolean
+  /** Absolute path to an MCP host config; requires explicit allow_mcp policy authority. */
+  mcpConfigFile?: string
   /** Absolute path to an LSP host config; must live outside the workspace. */
   lspConfigFile?: string
   /**
@@ -143,6 +145,7 @@ export function engineArgs(options: EngineOptions): string[] {
   if (options.credentialIntegration) args.push("--credential-integration", options.credentialIntegration)
   if (options.editRecovery === false) args.push("--edit-recovery", "off")
   if (options.lspDiagnostics === false) args.push("--lsp-diagnostics", "off")
+  if (options.mcpConfigFile) args.push("--mcp-config", options.mcpConfigFile)
   if (options.lspConfigFile) args.push("--lsp-config", options.lspConfigFile)
   if (options.promptCache !== undefined) args.push("--prompt-cache", options.promptCache ? "on" : "off")
   if (options.verifyCommand) args.push("--verify-command", options.verifyCommand)
