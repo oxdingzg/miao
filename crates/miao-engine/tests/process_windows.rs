@@ -9,11 +9,11 @@ use miao_engine::{
     tools::Tools,
 };
 use serde_json::{json, Value};
-use std::sync::Arc;
+use std::{path::Path, sync::Arc};
 use tokio::sync::mpsc;
 use tokio_util::sync::CancellationToken;
 
-struct Executor;
+struct Executor(Value);
 #[async_trait]
 impl Provider for Executor {
     async fn stream(
@@ -24,7 +24,7 @@ impl Provider for Executor {
     ) -> Result<Reply, ProviderError> {
         if request.messages.len() == 1 {
             return Ok(Reply {
-                content: json!([{"type":"tool_use","id":"call","name":"run_command","input":{"argv":["cmd","/c","echo hi"]}}]),
+                content: json!([{"type":"tool_use","id":"call","name":"run_command","input":self.0}]),
                 usage: json!({}),
                 needs_tools: true,
             });
@@ -51,17 +51,15 @@ fn policy() -> Policy {
     .unwrap()
 }
 
-#[tokio::test]
-async fn run_command_is_confined_and_captures_output_on_windows() {
-    let dir = tempfile::tempdir().unwrap();
-    let workspace = dir.path().join("workspace");
+async fn execute(root: &Path, input: Value) -> Value {
+    let workspace = root.join("workspace");
     std::fs::create_dir_all(&workspace).unwrap();
-    let store = Store::open(dir.path().join("engine.db")).await.unwrap();
+    let store = Store::open(root.join("engine.db")).await.unwrap();
     let tools = Tools::new(&workspace)
         .await
         .unwrap()
         .with_process_runner(env!("CARGO_BIN_EXE_miao-engine").into());
-    let runtime = Runtime::with_policy(store.clone(), Arc::new(Executor), tools, policy())
+    let runtime = Runtime::with_policy(store.clone(), Arc::new(Executor(input)), tools, policy())
         .await
         .unwrap();
     runtime
@@ -97,9 +95,36 @@ async fn run_command_is_confined_and_captures_output_on_windows() {
     .await
     .unwrap();
     runtime.shutdown().await;
+    result
+}
+
+#[tokio::test]
+async fn run_command_is_confined_and_captures_output_on_windows() {
+    let dir = tempfile::tempdir().unwrap();
+    let result = execute(dir.path(), json!({"argv":["cmd","/c","echo hi"]})).await;
     assert_eq!(result["exit_code"], 0, "{result}");
     assert!(
         result["stdout"].as_str().unwrap_or("").contains("hi"),
         "{result}"
     );
+}
+
+#[tokio::test]
+async fn cmd_writes_in_the_requested_subdirectory_not_windows_or_workspace_root() {
+    let dir = tempfile::tempdir().unwrap();
+    let nested = dir.path().join("workspace").join("nested with spaces");
+    std::fs::create_dir_all(&nested).unwrap();
+    let result = execute(
+        dir.path(),
+        json!({"argv":["cmd","/d","/c","echo scoped>marker.txt"],"cwd":"nested with spaces"}),
+    )
+    .await;
+    assert_eq!(result["exit_code"], 0, "{result}");
+    assert_eq!(
+        std::fs::read_to_string(nested.join("marker.txt"))
+            .unwrap()
+            .trim(),
+        "scoped"
+    );
+    assert!(!dir.path().join("workspace").join("marker.txt").exists());
 }

@@ -968,6 +968,13 @@ async fn execute(
                 json!({"run_id":run,"step":step,"usage":reply.usage,"cache":crate::usage::cache_lineage(&reply.usage),"context_message_seq":inner.store.max_message_seq(session).await?}),
             )
             .await?;
+        // The billed turn's settle wall-clock rides the timing side table, so
+        // usage reports can order turns in time without timestamps in replayed
+        // payloads.
+        let _ = inner
+            .store
+            .record_turn_time(session, run, step as u64, crate::approval::now_ms())
+            .await;
         if let Some(ttft_ms) = ttft_ms {
             let _ = inner
                 .store

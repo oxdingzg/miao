@@ -193,6 +193,12 @@ impl Store {
                         )?;
                     }
                 }
+                let has_turn_ms:bool=conn.query_row(
+                    "SELECT EXISTS(SELECT 1 FROM pragma_table_info('engine_timing') WHERE name='turn_ms')",
+                    [],|r|r.get(0))?;
+                if !has_turn_ms {
+                    conn.execute("ALTER TABLE engine_timing ADD COLUMN turn_ms INTEGER", [])?;
+                }
                 let has_checkpoint:bool=conn.query_row("SELECT EXISTS(SELECT 1 FROM pragma_table_info('engine_message') WHERE name='checkpoint')",[],|r|r.get(0))?;
                 if !has_checkpoint {
                     conn.execute("ALTER TABLE engine_message ADD COLUMN checkpoint TEXT", [])?;
@@ -1607,6 +1613,30 @@ impl Store {
         .await
     }
 
+    /// Wall-clock settle time of one billed turn, recorded when its `usage`
+    /// event commits. It lives in the same side table as TTFT so replayed
+    /// payloads stay free of wall-clock (ADR-15 recorded-time rule); rows for
+    /// turns that predate the column keep a NULL and the projection degrades
+    /// instead of fabricating a time.
+    pub async fn record_turn_time(
+        &self,
+        session: &str,
+        run: &str,
+        step: u64,
+        turn_ms: u64,
+    ) -> Result<(), Error> {
+        let (session, run) = (session.to_owned(), run.to_owned());
+        self.call(move |conn| {
+            conn.execute(
+                "INSERT INTO engine_timing(session_id,run_id,step,ttft_ms,turn_ms) VALUES(?1,?2,?3,0,?4)
+                 ON CONFLICT(session_id,run_id,step) DO UPDATE SET turn_ms=excluded.turn_ms",
+                params![session, run, step, turn_ms],
+            )?;
+            Ok(())
+        })
+        .await
+    }
+
     /// Cache lineage and latency evidence for one session: billed token
     /// totals across every recorded turn, time-to-first-token stats, and the
     /// provider/model that served each turn (roadmap A5). Tokens and lineage
@@ -1618,6 +1648,20 @@ impl Store {
             let mut turns = 0u64;
             let mut partial_turns = 0u64;
             let mut tokens = json!({"input":0,"output":0,"cacheRead":0,"cacheWrite":0,"nonCached":0});
+            let turn_ms: std::collections::HashMap<(String, String), u64> = {
+                let mut stmt = conn.prepare(
+                    "SELECT run_id,step,turn_ms FROM engine_timing WHERE session_id=?1 AND turn_ms IS NOT NULL",
+                )?;
+                let mut rows = stmt.query(params![session])?;
+                let mut values = std::collections::HashMap::new();
+                while let Some(row) = rows.next()? {
+                    values.insert(
+                        (row.get::<_, String>(0)?, row.get::<_, u64>(1)?.to_string()),
+                        row.get::<_, u64>(2)?,
+                    );
+                }
+                values
+            };
             let ttft: Vec<u64> = {
                 let mut stmt = conn.prepare(
                     "SELECT ttft_ms FROM engine_timing WHERE session_id=?1 ORDER BY run_id,step",
@@ -1633,8 +1677,11 @@ impl Store {
                 std::collections::HashMap::new();
             let mut per_identity: std::collections::HashMap<(String, String), u64> =
                 std::collections::HashMap::new();
+            let mut tool_calls = 0u64;
+            let mut tool_failures = 0u64;
+            let mut turn_detail: Vec<Value> = Vec::new();
             let mut stmt = conn.prepare(
-                "SELECT kind,data FROM engine_event WHERE session_id=?1 AND kind IN ('usage','provider.started') ORDER BY seq",
+                "SELECT kind,data FROM engine_event WHERE session_id=?1 AND kind IN ('usage','provider.started','tool.completed') ORDER BY seq",
             )?;
             let mut rows = stmt.query(params![session])?;
             while let Some(row) = rows.next()? {
@@ -1654,6 +1701,12 @@ impl Store {
                                     id.get("model").and_then(Value::as_str).unwrap_or_default().to_owned(),
                                 ),
                             );
+                        }
+                    }
+                    "tool.completed" => {
+                        tool_calls += 1;
+                        if data["is_error"].as_bool() == Some(true) {
+                            tool_failures += 1;
                         }
                     }
                     _ => {
@@ -1679,6 +1732,31 @@ impl Store {
                                 .entry((provider.clone(), model.clone()))
                                 .or_insert(0) += 1;
                         }
+                        if data["partial"].as_bool() != Some(true) {
+                            // Per-turn rows keep each turn's own context size so
+                            // the product can price tiered rates per turn instead
+                            // of against the summed input.
+                            let mut detail = json!({
+                                "runID": data["run_id"],
+                                "step": data["step"],
+                                "usage": {
+                                    "inputTokens": usage["inputTokens"].as_u64().unwrap_or(0),
+                                    "outputTokens": usage["outputTokens"].as_u64().unwrap_or(0),
+                                    "reasoningTokens": usage["reasoningTokens"].as_u64().unwrap_or(0),
+                                    "cacheReadInputTokens": usage["cacheReadInputTokens"].as_u64().unwrap_or(0),
+                                    "cacheWriteInputTokens": usage["cacheWriteInputTokens"].as_u64().unwrap_or(0),
+                                    "nonCachedInputTokens": usage["nonCachedInputTokens"].as_u64().unwrap_or(0),
+                                },
+                            });
+                            if let Some((protocol, model)) = identity.get(&key) {
+                                detail["protocol"] = json!(protocol);
+                                detail["model"] = json!(model);
+                            }
+                            if let Some(value) = turn_ms.get(&key) {
+                                detail["turnMs"] = json!(value);
+                            }
+                            turn_detail.push(detail);
+                        }
                     }
                 }
             }
@@ -1703,6 +1781,8 @@ impl Store {
                 "tokens": tokens,
                 "ttftMs": ttft_stats,
                 "lineage": lineage,
+                "tools": {"calls": tool_calls, "failures": tool_failures},
+                "turnsDetail": turn_detail,
             }))
         }).await
     }
