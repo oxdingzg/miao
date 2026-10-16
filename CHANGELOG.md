@@ -16,14 +16,15 @@ at `docs/releases/vX.Y.Z.md` and `docs/releases/vX.Y.Z.zh.md`; both are required
 ### Added
 - **engine**: guarded Windows ConPTY terminals and opt-in workspace custom tool workers (#947, #949).
 - **ui**: visible Session/message times, project-level auto-accept and opt-in per-turn changed files (#934, #936, #939).
-- **core**: multiple provider credentials with active-account selection through API/CLI (#944).
+- **core**: multiple provider credentials with active-account selection through API/CLI and account switching in Web/Desktop settings (#944, #953).
+- **engine**: trusted global MCP manifests/shared local settings attached per native owner, with product-client MCP/LSP roundtrips (#954).
 
 ### Fixed
 - **core/engine**: treat tool-argument limits as idle budgets while streaming input progresses (#946).
 - **ci**: repair App Store build-state diagnostics and propagate failures (#948).
 - **engine**: retain Session affinity for Responses prefix caching (#933).
 - **core**: gate MCP tool catalogs by capabilities and normalize permission metadata (#930, #932).
-- **core**: literal snapshot paths, scope containment and atomic store creation (#945).
+- **core**: literal snapshot paths, scope containment and atomic store creation, temporary-index publication and corrupt-index recovery (#945, #956).
 - **server**: restore shared native event delivery and usage/pricing projection (#910, #911, #915, #918).
 - **tui**: recover visible Session state and pending requests after reconnect (#916).
 - **engine**: honor guarded Windows process working directories (#919).
