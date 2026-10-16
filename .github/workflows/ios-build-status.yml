@@ -14,26 +14,53 @@ jobs:
           APPLE_API_ISSUER: ${{ secrets.APPLE_API_ISSUER }}
           APPLE_API_KEY_P8: ${{ secrets.APPLE_API_KEY_P8 }}
         run: |
-          set -euo pipefail
-          key="$RUNNER_TEMP/AuthKey.p8"
-          echo -n "$APPLE_API_KEY_P8" | base64 --decode -o "$key"
-          now=$(date +%s); iat=$((now - 60)); exp=$((now + 1200))
-          b64() { openssl base64 -e -A | tr -d '=' | tr '/+' '_-'; }
-          header=$(printf '{"alg":"ES256","kid":"%s"}' "$APPLE_API_KEY_ID" | b64)
-          payload=$(printf '{"iss":"%s","iat":%d,"exp":%d}' "$APPLE_API_ISSUER" "$iat" "$exp" | b64)
-          sig=$(printf '%s.%s' "$header" "$payload" | openssl dgst -sha256 -sign "$key" -binary | b64)
-          token="${header}.${payload}.${sig}"
-          apps=$(curl -sSg -H "Authorization: Bearer $token" "https://api.appstoreconnect.apple.com/v1/apps?filter[bundleId]=dev.miao.remote")
-          app_id=$(echo "$apps" | python3 -c 'import json,sys; d=json.load(sys.stdin); print(d["data"][0]["id"])')
-          builds=$(curl -sSg -H "Authorization: Bearer $token" "https://api.appstoreconnect.apple.com/v1/builds?filter[app]=$app_id&sort=-uploadedDate&page[limit]=5&include=betaAppReviewSubmission")
-          echo "$builds" | python3 -c '
-          import json, sys
-          d = json.load(sys.stdin)
-          review = {i["id"]: i["attributes"].get("state") for i in d.get("included", []) if i["type"] == "betaAppReviewSubmissions"}
-          for b in d.get("data", []):
-              a = b["attributes"]
+          python3 - <<'PY'
+          import base64, json, subprocess, time, urllib.request, os
+
+          key = os.environ["RUNNER_TEMP"] + "/AuthKey.p8"
+          with open(key, "wb") as handle:
+              handle.write(base64.b64decode(os.environ["APPLE_API_KEY_P8"]))
+
+          def b64u(data):
+              return base64.urlsafe_b64encode(data).rstrip(b"=").decode()
+
+          def parse_der_sig(der):
+              assert der[0] == 0x30
+              length = der[1]
+              seq = der[2 : 2 + length]
+              parts, p = [], 0
+              while p < len(seq):
+                  assert seq[p] == 0x02
+                  size = seq[p + 1]
+                  parts.append(seq[p + 2 : p + 2 + size])
+                  p += 2 + size
+              r, s = parts
+              return (b"\x00" * 32 + r)[-32:] + (b"\x00" * 32 + s)[-32:]
+
+          header = b64u(json.dumps({"alg": "ES256", "kid": os.environ["APPLE_API_KEY_ID"]}, separators=(",", ":")).encode())
+          payload = b64u(json.dumps({"iss": os.environ["APPLE_API_ISSUER"], "iat": int(time.time()) - 60, "exp": int(time.time()) + 1200}, separators=(",", ":")).encode())
+          signing_input = (header + "." + payload).encode()
+          der = subprocess.run(["openssl", "dgst", "-sha256", "-sign", key], input=signing_input, capture_output=True).stdout
+          if der.startswith(b"(") or not der:
+              raise SystemExit("openssl signing failed: " + der.decode(errors="replace"))
+          token = signing_input.decode() + "." + b64u(parse_der_sig(der))
+
+          def api(path):
+              request = urllib.request.Request("https://api.appstoreconnect.apple.com" + path, headers={"Authorization": "Bearer " + token})
+              try:
+                  return json.load(urllib.request.urlopen(request))
+              except urllib.error.HTTPError as error:
+                  print("HTTP", error.code, error.read().decode()[:400])
+                  raise
+
+          apps = api("/v1/apps?filter[bundleId]=dev.miao.remote")
+          app_id = apps["data"][0]["id"]
+          builds = api("/v1/builds?filter[app]=" + app_id + "&sort=-uploadedDate&page[limit]=5&include=betaAppReviewSubmission")
+          review = {i["id"]: i["attributes"].get("state") for i in builds.get("included", []) if i["type"] == "betaAppReviewSubmissions"}
+          for build in builds.get("data", []):
+              a = build["attributes"]
               print("version", a.get("version"), "| uploaded", a.get("uploadedDate"), "| processing", a.get("processingState"), "| encryption-exempt", a.get("usesNonExemptEncryption"))
-              sub = (b.get("relationships", {}).get("betaAppReviewSubmission", {}) or {}).get("data")
+              sub = (build.get("relationships", {}).get("betaAppReviewSubmission", {}) or {}).get("data")
               if sub:
                   print("   beta review:", review.get(sub.get("id")))
-          '
+          PY
