@@ -1,5 +1,7 @@
 import { spawn } from "bun"
 import { EOL } from "os"
+import type { ConfigMCP } from "@miao/schema/config/mcp"
+import { prepareMcpConfig } from "./mcp-config"
 
 /**
  * Host-side client for the experimental Rust engine (`miao-engine serve`).
@@ -56,6 +58,8 @@ export interface EngineOptions {
   lspDiagnostics?: boolean
   /** Absolute path to an MCP host config; requires explicit allow_mcp policy authority. */
   mcpConfigFile?: string
+  /** Trusted global MCP settings; materialized only with explicit native MCP policy authority. */
+  mcpSettings?: ConfigMCP.Info
   /** Absolute path to an LSP host config; must live outside the workspace. */
   lspConfigFile?: string
   /**
@@ -195,21 +199,33 @@ export class EngineClient {
   private stderr = ""
   private closed = false
 
-  private constructor(private readonly child: Bun.Subprocess<"pipe", "pipe", "pipe">) {
+  private constructor(
+    private readonly child: Bun.Subprocess<"pipe", "pipe", "pipe">,
+    private readonly cleanup = () => {},
+  ) {
     void this.readStdout()
     void this.readStderr()
-    void this.child.exited.then(() => this.fail(new EngineError("engine_closed", "miao-engine exited")))
+    void this.child.exited.then(() => {
+      this.fail(new EngineError("engine_closed", "miao-engine exited"))
+      this.cleanup()
+    })
   }
 
   static start(options: EngineOptions): EngineClient {
-    const args = engineArgs(options)
-    const child = spawn([options.binary, ...args], {
-      stdin: "pipe",
-      stdout: "pipe",
-      stderr: "pipe",
-      env: engineEnvironment(options.env),
-    })
-    return new EngineClient(child)
+    const manifest = prepareMcpConfig(options)
+    try {
+      const args = engineArgs({ ...options, mcpConfigFile: manifest?.file ?? options.mcpConfigFile })
+      const child = spawn([options.binary, ...args], {
+        stdin: "pipe",
+        stdout: "pipe",
+        stderr: "pipe",
+        env: engineEnvironment(options.env),
+      })
+      return new EngineClient(child, manifest?.dispose)
+    } catch (error) {
+      manifest?.dispose()
+      throw error
+    }
   }
 
   onEvent(handler: (event: EngineEvent) => void) {
@@ -265,7 +281,11 @@ export class EngineClient {
     if (this.closed) return
     this.closed = true
     this.child.stdin.end()
-    await this.child.exited
+    try {
+      await this.child.exited
+    } finally {
+      this.cleanup()
+    }
   }
 
   private fail(error: Error) {

@@ -75,3 +75,27 @@ for (const capability of ["mcp", "lsp"] as const) {
     }
   })
 }
+
+test("global MCP documents merge without requiring an engine section", async () => {
+  const dir = mkdtempSync(path.join(tmpdir(), "native-mcp-shared-"))
+  try {
+    writeFileSync(
+      path.join(dir, "miao.json"),
+      JSON.stringify({
+        mcp: { servers: { first: { type: "local", command: ["node", "first.js"] } } },
+      }),
+    )
+    writeFileSync(
+      path.join(dir, "miao.jsonc"),
+      JSON.stringify({
+        mcp: { servers: { second: { type: "local", command: ["node", "second.js"] } } },
+      }),
+    )
+    const settings = await engineSettings(dir)
+    expect(Object.keys(settings?.mcpSettings?.servers ?? {})).toEqual(["first", "second"])
+    const options = nativeEngineOptions({ MIAO_ENGINE_BIN: "engine", MIAO_ENGINE_MODEL: "fixture" }, settings)
+    expect(options?.mcpSettings?.servers?.second).toMatchObject({ command: ["node", "second.js"] })
+  } finally {
+    rmSync(dir, { recursive: true, force: true })
+  }
+})

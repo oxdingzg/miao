@@ -91,6 +91,7 @@ export const nativeEngineOptions = (
     promptCache: merged.promptCache,
     verifyCommand: merged.verifyCommand,
     mcpConfigFile: merged.mcpConfigFile,
+    mcpSettings: merged.mcpSettings,
     lspConfigFile: merged.lspConfigFile,
     contextLimits: merged.contextLimits,
   }
@@ -105,10 +106,12 @@ export const engineSettings = async (
   globalConfig: string,
 ): Promise<Omit<EngineOptions, "db" | "workspace"> | undefined> => {
   let settings: Omit<EngineOptions, "db" | "workspace"> | undefined = undefined
+  const documents: Config.Entry[] = []
   for (const name of Config.fileNames) {
     const file = path.join(globalConfig, name)
     if (!(await Bun.file(file).exists())) continue
     const info = Option.getOrUndefined(Config.decodeDocument(Config.parseJsonc(await Bun.file(file).text())))
+    if (info) documents.push(new Config.Document({ type: "document", info }))
     const engine = info?.engine
     if (!engine) continue
     settings = {
@@ -125,7 +128,8 @@ export const engineSettings = async (
       contextLimits: engine.context_limits,
     }
   }
-  return settings
+  const mcpSettings = Option.getOrUndefined(Config.decodeDocument(Config.merge(documents)))?.mcp
+  return mcpSettings ? { ...(settings ?? { binary: "", model: "" }), mcpSettings } : settings
 }
 
 /** Whether the composition root should build the native transport at all. */
