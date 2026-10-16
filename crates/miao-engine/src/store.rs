@@ -197,7 +197,7 @@ impl Store {
                     "SELECT EXISTS(SELECT 1 FROM pragma_table_info('engine_timing') WHERE name='turn_ms')",
                     [],|r|r.get(0))?;
                 if !has_turn_ms {
-                    conn.execute("ALTER TABLE engine_timing ADD COLUMN turn_ms INTEGER",[])?;
+                    conn.execute("ALTER TABLE engine_timing ADD COLUMN turn_ms INTEGER", [])?;
                 }
                 let has_checkpoint:bool=conn.query_row("SELECT EXISTS(SELECT 1 FROM pragma_table_info('engine_message') WHERE name='checkpoint')",[],|r|r.get(0))?;
                 if !has_checkpoint {
@@ -1618,7 +1618,13 @@ impl Store {
     /// payloads stay free of wall-clock (ADR-15 recorded-time rule); rows for
     /// turns that predate the column keep a NULL and the projection degrades
     /// instead of fabricating a time.
-    pub async fn record_turn_time(&self, session: &str, run: &str, step: u64, turn_ms: u64) -> Result<(), Error> {
+    pub async fn record_turn_time(
+        &self,
+        session: &str,
+        run: &str,
+        step: u64,
+        turn_ms: u64,
+    ) -> Result<(), Error> {
         let (session, run) = (session.to_owned(), run.to_owned());
         self.call(move |conn| {
             conn.execute(

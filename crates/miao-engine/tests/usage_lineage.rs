@@ -32,11 +32,19 @@ async fn usage_report_aggregates_turns_tokens_ttft_and_lineage() {
         .await
         .unwrap();
     store
-        .record("s", "tool.completed", json!({"run_id":"r1","step":0,"name":"read_file","is_error":false}))
+        .record(
+            "s",
+            "tool.completed",
+            json!({"run_id":"r1","step":0,"name":"read_file","is_error":false}),
+        )
         .await
         .unwrap();
     store
-        .record("s", "tool.completed", json!({"run_id":"r1","step":0,"name":"edit_file","is_error":true}))
+        .record(
+            "s",
+            "tool.completed",
+            json!({"run_id":"r1","step":0,"name":"edit_file","is_error":true}),
+        )
         .await
         .unwrap();
     store
@@ -60,7 +68,10 @@ async fn usage_report_aggregates_turns_tokens_ttft_and_lineage() {
     store.record_timing("s", "r1", 0, 900).await.unwrap();
     store.record_timing("s", "r1", 1, 300).await.unwrap();
     // The billed turn settles into the same timing row without losing TTFT.
-    store.record_turn_time("s", "r1", 0, 1_700_000_000_000).await.unwrap();
+    store
+        .record_turn_time("s", "r1", 0, 1_700_000_000_000)
+        .await
+        .unwrap();
     let report = store.usage_report("s").await.unwrap();
     assert_eq!(report["turns"], 1);
     assert_eq!(report["partialTurns"], 1);
