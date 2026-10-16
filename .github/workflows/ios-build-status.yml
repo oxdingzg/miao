@@ -43,4 +43,4 @@ jobs:
             end
           end
           RB
-          cd "$RUNNER_TEMP" && KEY_PATH="$RUNNER_TEMP/asc.json" FASTLANE_SKIP_UPDATE_CHECK=1 "$(gem environment gemdir)/bin/fastlane" ios status
+          cd "$RUNNER_TEMP" && KEY_PATH="$RUNNER_TEMP/asc.json" FASTLANE_SKIP_UPDATE_CHECK=1 "$(gem environment gemdir)/bin/fastlane" status
