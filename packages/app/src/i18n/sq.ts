@@ -603,6 +603,8 @@ export const dict = {
   "toast.permissions.autoaccept.on.description": "Kërkesat për leje do të miratohen automatikisht",
   "toast.permissions.autoaccept.off.title": "Ndaloi pranimin automatik të lejeve",
   "toast.permissions.autoaccept.off.description": "Kërkesat për leje do të kërkojnë miratim",
+  "settings.permissions.autoaccept.project.title": "Prano automatikis lejet për këtë projekt",
+  "settings.permissions.autoaccept.project.description": "Përgjigju kërkesave të reja për leje nga çdo sesion i këtij projekti pa pyetur. Zgjedhjet në nivel sesioni dhe drejtorie kanë përparësi.",
   "toast.model.none.title": "Asnjë model i zgjedhur",
   "toast.model.none.description": "Lidhni një ofrues për të përmbledhur këtë sesion",
   "toast.file.loadFailed.title": "Ngarkimi i skedarit dështoi",

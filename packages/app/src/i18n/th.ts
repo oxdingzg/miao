@@ -636,6 +636,8 @@ export const dict = {
   "toast.permissions.autoaccept.on.description": "คำขอสิทธิ์จะได้รับการอนุมัติโดยอัตโนมัติ",
   "toast.permissions.autoaccept.off.title": "หยุดยอมรับสิทธิ์โดยอัตโนมัติแล้ว",
   "toast.permissions.autoaccept.off.description": "คำขอสิทธิ์จะต้องได้รับการอนุมัติ",
+  "settings.permissions.autoaccept.project.title": "ยอมรับสิทธิ์สำหรับโปรเจกต์นี้โดยอัตโนมัติ",
+  "settings.permissions.autoaccept.project.description": "ตอบคำขอสิทธิ์ใหม่จากทุกเซสชันในโปรเจกต์นี้โดยไม่ถาม การเลือกแบบเซสชันและไดเรกทอรียังคงมีผลก่อน",
 
   "toast.model.none.title": "ไม่ได้เลือกโมเดล",
   "toast.model.none.description": "เชื่อมต่อผู้ให้บริการเพื่อสรุปเซสชันนี้",
