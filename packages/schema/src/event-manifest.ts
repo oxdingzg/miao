@@ -61,11 +61,16 @@ const featureDefinitions = Event.inventory(
 
 // Bridged events the TUI renders. `Definitions` already lists them through their families;
 // `/api/event` carries only server definitions, so attached TUIs need them here too.
+// The native bridge publishes `session.next.*` onto the client fan-out, and a
+// type missing here fails `clientEvent` validation — the delivery fiber dies
+// on the first settlement and attached clients silently lose the whole live
+// stream (text, tool, and step events alike).
 const tuiBridgeDefinitions = Event.inventory(
   LspEvent.Updated,
   VcsEvent.BranchUpdated,
   TuiEvent.ToastShow,
   SessionV1.Event.Error,
+  ...SessionEvent.Definitions,
 )
 
 export const ServerDefinitions = Event.inventory(
