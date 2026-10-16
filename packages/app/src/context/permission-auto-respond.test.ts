@@ -2,7 +2,7 @@ import { describe, expect, test } from "bun:test"
 import type { Session } from "@miao/schema/view-models"
 import type { PermissionRequest } from "@miao/schema/view-models"
 import { base64Encode } from "@miao/core/util/encode"
-import { autoRespondsPermission, isDirectoryAutoAccepting, sessionAutoAccept } from "./permission-auto-respond"
+import { autoRespondsPermission, isDirectoryAutoAccepting, isProjectAutoAccepting, sessionAutoAccept } from "./permission-auto-respond"
 
 const session = (input: { id: string; parentID?: string }) =>
   ({
@@ -122,5 +122,44 @@ describe("isDirectoryAutoAccepting", () => {
     const directory = "/tmp/project"
     const autoAccept = { [`${base64Encode(directory)}/*`]: false }
     expect(isDirectoryAutoAccepting(autoAccept, directory)).toBe(false)
+  })
+})
+
+describe("project-tier auto-accept", () => {
+  test("project key is the weakest fallback", () => {
+    const sessions = [session({ id: "root" })]
+    const autoAccept = { "p/proj_1": true }
+
+    expect(autoRespondsPermission(autoAccept, sessions, permission("root"), "/tmp/project", "proj_1")).toBe(true)
+    expect(isProjectAutoAccepting(autoAccept, "proj_1")).toBe(true)
+    expect(isProjectAutoAccepting({}, "proj_1")).toBe(false)
+    expect(isProjectAutoAccepting({ "p/proj_1": false }, "proj_1")).toBe(false)
+  })
+
+  test("returns false without a project id", () => {
+    const sessions = [session({ id: "root" })]
+    expect(autoRespondsPermission({ "p/proj_1": true }, sessions, permission("root"), "/tmp/project")).toBe(false)
+  })
+
+  test("explicit directory choice wins over the project tier", () => {
+    const directory = "/tmp/project"
+    const sessions = [session({ id: "root" })]
+    const autoAccept = {
+      "p/proj_1": true,
+      [`${base64Encode(directory)}/*`]: false,
+    }
+
+    expect(autoRespondsPermission(autoAccept, sessions, permission("root"), directory, "proj_1")).toBe(false)
+  })
+
+  test("lineage override wins over the project tier", () => {
+    const directory = "/tmp/project"
+    const sessions = [session({ id: "root" }), session({ id: "child", parentID: "root" })]
+    const autoAccept = {
+      "p/proj_1": true,
+      [`${base64Encode(directory)}/root`]: false,
+    }
+
+    expect(autoRespondsPermission(autoAccept, sessions, permission("child"), directory, "proj_1")).toBe(false)
   })
 })

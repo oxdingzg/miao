@@ -602,6 +602,8 @@ export const dict: Record<string, string> = {
   "toast.permissions.autoaccept.on.description": "अनुमति अनुरोधहरू स्वचालित रूपमा स्वीकृत हुनेछन्",
   "toast.permissions.autoaccept.off.title": "स्वत: स्वीकार गर्ने अनुमतिहरू रोकियो",
   "toast.permissions.autoaccept.off.description": "अनुमति अनुरोधहरू अनुमोदन आवश्यक हुनेछ",
+  "settings.permissions.autoaccept.project.title": "यो परियोजनाका लागि अनुमतिहरू स्वतः स्वीकार गर्नुहोस्",
+  "settings.permissions.autoaccept.project.description": "यो परियोजनाको कुनै पनि सेसनबाट आएका नयाँ अनुमति अनुरोधहरूको सोधबिना जवाफ दिनुहोस्। सेसन र डाइरेक्टरी स्तरका विकल्पहरूलाई प्राथमिकता दिइन्छ।",
   "toast.model.none.title": "कुनै मोडेल चयन गरिएको छैन",
   "toast.model.none.description": "यो सत्र संक्षेप गर्न प्रदायक जडान गर्नुहोस्",
   "toast.file.loadFailed.title": "फाइल लोड गर्न असफल भयो",
@@ -963,6 +965,8 @@ export const dict: Record<string, string> = {
     "कम्पोजरमा एजेन्टहरू बीच स्विच गर्नुहोस्। लुकेको बेला, बिल्ड एजेन्टमा पूर्वनिर्धारित हुन्छ।",
   "settings.general.row.reasoningSummaries.title": "तर्क सारांशहरू देखाउनुहोस्",
   "settings.general.row.reasoningSummaries.description": "टाइमलाइनमा मोडेल तर्क सारांशहरू प्रदर्शन गर्नुहोस्",
+  "settings.general.row.turnDiffs.title": "प्रत्येक चरणमा परिवर्तित फाइलहरू देखाउनुहोस्",
+  "settings.general.row.turnDiffs.description": "समयरेखामा प्रत्येक पूर्ण चरणका परिवर्तित फाइलहरू पङ्क्ति सङ्ख्या र विस्तारयोग्य भिन्नतासहित सूचीबद्ध गर्छ।",
   "settings.general.row.shellToolPartsExpanded.title": "शेल उपकरणका भागहरू विस्तार गर्नुहोस्",
   "settings.general.row.shellToolPartsExpanded.description":
     "टाइमलाइनमा पूर्वनिर्धारित रूपमा विस्तारित शेल उपकरण भागहरू देखाउनुहोस्",

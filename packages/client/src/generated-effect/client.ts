@@ -655,31 +655,52 @@ const adaptGroup12 = (raw: RawClient["server.integration"]) => ({
   attemptCancel: Endpoint12_6(raw),
 })
 
-type Endpoint13_0Request = Parameters<RawClient["server.credential"]["credential.update"]>[0]
-type Endpoint13_0Input = {
-  readonly credentialID: Endpoint13_0Request["params"]["credentialID"]
-  readonly location?: Endpoint13_0Request["query"]["location"]
-  readonly label: Endpoint13_0Request["payload"]["label"]
+type Endpoint13_0Request = Parameters<RawClient["server.credential"]["credential.list"]>[0]
+type Endpoint13_0Input = { readonly location?: Endpoint13_0Request["query"]["location"] }
+const Endpoint13_0 = (raw: RawClient["server.credential"]) => (input?: Endpoint13_0Input) =>
+  raw["credential.list"]({ query: { location: input?.["location"] } }).pipe(Effect.mapError(mapClientError))
+
+type Endpoint13_1Request = Parameters<RawClient["server.credential"]["credential.update"]>[0]
+type Endpoint13_1Input = {
+  readonly credentialID: Endpoint13_1Request["params"]["credentialID"]
+  readonly location?: Endpoint13_1Request["query"]["location"]
+  readonly label: Endpoint13_1Request["payload"]["label"]
 }
-const Endpoint13_0 = (raw: RawClient["server.credential"]) => (input: Endpoint13_0Input) =>
+const Endpoint13_1 = (raw: RawClient["server.credential"]) => (input: Endpoint13_1Input) =>
   raw["credential.update"]({
     params: { credentialID: input["credentialID"] },
     query: { location: input["location"] },
     payload: { label: input["label"] },
   }).pipe(Effect.mapError(mapClientError))
 
-type Endpoint13_1Request = Parameters<RawClient["server.credential"]["credential.remove"]>[0]
-type Endpoint13_1Input = {
-  readonly credentialID: Endpoint13_1Request["params"]["credentialID"]
-  readonly location?: Endpoint13_1Request["query"]["location"]
+type Endpoint13_2Request = Parameters<RawClient["server.credential"]["credential.activate"]>[0]
+type Endpoint13_2Input = {
+  readonly credentialID: Endpoint13_2Request["params"]["credentialID"]
+  readonly location?: Endpoint13_2Request["query"]["location"]
 }
-const Endpoint13_1 = (raw: RawClient["server.credential"]) => (input: Endpoint13_1Input) =>
+const Endpoint13_2 = (raw: RawClient["server.credential"]) => (input: Endpoint13_2Input) =>
+  raw["credential.activate"]({
+    params: { credentialID: input["credentialID"] },
+    query: { location: input["location"] },
+  }).pipe(Effect.mapError(mapClientError))
+
+type Endpoint13_3Request = Parameters<RawClient["server.credential"]["credential.remove"]>[0]
+type Endpoint13_3Input = {
+  readonly credentialID: Endpoint13_3Request["params"]["credentialID"]
+  readonly location?: Endpoint13_3Request["query"]["location"]
+}
+const Endpoint13_3 = (raw: RawClient["server.credential"]) => (input: Endpoint13_3Input) =>
   raw["credential.remove"]({
     params: { credentialID: input["credentialID"] },
     query: { location: input["location"] },
   }).pipe(Effect.mapError(mapClientError))
 
-const adaptGroup13 = (raw: RawClient["server.credential"]) => ({ update: Endpoint13_0(raw), remove: Endpoint13_1(raw) })
+const adaptGroup13 = (raw: RawClient["server.credential"]) => ({
+  list: Endpoint13_0(raw),
+  update: Endpoint13_1(raw),
+  activate: Endpoint13_2(raw),
+  remove: Endpoint13_3(raw),
+})
 
 type Endpoint14_0Request = Parameters<RawClient["server.permission"]["permission.request.list"]>[0]
 type Endpoint14_0Input = { readonly location?: Endpoint14_0Request["query"]["location"] }

@@ -643,6 +643,8 @@ export const dict = {
   "toast.permissions.autoaccept.on.description": "Las solicitudes de permisos se aprobarán automáticamente",
   "toast.permissions.autoaccept.off.title": "Se dejó de aceptar permisos automáticamente",
   "toast.permissions.autoaccept.off.description": "Las solicitudes de permisos requerirán aprobación",
+  "settings.permissions.autoaccept.project.title": "Aceptar permisos automáticamente para este proyecto",
+  "settings.permissions.autoaccept.project.description": "Responde a las nuevas solicitudes de permiso de cualquier sesión de este proyecto sin preguntar. Las elecciones por sesión y directorio siguen teniendo prioridad.",
 
   "toast.model.none.title": "Ningún modelo seleccionado",
   "toast.model.none.description": "Conecta un proveedor para resumir esta sesión",
@@ -959,6 +961,8 @@ export const dict = {
   "settings.general.row.reasoningSummaries.title": "Mostrar resúmenes de razonamiento",
   "settings.general.row.reasoningSummaries.description":
     "Mostrar resúmenes del razonamiento del modelo en la línea de tiempo",
+    "settings.general.row.turnDiffs.title": "Show changed files per turn",
+    "settings.general.row.turnDiffs.description": "List each finished turn's changed files with line counts and expandable diffs in the timeline.",
   "settings.general.row.shellToolPartsExpanded.title": "Expandir partes de la herramienta shell",
   "settings.general.row.shellToolPartsExpanded.description":
     "Mostrar las partes de la herramienta shell expandidas por defecto en la línea de tiempo",

@@ -275,7 +275,7 @@ export function Session() {
   const thinking = useThinkingMode()
   const thinkingMode = thinking.mode
   const showThinking = createMemo(() => true)
-  const [timestamps, setTimestamps] = kv.signal<"hide" | "show">("timestamps", "hide")
+  const [timestamps, setTimestamps] = kv.signal<"hide" | "show">("timestamps", "show")
   const [showDetails, setShowDetails] = kv.signal("tool_details_visibility", true)
   const [showAssistantMetadata, _setShowAssistantMetadata] = kv.signal("assistant_metadata_visibility", true)
   const [showScrollbar, setShowScrollbar] = kv.signal("scrollbar_visible", false)
@@ -1587,20 +1587,14 @@ function UserMessage(props: {
               </box>
             </Show>
             <Show when={props.receipt}>{(receipt) => <PromptStatus prompt={receipt()} />}</Show>
-            <Show
-              when={!props.receipt && queued()}
-              fallback={
-                <Show when={ctx.showTimestamps()}>
-                  <text fg={theme.textMuted}>
-                    <span style={{ fg: theme.textMuted }}>
-                      {Locale.todayTimeOrDateTime(props.message.time.created)}
-                    </span>
-                  </text>
-                </Show>
-              }
-            >
+            <Show when={ctx.showTimestamps() || (!props.receipt && queued())}>
               <text fg={theme.textMuted}>
-                <span style={{ bg: color(), fg: queuedFg(), bold: true }}> QUEUED </span>
+                <Show when={!props.receipt && queued()}>
+                  <span style={{ bg: color(), fg: queuedFg(), bold: true }}> QUEUED </span>{" "}
+                </Show>
+                <Show when={ctx.showTimestamps()}>
+                  <span style={{ fg: theme.textMuted }}>{Locale.todayTimeOrDateTime(props.message.time.created)}</span>
+                </Show>
               </text>
             </Show>
           </box>
@@ -1699,6 +1693,12 @@ function AssistantMessage(props: { message: TranscriptAssistantMessage; sessionI
             <text marginTop={1} fg={theme.textMuted}>
               {Locale.titlecase(props.message.agent)}
               <span style={{ fg: theme.textMuted }}> · {model()}</span>
+              <Show when={ctx.showTimestamps() && props.message.time.completed !== undefined}>
+                <span style={{ fg: theme.textMuted }}>
+                  {" · "}
+                  {aborted() ? "stopped" : "completed"} {Locale.todayTimeOrDateTime(props.message.time.completed!)}
+                </span>
+              </Show>
               <Show when={duration()}>
                 <span style={{ fg: theme.textMuted }}> · {Locale.duration(duration())}</span>
               </Show>

@@ -121,8 +121,12 @@ import type {
   IntegrationsAttemptCompleteOutput,
   IntegrationsAttemptCancelInput,
   IntegrationsAttemptCancelOutput,
+  CredentialsListInput,
+  CredentialsListOutput,
   CredentialsUpdateInput,
   CredentialsUpdateOutput,
+  CredentialsActivateInput,
+  CredentialsActivateOutput,
   CredentialsRemoveInput,
   CredentialsRemoveOutput,
   PermissionsListRequestsInput,
@@ -1158,6 +1162,18 @@ export function make(options: ClientOptions) {
         ),
     },
     credentials: {
+      list: (input?: CredentialsListInput, requestOptions?: RequestOptions) =>
+        request<CredentialsListOutput>(
+          {
+            method: "GET",
+            path: `/api/credential`,
+            query: { location: input?.["location"] },
+            successStatus: 200,
+            declaredStatuses: [401, 400],
+            empty: false,
+          },
+          requestOptions,
+        ),
       update: (input: CredentialsUpdateInput, requestOptions?: RequestOptions) =>
         request<CredentialsUpdateOutput>(
           {
@@ -1165,6 +1181,18 @@ export function make(options: ClientOptions) {
             path: `/api/credential/${encodeURIComponent(input.credentialID)}`,
             query: { location: input["location"] },
             body: { label: input["label"] },
+            successStatus: 204,
+            declaredStatuses: [401, 400],
+            empty: true,
+          },
+          requestOptions,
+        ),
+      activate: (input: CredentialsActivateInput, requestOptions?: RequestOptions) =>
+        request<CredentialsActivateOutput>(
+          {
+            method: "POST",
+            path: `/api/credential/${encodeURIComponent(input.credentialID)}/activate`,
+            query: { location: input["location"] },
             successStatus: 204,
             declaredStatuses: [401, 400],
             empty: true,

@@ -607,6 +607,8 @@ export const dict = {
   "toast.permissions.autoaccept.on.description": "Zahtjevi za dopuštenje bit će automatski odobreni",
   "toast.permissions.autoaccept.off.title": "Zaustavljeno automatsko prihvaćanje dopuštenja",
   "toast.permissions.autoaccept.off.description": "Za zahtjeve za dopuštenje bit će potrebno odobrenje",
+  "settings.permissions.autoaccept.project.title": "Automatski prihvati dozvole za ovaj projekt",
+  "settings.permissions.autoaccept.project.description": "Odgovori na nove zahtjeve za dozvolama iz bilo koje sesije ovog projekta bez pitanja. Odabiri na razini sesije i direktorija imaju prednost.",
   "toast.model.none.title": "Nijedan model nije odabran",
   "toast.model.none.description": "Povežite se s pružateljem usluga kako biste rezimirali ovu sesiju",
   "toast.file.loadFailed.title": "Učitavanje datoteke nije uspjelo",
@@ -974,6 +976,8 @@ export const dict = {
     "Prebacivanje između agenata u skladatelju. Kada je skriven, zadana je Build agent.",
   "settings.general.row.reasoningSummaries.title": "Prikaži sažetke obrazloženja",
   "settings.general.row.reasoningSummaries.description": "Prikažite sažetke obrazloženja modela na vremenskoj traci",
+  "settings.general.row.turnDiffs.title": "Prikaži promijenjene datoteke po krugu",
+  "settings.general.row.turnDiffs.description": "Na vremenskoj liniji navodi promijenjene datoteke svakog završenog kruga s brojem linija i proširivim razlikama.",
   "settings.general.row.shellToolPartsExpanded.title": "Proširite dijelove alata školjke",
   "settings.general.row.shellToolPartsExpanded.description":
     "Prikažite dijelove alata ljuske proširene prema zadanim postavkama na vremenskoj traci",

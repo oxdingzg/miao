@@ -641,6 +641,8 @@ export const dict = {
   "toast.permissions.autoaccept.on.description": "Zahtjevi za dozvole će biti automatski odobreni",
   "toast.permissions.autoaccept.off.title": "Zaustavljeno automatsko prihvatanje dozvola",
   "toast.permissions.autoaccept.off.description": "Zahtjevi za dozvole će zahtijevati odobrenje",
+  "settings.permissions.autoaccept.project.title": "Automatski prihvati dozvole za ovaj projekat",
+  "settings.permissions.autoaccept.project.description": "Odgovori na nove zahtjeve za dozvole iz bilo koje sesije ovog projekta bez pitanja. Izbori na nivou sesije i direktorija imaju prednost.",
 
   "toast.model.none.title": "Nije odabran model",
   "toast.model.none.description": "Poveži provajdera da sažmeš ovu sesiju",
@@ -951,6 +953,8 @@ export const dict = {
   "settings.general.row.showCustomAgents.description": "Prikaži izbor agenta u uređivaču poruke",
   "settings.general.row.reasoningSummaries.title": "Prikaži sažetke rasuđivanja",
   "settings.general.row.reasoningSummaries.description": "Prikaži sažetke rasuđivanja modela na vremenskoj traci",
+  "settings.general.row.turnDiffs.title": "Prikaži promijenjene datoteke po krugu",
+  "settings.general.row.turnDiffs.description": "Na vremenskoj liniji navodi promijenjene datoteke svakog završenog kruga s brojem linija i proširivim razlikama.",
 
   "settings.general.row.shellToolPartsExpanded.title": "Proširi dijelove shell alata",
   "settings.general.row.shellToolPartsExpanded.description":

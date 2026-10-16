@@ -602,6 +602,8 @@ export const dict = {
   "toast.permissions.autoaccept.on.description": "Żądania uprawnień będą automatycznie zatwierdzane",
   "toast.permissions.autoaccept.off.title": "Zatrzymano automatyczne akceptowanie uprawnień",
   "toast.permissions.autoaccept.off.description": "Żądania uprawnień będą wymagały zatwierdzenia",
+  "settings.permissions.autoaccept.project.title": "Automatycznie akceptuj uprawnienia w tym projekcie",
+  "settings.permissions.autoaccept.project.description": "Odpowiadaj na nowe prośby o uprawnienia z dowolnej sesji tego projektu bez pytania. Wybory na poziomie sesji i katalogu mają pierwszeństwo.",
   "toast.model.none.title": "Nie wybrano modelu",
   "toast.model.none.description": "Połącz dostawcę, aby podsumować tę sesję",
   "toast.file.loadFailed.title": "Nie udało się załadować pliku",
@@ -889,6 +891,8 @@ export const dict = {
     "Umożliwiaj przełączanie agentów w edytorze wiadomości. Po ukryciu domyślnie używany jest agent Build.",
   "settings.general.row.reasoningSummaries.title": "Pokaż podsumowania wnioskowania",
   "settings.general.row.reasoningSummaries.description": "Wyświetlaj podsumowania wnioskowania modelu na osi czasu",
+  "settings.general.row.turnDiffs.title": "Pokaż zmienione pliki dla każdej tury",
+  "settings.general.row.turnDiffs.description": "Wymienia na osi czasu pliki zmienione w każdej ukończonej turze, z liczbą linii i rozwijanymi różnicami.",
   "settings.general.row.shellToolPartsExpanded.title": "Rozwijaj elementy narzędzia shell",
   "settings.general.row.shellToolPartsExpanded.description":
     "Domyślnie pokazuj rozwinięte elementy narzędzia shell na osi czasu",

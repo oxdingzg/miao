@@ -894,7 +894,7 @@ async fn read_stream_with_budget<P: Parser>(
         let chunk = tokio::select! {
             _=cancel.cancelled()=>return Err(ProviderError::Interrupted),
             _=tokio::time::sleep_until(first_deadline), if first_event.is_some()=>return Err(ProviderError::Transport),
-            _=tokio::time::sleep_until(deadline), if input_budget.deadline().is_some()=>return Err(ProviderError::Stream("tool input time budget exceeded".into())),
+            _=tokio::time::sleep_until(deadline), if input_budget.deadline().is_some()=>return Err(input_budget.timeout_error()),
             result=tokio::time::timeout(Duration::from_secs(120),bytes.next())=>result.map_err(|_|ProviderError::Stream("provider idle timeout".into()))?,
         };
         let Some(chunk) = chunk else {
@@ -939,7 +939,7 @@ async fn read_stream_with_budget<P: Parser>(
                 .unwrap_or_else(|| tokio::time::Instant::now() + Duration::from_secs(120));
             tokio::select! {
                 _=cancel.cancelled()=>return Err(ProviderError::Interrupted),
-                _=tokio::time::sleep_until(deadline), if input_budget.deadline().is_some()=>return Err(ProviderError::Stream("tool input time budget exceeded".into())),
+                _=tokio::time::sleep_until(deadline), if input_budget.deadline().is_some()=>return Err(input_budget.timeout_error()),
                 result=send_all(&progress, &notices)=>if result.is_err(){return Err(ProviderError::Interrupted);},
             }
             if parser.terminal() {
@@ -1002,7 +1002,7 @@ mod input_watchdog_tests {
             .await
             .unwrap();
             assert!(
-                matches!(result, Err(ProviderError::Stream(message)) if message.contains("time budget exceeded"))
+                matches!(result, Err(ProviderError::Stream(message)) if message.contains("tool input idle timeout"))
             );
             server.abort();
         }

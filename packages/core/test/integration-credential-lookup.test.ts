@@ -52,8 +52,8 @@ describe("Integration credential reads", () => {
         }),
       )
       expect(lookup.names.filter((name) => name === "Credential.list")).toHaveLength(2)
-      expect(lookup.value.info?.connections).toEqual([{ type: "credential", id: first.id, label: "First" }])
-      expect(lookup.value.active).toEqual({ type: "credential", id: first.id, label: "First" })
+      expect(lookup.value.info?.connections).toEqual([{ type: "credential", id: first.id, label: "First", active: true }])
+      expect(lookup.value.active).toEqual({ type: "credential", id: first.id, label: "First", active: true })
       yield* credentials.update(first.id, {
         label: "Updated",
         value: Credential.Key.make({ type: "key", key: "updated" }),

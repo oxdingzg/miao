@@ -87,7 +87,7 @@ jobs:
         working-directory: packages/miao
         env:
           MIAO_ENGINE_BIN: ${{ github.workspace }}/crates/miao-engine/target/debug/miao-engine
-        run: bun test test/engine/native-acp-sdk.test.ts
+        run: bun test test/engine/native-acp-sdk.test.ts test/engine/native-acp-capabilities.test.ts
 
       - name: Verify accuracy checks detect injected faults
         if: matrix.os == 'ubuntu-latest'

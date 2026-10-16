@@ -346,6 +346,18 @@ export const SettingsGeneralV2: Component<{
         </SettingsRowV2>
 
         <SettingsRowV2
+          title={language.t("settings.general.row.turnDiffs.title")}
+          description={language.t("settings.general.row.turnDiffs.description")}
+        >
+          <div data-action="settings-feed-turn-diffs">
+            <Switch
+              checked={settings.general.showTurnDiffs()}
+              onChange={(checked) => settings.general.setShowTurnDiffs(checked)}
+            />
+          </div>
+        </SettingsRowV2>
+
+        <SettingsRowV2
           title={language.t("settings.general.row.shellToolPartsExpanded.title")}
           description={language.t("settings.general.row.shellToolPartsExpanded.description")}
         >

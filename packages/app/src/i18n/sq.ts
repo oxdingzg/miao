@@ -603,6 +603,8 @@ export const dict = {
   "toast.permissions.autoaccept.on.description": "Kërkesat për leje do të miratohen automatikisht",
   "toast.permissions.autoaccept.off.title": "Ndaloi pranimin automatik të lejeve",
   "toast.permissions.autoaccept.off.description": "Kërkesat për leje do të kërkojnë miratim",
+  "settings.permissions.autoaccept.project.title": "Prano automatikis lejet për këtë projekt",
+  "settings.permissions.autoaccept.project.description": "Përgjigju kërkesave të reja për leje nga çdo sesion i këtij projekti pa pyetur. Zgjedhjet në nivel sesioni dhe drejtorie kanë përparësi.",
   "toast.model.none.title": "Asnjë model i zgjedhur",
   "toast.model.none.description": "Lidhni një ofrues për të përmbledhur këtë sesion",
   "toast.file.loadFailed.title": "Ngarkimi i skedarit dështoi",
@@ -970,6 +972,8 @@ export const dict = {
     "Kaloni ndërmjet agjentëve në kompozitor. Kur fshihet, si parazgjedhje është Build agent.",
   "settings.general.row.reasoningSummaries.title": "Trego përmbledhjet e arsyetimit",
   "settings.general.row.reasoningSummaries.description": "Shfaqni përmbledhjet e arsyetimit të modelit në afatin kohor",
+  "settings.general.row.turnDiffs.title": "Shfaq skedarët e ndryshuar për çdo raund",
+  "settings.general.row.turnDiffs.description": "Në kronologji rendit skedarët e ndryshuar të çdo raundi të përfunduar me numërime rreshtash dhe dallime të zgjerueshme.",
   "settings.general.row.shellToolPartsExpanded.title": "Zgjeroni pjesët e veglave të guaskës",
   "settings.general.row.shellToolPartsExpanded.description":
     "Shfaq pjesët e veglës së guaskës të zgjeruara si parazgjedhje në afatin kohor",

@@ -636,6 +636,8 @@ export const dict = {
   "toast.permissions.autoaccept.on.description": "คำขอสิทธิ์จะได้รับการอนุมัติโดยอัตโนมัติ",
   "toast.permissions.autoaccept.off.title": "หยุดยอมรับสิทธิ์โดยอัตโนมัติแล้ว",
   "toast.permissions.autoaccept.off.description": "คำขอสิทธิ์จะต้องได้รับการอนุมัติ",
+  "settings.permissions.autoaccept.project.title": "ยอมรับสิทธิ์สำหรับโปรเจกต์นี้โดยอัตโนมัติ",
+  "settings.permissions.autoaccept.project.description": "ตอบคำขอสิทธิ์ใหม่จากทุกเซสชันในโปรเจกต์นี้โดยไม่ถาม การเลือกแบบเซสชันและไดเรกทอรียังคงมีผลก่อน",
 
   "toast.model.none.title": "ไม่ได้เลือกโมเดล",
   "toast.model.none.description": "เชื่อมต่อผู้ให้บริการเพื่อสรุปเซสชันนี้",
@@ -938,6 +940,8 @@ export const dict = {
     "สลับระหว่างเอเจนต์ในช่องเขียนข้อความ เมื่อซ่อน ระบบจะใช้เอเจนต์ Build เป็นค่าเริ่มต้น",
   "settings.general.row.reasoningSummaries.title": "แสดงสรุปการใช้เหตุผล",
   "settings.general.row.reasoningSummaries.description": "แสดงสรุปการใช้เหตุผลของโมเดลในไทม์ไลน์",
+  "settings.general.row.turnDiffs.title": "แสดงไฟล์ที่เปลี่ยนแปลงในแต่ละรอบ",
+  "settings.general.row.turnDiffs.description": "แสดงรายการไฟล์ที่เปลี่ยนแปลงของแต่ละรอบที่เสร็จสิ้นพร้อมจำนวนบรรทัดและ diff ที่ขยายได้ในไทม์ไลน์",
   "settings.general.row.shellToolPartsExpanded.title": "ขยายส่วนเครื่องมือ shell",
   "settings.general.row.shellToolPartsExpanded.description": "แสดงส่วนเครื่องมือ shell แบบขยายตามค่าเริ่มต้นในไทม์ไลน์",
   "settings.general.row.editToolPartsExpanded.title": "ขยายส่วนเครื่องมือ edit",
