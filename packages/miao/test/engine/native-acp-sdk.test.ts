@@ -1,7 +1,8 @@
 import { expect, test } from "bun:test"
 import path from "node:path"
 import { Database } from "bun:sqlite"
-import { ClientSideConnection, ndJsonStream, type Client, type SessionNotification } from "@agentclientprotocol/sdk"
+import type { Client, SessionNotification } from "@agentclientprotocol/sdk"
+import { connectNativeACP } from "./acp-client-fixture"
 import { tmpdir } from "../fixture/fixture"
 
 const binary = process.env.MIAO_ENGINE_BIN
@@ -11,60 +12,6 @@ function textReply(text: string) {
     `data: ${JSON.stringify({ choices: [{ index: 0, delta: { content: text }, finish_reason: "stop" }] })}\n\ndata: [DONE]\n\n`,
     { headers: { "content-type": "text/event-stream" } },
   )
-}
-
-/** The published executable and the independent ACP SDK meet at stdio, not at
- * engine-internal helpers or a hand-written copy of its JSON-RPC protocol. */
-async function connect(directory: string, endpoint: string, client: Client) {
-  if (!binary) throw new Error("MIAO_ENGINE_BIN is required")
-  const child = Bun.spawn(
-    [
-      binary,
-      "acp",
-      "--db",
-      path.join(directory, "engine.db"),
-      "--workspace",
-      directory,
-      "--provider",
-      "openai-chat",
-      "--model",
-      "fixture",
-      "--endpoint",
-      endpoint,
-      "--policy",
-      path.join(directory, "policy.json"),
-    ],
-    { env: { ...process.env, OPENAI_API_KEY: "fixture-only" }, stdin: "pipe", stdout: "pipe", stderr: "inherit" },
-  )
-  const connection = new ClientSideConnection(
-    () => client,
-    ndJsonStream(
-      new WritableStream<Uint8Array>({
-        async write(chunk) {
-          child.stdin.write(chunk)
-          await child.stdin.flush()
-        },
-        close() {
-          child.stdin.end()
-        },
-      }),
-      child.stdout,
-    ),
-  )
-  try {
-    await connection.initialize({ protocolVersion: 1, clientCapabilities: {} })
-  } catch (error) {
-    child.kill()
-    await child.exited
-    throw error
-  }
-  return {
-    connection,
-    async [Symbol.asyncDispose]() {
-      child.kill()
-      await child.exited
-    },
-  }
 }
 
 for (const decision of ["allow_once", "reject_once"] as const) {
@@ -95,7 +42,7 @@ for (const decision of ["allow_once", "reject_once"] as const) {
       try {
         const updates: SessionNotification[] = []
         const permissions: string[] = []
-        await using agent = await connect(tmp.path, provider.url.toString(), {
+        await using agent = await connectNativeACP(tmp.path, provider.url.toString(), {
           async requestPermission(request) {
             const option = request.options.find((option) => option.kind === decision)
             if (!option) throw new Error(`missing permission option ${decision}`)
@@ -169,7 +116,7 @@ test.skipIf(!binary)(
         },
       }
       const sessionID = await (async () => {
-        await using agent = await connect(tmp.path, provider.url.toString(), client)
+        await using agent = await connectNativeACP(tmp.path, provider.url.toString(), client)
         const session = await agent.connection.newSession({ cwd: tmp.path, mcpServers: [] })
         const pending = agent.connection.prompt({
           sessionId: session.sessionId,
@@ -188,7 +135,7 @@ test.skipIf(!binary)(
         return session.sessionId
       })()
       updates.length = 0
-      await using replacement = await connect(tmp.path, provider.url.toString(), client)
+      await using replacement = await connectNativeACP(tmp.path, provider.url.toString(), client)
       await replacement.connection.resumeSession({ sessionId: sessionID, cwd: tmp.path, mcpServers: [] })
       expect(updates.filter((event) => event.update.sessionUpdate === "agent_message_chunk")).toHaveLength(0)
       expect(
