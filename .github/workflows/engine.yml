@@ -78,6 +78,17 @@ jobs:
       - name: Test
         run: cargo test
 
+      - name: Setup ACP client runtime
+        uses: ./.github/actions/setup-bun
+        with:
+          install-flags: --frozen-lockfile --ignore-scripts
+
+      - name: Verify native ACP with the independent client SDK
+        working-directory: packages/miao
+        env:
+          MIAO_ENGINE_BIN: ${{ github.workspace }}/crates/miao-engine/target/debug/miao-engine
+        run: bun test test/engine/native-acp-sdk.test.ts
+
       - name: Verify accuracy checks detect injected faults
         if: matrix.os == 'ubuntu-latest'
         run: python3 tests/accuracy/sensitivity.py
