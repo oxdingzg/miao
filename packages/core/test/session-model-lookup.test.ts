@@ -3,6 +3,9 @@ import { Deferred, DateTime, Effect, Layer } from "effect"
 import { AppNodeBuilder } from "@miao/core/effect/app-node-builder"
 import { LayerNode } from "@miao/core/effect/layer-node"
 import { Catalog } from "@miao/core/catalog"
+import { AgentV2 } from "@miao/core/agent"
+import { Config } from "@miao/core/config"
+import { ConfigAgent } from "@miao/schema/config/agent"
 import { Credential } from "@miao/core/credential"
 import { EventV2 } from "@miao/core/event"
 import { Integration } from "@miao/core/integration"
@@ -36,6 +39,7 @@ const it = testEffect(
   AppNodeBuilder.build(
     LayerNode.group([
       Catalog.node,
+      Config.node,
       Credential.node,
       EventV2.node,
       Integration.node,
@@ -51,6 +55,39 @@ const it = testEffect(
     ],
   ),
 )
+
+const withConfig = (entries: Config.Entry[]) =>
+  testEffect(
+    AppNodeBuilder.build(
+      LayerNode.group([
+        Catalog.node,
+        Config.node,
+        Credential.node,
+        EventV2.node,
+        Integration.node,
+        Policy.node,
+        SessionRunnerModel.node,
+      ]),
+      [
+        [
+          Location.node,
+          Layer.succeed(Location.Service, Location.Service.of(location({ directory: AbsolutePath.make("test") }))),
+        ],
+        [PluginV2.node, preBootedPluginLayer],
+        [Config.node, Layer.succeed(Config.Service, Config.Service.of({ entries: () => Effect.succeed(entries) }))],
+      ],
+    ),
+  )
+
+const itConfig = withConfig([
+  Config.Document.make({
+    type: "document",
+    info: Config.Info.make({
+      accounts: { lookup: "Work" },
+      agents: { build: ConfigAgent.Info.make({ accounts: { lookup: "Personal" } }) },
+    }),
+  }),
+])
 
 const providerID = ProviderV2.ID.make("lookup")
 const modelID = ModelV2.ID.make("selected")
@@ -89,6 +126,48 @@ const populate = (catalog: Catalog.Interface, count = 0) =>
       )
     })
   })
+
+describe("configured provider account", () => {
+  itConfig.effect("runs a provider on the account config names, not the newest one", () =>
+    Effect.gen(function* () {
+      const catalog = yield* Catalog.Service
+      const models = yield* SessionRunnerModel.Service
+      const integrations = yield* Integration.Service
+      const credentials = yield* Credential.Service
+      const integrationID = Integration.ID.make("configured-account")
+      yield* integrations.transform((editor) => editor.update(integrationID, () => {}))
+      yield* populate(catalog)
+      yield* catalog.transform((editor) =>
+        editor.provider.update(providerID, (provider) => {
+          provider.integrationID = integrationID
+          delete provider.request.body.apiKey
+        }),
+      )
+      yield* credentials.create({
+        integrationID,
+        label: "Work",
+        value: Credential.Key.make({ type: "key", key: "work-key", metadata: { probe: "work" } }),
+      })
+      const newest = yield* credentials.create({
+        integrationID,
+        label: "Personal",
+        value: Credential.Key.make({ type: "key", key: "personal-key", metadata: { probe: "personal" } }),
+      })
+      // Recency alone would run the newest account, so the config is what picks
+      // the older one.
+      expect(yield* integrations.connection.active(integrationID)).toMatchObject({
+        id: newest.id,
+        label: "Personal",
+      })
+      const configured = yield* models.resolve(session)
+      expect(configured.model.route.defaults).toMatchObject({ http: { body: { probe: "work" } } })
+
+      // The agent's own choice outranks the Location default.
+      const agent = yield* models.resolve(SessionV2.Info.make({ ...session, agent: AgentV2.ID.make("build") }))
+      expect(agent.model.route.defaults).toMatchObject({ http: { body: { probe: "personal" } } })
+    }),
+  )
+})
 
 describe("selected Session model lookup", () => {
   it.effect("keeps provider/model overlays fresh and refuses disabled or removed selections", () =>

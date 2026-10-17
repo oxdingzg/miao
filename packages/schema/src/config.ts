@@ -137,6 +137,9 @@ export class Info extends Schema.Class<Info>("Config.Info")({
   disabled_tools: Schema.String.pipe(Schema.Array, Schema.optional).annotate({
     description: "Tool names hidden from the model for every agent in this Location",
   }),
+  accounts: Schema.Record(Schema.String, Schema.String).pipe(Schema.optional).annotate({
+    description: "Account a provider should use, keyed by provider id and valued by credential label or id",
+  }),
   agents: Schema.Record(Schema.String, ConfigAgent.Info).pipe(Schema.optional).annotate({
     description: "Named built-in agent overrides and custom agent definitions",
   }),
