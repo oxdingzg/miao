@@ -90,6 +90,29 @@ host, then `./script/install-engine.sh --binary /path/to/miao-engine`. It instal
 `~/.local/bin/miao-engine` (versioned under `~/.local/share/miao-engine/bin`), keeps one previous
 version for one-step rollback, and smoke-tests `--version`.
 
+### Host-owned model routes
+
+`--model-routes-config /host/routes.json` registers up to 64 exact provider instances.
+The manifest must be outside the workspace and is protected from model tools.
+The product bridge forwards `EngineOptions.modelRoutesConfigFile` or
+`MIAO_ENGINE_MODEL_ROUTES_CONFIG`. Each entry binds its own credential source:
+
+```json
+[{"id":"account-two/shared","provider":"openai-chat","model":"shared","endpoint":"https://example.org/v1/chat/completions","credential":{"type":"environment","key":"OPENAI_API_KEY"}}]
+```
+
+Credential types are `environment` (`key`: variable name, optional subscription
+`account`: variable name), `database` (`path`, `id`, `integration`), `legacy`
+(`path`, `integration`), or `daemon` (`path`, `id`, `integration`). File sources
+must be outside the workspace. The product child environment remains allowlisted;
+pass custom credential variables through `EngineOptions.env` explicitly.
+
+Controller `model_catalog` returns only `route_id`, `protocol`, and `model`.
+Use these exact fields as `select_model.params.binding`; a null binding restores
+the default. Unknown routes and mismatched identities fail before provider work.
+Opaque history remains bound to its original route even when endpoints use the
+same wire model name. Compact on the original route before switching.
+
 ## stdio protocol v0
 
 One JSON object per line. A request carries a string or number `id`; the response carries the same

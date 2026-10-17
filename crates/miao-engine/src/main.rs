@@ -145,6 +145,7 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
             "--context-config",
             "--skills-config",
             "--references-config",
+            "--model-routes-config",
             "--worker-config",
             "--credential-db",
             "--credential-id",
@@ -328,6 +329,19 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
             Some("off") => false,
             Some(_) => return Err("--lsp-diagnostics must be on or off".into()),
         });
+    let provider = if let Some(path) = options.get("--model-routes-config") {
+        let path = tokio::fs::canonicalize(path).await?;
+        let provider = miao_engine::model_routes::load(
+            &path,
+            std::path::Path::new(tools.location()),
+            provider,
+        )
+        .await?;
+        tools = tools.with_protected_resource(&path);
+        provider
+    } else {
+        provider
+    };
     if let Some(path) = source.path() {
         if policy.process_enabled() && path.starts_with(std::path::Path::new(tools.location())) {
             return Err("process-enabled credential sources must be outside workspace".into());

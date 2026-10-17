@@ -53,6 +53,26 @@ cargo build --manifest-path crates/miao-engine/Cargo.toml
 
 本地安装（不触碰 release 管理的 `miao` 与 `miao-preview`）：在构建机编译后 `./script/install-engine.sh --binary /path/to/miao-engine`。安装到 `~/.local/bin/miao-engine`（版本化于 `~/.local/share/miao-engine/bin`），保留一次旧版本用于一步回滚，并以 `--version` 冒烟。
 
+### 宿主模型路由
+
+`--model-routes-config /host/routes.json` 可注册最多 64 个精确 provider 实例。
+manifest 必须位于工作区之外，并受到模型工具保护。产品桥接支持
+`EngineOptions.modelRoutesConfigFile` 或 `MIAO_ENGINE_MODEL_ROUTES_CONFIG`。
+
+```json
+[{"id":"account-two/shared","provider":"openai-chat","model":"shared","endpoint":"https://example.org/v1/chat/completions","credential":{"type":"environment","key":"OPENAI_API_KEY"}}]
+```
+
+凭据来源支持 `environment`（`key` 为环境变量名，订阅可选 `account` 变量名）、
+`database`（`path`、`id`、`integration`）、`legacy`（`path`、`integration`）和
+`daemon`（`path`、`id`、`integration`）。文件来源须位于工作区外；产品子进程
+仍使用环境变量白名单，自定义凭据变量须通过 `EngineOptions.env` 显式传入。
+
+控制器 `model_catalog` 仅返回 `route_id`、`protocol`、`model`；将精确条目作为
+`select_model.params.binding`，或使用 null 恢复默认。未知路由和身份不匹配在
+调用 provider 前失败。即使两个 endpoint 使用相同模型名，opaque 历史仍绑定
+原路由，切换前须先在原路由压缩历史。
+
 ## stdio 协议 v0
 
 一行一个 JSON 对象。请求带字符串/数字 `id`，响应带同一个 `id` 与 `result` 或 `error`。
