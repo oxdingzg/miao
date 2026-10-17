@@ -36,9 +36,13 @@ const resolve = (policy: CachePolicy | undefined): CachePolicyObject => {
   return policy
 }
 
-// Protocols whose wire format ignores inline cache markers (OpenAI's implicit
-// prefix caching, Gemini's implicit + out-of-band CachedContent). Skip the
-// whole policy pass for these — emitting hints would be harmless but pointless.
+// Protocols whose wire format carries inline cache markers. Keyed by protocol
+// id, not route name: the Vertex route for Claude speaks the same Messages wire
+// format and declares the same protocol, so keying on the route name silently
+// disabled caching there. Protocols that ignore inline markers (OpenAI's
+// implicit prefix caching, Gemini's implicit + out-of-band CachedContent) skip
+// the whole policy pass — emitting hints for them would be harmless but
+// pointless.
 const RESPECTS_INLINE_HINTS = new Set(["anthropic-messages", "bedrock-converse"])
 
 const makeHint = (ttlSeconds: number | undefined): CacheHint =>
@@ -97,7 +101,7 @@ const markMessages = (
 }
 
 export const applyCachePolicy = (request: LLMRequest): LLMRequest => {
-  if (!RESPECTS_INLINE_HINTS.has(request.model.route.id)) return request
+  if (!RESPECTS_INLINE_HINTS.has(request.model.route.protocol)) return request
   const policy = resolve(request.cache)
   if (!policy.tools && !policy.system && !policy.messages) return request
 
