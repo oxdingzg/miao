@@ -539,6 +539,20 @@ const layer = Layer.effectDiscard(
         yield* run(db, event)
       }),
     )
+    yield* events.project(SessionEvent.AccountSwitched, (event) =>
+      Effect.gen(function* () {
+        yield* db
+          .update(SessionTable)
+          .set({
+            credential_id: event.data.credentialID,
+            time_updated: DateTime.toEpochMillis(event.data.timestamp),
+          })
+          .where(eq(SessionTable.id, event.data.sessionID))
+          .run()
+          .pipe(Effect.orDie)
+        yield* run(db, event)
+      }),
+    )
     yield* events.project(SessionEvent.Command.Started, (event) => run(db, event))
     yield* events.project(SessionEvent.Command.Completed, (event) => run(db, event))
     yield* events.project(SessionEvent.Command.Failed, (event) => run(db, event))

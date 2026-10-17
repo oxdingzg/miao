@@ -96,6 +96,16 @@ Decide an independent credential broker, additional providers, full media/LSP/MC
 
 Recently landed product-integration evidence (2026-10-12), recorded without changing any status above:
 
+- B1 Session model selection: `select_model` persists a validated model binding
+  on the configured route and applies it only at provider-turn boundaries.
+  Snapshot/fork preserve the selection, assistant/start identities and
+  compaction use the actual selected provider, and Gemini/fallback routes expose
+  model selection without replacing credential ownership. Tests in
+  `tests/session_models.rs` and `tests/gemini.rs` exercise concurrent turn
+  boundaries, Session isolation, reset, rejected selections, fork cuts and actual
+  Gemini HTTP path/header preservation. Product model-picker/catalog and
+  cross-route routing remain separate integration work.
+
 - B2 explicit tool recovery: controller commands `recoveries` and
   `resolve_recovery` provide paged unknown-outcome discovery and exactly one
   durable retry/abandon instruction per call. They preserve the original

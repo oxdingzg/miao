@@ -155,10 +155,17 @@ describe("Credential", () => {
         metadata: { miaoCredentialSocket: "/unused/owner.sock" },
       })
       const daemonRow = yield* credentials.create({ integrationID, value: owned })
-      expect(Exit.isFailure(yield* credentials.create({ integrationID, value: key("replacement") }).pipe(Effect.exit)))
-        .toBe(true)
+      // The owned identity itself stays off limits: another login of that same
+      // account, and activating its row.
+      expect(Exit.isFailure(yield* credentials.create({ integrationID, value: owned }).pipe(Effect.exit))).toBe(true)
       expect(Exit.isFailure(yield* credentials.activate(daemonRow.id).pipe(Effect.exit))).toBe(true)
-      expect(yield* credentials.list(integrationID)).toEqual([daemonRow])
+      // A different account sits next to it; the broker never writes to the
+      // owned row, not even its active flag, so the owner keeps what it had.
+      const separate = yield* credentials.create({ integrationID, label: "Keys", value: key("replacement") })
+      expect(separate.label).toBe("Keys")
+      expect((yield* credentials.get(daemonRow.id))?.value).toEqual(owned)
+      expect((yield* credentials.get(daemonRow.id))?.active).toBe(true)
+      expect(yield* credentials.list(integrationID)).toEqual([daemonRow, separate])
     }),
   )
 })

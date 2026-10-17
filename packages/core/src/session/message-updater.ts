@@ -137,6 +137,10 @@ export function update(adapter: Adapter, event: SessionEvent.Event) {
         )
       },
       "session.next.moved": () => Effect.void,
+      // Which account pays for a turn is a Session setting, like the model that
+      // serves it is not the same thing as the marker that records a switch:
+      // changing the account leaves the transcript alone.
+      "session.next.account.switched": () => Effect.void,
       "session.next.delegation.started": () => Effect.void,
       "session.next.delegation.ended": () => Effect.void,
       // A progress note reaches the parent as a promotion (`Synthetic`), which is
