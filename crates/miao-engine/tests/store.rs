@@ -257,3 +257,24 @@ async fn reply_identity_is_atomic_replayable_and_preserved_when_forked() {
     assert_eq!(exported[0]["kind"], "assistant.identity");
     assert_eq!(exported[0]["data"], events[0].data);
 }
+
+#[tokio::test]
+async fn explicit_close_releases_the_lease_before_immediate_reopen() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("close.db");
+    let store = Store::open(&path).await.unwrap();
+    let clone = store.clone();
+    assert!(matches!(
+        clone.close().await,
+        Err(miao_engine::protocol::Error::Busy)
+    ));
+    assert!(matches!(
+        Store::open(&path).await,
+        Err(miao_engine::protocol::Error::Busy)
+    ));
+    store.close().await.unwrap();
+    for _ in 0..20 {
+        let reopened = Store::open(&path).await.unwrap();
+        reopened.close().await.unwrap();
+    }
+}

@@ -18,7 +18,7 @@ use std::{
         Arc, Mutex, OnceLock,
     },
 };
-use tokio::sync::{mpsc, oneshot};
+use tokio::sync::{mpsc, oneshot, watch};
 
 pub(crate) const APPLICATION_ID: u32 = 0x4d494145;
 pub(crate) const SCHEMA_VERSION: u32 = 11;
@@ -51,6 +51,7 @@ impl Drop for FileLease {
 #[derive(Clone)]
 pub struct Store {
     work: mpsc::Sender<Work>,
+    closed: watch::Receiver<()>,
     runtime_owner: Arc<AtomicBool>,
     path: Arc<std::path::PathBuf>,
 }
@@ -78,7 +79,10 @@ impl Store {
         let path = path.as_ref().to_path_buf();
         let (work, mut receive) = mpsc::channel::<Work>(64);
         let (ready, started) = oneshot::channel();
+        let (stopped, closed) = watch::channel(());
         std::thread::spawn(move || {
+            // Dropped after the worker connection and file lease, including on panic.
+            let _stopped = stopped;
             let opened = (|| -> Result<_, Error> {
                 if let Some(parent) = path.parent().filter(|p| !p.as_os_str().is_empty()) {
                     std::fs::create_dir_all(parent)?;
@@ -246,9 +250,25 @@ impl Store {
         let path = started.await.map_err(|_| Error::Closed)??;
         Ok(Self {
             work,
+            closed,
             runtime_owner: Arc::new(AtomicBool::new(false)),
             path: Arc::new(path),
         })
+    }
+
+    /// Close the last Store handle and wait for SQLite and the file lease to
+    /// finish teardown. Dropping a Store only starts asynchronous worker exit.
+    /// A live clone (including a Runtime) must be released before calling this.
+    pub async fn close(self) -> Result<(), Error> {
+        if self.work.strong_count() != 1 {
+            return Err(Error::Busy);
+        }
+        let Self {
+            work, mut closed, ..
+        } = self;
+        drop(work);
+        let _ = closed.changed().await;
+        Ok(())
     }
 
     pub fn path(&self) -> &Path {
