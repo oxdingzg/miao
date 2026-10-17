@@ -20,7 +20,7 @@ import { SessionEnginePlacement } from "@miao/core/session/engine-placement"
 import { nativeExecution, nativeTodos } from "../native-state"
 import { nativeSessionEvents } from "../native-events"
 import { SessionEvent } from "@miao/schema/session-event"
-import { mergeNativeSessions, nativeSessionInfo, nativeSessionUsage } from "../native-session"
+import { mergeNativeSessions, nativeSessionInfo, nativeSessionUsage, waitNative } from "../native-session"
 import { booted } from "../location"
 import { SessionsCursor } from "@miao/protocol/groups/session"
 import {
@@ -477,6 +477,15 @@ export const SessionHandler = HttpApiBuilder.group(Api, "server.session", (handl
       .handle(
         "session.wait",
         Effect.fn(function* (ctx) {
+          // A composed native transport owns its Sessions' execution, so the
+          // TypeScript catalog has no run to wait on and would report idle
+          // immediately; the engine decides when the Session would be idle.
+          const native = Option.getOrUndefined(yield* Effect.serviceOption(NativeEngine.Service))
+          const placement = Option.getOrUndefined(yield* Effect.serviceOption(NativeEngine.Placement))
+          if (native && placement) {
+            yield* waitNative({ native, sessionID: ctx.params.sessionID, ...placement })
+            return HttpApiSchema.NoContent.make()
+          }
           yield* session.wait(ctx.params.sessionID).pipe(
             Effect.catchTag("Session.NotFoundError", (error) =>
               Effect.fail(
