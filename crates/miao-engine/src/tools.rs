@@ -129,6 +129,7 @@ pub struct Tools {
     process_enabled: bool,
     background_enabled: bool,
     delegation_enabled: bool,
+    product_tools: Vec<ToolDefinition>,
     wakeup_enabled: bool,
     cron_enabled: bool,
     process_network: bool,
@@ -193,6 +194,7 @@ impl Tools {
             edit_recovery: true,
             lsp_diagnostics: true,
             compact_disclosure: false,
+            product_tools: Vec::new(),
         })
     }
 
@@ -747,6 +749,11 @@ impl Tools {
         self
     }
 
+    pub fn with_product_tools(mut self, tools: Vec<ToolDefinition>) -> Self {
+        self.product_tools = tools;
+        self
+    }
+
     pub(crate) fn with_background(mut self, enabled: bool) -> Self {
         self.background_enabled = enabled && self.process_enabled;
         self
@@ -785,6 +792,10 @@ impl Tools {
     pub fn with_edit_recovery(mut self, enabled: bool) -> Self {
         self.edit_recovery = enabled;
         self
+    }
+
+    fn is_product(&self, name: &str) -> bool {
+        self.product_tools.iter().any(|tool| tool.name == name)
     }
 
     pub fn location(&self) -> &str {
@@ -972,7 +983,7 @@ impl Tools {
                 }
                 ".".into()
             }
-            "monitor" if self.background_enabled => ".".into(),
+            "." if self.is_product(name) => ".".into(),
             "start_job" if self.background_enabled => process::Input::parse(input.clone())?.cwd,
             "job_status" | "cancel_job" if self.background_enabled => {
                 crate::jobs::Selector::parse(input.clone())?;
@@ -1090,6 +1101,8 @@ impl Tools {
         } else if name == "schedule_wakeup" {
             Access::Schedule
         } else if matches!(name, "cancel_wakeup" | "todowrite" | "goal" | "cron_delete") {
+            Access::SessionState
+        } else if self.is_product(name) {
             Access::SessionState
         } else if name == "start_job" || name == "monitor" || name.starts_with("terminal_") {
             Access::Background
@@ -1560,6 +1573,7 @@ impl Tools {
                 definitions.push(ToolDefinition{name:name.into(),description:if name=="job_status"{"Inspect this Session's job state and bounded terminal output.".into()}else{"Request cancellation of this Session's active background job.".into()},input_schema:json!({"type":"object","properties":{"job_id":{"type":"string"}},"required":["job_id"],"additionalProperties":false})});
             }
             definitions.push(ToolDefinition{name:"monitor".into(),description:"Run a shell command in the background and stream stdout lines as monitor.notice progress events. Optional regex pattern filters delivered lines (batched ~200ms, max 200 lines/8KiB each, 64 notices then suppressed). Default timeout 600000 ms, max 3600000 ms kills the command. Cancel with cancel_job.".into(),input_schema:json!({"type":"object","properties":{"command":{"type":"string","minLength":1},"description":{"type":"string","maxLength":256},"pattern":{"type":"string","maxLength":512},"timeout_ms":{"type":"integer","minimum":1,"maximum":3600000}},"required":["command"],"additionalProperties":false})});
+            definitions.extend(self.product_tools.iter().cloned());
         }
         if let Some(web) = &self.web {
             definitions.extend(web.definitions());
