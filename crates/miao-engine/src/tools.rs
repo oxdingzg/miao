@@ -92,9 +92,13 @@ pub struct Prepared {
     /// evaluated against policy; a single deny rejects the whole call.
     targets: Vec<String>,
     access: Access,
+    batchable_read: bool,
     select: Option<Vec<String>>,
 }
 impl Prepared {
+    pub fn batchable_read(&self) -> bool {
+        self.batchable_read
+    }
     pub(crate) fn resolved_path(&self) -> &std::path::Path {
         &self.path
     }
@@ -809,6 +813,7 @@ impl Tools {
                 targets: vec![],
                 access: Access::Web,
                 select: None,
+                batchable_read: false,
             });
         }
         let invocation = if self.compact_disclosure && name == "tool_call" {
@@ -831,6 +836,7 @@ impl Tools {
                     resource,
                     targets: Vec::new(),
                     access: Access::External,
+                    batchable_read: false,
                     select,
                 });
             }
@@ -845,6 +851,7 @@ impl Tools {
                     resource,
                     targets: Vec::new(),
                     access: Access::External,
+                    batchable_read: false,
                     select,
                 });
             }
@@ -1106,6 +1113,12 @@ impl Tools {
             Vec::new()
         };
         Ok(Prepared {
+            // Runtime-owned operations cannot run through the local filesystem/LSP executor.
+            batchable_read: access == Access::Read
+                && !matches!(
+                    name,
+                    "question" | "recall" | "cron_list" | "job_status" | "cancel_job"
+                ),
             access,
             name: name.into(),
             input,
