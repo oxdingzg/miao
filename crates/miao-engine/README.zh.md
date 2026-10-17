@@ -8,6 +8,8 @@
 
 ## 运行
 
+原生[来源绑定知识工具](docs/source-bound-knowledge.md)提供跨 Session 的短索引、可审阅记忆、来源失效检测与条件更新。
+
 可选的[稳定扩展工具披露](docs/tool-disclosure.md)通过 `--tool-disclosure compact` 固定顶层工具 schema，按需发现扩展能力并过滤结果；也可设置全局 `engine.tool_disclosure` 或 `MIAO_ENGINE_TOOL_DISCLOSURE`。
 
 检索和诊断结果附带[源码版本来源信息](docs/revision-bound-observations.md)，区分实际观察到的内容、过期诊断与未报告版本的诊断；这类观察本身不构成整体任务完成的证明。
@@ -31,6 +33,8 @@ cargo build --manifest-path crates/miao-engine/Cargo.toml
 使用 `--http 127.0.0.1:PORT` 启用 loopback HTTP 控制面，复用同一命令表（`POST /rpc` 与 `GET /events` SSE 事件流，revision `engine-http-0`）；认证用 bearer token，取自 `--http-token` 或 `MIAO_ENGINE_HTTP_TOKEN`，缺省时启动生成并打印到 stderr。非 loopback 地址被拒绝，TLS 交给本地反代。
 
 ### 可选的 Responses 缓存控制
+
+已验证支持的部署还可独立启用 [Session WebSocket 复用与严格后缀增量](docs/responses-websocket.md)。
 
 `--responses-cache-contract JSON` 声明精确 wire model、规范化 endpoint URL（含 query）与认证类型（`api` 或 `subscription`）对应的缓存能力。只声明已验证的部署能力，不根据模型名称推断。集成的原生引擎读取全局配置 `engine.responses_cache_contract`，也可用 `MIAO_ENGINE_RESPONSES_CACHE_CONTRACT` 覆盖整个契约。
 
@@ -285,11 +289,17 @@ MCP server 是拥有自身 filesystem/network authority 的可信外部服务，
 目前未实现远程 HTTP transport、动态 catalog notifications、resources/prompts、MCP OAuth 或 TS plugin compatibility。
 
 
+## 宿主授权的 skill 目录
+
+`--skills-config /absolute/path/skills.json` 接收目录数组，例如 `[{"path":".miao/skills"},{"path":"/absolute/host/skills"}]`。相对目录保持在 workspace 内；绝对目录必须由 `--references-config` 显式授予只读目录权限。单文件 reference 不授权枚举其父目录。
+
+枚举遵循 `glob` policy；每个候选 skill 文件在读取 frontmatter 前，还要经过 `read_file` 路径解析与 policy 检查。ask/deny 不会泄露该文件元数据给模型。发现跳过 symlink，限制深度和数量，只在 Context 中列出名称、描述和路径；正文按需经正常工具授权读取。外部 skill 保留绝对路径，后续读取使用相同 reference 边界。
+
 ## 产品 sidecar 的 Context manifest
 
 产品通过 `MIAO_ENGINE_CONTEXT_CONFIG`、`MIAO_ENGINE_SKILLS_CONFIG`、`MIAO_ENGINE_REFERENCES_CONFIG` 将可信 manifest 分别传给原生 `--context-config`、`--skills-config`、`--references-config`。嵌入端对应设置 `EngineOptions.contextConfigFile`、`skillsConfigFile`、`referencesConfigFile`，环境变量优先。跨 Location 使用时应指定绝对 manifest 路径，并将 manifest 放在模型可写 workspace 之外。
 
-manifest 格式沿用下文原生格式，skill 目录仍须相对 workspace。外部 instruction 文件需要单独的只读 reference 授权；授权一个文件不会授权父目录或兄弟文件，Context 权限规则仍生效。这里传递来源路径而非拼接的 prompt 文本，因此 Context Epoch 保留来源信息并可观察后续编辑。
+manifest 格式沿用下文原生格式。相对 skill 目录保持在 workspace 内；绝对 skill 目录需要显式只读目录 reference，枚举和逐文件读取均遵循 policy。外部 instruction 文件需要单独的只读 reference 授权；授权一个文件不会授权父目录或兄弟文件，Context 权限规则仍生效。这里传递来源路径而非拼接的 prompt 文本，因此 Context Epoch 保留来源信息并可观察后续编辑。
 
 ## 显式 workspace Context Sources
 
