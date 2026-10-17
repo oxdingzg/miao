@@ -190,6 +190,37 @@ impl Runtime {
             );
             inner.crons.lock().await.insert(cron_id, background);
         }
+        // Timer ownership heartbeat: while this runtime is alive it owns the
+        // armed timers; the ticker lets a supervisor distinguish live engines
+        // from dead ones before adopting their sessions.
+        let heartbeat_inner = runtime.inner.clone();
+        let heartbeat_stop = runtime.inner.stop.clone();
+        tokio::spawn(async move {
+            loop {
+                tokio::select! {
+                    biased;
+                    _ = heartbeat_stop.cancelled() => return,
+                    _ = tokio::time::sleep(std::time::Duration::from_secs(30)) => {}
+                }
+                let sessions: Vec<String> = {
+                    let timers = heartbeat_inner.timers.lock().await;
+                    let crons = heartbeat_inner.crons.lock().await;
+                    timers
+                        .values()
+                        .chain(crons.values())
+                        .map(|background| background.session.clone())
+                        .collect::<std::collections::HashSet<_>>()
+                        .into_iter()
+                        .collect()
+                };
+                for session in sessions {
+                    let _ = heartbeat_inner
+                        .store
+                        .heartbeat_lease(&session, 30_000)
+                        .await;
+                }
+            }
+        });
         Ok(runtime)
     }
 

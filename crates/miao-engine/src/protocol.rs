@@ -205,6 +205,9 @@ pub enum Command {
         #[serde(default)]
         after: String,
     },
+    /// Sessions with unresolved timers whose engine is gone; the supervisor
+    /// re-owns them so the child's startup re-arm can fire.
+    TimerSessions,
     ResolveRecovery {
         session_id: String,
         call_id: String,
