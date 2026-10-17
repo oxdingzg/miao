@@ -983,7 +983,8 @@ impl Tools {
                 }
                 ".".into()
             }
-            "." if self.is_product(name) => ".".into(),
+            "monitor" if self.background_enabled => ".".into(),
+            _ if self.is_product(name) => ".".into(),
             "start_job" if self.background_enabled => process::Input::parse(input.clone())?.cwd,
             "job_status" | "cancel_job" if self.background_enabled => {
                 crate::jobs::Selector::parse(input.clone())?;
@@ -1100,9 +1101,9 @@ impl Tools {
             Access::Cron
         } else if name == "schedule_wakeup" {
             Access::Schedule
-        } else if matches!(name, "cancel_wakeup" | "todowrite" | "goal" | "cron_delete") {
-            Access::SessionState
-        } else if self.is_product(name) {
+        } else if matches!(name, "cancel_wakeup" | "todowrite" | "goal" | "cron_delete")
+            || self.is_product(name)
+        {
             Access::SessionState
         } else if name == "start_job" || name == "monitor" || name.starts_with("terminal_") {
             Access::Background
