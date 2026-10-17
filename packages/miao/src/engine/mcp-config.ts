@@ -17,21 +17,28 @@ export function prepareMcpConfig(options: EngineOptions) {
   )
     return
 
-  const servers = Object.entries(options.mcpSettings.servers).flatMap(([name, server]) => {
-    if (server.disabled) return []
-    if (server.type !== "local") throw new Error(`Native MCP shared configuration requires a local server: ${name}`)
-    // The native registry accepts argv/environment today. Refuse unsupported
-    // settings explicitly rather than silently dropping identity or timeout data.
-    if (
-      server.cwd !== undefined ||
-      server.timeout ||
-      options.mcpSettings?.timeout ||
-      Object.keys(server.call_meta ?? {}).length
-    ) {
-      throw new Error(`Native MCP shared configuration does not support cwd, call_meta or custom timeouts: ${name}`)
-    }
-    return [{ name, argv: server.command, env: server.environment ?? {} }]
-  })
+  const servers = Object.entries(options.mcpSettings.servers)
+    .map(([name, server]) => {
+      if (server.disabled) return
+      // Refuse unsupported settings rather than silently dropping their semantics.
+      if (
+        (server.type === "local" && server.cwd !== undefined) ||
+        server.timeout ||
+        options.mcpSettings?.timeout ||
+        Object.keys(server.call_meta ?? {}).length
+      ) {
+        throw new Error(`Native MCP shared configuration does not support cwd, call_meta or custom timeouts: ${name}`)
+      }
+      if (server.type === "remote") {
+        if (server.oauth !== false)
+          throw new Error(
+            `Native MCP shared configuration requires oauth: false until OAuth routing is configured: ${name}`,
+          )
+        return { name, url: server.url, headers: server.headers ?? {} }
+      }
+      return { name, argv: server.command, env: server.environment ?? {} }
+    })
+    .filter((server) => server !== undefined)
   if (!servers.length) return
 
   const directory = mkdtempSync(path.join(os.tmpdir(), "miao-native-mcp-"))
