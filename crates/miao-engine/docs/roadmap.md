@@ -96,6 +96,15 @@ Decide an independent credential broker, additional providers, full media/LSP/MC
 
 Recently landed product-integration evidence (2026-10-12), recorded without changing any status above:
 
+- B2 explicit tool recovery: controller commands `recoveries` and
+  `resolve_recovery` provide paged unknown-outcome discovery and exactly one
+  durable retry/abandon instruction per call. They preserve the original
+  unknown outcome and never schedule work or replay a prior dispatch.
+  [ADR-16](adr/0016-explicit-tool-recovery.md) defines the ownership and
+  admission boundary; `tests/recovery_decisions.rs` covers Host dispatch,
+  explicit continuation, conflicting retries and original-effect preservation.
+  Product recovery UI and real-client restart acceptance remain open.
+
 - B3 credential rollback: the standalone daemon's `release` IPC/CLI operation
   joins in-flight refresh before atomically handing a row back to the product
   broker. Tokens and unknown metadata are preserved; waiting refreshes recheck
