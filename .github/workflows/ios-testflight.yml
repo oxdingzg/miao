@@ -188,3 +188,33 @@ jobs:
         run: |
           gem install fastlane --no-document
           fastlane pilot upload --api_key_path "$RUNNER_TEMP/asc.json" --ipa "$RUNNER_TEMP/export/Miao.ipa" --skip_waiting
+      - name: Distribute the build to the internal group
+        env:
+          BUILD_NUMBER: ${{ github.run_id }}
+          KEY_PATH: ${{ runner.temp }}/asc.json
+        run: |
+          mkdir -p "$RUNNER_TEMP/fastlane"
+          cat > "$RUNNER_TEMP/fastlane/Fastfile" <<'RB'
+          lane :distribute do
+            token = Spaceship::ConnectAPI::Token.from_json_file(ENV["KEY_PATH"])
+            Spaceship::ConnectAPI.token = token
+            app = Spaceship::ConnectAPI::App.find("dev.miao.remote")
+            groups = []
+            Spaceship::ConnectAPI::BetaTester.all(includes: "betaGroups", limit: 50).each do |t|
+              (t.beta_groups || []).each { |g| groups << g }
+            end
+            internal = groups.uniq { |g| g.id }.select { |g| g.is_internal_group }
+            raise "No internal beta group found" if internal.empty?
+            build = Spaceship::ConnectAPI::Build.all(app_id: app.id, limit: 20).find { |b| b.version == ENV["BUILD_NUMBER"] }
+            raise "Build #{ENV['BUILD_NUMBER']} not registered yet" unless build
+            build.add_beta_groups(beta_groups: internal)
+            puts "Distributed build #{build.version} to #{internal.map(&:name).join(',')}"
+          end
+          RB
+          for attempt in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15; do
+            cd "$RUNNER_TEMP" && KEY_PATH="$KEY_PATH" FASTLANE_SKIP_UPDATE_CHECK=1 fastlane distribute && exit 0
+            echo "Attempt $attempt: build not registered yet; retrying in 45s"
+            sleep 45
+          done
+          echo "::error::Build never became registered in time to distribute"
+          exit 1

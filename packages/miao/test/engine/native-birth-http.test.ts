@@ -9,6 +9,19 @@ if (binary)
     await using tmp = await tmpdir()
     const directory = path.join(tmp.path, "project")
     await Bun.$`mkdir -p ${directory}`.quiet()
+    const routesFile = path.join(tmp.path, "routes.json")
+    await Bun.write(
+      routesFile,
+      JSON.stringify([
+        {
+          id: "account-two/shared",
+          provider: "openai-chat",
+          model: "fixture",
+          endpoint: "http://127.0.0.1:1/private-route",
+          credential: { type: "environment", key: "OPENAI_API_KEY" },
+        },
+      ]),
+    )
     const child = Bun.spawn([process.execPath, "src/index.ts", "serve", "--hostname", "127.0.0.1", "--port", "0"], {
       cwd: path.join(import.meta.dir, "../.."),
       env: {
@@ -17,6 +30,7 @@ if (binary)
         MIAO_ENGINE_BIN: binary,
         MIAO_ENGINE_PROVIDER: "openai-chat",
         MIAO_ENGINE_MODEL: "fixture",
+        MIAO_ENGINE_MODEL_ROUTES_CONFIG: routesFile,
         MIAO_ENGINE_STORAGE: path.join(tmp.path, "engines"),
         OPENAI_API_KEY: "fixture-only",
         MIAO_PURE: "1",
@@ -107,7 +121,7 @@ if (binary)
         body: JSON.stringify({ model: { providerID: "fixture", id: "other" } }),
       })
       expect(model.status).toBe(409)
-      expect(await model.text()).toContain("session.switchModel")
+      expect(await model.text()).toContain("native host route catalog")
 
       // Exact retry adopts the original engine identity, including title/time.
       const retry = await fetch(url + "/api/session", { method: "POST", headers, body: JSON.stringify(body) })
@@ -142,6 +156,63 @@ if (binary)
       const childGet = await fetch(url + "/api/session/" + forked.data.id, { headers })
       expect(childGet.status).toBe(200)
       expect(await childGet.json()).toEqual(forked)
+      const routesPath = url + "/api/session/" + body.id + "/model-routes"
+      expect((await fetch(routesPath)).status).toBe(401)
+      const routes = await fetch(routesPath, { headers })
+      expect(routes.status).toBe(200)
+      const catalog = await routes.json()
+      expect(catalog).toEqual({
+        data: [
+          {
+            model: { providerID: "native-engine-default", id: "default" },
+            protocol: "openai-chat",
+            wireModel: "fixture",
+            default: true,
+          },
+          {
+            model: { providerID: "native-engine", id: "account-two/shared" },
+            protocol: "openai-chat",
+            wireModel: "fixture",
+            default: false,
+          },
+        ],
+      })
+      expect(JSON.stringify(catalog)).not.toContain("private-route")
+      expect(JSON.stringify(catalog)).not.toContain("fixture-only")
+      const modelPath = url + "/api/session/" + body.id + "/model"
+      const selected = await fetch(modelPath, {
+        method: "POST",
+        headers,
+        body: JSON.stringify({ model: catalog.data[1].model }),
+      })
+      expect(selected.status).toBe(204)
+      const selectedGet = await fetch(url + "/api/session/" + body.id, { headers })
+      expect((await selectedGet.json()).data.model).toEqual(catalog.data[1].model)
+      const unchanged = await fetch(url + "/api/session/" + anotherBody.id, { headers: anotherHeaders })
+      expect((await unchanged.json()).data.model).toEqual(catalog.data[0].model)
+      const inherited = await fetch(url + "/api/session/" + body.id + "/fork", { method: "POST", headers, body: "{}" })
+      expect(inherited.status).toBe(200)
+      expect((await inherited.json()).data.model).toEqual(catalog.data[1].model)
+      const variant = await fetch(modelPath, {
+        method: "POST",
+        headers,
+        body: JSON.stringify({ model: { ...catalog.data[1].model, variant: "high" } }),
+      })
+      expect(variant.status).toBe(409)
+      const unknown = await fetch(modelPath, {
+        method: "POST",
+        headers,
+        body: JSON.stringify({ model: { providerID: "native-engine", id: "unregistered" } }),
+      })
+      expect(unknown.status).toBe(409)
+      const reset = await fetch(modelPath, {
+        method: "POST",
+        headers,
+        body: JSON.stringify({ model: catalog.data[0].model }),
+      })
+      expect(reset.status).toBe(204)
+      const resetGet = await fetch(url + "/api/session/" + body.id, { headers })
+      expect((await resetGet.json()).data.model).toEqual(catalog.data[0].model)
     } finally {
       clearTimeout(timer)
       child.kill()

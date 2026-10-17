@@ -68,8 +68,12 @@ export interface EngineOptions {
   lspConfigFile?: string
   /** Trusted instruction sources, skill directories, and exact read-only reference grants. */
   contextConfigFile?: string
+  /** Whether standalone workspace AGENTS.md discovery is enabled (default true). */
+  workspaceInstructions?: boolean
   skillsConfigFile?: string
   referencesConfigFile?: string
+  /** Host-owned exact model routes; endpoint/credential bindings never come from a Session request. */
+  modelRoutesConfigFile?: string
   /**
    * Explicit prefix-cache policy for the first model turn's stable prefix.
    * Absent leaves each provider's own caching behavior untouched.
@@ -164,8 +168,11 @@ export function engineArgs(options: EngineOptions): string[] {
   if (options.mcpConfigFile) args.push("--mcp-config", options.mcpConfigFile)
   if (options.lspConfigFile) args.push("--lsp-config", options.lspConfigFile)
   if (options.contextConfigFile) args.push("--context-config", options.contextConfigFile)
+  if (options.workspaceInstructions !== undefined)
+    args.push("--workspace-instructions", String(options.workspaceInstructions))
   if (options.skillsConfigFile) args.push("--skills-config", options.skillsConfigFile)
   if (options.referencesConfigFile) args.push("--references-config", options.referencesConfigFile)
+  if (options.modelRoutesConfigFile) args.push("--model-routes-config", options.modelRoutesConfigFile)
   if (options.promptCache !== undefined) args.push("--prompt-cache", options.promptCache ? "on" : "off")
   if (options.responsesCacheContract)
     args.push("--responses-cache-contract", JSON.stringify(options.responsesCacheContract))

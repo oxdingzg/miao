@@ -144,8 +144,10 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
             "--context-limits",
             "--hooks-config",
             "--context-config",
+            "--workspace-instructions",
             "--skills-config",
             "--references-config",
+            "--model-routes-config",
             "--worker-config",
             "--credential-db",
             "--credential-id",
@@ -324,6 +326,13 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
     let policy = Policy::new(config)?;
     let mut tools = Tools::new(workspace)
         .await?
+        .with_workspace_instructions(
+            match options.get("--workspace-instructions").map(String::as_str) {
+                None | Some("true") => true,
+                Some("false") => false,
+                Some(_) => return Err("--workspace-instructions must be true or false".into()),
+            },
+        )
         .with_process_runner(std::env::current_exe()?)
         .with_edit_recovery(match options.get("--edit-recovery").map(String::as_str) {
             None | Some("on") => true,
@@ -335,6 +344,19 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
             Some("off") => false,
             Some(_) => return Err("--lsp-diagnostics must be on or off".into()),
         });
+    let provider = if let Some(path) = options.get("--model-routes-config") {
+        let path = tokio::fs::canonicalize(path).await?;
+        let provider = miao_engine::model_routes::load(
+            &path,
+            std::path::Path::new(tools.location()),
+            provider,
+        )
+        .await?;
+        tools = tools.with_protected_resource(&path);
+        provider
+    } else {
+        provider
+    };
     if let Some(path) = source.path() {
         if policy.process_enabled() && path.starts_with(std::path::Path::new(tools.location())) {
             return Err("process-enabled credential sources must be outside workspace".into());

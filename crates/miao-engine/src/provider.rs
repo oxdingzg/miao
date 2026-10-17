@@ -184,6 +184,20 @@ pub trait Provider: Send + Sync {
     fn for_model(&self, _model: &str) -> Option<Arc<dyn Provider>> {
         None
     }
+    /// Exact host-registered routes only; controller input cannot retarget them.
+    fn for_route(&self, _route_id: &str) -> Option<Arc<dyn Provider>> {
+        None
+    }
+    fn model_catalog(&self) -> Vec<crate::model_catalog::Info> {
+        self.identity()
+            .into_iter()
+            .map(|identity| crate::model_catalog::Info {
+                route_id: None,
+                protocol: identity.protocol,
+                model: identity.model,
+            })
+            .collect()
+    }
     fn protected_resources(&self) -> Vec<std::path::PathBuf> {
         vec![]
     }

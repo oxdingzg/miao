@@ -353,6 +353,10 @@ impl Runtime {
         self.wake(session, true).await
     }
 
+    pub fn model_catalog(&self) -> Vec<crate::model_catalog::Info> {
+        self.inner.provider.model_catalog()
+    }
+
     pub async fn select_model(
         &self,
         session: &str,
@@ -365,24 +369,10 @@ impl Runtime {
         {
             return Err(Error::Conflict);
         }
-        // Validate capability before persisting; a model change never changes
-        // route, credentials, or a provider request already in flight.
+        // Resolve an immutable host route before durable admission.
         let selected = crate::session_model::select(&self.inner.provider, binding.as_ref())?;
-        if let Some(identity) = selected.identity() {
-            let (history, _) = self.inner.store.selected_input(session).await?;
-            if history
-                .iter()
-                .flat_map(|message| message.content.as_array().into_iter().flatten())
-                .any(|block| {
-                    block["type"] == "provider_opaque"
-                        && block["model"]
-                            .as_str()
-                            .is_some_and(|model| model != identity.model)
-                })
-            {
-                return Err(Error::Invalid("selected history contains model-bound opaque content; compact or use a compatible model".into()));
-            }
-        }
+        let (history, _) = self.inner.store.selected_input(session).await?;
+        crate::session_model::validate_history(&history, binding.as_ref(), selected.identity())?;
         self.inner.store.select_model(session, binding).await
     }
 
@@ -731,10 +721,8 @@ async fn execute(
         if cancel.is_cancelled() {
             return Ok(());
         }
-        let provider = crate::session_model::select(
-            &inner.provider,
-            inner.store.model_selection(session).await?.as_ref(),
-        )?;
+        let binding = inner.store.model_selection(session).await?;
+        let provider = crate::session_model::select(&inner.provider, binding.as_ref())?;
         let bundle =
             match crate::context::assemble(&inner.tools, &inner.policy, cancel.child_token()).await
             {
@@ -763,6 +751,7 @@ async fn execute(
             )
             .await?;
         let (mut history, state) = inner.store.selected_input(session).await?;
+        crate::session_model::validate_history(&history, binding.as_ref(), provider.identity())?;
         let state_allowed = inner.policy.evaluate(
             "session_state",
             "@session/state/session_state",
@@ -940,7 +929,7 @@ async fn execute(
                 other => break other,
             }
         };
-        let reply = match reply {
+        let mut reply = match reply {
             Ok(reply) => reply,
             Err(ProviderError::Interrupted) => return Ok(()),
             Err(error) => {
@@ -1063,6 +1052,7 @@ async fn execute(
                 json!({"session_id":session,"run_id":run,"step":step,"kind":"provider.ttft","ttft_ms":ttft_ms}),
             );
         }
+        crate::session_model::stamp_route(&mut reply.content, binding.as_ref());
         let assistant_boundary = inner
             .store
             .assistant_reply_profiled(
@@ -2282,30 +2272,20 @@ async fn delegate(
     // price parent+child without reconstructing provenance. Wall-clock cost
     // stays on the ephemeral progress feed — the replayed journal pins
     // payloads, and durations are not reproducible.
-    let mut billed_input = 0u64;
-    let mut billed_output = 0u64;
-    let mut turns = 0u64;
-    for event in inner
+    let usage = inner
         .store
-        .events(&child, 0, 10_000)
+        .usage_report(&child)
         .await
-        .unwrap_or_default()
-    {
-        if event.kind != "usage" || event.data["partial"].as_bool() == Some(true) {
-            continue;
-        }
-        turns += 1;
-        billed_input += event.data["usage"]["inputTokens"].as_u64().unwrap_or(0);
-        billed_output += event.data["usage"]["outputTokens"].as_u64().unwrap_or(0);
-    }
+        .map_err(|_| ToolError::External("subagent usage report unavailable".into()))?;
     inner
         .store
         .record(
             parent,
             crate::events::Lifecycle::SubagentStop.name(),
             json!({"run_id":run,"subagent_id":child,"call_id":call,"reason":"completed",
-                   "tokens":{"input":billed_input,"output":billed_output},
-                   "turns":turns}),
+                   "tokens":{"input":usage["providerUsage"]["tokens"]["input"].as_u64().unwrap_or(0),"output":usage["providerUsage"]["tokens"]["output"].as_u64().unwrap_or(0)},
+                   "usageCoverage":usage["providerUsage"],
+                   "turns":usage["turns"]}),
         )
         .await
         .map_err(|_| ToolError::External("subagent stop could not be recorded".into()))?;

@@ -55,3 +55,6 @@ mod first_event;
 
 mod delta;
 mod runtime_profile;
+
+pub mod model_catalog;
+pub mod model_routes;

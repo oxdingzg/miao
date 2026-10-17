@@ -108,7 +108,150 @@ async fn invalid_skill_directories_are_rejected() {
         .await
         .unwrap()
         .with_skill_directories(vec![SkillDirectory {
-            path: "/absolute".into(),
+            path: dir.path().to_string_lossy().into_owned(),
         }]);
-    assert!(absolute.is_err());
+    assert!(
+        absolute.is_ok(),
+        "absolute declarations are checked against reference authority during assembly"
+    );
+}
+
+#[tokio::test]
+async fn host_skill_metadata_requires_directory_authority_and_per_file_policy() {
+    use miao_engine::context::Reference;
+    let workspace = tempfile::tempdir().unwrap();
+    let global = tempfile::tempdir().unwrap();
+    std::fs::create_dir_all(global.path().join("review")).unwrap();
+    let file = global.path().join("review/SKILL.md");
+    std::fs::write(
+        &file,
+        "---\nname: global-review\ndescription: Host authorized review\n---\nPRIVATE_SKILL_BODY\n",
+    )
+    .unwrap();
+    for (grant, directory_rule, file_rule, expected) in [
+        (None, Decision::Allow, Decision::Allow, false),
+        (Some(file.clone()), Decision::Allow, Decision::Allow, false),
+        (
+            Some(global.path().to_owned()),
+            Decision::Ask,
+            Decision::Allow,
+            false,
+        ),
+        (
+            Some(global.path().to_owned()),
+            Decision::Deny,
+            Decision::Allow,
+            false,
+        ),
+        (
+            Some(global.path().to_owned()),
+            Decision::Allow,
+            Decision::Ask,
+            false,
+        ),
+        (
+            Some(global.path().to_owned()),
+            Decision::Allow,
+            Decision::Deny,
+            false,
+        ),
+        (
+            Some(global.path().to_owned()),
+            Decision::Allow,
+            Decision::Allow,
+            true,
+        ),
+    ] {
+        let tools = Tools::new(workspace.path())
+            .await
+            .unwrap()
+            .with_skill_directories(vec![SkillDirectory {
+                path: global.path().to_string_lossy().into_owned(),
+            }])
+            .unwrap();
+        let tools = tools
+            .with_references(
+                grant
+                    .into_iter()
+                    .map(|path| Reference {
+                        path: path.to_string_lossy().into_owned(),
+                        description: "Host skill authority".into(),
+                    })
+                    .collect(),
+            )
+            .unwrap();
+        let policy = Policy::new(Config {
+            rules: vec![
+                Rule {
+                    tool: "glob".into(),
+                    path: "@reference/**".into(),
+                    decision: directory_rule,
+                },
+                Rule {
+                    tool: "read_file".into(),
+                    path: "@reference/**".into(),
+                    decision: file_rule,
+                },
+            ],
+            ..Config::default()
+        })
+        .unwrap();
+        let bundle = context::assemble(&tools, &policy, CancellationToken::new())
+            .await
+            .unwrap();
+        assert_eq!(bundle.system.contains("global-review"), expected);
+        assert!(!bundle.system.contains("PRIVATE_SKILL_BODY"));
+        if expected {
+            let source = bundle
+                .sources
+                .iter()
+                .find(|source| source["type"] == "skill" && source["name"] == "global-review")
+                .unwrap();
+            assert!(std::path::Path::new(source["path"].as_str().unwrap()).is_absolute());
+            let body = tools
+                .execute(
+                    "read_file",
+                    serde_json::json!({"path":source["path"]}),
+                    CancellationToken::new(),
+                )
+                .await
+                .unwrap();
+            assert!(body["text"]
+                .as_str()
+                .unwrap()
+                .contains("PRIVATE_SKILL_BODY"));
+        }
+    }
+}
+
+#[tokio::test]
+async fn workspace_skill_file_denials_also_hide_frontmatter() {
+    let root = tempfile::tempdir().unwrap();
+    std::fs::create_dir(root.path().join("skills")).unwrap();
+    std::fs::write(
+        root.path().join("skills/private.md"),
+        "---\nname: hidden-skill\ndescription: hidden metadata\n---\nbody\n",
+    )
+    .unwrap();
+    let tools = Tools::new(root.path())
+        .await
+        .unwrap()
+        .with_skill_directories(vec![SkillDirectory {
+            path: "skills".into(),
+        }])
+        .unwrap();
+    let policy = Policy::new(Config {
+        rules: vec![Rule {
+            tool: "read_file".into(),
+            path: "skills/**".into(),
+            decision: Decision::Deny,
+        }],
+        ..Config::default()
+    })
+    .unwrap();
+    let bundle = context::assemble(&tools, &policy, CancellationToken::new())
+        .await
+        .unwrap();
+    assert!(!bundle.system.contains("hidden-skill"));
+    assert!(!bundle.system.contains("hidden metadata"));
 }

@@ -36,6 +36,7 @@ import { SessionCommand } from "./session/command"
 import { CommandV2 } from "./command"
 import { SkillV2 } from "./skill"
 import { SessionCompactRequest } from "./session/compact-request"
+import { SessionCacheProbe } from "./session/cache-probe"
 import { SessionExecution } from "./session/execution"
 import { makeGlobalNode } from "./effect/app-node"
 import { LocationServiceMap } from "./location-service-map"
@@ -481,6 +482,7 @@ const layer = Layer.effect(
         yield* result.get(sessionID)
         yield* db.delete(SessionTable).where(eq(SessionTable.id, sessionID)).run().pipe(Effect.orDie)
         yield* events.remove(sessionID)
+        SessionCacheProbe.current.invalidate(sessionID)
         SessionProjector.forget(db)
         SessionHistory.invalidate(db)
       }),
@@ -562,6 +564,7 @@ const layer = Layer.effect(
           agent: parent.agent,
           location: parent.location,
         })
+        SessionCacheProbe.current.fork(parent.id, child.id)
         // Fork from the projection, not the event log: the projection is the
         // durable record, and a session's event log may be pruned. Copy the
         // parent's messages (including backfilled legacy rows at negative
@@ -839,6 +842,7 @@ const layer = Layer.effect(
           yield* ownership.claim(input.sessionID)
           const session = yield* result.get(input.sessionID)
           return yield* SessionRevert.stage({ session, messageID: input.messageID, files: input.files }).pipe(
+            Effect.tap(() => Effect.sync(() => SessionCacheProbe.current.invalidate(input.sessionID))),
             Effect.provideService(Database.Service, database),
             Effect.provideService(EventV2.Service, events),
             Effect.provide(locations.get(session.location)),
@@ -848,6 +852,7 @@ const layer = Layer.effect(
           yield* ownership.claim(sessionID)
           const session = yield* result.get(sessionID)
           yield* SessionRevert.clear(session).pipe(
+            Effect.tap(() => Effect.sync(() => SessionCacheProbe.current.invalidate(sessionID))),
             Effect.provideService(EventV2.Service, events),
             Effect.provide(locations.get(session.location)),
           )
@@ -855,7 +860,10 @@ const layer = Layer.effect(
         commit: Effect.fn("V2Session.revert.commit")(function* (sessionID) {
           yield* ownership.claim(sessionID)
           const session = yield* result.get(sessionID)
-          yield* SessionRevert.commit(session).pipe(Effect.provideService(EventV2.Service, events))
+          yield* SessionRevert.commit(session).pipe(
+            Effect.tap(() => Effect.sync(() => SessionCacheProbe.current.invalidate(sessionID))),
+            Effect.provideService(EventV2.Service, events),
+          )
         }),
       },
     })

@@ -1,0 +1,51 @@
+name: bench
+
+on:
+  pull_request:
+    paths:
+      - "packages/core/bench/**"
+      - "packages/core/src/session/**"
+      - "packages/llm/src/**"
+      - ".github/workflows/bench.yml"
+  workflow_dispatch:
+
+concurrency:
+  # A pull request shares one group per number, so a new push cancels its older
+  # run. A push to main groups by commit SHA, so every merged commit keeps a
+  # complete status instead of being superseded and cancelled.
+  group: ${{ format('{0}-bench-{1}', github.workflow, github.event.pull_request.number || github.sha) }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  bench:
+    name: bench
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+
+      - name: Setup Bun
+        uses: ./.github/actions/setup-bun
+
+      # Reports request-preparation budgets on a real runner. This job is
+      # deliberately not part of the required checks yet: the budgets are
+      # `reference x 3 x 1.25` against developer-machine medians, and the factor
+      # wants replacing with a measured one before a failure can block merges.
+      # The summary below is where that factor comes from.
+      - name: Measure request preparation
+        run: |
+          set -euo pipefail
+          cd packages/core
+          bun run bench | tee "$RUNNER_TEMP/bench.txt"
+          {
+            echo "### Request preparation"
+            echo
+            echo '```'
+            cat "$RUNNER_TEMP/bench.txt"
+            echo '```'
+            echo
+            echo "Budgets are reference medians scaled by 3 and given 1.25 headroom."
+            echo "Compare the reported medians with the references in"
+            echo '`packages/core/bench/request-preparation.ts` and tighten both.'
+          } >> "$GITHUB_STEP_SUMMARY"

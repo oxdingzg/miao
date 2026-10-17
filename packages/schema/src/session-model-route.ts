@@ -1,0 +1,31 @@
+export * as SessionModelRoute from "./session-model-route"
+
+import { Schema } from "effect"
+import { Model } from "./model"
+
+/** Engine-owned routes use a reserved product namespace; wire model names are display metadata. */
+export const Info = Schema.Struct({
+  model: Model.Ref,
+  protocol: Schema.String,
+  wireModel: Schema.String,
+  default: Schema.Boolean,
+}).annotate({ identifier: "SessionModelRoute.Info" })
+export type Info = typeof Info.Type
+
+export const Binding = Schema.Struct({
+  protocol: Schema.String,
+  model: Schema.String,
+  route_id: Schema.optional(Schema.NullOr(Schema.String)),
+})
+export type Binding = typeof Binding.Type
+
+export function reference(routeID: string | null): Model.Ref {
+  return Schema.decodeUnknownSync(Model.Ref)({
+    providerID: routeID === null ? DefaultProviderID : ProviderID,
+    id: routeID ?? DefaultModelID,
+  })
+}
+
+export const ProviderID = "native-engine"
+export const DefaultProviderID = "native-engine-default"
+export const DefaultModelID = "default"
