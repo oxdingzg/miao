@@ -41,8 +41,14 @@ compaction/context changes and parameter changes send full history. A new connec
 never inherits an old response ID; `store:false` is preserved.
 
 Connections are Session-scoped and serialized per Session, with distinct Sessions able to progress
-concurrently. There are at most 32 retained slots. Busy slots are not evicted; capacity overflow uses
-HTTP. Idle slots expire after 180 seconds when the pool is accessed. A delta proof retains at most
+concurrently. Native forks may inherit the parent's cache-routing hint only when a persisted,
+completed request before the fork cursor has the exact same non-history wire parameters,
+permissions, endpoint/query, account and credential generation, and its entire input is an exact
+prefix of the child's lowered request. Changed system/tools/model, rewrites, compaction, historical
+cursors before that request, and missing evidence use the child's own hint. Hash-only proof survives
+restart and nested forks. Placement does not prove a cache hit or authorize a continuation; the child
+retains its own WebSocket ownership identity, connection and acknowledgement chain.
+There are at most 32 retained slots. Busy slots are not evicted; capacity overflow uses HTTP. Idle slots expire after 180 seconds when the pool is accessed. A delta proof retains at most
 1 MiB of input/output items; larger histories still work through full requests. Clients outside an
 engine Session use one-shot connections without continuation chains.
 
