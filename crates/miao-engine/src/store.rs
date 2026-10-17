@@ -709,32 +709,20 @@ impl Store {
         .await
     }
 
-    /// Forks share only a cache-routing hint, never a transport identity.
-    /// Corrupt or excessively deep lineage falls back to the current Session.
-    pub(crate) async fn cache_affinity(&self, session: &str) -> Result<String, Error> {
+    /// A fork may propose only a completed parent prefix at its own cursor.
+    /// The provider checks exact wire parameters/history before using the hint.
+    pub(crate) async fn cache_affinity(
+        &self,
+        session: &str,
+    ) -> Result<Option<crate::cache_affinity::Proof>, Error> {
         let session = session.to_owned();
         self.call(move |conn| {
-            let mut current = session.clone();
-            let mut visited = std::collections::HashSet::new();
-            for _ in 0..64 {
-                if !visited.insert(current.clone()) {
-                    return Ok(session);
-                }
-                let parent: Option<String> = conn
-                    .query_row(
-                        "SELECT parent_session_id FROM engine_lineage WHERE session_id=?1",
-                        [&current],
-                        |row| row.get(0),
-                    )
-                    .optional()?;
-                let Some(parent) = parent else {
-                    return Ok(current);
-                };
-                current = parent;
-            }
-            Ok(session)
-        })
-        .await
+            let data: Option<String> = conn.query_row(
+                "SELECT e.data FROM engine_lineage l JOIN engine_event e ON e.session_id=l.parent_session_id WHERE l.session_id=?1 AND e.kind='cache.prefix.completed' AND e.seq<=l.message_seq ORDER BY e.seq DESC LIMIT 1",
+                [&session], |row| row.get(0),
+            ).optional()?;
+            Ok(data.and_then(|data|serde_json::from_str(&data).ok()))
+        }).await
     }
 
     pub async fn fork(
