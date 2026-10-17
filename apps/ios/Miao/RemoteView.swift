@@ -14,107 +14,15 @@ struct RemoteView: View {
     @State private var attached: UUID?
     @State private var attachEpoch = 0
     @State private var notificationSession: NotificationDestination?
+    @State private var sidebarVisible = false
+    @State private var sessionID: String?
+    @State private var creating = false
+    @State private var forgetConfirmation = false
 
     var body: some View {
-        NavigationSplitView {
-            List(selection: $hostID) {
-                Section {
-                    VStack(alignment: .leading, spacing: 6) {
-                        Text("远程工作台").font(.title2.weight(.semibold))
-                        Text("连接你的电脑，随时继续同一个会话。")
-                            .font(.subheadline).foregroundStyle(.secondary)
-                    }
-                    .padding(.vertical, 8)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .listRowBackground(Color.clear)
-                    .listRowInsets(EdgeInsets(top: 4, leading: 0, bottom: 4, trailing: 0))
-                }
-                Section {
-                    Button { accountPresented = true } label: {
-                        HStack(spacing: 12) {
-                            Image(systemName: "person.crop.circle")
-                                .font(.title3).foregroundStyle(.tint).frame(width: 32, height: 32)
-                            VStack(alignment: .leading, spacing: 4) {
-                                Text(model.accountSignedIn ? "中继账号" : "登录中继")
-                                    .font(.headline).foregroundStyle(.primary)
-                                Text(model.accountSignedIn ? "管理账号与已注册电脑" : "登录后同步你的电脑")
-                                    .font(.subheadline).foregroundStyle(.secondary)
-                            }
-                            Spacer(minLength: 8)
-                            Image(systemName: "chevron.right").font(.caption.weight(.semibold))
-                                .foregroundStyle(.tertiary)
-                        }
-                        .padding(.vertical, 6)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .contentShape(Rectangle())
-                    }.buttonStyle(.plain).accessibilityIdentifier("hubAccount")
-                    if let error = model.accountError { Text(error).font(.footnote).foregroundStyle(.secondary) }
-                }
-                Section {
-                    if model.hosts.isEmpty {
-                        VStack(alignment: .leading, spacing: 20) {
-                            HStack(alignment: .top, spacing: 12) {
-                                Image(systemName: "desktopcomputer")
-                                    .font(.title3).foregroundStyle(.secondary).frame(width: 32, height: 32)
-                                VStack(alignment: .leading, spacing: 6) {
-                                    Text("连接第一台电脑").font(.headline)
-                                    Text("在电脑上打开 /remote-control，扫描二维码并确认授权。")
-                                        .font(.subheadline).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
-                                }
-                            }
-                            Button { pairing = true } label: {
-                                Label("连接电脑", systemImage: "qrcode.viewfinder")
-                                    .font(.body.weight(.semibold))
-                                    .frame(maxWidth: .infinity, minHeight: 32)
-                            }
-                            .buttonStyle(.borderedProminent).controlSize(.large)
-                            .labelStyle(.titleAndIcon)
-                            .buttonBorderShape(.roundedRectangle(radius: 12))
-                        }
-                        .padding(.vertical, 12)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                    }
-                    ForEach(model.hosts) { record in
-                        HStack(spacing: 12) {
-                            Image(systemName: "desktopcomputer").font(.title3).frame(width: 32, height: 32)
-                                .foregroundStyle(.secondary)
-                            VStack(alignment: .leading, spacing: 4) {
-                                Text(record.host.label).font(.headline)
-                                Label(record.expired ? "授权已过期" : "已配对", systemImage: record.expired ? "exclamationmark.circle" : "checkmark.circle")
-                                    .font(.caption).foregroundStyle(record.expired ? .orange : .secondary)
-                            }
-                        }.padding(.vertical, 4).tag(record.id)
-                    }
-                } header: { Text("我的电脑") } footer: {
-                    if model.hosts.isEmpty {
-                        Text("任务在电脑上持续运行。手机用于查看进展、发送输入和确认操作。")
-                    }
-                }
-                if !model.attempts.isEmpty {
-                    Section("待核对的配对") {
-                        Text("曾发起配对但未确认保存授权。请在电脑上检查设备接入状态后重新配对。")
-                            .font(.footnote).foregroundStyle(.secondary)
-                    }
-                }
-                if let error = model.error { Text(error).foregroundStyle(.red).font(.footnote) }
-            }
-            .listStyle(.insetGrouped)
-            .listSectionSpacing(20)
-            .contentMargins(.top, 16, for: .scrollContent)
-            .navigationTitle("miao")
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar { Button("连接电脑", systemImage: "qrcode.viewfinder") { pairing = true } }
-        } detail: {
-            if let hostID, let client = model.clients[hostID] {
-                NavigationStack { HostView(client: client, forget: { Task { await model.forget(hostID); self.hostID = nil } }) }
-                    .id(hostID.uuidString + ":" + String(model.connectionEpoch))
-            } else {
-                ContentUnavailableView {
-                    Label("随时接回会话", systemImage: "bubble.left.and.bubble.right")
-                } description: {
-                    Text("在电脑上的 /remote-control 中选择 App，扫码并批准这台设备。")
-                } actions: { Button("连接电脑") { pairing = true }.buttonStyle(.borderedProminent) }
-            }
+        ZStack {
+            mainContent
+            if sidebarVisible { sidebar }
         }
         .task {
             await model.load()
@@ -165,6 +73,203 @@ struct RemoteView: View {
             if !invitation.isEmpty, model.accountSignedIn { pairing = true }
         }) { HubAccountView(model: model) }
         .sheet(isPresented: $pairing, onDismiss: { invitation = "" }) { PairingView(model: model, initialURI: $invitation) }
+        .sheet(isPresented: $creating) {
+            if let hostID, let client = model.clients[hostID] { CreateSessionView(client: client) }
+        }
+        .confirmationDialog("从这台设备移除电脑？", isPresented: $forgetConfirmation, titleVisibility: .visible) {
+            Button("移除", role: .destructive) {
+                withAnimation(.easeInOut(duration: 0.25)) { sidebarVisible = false }
+                if let hostID {
+                    Task { await model.forget(hostID) }
+                    self.hostID = nil
+                    sessionID = nil
+                }
+            }
+        } message: { Text("本机缓存将被删除，电脑上的任务继续运行。要撤销授权，请在电脑的设备接入界面操作。") }
+    }
+
+    @ViewBuilder private var mainContent: some View {
+        if let hostID, let client = model.clients[hostID] {
+            NavigationStack {
+                sessionContent(client)
+                    .onChange(of: sessionCount(client)) { _, count in
+                        if sessionID == nil, count > 0, let first = client.lists.values.flatMap({ $0 }).first {
+                            sessionID = first.id
+                        }
+                    }
+            }
+            .id(hostID.uuidString + ":" + String(model.connectionEpoch))
+        } else {
+            ContentUnavailableView {
+                Label("随时接回会话", systemImage: "bubble.left.and.bubble.right")
+            } description: {
+                Text("登录同一账号后，这台电脑的会话会出现在侧栏里。")
+            } actions: {
+                Button("打开侧栏") { withAnimation(.easeInOut(duration: 0.25)) { sidebarVisible = true } }
+                    .buttonStyle(.borderedProminent)
+            }
+        }
+    }
+
+    @ViewBuilder private func sessionContent(_ client: HostClient) -> some View {
+        if let session = activeSession(client) {
+            SessionView(client: client, session: session, showsSidebarToggle: true, onSidebar: {
+                withAnimation(.easeInOut(duration: 0.25)) { sidebarVisible = true }
+            })
+            .id(session.summary.id)
+        } else {
+            ContentUnavailableView {
+                Label("选择一个会话", systemImage: "sidebar.left")
+            } description: {
+                Text("点左上角打开侧栏，查看这台电脑上的会话。")
+            }
+        }
+    }
+
+    private func activeSession(_ client: HostClient) -> RemoteSession? {
+        guard let sessionID else { return nil }
+        if let cached = client.sessions[sessionID] { return cached }
+        guard let summary = findSummary(client, id: sessionID) else { return nil }
+        return client.session(summary)
+    }
+
+    private func findSummary(_ client: HostClient, id: String) -> SessionSummary? {
+        for (_, list) in client.lists {
+            if let match = list.first(where: { $0.id == id }) { return match }
+        }
+        return nil
+    }
+
+    private func sessionCount(_ client: HostClient) -> Int {
+        client.lists.values.reduce(0) { $0 + $1.count }
+    }
+
+    private var sidebar: some View {
+        ZStack(alignment: .leading) {
+            Color.black.opacity(0.35).ignoresSafeArea()
+                .onTapGesture { withAnimation(.easeInOut(duration: 0.25)) { sidebarVisible = false } }
+            Group {
+                if let hostID, let client = model.clients[hostID] {
+                    sidebarContent(client)
+                } else {
+                    emptySidebar
+                }
+            }
+            .frame(maxWidth: 330)
+            .frame(maxHeight: .infinity)
+            .background(.background)
+            .transition(.move(edge: .leading))
+        }
+    }
+
+    @ViewBuilder private func sidebarContent(_ client: HostClient) -> some View {
+        List {
+            Section {
+                HStack {
+                    Text(client.record.host.label).font(.headline)
+                    Spacer()
+                    Button { withAnimation(.easeInOut(duration: 0.25)) { sidebarVisible = false } } label: {
+                        Image(systemName: "xmark")
+                    }.accessibilityLabel("关闭侧栏").buttonStyle(.plain)
+                }
+                Label(client.connectionDescription, systemImage: client.ready ? "checkmark.circle.fill" : "network")
+                    .font(.footnote).foregroundStyle(client.ready ? .green : .secondary)
+                if let error = client.error { Text(error).font(.footnote).foregroundStyle(.red) }
+            }
+            ForEach(client.lists.keys.sorted(), id: \.self) { project in
+                Section(projectName(project)) {
+                    ForEach(client.lists[project] ?? []) { session in
+                        Button {
+                            sessionID = session.id
+                            withAnimation(.easeInOut(duration: 0.25)) { sidebarVisible = false }
+                        } label: {
+                            HStack(spacing: 10) {
+                                Image(systemName: "bubble.left.and.text.bubble.right")
+                                    .foregroundStyle(sessionID == session.id ? .tint : .secondary)
+                                Text(session.title)
+                                    .font(sessionID == session.id ? .body.weight(.semibold) : .body)
+                                    .lineLimit(2)
+                                Spacer(minLength: 4)
+                                if sessionID == session.id { Image(systemName: "checkmark").font(.caption.weight(.semibold)).foregroundStyle(.tint) }
+                            }.contentShape(Rectangle())
+                        }.buttonStyle(.plain)
+                    }
+                    if client.next[project] != nil {
+                        Button("更多会话") { Task { await client.refreshLists(more: project) } }.disabled(!client.ready)
+                    }
+                }
+            }
+            if !client.operations.filter({ [.prepared, .awaitingConfirmation, .outcomeUnknown].contains($0.status) }).isEmpty {
+                Section("待核对操作") {
+                    ForEach(client.operations.filter { [.prepared, .awaitingConfirmation, .outcomeUnknown].contains($0.status) }) { operation in
+                        VStack(alignment: .leading) {
+                            Text(operation.kind.rawValue)
+                            Text("结果尚未确认；不会自动重新发送").font(.caption).foregroundStyle(.secondary)
+                        }
+                    }
+                    Button("核对操作结果") { Task { await client.reconcileOperations() } }.disabled(!client.ready)
+                }
+            }
+            Section {
+                if client.record.grant.permissions.contains(.sessionCreate) {
+                    Button { creating = true } label: {
+                        Label("新会话", systemImage: "plus").frame(maxWidth: .infinity, alignment: .leading)
+                    }.disabled(!client.ready)
+                }
+                Button { Task { await client.refreshLists() } } label: {
+                    Label("刷新会话", systemImage: "arrow.clockwise").frame(maxWidth: .infinity, alignment: .leading)
+                }.disabled(!client.ready)
+                Button { accountPresented = true } label: {
+                    Label(model.accountSignedIn ? "中继账号" : "登录中继", systemImage: "person.crop.circle")
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                }.accessibilityIdentifier("hubAccount")
+                Button { pairing = true } label: {
+                    Label("连接电脑", systemImage: "qrcode.viewfinder").frame(maxWidth: .infinity, alignment: .leading)
+                }
+                Button(role: .destructive) { forgetConfirmation = true } label: {
+                    Label("从这台设备移除", systemImage: "trash").frame(maxWidth: .infinity, alignment: .leading)
+                }
+            }
+        }
+        .listStyle(.insetGrouped)
+    }
+
+    private var emptySidebar: some View {
+        List {
+            Section {
+                HStack {
+                    Text("miao").font(.headline)
+                    Spacer()
+                    Button { withAnimation(.easeInOut(duration: 0.25)) { sidebarVisible = false } } label: {
+                        Image(systemName: "xmark")
+                    }.accessibilityLabel("关闭侧栏").buttonStyle(.plain)
+                }
+                Button { accountPresented = true } label: {
+                    Label(model.accountSignedIn ? "中继账号" : "登录中继", systemImage: "person.crop.circle")
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                }.accessibilityIdentifier("hubAccount")
+                Button { pairing = true } label: {
+                    Label("连接电脑", systemImage: "qrcode.viewfinder").frame(maxWidth: .infinity, alignment: .leading)
+                }
+                if let error = model.error { Text(error).foregroundStyle(.red).font(.footnote) }
+            } header: { Text("我的电脑") } footer: {
+                Text("在电脑上打开 /remote-control 并登录同一账号，或扫描配对码。")
+            }
+        }
+        .listStyle(.insetGrouped)
+        .navigationTitle("miao")
+        .navigationBarTitleDisplayMode(.inline)
+        .toolbar {
+            ToolbarItem(placement: .topBarTrailing) {
+                Button { withAnimation(.easeInOut(duration: 0.25)) { sidebarVisible = false } } label: { Image(systemName: "xmark") }
+            }
+        }
+    }
+
+    private func projectName(_ id: String) -> String {
+        if id.isEmpty { return "已授权会话" }
+        guard let hostID, let client = model.clients[hostID] else { return "项目" }
+        return client.projects.first(where: { $0["id"]?.string == id })?["name"]?.string ?? "项目"
     }
 
     private func applyNotification() {
@@ -252,71 +357,6 @@ private struct PairingView: View {
 }
 
 @MainActor
-private struct HostView: View {
-    @Bindable var client: HostClient
-    let forget: () -> Void
-    @State private var forgetConfirmation = false
-    @State private var creating = false
-
-    var body: some View {
-        List {
-            Section {
-                Label(status, systemImage: client.ready ? "checkmark.circle.fill" : "network")
-                    .foregroundStyle(client.ready ? .green : .secondary)
-                if let error = client.error { Text(error).font(.footnote).foregroundStyle(.red) }
-            }
-            ForEach(client.lists.keys.sorted(), id: \.self) { project in
-                Section(projectName(project)) {
-                    ForEach(client.lists[project] ?? []) { session in
-                        NavigationLink { SessionView(client: client, session: client.session(session)) } label: {
-                            Label(session.title, systemImage: "bubble.left.and.text.bubble.right")
-                        }
-                    }
-                    if client.next[project] != nil {
-                        Button("更多会话") { Task { await client.refreshLists(more: project) } }.disabled(!client.ready)
-                    }
-                }
-            }
-            if !client.operations.filter({ [.prepared, .awaitingConfirmation, .outcomeUnknown].contains($0.status) }).isEmpty {
-                Section("待核对操作") {
-                    ForEach(client.operations.filter { [.prepared, .awaitingConfirmation, .outcomeUnknown].contains($0.status) }) { operation in
-                        VStack(alignment: .leading) {
-                            Text(operation.kind.rawValue)
-                            Text("结果尚未确认；不会自动重新发送").font(.caption).foregroundStyle(.secondary)
-                        }
-                    }
-                    Button("核对操作结果") { Task { await client.reconcileOperations() } }.disabled(!client.ready)
-                }
-            }
-        }
-        .navigationTitle(client.record.host.label)
-        .refreshable { await client.refreshLists() }
-        .toolbar {
-            ToolbarItemGroup(placement: .primaryAction) {
-                if client.record.grant.permissions.contains(.sessionCreate) {
-                    Button("新会话", systemImage: "plus") { creating = true }.disabled(!client.ready)
-                }
-                Menu {
-                    Button("刷新会话", systemImage: "arrow.clockwise") { Task { await client.refreshLists() } }
-                    Button("从这台设备移除", systemImage: "trash", role: .destructive) { forgetConfirmation = true }
-                } label: { Image(systemName: "ellipsis.circle") }
-            }
-        }
-        .confirmationDialog("从这台设备移除电脑？", isPresented: $forgetConfirmation, titleVisibility: .visible) {
-            Button("移除", role: .destructive, action: forget)
-        } message: { Text("本机缓存将被删除，电脑上的任务继续运行。要撤销授权，请在电脑的设备接入界面操作。") }
-        .sheet(isPresented: $creating) { CreateSessionView(client: client) }
-    }
-    private var status: String {
-        client.connectionDescription
-    }
-    private func projectName(_ id: String) -> String {
-        if id.isEmpty { return "已授权会话" }
-        return client.projects.first(where: { $0["id"]?.string == id })?["name"]?.string ?? "项目"
-    }
-}
-
-@MainActor
 private struct CreateSessionView: View {
     @Bindable var client: HostClient
     @Environment(\.dismiss) private var dismiss
@@ -359,6 +399,8 @@ private struct CreateSessionView: View {
 private struct SessionView: View {
     @Bindable var client: HostClient
     @Bindable var session: RemoteSession
+    var showsSidebarToggle = false
+    var onSidebar: (() -> Void)?
     @State private var speech = SpeechInput()
     @State private var diffPresented = false
     @State private var renamePresented = false
@@ -387,6 +429,12 @@ private struct SessionView: View {
         .navigationTitle(session.timeline.title.isEmpty ? session.summary.title : session.timeline.title)
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
+            if showsSidebarToggle, let onSidebar {
+                ToolbarItem(placement: .topBarLeading) {
+                    Button(action: onSidebar) { Image(systemName: "line.3.horizontal") }
+                        .accessibilityLabel("会话侧栏").accessibilityIdentifier("sessionSidebar")
+                }
+            }
             ToolbarItem(placement: .topBarTrailing) {
                 Button { composing = false; menuPresented = true } label: { Image(systemName: "ellipsis.circle") }.accessibilityLabel("会话菜单")
                     .accessibilityIdentifier("sessionMenu").accessibilityValue(client.connectionDescription).disabled(!client.ready)
@@ -473,34 +521,52 @@ private extension JSONValue { var messageID: String { self["id"]?.string ?? "" }
 @MainActor
 private struct MessageView: View {
     let message: JSONValue
+
     var body: some View {
+        if message["type"]?.string == "user" {
+            HStack(alignment: .bottom) {
+                Spacer(minLength: 56)
+                content
+                    .padding(12)
+                    .background(Color.accentColor.opacity(0.14), in: RoundedRectangle(cornerRadius: 16))
+            }
+        } else {
+            content
+                .padding(.vertical, 2)
+                .frame(maxWidth: .infinity, alignment: .leading)
+        }
+    }
+
+    private var content: some View {
         VStack(alignment: .leading, spacing: 8) {
-            Label(role, systemImage: message["type"]?.string == "user" ? "person.circle" : "sparkles")
-                .font(.caption.weight(.semibold)).foregroundStyle(.secondary)
             if let text = message["text"]?.string { Text(text).textSelection(.enabled) }
             if let summary = message["summary"]?.string { Text(summary).textSelection(.enabled) }
             ForEach(Array((message["content"]?.array ?? []).enumerated()), id: \.offset) { _, part in
                 if part["type"]?.string == "reasoning" {
-                    DisclosureGroup("思考过程") { Text(part["text"]?.string ?? part.formatted).font(.footnote).textSelection(.enabled) }
+                    DisclosureGroup("思考过程") { Text(part["text"]?.string ?? part.formatted).font(.footnote).foregroundStyle(.secondary).textSelection(.enabled) }
                 } else if let text = part["text"]?.string { Text(text).textSelection(.enabled) }
                 else {
-                    DisclosureGroup(part["name"]?.string ?? part["type"]?.string ?? "操作详情") {
-                        Text(part.formatted).font(.system(.caption, design: .monospaced)).textSelection(.enabled)
-                    }
+                    DisclosureGroup { Text(part.formatted).font(.system(.caption, design: .monospaced)).textSelection(.enabled) } label: {
+                        Label(part["name"]?.string ?? part["type"]?.string ?? "操作详情", systemImage: "wrench.and.screwdriver")
+                            .font(.footnote.weight(.medium))
+                    }.accentColor(.secondary)
                 }
             }
-            if let command = message["command"]?.string { Text(command).font(.system(.footnote, design: .monospaced)).textSelection(.enabled) }
-            if let output = message["output"]?.string { Text(output).font(.system(.footnote, design: .monospaced)).textSelection(.enabled) }
+            if let command = message["command"]?.string {
+                DisclosureGroup { Text(command).font(.system(.footnote, design: .monospaced)).textSelection(.enabled) } label: {
+                    Label("命令", systemImage: "terminal").font(.footnote.weight(.medium))
+                }.accentColor(.secondary)
+            }
+            if let output = message["output"]?.string {
+                DisclosureGroup { Text(output).font(.system(.footnote, design: .monospaced)).textSelection(.enabled) } label: {
+                    Label("输出", systemImage: "text.quote").font(.footnote.weight(.medium))
+                }.accentColor(.secondary)
+            }
             if ["agent-switched", "model-switched"].contains(message["type"]?.string ?? "") {
-                Text(message["agent"]?.string ?? message["model"]?.formatted ?? "").font(.footnote).textSelection(.enabled)
+                Text(message["agent"]?.string ?? message["model"]?.formatted ?? "").font(.footnote).foregroundStyle(.secondary).textSelection(.enabled)
             }
             if let error = message["error"] { Text(error.formatted).font(.footnote).foregroundStyle(.red) }
         }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(14).background(message["type"]?.string == "user" ? Color.accentColor.opacity(0.08) : Color.secondary.opacity(0.06), in: RoundedRectangle(cornerRadius: 14))
-    }
-    private var role: String {
-        switch message["type"]?.string { case "user": return "你"; case "assistant": return "miao"; case "shell": return "终端"; case "compaction": return "上下文整理"; default: return "会话记录" }
     }
 }
 
