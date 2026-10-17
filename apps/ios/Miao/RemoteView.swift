@@ -219,13 +219,13 @@ struct RemoteView: View {
         } label: {
             HStack(spacing: 10) {
                 Image(systemName: "bubble.left.and.text.bubble.right")
-                    .foregroundStyle(active ? Color.tint : Color.secondary)
+                    .foregroundStyle(active ? Color.accentColor : Color.secondary)
                 Text(session.title)
                     .font(active ? Font.body.weight(.semibold) : Font.body)
                     .lineLimit(2)
                 Spacer(minLength: 4)
                 if active {
-                    Image(systemName: "checkmark").font(.caption.weight(.semibold)).foregroundStyle(Color.tint)
+                    Image(systemName: "checkmark").font(.caption.weight(.semibold)).foregroundStyle(Color.accentColor)
                 }
             }.contentShape(Rectangle())
         }.buttonStyle(.plain)
