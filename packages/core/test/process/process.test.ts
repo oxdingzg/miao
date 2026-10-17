@@ -443,6 +443,45 @@ describe("AppProcess", () => {
     )
 
     it.live(
+      "decodes GBK lines and the unterminated last line",
+      Effect.gen(function* () {
+        const svc = yield* AppProcess.Service
+        // A Windows host writes its console code page whether or not it is
+        // local: `测试文件` in GBK, once with a terminator and once without.
+        const gbk = Buffer.from([0xb2, 0xe2, 0xca, 0xd4, 0xce, 0xc4, 0xbc, 0xfe])
+        const line = JSON.stringify(Buffer.concat([gbk, Buffer.from("\n")]))
+        const result = yield* svc
+          .runStream(
+            cmd(
+              "-e",
+              `process.stdout.write(Buffer.from(${line})); process.stdout.write(Buffer.from(${JSON.stringify(gbk)}))`,
+            ),
+          )
+          .pipe(Stream.runCollect)
+        expect(Array.from(result)).toEqual(["测试文件", "测试文件"])
+      }),
+    )
+
+    it.live(
+      "reassembles a character split across chunks",
+      Effect.gen(function* () {
+        const svc = yield* AppProcess.Service
+        const bytes = Buffer.from("测试\n", "utf8")
+        const head = JSON.stringify(Array.from(bytes.subarray(0, 2)))
+        const tail = JSON.stringify(Array.from(bytes.subarray(2)))
+        const result = yield* svc
+          .runStream(
+            cmd(
+              "-e",
+              `process.stdout.write(Buffer.from(${head})); setTimeout(() => process.stdout.write(Buffer.from(${tail})), 20)`,
+            ),
+          )
+          .pipe(Stream.runCollect)
+        expect(Array.from(result)).toEqual(["测试"])
+      }),
+    )
+
+    it.live(
       "AbortSignal interrupts the stream",
       Effect.gen(function* () {
         const svc = yield* AppProcess.Service
@@ -473,30 +512,46 @@ describe("AppProcess", () => {
   })
 })
 
-describe("AppProcess.decodeBytes", () => {
+describe("AppProcess.decodeOutput", () => {
   // Bytes captured from a Chinese Windows host (`96`, codepage 936) running
   // `cmd /c "dir C:\winenc /b"` for a file named `测试文件.txt`. UTF-8 decoding
   // produced the replacement-character mojibake the user reported.
   const gbkBytes = Buffer.from([0xb2, 0xe2, 0xca, 0xd4, 0xce, 0xc4, 0xbc, 0xfe, 0x2e, 0x74, 0x78, 0x74])
 
-  test("decodes GBK shell output on the Windows branch", () => {
-    expect(AppProcess.decodeBytes(gbkBytes, { windows: true })).toBe("测试文件.txt")
+  // An ssh command runs on the host it targets, so the code page of the output
+  // has nothing to do with the platform the decoder runs on.
+  test("decodes GBK output from a remote Windows host", () => {
+    expect(AppProcess.decodeOutput(gbkBytes)).toBe("测试文件.txt")
   })
 
-  test("keeps already-UTF-8 output untouched on the Windows branch", () => {
-    const utf8 = Buffer.from("测试文件.txt", "utf8")
-    expect(AppProcess.decodeBytes(utf8, { windows: true })).toBe("测试文件.txt")
+  test("keeps already-UTF-8 output untouched", () => {
+    expect(AppProcess.decodeOutput(Buffer.from("测试文件.txt", "utf8"))).toBe("测试文件.txt")
   })
 
-  test("does not apply the code page off Windows", () => {
-    expect(AppProcess.decodeBytes(gbkBytes, { windows: false })).not.toBe("测试文件.txt")
+  // The in-memory capture is cut at a byte limit, which can land inside a
+  // character; that is not a reason to read the whole output as another code
+  // page.
+  test("keeps output whose last character was cut by the capture limit", () => {
+    // Eight bytes hold `测试` and two thirds of `文`, which the cut drops.
+    expect(AppProcess.decodeOutput(Buffer.from("测试文件.txt", "utf8").subarray(0, 8))).toBe("测试")
   })
 
   test("honors MIAO_WINDOWS_CODEPAGE", () => {
     const previous = process.env["MIAO_WINDOWS_CODEPAGE"]
     process.env["MIAO_WINDOWS_CODEPAGE"] = "gb18030"
     try {
-      expect(AppProcess.decodeBytes(gbkBytes, { windows: true })).toBe("测试文件.txt")
+      expect(AppProcess.decodeOutput(gbkBytes)).toBe("测试文件.txt")
+    } finally {
+      if (previous === undefined) delete process.env["MIAO_WINDOWS_CODEPAGE"]
+      else process.env["MIAO_WINDOWS_CODEPAGE"] = previous
+    }
+  })
+
+  test("falls back to latin1 when the code page label is unknown", () => {
+    const previous = process.env["MIAO_WINDOWS_CODEPAGE"]
+    process.env["MIAO_WINDOWS_CODEPAGE"] = "not-a-code-page"
+    try {
+      expect(AppProcess.decodeOutput(gbkBytes)).toBe(gbkBytes.toString("latin1"))
     } finally {
       if (previous === undefined) delete process.env["MIAO_WINDOWS_CODEPAGE"]
       else process.env["MIAO_WINDOWS_CODEPAGE"] = previous
