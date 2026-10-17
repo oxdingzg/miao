@@ -1,6 +1,7 @@
 import os from "node:os"
 import path from "node:path"
 import { Config } from "@miao/core/config"
+import { ResponsesCacheContract } from "@miao/schema/config"
 import { Global } from "@miao/core/global"
 import { makeGlobalNode } from "@miao/core/effect/app-node"
 import { ClientEvents } from "@miao/server/client-events"
@@ -61,7 +62,16 @@ export const nativeEngineOptions = (
   if (environment.MIAO_ENGINE_PROVIDER) merged.provider = environment.MIAO_ENGINE_PROVIDER
   if (environment.MIAO_ENGINE_ENDPOINT) merged.endpoint = environment.MIAO_ENGINE_ENDPOINT
   if (environment.MIAO_ENGINE_FALLBACK_MODEL) merged.fallbackModel = environment.MIAO_ENGINE_FALLBACK_MODEL
+  if (environment.MIAO_ENGINE_TOOL_DISCLOSURE) {
+    if (!["full", "compact"].includes(environment.MIAO_ENGINE_TOOL_DISCLOSURE))
+      throw new Error("MIAO_ENGINE_TOOL_DISCLOSURE must be full or compact")
+    merged.toolDisclosure = environment.MIAO_ENGINE_TOOL_DISCLOSURE === "compact" ? "compact" : "full"
+  }
   if (environment.MIAO_ENGINE_ROLES) merged.roles = JSON.parse(environment.MIAO_ENGINE_ROLES)
+  if (environment.MIAO_ENGINE_RESPONSES_CACHE_CONTRACT)
+    merged.responsesCacheContract = Schema.decodeUnknownSync(Schema.fromJsonString(ResponsesCacheContract), {
+      onExcessProperty: "error",
+    })(environment.MIAO_ENGINE_RESPONSES_CACHE_CONTRACT)
   merged.promptCache = environment.MIAO_ENGINE_PROMPT_CACHE
     ? environment.MIAO_ENGINE_PROMPT_CACHE === "on"
     : merged.promptCache
@@ -87,7 +97,9 @@ export const nativeEngineOptions = (
     credentialID: environment.MIAO_ENGINE_CREDENTIAL_ID,
     credentialIntegration: environment.MIAO_ENGINE_CREDENTIAL_INTEGRATION,
     fallbackModel: merged.fallbackModel,
+    toolDisclosure: merged.toolDisclosure,
     roles: merged.roles,
+    responsesCacheContract: merged.responsesCacheContract,
     promptCache: merged.promptCache,
     verifyCommand: merged.verifyCommand,
     mcpConfigFile: merged.mcpConfigFile,
@@ -120,7 +132,9 @@ export const engineSettings = async (
       provider: engine.provider,
       endpoint: engine.endpoint,
       fallbackModel: engine.fallback_model,
+      toolDisclosure: engine.tool_disclosure,
       roles: engine.roles,
+      responsesCacheContract: engine.responses_cache_contract,
       promptCache: engine.prompt_cache,
       verifyCommand: engine.verify_command,
       mcpConfigFile: engine.mcp_config ? path.resolve(globalConfig, engine.mcp_config) : undefined,

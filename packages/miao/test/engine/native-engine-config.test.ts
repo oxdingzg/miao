@@ -44,6 +44,65 @@ test("the environment overrides the configured engine key by key", () => {
   expect(options?.verifyCommand).toBe("bun run check")
 })
 
+test("global cache contracts reach the child and explicit environment overrides are validated", async () => {
+  const dir = mkdtempSync(path.join(tmpdir(), "native-cache-contract-"))
+  const contract = {
+    model: "wire-model",
+    endpoint: "https://api.example/responses",
+    authentication: "api",
+    profile: "breakpoints",
+    ttl: "30m",
+  }
+  try {
+    writeFileSync(
+      path.join(dir, "miao.json"),
+      JSON.stringify({ engine: { model: "wire-model", responses_cache_contract: contract } }),
+    )
+    const settings = await engineSettings(dir)
+    expect(settings?.responsesCacheContract).toMatchObject(contract)
+    const options = nativeEngineOptions({ MIAO_ENGINE_BIN: "engine" }, settings)
+    if (!options) throw new Error("expected configured engine")
+    const args = engineArgs({ ...options, db: "store.db", workspace: "workspace" })
+    expect(JSON.parse(args[args.indexOf("--responses-cache-contract") + 1] ?? "null")).toEqual(contract)
+    const disabled = { ...contract, mode: "disabled" }
+    const overridden = nativeEngineOptions(
+      { MIAO_ENGINE_BIN: "engine", MIAO_ENGINE_RESPONSES_CACHE_CONTRACT: JSON.stringify(disabled) },
+      settings,
+    )
+    expect(overridden?.responsesCacheContract?.mode).toBe("disabled")
+    expect(nativeEngineOptions({ MIAO_ENGINE_BIN: "engine" })?.responsesCacheContract).toBeUndefined()
+    for (const invalid of [{ prewarm: true }, { unknownCacheControl: true }])
+      expect(() =>
+        nativeEngineOptions({
+          MIAO_ENGINE_BIN: "engine",
+          MIAO_ENGINE_RESPONSES_CACHE_CONTRACT: JSON.stringify({ ...contract, ...invalid }),
+        }),
+      ).toThrow()
+  } finally {
+    rmSync(dir, { recursive: true, force: true })
+  }
+})
+
+test("compact tool disclosure reaches child arguments and validates environment overrides", async () => {
+  const dir = mkdtempSync(path.join(tmpdir(), "native-tool-disclosure-"))
+  try {
+    writeFileSync(path.join(dir, "miao.json"), JSON.stringify({ engine: { tool_disclosure: "compact" } }))
+    const settings = await engineSettings(dir)
+    const options = nativeEngineOptions({ MIAO_ENGINE_BIN: "engine" }, settings)
+    if (!options) throw new Error("expected engine options")
+    expect(options.toolDisclosure).toBe("compact")
+    const args = engineArgs({ ...options, db: "store.db", workspace: "workspace" })
+    expect(args[args.indexOf("--tool-disclosure") + 1]).toBe("compact")
+    expect(
+      nativeEngineOptions({ MIAO_ENGINE_BIN: "engine", MIAO_ENGINE_TOOL_DISCLOSURE: "full" }, settings)?.toolDisclosure,
+    ).toBe("full")
+    expect(() => nativeEngineOptions({ MIAO_ENGINE_BIN: "engine", MIAO_ENGINE_TOOL_DISCLOSURE: "invalid" })).toThrow()
+    expect(nativeEngineOptions({ MIAO_ENGINE_BIN: "engine" })?.toolDisclosure).toBeUndefined()
+  } finally {
+    rmSync(dir, { recursive: true, force: true })
+  }
+})
+
 for (const capability of ["mcp", "lsp"] as const) {
   test(`native ${capability} host config resolves globally and reaches the child arguments`, async () => {
     const dir = mkdtempSync(path.join(tmpdir(), `native-${capability}-config-`))

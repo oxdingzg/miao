@@ -27,6 +27,8 @@ pub mod protocol;
 pub mod provider;
 pub mod question;
 pub mod recall;
+pub mod recovery;
+pub mod responses_cache;
 pub mod roles;
 pub mod routing;
 pub mod runtime;
@@ -38,9 +40,11 @@ pub mod terminal;
 pub mod tool_replay;
 pub mod tools;
 pub mod usage;
+mod verification;
 pub mod wakeup;
 pub mod worker;
 
+pub mod tool_catalog;
 mod tool_input;
 
 mod first_event;

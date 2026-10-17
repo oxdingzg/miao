@@ -8,6 +8,13 @@ export interface OpenAIOptionsInput {
   readonly [key: string]: unknown
   readonly store?: boolean
   readonly promptCacheKey?: string
+  /** Advanced controls require the selected model's bound cache capability. */
+  readonly promptCacheRetention?: "in_memory" | "24h"
+  readonly promptCacheOptions?: {
+    readonly mode?: "implicit" | "explicit"
+    readonly ttl?: "30m"
+    readonly prewarm?: boolean
+  }
   readonly reasoningEffort?: ReasoningEffort
   readonly reasoningSummary?: "auto"
   // OpenAI Responses `include` wire field. Mirrors the official SDK's
@@ -30,6 +37,8 @@ const openAIProviderOptions = (options: OpenAIOptionsInput | undefined): Provide
     definedEntries({
       store: options?.store,
       promptCacheKey: options?.promptCacheKey,
+      promptCacheRetention: options?.promptCacheRetention,
+      promptCacheOptions: options?.promptCacheOptions,
       reasoningEffort: options?.reasoningEffort,
       reasoningSummary: options?.reasoningSummary,
       include: options?.include,

@@ -8,6 +8,10 @@
 
 ## 运行
 
+可选的[稳定扩展工具披露](docs/tool-disclosure.md)通过 `--tool-disclosure compact` 固定顶层工具 schema，按需发现扩展能力并过滤结果；也可设置全局 `engine.tool_disclosure` 或 `MIAO_ENGINE_TOOL_DISCLOSURE`。
+
+检索和诊断结果附带[源码版本来源信息](docs/revision-bound-observations.md)，区分实际观察到的内容、过期诊断与未报告版本的诊断；这类观察本身不构成整体任务完成的证明。
+
 在构建环境执行：
 
 ```sh
@@ -25,6 +29,25 @@ cargo build --manifest-path crates/miao-engine/Cargo.toml
 版本读取根 `package.json`，不把 crate 内部版本用作产品版本。
 
 使用 `--http 127.0.0.1:PORT` 启用 loopback HTTP 控制面，复用同一命令表（`POST /rpc` 与 `GET /events` SSE 事件流，revision `engine-http-0`）；认证用 bearer token，取自 `--http-token` 或 `MIAO_ENGINE_HTTP_TOKEN`，缺省时启动生成并打印到 stderr。非 loopback 地址被拒绝，TLS 交给本地反代。
+
+### 可选的 Responses 缓存控制
+
+`--responses-cache-contract JSON` 声明精确 wire model、规范化 endpoint URL（含 query）与认证类型（`api` 或 `subscription`）对应的缓存能力。只声明已验证的部署能力，不根据模型名称推断。集成的原生引擎读取全局配置 `engine.responses_cache_contract`，也可用 `MIAO_ENGINE_RESPONSES_CACHE_CONTRACT` 覆盖整个契约。
+
+```json
+{
+  "model": "wire-model",
+  "endpoint": "https://api.example/v1/responses",
+  "authentication": "api",
+  "profile": "breakpoints",
+  "mode": "implicit",
+  "ttl": "30m"
+}
+```
+
+`breakpoints` profile 将稳定 system 从 `instructions` 移到首个 developer `input_text`，附显式 breakpoint，默认保留尾部隐式缓存。`system:false` 不附标记；`mode:explicit` 要求非空且已标记的 system；`mode:disabled` 发送无标记的 explicit-only 模式。TTL 仅支持 `30m`。
+
+`legacy` profile 接受可选 `retention:in_memory|24h`，不能混用现代 TTL 或 mode 控制。普通模型默认配置拒绝会抑制生成的 `prewarm:true`。模型、端点、认证或协议不匹配时在发送前拒绝；同模型辅助角色保留契约，其他角色模型和 fallback 不继承。不配置契约时保留原请求形状。契约声明请求能力，实际命中仍需查看 provider usage 与缓存诊断。
 
 `acp` 模式在 stdio 上提供 ACP（newline-delimited JSON-RPC 2.0），供编辑器直接对接：`miao-engine acp --db PATH --workspace PATH --model MODEL [--provider ...] [--endpoint URL] [--policy PATH]`。当前实现 `initialize`/`authenticate`/`session/new`/`session/prompt`/`session/cancel`，把引擎审批映射为 `session/request_permission` 往返，把已提交的工具调用流式推送为 `tool_call`/`tool_call_update`，支持 `session/load`（历史回放）/`session/fork`/`session/resume`/`session/close`/`session/set_mode`，并把已提交的 todos 推送为 `plan`，支持 `session/list`；config/usage 更新为后续切片。
 
@@ -469,3 +492,7 @@ fail-closed 阻止派发，工具结果为 `blocked by tool_before hook (outcome
 
 钩子是 host 信任配置的守门/观测面，不是模型能力：不占 permission 规则、不需要 allow_process，
 也不给模型任何新 authority。目前没有 per-hook 网络、stdin 注入、run/turn 级事件或远程 hook。
+
+## 完成检查收据
+
+配置的完成检查会记录[版本绑定的验证收据](docs/verification-receipts.md)，包含实际退出码/输出、任务版本与有明确边界的源码覆盖范围。

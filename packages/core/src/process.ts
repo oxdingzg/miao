@@ -6,34 +6,72 @@ import { ChildProcessSpawner } from "effect/unstable/process/ChildProcessSpawner
 import { CrossSpawnSpawner } from "./cross-spawn-spawner"
 import { makeGlobalNode } from "./effect/app-node"
 
-// Windows shells write bytes in the console's active code page, not UTF-8, so a
-// Chinese `cmd.exe` (`chcp 936`) emits GBK and `dir` file names rendered as
-// replacement characters when decoded as UTF-8. Decode strictly as UTF-8 first
-// and fall back to the OEM code page only when those bytes are not valid UTF-8,
-// so already-UTF-8 output (the common case) is untouched. The label may be
-// overridden with `MIAO_WINDOWS_CODEPAGE`; the default 936 (GBK) covers the
-// reported case, and latin1 is the last resort because it never throws.
-const windowsCodepageLabel = (): ConstructorParameters<typeof TextDecoder>[0] =>
+// Shells write bytes in the active code page, not UTF-8: a Chinese `cmd.exe`
+// (`chcp 936`) emits GBK, and those bytes reach a UTF-8 host unchanged when the
+// command runs on a remote Windows machine over ssh, so the fallback cannot be
+// gated on `process.platform`. Decode as UTF-8 first and fall back to the code
+// page only when the bytes are not valid UTF-8, so already-UTF-8 output (the
+// common case) is untouched. `MIAO_WINDOWS_CODEPAGE` overrides the label; the
+// default 936 (GBK) covers the reported case, and latin1 is the last resort
+// because it never throws.
+const codepageLabel = (): ConstructorParameters<typeof TextDecoder>[0] =>
   (process.env["MIAO_WINDOWS_CODEPAGE"] ?? "gbk") as ConstructorParameters<typeof TextDecoder>[0]
 
-// Split out from `decodeOutput` so the Windows fallback is exercisable off
-// Windows: pass `windows: true` in a test to run the code-page branch.
-export function decodeBytes(buffer: Buffer, options: { windows: boolean }): string {
-  if (!options.windows) return buffer.toString("utf8")
+export function decodeOutput(buffer: Buffer): string {
+  const utf8 = new TextDecoder("utf-8", { fatal: true })
   try {
-    return new TextDecoder("utf-8", { fatal: true }).decode(buffer)
+    // Streaming first: a character cut in half by the capture limit is held
+    // back instead of being reported as invalid, and then only the flush fails.
+    const text = utf8.decode(buffer, { stream: true })
+    try {
+      return text + utf8.decode()
+    } catch {
+      return text
+    }
   } catch {
     try {
-      return new TextDecoder(windowsCodepageLabel()).decode(buffer)
+      return new TextDecoder(codepageLabel()).decode(buffer)
     } catch {
       return buffer.toString("latin1")
     }
   }
 }
 
-export function decodeOutput(buffer: Buffer): string {
-  return decodeBytes(buffer, { windows: process.platform === "win32" })
-}
+const NEWLINE = 0x0a
+const CARRIAGE_RETURN = 0x0d
+
+/**
+ * Split shell output into lines and decode each one on its own, so a GBK line
+ * is not mangled by the UTF-8 decoder the way whole-buffer text would be.
+ * `\r\n` and a lone `\r` terminate a line, matching `Stream.splitLines`, and an
+ * unterminated final line is returned too. Latin-1 maps every byte to its own
+ * code unit, so slicing here keeps byte offsets exact; neither UTF-8 nor GBK
+ * continues a character through 0x0a or 0x0d.
+ */
+const splitLines = (buffer: Buffer): ReadonlyArray<string> =>
+  buffer
+    .toString("latin1")
+    .split(/\r\n|\r|\n/)
+    .map((line) => decodeOutput(Buffer.from(line, "latin1")))
+
+/**
+ * Decode a byte stream into lines with `splitLines`, carrying the bytes of an
+ * incomplete line into the next chunk. The tail that never got a terminator is
+ * emitted when the stream ends, which `Stream.mapAccumArray`'s `onHalt` does.
+ */
+const decodeLines = (source: Stream.Stream<Uint8Array, PlatformError>): Stream.Stream<string, PlatformError> =>
+  source.pipe(
+    Stream.mapAccumArray(
+      () => Buffer.alloc(0),
+      (pending, chunks) => {
+        const buffer = Buffer.concat([pending, ...chunks])
+        const end = Math.max(buffer.lastIndexOf(NEWLINE), buffer.lastIndexOf(CARRIAGE_RETURN))
+        if (end === -1) return [buffer, [] as ReadonlyArray<string>]
+        return [buffer.subarray(end + 1), splitLines(buffer.subarray(0, end + 1))]
+      },
+      { onHalt: (pending) => (pending.length === 0 ? [] : splitLines(pending)) },
+    ),
+  )
 
 export class AppProcessError extends Schema.TaggedErrorClass<AppProcessError>()("AppProcessError", {
   command: Schema.String,
@@ -339,11 +377,7 @@ const layer = Layer.effect(
             collectStream(handle.stderr, options?.maxErrorBytes).pipe(Effect.map((x) => decodeOutput(x.buffer))),
           )
           const source = options?.includeStderr === true ? handle.all : handle.stdout
-          const lines = source.pipe(
-            Stream.decodeText,
-            Stream.splitLines,
-            Stream.filter((line) => line.length > 0),
-          )
+          const lines = decodeLines(source).pipe(Stream.filter((line) => line.length > 0))
           const tail = Stream.unwrap(
             Effect.gen(function* () {
               const code = yield* handle.exitCode

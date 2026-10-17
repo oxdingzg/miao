@@ -11,6 +11,7 @@ import type { Transport, TransportRuntime } from "./transport"
 import { WebSocketExecutor, WebSocketPool } from "./transport"
 import type { Protocol } from "./protocol"
 import { applyCachePolicy } from "../cache-policy"
+import { validateCacheCapability } from "../cache-capabilities"
 import * as ProviderShared from "../protocols/shared"
 import type { LLMError, PreparedRequestOf, ProtocolID, ProviderOptions } from "../schema"
 import {
@@ -349,10 +350,7 @@ function makeFromTransport<Body, Prepared, Frame, Event, State>(
             // tool-argument correction loop engages), so it runs as a final
             // effectful element instead of a sync mapAccumEffect onHalt.
             const streamed: Stream.Stream<LLMEvent, LLMError> = parser.onHalt
-              ? Stream.concat(
-                  stepped,
-                  Stream.fromIterableEffect(Effect.flatMap(Ref.get(latest), parser.onHalt)),
-                )
+              ? Stream.concat(stepped, Stream.fromIterableEffect(Effect.flatMap(Ref.get(latest), parser.onHalt)))
               : stepped
             return streamed.pipe(
               // A provider that ends the stream without a terminal frame has not
@@ -486,6 +484,7 @@ const compile = Effect.fn("LLM.compile")(function* (request: LLMRequest) {
   const body = yield* route.body
     .from(resolved)
     .pipe(Effect.flatMap(ProviderShared.validateWith(Schema.decodeUnknownEffect(route.body.schema))))
+  yield* validateCacheCapability(resolved, body)
   if (process.env.MIAO_DEBUG_LLM_WIRE === "1")
     yield* Effect.logInfo("llm.wire", { route: route.id, ...wireSummary(body) })
   const prepared = yield* route.prepareTransport(body, resolved)

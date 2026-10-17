@@ -24,12 +24,28 @@ import { ConfigToolOutput } from "./config/tool-output"
 import { ConfigWatcher } from "./config/watcher"
 
 // The V2 config schema, shared so clients can type /api/config against it.
+/** Deployment assertions for optional Responses cache controls; validated by the engine before transport. */
+export class ResponsesCacheContract extends Schema.Class<ResponsesCacheContract>("Config.ResponsesCacheContract")({
+  model: Schema.String,
+  endpoint: Schema.String,
+  authentication: Schema.Literals(["api", "subscription"]),
+  profile: Schema.Literals(["legacy", "breakpoints"]),
+  mode: optional(Schema.Literals(["implicit", "explicit", "disabled"])),
+  ttl: optional(Schema.Literal("30m")),
+  retention: optional(Schema.Literals(["in_memory", "24h"])),
+  system: optional(Schema.Boolean),
+  prewarm: optional(Schema.Literal(false)),
+}) {}
+
 /**
  * Engine process settings (B1): read from the **global** config file only —
  * the engine is one process serving every Location, so project documents do
  * not configure it. The operator's environment overrides any key.
  */
 export class Engine extends Schema.Class<Engine>("Config.Engine")({
+  tool_disclosure: optional(Schema.Literals(["full", "compact"])).annotate({
+    description: "Extension tool disclosure: full schemas (default) or stable search/call bridge",
+  }),
   provider: Schema.String.pipe(Schema.optional).annotate({
     description: "Provider id the engine's primary model resolves against",
   }),
@@ -53,6 +69,10 @@ export class Engine extends Schema.Class<Engine>("Config.Engine")({
     }),
   prompt_cache: Schema.Boolean.pipe(Schema.optional).annotate({
     description: "Prompt-cache policy for providers that support it (default provider-dependent)",
+  }),
+  responses_cache_contract: optional(ResponsesCacheContract).annotate({
+    description:
+      "Explicit Responses cache capability bound to model, endpoint and authentication; absent preserves existing requests",
   }),
   verify_command: Schema.String.pipe(Schema.optional).annotate({
     description: "Completion check the engine runs before ending an edit turn",

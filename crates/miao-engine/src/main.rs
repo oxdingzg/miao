@@ -115,7 +115,7 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
     }
     let mode = args.first().map(String::as_str);
     if !matches!(mode, Some("serve" | "acp")) {
-        eprintln!("Usage: miao-engine serve --db PATH --workspace PATH --model MODEL [--provider anthropic|openai-chat|openai-responses|subscription-responses|gemini] [--endpoint URL] [--policy PATH] [--verify-command COMMAND] [--prompt-cache on|off] [--lsp-diagnostics on|off] [--context-limits JSON] [--http ADDR [--http-token TOKEN]]\n       miao-engine acp --db PATH --workspace PATH --model MODEL [--provider ...] [--endpoint URL] [--policy PATH] [--verify-command COMMAND] [--prompt-cache on|off] [--lsp-diagnostics on|off]\n       miao-engine export --db PATH --session ID [--after CURSOR]\n       miao-engine doctor [--db PATH]\nUse ANTHROPIC_API_KEY, OPENAI_API_KEY or GEMINI_API_KEY for the selected provider. An explicit engine database is required.");
+        eprintln!("Usage: miao-engine serve --db PATH --workspace PATH --model MODEL [--provider anthropic|openai-chat|openai-responses|subscription-responses|gemini] [--endpoint URL] [--policy PATH] [--verify-command COMMAND] [--prompt-cache on|off] [--responses-cache-contract JSON] [--tool-disclosure full|compact] [--lsp-diagnostics on|off] [--context-limits JSON] [--http ADDR [--http-token TOKEN]]\n       miao-engine acp --db PATH --workspace PATH --model MODEL [--provider ...] [--endpoint URL] [--policy PATH] [--verify-command COMMAND] [--prompt-cache on|off] [--responses-cache-contract JSON] [--tool-disclosure full|compact] [--lsp-diagnostics on|off]\n       miao-engine export --db PATH --session ID [--after CURSOR]\n       miao-engine doctor [--db PATH]\nUse ANTHROPIC_API_KEY, OPENAI_API_KEY or GEMINI_API_KEY for the selected provider. An explicit engine database is required.");
         std::process::exit(2);
     }
     let acp = mode == Some("acp");
@@ -134,6 +134,8 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
             "--edit-recovery",
             "--verify-command",
             "--prompt-cache",
+            "--responses-cache-contract",
+            "--tool-disclosure",
             "--tool-replay",
             "--mcp-config",
             "--lsp-config",
@@ -272,12 +274,17 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
         Some("on") => true,
         Some(_) => return Err("--prompt-cache must be on or off".into()),
     };
-    let provider = miao_engine::routing::build(
+    let cache_contract = options
+        .get("--responses-cache-contract")
+        .map(|value| miao_engine::responses_cache::Contract::from_wire(value))
+        .transpose()?;
+    let provider = miao_engine::routing::build_with_cache(
         provider_name,
         options.get("--endpoint").map(String::as_str),
         source.clone(),
         model.clone(),
         prompt_cache,
+        cache_contract,
     )?;
     let provider: Arc<dyn Provider> = if let Some(model) = options.get("--fallback-model") {
         let endpoint = options.get("--fallback-endpoint").or_else(|| {
@@ -373,6 +380,12 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
             .with_protected_resource(&path)
             .with_references(references)?;
     }
+    tools =
+        tools.with_compact_disclosure(match options.get("--tool-disclosure").map(String::as_str) {
+            None | Some("full") => false,
+            Some("compact") => true,
+            Some(_) => return Err("--tool-disclosure must be full or compact".into()),
+        });
     if let Some(path) = options.get("--worker-config") {
         let path = tokio::fs::canonicalize(path).await?;
         if path.starts_with(std::path::Path::new(tools.location())) {
