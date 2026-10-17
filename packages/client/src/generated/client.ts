@@ -41,6 +41,8 @@ import type {
   SessionsGetOutput,
   SessionsSwitchAgentInput,
   SessionsSwitchAgentOutput,
+  SessionsModelRoutesInput,
+  SessionsModelRoutesOutput,
   SessionsSwitchModelInput,
   SessionsSwitchModelOutput,
   SessionsSwitchAccountInput,
@@ -685,6 +687,17 @@ export function make(options: ClientOptions) {
           },
           requestOptions,
         ),
+      modelRoutes: (input: SessionsModelRoutesInput, requestOptions?: RequestOptions) =>
+        request<{ readonly data: SessionsModelRoutesOutput }>(
+          {
+            method: "GET",
+            path: `/api/session/${encodeURIComponent(input.sessionID)}/model-routes`,
+            successStatus: 200,
+            declaredStatuses: [409, 404, 503, 400, 410, 401],
+            empty: false,
+          },
+          requestOptions,
+        ).then((value) => value.data),
       switchModel: (input: SessionsSwitchModelInput, requestOptions?: RequestOptions) =>
         request<SessionsSwitchModelOutput>(
           {
@@ -692,7 +705,7 @@ export function make(options: ClientOptions) {
             path: `/api/session/${encodeURIComponent(input.sessionID)}/model`,
             body: { model: input["model"] },
             successStatus: 204,
-            declaredStatuses: [404, 503, 400, 410, 409, 401],
+            declaredStatuses: [409, 404, 503, 400, 410, 401],
             empty: true,
           },
           requestOptions,
