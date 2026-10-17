@@ -18,6 +18,7 @@ import {
   UnknownError,
 } from "../errors"
 import { Agent } from "@miao/schema/agent"
+import { Credential } from "@miao/schema/credential"
 import { Model } from "@miao/schema/model"
 import { Location } from "@miao/schema/location"
 import { Revert } from "@miao/schema/revert"
@@ -210,6 +211,22 @@ export const makeSessionGroup = <I extends HttpApiMiddleware.AnyId, S>(sessionLo
             identifier: "v2.session.switchModel",
             summary: "Switch session model",
             description: "Switch the model used by subsequent provider turns.",
+          }),
+        ),
+    )
+    .add(
+      HttpApiEndpoint.post("session.switchAccount", "/api/session/:sessionID/account", {
+        params: { sessionID: Session.ID },
+        payload: Schema.Struct({ credentialID: Schema.NullOr(Credential.ID) }),
+        success: HttpApiSchema.NoContent,
+        error: [SessionNotFoundError, ServiceUnavailableError],
+      })
+        .middleware(sessionLocationMiddleware)
+        .annotateMerge(
+          OpenApi.annotations({
+            identifier: "v2.session.switchAccount",
+            summary: "Switch session account",
+            description: "Switch the provider account used by subsequent provider turns, or clear the pin.",
           }),
         ),
     )

@@ -7,6 +7,7 @@ import { ListAnchor } from "@miao/schema/session"
 import { and, asc, desc, eq, gt, isNull, like, lt, or, sql, type SQL } from "drizzle-orm"
 import { ProjectV2 } from "./project"
 import { WorkspaceV2 } from "./workspace"
+import { Credential } from "@miao/schema/credential"
 import { ModelV2 } from "./model"
 import { Location } from "./location"
 import { SessionMessage } from "./session/message"
@@ -223,6 +224,14 @@ export interface Interface {
   readonly switchModel: (input: {
     sessionID: SessionSchema.ID
     model: ModelV2.Ref
+  }) => Effect.Effect<void, NotFoundError | LegacyNotMigratedError>
+  /**
+   * Pins the conversation to one stored account of its provider, or clears the
+   * pin so the provider resolves the account again.
+   */
+  readonly switchAccount: (input: {
+    sessionID: SessionSchema.ID
+    credentialID: Credential.ID | null
   }) => Effect.Effect<void, NotFoundError | LegacyNotMigratedError>
   readonly prompt: (input: {
     id?: SessionMessage.ID
@@ -788,6 +797,18 @@ const layer = Layer.effect(
           messageID: SessionMessage.ID.create(),
           timestamp: yield* DateTime.now,
           model: input.model,
+        })
+      }),
+      switchAccount: Effect.fn("V2Session.switchAccount")(function* (input) {
+        yield* ownership.claim(input.sessionID)
+        const session = yield* result.get(input.sessionID)
+        yield* requireMigrated(session.id)
+        if ((session.credentialID ?? null) === input.credentialID) return
+        yield* events.publish(SessionEvent.AccountSwitched, {
+          sessionID: input.sessionID,
+          messageID: SessionMessage.ID.create(),
+          timestamp: yield* DateTime.now,
+          credentialID: input.credentialID,
         })
       }),
       compact: Effect.fn("V2Session.compact")(function* (input) {

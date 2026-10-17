@@ -1,9 +1,9 @@
 {
   "version": "7",
   "dialect": "sqlite",
-  "id": "f21f0e8f-3b52-40d0-998f-d8d009c9f898",
+  "id": "f5f77b80-1c50-4105-8e7e-a58486bb0e24",
   "prevIds": [
-    "fea802e3-16a6-42cf-a5d6-16005f6b7998"
+    "f21f0e8f-3b52-40d0-998f-d8d009c9f898"
   ],
   "ddl": [
     {
@@ -1673,6 +1673,16 @@
       "default": null,
       "generated": null,
       "name": "model",
+      "entityType": "columns",
+      "table": "session"
+    },
+    {
+      "type": "text",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "credential_id",
       "entityType": "columns",
       "table": "session"
     },

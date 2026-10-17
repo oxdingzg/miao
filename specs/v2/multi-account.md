@@ -1,7 +1,6 @@
 # Multi-Account Provider Support
 
-Status: shipped except for one gap; this document records the design and what
-`main` implements today.
+Status: shipped; this document records the design and what `main` implements.
 
 ## Implementation status (main, as of this revision)
 
@@ -33,11 +32,17 @@ An account is a stored credential, and a provider can hold several. Shipped:
   writes the active flag of a daemon-owned row, so an owner-brokered account no
   longer blocks adding or rotating a different one (605bfbb98b).
 
-One gap remains:
+- Session binding: `Session.Info.credentialID` pins a conversation to one
+  account of its provider. `SessionV2.switchAccount` publishes the durable
+  `session.next.account.switched` event (clearing the pin publishes a null), the
+  projector writes `session.credential_id`, `POST /api/session/:id/account`
+  exposes it, and the terminal's accounts dialog offers "Use here" (ctrl+y). The
+  runner resolves a pinned account before either config level, and a pin that
+  no longer exists falls back with a warning like any other stale entry.
 
-1. No session-level account binding: `Session.Info` carries no `credentialID`,
-   so a session follows the account its provider resolves (active, config, or
-   agent), never one pinned to that conversation.
+Resolution order for a turn's account is therefore: the conversation's pin, the
+agent's `accounts` entry, the Location's `accounts` entry, and finally the
+provider's active credential.
 
 The sections below are the original design and still describe the intended
 semantics; where they differ from the shipped shape, the shipped shape wins

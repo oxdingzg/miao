@@ -6,6 +6,7 @@ import { useDialog } from "../ui/dialog"
 import { useToast } from "../ui/toast"
 import { useSDK } from "../context/sdk"
 import { useSync } from "../context/sync"
+import { useRoute } from "../context/route"
 import { useTheme } from "../context/theme"
 import { connectProvider } from "./dialog-provider"
 
@@ -57,6 +58,7 @@ export function DialogAccounts(props: { providerID: string }) {
   const sync = useSync()
   const dialog = useDialog()
   const toast = useToast()
+  const route = useRoute()
   const { theme } = useTheme()
   const [accounts, setAccounts] = createSignal<Account[]>([])
 
@@ -78,6 +80,14 @@ export function DialogAccounts(props: { providerID: string }) {
   onMount(() => void load())
 
   const reopen = () => dialog.replace(() => <DialogAccounts providerID={props.providerID} />)
+  const session = createMemo(() => {
+    const id = route.data.type === "session" ? route.data.sessionID : undefined
+    return id ? sync.data.session.find((item) => item.id === id) : undefined
+  })
+  const describe = (item: Account) =>
+    [item.active ? "active" : "inactive", session()?.credentialID === item.id ? "used in this session" : undefined]
+      .filter((part) => part !== undefined)
+      .join(" · ")
 
   async function activate(id: string): Promise<void> {
     if (account(id)?.active) return
@@ -98,6 +108,18 @@ export function DialogAccounts(props: { providerID: string }) {
     await sdk.api.credentials
       .update({ credentialID: id, label: label.trim(), location: location() })
       .catch((error: unknown) => toast.error(error))
+    await sync.bootstrap()
+    reopen()
+  }
+
+  /** Pins the account to the open conversation; the provider default stays put. */
+  async function pin(id: string): Promise<void> {
+    const current = session()
+    if (!current) return reopen()
+    await sdk.api.sessions.switchAccount({ sessionID: current.id, credentialID: id }, {}).catch((error: unknown) => {
+      toast.error(error)
+      return undefined
+    })
     await sync.bootstrap()
     reopen()
   }
@@ -150,7 +172,7 @@ export function DialogAccounts(props: { providerID: string }) {
     ...accounts().map((item) => ({
       title: item.label,
       value: item.id,
-      description: item.active ? "active" : "inactive",
+      description: describe(item),
       gutter: item.active ? () => <text fg={theme.success}>✓</text> : undefined,
       onSelect: (): void => void activate(item.id),
     })),
@@ -172,6 +194,12 @@ export function DialogAccounts(props: { providerID: string }) {
           command: "provider.account.add",
           title: "Add",
           onTrigger: (): void => void add(),
+        },
+        {
+          command: "provider.account.pin",
+          title: "Use here",
+          disabled: (option) => !session() || !option || option.value === "add",
+          onTrigger: (option): void => void pin(String(option.value)),
         },
         {
           command: "provider.account.rename",
