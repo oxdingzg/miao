@@ -125,15 +125,18 @@ async fn rewind_survives_recovery_and_fork_excludes_reverted() {
         let store = Store::open(&path).await.unwrap();
         seed(&store).await;
         let history = store.history("s").await.unwrap();
-        (
+        let boundaries = (
             history[0].checkpoint.clone().unwrap(),
             history[2].checkpoint.clone().unwrap(),
-        )
+        );
+        store.close().await.unwrap();
+        boundaries
     };
     {
         let store = Store::open(&path).await.unwrap();
         store.revert("s", &second).await.unwrap();
         assert_eq!(store.history("s").await.unwrap().len(), 2);
+        store.close().await.unwrap();
     }
     // Recovery: a fresh Store over the same database keeps the rewind.
     let store = Store::open(&path).await.unwrap();
@@ -146,7 +149,7 @@ async fn rewind_survives_recovery_and_fork_excludes_reverted() {
     // Unrevert restores the full projection, and it, too, survives recovery.
     store.unrevert("s").await.unwrap();
     assert_eq!(store.history("s").await.unwrap().len(), 4);
-    drop(store);
+    store.close().await.unwrap();
     let reopened = Store::open(&path).await.unwrap();
     assert_eq!(reopened.history("s").await.unwrap().len(), 4);
 }

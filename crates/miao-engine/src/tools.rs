@@ -272,16 +272,10 @@ impl Tools {
         for reference in &references {
             let canonical =
                 std::fs::canonicalize(&reference.path).map_err(|_| ToolError::InvalidInput)?;
-            let root = if canonical.is_dir() {
-                canonical
-            } else {
-                canonical
-                    .parent()
-                    .ok_or(ToolError::InvalidInput)?
-                    .to_owned()
-            };
-            if !roots.contains(&root) {
-                roots.push(root);
+            // A file reference authorizes that exact file, not its siblings.
+            // Directory references retain their explicitly granted subtree.
+            if !roots.contains(&canonical) {
+                roots.push(canonical);
             }
         }
         self.references = Arc::new(references);

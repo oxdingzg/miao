@@ -5,6 +5,7 @@ import { DialogSelect } from "../ui/dialog-select"
 import { useDialog } from "../ui/dialog"
 import { createDialogProviderOptions, DialogProvider } from "./dialog-provider"
 import { DialogProviderSwitch } from "./dialog-provider-switch"
+import { DialogAccounts } from "./dialog-accounts"
 import { DialogVariant } from "./dialog-variant"
 import * as fuzzysort from "fuzzysort"
 import { useConnected } from "./use-connected"
@@ -185,6 +186,16 @@ export function DialogModel(props: { providerID?: string }) {
           hidden: !connected(),
           onTrigger: (option) => {
             local.model.toggleFavorite(option.value as { providerID: string; modelID: string })
+          },
+        },
+        {
+          command: "provider.accounts",
+          title: "Accounts",
+          hidden: props.providerID === undefined,
+          onTrigger: () => {
+            const providerID = props.providerID
+            if (!providerID) return
+            dialog.replace(() => <DialogAccounts providerID={providerID} />)
           },
         },
       ]}

@@ -18,7 +18,7 @@ use std::{
         Arc, Mutex, OnceLock,
     },
 };
-use tokio::sync::{mpsc, oneshot};
+use tokio::sync::{mpsc, oneshot, watch};
 
 pub(crate) const APPLICATION_ID: u32 = 0x4d494145;
 pub(crate) const SCHEMA_VERSION: u32 = 11;
@@ -51,6 +51,7 @@ impl Drop for FileLease {
 #[derive(Clone)]
 pub struct Store {
     work: mpsc::Sender<Work>,
+    closed: watch::Receiver<()>,
     runtime_owner: Arc<AtomicBool>,
     path: Arc<std::path::PathBuf>,
 }
@@ -78,7 +79,10 @@ impl Store {
         let path = path.as_ref().to_path_buf();
         let (work, mut receive) = mpsc::channel::<Work>(64);
         let (ready, started) = oneshot::channel();
+        let (stopped, closed) = watch::channel(());
         std::thread::spawn(move || {
+            // Dropped after the worker connection and file lease, including on panic.
+            let _stopped = stopped;
             let opened = (|| -> Result<_, Error> {
                 if let Some(parent) = path.parent().filter(|p| !p.as_os_str().is_empty()) {
                     std::fs::create_dir_all(parent)?;
@@ -246,9 +250,25 @@ impl Store {
         let path = started.await.map_err(|_| Error::Closed)??;
         Ok(Self {
             work,
+            closed,
             runtime_owner: Arc::new(AtomicBool::new(false)),
             path: Arc::new(path),
         })
+    }
+
+    /// Close the last Store handle and wait for SQLite and the file lease to
+    /// finish teardown. Dropping a Store only starts asynchronous worker exit.
+    /// A live clone (including a Runtime) must be released before calling this.
+    pub async fn close(self) -> Result<(), Error> {
+        if self.work.strong_count() != 1 {
+            return Err(Error::Busy);
+        }
+        let Self {
+            work, mut closed, ..
+        } = self;
+        drop(work);
+        let _ = closed.changed().await;
+        Ok(())
     }
 
     pub fn path(&self) -> &Path {
@@ -660,12 +680,13 @@ impl Store {
             let questions=crate::question::pending(&tx,&session)?;
             let wakeups=crate::wakeup::pending(&tx,&session)?;
             let crons=crate::cron::pending(&tx,&session)?;
+            let model_selection=crate::session_model::selected(&tx,&session)?;
             let mode:String=tx.query_row("SELECT mode FROM engine_session WHERE id=?1",[&session],|r|r.get(0)).optional()?.unwrap_or_else(||"build".into());
             let (title,created_at_ms,updated_at_ms):(String,Option<i64>,Option<i64>)=tx.query_row(
                 "SELECT title,created_at_ms,updated_at_ms FROM engine_session WHERE id=?1",
                 [&session],|r|Ok((r.get(0)?,r.get(1)?,r.get(2)?)),
             )?;
-            let snapshot=json!({"session_id":session,"parent_session_id":parent,"cursor":cursor,"location":location,"mode":mode,"title":title,"created_at_ms":created_at_ms,"updated_at_ms":updated_at_ms,"messages":messages,"selection":selection,"pending":pending,"active_run":active,"approvals":approvals,"context":context,"state":state,"questions":questions,"wakeups":wakeups,"crons":crons});
+            let snapshot=json!({"session_id":session,"parent_session_id":parent,"cursor":cursor,"location":location,"mode":mode,"title":title,"created_at_ms":created_at_ms,"updated_at_ms":updated_at_ms,"messages":messages,"selection":selection,"pending":pending,"active_run":active,"approvals":approvals,"context":context,"state":state,"questions":questions,"wakeups":wakeups,"crons":crons,"model_selection":model_selection});
             if serde_json::to_vec(&snapshot)?.len()>4*1024*1024{return Err(Error::Invalid("snapshot exceeds limit; use events pagination".into()));}
             tx.commit()?;Ok(snapshot)
         }).await
@@ -764,6 +785,9 @@ impl Store {
                 tx.execute("INSERT INTO engine_context VALUES(?1,1,?2,?3,?4,?5)",params![target,fingerprint,system,sources,event.seq])?;
             }
             let source_watermark=if message_seq.is_none(){tx.query_row("SELECT next_seq FROM engine_session WHERE id=?1",[&parent],|r|r.get::<_,u64>(0))?}else{seq};
+            if let Some(binding)=crate::session_model::selected_at(&tx,&parent,source_watermark)? {
+                append(&tx,&target,"session.model.selected",json!({"binding":binding,"inherited":true}))?;
+            }
             let inherited=crate::state::projection(&tx,&parent,source_watermark)?;
             for kind in ["todos","goal"] {
                 if !inherited[kind].is_null(){append(&tx,&target,"session.state.updated",json!({"operation_id":format!("fork:{target}:{kind}"),"kind":kind,"value":inherited[kind]["value"],"expected_revision":null,"parent_revision":inherited[kind]["revision"]}))?;}

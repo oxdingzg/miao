@@ -199,12 +199,7 @@ pub(crate) fn validate(sources: &[Source]) -> Result<(), ToolError> {
                 .all(|b| b.is_ascii_alphanumeric() || b == b'_' || b == b'-' || b == b'.')
             || source.path.is_empty()
             || source.path.len() > 2048
-            || std::path::Path::new(&source.path).is_absolute()
-            || source
-                .path
-                .split('/')
-                .any(|part| part == ".." || part.is_empty() || part == ".")
-            || source.path.contains(['\0', '\\'])
+            || !source_path(&source.path)
             || !paths.insert(&source.path)
             || !labels.insert(&source.label)
         {
@@ -212,6 +207,28 @@ pub(crate) fn validate(sources: &[Source]) -> Result<(), ToolError> {
         }
     }
     Ok(())
+}
+
+fn source_path(path: &str) -> bool {
+    if path.contains('\0') {
+        return false;
+    }
+    let parsed = std::path::Path::new(path);
+    if parsed.is_absolute() {
+        // Absolute names grant nothing by themselves: ordinary prepare/read
+        // still requires a host-authorized read-only reference for this file.
+        return parsed.file_name().is_some()
+            && !parsed.components().any(|part| {
+                matches!(
+                    part,
+                    std::path::Component::ParentDir | std::path::Component::CurDir
+                )
+            });
+    }
+    !path.contains('\\')
+        && !path
+            .split('/')
+            .any(|part| part == ".." || part.is_empty() || part == ".")
 }
 
 /// Location-owned workspace producers. Additional sources are explicit host
@@ -236,14 +253,28 @@ pub async fn assemble(
         label: "AGENTS.md".into(),
         path: "AGENTS.md".into(),
     };
-    for source in std::iter::once(&root).chain(tools.context_sources()) {
+    // Host global/ancestor instructions precede this workspace's instructions;
+    // additional workspace-relative sources retain their configured order.
+    for source in tools
+        .context_sources()
+        .filter(|source| std::path::Path::new(&source.path).is_absolute())
+        .chain(std::iter::once(&root))
+        .chain(
+            tools
+                .context_sources()
+                .filter(|source| !std::path::Path::new(&source.path).is_absolute()),
+        )
+    {
         if cancel.is_cancelled() {
             return Err(ToolError::Interrupted);
         }
-        let decision = policy.evaluate("read_file", &source.path, crate::permission::Access::Read);
-        if decision != Decision::Allow {
-            sources.push(json!({"label":source.label,"path":source.path,"status":"skipped","reason":if decision==Decision::Ask{"policy_ask"}else{"policy_deny"}}));
-            continue;
+        if !std::path::Path::new(&source.path).is_absolute() {
+            let decision =
+                policy.evaluate("read_file", &source.path, crate::permission::Access::Read);
+            if decision != Decision::Allow {
+                sources.push(json!({"label":source.label,"path":source.path,"status":"skipped","reason":if decision==Decision::Ask{"policy_ask"}else{"policy_deny"}}));
+                continue;
+            }
         }
         match tools.prepare("read_file",json!({"path":source.path})).await {
             Ok(prepared)=> {
