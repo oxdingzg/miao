@@ -2,7 +2,7 @@ use serde_json::Value;
 use std::time::Duration;
 use tokio::time::Instant;
 
-/// Starts at HTTP dispatch and is released after a canonical provider event.
+/// Starts at provider dispatch and is released after a canonical provider event.
 #[derive(Clone, Copy)]
 pub(crate) struct FirstEventDeadline(pub(crate) Option<Instant>);
 
