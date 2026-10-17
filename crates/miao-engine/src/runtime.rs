@@ -353,6 +353,10 @@ impl Runtime {
         self.wake(session, true).await
     }
 
+    pub fn model_catalog(&self) -> Vec<crate::model_catalog::Info> {
+        self.inner.provider.model_catalog()
+    }
+
     pub async fn select_model(
         &self,
         session: &str,

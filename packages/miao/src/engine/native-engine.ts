@@ -114,6 +114,7 @@ export const nativeEngineOptions = (
     contextConfigFile: environment.MIAO_ENGINE_CONTEXT_CONFIG ?? merged.contextConfigFile,
     skillsConfigFile: environment.MIAO_ENGINE_SKILLS_CONFIG ?? merged.skillsConfigFile,
     referencesConfigFile: environment.MIAO_ENGINE_REFERENCES_CONFIG ?? merged.referencesConfigFile,
+    modelRoutesConfigFile: environment.MIAO_ENGINE_MODEL_ROUTES_CONFIG ?? merged.modelRoutesConfigFile,
     contextLimits: merged.contextLimits,
   }
 }
