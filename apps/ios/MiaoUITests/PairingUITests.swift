@@ -73,6 +73,17 @@ final class PairingUITests: XCTestCase {
     }
 
     @MainActor
+    private func openDrawer(_ app: XCUIApplication) {
+        let toggle = app.buttons["sessionSidebar"]
+        if toggle.waitForExistence(timeout: 5) && toggle.isHittable {
+            toggle.tap()
+            return
+        }
+        let open = app.buttons["打开侧栏"].firstMatch
+        if open.waitForExistence(timeout: 3) && open.isHittable { open.tap() }
+    }
+
+    @MainActor
     func testRealRuntimeRenameAndDraftRecovery() throws {
         guard let path = ProcessInfo.processInfo.environment["MIAO_UI_TEST_FIXTURE"], !path.isEmpty,
               !path.hasPrefix("$(") else { throw XCTSkip("Live Runtime fixture is supplied by check-app.ts") }
@@ -90,11 +101,9 @@ final class PairingUITests: XCTestCase {
         if let account = fixture.account {
             stage("account")
             if fixture.enrollment != nil {
-                XCTAssertTrue(app.buttons["hubAccount"].waitForExistence(timeout: 15))
-                app.buttons["hubAccount"].tap()
+                XCTAssertTrue(app.textFields["hubOrigin"].waitForExistence(timeout: 15))
+                app.textFields["hubOrigin"].tap(); app.textFields["hubOrigin"].typeText(account.origin)
             }
-            XCTAssertTrue(app.textFields["hubOrigin"].waitForExistence(timeout: 15))
-            app.textFields["hubOrigin"].tap(); app.textFields["hubOrigin"].typeText(account.origin)
             app.textFields["hubEmail"].tap(); app.textFields["hubEmail"].typeText(account.email)
             app.secureTextFields["hubPassword"].tap(); app.secureTextFields["hubPassword"].typeText(account.password)
             app.buttons["hubSignIn"].tap()
@@ -103,7 +112,7 @@ final class PairingUITests: XCTestCase {
             // nothing taps 关闭 to get out of the sign-in flow.
             if let enrollment = fixture.enrollment {
                 stage("pairing")
-                XCTAssertTrue(app.buttons["hubAccount"].waitForExistence(timeout: 30))
+                openDrawer(app)
                 // Sign-in dismisses the account sheet on its own, so reopening it
                 // can race that dismissal; retry until the signed-in sheet shows
                 // the enrollment controls. The enrollment section is a lazy Form
@@ -196,6 +205,7 @@ final class PairingUITests: XCTestCase {
             stage("pairing")
             app.buttons["开始配对"].tap()
         }
+        openDrawer(app)
         XCTAssertTrue(app.staticTexts["已连接"].waitForExistence(timeout: 30))
         XCTAssertTrue(app.buttons[fixture.title].waitForExistence(timeout: 10))
         app.buttons[fixture.title].tap()
@@ -274,6 +284,7 @@ final class PairingUITests: XCTestCase {
         app.terminate()
         app.launchEnvironment.removeValue(forKey: "MIAO_UI_TEST_INVITATION")
         app.launch()
+        openDrawer(app)
         XCTAssertTrue(app.staticTexts["已连接"].waitForExistence(timeout: 30))
         app.buttons["Native phone rename"].tap()
         XCTAssertTrue(draft.waitForExistence(timeout: 10))
@@ -297,6 +308,7 @@ final class PairingUITests: XCTestCase {
         stage("restart")
         app.terminate()
         app.launch()
+        openDrawer(app)
         XCTAssertTrue(app.staticTexts["已连接"].waitForExistence(timeout: 30))
         app.buttons["Native phone rename"].tap()
         app.swipeUp()
