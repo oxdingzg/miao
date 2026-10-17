@@ -610,10 +610,15 @@ fn boxed_drain(
     force: bool,
     cancel: CancellationToken,
 ) -> std::pin::Pin<Box<dyn std::future::Future<Output = Result<(), Error>> + Send>> {
-    Box::pin(crate::cache_affinity::scoped(
-        session.clone(),
-        drain(session, inner, force, cancel),
-    ))
+    Box::pin(async move {
+        let affinity = inner.store.cache_affinity(&session).await?;
+        crate::cache_affinity::scoped_with(
+            affinity,
+            session.clone(),
+            drain(session, inner, force, cancel),
+        )
+        .await
+    })
 }
 
 async fn drain(

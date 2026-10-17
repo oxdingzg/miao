@@ -709,6 +709,34 @@ impl Store {
         .await
     }
 
+    /// Forks share only a cache-routing hint, never a transport identity.
+    /// Corrupt or excessively deep lineage falls back to the current Session.
+    pub(crate) async fn cache_affinity(&self, session: &str) -> Result<String, Error> {
+        let session = session.to_owned();
+        self.call(move |conn| {
+            let mut current = session.clone();
+            let mut visited = std::collections::HashSet::new();
+            for _ in 0..64 {
+                if !visited.insert(current.clone()) {
+                    return Ok(session);
+                }
+                let parent: Option<String> = conn
+                    .query_row(
+                        "SELECT parent_session_id FROM engine_lineage WHERE session_id=?1",
+                        [&current],
+                        |row| row.get(0),
+                    )
+                    .optional()?;
+                let Some(parent) = parent else {
+                    return Ok(current);
+                };
+                current = parent;
+            }
+            Ok(session)
+        })
+        .await
+    }
+
     pub async fn fork(
         &self,
         parent: &str,
