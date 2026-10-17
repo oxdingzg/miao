@@ -119,6 +119,8 @@ impl Runtime {
             ));
         }
         let mut tools = tools
+            .enable_web(policy.web_enabled())
+            .map_err(|error| Error::Invalid(error.to_string()))?
             .with_cron(policy.cron_enabled())
             .with_wakeup(policy.wakeup_enabled())
             .with_writes(policy.writes_enabled())
@@ -390,6 +392,7 @@ impl Runtime {
         call: &str,
         operation: &str,
         decision: crate::recovery::Decision,
+        resume: bool,
     ) -> Result<Value, Error> {
         if self.inner.stop.is_cancelled() {
             return Err(Error::Closed);
@@ -398,10 +401,17 @@ impl Runtime {
         {
             return Err(Error::Conflict);
         }
-        self.inner
+        let result = self
+            .inner
             .store
             .resolve_recovery(session, call, operation, decision)
-            .await
+            .await?;
+        // An exact retry after promotion must not force a second provider
+        // continuation. Advisory wake only drains still-pending durable input.
+        if resume {
+            self.wake(session, false).await?;
+        }
+        Ok(result)
     }
 
     async fn wake(&self, session: &str, force: bool) -> Result<(), Error> {

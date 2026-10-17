@@ -65,6 +65,10 @@ export interface EngineOptions {
   mcpSettings?: ConfigMCP.Info
   /** Absolute path to an LSP host config; must live outside the workspace. */
   lspConfigFile?: string
+  /** Trusted instruction sources, skill directories, and exact read-only reference grants. */
+  contextConfigFile?: string
+  skillsConfigFile?: string
+  referencesConfigFile?: string
   /**
    * Explicit prefix-cache policy for the first model turn's stable prefix.
    * Absent leaves each provider's own caching behavior untouched.
@@ -113,6 +117,10 @@ const INHERITED_ENVIRONMENT = [
   "OPENAI_ACCESS_TOKEN",
   "OPENAI_ACCOUNT_ID",
   "GEMINI_API_KEY",
+  "EXA_API_KEY",
+  "PARALLEL_API_KEY",
+  "MIAO_WEB_SEARCH_PROVIDER",
+  "MIAO_WEB_SEARCH_ENDPOINT",
   // Engine deployment knobs.
   "MIAO_ENGINE_VERSION",
   "MIAO_ENGINE_HTTP_TOKEN",
@@ -154,6 +162,9 @@ export function engineArgs(options: EngineOptions): string[] {
   if (options.lspDiagnostics === false) args.push("--lsp-diagnostics", "off")
   if (options.mcpConfigFile) args.push("--mcp-config", options.mcpConfigFile)
   if (options.lspConfigFile) args.push("--lsp-config", options.lspConfigFile)
+  if (options.contextConfigFile) args.push("--context-config", options.contextConfigFile)
+  if (options.skillsConfigFile) args.push("--skills-config", options.skillsConfigFile)
+  if (options.referencesConfigFile) args.push("--references-config", options.referencesConfigFile)
   if (options.promptCache !== undefined) args.push("--prompt-cache", options.promptCache ? "on" : "off")
   if (options.responsesCacheContract)
     args.push("--responses-cache-contract", JSON.stringify(options.responsesCacheContract))
