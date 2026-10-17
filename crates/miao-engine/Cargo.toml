@@ -12,7 +12,7 @@ path = "src/main.rs"
 [dependencies]
 async-trait = "0.1"
 base64 = "0.22"
-axum = { version = "0.8", default-features = false, features = ["http1", "tokio", "json", "query"] }
+axum = { version = "0.8", default-features = false, features = ["http1", "tokio", "json", "query", "form"] }
 cap-std = "3"
 cap-fs-ext = "3"
 regex = "1"

@@ -493,6 +493,7 @@ for line in sys.stdin:
             name: "process".into(),
             argv: vec!["python3".into(), "-u".into(), "-c".into(), script.into()],
             env: Default::default(),
+            oauth: None,
         }],
         dir.path(),
     )
