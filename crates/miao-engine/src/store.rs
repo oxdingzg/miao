@@ -1036,7 +1036,11 @@ impl Store {
                 let session:String=row.get(0)?;
                 Ok(json!({"session_id":session}))
             })?;
-            rows.collect::<Result<Vec<_>,_>>().map_err(Error::from)
+            let mut sessions=Vec::new();
+            for row in rows{
+                sessions.push(row.map_err(Error::from)?);
+            }
+            Ok(sessions)
         }).await
     }
     /// Process heartbeat for timer ownership. The epoch advances on every
