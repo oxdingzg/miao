@@ -195,6 +195,21 @@ pub enum Command {
     Resume {
         session_id: String,
     },
+    SelectModel {
+        session_id: String,
+        binding: Option<crate::session_model::Binding>,
+    },
+    Recoveries {
+        session_id: String,
+        #[serde(default)]
+        after: String,
+    },
+    ResolveRecovery {
+        session_id: String,
+        call_id: String,
+        operation_id: String,
+        decision: crate::recovery::Decision,
+    },
     Mode {
         session_id: String,
         mode: CollaborationMode,

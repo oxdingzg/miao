@@ -1,5 +1,7 @@
+import os from "node:os"
 import path from "node:path"
 import { Config } from "@miao/core/config"
+import { ResponsesCacheContract } from "@miao/schema/config"
 import { Global } from "@miao/core/global"
 import { makeGlobalNode } from "@miao/core/effect/app-node"
 import { ClientEvents } from "@miao/server/client-events"
@@ -60,11 +62,23 @@ export const nativeEngineOptions = (
   if (environment.MIAO_ENGINE_PROVIDER) merged.provider = environment.MIAO_ENGINE_PROVIDER
   if (environment.MIAO_ENGINE_ENDPOINT) merged.endpoint = environment.MIAO_ENGINE_ENDPOINT
   if (environment.MIAO_ENGINE_FALLBACK_MODEL) merged.fallbackModel = environment.MIAO_ENGINE_FALLBACK_MODEL
+  if (environment.MIAO_ENGINE_TOOL_DISCLOSURE) {
+    if (!["full", "compact"].includes(environment.MIAO_ENGINE_TOOL_DISCLOSURE))
+      throw new Error("MIAO_ENGINE_TOOL_DISCLOSURE must be full or compact")
+    merged.toolDisclosure = environment.MIAO_ENGINE_TOOL_DISCLOSURE === "compact" ? "compact" : "full"
+  }
   if (environment.MIAO_ENGINE_ROLES) merged.roles = JSON.parse(environment.MIAO_ENGINE_ROLES)
+  if (environment.MIAO_ENGINE_RESPONSES_CACHE_CONTRACT)
+    merged.responsesCacheContract = Schema.decodeUnknownSync(Schema.fromJsonString(ResponsesCacheContract), {
+      onExcessProperty: "error",
+    })(environment.MIAO_ENGINE_RESPONSES_CACHE_CONTRACT)
   merged.promptCache = environment.MIAO_ENGINE_PROMPT_CACHE
     ? environment.MIAO_ENGINE_PROMPT_CACHE === "on"
     : merged.promptCache
   merged.verifyCommand = environment.MIAO_ENGINE_VERIFY_COMMAND ?? merged.verifyCommand
+  merged.mcpConfigFile = environment.MIAO_ENGINE_MCP_CONFIG
+    ? path.resolve(environment.MIAO_ENGINE_MCP_CONFIG)
+    : merged.mcpConfigFile
   merged.lspConfigFile = environment.MIAO_ENGINE_LSP_CONFIG
     ? path.resolve(environment.MIAO_ENGINE_LSP_CONFIG)
     : merged.lspConfigFile
@@ -83,9 +97,13 @@ export const nativeEngineOptions = (
     credentialID: environment.MIAO_ENGINE_CREDENTIAL_ID,
     credentialIntegration: environment.MIAO_ENGINE_CREDENTIAL_INTEGRATION,
     fallbackModel: merged.fallbackModel,
+    toolDisclosure: merged.toolDisclosure,
     roles: merged.roles,
+    responsesCacheContract: merged.responsesCacheContract,
     promptCache: merged.promptCache,
     verifyCommand: merged.verifyCommand,
+    mcpConfigFile: merged.mcpConfigFile,
+    mcpSettings: merged.mcpSettings,
     lspConfigFile: merged.lspConfigFile,
     contextLimits: merged.contextLimits,
   }
@@ -100,10 +118,12 @@ export const engineSettings = async (
   globalConfig: string,
 ): Promise<Omit<EngineOptions, "db" | "workspace"> | undefined> => {
   let settings: Omit<EngineOptions, "db" | "workspace"> | undefined = undefined
+  const documents: Config.Entry[] = []
   for (const name of Config.fileNames) {
     const file = path.join(globalConfig, name)
     if (!(await Bun.file(file).exists())) continue
     const info = Option.getOrUndefined(Config.decodeDocument(Config.parseJsonc(await Bun.file(file).text())))
+    if (info) documents.push(new Config.Document({ type: "document", info }))
     const engine = info?.engine
     if (!engine) continue
     settings = {
@@ -112,14 +132,18 @@ export const engineSettings = async (
       provider: engine.provider,
       endpoint: engine.endpoint,
       fallbackModel: engine.fallback_model,
+      toolDisclosure: engine.tool_disclosure,
       roles: engine.roles,
+      responsesCacheContract: engine.responses_cache_contract,
       promptCache: engine.prompt_cache,
       verifyCommand: engine.verify_command,
+      mcpConfigFile: engine.mcp_config ? path.resolve(globalConfig, engine.mcp_config) : undefined,
       lspConfigFile: engine.lsp_config ? path.resolve(globalConfig, engine.lsp_config) : undefined,
       contextLimits: engine.context_limits,
     }
   }
-  return settings
+  const mcpSettings = Option.getOrUndefined(Config.decodeDocument(Config.merge(documents)))?.mcp
+  return mcpSettings ? { ...(settings ?? { binary: "", model: "" }), mcpSettings } : settings
 }
 
 /** Whether the composition root should build the native transport at all. */
@@ -186,26 +210,10 @@ export const fromOwners = (owners: Owners): NativeEngine.Interface => {
       read<Readonly<Record<string, unknown>>>(input, (connection) =>
         connection.client.request("snapshot", { session_id: input.sessionID }),
       ).pipe(Effect.map((value) => (typeof value === "object" && value !== null ? value : {}))),
-    tokens: (input) =>
-      read(input, async (connection) => {
-        const report = Schema.decodeUnknownSync(
-          Schema.Struct({
-            tokens: Schema.Struct({
-              input: Schema.Number,
-              output: Schema.Number,
-              reasoning: Schema.Number.pipe(Schema.optional),
-              cacheRead: Schema.Number,
-              cacheWrite: Schema.Number,
-            }),
-          }),
-        )(await connection.client.request("usage", { session_id: input.sessionID }))
-        return {
-          input: report.tokens.input,
-          output: report.tokens.output,
-          reasoning: report.tokens.reasoning ?? 0,
-          cache: { read: report.tokens.cacheRead, write: report.tokens.cacheWrite },
-        }
-      }),
+    usage: (input) =>
+      read<Readonly<Record<string, unknown>>>(input, (connection) =>
+        connection.client.request("usage", { session_id: input.sessionID }),
+      ).pipe(Effect.map((value) => (typeof value === "object" && value !== null ? value : {}))),
     transcript: (input) =>
       read(input, (connection) =>
         readTranscript({
@@ -390,6 +398,17 @@ const layer = Layer.effect(
     const settings = yield* Effect.promise(() => engineSettings(global.config))
     const configuration = nativeEngineOptions(process.env, settings)
     if (!configuration) return yield* Effect.die("NativeEngine layer built without MIAO_ENGINE_BIN")
+    if (process.env.MIAO_ENGINE_WORKER === "1") {
+      // Opt-in ADR-12 worker host: serve the workspace's custom tools to the
+      // engine. The config lives outside any model-writable workspace (tmp),
+      // and its argv is static because the engine names the workspace in the
+      // `hello` handshake.
+      const workerConfigFile = path.join(os.tmpdir(), "miao-engine-worker-config.json")
+      const host = path.resolve(import.meta.dir, "worker-host.ts")
+      yield* Effect.promise(() => Bun.write(workerConfigFile, JSON.stringify({ argv: [process.execPath, host] })))
+      configuration.workerConfigFile = workerConfigFile
+      console.log("[worker-host] config written:", workerConfigFile)
+    }
     const owners = yield* makeEngineOwners(configuration)
     return fromOwners(owners)
   }),

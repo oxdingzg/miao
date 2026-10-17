@@ -193,6 +193,12 @@ impl Store {
                         )?;
                     }
                 }
+                let has_turn_ms:bool=conn.query_row(
+                    "SELECT EXISTS(SELECT 1 FROM pragma_table_info('engine_timing') WHERE name='turn_ms')",
+                    [],|r|r.get(0))?;
+                if !has_turn_ms {
+                    conn.execute("ALTER TABLE engine_timing ADD COLUMN turn_ms INTEGER", [])?;
+                }
                 let has_checkpoint:bool=conn.query_row("SELECT EXISTS(SELECT 1 FROM pragma_table_info('engine_message') WHERE name='checkpoint')",[],|r|r.get(0))?;
                 if !has_checkpoint {
                     conn.execute("ALTER TABLE engine_message ADD COLUMN checkpoint TEXT", [])?;
@@ -654,12 +660,13 @@ impl Store {
             let questions=crate::question::pending(&tx,&session)?;
             let wakeups=crate::wakeup::pending(&tx,&session)?;
             let crons=crate::cron::pending(&tx,&session)?;
+            let model_selection=crate::session_model::selected(&tx,&session)?;
             let mode:String=tx.query_row("SELECT mode FROM engine_session WHERE id=?1",[&session],|r|r.get(0)).optional()?.unwrap_or_else(||"build".into());
             let (title,created_at_ms,updated_at_ms):(String,Option<i64>,Option<i64>)=tx.query_row(
                 "SELECT title,created_at_ms,updated_at_ms FROM engine_session WHERE id=?1",
                 [&session],|r|Ok((r.get(0)?,r.get(1)?,r.get(2)?)),
             )?;
-            let snapshot=json!({"session_id":session,"parent_session_id":parent,"cursor":cursor,"location":location,"mode":mode,"title":title,"created_at_ms":created_at_ms,"updated_at_ms":updated_at_ms,"messages":messages,"selection":selection,"pending":pending,"active_run":active,"approvals":approvals,"context":context,"state":state,"questions":questions,"wakeups":wakeups,"crons":crons});
+            let snapshot=json!({"session_id":session,"parent_session_id":parent,"cursor":cursor,"location":location,"mode":mode,"title":title,"created_at_ms":created_at_ms,"updated_at_ms":updated_at_ms,"messages":messages,"selection":selection,"pending":pending,"active_run":active,"approvals":approvals,"context":context,"state":state,"questions":questions,"wakeups":wakeups,"crons":crons,"model_selection":model_selection});
             if serde_json::to_vec(&snapshot)?.len()>4*1024*1024{return Err(Error::Invalid("snapshot exceeds limit; use events pagination".into()));}
             tx.commit()?;Ok(snapshot)
         }).await
@@ -758,6 +765,9 @@ impl Store {
                 tx.execute("INSERT INTO engine_context VALUES(?1,1,?2,?3,?4,?5)",params![target,fingerprint,system,sources,event.seq])?;
             }
             let source_watermark=if message_seq.is_none(){tx.query_row("SELECT next_seq FROM engine_session WHERE id=?1",[&parent],|r|r.get::<_,u64>(0))?}else{seq};
+            if let Some(binding)=crate::session_model::selected_at(&tx,&parent,source_watermark)? {
+                append(&tx,&target,"session.model.selected",json!({"binding":binding,"inherited":true}))?;
+            }
             let inherited=crate::state::projection(&tx,&parent,source_watermark)?;
             for kind in ["todos","goal"] {
                 if !inherited[kind].is_null(){append(&tx,&target,"session.state.updated",json!({"operation_id":format!("fork:{target}:{kind}"),"kind":kind,"value":inherited[kind]["value"],"expected_revision":null,"parent_revision":inherited[kind]["revision"]}))?;}
@@ -853,6 +863,26 @@ impl Store {
             let mut stmt = conn.prepare("SELECT seq,kind,data,recorded_at_ms FROM engine_event WHERE session_id=?1 AND seq>?2 ORDER BY seq LIMIT ?3")?;
             let rows = stmt.query_map(params![session,after,limit.min(1000)], |r| Ok((r.get::<_,u64>(0)?,r.get::<_,String>(1)?,r.get::<_,String>(2)?,r.get::<_,Option<u64>>(3)?)))?;
             rows.map(|row| { let (seq,kind,data,recorded_at_ms) = row?; Ok(Event { session_id:session.clone(),seq,kind,data:serde_json::from_str(&data)?,recorded_at_ms }) }).collect()
+        }).await
+    }
+
+    /// A bounded journal lookup for observations that survive runner restarts.
+    /// Do not page the entire transcript to find the preceding request.
+    pub(crate) async fn latest_event(
+        &self,
+        session: &str,
+        kind: &str,
+    ) -> Result<Option<Event>, Error> {
+        let (session, kind) = (session.to_owned(), kind.to_owned());
+        self.call(move |conn| {
+            let row = conn.query_row(
+                "SELECT seq,data,recorded_at_ms FROM engine_event WHERE session_id=?1 AND kind=?2 ORDER BY seq DESC LIMIT 1",
+                params![session, kind],
+                |row| Ok((row.get::<_, u64>(0)?, row.get::<_, String>(1)?, row.get::<_, Option<u64>>(2)?)),
+            ).optional()?;
+            row.map(|(seq, data, recorded_at_ms)| Ok(Event {
+                session_id: session, seq, kind, data: serde_json::from_str(&data)?, recorded_at_ms,
+            })).transpose()
         }).await
     }
 
@@ -1607,6 +1637,30 @@ impl Store {
         .await
     }
 
+    /// Wall-clock settle time of one billed turn, recorded when its `usage`
+    /// event commits. It lives in the same side table as TTFT so replayed
+    /// payloads stay free of wall-clock (ADR-15 recorded-time rule); rows for
+    /// turns that predate the column keep a NULL and the projection degrades
+    /// instead of fabricating a time.
+    pub async fn record_turn_time(
+        &self,
+        session: &str,
+        run: &str,
+        step: u64,
+        turn_ms: u64,
+    ) -> Result<(), Error> {
+        let (session, run) = (session.to_owned(), run.to_owned());
+        self.call(move |conn| {
+            conn.execute(
+                "INSERT INTO engine_timing(session_id,run_id,step,ttft_ms,turn_ms) VALUES(?1,?2,?3,0,?4)
+                 ON CONFLICT(session_id,run_id,step) DO UPDATE SET turn_ms=excluded.turn_ms",
+                params![session, run, step, turn_ms],
+            )?;
+            Ok(())
+        })
+        .await
+    }
+
     /// Cache lineage and latency evidence for one session: billed token
     /// totals across every recorded turn, time-to-first-token stats, and the
     /// provider/model that served each turn (roadmap A5). Tokens and lineage
@@ -1618,6 +1672,25 @@ impl Store {
             let mut turns = 0u64;
             let mut partial_turns = 0u64;
             let mut tokens = json!({"input":0,"output":0,"cacheRead":0,"cacheWrite":0,"nonCached":0});
+            let mut coverage = json!({"input":0,"output":0,"cacheRead":0,"cacheWrite":0,"nonCached":0});
+            let mut requests = 0u64;
+            let mut invalid_cache_rows = 0u64;
+            let mut changes = std::collections::BTreeMap::<String,u64>::new();
+            let mut histories = std::collections::BTreeMap::<String,u64>::new();
+            let turn_ms: std::collections::HashMap<(String, String), u64> = {
+                let mut stmt = conn.prepare(
+                    "SELECT run_id,step,turn_ms FROM engine_timing WHERE session_id=?1 AND turn_ms IS NOT NULL",
+                )?;
+                let mut rows = stmt.query(params![session])?;
+                let mut values = std::collections::HashMap::new();
+                while let Some(row) = rows.next()? {
+                    values.insert(
+                        (row.get::<_, String>(0)?, row.get::<_, u64>(1)?.to_string()),
+                        row.get::<_, u64>(2)?,
+                    );
+                }
+                values
+            };
             let ttft: Vec<u64> = {
                 let mut stmt = conn.prepare(
                     "SELECT ttft_ms FROM engine_timing WHERE session_id=?1 ORDER BY run_id,step",
@@ -1633,8 +1706,11 @@ impl Store {
                 std::collections::HashMap::new();
             let mut per_identity: std::collections::HashMap<(String, String), u64> =
                 std::collections::HashMap::new();
+            let mut tool_calls = 0u64;
+            let mut tool_failures = 0u64;
+            let mut turn_detail: Vec<Value> = Vec::new();
             let mut stmt = conn.prepare(
-                "SELECT kind,data FROM engine_event WHERE session_id=?1 AND kind IN ('usage','provider.started') ORDER BY seq",
+                "SELECT kind,data FROM engine_event WHERE session_id=?1 AND kind IN ('usage','provider.started','provider.request','tool.completed') ORDER BY seq",
             )?;
             let mut rows = stmt.query(params![session])?;
             while let Some(row) = rows.next()? {
@@ -1645,6 +1721,16 @@ impl Store {
                     data["step"].as_u64().unwrap_or_default().to_string(),
                 );
                 match kind.as_str() {
+                    "provider.request" => {
+                        requests += 1;
+                        let diagnostic = &data["cache_diagnostics"];
+                        if let Some(state) = diagnostic["historyState"].as_str() {
+                            *histories.entry(state.to_owned()).or_default() += 1;
+                        }
+                        for reason in diagnostic["changes"].as_array().into_iter().flatten().filter_map(Value::as_str) {
+                            *changes.entry(reason.to_owned()).or_default() += 1;
+                        }
+                    }
                     "provider.started" => {
                         if let Some(id) = data["identity"].as_object() {
                             identity.insert(
@@ -1656,6 +1742,12 @@ impl Store {
                             );
                         }
                     }
+                    "tool.completed" => {
+                        tool_calls += 1;
+                        if data["is_error"].as_bool() == Some(true) {
+                            tool_failures += 1;
+                        }
+                    }
                     _ => {
                         if data["partial"].as_bool() == Some(true) {
                             partial_turns += 1;
@@ -1663,6 +1755,12 @@ impl Store {
                             turns += 1;
                         }
                         let usage = &data["usage"];
+                        if usage["inputTokens"].as_u64().is_some_and(|input| {
+                            usage["cacheReadInputTokens"].as_u64().unwrap_or(0)
+                                .saturating_add(usage["cacheWriteInputTokens"].as_u64().unwrap_or(0)) > input
+                        }) {
+                            invalid_cache_rows += 1;
+                        }
                         for (field, key) in [
                             ("inputTokens", "input"),
                             ("outputTokens", "output"),
@@ -1672,12 +1770,38 @@ impl Store {
                         ] {
                             if let Some(value) = usage[field].as_u64() {
                                 tokens[key] = json!(tokens[key].as_u64().unwrap_or(0) + value);
+                                coverage[key] = json!(coverage[key].as_u64().unwrap_or(0) + 1);
                             }
                         }
                         if let Some((provider, model)) = identity.get(&key) {
                             *per_identity
                                 .entry((provider.clone(), model.clone()))
                                 .or_insert(0) += 1;
+                        }
+                        if data["partial"].as_bool() != Some(true) {
+                            // Per-turn rows keep each turn's own context size so
+                            // the product can price tiered rates per turn instead
+                            // of against the summed input.
+                            let mut detail = json!({
+                                "runID": data["run_id"],
+                                "step": data["step"],
+                                "usage": {
+                                    "inputTokens": usage["inputTokens"].as_u64().unwrap_or(0),
+                                    "outputTokens": usage["outputTokens"].as_u64().unwrap_or(0),
+                                    "reasoningTokens": usage["reasoningTokens"].as_u64().unwrap_or(0),
+                                    "cacheReadInputTokens": usage["cacheReadInputTokens"].as_u64().unwrap_or(0),
+                                    "cacheWriteInputTokens": usage["cacheWriteInputTokens"].as_u64().unwrap_or(0),
+                                    "nonCachedInputTokens": usage["nonCachedInputTokens"].as_u64().unwrap_or(0),
+                                },
+                            });
+                            if let Some((protocol, model)) = identity.get(&key) {
+                                detail["protocol"] = json!(protocol);
+                                detail["model"] = json!(model);
+                            }
+                            if let Some(value) = turn_ms.get(&key) {
+                                detail["turnMs"] = json!(value);
+                            }
+                            turn_detail.push(detail);
                         }
                     }
                 }
@@ -1701,8 +1825,22 @@ impl Store {
                 "turns": turns,
                 "partialTurns": partial_turns,
                 "tokens": tokens,
+                "cacheDiagnostics": {
+                    "observedRequests":requests, "usageObservations":turns + partial_turns,
+                    "coverage":coverage, "observedChanges":changes, "historyStates":histories,
+                    "invalidBreakdowns":invalid_cache_rows,
+                    "serverCacheState":"unknown",
+                    "hitRatio": if turns + partial_turns > 0 && invalid_cache_rows == 0
+                        && coverage["input"].as_u64() == Some(turns + partial_turns)
+                        && coverage["cacheRead"].as_u64() == Some(turns + partial_turns)
+                        && tokens["input"].as_u64().unwrap_or(0) > 0 {
+                        Some(tokens["cacheRead"].as_f64().unwrap_or(0.0) / tokens["input"].as_f64().unwrap_or(1.0))
+                    } else { None },
+                },
                 "ttftMs": ttft_stats,
                 "lineage": lineage,
+                "tools": {"calls": tool_calls, "failures": tool_failures},
+                "turnsDetail": turn_detail,
             }))
         }).await
     }

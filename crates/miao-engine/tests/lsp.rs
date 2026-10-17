@@ -435,6 +435,9 @@ async fn edited_documents_refresh_diagnostics_and_queries_without_reopening() {
                             .to_owned()
                     };
                     // Stale versioned diagnostics must not replace the new result.
+                    if text == "race" {
+                        std::fs::write(&path, "outside").unwrap();
+                    }
                     write_frame(&mut write, &json!({"jsonrpc":"2.0","method":"textDocument/publishDiagnostics","params":{"uri":uri,"version":previous,"diagnostics":[{"message":"stale"}]}})).await;
                     write_frame(&mut write, &json!({"jsonrpc":"2.0","method":"textDocument/publishDiagnostics","params":{"uri":uri,"version":version,"diagnostics":[{"message":text}]}})).await;
                 }
@@ -444,7 +447,7 @@ async fn edited_documents_refresh_diagnostics_and_queries_without_reopening() {
                 }
                 "shutdown" => {
                     assert_eq!(opens, 1);
-                    assert_eq!(version, 3);
+                    assert_eq!(version, 4);
                     return;
                 }
                 _ => {}
@@ -457,10 +460,15 @@ async fn edited_documents_refresh_diagnostics_and_queries_without_reopening() {
             .await
             .unwrap();
     let path = dir.path().join("space # unicode-中.rs");
+    let first = registry.diagnostics(&path).await.unwrap();
+    assert_eq!(first["diagnostics"][0]["message"], "old");
     assert_eq!(
-        registry.diagnostics(&path).await.unwrap()["diagnostics"][0]["message"],
-        "old"
+        first["source"]["sha256"],
+        miao_engine::permission::digest(b"old")
     );
+    assert_eq!(first["source"]["document_version"], 1);
+    assert_eq!(first["source"]["diagnostics_version"], 1);
+    assert_eq!(first["source"]["version_verified"], true);
     assert_eq!(
         registry.diagnostics(&path).await.unwrap()["diagnostics"][0]["message"],
         "old"
@@ -480,6 +488,15 @@ async fn edited_documents_refresh_diagnostics_and_queries_without_reopening() {
         registry.diagnostics(&path).await.unwrap()["diagnostics"][0]["message"],
         "final"
     );
+    std::fs::write(&path, "race").unwrap();
+    let raced = registry.diagnostics(&path).await.unwrap();
+    assert_eq!(raced["source"]["stale"], true);
+    assert_eq!(raced["source"]["version_verified"], false);
+    assert_eq!(
+        raced["source"]["current_sha256"],
+        miao_engine::permission::digest(b"outside")
+    );
+    assert!(raced["diagnostics"].as_array().unwrap().is_empty());
     registry.shutdown().await;
     peer.await.unwrap();
 }
@@ -579,6 +596,12 @@ async fn read_file_warms_the_language_server_for_the_next_edit() {
     .await;
     assert_eq!(edit["diagnostics"][0]["message"], "warm fixture");
     assert_eq!(edit["diagnostics"][0]["severity"], 1);
+    assert_eq!(edit["diagnostics_source"]["sha256"], edit["sha256"]);
+    assert_eq!(edit["diagnostics_source"]["matches_applied_revision"], true);
+    assert_eq!(
+        edit["diagnostics_source"]["version_verified"], false,
+        "unversioned server notifications are advisory"
+    );
 
     // The ablation performs no LSP work at all.
     let ablated = run_with(

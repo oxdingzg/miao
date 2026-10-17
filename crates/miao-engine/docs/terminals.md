@@ -1,9 +1,11 @@
 # Session-owned interactive terminals
 
-The Unix engine exposes `terminal_start`, `terminal_write`, `terminal_read`,
+The engine exposes `terminal_start`, `terminal_write`, `terminal_read`,
 `terminal_resize`, `terminal_list`, and `terminal_stop` when both process and
-background authority are enabled. Windows does not advertise these tools yet;
-its existing confined foreground process support is unchanged.
+background authority are enabled. Unix backs each terminal with a PTY confined
+by seatbelt/Landlock; Windows backs each terminal with a real pseudoconsole
+(ConPTY) whose child is placed in the same AppContainer and job object as a
+confined foreground command.
 
 - `terminal_start` accepts `argv`, workspace-relative `cwd`, `rows`, and `cols`.
   A shell is explicit, e.g. `argv: ["bash"]`; no shell parsing is implied for
@@ -41,9 +43,25 @@ stops ordinary descendants. As with foreground process execution, deliberately
 re-sessioned descendants require stronger OS ownership than process-group
 sweeps. macOS permits termios ioctls only on the assigned PTY and `/dev/tty`.
 
-Evidence: `tests/terminal.rs` exercises actual confined processes, terminal
-stdin/stdout, exact input, resize observed by `stty`, cursor replay, Session
-isolation, output retention limits, exit status, stop/shutdown, and a complete
-provider/tool/durable-history workflow. `tests/guardian.rs` also kills a serving
-engine to verify terminal owner-loss cleanup. Existing Bash and process tests
-cover shared spawn/confinement regressions.
+On Windows the child is started on `CreatePseudoConsole` with an explicit
+`PROC_THREAD_ATTRIBUTE_PSEUDOCONSOLE` attribute, and the session's
+registry/ring/cursor/limit logic is the same code as Unix; only the process/PTY
+layer differs. `terminal_stop` and runtime shutdown kill the job object, so the
+whole tree dies and the blocking output reader observes end-of-stream.
+
+A Windows terminal requires AppContainer confinement and reports
+`sandbox_profile: "workspace_write"`. The profile and writable-directory ACLs
+remain owned by the terminal until its process tree is stopped. If the OS
+rejects the confined pseudoconsole launch, startup returns an error; it never
+retries as an unconfined process.
+
+Evidence: on Unix `tests/terminal.rs` exercises actual confined processes,
+terminal stdin/stdout, exact input, resize observed by `stty`, cursor replay,
+Session isolation, output retention limits, exit status, stop/shutdown, and a
+complete provider/tool/durable-history workflow. On Windows the same file's
+`cfg(windows)` tests run a real `cmd.exe` on a real pseudoconsole and assert
+startup output, exact echoed input, resize observed through `mode con`, exit
+codes, ring-bounded output, `terminal_stop` reaping a heartbeat process tree,
+cross-Session isolation, nested canonical cwd, positive workspace writes and outside sentinel preservation. `tests/guardian.rs` also kills a serving engine to
+verify Unix terminal owner-loss cleanup. Existing Bash and process tests cover
+shared spawn/confinement regressions.

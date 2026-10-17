@@ -245,6 +245,7 @@ pub(crate) fn apply(
                     skipped_io += 1;
                     continue;
                 };
+                let sha256 = crate::permission::digest(&bytes);
                 for (line, text) in text.lines().enumerate() {
                     if cancel.is_cancelled() {
                         return Err(ToolError::Interrupted);
@@ -253,7 +254,7 @@ pub(crate) fn apply(
                         continue;
                     }
                     let preview: String = text.chars().take(512).collect();
-                    let result = json!({"path":resource,"line":line+1,"text":preview,"line_truncated":text.chars().count()>512});
+                    let result = json!({"path":resource,"sha256":sha256,"line":line+1,"text":preview,"line_truncated":text.chars().count()>512});
                     output_bytes += serde_json::to_vec(&result)
                         .map_err(|_| ToolError::InvalidInput)?
                         .len();

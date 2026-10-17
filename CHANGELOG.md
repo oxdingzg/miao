@@ -11,6 +11,31 @@ at `docs/releases/vX.Y.Z.md` and `docs/releases/vX.Y.Z.zh.md`; both are required
 
 ## [Unreleased]
 
+## [0.2.14] - 2026-10-17
+
+### Added
+- **engine**: guarded Windows ConPTY terminals and opt-in workspace custom tool workers (#947, #949).
+- **ui**: visible Session/message times, project-level auto-accept and opt-in per-turn changed files (#934, #936, #939).
+- **core**: multiple provider credentials with active-account selection through API/CLI and account switching in Web/Desktop settings (#944, #953).
+- **engine**: trusted global MCP manifests/shared local settings attached per native owner, with product-client MCP/LSP roundtrips (#954).
+
+### Fixed
+- **core/engine**: treat tool-argument limits as idle budgets while streaming input progresses (#946).
+- **ci**: repair App Store build-state diagnostics and propagate failures (#948).
+- **engine**: retain Session affinity for Responses prefix caching (#933).
+- **core**: gate MCP tool catalogs by capabilities and normalize permission metadata (#930, #932).
+- **core**: literal snapshot paths, scope containment and atomic store creation, temporary-index publication and corrupt-index recovery (#945, #956).
+- **server**: restore shared native event delivery and usage/pricing projection (#910, #911, #915, #918).
+- **tui**: recover visible Session state and pending requests after reconnect (#916).
+- **engine**: honor guarded Windows process working directories (#919).
+- **engine**: compact closed answers, preserve summary boundaries and ACP output (#937, #940).
+- **core**: preserve routing authority during concurrent Session creation (#925).
+- **engine**: close evaluation SSE readers before releasing persistent request budgets (#924, #928).
+
+### Validation
+- Independent ACP SDK lifecycle and host-capability checks (#912, #921, #923, #927).
+- Real TCP SSE isolation/cursor recovery and prebuilt artifact drills (#920, #922, #940).
+
 ## [0.2.13] - 2026-10-16
 
 ### Added

@@ -2,7 +2,7 @@ export * as Git from "./git"
 
 import path from "path"
 import { randomUUID } from "crypto"
-import { Context, Effect, Layer, Schema, Stream } from "effect"
+import { Context, Effect, Exit, Layer, Schema, Stream } from "effect"
 import { ChildProcess } from "effect/unstable/process"
 import { native, type NativeModule } from "@miao/native"
 import { Flag } from "./flag/flag"
@@ -484,12 +484,18 @@ const layer = Layer.effect(
       })
     })
 
-    const create = Effect.fn("Git.repo.create")(function* (input: {
+    const initRepository = Effect.fnUntraced(function* (input: {
       worktree: AbsolutePath
       gitDirectory: AbsolutePath
+      directory: AbsolutePath
       seed?: Repository
     }) {
-      yield* fs.ensureDir(input.gitDirectory).pipe(
+      const repository = new Repository({
+        worktree: input.worktree,
+        gitDirectory: input.directory,
+        commonDirectory: input.directory,
+      })
+      yield* fs.ensureDir(input.directory).pipe(
         Effect.mapError(
           (cause) =>
             new OperationError({
@@ -500,11 +506,6 @@ const layer = Layer.effect(
             }),
         ),
       )
-      const repository = new Repository({
-        worktree: input.worktree,
-        gitDirectory: input.gitDirectory,
-        commonDirectory: input.gitDirectory,
-      })
       yield* repositoryOperation("create", repository, ["init"])
       yield* Effect.forEach(
         [
@@ -520,8 +521,8 @@ const layer = Layer.effect(
         ([key, value]) => repositoryOperation("create", repository, ["config", key, value]),
         { discard: true },
       )
-      if (!input.seed) return repository
-      yield* fs.ensureDir(path.join(input.gitDirectory, "objects", "info")).pipe(
+      if (!input.seed) return
+      yield* fs.ensureDir(path.join(input.directory, "objects", "info")).pipe(
         Effect.mapError(
           (cause) =>
             new OperationError({
@@ -534,7 +535,7 @@ const layer = Layer.effect(
       )
       yield* fs
         .writeFileString(
-          path.join(input.gitDirectory, "objects", "info", "alternates"),
+          path.join(input.directory, "objects", "info", "alternates"),
           path.join(input.seed.commonDirectory, "objects") + "\n",
         )
         .pipe(
@@ -549,8 +550,36 @@ const layer = Layer.effect(
           ),
         )
       yield* fs
-        .copyFile(path.join(input.seed.gitDirectory, "index"), path.join(input.gitDirectory, "index"))
+        .copyFile(path.join(input.seed.gitDirectory, "index"), path.join(input.directory, "index"))
         .pipe(Effect.catch(() => Effect.void))
+    })
+
+    // A new store is initialized in a temporary sibling directory and renamed into
+    // place, so concurrent first captures never see a half-initialized store; the
+    // loser of the race adopts the winner's store instead of failing.
+    const create = Effect.fn("Git.repo.create")(function* (input: {
+      worktree: AbsolutePath
+      gitDirectory: AbsolutePath
+      seed?: Repository
+    }) {
+      const repository = new Repository({
+        worktree: input.worktree,
+        gitDirectory: input.gitDirectory,
+        commonDirectory: input.gitDirectory,
+      })
+      if (yield* fs.existsSafe(path.join(input.gitDirectory, "HEAD"))) return repository
+      const temporaryDirectory = AbsolutePath.make(`${input.gitDirectory}.init-${randomUUID()}`)
+      yield* Effect.gen(function* () {
+        yield* initRepository({ ...input, directory: temporaryDirectory })
+        const renamed = yield* fs.rename(temporaryDirectory, input.gitDirectory).pipe(Effect.exit)
+        if (Exit.isSuccess(renamed)) return
+        if (yield* fs.existsSafe(path.join(input.gitDirectory, "HEAD"))) return
+        yield* initRepository({ ...input, directory: input.gitDirectory })
+      }).pipe(
+        Effect.ensuring(
+          fs.remove(temporaryDirectory, { recursive: true, force: true }).pipe(Effect.catch(() => Effect.void)),
+        ),
+      )
       return repository
     })
 
@@ -559,15 +588,17 @@ const layer = Layer.effect(
       scope: RelativePath
       ignores?: Repository
       maximumUntrackedFileBytes?: number
+      env?: Record<string, string>
     }) {
+      // Embedded repositories are listed as `dir/`; update-index records them as gitlinks.
       const list = (args: string[]) =>
-        repositoryOperation("refresh", input.repository, args).pipe(
-          Effect.map((result) => result.text.split("\0").filter(Boolean)),
+        repositoryOperation("refresh", input.repository, args, { env: input.env }).pipe(
+          Effect.map((result) => result.text.split("\0").filter(Boolean).map((file) => file.replace(/\/$/, ""))),
         )
       const [tracked, untracked] = yield* Effect.all(
         [
-          list(["diff-files", "--name-only", "-z", "--", input.scope]),
-          list(["ls-files", "--others", "--exclude-standard", "-z", "--", input.scope]),
+          list(["diff-files", "--name-only", "-z", "--", literalPathspec(input.scope)]),
+          list(["ls-files", "--others", "--exclude-standard", "-z", "--", literalPathspec(input.scope)]),
         ],
         { concurrency: 2 },
       )
@@ -599,20 +630,32 @@ const layer = Layer.effect(
         : []
       const stage = allowed.filter((item) => !skipped.includes(RelativePath.make(item)))
       const remove = [...ignored, ...skipped]
+      // update-index takes literal paths from stdin, so nothing here is pathspec-matched.
       if (remove.length)
+        yield* repositoryOperation("refresh", input.repository, ["update-index", "--force-remove", "-z", "--stdin"], {
+          stdin: remove.join("\0") + "\0",
+          env: input.env,
+        })
+      if (stage.length) {
+        // update-index drops a tracked file replaced by an embedded repository; a second
+        // line for the same path, in the same call, records its gitlink.
+        const embedded = (
+          yield* Effect.forEach(
+            tracked.filter((item) => stage.includes(item)),
+            (item) =>
+              fs.existsSafe(path.join(input.repository.worktree, item, ".git")).pipe(
+                Effect.map((found) => (found ? item : undefined)),
+              ),
+            { concurrency: 8 },
+          )
+        ).filter((item): item is string => item !== undefined)
         yield* repositoryOperation(
           "refresh",
           input.repository,
-          ["rm", "--cached", "-f", "--ignore-unmatch", "--pathspec-from-file=-", "--pathspec-file-nul"],
-          { stdin: remove.join("\0") + "\0" },
+          ["update-index", "--add", "--remove", "--replace", "-z", "--stdin"],
+          { stdin: [...stage, ...embedded].join("\0") + "\0", env: input.env },
         )
-      if (stage.length)
-        yield* repositoryOperation(
-          "refresh",
-          input.repository,
-          ["add", "--all", "--sparse", "--pathspec-from-file=-", "--pathspec-file-nul"],
-          { stdin: stage.join("\0") + "\0" },
-        )
+      }
       return { skipped }
     })
 
@@ -655,9 +698,13 @@ const layer = Layer.effect(
       )
     })
 
-    const writeTree = Effect.fn("Git.tree.write")(function* (repository: Repository) {
-      return TreeID.make((yield* repositoryOperation("write_tree", repository, ["write-tree"])).text.trim())
+    const writeTree = Effect.fn("Git.tree.write")(function* (repository: Repository, env?: Record<string, string>) {
+      return TreeID.make((yield* repositoryOperation("write_tree", repository, ["write-tree"], { env })).text.trim())
     })
+
+    // A corrupted store index must not break captures: these messages let a
+    // capture rebuild the index and retry the failed step once.
+    const corruptIndex = /bad index|index file.*(?:corrupt|smaller than expected)|index uses .* extension/i
 
     const captureTree = Effect.fn("Git.tree.capture")(
       (input: {
@@ -669,18 +716,61 @@ const layer = Layer.effect(
         locked(
           input.repository,
           Effect.gen(function* () {
-            const refreshStartedAt = Date.now()
-            yield* Effect.forEach(input.scopes, (scope) => refresh({ ...input, scope }), { discard: true })
-            const refreshMs = Date.now() - refreshStartedAt
-            const writeStartedAt = Date.now()
-            const tree = yield* writeTree(input.repository)
-            // The untracked walk inside refresh dominates slow captures on big
-            // trees; log only the captures worth attributing so the steady
-            // state stays out of the log.
-            const writeMs = Date.now() - writeStartedAt
-            if (refreshMs + writeMs >= 500)
-              yield* Effect.logInfo("session.snapshot", { refreshMs, writeTreeMs: writeMs, scopes: input.scopes.length })
-            return tree
+            const index = path.join(input.repository.gitDirectory, "index")
+            const temporary = path.join(input.repository.gitDirectory, `index.tmp-${randomUUID()}`)
+            const env = { GIT_INDEX_FILE: temporary }
+            // A fresh store may not have an index to copy.
+            yield* fs.copyFile(index, temporary).pipe(Effect.catch(() => Effect.void))
+            const rebuild = Effect.gen(function* () {
+              yield* fs.remove(index, { force: true }).pipe(Effect.catch(() => Effect.void))
+              yield* fs.remove(temporary, { force: true }).pipe(Effect.catch(() => Effect.void))
+              const head = yield* repositoryOperation("refresh", input.repository, ["rev-parse", "--verify", "HEAD"]).pipe(
+                Effect.exit,
+              )
+              yield* repositoryOperation(
+                "refresh",
+                input.repository,
+                Exit.isSuccess(head) ? ["read-tree", "HEAD"] : ["read-tree", "--empty"],
+                { env },
+              )
+            })
+            const retried = <A>(step: Effect.Effect<A, OperationError>) =>
+              Effect.catch(step, (error) =>
+                corruptIndex.test(error.message) ? Effect.flatMap(rebuild, () => step) : Effect.fail(error),
+              )
+            return yield* Effect.gen(function* () {
+              const refreshStartedAt = Date.now()
+              yield* Effect.forEach(input.scopes, (scope) => retried(refresh({ ...input, scope, env })), {
+                discard: true,
+              })
+              const refreshMs = Date.now() - refreshStartedAt
+              const writeStartedAt = Date.now()
+              const tree = yield* retried(writeTree(input.repository, env))
+              // The untracked walk inside refresh dominates slow captures on big
+              // trees; log only the captures worth attributing so the steady
+              // state stays out of the log.
+              const writeMs = Date.now() - writeStartedAt
+              if (refreshMs + writeMs >= 500)
+                yield* Effect.logInfo("session.snapshot", {
+                  refreshMs,
+                  writeTreeMs: writeMs,
+                  scopes: input.scopes.length,
+                })
+              // Publishing by rename makes the store index swap atomic for
+              // readers in other processes.
+              yield* fs.rename(temporary, index).pipe(
+                Effect.mapError(
+                  (cause) =>
+                    new OperationError({
+                      operation: "refresh",
+                      directory: input.repository.gitDirectory,
+                      message: "Failed to publish the captured snapshot index",
+                      cause,
+                    }),
+                ),
+              )
+              return tree
+            }).pipe(Effect.ensuring(fs.remove(temporary, { force: true }).pipe(Effect.catch(() => Effect.void))))
           }),
         ),
     )
@@ -711,7 +801,7 @@ const layer = Layer.effect(
       paths?: readonly RelativePath[]
     }) {
       if (input.paths?.length === 0) return []
-      const paths = input.paths?.map((file) => `:(literal)${file}`) ?? []
+      const paths = input.paths?.map(literalPathspec) ?? []
       const flags = ["--no-ext-diff", "--no-textconv", "--no-renames", input.from, input.to, "--", ...paths]
       const statuses = (yield* repositoryOperation("diff", input.repository, [
         "diff",
@@ -760,7 +850,7 @@ const layer = Layer.effect(
         "-z",
         tree,
         "--",
-        file,
+        literalPathspec(file),
       ])).text.replace(/\0$/, "")
       if (!text) return
       const match = text.match(/^(\d+)\s+\w+\s+([0-9a-f]+)\t/)
@@ -834,7 +924,12 @@ const layer = Layer.effect(
             ([file, tree]) =>
               Effect.gen(function* () {
                 if (yield* entry(input.repository, tree, file)) {
-                  yield* repositoryOperation("restore", input.repository, ["checkout", tree, "--", file])
+                  yield* repositoryOperation("restore", input.repository, [
+                    "checkout",
+                    tree,
+                    "--",
+                    literalPathspec(file),
+                  ])
                   return
                 }
                 yield* fs.remove(path.join(input.repository.worktree, file), { recursive: true, force: true }).pipe(
@@ -1123,4 +1218,9 @@ function resolvePath(cwd: string, value: string) {
   const normalized = FSUtil.windowsPath(trimmed)
   if (path.isAbsolute(normalized)) return path.normalize(normalized)
   return path.resolve(cwd, normalized)
+}
+
+/** Pathspec magic that matches exactly one path, so names with `*`, `?`, `[`, or a leading `:` are not patterns. */
+function literalPathspec(file: string) {
+  return `:(literal)${file}`
 }

@@ -2,7 +2,7 @@ export * as Config from "./config"
 
 import { Schema } from "effect"
 import { Permission } from "@miao/schema/permission"
-import { AbsolutePath } from "./schema"
+import { AbsolutePath, optional } from "./schema"
 import { ConfigAgent } from "./config/agent"
 import { ConfigAttachments } from "./config/attachments"
 import { ConfigCache } from "./config/cache"
@@ -24,12 +24,28 @@ import { ConfigToolOutput } from "./config/tool-output"
 import { ConfigWatcher } from "./config/watcher"
 
 // The V2 config schema, shared so clients can type /api/config against it.
+/** Deployment assertions for optional Responses cache controls; validated by the engine before transport. */
+export class ResponsesCacheContract extends Schema.Class<ResponsesCacheContract>("Config.ResponsesCacheContract")({
+  model: Schema.String,
+  endpoint: Schema.String,
+  authentication: Schema.Literals(["api", "subscription"]),
+  profile: Schema.Literals(["legacy", "breakpoints"]),
+  mode: optional(Schema.Literals(["implicit", "explicit", "disabled"])),
+  ttl: optional(Schema.Literal("30m")),
+  retention: optional(Schema.Literals(["in_memory", "24h"])),
+  system: optional(Schema.Boolean),
+  prewarm: optional(Schema.Literal(false)),
+}) {}
+
 /**
  * Engine process settings (B1): read from the **global** config file only —
  * the engine is one process serving every Location, so project documents do
  * not configure it. The operator's environment overrides any key.
  */
 export class Engine extends Schema.Class<Engine>("Config.Engine")({
+  tool_disclosure: optional(Schema.Literals(["full", "compact"])).annotate({
+    description: "Extension tool disclosure: full schemas (default) or stable search/call bridge",
+  }),
   provider: Schema.String.pipe(Schema.optional).annotate({
     description: "Provider id the engine's primary model resolves against",
   }),
@@ -54,11 +70,20 @@ export class Engine extends Schema.Class<Engine>("Config.Engine")({
   prompt_cache: Schema.Boolean.pipe(Schema.optional).annotate({
     description: "Prompt-cache policy for providers that support it (default provider-dependent)",
   }),
+  responses_cache_contract: optional(ResponsesCacheContract).annotate({
+    description:
+      "Explicit Responses cache capability bound to model, endpoint and authentication; absent preserves existing requests",
+  }),
   verify_command: Schema.String.pipe(Schema.optional).annotate({
     description: "Completion check the engine runs before ending an edit turn",
   }),
+  mcp_config: optional(Schema.String).annotate({
+    description:
+      "Native engine MCP host configuration file; relative paths resolve against the global config directory",
+  }),
   lsp_config: Schema.String.pipe(Schema.optional).annotate({
-    description: "Native engine LSP host configuration file; relative paths resolve against the global config directory",
+    description:
+      "Native engine LSP host configuration file; relative paths resolve against the global config directory",
   }),
   context_limits: Schema.Struct({
     window: Schema.Finite,
@@ -111,6 +136,9 @@ export class Info extends Schema.Class<Info>("Config.Info")({
   }),
   disabled_tools: Schema.String.pipe(Schema.Array, Schema.optional).annotate({
     description: "Tool names hidden from the model for every agent in this Location",
+  }),
+  accounts: Schema.Record(Schema.String, Schema.String).pipe(Schema.optional).annotate({
+    description: "Account a provider should use, keyed by provider id and valued by credential label or id",
   }),
   agents: Schema.Record(Schema.String, ConfigAgent.Info).pipe(Schema.optional).annotate({
     description: "Named built-in agent overrides and custom agent definitions",

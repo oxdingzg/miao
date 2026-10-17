@@ -44,24 +44,116 @@ test("the environment overrides the configured engine key by key", () => {
   expect(options?.verifyCommand).toBe("bun run check")
 })
 
-test("native LSP host config resolves globally and reaches the child arguments", async () => {
-  const dir = mkdtempSync(path.join(tmpdir(), "native-lsp-config-"))
+test("global cache contracts reach the child and explicit environment overrides are validated", async () => {
+  const dir = mkdtempSync(path.join(tmpdir(), "native-cache-contract-"))
+  const contract = {
+    model: "wire-model",
+    endpoint: "https://api.example/responses",
+    authentication: "api",
+    profile: "breakpoints",
+    ttl: "30m",
+  }
   try {
-    writeFileSync(path.join(dir, "miao.json"), JSON.stringify({
-      engine: { model: "fixture", lsp_config: "host-lsp.json" },
-    }))
+    writeFileSync(
+      path.join(dir, "miao.json"),
+      JSON.stringify({ engine: { model: "wire-model", responses_cache_contract: contract } }),
+    )
     const settings = await engineSettings(dir)
-    expect(settings?.lspConfigFile).toBe(path.resolve(dir, "host-lsp.json"))
+    expect(settings?.responsesCacheContract).toMatchObject(contract)
     const options = nativeEngineOptions({ MIAO_ENGINE_BIN: "engine" }, settings)
-    if (!options) throw new Error("configured binary must produce engine options")
+    if (!options) throw new Error("expected configured engine")
     const args = engineArgs({ ...options, db: "store.db", workspace: "workspace" })
-    expect(args[args.indexOf("--lsp-config") + 1]).toBe(path.resolve(dir, "host-lsp.json"))
-    const overridden = nativeEngineOptions({
-      MIAO_ENGINE_BIN: "engine",
-      MIAO_ENGINE_LSP_CONFIG: "operator-lsp.json",
-    }, settings)
-    expect(overridden?.lspConfigFile).toBe(path.resolve("operator-lsp.json"))
-    expect(nativeEngineOptions({ MIAO_ENGINE_BIN: "engine" })?.lspConfigFile).toBeUndefined()
+    expect(JSON.parse(args[args.indexOf("--responses-cache-contract") + 1] ?? "null")).toEqual(contract)
+    const disabled = { ...contract, mode: "disabled" }
+    const overridden = nativeEngineOptions(
+      { MIAO_ENGINE_BIN: "engine", MIAO_ENGINE_RESPONSES_CACHE_CONTRACT: JSON.stringify(disabled) },
+      settings,
+    )
+    expect(overridden?.responsesCacheContract?.mode).toBe("disabled")
+    expect(nativeEngineOptions({ MIAO_ENGINE_BIN: "engine" })?.responsesCacheContract).toBeUndefined()
+    for (const invalid of [{ prewarm: true }, { unknownCacheControl: true }])
+      expect(() =>
+        nativeEngineOptions({
+          MIAO_ENGINE_BIN: "engine",
+          MIAO_ENGINE_RESPONSES_CACHE_CONTRACT: JSON.stringify({ ...contract, ...invalid }),
+        }),
+      ).toThrow()
+  } finally {
+    rmSync(dir, { recursive: true, force: true })
+  }
+})
+
+test("compact tool disclosure reaches child arguments and validates environment overrides", async () => {
+  const dir = mkdtempSync(path.join(tmpdir(), "native-tool-disclosure-"))
+  try {
+    writeFileSync(path.join(dir, "miao.json"), JSON.stringify({ engine: { tool_disclosure: "compact" } }))
+    const settings = await engineSettings(dir)
+    const options = nativeEngineOptions({ MIAO_ENGINE_BIN: "engine" }, settings)
+    if (!options) throw new Error("expected engine options")
+    expect(options.toolDisclosure).toBe("compact")
+    const args = engineArgs({ ...options, db: "store.db", workspace: "workspace" })
+    expect(args[args.indexOf("--tool-disclosure") + 1]).toBe("compact")
+    expect(
+      nativeEngineOptions({ MIAO_ENGINE_BIN: "engine", MIAO_ENGINE_TOOL_DISCLOSURE: "full" }, settings)?.toolDisclosure,
+    ).toBe("full")
+    expect(() => nativeEngineOptions({ MIAO_ENGINE_BIN: "engine", MIAO_ENGINE_TOOL_DISCLOSURE: "invalid" })).toThrow()
+    expect(nativeEngineOptions({ MIAO_ENGINE_BIN: "engine" })?.toolDisclosure).toBeUndefined()
+  } finally {
+    rmSync(dir, { recursive: true, force: true })
+  }
+})
+
+for (const capability of ["mcp", "lsp"] as const) {
+  test(`native ${capability} host config resolves globally and reaches the child arguments`, async () => {
+    const dir = mkdtempSync(path.join(tmpdir(), `native-${capability}-config-`))
+    const field = capability === "mcp" ? "mcpConfigFile" : "lspConfigFile"
+    try {
+      writeFileSync(
+        path.join(dir, "miao.json"),
+        JSON.stringify({
+          engine: { model: "fixture", [`${capability}_config`]: "host.json" },
+        }),
+      )
+      const settings = await engineSettings(dir)
+      expect(settings?.[field]).toBe(path.resolve(dir, "host.json"))
+      const options = nativeEngineOptions({ MIAO_ENGINE_BIN: "engine" }, settings)
+      if (!options) throw new Error("configured binary must produce engine options")
+      const args = engineArgs({ ...options, db: "store.db", workspace: "workspace" })
+      expect(args[args.indexOf(`--${capability}-config`) + 1]).toBe(path.resolve(dir, "host.json"))
+      const overridden = nativeEngineOptions(
+        {
+          MIAO_ENGINE_BIN: "engine",
+          [`MIAO_ENGINE_${capability.toUpperCase()}_CONFIG`]: "operator.json",
+        },
+        settings,
+      )
+      expect(overridden?.[field]).toBe(path.resolve("operator.json"))
+      expect(nativeEngineOptions({ MIAO_ENGINE_BIN: "engine" })?.[field]).toBeUndefined()
+    } finally {
+      rmSync(dir, { recursive: true, force: true })
+    }
+  })
+}
+
+test("global MCP documents merge without requiring an engine section", async () => {
+  const dir = mkdtempSync(path.join(tmpdir(), "native-mcp-shared-"))
+  try {
+    writeFileSync(
+      path.join(dir, "miao.json"),
+      JSON.stringify({
+        mcp: { servers: { first: { type: "local", command: ["node", "first.js"] } } },
+      }),
+    )
+    writeFileSync(
+      path.join(dir, "miao.jsonc"),
+      JSON.stringify({
+        mcp: { servers: { second: { type: "local", command: ["node", "second.js"] } } },
+      }),
+    )
+    const settings = await engineSettings(dir)
+    expect(Object.keys(settings?.mcpSettings?.servers ?? {})).toEqual(["first", "second"])
+    const options = nativeEngineOptions({ MIAO_ENGINE_BIN: "engine", MIAO_ENGINE_MODEL: "fixture" }, settings)
+    expect(options?.mcpSettings?.servers?.second).toMatchObject({ command: ["node", "second.js"] })
   } finally {
     rmSync(dir, { recursive: true, force: true })
   }

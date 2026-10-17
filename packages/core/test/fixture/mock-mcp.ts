@@ -7,7 +7,10 @@ import {
   ListToolsRequestSchema,
 } from "@modelcontextprotocol/sdk/types.js"
 
-const server = new Server({ name: "mock", version: "1.0.0" }, { capabilities: { tools: {}, resources: {} } })
+const server = new Server(
+  { name: "mock", version: "1.0.0" },
+  { capabilities: process.env.MOCK_MCP_NO_TOOLS ? { resources: {} } : { tools: {}, resources: {} } },
+)
 
 server.setRequestHandler(ListResourcesRequestSchema, async () => ({
   resources: [
@@ -20,8 +23,9 @@ server.setRequestHandler(ListResourcesRequestSchema, async () => ({
   ],
 }))
 
-server.setRequestHandler(ListToolsRequestSchema, async () => ({
-  tools: [
+if (!process.env.MOCK_MCP_NO_TOOLS) {
+  server.setRequestHandler(ListToolsRequestSchema, async () => ({
+    tools: [
     {
       name: "echo",
       description: "Echo the given text",
@@ -42,14 +46,17 @@ server.setRequestHandler(ListToolsRequestSchema, async () => ({
     },
   ],
 }))
+}
 
-server.setRequestHandler(CallToolRequestSchema, async (request) => {
-  // Lets tests prove a denied call never reached the server.
-  const log = process.env.MOCK_MCP_CALL_LOG
-  if (log) await appendFile(log, request.params.name + "\n")
-  return {
-    content: [{ type: "text", text: `echo:${String((request.params.arguments as { text?: string })?.text ?? "")}` }],
-  }
-})
+if (!process.env.MOCK_MCP_NO_TOOLS) {
+  server.setRequestHandler(CallToolRequestSchema, async (request) => {
+    // Lets tests prove a denied call never reached the server.
+    const log = process.env.MOCK_MCP_CALL_LOG
+    if (log) await appendFile(log, request.params.name + "\n")
+    return {
+      content: [{ type: "text", text: `echo:${String((request.params.arguments as { text?: string })?.text ?? "")}` }],
+    }
+  })
+}
 
 await server.connect(new StdioServerTransport())

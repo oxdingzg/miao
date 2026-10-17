@@ -18,6 +18,8 @@ import {
   acceptKey,
   directoryAcceptKey,
   isDirectoryAutoAccepting,
+  isProjectAutoAccepting,
+  projectAcceptKey,
   autoRespondsPermission,
   sessionAutoAccept,
 } from "./permission-auto-respond"
@@ -166,6 +168,12 @@ export const { use: usePermission, provider: PermissionProvider } = createSimple
       isAutoAcceptingDirectory(directory: string) {
         return selected().isAutoAcceptingDirectory(directory)
       },
+      isAutoAcceptingProject(projectID: string) {
+        return selected().isAutoAcceptingProject(projectID)
+      },
+      toggleAutoAcceptProject(projectID: string, directories: string[]) {
+        selected().toggleAutoAcceptProject(projectID, directories)
+      },
       toggleAutoAccept(sessionID: string, directory: string) {
         selected().toggleAutoAccept(sessionID, directory)
       },
@@ -276,16 +284,24 @@ function createServerPermissionState(input: { sdk: ServerSDK; sync: ServerSync }
     return [...info, ...input.sync.child(directory, { bootstrap: false })[0].session]
   }
 
+  function projectOfSession(sessionID: string, directory?: string) {
+    return sessions(directory).find((session) => session.id === sessionID)?.projectID
+  }
+
   function isAutoAccepting(sessionID: string, directory?: string) {
-    return autoRespondsPermission(store.autoAccept, sessions(directory), { sessionID }, directory)
+    return autoRespondsPermission(store.autoAccept, sessions(directory), { sessionID }, directory, projectOfSession(sessionID, directory))
   }
 
   function isAutoAcceptingDirectory(directory: string) {
     return isDirectoryAutoAccepting(store.autoAccept, directory)
   }
 
+  function isAutoAcceptingProject(projectID: string) {
+    return isProjectAutoAccepting(store.autoAccept, projectID)
+  }
+
   function shouldAutoRespond(permission: PermissionV2Request, directory?: string) {
-    return autoRespondsPermission(store.autoAccept, sessions(directory), permission, directory)
+    return autoRespondsPermission(store.autoAccept, sessions(directory), permission, directory, projectOfSession(permission.sessionID, directory))
   }
 
   function isPending(permission: PermissionV2Request) {
@@ -296,10 +312,18 @@ function createServerPermissionState(input: { sdk: ServerSDK; sync: ServerSync }
   async function shouldAutoRespondResolved(permission: PermissionV2Request, directory?: string) {
     const override = sessionAutoAccept(store.autoAccept, sessions(directory), permission, directory)
     if (override !== undefined) return override
+    // Knowing the project does not prove that every ancestor is loaded. Resolve
+    // the lineage before falling back, so a distant parent's override wins.
     if (input.sync.session.lineage.peek(permission.sessionID)) return shouldAutoRespond(permission, directory)
     const lineage = await input.sync.session.lineage.resolve(permission.sessionID).catch(() => undefined)
     if (meta.disposed || !lineage) return false
-    return shouldAutoRespond(permission, directory)
+    return autoRespondsPermission(
+      store.autoAccept,
+      sessions(directory),
+      permission,
+      directory,
+      lineage.session.projectID,
+    )
   }
 
   async function respondPending(
@@ -371,6 +395,42 @@ function createServerPermissionState(input: { sdk: ServerSDK; sync: ServerSync }
     )
   }
 
+  function enableProject(projectID: string, directories: string[]) {
+    if (meta.disposed) return
+    const key = projectAcceptKey(projectID)
+    setStore(
+      produce((draft) => {
+        draft.autoAccept[key] = true
+      }),
+    )
+
+    for (const directory of directories) {
+      list(directory)
+        .then((permissions) => {
+          if (meta.disposed) return
+          if (!isProjectAutoAccepting(store.autoAccept, projectID)) return
+          for (const permission of permissions) {
+            void respondPending(
+              permission as PermissionV2Request,
+              directory,
+              () => isProjectAutoAccepting(store.autoAccept, projectID),
+            )
+          }
+        })
+        .catch(() => undefined)
+    }
+  }
+
+  function disableProject(projectID: string) {
+    if (meta.disposed) return
+    const key = projectAcceptKey(projectID)
+    setStore(
+      produce((draft) => {
+        draft.autoAccept[key] = false
+      }),
+    )
+  }
+
   function enable(sessionID: string, directory: string) {
     if (meta.disposed) return
     const key = acceptKey(sessionID, directory)
@@ -425,6 +485,26 @@ function createServerPermissionState(input: { sdk: ServerSDK; sync: ServerSync }
     isAutoAcceptingDirectory(directory: string) {
       if (meta.disposed) return false
       return isAutoAcceptingDirectory(directory)
+    },
+    isAutoAcceptingProject(projectID: string) {
+      if (meta.disposed) return false
+      return isAutoAcceptingProject(projectID)
+    },
+    enableProject(projectID: string, directories: string[]) {
+      if (meta.disposed) return
+      enableProject(projectID, directories)
+    },
+    disableProject(projectID: string) {
+      if (meta.disposed) return
+      disableProject(projectID)
+    },
+    toggleAutoAcceptProject(projectID: string, directories: string[]) {
+      if (meta.disposed) return
+      if (isAutoAcceptingProject(projectID)) {
+        disableProject(projectID)
+        return
+      }
+      enableProject(projectID, directories)
     },
     toggleAutoAccept(sessionID: string, directory: string) {
       if (meta.disposed) return

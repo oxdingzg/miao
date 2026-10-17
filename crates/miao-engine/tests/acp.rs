@@ -578,3 +578,135 @@ async fn honest_authenticate_resume_and_close_semantics() {
     .await;
     assert_eq!(read_response(&mut stdout, 9).await["result"], json!({}));
 }
+
+#[tokio::test]
+async fn compaction_preserves_acp_answers_and_loaded_transcript() {
+    let replies = [
+        "first answer",
+        "first summary",
+        "second answer",
+        "second summary",
+    ]
+    .into_iter()
+    .map(|text| {
+        (
+            200,
+            sse(vec![
+                json!({"choices":[{"index":0,"delta":{"content":text},"finish_reason":"stop"}]}),
+                json!({"choices":[],"usage":{"prompt_tokens":1900,"completion_tokens":1}}),
+            ]),
+        )
+    })
+    .collect();
+    let (endpoint, _requests, _server) = common::endpoint(replies).await;
+    let dir = tempfile::tempdir().unwrap();
+    let db = dir.path().join("engine.db");
+    let mut child = Command::new(env!("CARGO_BIN_EXE_miao-engine"))
+        .args([
+            "acp",
+            "--db",
+            db.to_str().unwrap(),
+            "--workspace",
+            dir.path().to_str().unwrap(),
+            "--model",
+            "fixture",
+            "--provider",
+            "openai-chat",
+            "--endpoint",
+            &endpoint,
+            "--context-limits",
+            r#"{"window":4000,"ratio":0.25,"headroom":500,"perPass":100,"protectTurns":2}"#,
+        ])
+        .env("OPENAI_API_KEY", "fixture")
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::inherit())
+        .kill_on_drop(true)
+        .spawn()
+        .unwrap();
+    let mut stdin = child.stdin.take().unwrap();
+    let mut stdout = BufReader::new(child.stdout.take().unwrap()).lines();
+    send(&mut stdin, json!({"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":1,"clientCapabilities":{}}})).await;
+    assert!(read_response(&mut stdout, 1).await.get("error").is_none());
+    send(&mut stdin, json!({"jsonrpc":"2.0","id":2,"method":"session/new","params":{"cwd":dir.path().to_str().unwrap(),"mcpServers":[]}})).await;
+    let session = read_response(&mut stdout, 2).await["result"]["sessionId"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    for (id, method, params, expected) in [
+        (
+            3,
+            "session/prompt",
+            json!({"sessionId":session,"prompt":[{"type":"text","text":"first prompt"}]}),
+            "first answer",
+        ),
+        (
+            4,
+            "session/prompt",
+            json!({"sessionId":session,"prompt":[{"type":"text","text":"second prompt"}]}),
+            "second answer",
+        ),
+        (
+            5,
+            "session/load",
+            json!({"sessionId":session,"cwd":dir.path().to_str().unwrap(),"mcpServers":[]}),
+            "first answersecond answer",
+        ),
+        (
+            6,
+            "session/resume",
+            json!({"sessionId":session,"cwd":dir.path().to_str().unwrap(),"mcpServers":[]}),
+            "",
+        ),
+    ] {
+        send(
+            &mut stdin,
+            json!({"jsonrpc":"2.0","id":id,"method":method,"params":params}),
+        )
+        .await;
+        let mut text = String::new();
+        loop {
+            let line = tokio::time::timeout(Duration::from_secs(15), stdout.next_line())
+                .await
+                .unwrap()
+                .unwrap()
+                .unwrap();
+            let value: Value = serde_json::from_str(&line).unwrap();
+            if value["method"] == "session/update"
+                && value["params"]["update"]["sessionUpdate"] == "agent_message_chunk"
+            {
+                text.push_str(
+                    value["params"]["update"]["content"]["text"]
+                        .as_str()
+                        .unwrap(),
+                );
+            }
+            if value.get("id") == Some(&json!(id)) {
+                assert!(value.get("error").is_none(), "{value}");
+                if method == "session/prompt" {
+                    assert_eq!(value["result"]["stopReason"], "end_turn");
+                }
+                break;
+            }
+        }
+        assert_eq!(
+            text, expected,
+            "{method} must expose original answers, without duplication or synthetic summaries"
+        );
+    }
+    drop(stdin);
+    tokio::time::timeout(Duration::from_secs(5), child.wait())
+        .await
+        .unwrap()
+        .unwrap();
+    let store = miao_engine::store::Store::open(db).await.unwrap();
+    let events = store.events(&session, 0, 1000).await.unwrap();
+    assert_eq!(
+        events
+            .iter()
+            .filter(|event| event.kind == "history.compacted")
+            .count(),
+        2
+    );
+    assert_eq!(store.selected_history(&session).await.unwrap().len(), 1);
+}

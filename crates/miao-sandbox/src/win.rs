@@ -61,7 +61,7 @@ pub enum WinError {
     Start(String),
 }
 
-fn command_line(command: &[String]) -> String {
+pub(crate) fn command_line(command: &[String]) -> String {
     let is_cmd = command
         .first()
         .and_then(|program| Path::new(program).file_name())
@@ -104,14 +104,14 @@ fn command_line(command: &[String]) -> String {
         .join(" ")
 }
 
-fn wide(value: &str) -> Vec<u16> {
+pub(crate) fn wide(value: &str) -> Vec<u16> {
     std::ffi::OsStr::new(value)
         .encode_wide()
         .chain(std::iter::once(0))
         .collect()
 }
 
-fn last_error(context: &str) -> WinError {
+pub(crate) fn last_error(context: &str) -> WinError {
     WinError::Unavailable(format!(
         "{context}: {}",
         windows::core::Error::from_win32().message()
@@ -324,7 +324,7 @@ impl Drop for AclGrant {
 }
 
 #[derive(Default)]
-struct Grants(Vec<AclGrant>);
+pub(crate) struct Grants(Vec<AclGrant>);
 impl Grants {
     fn push(&mut self, grant: AclGrant) {
         self.0.push(grant);
@@ -437,7 +437,7 @@ fn grant_acl(
     Ok(())
 }
 
-fn grant_modify(path: &Path, sid: PSID, grants: &mut Grants) -> Result<(), WinError> {
+pub(crate) fn grant_modify(path: &Path, sid: PSID, grants: &mut Grants) -> Result<(), WinError> {
     grant_acl(
         AclTarget::Path(
             path.as_os_str()
@@ -452,7 +452,7 @@ fn grant_modify(path: &Path, sid: PSID, grants: &mut Grants) -> Result<(), WinEr
     )
 }
 
-fn grant_path_discovery(path: &Path, sid: PSID, grants: &mut Grants) {
+pub(crate) fn grant_path_discovery(path: &Path, sid: PSID, grants: &mut Grants) {
     // GetLongPathNameW (used by managed shells for 8.3 aliases) must list/read
     // attributes on ancestors. These grants are directory-only, not inherited:
     // they permit canonicalization without sibling file-content or write access.
@@ -479,7 +479,7 @@ fn grant_path_discovery(path: &Path, sid: PSID, grants: &mut Grants) {
     }
 }
 
-fn grant_console_objects(grants: &mut Grants, sid: PSID) -> Result<(), WinError> {
+pub(crate) fn grant_console_objects(grants: &mut Grants, sid: PSID) -> Result<(), WinError> {
     // Managed console runtimes load user32. An SSH/service desktop may exclude
     // AppContainer SIDs, producing STATUS_DLL_INIT_FAILED before main runs.
     // Grant this invocation only the initialization rights, not clipboard,
@@ -504,7 +504,7 @@ fn grant_console_objects(grants: &mut Grants, sid: PSID) -> Result<(), WinError>
     )
 }
 
-fn capability_sid(name: &str) -> Option<PSID> {
+pub(crate) fn capability_sid(name: &str) -> Option<PSID> {
     let mut wide = wide(name);
     let mut sid = PSID(std::ptr::null_mut());
     unsafe { ConvertStringSidToSidW(PCWSTR(wide.as_mut_ptr()), &mut sid).ok() }.map(|_| sid)
@@ -538,14 +538,26 @@ fn quote_arg(arg: &str) -> String {
     out
 }
 
-pub fn run(
-    workdirs: &[std::path::PathBuf],
-    allow_paths: &[std::path::PathBuf],
-    allow_network: bool,
-    command: &[String],
-) -> Result<i32, WinError> {
-    // A process killed before cleanup can leave granted ACLs behind. Never
-    // reuse its SID: otherwise another invocation could access its old paths.
+/// An invocation-owned AppContainer profile and its local SID. Drop deletes the
+/// profile and frees the SID; forced process death cannot run Drop, so a killed
+/// process may leave its profile behind (never reused, see [`new_container`]).
+pub(crate) struct Container {
+    name: Vec<u16>,
+    pub(crate) sid: PSID,
+}
+impl Drop for Container {
+    fn drop(&mut self) {
+        unsafe {
+            let _ = DeleteAppContainerProfile(PCWSTR(self.name.as_ptr()));
+            FreeSid(self.sid);
+        }
+    }
+}
+
+/// Create a fresh AppContainer profile for one invocation. A process killed
+/// before cleanup can leave granted ACLs behind; the unique name guarantees a
+/// stale SID is never reused by another invocation.
+pub(crate) fn new_container() -> Result<Container, WinError> {
     let name = wide(&format!(
         "miao.sandbox.{}.{:x}",
         std::process::id(),
@@ -563,21 +575,59 @@ pub fn run(
         )
     }
     .map_err(|_| last_error("CreateAppContainerProfile"))?;
-    // The profile and local SID are invocation-owned. Drop runs on all normal
-    // returns (including setup errors); forced process death cannot run Drop.
-    struct Container {
-        name: Vec<u16>,
-        sid: PSID,
+    Ok(Container { name, sid })
+}
+
+/// Create the job object that owns a command tree. `KILL_ON_JOB_CLOSE` makes the
+/// whole tree die with the last handle, including on forced runner death.
+pub(crate) fn new_job() -> Result<HANDLE, WinError> {
+    let job = unsafe { CreateJobObjectW(None, PCWSTR::null()) }
+        .map_err(|_| last_error("CreateJobObjectW"))?;
+    let mut info = JOBOBJECT_EXTENDED_LIMIT_INFORMATION::default();
+    info.BasicLimitInformation.LimitFlags = JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE;
+    if unsafe {
+        SetInformationJobObject(
+            job,
+            JobObjectExtendedLimitInformation,
+            &info as *const _ as *const c_void,
+            size_of::<JOBOBJECT_EXTENDED_LIMIT_INFORMATION>() as u32,
+        )
     }
-    impl Drop for Container {
-        fn drop(&mut self) {
-            unsafe {
-                let _ = DeleteAppContainerProfile(PCWSTR(self.name.as_ptr()));
-                FreeSid(self.sid);
-            }
+    .is_err()
+    {
+        unsafe {
+            let _ = CloseHandle(job);
         }
+        return Err(last_error("SetInformationJobObject"));
     }
-    let _container = Container { name, sid };
+    Ok(job)
+}
+
+pub fn run(
+    workdirs: &[std::path::PathBuf],
+    allow_paths: &[std::path::PathBuf],
+    allow_network: bool,
+    command: &[String],
+) -> Result<i32, WinError> {
+    run_in(
+        workdirs,
+        allow_paths,
+        allow_network,
+        command,
+        workdirs.first().map(|dir| dir.as_path()),
+    )
+}
+
+/// The process cwd is placement, not an additional writable capability.
+pub fn run_in(
+    workdirs: &[std::path::PathBuf],
+    allow_paths: &[std::path::PathBuf],
+    allow_network: bool,
+    command: &[String],
+    cwd: Option<&Path>,
+) -> Result<i32, WinError> {
+    let container = new_container()?;
+    let sid = container.sid;
 
     // 2. Write allowlist: grant Modify on workdirs + allow_paths.
     let mut grants = Grants::default();
@@ -618,24 +668,12 @@ pub fn run(
     };
 
     // 4. Job object: tree dies when this process (or the handle) closes.
-    let job = unsafe { CreateJobObjectW(None, PCWSTR::null()) };
-    let job = match job {
-        Ok(handle) => handle,
-        Err(_) => {
+    let job = match new_job() {
+        Ok(job) => job,
+        Err(error) => {
             grants.restore();
-            return Err(last_error("CreateJobObjectW"));
+            return Err(error);
         }
-    };
-    let mut info = JOBOBJECT_EXTENDED_LIMIT_INFORMATION::default();
-    info.BasicLimitInformation.LimitFlags = JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE;
-    unsafe {
-        SetInformationJobObject(
-            job,
-            JobObjectExtendedLimitInformation,
-            &info as *const _ as *const c_void,
-            size_of::<JOBOBJECT_EXTENDED_LIMIT_INFORMATION>() as u32,
-        )
-        .map_err(|_| last_error("SetInformationJobObject"))?
     };
 
     // 5. Build process + attribute list with the AppContainer capabilities.
@@ -702,8 +740,13 @@ pub fn run(
         .collect();
     let mut cmdline = cmdline;
 
-    let cwd = workdirs.first().map(|dir| {
-        dir.as_os_str()
+    let cwd = cwd.map(|dir| {
+        // Canonicalization produces verbatim paths. cmd.exe rejects those as
+        // UNC current directories and falls back to the Windows directory.
+        // Simplify only losslessly representable paths; ACL validation keeps
+        // using the canonical workdirs and must not grant a different path.
+        dunce::simplified(dir)
+            .as_os_str()
             .encode_wide()
             .chain(std::iter::once(0))
             .collect::<Vec<u16>>()
@@ -779,7 +822,7 @@ pub fn run(
 
     grants.restore();
     for value in capability_sids {
-        unsafe { LocalFree(Some(HLOCAL(value.0 as *mut c_void))) };
+        unsafe { LocalFree(Some(HLOCAL(value.0))) };
     }
 
     Ok(exit_code as i32)

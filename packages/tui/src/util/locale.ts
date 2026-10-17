@@ -1,3 +1,7 @@
+import { createTimeFormatter } from "@miao/ui/i18n/time"
+
+const timestamps = createTimeFormatter()
+
 export function titlecase(str: string | null) {
   if (str === null) return "Unknown"
   return str.replace(/\b\w/g, (c) => c.toUpperCase())
@@ -18,17 +22,15 @@ export function datetime(input: number | null): string {
 }
 
 export function todayTimeOrDateTime(input: number | null): string {
-  if (input === null) return "Unknown"
-  const date = new Date(input)
-  const now = new Date()
-  const isToday =
-    date.getFullYear() === now.getFullYear() && date.getMonth() === now.getMonth() && date.getDate() === now.getDate()
+  return timestamps.compact(input)
+}
 
-  if (isToday) {
-    return time(input)
-  } else {
-    return datetime(input)
-  }
+export function preciseTime(input: number | null | undefined): string {
+  return timestamps.precise(input)
+}
+
+export function relativeTime(input: number | null | undefined, now = Date.now()): string {
+  return timestamps.relative(input, now)
 }
 
 export function number(num: number): string {

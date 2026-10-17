@@ -109,15 +109,19 @@ pub fn responses(raw: &Value) -> Value {
     let input = field(raw, &["input_tokens"]);
     let output = field(raw, &["output_tokens"]);
     let cache_read = field(raw, &["input_tokens_details", "cached_tokens"]);
-    let non_cached = input
-        .zip(cache_read)
-        .map(|(input, read)| input.saturating_sub(read));
+    let cache_write = field(raw, &["input_tokens_details", "cache_write_tokens"]);
+    let non_cached = input.zip(cache_read).map(|(input, read)| {
+        input
+            .saturating_sub(read)
+            .saturating_sub(cache_write.unwrap_or(0))
+    });
     let reasoning = field(raw, &["output_tokens_details", "reasoning_tokens"]);
     let mut usage = Map::new();
     insert(&mut usage, "inputTokens", input);
     insert(&mut usage, "outputTokens", output);
     insert(&mut usage, "nonCachedInputTokens", non_cached);
     insert(&mut usage, "cacheReadInputTokens", cache_read);
+    insert(&mut usage, "cacheWriteInputTokens", cache_write);
     insert(&mut usage, "reasoningTokens", reasoning);
     let total = field(raw, &["total_tokens"])
         .or_else(|| input.zip(output).map(|(input, output)| input + output));

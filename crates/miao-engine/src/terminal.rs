@@ -75,7 +75,7 @@ fn validate_size(rows: u16, cols: u16) -> Result<(), ToolError> {
 }
 
 pub fn supported() -> bool {
-    cfg!(unix) && crate::process::enforced()
+    crate::process::enforced()
 }
 
 #[derive(Default)]
@@ -117,11 +117,29 @@ impl Output {
 }
 
 struct Terminal {
-    output: Arc<Mutex<Output>>,
+    output: Arc<std::sync::Mutex<Output>>,
     cancel: CancellationToken,
     join: Mutex<Option<tokio::task::JoinHandle<()>>>,
     #[cfg(unix)]
     commands: tokio::sync::mpsc::Sender<Command>,
+    #[cfg(windows)]
+    pty: Arc<std::sync::Mutex<miao_sandbox::pty::Pty>>,
+}
+impl Terminal {
+    /// Cancel the terminal's worker and wait for it to reap its process tree.
+    /// On Windows the worker is blocked on the pseudoconsole output pipe, so the
+    /// tree is killed first to make the read return end-of-stream.
+    async fn reap(&self) {
+        self.cancel.cancel();
+        #[cfg(windows)]
+        {
+            let pty = self.pty.clone();
+            let _ = tokio::task::spawn_blocking(move || pty.lock().unwrap().kill()).await;
+        }
+        if let Some(join) = self.join.lock().await.take() {
+            let _ = join.await;
+        }
+    }
 }
 #[cfg(unix)]
 enum Command {
@@ -141,6 +159,19 @@ pub struct Registry {
 impl Drop for Registry {
     fn drop(&mut self) {
         self.stop.cancel();
+        // On Windows the worker is blocked on the pseudoconsole output pipe, so
+        // cancelling the token alone cannot wake it. Kill each tree here too, or
+        // a runtime shutdown would wait forever on a reader that never returns.
+        #[cfg(windows)]
+        {
+            if let Ok(terminals) = self.terminals.try_lock() {
+                for terminal in terminals.values() {
+                    if let Ok(mut pty) = terminal.pty.lock() {
+                        pty.kill();
+                    }
+                }
+            }
+        }
     }
 }
 impl Registry {
@@ -186,7 +217,7 @@ impl Registry {
         resize(&master, input.rows, input.cols)?;
         let master = tokio::io::unix::AsyncFd::new(master)?;
         let id = format!("term_{}", uuid::Uuid::new_v4());
-        let output = Arc::new(Mutex::new(Output::default()));
+        let output = Arc::new(std::sync::Mutex::new(Output::default()));
         let captured = output.clone();
         let cancel = self.stop.child_token();
         let lifetime = cancel.clone();
@@ -207,7 +238,7 @@ impl Registry {
                     }
                     read = read_master(&master, &mut buffer), if !eof => match read {
                         Ok(0) => eof = true,
-                        Ok(size) => captured.lock().await.append(&buffer[..size]),
+                        Ok(size) => captured.lock().unwrap().append(&buffer[..size]),
                         Err(error) if error.raw_os_error() == Some(libc::EIO) => eof = true,
                         Err(error) => { failure = Some(error.to_string()); break; }
                     },
@@ -248,7 +279,7 @@ impl Registry {
                         exit = group.child.wait() => { status = exit.ok(); break; }
                         read = read_master(&master, &mut buffer), if !eof => match read {
                             Ok(0) => eof = true,
-                            Ok(size) => captured.lock().await.append(&buffer[..size]),
+                            Ok(size) => captured.lock().unwrap().append(&buffer[..size]),
                             Err(_) => eof = true,
                         }
                     }
@@ -267,10 +298,10 @@ impl Registry {
                 if read <= 0 {
                     break;
                 }
-                captured.lock().await.append(&buffer[..read as usize]);
+                captured.lock().unwrap().append(&buffer[..read as usize]);
             }
             use std::os::unix::process::ExitStatusExt;
-            captured.lock().await.exit = Some(
+            captured.lock().unwrap().exit = Some(
                 json!({"reason":reason,"exit_code":status.as_ref().and_then(|exit| exit.code()),"signal":status.as_ref().and_then(|exit| exit.signal()),"error":failure}),
             );
             group.armed = false;
@@ -290,7 +321,117 @@ impl Registry {
         )
     }
 
-    #[cfg(not(unix))]
+    /// Windows terminals run a real pseudoconsole (ConPTY). The child is placed
+    /// in the shared AppContainer/job sandbox. A failed confined launch is
+    /// reported as an error, without retrying in a wider security context.
+    #[cfg(windows)]
+    pub async fn start(
+        &self,
+        session: &str,
+        _runner: &Path,
+        workspace: &Path,
+        cwd: &Path,
+        input: Start,
+        network: bool,
+    ) -> Result<Value, ToolError> {
+        if self.stop.is_cancelled() {
+            return Err(ToolError::Interrupted);
+        }
+        let mut terminals = self.terminals.lock().await;
+        if terminals.len() >= 32
+            || terminals
+                .keys()
+                .filter(|(owner, _)| owner == session)
+                .count()
+                >= 8
+        {
+            return Err(ToolError::External(
+                "terminal limit reached; stop an existing terminal".into(),
+            ));
+        }
+        let Start {
+            argv, rows, cols, ..
+        } = input;
+        let temp = tokio::task::spawn_blocking(tempfile::tempdir)
+            .await
+            .map_err(|_| ToolError::Io(std::io::Error::other("temp worker failed")))?
+            .map_err(ToolError::Io)?;
+        let spec = miao_sandbox::pty::Spec {
+            argv,
+            cwd: cwd.to_path_buf(),
+            writable: vec![workspace.to_path_buf(), temp.path().to_path_buf()],
+            temp: temp.path().to_path_buf(),
+            allow_network: network,
+            rows,
+            cols,
+        };
+        let pty = miao_sandbox::pty::Pty::spawn(spec).map_err(|error| {
+            let message = match error {
+                miao_sandbox::win::WinError::Unavailable(message)
+                | miao_sandbox::win::WinError::Start(message) => message,
+            };
+            ToolError::External(message)
+        })?;
+        let confined = pty.confined();
+        let reader = pty.try_clone_reader().map_err(ToolError::Io)?;
+        let id = format!("term_{}", uuid::Uuid::new_v4());
+        let output = Arc::new(std::sync::Mutex::new(Output::default()));
+        let captured = output.clone();
+        let cancel = self.stop.child_token();
+        let lifetime = cancel.clone();
+        let control = Arc::new(std::sync::Mutex::new(pty));
+        let worker_control = control.clone();
+        let join = tokio::task::spawn_blocking(move || {
+            let _temp = temp;
+            let mut reader = reader;
+            let mut buffer = [0u8; 8192];
+            let mut failure = None;
+            loop {
+                if lifetime.is_cancelled() {
+                    break;
+                }
+                match reader.read_timeout(&mut buffer, std::time::Duration::from_millis(100)) {
+                    Ok(Some(0)) => break,
+                    Ok(Some(size)) => captured.lock().unwrap().append(&buffer[..size]),
+                    Ok(None) => {}
+                    Err(error) => {
+                        failure = Some(error.to_string());
+                        break;
+                    }
+                }
+            }
+            let mut guard = worker_control.lock().unwrap();
+            guard.kill();
+            let status = guard.poll_exit().ok().flatten();
+            let reason = if lifetime.is_cancelled() {
+                "stopped"
+            } else {
+                "completed"
+            };
+            captured.lock().unwrap().exit = Some(
+                json!({"reason":reason,"exit_code":status,"signal":Value::Null,"error":failure}),
+            );
+        });
+        terminals.insert(
+            (session.into(), id.clone()),
+            Arc::new(Terminal {
+                output,
+                cancel,
+                join: Mutex::new(Some(join)),
+                pty: control,
+            }),
+        );
+        Ok(json!({
+            "id": id,
+            "rows": rows,
+            "cols": cols,
+            "sandbox_profile": if confined { "workspace_write" } else { "windows_unconfined" },
+            "network_allowed": network,
+            "max_lifetime_ms": 86400000
+        }))
+    }
+
+    #[cfg(not(any(unix, windows)))]
     pub async fn start(
         &self,
         _: &str,
@@ -313,7 +454,7 @@ impl Registry {
             let terminals = self.terminals.lock().await;
             let mut list = Vec::new();
             for ((_, id), terminal) in terminals.iter().filter(|((owner, _), _)| owner == session) {
-                list.push(json!({"id":id,"exit":terminal.output.lock().await.exit}));
+                list.push(json!({"id":id,"exit":terminal.output.lock().unwrap().exit}));
             }
             return Ok(json!({"terminals":list}));
         }
@@ -326,21 +467,50 @@ impl Registry {
             .cloned()
             .ok_or_else(|| ToolError::External("terminal not found in this Session".into()))?;
         match name {
-            "terminal_read" => terminal.output.lock().await.read(&input.id, input.cursor),
+            "terminal_read" => terminal
+                .output
+                .lock()
+                .unwrap()
+                .read(&input.id, input.cursor),
             "terminal_stop" => {
-                terminal.cancel.cancel();
-                if let Some(join) = terminal.join.lock().await.take() {
-                    let _ = join.await;
-                }
+                terminal.reap().await;
                 self.terminals
                     .lock()
                     .await
                     .remove(&(session.into(), input.id.clone()));
-                terminal.output.lock().await.read(&input.id, input.cursor)
+                terminal
+                    .output
+                    .lock()
+                    .unwrap()
+                    .read(&input.id, input.cursor)
+            }
+            #[cfg(windows)]
+            "terminal_write" | "terminal_resize" => {
+                if terminal.output.lock().unwrap().exit.is_some() {
+                    return Err(ToolError::External("terminal has exited".into()));
+                }
+                let pty = terminal.pty.clone();
+                let result = if name == "terminal_write" {
+                    let text = input.input.unwrap();
+                    tokio::task::spawn_blocking(move || pty.lock().unwrap().write(text.as_bytes()))
+                        .await
+                        .map_err(|_| {
+                            ToolError::Io(std::io::Error::other("terminal write worker failed"))
+                        })?
+                } else {
+                    let (rows, cols) = (input.rows.unwrap(), input.cols.unwrap());
+                    tokio::task::spawn_blocking(move || pty.lock().unwrap().resize(rows, cols))
+                        .await
+                        .map_err(|_| {
+                            ToolError::Io(std::io::Error::other("terminal resize worker failed"))
+                        })?
+                };
+                result.map_err(ToolError::Io)?;
+                Ok(json!({"id":input.id,"accepted":true}))
             }
             #[cfg(unix)]
             "terminal_write" | "terminal_resize" => {
-                if terminal.output.lock().await.exit.is_some() {
+                if terminal.output.lock().unwrap().exit.is_some() {
                     return Err(ToolError::External("terminal has exited".into()));
                 }
                 let (reply, result) = tokio::sync::oneshot::channel();
@@ -367,10 +537,7 @@ impl Registry {
         self.stop.cancel();
         let terminals = std::mem::take(&mut *self.terminals.lock().await);
         for terminal in terminals.into_values() {
-            terminal.cancel.cancel();
-            if let Some(join) = terminal.join.lock().await.take() {
-                let _ = join.await;
-            }
+            terminal.reap().await;
         }
     }
 }

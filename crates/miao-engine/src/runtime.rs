@@ -351,6 +351,59 @@ impl Runtime {
         self.wake(session, true).await
     }
 
+    pub async fn select_model(
+        &self,
+        session: &str,
+        binding: Option<crate::session_model::Binding>,
+    ) -> Result<Value, Error> {
+        if self.inner.stop.is_cancelled() {
+            return Err(Error::Closed);
+        }
+        if self.inner.store.location(session).await?.as_deref() != Some(self.inner.tools.location())
+        {
+            return Err(Error::Conflict);
+        }
+        // Validate capability before persisting; a model change never changes
+        // route, credentials, or a provider request already in flight.
+        let selected = crate::session_model::select(&self.inner.provider, binding.as_ref())?;
+        if let Some(identity) = selected.identity() {
+            let (history, _) = self.inner.store.selected_input(session).await?;
+            if history
+                .iter()
+                .flat_map(|message| message.content.as_array().into_iter().flatten())
+                .any(|block| {
+                    block["type"] == "provider_opaque"
+                        && block["model"]
+                            .as_str()
+                            .is_some_and(|model| model != identity.model)
+                })
+            {
+                return Err(Error::Invalid("selected history contains model-bound opaque content; compact or use a compatible model".into()));
+            }
+        }
+        self.inner.store.select_model(session, binding).await
+    }
+
+    pub async fn resolve_recovery(
+        &self,
+        session: &str,
+        call: &str,
+        operation: &str,
+        decision: crate::recovery::Decision,
+    ) -> Result<Value, Error> {
+        if self.inner.stop.is_cancelled() {
+            return Err(Error::Closed);
+        }
+        if self.inner.store.location(session).await?.as_deref() != Some(self.inner.tools.location())
+        {
+            return Err(Error::Conflict);
+        }
+        self.inner
+            .store
+            .resolve_recovery(session, call, operation, decision)
+            .await
+    }
+
     async fn wake(&self, session: &str, force: bool) -> Result<(), Error> {
         let commands = self.actor(session).await?;
         tokio::select! {
@@ -547,7 +600,10 @@ fn boxed_drain(
     force: bool,
     cancel: CancellationToken,
 ) -> std::pin::Pin<Box<dyn std::future::Future<Output = Result<(), Error>> + Send>> {
-    Box::pin(drain(session, inner, force, cancel))
+    Box::pin(crate::cache_affinity::scoped(
+        session.clone(),
+        drain(session, inner, force, cancel),
+    ))
 }
 
 async fn drain(
@@ -647,6 +703,7 @@ async fn execute(
     // Consecutive failed completion checks for the configured verification.
     let mut verification_failures = 0;
     let mut repeats = HashMap::<String, u32>::new();
+    let mut verification_scope = crate::verification::Scope::default();
     let mut internal_inputs = HashSet::new();
     let mut goal_iterations = 0;
     let mut goal_stalls = 0;
@@ -659,6 +716,10 @@ async fn execute(
         if cancel.is_cancelled() {
             return Ok(());
         }
+        let provider = crate::session_model::select(
+            &inner.provider,
+            inner.store.model_selection(session).await?.as_ref(),
+        )?;
         let bundle =
             match crate::context::assemble(&inner.tools, &inner.policy, cancel.child_token()).await
             {
@@ -741,7 +802,7 @@ async fn execute(
             .record(
                 session,
                 "provider.started",
-                json!({"run_id":run,"step":step,"context_epoch":context_epoch,"policy_revision":inner.policy.revision(),"state_selection":state_selection,"identity":inner.provider.identity().map(|i|json!({"protocol":i.protocol,"model":i.model}))}),
+                json!({"run_id":run,"step":step,"context_epoch":context_epoch,"policy_revision":inner.policy.revision(),"state_selection":state_selection,"identity":provider.identity().map(|i|json!({"protocol":i.protocol,"model":i.model}))}),
             )
             .await?;
         // Durable history retains null plus the error marker for unavailable
@@ -764,6 +825,11 @@ async fn execute(
             system,
             messages: history,
             tools: inner.tools.definitions(),
+        };
+        let prefix_through = if inner.context.lock().await.is_some() {
+            Some(inner.store.max_message_seq(session).await?)
+        } else {
+            None
         };
         // A transport failure before any streamed output is safe to replay; once
         // output has been emitted it is not. Retry the bounded pre-output case so
@@ -789,9 +855,7 @@ async fn execute(
                 crate::provider::scoped(
                     transport_budget.clone(),
                     3,
-                    inner
-                        .provider
-                        .stream(request.clone(), send, cancel.child_token()),
+                    provider.stream(request.clone(), send, cancel.child_token()),
                 ),
             );
             tokio::pin!(response);
@@ -968,6 +1032,13 @@ async fn execute(
                 json!({"run_id":run,"step":step,"usage":reply.usage,"cache":crate::usage::cache_lineage(&reply.usage),"context_message_seq":inner.store.max_message_seq(session).await?}),
             )
             .await?;
+        // The billed turn's settle wall-clock rides the timing side table, so
+        // usage reports can order turns in time without timestamps in replayed
+        // payloads.
+        let _ = inner
+            .store
+            .record_turn_time(session, run, step as u64, crate::approval::now_ms())
+            .await;
         if let Some(ttft_ms) = ttft_ms {
             let _ = inner
                 .store
@@ -985,7 +1056,7 @@ async fn execute(
                 step,
                 Some(started.seq),
                 reply.content.clone(),
-                inner.provider.reply_identity(&reply),
+                provider.reply_identity(&reply),
             )
             .await?
             .seq;
@@ -1016,6 +1087,7 @@ async fn execute(
                 let name = block["name"]
                     .as_str()
                     .ok_or_else(|| Error::Invalid("tool name".into()))?;
+                let effective_name = inner.tools.effective_name(name, &block["input"]);
                 if cancel.is_cancelled() && !reads.contains_key(id) {
                     return Ok(());
                 }
@@ -1071,17 +1143,30 @@ async fn execute(
                                 inner,
                                 session,
                                 crate::events::Lifecycle::PreToolUse,
-                                name,
+                                effective_name,
                             )
                             .await?
                             {
                                 (json!({"error":blocked}), true)
                             } else {
                                 inner.store.mark_dispatched(session, run, id).await?;
+                                verification_scope.observe(&prepared);
                                 let prepared_external =
                                     prepared.access() == crate::permission::Access::External;
                                 let replayed = if let Some(replay) = &inner.tool_replay {
-                                    Some(replay.take(session, name, prepared.input()).await?)
+                                    Some(
+                                        replay
+                                            .take(
+                                                session,
+                                                name,
+                                                if name == "tool_call" {
+                                                    &block["input"]
+                                                } else {
+                                                    prepared.input()
+                                                },
+                                            )
+                                            .await?,
+                                    )
                                 } else {
                                     None
                                 };
@@ -1253,7 +1338,13 @@ async fn execute(
                         )
                         .await?;
                 }
-                run_hooks(inner, session, crate::events::Lifecycle::PostToolUse, name).await?;
+                run_hooks(
+                    inner,
+                    session,
+                    crate::events::Lifecycle::PostToolUse,
+                    effective_name,
+                )
+                .await?;
                 if polling_terminal {
                     continue;
                 }
@@ -1295,11 +1386,25 @@ async fn execute(
         if cancel.is_cancelled() {
             return Ok(());
         }
-        let mut promoted = inner.store.promote(session, !reply.needs_tools).await?;
-        // Automatic context management at the settled boundary (roadmap
-        // §2.13). Off unless the runtime was configured with limits.
-        if let Some(limits) = &*inner.context.lock().await {
-            let primary = Arc::clone(&inner.provider);
+        // Settled tools do not close a provider continuation: its assistant
+        // message still contains tool_use blocks whose results follow the cut.
+        // Compact only a completed answer, before admitting newer prompts into
+        // the selected history summarized by this checkpoint.
+        let closed_answer = !reply.needs_tools
+            && reply.content.as_array().is_some_and(|parts| {
+                parts.iter().any(|part| {
+                    part["type"] == "text"
+                        && part["text"].as_str().is_some_and(|text| !text.is_empty())
+                })
+            });
+        if let Some(limits) = inner
+            .context
+            .lock()
+            .await
+            .as_ref()
+            .filter(|_| closed_answer)
+        {
+            let primary = Arc::clone(&provider);
             let bindings = inner.roles.lock().await.clone();
             let (role_provider, resolution) =
                 crate::roles::resolve(&primary, bindings.binding("summarize"));
@@ -1319,6 +1424,13 @@ async fn execute(
             // substituted one — does not escalate to itself (ADR-14): only
             // an accepted binding earns the single retry on the primary.
             let escalate = matches!(resolution, crate::roles::Resolution::Bound { .. });
+            let prefix_provider = Arc::clone(&role_provider);
+            let prefix_allowed = prefix_provider.supports_tool_free_stream()
+                && prefix_provider
+                    .identity()
+                    .zip(primary.identity())
+                    .is_some_and(|(role, main)| role == main)
+                && prefix_through.is_some();
             let mut summarize = move |body: String| {
                 let role_provider = Arc::clone(&role_provider);
                 let primary = Arc::clone(&primary);
@@ -1345,7 +1457,7 @@ async fn execute(
             };
             // Gate ②: the runtime owns the provider, so the counter that prices
             // the messages appended since the anchor is bound here.
-            let counting = Arc::clone(&inner.provider);
+            let counting = Arc::clone(&provider);
             let mut count = move |messages: Vec<crate::protocol::Message>| -> std::pin::Pin<
                 Box<dyn std::future::Future<Output = crate::provider::CountTokens> + Send>,
             > {
@@ -1361,7 +1473,34 @@ async fn execute(
                 })
             };
             let mut breaker = inner.breaker.lock().await;
-            let _ = crate::context_trigger::maybe_compact(
+            let mut prefix = || {
+                let provider = Arc::clone(&prefix_provider);
+                let store = inner.store.clone();
+                let stop = inner.stop.clone();
+                let mut snapshot = request.clone();
+                let permissions = json!({"policy":inner.policy.descriptor(),"boundary":inner.tools.authority_descriptor()});
+                async move {
+                    if !prefix_allowed {
+                        return None;
+                    }
+                    let tail = match store
+                        .pending_context(session, prefix_through.unwrap_or(0))
+                        .await
+                    {
+                        Ok((messages, _)) => messages,
+                        Err(error) => return Some(Err(error.to_string())),
+                    };
+                    snapshot.messages.extend(tail);
+                    Some(crate::runtime_profile::scoped(
+                        crate::runtime_profile::Scope {
+                            store:store.clone(),session:session.into(),run:run.into(),step,context_epoch,
+                            agent:json!({"name":"native-summary","semantics":"prefix-summary-v1"}),permissions,
+                        },
+                        crate::roles::summarize_prefix(&provider,&crate::roles::Settlement { store:&store,session,run },&stop,snapshot),
+                    ).await)
+                }
+            };
+            let _ = crate::context_trigger::maybe_compact_with_prefix(
                 &inner.store,
                 crate::context_trigger::CompactRequest {
                     session,
@@ -1374,9 +1513,11 @@ async fn execute(
                     count: &mut count,
                 },
                 &mut summarize,
+                &mut prefix,
             )
             .await;
         }
+        let mut promoted = inner.store.promote(session, !reply.needs_tools).await?;
         let mut goal_stopped_this_turn = false;
         if !reply.needs_tools && promoted.is_empty() && state_allowed {
             let state = inner.store.state(session).await?;
@@ -1492,28 +1633,41 @@ async fn execute(
                 } else {
                     json!(["sh", "-c", command])
                 };
-                let detail = match inner
+                let started_at = now_ms();
+                let state = inner.store.state(session).await?;
+                let task_before = json!({"goal_revision":state["goal"]["revision"],"todos_revision":state["todos"]["revision"]});
+                let source_before = inner.tools.verification_source(&verification_scope).await;
+                inner.store.record(session,"verification.started",json!({"run_id":run,"attempt":verification_failures+1,"command":command,"cwd":inner.tools.location(),"started_at":started_at,"source":source_before,"task":task_before})).await?;
+                let result = match inner
                     .tools
                     .prepare("run_command", json!({"argv":argv}))
                     .await
                 {
-                    Err(error) => Some(error.to_string()),
+                    Err(error) => json!({"error":error.to_string()}),
                     Ok(prepared) => match inner
                         .tools
                         .execute_prepared(prepared, &inner.policy, cancel.child_token())
                         .await
                     {
-                        Err(error) => Some(error.to_string()),
-                        Ok(value) => {
-                            let failed = value.get("error").is_some()
-                                || value
-                                    .get("exit_code")
-                                    .and_then(Value::as_i64)
-                                    .is_none_or(|code| code != 0);
-                            failed.then(|| json!(value).to_string())
-                        }
+                        Err(error) => json!({"error":error.to_string()}),
+                        Ok(value) => value,
                     },
                 };
+                let source_after = inner.tools.verification_source(&verification_scope).await;
+                let state = inner.store.state(session).await?;
+                let task_after = json!({"goal_revision":state["goal"]["revision"],"todos_revision":state["todos"]["revision"]});
+                let task_stable = task_before == task_after;
+                let source_stable =
+                    source_before == source_after && source_after["complete"] == true;
+                let command_passed =
+                    result.get("error").is_none() && result["exit_code"].as_i64() == Some(0);
+                let cancelled = cancel.is_cancelled();
+                let accepted = command_passed && source_stable && task_stable && !cancelled;
+                let receipt = inner.store.record(session,"verification.completed",json!({"run_id":run,"attempt":verification_failures+1,"command":command,"started_at":started_at,"completed_at":now_ms(),"source_before":source_before,"source_after":source_after,"source_stable":source_stable,"task_before":task_before,"task_after":task_after,"task_stable":task_stable,"command_passed":command_passed,"accepted":accepted,"cancelled":cancelled,"result":result})).await?;
+                if cancel.is_cancelled() {
+                    return Ok(());
+                }
+                let detail = (!accepted).then(||json!({"result":result,"source_stable":source_stable,"task_stable":task_stable,"note":"A successful exit validates this check only at its recorded source/task scope; changed or unavailable tracked sources or changed task revisions require another check."}).to_string());
                 if let Some(detail) = detail {
                     verification_failures += 1;
                     inner
@@ -1521,7 +1675,7 @@ async fn execute(
                         .record(
                             session,
                             "verification.failed",
-                            json!({"run_id":run,"attempt":verification_failures}),
+                            json!({"run_id":run,"attempt":verification_failures,"receipt_seq":receipt.seq}),
                         )
                         .await?;
                     // One repair chance: the second consecutive failure closes
@@ -1547,7 +1701,7 @@ async fn execute(
                             input_id: input_id.clone(),
                             prompt: format!(
                                 "The completion check failed:\n{}\nRepair the cause, then stop.",
-                                &detail[..detail.len().min(500)]
+                                detail.chars().take(500).collect::<String>()
                             ),
                             delivery: crate::protocol::Delivery::Steer,
                         })
@@ -1566,7 +1720,11 @@ async fn execute(
                 } else {
                     inner
                         .store
-                        .record(session, "verification.passed", json!({"run_id":run}))
+                        .record(
+                            session,
+                            "verification.passed",
+                            json!({"run_id":run,"receipt_seq":receipt.seq}),
+                        )
                         .await?;
                 }
             }

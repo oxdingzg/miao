@@ -177,6 +177,24 @@ pub trait Provider: Send + Sync {
         CountTokens::Unsupported
     }
 
+    /// Auxiliary requests can retain the exact tool schema prefix while the
+    /// wire protocol forbids tool invocation. Unknown adapters opt out rather
+    /// than treating a prompt instruction as an execution guarantee.
+    fn supports_tool_free_stream(&self) -> bool {
+        false
+    }
+
+    async fn stream_without_tools(
+        &self,
+        _request: ModelRequest,
+        _progress: mpsc::Sender<Value>,
+        _cancel: CancellationToken,
+    ) -> Result<Reply, ProviderError> {
+        Err(ProviderError::Stream(
+            "tool-free stream is unsupported".into(),
+        ))
+    }
+
     async fn stream(
         &self,
         request: ModelRequest,
@@ -247,33 +265,13 @@ impl Anthropic {
     }
 }
 
-#[async_trait]
-impl Provider for Anthropic {
-    fn for_model(&self, model: &str) -> Option<Arc<dyn Provider>> {
-        if !valid_model(model) {
-            return None;
-        }
-        let mut selected = self.clone();
-        selected.model = model.to_owned();
-        Some(Arc::new(selected))
-    }
-    fn identity(&self) -> Option<Identity> {
-        Some(Identity {
-            protocol: "anthropic-messages".into(),
-            model: self.model.clone(),
-        })
-    }
-    fn protected_resources(&self) -> Vec<std::path::PathBuf> {
-        self.source
-            .path()
-            .map(|path| vec![path.to_owned()])
-            .unwrap_or_default()
-    }
-    async fn stream(
+impl Anthropic {
+    async fn stream_mode(
         &self,
         request: ModelRequest,
         progress: mpsc::Sender<Value>,
         cancel: CancellationToken,
+        without_tools: bool,
     ) -> Result<Reply, ProviderError> {
         let credential = self.source.load().await?;
         if credential.kind() != Kind::Key {
@@ -361,13 +359,64 @@ impl Provider for Anthropic {
         } else {
             json!(request.system)
         };
-        let request=self.client.post(&self.endpoint)
-            .header("x-api-key",credential.header()?).header("anthropic-version","2023-06-01")
-            .json(&json!({"model":self.model,"max_tokens":self.max_tokens,"stream":true,"messages":messages,"system":system,"tools":tools}))
-            .build().map_err(|_|ProviderError::Transport)?;
+        let mut body = json!({"model":self.model,"max_tokens":self.max_tokens,"stream":true,"messages":messages,"system":system,"tools":tools});
+        if without_tools {
+            body["tool_choice"] = json!({"type":"none"});
+        }
+        let request = self
+            .client
+            .post(&self.endpoint)
+            .header("x-api-key", credential.header()?)
+            .header("anthropic-version", "2023-06-01")
+            .json(&body)
+            .build()
+            .map_err(|_| ProviderError::Transport)?;
         let response =
             request_with_retry("anthropic", &self.client, request, &progress, &cancel).await?;
         read_stream(response, progress, cancel, StreamState::default()).await
+    }
+}
+
+#[async_trait]
+impl Provider for Anthropic {
+    fn for_model(&self, model: &str) -> Option<Arc<dyn Provider>> {
+        if !valid_model(model) {
+            return None;
+        }
+        let mut selected = self.clone();
+        selected.model = model.to_owned();
+        Some(Arc::new(selected))
+    }
+    fn identity(&self) -> Option<Identity> {
+        Some(Identity {
+            protocol: "anthropic-messages".into(),
+            model: self.model.clone(),
+        })
+    }
+    fn protected_resources(&self) -> Vec<std::path::PathBuf> {
+        self.source
+            .path()
+            .map(|path| vec![path.to_owned()])
+            .unwrap_or_default()
+    }
+    async fn stream(
+        &self,
+        request: ModelRequest,
+        progress: mpsc::Sender<Value>,
+        cancel: CancellationToken,
+    ) -> Result<Reply, ProviderError> {
+        self.stream_mode(request, progress, cancel, false).await
+    }
+    fn supports_tool_free_stream(&self) -> bool {
+        true
+    }
+    async fn stream_without_tools(
+        &self,
+        request: ModelRequest,
+        progress: mpsc::Sender<Value>,
+        cancel: CancellationToken,
+    ) -> Result<Reply, ProviderError> {
+        self.stream_mode(request, progress, cancel, true).await
     }
 
     /// Advisory pre-send count against the provider's own endpoint. No retry
@@ -894,7 +943,7 @@ async fn read_stream_with_budget<P: Parser>(
         let chunk = tokio::select! {
             _=cancel.cancelled()=>return Err(ProviderError::Interrupted),
             _=tokio::time::sleep_until(first_deadline), if first_event.is_some()=>return Err(ProviderError::Transport),
-            _=tokio::time::sleep_until(deadline), if input_budget.deadline().is_some()=>return Err(ProviderError::Stream("tool input time budget exceeded".into())),
+            _=tokio::time::sleep_until(deadline), if input_budget.deadline().is_some()=>return Err(input_budget.timeout_error()),
             result=tokio::time::timeout(Duration::from_secs(120),bytes.next())=>result.map_err(|_|ProviderError::Stream("provider idle timeout".into()))?,
         };
         let Some(chunk) = chunk else {
@@ -939,7 +988,7 @@ async fn read_stream_with_budget<P: Parser>(
                 .unwrap_or_else(|| tokio::time::Instant::now() + Duration::from_secs(120));
             tokio::select! {
                 _=cancel.cancelled()=>return Err(ProviderError::Interrupted),
-                _=tokio::time::sleep_until(deadline), if input_budget.deadline().is_some()=>return Err(ProviderError::Stream("tool input time budget exceeded".into())),
+                _=tokio::time::sleep_until(deadline), if input_budget.deadline().is_some()=>return Err(input_budget.timeout_error()),
                 result=send_all(&progress, &notices)=>if result.is_err(){return Err(ProviderError::Interrupted);},
             }
             if parser.terminal() {
@@ -1002,7 +1051,7 @@ mod input_watchdog_tests {
             .await
             .unwrap();
             assert!(
-                matches!(result, Err(ProviderError::Stream(message)) if message.contains("time budget exceeded"))
+                matches!(result, Err(ProviderError::Stream(message)) if message.contains("tool input idle timeout"))
             );
             server.abort();
         }

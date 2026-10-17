@@ -33,7 +33,7 @@ describe("tool argument budgets", () => {
           env: { MIAO_TOOL_INPUT_TIMEOUT_MS: "50" },
         })
         expect(result.exitCode).not.toBe(0)
-        expect(result.stderr).toContain("exceeds 50ms")
+        expect(result.stderr).toContain("idle limit 50ms")
         expect(yield* llm.calls).toBe(1)
       }),
     60_000,

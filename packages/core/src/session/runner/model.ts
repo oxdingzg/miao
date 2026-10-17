@@ -2,7 +2,7 @@ export * as SessionRunnerModel from "./model"
 
 import os from "os"
 import { makeLocationNode } from "../../effect/app-node"
-import { type Model } from "@miao/llm"
+import { ModelCompatibility, mergeProviderOptions, type Model } from "@miao/llm"
 import * as AnthropicMessages from "@miao/llm/protocols/anthropic-messages"
 import * as BedrockConverse from "@miao/llm/protocols/bedrock-converse"
 import * as CommandCode from "@miao/llm/protocols/commandcode"
@@ -13,11 +13,12 @@ import * as OpenAIResponses from "@miao/llm/protocols/openai-responses"
 import { Azure, GitHubCopilot } from "@miao/llm/providers"
 import { openAIDefaultOptions } from "@miao/llm/providers/openai"
 import { Auth, type AnyRoute } from "@miao/llm/route"
-import { Context, Deferred, Effect, Layer, Schema } from "effect"
+import { Context, Deferred, Effect, Layer, Option, Schema } from "effect"
 import { produce } from "immer"
 import { AwsCredentials } from "../../aws-credentials"
 import { AzureEntra } from "../../azure-entra"
 import { Catalog } from "../../catalog"
+import { Config } from "../../config"
 import { Credential } from "../../credential"
 import { Flag } from "../../flag/flag"
 import { GoogleCloudAuth } from "../../google-cloud-auth"
@@ -196,6 +197,20 @@ export const fromCatalogModel = (
           Object.assign(draft.request.body, credential.metadata)
         }),
   )
+  if (
+    resolved.request.body.responsesCache !== undefined &&
+    (resolved.api.type !== "aisdk" ||
+      resolved.api.package !== "@ai-sdk/openai" ||
+      resolved.providerID === ProviderV2.ID.githubCopilot ||
+      resolved.providerID === ProviderV2.ID.make("commandcode"))
+  )
+    return Effect.fail(
+      new UnsupportedApiError({
+        providerID: resolved.providerID,
+        modelID: resolved.id,
+        api: "Responses cache capability is unsupported by this model route",
+      }),
+    )
   // Azure AI Foundry models (Claude, DeepSeek) use the generic routes below with the Azure key.
   const key =
     resolved.providerID === ProviderV2.ID.azure
@@ -203,7 +218,8 @@ export const fromCatalogModel = (
       : apiKey(resolved, credential)
   // Command Code's subscription login speaks the CLI's `/alpha/generate`
   // endpoint, not an OpenAI/Anthropic-compatible API, so it has its own route.
-  if (resolved.providerID === ProviderV2.ID.make("commandcode")) return Effect.succeed(commandCode(resolved, credential))
+  if (resolved.providerID === ProviderV2.ID.make("commandcode"))
+    return Effect.succeed(commandCode(resolved, credential))
   if (resolved.api.type !== "aisdk") return Effect.fail(unsupported(resolved))
   const bearer = key === undefined ? Auth.none : Auth.bearer(key)
   if (resolved.providerID === ProviderV2.ID.githubCopilot) return Effect.succeed(copilot(resolved, credential))
@@ -211,13 +227,43 @@ export const fromCatalogModel = (
   if (isVertex(resolved)) return vertex(resolved, credential)
   if (resolved.api.package.startsWith("@ai-sdk/amazon-bedrock")) return bedrock(resolved, credential)
   if (resolved.api.package === "@ai-sdk/openai") {
+    const cacheOptions = resolved.request.body.promptCacheOptions
+    if (cacheOptions && typeof cacheOptions === "object" && "prewarm" in cacheOptions && cacheOptions.prewarm === true)
+      return Effect.fail(
+        new UnsupportedApiError({
+          providerID: resolved.providerID,
+          modelID: resolved.id,
+          api: "Prewarming cannot be enabled as a normal model default",
+        }),
+      )
     // The llm OpenAI facade applies these defaults; building the route directly
     // skipped them, so reasoning models ran without the encrypted reasoning
     // include that is the only way a stateless (store: false) turn carries its
     // reasoning into the next one.
-    const route = withDefaults(resolved, OpenAIResponses.route).with({
+    const declared = Schema.decodeUnknownOption(ModelCompatibility)({
+      responsesCache: resolved.request.body.responsesCache,
+    })
+    if (Option.isNone(declared))
+      return Effect.fail(
+        new UnsupportedApiError({
+          providerID: resolved.providerID,
+          modelID: resolved.id,
+          api: "Invalid Responses cache capability declaration",
+        }),
+      )
+    const compatibility = resolved.request.body.responsesCache === undefined ? undefined : declared.value
+    const route = withDefaults(resolved, OpenAIResponses.route, [
+      "responsesCache",
+      "promptCacheOptions",
+      "promptCacheRetention",
+    ]).with({
       auth: bearer,
-      providerOptions: openAIDefaultOptions(resolved.api.id),
+      providerOptions: mergeProviderOptions(openAIDefaultOptions(resolved.api.id), {
+        openai: {
+          promptCacheOptions: resolved.request.body.promptCacheOptions,
+          promptCacheRetention: resolved.request.body.promptCacheRetention,
+        },
+      }),
       // Match the Codex CLI client identity, as the V1 codex plugin did in `chat.headers`.
       headers:
         resolved.providerID === ProviderV2.ID.openai ? { originator: "miao", "User-Agent": userAgent() } : undefined,
@@ -235,10 +281,10 @@ export const fromCatalogModel = (
             http: { body: { ...route.defaults.http?.body, store: false } },
             ...(Flag.MIAO_RESPONSES_WS ? { transport: OpenAIResponses.pooledTransport } : {}),
           })
-          .model({ id: resolved.api.id }),
+          .model({ id: resolved.api.id, compatibility }),
       )
     }
-    return Effect.succeed(route.model({ id: resolved.api.id }))
+    return Effect.succeed(route.model({ id: resolved.api.id, compatibility }))
   }
   if (resolved.api.package === "@ai-sdk/anthropic") {
     return Effect.succeed(
@@ -287,7 +333,8 @@ const copilot = (model: ModelV2.Info, credential?: Credential.Value) => {
   const auth = token === undefined ? Auth.none : Auth.bearer(token)
   const settings = model.api.type === "aisdk" ? model.api.settings : undefined
   const endpoint =
-    settings?.endpoint ?? (model.api.type === "aisdk" && model.api.package === "@ai-sdk/anthropic" ? "messages" : undefined)
+    settings?.endpoint ??
+    (model.api.type === "aisdk" && model.api.package === "@ai-sdk/anthropic" ? "messages" : undefined)
   const headers = { ...CopilotModels.headers(), "Openai-Intent": "conversation-edits" }
   if (endpoint === "messages")
     return withDefaults(model, AnthropicMessages.route)
@@ -301,10 +348,10 @@ const copilot = (model: ModelV2.Info, credential?: Credential.Value) => {
     endpoint === "responses" || (endpoint !== "chat" && GitHubCopilot.shouldUseResponsesApi(model.api.id))
   // Responses runs stateless (store: false) with encrypted reasoning, as V1 did;
   // V1's Copilot chat model sent neither `store` nor a default effort.
-  const route = responses
-    ? GitHubCopilot.configure({ baseURL: base }).responses(model.api.id).route
-    : OpenAIChat.route
-  return withDefaults(model, route).with({ endpoint: { baseURL: base }, auth, headers }).model({ id: model.api.id })
+  const route = responses ? GitHubCopilot.configure({ baseURL: base }).responses(model.api.id).route : OpenAIChat.route
+  return withDefaults(model, route)
+    .with({ endpoint: { baseURL: base }, auth, headers })
+    .model({ id: model.api.id })
 }
 
 /**
@@ -316,7 +363,11 @@ const copilot = (model: ModelV2.Info, credential?: Credential.Value) => {
 const commandCode = (model: ModelV2.Info, credential?: Credential.Value) => {
   const key = apiKey(model, credential)
   const base = (process.cwd() || "").split(/[\\/]/).filter(Boolean).pop() ?? "miao"
-  const projectSlug = base.toLowerCase().replace(/[^a-z0-9-]/g, "-").slice(0, 40) || "miao"
+  const projectSlug =
+    base
+      .toLowerCase()
+      .replace(/[^a-z0-9-]/g, "-")
+      .slice(0, 40) || "miao"
   return withDefaults(model, CommandCode.route)
     .with({
       auth: key === undefined ? Auth.none : Auth.bearer(key),
@@ -347,14 +398,10 @@ const azure = (model: ModelV2.Info, credential?: Credential.Value) => {
   const base = model.api.url ?? `https://${resource!.trim()}.openai.azure.com/openai`
   const baseURL = deployments
     ? `${base.replace(/\/v1\/?$/, "")}/deployments/${model.api.id}`
-    : model.api.url ?? `${base}/v1`
+    : (model.api.url ?? `${base}/v1`)
   const key = cloudKey(model, credential, ["AZURE_RESOURCE_NAME"], "AZURE_API_KEY")
   const configured = Object.keys(model.request.headers).some((name) => name.toLowerCase() === "authorization")
-  const auth = key
-    ? Auth.header("api-key", key)
-    : configured
-      ? Auth.none
-      : Auth.effect(AzureEntra.token).bearer()
+  const auth = key ? Auth.header("api-key", key) : configured ? Auth.none : Auth.effect(AzureEntra.token).bearer()
   const route = Azure.configure({
     baseURL,
     apiVersion: typeof apiVersion === "string" ? apiVersion : undefined,
@@ -515,9 +562,7 @@ const bedrock = (model: ModelV2.Info, credential?: Credential.Value) => {
       ? Auth.bearer(key)
       : Auth.custom((input) =>
           AwsCredentials.resolve(profile).pipe(
-            Effect.flatMap((identity) =>
-              Auth.toEffect(BedrockConverse.sigV4Auth({ region, ...identity }))(input),
-            ),
+            Effect.flatMap((identity) => Auth.toEffect(BedrockConverse.sigV4Auth({ region, ...identity }))(input)),
           ),
         )
   if (model.api.type === "aisdk" && model.api.package === "@ai-sdk/amazon-bedrock/mantle") {
@@ -575,8 +620,32 @@ export const locationLayer = Layer.effect(
   Service,
   Effect.gen(function* () {
     const catalog = yield* Catalog.Service
+    const config = yield* Config.Service
     const integrations = yield* Integration.Service
     const plugins = yield* PluginV2.Service
+    const decodeConfig = Schema.decodeUnknownOption(Config.Info, { errors: "all", onExcessProperty: "ignore" })
+    // Config may name the account a provider should use: `accounts.<providerID>`
+    // for the Location, with the agent's own choice taking precedence. The value
+    // is a credential label or id; a stale entry falls back to the provider's
+    // active account instead of failing the turn.
+    const resolveConnection = Effect.fn("SessionRunnerModel.resolveConnection")(function* (
+      session: SessionSchema.Info,
+      integrationID: Integration.ID,
+      providerID: string,
+    ) {
+      const merged = decodeConfig(Config.merge(yield* config.entries())).pipe(Option.getOrUndefined)
+      const account =
+        (session.agent ? merged?.agents?.[session.agent]?.accounts?.[providerID] : undefined) ??
+        merged?.accounts?.[providerID]
+      if (!account) return yield* integrations.connection.active(integrationID)
+      const integration = yield* integrations.get(integrationID)
+      const match = integration?.connections.find(
+        (candidate) => candidate.type === "credential" && (candidate.label === account || candidate.id === account),
+      )
+      if (match) return match
+      yield* Effect.logWarning("configured provider account not found", { providerID, account })
+      return yield* integrations.connection.active(integrationID)
+    })
     return Service.of({
       resolve: Effect.fn("SessionRunnerModel.resolve")(function* (session) {
         const resolveStartedAt = Date.now()
@@ -617,8 +686,10 @@ export const locationLayer = Layer.effect(
         const selectionMs = Date.now() - resolveStartedAt
         const connectionStartedAt = Date.now()
         const provider = yield* catalog.provider.get(selected.providerID)
-        const connection = yield* integrations.connection.active(
+        const connection = yield* resolveConnection(
+          session,
           provider?.integrationID ?? Integration.ID.make(selected.providerID),
+          selected.providerID,
         )
         const connectionMs = Date.now() - connectionStartedAt
         const credentialStartedAt = Date.now()
@@ -645,8 +716,10 @@ export const locationLayer = Layer.effect(
           const selected = yield* catalog.model.small(providerID)
           if (!selected || !supported(selected)) return undefined
           const provider = yield* catalog.provider.get(selected.providerID)
-          const connection = yield* integrations.connection.active(
+          const connection = yield* resolveConnection(
+            session,
             provider?.integrationID ?? Integration.ID.make(selected.providerID),
+            selected.providerID,
           )
           return yield* fromCatalogModel(
             selected,
@@ -661,5 +734,6 @@ export const locationLayer = Layer.effect(
 export const node = makeLocationNode({
   service: Service,
   layer: locationLayer,
-  deps: [Catalog.node, Integration.node, PluginV2.node],
+  // Config carries the per-provider account choice, so the layer reads it.
+  deps: [Catalog.node, Config.node, Integration.node, PluginV2.node],
 })

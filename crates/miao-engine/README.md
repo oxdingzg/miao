@@ -14,6 +14,12 @@ they are not the current capability-gap checklist.
 
 ## Running
 
+Optional [stable extension tool disclosure](docs/tool-disclosure.md) keeps the provider tool surface
+fixed while discovering extension schemas and filtering results on demand (`--tool-disclosure compact`).
+
+Search and diagnostic results carry [source revision provenance](docs/revision-bound-observations.md)
+so later edits and checks can distinguish observed content from stale or unversioned diagnostics.
+
 Build on a build host:
 
 ```sh
@@ -37,6 +43,37 @@ Use `--http 127.0.0.1:PORT` to enable the loopback HTTP control plane, reusing t
 (`POST /rpc` and the `GET /events` SSE event stream, revision `engine-http-0`); authentication uses a
 bearer token taken from `--http-token` or `MIAO_ENGINE_HTTP_TOKEN`, generated at startup and printed
 to stderr when absent. Non-loopback addresses are rejected, and TLS is left to a local reverse proxy.
+
+### Optional Responses cache controls
+
+`--responses-cache-contract JSON` declares cache capabilities for an exact wire model, normalized
+endpoint URL (including its query), and authentication profile (`api` or `subscription`). Declare
+only capabilities verified for that deployment. No capability is inferred from a model name.
+For the integrated native engine, set `engine.responses_cache_contract` in global config, or
+override the whole contract with `MIAO_ENGINE_RESPONSES_CACHE_CONTRACT`.
+
+```json
+{
+  "model": "wire-model",
+  "endpoint": "https://api.example/v1/responses",
+  "authentication": "api",
+  "profile": "breakpoints",
+  "mode": "implicit",
+  "ttl": "30m"
+}
+```
+
+The `breakpoints` profile moves the stable system text from `instructions` to the first developer
+`input_text` with an explicit breakpoint, while preserving implicit tail caching by default.
+`system:false` omits that marker; `mode:explicit` requires a nonempty marked system;
+`mode:disabled` emits explicit-only mode without a marker. Only `ttl:30m` is supported.
+The `legacy` profile accepts optional `retention:in_memory|24h` and cannot be combined with modern
+TTL or mode controls. Normal model defaults reject `prewarm:true`, which would suppress generation.
+
+Contracts fail before transport when bound to a different endpoint, model, authentication profile,
+or protocol. Same-model auxiliary roles retain the contract; other role models and fallback routes
+do not inherit it. Omitting a contract preserves the existing request shape. These controls declare
+request capabilities, not measured cache hits; use provider usage and cache diagnostics for results.
 
 `acp` mode provides ACP (newline-delimited JSON-RPC 2.0) on stdio for editors to integrate directly:
 `miao-engine acp --db PATH --workspace PATH --model MODEL [--provider ...] [--endpoint URL]
@@ -98,6 +135,55 @@ an active runtime:
 export does not create a missing database, does not change execution state, and does not take on a
 second authoritative log. The read transaction pins a high-water mark; a very slow external export
 prolongs SQLite snapshot/WAL retention, so long-term analysis should read from the exported file.
+
+## Prompt-cache affinity
+
+Responses requests made by a Session carry a stable `prompt_cache_key`. The subscription profile
+also sends the same value in the `session-id` header so tool continuations and later user turns
+remain cache-affine. The key is a bounded digest of the Session ID: it survives process restarts,
+retries and context compaction, and differs for independent Sessions sharing one provider.
+It is transport metadata, not a system-prompt instruction or shared mutable provider setting.
+
+This routing is automatic for Responses; `--prompt-cache on|off` controls explicit Anthropic
+cache breakpoints instead. Neither setting guarantees a provider cache hit. Stable system/tool
+prefixes still matter; compare `cacheReadInputTokens` and `nonCachedInputTokens` from `run.usage`
+alongside total input, output, requests and task success rather than treating total input as cost.
+
+Each durable `provider.request` includes `cache_diagnostics`: bounded fingerprints of the
+observed system, ordered tools, history, route and available account/cache identifiers. Later
+requests compare against the preceding durable observation, including across runner restarts.
+An exact prefix digest distinguishes append-only history from rewrites even when the bounded
+per-message sample is exhausted. Content, authorization headers and query credentials are not
+recorded by this diagnostic.
+
+These are **client-observed changes**, not proven reasons for a server cache miss. A changed
+context epoch alone does not prove the prefix changed; a matching prefix does not prove a
+server cache entry exists. `serverCacheState` remains `unknown`. Account coverage is limited to
+an account header when the route provides one; opaque credential rotations cannot be inferred.
+
+The Session usage report's `cacheDiagnostics` includes observed-request/change counts and
+per-token-axis coverage. Its weighted `hitRatio` is `null` unless every billed observation
+reports both inclusive input and cache reads. Legacy token sums remain compatible, while
+coverage distinguishes missing measurements from measured zero.
+
+## Cache-preserving summaries
+
+When a closed turn crosses the context threshold and has room for a summary, the runtime can
+reuse that turn's exact system, tool definitions and sent history. It appends only the newly
+settled messages and a retention instruction. An adapter must explicitly support a wire-level
+tool prohibition; custom or composite adapters opt out by default. A differently bound summary
+model retains the existing cold path rather than replaying model-specific history on another
+route. Oversized contexts and rejected, empty or timed-out warm summaries also fall back to
+the bounded cold summarizer. Existing closed-boundary and checkpoint rules still apply.
+
+The Responses/Chat adapters use `tool_choice: none`, Anthropic uses `{type: none}`, and Gemini
+uses function-calling mode `NONE`, without deleting the tool schema prefix. Replies that still
+request tools are rejected and no auxiliary tool calls are dispatched. This preserves a
+potential reusable prefix; it does not guarantee how a provider accounts for that prefix.
+
+`role.provider.started/completed` retain the auxiliary route, observed usage and semantic
+acceptance separately from main-turn usage, so summary calls do not advance the context anchor.
+An interrupted call without completed usage remains an unmeasured attempt, not a free call.
 
 ## Execution invariants
 
@@ -382,7 +468,7 @@ configured with the `mcp_*` tool matcher and the `@mcp/local_service/**` resourc
 Remote HTTP transport, dynamic catalog notifications, resources/prompts, MCP OAuth, and TS plugin
 compatibility are not implemented today.
 
-## Explicit workspace Context Sources
+## Explicit Context Sources
 
 `--context-config /absolute/path/context.json` selects additional instruction/persona files:
 
@@ -393,16 +479,25 @@ compatibility are not implemented today.
 ]
 ```
 
-The configuration lives outside the workspace, and content paths must be workspace-relative. At most
+The configuration lives outside the workspace. Content paths may be workspace-relative, or absolute
+paths covered by explicit read-only `--references-config` grants. A file reference grants that exact
+file, not its parent directory or sibling files. For example, a host can select a global `AGENTS.md`
+by putting its absolute path in both the Context Source list and the reference list; naming an
+absolute file in the Context Source list alone grants no access. External file-level permission
+rules use the ordinary `@reference/**` resource namespace.
+
+At most
 16 additional sources; a label uses ASCII letters/digits/`_.-` limited to 64 characters, and a path
-cannot have an empty, `.`, or `..` segment. By default `AGENTS.md` loads first, then the sources in
-configuration order; each item reuses the scoped `read_file` and file-level policy, an ask/deny item
+cannot traverse `..`. Relative paths also reject empty and `.` segments. Explicit external sources
+load first in configuration order, then workspace `AGENTS.md`, then relative sources in configuration
+order. Each item reuses the scoped `read_file` and file-level policy; an ask/deny item
 is not read, and missing/skipped is also recorded in provenance. Each file is at most 32 KiB and the
 final system is at most 64 KiB; exceeding the budget fails explicitly. The provider boundary re-reads
 and stores, through an immutable Context Epoch, the full system, source hashes, and selection order.
 
-This provides explicitly selected workspace producers; ambient user/ancestor discovery, a full
-skill/reference catalog, and per-task automatic selection are not implemented yet.
+This provides explicitly selected workspace and host-file producers. Ambient user/ancestor discovery
+and product configuration mapping still belong to the embedding host; the engine does not infer
+permission to inspect parent directories from a Context Source path.
 
 ## In-Session raw-history recall
 
@@ -671,3 +766,8 @@ the original Session, input hash and policy revision.
 CLI and HTTP API: create, submit a prompt, await and approve a native write once,
 observe the final history, and verify the file. Its unconfigured-policy case
 verifies that the same request does not write a file.
+
+## Completion verification receipts
+
+Configured completion commands produce [version-bound verification receipts](docs/verification-receipts.md)
+with actual exit/output, task revisions and bounded source coverage.

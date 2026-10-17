@@ -71,6 +71,16 @@ impl Gemini {
 }
 #[async_trait]
 impl Provider for Gemini {
+    fn for_model(&self, model: &str) -> Option<std::sync::Arc<dyn Provider>> {
+        let model = model.strip_prefix("models/").unwrap_or(model);
+        let suffix = format!("/models/{}:streamGenerateContent", self.model);
+        let prefix = self.endpoint.path().strip_suffix(&suffix)?;
+        let mut endpoint = self.endpoint.clone();
+        endpoint.set_path(&format!("{prefix}/models/{model}:streamGenerateContent"));
+        Self::with_source(endpoint.into(), self.source.clone(), model.into())
+            .ok()
+            .map(|provider| std::sync::Arc::new(provider) as std::sync::Arc<dyn Provider>)
+    }
     fn identity(&self) -> Option<crate::provider::Identity> {
         Some(crate::provider::Identity {
             protocol: "gemini-generate-content".into(),
@@ -144,6 +154,28 @@ impl Provider for Gemini {
         progress: mpsc::Sender<Value>,
         cancel: CancellationToken,
     ) -> Result<Reply, ProviderError> {
+        self.stream_mode(request, progress, cancel, false).await
+    }
+    fn supports_tool_free_stream(&self) -> bool {
+        true
+    }
+    async fn stream_without_tools(
+        &self,
+        request: ModelRequest,
+        progress: mpsc::Sender<Value>,
+        cancel: CancellationToken,
+    ) -> Result<Reply, ProviderError> {
+        self.stream_mode(request, progress, cancel, true).await
+    }
+}
+impl Gemini {
+    async fn stream_mode(
+        &self,
+        request: ModelRequest,
+        progress: mpsc::Sender<Value>,
+        cancel: CancellationToken,
+        without_tools: bool,
+    ) -> Result<Reply, ProviderError> {
         let credential = self.source.load().await?;
         if credential.kind() != Kind::Key {
             return Err(ProviderError::AuthProfile);
@@ -153,7 +185,7 @@ impl Provider for Gemini {
         let mut body = json!({"contents":contents,"generationConfig":{"candidateCount":1,"maxOutputTokens":8192},"systemInstruction":{"parts":[{"text":request.system}]}});
         if !declarations.is_empty() {
             body["tools"] = json!([{"functionDeclarations":declarations}]);
-            body["toolConfig"] = json!({"functionCallingConfig":{"mode":"AUTO"}});
+            body["toolConfig"] = json!({"functionCallingConfig":{"mode":if without_tools { "NONE" } else { "AUTO" }}});
         }
         let request = self
             .client

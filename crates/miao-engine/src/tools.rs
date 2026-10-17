@@ -92,6 +92,7 @@ pub struct Prepared {
     /// evaluated against policy; a single deny rejects the whole call.
     targets: Vec<String>,
     access: Access,
+    select: Option<Vec<String>>,
 }
 impl Prepared {
     pub fn name(&self) -> &str {
@@ -137,6 +138,7 @@ pub struct Tools {
     edit_snapshots: Arc<std::sync::Mutex<Snapshots>>,
     edit_recovery: bool,
     lsp_diagnostics: bool,
+    compact_disclosure: bool,
 }
 
 impl Tools {
@@ -178,6 +180,7 @@ impl Tools {
             edit_snapshots: Arc::new(std::sync::Mutex::new(Snapshots::new())),
             edit_recovery: true,
             lsp_diagnostics: true,
+            compact_disclosure: false,
         })
     }
 
@@ -269,16 +272,10 @@ impl Tools {
         for reference in &references {
             let canonical =
                 std::fs::canonicalize(&reference.path).map_err(|_| ToolError::InvalidInput)?;
-            let root = if canonical.is_dir() {
-                canonical
-            } else {
-                canonical
-                    .parent()
-                    .ok_or(ToolError::InvalidInput)?
-                    .to_owned()
-            };
-            if !roots.contains(&root) {
-                roots.push(root);
+            // A file reference authorizes that exact file, not its siblings.
+            // Directory references retain their explicitly granted subtree.
+            if !roots.contains(&canonical) {
+                roots.push(canonical);
             }
         }
         self.references = Arc::new(references);
@@ -324,6 +321,33 @@ impl Tools {
     pub fn with_mcp(mut self, registry: Arc<mcp::Registry>) -> Self {
         self.mcp = Some(registry);
         self
+    }
+
+    pub fn with_compact_disclosure(mut self, enabled: bool) -> Self {
+        self.compact_disclosure = enabled;
+        self
+    }
+
+    /// Hooks use the actual extension name; the provider still sees the stable bridge name.
+    pub(crate) fn effective_name<'a>(&self, name: &'a str, input: &'a Value) -> &'a str {
+        if self.compact_disclosure && name == "tool_call" {
+            if let Some(target) = input["name"].as_str() {
+                if self
+                    .mcp
+                    .as_ref()
+                    .and_then(|registry| registry.resource(target))
+                    .is_some()
+                    || self
+                        .worker
+                        .as_ref()
+                        .and_then(|registry| registry.resource(target))
+                        .is_some()
+                {
+                    return target;
+                }
+            }
+        }
+        name
     }
     /// Evaluation ablation switch: `false` disables the read warm-up and the
     /// post-edit diagnostics report while every other path stays identical.
@@ -409,7 +433,24 @@ impl Tools {
         self.root.to_str().expect("validated UTF-8 Location")
     }
 
+    pub(crate) async fn verification_source(&self, scope: &crate::verification::Scope) -> Value {
+        let directory = self.directory.clone();
+        let scope = scope.clone();
+        tokio::task::spawn_blocking(move || scope.snapshot(&directory)).await
+            .unwrap_or_else(|_| json!({"coverage":"native-write-targets","complete":false,"error":"source snapshot worker failed"}))
+    }
+
     pub async fn prepare(&self, name: &str, input: Value) -> Result<Prepared, ToolError> {
+        let invocation = if self.compact_disclosure && name == "tool_call" {
+            Some(crate::tool_catalog::Invocation::parse(input.clone())?)
+        } else {
+            None
+        };
+        let name = invocation.as_ref().map_or(name, |call| call.name.as_str());
+        let input = invocation
+            .as_ref()
+            .map_or(input, |call| call.arguments.clone());
+        let select = invocation.as_ref().and_then(|call| call.select.clone());
         if let Some(registry) = &self.mcp {
             if let Some(resource) = registry.resource(name) {
                 registry.validate(name, &input)?;
@@ -420,6 +461,7 @@ impl Tools {
                     resource,
                     targets: Vec::new(),
                     access: Access::External,
+                    select,
                 });
             }
         }
@@ -433,10 +475,18 @@ impl Tools {
                     resource,
                     targets: Vec::new(),
                     access: Access::External,
+                    select,
                 });
             }
         }
+        if invocation.is_some() {
+            return Err(ToolError::Unsupported);
+        }
         let path = match name {
+            "tool_search" if self.compact_disclosure => {
+                crate::tool_catalog::Search::parse(input.clone())?;
+                ".".into()
+            }
             "read_file" | "read_image" => {
                 serde_json::from_value::<ReadInput>(input.clone())
                     .map_err(|_| ToolError::InvalidInput)?
@@ -676,6 +726,7 @@ impl Tools {
             path,
             resource,
             targets,
+            select: None,
         })
     }
 
@@ -712,18 +763,42 @@ impl Tools {
         cancel: CancellationToken,
     ) -> Result<Value, ToolError> {
         if prepared.access() == Access::External {
-            if let Some(registry) = &self.worker {
-                if crate::worker::owns(prepared.name()) {
-                    let name = prepared.name().to_owned();
-                    return registry.call(&name, prepared.input, cancel).await;
-                }
-            }
-            return self
-                .mcp
-                .as_ref()
-                .ok_or(ToolError::Unsupported)?
-                .call(&prepared.name, prepared.input, cancel)
-                .await;
+            let output = if crate::worker::owns(prepared.name()) {
+                self.worker
+                    .as_ref()
+                    .ok_or(ToolError::Unsupported)?
+                    .call(&prepared.name, prepared.input, cancel)
+                    .await?
+            } else {
+                self.mcp
+                    .as_ref()
+                    .ok_or(ToolError::Unsupported)?
+                    .call(&prepared.name, prepared.input, cancel)
+                    .await?
+            };
+            return Ok(crate::tool_catalog::project(output, prepared.select));
+        }
+        if prepared.name() == "tool_search" && self.compact_disclosure {
+            let tools = self
+                .extension_definitions()
+                .into_iter()
+                .filter(|tool| {
+                    let resource = self
+                        .mcp
+                        .as_ref()
+                        .and_then(|registry| registry.resource(&tool.name))
+                        .or_else(|| {
+                            self.worker
+                                .as_ref()
+                                .and_then(|registry| registry.resource(&tool.name))
+                        });
+                    resource.is_some_and(|resource| {
+                        policy.evaluate(&tool.name, &resource, Access::External)
+                            != crate::permission::Decision::Deny
+                    })
+                })
+                .collect();
+            return Ok(crate::tool_catalog::Search::parse(prepared.input)?.run(tools));
         }
         if prepared.access() == Access::Execute {
             let _lease = tokio::select! {_=cancel.cancelled()=>return Err(ToolError::Interrupted),guard=self.gate.clone().write_owned()=>guard};
@@ -833,14 +908,17 @@ impl Tools {
             if self.lsp_diagnostics && matches!(prepared.name.as_str(), "edit_file" | "write_file")
             {
                 if let (Ok(value), Some(registry)) = (applied.as_mut(), self.lsp.clone()) {
-                    if let Some(report) = registry
-                        .diagnostics(&prepared.path)
-                        .await
-                        .ok()
-                        .and_then(|result| report_diagnostics(&result))
-                    {
+                    if let Ok(result) = registry.diagnostics(&prepared.path).await {
+                        let matches = result["source"]["sha256"] == value["sha256"];
+                        let mut source = result["source"].clone();
+                        source["matches_applied_revision"] = json!(matches);
                         if let Value::Object(fields) = value {
-                            fields.insert("diagnostics".into(), report);
+                            fields.insert("diagnostics_source".into(), source);
+                            if matches && result["source"]["stale"] == false {
+                                if let Some(report) = report_diagnostics(&result) {
+                                    fields.insert("diagnostics".into(), report);
+                                }
+                            }
                         }
                     }
                 }
@@ -1054,13 +1132,24 @@ impl Tools {
                 definitions.push(ToolDefinition{name:name.into(),description:if name=="job_status"{"Inspect this Session's job state and bounded terminal output.".into()}else{"Request cancellation of this Session's active background job.".into()},input_schema:json!({"type":"object","properties":{"job_id":{"type":"string"}},"required":["job_id"],"additionalProperties":false})});
             }
         }
-        if let Some(registry) = &self.mcp {
-            definitions.extend(registry.definitions());
-        }
-        if let Some(registry) = &self.worker {
-            definitions.extend(registry.definitions());
-        }
+        definitions.extend(if self.compact_disclosure {
+            crate::tool_catalog::definitions()
+        } else {
+            self.extension_definitions()
+        });
         definitions
+    }
+
+    fn extension_definitions(&self) -> Vec<ToolDefinition> {
+        self.mcp
+            .iter()
+            .flat_map(|registry| registry.definitions())
+            .chain(
+                self.worker
+                    .iter()
+                    .flat_map(|registry| registry.definitions()),
+            )
+            .collect()
     }
 
     async fn contained(&self, path: &str) -> Result<PathBuf, ToolError> {

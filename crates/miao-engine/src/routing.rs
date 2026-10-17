@@ -19,6 +19,22 @@ pub fn build(
     model: String,
     prompt_cache: bool,
 ) -> Result<Arc<dyn Provider>, ProviderError> {
+    build_with_cache(name, endpoint, source, model, prompt_cache, None)
+}
+
+pub fn build_with_cache(
+    name: &str,
+    endpoint: Option<&str>,
+    source: Source,
+    model: String,
+    prompt_cache: bool,
+    cache: Option<crate::responses_cache::Contract>,
+) -> Result<Arc<dyn Provider>, ProviderError> {
+    if cache.is_some() && !matches!(name, "openai-responses" | "subscription-responses") {
+        return Err(ProviderError::Stream(
+            "Responses cache contracts are unsupported by this provider route".into(),
+        ));
+    }
     match name {
         "anthropic" => Ok(Arc::new(
             Anthropic::with_source(
@@ -48,19 +64,24 @@ pub fn build(
             } else {
                 "https://api.openai.com/v1/responses"
             };
-            Ok(Arc::new(
-                OpenAIResponses::with_source(
-                    endpoint.unwrap_or(default).into(),
-                    source,
-                    model,
-                    if subscription {
-                        Profile::Subscription
-                    } else {
-                        Profile::Api
-                    },
-                )
-                .map_err(|_| ProviderError::Transport)?,
-            ))
+            let provider = OpenAIResponses::with_source(
+                endpoint.unwrap_or(default).into(),
+                source,
+                model,
+                if subscription {
+                    Profile::Subscription
+                } else {
+                    Profile::Api
+                },
+            )
+            .map_err(|_| ProviderError::Transport)?;
+            let provider = match cache {
+                Some(contract) => provider
+                    .with_cache_contract(contract)
+                    .map_err(ProviderError::Stream)?,
+                None => provider,
+            };
+            Ok(Arc::new(provider))
         }
         "gemini" => {
             let default = format!(
@@ -111,6 +132,15 @@ impl Fallback {
 }
 #[async_trait]
 impl Provider for Fallback {
+    fn for_model(&self, model: &str) -> Option<Arc<dyn Provider>> {
+        let primary = self.primary.for_model(model)?;
+        if primary.identity() == self.secondary.identity() {
+            return Some(primary);
+        }
+        Self::new(primary, Arc::clone(&self.secondary))
+            .ok()
+            .map(|provider| Arc::new(provider) as Arc<dyn Provider>)
+    }
     fn identity(&self) -> Option<Identity> {
         Some(self.first.clone())
     }

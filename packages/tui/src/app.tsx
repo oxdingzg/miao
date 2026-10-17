@@ -31,6 +31,7 @@ import {
 import { TuiPathsProvider, TuiStartupProvider, TuiTerminalEnvironmentProvider, useTuiStartup } from "./context/runtime"
 import { DialogProvider, useDialog } from "./ui/dialog"
 import { DialogProvider as DialogProviderList } from "./component/dialog-provider"
+import { DialogAccountProviders } from "./component/dialog-accounts"
 import { ErrorComponent } from "./component/error-component"
 import { PluginRouteMissing } from "./component/plugin-route-missing"
 import { ProjectProvider, useProject } from "./context/project"
@@ -152,6 +153,7 @@ const appBindingCommands = [
   "variant.cycle",
   "variant.list",
   "provider.connect",
+  "provider.accounts",
   "miao.status",
   "miao.debug",
   "theme.switch",
@@ -931,6 +933,15 @@ function App(props: {
         slashName: "connect",
         run: () => {
           dialog.replace(() => <DialogProviderList />)
+        },
+        category: "Provider",
+      },
+      {
+        name: "provider.accounts",
+        title: "Manage provider accounts",
+        slashName: "accounts",
+        run: () => {
+          dialog.replace(() => <DialogAccountProviders />)
         },
         category: "Provider",
       },
