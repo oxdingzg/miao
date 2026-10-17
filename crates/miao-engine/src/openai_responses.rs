@@ -28,6 +28,8 @@ pub struct OpenAIResponses {
     source: Source,
     model: String,
     cache_contract: Option<crate::responses_cache::Contract>,
+    websocket_contract: Option<crate::responses_websocket::Contract>,
+    websocket_pool: std::sync::Arc<crate::responses_websocket::Pool>,
 }
 impl OpenAIResponses {
     pub fn new(endpoint: String, key: String, model: String) -> Result<Self, reqwest::Error> {
@@ -54,6 +56,8 @@ impl OpenAIResponses {
             model,
             profile,
             cache_contract: None,
+            websocket_contract: None,
+            websocket_pool: std::sync::Arc::new(crate::responses_websocket::Pool::default()),
         })
     }
     pub fn with_cache_contract(
@@ -70,6 +74,20 @@ impl OpenAIResponses {
         self.cache_contract = Some(contract);
         Ok(self)
     }
+    pub fn with_websocket_contract(
+        mut self,
+        contract: crate::responses_websocket::Contract,
+    ) -> Result<Self, String> {
+        let endpoint =
+            reqwest::Url::parse(&self.endpoint).map_err(|_| "invalid Responses endpoint")?;
+        contract.validate(
+            &self.model,
+            &endpoint,
+            matches!(self.profile, Profile::Subscription),
+        )?;
+        self.websocket_contract = Some(contract);
+        Ok(self)
+    }
 }
 #[async_trait]
 impl Provider for OpenAIResponses {
@@ -79,6 +97,13 @@ impl Provider for OpenAIResponses {
         }
         let mut selected = self.clone();
         selected.model = model.to_owned();
+        if selected
+            .websocket_contract
+            .as_ref()
+            .is_some_and(|contract| contract.model != model)
+        {
+            selected.websocket_contract = None;
+        }
         if selected
             .cache_contract
             .as_ref()
@@ -137,11 +162,7 @@ impl OpenAIResponses {
         }
         let input = items(&request.messages, &self.model)?;
         let tools:Vec<Value>=request.tools.iter().map(|tool|json!({"type":"function","name":tool.name,"description":tool.description,"parameters":tool.input_schema})).collect();
-        let cache_key = crate::cache_affinity::key();
         let mut body = json!({"model":self.model,"instructions":request.system,"input":input,"tools":tools,"stream":true,"store":false,"include":["reasoning.encrypted_content"]});
-        if let Some(key) = &cache_key {
-            body["prompt_cache_key"] = json!(key);
-        }
         if let Some(contract) = &self.cache_contract {
             contract
                 .project(&mut body, &request.system)
@@ -149,6 +170,16 @@ impl OpenAIResponses {
         }
         if without_tools {
             body["tool_choice"] = json!("none");
+        }
+        let (cache_key, cache_prefix) = crate::cache_affinity::select(
+            &body,
+            &json!({
+                "endpoint":self.endpoint,"profile":match self.profile {Profile::Api=>"api",Profile::Subscription=>"subscription"},"account":credential.account(),
+                "generation":crate::permission::digest(credential.secret().as_bytes()),
+            }),
+        )?;
+        if let Some(key) = &cache_key {
+            body["prompt_cache_key"] = json!(key);
         }
         let mut builder = self
             .client
@@ -170,6 +201,38 @@ impl OpenAIResponses {
             }
         }
         let request = builder.build().map_err(|_| ProviderError::Transport)?;
+        if let Some(contract) = &self.websocket_contract {
+            if let Some(reply) = crate::responses_websocket::try_stream(
+                &self.websocket_pool,
+                contract,
+                &request,
+                progress.clone(),
+                cancel.clone(),
+                ResponsesState {
+                    model: self.model.clone(),
+                    ..Default::default()
+                },
+                |reply| {
+                    items(
+                        &[Message {
+                            role: "assistant".into(),
+                            content: reply.content.clone(),
+                            checkpoint: None,
+                            recorded_at_ms: None,
+                        }],
+                        &self.model,
+                    )
+                },
+            )
+            .await?
+            {
+                crate::runtime_profile::cache_prefix_completed(cache_prefix).await;
+                return Ok(reply);
+            }
+            let _ = progress.try_send(
+                json!({"kind":"transport.http_fallback","from":"websocket","history":"full"}),
+            );
+        }
         let response = request_with_retry(
             "openai-responses",
             &self.client,
@@ -178,7 +241,7 @@ impl OpenAIResponses {
             &cancel,
         )
         .await?;
-        read_stream(
+        let reply = read_stream(
             response,
             progress,
             cancel,
@@ -187,7 +250,9 @@ impl OpenAIResponses {
                 ..Default::default()
             },
         )
-        .await
+        .await?;
+        crate::runtime_profile::cache_prefix_completed(cache_prefix).await;
+        Ok(reply)
     }
 }
 
@@ -511,3 +576,7 @@ impl Parser for ResponsesState {
         })
     }
 }
+
+#[cfg(test)]
+#[path = "openai_responses_websocket_tests.rs"]
+mod websocket_tests;

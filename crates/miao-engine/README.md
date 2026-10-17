@@ -49,6 +49,8 @@ to stderr when absent. Non-loopback addresses are rejected, and TLS is left to a
 
 ### Optional Responses cache controls
 
+Verified deployments can independently opt into [Session WebSocket reuse and strict suffix continuation](docs/responses-websocket.md).
+
 `--responses-cache-contract JSON` declares cache capabilities for an exact wire model, normalized
 endpoint URL (including its query), and authentication profile (`api` or `subscription`). Declare
 only capabilities verified for that deployment. No capability is inferred from a model name.

@@ -17,6 +17,24 @@ pub(crate) struct Scope {
 }
 
 tokio::task_local! { static SCOPE: Scope; }
+pub(crate) fn context_epoch() -> Option<u64> {
+    SCOPE.try_with(|scope| scope.context_epoch).ok()
+}
+
+pub(crate) fn permission_hash() -> Option<String> {
+    SCOPE
+        .try_with(|scope| fingerprint(&scope.permissions).ok())
+        .ok()
+        .flatten()
+}
+
+pub(crate) async fn cache_prefix_completed(proof: Option<crate::cache_affinity::Proof>) {
+    let (Ok(scope), Some(proof)) = (SCOPE.try_with(Clone::clone), proof) else {
+        return;
+    };
+    // Side-table write: the replay-pinned journal stays wall-clock-free.
+    scope.store.record_cache_prefix(&scope.session, proof).await;
+}
 
 pub(crate) async fn scoped<F: std::future::Future>(scope: Scope, future: F) -> F::Output {
     SCOPE.scope(scope, future).await
@@ -61,7 +79,7 @@ pub(crate) async fn record(
         scope.context_epoch,
         previous.as_ref(),
     )?;
-    // Recording is awaited before executing HTTP, so failed and retried attempts
+    // Recording is awaited before provider transport, so failed and retried attempts
     // remain observable even when no stream delta or successful reply exists.
     let event = scope.store.record(&scope.session, "provider.request", json!({
         "run_id": scope.run, "step": scope.step, "attempt": attempt,"phase":"prepared",

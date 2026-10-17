@@ -30,6 +30,7 @@ pub mod question;
 pub mod recall;
 pub mod recovery;
 pub mod responses_cache;
+pub mod responses_websocket;
 pub mod roles;
 pub mod routing;
 pub mod runtime;
