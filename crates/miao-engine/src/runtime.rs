@@ -1229,6 +1229,7 @@ async fn execute(
                                     None => Err(ToolError::Interrupted),
                                 },
                                 "session_state" => Ok(inner.store.state(session).await?),
+                                "knowledge"=>inner.tools.execute_knowledge(prepared,&inner.policy,session,cancel.child_token()).await,
                                 "todowrite" | "goal" => match crate::state::Mutation::parse(
                                     name,
                                     prepared.input().clone(),

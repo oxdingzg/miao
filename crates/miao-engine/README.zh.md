@@ -8,6 +8,8 @@
 
 ## 运行
 
+原生[来源绑定知识工具](docs/source-bound-knowledge.md)提供跨 Session 的短索引、可审阅记忆、来源失效检测与条件更新。
+
 可选的[稳定扩展工具披露](docs/tool-disclosure.md)通过 `--tool-disclosure compact` 固定顶层工具 schema，按需发现扩展能力并过滤结果；也可设置全局 `engine.tool_disclosure` 或 `MIAO_ENGINE_TOOL_DISCLOSURE`。
 
 检索和诊断结果附带[源码版本来源信息](docs/revision-bound-observations.md)，区分实际观察到的内容、过期诊断与未报告版本的诊断；这类观察本身不构成整体任务完成的证明。
