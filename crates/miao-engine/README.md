@@ -109,7 +109,30 @@ The product bridge forwards `EngineOptions.modelRoutesConfigFile` or
 Credential types are `environment` (`key`: variable name, optional subscription
 `account`: variable name), `database` (`path`, `id`, `integration`), `legacy`
 (`path`, `integration`), or `daemon` (`path`, `id`, `integration`). File sources
-must be outside the workspace. The product child environment remains allowlisted;
+must be outside the workspace.
+
+Each route may also carry a declarative auth block — wire auth style plus
+trusted headers and literal query parameters, sourced from the trusted host
+manifest (secrets still travel through the credential source):
+
+```json
+[{
+  "id": "azure-prod",
+  "provider": "openai-chat",
+  "model": "gpt-4o",
+  "endpoint": "https://my-resource.openai.azure.com/openai/deployments/gpt-4o",
+  "credential": {"type": "environment", "key": "AZURE_OPENAI_API_KEY"},
+  "auth": {
+    "style": "api-key",
+    "headers": {"x-gateway": "edge1"},
+    "query": {"api-version": "2024-10-21"}
+  }
+}]
+```
+
+`style` is `bearer` (default) or `api-key`; `query` entries are appended
+literally to the request URL. Any base-url provider or gateway is therefore
+configuration, not engine code. The product child environment remains allowlisted;
 pass custom credential variables through `EngineOptions.env` explicitly.
 
 Controller `model_catalog` returns only `route_id`, `protocol`, and `model`.

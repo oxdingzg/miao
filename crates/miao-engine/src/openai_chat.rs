@@ -9,12 +9,24 @@ use std::{collections::BTreeMap, time::Duration};
 use tokio::sync::mpsc;
 use tokio_util::sync::CancellationToken;
 
+#[derive(Clone, Copy, PartialEq, Eq, Default)]
+pub enum AuthStyle {
+    #[default]
+    Bearer,
+    /// Microsoft Azure Front Door style: the secret travels in an `api-key`
+    /// header, never an Authorization bearer.
+    ApiKey,
+}
+
 #[derive(Clone)]
 pub struct OpenAIChat {
     client: reqwest::Client,
     endpoint: String,
     source: Source,
     model: String,
+    auth_style: AuthStyle,
+    query: Option<String>,
+    extra_headers: std::collections::BTreeMap<String, String>,
 }
 
 impl OpenAIChat {
@@ -26,6 +38,44 @@ impl OpenAIChat {
         source: Source,
         model: String,
     ) -> Result<Self, reqwest::Error> {
+        Self::with_auth(
+            endpoint,
+            source,
+            model,
+            AuthStyle::default(),
+            Default::default(),
+            None,
+        )
+    }
+
+    /// Azure OpenAI authenticates with an `api-key` header against a
+    /// deployment-scoped endpoint and pins the service version by query.
+    pub fn with_azure(
+        endpoint: String,
+        source: Source,
+        model: String,
+        api_version: &str,
+    ) -> Result<Self, reqwest::Error> {
+        Self::with_auth(
+            endpoint,
+            source,
+            model,
+            AuthStyle::ApiKey,
+            Default::default(),
+            Some(format!("api-version={}", api_version)),
+        )
+    }
+
+    /// Declarative constructor for gateway/provider manifests: auth style,
+    /// extra trusted headers, and literal query parameters.
+    pub fn with_auth(
+        endpoint: String,
+        source: Source,
+        model: String,
+        auth_style: AuthStyle,
+        extra_headers: std::collections::BTreeMap<String, String>,
+        query: Option<String>,
+    ) -> Result<Self, reqwest::Error> {
         Ok(Self {
             client: reqwest::Client::builder()
                 .redirect(reqwest::redirect::Policy::none())
@@ -34,6 +84,9 @@ impl OpenAIChat {
             endpoint,
             source,
             model,
+            auth_style,
+            query,
+            extra_headers,
         })
     }
 }
@@ -101,13 +154,19 @@ impl OpenAIChat {
         if without_tools {
             body["tool_choice"] = json!("none");
         }
-        let request = self
-            .client
-            .post(&self.endpoint)
-            .bearer_auth(credential.secret())
-            .json(&body)
-            .build()
-            .map_err(|_| ProviderError::Transport)?;
+        let mut url = reqwest::Url::parse(&self.endpoint).map_err(|_| ProviderError::Transport)?;
+        if let Some(query) = self.query.as_deref() {
+            url.set_query(Some(query));
+        }
+        let mut request = self.client.post(url).json(&body);
+        request = match self.auth_style {
+            AuthStyle::Bearer => request.bearer_auth(credential.secret()),
+            AuthStyle::ApiKey => request.header("api-key", credential.secret()),
+        };
+        for (name, value) in &self.extra_headers {
+            request = request.header(name, value);
+        }
+        let request = request.build().map_err(|_| ProviderError::Transport)?;
         let response =
             request_with_retry("openai-chat", &self.client, request, &progress, &cancel).await?;
         read_stream(response, progress, cancel, ChatState::default()).await

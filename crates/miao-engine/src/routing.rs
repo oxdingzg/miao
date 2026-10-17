@@ -1,6 +1,7 @@
 use crate::{
     credential::Source,
     gemini::Gemini,
+    openai_chat::AuthStyle,
     openai_chat::OpenAIChat,
     openai_responses::{OpenAIResponses, Profile},
     protocol::ModelRequest,
@@ -8,7 +9,10 @@ use crate::{
 };
 use async_trait::async_trait;
 use serde_json::{json, Value};
-use std::{collections::BTreeSet, sync::Arc};
+use std::{
+    collections::{BTreeMap, BTreeSet},
+    sync::Arc,
+};
 use tokio::sync::mpsc;
 use tokio_util::sync::CancellationToken;
 
@@ -31,6 +35,71 @@ pub fn build_with_cache(
     cache: Option<crate::responses_cache::Contract>,
 ) -> Result<Arc<dyn Provider>, ProviderError> {
     build_with_responses(name, endpoint, source, model, prompt_cache, cache, None)
+}
+
+/// Route construction with a declarative auth block from a trusted host
+/// manifest: wire auth style plus trusted headers and literal query
+/// parameters. Unknown providers keep the plain error path.
+pub fn build_with_auth(
+    name: &str,
+    endpoint: Option<&str>,
+    source: Source,
+    model: String,
+    prompt_cache: bool,
+    auth: Option<&crate::model_routes::Auth>,
+) -> Result<Arc<dyn Provider>, ProviderError> {
+    let (style, headers, query) = match auth {
+        Some(auth) => (
+            auth.style.as_deref(),
+            auth.headers.clone(),
+            auth.query.clone(),
+        ),
+        None => (None, BTreeMap::new(), BTreeMap::new()),
+    };
+    let query = if query.is_empty() {
+        None
+    } else {
+        Some(
+            query
+                .iter()
+                .map(|(name, value)| format!("{}={}", name, value))
+                .collect::<Vec<_>>()
+                .join("&"),
+        )
+    };
+    match (name, style) {
+        ("openai-chat", style) => {
+            let endpoint = endpoint
+                .ok_or_else(|| ProviderError::Stream("route requires an endpoint".into()))?;
+            let provider = OpenAIChat::with_auth(
+                endpoint.into(),
+                source,
+                model,
+                match style {
+                    Some("api-key") => AuthStyle::ApiKey,
+                    _ => AuthStyle::Bearer,
+                },
+                headers,
+                query.clone(),
+            )
+            .map_err(|_| ProviderError::Transport)?;
+            Ok(Arc::new(provider))
+        }
+        ("anthropic", style) => {
+            let endpoint = endpoint
+                .unwrap_or("https://api.anthropic.com/v1/messages")
+                .into();
+            let provider = match style {
+                Some("bearer") => Anthropic::with_bearer_source(endpoint, source, model)
+                    .map_err(|_| ProviderError::Transport)?,
+                _ => Anthropic::with_source(endpoint, source, model)
+                    .map_err(|_| ProviderError::Transport)?,
+            }
+            .with_prompt_cache(prompt_cache);
+            Ok(Arc::new(provider))
+        }
+        _ => build_with_responses(name, endpoint, source, model, prompt_cache, None, None),
+    }
 }
 
 pub fn build_with_responses(
@@ -102,6 +171,27 @@ pub fn build_with_responses(
                 None => provider,
             };
             Ok(Arc::new(provider))
+        }
+        "azure" => {
+            let endpoint = endpoint
+                .ok_or_else(|| ProviderError::Stream("azure route requires an endpoint".into()))?;
+            let api_version =
+                std::env::var("AZURE_OPENAI_API_VERSION").unwrap_or_else(|_| "2024-10-21".into());
+            Ok(Arc::new(
+                OpenAIChat::with_azure(endpoint.into(), source, model, &api_version)
+                    .map_err(|_| ProviderError::Transport)?,
+            ))
+        }
+        "vertex-anthropic" => {
+            let endpoint = endpoint.ok_or_else(|| {
+                ProviderError::Stream(
+                    "vertex-anthropic route requires a rawPredict endpoint".into(),
+                )
+            })?;
+            Ok(Arc::new(
+                Anthropic::with_bearer_source(endpoint.into(), source, model)
+                    .map_err(|_| ProviderError::Transport)?,
+            ))
         }
         "gemini" => {
             let default = format!(
