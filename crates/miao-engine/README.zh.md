@@ -8,6 +8,8 @@
 
 ## 运行
 
+原生[来源绑定知识工具](docs/source-bound-knowledge.md)提供跨 Session 的短索引、可审阅记忆、来源失效检测与条件更新。
+
 可选的[稳定扩展工具披露](docs/tool-disclosure.md)通过 `--tool-disclosure compact` 固定顶层工具 schema，按需发现扩展能力并过滤结果；也可设置全局 `engine.tool_disclosure` 或 `MIAO_ENGINE_TOOL_DISCLOSURE`。
 
 检索和诊断结果附带[源码版本来源信息](docs/revision-bound-observations.md)，区分实际观察到的内容、过期诊断与未报告版本的诊断；这类观察本身不构成整体任务完成的证明。
@@ -31,6 +33,8 @@ cargo build --manifest-path crates/miao-engine/Cargo.toml
 使用 `--http 127.0.0.1:PORT` 启用 loopback HTTP 控制面，复用同一命令表（`POST /rpc` 与 `GET /events` SSE 事件流，revision `engine-http-0`）；认证用 bearer token，取自 `--http-token` 或 `MIAO_ENGINE_HTTP_TOKEN`，缺省时启动生成并打印到 stderr。非 loopback 地址被拒绝，TLS 交给本地反代。
 
 ### 可选的 Responses 缓存控制
+
+已验证支持的部署还可独立启用 [Session WebSocket 复用与严格后缀增量](docs/responses-websocket.md)。
 
 `--responses-cache-contract JSON` 声明精确 wire model、规范化 endpoint URL（含 query）与认证类型（`api` 或 `subscription`）对应的缓存能力。只声明已验证的部署能力，不根据模型名称推断。集成的原生引擎读取全局配置 `engine.responses_cache_contract`，也可用 `MIAO_ENGINE_RESPONSES_CACHE_CONTRACT` 覆盖整个契约。
 

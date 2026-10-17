@@ -14,6 +14,9 @@ they are not the current capability-gap checklist.
 
 ## Running
 
+The native [source-bound knowledge tool](docs/source-bound-knowledge.md) provides a short workspace
+index, reviewable notes, source invalidation and conditional updates across Sessions.
+
 Optional [stable extension tool disclosure](docs/tool-disclosure.md) keeps the provider tool surface
 fixed while discovering extension schemas and filtering results on demand (`--tool-disclosure compact`).
 
@@ -45,6 +48,8 @@ bearer token taken from `--http-token` or `MIAO_ENGINE_HTTP_TOKEN`, generated at
 to stderr when absent. Non-loopback addresses are rejected, and TLS is left to a local reverse proxy.
 
 ### Optional Responses cache controls
+
+Verified deployments can independently opt into [Session WebSocket reuse and strict suffix continuation](docs/responses-websocket.md).
 
 `--responses-cache-contract JSON` declares cache capabilities for an exact wire model, normalized
 endpoint URL (including its query), and authentication profile (`api` or `subscription`). Declare
@@ -482,6 +487,46 @@ Ask/deny decisions hide that metadata from the model. Discovery skips symlinks,
 is depth/count bounded, and lists only names/descriptions/paths in Context.
 Skill bodies are read on demand through ordinary authorized tools. External
 skill paths remain absolute so a later read uses the same reference boundary.
+
+## Native web tools
+
+Enable native HTTP reads/search through the ordinary policy boundary:
+
+```json
+{
+  "allow_web": true,
+  "rules": [
+    { "tool": "webfetch", "path": "@web/**", "decision": "allow" },
+    { "tool": "websearch", "path": "@web/**", "decision": "allow" }
+  ]
+}
+```
+
+`webfetch` accepts an HTTP(S) URL, `format: "markdown" | "text" | "html"`
+(default markdown), and `timeout` in seconds (1–120, default 30). HTML uses a
+native DOM converter; text excludes head/script/style content. Declared text
+encodings and compressed responses are decoded before enforcing the 2 MiB body
+limit. Returned content is UTF-8 bounded to 64 KiB with an explicit `truncated`
+flag. URL fragments are not transmitted. Up to five redirects are followed only
+when their targets independently have an allow rule; otherwise the target URL
+is returned in the permission error for a separate authorized call. Read-only
+collaboration does not grant write/process authority through these tools.
+
+`websearch` is disclosed only when the host has configured a supported search
+credential. Set `EXA_API_KEY` or `PARALLEL_API_KEY`; if both exist Exa is the
+default. `MIAO_WEB_SEARCH_PROVIDER=exa|parallel` explicitly selects one, and
+`MIAO_WEB_SEARCH_ENDPOINT` optionally selects the host's deployment endpoint.
+These deployment variables are forwarded by the product's native child
+environment boundary. They are never model tool arguments or returned in tool
+results. Search never follows redirects, and upstream error bodies are not
+returned to the model.
+
+Search input is `query`, optional `numResults` (1–20, default 8), `type`
+(`auto|fast|deep`) and `contextMaxCharacters` (1–50000, default 10000). The native
+adapters use Exa `/search` or Parallel `/v1/search` and return bounded source URLs,
+titles, excerpts and truncation flags. Permission resources are namespaced as
+`@web/<host>[:port]/<path>`; normal once-only controller approval is supported
+when rules ask rather than allow.
 
 ## Explicit Context Sources
 
