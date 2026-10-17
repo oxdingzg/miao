@@ -10,7 +10,9 @@ import { ConflictError } from "@miao/protocol/errors"
 import { Location } from "@miao/schema/location"
 import { Effect, Layer, Option, Schema } from "effect"
 import { EngineError, type EngineOptions, type EngineEvent } from "./client"
+import { LocationServiceMap } from "@miao/core/location-service-map"
 import { makeEngineOwners } from "./owners"
+import { ProductHooks } from "./product-hooks"
 import { NativeRecovery } from "./recovery"
 import { engineMessageSequence } from "./message-sequence"
 import { Permission } from "@miao/schema/permission"
@@ -109,6 +111,7 @@ export const nativeEngineOptions = (
     contextConfigFile: environment.MIAO_ENGINE_CONTEXT_CONFIG ?? merged.contextConfigFile,
     skillsConfigFile: environment.MIAO_ENGINE_SKILLS_CONFIG ?? merged.skillsConfigFile,
     referencesConfigFile: environment.MIAO_ENGINE_REFERENCES_CONFIG ?? merged.referencesConfigFile,
+    hooksConfigFile: environment.MIAO_ENGINE_HOOKS_CONFIG ?? merged.hooksConfigFile,
     contextLimits: merged.contextLimits,
   }
 }
@@ -411,6 +414,7 @@ const layer = Layer.effect(
   NativeEngine.Service,
   Effect.gen(function* () {
     const global = yield* Global.Service
+    const locations = yield* LocationServiceMap.Service
     const settings = yield* Effect.promise(() => engineSettings(global.config))
     const configuration = nativeEngineOptions(process.env, settings)
     if (!configuration) return yield* Effect.die("NativeEngine layer built without MIAO_ENGINE_BIN")
@@ -425,11 +429,22 @@ const layer = Layer.effect(
       configuration.workerConfigFile = workerConfigFile
       console.log("[worker-host] config written:", workerConfigFile)
     }
-    const owners = yield* makeEngineOwners(configuration)
+    const owners = yield* makeEngineOwners(configuration, (location) =>
+      ProductHooks.prepare(location, configuration).pipe(
+        Effect.provide(locations.get(location)),
+        Effect.mapError((error) =>
+          error instanceof EngineError ? error : new EngineError("engine_hooks_io", "could not prepare product hooks"),
+        ),
+      ),
+    )
     return fromOwners(owners)
   }),
 )
 
-export const node = makeGlobalNode({ service: NativeEngine.Service, layer, deps: [ClientEvents.node, Global.node] })
+export const node = makeGlobalNode({
+  service: NativeEngine.Service,
+  layer,
+  deps: [ClientEvents.node, Global.node, LocationServiceMap.node],
+})
 
 export * as NativeEngineNode from "./native-engine"

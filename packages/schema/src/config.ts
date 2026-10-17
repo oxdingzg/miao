@@ -15,6 +15,7 @@ import { ConfigLinter } from "./config/linter"
 import { ConfigTools } from "./config/tools"
 import { ConfigLSP } from "./config/lsp"
 import { ConfigLoop } from "./config/loop"
+import { ConfigHooks } from "./config/hooks"
 import { ConfigMCP } from "./config/mcp"
 import { ConfigPlugin } from "./config/plugin"
 import { ConfigProvider } from "./config/provider"
@@ -169,6 +170,9 @@ export class Info extends Schema.Class<Info>("Config.Info")({
   }),
   mcp: ConfigMCP.Info.pipe(Schema.optional).annotate({
     description: "MCP server configuration",
+  }),
+  hooks: ConfigHooks.Info.pipe(Schema.optional).annotate({
+    description: "Lifecycle hooks the native engine executes under its sandbox",
   }),
   compaction: ConfigCompaction.Info.pipe(Schema.optional).annotate({
     description: "Conversation compaction behavior",

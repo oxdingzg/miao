@@ -489,6 +489,11 @@ selection 包含 protocol/model、primary/fallback、opaque_pinned、fallback �
 
 ## Host 生命周期 hooks（tool 前后）
 
+产品配置会自动映射到本接口：受信任的产品 `hooks` 配置在 owner 创建时物化为
+host 侧 manifest，显式 `--hooks-config` 始终优先。hooks 在子进程生命周期内
+固定，修改需要新的 engine owner。当前仅 `pre_tool_use` 与 `post_tool_use`
+会派发；其余词汇保留给尚未落地的生产者。
+
 `--hooks-config /absolute/path/hooks.json` 配置 host 侧钩子（workspace 之外，≤64 KiB，自动列入保护资源）：
 
 ```json

@@ -7,6 +7,7 @@ import { connectEngine } from "./connection"
 /** Native children belong to the server scope, never to an individual HTTP request. */
 export const makeEngineOwners = Effect.fn("Engine.owners")(function* (
   options: Omit<EngineOptions, "db" | "workspace">,
+  prepare?: (location: Location.Ref) => Effect.Effect<Partial<EngineOptions>, EngineError, Scope.Scope>,
 ) {
   const clients = yield* ClientEvents.Service
   const scope = yield* Scope.make()
@@ -53,8 +54,10 @@ export const makeEngineOwners = Effect.fn("Engine.owners")(function* (
               )
             return existing.connection
           }
+          const extra = prepare ? yield* prepare(input.location).pipe(Effect.provideService(Scope.Scope, scope)) : {}
           const connection = yield* connectEngine({
             ...configuration,
+            ...extra,
             db: input.storage,
             workspace: input.location.directory,
             engineID: input.engineID,

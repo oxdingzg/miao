@@ -69,6 +69,8 @@ export interface EngineOptions {
   contextConfigFile?: string
   skillsConfigFile?: string
   referencesConfigFile?: string
+  /** Host-owned lifecycle hooks; commands run under the same sandbox as bash. */
+  hooksConfigFile?: string
   /**
    * Explicit prefix-cache policy for the first model turn's stable prefix.
    * Absent leaves each provider's own caching behavior untouched.
@@ -165,6 +167,7 @@ export function engineArgs(options: EngineOptions): string[] {
   if (options.contextConfigFile) args.push("--context-config", options.contextConfigFile)
   if (options.skillsConfigFile) args.push("--skills-config", options.skillsConfigFile)
   if (options.referencesConfigFile) args.push("--references-config", options.referencesConfigFile)
+  if (options.hooksConfigFile) args.push("--hooks-config", options.hooksConfigFile)
   if (options.promptCache !== undefined) args.push("--prompt-cache", options.promptCache ? "on" : "off")
   if (options.responsesCacheContract)
     args.push("--responses-cache-contract", JSON.stringify(options.responsesCacheContract))

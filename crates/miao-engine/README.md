@@ -787,6 +787,13 @@ full purpose-role catalog, automatic model discovery, or quality/price routing.
 
 ## Host lifecycle hooks (around tools)
 
+Product configuration maps into this surface automatically: trusted `hooks`
+entries in product configuration become a host-owned manifest at owner creation,
+and an explicit `--hooks-config` always takes precedence. Hooks are fixed for a
+child's lifetime; changing them requires a new engine owner. Only
+`pre_tool_use` and `post_tool_use` dispatch today; the remaining vocabulary
+stays reserved until its producer lands.
+
 `--hooks-config /absolute/path/hooks.json` configures host-side hooks (outside the workspace, ≤64
 KiB, automatically listed as a protected resource):
 
