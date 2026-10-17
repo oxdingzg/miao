@@ -128,6 +128,7 @@ pub struct Tools {
     protected: Vec<PathBuf>,
     private_store: Option<PathBuf>,
     mcp: Option<Arc<mcp::Registry>>,
+    web: Option<Arc<crate::web::Client>>,
     worker: Option<Arc<crate::worker::Registry>>,
     lsp: Option<Arc<crate::lsp::Registry>>,
     context_sources: Arc<Vec<crate::context::Source>>,
@@ -170,6 +171,7 @@ impl Tools {
             protected: vec![],
             private_store: None,
             mcp: None,
+            web: None,
             worker: None,
             lsp: None,
             context_sources: Arc::new(vec![]),
@@ -227,6 +229,22 @@ impl Tools {
     ) -> Result<Self, ToolError> {
         crate::context::validate(&sources)?;
         self.context_sources = Arc::new(sources);
+        Ok(self)
+    }
+
+    pub fn with_web(mut self, client: crate::web::Client) -> Self {
+        self.web = Some(Arc::new(client));
+        self
+    }
+    pub(crate) fn enable_web(self, enabled: bool) -> Result<Self, ToolError> {
+        if !enabled && self.web.is_some() {
+            return Err(ToolError::InvalidInput);
+        }
+        if enabled && self.web.is_none() {
+            return Ok(self.with_web(crate::web::Client::new(
+                crate::web::SearchConfig::from_env()?,
+            )?));
+        }
         Ok(self)
     }
     fn patch_input(name: &str, input: Value) -> Result<crate::patch::Input, ToolError> {
@@ -310,7 +328,7 @@ impl Tools {
             "background":self.background_enabled,"delegation":self.delegation_enabled,
             "wakeup":self.wakeup_enabled,"cron":self.cron_enabled,"processNetwork":self.process_network,
             "processRunnerConfigured":self.runner.is_some(),"mcpAttached":self.mcp.is_some(),
-            "workerAttached":self.worker.is_some(),"lspAttached":self.lsp.is_some()})
+            "workerAttached":self.worker.is_some(),"lspAttached":self.lsp.is_some(),"web":self.web.as_ref().map(|client|client.descriptor())})
     }
     pub(crate) fn references(&self) -> &[crate::context::Reference] {
         &self.references
@@ -447,6 +465,22 @@ impl Tools {
     }
 
     pub async fn prepare(&self, name: &str, input: Value) -> Result<Prepared, ToolError> {
+        if matches!(name, "webfetch" | "websearch") {
+            let resource = self
+                .web
+                .as_ref()
+                .ok_or(ToolError::Unsupported)?
+                .prepare(name, input.clone())?;
+            return Ok(Prepared {
+                name: name.into(),
+                input,
+                path: self.root.clone(),
+                resource,
+                targets: vec![],
+                access: Access::Web,
+                select: None,
+            });
+        }
         let invocation = if self.compact_disclosure && name == "tool_call" {
             Some(crate::tool_catalog::Invocation::parse(input.clone())?)
         } else {
@@ -768,6 +802,14 @@ impl Tools {
         policy: &Policy,
         cancel: CancellationToken,
     ) -> Result<Value, ToolError> {
+        if prepared.access() == Access::Web {
+            return self
+                .web
+                .as_ref()
+                .ok_or(ToolError::Unsupported)?
+                .execute(&prepared.name, prepared.input, policy, cancel)
+                .await;
+        }
         if prepared.access() == Access::External {
             let output = if crate::worker::owns(prepared.name()) {
                 self.worker
@@ -1137,6 +1179,9 @@ impl Tools {
             for name in ["job_status", "cancel_job"] {
                 definitions.push(ToolDefinition{name:name.into(),description:if name=="job_status"{"Inspect this Session's job state and bounded terminal output.".into()}else{"Request cancellation of this Session's active background job.".into()},input_schema:json!({"type":"object","properties":{"job_id":{"type":"string"}},"required":["job_id"],"additionalProperties":false})});
             }
+        }
+        if let Some(web) = &self.web {
+            definitions.extend(web.definitions());
         }
         definitions.extend(if self.compact_disclosure {
             crate::tool_catalog::definitions()
