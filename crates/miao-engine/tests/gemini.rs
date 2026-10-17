@@ -116,7 +116,9 @@ async fn model_selection_preserves_route_and_key_and_updates_the_native_model_pa
     task.await.unwrap();
 }
 async fn completed(store: &Store) {
-    tokio::time::timeout(std::time::Duration::from_secs(3), async {
+    // A loaded CI runner can take seconds to record `run.finished`, so this poll
+    // budget only decides how long a genuinely stuck run waits before failing.
+    tokio::time::timeout(std::time::Duration::from_secs(30), async {
         loop {
             if store
                 .events("s", 0, 100)
