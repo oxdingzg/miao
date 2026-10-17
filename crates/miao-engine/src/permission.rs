@@ -28,6 +28,7 @@ pub enum Access {
     Background,
     Delegate,
     External,
+    Web,
     SessionState,
     Schedule,
     Cron,
@@ -55,6 +56,8 @@ pub struct Config {
     #[serde(default)]
     pub allow_mcp: bool,
     #[serde(default)]
+    pub allow_web: bool,
+    #[serde(default)]
     pub allow_wakeup: bool,
     #[serde(default)]
     pub allow_cron: bool,
@@ -64,6 +67,11 @@ pub struct Config {
     pub rules: Vec<Rule>,
     #[serde(default = "approval_timeout")]
     pub approval_timeout_ms: u64,
+    #[serde(default = "provider_turns")]
+    pub max_provider_turns: u32,
+}
+fn provider_turns() -> u32 {
+    25
 }
 fn approval_timeout() -> u64 {
     60_000
@@ -76,11 +84,13 @@ impl Default for Config {
             allow_background: false,
             allow_subagents: false,
             allow_mcp: false,
+            allow_web: false,
             allow_wakeup: false,
             allow_cron: false,
             process_network: false,
             rules: vec![],
             approval_timeout_ms: approval_timeout(),
+            max_provider_turns: provider_turns(),
         }
     }
 }
@@ -124,8 +134,15 @@ pub struct Policy {
     matchers: Vec<CompiledMatcher>,
 }
 impl Policy {
+    pub fn max_provider_turns(&self) -> u32 {
+        self.config.max_provider_turns
+    }
+
     pub fn new(config: Config) -> Result<Self, Error> {
-        if !(1..=600_000).contains(&config.approval_timeout_ms) || config.rules.len() > 256 {
+        if !(1..=600_000).contains(&config.approval_timeout_ms)
+            || !(1..=10_000).contains(&config.max_provider_turns)
+            || config.rules.len() > 256
+        {
             return Err(Error::Invalid("invalid permission limits".into()));
         }
         let revision = digest(&serde_json::to_vec(&config)?);
@@ -199,6 +216,10 @@ impl Policy {
         self.config.mode == Mode::Workspace && self.config.allow_mcp
     }
 
+    pub fn web_enabled(&self) -> bool {
+        self.config.allow_web
+    }
+
     pub fn process_network(&self) -> bool {
         self.config.process_network
     }
@@ -228,6 +249,7 @@ impl Policy {
             || (access == Access::Background && !self.background_enabled())
             || (access == Access::Delegate && !self.subagents_enabled())
             || (access == Access::External && !self.mcp_enabled())
+            || (access == Access::Web && !self.web_enabled())
             || (access == Access::Write && self.config.mode == Mode::ReadOnly)
         {
             return (

@@ -2,6 +2,7 @@ export * as SessionInfo from "./session-info"
 
 import { Schema } from "effect"
 import { Agent } from "./agent"
+import { Credential } from "./credential"
 import { Location } from "./location"
 import { Model } from "./model"
 import { Project } from "./project"
@@ -17,6 +18,26 @@ import { Revert } from "./revert"
  */
 export interface Usage extends Schema.Schema.Type<typeof Usage> {}
 export const Usage = Schema.Struct({
+  coverage: Schema.Struct({
+    observations: Schema.Finite,
+    auxiliaryObservations: Schema.Finite,
+    missingUsageObservations: Schema.Finite,
+    unknownPriceObservations: Schema.Finite,
+    observedTokens: Schema.Struct({
+      input: Schema.Finite,
+      output: Schema.Finite,
+      reasoning: Schema.Finite,
+      cache: Schema.Struct({ read: Schema.Finite, write: Schema.Finite }),
+    }).pipe(optional),
+    axes: Schema.Struct({
+      input: Schema.Finite,
+      output: Schema.Finite,
+      cacheRead: Schema.Finite,
+      cacheWrite: Schema.Finite,
+      nonCached: Schema.Finite,
+      reasoning: Schema.Finite,
+    }),
+  }).pipe(optional),
   turns: Schema.Finite,
   tools: Schema.Struct({
     calls: Schema.Finite,
@@ -54,6 +75,8 @@ export const Info = Schema.Struct({
   projectID: Project.ID,
   agent: Agent.ID.pipe(optional),
   model: Model.Ref.pipe(optional),
+  /** Account this conversation is pinned to; unset follows the provider's own resolution. */
+  credentialID: Credential.ID.pipe(optional),
   execution: Schema.Struct({
     engine: Schema.Literals(["typescript", "rust"]),
     selection: Schema.Literals(["session", "operator"]),

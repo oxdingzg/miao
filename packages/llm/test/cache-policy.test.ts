@@ -17,6 +17,11 @@ const bedrockModel = AmazonBedrock.configure({
   credentials: { region: "us-east-1", accessKeyId: "fixture", secretAccessKey: "fixture" },
 }).model("anthropic.claude-3-5-sonnet-20241022-v2:0")
 
+// Same wire format as Messages behind a differently named route.
+const vertexModel = AnthropicMessages.vertexRoute
+  .with({ endpoint: { baseURL: "https://vertex.test/v1/" } })
+  .model({ id: "claude-sonnet-4-5" })
+
 const openaiModel = OpenAIChat.route
   .with({ endpoint: { baseURL: "https://api.openai.test/v1/" }, auth: Auth.bearer("test") })
   .model({ id: "gpt-4o-mini" })
@@ -48,7 +53,7 @@ describe("applyCachePolicy", () => {
     }),
   )
 
-  it.effect("'auto' marks the last tool, last system part, and latest user message on Anthropic", () =>
+  it.effect("'auto' marks the last tool, both system boundaries, and the newest message", () =>
     Effect.gen(function* () {
       const prepared = yield* LLMClient.prepare(
         LLM.request({
@@ -75,6 +80,88 @@ describe("applyCachePolicy", () => {
             content: [{ type: "text", text: "latest user message", cache_control: { type: "ephemeral" } }],
           },
         ],
+      })
+    }),
+  )
+
+  it.effect("'auto' marks the first and last system part", () =>
+    Effect.gen(function* () {
+      const prepared = yield* LLMClient.prepare(
+        LLM.request({
+          model: anthropicModel,
+          system: [
+            { type: "text", text: "base persona" },
+            { type: "text", text: "project instructions" },
+            { type: "text", text: "session state" },
+          ],
+          prompt: "hi",
+          cache: "auto",
+        }),
+      )
+
+      const body = prepared.body as { system: Array<{ text: string; cache_control?: unknown }> }
+      expect(body.system[0]?.cache_control).toEqual({ type: "ephemeral" })
+      expect(body.system[1]?.cache_control).toBeUndefined()
+      expect(body.system[2]?.cache_control).toEqual({ type: "ephemeral" })
+    }),
+  )
+
+  it.effect("'auto' advances the message breakpoint to the newest message", () =>
+    Effect.gen(function* () {
+      const prepared = yield* LLMClient.prepare(
+        LLM.request({
+          model: anthropicModel,
+          messages: [Message.user("the only user message"), Message.assistant("a tool result follows in a real turn")],
+          cache: "auto",
+        }),
+      )
+
+      const body = prepared.body as { messages: Array<{ content: Array<{ cache_control?: unknown }> }> }
+      expect(body.messages[0]?.content[0]?.cache_control).toBeUndefined()
+      expect(body.messages[1]?.content[0]?.cache_control).toEqual({ type: "ephemeral" })
+    }),
+  )
+
+  it.effect("'auto' spends only the breakpoints the manual hints leave", () =>
+    Effect.gen(function* () {
+      const hint = new CacheHint({ type: "ephemeral", ttlSeconds: 3600 })
+      const prepared = yield* LLMClient.prepare(
+        LLM.request({
+          model: anthropicModel,
+          system: [
+            { type: "text", text: "s1", cache: hint },
+            { type: "text", text: "s2", cache: hint },
+            { type: "text", text: "s3", cache: hint },
+            { type: "text", text: "s4", cache: hint },
+          ],
+          tools: [{ name: "t1", description: "t1", inputSchema: { type: "object", properties: {} } }],
+          prompt: "hi",
+          cache: "auto",
+        }),
+      )
+
+      const body = prepared.body as { tools: Array<{ cache_control?: unknown }> }
+      expect(body.tools[0]?.cache_control).toBeUndefined()
+      expect(JSON.stringify(prepared.body).match(/cache_control/g)).toHaveLength(4)
+    }),
+  )
+
+  it.effect("'auto' follows the protocol, not the route name (Claude on Vertex)", () =>
+    Effect.gen(function* () {
+      const prepared = yield* LLMClient.prepare(
+        LLM.request({
+          model: vertexModel,
+          system: "Sys",
+          tools: [{ name: "t1", description: "t1", inputSchema: { type: "object", properties: {} } }],
+          prompt: "hi",
+          cache: "auto",
+        }),
+      )
+
+      expect(prepared.body).toMatchObject({
+        tools: [{ name: "t1", cache_control: { type: "ephemeral" } }],
+        system: [{ type: "text", text: "Sys", cache_control: { type: "ephemeral" } }],
+        messages: [{ role: "user", content: [{ type: "text", text: "hi", cache_control: { type: "ephemeral" } }] }],
       })
     }),
   )

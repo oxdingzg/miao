@@ -38,6 +38,10 @@ export function wrap<E, R>(stream: Stream.Stream<LLMEvent, E, R>, options?: { ma
               method: "stream",
               reason: new InvalidProviderOutputReason({
                 message: `Stopped unfinished tool arguments for ${tool.name}: ${budget === "bytes" ? `${tool.bytes} bytes exceeds ${maxBytes}` : `no argument progress for ${idleMs}ms (idle limit ${timeoutMs}ms; ${tool.bytes} bytes received over ${elapsedMs}ms)`}. Incomplete local calls were not executed. Earlier completed operations are retained; do not repeat them. ${budget === "bytes" ? "Split large inputs into smaller calls, or adjust MIAO_TOOL_INPUT_MAX_BYTES." : "Retry only the unfinished work. For a slow provider or gateway, adjust MIAO_TOOL_INPUT_TIMEOUT_MS (idle timeout)."} Provider-managed side effects may be unknown.`,
+                // The runner replays an idle trip instead of failing the turn;
+                // the byte budget is deterministic for the same input, so it
+                // stays terminal.
+                toolInput: { callID: id, name: tool.name, characters: tool.bytes, canCorrect: false, budget },
               }),
             }),
           ),

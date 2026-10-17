@@ -150,6 +150,28 @@ An exact retry returns `duplicate: true` and preserves edited metadata and the
 journal cursor; reusing an identity belonging to another workspace fails.
 The product initializes identity before publishing its durable native placement.
 
+### Session model selection
+
+`select_model` takes `session_id` and `binding` (`protocol`, canonical wire
+`model`), or `binding: null` to reset to the configured default. The Runtime
+validates that its configured provider can select that model without changing
+route, endpoint or credential source before committing `session.model.selected`.
+An identical selection is a no-op. Unsupported models/routes fail without
+changing the prior binding or waking the Session.
+
+The next provider-turn boundary reads the committed binding. A request already
+in flight retains its original provider, and another Session retains its own
+selection/default. Provider-start evidence, assistant identity, native token
+counting and compaction use the provider actually selected for that turn.
+`snapshot.model_selection` exposes the durable binding, or null for the default.
+A fork inherits selection at its explicit message boundary, or the parent's
+latest selection when no boundary was requested. Reverting transcript history
+does not alter this configuration binding.
+
+This command selects models on the configured provider route. Cross-route
+catalog routing and product model-picker wiring require their own facade
+integration; it does not infer endpoints or borrow credentials from model names.
+
 ### Explicit unknown-tool recovery
 
 `recoveries` takes `session_id` and optional exclusive `after` call ID. It returns
@@ -161,9 +183,12 @@ ASCII alphanumeric/underscore/hyphen characters), and `decision: "retry" |
 "abandon"`. It atomically records the controller decision and admits one steer
 input. The receipt includes `input_id` and `admitted_seq`; an exact retry returns
 the same receipt, while conflicting reuse fails. The original outcome remains
-unknown. A retry requests inspection and, if necessary, a fresh authorized tool
+unknown. Optional `resume: true` explicitly schedules an advisory wake after
+admission; it never forces another provider turn for an already-promoted exact
+retry. A retry requests inspection and, if necessary, a fresh authorized tool
 call; it never replays the previous dispatch. An abandon requests continuation
 without retrying that operation. The Session must be idle and Location-bound.
 
-Neither command schedules model work. Use a separate explicit `resume` to
-promote the durable instruction. See [ADR-16](docs/adr/0016-explicit-tool-recovery.md).
+By default neither command schedules model work. Use explicit `resume: true`,
+a separate `resume`, or a later prompt to promote the durable instruction.
+See [ADR-16](docs/adr/0016-explicit-tool-recovery.md).

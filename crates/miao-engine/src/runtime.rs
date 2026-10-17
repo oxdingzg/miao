@@ -119,6 +119,8 @@ impl Runtime {
             ));
         }
         let mut tools = tools
+            .enable_web(policy.web_enabled())
+            .map_err(|error| Error::Invalid(error.to_string()))?
             .with_cron(policy.cron_enabled())
             .with_wakeup(policy.wakeup_enabled())
             .with_writes(policy.writes_enabled())
@@ -351,12 +353,14 @@ impl Runtime {
         self.wake(session, true).await
     }
 
-    pub async fn resolve_recovery(
+    pub fn model_catalog(&self) -> Vec<crate::model_catalog::Info> {
+        self.inner.provider.model_catalog()
+    }
+
+    pub async fn select_model(
         &self,
         session: &str,
-        call: &str,
-        operation: &str,
-        decision: crate::recovery::Decision,
+        binding: Option<crate::session_model::Binding>,
     ) -> Result<Value, Error> {
         if self.inner.stop.is_cancelled() {
             return Err(Error::Closed);
@@ -365,10 +369,39 @@ impl Runtime {
         {
             return Err(Error::Conflict);
         }
-        self.inner
+        // Resolve an immutable host route before durable admission.
+        let selected = crate::session_model::select(&self.inner.provider, binding.as_ref())?;
+        let (history, _) = self.inner.store.selected_input(session).await?;
+        crate::session_model::validate_history(&history, binding.as_ref(), selected.identity())?;
+        self.inner.store.select_model(session, binding).await
+    }
+
+    pub async fn resolve_recovery(
+        &self,
+        session: &str,
+        call: &str,
+        operation: &str,
+        decision: crate::recovery::Decision,
+        resume: bool,
+    ) -> Result<Value, Error> {
+        if self.inner.stop.is_cancelled() {
+            return Err(Error::Closed);
+        }
+        if self.inner.store.location(session).await?.as_deref() != Some(self.inner.tools.location())
+        {
+            return Err(Error::Conflict);
+        }
+        let result = self
+            .inner
             .store
             .resolve_recovery(session, call, operation, decision)
-            .await
+            .await?;
+        // An exact retry after promotion must not force a second provider
+        // continuation. Advisory wake only drains still-pending durable input.
+        if resume {
+            self.wake(session, false).await?;
+        }
+        Ok(result)
     }
 
     async fn wake(&self, session: &str, force: bool) -> Result<(), Error> {
@@ -567,10 +600,15 @@ fn boxed_drain(
     force: bool,
     cancel: CancellationToken,
 ) -> std::pin::Pin<Box<dyn std::future::Future<Output = Result<(), Error>> + Send>> {
-    Box::pin(crate::cache_affinity::scoped(
-        session.clone(),
-        drain(session, inner, force, cancel),
-    ))
+    Box::pin(async move {
+        let affinity = inner.store.cache_affinity(&session).await?;
+        crate::cache_affinity::scoped_candidate(
+            session.clone(),
+            affinity,
+            drain(session, inner, force, cancel),
+        )
+        .await
+    })
 }
 
 async fn drain(
@@ -662,7 +700,7 @@ async fn execute(
     cancel: CancellationToken,
 ) -> Result<(), Error> {
     let mut step = 0;
-    let mut allowance = 25;
+    let mut allowance = inner.policy.max_provider_turns();
     let mut input_corrections = 0;
     let mut transport_continuations = 0;
     // Consecutive provider turns that produced neither text nor tool calls.
@@ -683,6 +721,8 @@ async fn execute(
         if cancel.is_cancelled() {
             return Ok(());
         }
+        let binding = inner.store.model_selection(session).await?;
+        let provider = crate::session_model::select(&inner.provider, binding.as_ref())?;
         let bundle =
             match crate::context::assemble(&inner.tools, &inner.policy, cancel.child_token()).await
             {
@@ -711,6 +751,7 @@ async fn execute(
             )
             .await?;
         let (mut history, state) = inner.store.selected_input(session).await?;
+        crate::session_model::validate_history(&history, binding.as_ref(), provider.identity())?;
         let state_allowed = inner.policy.evaluate(
             "session_state",
             "@session/state/session_state",
@@ -765,7 +806,7 @@ async fn execute(
             .record(
                 session,
                 "provider.started",
-                json!({"run_id":run,"step":step,"context_epoch":context_epoch,"policy_revision":inner.policy.revision(),"state_selection":state_selection,"identity":inner.provider.identity().map(|i|json!({"protocol":i.protocol,"model":i.model}))}),
+                json!({"run_id":run,"step":step,"context_epoch":context_epoch,"policy_revision":inner.policy.revision(),"state_selection":state_selection,"identity":provider.identity().map(|i|json!({"protocol":i.protocol,"model":i.model}))}),
             )
             .await?;
         // Durable history retains null plus the error marker for unavailable
@@ -818,9 +859,7 @@ async fn execute(
                 crate::provider::scoped(
                     transport_budget.clone(),
                     3,
-                    inner
-                        .provider
-                        .stream(request.clone(), send, cancel.child_token()),
+                    provider.stream(request.clone(), send, cancel.child_token()),
                 ),
             );
             tokio::pin!(response);
@@ -890,7 +929,7 @@ async fn execute(
                 other => break other,
             }
         };
-        let reply = match reply {
+        let mut reply = match reply {
             Ok(reply) => reply,
             Err(ProviderError::Interrupted) => return Ok(()),
             Err(error) => {
@@ -956,7 +995,7 @@ async fn execute(
                                 .as_str()
                                 .is_none_or(|id| !internal_inputs.contains(id))
                         }) {
-                            allowance = 25;
+                            allowance = inner.policy.max_provider_turns();
                             input_corrections = 0;
                             repeats.clear();
                             transport_continuations = 0;
@@ -1013,6 +1052,7 @@ async fn execute(
                 json!({"session_id":session,"run_id":run,"step":step,"kind":"provider.ttft","ttft_ms":ttft_ms}),
             );
         }
+        crate::session_model::stamp_route(&mut reply.content, binding.as_ref());
         let assistant_boundary = inner
             .store
             .assistant_reply_profiled(
@@ -1021,7 +1061,7 @@ async fn execute(
                 step,
                 Some(started.seq),
                 reply.content.clone(),
-                inner.provider.reply_identity(&reply),
+                provider.reply_identity(&reply),
             )
             .await?
             .seq;
@@ -1184,6 +1224,7 @@ async fn execute(
                                     None => Err(ToolError::Interrupted),
                                 },
                                 "session_state" => Ok(inner.store.state(session).await?),
+                                "knowledge"=>inner.tools.execute_knowledge(prepared,&inner.policy,session,cancel.child_token()).await,
                                 "todowrite" | "goal" => match crate::state::Mutation::parse(
                                     name,
                                     prepared.input().clone(),
@@ -1369,7 +1410,7 @@ async fn execute(
             .as_ref()
             .filter(|_| closed_answer)
         {
-            let primary = Arc::clone(&inner.provider);
+            let primary = Arc::clone(&provider);
             let bindings = inner.roles.lock().await.clone();
             let (role_provider, resolution) =
                 crate::roles::resolve(&primary, bindings.binding("summarize"));
@@ -1422,7 +1463,7 @@ async fn execute(
             };
             // Gate ②: the runtime owns the provider, so the counter that prices
             // the messages appended since the anchor is bound here.
-            let counting = Arc::clone(&inner.provider);
+            let counting = Arc::clone(&provider);
             let mut count = move |messages: Vec<crate::protocol::Message>| -> std::pin::Pin<
                 Box<dyn std::future::Future<Output = crate::provider::CountTokens> + Send>,
             > {
@@ -1709,7 +1750,7 @@ async fn execute(
                     .as_str()
                     .is_none_or(|id| !internal_inputs.contains(id))
             }) {
-                allowance = 25;
+                allowance = inner.policy.max_provider_turns();
                 input_corrections = 0;
                 transport_continuations = 0;
                 empty_completions = 0;
@@ -2231,30 +2272,20 @@ async fn delegate(
     // price parent+child without reconstructing provenance. Wall-clock cost
     // stays on the ephemeral progress feed — the replayed journal pins
     // payloads, and durations are not reproducible.
-    let mut billed_input = 0u64;
-    let mut billed_output = 0u64;
-    let mut turns = 0u64;
-    for event in inner
+    let usage = inner
         .store
-        .events(&child, 0, 10_000)
+        .usage_report(&child)
         .await
-        .unwrap_or_default()
-    {
-        if event.kind != "usage" || event.data["partial"].as_bool() == Some(true) {
-            continue;
-        }
-        turns += 1;
-        billed_input += event.data["usage"]["inputTokens"].as_u64().unwrap_or(0);
-        billed_output += event.data["usage"]["outputTokens"].as_u64().unwrap_or(0);
-    }
+        .map_err(|_| ToolError::External("subagent usage report unavailable".into()))?;
     inner
         .store
         .record(
             parent,
             crate::events::Lifecycle::SubagentStop.name(),
             json!({"run_id":run,"subagent_id":child,"call_id":call,"reason":"completed",
-                   "tokens":{"input":billed_input,"output":billed_output},
-                   "turns":turns}),
+                   "tokens":{"input":usage["providerUsage"]["tokens"]["input"].as_u64().unwrap_or(0),"output":usage["providerUsage"]["tokens"]["output"].as_u64().unwrap_or(0)},
+                   "usageCoverage":usage["providerUsage"],
+                   "turns":usage["turns"]}),
         )
         .await
         .map_err(|_| ToolError::External("subagent stop could not be recorded".into()))?;

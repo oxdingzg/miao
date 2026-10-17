@@ -1,6 +1,7 @@
 import { describe, expect } from "bun:test"
 import path from "path"
 import { Effect, Layer, Stream } from "effect"
+import { Credential } from "@miao/schema/credential"
 import { AgentV2 } from "@miao/core/agent"
 import { asc, eq } from "drizzle-orm"
 import { Database } from "@miao/core/database/database"
@@ -16,6 +17,7 @@ import { SessionEnginePlacementTable } from "@miao/core/session/engine-placement
 import { ProviderV2 } from "@miao/core/provider"
 import { AbsolutePath } from "@miao/core/schema"
 import { SessionV2 } from "@miao/core/session"
+import { SessionCacheProbe } from "@miao/core/session/cache-probe"
 import { SessionV1 } from "@miao/core/v1/session"
 import { SessionBackfill } from "@miao/core/session/backfill"
 import { LegacyNotMigratedError } from "@miao/core/session/error"
@@ -415,6 +417,71 @@ describe("SessionV2.create", () => {
     }),
   )
 
+  it.effect("pins the conversation to an account through the durable Session event", () =>
+    Effect.gen(function* () {
+      const session = yield* SessionV2.Service
+      const created = yield* session.create({ location })
+      const credentialID = Credential.ID.make("cred_pinned")
+
+      yield* session.switchAccount({ sessionID: created.id, credentialID })
+
+      expect((yield* session.get(created.id))?.credentialID).toBe(credentialID)
+      expect(
+        Array.from(
+          yield* session.events({ sessionID: created.id }).pipe(
+            Stream.filter((event) => event.type === "session.next.account.switched"),
+            Stream.take(1),
+            Stream.runCollect,
+          ),
+        ),
+      ).toMatchObject([{ type: "session.next.account.switched", data: { credentialID } }])
+
+      // Clearing the pin returns the conversation to the provider's own choice.
+      yield* session.switchAccount({ sessionID: created.id, credentialID: null })
+      expect((yield* session.get(created.id))?.credentialID).toBeUndefined()
+    }),
+  )
+
+  it.effect("ignores an account switch when the pinned account is unchanged", () =>
+    Effect.gen(function* () {
+      const session = yield* SessionV2.Service
+      const created = yield* session.create({ location })
+      const credentialID = Credential.ID.make("cred_pinned")
+
+      yield* session.switchAccount({ sessionID: created.id, credentialID })
+      yield* session.switchAccount({ sessionID: created.id, credentialID })
+
+      const { db } = yield* Database.Service
+      expect(
+        yield* db
+          .select()
+          .from(EventTable)
+          .where(eq(EventTable.aggregate_id, created.id))
+          .all()
+          .pipe(Effect.orDie),
+      ).toHaveLength(2)
+      expect((yield* session.get(created.id))?.credentialID).toBe(credentialID)
+    }),
+  )
+
+  it.effect("rejects an account switch for a missing Session", () =>
+    Effect.gen(function* () {
+      const session = yield* SessionV2.Service
+
+      expect(
+        yield* session
+          .switchAccount({
+            sessionID: SessionV2.ID.make("ses_missing_account_switch"),
+            credentialID: Credential.ID.make("cred_pinned"),
+          })
+          .pipe(
+            Effect.flip,
+            Effect.map((error) => error._tag),
+          ),
+      ).toBe("Session.NotFoundError")
+    }),
+  )
+
   it.effect("rejects a model switch for a missing Session", () =>
     Effect.gen(function* () {
       const session = yield* SessionV2.Service
@@ -490,9 +557,13 @@ describe("SessionV2.create", () => {
             location: Location.Ref.make({ directory: AbsolutePath.make(tmp.path) }),
           })
           yield* session.shell({ sessionID: created.id, command: "echo fork-me", resume: false })
+          const normalized = { model: "fixture", tools: [], system: [], messages: [] }
+          SessionCacheProbe.current.complete(created.id, normalized, 2048)
 
           const forked = yield* session.fork({ sessionID: created.id })
           expect(forked.parentID).toBe(created.id)
+          expect(SessionCacheProbe.current.consume(forked.id, normalized)).toMatchObject({ state: "prefix-match", parentInputTokens: 2048 })
+          SessionCacheProbe.current.invalidate(created.id)
 
           const parentShell = (yield* session.context(created.id)).find((message) => message.type === "shell")
           const childShell = (yield* session.context(forked.id)).find((message) => message.type === "shell")

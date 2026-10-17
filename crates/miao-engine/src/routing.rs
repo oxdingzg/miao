@@ -30,9 +30,23 @@ pub fn build_with_cache(
     prompt_cache: bool,
     cache: Option<crate::responses_cache::Contract>,
 ) -> Result<Arc<dyn Provider>, ProviderError> {
-    if cache.is_some() && !matches!(name, "openai-responses" | "subscription-responses") {
+    build_with_responses(name, endpoint, source, model, prompt_cache, cache, None)
+}
+
+pub fn build_with_responses(
+    name: &str,
+    endpoint: Option<&str>,
+    source: Source,
+    model: String,
+    prompt_cache: bool,
+    cache: Option<crate::responses_cache::Contract>,
+    websocket: Option<crate::responses_websocket::Contract>,
+) -> Result<Arc<dyn Provider>, ProviderError> {
+    if (cache.is_some() || websocket.is_some())
+        && !matches!(name, "openai-responses" | "subscription-responses")
+    {
         return Err(ProviderError::Stream(
-            "Responses cache contracts are unsupported by this provider route".into(),
+            "Responses capability contracts are unsupported by this provider route".into(),
         ));
     }
     match name {
@@ -78,6 +92,12 @@ pub fn build_with_cache(
             let provider = match cache {
                 Some(contract) => provider
                     .with_cache_contract(contract)
+                    .map_err(ProviderError::Stream)?,
+                None => provider,
+            };
+            let provider = match websocket {
+                Some(contract) => provider
+                    .with_websocket_contract(contract)
                     .map_err(ProviderError::Stream)?,
                 None => provider,
             };
@@ -132,6 +152,15 @@ impl Fallback {
 }
 #[async_trait]
 impl Provider for Fallback {
+    fn for_model(&self, model: &str) -> Option<Arc<dyn Provider>> {
+        let primary = self.primary.for_model(model)?;
+        if primary.identity() == self.secondary.identity() {
+            return Some(primary);
+        }
+        Self::new(primary, Arc::clone(&self.secondary))
+            .ok()
+            .map(|provider| Arc::new(provider) as Arc<dyn Provider>)
+    }
     fn identity(&self) -> Option<Identity> {
         Some(self.first.clone())
     }

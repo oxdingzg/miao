@@ -14,6 +14,9 @@ they are not the current capability-gap checklist.
 
 ## Running
 
+The native [source-bound knowledge tool](docs/source-bound-knowledge.md) provides a short workspace
+index, reviewable notes, source invalidation and conditional updates across Sessions.
+
 Optional [stable extension tool disclosure](docs/tool-disclosure.md) keeps the provider tool surface
 fixed while discovering extension schemas and filtering results on demand (`--tool-disclosure compact`).
 
@@ -45,6 +48,8 @@ bearer token taken from `--http-token` or `MIAO_ENGINE_HTTP_TOKEN`, generated at
 to stderr when absent. Non-loopback addresses are rejected, and TLS is left to a local reverse proxy.
 
 ### Optional Responses cache controls
+
+Verified deployments can independently opt into [Session WebSocket reuse and strict suffix continuation](docs/responses-websocket.md).
 
 `--responses-cache-contract JSON` declares cache capabilities for an exact wire model, normalized
 endpoint URL (including its query), and authentication profile (`api` or `subscription`). Declare
@@ -89,6 +94,29 @@ Local install (without touching the release-managed `miao` and `miao-preview`): 
 host, then `./script/install-engine.sh --binary /path/to/miao-engine`. It installs to
 `~/.local/bin/miao-engine` (versioned under `~/.local/share/miao-engine/bin`), keeps one previous
 version for one-step rollback, and smoke-tests `--version`.
+
+### Host-owned model routes
+
+`--model-routes-config /host/routes.json` registers up to 64 exact provider instances.
+The manifest must be outside the workspace and is protected from model tools.
+The product bridge forwards `EngineOptions.modelRoutesConfigFile` or
+`MIAO_ENGINE_MODEL_ROUTES_CONFIG`. Each entry binds its own credential source:
+
+```json
+[{"id":"account-two/shared","provider":"openai-chat","model":"shared","endpoint":"https://example.org/v1/chat/completions","credential":{"type":"environment","key":"OPENAI_API_KEY"}}]
+```
+
+Credential types are `environment` (`key`: variable name, optional subscription
+`account`: variable name), `database` (`path`, `id`, `integration`), `legacy`
+(`path`, `integration`), or `daemon` (`path`, `id`, `integration`). File sources
+must be outside the workspace. The product child environment remains allowlisted;
+pass custom credential variables through `EngineOptions.env` explicitly.
+
+Controller `model_catalog` returns only `route_id`, `protocol`, and `model`.
+Use these exact fields as `select_model.params.binding`; a null binding restores
+the default. Unknown routes and mismatched identities fail before provider work.
+Opaque history remains bound to its original route even when endpoints use the
+same wire model name. Compact on the original route before switching.
 
 ## stdio protocol v0
 
@@ -465,10 +493,101 @@ configured with the `mcp_*` tool matcher and the `@mcp/local_service/**` resourc
 - cancel stops the local wait, and a dispatched call may still be executing on the server; Session recovery follows the unknown intent boundary.
 - A normal shutdown closes the transport and kills/reaps the configured direct child process. A hard engine exit and server-derived/daemon processes do not yet have a full cross-process ownership guarantee.
 
-Remote HTTP transport, dynamic catalog notifications, resources/prompts, MCP OAuth, and TS plugin
-compatibility are not implemented today.
+Streamable HTTP servers use `{"name":"remote","url":"https://example.test/mcp",
+"headers":{"Authorization":"Bearer ..."}}` instead of `argv`/`env`. Headers and
+endpoints are trusted host configuration, never model arguments. HTTP connections
+use the same external-tool policy and schema validation as process servers.
+Redirects are refused, SSE events are bounded to 256 KiB, and session expiry
+fails the call rather than transparently replaying a possible side effect.
+A host manifest may carry an explicit refresh grant instead of a static
+authorization header: `{"oauth":{"token_endpoint":"https://issuer/token",
+"client_id":"...","refresh_token":"...","scopes":["mcp"]}}`. The engine exchanges
+it exactly once when the connection starts, attaches the returned bearer token,
+refuses redirects and userinfo/fragment endpoints, bounds the request and the
+64 KiB response, and reports generic failures without echoing provider bodies or
+tokens. Rotated refresh tokens in the response are ignored for the child's
+lifetime; the host provisions a fresh grant on restart. OAuth conflicts with a
+static `authorization` header and is unavailable to process servers. Shared
+product remote servers still require explicit `oauth: false` in product
+configuration until the product-side flow ships. The temporary manifest is mode
+0600.
 
-## Explicit workspace Context Sources
+Servers advertising resources expose `mcp_<server>_resources_list`,
+`mcp_<server>_resource_templates_list` and `mcp_<server>_resource_read`. Servers
+advertising prompts expose `mcp_<server>_prompts_list` and
+`mcp_<server>_prompt_get`. Catalog operations accept an optional `cursor`; reads
+accept `uri`, and prompt retrieval accepts `name` plus optional string
+`arguments`. Resource/prompt-only servers need not implement `tools/list`.
+All operations require normal external-tool authority, validate input before
+wire dispatch and enforce the same 64 KiB result budget. Prompt messages and
+resource contents remain untrusted tool data: retrieval neither executes the
+prompt nor changes system instructions. Cancellation and input/task continuation
+do not trigger automatic replays.
+
+Dynamic catalog notifications refresh in place: the engine subscribes to
+`notifications/tools/list_changed` (and the resource/prompt equivalents) per
+connected server, debounces them into a bounded re-list, and swaps the catalog
+under a lock so the next turn sees the new definitions without a reconnect.
+A failed refresh keeps the previous catalog until the next change. TS plugin
+compatibility is not implemented today.
+
+## Host-authorized skill directories
+
+`--skills-config /absolute/path/skills.json` supplies an array of directories,
+e.g. `[{ "path": ".miao/skills" }, { "path": "/absolute/host/skills" }]`.
+Workspace-relative directories stay within the workspace; absolute directories
+require an explicit read-only directory grant in `--references-config`.
+An exact-file reference does not authorize enumeration of its parent directory.
+
+Directory enumeration follows `glob` policy, and every candidate skill file is
+resolved and checked against `read_file` policy before its frontmatter is read.
+Ask/deny decisions hide that metadata from the model. Discovery skips symlinks,
+is depth/count bounded, and lists only names/descriptions/paths in Context.
+Skill bodies are read on demand through ordinary authorized tools. External
+skill paths remain absolute so a later read uses the same reference boundary.
+
+
+## Native web tools
+
+Enable native HTTP reads/search through the ordinary policy boundary:
+
+```json
+{
+  "allow_web": true,
+  "rules": [
+    { "tool": "webfetch", "path": "@web/**", "decision": "allow" },
+    { "tool": "websearch", "path": "@web/**", "decision": "allow" }
+  ]
+}
+```
+
+`webfetch` accepts an HTTP(S) URL, `format: "markdown" | "text" | "html"`
+(default markdown), and `timeout` in seconds (1–120, default 30). HTML uses a
+native DOM converter; text excludes head/script/style content. Declared text
+encodings and compressed responses are decoded before enforcing the 2 MiB body
+limit. Returned content is UTF-8 bounded to 64 KiB with an explicit `truncated`
+flag. URL fragments are not transmitted. Up to five redirects are followed only
+when their targets independently have an allow rule; otherwise the target URL
+is returned in the permission error for a separate authorized call. Read-only
+collaboration does not grant write/process authority through these tools.
+
+`websearch` is disclosed only when the host has configured a supported search
+credential. Set `EXA_API_KEY` or `PARALLEL_API_KEY`; if both exist Exa is the
+default. `MIAO_WEB_SEARCH_PROVIDER=exa|parallel` explicitly selects one, and
+`MIAO_WEB_SEARCH_ENDPOINT` optionally selects the host's deployment endpoint.
+These deployment variables are forwarded by the product's native child
+environment boundary. They are never model tool arguments or returned in tool
+results. Search never follows redirects, and upstream error bodies are not
+returned to the model.
+
+Search input is `query`, optional `numResults` (1–20, default 8), `type`
+(`auto|fast|deep`) and `contextMaxCharacters` (1–50000, default 10000). The native
+adapters use Exa `/search` or Parallel `/v1/search` and return bounded source URLs,
+titles, excerpts and truncation flags. Permission resources are namespaced as
+`@web/<host>[:port]/<path>`; normal once-only controller approval is supported
+when rules ask rather than allow.
+
+## Explicit Context Sources
 
 `--context-config /absolute/path/context.json` selects additional instruction/persona files:
 
@@ -479,16 +598,25 @@ compatibility are not implemented today.
 ]
 ```
 
-The configuration lives outside the workspace, and content paths must be workspace-relative. At most
+The configuration lives outside the workspace. Content paths may be workspace-relative, or absolute
+paths covered by explicit read-only `--references-config` grants. A file reference grants that exact
+file, not its parent directory or sibling files. For example, a host can select a global `AGENTS.md`
+by putting its absolute path in both the Context Source list and the reference list; naming an
+absolute file in the Context Source list alone grants no access. External file-level permission
+rules use the ordinary `@reference/**` resource namespace.
+
+At most
 16 additional sources; a label uses ASCII letters/digits/`_.-` limited to 64 characters, and a path
-cannot have an empty, `.`, or `..` segment. By default `AGENTS.md` loads first, then the sources in
-configuration order; each item reuses the scoped `read_file` and file-level policy, an ask/deny item
+cannot traverse `..`. Relative paths also reject empty and `.` segments. Explicit external sources
+load first in configuration order, then workspace `AGENTS.md`, then relative sources in configuration
+order. Each item reuses the scoped `read_file` and file-level policy; an ask/deny item
 is not read, and missing/skipped is also recorded in provenance. Each file is at most 32 KiB and the
 final system is at most 64 KiB; exceeding the budget fails explicitly. The provider boundary re-reads
 and stores, through an immutable Context Epoch, the full system, source hashes, and selection order.
 
-This provides explicitly selected workspace producers; ambient user/ancestor discovery, a full
-skill/reference catalog, and per-task automatic selection are not implemented yet.
+This provides explicitly selected workspace and host-file producers. Ambient user/ancestor discovery
+and product configuration mapping still belong to the embedding host; the engine does not infer
+permission to inspect parent directories from a Context Source path.
 
 ## In-Session raw-history recall
 
@@ -737,6 +865,24 @@ Hooks are a gatekeeper/observation surface of trusted host configuration, not a 
 they do not occupy permission rules, do not need allow_process, and give the model no new authority.
 There is currently no per-hook network, stdin injection, run/turn-level event, or remote hook.
 
+### Product sidecar Context manifests
+
+The product accepts `MIAO_ENGINE_CONTEXT_CONFIG`, `MIAO_ENGINE_SKILLS_CONFIG`, and
+`MIAO_ENGINE_REFERENCES_CONFIG`, forwarding them as `--context-config`,
+`--skills-config`, and `--references-config`. Embedders can set the corresponding
+`EngineOptions.contextConfigFile`, `skillsConfigFile`, and `referencesConfigFile`.
+Environment values override embedded settings. Use absolute manifest paths when
+one product process serves multiple Locations.
+
+The manifests use the native formats documented above. Instruction and reference
+manifests can name explicitly authorized external files. Relative skill directories
+stay workspace-contained; absolute skill directories need explicit read-only
+directory references and directory/file policy authorization. Manifests must stay outside model-writable workspaces. An
+external instruction file needs its own read-only reference grant; granting one
+file never grants its parent directory or siblings. Normal Context permission
+rules still apply. These inputs select host-owned sources, not literal prompt
+text, so native Context epochs retain source provenance and observe later edits.
+
 ### Product sidecar coding policy
 
 The product forwards `MIAO_ENGINE_ENDPOINT` as the explicit provider endpoint and
@@ -760,5 +906,18 @@ verifies that the same request does not write a file.
 
 ## Completion verification receipts
 
+Provider reporting also exposes [auxiliary usage and coverage](docs/auxiliary-usage.md) for complete
+and partial primary observations, role attempts and child outcome evidence.
+
 Configured completion commands produce [version-bound verification receipts](docs/verification-receipts.md)
 with actual exit/output, task revisions and bounded source coverage.
+
+### Provider-turn budget
+
+The host policy accepts `max_provider_turns` (1–10000, default 25). For a
+long multi-step task, set e.g. `"max_provider_turns": 100` in the policy JSON.
+This budget applies to provider turns per admitted user input, including tool
+round trips and transport continuations. External user admissions reset it;
+synthetic autonomous-continuation inputs do not. Exhaustion remains an explicit
+failed run and never silently replays tool calls. The policy revision records
+the configured budget.

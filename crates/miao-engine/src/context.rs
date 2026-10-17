@@ -14,8 +14,9 @@ pub struct Source {
     pub path: String,
 }
 
-/// A project skill directory: `*.md` at its root and any nested `SKILL.md` are
-/// discovered, and each skill's name/description is listed in the system context.
+/// A host-selected skill directory: workspace-relative paths stay contained;
+/// absolute paths require a read-only directory reference. `*.md` at its root
+/// and nested `SKILL.md` files are discovered under directory and file policy.
 /// The body is read on demand, so it never inflates the prompt.
 #[derive(Clone, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -58,12 +59,15 @@ pub(crate) fn validate_skills(directories: &[SkillDirectory]) -> Result<(), Tool
     for directory in directories {
         if directory.path.is_empty()
             || directory.path.len() > 2048
-            || std::path::Path::new(&directory.path).is_absolute()
             || directory
                 .path
                 .split('/')
-                .any(|part| part.is_empty() || part == "." || part == "..")
-            || directory.path.contains(['\0', '\\'])
+                .any(|part| part == "." || part == "..")
+            || (!std::path::Path::new(&directory.path).is_absolute()
+                && directory.path.split('/').any(str::is_empty))
+            || directory.path.contains('\0')
+            || (!std::path::Path::new(&directory.path).is_absolute()
+                && directory.path.contains('\\'))
             || !seen.insert(&directory.path)
         {
             return Err(ToolError::InvalidInput);
@@ -133,47 +137,97 @@ fn collect_skills(dir: &std::path::Path, depth: u8, out: &mut Vec<std::path::Pat
 pub(crate) const MEDIA_OBSERVE: &str =
     include_str!("../../../packages/core/src/plugin/skill/media-observe.md");
 
-fn discover_skills(root: &std::path::Path, directories: &[SkillDirectory]) -> Vec<Skill> {
+async fn discover_skills(
+    tools: &Tools,
+    policy: &Policy,
+    cancel: CancellationToken,
+    sources: &mut Vec<serde_json::Value>,
+) -> Result<Vec<Skill>, ToolError> {
+    let root = std::path::Path::new(tools.location());
     let mut skills = Vec::new();
-    for directory in directories {
+    for directory in tools.skill_directories() {
+        if cancel.is_cancelled() {
+            return Err(ToolError::Interrupted);
+        }
+        // Authorize enumeration before inspecting any filenames or frontmatter.
+        // The tool resolver requires an explicit reference for external roots.
+        let prepared = match tools
+            .prepare(
+                "glob",
+                json!({"path":directory.path,"pattern":"**/SKILL.md"}),
+            )
+            .await
+        {
+            Ok(prepared) => prepared,
+            Err(ToolError::Io(error)) if error.kind() == std::io::ErrorKind::NotFound => continue,
+            Err(ToolError::OutsideWorkspace | ToolError::ProtectedResource) => {
+                sources.push(json!({"type":"skill_directory","path":directory.path,"status":"skipped","reason":"outside_context_authority"}));
+                continue;
+            }
+            Err(error) => return Err(error),
+        };
+        let decision = policy.evaluate(prepared.name(), prepared.resource(), prepared.access());
+        if decision != Decision::Allow {
+            sources.push(json!({"type":"skill_directory","path":directory.path,"status":"skipped","reason":if decision==Decision::Ask{"policy_ask"}else{"policy_deny"}}));
+            continue;
+        }
         let mut files = Vec::new();
-        collect_skills(&root.join(&directory.path), 0, &mut files);
+        collect_skills(prepared.resolved_path(), 0, &mut files);
+        files.sort();
         for file in files {
             if skills.len() >= 64 {
                 break;
             }
-            let Ok(text) = std::fs::read_to_string(&file) else {
+            let path = file.to_string_lossy().into_owned();
+            let prepared = match tools.prepare("read_file", json!({"path":path})).await {
+                Ok(prepared) => prepared,
+                Err(ToolError::Io(error)) if error.kind() == std::io::ErrorKind::NotFound => {
+                    continue
+                }
+                Err(ToolError::OutsideWorkspace | ToolError::ProtectedResource) => continue,
+                Err(error) => return Err(error),
+            };
+            if policy.evaluate(prepared.name(), prepared.resource(), prepared.access())
+                != Decision::Allow
+            {
+                continue;
+            }
+            let data = match tools
+                .execute_prepared(prepared, policy, cancel.child_token())
+                .await
+            {
+                Ok(data) => data,
+                Err(ToolError::InvalidFile) => continue,
+                Err(error) => return Err(error),
+            };
+            let Some(text) = data["text"].as_str() else {
                 continue;
             };
-            if text.len() > 65536 {
+            if text.len() > 65536 || data["truncated"] == true {
                 continue;
             }
-            let (name, description) = parse_frontmatter(&text);
-            let parent = file
-                .parent()
-                .and_then(|parent| parent.file_name())
-                .map(|name| name.to_string_lossy().into_owned())
-                .unwrap_or_default();
+            let (name, description) = parse_frontmatter(text);
             let name = name.filter(|name| !name.is_empty()).unwrap_or_else(|| {
                 if file.ends_with("SKILL.md") {
-                    parent
-                } else {
-                    file.file_stem()
-                        .map(|stem| stem.to_string_lossy().into_owned())
-                        .unwrap_or_default()
+                    return file
+                        .parent()
+                        .and_then(|parent| parent.file_name())
+                        .map(|name| name.to_string_lossy().into_owned())
+                        .unwrap_or_default();
                 }
+                file.file_stem()
+                    .map(|name| name.to_string_lossy().into_owned())
+                    .unwrap_or_default()
             });
-            if name.is_empty() || name.len() > 64 {
-                continue;
-            }
             let description = description.unwrap_or_default();
-            if description.len() > 512 {
+            if name.is_empty() || name.len() > 64 || description.len() > 512 {
                 continue;
             }
+            // Keep Windows absolute/verbatim prefixes intact for later read_file calls.
             let path = file
                 .strip_prefix(root)
                 .map(|path| path.to_string_lossy().replace('\\', "/"))
-                .unwrap_or_else(|_| file.to_string_lossy().replace('\\', "/"));
+                .unwrap_or_else(|_| file.to_string_lossy().into_owned());
             skills.push(Skill {
                 name,
                 description,
@@ -181,7 +235,7 @@ fn discover_skills(root: &std::path::Path, directories: &[SkillDirectory]) -> Ve
             });
         }
     }
-    skills
+    Ok(skills)
 }
 
 pub(crate) fn validate(sources: &[Source]) -> Result<(), ToolError> {
@@ -199,12 +253,7 @@ pub(crate) fn validate(sources: &[Source]) -> Result<(), ToolError> {
                 .all(|b| b.is_ascii_alphanumeric() || b == b'_' || b == b'-' || b == b'.')
             || source.path.is_empty()
             || source.path.len() > 2048
-            || std::path::Path::new(&source.path).is_absolute()
-            || source
-                .path
-                .split('/')
-                .any(|part| part == ".." || part.is_empty() || part == ".")
-            || source.path.contains(['\0', '\\'])
+            || !source_path(&source.path)
             || !paths.insert(&source.path)
             || !labels.insert(&source.label)
         {
@@ -212,6 +261,28 @@ pub(crate) fn validate(sources: &[Source]) -> Result<(), ToolError> {
         }
     }
     Ok(())
+}
+
+fn source_path(path: &str) -> bool {
+    if path.contains('\0') {
+        return false;
+    }
+    let parsed = std::path::Path::new(path);
+    if parsed.is_absolute() {
+        // Absolute names grant nothing by themselves: ordinary prepare/read
+        // still requires a host-authorized read-only reference for this file.
+        return parsed.file_name().is_some()
+            && !parsed.components().any(|part| {
+                matches!(
+                    part,
+                    std::path::Component::ParentDir | std::path::Component::CurDir
+                )
+            });
+    }
+    !path.contains('\\')
+        && !path
+            .split('/')
+            .any(|part| part == ".." || part.is_empty() || part == ".")
 }
 
 /// Location-owned workspace producers. Additional sources are explicit host
@@ -236,14 +307,28 @@ pub async fn assemble(
         label: "AGENTS.md".into(),
         path: "AGENTS.md".into(),
     };
-    for source in std::iter::once(&root).chain(tools.context_sources()) {
+    // Host global/ancestor instructions precede this workspace's instructions;
+    // additional workspace-relative sources retain their configured order.
+    for source in tools
+        .context_sources()
+        .filter(|source| std::path::Path::new(&source.path).is_absolute())
+        .chain(tools.workspace_instructions().then_some(&root))
+        .chain(
+            tools
+                .context_sources()
+                .filter(|source| !std::path::Path::new(&source.path).is_absolute()),
+        )
+    {
         if cancel.is_cancelled() {
             return Err(ToolError::Interrupted);
         }
-        let decision = policy.evaluate("read_file", &source.path, crate::permission::Access::Read);
-        if decision != Decision::Allow {
-            sources.push(json!({"label":source.label,"path":source.path,"status":"skipped","reason":if decision==Decision::Ask{"policy_ask"}else{"policy_deny"}}));
-            continue;
+        if !std::path::Path::new(&source.path).is_absolute() {
+            let decision =
+                policy.evaluate("read_file", &source.path, crate::permission::Access::Read);
+            if decision != Decision::Allow {
+                sources.push(json!({"label":source.label,"path":source.path,"status":"skipped","reason":if decision==Decision::Ask{"policy_ask"}else{"policy_deny"}}));
+                continue;
+            }
         }
         match tools.prepare("read_file",json!({"path":source.path})).await {
             Ok(prepared)=> {
@@ -270,10 +355,7 @@ pub async fn assemble(
         return Err(ToolError::ContextBudget);
     }
     sources.push(json!({"type":"builtin_skill","name":"media-observe","path":"@builtin/skill/media-observe","status":"registered","sha256":crate::permission::digest(MEDIA_OBSERVE.as_bytes())}));
-    let skills = discover_skills(
-        std::path::Path::new(tools.location()),
-        tools.skill_directories(),
-    );
+    let skills = discover_skills(tools, policy, cancel.child_token(), &mut sources).await?;
     if !skills.is_empty() {
         let mut section = String::from(
             "\n\n<available-skills>\nSkill bodies are not included; read the listed path when a skill applies.\n",

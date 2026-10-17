@@ -93,8 +93,32 @@ fn user() -> Message {
         recorded_at_ms: None,
     }
 }
+
+#[tokio::test]
+async fn model_selection_preserves_route_and_key_and_updates_the_native_model_path() {
+    let (url, mut captured, task) = fixture(vec![sse(vec![
+        json!({"candidates":[{"content":{"parts":[{"text":"done"}]},"finishReason":"STOP"}]}),
+    ])])
+    .await;
+    let provider = Gemini::new(url, "same-key".into(), "gemini-fixture".into()).unwrap();
+    let selected = provider.for_model("gemini-selected").unwrap();
+    assert_eq!(selected.identity().unwrap().model, "gemini-selected");
+    assert!(provider.for_model("../invalid").is_none());
+    let (send, _receive) = mpsc::channel(32);
+    selected
+        .stream(request(vec![user()]), send, CancellationToken::new())
+        .await
+        .unwrap();
+    let wire = captured.recv().await.unwrap();
+    let headers = wire["headers"].as_str().unwrap();
+    assert!(headers.contains("/v1beta/models/gemini-selected:streamGenerateContent?alt=sse"));
+    assert!(headers.contains("x-goog-api-key: same-key"));
+    task.await.unwrap();
+}
 async fn completed(store: &Store) {
-    tokio::time::timeout(std::time::Duration::from_secs(3), async {
+    // A loaded CI runner can take seconds to record `run.finished`, so this poll
+    // budget only decides how long a genuinely stuck run waits before failing.
+    tokio::time::timeout(std::time::Duration::from_secs(30), async {
         loop {
             if store
                 .events("s", 0, 100)

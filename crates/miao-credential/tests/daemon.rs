@@ -361,3 +361,66 @@ async fn integration_mismatch_and_missing_rows_map_to_wire_codes() {
     // Discovery never carries secret material.
     assert!(listing[0].get("access").is_none());
 }
+
+#[tokio::test]
+async fn explicit_refresh_contacts_the_issuer_even_before_expiry() {
+    let dir = tempfile::tempdir().unwrap();
+    let db = setup_db(dir.path(), 3_600_000, "r1");
+    let (url, counter) = token_server(Arc::new(vec![(
+        200,
+        r#"{"access_token":"a2","refresh_token":"r2","expires_in":7200}"#.into(),
+    )]));
+    let socket = dir.path().join("forced.sock");
+    let listener = tokio::net::UnixListener::bind(&socket).unwrap();
+    let daemon = Arc::new(
+        Daemon::new(
+            db.clone(),
+            profile::Profile {
+                issuer: url,
+                ..profile::openai()
+            },
+            USER_AGENT.to_owned(),
+        )
+        .with_margin_ms(0),
+    );
+    tokio::spawn(daemon.serve(listener));
+    client::request(
+        &socket,
+        serde_json::json!({"id":1,"op":"adopt","credential_id":"cred_1","integration":"openai"})
+            .to_string(),
+    )
+    .await
+    .unwrap();
+    assert_eq!(
+        client::get(&socket, "cred_1", "openai").await.unwrap()["access"],
+        "a1"
+    );
+    assert_eq!(counter.load(Ordering::SeqCst), 0);
+    let result = client::request(
+        &socket,
+        serde_json::json!({"id":2,"op":"refresh","credential_id":"cred_1","integration":"openai"})
+            .to_string(),
+    )
+    .await
+    .unwrap();
+    assert!(
+        result["ok"]["expires"].as_u64().unwrap() > miao_credential::daemon::now_ms() + 3_600_000
+    );
+    assert!(!result.to_string().contains("a2"));
+    assert_eq!(counter.load(Ordering::SeqCst), 1);
+    let updated = client::get(&socket, "cred_1", "openai").await.unwrap();
+    assert_eq!(updated["access"], "a2");
+    assert_eq!(updated["refresh"], "r2");
+    assert_eq!(updated["metadata"]["accountID"], "acct");
+    client::request(
+        &socket,
+        serde_json::json!({"id":3,"op":"release","credential_id":"cred_1","integration":"openai"})
+            .to_string(),
+    )
+    .await
+    .unwrap();
+    assert_eq!(
+        miao_credential::store::load(&db, "cred_1", "openai").unwrap()["access"],
+        "a2"
+    );
+}

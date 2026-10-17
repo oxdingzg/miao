@@ -37,12 +37,26 @@ export class ResponsesCacheContract extends Schema.Class<ResponsesCacheContract>
   prewarm: optional(Schema.Literal(false)),
 }) {}
 
+/** Explicit Responses WebSocket deployment capability; absence preserves HTTP. */
+export class ResponsesWebSocketContract extends Schema.Class<ResponsesWebSocketContract>(
+  "Config.ResponsesWebSocketContract",
+)({
+  model: Schema.String,
+  endpoint: Schema.String,
+  authentication: Schema.Literals(["api", "subscription"]),
+  mode: Schema.Literals(["full", "delta"]),
+  beta: optional(Schema.Boolean),
+}) {}
+
 /**
  * Engine process settings (B1): read from the **global** config file only —
  * the engine is one process serving every Location, so project documents do
  * not configure it. The operator's environment overrides any key.
  */
 export class Engine extends Schema.Class<Engine>("Config.Engine")({
+  responses_websocket_contract: optional(ResponsesWebSocketContract).annotate({
+    parseOptions: { onExcessProperty: "error" },
+  }),
   tool_disclosure: optional(Schema.Literals(["full", "compact"])).annotate({
     description: "Extension tool disclosure: full schemas (default) or stable search/call bridge",
   }),
@@ -136,6 +150,9 @@ export class Info extends Schema.Class<Info>("Config.Info")({
   }),
   disabled_tools: Schema.String.pipe(Schema.Array, Schema.optional).annotate({
     description: "Tool names hidden from the model for every agent in this Location",
+  }),
+  accounts: Schema.Record(Schema.String, Schema.String).pipe(Schema.optional).annotate({
+    description: "Account a provider should use, keyed by provider id and valued by credential label or id",
   }),
   agents: Schema.Record(Schema.String, ConfigAgent.Info).pipe(Schema.optional).annotate({
     description: "Named built-in agent overrides and custom agent definitions",

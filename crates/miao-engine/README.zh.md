@@ -8,6 +8,8 @@
 
 ## 运行
 
+原生[来源绑定知识工具](docs/source-bound-knowledge.md)提供跨 Session 的短索引、可审阅记忆、来源失效检测与条件更新。
+
 可选的[稳定扩展工具披露](docs/tool-disclosure.md)通过 `--tool-disclosure compact` 固定顶层工具 schema，按需发现扩展能力并过滤结果；也可设置全局 `engine.tool_disclosure` 或 `MIAO_ENGINE_TOOL_DISCLOSURE`。
 
 检索和诊断结果附带[源码版本来源信息](docs/revision-bound-observations.md)，区分实际观察到的内容、过期诊断与未报告版本的诊断；这类观察本身不构成整体任务完成的证明。
@@ -32,6 +34,8 @@ cargo build --manifest-path crates/miao-engine/Cargo.toml
 
 ### 可选的 Responses 缓存控制
 
+已验证支持的部署还可独立启用 [Session WebSocket 复用与严格后缀增量](docs/responses-websocket.md)。
+
 `--responses-cache-contract JSON` 声明精确 wire model、规范化 endpoint URL（含 query）与认证类型（`api` 或 `subscription`）对应的缓存能力。只声明已验证的部署能力，不根据模型名称推断。集成的原生引擎读取全局配置 `engine.responses_cache_contract`，也可用 `MIAO_ENGINE_RESPONSES_CACHE_CONTRACT` 覆盖整个契约。
 
 ```json
@@ -52,6 +56,26 @@ cargo build --manifest-path crates/miao-engine/Cargo.toml
 `acp` 模式在 stdio 上提供 ACP（newline-delimited JSON-RPC 2.0），供编辑器直接对接：`miao-engine acp --db PATH --workspace PATH --model MODEL [--provider ...] [--endpoint URL] [--policy PATH]`。当前实现 `initialize`/`authenticate`/`session/new`/`session/prompt`/`session/cancel`，把引擎审批映射为 `session/request_permission` 往返，把已提交的工具调用流式推送为 `tool_call`/`tool_call_update`，支持 `session/load`（历史回放）/`session/fork`/`session/resume`/`session/close`/`session/set_mode`，并把已提交的 todos 推送为 `plan`，支持 `session/list`；config/usage 更新为后续切片。
 
 本地安装（不触碰 release 管理的 `miao` 与 `miao-preview`）：在构建机编译后 `./script/install-engine.sh --binary /path/to/miao-engine`。安装到 `~/.local/bin/miao-engine`（版本化于 `~/.local/share/miao-engine/bin`），保留一次旧版本用于一步回滚，并以 `--version` 冒烟。
+
+### 宿主模型路由
+
+`--model-routes-config /host/routes.json` 可注册最多 64 个精确 provider 实例。
+manifest 必须位于工作区之外，并受到模型工具保护。产品桥接支持
+`EngineOptions.modelRoutesConfigFile` 或 `MIAO_ENGINE_MODEL_ROUTES_CONFIG`。
+
+```json
+[{"id":"account-two/shared","provider":"openai-chat","model":"shared","endpoint":"https://example.org/v1/chat/completions","credential":{"type":"environment","key":"OPENAI_API_KEY"}}]
+```
+
+凭据来源支持 `environment`（`key` 为环境变量名，订阅可选 `account` 变量名）、
+`database`（`path`、`id`、`integration`）、`legacy`（`path`、`integration`）和
+`daemon`（`path`、`id`、`integration`）。文件来源须位于工作区外；产品子进程
+仍使用环境变量白名单，自定义凭据变量须通过 `EngineOptions.env` 显式传入。
+
+控制器 `model_catalog` 仅返回 `route_id`、`protocol`、`model`；将精确条目作为
+`select_model.params.binding`，或使用 null 恢复默认。未知路由和身份不匹配在
+调用 provider 前失败。即使两个 endpoint 使用相同模型名，opaque 历史仍绑定
+原路由，切换前须先在原路由压缩历史。
 
 ## stdio 协议 v0
 
@@ -282,8 +306,29 @@ MCP server 是拥有自身 filesystem/network authority 的可信外部服务，
 - 正常 shutdown 关闭 transport 并 kill/reap 配置的直接子进程。引擎硬退出、server 派生/daemon 进程
   尚无完整跨进程归属保证。
 
-目前未实现远程 HTTP transport、动态 catalog notifications、resources/prompts、MCP OAuth 或 TS plugin compatibility。
+远程 Streamable HTTP server 用 `{"name":"remote","url":"https://example.test/mcp","headers":{"Authorization":"Bearer ..."}}` 代替 `argv`/`env`。URL 和 headers 来自可信宿主配置，工具调用仍受同一 external authority 和 schema 校验约束。拒绝重定向，单个 SSE event 限制为 256 KiB，Session 过期时返回失败而不自动重放可能产生副作用的请求。宿主 manifest 也可携带显式 refresh grant 代替静态 authorization 头：`{"oauth":{"token_endpoint":"https://issuer/token","client_id":"...","refresh_token":"...","scopes":["mcp"]}}`。引擎在建立连接时恰好执行一次刷新换取并附加返回的 bearer token；拒绝重定向及含 userinfo/fragment 的 endpoint，请求与 64 KiB 响应有界，失败只报通用错误且不回显 provider 响应或 token。响应中轮换的 refresh token 在子进程生命周期内被忽略，宿主重启时重新下发；OAuth 与静态 `authorization` 头冲突，进程型 server 不可使用。产品共享 remote 配置仍须显式设置 `oauth: false`，待产品侧流程落地；临时 manifest 权限为 0600。
 
+声明 resources 能力的 server 暴露 `mcp_<server>_resources_list`、`mcp_<server>_resource_templates_list`、`mcp_<server>_resource_read`；声明 prompts 能力的 server 暴露 `mcp_<server>_prompts_list`、`mcp_<server>_prompt_get`。目录接口支持可选 `cursor`，资源读取接收 `uri`，提示词读取接收 `name` 和可选字符串 `arguments`。只有 resources/prompts 的 server 不必实现 `tools/list`。
+
+这些操作全部经过 external-tool authority、发送前输入校验和 64 KiB 返回预算。返回的资源和提示词消息只是外部工具数据，不会自动执行，也不会替换 system instructions。取消和 input/task continuation 不会触发自动重放。
+
+动态 catalog notifications 已支持就地刷新：引擎对每个已连接 server 订阅
+`notifications/tools/list_changed`（含 resource/prompt 等价通知），防抖后有界
+重新拉取并在锁内替换目录，下一轮即可看到新定义而无需重连；刷新失败保留原
+目录直至下次变更。TS plugin compatibility 仍未实现。
+
+
+## 宿主授权的 skill 目录
+
+`--skills-config /absolute/path/skills.json` 接收目录数组，例如 `[{"path":".miao/skills"},{"path":"/absolute/host/skills"}]`。相对目录保持在 workspace 内；绝对目录必须由 `--references-config` 显式授予只读目录权限。单文件 reference 不授权枚举其父目录。
+
+枚举遵循 `glob` policy；每个候选 skill 文件在读取 frontmatter 前，还要经过 `read_file` 路径解析与 policy 检查。ask/deny 不会泄露该文件元数据给模型。发现跳过 symlink，限制深度和数量，只在 Context 中列出名称、描述和路径；正文按需经正常工具授权读取。外部 skill 保留绝对路径，后续读取使用相同 reference 边界。
+
+## 产品 sidecar 的 Context manifest
+
+产品通过 `MIAO_ENGINE_CONTEXT_CONFIG`、`MIAO_ENGINE_SKILLS_CONFIG`、`MIAO_ENGINE_REFERENCES_CONFIG` 将可信 manifest 分别传给原生 `--context-config`、`--skills-config`、`--references-config`。嵌入端对应设置 `EngineOptions.contextConfigFile`、`skillsConfigFile`、`referencesConfigFile`，环境变量优先。跨 Location 使用时应指定绝对 manifest 路径，并将 manifest 放在模型可写 workspace 之外。
+
+manifest 格式沿用下文原生格式。相对 skill 目录保持在 workspace 内；绝对 skill 目录需要显式只读目录 reference，枚举和逐文件读取均遵循 policy。外部 instruction 文件需要单独的只读 reference 授权；授权一个文件不会授权父目录或兄弟文件，Context 权限规则仍生效。这里传递来源路径而非拼接的 prompt 文本，因此 Context Epoch 保留来源信息并可观察后续编辑。
 
 ## 显式 workspace Context Sources
 
@@ -494,5 +539,7 @@ fail-closed 阻止派发，工具结果为 `blocked by tool_before hook (outcome
 也不给模型任何新 authority。目前没有 per-hook 网络、stdin 注入、run/turn 级事件或远程 hook。
 
 ## 完成检查收据
+
+Provider 报告还提供[辅助用量与覆盖范围](docs/auxiliary-usage.md)，包含主请求的完整/部分观察、角色尝试及子 Session 结果证据。
 
 配置的完成检查会记录[版本绑定的验证收据](docs/verification-receipts.md)，包含实际退出码/输出、任务版本与有明确边界的源码覆盖范围。

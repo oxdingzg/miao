@@ -2,7 +2,7 @@ import { describe, expect, test } from "bun:test"
 import fs from "fs/promises"
 import path from "path"
 import { AuthenticationReason, InvalidRequestReason, LLMError, RateLimitReason, TransportReason } from "@miao/llm"
-import { DateTime, Effect, Fiber, Ref } from "effect"
+import { DateTime, Duration, Effect, Fiber, Ref } from "effect"
 import { AppNodeBuilder } from "@miao/core/effect/app-node-builder"
 import { LayerNode } from "@miao/core/effect/layer-node"
 import { LocationServiceMap } from "@miao/core/location-services"
@@ -31,9 +31,9 @@ describe("SessionRunnerProviderRetry", () => {
   test("retries catalog misses and transient provider failures", () => {
     expect(SessionRunnerProviderRetry.retryable({ _tag: "SessionRunnerModel.ModelUnavailableError" })).toBe(true)
     expect(SessionRunnerProviderRetry.retryable({ _tag: "SessionRunnerModel.ModelNotSelectedError" })).toBe(true)
-    expect(
-      SessionRunnerProviderRetry.retryable(providerError(new RateLimitReason({ message: "slow down" }))),
-    ).toBe(true)
+    expect(SessionRunnerProviderRetry.retryable(providerError(new RateLimitReason({ message: "slow down" })))).toBe(
+      true,
+    )
     expect(
       SessionRunnerProviderRetry.retryable(
         providerError(new AuthenticationReason({ message: "expired", kind: "expired" })),
@@ -82,6 +82,57 @@ describe("SessionRunnerProviderRetry", () => {
 
       yield* Effect.sleep("2 seconds")
       expect(yield* Ref.get(attempts)).toBeGreaterThan(1)
+      yield* Fiber.interrupt(fiber)
+    }),
+  )
+
+  test("raises the backoff to the pause the provider asked for", () => {
+    const rateLimit = providerError(new RateLimitReason({ message: "slow down", retryAfterMs: 2_000 }))
+    expect(Duration.toMillis(SessionRunnerProviderRetry.providerDelay(rateLimit, Duration.millis(500)))).toBe(2_000)
+  })
+
+  test("keeps the schedule's own backoff when it is already longer", () => {
+    const rateLimit = providerError(new RateLimitReason({ message: "slow down", retryAfterMs: 100 }))
+    expect(Duration.toMillis(SessionRunnerProviderRetry.providerDelay(rateLimit, Duration.millis(500)))).toBe(500)
+  })
+
+  test("caps a pause no endpoint should be able to claim", () => {
+    const rateLimit = providerError(new RateLimitReason({ message: "slow down", retryAfterMs: 2 * 60 * 60_000 }))
+    expect(Duration.toMillis(SessionRunnerProviderRetry.providerDelay(rateLimit, Duration.millis(500)))).toBe(
+      15 * 60_000,
+    )
+  })
+
+  test("ignores a pause from a failure that carries none", () => {
+    const cases = [
+      { _tag: "Other" },
+      providerError(new RateLimitReason({ message: "slow down" })),
+      providerError(new TransportReason({ message: "connection reset", kind: "stream-read" })),
+    ]
+    for (const error of cases)
+      expect(Duration.toMillis(SessionRunnerProviderRetry.providerDelay(error, Duration.millis(500)))).toBe(500)
+  })
+
+  it.live("waits out the pause the provider asked for before retrying", () =>
+    Effect.gen(function* () {
+      const attempts = yield* Ref.make(0)
+      const failing = Effect.gen(function* () {
+        yield* Ref.update(attempts, (count) => count + 1)
+        return yield* providerError(new RateLimitReason({ message: "slow down", retryAfterMs: 2_000 }))
+      })
+
+      const fiber = yield* failing.pipe(
+        Effect.retry({
+          while: (error) => SessionRunnerProviderRetry.retryable(error),
+          schedule: SessionRunnerProviderRetry.providerSchedule,
+        }),
+        Effect.forkScoped,
+      )
+
+      // The schedule's own first gap is about half a second, so without the
+      // provider's pause this window would already hold a second attempt.
+      yield* Effect.sleep("1500 millis")
+      expect(yield* Ref.get(attempts)).toBe(1)
       yield* Fiber.interrupt(fiber)
     }),
   )
@@ -173,10 +224,7 @@ describe("SessionRunnerProviderRetry against a live location", () => {
               }),
             )
             expect(resolved).toMatchObject({ model: { id: "chat", provider: "slow" } })
-          }).pipe(
-            Effect.scoped,
-            Effect.provide(LocationServiceMap.Service.get(location)),
-          )
+          }).pipe(Effect.scoped, Effect.provide(LocationServiceMap.Service.get(location)))
         }),
       ),
     ),

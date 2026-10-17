@@ -542,9 +542,30 @@ export type SessionsListOutput = {
     readonly projectID: string
     readonly agent?: string
     readonly model?: { readonly id: string; readonly providerID: string; readonly variant?: string }
+    readonly credentialID?: string
     readonly execution?: { readonly engine: "typescript" | "rust"; readonly selection: "session" | "operator" }
     readonly cost: number
     readonly usage?: {
+      readonly coverage?: {
+        readonly observations: number
+        readonly auxiliaryObservations: number
+        readonly missingUsageObservations: number
+        readonly unknownPriceObservations: number
+        readonly observedTokens?: {
+          readonly input: number
+          readonly output: number
+          readonly reasoning: number
+          readonly cache: { readonly read: number; readonly write: number }
+        }
+        readonly axes: {
+          readonly input: number
+          readonly output: number
+          readonly cacheRead: number
+          readonly cacheWrite: number
+          readonly nonCached: number
+          readonly reasoning: number
+        }
+      }
       readonly turns: number
       readonly tools: { readonly calls: number; readonly failures: number }
       readonly models: ReadonlyArray<{
@@ -624,9 +645,30 @@ export type SessionsCreateOutput = {
     readonly projectID: string
     readonly agent?: string
     readonly model?: { readonly id: string; readonly providerID: string; readonly variant?: string }
+    readonly credentialID?: string
     readonly execution?: { readonly engine: "typescript" | "rust"; readonly selection: "session" | "operator" }
     readonly cost: number
     readonly usage?: {
+      readonly coverage?: {
+        readonly observations: number
+        readonly auxiliaryObservations: number
+        readonly missingUsageObservations: number
+        readonly unknownPriceObservations: number
+        readonly observedTokens?: {
+          readonly input: number
+          readonly output: number
+          readonly reasoning: number
+          readonly cache: { readonly read: number; readonly write: number }
+        }
+        readonly axes: {
+          readonly input: number
+          readonly output: number
+          readonly cacheRead: number
+          readonly cacheWrite: number
+          readonly nonCached: number
+          readonly reasoning: number
+        }
+      }
       readonly turns: number
       readonly tools: { readonly calls: number; readonly failures: number }
       readonly models: ReadonlyArray<{
@@ -682,9 +724,30 @@ export type SessionsGetOutput = {
     readonly projectID: string
     readonly agent?: string
     readonly model?: { readonly id: string; readonly providerID: string; readonly variant?: string }
+    readonly credentialID?: string
     readonly execution?: { readonly engine: "typescript" | "rust"; readonly selection: "session" | "operator" }
     readonly cost: number
     readonly usage?: {
+      readonly coverage?: {
+        readonly observations: number
+        readonly auxiliaryObservations: number
+        readonly missingUsageObservations: number
+        readonly unknownPriceObservations: number
+        readonly observedTokens?: {
+          readonly input: number
+          readonly output: number
+          readonly reasoning: number
+          readonly cache: { readonly read: number; readonly write: number }
+        }
+        readonly axes: {
+          readonly input: number
+          readonly output: number
+          readonly cacheRead: number
+          readonly cacheWrite: number
+          readonly nonCached: number
+          readonly reasoning: number
+        }
+      }
       readonly turns: number
       readonly tools: { readonly calls: number; readonly failures: number }
       readonly models: ReadonlyArray<{
@@ -736,6 +799,17 @@ export type SessionsSwitchAgentInput = {
 
 export type SessionsSwitchAgentOutput = void
 
+export type SessionsModelRoutesInput = { readonly sessionID: { readonly sessionID: string }["sessionID"] }
+
+export type SessionsModelRoutesOutput = {
+  readonly data: ReadonlyArray<{
+    readonly model: { readonly id: string; readonly providerID: string; readonly variant?: string }
+    readonly protocol: string
+    readonly wireModel: string
+    readonly default: boolean
+  }>
+}["data"]
+
 export type SessionsSwitchModelInput = {
   readonly sessionID: { readonly sessionID: string }["sessionID"]
   readonly model: {
@@ -744,6 +818,79 @@ export type SessionsSwitchModelInput = {
 }
 
 export type SessionsSwitchModelOutput = void
+
+export type SessionsSwitchAccountInput = {
+  readonly sessionID: { readonly sessionID: string }["sessionID"]
+  readonly credentialID: { readonly credentialID: string | null }["credentialID"]
+}
+
+export type SessionsSwitchAccountOutput = void
+
+export type SessionsRecoveriesInput = {
+  readonly sessionID: { readonly sessionID: string }["sessionID"]
+  readonly after?: { readonly after?: string | undefined }["after"]
+}
+
+export type SessionsRecoveriesOutput = {
+  readonly data: {
+    readonly calls: ReadonlyArray<{
+      readonly callID: string
+      readonly runID: string
+      readonly tool: string
+      readonly outcome: "unknown"
+      readonly resolution: {
+        readonly operationID: string
+        readonly callID: string
+        readonly runID: string
+        readonly decision: "retry" | "abandon"
+        readonly inputID: string
+        readonly admittedSeq: number
+        readonly outcome: "unknown"
+      } | null
+    }>
+    readonly hasMore: boolean
+  }
+}["data"]
+
+export type SessionsResolveRecoveryInput = {
+  readonly sessionID: { readonly sessionID: string }["sessionID"]
+  readonly callID: {
+    readonly callID: string
+    readonly operationID: string
+    readonly decision: "retry" | "abandon"
+    readonly resume?: boolean | undefined
+  }["callID"]
+  readonly operationID: {
+    readonly callID: string
+    readonly operationID: string
+    readonly decision: "retry" | "abandon"
+    readonly resume?: boolean | undefined
+  }["operationID"]
+  readonly decision: {
+    readonly callID: string
+    readonly operationID: string
+    readonly decision: "retry" | "abandon"
+    readonly resume?: boolean | undefined
+  }["decision"]
+  readonly resume?: {
+    readonly callID: string
+    readonly operationID: string
+    readonly decision: "retry" | "abandon"
+    readonly resume?: boolean | undefined
+  }["resume"]
+}
+
+export type SessionsResolveRecoveryOutput = {
+  readonly data: {
+    readonly operationID: string
+    readonly callID: string
+    readonly runID: string
+    readonly decision: "retry" | "abandon"
+    readonly inputID: string
+    readonly admittedSeq: number
+    readonly outcome: "unknown"
+  }
+}["data"]
 
 export type SessionsPromptInput = {
   readonly sessionID: { readonly sessionID: string }["sessionID"]
@@ -1163,9 +1310,30 @@ export type SessionsForkOutput = {
     readonly projectID: string
     readonly agent?: string
     readonly model?: { readonly id: string; readonly providerID: string; readonly variant?: string }
+    readonly credentialID?: string
     readonly execution?: { readonly engine: "typescript" | "rust"; readonly selection: "session" | "operator" }
     readonly cost: number
     readonly usage?: {
+      readonly coverage?: {
+        readonly observations: number
+        readonly auxiliaryObservations: number
+        readonly missingUsageObservations: number
+        readonly unknownPriceObservations: number
+        readonly observedTokens?: {
+          readonly input: number
+          readonly output: number
+          readonly reasoning: number
+          readonly cache: { readonly read: number; readonly write: number }
+        }
+        readonly axes: {
+          readonly input: number
+          readonly output: number
+          readonly cacheRead: number
+          readonly cacheWrite: number
+          readonly nonCached: number
+          readonly reasoning: number
+        }
+      }
       readonly turns: number
       readonly tools: { readonly calls: number; readonly failures: number }
       readonly models: ReadonlyArray<{
@@ -1368,9 +1536,30 @@ export type SessionsChildrenOutput = {
     readonly projectID: string
     readonly agent?: string
     readonly model?: { readonly id: string; readonly providerID: string; readonly variant?: string }
+    readonly credentialID?: string
     readonly execution?: { readonly engine: "typescript" | "rust"; readonly selection: "session" | "operator" }
     readonly cost: number
     readonly usage?: {
+      readonly coverage?: {
+        readonly observations: number
+        readonly auxiliaryObservations: number
+        readonly missingUsageObservations: number
+        readonly unknownPriceObservations: number
+        readonly observedTokens?: {
+          readonly input: number
+          readonly output: number
+          readonly reasoning: number
+          readonly cache: { readonly read: number; readonly write: number }
+        }
+        readonly axes: {
+          readonly input: number
+          readonly output: number
+          readonly cacheRead: number
+          readonly cacheWrite: number
+          readonly nonCached: number
+          readonly reasoning: number
+        }
+      }
       readonly turns: number
       readonly tools: { readonly calls: number; readonly failures: number }
       readonly models: ReadonlyArray<{
@@ -1438,9 +1627,30 @@ export type SessionsHistoryOutput = {
             readonly projectID: string
             readonly agent?: string
             readonly model?: { readonly id: string; readonly providerID: string; readonly variant?: string }
+            readonly credentialID?: string
             readonly execution?: { readonly engine: "typescript" | "rust"; readonly selection: "session" | "operator" }
             readonly cost: number
             readonly usage?: {
+              readonly coverage?: {
+                readonly observations: number
+                readonly auxiliaryObservations: number
+                readonly missingUsageObservations: number
+                readonly unknownPriceObservations: number
+                readonly observedTokens?: {
+                  readonly input: number
+                  readonly output: number
+                  readonly reasoning: number
+                  readonly cache: { readonly read: number; readonly write: number }
+                }
+                readonly axes: {
+                  readonly input: number
+                  readonly output: number
+                  readonly cacheRead: number
+                  readonly cacheWrite: number
+                  readonly nonCached: number
+                  readonly reasoning: number
+                }
+              }
               readonly turns: number
               readonly tools: { readonly calls: number; readonly failures: number }
               readonly models: ReadonlyArray<{
@@ -1525,6 +1735,19 @@ export type SessionsHistoryOutput = {
           readonly sessionID: string
           readonly messageID: string
           readonly model: { readonly id: string; readonly providerID: string; readonly variant?: string }
+        }
+      }
+    | {
+        readonly id: string
+        readonly metadata?: { readonly [x: string]: JsonValue }
+        readonly type: "session.next.account.switched"
+        readonly durable?: { readonly aggregateID: string; readonly seq: number; readonly version: number }
+        readonly location?: { readonly directory: string; readonly workspaceID?: string }
+        readonly data: {
+          readonly timestamp: number
+          readonly sessionID: string
+          readonly messageID: string
+          readonly credentialID: string | null
         }
       }
     | {
@@ -2124,9 +2347,30 @@ export type SessionsEventsOutput =
           readonly projectID: string
           readonly agent?: string
           readonly model?: { readonly id: string; readonly providerID: string; readonly variant?: string }
+          readonly credentialID?: string
           readonly execution?: { readonly engine: "typescript" | "rust"; readonly selection: "session" | "operator" }
           readonly cost: number
           readonly usage?: {
+            readonly coverage?: {
+              readonly observations: number
+              readonly auxiliaryObservations: number
+              readonly missingUsageObservations: number
+              readonly unknownPriceObservations: number
+              readonly observedTokens?: {
+                readonly input: number
+                readonly output: number
+                readonly reasoning: number
+                readonly cache: { readonly read: number; readonly write: number }
+              }
+              readonly axes: {
+                readonly input: number
+                readonly output: number
+                readonly cacheRead: number
+                readonly cacheWrite: number
+                readonly nonCached: number
+                readonly reasoning: number
+              }
+            }
             readonly turns: number
             readonly tools: { readonly calls: number; readonly failures: number }
             readonly models: ReadonlyArray<{
@@ -2211,6 +2455,19 @@ export type SessionsEventsOutput =
         readonly sessionID: string
         readonly messageID: string
         readonly model: { readonly id: string; readonly providerID: string; readonly variant?: string }
+      }
+    }
+  | {
+      readonly id: string
+      readonly metadata?: { readonly [x: string]: unknown }
+      readonly type: "session.next.account.switched"
+      readonly durable?: { readonly aggregateID: string; readonly seq: number; readonly version: number }
+      readonly location?: { readonly directory: string; readonly workspaceID?: string }
+      readonly data: {
+        readonly timestamp: number
+        readonly sessionID: string
+        readonly messageID: string
+        readonly credentialID: string | null
       }
     }
   | {
@@ -4089,6 +4346,26 @@ export type EventsDurableOutput =
             readonly diff?: string
           }
           readonly usage?: {
+            readonly coverage?: {
+              readonly observations: number
+              readonly auxiliaryObservations: number
+              readonly missingUsageObservations: number
+              readonly unknownPriceObservations: number
+              readonly observedTokens?: {
+                readonly input: number
+                readonly output: number
+                readonly reasoning: number
+                readonly cache: { readonly read: number; readonly write: number }
+              }
+              readonly axes: {
+                readonly input: number
+                readonly output: number
+                readonly cacheRead: number
+                readonly cacheWrite: number
+                readonly nonCached: number
+                readonly reasoning: number
+              }
+            }
             readonly turns: number
             readonly tools: { readonly calls: number; readonly failures: number }
             readonly models: ReadonlyArray<{
@@ -4168,6 +4445,26 @@ export type EventsDurableOutput =
             readonly diff?: string
           }
           readonly usage?: {
+            readonly coverage?: {
+              readonly observations: number
+              readonly auxiliaryObservations: number
+              readonly missingUsageObservations: number
+              readonly unknownPriceObservations: number
+              readonly observedTokens?: {
+                readonly input: number
+                readonly output: number
+                readonly reasoning: number
+                readonly cache: { readonly read: number; readonly write: number }
+              }
+              readonly axes: {
+                readonly input: number
+                readonly output: number
+                readonly cacheRead: number
+                readonly cacheWrite: number
+                readonly nonCached: number
+                readonly reasoning: number
+              }
+            }
             readonly turns: number
             readonly tools: { readonly calls: number; readonly failures: number }
             readonly models: ReadonlyArray<{
@@ -4247,6 +4544,26 @@ export type EventsDurableOutput =
             readonly diff?: string
           }
           readonly usage?: {
+            readonly coverage?: {
+              readonly observations: number
+              readonly auxiliaryObservations: number
+              readonly missingUsageObservations: number
+              readonly unknownPriceObservations: number
+              readonly observedTokens?: {
+                readonly input: number
+                readonly output: number
+                readonly reasoning: number
+                readonly cache: { readonly read: number; readonly write: number }
+              }
+              readonly axes: {
+                readonly input: number
+                readonly output: number
+                readonly cacheRead: number
+                readonly cacheWrite: number
+                readonly nonCached: number
+                readonly reasoning: number
+              }
+            }
             readonly turns: number
             readonly tools: { readonly calls: number; readonly failures: number }
             readonly models: ReadonlyArray<{
@@ -4936,9 +5253,30 @@ export type EventsDurableOutput =
           readonly projectID: string
           readonly agent?: string
           readonly model?: { readonly id: string; readonly providerID: string; readonly variant?: string }
+          readonly credentialID?: string
           readonly execution?: { readonly engine: "typescript" | "rust"; readonly selection: "session" | "operator" }
           readonly cost: number
           readonly usage?: {
+            readonly coverage?: {
+              readonly observations: number
+              readonly auxiliaryObservations: number
+              readonly missingUsageObservations: number
+              readonly unknownPriceObservations: number
+              readonly observedTokens?: {
+                readonly input: number
+                readonly output: number
+                readonly reasoning: number
+                readonly cache: { readonly read: number; readonly write: number }
+              }
+              readonly axes: {
+                readonly input: number
+                readonly output: number
+                readonly cacheRead: number
+                readonly cacheWrite: number
+                readonly nonCached: number
+                readonly reasoning: number
+              }
+            }
             readonly turns: number
             readonly tools: { readonly calls: number; readonly failures: number }
             readonly models: ReadonlyArray<{
@@ -5001,9 +5339,30 @@ export type EventsDurableOutput =
           readonly projectID: string
           readonly agent?: string
           readonly model?: { readonly id: string; readonly providerID: string; readonly variant?: string }
+          readonly credentialID?: string
           readonly execution?: { readonly engine: "typescript" | "rust"; readonly selection: "session" | "operator" }
           readonly cost: number
           readonly usage?: {
+            readonly coverage?: {
+              readonly observations: number
+              readonly auxiliaryObservations: number
+              readonly missingUsageObservations: number
+              readonly unknownPriceObservations: number
+              readonly observedTokens?: {
+                readonly input: number
+                readonly output: number
+                readonly reasoning: number
+                readonly cache: { readonly read: number; readonly write: number }
+              }
+              readonly axes: {
+                readonly input: number
+                readonly output: number
+                readonly cacheRead: number
+                readonly cacheWrite: number
+                readonly nonCached: number
+                readonly reasoning: number
+              }
+            }
             readonly turns: number
             readonly tools: { readonly calls: number; readonly failures: number }
             readonly models: ReadonlyArray<{
@@ -5127,6 +5486,32 @@ export type EventsDurableOutput =
         readonly sessionID: string
         readonly messageID: string
         readonly model: { readonly id: string; readonly providerID: string; readonly variant?: string }
+      }
+    }
+  | {
+      readonly id: string
+      readonly metadata?: { readonly [x: string]: unknown }
+      readonly type: "session.next.account.switched"
+      readonly durable?: { readonly aggregateID: string; readonly seq: number; readonly version: number }
+      readonly location?: { readonly directory: string; readonly workspaceID?: string }
+      readonly data: {
+        readonly timestamp: number
+        readonly sessionID: string
+        readonly messageID: string
+        readonly credentialID: string | null
+      }
+    }
+  | {
+      readonly id: string
+      readonly metadata?: { readonly [x: string]: unknown }
+      readonly type: "session.next.account.switched"
+      readonly durable?: { readonly aggregateID: string; readonly seq: number; readonly version: number }
+      readonly location?: { readonly directory: string; readonly workspaceID?: string }
+      readonly data: {
+        readonly timestamp: number
+        readonly sessionID: string
+        readonly messageID: string
+        readonly credentialID: string | null
       }
     }
   | {

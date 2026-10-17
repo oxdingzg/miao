@@ -18,7 +18,7 @@ use std::{
         Arc, Mutex, OnceLock,
     },
 };
-use tokio::sync::{mpsc, oneshot};
+use tokio::sync::{mpsc, oneshot, watch};
 
 pub(crate) const APPLICATION_ID: u32 = 0x4d494145;
 pub(crate) const SCHEMA_VERSION: u32 = 11;
@@ -51,6 +51,7 @@ impl Drop for FileLease {
 #[derive(Clone)]
 pub struct Store {
     work: mpsc::Sender<Work>,
+    closed: watch::Receiver<()>,
     runtime_owner: Arc<AtomicBool>,
     path: Arc<std::path::PathBuf>,
 }
@@ -78,7 +79,10 @@ impl Store {
         let path = path.as_ref().to_path_buf();
         let (work, mut receive) = mpsc::channel::<Work>(64);
         let (ready, started) = oneshot::channel();
+        let (stopped, closed) = watch::channel(());
         std::thread::spawn(move || {
+            // Dropped after the worker connection and file lease, including on panic.
+            let _stopped = stopped;
             let opened = (|| -> Result<_, Error> {
                 if let Some(parent) = path.parent().filter(|p| !p.as_os_str().is_empty()) {
                     std::fs::create_dir_all(parent)?;
@@ -157,6 +161,7 @@ impl Store {
                     CREATE TABLE IF NOT EXISTS engine_run(id TEXT PRIMARY KEY, session_id TEXT NOT NULL REFERENCES engine_session(id), state TEXT NOT NULL);
                     CREATE UNIQUE INDEX IF NOT EXISTS engine_active_run ON engine_run(session_id) WHERE state='running';
                     CREATE TABLE IF NOT EXISTS engine_timing(session_id TEXT NOT NULL REFERENCES engine_session(id), run_id TEXT NOT NULL, step INTEGER NOT NULL, ttft_ms INTEGER NOT NULL, PRIMARY KEY(session_id,run_id,step));
+                    CREATE TABLE IF NOT EXISTS engine_cache_prefix(session_id TEXT PRIMARY KEY REFERENCES engine_session(id), affinity_session TEXT NOT NULL, route_hash TEXT NOT NULL, parameters_hash TEXT NOT NULL, history_hash TEXT NOT NULL, message_count INTEGER NOT NULL, session_seq INTEGER NOT NULL);
                     CREATE TABLE IF NOT EXISTS engine_tool(id TEXT PRIMARY KEY, run_id TEXT NOT NULL REFERENCES engine_run(id), name TEXT NOT NULL, input TEXT NOT NULL, state TEXT NOT NULL);
                     CREATE TABLE IF NOT EXISTS engine_location(session_id TEXT PRIMARY KEY REFERENCES engine_session(id),root TEXT NOT NULL);
                     CREATE TABLE IF NOT EXISTS engine_approval(id TEXT PRIMARY KEY,session_id TEXT NOT NULL REFERENCES engine_session(id),run_id TEXT NOT NULL REFERENCES engine_run(id),call_id TEXT NOT NULL REFERENCES engine_tool(id),binding TEXT NOT NULL,expires_at INTEGER NOT NULL,state TEXT NOT NULL);
@@ -246,9 +251,25 @@ impl Store {
         let path = started.await.map_err(|_| Error::Closed)??;
         Ok(Self {
             work,
+            closed,
             runtime_owner: Arc::new(AtomicBool::new(false)),
             path: Arc::new(path),
         })
+    }
+
+    /// Close the last Store handle and wait for SQLite and the file lease to
+    /// finish teardown. Dropping a Store only starts asynchronous worker exit.
+    /// A live clone (including a Runtime) must be released before calling this.
+    pub async fn close(self) -> Result<(), Error> {
+        if self.work.strong_count() != 1 {
+            return Err(Error::Busy);
+        }
+        let Self {
+            work, mut closed, ..
+        } = self;
+        drop(work);
+        let _ = closed.changed().await;
+        Ok(())
     }
 
     pub fn path(&self) -> &Path {
@@ -660,12 +681,13 @@ impl Store {
             let questions=crate::question::pending(&tx,&session)?;
             let wakeups=crate::wakeup::pending(&tx,&session)?;
             let crons=crate::cron::pending(&tx,&session)?;
+            let model_selection=crate::session_model::selected(&tx,&session)?;
             let mode:String=tx.query_row("SELECT mode FROM engine_session WHERE id=?1",[&session],|r|r.get(0)).optional()?.unwrap_or_else(||"build".into());
             let (title,created_at_ms,updated_at_ms):(String,Option<i64>,Option<i64>)=tx.query_row(
                 "SELECT title,created_at_ms,updated_at_ms FROM engine_session WHERE id=?1",
                 [&session],|r|Ok((r.get(0)?,r.get(1)?,r.get(2)?)),
             )?;
-            let snapshot=json!({"session_id":session,"parent_session_id":parent,"cursor":cursor,"location":location,"mode":mode,"title":title,"created_at_ms":created_at_ms,"updated_at_ms":updated_at_ms,"messages":messages,"selection":selection,"pending":pending,"active_run":active,"approvals":approvals,"context":context,"state":state,"questions":questions,"wakeups":wakeups,"crons":crons});
+            let snapshot=json!({"session_id":session,"parent_session_id":parent,"cursor":cursor,"location":location,"mode":mode,"title":title,"created_at_ms":created_at_ms,"updated_at_ms":updated_at_ms,"messages":messages,"selection":selection,"pending":pending,"active_run":active,"approvals":approvals,"context":context,"state":state,"questions":questions,"wakeups":wakeups,"crons":crons,"model_selection":model_selection});
             if serde_json::to_vec(&snapshot)?.len()>4*1024*1024{return Err(Error::Invalid("snapshot exceeds limit; use events pagination".into()));}
             tx.commit()?;Ok(snapshot)
         }).await
@@ -686,6 +708,40 @@ impl Store {
                 .optional()?)
         })
         .await
+    }
+
+    /// A fork may propose only a completed parent prefix at its own cursor.
+    /// The provider checks exact wire parameters/history before using the hint.
+    /// Proofs live in a side table: the replay-pinned journal never carries them.
+    pub(crate) async fn cache_affinity(
+        &self,
+        session: &str,
+    ) -> Result<Option<crate::cache_affinity::Proof>, Error> {
+        let session = session.to_owned();
+        self.call(move |conn| {
+            let row: Option<(String, String, String, String, i64)> = conn.query_row(
+                "SELECT p.affinity_session,p.route_hash,p.parameters_hash,p.history_hash,p.message_count FROM engine_cache_prefix p JOIN engine_lineage l ON l.parent_session_id=p.session_id WHERE l.session_id=?1 AND p.session_seq<=l.message_seq",
+                [&session], |row| Ok((row.get(0)?,row.get(1)?,row.get(2)?,row.get(3)?,row.get(4)?)),
+            ).optional()?;
+            Ok(row.map(|(affinity_session,route_hash,parameters_hash,history_hash,message_count)|crate::cache_affinity::Proof{affinity_session,route_hash,parameters_hash,history_hash,message_count:usize::try_from(message_count).unwrap_or(0)}))
+        }).await
+    }
+
+    /// Wall-clock-free side-table write. Losing it only loses an optimization.
+    pub(crate) async fn record_cache_prefix(
+        &self,
+        session: &str,
+        proof: crate::cache_affinity::Proof,
+    ) {
+        let session = session.to_owned();
+        let _ = self.call(move |conn| {
+            conn.execute(
+                "INSERT INTO engine_cache_prefix(session_id,affinity_session,route_hash,parameters_hash,history_hash,message_count,session_seq) VALUES(?1,?2,?3,?4,?5,?6,(SELECT COALESCE(MAX(seq),0) FROM engine_message WHERE session_id=?1))
+                 ON CONFLICT(session_id) DO UPDATE SET affinity_session=excluded.affinity_session,route_hash=excluded.route_hash,parameters_hash=excluded.parameters_hash,history_hash=excluded.history_hash,message_count=excluded.message_count,session_seq=excluded.session_seq",
+                params![session,proof.affinity_session,proof.route_hash,proof.parameters_hash,proof.history_hash,proof.message_count as i64],
+            )?;
+            Ok(())
+        }).await;
     }
 
     pub async fn fork(
@@ -764,6 +820,9 @@ impl Store {
                 tx.execute("INSERT INTO engine_context VALUES(?1,1,?2,?3,?4,?5)",params![target,fingerprint,system,sources,event.seq])?;
             }
             let source_watermark=if message_seq.is_none(){tx.query_row("SELECT next_seq FROM engine_session WHERE id=?1",[&parent],|r|r.get::<_,u64>(0))?}else{seq};
+            if let Some(binding)=crate::session_model::selected_at(&tx,&parent,source_watermark)? {
+                append(&tx,&target,"session.model.selected",json!({"binding":binding,"inherited":true}))?;
+            }
             let inherited=crate::state::projection(&tx,&parent,source_watermark)?;
             for kind in ["todos","goal"] {
                 if !inherited[kind].is_null(){append(&tx,&target,"session.state.updated",json!({"operation_id":format!("fork:{target}:{kind}"),"kind":kind,"value":inherited[kind]["value"],"expected_revision":null,"parent_revision":inherited[kind]["revision"]}))?;}
@@ -1705,18 +1764,37 @@ impl Store {
             let mut tool_calls = 0u64;
             let mut tool_failures = 0u64;
             let mut turn_detail: Vec<Value> = Vec::new();
+            let mut provider_usage=crate::usage::Totals::default();
+            let mut auxiliary_usage=crate::usage::Totals::default();
+            let mut auxiliary_detail=Vec::new();
+            let mut provider_detail=Vec::new();
+            let mut auxiliary_accepted=0u64;
+            let mut auxiliary_failed=0u64;
+            let mut auxiliary_rejected=0u64;
+            let mut role_starts=std::collections::HashMap::<u64,Option<u64>>::new();
             let mut stmt = conn.prepare(
-                "SELECT kind,data FROM engine_event WHERE session_id=?1 AND kind IN ('usage','provider.started','provider.request','tool.completed') ORDER BY seq",
+                "SELECT seq,kind,data,recorded_at_ms FROM engine_event WHERE session_id=?1 AND kind IN ('usage','provider.started','provider.request','tool.completed','role.provider.started','role.provider.completed') ORDER BY seq",
             )?;
             let mut rows = stmt.query(params![session])?;
             while let Some(row) = rows.next()? {
-                let kind: String = row.get(0)?;
-                let data: Value = serde_json::from_str(&row.get::<_, String>(1)?)?;
+                let kind: String = row.get(1)?;
+                let data: Value = serde_json::from_str(&row.get::<_, String>(2)?)?;
                 let key = (
                     data["run_id"].as_str().unwrap_or_default().to_owned(),
                     data["step"].as_u64().unwrap_or_default().to_string(),
                 );
                 match kind.as_str() {
+                    "role.provider.started"=>{role_starts.insert(row.get::<_,u64>(0)?,row.get::<_,Option<u64>>(3)?);}
+                    "role.provider.completed"=>{
+                        let usage=crate::usage::observed(&data["usage"]);
+                        provider_usage.observe(&usage);auxiliary_usage.observe(&usage);
+                        auxiliary_accepted+=u64::from(data["accepted"]==true);
+                        auxiliary_failed+=u64::from(data["providerSuccess"]!=true);
+                        auxiliary_rejected+=u64::from(data["providerSuccess"]==true && data["accepted"]!=true);
+                        let duration=data["startedSeq"].as_u64().and_then(|seq|role_starts.get(&seq).copied().flatten()).zip(row.get::<_,Option<u64>>(3)?).and_then(|(start,end)|end.checked_sub(start));
+                        let detail=json!({"receiptSeq":row.get::<_,u64>(0)?,"kind":"auxiliary","runID":data["run_id"],"role":data["role"],"path":data["path"],"accepted":data["accepted"],"providerSuccess":data["providerSuccess"],"protocol":data["identity"]["protocol"],"model":data["identity"]["model"],"identitySource":data["identitySource"],"usage":usage,"durationMs":duration,"turnMs":row.get::<_,Option<u64>>(3)?});
+                        auxiliary_detail.push(detail.clone());provider_detail.push(detail);
+                    }
                     "provider.request" => {
                         requests += 1;
                         let diagnostic = &data["cache_diagnostics"];
@@ -1751,6 +1829,7 @@ impl Store {
                             turns += 1;
                         }
                         let usage = &data["usage"];
+                        provider_usage.observe(usage);
                         if usage["inputTokens"].as_u64().is_some_and(|input| {
                             usage["cacheReadInputTokens"].as_u64().unwrap_or(0)
                                 .saturating_add(usage["cacheWriteInputTokens"].as_u64().unwrap_or(0)) > input
@@ -1774,11 +1853,13 @@ impl Store {
                                 .entry((provider.clone(), model.clone()))
                                 .or_insert(0) += 1;
                         }
-                        if data["partial"].as_bool() != Some(true) {
+                        {
                             // Per-turn rows keep each turn's own context size so
                             // the product can price tiered rates per turn instead
                             // of against the summed input.
                             let mut detail = json!({
+                                "kind":"primary","partial":data["partial"]==true,
+                                "observedUsage":crate::usage::observed(usage),
                                 "runID": data["run_id"],
                                 "step": data["step"],
                                 "usage": {
@@ -1797,7 +1878,8 @@ impl Store {
                             if let Some(value) = turn_ms.get(&key) {
                                 detail["turnMs"] = json!(value);
                             }
-                            turn_detail.push(detail);
+                            provider_detail.push(detail.clone());
+                            if data["partial"] != true { turn_detail.push(detail); }
                         }
                     }
                 }
@@ -1818,6 +1900,9 @@ impl Store {
                 })
             };
             Ok(json!({
+                "providerUsage":provider_usage.report(),
+                "providerDetail":provider_detail,
+                "auxiliary":{"usage":auxiliary_usage.report(),"accepted":auxiliary_accepted,"semanticRejected":auxiliary_rejected,"providerFailed":auxiliary_failed,"turnsDetail":auxiliary_detail},
                 "turns": turns,
                 "partialTurns": partial_turns,
                 "tokens": tokens,

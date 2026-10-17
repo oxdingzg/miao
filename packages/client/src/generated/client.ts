@@ -41,8 +41,16 @@ import type {
   SessionsGetOutput,
   SessionsSwitchAgentInput,
   SessionsSwitchAgentOutput,
+  SessionsModelRoutesInput,
+  SessionsModelRoutesOutput,
   SessionsSwitchModelInput,
   SessionsSwitchModelOutput,
+  SessionsSwitchAccountInput,
+  SessionsSwitchAccountOutput,
+  SessionsRecoveriesInput,
+  SessionsRecoveriesOutput,
+  SessionsResolveRecoveryInput,
+  SessionsResolveRecoveryOutput,
   SessionsPromptInput,
   SessionsPromptOutput,
   SessionsSkillInput,
@@ -679,6 +687,17 @@ export function make(options: ClientOptions) {
           },
           requestOptions,
         ),
+      modelRoutes: (input: SessionsModelRoutesInput, requestOptions?: RequestOptions) =>
+        request<{ readonly data: SessionsModelRoutesOutput }>(
+          {
+            method: "GET",
+            path: `/api/session/${encodeURIComponent(input.sessionID)}/model-routes`,
+            successStatus: 200,
+            declaredStatuses: [409, 404, 503, 400, 410, 401],
+            empty: false,
+          },
+          requestOptions,
+        ).then((value) => value.data),
       switchModel: (input: SessionsSwitchModelInput, requestOptions?: RequestOptions) =>
         request<SessionsSwitchModelOutput>(
           {
@@ -686,11 +705,52 @@ export function make(options: ClientOptions) {
             path: `/api/session/${encodeURIComponent(input.sessionID)}/model`,
             body: { model: input["model"] },
             successStatus: 204,
+            declaredStatuses: [409, 404, 503, 400, 410, 401],
+            empty: true,
+          },
+          requestOptions,
+        ),
+      switchAccount: (input: SessionsSwitchAccountInput, requestOptions?: RequestOptions) =>
+        request<SessionsSwitchAccountOutput>(
+          {
+            method: "POST",
+            path: `/api/session/${encodeURIComponent(input.sessionID)}/account`,
+            body: { credentialID: input["credentialID"] },
+            successStatus: 204,
             declaredStatuses: [404, 503, 400, 410, 409, 401],
             empty: true,
           },
           requestOptions,
         ),
+      recoveries: (input: SessionsRecoveriesInput, requestOptions?: RequestOptions) =>
+        request<{ readonly data: SessionsRecoveriesOutput }>(
+          {
+            method: "GET",
+            path: `/api/session/${encodeURIComponent(input.sessionID)}/recovery`,
+            query: { after: input["after"] },
+            successStatus: 200,
+            declaredStatuses: [409, 404, 503, 400, 410, 401],
+            empty: false,
+          },
+          requestOptions,
+        ).then((value) => value.data),
+      resolveRecovery: (input: SessionsResolveRecoveryInput, requestOptions?: RequestOptions) =>
+        request<{ readonly data: SessionsResolveRecoveryOutput }>(
+          {
+            method: "POST",
+            path: `/api/session/${encodeURIComponent(input.sessionID)}/recovery`,
+            body: {
+              callID: input["callID"],
+              operationID: input["operationID"],
+              decision: input["decision"],
+              resume: input["resume"],
+            },
+            successStatus: 200,
+            declaredStatuses: [409, 404, 503, 400, 410, 401],
+            empty: false,
+          },
+          requestOptions,
+        ).then((value) => value.data),
       prompt: (input: SessionsPromptInput, requestOptions?: RequestOptions) =>
         request<{ readonly data: SessionsPromptOutput }>(
           {

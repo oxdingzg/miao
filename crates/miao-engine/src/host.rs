@@ -56,6 +56,13 @@ impl Host {
                 .resume(&session_id)
                 .await
                 .map(|_| json!({ "accepted": true })),
+            Command::ModelCatalog => {
+                serde_json::to_value(runtime.model_catalog()).map_err(Error::from)
+            }
+            Command::SelectModel {
+                session_id,
+                binding,
+            } => runtime.select_model(&session_id, binding).await,
             Command::Recoveries { session_id, after } => {
                 runtime.store().recoveries(&session_id, &after).await
             }
@@ -64,9 +71,10 @@ impl Host {
                 call_id,
                 operation_id,
                 decision,
+                resume,
             } => {
                 runtime
-                    .resolve_recovery(&session_id, &call_id, &operation_id, decision)
+                    .resolve_recovery(&session_id, &call_id, &operation_id, decision, resume)
                     .await
             }
             Command::Mode { session_id, mode } => runtime

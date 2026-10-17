@@ -7,6 +7,7 @@ import { ListAnchor } from "@miao/schema/session"
 import { and, asc, desc, eq, gt, isNull, like, lt, or, sql, type SQL } from "drizzle-orm"
 import { ProjectV2 } from "./project"
 import { WorkspaceV2 } from "./workspace"
+import { Credential } from "@miao/schema/credential"
 import { ModelV2 } from "./model"
 import { Location } from "./location"
 import { SessionMessage } from "./session/message"
@@ -35,6 +36,7 @@ import { SessionCommand } from "./session/command"
 import { CommandV2 } from "./command"
 import { SkillV2 } from "./skill"
 import { SessionCompactRequest } from "./session/compact-request"
+import { SessionCacheProbe } from "./session/cache-probe"
 import { SessionExecution } from "./session/execution"
 import { makeGlobalNode } from "./effect/app-node"
 import { LocationServiceMap } from "./location-service-map"
@@ -223,6 +225,14 @@ export interface Interface {
   readonly switchModel: (input: {
     sessionID: SessionSchema.ID
     model: ModelV2.Ref
+  }) => Effect.Effect<void, NotFoundError | LegacyNotMigratedError>
+  /**
+   * Pins the conversation to one stored account of its provider, or clears the
+   * pin so the provider resolves the account again.
+   */
+  readonly switchAccount: (input: {
+    sessionID: SessionSchema.ID
+    credentialID: Credential.ID | null
   }) => Effect.Effect<void, NotFoundError | LegacyNotMigratedError>
   readonly prompt: (input: {
     id?: SessionMessage.ID
@@ -472,6 +482,7 @@ const layer = Layer.effect(
         yield* result.get(sessionID)
         yield* db.delete(SessionTable).where(eq(SessionTable.id, sessionID)).run().pipe(Effect.orDie)
         yield* events.remove(sessionID)
+        SessionCacheProbe.current.invalidate(sessionID)
         SessionProjector.forget(db)
         SessionHistory.invalidate(db)
       }),
@@ -553,6 +564,7 @@ const layer = Layer.effect(
           agent: parent.agent,
           location: parent.location,
         })
+        SessionCacheProbe.current.fork(parent.id, child.id)
         // Fork from the projection, not the event log: the projection is the
         // durable record, and a session's event log may be pruned. Copy the
         // parent's messages (including backfilled legacy rows at negative
@@ -790,6 +802,18 @@ const layer = Layer.effect(
           model: input.model,
         })
       }),
+      switchAccount: Effect.fn("V2Session.switchAccount")(function* (input) {
+        yield* ownership.claim(input.sessionID)
+        const session = yield* result.get(input.sessionID)
+        yield* requireMigrated(session.id)
+        if ((session.credentialID ?? null) === input.credentialID) return
+        yield* events.publish(SessionEvent.AccountSwitched, {
+          sessionID: input.sessionID,
+          messageID: SessionMessage.ID.create(),
+          timestamp: yield* DateTime.now,
+          credentialID: input.credentialID,
+        })
+      }),
       compact: Effect.fn("V2Session.compact")(function* (input) {
         yield* ownership.claim(input.sessionID)
         yield* result.get(input.sessionID)
@@ -818,6 +842,7 @@ const layer = Layer.effect(
           yield* ownership.claim(input.sessionID)
           const session = yield* result.get(input.sessionID)
           return yield* SessionRevert.stage({ session, messageID: input.messageID, files: input.files }).pipe(
+            Effect.tap(() => Effect.sync(() => SessionCacheProbe.current.invalidate(input.sessionID))),
             Effect.provideService(Database.Service, database),
             Effect.provideService(EventV2.Service, events),
             Effect.provide(locations.get(session.location)),
@@ -827,6 +852,7 @@ const layer = Layer.effect(
           yield* ownership.claim(sessionID)
           const session = yield* result.get(sessionID)
           yield* SessionRevert.clear(session).pipe(
+            Effect.tap(() => Effect.sync(() => SessionCacheProbe.current.invalidate(sessionID))),
             Effect.provideService(EventV2.Service, events),
             Effect.provide(locations.get(session.location)),
           )
@@ -834,7 +860,10 @@ const layer = Layer.effect(
         commit: Effect.fn("V2Session.revert.commit")(function* (sessionID) {
           yield* ownership.claim(sessionID)
           const session = yield* result.get(sessionID)
-          yield* SessionRevert.commit(session).pipe(Effect.provideService(EventV2.Service, events))
+          yield* SessionRevert.commit(session).pipe(
+            Effect.tap(() => Effect.sync(() => SessionCacheProbe.current.invalidate(sessionID))),
+            Effect.provideService(EventV2.Service, events),
+          )
         }),
       },
     })

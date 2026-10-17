@@ -10,7 +10,8 @@
     "migration": "bun run script/migration.ts",
     "fix-node-pty": "bun run script/fix-node-pty.ts",
     "test": "bun test --only-failures",
-    "typecheck": "tsgo --noEmit"
+    "typecheck": "tsgo --noEmit",
+    "bench": "bun run bench/run.ts"
   },
   "bin": {
     "opencode": "./bin/opencode"

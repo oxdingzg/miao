@@ -1,3 +1,4 @@
+import { SessionModelRoute } from "@miao/schema/session-model-route"
 import { SessionMessage } from "@miao/schema/session-message"
 import { SessionInput } from "@miao/schema/session-input"
 import { PromptInput } from "@miao/schema/prompt-input"
@@ -18,11 +19,13 @@ import {
   UnknownError,
 } from "../errors"
 import { Agent } from "@miao/schema/agent"
+import { Credential } from "@miao/schema/credential"
 import { Model } from "@miao/schema/model"
 import { Location } from "@miao/schema/location"
 import { Revert } from "@miao/schema/revert"
 import { SessionEvent } from "@miao/schema/session-event"
 import { SessionExecution } from "@miao/schema/session-execution"
+import { SessionRecovery } from "@miao/schema/session-recovery"
 
 const SessionsQueryFields = {
   workspace: Workspace.ID.pipe(Schema.optional),
@@ -198,11 +201,26 @@ export const makeSessionGroup = <I extends HttpApiMiddleware.AnyId, S>(sessionLo
         ),
     )
     .add(
+      HttpApiEndpoint.get("session.modelRoutes", "/api/session/:sessionID/model-routes", {
+        params: { sessionID: Session.ID },
+        success: Schema.Struct({ data: Schema.Array(SessionModelRoute.Info) }),
+        error: [ConflictError, SessionNotFoundError, ServiceUnavailableError],
+      })
+        .middleware(sessionLocationMiddleware)
+        .annotateMerge(
+          OpenApi.annotations({
+            identifier: "v2.session.modelRoutes",
+            summary: "List native session model routes",
+            description: "List host-registered model references without exposing endpoint or credential bindings.",
+          }),
+        ),
+    )
+    .add(
       HttpApiEndpoint.post("session.switchModel", "/api/session/:sessionID/model", {
         params: { sessionID: Session.ID },
         payload: Schema.Struct({ model: Model.Ref }),
         success: HttpApiSchema.NoContent,
-        error: [SessionNotFoundError, ServiceUnavailableError],
+        error: [ConflictError, SessionNotFoundError, ServiceUnavailableError],
       })
         .middleware(sessionLocationMiddleware)
         .annotateMerge(
@@ -210,6 +228,61 @@ export const makeSessionGroup = <I extends HttpApiMiddleware.AnyId, S>(sessionLo
             identifier: "v2.session.switchModel",
             summary: "Switch session model",
             description: "Switch the model used by subsequent provider turns.",
+          }),
+        ),
+    )
+    .add(
+      HttpApiEndpoint.post("session.switchAccount", "/api/session/:sessionID/account", {
+        params: { sessionID: Session.ID },
+        payload: Schema.Struct({ credentialID: Schema.NullOr(Credential.ID) }),
+        success: HttpApiSchema.NoContent,
+        error: [SessionNotFoundError, ServiceUnavailableError],
+      })
+        .middleware(sessionLocationMiddleware)
+        .annotateMerge(
+          OpenApi.annotations({
+            identifier: "v2.session.switchAccount",
+            summary: "Switch session account",
+            description: "Switch the provider account used by subsequent provider turns, or clear the pin.",
+          }),
+        ),
+    )
+    .add(
+      HttpApiEndpoint.get("session.recoveries", "/api/session/:sessionID/recovery", {
+        params: { sessionID: Session.ID },
+        query: Schema.Struct({ after: Schema.optional(Schema.String) }),
+        success: Schema.Struct({ data: SessionRecovery.Page }),
+        error: [ConflictError, SessionNotFoundError, ServiceUnavailableError],
+      })
+        .middleware(sessionLocationMiddleware)
+        .annotateMerge(
+          OpenApi.annotations({
+            identifier: "v2.session.recoveries",
+            summary: "Inspect interrupted tool outcomes",
+            description:
+              "List unknown tool outcomes and prior controller decisions for a Rust-owned Session. Read-only and paged by exclusive call ID.",
+          }),
+        ),
+    )
+    .add(
+      HttpApiEndpoint.post("session.resolveRecovery", "/api/session/:sessionID/recovery", {
+        params: { sessionID: Session.ID },
+        payload: Schema.Struct({
+          callID: Schema.String.check(Schema.isMinLength(1)),
+          operationID: SessionRecovery.OperationID,
+          decision: SessionRecovery.Decision,
+          resume: Schema.optional(Schema.Boolean),
+        }),
+        success: Schema.Struct({ data: SessionRecovery.Resolution }),
+        error: [ConflictError, SessionNotFoundError, ServiceUnavailableError],
+      })
+        .middleware(sessionLocationMiddleware)
+        .annotateMerge(
+          OpenApi.annotations({
+            identifier: "v2.session.resolveRecovery",
+            summary: "Resolve an interrupted tool outcome",
+            description:
+              "Record one explicit retry/abandon decision and durable steer input. Exact retries reconcile. Resume is admit-only by default; true schedules an advisory inbox wake, never replay of the old tool dispatch.",
           }),
         ),
     )

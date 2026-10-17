@@ -14,3 +14,14 @@ export const requireTypescriptOwner = Effect.fn("NativeCommand.requireTypescript
       resource: sessionID,
     })
 })
+
+export const requireNativeOwner = Effect.fn("NativeCommand.requireNativeOwner")(function* (sessionID: string) {
+  const native = yield* Effect.serviceOption(NativeEngine.Service)
+  const placement = yield* Effect.serviceOption(NativeEngine.Placement)
+  if (Option.isNone(native) || Option.isNone(placement))
+    return yield* new ConflictError({
+      message: "This operation requires a Rust-owned Session and its native transport.",
+      resource: sessionID,
+    })
+  return { native: native.value, placement: placement.value }
+})

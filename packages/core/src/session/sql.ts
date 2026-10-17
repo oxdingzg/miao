@@ -13,6 +13,7 @@ import { WorkspaceV2 } from "../workspace"
 import { Timestamps } from "../database/schema.sql"
 import type { SystemContext } from "../system-context/index"
 import { AgentV2 } from "../agent"
+import type { Credential } from "@miao/schema/credential"
 import type { Revert } from "@miao/schema/revert"
 import type { SessionEvent } from "./event"
 
@@ -62,6 +63,7 @@ export const SessionTable = sqliteTable(
       providerID: string
       variant?: string
     }>(),
+    credential_id: text().$type<Credential.ID>(),
     ...Timestamps,
     time_compacting: integer(),
     time_archived: integer(),

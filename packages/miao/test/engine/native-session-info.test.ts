@@ -50,21 +50,37 @@ test("unknown metadata degrades honestly instead of fabricating", () => {
 
 test("fork lineage comes from the engine snapshot rather than a fabricated catalog parent", () => {
   const input = { sessionID: SessionID.make("ses_child"), projectID, location }
-  expect(nativeSessionInfo({ ...input, snapshot: { parent_session_id: "ses_parent" } }).parentID).toBe(SessionID.make("ses_parent"))
+  expect(nativeSessionInfo({ ...input, snapshot: { parent_session_id: "ses_parent" } }).parentID).toBe(
+    SessionID.make("ses_parent"),
+  )
   expect(nativeSessionInfo({ ...input, snapshot: { parent_session_id: null } }).parentID).toBeUndefined()
   expect(() => nativeSessionInfo({ ...input, snapshot: { parent_session_id: "invalid" } })).toThrow()
 })
 
 test("a usage-less engine report projects to no usage block", () => {
   expect(nativeSessionUsage({ report: {}, models: [], snapshot: {} })).toBeUndefined()
-  expect(nativeSessionUsage({ report: { turns: 0, tools: { calls: 0, failures: 0 }, turnsDetail: [] }, models: [], snapshot: {} })).toBeUndefined()
+  expect(
+    nativeSessionUsage({
+      report: { turns: 0, tools: { calls: 0, failures: 0 }, turnsDetail: [] },
+      models: [],
+      snapshot: {},
+    }),
+  ).toBeUndefined()
 })
 
 test("billed turns price through the catalog at each turn's own tier", () => {
   const base = { input: 1, output: 2, cache: { read: 0.1, write: 0.2 } }
   const model = {
     ...ModelV2.Info.empty(ProviderV2.ID.make("openai"), ModelV2.ID.make("gpt-x")),
-    cost: [{ ...base, tier: { type: "context" as const, size: 200_000 }, input: 3, output: 4, cache: { read: 0.3, write: 0.4 } }],
+    cost: [
+      {
+        ...base,
+        tier: { type: "context" as const, size: 200_000 },
+        input: 3,
+        output: 4,
+        cache: { read: 0.3, write: 0.4 },
+      },
+    ],
   }
   const usage = nativeSessionUsage({
     report: {
@@ -78,7 +94,12 @@ test("billed turns price through the catalog at each turn's own tier", () => {
           runID: "r1",
           step: 0,
           turnMs: 1_700_000_001_000,
-          usage: { inputTokens: 300_000, outputTokens: 10, nonCachedInputTokens: 50_000, cacheReadInputTokens: 150_000 },
+          usage: {
+            inputTokens: 300_000,
+            outputTokens: 10,
+            nonCachedInputTokens: 50_000,
+            cacheReadInputTokens: 150_000,
+          },
         },
       ],
     },
@@ -137,4 +158,113 @@ test("projected usage fills the session record's cost and token totals", () => {
   expect(info.usage).toBe(usage)
   expect(info.tokens).toEqual({ input: 100, output: 5, reasoning: 0, cache: { read: 0, write: 0 } })
   expect(info.cost).toBe(0)
+})
+
+test("native accounting prices rejected auxiliary usage and keeps unknown attempts out of measured-zero rows", () => {
+  const model = (id: string, input: number, output: number, read: number, write: number) => ({
+    ...ModelV2.Info.empty(ProviderV2.ID.make("provider"), ModelV2.ID.make(id)),
+    cost: [{ input, output, cache: { read, write } }],
+  })
+  const usage = nativeSessionUsage({
+    report: {
+      turns: 1,
+      tools: { calls: 0, failures: 0 },
+      providerUsage: {
+        observations: 3,
+        missingUsageObservations: 1,
+        coverage: { input: 2, output: 2, cacheRead: 2, cacheWrite: 1, nonCached: 2, reasoning: 0 },
+      },
+      auxiliary: { usage: { observations: 2 } },
+      providerDetail: [
+        {
+          kind: "primary",
+          model: "provider/main",
+          observedUsage: { inputTokens: 100, outputTokens: 10, nonCachedInputTokens: 20, cacheReadInputTokens: 80 },
+        },
+        {
+          kind: "auxiliary",
+          role: "summarize",
+          accepted: false,
+          providerSuccess: true,
+          model: "provider/cheap",
+          usage: {
+            inputTokens: 50,
+            outputTokens: 5,
+            nonCachedInputTokens: 15,
+            cacheReadInputTokens: 30,
+            cacheWriteInputTokens: 5,
+          },
+        },
+        {
+          kind: "auxiliary",
+          role: "summarize",
+          accepted: false,
+          providerSuccess: false,
+          model: "provider/cheap",
+          usage: {},
+        },
+      ],
+    },
+    models: [model("main", 1, 2, 0.1, 0.2), model("cheap", 0.5, 1, 0.05, 0.1)],
+    snapshot: { updated_at_ms: 1700000000000 },
+  })
+  if (!usage) throw new Error("expected observed usage")
+  expect(usage.turns).toBe(1)
+  const cheap = usage.models.find((entry) => entry.id === "cheap")
+  if (!cheap) throw new Error("expected auxiliary model")
+  expect(cheap.turns).toBe(1)
+  expect(cheap.tokens.input).toBe(50)
+  expect(cheap.cost).toBeCloseTo(14.5 / 1_000_000, 10)
+  expect(usage.models.reduce((sum, entry) => sum + entry.cost, 0)).toBeCloseTo(62.5 / 1_000_000, 10)
+  expect(usage.coverage).toMatchObject({
+    observations: 3,
+    auxiliaryObservations: 2,
+    missingUsageObservations: 1,
+    unknownPriceObservations: 0,
+  })
+})
+
+test("observed-usage coverage takes precedence over legacy zero-filled compatibility values", () => {
+  const usage = nativeSessionUsage({
+    report: {
+      turns: 1,
+      providerUsage: { observations: 1, missingUsageObservations: 1, coverage: {} },
+      providerDetail: [{ model: "unknown/model", observedUsage: {}, usage: { inputTokens: 0, outputTokens: 0 } }],
+    },
+    models: [],
+    snapshot: {},
+  })
+  if (!usage) throw new Error("expected incomplete observation")
+  expect(usage.models).toEqual([])
+  expect(usage.coverage).toMatchObject({
+    observations: 1,
+    missingUsageObservations: 1,
+    unknownPriceObservations: 1,
+    axes: { input: 0, output: 0 },
+  })
+})
+
+test("observed token totals survive an unknown auxiliary model identity", () => {
+  const usage = nativeSessionUsage({
+    report: {
+      turns: 0,
+      providerUsage: {
+        observations: 1,
+        missingUsageObservations: 0,
+        tokens: { input: 50, output: 5, cacheRead: 20 },
+        coverage: { input: 1, output: 1, cacheRead: 1 },
+      },
+      auxiliary: { usage: { observations: 1 } },
+      providerDetail: [
+        { kind: "auxiliary", model: null, usage: { inputTokens: 50, outputTokens: 5, cacheReadInputTokens: 20 } },
+      ],
+    },
+    models: [],
+    snapshot: {},
+  })
+  if (!usage) throw new Error("expected unattributed usage")
+  const info = nativeSessionInfo({ sessionID, projectID, location, snapshot: { session_id: "ses_native" }, usage })
+  expect(info.tokens).toEqual({ input: 50, output: 5, reasoning: 0, cache: { read: 20, write: 0 } })
+  expect(usage.models).toEqual([])
+  expect(usage.coverage?.unknownPriceObservations).toBe(1)
 })

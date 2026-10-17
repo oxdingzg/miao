@@ -91,6 +91,102 @@
     ],
     "type": "object"
   },
+  "knowledge": {
+    "additionalProperties": false,
+    "properties": {
+      "body": {
+        "maxLength": 8192,
+        "type": "string"
+      },
+      "derivation": {
+        "maxLength": 2048,
+        "type": "string"
+      },
+      "expected_revision": {
+        "minimum": 0,
+        "type": "integer"
+      },
+      "expected_store_sha256": {
+        "pattern": "^[a-fA-F0-9]{64}$",
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "id": {
+        "maxLength": 128,
+        "type": "string"
+      },
+      "include_stale": {
+        "type": "boolean"
+      },
+      "kind": {
+        "enum": [
+          "repo_fact",
+          "preference",
+          "constraint",
+          "file_index"
+        ],
+        "type": "string"
+      },
+      "limit": {
+        "maximum": 20,
+        "minimum": 1,
+        "type": "integer"
+      },
+      "op": {
+        "enum": [
+          "list",
+          "get",
+          "put",
+          "index_file",
+          "delete"
+        ],
+        "type": "string"
+      },
+      "path": {
+        "type": "string"
+      },
+      "query": {
+        "maxLength": 256,
+        "type": "string"
+      },
+      "sources": {
+        "items": {
+          "additionalProperties": false,
+          "properties": {
+            "path": {
+              "type": "string"
+            },
+            "sha256": {
+              "pattern": "^[a-fA-F0-9]{64}$",
+              "type": "string"
+            }
+          },
+          "required": [
+            "path",
+            "sha256"
+          ],
+          "type": "object"
+        },
+        "maxItems": 8,
+        "type": "array"
+      },
+      "title": {
+        "maxLength": 160,
+        "type": "string"
+      },
+      "ttl_seconds": {
+        "maximum": 2592000,
+        "minimum": 1,
+        "type": "integer"
+      }
+    },
+    "required": [
+      "op"
+    ],
+    "type": "object"
+  },
   "list_files": {
     "additionalProperties": false,
     "properties": {

@@ -83,6 +83,117 @@ export function normalizeCustomProviderID(value: string) {
   return providerID
 }
 
+/**
+ * Runs the auth flow for one provider: method selection, then the OAuth or key
+ * step. `label` names the account the credential becomes, so connecting a
+ * second account of the same provider can keep both; `onConnected` lets a
+ * caller (the accounts dialog) return to its own screen instead of the model
+ * list.
+ */
+export async function connectProvider(props: {
+  providerID: string
+  label?: string
+  dialog: ReturnType<typeof useDialog>
+  sdk: ReturnType<typeof useSDK>
+  sync: ReturnType<typeof useSync>
+  toast: ReturnType<typeof useToast>
+  onConnected?: () => void
+}) {
+  const done = () => {
+    if (props.onConnected) return props.onConnected()
+    props.dialog.replace(() => <DialogModel providerID={props.providerID} />)
+  }
+  const methods = props.sync.data.provider_auth[props.providerID] ?? [
+    {
+      type: "api" as const,
+      label: "API key",
+    },
+  ]
+  let index: number | null = 0
+  if (methods.length > 1) {
+    index = await new Promise<number | null>((resolve) => {
+      props.dialog.replace(
+        () => (
+          <DialogSelect
+            title="Select auth method"
+            options={methods.map((method, index) => ({
+              title: method.label,
+              value: index,
+            }))}
+            onSelect={(option) => resolve(option.value)}
+          />
+        ),
+        () => resolve(null),
+      )
+    })
+  }
+  if (index == null) return
+  const method = methods[index]
+  if (method.type === "oauth") {
+    let inputs: Record<string, string> | undefined
+    if (method.prompts?.length) {
+      const value = await PromptsMethod({
+        dialog: props.dialog,
+        prompts: method.prompts,
+      })
+      if (!value) return
+      inputs = value
+    }
+
+    if (!method.id) return
+    const result = await props.sdk.api.integrations
+      .connectOauth({
+        integrationID: props.providerID,
+        location: { directory: props.sdk.directory },
+        methodID: method.id,
+        inputs: inputs ?? {},
+        ...(props.label ? { label: props.label } : {}),
+      })
+      .catch((error: unknown) => {
+        props.toast.error(error)
+        props.dialog.clear()
+      })
+    if (!result) return
+    const attempt = result.data
+    if (!attempt) {
+      props.toast.show({
+        variant: "error",
+        message: "OAuth authorization failed. Try /connect again.",
+      })
+      props.dialog.clear()
+      return
+    }
+    if (attempt.mode === "code") {
+      props.dialog.replace(() => (
+        <CodeMethod providerID={props.providerID} title={method.label} attempt={attempt} onConnected={done} />
+      ))
+    }
+    if (attempt.mode === "auto") {
+      props.dialog.replace(() => (
+        <AutoMethod providerID={props.providerID} title={method.label} attempt={attempt} onConnected={done} />
+      ))
+    }
+    return
+  }
+  if (method.type === "api") {
+    let metadata: Record<string, string> | undefined
+    if (method.prompts?.length) {
+      const value = await PromptsMethod({ dialog: props.dialog, prompts: method.prompts })
+      if (!value) return
+      metadata = value
+    }
+    props.dialog.replace(() => (
+      <ApiMethod
+        providerID={props.providerID}
+        title={method.label}
+        metadata={metadata}
+        label={props.label}
+        onConnected={done}
+      />
+    ))
+  }
+}
+
 export function createDialogProviderOptions() {
   const sync = useSync()
   const dialog = useDialog()
@@ -139,83 +250,7 @@ export function createDialogProviderOptions() {
           category: provider.category,
           gutter: connected && onboarded() ? () => <text fg={theme.success}>✓</text> : undefined,
           async onSelect() {
-            const methods = sync.data.provider_auth[providerID] ?? [
-              {
-                type: "api",
-                label: "API key",
-              },
-            ]
-            let index: number | null = 0
-            if (methods.length > 1) {
-              index = await new Promise<number | null>((resolve) => {
-                dialog.replace(
-                  () => (
-                    <DialogSelect
-                      title="Select auth method"
-                      options={methods.map((x, index) => ({
-                        title: x.label,
-                        value: index,
-                      }))}
-                      onSelect={(option) => resolve(option.value)}
-                    />
-                  ),
-                  () => resolve(null),
-                )
-              })
-            }
-            if (index == null) return
-            const method = methods[index]
-            if (method.type === "oauth") {
-              let inputs: Record<string, string> | undefined
-              if (method.prompts?.length) {
-                const value = await PromptsMethod({
-                  dialog,
-                  prompts: method.prompts,
-                })
-                if (!value) return
-                inputs = value
-              }
-
-              if (!method.id) return
-              const result = await sdk.api.integrations
-                .connectOauth({
-                  integrationID: providerID,
-                  location: { directory: sdk.directory },
-                  methodID: method.id,
-                  inputs: inputs ?? {},
-                })
-                .catch((error: unknown) => {
-                  toast.error(error)
-                  dialog.clear()
-                })
-              if (!result) return
-              const attempt = result.data
-              if (!attempt) {
-                toast.show({
-                  variant: "error",
-                  message: "OAuth authorization failed. Try /connect again.",
-                })
-                dialog.clear()
-                return
-              }
-              if (attempt.mode === "code") {
-                dialog.replace(() => <CodeMethod providerID={providerID} title={method.label} attempt={attempt} />)
-              }
-              if (attempt.mode === "auto") {
-                dialog.replace(() => <AutoMethod providerID={providerID} title={method.label} attempt={attempt} />)
-              }
-            }
-            if (method.type === "api") {
-              let metadata: Record<string, string> | undefined
-              if (method.prompts?.length) {
-                const value = await PromptsMethod({ dialog, prompts: method.prompts })
-                if (!value) return
-                metadata = value
-              }
-              return dialog.replace(() => (
-                <ApiMethod providerID={providerID} title={method.label} metadata={metadata} />
-              ))
-            }
+            return connectProvider({ providerID, dialog, sdk, sync, toast })
           },
         }
       }),
@@ -238,6 +273,7 @@ interface OAuthMethodProps {
   providerID: string
   title: string
   attempt: IntegrationAttempt
+  onConnected?: () => void
 }
 function AutoMethod(props: OAuthMethodProps) {
   const { theme } = useTheme()
@@ -297,6 +333,10 @@ function AutoMethod(props: OAuthMethodProps) {
       }
       if (status.status === "complete") {
         await sync.bootstrap()
+        if (props.onConnected) {
+          props.onConnected()
+          return
+        }
         dialog.replace(() => <DialogModel providerID={props.providerID} />)
         return
       }
@@ -356,6 +396,10 @@ function CodeMethod(props: OAuthMethodProps) {
           .catch(() => false)
         if (ok) {
           await sync.bootstrap()
+          if (props.onConnected) {
+            props.onConnected()
+            return
+          }
           dialog.replace(() => <DialogModel providerID={props.providerID} />)
           return
         }
@@ -378,7 +422,9 @@ interface ApiMethodProps {
   providerID: string
   title: string
   metadata?: Record<string, string>
+  label?: string
   custom?: boolean
+  onConnected?: () => void
 }
 function ApiMethod(props: ApiMethodProps) {
   const dialog = useDialog()
@@ -413,6 +459,7 @@ function ApiMethod(props: ApiMethodProps) {
             integrationID: props.providerID,
             location: { directory: sdk.directory },
             key: value,
+            ...(props.label ? { label: props.label } : {}),
           },
           {},
         )
@@ -424,6 +471,10 @@ function ApiMethod(props: ApiMethodProps) {
             message: `Saved credential for ${props.providerID}. Configure it in miao.json to use it.`,
           })
           dialog.clear()
+          return
+        }
+        if (props.onConnected) {
+          props.onConnected()
           return
         }
         dialog.replace(() => <DialogModel providerID={props.providerID} />)

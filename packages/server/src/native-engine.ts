@@ -9,9 +9,38 @@ import type { SessionID } from "@miao/schema/session-id"
 import type { SessionInput } from "@miao/schema/session-input"
 import type { SessionMessage } from "@miao/schema/session-message"
 import type { SessionInfo } from "@miao/schema/session-info"
+import type { Model } from "@miao/schema/model"
+import type { SessionModelRoute } from "@miao/schema/session-model-route"
+import type { SessionRecovery } from "@miao/schema/session-recovery"
 import type { AbsolutePath } from "@miao/core/schema"
 
 export interface Interface {
+  readonly modelRoutes: (input: {
+    sessionID: SessionID
+    storage: AbsolutePath
+    location: Location.Ref
+  }) => Effect.Effect<readonly SessionModelRoute.Info[], ConflictError>
+  readonly selectModel: (input: {
+    sessionID: SessionID
+    storage: AbsolutePath
+    location: Location.Ref
+    model: Model.Ref
+  }) => Effect.Effect<void, ConflictError>
+  readonly recoveries: (input: {
+    sessionID: SessionID
+    storage: AbsolutePath
+    location: Location.Ref
+    after?: string
+  }) => Effect.Effect<SessionRecovery.Page, ConflictError>
+  readonly resolveRecovery: (input: {
+    sessionID: SessionID
+    storage: AbsolutePath
+    location: Location.Ref
+    callID: string
+    operationID: string
+    decision: SessionRecovery.Decision
+    resume?: boolean
+  }) => Effect.Effect<SessionRecovery.Resolution, ConflictError>
   /** Create idle engine identity before publishing its durable placement. */
   readonly initialize: (input: {
     sessionID: SessionID

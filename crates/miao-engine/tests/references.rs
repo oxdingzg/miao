@@ -27,6 +27,39 @@ fn policy() -> Policy {
 }
 
 #[tokio::test]
+async fn file_reference_grants_only_the_named_file_and_never_its_parent_siblings() {
+    let workspace = tempfile::tempdir().unwrap();
+    let external = tempfile::tempdir().unwrap();
+    let granted = external.path().join("AGENTS.md");
+    let sibling = external.path().join("private.txt");
+    std::fs::write(&granted, "explicit instructions").unwrap();
+    std::fs::write(&sibling, "not granted").unwrap();
+    let tools = Tools::new(workspace.path())
+        .await
+        .unwrap()
+        .with_references(vec![Reference {
+            path: granted.to_string_lossy().into_owned(),
+            description: "One file".into(),
+        }])
+        .unwrap();
+    let read = tools
+        .execute(
+            "read_file",
+            json!({"path":granted}),
+            CancellationToken::new(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(read["text"], "explicit instructions");
+    for target in [sibling.as_path(), external.path()] {
+        assert!(matches!(
+            tools.prepare("read_file", json!({"path":target})).await,
+            Err(ToolError::OutsideWorkspace)
+        ));
+    }
+}
+
+#[tokio::test]
 async fn references_are_listed_and_readable_but_not_writable() {
     let workspace = tempfile::tempdir().unwrap();
     let external = tempfile::tempdir().unwrap();
