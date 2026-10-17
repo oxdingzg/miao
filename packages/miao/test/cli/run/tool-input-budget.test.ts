@@ -24,17 +24,22 @@ describe("tool argument budgets", () => {
   )
 
   cliIt.serial(
-    "stops a stalled argument stream without waiting for its terminal frame",
-    ({ llm, opencode }) =>
+    "replays a stalled argument stream instead of ending the turn",
+    ({ home, llm, opencode }) =>
       Effect.gen(function* () {
-        yield* llm.push(reply().pendingTool("bash", { command: "echo never" }).hang())
-        const result = yield* opencode.run("Bound generation time", {
+        yield* llm.push(reply().pendingTool("bash", { command: "printf stalled > never" }).hang())
+        yield* llm.push(reply().tool("bash", { command: "printf recovered > marker" }))
+        yield* llm.text("RECOVERED")
+        const result = yield* opencode.run("Recover from a stalled argument stream", {
           extraArgs: ["--dangerously-skip-permissions", "--title", "Input deadline"],
           env: { MIAO_TOOL_INPUT_TIMEOUT_MS: "50" },
         })
-        expect(result.exitCode).not.toBe(0)
-        expect(result.stderr).toContain("idle limit 50ms")
-        expect(yield* llm.calls).toBe(1)
+        opencode.expectExit(result, 0)
+        expect(result.stdout).toContain("RECOVERED")
+        expect(yield* llm.calls).toBe(3)
+        // The stalled call never ran, and the replayed attempt's call did.
+        expect(yield* Effect.promise(() => Bun.file(path.join(home, "never")).exists())).toBe(false)
+        expect(yield* Effect.promise(() => Bun.file(path.join(home, "marker")).text())).toBe("recovered")
       }),
     60_000,
   )

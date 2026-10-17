@@ -60,6 +60,12 @@ export const retryable = (error: { readonly _tag: string }): boolean => {
   // credential is fine but not allowed (OpenCode's free tier answers miao this
   // way), and retrying it only burned the whole provider budget before failing.
   if (reason._tag === "Authentication") return reason.kind !== "insufficient-permissions"
+  // A tool-argument stream that stopped making progress is a stalled transport,
+  // not a defective request: the provider went quiet while a call was still
+  // open. Replaying rebuilds the same request, and the runner replays only while
+  // nothing durable has been produced. The byte budget stays terminal: the same
+  // oversized input fails identically.
+  if (reason._tag === "InvalidProviderOutput") return reason.toolInput?.budget === "idle"
   return reason.retryable === true
 }
 
