@@ -30,6 +30,25 @@ fn bundle(system: &str) -> ContextBundle {
 }
 
 #[tokio::test]
+async fn product_instruction_aggregate_can_disable_standalone_workspace_discovery() {
+    let dir = tempfile::tempdir().unwrap();
+    std::fs::write(dir.path().join("AGENTS.md"), "MUST_NOT_BE_REINTRODUCED").unwrap();
+    let tools = Tools::new(dir.path())
+        .await
+        .unwrap()
+        .with_workspace_instructions(false);
+    let policy = Policy::new(Config::default()).unwrap();
+    let context = assemble(&tools, &policy, CancellationToken::new())
+        .await
+        .unwrap();
+    assert!(!context.system.contains("MUST_NOT_BE_REINTRODUCED"));
+    assert!(!context
+        .sources
+        .iter()
+        .any(|source| source["path"] == "AGENTS.md"));
+}
+
+#[tokio::test]
 async fn project_instructions_are_scoped_bounded_and_policy_checked() {
     let dir = tempfile::tempdir().unwrap();
     std::fs::write(dir.path().join("AGENTS.md"), "请保留用户改动。\n").unwrap();

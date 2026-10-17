@@ -16,6 +16,83 @@ use serde_json::{json, Map, Value};
 /// Audit-only raw provider payload; usage aggregation never sums into it.
 pub const PROVIDER_METADATA: &str = "providerMetadata";
 
+const AXES: [(&str, &str); 6] = [
+    ("inputTokens", "input"),
+    ("outputTokens", "output"),
+    ("cacheReadInputTokens", "cacheRead"),
+    ("cacheWriteInputTokens", "cacheWrite"),
+    ("nonCachedInputTokens", "nonCached"),
+    ("reasoningTokens", "reasoning"),
+];
+
+/// Normalized observed axes only. Missing axes stay absent and raw metadata is never billed twice.
+pub(crate) fn observed(usage: &Value) -> Value {
+    Value::Object(
+        AXES.iter()
+            .filter_map(|(field, _)| {
+                usage[*field]
+                    .as_u64()
+                    .map(|value| ((*field).to_owned(), json!(value)))
+            })
+            .collect(),
+    )
+}
+
+#[derive(Default)]
+pub(crate) struct Totals {
+    observations: u64,
+    known: u64,
+    tokens: [u64; 6],
+    coverage: [u64; 6],
+    invalid: u64,
+}
+impl Totals {
+    pub fn observe(&mut self, usage: &Value) {
+        self.observations += 1;
+        let mut known = false;
+        for (index, (field, _)) in AXES.iter().enumerate() {
+            if let Some(value) = usage[*field].as_u64() {
+                self.tokens[index] = self.tokens[index].saturating_add(value);
+                self.coverage[index] += 1;
+                known = true;
+            }
+        }
+        self.known += u64::from(known);
+        if usage["inputTokens"].as_u64().is_some_and(|input| {
+            usage["cacheReadInputTokens"]
+                .as_u64()
+                .unwrap_or(0)
+                .saturating_add(usage["cacheWriteInputTokens"].as_u64().unwrap_or(0))
+                > input
+        }) {
+            self.invalid += 1;
+        }
+    }
+    pub fn report(&self) -> Value {
+        let tokens: Map<String, Value> = AXES
+            .iter()
+            .enumerate()
+            .map(|(index, (_, key))| {
+                (
+                    (*key).into(),
+                    if self.coverage[index] > 0 {
+                        json!(self.tokens[index])
+                    } else {
+                        Value::Null
+                    },
+                )
+            })
+            .collect();
+        let coverage: Map<String, Value> = AXES
+            .iter()
+            .enumerate()
+            .map(|(index, (_, key))| ((*key).into(), json!(self.coverage[index])))
+            .collect();
+        json!({"observations":self.observations,"knownUsageObservations":self.known,"missingUsageObservations":self.observations-self.known,"tokens":tokens,"coverage":coverage,"invalidBreakdowns":self.invalid,
+            "hitRatio":if self.observations>0 && self.invalid==0 && self.coverage[0]==self.observations && self.coverage[2]==self.observations && self.tokens[0]>0 {Some(self.tokens[2] as f64/self.tokens[0] as f64)} else {None}})
+    }
+}
+
 /// Provider-reported token counts are integers; a JSON string is accepted
 /// because some gateways quote them.
 fn number(value: Option<&Value>) -> Option<u64> {

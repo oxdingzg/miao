@@ -49,6 +49,8 @@ to stderr when absent. Non-loopback addresses are rejected, and TLS is left to a
 
 ### Optional Responses cache controls
 
+Verified deployments can independently opt into [Session WebSocket reuse and strict suffix continuation](docs/responses-websocket.md).
+
 `--responses-cache-contract JSON` declares cache capabilities for an exact wire model, normalized
 endpoint URL (including its query), and authentication profile (`api` or `subscription`). Declare
 only capabilities verified for that deployment. No capability is inferred from a model name.
@@ -92,6 +94,29 @@ Local install (without touching the release-managed `miao` and `miao-preview`): 
 host, then `./script/install-engine.sh --binary /path/to/miao-engine`. It installs to
 `~/.local/bin/miao-engine` (versioned under `~/.local/share/miao-engine/bin`), keeps one previous
 version for one-step rollback, and smoke-tests `--version`.
+
+### Host-owned model routes
+
+`--model-routes-config /host/routes.json` registers up to 64 exact provider instances.
+The manifest must be outside the workspace and is protected from model tools.
+The product bridge forwards `EngineOptions.modelRoutesConfigFile` or
+`MIAO_ENGINE_MODEL_ROUTES_CONFIG`. Each entry binds its own credential source:
+
+```json
+[{"id":"account-two/shared","provider":"openai-chat","model":"shared","endpoint":"https://example.org/v1/chat/completions","credential":{"type":"environment","key":"OPENAI_API_KEY"}}]
+```
+
+Credential types are `environment` (`key`: variable name, optional subscription
+`account`: variable name), `database` (`path`, `id`, `integration`), `legacy`
+(`path`, `integration`), or `daemon` (`path`, `id`, `integration`). File sources
+must be outside the workspace. The product child environment remains allowlisted;
+pass custom credential variables through `EngineOptions.env` explicitly.
+
+Controller `model_catalog` returns only `route_id`, `protocol`, and `model`.
+Use these exact fields as `select_model.params.binding`; a null binding restores
+the default. Unknown routes and mismatched identities fail before provider work.
+Opaque history remains bound to its original route even when endpoints use the
+same wire model name. Compact on the original route before switching.
 
 ## stdio protocol v0
 
@@ -493,6 +518,22 @@ do not trigger automatic replays.
 Dynamic catalog notifications, MCP OAuth, and TS plugin compatibility are not
 implemented today.
 
+## Host-authorized skill directories
+
+`--skills-config /absolute/path/skills.json` supplies an array of directories,
+e.g. `[{ "path": ".miao/skills" }, { "path": "/absolute/host/skills" }]`.
+Workspace-relative directories stay within the workspace; absolute directories
+require an explicit read-only directory grant in `--references-config`.
+An exact-file reference does not authorize enumeration of its parent directory.
+
+Directory enumeration follows `glob` policy, and every candidate skill file is
+resolved and checked against `read_file` policy before its frontmatter is read.
+Ask/deny decisions hide that metadata from the model. Discovery skips symlinks,
+is depth/count bounded, and lists only names/descriptions/paths in Context.
+Skill bodies are read on demand through ordinary authorized tools. External
+skill paths remain absolute so a later read uses the same reference boundary.
+
+
 ## Native web tools
 
 Enable native HTTP reads/search through the ordinary policy boundary:
@@ -821,8 +862,9 @@ Environment values override embedded settings. Use absolute manifest paths when
 one product process serves multiple Locations.
 
 The manifests use the native formats documented above. Instruction and reference
-manifests can name explicitly authorized external files; skill directories remain
-workspace-relative. Manifests must stay outside model-writable workspaces. An
+manifests can name explicitly authorized external files. Relative skill directories
+stay workspace-contained; absolute skill directories need explicit read-only
+directory references and directory/file policy authorization. Manifests must stay outside model-writable workspaces. An
 external instruction file needs its own read-only reference grant; granting one
 file never grants its parent directory or siblings. Normal Context permission
 rules still apply. These inputs select host-owned sources, not literal prompt
@@ -851,5 +893,18 @@ verifies that the same request does not write a file.
 
 ## Completion verification receipts
 
+Provider reporting also exposes [auxiliary usage and coverage](docs/auxiliary-usage.md) for complete
+and partial primary observations, role attempts and child outcome evidence.
+
 Configured completion commands produce [version-bound verification receipts](docs/verification-receipts.md)
 with actual exit/output, task revisions and bounded source coverage.
+
+### Provider-turn budget
+
+The host policy accepts `max_provider_turns` (1–10000, default 25). For a
+long multi-step task, set e.g. `"max_provider_turns": 100` in the policy JSON.
+This budget applies to provider turns per admitted user input, including tool
+round trips and transport continuations. External user admissions reset it;
+synthetic autonomous-continuation inputs do not. Exhaustion remains an explicit
+failed run and never silently replays tool calls. The policy revision records
+the configured budget.

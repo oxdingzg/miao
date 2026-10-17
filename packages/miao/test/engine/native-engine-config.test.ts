@@ -103,6 +103,45 @@ test("compact tool disclosure reaches child arguments and validates environment 
   }
 })
 
+test("WebSocket capability is explicit and reaches the native child without accepting raw controls", async () => {
+  const dir = mkdtempSync(path.join(tmpdir(), "native-ws-contract-"))
+  const contract = { model: "wire", endpoint: "https://api.example/responses", authentication: "api", mode: "delta" }
+  try {
+    writeFileSync(path.join(dir, "miao.json"), JSON.stringify({ engine: { responses_websocket_contract: contract } }))
+    const settings = await engineSettings(dir)
+    const options = nativeEngineOptions({ MIAO_ENGINE_BIN: "engine" }, settings)
+    if (!options) throw new Error("expected engine options")
+    const args = engineArgs({ ...options, db: "store.db", workspace: "workspace" })
+    expect(JSON.parse(args[args.indexOf("--responses-websocket-contract") + 1] ?? "null")).toEqual(contract)
+    expect(nativeEngineOptions({ MIAO_ENGINE_BIN: "engine" })?.responsesWebSocketContract).toBeUndefined()
+    expect(
+      nativeEngineOptions(
+        {
+          MIAO_ENGINE_BIN: "engine",
+          MIAO_ENGINE_RESPONSES_WEBSOCKET_CONTRACT: JSON.stringify({ ...contract, mode: "full" }),
+        },
+        settings,
+      )?.responsesWebSocketContract?.mode,
+    ).toBe("full")
+    for (const patch of [{ mode: "unknown" }, { previous_response_id: "raw" }, { prewarm: true }])
+      expect(() =>
+        nativeEngineOptions({
+          MIAO_ENGINE_BIN: "engine",
+          MIAO_ENGINE_RESPONSES_WEBSOCKET_CONTRACT: JSON.stringify({ ...contract, ...patch }),
+        }),
+      ).toThrow()
+    for (const patch of [{ previous_response_id: "raw" }, { prewarm: true }]) {
+      writeFileSync(
+        path.join(dir, "miao.json"),
+        JSON.stringify({ engine: { responses_websocket_contract: { ...contract, ...patch } } }),
+      )
+      expect((await engineSettings(dir))?.responsesWebSocketContract).toBeUndefined()
+    }
+  } finally {
+    rmSync(dir, { recursive: true, force: true })
+  }
+})
+
 for (const capability of ["mcp", "lsp"] as const) {
   test(`native ${capability} host config resolves globally and reaches the child arguments`, async () => {
     const dir = mkdtempSync(path.join(tmpdir(), `native-${capability}-config-`))

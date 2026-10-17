@@ -17,6 +17,7 @@ import { SessionEnginePlacementTable } from "@miao/core/session/engine-placement
 import { ProviderV2 } from "@miao/core/provider"
 import { AbsolutePath } from "@miao/core/schema"
 import { SessionV2 } from "@miao/core/session"
+import { SessionCacheProbe } from "@miao/core/session/cache-probe"
 import { SessionV1 } from "@miao/core/v1/session"
 import { SessionBackfill } from "@miao/core/session/backfill"
 import { LegacyNotMigratedError } from "@miao/core/session/error"
@@ -556,9 +557,13 @@ describe("SessionV2.create", () => {
             location: Location.Ref.make({ directory: AbsolutePath.make(tmp.path) }),
           })
           yield* session.shell({ sessionID: created.id, command: "echo fork-me", resume: false })
+          const normalized = { model: "fixture", tools: [], system: [], messages: [] }
+          SessionCacheProbe.current.complete(created.id, normalized, 2048)
 
           const forked = yield* session.fork({ sessionID: created.id })
           expect(forked.parentID).toBe(created.id)
+          expect(SessionCacheProbe.current.consume(forked.id, normalized)).toMatchObject({ state: "prefix-match", parentInputTokens: 2048 })
+          SessionCacheProbe.current.invalidate(created.id)
 
           const parentShell = (yield* session.context(created.id)).find((message) => message.type === "shell")
           const childShell = (yield* session.context(forked.id)).find((message) => message.type === "shell")

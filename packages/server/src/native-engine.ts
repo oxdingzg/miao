@@ -9,10 +9,23 @@ import type { SessionID } from "@miao/schema/session-id"
 import type { SessionInput } from "@miao/schema/session-input"
 import type { SessionMessage } from "@miao/schema/session-message"
 import type { SessionInfo } from "@miao/schema/session-info"
+import type { Model } from "@miao/schema/model"
+import type { SessionModelRoute } from "@miao/schema/session-model-route"
 import type { SessionRecovery } from "@miao/schema/session-recovery"
 import type { AbsolutePath } from "@miao/core/schema"
 
 export interface Interface {
+  readonly modelRoutes: (input: {
+    sessionID: SessionID
+    storage: AbsolutePath
+    location: Location.Ref
+  }) => Effect.Effect<readonly SessionModelRoute.Info[], ConflictError>
+  readonly selectModel: (input: {
+    sessionID: SessionID
+    storage: AbsolutePath
+    location: Location.Ref
+    model: Model.Ref
+  }) => Effect.Effect<void, ConflictError>
   readonly recoveries: (input: {
     sessionID: SessionID
     storage: AbsolutePath
