@@ -2620,7 +2620,8 @@ async fn execute_read_batch(
         // when its own declaration says it only reads a named resource, not
         // because of its name. Anything that declares a write — or anything
         // undeclared — conflicts with the batch and stays serial.
-        if tool.access() != crate::permission::Access::Read
+        if !tool.batchable_read()
+            || tool.access() != crate::permission::Access::Read
             || tool.resource().is_empty()
             || inner
                 .policy
@@ -2630,6 +2631,9 @@ async fn execute_read_batch(
             break;
         }
         prepared.push((id.to_owned(), tool));
+        if prepared.len() == 16 {
+            break;
+        }
     }
     if !(2..=16).contains(&prepared.len()) || cancel.is_cancelled() {
         return Ok(HashMap::new());
