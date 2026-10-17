@@ -17,6 +17,11 @@ const bedrockModel = AmazonBedrock.configure({
   credentials: { region: "us-east-1", accessKeyId: "fixture", secretAccessKey: "fixture" },
 }).model("anthropic.claude-3-5-sonnet-20241022-v2:0")
 
+// Same wire format as Messages behind a differently named route.
+const vertexModel = AnthropicMessages.vertexRoute
+  .with({ endpoint: { baseURL: "https://vertex.test/v1/" } })
+  .model({ id: "claude-sonnet-4-5" })
+
 const openaiModel = OpenAIChat.route
   .with({ endpoint: { baseURL: "https://api.openai.test/v1/" }, auth: Auth.bearer("test") })
   .model({ id: "gpt-4o-mini" })
@@ -75,6 +80,26 @@ describe("applyCachePolicy", () => {
             content: [{ type: "text", text: "latest user message", cache_control: { type: "ephemeral" } }],
           },
         ],
+      })
+    }),
+  )
+
+  it.effect("'auto' follows the protocol, not the route name (Claude on Vertex)", () =>
+    Effect.gen(function* () {
+      const prepared = yield* LLMClient.prepare(
+        LLM.request({
+          model: vertexModel,
+          system: "Sys",
+          tools: [{ name: "t1", description: "t1", inputSchema: { type: "object", properties: {} } }],
+          prompt: "hi",
+          cache: "auto",
+        }),
+      )
+
+      expect(prepared.body).toMatchObject({
+        tools: [{ name: "t1", cache_control: { type: "ephemeral" } }],
+        system: [{ type: "text", text: "Sys", cache_control: { type: "ephemeral" } }],
+        messages: [{ role: "user", content: [{ type: "text", text: "hi", cache_control: { type: "ephemeral" } }] }],
       })
     }),
   )
