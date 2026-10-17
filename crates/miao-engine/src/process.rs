@@ -422,6 +422,8 @@ impl Drop for Group {
     }
 }
 
+pub(crate) type Progress = tokio::sync::mpsc::Sender<Value>;
+
 /// Foreground process ownership. No detached/background process API is implied.
 /// A cancelled task still kills/reaps its group and joins pipe readers.
 pub(crate) async fn execute(
@@ -431,6 +433,20 @@ pub(crate) async fn execute(
     input: Input,
     allow_network: bool,
     cancel: CancellationToken,
+) -> Result<Value, ToolError> {
+    execute_with_progress(runner, workspace, cwd, input, allow_network, cancel, None).await
+}
+
+/// `progress` receives best-effort decoded output chunks while the command
+/// runs. A full or dropped channel never affects execution or the result.
+pub(crate) async fn execute_with_progress(
+    runner: &Path,
+    workspace: &Path,
+    cwd: &Path,
+    input: Input,
+    allow_network: bool,
+    cancel: CancellationToken,
+    progress: Option<tokio::sync::mpsc::Sender<Value>>,
 ) -> Result<Value, ToolError> {
     if !enforced() {
         return Err(ToolError::Unsupported);
@@ -480,6 +496,14 @@ pub(crate) async fn execute(
                 if let Some(part)=part {
                     let (is_stdout,bytes)=part.map_err(|_|ToolError::Io(std::io::Error::other("pipe reader failed")))??;
                     let oversized=bytes.len()>32768;
+                    if let Some(progress)=progress.as_ref() {
+                        if !bytes.is_empty() {
+                            let _=progress.try_send(json!({
+                                "stream":if is_stdout{"stdout"}else{"stderr"},
+                                "text":String::from_utf8_lossy(&bytes[..bytes.len().min(2048)]),
+                            }));
+                        }
+                    }
                     if is_stdout{stdout=bytes;}else{stderr=bytes;}
                     if oversized{reason="output_limit";break;}
                 }
