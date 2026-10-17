@@ -21,6 +21,21 @@ pub(crate) fn context_epoch() -> Option<u64> {
     SCOPE.try_with(|scope| scope.context_epoch).ok()
 }
 
+pub(crate) fn permission_hash() -> Option<String> {
+    SCOPE
+        .try_with(|scope| fingerprint(&scope.permissions).ok())
+        .ok()
+        .flatten()
+}
+
+pub(crate) async fn cache_prefix_completed(proof: Option<crate::cache_affinity::Proof>) {
+    let (Ok(scope), Some(proof)) = (SCOPE.try_with(Clone::clone), proof) else {
+        return;
+    };
+    // Side-table write: the replay-pinned journal stays wall-clock-free.
+    scope.store.record_cache_prefix(&scope.session, proof).await;
+}
+
 pub(crate) async fn scoped<F: std::future::Future>(scope: Scope, future: F) -> F::Output {
     SCOPE.scope(scope, future).await
 }

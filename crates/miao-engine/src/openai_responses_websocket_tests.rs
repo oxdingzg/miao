@@ -180,6 +180,73 @@ async fn exact_acknowledged_suffixes_are_sent_only_while_history_and_parameters_
 }
 
 #[tokio::test]
+async fn fork_cache_affinity_never_reuses_the_parents_live_websocket() {
+    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let url = format!("http://{}/responses", listener.local_addr().unwrap());
+    let server = tokio::spawn(async move {
+        let (stream, _) = listener.accept().await.unwrap();
+        let mut parent = tokio_tungstenite::accept_async(stream).await.unwrap();
+        let first: Value =
+            serde_json::from_str(&parent.next().await.unwrap().unwrap().into_text().unwrap())
+                .unwrap();
+        parent
+            .send(tungstenite::Message::Text(
+                created("parent-response").to_string().into(),
+            ))
+            .await
+            .unwrap();
+        parent
+            .send(tungstenite::Message::Text(
+                completed("parent-response", "done").to_string().into(),
+            ))
+            .await
+            .unwrap();
+        // Keep the parent's connection alive: reuse would block waiting for a
+        // reply on it instead of opening the child's independent connection.
+        let (stream, _) =
+            tokio::time::timeout(std::time::Duration::from_secs(10), listener.accept())
+                .await
+                .unwrap()
+                .unwrap();
+        let mut child = tokio_tungstenite::accept_async(stream).await.unwrap();
+        let second: Value =
+            serde_json::from_str(&child.next().await.unwrap().unwrap().into_text().unwrap())
+                .unwrap();
+        assert_eq!(first["prompt_cache_key"], second["prompt_cache_key"]);
+        assert!(second.get("previous_response_id").is_none());
+        child
+            .send(tungstenite::Message::Text(
+                created("child-response").to_string().into(),
+            ))
+            .await
+            .unwrap();
+        child
+            .send(tungstenite::Message::Text(
+                completed("child-response", "child").to_string().into(),
+            ))
+            .await
+            .unwrap();
+        drop(parent);
+    });
+    let provider = adapter(&url, Mode::Delta);
+    for session in ["parent", "child"] {
+        let (tx, _rx) = mpsc::channel(64);
+        crate::cache_affinity::scoped_with(
+            "root".into(),
+            session.into(),
+            provider.stream(
+                request(&[message("user", "same prefix")], "rules", vec![]),
+                tx,
+                CancellationToken::new(),
+            ),
+        )
+        .await
+        .unwrap();
+    }
+    server.await.unwrap();
+}
+
+#[tokio::test]
 async fn sessions_and_credential_generations_do_not_share_a_chain_or_connection() {
     let (url, mut packets, task) = peer(2, 2).await;
     let provider = adapter(&url, Mode::Delta);
