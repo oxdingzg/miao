@@ -1818,6 +1818,117 @@ describe("SessionRunnerLLM", () => {
     }).pipe(Effect.ensuring(Effect.sync(() => { modelResolveFailure = undefined }))),
   )
 
+  it.effect("advertises the full catalog again after repeated tool_search misses", () =>
+    Effect.gen(function* () {
+      const previous = process.env.MIAO_EXPERIMENTAL_TOOL_DISCLOSURE
+      yield* Effect.addFinalizer(() =>
+        Effect.sync(() => {
+          if (previous === undefined) delete process.env.MIAO_EXPERIMENTAL_TOOL_DISCLOSURE
+          else process.env.MIAO_EXPERIMENTAL_TOOL_DISCLOSURE = previous
+        }),
+      )
+      process.env.MIAO_EXPERIMENTAL_TOOL_DISCLOSURE = "1"
+      yield* setup
+      const session = yield* SessionV2.Service
+      const applicationTools = yield* ApplicationTools.Service
+      yield* applicationTools.register({
+        huge_external: Tool.makeExternal({
+          description: `${"huge ".repeat(8_200)}(external)`,
+          inputSchema: { type: "object" },
+          execute: () => Effect.succeed([{ type: "text" as const, text: "huge ok" }]),
+        }),
+      })
+
+      const advertised: string[][] = []
+      let step = 0
+      responseFor = (request) => {
+        advertised.push(request.tools.map((tool) => tool.name))
+        step += 1
+        if (step > 2)
+          return Stream.fromIterable([
+            LLMEvent.stepStart({ index: 0 }),
+            LLMEvent.textStart({ id: "done" }),
+            LLMEvent.textDelta({ id: "done", text: "done" }),
+            LLMEvent.textEnd({ id: "done" }),
+            LLMEvent.stepFinish({ index: 0, reason: "stop" }),
+            LLMEvent.finish({ reason: "stop" }),
+          ])
+        return Stream.fromIterable([
+          LLMEvent.stepStart({ index: 0 }),
+          LLMEvent.toolCall({ id: `miss-${step}`, name: "tool_search", input: { query: `nothing-${step}` } }),
+          LLMEvent.stepFinish({ index: 0, reason: "tool-calls" }),
+          LLMEvent.finish({ reason: "tool-calls" }),
+        ])
+      }
+
+      yield* session.prompt({ sessionID, prompt: Prompt.make({ text: "find the missing tool" }), resume: false })
+      yield* session.resume(sessionID)
+
+      // Two misses are tolerated; the third request advertises every tool again.
+      expect(advertised[0]).toContain("tool_search")
+      expect(advertised[0]).not.toContain("huge_external")
+      expect(advertised[1]).toContain("tool_search")
+      expect(advertised[2]).toContain("huge_external")
+      expect(advertised[2]).not.toContain("tool_search")
+    }),
+  )
+
+  it.effect("a successful tool_search resets the miss streak", () =>
+    Effect.gen(function* () {
+      const previous = process.env.MIAO_EXPERIMENTAL_TOOL_DISCLOSURE
+      yield* Effect.addFinalizer(() =>
+        Effect.sync(() => {
+          if (previous === undefined) delete process.env.MIAO_EXPERIMENTAL_TOOL_DISCLOSURE
+          else process.env.MIAO_EXPERIMENTAL_TOOL_DISCLOSURE = previous
+        }),
+      )
+      process.env.MIAO_EXPERIMENTAL_TOOL_DISCLOSURE = "1"
+      yield* setup
+      const session = yield* SessionV2.Service
+      const applicationTools = yield* ApplicationTools.Service
+      yield* applicationTools.register({
+        huge_external: Tool.makeExternal({
+          description: `${"huge ".repeat(8_200)}(external)`,
+          inputSchema: { type: "object" },
+          execute: () => Effect.succeed([{ type: "text" as const, text: "huge ok" }]),
+        }),
+      })
+
+      const queries = ["nothing-1", "huge", "nothing-3", "nothing-4"]
+      const advertised: string[][] = []
+      let step = 0
+      responseFor = (request) => {
+        advertised.push(request.tools.map((tool) => tool.name))
+        step += 1
+        const query = queries[step - 1]
+        if (query === undefined)
+          return Stream.fromIterable([
+            LLMEvent.stepStart({ index: 0 }),
+            LLMEvent.textStart({ id: "done" }),
+            LLMEvent.textDelta({ id: "done", text: "done" }),
+            LLMEvent.textEnd({ id: "done" }),
+            LLMEvent.stepFinish({ index: 0, reason: "stop" }),
+            LLMEvent.finish({ reason: "stop" }),
+          ])
+        return Stream.fromIterable([
+          LLMEvent.stepStart({ index: 0 }),
+          LLMEvent.toolCall({ id: `search-${step}`, name: "tool_search", input: { query } }),
+          LLMEvent.stepFinish({ index: 0, reason: "tool-calls" }),
+          LLMEvent.finish({ reason: "tool-calls" }),
+        ])
+      }
+
+      yield* session.prompt({ sessionID, prompt: Prompt.make({ text: "find the missing tool" }), resume: false })
+      yield* session.resume(sessionID)
+
+      // miss, hit, miss, miss: the hit restarts the streak, so the catalog
+      // survives the third request and is only dropped for the fifth.
+      expect(advertised.slice(0, 4).every((names) => names.includes("tool_search"))).toBe(true)
+      expect(advertised[4]).toContain("huge_external")
+      expect(advertised[4]).not.toContain("tool_search")
+    }),
+  )
+
   it.effect("resumes a response that hit the output token limit", () =>
     Effect.gen(function* () {
       yield* setup

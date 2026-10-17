@@ -40,6 +40,7 @@ import { Global } from "../../global"
 import { SkillGuidance } from "../../skill/guidance"
 import { ReferenceGuidance } from "../../reference/guidance"
 import { ToolRegistry } from "../../tool/registry"
+import { ToolSearch } from "../../tool/tool-search"
 import { BashTool } from "../../tool/bash"
 import { LocationMutation } from "../../location-mutation"
 import { SessionCommandPrepare } from "../command-prepare"
@@ -182,6 +183,13 @@ const MAX_STREAM_CONTINUATIONS = 2
  */
 const MAX_OUTPUT_CONTINUATIONS = 2
 const MAX_TOOL_INPUT_CORRECTIONS = 2
+/**
+ * Empty `tool_search` results in a row before the deferred catalog is dropped
+ * and every tool is advertised again. One miss is a model guessing at a name;
+ * two in a row means it cannot find what it needs through search, and the search
+ * tool is then costing a step per attempt instead of saving schema bytes.
+ */
+const MAX_DISCLOSURE_MISSES = 2
 
 /**
  * How many compactions in one Session before the frequency is worth surfacing.
@@ -314,6 +322,11 @@ const layer = Layer.effect(
     const seenModelSwitches = new Map<string, number>()
     const streamContinuations = new Map<string, number>()
     const outputContinuations = new Map<string, number>()
+    // Consecutive empty `tool_search` results per Session, and the Sessions
+    // whose deferred catalog was dropped for the rest of the drain. Both are
+    // process-local and cleared with the other per-drain counters.
+    const disclosureMisses = new Map<string, number>()
+    const disclosureEscalated = new Set<string>()
     const toolInputCorrections = new Map<string, number>()
     // A new input may legitimately ask for the same operation again. Drain
     // boundaries are scheduler details, not user-request boundaries.
@@ -731,7 +744,9 @@ const layer = Layer.effect(
         ? undefined
         : yield* tools.materialize(agent.info?.permissions, {
             codeMode: Flag.MIAO_EXPERIMENTAL_CODE_MODE,
-            disclosure: settings.disclosure ?? Flag.MIAO_EXPERIMENTAL_TOOL_DISCLOSURE,
+            disclosure:
+              (settings.disclosure ?? Flag.MIAO_EXPERIMENTAL_TOOL_DISCLOSURE) &&
+              !disclosureEscalated.has(session.id),
             alwaysLoad: settings.alwaysLoad,
             sessionID: session.id,
             disabledTools: settings.disabledTools,
@@ -1018,11 +1033,34 @@ const layer = Layer.effect(
               ? SessionBlackbox.tool(session.id, event.name, event.input, settlement)
               : settlement
             ).pipe(
-              Effect.flatMap((settlement) =>
-                publish(
-                  LLMEvent.toolResult({ id: event.id, name: event.name, result: settlement.result, output: settlement.output }),
-                  settlement.outputPaths ?? [],
-                ),
+              Effect.flatMap((settled) =>
+                Effect.gen(function* () {
+                  // A deferred catalog the model cannot search its way out of
+                  // costs a step per miss; after the limit, advertise everything
+                  // again for the rest of the drain.
+                  if (event.name === ToolSearch.TOOL_SEARCH_TOOL && !disclosureEscalated.has(session.id)) {
+                    const missed = settled.result.type === "error" || settled.result.value.startsWith("No deferred tool")
+                    const misses = missed ? (disclosureMisses.get(session.id) ?? 0) + 1 : 0
+                    disclosureMisses.set(session.id, misses)
+                    if (misses >= MAX_DISCLOSURE_MISSES) {
+                      disclosureEscalated.add(session.id)
+                      yield* Effect.logInfo("session.disclosure-escalated", {
+                        sessionID: session.id,
+                        misses,
+                        reason: "Repeated tool_search misses; advertising the full catalog again.",
+                      })
+                    }
+                  }
+                  return yield* publish(
+                    LLMEvent.toolResult({
+                      id: event.id,
+                      name: event.name,
+                      result: settled.result,
+                      output: settled.output,
+                    }),
+                    settled.outputPaths ?? [],
+                  )
+                }),
               ),
             )
             yield* Effect.uninterruptibleMask((restore) =>
@@ -1897,10 +1935,14 @@ const layer = Layer.effect(
         Effect.gen(function* () {
           streamContinuations.delete(input.sessionID)
           outputContinuations.delete(input.sessionID)
+          disclosureMisses.delete(input.sessionID)
+          disclosureEscalated.delete(input.sessionID)
           toolInputCorrections.delete(input.sessionID)
           yield* Effect.addFinalizer(() => Effect.sync(() => {
             streamContinuations.delete(input.sessionID)
             outputContinuations.delete(input.sessionID)
+            disclosureMisses.delete(input.sessionID)
+            disclosureEscalated.delete(input.sessionID)
             toolInputCorrections.delete(input.sessionID)
           }))
           const drainSession = yield* store.get(input.sessionID)
