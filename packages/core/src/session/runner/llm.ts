@@ -64,6 +64,7 @@ import { SessionCreate } from "../../session-create"
 import { SessionContextEpoch } from "../context-epoch"
 import { SessionCompaction, RESTORE_TOKENS, RESTORE_FILES, RESTORE_FILE_TOKENS } from "../compaction"
 import { SessionCompactRequest } from "../compact-request"
+import { SessionCacheProbe } from "../cache-probe"
 import { SessionEvent } from "../event"
 import { SessionHistory } from "../history"
 import { SessionDelegation } from "../delegation"
@@ -859,6 +860,7 @@ const layer = Layer.effect(
         })
         if (attempt.result === "compacted") {
           turns.set(session.id, { at: Date.now(), afterCompaction: true })
+          SessionCacheProbe.current.invalidate(session.id)
           lastPromptTokens.delete(session.id)
           lastPromptMessages.delete(session.id)
           lastPromptPrefix.delete(session.id)
@@ -882,6 +884,7 @@ const layer = Layer.effect(
       const contextBudget = yield* compaction.budget(compactionInput)
       if (yield* compaction.compactIfNeeded(compactionInput, contextBudget)) {
         turns.set(session.id, { at: Date.now(), afterCompaction: true })
+        SessionCacheProbe.current.invalidate(session.id)
         lastPromptTokens.delete(session.id)
         lastPromptMessages.delete(session.id)
         lastPromptPrefix.delete(session.id)
@@ -955,6 +958,8 @@ const layer = Layer.effect(
       const providerSource = blackbox
         ? SessionBlackbox.stream(session.id, request, () => llm.stream(request), execution)
         : llm.stream(request)
+      const forkCacheProbe = SessionCacheProbe.current.consume(session.id, request)
+      if (forkCacheProbe) yield* Effect.logInfo("session.fork.cache-probe", { sessionID: session.id, ...forkCacheProbe })
       const providerStream = providerSource.pipe(
         SessionFirstByteGuard.wrap,
         SessionToolInputGuard.wrap,
@@ -1198,6 +1203,7 @@ const layer = Layer.effect(
             (yield* restore(recoverOverflow({ sessionID: session.id, entries, model, summarizeModel, request, report: phase })))
           ) {
             turns.set(session.id, { at: Date.now(), afterCompaction: true })
+            SessionCacheProbe.current.invalidate(session.id)
             yield* recordCompaction(session.id, "recovery")
             return yield* Effect.die(continueAfterOverflowCompaction(currentStep))
           }
@@ -1252,6 +1258,7 @@ const layer = Layer.effect(
             yield* withPublication(publisher.failAssistant("Provider stream ended without a completion frame"))
           const stepSettlement = publisher.stepSettlement()
           if (stepSettlement && !publisher.hasProviderError()) {
+            SessionCacheProbe.current.complete(session.id, request, SessionRunnerMetrics.promptTokens(stepSettlement.tokens))
             // Feed the next compaction decision the provider's own count.
             lastPromptTokens.set(session.id, SessionRunnerMetrics.promptTokens(stepSettlement.tokens))
             lastPromptMessages.set(session.id, request.messages.length)
