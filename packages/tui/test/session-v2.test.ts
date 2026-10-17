@@ -7,7 +7,12 @@ import {
   isV2StreamFragmentEvent,
   mergeTranscript,
 } from "../src/context/session-v2"
-import { promptInputFromParts, toolPart, sessionContextToMessages } from "../src/context/session-v2-write"
+import {
+  promptInputFromParts,
+  toolPart,
+  sessionContextToMessages,
+  renderSessionContext,
+} from "../src/context/session-v2-write"
 
 const base = { sessionID: "ses_1" }
 
@@ -153,6 +158,28 @@ test("legacy export rejects unknown metadata without changing the V2 source", ()
   expect(message).toMatchObject({ agent: null, model: null, time: { created: null } })
   expect(message).not.toHaveProperty("cost")
   expect(message).not.toHaveProperty("tokens")
+})
+
+test("headless rendering accepts native identity gaps while archive export stays strict", () => {
+  const message: SessionMessage = {
+    id: "msg_native",
+    type: "assistant",
+    agent: null,
+    model: null,
+    content: [{ type: "text", id: "text_native", text: "ENGINE_OK" }],
+    time: { created: 10, completed: 20 },
+    cost: 0,
+    tokens: { input: 1, output: 1, reasoning: 0, cache: { read: 0, write: 0 } },
+  }
+  const input = { sessionID: "ses_1", cwd: "/project", root: "/project", messages: [message] }
+  const rendered = renderSessionContext(input)
+  expect(rendered).toHaveLength(1)
+  expect(rendered[0]?.parts).toMatchObject([{ type: "text", text: "ENGINE_OK" }])
+  expect(rendered[0]?.info).not.toHaveProperty("agent")
+  expect(rendered[0]?.info).not.toHaveProperty("modelID")
+  expect(rendered[0]?.info).not.toHaveProperty("providerID")
+  expect(() => sessionContextToMessages(input)).toThrow("Legacy export cannot represent unknown assistant metadata")
+  expect(message).toMatchObject({ agent: null, model: null, time: { created: 10, completed: 20 } })
 })
 
 test("an unknown history clock preserves cursor order while deduplication retains the active copy", () => {
