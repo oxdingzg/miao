@@ -204,6 +204,15 @@ impl Daemon {
                     .map(|()| serde_json::json!({"status":"owned", "credential_id":credential_id}));
                 reply(frame.id, result)
             }
+            Request::Release {
+                credential_id,
+                integration,
+            } => {
+                let result = self.release(&credential_id, &integration).await.map(
+                    |()| serde_json::json!({"status":"released", "credential_id":credential_id}),
+                );
+                reply(frame.id, result)
+            }
             Request::Discover => {
                 let payload = store::discover(&self.db).map(|rows| {
                     serde_json::to_value(rows).unwrap_or_else(|_| serde_json::json!([]))
@@ -227,6 +236,29 @@ impl Daemon {
         let _guard = lock.lock().await;
         let socket = self.socket.lock().await.clone().ok_or(Error::Io)?;
         store::claim(
+            &self.db,
+            id,
+            integration,
+            socket.to_str().ok_or(Error::Invalid)?,
+        )
+    }
+
+    async fn release(&self, id: &str, integration: &str) -> Result<(), Error> {
+        if !self.profiles.contains_key(integration) {
+            return Err(Error::Integration);
+        }
+        let lock = {
+            let mut locks = self.row_locks.lock().await;
+            locks
+                .entry(id.to_owned())
+                .or_insert_with(|| Arc::new(Mutex::new(())))
+                .clone()
+        };
+        // Join a rotation before handing its newest refresh token back to
+        // the product broker. No in-flight refresh may write after release.
+        let _guard = lock.lock().await;
+        let socket = self.socket.lock().await.clone().ok_or(Error::Io)?;
+        store::release(
             &self.db,
             id,
             integration,
@@ -311,7 +343,8 @@ impl Daemon {
         let refresh_token = value.get("refresh").and_then(Value::as_str);
         match refresh_token {
             Some(token) if !token.is_empty() => {
-                self.refresh_value(credential_id, integration, value).await
+                self.refresh_value(credential_id, integration, value, false)
+                    .await
             }
             // Inside the margin with no refresh token the stored access is
             // all there is; hand it out and let the stored expiry speak.
@@ -323,7 +356,7 @@ impl Daemon {
     pub async fn refresh_row(&self, credential_id: &str, integration: &str) -> Result<u64, Error> {
         let value = store::load(&self.db, credential_id, integration)?;
         let refreshed = self
-            .refresh_value(credential_id, integration, value)
+            .refresh_value(credential_id, integration, value, true)
             .await?;
         refreshed
             .get("expires")
@@ -338,6 +371,7 @@ impl Daemon {
         credential_id: &str,
         integration: &str,
         value: Value,
+        force: bool,
     ) -> Result<Value, Error> {
         if !self.profiles.contains_key(integration) {
             return Err(Error::Integration);
@@ -366,11 +400,17 @@ impl Daemon {
         // row while we waited, and replaying a one-time refresh token after a
         // rotation would invalidate the new one.
         let current = store::load(&self.db, credential_id, integration)?;
-        if current.get("refresh").and_then(Value::as_str) != Some(&refresh_token) {
+        if current["metadata"]["miaoCredentialSocket"].as_str() != socket.to_str() {
+            return Err(Error::NotRefreshable);
+        }
+        if current.get("refresh").and_then(Value::as_str) != Some(&refresh_token)
+            || current.get("access") != value.get("access")
+            || current.get("expires") != value.get("expires")
+        {
             return Ok(current);
         }
         if let Some(expires) = current.get("expires").and_then(Value::as_u64) {
-            if expires > now_ms() + self.margin_ms {
+            if !force && expires > now_ms() + self.margin_ms {
                 return Ok(current);
             }
         }

@@ -96,6 +96,16 @@ Decide an independent credential broker, additional providers, full media/LSP/MC
 
 Recently landed product-integration evidence (2026-10-12), recorded without changing any status above:
 
+- B1 Session model selection: `select_model` persists a validated model binding
+  on the configured route and applies it only at provider-turn boundaries.
+  Snapshot/fork preserve the selection, assistant/start identities and
+  compaction use the actual selected provider, and Gemini/fallback routes expose
+  model selection without replacing credential ownership. Tests in
+  `tests/session_models.rs` and `tests/gemini.rs` exercise concurrent turn
+  boundaries, Session isolation, reset, rejected selections, fork cuts and actual
+  Gemini HTTP path/header preservation. Product model-picker/catalog and
+  cross-route routing remain separate integration work.
+
 - B2 explicit tool recovery: controller commands `recoveries` and
   `resolve_recovery` provide paged unknown-outcome discovery and exactly one
   durable retry/abandon instruction per call. They preserve the original
@@ -104,6 +114,13 @@ Recently landed product-integration evidence (2026-10-12), recorded without chan
   admission boundary; `tests/recovery_decisions.rs` covers Host dispatch,
   explicit continuation, conflicting retries and original-effect preservation.
   Product recovery UI and real-client restart acceptance remain open.
+
+- B3 credential rollback: the standalone daemon's `release` IPC/CLI operation
+  joins in-flight refresh before atomically handing a row back to the product
+  broker. Tokens and unknown metadata are preserved; waiting refreshes recheck
+  ownership. Cross-platform SQL handoff and Unix socket/CLI race scenarios live
+  in `crates/miao-credential/tests/{ownership,daemon}.rs`. This closes the
+  reversible handoff mechanism, not real-account expiry/refresh acceptance.
 
 - A durable `session_engine_placement` catalog binds each Session's engine, native storage, and Location atomically; exact retries adopt the binding and cross-engine/storage/Location takeover is rejected. Location resolution now treats that catalog as the routing authority and never reads or heals TS metadata for a Rust-owned Session.
 - Client-only assistant-identity and per-attempt provider request/result receipts are delivered on the product stream, bound to their durable cursor, without writing the TS journal. They are evidence for clients; no product UI consumes them yet.

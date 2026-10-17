@@ -13,6 +13,9 @@ export const Color = Schema.Union([
 export class Info extends Schema.Class<Info>("ConfigV2.Agent")({
   model: Schema.String.pipe(Schema.optional),
   variant: Schema.String.pipe(Schema.optional),
+  accounts: Schema.Record(Schema.String, Schema.String).pipe(Schema.optional).annotate({
+    description: "Account this agent should use per provider, valued by credential label or id",
+  }),
   request: ConfigProvider.Request.pipe(Schema.optional),
   system: Schema.String.pipe(Schema.optional),
   description: Schema.String.pipe(Schema.optional),

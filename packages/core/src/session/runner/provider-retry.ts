@@ -1,7 +1,7 @@
 export * as SessionRunnerProviderRetry from "./provider-retry"
 
 import type { LLMError } from "@miao/llm"
-import { Schedule } from "effect"
+import { Duration, Effect, Schedule } from "effect"
 
 /**
  * Retry policy for one Session turn.
@@ -21,9 +21,45 @@ const PROVIDER_TIMEOUT_MS = 60_000
 /** Budget for retrying model resolution against a catalog gap. */
 const CATALOG_TIMEOUT_MS = 10_000
 
+/**
+ * Ceiling for a pause the provider itself asked for. The endpoint is telling us
+ * when it will be ready; honoring anything longer would hold the Session for
+ * most of an hour, so a hostile or buggy `Retry-After` is treated as this.
+ */
+const RETRY_AFTER_MAX_MS = 15 * 60_000
+
+/**
+ * The pause before the next attempt: the schedule's own backoff, raised to the
+ * delay the provider asked for.
+ *
+ * Retrying a 429 on a shorter backoff than the endpoint named just spends one
+ * of the few attempts on another rejection — with a 60 s budget, a provider
+ * that wants 2 minutes never gets a usable second attempt, and the turn fails
+ * with the user left to continue it by hand.
+ */
+export const providerDelay = (error: unknown, delay: Duration.Duration): Duration.Duration => {
+  const requested = retryAfterMs(error)
+  if (requested === undefined) return delay
+  return Duration.max(delay, Duration.millis(Math.min(requested, RETRY_AFTER_MAX_MS)))
+}
+
+const retryAfterMs = (error: unknown) => {
+  if (typeof error !== "object" || error === null || !("_tag" in error)) return undefined
+  if ((error as { readonly _tag: unknown })._tag !== "LLM.Error") return undefined
+  // Only a rate limit or a provider-side internal error names a pause; every
+  // other reason's `retryAfterMs` would be a header we do not trust.
+  const reason = (error as LLMError).reason
+  if (reason._tag !== "RateLimit" && reason._tag !== "ProviderInternal") return undefined
+  return reason.retryAfterMs
+}
+
 export const providerSchedule = Schedule.exponential(500, 1.7).pipe(
   Schedule.either(Schedule.spaced(5_000)),
   Schedule.jittered,
+  // The delay has to see the failure that earned it, which is the schedule's
+  // input; `passthrough` hands it on as the output.
+  Schedule.passthrough,
+  Schedule.modifyDelay((error, delay) => Effect.succeed(providerDelay(error, delay))),
   Schedule.while((meta) => meta.elapsed < PROVIDER_TIMEOUT_MS),
 )
 
@@ -60,6 +96,12 @@ export const retryable = (error: { readonly _tag: string }): boolean => {
   // credential is fine but not allowed (OpenCode's free tier answers miao this
   // way), and retrying it only burned the whole provider budget before failing.
   if (reason._tag === "Authentication") return reason.kind !== "insufficient-permissions"
+  // A tool-argument stream that stopped making progress is a stalled transport,
+  // not a defective request: the provider went quiet while a call was still
+  // open. Replaying rebuilds the same request, and the runner replays only while
+  // nothing durable has been produced. The byte budget stays terminal: the same
+  // oversized input fails identically.
+  if (reason._tag === "InvalidProviderOutput") return reason.toolInput?.budget === "idle"
   return reason.retryable === true
 }
 

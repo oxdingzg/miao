@@ -471,7 +471,7 @@ configured with the `mcp_*` tool matcher and the `@mcp/local_service/**` resourc
 Remote HTTP transport, dynamic catalog notifications, resources/prompts, MCP OAuth, and TS plugin
 compatibility are not implemented today.
 
-## Explicit workspace Context Sources
+## Explicit Context Sources
 
 `--context-config /absolute/path/context.json` selects additional instruction/persona files:
 
@@ -482,16 +482,25 @@ compatibility are not implemented today.
 ]
 ```
 
-The configuration lives outside the workspace, and content paths must be workspace-relative. At most
+The configuration lives outside the workspace. Content paths may be workspace-relative, or absolute
+paths covered by explicit read-only `--references-config` grants. A file reference grants that exact
+file, not its parent directory or sibling files. For example, a host can select a global `AGENTS.md`
+by putting its absolute path in both the Context Source list and the reference list; naming an
+absolute file in the Context Source list alone grants no access. External file-level permission
+rules use the ordinary `@reference/**` resource namespace.
+
+At most
 16 additional sources; a label uses ASCII letters/digits/`_.-` limited to 64 characters, and a path
-cannot have an empty, `.`, or `..` segment. By default `AGENTS.md` loads first, then the sources in
-configuration order; each item reuses the scoped `read_file` and file-level policy, an ask/deny item
+cannot traverse `..`. Relative paths also reject empty and `.` segments. Explicit external sources
+load first in configuration order, then workspace `AGENTS.md`, then relative sources in configuration
+order. Each item reuses the scoped `read_file` and file-level policy; an ask/deny item
 is not read, and missing/skipped is also recorded in provenance. Each file is at most 32 KiB and the
 final system is at most 64 KiB; exceeding the budget fails explicitly. The provider boundary re-reads
 and stores, through an immutable Context Epoch, the full system, source hashes, and selection order.
 
-This provides explicitly selected workspace producers; ambient user/ancestor discovery, a full
-skill/reference catalog, and per-task automatic selection are not implemented yet.
+This provides explicitly selected workspace and host-file producers. Ambient user/ancestor discovery
+and product configuration mapping still belong to the embedding host; the engine does not infer
+permission to inspect parent directories from a Context Source path.
 
 ## In-Session raw-history recall
 

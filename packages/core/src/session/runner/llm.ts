@@ -174,6 +174,13 @@ type Promotion = SessionInput.Delivery | "notification" | "notification-steer"
  */
 const MAX_OVERFLOW_COMPACTIONS = 2
 const MAX_STREAM_CONTINUATIONS = 2
+/**
+ * How many times one provider turn may resume after the model hit its output
+ * token limit. Two continuations normally finish an answer that a single
+ * response length cut in half; a model that still has not stopped is looping on
+ * the same content, and another attempt only spends tokens.
+ */
+const MAX_OUTPUT_CONTINUATIONS = 2
 const MAX_TOOL_INPUT_CORRECTIONS = 2
 
 /**
@@ -201,6 +208,9 @@ const SUBAGENT_SILENCE = Duration.minutes(SUBAGENT_SILENCE_MINUTES)
  * through the provider wire archive.
  */
 const STREAM_STALL_MS = 5_000
+
+/** What a prepared call becomes when its argument stream died before dispatch. */
+const INTERRUPTED_TOOL_CALL = "Provider stream interrupted before this tool call was complete; it was not executed"
 
 /** Goal/todo-driven autonomous loop bounds. */
 const DEFAULT_LOOP_MAX_ITERATIONS = 25
@@ -303,6 +313,7 @@ const layer = Layer.effect(
     // trigger the takeover note, so replays and restarts stay silent.
     const seenModelSwitches = new Map<string, number>()
     const streamContinuations = new Map<string, number>()
+    const outputContinuations = new Map<string, number>()
     const toolInputCorrections = new Map<string, number>()
     // A new input may legitimately ask for the same operation again. Drain
     // boundaries are scheduler details, not user-request boundaries.
@@ -1042,6 +1053,11 @@ const layer = Layer.effect(
       // so a retry the schedule declines is never reported.
       let retrying: LLMError | SessionRunnerModel.Error | undefined
       let attempt = 0
+      // A replay restates the request, so it is only safe where nothing durable
+      // has been produced: no answer text and no dispatched tool call. Reasoning
+      // is live-only and prepared tool input is discarded first.
+      const replayable = () =>
+        !publisher.hasAnswerText() && !publisher.hasDispatchedToolCall() && !publisher.hasProviderError()
       return yield* Effect.uninterruptibleMask((restore) =>
         Effect.gen(function* () {
           const runProviderTurn = () => Effect.suspend(() => {
@@ -1055,7 +1071,8 @@ const layer = Layer.effect(
             if (retried) attempt++
             return (
               retried
-                ? publisher.discardInFlight().pipe(
+                ? withPublication(publisher.discardPreparedTools(INTERRUPTED_TOOL_CALL)).pipe(
+                    Effect.andThen(publisher.discardInFlight()),
                     Effect.andThen(
                       events.publish(SessionEvent.Retried, {
                         sessionID: session.id,
@@ -1077,15 +1094,15 @@ const layer = Layer.effect(
               ),
             )
           }).pipe(
-            // Retry only while the attempt failed before publishing visible
-            // answer content. Reasoning is live-only and replayable, so a drop
-            // after reasoning but before any text or tool call can still retry;
-            // once text or a tool call is visible, replaying would duplicate it.
+            // Retry only while the attempt failed before publishing answer text
+            // or dispatching a tool call. Reasoning is live-only and replayable,
+            // and prepared-but-uncalled tool input is scaffolding the replay
+            // restates, so a stalled argument stream can retry; once text or a
+            // dispatched call is visible, replaying would duplicate it.
             // Interrupts never retry.
             Effect.tapError((error) =>
               SessionRunnerProviderRetry.retryable(error) &&
-              !publisher.hasVisibleOutput() &&
-              !publisher.hasProviderError()
+              replayable()
                 ? Effect.sync(() => {
                     retrying = error
                   }).pipe(
@@ -1102,10 +1119,7 @@ const layer = Layer.effect(
                 : Effect.void,
             ),
             Effect.retry({
-              while: (error) =>
-                !publisher.hasVisibleOutput() &&
-                !publisher.hasProviderError() &&
-                SessionRunnerProviderRetry.retryable(error),
+              while: (error) => replayable() && SessionRunnerProviderRetry.retryable(error),
               schedule: SessionRunnerProviderRetry.providerSchedule,
             }),
             Effect.exit,
@@ -1118,17 +1132,13 @@ const layer = Layer.effect(
           // up; a deterministic rejection still fails, at the cost of one replay.
           if (stream._tag === "Failure") {
             const rejected = Option.getOrUndefined(Cause.findErrorOption(stream.cause))
-            if (
-              !publisher.hasVisibleOutput() &&
-              !publisher.hasProviderError() &&
-              rejected !== undefined &&
-              SessionRunnerProviderRetry.selfHealable(rejected)
-            ) {
+            if (replayable() && rejected !== undefined && SessionRunnerProviderRetry.selfHealable(rejected)) {
               yield* Effect.logWarning("retrying rejected provider request", {
                 sessionID: session.id,
                 model: `${model.provider}/${model.id}`,
                 ...retryLog(rejected),
               })
+              yield* withPublication(publisher.discardPreparedTools(INTERRUPTED_TOOL_CALL))
               yield* publisher.discardInFlight()
               stream = yield* runProviderTurn()
             }
@@ -1162,7 +1172,7 @@ const layer = Layer.effect(
             if (llmFailure.module === "SessionToolInputGuard")
               yield* withPublication(publisher.failPreparedTools("Tool arguments were not completed; this local call was not executed. Earlier completed operations are retained."))
             if (invalidToolInput || (llmFailure.reason._tag === "Transport" && llmFailure.reason.retryable))
-              yield* withPublication(publisher.failPreparedTools("Provider stream interrupted before this tool call was complete; it was not executed"))
+              yield* withPublication(publisher.failPreparedTools(INTERRUPTED_TOOL_CALL))
             const detail = retryDetail(llmFailure)
             yield* withPublication(publisher.failAssistant(detail.statusCode === undefined
               ? llmFailure.reason.message
@@ -1349,6 +1359,42 @@ const layer = Layer.effect(
           }
           if (stream._tag === "Success" && stepSettlement && !publisher.hasProviderError())
             streamContinuations.delete(session.id)
+          // A response that ran into the output token limit is unfinished work,
+          // not a completed turn: the model was mid-answer and the next turn
+          // resumes it. Two continuations cover an answer that one response
+          // length cut in half; past that the model is repeating itself and
+          // marking the answer truncated tells the user why it stops.
+          if (
+            stream._tag === "Success" &&
+            stepSettlement?.finish === "length" &&
+            !publisher.hasProviderError() &&
+            !publisher.hasToolCalls() &&
+            !isLastStep
+          ) {
+            const attempt = (outputContinuations.get(session.id) ?? 0) + 1
+            if (attempt > MAX_OUTPUT_CONTINUATIONS) {
+              yield* withPublication(
+                publisher.failAssistant(
+                  `Response still truncated after ${MAX_OUTPUT_CONTINUATIONS} output token limit continuations`,
+                ),
+              )
+              return { needsContinuation: false, step: currentStep, failed: true }
+            }
+            outputContinuations.set(session.id, attempt)
+            // A NEW provider turn over the committed history and a fresh
+            // assistant message, so the resumed text does not append to the
+            // truncated one and the turn reports both halves.
+            yield* events.publish(SessionEvent.Synthetic, {
+              sessionID: session.id,
+              timestamp: yield* DateTime.now,
+              messageID: SessionMessage.ID.create(),
+              text: `Your last response hit the output token limit (stop reason: length). Continue from where it stopped without repeating what is already written, and do not apologize or recap. Break the remaining work into smaller pieces.`,
+              metadata: { providerOutputLimitContinuation: true },
+            })
+            return { needsContinuation: true, step: currentStep }
+          }
+          if (stepSettlement?.finish !== undefined && stepSettlement.finish !== "length")
+            outputContinuations.delete(session.id)
           if (stream._tag === "Failure") return yield* Effect.failCause(stream.cause)
           if (settled._tag === "Failure" && Cause.hasInterrupts(settled.cause))
             return yield* Effect.failCause(settled.cause)
@@ -1850,9 +1896,11 @@ const layer = Layer.effect(
       return yield* Effect.scoped(
         Effect.gen(function* () {
           streamContinuations.delete(input.sessionID)
+          outputContinuations.delete(input.sessionID)
           toolInputCorrections.delete(input.sessionID)
           yield* Effect.addFinalizer(() => Effect.sync(() => {
             streamContinuations.delete(input.sessionID)
+            outputContinuations.delete(input.sessionID)
             toolInputCorrections.delete(input.sessionID)
           }))
           const drainSession = yield* store.get(input.sessionID)

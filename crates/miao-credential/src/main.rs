@@ -19,8 +19,8 @@ fn main() {
         Some("serve") => serve(&args[1..]),
         Some("discover") => discover(&args[1..]),
         Some("login") => login(&args[1..]),
-        Some("adopt") => adopt(&args[1..]),
-        _ => Err("usage: miao-credential serve --db PATH --socket PATH [--refresh-margin-ms N]\n       miao-credential discover --db PATH".into()),
+        Some("adopt" | "release") => ownership(&args[1..], &args[0]),
+        _ => Err("usage: miao-credential serve --db PATH --socket PATH [--refresh-margin-ms N]\n       miao-credential discover --db PATH\n       miao-credential login --socket PATH --credential-id ID [--integration ID] [--label LABEL]\n       miao-credential adopt|release --socket PATH --credential-id ID --integration ID".into()),
     };
     if let Err(error) = error {
         eprintln!("{error}");
@@ -221,7 +221,7 @@ fn login(_args: &[String]) -> Result<(), String> {
 }
 
 #[cfg(any(unix, windows))]
-fn adopt(args: &[String]) -> Result<(), String> {
+fn ownership(args: &[String], operation: &str) -> Result<(), String> {
     let (pairs, remainder) = args.as_chunks::<2>();
     if !remainder.is_empty() {
         return Err("missing option value".into());
@@ -248,20 +248,20 @@ fn adopt(args: &[String]) -> Result<(), String> {
     runtime.block_on(async {
         let reply = miao_credential::client::request(
             std::path::Path::new(socket),
-            serde_json::json!({"id":1,"op":"adopt","credential_id":id,"integration":integration})
+            serde_json::json!({"id":1,"op":operation,"credential_id":id,"integration":integration})
                 .to_string(),
         )
         .await
         .map_err(|e| e.to_string())?;
         if reply.get("ok").is_none() {
-            return Err("credential adoption rejected".into());
+            return Err(format!("credential {operation} rejected"));
         }
-        println!("Credential {id} is daemon-owned");
+        println!("Credential {id}: {operation} complete");
         Ok(())
     })
 }
 
 #[cfg(not(any(unix, windows)))]
-fn adopt(_args: &[String]) -> Result<(), String> {
+fn ownership(_args: &[String], _operation: &str) -> Result<(), String> {
     Err("credential daemon requires Unix sockets".into())
 }

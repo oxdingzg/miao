@@ -56,6 +56,10 @@ impl Host {
                 .resume(&session_id)
                 .await
                 .map(|_| json!({ "accepted": true })),
+            Command::SelectModel {
+                session_id,
+                binding,
+            } => runtime.select_model(&session_id, binding).await,
             Command::Recoveries { session_id, after } => {
                 runtime.store().recoveries(&session_id, &after).await
             }

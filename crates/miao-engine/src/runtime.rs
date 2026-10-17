@@ -351,6 +351,39 @@ impl Runtime {
         self.wake(session, true).await
     }
 
+    pub async fn select_model(
+        &self,
+        session: &str,
+        binding: Option<crate::session_model::Binding>,
+    ) -> Result<Value, Error> {
+        if self.inner.stop.is_cancelled() {
+            return Err(Error::Closed);
+        }
+        if self.inner.store.location(session).await?.as_deref() != Some(self.inner.tools.location())
+        {
+            return Err(Error::Conflict);
+        }
+        // Validate capability before persisting; a model change never changes
+        // route, credentials, or a provider request already in flight.
+        let selected = crate::session_model::select(&self.inner.provider, binding.as_ref())?;
+        if let Some(identity) = selected.identity() {
+            let (history, _) = self.inner.store.selected_input(session).await?;
+            if history
+                .iter()
+                .flat_map(|message| message.content.as_array().into_iter().flatten())
+                .any(|block| {
+                    block["type"] == "provider_opaque"
+                        && block["model"]
+                            .as_str()
+                            .is_some_and(|model| model != identity.model)
+                })
+            {
+                return Err(Error::Invalid("selected history contains model-bound opaque content; compact or use a compatible model".into()));
+            }
+        }
+        self.inner.store.select_model(session, binding).await
+    }
+
     pub async fn resolve_recovery(
         &self,
         session: &str,
@@ -683,6 +716,10 @@ async fn execute(
         if cancel.is_cancelled() {
             return Ok(());
         }
+        let provider = crate::session_model::select(
+            &inner.provider,
+            inner.store.model_selection(session).await?.as_ref(),
+        )?;
         let bundle =
             match crate::context::assemble(&inner.tools, &inner.policy, cancel.child_token()).await
             {
@@ -765,7 +802,7 @@ async fn execute(
             .record(
                 session,
                 "provider.started",
-                json!({"run_id":run,"step":step,"context_epoch":context_epoch,"policy_revision":inner.policy.revision(),"state_selection":state_selection,"identity":inner.provider.identity().map(|i|json!({"protocol":i.protocol,"model":i.model}))}),
+                json!({"run_id":run,"step":step,"context_epoch":context_epoch,"policy_revision":inner.policy.revision(),"state_selection":state_selection,"identity":provider.identity().map(|i|json!({"protocol":i.protocol,"model":i.model}))}),
             )
             .await?;
         // Durable history retains null plus the error marker for unavailable
@@ -818,9 +855,7 @@ async fn execute(
                 crate::provider::scoped(
                     transport_budget.clone(),
                     3,
-                    inner
-                        .provider
-                        .stream(request.clone(), send, cancel.child_token()),
+                    provider.stream(request.clone(), send, cancel.child_token()),
                 ),
             );
             tokio::pin!(response);
@@ -1021,7 +1056,7 @@ async fn execute(
                 step,
                 Some(started.seq),
                 reply.content.clone(),
-                inner.provider.reply_identity(&reply),
+                provider.reply_identity(&reply),
             )
             .await?
             .seq;
@@ -1370,7 +1405,7 @@ async fn execute(
             .as_ref()
             .filter(|_| closed_answer)
         {
-            let primary = Arc::clone(&inner.provider);
+            let primary = Arc::clone(&provider);
             let bindings = inner.roles.lock().await.clone();
             let (role_provider, resolution) =
                 crate::roles::resolve(&primary, bindings.binding("summarize"));
@@ -1423,7 +1458,7 @@ async fn execute(
             };
             // Gate ②: the runtime owns the provider, so the counter that prices
             // the messages appended since the anchor is bound here.
-            let counting = Arc::clone(&inner.provider);
+            let counting = Arc::clone(&provider);
             let mut count = move |messages: Vec<crate::protocol::Message>| -> std::pin::Pin<
                 Box<dyn std::future::Future<Output = crate::provider::CountTokens> + Send>,
             > {

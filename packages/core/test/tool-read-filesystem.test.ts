@@ -112,6 +112,41 @@ describe("ReadToolFileSystem", () => {
     }),
   )
 
+  it.effect("names the columns window that reads the rest of a truncated line", () =>
+    Effect.gen(function* () {
+      const { fs, files, directory } = yield* fixture
+      const file = path.join(directory, "minified.js")
+      yield* files.writeFileString(file, `${"x".repeat(5_000)}\nshort\n`)
+
+      // A paged read clips a long line and says exactly how to ask for the rest.
+      const first = (yield* ReadToolFileSystem.read(fs, file, "minified.js", { offset: 1, limit: 2 })) as
+        | ReadToolFileSystem.TextPage
+        | { content: string }
+      expect("content" in first && first.content.startsWith("x".repeat(2_000))).toBe(true)
+      expect("content" in first && first.content.slice(2_000)).toBe(
+        `... (line truncated at 2000 chars; read the rest with offset=1, columns={"from":2001})\nshort`,
+      )
+
+      // Following the notice advances the window until the line is exhausted.
+      const rest = (yield* ReadToolFileSystem.read(fs, file, "minified.js", {
+        offset: 1,
+        limit: 1,
+        columns: { from: 2_001 },
+      })) as ReadToolFileSystem.TextPage
+      expect(rest.content.slice(2_000)).toBe(
+        `... (line truncated at 4000 chars; read the rest with offset=1, columns={"from":4001})`,
+      )
+
+      const tail = (yield* ReadToolFileSystem.read(fs, file, "minified.js", {
+        offset: 1,
+        limit: 1,
+        columns: { from: 4_001 },
+      })) as ReadToolFileSystem.TextPage
+      expect(tail.content).toBe("x".repeat(1_000))
+      expect(tail.content).not.toContain("truncated at")
+    }),
+  )
+
   it.effect("preserves the media ingestion limit message", () =>
     Effect.gen(function* () {
       const { fs, files, directory } = yield* fixture
