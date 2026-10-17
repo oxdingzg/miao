@@ -1,6 +1,7 @@
 # miao 路线图 — 剩余工作
 
-状态快照：**2026-10-05**，最新发布 tag **v0.1.4**（0.1.5–0.1.7 已准备；0.1.8 在 PR #151）。
+状态快照：**2026-10-18**，main head a788a011e0。原生（Rust）引擎建设已落地——
+见 §0。已发布 tag 仍为 v0.1.4；下一个版本将携带整条原生引擎主线。
 
 本文档是 V1→V2 重建中所有未完成项的**唯一权威清单**。它取代了此前分散的追踪文档
 （remaining-work checklist 与 handoff、V2 todo 列表、P7 路由盘点、app API 迁移清单，以及
@@ -50,24 +51,17 @@
 
 ## 下一步（Next up，按序）
 
-1. **§1.3** 移除 `packages/miao` 的 `app-runtime` V1 层与剩余非会话路由；发布服务端切到
-   V2-only 组装。收尾 V1→V2 重置。
-2. **§1.2** 退役 app 的 legacy 类型、过渡会话/消息事件与路由 mock。
-3. **§2.1** 完成 runner 切片：合批流式 delta + 补覆盖性投影历史索引、移除 `@miao/llm` 工具
-   循环、暴露可重放 Session 事件游标。
-4. **§2.5** 剩余输出边界：非流式 JSON/image body 上限。
-5. **§2.3** 取消：级联取消作为单一路径、增量工具进度、历史降级前物化 remote/managed URI。
-6. **§2.4** 崩溃恢复幂等：幂等键 + 一次性消费 token。
-7. **§2.8** 把 core 沙箱扩展到其余变更型工具，再默认开启。
-8. **§2.7** MCP 渐进发现 / CIMD OAuth / 确定性 `tools/list`。
-9. **§2.2** ACP terminal 契约（`terminal/create`、`wait_for_exit`、`kill`、`release`）。
-10. **§3** 完成 config/插件/service 重构（嵌套指令、每 service 热重载、provider 作为插件）。
-11. **§4** 存储运维验收（压缩 `miao-main.db`、量测 `miao.db`、仅 delta 事件）。
-12. **§2.9** 设计 durable 续跑恢复（当前 blocked）。
-13. **§5** 产出双语性能报告。
-14. **§7** 刷新过时指南。
-15. **§6** 发布二进制验收（多为 owner/凭据受阻）。
-16. **§8** 落地远程控制 / Hub / iOS / push 主线。
+1. **§9.1** 引擎二进制默认就位：接入发布流并自动发现已安装的 `miao-engine`，
+   使原生会话无需手动 `MIAO_ENGINE_BIN`。
+2. **§9.2** 产品工具反向桥：把产品级工具注册进原生会话并反向调度到服务端
+   （#1027，draft——e2e 测试需先解决事件可见性）。
+3. **§9.3** 落地声明式 provider manifest 文档；声明 Bedrock/Copilot 原生不支持
+   （或仅网关）。
+4. **§6** 实时验收：Gemini/Anthropic 实账号（缺凭据受阻）、发布二进制升级路径。
+5. **§1.2** app transcript 迁移到 V2 类型（按下文分阶段说明独立切换）。
+6. **§2.4** 基于 RS 原语的崩溃恢复幂等（tool replay + outcome-unknown）。
+7. 其余 TS 侧与运维项按节顺序推进（§1.3 确认、§2.5 body 上限、§2.7 CIMD 排序、
+   §2.8 monitor 沙箱化、§3 热重载、§4 存储运维、§5 报告、§7 文档、§8 push/APNs）。
 
 ---
 
