@@ -1844,7 +1844,6 @@ async fn start_cron(
         .map_err(|_| Error::Invalid("invalid cron input".into()))?;
     let anchor = chrono::Local::now();
     let anchor_ms = anchor.timestamp_millis() as u64;
-    let clock = tokio::time::Instant::now();
     let first = match crate::cron::next(input.cron.clone(), anchor).await {
         Ok(next) => next.timestamp_millis() as u64,
         Err(error) => return Ok(Err(ToolError::External(error.to_string()))),
@@ -1930,6 +1929,7 @@ fn spawn_cron_task(
     let cancel = inner.stop.child_token();
     let token = cancel.clone();
     let owner = inner.clone();
+    let background_source = source.clone();
     let source = source.clone();
     let join = tokio::spawn(async move {
         let result=async {
@@ -1963,7 +1963,7 @@ fn spawn_cron_task(
         }
     });
     Background {
-        session: source,
+        session: background_source,
         cancel,
         join,
     }
@@ -2059,6 +2059,7 @@ fn arm_wakeup(inner: &Arc<Inner>, source: String, timer_id: String, due_at_ms: u
     let token = cancel.clone();
     let owner = inner.clone();
     let timer_id = timer_id.clone();
+    let background_source = source.clone();
     let join = tokio::spawn(async move {
         let result=async {
             tokio::select!{biased;_=token.cancelled()=>{owner.store.close_wakeup(&source,&timer_id,"cancelled").await?;return Ok::<_,Error>(());},_=tokio::time::sleep_until(deadline)=>{}}
@@ -2081,7 +2082,7 @@ fn arm_wakeup(inner: &Arc<Inner>, source: String, timer_id: String, due_at_ms: u
         }
     });
     Background {
-        session: source,
+        session: background_source,
         cancel,
         join,
     }
