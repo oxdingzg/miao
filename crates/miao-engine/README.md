@@ -468,6 +468,21 @@ configured with the `mcp_*` tool matcher and the `@mcp/local_service/**` resourc
 Remote HTTP transport, dynamic catalog notifications, resources/prompts, MCP OAuth, and TS plugin
 compatibility are not implemented today.
 
+## Host-authorized skill directories
+
+`--skills-config /absolute/path/skills.json` supplies an array of directories,
+e.g. `[{ "path": ".miao/skills" }, { "path": "/absolute/host/skills" }]`.
+Workspace-relative directories stay within the workspace; absolute directories
+require an explicit read-only directory grant in `--references-config`.
+An exact-file reference does not authorize enumeration of its parent directory.
+
+Directory enumeration follows `glob` policy, and every candidate skill file is
+resolved and checked against `read_file` policy before its frontmatter is read.
+Ask/deny decisions hide that metadata from the model. Discovery skips symlinks,
+is depth/count bounded, and lists only names/descriptions/paths in Context.
+Skill bodies are read on demand through ordinary authorized tools. External
+skill paths remain absolute so a later read uses the same reference boundary.
+
 ## Explicit Context Sources
 
 `--context-config /absolute/path/context.json` selects additional instruction/persona files:

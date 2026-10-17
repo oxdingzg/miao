@@ -285,6 +285,12 @@ MCP server 是拥有自身 filesystem/network authority 的可信外部服务，
 目前未实现远程 HTTP transport、动态 catalog notifications、resources/prompts、MCP OAuth 或 TS plugin compatibility。
 
 
+## 宿主授权的 skill 目录
+
+`--skills-config /absolute/path/skills.json` 接收目录数组，例如 `[{"path":".miao/skills"},{"path":"/absolute/host/skills"}]`。相对目录保持在 workspace 内；绝对目录必须由 `--references-config` 显式授予只读目录权限。单文件 reference 不授权枚举其父目录。
+
+枚举遵循 `glob` policy；每个候选 skill 文件在读取 frontmatter 前，还要经过 `read_file` 路径解析与 policy 检查。ask/deny 不会泄露该文件元数据给模型。发现跳过 symlink，限制深度和数量，只在 Context 中列出名称、描述和路径；正文按需经正常工具授权读取。外部 skill 保留绝对路径，后续读取使用相同 reference 边界。
+
 ## 显式 workspace Context Sources
 
 `--context-config /absolute/path/context.json` 选择附加 instruction/persona 文件：
