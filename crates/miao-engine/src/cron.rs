@@ -181,12 +181,35 @@ impl Store {
             }).collect()
         }).await
     }
-    pub async fn recover_crons(&self) -> Result<(), Error> {
-        self.call(move|conn|{let tx=conn.transaction()?;
+    /// Restart adoption mirrors wakeups: non-terminal `cron.adopted` keeps
+    /// resolution open so the re-armed loop still fires occurrences.
+    pub async fn adopt_crons(
+        &self,
+    ) -> Result<Vec<(String, String, String, bool, u64, u64)>, Error> {
+        self.call(move|conn|{
+            let tx=conn.transaction()?;
             let crons={let mut stmt=tx.prepare("SELECT q.session_id,q.data FROM engine_event q WHERE q.kind='cron.scheduled' AND NOT EXISTS(SELECT 1 FROM engine_event r WHERE r.session_id=q.session_id AND r.kind='cron.resolved' AND json_extract(r.data,'$.cron_id')=json_extract(q.data,'$.cron_id')) LIMIT 65")?;let rows=stmt.query_map([],|row|Ok((row.get::<_,String>(0)?,row.get::<_,String>(1)?)))?;rows.collect::<Result<Vec<_>,_>>()?};
             if crons.len()>64{return Err(Error::Invalid("cron recovery budget exceeded".into()));}
-            for (session,data) in crons{let data:Value=serde_json::from_str(&data)?;append(&tx,&session,"cron.resolved",json!({"cron_id":data["cron_id"],"state":"interrupted","recovered":true}))?;}tx.commit()?;Ok(())
+            let mut rearm=Vec::new();
+            for (session,data) in crons{
+                let data:Value=serde_json::from_str(&data)?;
+                let id=data["cron_id"].as_str().ok_or_else(||Error::Invalid("cron id missing".into()))?.to_owned();
+                let adopted:bool=tx.query_row("SELECT EXISTS(SELECT 1 FROM engine_event WHERE session_id=?1 AND kind='cron.adopted' AND json_extract(data,'$.cron_id')=?2)",params![&session,&id],|row|row.get(0))?;
+                if !adopted{append(&tx,&session,"cron.adopted",json!({"cron_id":id,"recovered":true}))?;}
+                rearm.push((
+                    session,
+                    id,
+                    data["input"]["cron"].as_str().unwrap_or_default().to_owned(),
+                    data["input"]["recurring"].as_bool().unwrap_or(true),
+                    data["first_occurrence_ms"].as_u64().unwrap_or(0),
+                    data["expires_at_ms"].as_u64().unwrap_or(0),
+                ));
+            }
+            tx.commit()?;Ok(rearm)
         }).await
+    }
+    pub async fn recover_crons(&self) -> Result<(), Error> {
+        self.adopt_crons().await.map(|_|())
     }
 }
 fn resolution(conn: &Connection, session: &str, id: &str) -> Result<Option<Value>, Error> {

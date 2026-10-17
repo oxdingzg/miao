@@ -212,7 +212,9 @@ async fn capacity_and_recovery_are_bounded_and_fork_does_not_copy_timers() {
     store.recover_wakeups().await.unwrap();
     store.recover_wakeups().await.unwrap();
     let recovered = store.wakeups("s").await.unwrap();
-    assert_eq!(recovered[0]["state"], "interrupted");
+    // Adoption is non-terminal: the re-armed process loop still owns firing,
+    // so the timer reports scheduled rather than a resolved state.
+    assert_eq!(recovered[0]["state"], "scheduled");
     assert_eq!(
         store
             .events("s", 0, 100)

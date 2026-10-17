@@ -170,7 +170,7 @@ impl Store {
                     CREATE INDEX IF NOT EXISTS engine_pending_inputs ON engine_input(session_id,state,admitted_seq);
                     CREATE TABLE IF NOT EXISTS engine_context(session_id TEXT NOT NULL REFERENCES engine_session(id),epoch INTEGER NOT NULL,fingerprint TEXT NOT NULL,system TEXT NOT NULL,sources TEXT NOT NULL,selected_seq INTEGER NOT NULL,PRIMARY KEY(session_id,epoch));
                     CREATE TABLE IF NOT EXISTS engine_job(id TEXT PRIMARY KEY,session_id TEXT NOT NULL REFERENCES engine_session(id),request_key TEXT UNIQUE NOT NULL REFERENCES engine_tool(id),state TEXT NOT NULL,input TEXT NOT NULL,result TEXT);
-                    CREATE TABLE IF NOT EXISTS engine_compaction(id TEXT PRIMARY KEY,session_id TEXT NOT NULL REFERENCES engine_session(id),through_seq INTEGER NOT NULL,summary TEXT NOT NULL,created_seq INTEGER NOT NULL);"))?;
+                    CREATE TABLE IF NOT EXISTS engine_compaction(id TEXT PRIMARY KEY,session_id TEXT NOT NULL REFERENCES engine_session(id),through_seq INTEGER NOT NULL,summary TEXT NOT NULL,created_seq INTEGER NOT NULL);CREATE TABLE IF NOT EXISTS engine_lease(session_id TEXT PRIMARY KEY REFERENCES engine_session(id),interval_ms INTEGER NOT NULL,last_ms INTEGER NOT NULL,epoch INTEGER NOT NULL);"))?;
                 let has_mode:bool=conn.query_row("SELECT EXISTS(SELECT 1 FROM pragma_table_info('engine_session') WHERE name='mode')",[],|r|r.get(0))?;
                 if !has_mode {
                     conn.execute(
@@ -1025,6 +1025,33 @@ impl Store {
         }).await
     }
 
+    /// Process heartbeat for timer ownership. The epoch advances on every
+    /// renewal so a future cross-process supervisor can order leases.
+    pub async fn heartbeat_lease(&self, session: &str, interval_ms: i64) -> Result<i64, Error> {
+        let (session, interval_ms) = (session.to_owned(), interval_ms);
+        self.call(move|conn|{
+            let now=crate::approval::now_ms() as i64;
+            let epoch:i64=conn.query_row(
+                "INSERT INTO engine_lease(session_id,interval_ms,last_ms,epoch) VALUES(?1,?2,?3,1)\n                 ON CONFLICT(session_id) DO UPDATE SET interval_ms=excluded.interval_ms,last_ms=excluded.last_ms,epoch=engine_lease.epoch+1 RETURNING epoch",
+                params![session,interval_ms,now],
+                |row|row.get(0),
+            )?;
+            Ok(epoch)
+        }).await
+    }
+    /// A lease is alive while its last heartbeat is within twice the declared
+    /// interval; expired or missing leases make timers adoptable.
+    pub async fn lease_alive(&self, session: &str) -> Result<bool, Error> {
+        let session = session.to_owned();
+        self.call(move|conn|{
+            let row:Option<(i64,i64)>=conn.query_row(
+                "SELECT interval_ms,last_ms FROM engine_lease WHERE session_id=?1",
+                [&session],
+                |row|row.get((0,1)),
+            ).optional()?;
+            Ok(row.is_some_and(|(interval,last)|crate::approval::now_ms().saturating_sub(last as u64)<2*interval.max(1) as u64))
+        }).await
+    }
     pub async fn record(&self, session: &str, kind: &str, data: Value) -> Result<Event, Error> {
         let (session, kind) = (session.to_owned(), kind.to_owned());
         self.call(move |conn| {

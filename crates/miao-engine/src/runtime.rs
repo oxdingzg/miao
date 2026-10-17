@@ -142,10 +142,10 @@ impl Runtime {
         store.recover().await?;
         store.recover_jobs().await?;
         store.recover_questions().await?;
-        store.recover_wakeups().await?;
-        store.recover_crons().await?;
+        store.adopt_wakeups().await?;
+        store.adopt_crons().await?;
         let (progress, _) = broadcast::channel(256);
-        Ok(Self {
+        let runtime = Self {
             inner: Arc::new(Inner {
                 id: uuid::Uuid::new_v4().to_string(),
                 _lease: lease,
@@ -170,7 +170,34 @@ impl Runtime {
                 verification: Mutex::new(None),
                 breaker: Mutex::new(crate::context_trigger::Breaker::new(3)),
             }),
-        })
+        };
+        for (session, timer_id, due_at_ms) in store.adopt_wakeups().await? {
+            let background = arm_wakeup(&runtime.inner, session, timer_id, due_at_ms);
+            runtime
+                .inner
+                .timers
+                .lock()
+                .await
+                .insert(timer_id, background);
+        }
+        for (session, cron_id, pattern, recurring, next, expires) in store.adopt_crons().await? {
+            let background = spawn_cron_task(
+                &runtime.inner,
+                session,
+                cron_id,
+                pattern,
+                recurring,
+                next,
+                expires,
+            );
+            runtime
+                .inner
+                .crons
+                .lock()
+                .await
+                .insert(cron_id, background);
+        }
+        Ok(runtime)
     }
 
     pub fn controller(&self) -> Controller {
@@ -1871,17 +1898,49 @@ async fn start_cron(
     if data["state"] != "scheduled" || crons.contains_key(&id) {
         return Ok(Ok(data));
     }
-    let mut next = data["first_occurrence_ms"]
+    let next = data["first_occurrence_ms"]
         .as_u64()
         .ok_or_else(|| Error::Invalid("cron occurrence missing".into()))?;
     let expires = data["expires_at_ms"]
         .as_u64()
         .ok_or_else(|| Error::Invalid("cron lifetime missing".into()))?;
+    drop(crons);
+    let background = spawn_cron_task(
+        inner,
+        session.to_owned(),
+        id.clone(),
+        pattern,
+        recurring,
+        next,
+        expires,
+    );
+    let mut crons = inner.crons.lock().await;
+    crons.insert(
+        id,
+        background,
+    );
+    Ok(Ok(data))
+}
+
+/// (Re-)arm a durable cron from stored schedule fields. Shared by the
+/// create path and process restart adoption.
+#[allow(clippy::too_many_arguments)]
+fn spawn_cron_task(
+    inner: &Arc<Inner>,
+    source: String,
+    cron_id: String,
+    pattern: String,
+    recurring: bool,
+    mut next: u64,
+    expires: u64,
+) -> Background {
+    let anchor = chrono::Local::now();
+    let anchor_ms = anchor.timestamp_millis() as u64;
+    let clock = tokio::time::Instant::now();
     let cancel = inner.stop.child_token();
     let token = cancel.clone();
     let owner = inner.clone();
-    let cron_id = id.clone();
-    let source = session.to_owned();
+    let source = source.clone();
     let join = tokio::spawn(async move {
         let result=async {
             loop {
@@ -1913,14 +1972,12 @@ async fn start_cron(
                 .await;
         }
     });
-    crons.insert(
-        id,
-        Background {
-            session: session.into(),
-            cancel,
-            join,
-        },
-    );
+    Background {
+        session: source,
+        cancel,
+        join,
+    }
+}
     Ok(Ok(data))
 }
 async fn cancel_cron(inner: &Inner, session: &str, id: &str) -> Result<bool, Error> {
@@ -1976,16 +2033,49 @@ async fn start_wakeup(
     if data["state"] != "scheduled" || timers.contains_key(&id) {
         return Ok(Ok(data));
     }
-    let delay = data["due_at_ms"]
-        .as_u64()
-        .unwrap_or(now_ms())
-        .saturating_sub(now_ms());
+    drop(timers);
+    let background = arm_wakeup(
+        inner,
+        session.to_owned(),
+        id.clone(),
+        data["due_at_ms"].as_u64().unwrap_or(now_ms()),
+    );
+    let mut timers = inner.timers.lock().await;
+    timers.insert(id, background);
+    Ok(Ok(data))
+}
+async fn cancel_wakeup(inner: &Inner, session: &str, id: &str) -> Result<bool, Error> {
+    let token = inner
+        .timers
+        .lock()
+        .await
+        .get(id)
+        .filter(|timer| timer.session == session)
+        .map(|timer| timer.cancel.clone());
+    let Some(token) = token else {
+        return Ok(false);
+    };
+    let accepted = inner.store.close_wakeup(session, id, "cancelled").await?;
+    if accepted {
+        token.cancel();
+    }
+    Ok(accepted)
+}
+
+/// (Re-)arm a durable wakeup from its stored due time. Shared by the
+/// schedule tool path and process restart adoption.
+fn arm_wakeup(
+    inner: &Arc<Inner>,
+    source: String,
+    timer_id: String,
+    due_at_ms: u64,
+) -> Background {
+    let delay = due_at_ms.saturating_sub(now_ms());
     let deadline = tokio::time::Instant::now() + std::time::Duration::from_millis(delay);
     let cancel = inner.stop.child_token();
     let token = cancel.clone();
     let owner = inner.clone();
-    let timer_id = id.clone();
-    let source = session.to_owned();
+    let timer_id = timer_id.clone();
     let join = tokio::spawn(async move {
         let result=async {
             tokio::select!{biased;_=token.cancelled()=>{owner.store.close_wakeup(&source,&timer_id,"cancelled").await?;return Ok::<_,Error>(());},_=tokio::time::sleep_until(deadline)=>{}}
@@ -2007,32 +2097,11 @@ async fn start_wakeup(
                 .await;
         }
     });
-    timers.insert(
-        id,
-        Background {
-            session: session.into(),
-            cancel,
-            join,
-        },
-    );
-    Ok(Ok(data))
-}
-async fn cancel_wakeup(inner: &Inner, session: &str, id: &str) -> Result<bool, Error> {
-    let token = inner
-        .timers
-        .lock()
-        .await
-        .get(id)
-        .filter(|timer| timer.session == session)
-        .map(|timer| timer.cancel.clone());
-    let Some(token) = token else {
-        return Ok(false);
-    };
-    let accepted = inner.store.close_wakeup(session, id, "cancelled").await?;
-    if accepted {
-        token.cancel();
+    Background {
+        session: source,
+        cancel,
+        join,
     }
-    Ok(accepted)
 }
 
 async fn ask_question(

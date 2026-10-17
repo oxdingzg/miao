@@ -131,15 +131,29 @@ impl Store {
             rows.map(|row|{let mut data:Value=serde_json::from_str(&row?)?;let id=data["timer_id"].as_str().ok_or_else(||Error::Invalid("timer id missing".into()))?;if let Some(resolved)=resolution(conn,&session,id)?{data["state"]=resolved["state"].clone();data["result"]=resolved;}Ok(data)}).collect()
         }).await
     }
-    pub async fn recover_wakeups(&self) -> Result<(), Error> {
+    /// Restart adoption: unresolved timers switch ownership to this process
+    /// via a non-terminal `wakeup.adopted` event (resolution stays open so
+    /// the re-armed loop can still fire them). Returns the re-arm list.
+    pub async fn adopt_wakeups(&self) -> Result<Vec<(String, String, u64)>, Error> {
         self.call(move|conn|{
             let tx=conn.transaction()?;
             let timers={let mut stmt=tx.prepare("SELECT q.session_id,q.data FROM engine_event q WHERE q.kind='wakeup.scheduled' AND NOT EXISTS(SELECT 1 FROM engine_event r WHERE r.session_id=q.session_id AND r.kind='wakeup.resolved' AND json_extract(r.data,'$.timer_id')=json_extract(q.data,'$.timer_id')) LIMIT 65")?;let rows=stmt.query_map([],|row|Ok((row.get::<_,String>(0)?,row.get::<_,String>(1)?)))?;rows.collect::<Result<Vec<_>,_>>()?};
             if timers.len()>64{return Err(Error::Invalid("wakeup recovery budget exceeded".into()));}
-            for (session,data) in timers{let data:Value=serde_json::from_str(&data)?;append(&tx,&session,"wakeup.resolved",json!({"timer_id":data["timer_id"],"state":"interrupted","recovered":true}))?;}
-            tx.commit()?;Ok(())
+            let mut rearm=Vec::new();
+            for (session,data) in timers{
+                let data:Value=serde_json::from_str(&data)?;
+                let id=data["timer_id"].as_str().ok_or_else(||Error::Invalid("timer id missing".into()))?.to_owned();
+                let adopted:bool=tx.query_row("SELECT EXISTS(SELECT 1 FROM engine_event WHERE session_id=?1 AND kind='wakeup.adopted' AND json_extract(data,'$.timer_id')=?2)",params![&session,&id],|row|row.get(0))?;
+                if !adopted{append(&tx,&session,"wakeup.adopted",json!({"timer_id":id,"recovered":true}))?;}
+                rearm.push((session,id,data["due_at_ms"].as_u64().unwrap_or(0)));
+            }
+            tx.commit()?;Ok(rearm)
         }).await
     }
+    pub async fn recover_wakeups(&self) -> Result<(), Error> {
+        self.adopt_wakeups().await.map(|_|())
+    }
+    pub async fn wakeups(&self, session: &str) -> Result<Vec<Value>, Error> {
 }
 fn resolution(conn: &Connection, session: &str, id: &str) -> Result<Option<Value>, Error> {
     let data:Option<String>=conn.query_row("SELECT data FROM engine_event WHERE session_id=?1 AND kind='wakeup.resolved' AND json_extract(data,'$.timer_id')=?2 ORDER BY seq DESC LIMIT 1",params![session,id],|row|row.get(0)).optional()?;
