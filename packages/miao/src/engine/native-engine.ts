@@ -11,6 +11,7 @@ import { Location } from "@miao/schema/location"
 import { Effect, Layer, Option, Schema } from "effect"
 import { EngineError, type EngineOptions, type EngineEvent } from "./client"
 import { makeEngineOwners } from "./owners"
+import { NativeRecovery } from "./recovery"
 import { engineMessageSequence } from "./message-sequence"
 import { Permission } from "@miao/schema/permission"
 import { Question } from "@miao/schema/question"
@@ -150,13 +151,15 @@ export const engineSettings = async (
 export const configured = (): boolean => nativeEngineOptions() !== undefined
 
 const refusal = (sessionID: string, error: unknown) =>
-  new ConflictError({
-    message:
-      error instanceof EngineError
-        ? `Native engine rejected admission for ${sessionID}: ${error.message}`
-        : `Native engine admission for ${sessionID} failed unexpectedly.`,
-    resource: sessionID,
-  })
+  error instanceof ConflictError
+    ? error
+    : new ConflictError({
+        message:
+          error instanceof EngineError
+            ? `Native engine rejected operation for ${sessionID}: ${error.message}`
+            : `Native engine operation for ${sessionID} failed unexpectedly.`,
+        resource: sessionID,
+      })
 
 type Owners = Effect.Success<ReturnType<typeof makeEngineOwners>>
 
@@ -172,19 +175,29 @@ export const fromOwners = (owners: Owners): NativeEngine.Interface => {
       location: input.location,
     })
   const read = <T>(
-    input: { storage: string; location: Location.Ref },
+    input: { storage: string; location: Location.Ref; sessionID?: string },
     request: (connection: Effect.Success<ReturnType<Owners["get"]>>) => Promise<unknown>,
   ) =>
     connect(input).pipe(
       Effect.flatMap((connection) =>
         Effect.tryPromise({
           try: () => request(connection) as Promise<T>,
-          catch: (error) => refusal(input.storage, error),
+          catch: (error) => refusal(input.sessionID ?? input.storage, error),
         }),
       ),
-      Effect.mapError((error) => refusal(input.storage, error)),
+      Effect.mapError((error) => refusal(input.sessionID ?? input.storage, error)),
     )
   return {
+    recoveries: (input) =>
+      read<ReturnType<typeof NativeRecovery.page>>(input, async (connection) =>
+        NativeRecovery.page(
+          await connection.client.request("recoveries", { session_id: input.sessionID, after: input.after ?? "" }),
+        ),
+      ),
+    resolveRecovery: (input) =>
+      read<ReturnType<typeof NativeRecovery.resolution>>(input, async (connection) =>
+        NativeRecovery.resolution(await connection.session.resolveRecovery(input)),
+      ),
     initialize: (input) =>
       read(input, (connection) =>
         connection.client.request("initialize", { session_id: input.sessionID, title: input.title }),

@@ -75,6 +75,24 @@ if (binary)
       const get = await fetch(url + "/api/session/" + body.id, { headers })
       expect(get.status).toBe(200)
       expect(await get.json()).toEqual(created)
+      const recoveryPath = url + "/api/session/" + body.id + "/recovery"
+      expect((await fetch(recoveryPath)).status).toBe(401)
+      const recoveries = await fetch(recoveryPath, { headers })
+      expect(recoveries.status).toBe(200)
+      expect(await recoveries.json()).toEqual({ data: { calls: [], hasMore: false } })
+      const invalidRecovery = await fetch(recoveryPath, {
+        method: "POST",
+        headers,
+        body: JSON.stringify({ callID: "missing", operationID: "bad operation", decision: "retry" }),
+      })
+      expect(invalidRecovery.status).toBe(400)
+      const unknownRecovery = await fetch(recoveryPath, {
+        method: "POST",
+        headers,
+        body: JSON.stringify({ callID: "missing", operationID: "op-missing", decision: "retry", resume: true }),
+      })
+      expect(unknownRecovery.status).toBe(409)
+      expect(await unknownRecovery.text()).toContain("unknown tool outcome")
       const shell = await fetch(url + "/api/session/" + body.id + "/shell", {
         method: "POST",
         headers,
