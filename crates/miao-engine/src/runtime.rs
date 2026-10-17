@@ -15,6 +15,7 @@ use std::{
     collections::{HashMap, HashSet},
     sync::Arc,
 };
+use tokio::io::AsyncBufReadExt;
 use tokio::sync::{broadcast, mpsc, oneshot, Mutex, Semaphore};
 use tokio::task::{JoinHandle, JoinSet};
 use tokio_util::sync::CancellationToken;
@@ -1319,6 +1320,9 @@ async fn execute(
                                 "start_job" => {
                                     start_background(inner, session, run, id, prepared).await
                                 }
+                                "monitor" => {
+                                    start_monitor(inner, session, run, id, prepared).await
+                                }
                                 "terminal_start" => {
                                     inner.tools.start_terminal(&inner.terminals, session, prepared, cancel.child_token()).await
                                 }
@@ -2592,6 +2596,167 @@ async fn cancel_background(inner: &Inner, session: &str, id: &str) -> Result<boo
     }
     token.cancel();
     Ok(true)
+}
+
+/// Admit a background command watch: durable job admission, live stdout
+/// filtered by an optional regex, batched notices on the progress channel,
+/// hard timeout kills the child. Cancel flows through cancel_job.
+async fn start_monitor(
+    inner: &Arc<Inner>,
+    session: &str,
+    run: &str,
+    call: &str,
+    prepared: Prepared,
+) -> Result<Value, ToolError> {
+    if inner.stop.is_cancelled() {
+        return Err(ToolError::Interrupted);
+    }
+    let input = crate::monitor::Input::parse(prepared.input().clone())?;
+    let matcher = input.matcher()?;
+    let timeout = input.timeout();
+    let description = input.description.clone();
+    let output_description = description.clone();
+    let mut jobs = inner.jobs.lock().await;
+    if jobs.len() >= 32 {
+        return Err(ToolError::InvalidInput);
+    }
+    let admission = inner
+        .store
+        .create_job_for(session, run, call, prepared.input().clone(), "monitor")
+        .await
+        .map_err(|error| ToolError::Io(std::io::Error::other(error.to_string())))?;
+    if admission["duplicate"] == true {
+        return Ok(admission);
+    }
+    let id = admission["job_id"]
+        .as_str()
+        .ok_or(ToolError::InvalidInput)?
+        .to_owned();
+    let token = inner.stop.child_token();
+    let owner = session.to_owned();
+    let workspace = inner.tools.location().to_owned();
+    let task_id = id.clone();
+    let task_inner = inner.clone();
+    let (job_owner, job_token, job_id) = (owner.clone(), token.clone(), id.clone());
+    let join = tokio::spawn(async move {
+        let home = std::env::var("HOME").unwrap_or_else(|_| "/root".into());
+        let mut command = tokio::process::Command::new("sh");
+        command
+            .arg("-c")
+            .arg(&input.command)
+            .current_dir(&workspace)
+            .stdin(std::process::Stdio::null())
+            .stdout(std::process::Stdio::piped())
+            .stderr(std::process::Stdio::null())
+            .env_clear()
+            .envs([
+                ("PATH", "/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin"),
+                ("HOME", home.as_str()),
+                ("LANG", "C.UTF-8"),
+            ]);
+        let mut child = match command.spawn() {
+            Ok(child) => child,
+            Err(error) => {
+                let _ = task_inner
+                    .store
+                    .record(
+                        &owner,
+                        "monitor.failed",
+                        json!({"job_id":task_id,"message":error.to_string()}),
+                    )
+                    .await;
+                task_inner.jobs.lock().await.remove(&task_id);
+                return;
+            }
+        };
+        let stdout = child.stdout.take().expect("monitor stdout piped");
+        if let Err(error) = task_inner.store.start_job(&owner, &task_id).await {
+            let _ = task_inner
+                .store
+                .record(
+                    &owner,
+                    "monitor.failed",
+                    json!({"job_id":task_id,"message":error.to_string()}),
+                )
+                .await;
+            task_inner.jobs.lock().await.remove(&task_id);
+            return;
+        }
+        let mut reader = tokio::io::BufReader::new(stdout).lines();
+        let mut batcher = crate::monitor::Batcher::default();
+        let mut window = tokio::time::interval(tokio::time::Duration::from_millis(
+            crate::monitor::BATCH_WINDOW_MS,
+        ));
+        window.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
+        window.reset();
+        let deadline =
+            tokio::time::Instant::now() + std::time::Duration::from_millis(input.timeout());
+        loop {
+            tokio::select! {
+                biased;
+                _ = token.cancelled() => {
+                    let _ = child.kill().await;
+                    let _ = finish_background_job(
+                        &task_inner,
+                        &owner,
+                        &task_id,
+                        "cancelled",
+                        json!({"reason":"cancelled_by_request"}),
+                    )
+                    .await;
+                    task_inner.jobs.lock().await.remove(&task_id);
+                    return;
+                }
+                _ = tokio::time::sleep_until(deadline) => {
+                    let _ = child.kill().await;
+                    let _ = task_inner
+                        .store
+                        .record(&owner, "monitor.timeout", json!({"job_id":task_id,"timeout_ms":input.timeout()}))
+                        .await;
+                    break;
+                }
+                _ = window.tick() => {
+                    if let Some(notice) = batcher.flush(true, &task_id, description.as_deref()) {
+                        let _ = task_inner.progress.send(notice);
+                    }
+                }
+                line = reader.next_line() => {
+                    match line {
+                        Ok(Some(line)) => {
+                            batcher.feed(matcher.as_ref(), &line);
+                        }
+                        _ => {
+                            let status = child.wait().await.map(|status| status.code().unwrap_or(-1)).unwrap_or(-1);
+                            let _ = task_inner
+                                .store
+                                .record(&owner, "monitor.exited", json!({"job_id":task_id,"code":status}))
+                                .await;
+                            if let Some(notice) = batcher.flush(true, &task_id, description.as_deref()) {
+                                let _ = task_inner.progress.send(notice);
+                            }
+                            break;
+                        }
+                    }
+                }
+            }
+        }
+        let _ = child.kill().await;
+        task_inner.jobs.lock().await.remove(&task_id);
+    });
+    jobs.insert(
+        job_id,
+        Background {
+            session: job_owner,
+            cancel: job_token,
+            join,
+        },
+    );
+    Ok(json!({
+        "job_id":id,
+        "description":output_description,
+        "output":"watching stdout; matching lines arrive as monitor.notice progress events; cancel with cancel_job",
+        "timeout_ms":timeout,
+    }))
 }
 
 async fn start_background(

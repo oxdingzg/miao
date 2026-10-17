@@ -533,12 +533,27 @@ impl Store {
         call: &str,
         input: Value,
     ) -> Result<Value, Error> {
+        self.create_job_for(session, run, call, input, "start_job")
+            .await
+    }
+
+    /// Job admission bound to the dispatched intent of an arbitrary tool name
+    /// (`start_job` for background tasks, `monitor` for command watches).
+    pub async fn create_job_for(
+        &self,
+        session: &str,
+        run: &str,
+        call: &str,
+        input: Value,
+        tool_name: &str,
+    ) -> Result<Value, Error> {
         let (session, run, call) = (session.to_owned(), run.to_owned(), call.to_owned());
+        let tool_name = tool_name.to_owned();
         self.call(move |conn| {
             let tx=conn.transaction()?;let request=format!("{run}/{call}");
             let existing:Option<(String,String,String)>=tx.query_row("SELECT id,state,input FROM engine_job WHERE request_key=?1 AND session_id=?2",params![request,session],|r|Ok((r.get(0)?,r.get(1)?,r.get(2)?))).optional()?;
             if let Some((id,state,original))=existing {if serde_json::from_str::<Value>(&original)?!=input{return Err(Error::Conflict);}return Ok(json!({"job_id":id,"state":state,"duplicate":true}));}
-            let original:Option<String>=tx.query_row("SELECT t.input FROM engine_tool t JOIN engine_run r ON r.id=t.run_id WHERE t.id=?1 AND t.name='start_job' AND t.state='dispatched' AND r.session_id=?2 AND r.state='running'",params![request,session],|r|r.get(0)).optional()?;
+            let original:Option<String>=tx.query_row("SELECT t.input FROM engine_tool t JOIN engine_run r ON r.id=t.run_id WHERE t.id=?1 AND t.name=?2 AND t.state='dispatched' AND r.session_id=?3 AND r.state='running'",params![request,tool_name,session],|r|r.get(0)).optional()?;
             let original=original.ok_or_else(||Error::Invalid("job admission requires its dispatched tool intent".into()))?;
             if serde_json::from_str::<Value>(&original)?["input"]!=input{return Err(Error::Conflict);}
             let id=uuid::Uuid::new_v4().to_string();tx.execute("INSERT INTO engine_job VALUES(?1,?2,?3,'queued',?4,NULL)",params![id,session,request,serde_json::to_string(&input)?])?;

@@ -972,6 +972,7 @@ impl Tools {
                 }
                 ".".into()
             }
+            "monitor" if self.background_enabled => ".".into(),
             "start_job" if self.background_enabled => process::Input::parse(input.clone())?.cwd,
             "job_status" | "cancel_job" if self.background_enabled => {
                 crate::jobs::Selector::parse(input.clone())?;
@@ -1019,7 +1020,7 @@ impl Tools {
         }
         if matches!(
             name,
-            "run_command" | "bash" | "start_job" | "terminal_start" | "glob" | "grep"
+            "run_command" | "bash" | "start_job" | "monitor" | "terminal_start" | "glob" | "grep"
         ) && !tokio::fs::metadata(&path).await?.is_dir()
         {
             return Err(ToolError::InvalidInput);
@@ -1090,7 +1091,7 @@ impl Tools {
             Access::Schedule
         } else if matches!(name, "cancel_wakeup" | "todowrite" | "goal" | "cron_delete") {
             Access::SessionState
-        } else if name == "start_job" || name.starts_with("terminal_") {
+        } else if name == "start_job" || name == "monitor" || name.starts_with("terminal_") {
             Access::Background
         } else if name == "task" {
             Access::Delegate
@@ -1558,6 +1559,7 @@ impl Tools {
             for name in ["job_status", "cancel_job"] {
                 definitions.push(ToolDefinition{name:name.into(),description:if name=="job_status"{"Inspect this Session's job state and bounded terminal output.".into()}else{"Request cancellation of this Session's active background job.".into()},input_schema:json!({"type":"object","properties":{"job_id":{"type":"string"}},"required":["job_id"],"additionalProperties":false})});
             }
+            definitions.push(ToolDefinition{name:"monitor".into(),description:"Run a shell command in the background and stream stdout lines as monitor.notice progress events. Optional regex pattern filters delivered lines (batched ~200ms, max 200 lines/8KiB each, 64 notices then suppressed). Default timeout 600000 ms, max 3600000 ms kills the command. Cancel with cancel_job.".into(),input_schema:json!({"type":"object","properties":{"command":{"type":"string","minLength":1},"description":{"type":"string","maxLength":256},"pattern":{"type":"string","maxLength":512},"timeout_ms":{"type":"integer","minimum":1,"maximum":3600000}},"required":["command"],"additionalProperties":false})});
         }
         if let Some(web) = &self.web {
             definitions.extend(web.definitions());
