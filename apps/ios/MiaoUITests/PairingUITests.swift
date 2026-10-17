@@ -101,6 +101,9 @@ final class PairingUITests: XCTestCase {
         if let account = fixture.account {
             stage("account")
             if fixture.enrollment != nil {
+                let accountEntry = app.buttons["中继账号"].firstMatch
+                XCTAssertTrue(accountEntry.waitForExistence(timeout: 15))
+                accountEntry.tap()
                 XCTAssertTrue(app.textFields["hubOrigin"].waitForExistence(timeout: 15))
                 app.textFields["hubOrigin"].tap(); app.textFields["hubOrigin"].typeText(account.origin)
             }
