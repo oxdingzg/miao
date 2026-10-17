@@ -7753,6 +7753,91 @@ describe("SessionRunnerLLM", () => {
     }),
   )
 
+  it.effect("replays an attempt whose tool-argument stream stalled before dispatch", () =>
+    Effect.gen(function* () {
+      yield* setup
+      const previous = process.env.MIAO_TOOL_INPUT_TIMEOUT_MS
+      yield* Effect.addFinalizer(() =>
+        Effect.sync(() => {
+          if (previous === undefined) delete process.env.MIAO_TOOL_INPUT_TIMEOUT_MS
+          else process.env.MIAO_TOOL_INPUT_TIMEOUT_MS = previous
+        }),
+      )
+      process.env.MIAO_TOOL_INPUT_TIMEOUT_MS = "100"
+      const session = yield* SessionV2.Service
+      yield* session.prompt({ sessionID, prompt: Prompt.make({ text: "Recover from a stalled call" }), resume: false })
+      const stalled = fragmentFixture("tool input", fragmentID("tool input", "stalled"), ['{"text":"'])
+      let attempts = 0
+      responseStream = Stream.unwrap(
+        Effect.sync(() =>
+          ++attempts === 1
+            ? Stream.concat(Stream.fromIterable(stalled.partialEvents), Stream.never)
+            : Stream.fromIterable(fragmentFixture("text", "after-stall", ["Recovered"]).completeEvents),
+        ),
+      )
+      const run = yield* session.resume(sessionID).pipe(Effect.forkScoped)
+      while (attempts < 2) yield* TestClock.adjust("1 second")
+      yield* Fiber.join(run)
+      expect(attempts).toBe(2)
+      // The stalled call is closed as unexecuted and the replayed attempt answers.
+      expect(yield* session.context(sessionID)).toMatchObject([
+        { type: "user", text: "Recover from a stalled call" },
+        {
+          type: "assistant",
+          finish: "stop",
+          content: [
+            { type: "tool", id: fragmentID("tool input", "stalled"), state: { status: "error" } },
+            { type: "text", text: "Recovered" },
+          ],
+        },
+      ])
+      const database = yield* Database.Service
+      const retried = yield* database.db
+        .select({ data: EventTable.data })
+        .from(EventTable)
+        .where(eq(EventTable.type, EventV2.versionedType(SessionEvent.Retried.type, 1)))
+        .all()
+        .pipe(Effect.orDie)
+      expect(retried.map((row) => row.data)).toMatchObject([
+        { sessionID, attempt: 1, error: { message: expect.stringContaining("no argument progress") } },
+      ])
+    }),
+  )
+
+  it.effect("does not replay an attempt that exceeded the tool argument byte budget", () =>
+    Effect.gen(function* () {
+      yield* setup
+      const previous = process.env.MIAO_TOOL_INPUT_MAX_BYTES
+      yield* Effect.addFinalizer(() =>
+        Effect.sync(() => {
+          if (previous === undefined) delete process.env.MIAO_TOOL_INPUT_MAX_BYTES
+          else process.env.MIAO_TOOL_INPUT_MAX_BYTES = previous
+        }),
+      )
+      process.env.MIAO_TOOL_INPUT_MAX_BYTES = "1"
+      const session = yield* SessionV2.Service
+      yield* session.prompt({ sessionID, prompt: Prompt.make({ text: "Oversized call" }), resume: false })
+      const oversized = fragmentFixture("tool input", fragmentID("tool input", "oversized"), ["too large"])
+      let attempts = 0
+      responseStream = Stream.unwrap(
+        Effect.sync(() => {
+          attempts++
+          return Stream.fromIterable(oversized.partialEvents)
+        }),
+      )
+      yield* session.resume(sessionID).pipe(Effect.flip)
+      expect(attempts).toBe(1)
+      const database = yield* Database.Service
+      const retried = yield* database.db
+        .select({ event: EventTable.type })
+        .from(EventTable)
+        .where(eq(EventTable.type, EventV2.versionedType(SessionEvent.Retried.type, 1)))
+        .all()
+        .pipe(Effect.orDie)
+      expect(retried).toHaveLength(0)
+    }),
+  )
+
   ;["stream-read", "connection-closed", "connection-failed", "Timeout", "tls-handshake"].forEach((kind) => {
     it.effect(`retries ${kind} before its first event`, () =>
       Effect.gen(function* () {

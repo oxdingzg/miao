@@ -202,6 +202,9 @@ const SUBAGENT_SILENCE = Duration.minutes(SUBAGENT_SILENCE_MINUTES)
  */
 const STREAM_STALL_MS = 5_000
 
+/** What a prepared call becomes when its argument stream died before dispatch. */
+const INTERRUPTED_TOOL_CALL = "Provider stream interrupted before this tool call was complete; it was not executed"
+
 /** Goal/todo-driven autonomous loop bounds. */
 const DEFAULT_LOOP_MAX_ITERATIONS = 25
 const LOOP_STALL_LIMIT = 2
@@ -1042,6 +1045,11 @@ const layer = Layer.effect(
       // so a retry the schedule declines is never reported.
       let retrying: LLMError | SessionRunnerModel.Error | undefined
       let attempt = 0
+      // A replay restates the request, so it is only safe where nothing durable
+      // has been produced: no answer text and no dispatched tool call. Reasoning
+      // is live-only and prepared tool input is discarded first.
+      const replayable = () =>
+        !publisher.hasAnswerText() && !publisher.hasDispatchedToolCall() && !publisher.hasProviderError()
       return yield* Effect.uninterruptibleMask((restore) =>
         Effect.gen(function* () {
           const runProviderTurn = () => Effect.suspend(() => {
@@ -1055,7 +1063,8 @@ const layer = Layer.effect(
             if (retried) attempt++
             return (
               retried
-                ? publisher.discardInFlight().pipe(
+                ? withPublication(publisher.discardPreparedTools(INTERRUPTED_TOOL_CALL)).pipe(
+                    Effect.andThen(publisher.discardInFlight()),
                     Effect.andThen(
                       events.publish(SessionEvent.Retried, {
                         sessionID: session.id,
@@ -1077,15 +1086,15 @@ const layer = Layer.effect(
               ),
             )
           }).pipe(
-            // Retry only while the attempt failed before publishing visible
-            // answer content. Reasoning is live-only and replayable, so a drop
-            // after reasoning but before any text or tool call can still retry;
-            // once text or a tool call is visible, replaying would duplicate it.
+            // Retry only while the attempt failed before publishing answer text
+            // or dispatching a tool call. Reasoning is live-only and replayable,
+            // and prepared-but-uncalled tool input is scaffolding the replay
+            // restates, so a stalled argument stream can retry; once text or a
+            // dispatched call is visible, replaying would duplicate it.
             // Interrupts never retry.
             Effect.tapError((error) =>
               SessionRunnerProviderRetry.retryable(error) &&
-              !publisher.hasVisibleOutput() &&
-              !publisher.hasProviderError()
+              replayable()
                 ? Effect.sync(() => {
                     retrying = error
                   }).pipe(
@@ -1102,10 +1111,7 @@ const layer = Layer.effect(
                 : Effect.void,
             ),
             Effect.retry({
-              while: (error) =>
-                !publisher.hasVisibleOutput() &&
-                !publisher.hasProviderError() &&
-                SessionRunnerProviderRetry.retryable(error),
+              while: (error) => replayable() && SessionRunnerProviderRetry.retryable(error),
               schedule: SessionRunnerProviderRetry.providerSchedule,
             }),
             Effect.exit,
@@ -1118,17 +1124,13 @@ const layer = Layer.effect(
           // up; a deterministic rejection still fails, at the cost of one replay.
           if (stream._tag === "Failure") {
             const rejected = Option.getOrUndefined(Cause.findErrorOption(stream.cause))
-            if (
-              !publisher.hasVisibleOutput() &&
-              !publisher.hasProviderError() &&
-              rejected !== undefined &&
-              SessionRunnerProviderRetry.selfHealable(rejected)
-            ) {
+            if (replayable() && rejected !== undefined && SessionRunnerProviderRetry.selfHealable(rejected)) {
               yield* Effect.logWarning("retrying rejected provider request", {
                 sessionID: session.id,
                 model: `${model.provider}/${model.id}`,
                 ...retryLog(rejected),
               })
+              yield* withPublication(publisher.discardPreparedTools(INTERRUPTED_TOOL_CALL))
               yield* publisher.discardInFlight()
               stream = yield* runProviderTurn()
             }
@@ -1162,7 +1164,7 @@ const layer = Layer.effect(
             if (llmFailure.module === "SessionToolInputGuard")
               yield* withPublication(publisher.failPreparedTools("Tool arguments were not completed; this local call was not executed. Earlier completed operations are retained."))
             if (invalidToolInput || (llmFailure.reason._tag === "Transport" && llmFailure.reason.retryable))
-              yield* withPublication(publisher.failPreparedTools("Provider stream interrupted before this tool call was complete; it was not executed"))
+              yield* withPublication(publisher.failPreparedTools(INTERRUPTED_TOOL_CALL))
             const detail = retryDetail(llmFailure)
             yield* withPublication(publisher.failAssistant(detail.statusCode === undefined
               ? llmFailure.reason.message
