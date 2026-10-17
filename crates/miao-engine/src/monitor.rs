@@ -109,10 +109,6 @@ impl Batcher {
             "suppressed":self.suppressed,
         }))
     }
-
-    pub fn suppressed(&self) -> bool {
-        self.suppressed
-    }
 }
 
 #[cfg(test)]
@@ -151,12 +147,13 @@ mod tests {
     #[test]
     fn notice_budget_is_bounded() {
         let mut batcher = Batcher::default();
-        for _ in 0..=MAX_NOTICES {
+        for _ in 0..MAX_NOTICES {
             batcher.feed(None, "tick");
             assert!(batcher.flush(true, "job", None).is_some());
         }
         batcher.feed(None, "tick");
         assert!(batcher.flush(true, "job", None).is_none());
-        assert!(batcher.suppressed());
+        batcher.feed(None, "tick");
+        assert!(batcher.flush(true, "job", None).is_none());
     }
 }

@@ -15,6 +15,7 @@ use std::{
     collections::{HashMap, HashSet},
     sync::Arc,
 };
+use tokio::io::AsyncBufReadExt;
 use tokio::sync::{broadcast, mpsc, oneshot, Mutex, Semaphore};
 use tokio::task::{JoinHandle, JoinSet};
 use tokio_util::sync::CancellationToken;
@@ -2614,6 +2615,7 @@ async fn start_monitor(
     let matcher = input.matcher()?;
     let timeout = input.timeout();
     let description = input.description.clone();
+    let output_description = description.clone();
     let mut jobs = inner.jobs.lock().await;
     if jobs.len() >= 32 {
         return Err(ToolError::InvalidInput);
@@ -2635,7 +2637,9 @@ async fn start_monitor(
     let workspace = inner.tools.location().to_owned();
     let task_id = id.clone();
     let task_inner = inner.clone();
+    let (job_owner, job_token, job_id) = (owner.clone(), token.clone(), id.clone());
     let join = tokio::spawn(async move {
+        let home = std::env::var("HOME").unwrap_or_else(|_| "/root".into());
         let mut command = tokio::process::Command::new("sh");
         command
             .arg("-c")
@@ -2647,10 +2651,7 @@ async fn start_monitor(
             .env_clear()
             .envs([
                 ("PATH", "/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin"),
-                (
-                    "HOME",
-                    std::env::var("HOME").unwrap_or_else(|_| "/root".into()),
-                ),
+                ("HOME", home.as_str()),
                 ("LANG", "C.UTF-8"),
             ]);
         let mut child = match command.spawn() {
@@ -2727,16 +2728,16 @@ async fn start_monitor(
         task_inner.jobs.lock().await.remove(&task_id);
     });
     jobs.insert(
-        id,
+        job_id,
         Background {
-            session: owner,
-            cancel: token,
+            session: job_owner,
+            cancel: job_token,
             join,
         },
     );
     Ok(json!({
         "job_id":id,
-        "description":description,
+        "description":output_description,
         "output":"watching stdout; matching lines arrive as monitor.notice progress events; cancel with cancel_job",
         "timeout_ms":timeout,
     }))
