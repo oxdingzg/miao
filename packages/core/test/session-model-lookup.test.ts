@@ -143,7 +143,7 @@ describe("configured provider account", () => {
           delete provider.request.body.apiKey
         }),
       )
-      yield* credentials.create({
+      const work = yield* credentials.create({
         integrationID,
         label: "Work",
         value: Credential.Key.make({ type: "key", key: "work-key", metadata: { probe: "work" } }),
@@ -165,6 +165,14 @@ describe("configured provider account", () => {
       // The agent's own choice outranks the Location default.
       const agent = yield* models.resolve(SessionV2.Info.make({ ...session, agent: AgentV2.ID.make("build") }))
       expect(agent.model.route.defaults).toMatchObject({ http: { body: { probe: "personal" } } })
+
+      // The conversation's own pin outranks every config level.
+      const pinned = yield* models.resolve(SessionV2.Info.make({ ...session, credentialID: work.id }))
+      expect(pinned.model.route.defaults).toMatchObject({ http: { body: { probe: "work" } } })
+      const pinnedAgent = yield* models.resolve(
+        SessionV2.Info.make({ ...session, agent: AgentV2.ID.make("build"), credentialID: work.id }),
+      )
+      expect(pinnedAgent.model.route.defaults).toMatchObject({ http: { body: { probe: "work" } } })
     }),
   )
 })

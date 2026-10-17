@@ -634,7 +634,10 @@ export const locationLayer = Layer.effect(
       providerID: string,
     ) {
       const merged = decodeConfig(Config.merge(yield* config.entries())).pipe(Option.getOrUndefined)
+      // The conversation's own pin outranks both config levels; unset follows
+      // the provider's account resolution.
       const account =
+        session.credentialID ??
         (session.agent ? merged?.agents?.[session.agent]?.accounts?.[providerID] : undefined) ??
         merged?.accounts?.[providerID]
       if (!account) return yield* integrations.connection.active(integrationID)

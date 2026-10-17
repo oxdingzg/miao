@@ -1,6 +1,7 @@
 import { describe, expect } from "bun:test"
 import path from "path"
 import { Effect, Layer, Stream } from "effect"
+import { Credential } from "@miao/schema/credential"
 import { AgentV2 } from "@miao/core/agent"
 import { asc, eq } from "drizzle-orm"
 import { Database } from "@miao/core/database/database"
@@ -412,6 +413,71 @@ describe("SessionV2.create", () => {
       expect(
         yield* db.select().from(EventTable).where(eq(EventTable.aggregate_id, created.id)).all().pipe(Effect.orDie),
       ).toHaveLength(1)
+    }),
+  )
+
+  it.effect("pins the conversation to an account through the durable Session event", () =>
+    Effect.gen(function* () {
+      const session = yield* SessionV2.Service
+      const created = yield* session.create({ location })
+      const credentialID = Credential.ID.make("cred_pinned")
+
+      yield* session.switchAccount({ sessionID: created.id, credentialID })
+
+      expect((yield* session.get(created.id))?.credentialID).toBe(credentialID)
+      expect(
+        Array.from(
+          yield* session.events({ sessionID: created.id }).pipe(
+            Stream.filter((event) => event.type === "session.next.account.switched"),
+            Stream.take(1),
+            Stream.runCollect,
+          ),
+        ),
+      ).toMatchObject([{ type: "session.next.account.switched", data: { credentialID } }])
+
+      // Clearing the pin returns the conversation to the provider's own choice.
+      yield* session.switchAccount({ sessionID: created.id, credentialID: null })
+      expect((yield* session.get(created.id))?.credentialID).toBeUndefined()
+    }),
+  )
+
+  it.effect("ignores an account switch when the pinned account is unchanged", () =>
+    Effect.gen(function* () {
+      const session = yield* SessionV2.Service
+      const created = yield* session.create({ location })
+      const credentialID = Credential.ID.make("cred_pinned")
+
+      yield* session.switchAccount({ sessionID: created.id, credentialID })
+      yield* session.switchAccount({ sessionID: created.id, credentialID })
+
+      const { db } = yield* Database.Service
+      expect(
+        yield* db
+          .select()
+          .from(EventTable)
+          .where(eq(EventTable.aggregate_id, created.id))
+          .all()
+          .pipe(Effect.orDie),
+      ).toHaveLength(2)
+      expect((yield* session.get(created.id))?.credentialID).toBe(credentialID)
+    }),
+  )
+
+  it.effect("rejects an account switch for a missing Session", () =>
+    Effect.gen(function* () {
+      const session = yield* SessionV2.Service
+
+      expect(
+        yield* session
+          .switchAccount({
+            sessionID: SessionV2.ID.make("ses_missing_account_switch"),
+            credentialID: Credential.ID.make("cred_pinned"),
+          })
+          .pipe(
+            Effect.flip,
+            Effect.map((error) => error._tag),
+          ),
+      ).toBe("Session.NotFoundError")
     }),
   )
 
