@@ -96,6 +96,7 @@ async fn controller_retry_is_durable_admission_only_and_never_replays_the_old_di
         call_id: "call".into(),
         operation_id: "decision-one".into(),
         decision: Decision::Retry,
+        resume: false,
     };
     let receipt = host.dispatch(resolve()).await.unwrap();
     assert_eq!(receipt["outcome"], "unknown");
@@ -103,11 +104,18 @@ async fn controller_retry_is_durable_admission_only_and_never_replays_the_old_di
     assert_eq!(count.load(Ordering::SeqCst), 0);
     let snapshot = store.snapshot("s").await.unwrap();
     assert_eq!(snapshot["pending"].as_array().unwrap().len(), 1);
-    host.dispatch(Command::Resume {
-        session_id: "s".into(),
-    })
-    .await
-    .unwrap();
+    assert_eq!(
+        receipt,
+        host.dispatch(Command::ResolveRecovery {
+            session_id: "s".into(),
+            call_id: "call".into(),
+            operation_id: "decision-one".into(),
+            decision: Decision::Retry,
+            resume: true,
+        })
+        .await
+        .unwrap()
+    );
     tokio::time::timeout(std::time::Duration::from_secs(5), async {
         loop {
             let events = store.events("s", 0, 100).await.unwrap();
@@ -124,6 +132,20 @@ async fn controller_retry_is_durable_admission_only_and_never_replays_the_old_di
     .unwrap();
     assert_eq!(count.load(Ordering::SeqCst), 1);
     assert_eq!(receipt, host.dispatch(resolve()).await.unwrap());
+    assert_eq!(
+        receipt,
+        host.dispatch(Command::ResolveRecovery {
+            session_id: "s".into(),
+            call_id: "call".into(),
+            operation_id: "decision-one".into(),
+            decision: Decision::Retry,
+            resume: true,
+        })
+        .await
+        .unwrap()
+    );
+    tokio::time::sleep(std::time::Duration::from_millis(30)).await;
+    assert_eq!(count.load(Ordering::SeqCst), 1);
     assert!(store.snapshot("s").await.unwrap()["pending"]
         .as_array()
         .unwrap()
@@ -148,7 +170,8 @@ async fn controller_retry_is_durable_admission_only_and_never_replays_the_old_di
             session_id: "s".into(),
             call_id: "call".into(),
             operation_id: "decision-one".into(),
-            decision: Decision::Abandon
+            decision: Decision::Abandon,
+            resume: false,
         })
         .await,
         Err(Error::Conflict)
