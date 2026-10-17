@@ -174,6 +174,13 @@ type Promotion = SessionInput.Delivery | "notification" | "notification-steer"
  */
 const MAX_OVERFLOW_COMPACTIONS = 2
 const MAX_STREAM_CONTINUATIONS = 2
+/**
+ * How many times one provider turn may resume after the model hit its output
+ * token limit. Two continuations normally finish an answer that a single
+ * response length cut in half; a model that still has not stopped is looping on
+ * the same content, and another attempt only spends tokens.
+ */
+const MAX_OUTPUT_CONTINUATIONS = 2
 const MAX_TOOL_INPUT_CORRECTIONS = 2
 
 /**
@@ -306,6 +313,7 @@ const layer = Layer.effect(
     // trigger the takeover note, so replays and restarts stay silent.
     const seenModelSwitches = new Map<string, number>()
     const streamContinuations = new Map<string, number>()
+    const outputContinuations = new Map<string, number>()
     const toolInputCorrections = new Map<string, number>()
     // A new input may legitimately ask for the same operation again. Drain
     // boundaries are scheduler details, not user-request boundaries.
@@ -1351,6 +1359,42 @@ const layer = Layer.effect(
           }
           if (stream._tag === "Success" && stepSettlement && !publisher.hasProviderError())
             streamContinuations.delete(session.id)
+          // A response that ran into the output token limit is unfinished work,
+          // not a completed turn: the model was mid-answer and the next turn
+          // resumes it. Two continuations cover an answer that one response
+          // length cut in half; past that the model is repeating itself and
+          // marking the answer truncated tells the user why it stops.
+          if (
+            stream._tag === "Success" &&
+            stepSettlement?.finish === "length" &&
+            !publisher.hasProviderError() &&
+            !publisher.hasToolCalls() &&
+            !isLastStep
+          ) {
+            const attempt = (outputContinuations.get(session.id) ?? 0) + 1
+            if (attempt > MAX_OUTPUT_CONTINUATIONS) {
+              yield* withPublication(
+                publisher.failAssistant(
+                  `Response still truncated after ${MAX_OUTPUT_CONTINUATIONS} output token limit continuations`,
+                ),
+              )
+              return { needsContinuation: false, step: currentStep, failed: true }
+            }
+            outputContinuations.set(session.id, attempt)
+            // A NEW provider turn over the committed history and a fresh
+            // assistant message, so the resumed text does not append to the
+            // truncated one and the turn reports both halves.
+            yield* events.publish(SessionEvent.Synthetic, {
+              sessionID: session.id,
+              timestamp: yield* DateTime.now,
+              messageID: SessionMessage.ID.create(),
+              text: `Your last response hit the output token limit (stop reason: length). Continue from where it stopped without repeating what is already written, and do not apologize or recap. Break the remaining work into smaller pieces.`,
+              metadata: { providerOutputLimitContinuation: true },
+            })
+            return { needsContinuation: true, step: currentStep }
+          }
+          if (stepSettlement?.finish !== undefined && stepSettlement.finish !== "length")
+            outputContinuations.delete(session.id)
           if (stream._tag === "Failure") return yield* Effect.failCause(stream.cause)
           if (settled._tag === "Failure" && Cause.hasInterrupts(settled.cause))
             return yield* Effect.failCause(settled.cause)
@@ -1852,9 +1896,11 @@ const layer = Layer.effect(
       return yield* Effect.scoped(
         Effect.gen(function* () {
           streamContinuations.delete(input.sessionID)
+          outputContinuations.delete(input.sessionID)
           toolInputCorrections.delete(input.sessionID)
           yield* Effect.addFinalizer(() => Effect.sync(() => {
             streamContinuations.delete(input.sessionID)
+            outputContinuations.delete(input.sessionID)
             toolInputCorrections.delete(input.sessionID)
           }))
           const drainSession = yield* store.get(input.sessionID)

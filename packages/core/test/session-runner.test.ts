@@ -1818,6 +1818,62 @@ describe("SessionRunnerLLM", () => {
     }).pipe(Effect.ensuring(Effect.sync(() => { modelResolveFailure = undefined }))),
   )
 
+  it.effect("resumes a response that hit the output token limit", () =>
+    Effect.gen(function* () {
+      yield* setup
+      const session = yield* SessionV2.Service
+      let turns = 0
+      responseFor = () => {
+        turns += 1
+        const reason = turns < 3 ? ("length" as const) : ("stop" as const)
+        return Stream.fromIterable([
+          LLMEvent.stepStart({ index: 0 }),
+          LLMEvent.textStart({ id: `part-${turns}` }),
+          LLMEvent.textDelta({ id: `part-${turns}`, text: `part ${turns}` }),
+          LLMEvent.textEnd({ id: `part-${turns}` }),
+          LLMEvent.stepFinish({ index: 0, reason }),
+          LLMEvent.finish({ reason }),
+        ])
+      }
+
+      yield* session.prompt({ sessionID, prompt: Prompt.make({ text: "write the report" }), resume: false })
+      yield* session.resume(sessionID)
+
+      // Two truncated responses are resumed, and the third ends the turn.
+      expect(turns).toBe(3)
+      expect(JSON.stringify(requests[1])).toContain("hit the output token limit")
+      expect((yield* session.context(sessionID)).at(-1)).toMatchObject({ type: "assistant", finish: "stop" })
+    }),
+  )
+
+  it.effect("stops resuming a response that never stops hitting the output token limit", () =>
+    Effect.gen(function* () {
+      yield* setup
+      const session = yield* SessionV2.Service
+      let turns = 0
+      responseFor = () => {
+        turns += 1
+        return Stream.fromIterable([
+          LLMEvent.stepStart({ index: 0 }),
+          LLMEvent.textStart({ id: `part-${turns}` }),
+          LLMEvent.textDelta({ id: `part-${turns}`, text: `part ${turns}` }),
+          LLMEvent.textEnd({ id: `part-${turns}` }),
+          LLMEvent.stepFinish({ index: 0, reason: "length" }),
+          LLMEvent.finish({ reason: "length" }),
+        ])
+      }
+
+      yield* session.prompt({ sessionID, prompt: Prompt.make({ text: "write the report" }), resume: false })
+      yield* session.resume(sessionID).pipe(Effect.catch(() => Effect.void))
+
+      expect(turns).toBe(3)
+      expect((yield* session.context(sessionID)).at(-1)).toMatchObject({
+        type: "assistant",
+        error: { message: "Response still truncated after 2 output token limit continuations" },
+      })
+    }),
+  )
+
   it.live("continues after a real WebSocket 1006 without repeating completed tool effects", () =>
     Effect.gen(function* () {
       yield* setup
