@@ -813,6 +813,7 @@ impl Tools {
                 targets: vec![],
                 access: Access::Web,
                 select: None,
+                batchable_read: false,
             });
         }
         let invocation = if self.compact_disclosure && name == "tool_call" {
