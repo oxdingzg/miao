@@ -161,6 +161,7 @@ impl Store {
                     CREATE TABLE IF NOT EXISTS engine_run(id TEXT PRIMARY KEY, session_id TEXT NOT NULL REFERENCES engine_session(id), state TEXT NOT NULL);
                     CREATE UNIQUE INDEX IF NOT EXISTS engine_active_run ON engine_run(session_id) WHERE state='running';
                     CREATE TABLE IF NOT EXISTS engine_timing(session_id TEXT NOT NULL REFERENCES engine_session(id), run_id TEXT NOT NULL, step INTEGER NOT NULL, ttft_ms INTEGER NOT NULL, PRIMARY KEY(session_id,run_id,step));
+                    CREATE TABLE IF NOT EXISTS engine_cache_prefix(session_id TEXT PRIMARY KEY REFERENCES engine_session(id), affinity_session TEXT NOT NULL, route_hash TEXT NOT NULL, parameters_hash TEXT NOT NULL, history_hash TEXT NOT NULL, message_count INTEGER NOT NULL, session_seq INTEGER NOT NULL);
                     CREATE TABLE IF NOT EXISTS engine_tool(id TEXT PRIMARY KEY, run_id TEXT NOT NULL REFERENCES engine_run(id), name TEXT NOT NULL, input TEXT NOT NULL, state TEXT NOT NULL);
                     CREATE TABLE IF NOT EXISTS engine_location(session_id TEXT PRIMARY KEY REFERENCES engine_session(id),root TEXT NOT NULL);
                     CREATE TABLE IF NOT EXISTS engine_approval(id TEXT PRIMARY KEY,session_id TEXT NOT NULL REFERENCES engine_session(id),run_id TEXT NOT NULL REFERENCES engine_run(id),call_id TEXT NOT NULL REFERENCES engine_tool(id),binding TEXT NOT NULL,expires_at INTEGER NOT NULL,state TEXT NOT NULL);
@@ -711,18 +712,32 @@ impl Store {
 
     /// A fork may propose only a completed parent prefix at its own cursor.
     /// The provider checks exact wire parameters/history before using the hint.
+    /// Proofs live in a side table: the replay-pinned journal never carries them.
     pub(crate) async fn cache_affinity(
         &self,
         session: &str,
     ) -> Result<Option<crate::cache_affinity::Proof>, Error> {
         let session = session.to_owned();
         self.call(move |conn| {
-            let data: Option<String> = conn.query_row(
-                "SELECT e.data FROM engine_lineage l JOIN engine_event e ON e.session_id=l.parent_session_id WHERE l.session_id=?1 AND e.kind='cache.prefix.completed' AND e.seq<=l.message_seq ORDER BY e.seq DESC LIMIT 1",
-                [&session], |row| row.get(0),
+            let row: Option<(String, String, String, String, i64)> = conn.query_row(
+                "SELECT p.affinity_session,p.route_hash,p.parameters_hash,p.history_hash,p.message_count FROM engine_cache_prefix p JOIN engine_lineage l ON l.parent_session_id=p.session_id WHERE l.session_id=?1 AND p.session_seq<=l.message_seq",
+                [&session], |row| Ok((row.get(0)?,row.get(1)?,row.get(2)?,row.get(3)?,row.get(4)?)),
             ).optional()?;
-            Ok(data.and_then(|data|serde_json::from_str(&data).ok()))
+            Ok(row.map(|(affinity_session,route_hash,parameters_hash,history_hash,message_count)|crate::cache_affinity::Proof{affinity_session,route_hash,parameters_hash,history_hash,message_count:usize::try_from(message_count).unwrap_or(0)}))
         }).await
+    }
+
+    /// Wall-clock-free side-table write. Losing it only loses an optimization.
+    pub async fn record_cache_prefix(&self, session: &str, proof: crate::cache_affinity::Proof) {
+        let session = session.to_owned();
+        let _ = self.call(move |conn| {
+            conn.execute(
+                "INSERT INTO engine_cache_prefix(session_id,affinity_session,route_hash,parameters_hash,history_hash,message_count,session_seq) VALUES(?1,?2,?3,?4,?5,?6,(SELECT COALESCE(MAX(seq),0) FROM engine_message WHERE session_id=?1))
+                 ON CONFLICT(session_id) DO UPDATE SET affinity_session=excluded.affinity_session,route_hash=excluded.route_hash,parameters_hash=excluded.parameters_hash,history_hash=excluded.history_hash,message_count=excluded.message_count,session_seq=excluded.session_seq",
+                params![session,proof.affinity_session,proof.route_hash,proof.parameters_hash,proof.history_hash,proof.message_count as i64],
+            )?;
+            Ok(())
+        }).await;
     }
 
     pub async fn fork(

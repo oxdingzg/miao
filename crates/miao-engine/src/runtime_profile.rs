@@ -32,12 +32,8 @@ pub(crate) async fn cache_prefix_completed(proof: Option<crate::cache_affinity::
     let (Ok(scope), Some(proof)) = (SCOPE.try_with(Clone::clone), proof) else {
         return;
     };
-    // Missing persistence can lose an optimization, not fail a completed turn
-    // and accidentally turn an already-billed answer into a retried request.
-    let _ = scope
-        .store
-        .record(&scope.session, "cache.prefix.completed", json!(proof))
-        .await;
+    // Side-table write: the replay-pinned journal stays wall-clock-free.
+    scope.store.record_cache_prefix(&scope.session, proof).await;
 }
 
 pub(crate) async fn scoped<F: std::future::Future>(scope: Scope, future: F) -> F::Output {
