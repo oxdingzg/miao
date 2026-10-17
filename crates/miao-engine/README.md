@@ -14,6 +14,9 @@ they are not the current capability-gap checklist.
 
 ## Running
 
+The native [source-bound knowledge tool](docs/source-bound-knowledge.md) provides a short workspace
+index, reviewable notes, source invalidation and conditional updates across Sessions.
+
 Optional [stable extension tool disclosure](docs/tool-disclosure.md) keeps the provider tool surface
 fixed while discovering extension schemas and filtering results on demand (`--tool-disclosure compact`).
 

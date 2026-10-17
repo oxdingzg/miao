@@ -16,6 +16,7 @@ pub mod hooks;
 pub mod host;
 pub mod http;
 mod jobs;
+pub mod knowledge;
 pub mod lsp;
 pub mod mcp;
 pub mod openai_chat;
