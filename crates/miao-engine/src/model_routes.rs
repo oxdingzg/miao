@@ -19,6 +19,21 @@ struct Route {
     credential: CredentialSource,
     #[serde(default)]
     prompt_cache: bool,
+    #[serde(default)]
+    auth: Option<Auth>,
+}
+
+/// Declarative auth for a route: wire-level auth style plus trusted host
+/// headers and literal query parameters. Secrets still travel through the
+/// credential source; these fields never carry one.
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct Auth {
+    pub(crate) style: Option<String>,
+    #[serde(default)]
+    pub(crate) headers: std::collections::BTreeMap<String, String>,
+    #[serde(default)]
+    pub(crate) query: std::collections::BTreeMap<String, String>,
 }
 
 #[derive(Deserialize)]
@@ -126,12 +141,13 @@ pub async fn load(
         source.load().await?;
         routes.push((
             entry.id,
-            crate::routing::build(
+            crate::routing::build_with_auth(
                 &entry.provider,
                 entry.endpoint.as_deref(),
                 source,
                 entry.model,
                 entry.prompt_cache,
+                entry.auth.as_ref(),
             )?,
         ));
     }

@@ -490,7 +490,7 @@ impl Provider for Anthropic {
             .iter()
             .map(|message| json!({"role": message.role, "content": message.content}))
             .collect();
-        let request = if self.bearer {
+        if self.bearer {
             return CountTokens::Failed("vertex bearer route has no count endpoint".into());
         }
         let request = self

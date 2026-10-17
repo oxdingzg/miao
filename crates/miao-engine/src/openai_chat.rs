@@ -26,6 +26,7 @@ pub struct OpenAIChat {
     model: String,
     auth_style: AuthStyle,
     query: Option<String>,
+    extra_headers: std::collections::BTreeMap<String, String>,
 }
 
 impl OpenAIChat {
@@ -37,17 +38,14 @@ impl OpenAIChat {
         source: Source,
         model: String,
     ) -> Result<Self, reqwest::Error> {
-        Ok(Self {
-            client: reqwest::Client::builder()
-                .redirect(reqwest::redirect::Policy::none())
-                .connect_timeout(Duration::from_secs(15))
-                .build()?,
+        Self::with_auth(
             endpoint,
             source,
             model,
-            auth_style: AuthStyle::default(),
-            query: None,
-        })
+            AuthStyle::default(),
+            Default::default(),
+            None,
+        )
     }
 
     /// Azure OpenAI authenticates with an `api-key` header against a
@@ -58,6 +56,26 @@ impl OpenAIChat {
         model: String,
         api_version: &str,
     ) -> Result<Self, reqwest::Error> {
+        Self::with_auth(
+            endpoint,
+            source,
+            model,
+            AuthStyle::ApiKey,
+            Default::default(),
+            Some(format!("api-version={}", api_version)),
+        )
+    }
+
+    /// Declarative constructor for gateway/provider manifests: auth style,
+    /// extra trusted headers, and literal query parameters.
+    pub fn with_auth(
+        endpoint: String,
+        source: Source,
+        model: String,
+        auth_style: AuthStyle,
+        extra_headers: std::collections::BTreeMap<String, String>,
+        query: Option<String>,
+    ) -> Result<Self, reqwest::Error> {
         Ok(Self {
             client: reqwest::Client::builder()
                 .redirect(reqwest::redirect::Policy::none())
@@ -66,8 +84,9 @@ impl OpenAIChat {
             endpoint,
             source,
             model,
-            auth_style: AuthStyle::ApiKey,
-            query: Some(format!("api-version={}", api_version)),
+            auth_style,
+            query,
+            extra_headers,
         })
     }
 }
@@ -144,9 +163,10 @@ impl OpenAIChat {
             AuthStyle::Bearer => request.bearer_auth(credential.secret()),
             AuthStyle::ApiKey => request.header("api-key", credential.secret()),
         };
-        let request = request
-            .build()
-            .map_err(|_| ProviderError::Transport)?;
+        for (name, value) in &self.extra_headers {
+            request = request.header(name, value);
+        }
+        let request = request.build().map_err(|_| ProviderError::Transport)?;
         let response =
             request_with_retry("openai-chat", &self.client, request, &progress, &cancel).await?;
         read_stream(response, progress, cancel, ChatState::default()).await
