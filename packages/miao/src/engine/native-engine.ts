@@ -1,6 +1,7 @@
 import { LocationServiceMap } from "@miao/core/location-service-map"
 import { SessionModelRoute } from "@miao/schema/session-model-route"
 import { AmbientContext } from "./ambient-context"
+import { ProductHooks } from "./product-hooks"
 import os from "node:os"
 import path from "node:path"
 import { Config } from "@miao/core/config"
@@ -117,6 +118,7 @@ export const nativeEngineOptions = (
     contextConfigFile: environment.MIAO_ENGINE_CONTEXT_CONFIG ?? merged.contextConfigFile,
     skillsConfigFile: environment.MIAO_ENGINE_SKILLS_CONFIG ?? merged.skillsConfigFile,
     referencesConfigFile: environment.MIAO_ENGINE_REFERENCES_CONFIG ?? merged.referencesConfigFile,
+    hooksConfigFile: environment.MIAO_ENGINE_HOOKS_CONFIG ?? merged.hooksConfigFile,
     workspaceInstructions: merged.workspaceInstructions,
     modelRoutesConfigFile: environment.MIAO_ENGINE_MODEL_ROUTES_CONFIG ?? merged.modelRoutesConfigFile,
     contextLimits: merged.contextLimits,
@@ -481,6 +483,17 @@ const layer = Layer.effect(
     }
     const owners = yield* makeEngineOwners(configuration, (location) =>
       AmbientContext.prepare(location, configuration).pipe(
+        Effect.flatMap((context) =>
+          ProductHooks.prepare(location, {
+            ...configuration,
+            ...context.options,
+          }).pipe(
+            Effect.map((hooks) => ({
+              options: { ...context.options, ...hooks },
+              refresh: context.refresh,
+            })),
+          ),
+        ),
         Effect.provide(locations.get(location)),
         Effect.mapError((error) =>
           error instanceof EngineError
