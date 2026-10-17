@@ -103,6 +103,27 @@ pub fn build_with_responses(
             };
             Ok(Arc::new(provider))
         }
+        "azure" => {
+            let endpoint = endpoint
+                .ok_or_else(|| ProviderError::Stream("azure route requires an endpoint".into()))?;
+            let api_version = std::env::var("AZURE_OPENAI_API_VERSION")
+                .unwrap_or_else(|_| "2024-10-21".into());
+            Ok(Arc::new(
+                OpenAIChat::with_azure(endpoint.into(), source, model, &api_version)
+                    .map_err(|_| ProviderError::Transport)?,
+            ))
+        }
+        "vertex-anthropic" => {
+            let endpoint = endpoint.ok_or_else(|| {
+                ProviderError::Stream(
+                    "vertex-anthropic route requires a rawPredict endpoint".into(),
+                )
+            })?;
+            Ok(Arc::new(
+                Anthropic::with_bearer_source(endpoint.into(), source, model)
+                    .map_err(|_| ProviderError::Transport)?,
+            ))
+        }
         "gemini" => {
             let default = format!(
                 "https://generativelanguage.googleapis.com/v1beta/models/{}:streamGenerateContent",

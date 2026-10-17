@@ -9,12 +9,23 @@ use std::{collections::BTreeMap, time::Duration};
 use tokio::sync::mpsc;
 use tokio_util::sync::CancellationToken;
 
+#[derive(Clone, Copy, PartialEq, Eq, Default)]
+pub enum AuthStyle {
+    #[default]
+    Bearer,
+    /// Microsoft Azure Front Door style: the secret travels in an `api-key`
+    /// header, never an Authorization bearer.
+    ApiKey,
+}
+
 #[derive(Clone)]
 pub struct OpenAIChat {
     client: reqwest::Client,
     endpoint: String,
     source: Source,
     model: String,
+    auth_style: AuthStyle,
+    query: Option<String>,
 }
 
 impl OpenAIChat {
@@ -34,6 +45,29 @@ impl OpenAIChat {
             endpoint,
             source,
             model,
+            auth_style: AuthStyle::default(),
+            query: None,
+        })
+    }
+
+    /// Azure OpenAI authenticates with an `api-key` header against a
+    /// deployment-scoped endpoint and pins the service version by query.
+    pub fn with_azure(
+        endpoint: String,
+        source: Source,
+        model: String,
+        api_version: &str,
+    ) -> Result<Self, reqwest::Error> {
+        Ok(Self {
+            client: reqwest::Client::builder()
+                .redirect(reqwest::redirect::Policy::none())
+                .connect_timeout(Duration::from_secs(15))
+                .build()?,
+            endpoint,
+            source,
+            model,
+            auth_style: AuthStyle::ApiKey,
+            query: Some(format!("api-version={}", api_version)),
         })
     }
 }
@@ -101,11 +135,16 @@ impl OpenAIChat {
         if without_tools {
             body["tool_choice"] = json!("none");
         }
-        let request = self
-            .client
-            .post(&self.endpoint)
-            .bearer_auth(credential.secret())
-            .json(&body)
+        let mut url = reqwest::Url::parse(&self.endpoint).map_err(|_| ProviderError::Transport)?;
+        if let Some(query) = self.query.as_deref() {
+            url.set_query(Some(query));
+        }
+        let mut request = self.client.post(url).json(&body);
+        request = match self.auth_style {
+            AuthStyle::Bearer => request.bearer_auth(credential.secret()),
+            AuthStyle::ApiKey => request.header("api-key", credential.secret()),
+        };
+        let request = request
             .build()
             .map_err(|_| ProviderError::Transport)?;
         let response =
