@@ -1048,7 +1048,7 @@ impl Store {
                 .query_row(
                     "SELECT interval_ms,last_ms FROM engine_lease WHERE session_id=?1",
                     [&session],
-                    |row| row.get((0, 1)),
+                    |row| Ok((row.get(0)?, row.get(1)?)),
                 )
                 .optional()?;
             Ok(row.is_some_and(|(interval, last)| {

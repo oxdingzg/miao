@@ -171,26 +171,24 @@ impl Runtime {
                 breaker: Mutex::new(crate::context_trigger::Breaker::new(3)),
             }),
         };
-        for (session, timer_id, due_at_ms) in store.adopt_wakeups().await? {
-            let background = arm_wakeup(&runtime.inner, session, timer_id, due_at_ms);
-            runtime
-                .inner
-                .timers
-                .lock()
-                .await
-                .insert(timer_id, background);
+        let inner = runtime.inner.clone();
+        for (session, timer_id, due_at_ms) in inner.store.adopt_wakeups().await? {
+            let background = arm_wakeup(&inner, session.clone(), timer_id.clone(), due_at_ms);
+            inner.timers.lock().await.insert(timer_id, background);
         }
-        for (session, cron_id, pattern, recurring, next, expires) in store.adopt_crons().await? {
+        for (session, cron_id, pattern, recurring, next, expires) in
+            inner.store.adopt_crons().await?
+        {
             let background = spawn_cron_task(
-                &runtime.inner,
-                session,
-                cron_id,
+                &inner,
+                session.clone(),
+                cron_id.clone(),
                 pattern,
                 recurring,
                 next,
                 expires,
             );
-            runtime.inner.crons.lock().await.insert(cron_id, background);
+            inner.crons.lock().await.insert(cron_id, background);
         }
         Ok(runtime)
     }
