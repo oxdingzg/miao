@@ -1,6 +1,6 @@
 # ADR-09: Credential freshness and refresh ownership
 
-Status: Proposed. Extends [ADR-06](0006-provider-semantics.md) (credentials) and
+Status: Accepted, including explicit daemon handoff. Extends [ADR-06](0006-provider-semantics.md) (credentials) and
 [ADR-08](0008-delivery-and-migration.md) (migration).
 
 ## Context
@@ -38,10 +38,41 @@ place two owners may write.
   OAuth), and never logs secret bytes; only normalised id/integration/kind/expiry
   metadata is observable.
 
+## Explicit daemon handoff and rollback
+
+The standalone `miao-credential` daemon can own individual product credential
+rows before the TS execution core is retired. `adopt` installs a durable socket
+marker and SQLite update/delete guards atomically. The TS broker observes the
+marker and delegates refresh to that daemon; it does not remain a second writer.
+The daemon holds a database-scoped process lease and serializes each row's
+refresh and handoff operations.
+
+`release` is the inverse migration, requested over the same local IPC endpoint:
+
+```sh
+miao-credential release --socket PATH --credential-id ID --integration INTEGRATION
+```
+
+It joins an in-flight rotation, then removes the owner marker and SQL guard in
+one transaction, preserving the newest access/refresh tokens, expiry, account
+metadata and method identity. An identical retry reconciles an already-released
+row. An integration mismatch or a different recorded owner fails without
+changing the row. A refresh waiting on the row lock rechecks ownership before
+calling the provider, so it cannot rotate a token after handback. Subsequent
+product refreshes use the original broker, and a later `adopt` reinstalls daemon
+ownership. No secret material is returned by either migration command.
+
+Verification: `miao-credential/tests/ownership.rs` exercises the SQL guards,
+identity preservation and re-adoption on all platforms;
+`miao-credential/tests/daemon.rs` exercises release during a real local token
+request and CLI retry over the socket. These deterministic checks do not stand
+in for real-account provider acceptance.
+
 ## Consequences
 
-- The sidecar phase needs no engine-side broker and cannot double-refresh.
-- The refresh implementation is bounded and lands with the replacement, not
-  before it, keeping the engine read-only until it is the only writer.
+- The sidecar phase can retain the product broker or explicitly migrate a row
+  to the standalone daemon; neither mode permits a second refresh writer.
+- The engine remains a read-only consumer in both modes. Only the selected
+  credential broker writes refresh results.
 - A future client that wants the engine to refresh must first make it the sole
   runtime for that credential, which is the ADR-08 hand-off.
