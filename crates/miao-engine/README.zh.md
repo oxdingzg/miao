@@ -531,4 +531,6 @@ fail-closed 阻止派发，工具结果为 `blocked by tool_before hook (outcome
 
 ## 完成检查收据
 
+Provider 报告还提供[辅助用量与覆盖范围](docs/auxiliary-usage.md)，包含主请求的完整/部分观察、角色尝试及子 Session 结果证据。
+
 配置的完成检查会记录[版本绑定的验证收据](docs/verification-receipts.md)，包含实际退出码/输出、任务版本与有明确边界的源码覆盖范围。
