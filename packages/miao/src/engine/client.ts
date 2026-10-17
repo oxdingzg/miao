@@ -215,6 +215,11 @@ export class EngineError extends Error {
   }
 }
 
+export type EngineTransport = Pick<
+  EngineClient,
+  "request" | "subscribe" | "admit" | "onEvent" | "onProgress" | "close" | "stderrText"
+>
+
 interface Pending {
   resolve: (value: unknown) => void
   reject: (error: Error) => void
