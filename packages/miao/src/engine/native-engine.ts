@@ -106,6 +106,9 @@ export const nativeEngineOptions = (
     mcpConfigFile: merged.mcpConfigFile,
     mcpSettings: merged.mcpSettings,
     lspConfigFile: merged.lspConfigFile,
+    contextConfigFile: environment.MIAO_ENGINE_CONTEXT_CONFIG ?? merged.contextConfigFile,
+    skillsConfigFile: environment.MIAO_ENGINE_SKILLS_CONFIG ?? merged.skillsConfigFile,
+    referencesConfigFile: environment.MIAO_ENGINE_REFERENCES_CONFIG ?? merged.referencesConfigFile,
     contextLimits: merged.contextLimits,
   }
 }

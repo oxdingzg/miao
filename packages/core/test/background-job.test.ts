@@ -318,6 +318,54 @@ describe("BackgroundJob engine semantics", () => {
 })
 
 describe("BackgroundJob teardown", () => {
+  const withRunningLimit = (limit: string) =>
+    Effect.acquireRelease(
+      Effect.sync(() => {
+        const previous = process.env.MIAO_MAX_BACKGROUND_JOBS
+        process.env.MIAO_MAX_BACKGROUND_JOBS = limit
+        return previous
+      }),
+      (previous) =>
+        Effect.sync(() => {
+          if (previous === undefined) delete process.env.MIAO_MAX_BACKGROUND_JOBS
+          else process.env.MIAO_MAX_BACKGROUND_JOBS = previous
+        }),
+    )
+
+  it.live("refuses a job while the running limit is reached, and frees the slot on completion", () =>
+    Effect.gen(function* () {
+      yield* withRunningLimit("1")
+      const jobs = yield* BackgroundJob.make
+      const latch = yield* Deferred.make<void>()
+      const held = yield* jobs.start({ type: "test", run: Deferred.await(latch).pipe(Effect.as("done")) })
+
+      const refused = yield* jobs.start({ type: "test", run: Effect.succeed("done") }).pipe(Effect.flip)
+      expect(refused).toBeInstanceOf(BackgroundJob.CapacityError)
+      expect(refused.message).toContain("1 of 1 are already running")
+
+      yield* Deferred.succeed(latch, undefined)
+      yield* jobs.wait({ id: held.id })
+      // The finished job no longer occupies the slot.
+      const next = yield* jobs.start({ type: "test", run: Effect.succeed("done") })
+      expect(yield* jobs.wait({ id: next.id })).toMatchObject({ timedOut: false, info: { status: "completed" } })
+    }),
+  )
+
+  it.live("adopting a running job id does not need a free slot", () =>
+    Effect.gen(function* () {
+      yield* withRunningLimit("1")
+      const jobs = yield* BackgroundJob.make
+      const latch = yield* Deferred.make<void>()
+      const first = yield* jobs.start({ id: "held", type: "test", run: Deferred.await(latch).pipe(Effect.as("done")) })
+
+      const adopted = yield* jobs.start({ id: "held", type: "test", run: Effect.succeed("other") })
+
+      expect(adopted).toMatchObject({ id: first.id, status: "running" })
+      yield* Deferred.succeed(latch, undefined)
+      yield* jobs.wait({ id: first.id })
+    }),
+  )
+
   it.live("interrupts running jobs when the registry scope closes", () =>
     Effect.gen(function* () {
       let interrupted = false

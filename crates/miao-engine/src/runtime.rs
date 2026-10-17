@@ -119,6 +119,8 @@ impl Runtime {
             ));
         }
         let mut tools = tools
+            .enable_web(policy.web_enabled())
+            .map_err(|error| Error::Invalid(error.to_string()))?
             .with_cron(policy.cron_enabled())
             .with_wakeup(policy.wakeup_enabled())
             .with_writes(policy.writes_enabled())
@@ -1227,6 +1229,7 @@ async fn execute(
                                     None => Err(ToolError::Interrupted),
                                 },
                                 "session_state" => Ok(inner.store.state(session).await?),
+                                "knowledge"=>inner.tools.execute_knowledge(prepared,&inner.policy,session,cancel.child_token()).await,
                                 "todowrite" | "goal" => match crate::state::Mutation::parse(
                                     name,
                                     prepared.input().clone(),
