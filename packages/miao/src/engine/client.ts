@@ -215,6 +215,11 @@ export class EngineError extends Error {
   }
 }
 
+export type EngineTransport = Pick<
+  EngineClient,
+  "request" | "subscribe" | "admit" | "onEvent" | "onProgress" | "close" | "stderrText"
+>
+
 interface Pending {
   resolve: (value: unknown) => void
   reject: (error: Error) => void
@@ -228,15 +233,31 @@ export class EngineClient {
   private readonly lines = { buffer: "" }
   private stderr = ""
   private closed = false
+  private failure?: Error
 
   private constructor(
     private readonly child: Bun.Subprocess<"pipe", "pipe", "pipe">,
     private readonly cleanup = () => {},
   ) {
-    void this.readStdout()
-    void this.readStderr()
-    void this.child.exited.then(() => {
-      this.fail(new EngineError("engine_closed", "miao-engine exited"))
+    void this.readStdout().catch(() => {
+      this.fail(new EngineError("engine_protocol", "miao-engine output stream failed"), true)
+      this.child.kill()
+    })
+    const stderr = this.readStderr().catch(() => {})
+    void this.child.exited.then(async (code) => {
+      // Drain stderr before rejecting so a failed startup reports its cause.
+      await stderr
+      const detail = this.stderr.trim()
+      const busy = /(?:^|\n)Error: Busy(?:\r?\n|$)/.test(detail)
+      this.fail(
+        new EngineError(
+          busy ? "engine_busy" : "engine_closed",
+          busy
+            ? "miao-engine exited: native storage is owned by another running engine"
+            : `miao-engine exited (code ${code})${detail ? `: ${detail}` : ""}`,
+        ),
+        true,
+      )
       this.cleanup()
     })
   }
@@ -271,11 +292,19 @@ export class EngineClient {
   }
 
   request(method: string, params?: unknown): Promise<unknown> {
+    if (this.failure) return Promise.reject(this.failure)
+    if (this.closed) return Promise.reject(new EngineError("engine_closed", "miao-engine client is closed"))
     const id = this.next++
-    this.child.stdin.write(JSON.stringify({ id, method, params }) + EOL)
-    void this.child.stdin.flush()
     return new Promise<unknown>((resolve, reject) => {
       this.pending.set(id, { resolve, reject })
+      try {
+        this.child.stdin.write(JSON.stringify({ id, method, params }) + EOL)
+        void Promise.resolve(this.child.stdin.flush()).catch(() =>
+          this.fail(new EngineError("engine_closed", "miao-engine input stream closed"), true),
+        )
+      } catch {
+        this.fail(new EngineError("engine_closed", "miao-engine input stream closed"), true)
+      }
     })
   }
 
@@ -318,8 +347,9 @@ export class EngineClient {
     }
   }
 
-  private fail(error: Error) {
-    for (const pending of this.pending.values()) pending.reject(error)
+  private fail(error: Error, terminal = false) {
+    if (terminal) this.failure ??= error
+    for (const pending of this.pending.values()) pending.reject(this.failure ?? error)
     this.pending.clear()
   }
 
