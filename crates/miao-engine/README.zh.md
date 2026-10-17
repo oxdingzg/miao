@@ -34,6 +34,8 @@ cargo build --manifest-path crates/miao-engine/Cargo.toml
 
 ### 可选的 Responses 缓存控制
 
+已验证支持的部署还可独立启用 [Session WebSocket 复用与严格后缀增量](docs/responses-websocket.md)。
+
 `--responses-cache-contract JSON` 声明精确 wire model、规范化 endpoint URL（含 query）与认证类型（`api` 或 `subscription`）对应的缓存能力。只声明已验证的部署能力，不根据模型名称推断。集成的原生引擎读取全局配置 `engine.responses_cache_contract`，也可用 `MIAO_ENGINE_RESPONSES_CACHE_CONTRACT` 覆盖整个契约。
 
 ```json
