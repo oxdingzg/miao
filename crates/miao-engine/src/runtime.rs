@@ -190,12 +190,7 @@ impl Runtime {
                 next,
                 expires,
             );
-            runtime
-                .inner
-                .crons
-                .lock()
-                .await
-                .insert(cron_id, background);
+            runtime.inner.crons.lock().await.insert(cron_id, background);
         }
         Ok(runtime)
     }
@@ -1915,10 +1910,7 @@ async fn start_cron(
         expires,
     );
     let mut crons = inner.crons.lock().await;
-    crons.insert(
-        id,
-        background,
-    );
+    crons.insert(id, background);
     Ok(Ok(data))
 }
 
@@ -1977,8 +1969,6 @@ fn spawn_cron_task(
         cancel,
         join,
     }
-}
-    Ok(Ok(data))
 }
 async fn cancel_cron(inner: &Inner, session: &str, id: &str) -> Result<bool, Error> {
     let token = inner
@@ -2064,12 +2054,7 @@ async fn cancel_wakeup(inner: &Inner, session: &str, id: &str) -> Result<bool, E
 
 /// (Re-)arm a durable wakeup from its stored due time. Shared by the
 /// schedule tool path and process restart adoption.
-fn arm_wakeup(
-    inner: &Arc<Inner>,
-    source: String,
-    timer_id: String,
-    due_at_ms: u64,
-) -> Background {
+fn arm_wakeup(inner: &Arc<Inner>, source: String, timer_id: String, due_at_ms: u64) -> Background {
     let delay = due_at_ms.saturating_sub(now_ms());
     let deadline = tokio::time::Instant::now() + std::time::Duration::from_millis(delay);
     let cancel = inner.stop.child_token();

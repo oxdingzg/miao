@@ -209,7 +209,7 @@ impl Store {
         }).await
     }
     pub async fn recover_crons(&self) -> Result<(), Error> {
-        self.adopt_crons().await.map(|_|())
+        self.adopt_crons().await.map(|_| ())
     }
 }
 fn resolution(conn: &Connection, session: &str, id: &str) -> Result<Option<Value>, Error> {

@@ -151,9 +151,8 @@ impl Store {
         }).await
     }
     pub async fn recover_wakeups(&self) -> Result<(), Error> {
-        self.adopt_wakeups().await.map(|_|())
+        self.adopt_wakeups().await.map(|_| ())
     }
-    pub async fn wakeups(&self, session: &str) -> Result<Vec<Value>, Error> {
 }
 fn resolution(conn: &Connection, session: &str, id: &str) -> Result<Option<Value>, Error> {
     let data:Option<String>=conn.query_row("SELECT data FROM engine_event WHERE session_id=?1 AND kind='wakeup.resolved' AND json_extract(data,'$.timer_id')=?2 ORDER BY seq DESC LIMIT 1",params![session,id],|row|row.get(0)).optional()?;

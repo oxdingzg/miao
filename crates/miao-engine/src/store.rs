@@ -1043,14 +1043,19 @@ impl Store {
     /// interval; expired or missing leases make timers adoptable.
     pub async fn lease_alive(&self, session: &str) -> Result<bool, Error> {
         let session = session.to_owned();
-        self.call(move|conn|{
-            let row:Option<(i64,i64)>=conn.query_row(
-                "SELECT interval_ms,last_ms FROM engine_lease WHERE session_id=?1",
-                [&session],
-                |row|row.get((0,1)),
-            ).optional()?;
-            Ok(row.is_some_and(|(interval,last)|crate::approval::now_ms().saturating_sub(last as u64)<2*interval.max(1) as u64))
-        }).await
+        self.call(move |conn| {
+            let row: Option<(i64, i64)> = conn
+                .query_row(
+                    "SELECT interval_ms,last_ms FROM engine_lease WHERE session_id=?1",
+                    [&session],
+                    |row| row.get((0, 1)),
+                )
+                .optional()?;
+            Ok(row.is_some_and(|(interval, last)| {
+                crate::approval::now_ms().saturating_sub(last as u64) < 2 * interval.max(1) as u64
+            }))
+        })
+        .await
     }
     pub async fn record(&self, session: &str, kind: &str, data: Value) -> Result<Event, Error> {
         let (session, kind) = (session.to_owned(), kind.to_owned());
