@@ -52,6 +52,7 @@ import { TodoItem } from "../../component/todo-item"
 import { DialogMessage } from "./dialog-message"
 import type { PromptInfo } from "../../component/prompt/history"
 import { DialogConfirm } from "../../ui/dialog-confirm"
+import { DialogRecovery } from "./dialog-recovery"
 import { DialogTimeline } from "./dialog-timeline"
 import { DialogForkFromTimeline } from "./dialog-fork-from-timeline"
 import { DialogSessionRename } from "../../component/dialog-session-rename"
@@ -143,6 +144,7 @@ const sessionBindingCommands = [
   "session.timeline",
   "session.fork",
   "session.compact",
+  "session.recover",
   "session.undo",
   "session.redo",
   "session.sidebar.toggle",
@@ -582,6 +584,14 @@ export function Session() {
           />
         ))
       },
+    },
+    {
+      title: "Recover interrupted tools",
+      value: "session.recover",
+      category: "Session",
+      enabled: session()?.execution?.engine === "rust",
+      slash: { name: "recover" },
+      run: () => dialog.replace(() => <DialogRecovery sessionID={route.sessionID} />),
     },
     {
       title: "Compact session",

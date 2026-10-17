@@ -225,22 +225,42 @@ export class EngineSession {
     client.onProgress((progress) => this.#translator.progress(progress))
   }
 
+  /** Share the live subscription before any operation that can admit work. */
+  async watch(sessionID: string) {
+    if (!this.#subscriptions.has(sessionID)) {
+      const subscription = this.#client.subscribe(sessionID, 0).catch((error: unknown) => {
+        this.#subscriptions.delete(sessionID)
+        throw error
+      })
+      this.#subscriptions.set(sessionID, { mode: "live", ready: subscription })
+    }
+    await this.#subscriptions.get(sessionID)?.ready
+  }
+
+  async resolveRecovery(input: {
+    sessionID: string
+    callID: string
+    operationID: string
+    decision: "retry" | "abandon"
+    resume?: boolean
+  }) {
+    await this.watch(input.sessionID)
+    return this.#client.request("resolve_recovery", {
+      session_id: input.sessionID,
+      call_id: input.callID,
+      operation_id: input.operationID,
+      decision: input.decision,
+      resume: input.resume ?? false,
+    })
+  }
+
   /** Subscribe before admitting; retain the caller's identity for exact retries. */
   async prompt(
     sessionID: string,
     prompt: string,
     options: { inputID?: string; delivery?: "steer" | "queue"; resume?: boolean } = {},
   ): Promise<unknown> {
-    if (!this.#subscriptions.has(sessionID)) {
-      const subscription = this.#client.subscribe(sessionID, 0).catch((error: unknown) => {
-        this.#subscriptions.delete(sessionID)
-        throw error
-      })
-      // Share the pending subscription too: concurrent admissions must not
-      // replay the same history twice before either subscribe reply arrives.
-      this.#subscriptions.set(sessionID, { mode: "live", ready: subscription })
-    }
-    await this.#subscriptions.get(sessionID)?.ready
+    await this.watch(sessionID)
     return this.#client.admit(
       {
         session_id: sessionID,

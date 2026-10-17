@@ -761,6 +761,24 @@ Hooks are a gatekeeper/observation surface of trusted host configuration, not a 
 they do not occupy permission rules, do not need allow_process, and give the model no new authority.
 There is currently no per-hook network, stdin injection, run/turn-level event, or remote hook.
 
+### Product sidecar Context manifests
+
+The product accepts `MIAO_ENGINE_CONTEXT_CONFIG`, `MIAO_ENGINE_SKILLS_CONFIG`, and
+`MIAO_ENGINE_REFERENCES_CONFIG`, forwarding them as `--context-config`,
+`--skills-config`, and `--references-config`. Embedders can set the corresponding
+`EngineOptions.contextConfigFile`, `skillsConfigFile`, and `referencesConfigFile`.
+Environment values override embedded settings. Use absolute manifest paths when
+one product process serves multiple Locations.
+
+The manifests use the native formats documented above. Instruction and reference
+manifests can name explicitly authorized external files. Relative skill directories
+stay workspace-contained; absolute skill directories need explicit read-only
+directory references and directory/file policy authorization. Manifests must stay outside model-writable workspaces. An
+external instruction file needs its own read-only reference grant; granting one
+file never grants its parent directory or siblings. Normal Context permission
+rules still apply. These inputs select host-owned sources, not literal prompt
+text, so native Context epochs retain source provenance and observe later edits.
+
 ### Product sidecar coding policy
 
 The product forwards `MIAO_ENGINE_ENDPOINT` as the explicit provider endpoint and
