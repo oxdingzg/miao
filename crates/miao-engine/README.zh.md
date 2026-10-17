@@ -285,6 +285,12 @@ MCP server 是拥有自身 filesystem/network authority 的可信外部服务，
 目前未实现远程 HTTP transport、动态 catalog notifications、resources/prompts、MCP OAuth 或 TS plugin compatibility。
 
 
+## 产品 sidecar 的 Context manifest
+
+产品通过 `MIAO_ENGINE_CONTEXT_CONFIG`、`MIAO_ENGINE_SKILLS_CONFIG`、`MIAO_ENGINE_REFERENCES_CONFIG` 将可信 manifest 分别传给原生 `--context-config`、`--skills-config`、`--references-config`。嵌入端对应设置 `EngineOptions.contextConfigFile`、`skillsConfigFile`、`referencesConfigFile`，环境变量优先。跨 Location 使用时应指定绝对 manifest 路径，并将 manifest 放在模型可写 workspace 之外。
+
+manifest 格式沿用下文原生格式，skill 目录仍须相对 workspace。外部 instruction 文件需要单独的只读 reference 授权；授权一个文件不会授权父目录或兄弟文件，Context 权限规则仍生效。这里传递来源路径而非拼接的 prompt 文本，因此 Context Epoch 保留来源信息并可观察后续编辑。
+
 ## 显式 workspace Context Sources
 
 `--context-config /absolute/path/context.json` 选择附加 instruction/persona 文件：
