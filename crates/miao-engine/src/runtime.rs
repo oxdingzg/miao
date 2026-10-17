@@ -384,6 +384,26 @@ impl Runtime {
         self.inner.store.select_model(session, binding).await
     }
 
+    pub async fn resolve_recovery(
+        &self,
+        session: &str,
+        call: &str,
+        operation: &str,
+        decision: crate::recovery::Decision,
+    ) -> Result<Value, Error> {
+        if self.inner.stop.is_cancelled() {
+            return Err(Error::Closed);
+        }
+        if self.inner.store.location(session).await?.as_deref() != Some(self.inner.tools.location())
+        {
+            return Err(Error::Conflict);
+        }
+        self.inner
+            .store
+            .resolve_recovery(session, call, operation, decision)
+            .await
+    }
+
     async fn wake(&self, session: &str, force: bool) -> Result<(), Error> {
         let commands = self.actor(session).await?;
         tokio::select! {

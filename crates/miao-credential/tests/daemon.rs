@@ -179,6 +179,132 @@ async fn concurrent_refreshes_share_one_token_request() {
 }
 
 #[tokio::test]
+async fn release_joins_rotation_and_returns_the_newest_tokens_to_the_broker() {
+    let dir = tempfile::tempdir().unwrap();
+    let db = setup_db(dir.path(), 10_000, "r1");
+    let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+    let url = format!("http://{}", listener.local_addr().unwrap());
+    let (started, waiting) = tokio::sync::oneshot::channel();
+    let (finish, response) = std::sync::mpsc::channel();
+    let server = std::thread::spawn(move || {
+        let (mut stream, _) = listener.accept().unwrap();
+        let mut header = Vec::new();
+        while !header.ends_with(b"\r\n\r\n") {
+            assert!(header.len() < 8192);
+            let mut byte = [0];
+            stream.read_exact(&mut byte).unwrap();
+            header.push(byte[0]);
+        }
+        let header = String::from_utf8(header).unwrap();
+        let length = header
+            .lines()
+            .find_map(|line| {
+                line.to_ascii_lowercase()
+                    .strip_prefix("content-length:")
+                    .map(|length| length.trim().parse::<usize>().unwrap())
+            })
+            .unwrap();
+        assert!(length < 8192);
+        stream.read_exact(&mut vec![0; length]).unwrap();
+        started.send(()).unwrap();
+        response
+            .recv_timeout(std::time::Duration::from_secs(5))
+            .unwrap();
+        let body = r#"{"access_token":"a2","refresh_token":"r2","expires_in":3600}"#;
+        write!(
+            stream,
+            "HTTP/1.1 200 OK\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",
+            body.len()
+        )
+        .unwrap();
+    });
+    let socket = dir.path().join("credential.sock");
+    let daemon = Arc::new(
+        Daemon::new(
+            db.clone(),
+            profile::Profile {
+                issuer: url,
+                ..profile::openai()
+            },
+            USER_AGENT.into(),
+        )
+        .with_margin_ms(60_000),
+    );
+    tokio::spawn(daemon.serve(tokio::net::UnixListener::bind(&socket).unwrap()));
+    tokio::time::sleep(std::time::Duration::from_millis(20)).await;
+    client::request(
+        &socket,
+        serde_json::json!({"id":1,"op":"adopt","credential_id":"cred_1","integration":"openai"})
+            .to_string(),
+    )
+    .await
+    .unwrap();
+    let refresh = tokio::spawn({
+        let socket = socket.clone();
+        async move { client::refresh(&socket, "cred_1", "openai").await }
+    });
+    tokio::time::timeout(std::time::Duration::from_secs(5), waiting)
+        .await
+        .unwrap()
+        .unwrap();
+    let mut release = tokio::spawn({
+        let socket = socket.clone();
+        async move {
+            client::request(&socket, serde_json::json!({"id":2,"op":"release","credential_id":"cred_1","integration":"openai"}).to_string()).await
+        }
+    });
+    assert!(
+        tokio::time::timeout(std::time::Duration::from_millis(50), &mut release)
+            .await
+            .is_err()
+    );
+    finish.send(()).unwrap();
+    refresh.await.unwrap().unwrap();
+    assert_eq!(release.await.unwrap().unwrap()["ok"]["status"], "released");
+    server.join().unwrap();
+    let value = miao_credential::store::load(&db, "cred_1", "openai").unwrap();
+    assert_eq!(value["access"], "a2");
+    assert_eq!(value["refresh"], "r2");
+    assert_eq!(value["metadata"]["accountID"], "acct");
+    assert!(value["metadata"].get("miaoCredentialSocket").is_none());
+    assert_eq!(value["methodID"], "chatgpt-browser");
+    assert!(matches!(
+        client::refresh(&socket, "cred_1", "openai").await,
+        Err(miao_credential::Error::NotRefreshable)
+    ));
+    // A retry is harmless, and the real product writer's SQL is unblocked.
+    let output = tokio::task::spawn_blocking(move || {
+        std::process::Command::new(env!("CARGO_BIN_EXE_miao-credential"))
+            .args([
+                "release",
+                "--socket",
+                socket.to_str().unwrap(),
+                "--credential-id",
+                "cred_1",
+                "--integration",
+                "openai",
+            ])
+            .output()
+            .unwrap()
+    })
+    .await
+    .unwrap();
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert!(!String::from_utf8_lossy(&output.stdout).contains("r2"));
+    Connection::open(&db)
+        .unwrap()
+        .execute(
+            "UPDATE credential SET label='Product owned' WHERE id='cred_1'",
+            [],
+        )
+        .unwrap();
+}
+
+#[tokio::test]
 async fn refresh_rejection_is_reported_as_refresh_rejected() {
     let dir = tempfile::tempdir().unwrap();
     let db = setup_db(dir.path(), 10_000, "r1");

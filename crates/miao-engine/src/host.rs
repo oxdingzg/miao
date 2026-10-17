@@ -60,6 +60,19 @@ impl Host {
                 session_id,
                 binding,
             } => runtime.select_model(&session_id, binding).await,
+            Command::Recoveries { session_id, after } => {
+                runtime.store().recoveries(&session_id, &after).await
+            }
+            Command::ResolveRecovery {
+                session_id,
+                call_id,
+                operation_id,
+                decision,
+            } => {
+                runtime
+                    .resolve_recovery(&session_id, &call_id, &operation_id, decision)
+                    .await
+            }
             Command::Mode { session_id, mode } => runtime
                 .set_mode(&session_id, mode)
                 .await
