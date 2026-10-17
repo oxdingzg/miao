@@ -468,6 +468,46 @@ configured with the `mcp_*` tool matcher and the `@mcp/local_service/**` resourc
 Remote HTTP transport, dynamic catalog notifications, resources/prompts, MCP OAuth, and TS plugin
 compatibility are not implemented today.
 
+## Native web tools
+
+Enable native HTTP reads/search through the ordinary policy boundary:
+
+```json
+{
+  "allow_web": true,
+  "rules": [
+    { "tool": "webfetch", "path": "@web/**", "decision": "allow" },
+    { "tool": "websearch", "path": "@web/**", "decision": "allow" }
+  ]
+}
+```
+
+`webfetch` accepts an HTTP(S) URL, `format: "markdown" | "text" | "html"`
+(default markdown), and `timeout` in seconds (1–120, default 30). HTML uses a
+native DOM converter; text excludes head/script/style content. Declared text
+encodings and compressed responses are decoded before enforcing the 2 MiB body
+limit. Returned content is UTF-8 bounded to 64 KiB with an explicit `truncated`
+flag. URL fragments are not transmitted. Up to five redirects are followed only
+when their targets independently have an allow rule; otherwise the target URL
+is returned in the permission error for a separate authorized call. Read-only
+collaboration does not grant write/process authority through these tools.
+
+`websearch` is disclosed only when the host has configured a supported search
+credential. Set `EXA_API_KEY` or `PARALLEL_API_KEY`; if both exist Exa is the
+default. `MIAO_WEB_SEARCH_PROVIDER=exa|parallel` explicitly selects one, and
+`MIAO_WEB_SEARCH_ENDPOINT` optionally selects the host's deployment endpoint.
+These deployment variables are forwarded by the product's native child
+environment boundary. They are never model tool arguments or returned in tool
+results. Search never follows redirects, and upstream error bodies are not
+returned to the model.
+
+Search input is `query`, optional `numResults` (1–20, default 8), `type`
+(`auto|fast|deep`) and `contextMaxCharacters` (1–50000, default 10000). The native
+adapters use Exa `/search` or Parallel `/v1/search` and return bounded source URLs,
+titles, excerpts and truncation flags. Permission resources are namespaced as
+`@web/<host>[:port]/<path>`; normal once-only controller approval is supported
+when rules ask rather than allow.
+
 ## Explicit Context Sources
 
 `--context-config /absolute/path/context.json` selects additional instruction/persona files:

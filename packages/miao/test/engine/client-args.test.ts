@@ -76,6 +76,10 @@ test("the child inherits the engine's own surface and nothing else", () => {
     HOME: "/home/u",
     TEMP: "/tmp",
     ANTHROPIC_API_KEY: "sk-ant-parent",
+    EXA_API_KEY: "exa-parent",
+    PARALLEL_API_KEY: "parallel-parent",
+    MIAO_WEB_SEARCH_PROVIDER: "exa",
+    MIAO_WEB_SEARCH_ENDPOINT: "https://search.example.test/search",
     MIAO_TOOL_INPUT_MAX_BYTES: "4096",
     AWS_SECRET_ACCESS_KEY: "aws-parent",
     CI_JOB_TOKEN: "ci-parent",
@@ -87,6 +91,10 @@ test("the child inherits the engine's own surface and nothing else", () => {
   expect(child.TEMP).toBe("/tmp")
   // The engine's own credential and knob surface crosses the boundary.
   expect(child.ANTHROPIC_API_KEY).toBe("sk-ant-parent")
+  expect(child.EXA_API_KEY).toBe("exa-parent")
+  expect(child.PARALLEL_API_KEY).toBe("parallel-parent")
+  expect(child.MIAO_WEB_SEARCH_PROVIDER).toBe("exa")
+  expect(child.MIAO_WEB_SEARCH_ENDPOINT).toBe("https://search.example.test/search")
   expect(child.MIAO_TOOL_INPUT_MAX_BYTES).toBe("4096")
   expect(child.OPENAI_API_KEY).toBe("explicit")
   // Unrelated secrets in the operator's environment never reach the engine.

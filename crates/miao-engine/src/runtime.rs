@@ -119,6 +119,8 @@ impl Runtime {
             ));
         }
         let mut tools = tools
+            .enable_web(policy.web_enabled())
+            .map_err(|error| Error::Invalid(error.to_string()))?
             .with_cron(policy.cron_enabled())
             .with_wakeup(policy.wakeup_enabled())
             .with_writes(policy.writes_enabled())
