@@ -123,7 +123,7 @@ async fn product_tool_reverse_dispatches_to_host_and_returns_result() {
     let rendered = loop {
         let history = store.history("s").await.unwrap();
         let rendered = serde_json::to_string(&history).unwrap();
-        if rendered.contains("\"delivered\":true") {
+        if rendered.contains(r#"\"delivered\":true"#) {
             break rendered;
         }
         assert!(

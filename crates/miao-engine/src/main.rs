@@ -563,11 +563,11 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
         result?;
         return Ok(());
     }
-    let result = serve(runtime, options.remove("--product-tools")).await?;
+    serve(runtime, options.remove("--product-tools")).await?;
     Ok(())
 }
 
-async fn serve(mut runtime: Runtime, product_tools: Option<String>) -> io::Result<()> {
+async fn serve(runtime: Runtime, product_tools: Option<String>) -> io::Result<()> {
     let (output, mut outgoing) = mpsc::channel::<Value>(128);
     if let Some(path) = product_tools {
         let file = tokio::fs::read_to_string(&path)
