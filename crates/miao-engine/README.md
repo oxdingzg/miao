@@ -511,6 +511,7 @@ is depth/count bounded, and lists only names/descriptions/paths in Context.
 Skill bodies are read on demand through ordinary authorized tools. External
 skill paths remain absolute so a later read uses the same reference boundary.
 
+
 ## Native web tools
 
 Enable native HTTP reads/search through the ordinary policy boundary:
