@@ -36,6 +36,13 @@ stream. The provider-turn and session-open paths need recorded fixtures and a
 database harness first, and should be added here rather than approximated with a
 fake provider that would measure the fake.
 
-Budgets are compared in this package only. The gate is not yet wired into
-`ci.yml`; a job belongs next to the other required checks once the constants are
-calibrated against a real runner.
+`bench.yml` runs this on a runner for pull requests that touch the measured
+paths and writes the medians into the job summary. It is deliberately **not** a
+required check yet: the budgets are `reference x 3 x 1.25` against
+developer-machine medians, and that factor wants replacing with a measured one
+before a failure can block merges.
+
+To promote it: read the medians a few runs report, set each `referenceMs` to
+roughly the observed runner median divided by the scale, tighten `CI_SCALE` in
+`lib/harness.ts`, then add a `bench` entry to `.github/ci-checks.json`, a job to
+`ci.yml`, and the job to `ci-gate`'s `needs` list so a violation fails the gate.

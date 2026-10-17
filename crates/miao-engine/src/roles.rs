@@ -109,9 +109,11 @@ async fn request_summary(
     let (tx, mut rx) = tokio::sync::mpsc::channel(16);
     tokio::spawn(async move { while rx.recv().await.is_some() {} });
     let path = if without_tools { "prefix" } else { "cold" };
-    if let Some(owner) = settlement {
-        owner.store.record(owner.session,"role.provider.started",json!({"run_id":owner.run,"role":"summarize","path":path,"identity":provider.identity()})).await.map_err(|error|error.to_string())?;
-    }
+    let started_seq = if let Some(owner) = settlement {
+        Some(owner.store.record(owner.session,"role.provider.started",json!({"run_id":owner.run,"role":"summarize","path":path,"identity":provider.identity()})).await.map_err(|error|error.to_string())?.seq)
+    } else {
+        None
+    };
     let result = if without_tools {
         provider
             .stream_without_tools(request, tx, stop.child_token())
@@ -130,7 +132,15 @@ async fn request_summary(
                 .err()
                 .and_then(|error| error.continuation().map(|(reply, _)| reply))
         });
-        owner.store.record(owner.session,"role.provider.completed",json!({"run_id":owner.run,"role":"summarize","path":path,"providerSuccess":result.is_ok(),"accepted":summary.is_ok(),"reason":summary.as_ref().err(),"identity":observed.and_then(|reply|provider.reply_identity(reply)),"usage":observed.map(|reply|&reply.usage)})).await.map_err(|error|error.to_string())?;
+        let reply_identity = observed.and_then(|reply| provider.reply_identity(reply));
+        let identity_source = if reply_identity.is_some() {
+            "reply"
+        } else if provider.identity().is_some() {
+            "request"
+        } else {
+            "unknown"
+        };
+        owner.store.record(owner.session,"role.provider.completed",json!({"run_id":owner.run,"startedSeq":started_seq,"role":"summarize","path":path,"providerSuccess":result.is_ok(),"accepted":summary.is_ok(),"reason":summary.as_ref().err(),"identity":reply_identity.or_else(||provider.identity()),"identitySource":identity_source,"usage":observed.map(|reply|&reply.usage)})).await.map_err(|error|error.to_string())?;
     }
     summary
 }
