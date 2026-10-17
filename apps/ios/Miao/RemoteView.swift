@@ -105,7 +105,8 @@ struct RemoteView: View {
             } description: {
                 Text("登录同一账号后，这台电脑的会话会出现在侧栏里。")
             } actions: {
-                Button("中继账号") { accountPresented = true }.buttonStyle(.bordered)
+                Button("中继账号") { accountPresented = true }
+                    .buttonStyle(.bordered).accessibilityIdentifier("hubAccount")
                 Button("连接电脑") { pairing = true }.buttonStyle(.borderedProminent)
             }
         }
