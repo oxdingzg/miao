@@ -50,6 +50,7 @@ struct Inner {
     started: Mutex<std::collections::HashSet<String>>,
     stop: CancellationToken,
     progress: broadcast::Sender<Value>,
+    product: Arc<std::sync::RwLock<crate::product::State>>,
     context: Mutex<Option<ContextLimits>>,
     roles: Mutex<crate::roles::Bindings>,
     /// Task-specific verification command run before a run may finish.
@@ -166,6 +167,7 @@ impl Runtime {
                 started: Mutex::new(std::collections::HashSet::new()),
                 stop: CancellationToken::new(),
                 progress,
+                product: Arc::new(std::sync::RwLock::new(crate::product::State::default())),
                 context: Mutex::new(None),
                 roles: Mutex::new(crate::roles::Bindings::default()),
                 verification: Mutex::new(None),
@@ -223,6 +225,34 @@ impl Runtime {
             }
         });
         Ok(runtime)
+    }
+
+    /// Register host-provided product tools and the reverse bridge used to
+    /// execute them. Call once at startup, before any run.
+    pub fn with_product_tools(
+        &self,
+        tools: Vec<crate::protocol::ToolDefinition>,
+        bridge: crate::product::Bridge,
+    ) {
+        let mut state = self.inner.product.write().unwrap();
+        state.tools = tools;
+        state.bridge = Some(bridge);
+    }
+
+    /// Route a host reply for a product-tool bridge call.
+    pub fn deliver_product_reply(&self, bridge_id: u64, value: Value) -> bool {
+        match self
+            .inner
+            .product
+            .read()
+            .unwrap()
+            .bridge
+            .as_ref()
+            .map(|bridge| bridge.pending())
+        {
+            Some(pending) => crate::product::deliver(pending, bridge_id, value),
+            None => false,
+        }
     }
 
     pub fn controller(&self) -> Controller {
@@ -1347,6 +1377,21 @@ async fn execute(
                                             json!({"accepted":cancel_background(inner,session,&selector.job_id).await?}),
                                         ),
                                         Err(error) => Err(error),
+                                    }
+                                }
+                                name if inner.product.read().unwrap().has(name) => {
+                                    let input = prepared.input().clone();
+                                    let bridge = inner
+                                        .product
+                                        .read()
+                                        .unwrap()
+                                        .bridge
+                                        .clone();
+                                    match bridge {
+                                        Some(bridge) => {
+                                            bridge.call(name, input).await
+                                        }
+                                        None => Err(ToolError::Unsupported),
                                     }
                                 }
                                 _ => {

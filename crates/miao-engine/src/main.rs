@@ -148,6 +148,7 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
             "--skills-config",
             "--references-config",
             "--model-routes-config",
+            "--product-tools",
             "--worker-config",
             "--credential-db",
             "--credential-id",
@@ -562,14 +563,21 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
         result?;
         return Ok(());
     }
-    let result = serve(&runtime).await;
-    runtime.shutdown().await;
-    result?;
+    serve(runtime, options.remove("--product-tools")).await?;
     Ok(())
 }
 
-async fn serve(runtime: &Runtime) -> io::Result<()> {
+async fn serve(runtime: Runtime, product_tools: Option<String>) -> io::Result<()> {
     let (output, mut outgoing) = mpsc::channel::<Value>(128);
+    if let Some(path) = product_tools {
+        let file = tokio::fs::read_to_string(&path)
+            .await
+            .map_err(io::Error::other)?;
+        let manifest: Value = serde_json::from_str(&file).map_err(io::Error::other)?;
+        let tools: Vec<miao_engine::protocol::ToolDefinition> =
+            serde_json::from_value(manifest["tools"].clone()).map_err(io::Error::other)?;
+        runtime.with_product_tools(tools, miao_engine::product::Bridge::new(output.clone()));
+    }
     let writer = tokio::spawn(async move {
         let mut stdout = tokio::io::stdout();
         while let Some(value) = outgoing.recv().await {
@@ -598,7 +606,12 @@ async fn serve(runtime: &Runtime) -> io::Result<()> {
             tokio::select! {
                 line=read_line(&mut input,&mut bytes)=>{
                     let Some(line)=line? else { break; };
-                    let request=match serde_json::from_slice::<Request>(&line) {
+                    let value:Value=match serde_json::from_slice(&line) {Ok(v)=>v,Err(_)=>{send(&output,json!({"id":null,"error":{"code":"invalid_request","message":"expected a JSON object"}}))?;continue;}};
+                    if let Some(bridge_id)=value.get("bridge_id").and_then(|id|id.as_u64()) {
+                        runtime.deliver_product_reply(bridge_id, value);
+                        continue;
+                    }
+                    let request=match serde_json::from_value::<Request>(value) {
                         Ok(r) if r.id.is_string()||r.id.is_number()=>r,
                         _=>{send(&output,json!({"id":null,"error":{"code":"invalid_request","message":"expected an id and a typed method/params request"}}))?;continue;},
                     };
