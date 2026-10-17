@@ -745,6 +745,72 @@ export type SessionsSwitchModelInput = {
 
 export type SessionsSwitchModelOutput = void
 
+export type SessionsRecoveriesInput = {
+  readonly sessionID: { readonly sessionID: string }["sessionID"]
+  readonly after?: { readonly after?: string | undefined }["after"]
+}
+
+export type SessionsRecoveriesOutput = {
+  readonly data: {
+    readonly calls: ReadonlyArray<{
+      readonly callID: string
+      readonly runID: string
+      readonly tool: string
+      readonly outcome: "unknown"
+      readonly resolution: {
+        readonly operationID: string
+        readonly callID: string
+        readonly runID: string
+        readonly decision: "retry" | "abandon"
+        readonly inputID: string
+        readonly admittedSeq: number
+        readonly outcome: "unknown"
+      } | null
+    }>
+    readonly hasMore: boolean
+  }
+}["data"]
+
+export type SessionsResolveRecoveryInput = {
+  readonly sessionID: { readonly sessionID: string }["sessionID"]
+  readonly callID: {
+    readonly callID: string
+    readonly operationID: string
+    readonly decision: "retry" | "abandon"
+    readonly resume?: boolean | undefined
+  }["callID"]
+  readonly operationID: {
+    readonly callID: string
+    readonly operationID: string
+    readonly decision: "retry" | "abandon"
+    readonly resume?: boolean | undefined
+  }["operationID"]
+  readonly decision: {
+    readonly callID: string
+    readonly operationID: string
+    readonly decision: "retry" | "abandon"
+    readonly resume?: boolean | undefined
+  }["decision"]
+  readonly resume?: {
+    readonly callID: string
+    readonly operationID: string
+    readonly decision: "retry" | "abandon"
+    readonly resume?: boolean | undefined
+  }["resume"]
+}
+
+export type SessionsResolveRecoveryOutput = {
+  readonly data: {
+    readonly operationID: string
+    readonly callID: string
+    readonly runID: string
+    readonly decision: "retry" | "abandon"
+    readonly inputID: string
+    readonly admittedSeq: number
+    readonly outcome: "unknown"
+  }
+}["data"]
+
 export type SessionsPromptInput = {
   readonly sessionID: { readonly sessionID: string }["sessionID"]
   readonly id?: {

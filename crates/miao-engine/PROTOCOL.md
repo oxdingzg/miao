@@ -161,9 +161,12 @@ ASCII alphanumeric/underscore/hyphen characters), and `decision: "retry" |
 "abandon"`. It atomically records the controller decision and admits one steer
 input. The receipt includes `input_id` and `admitted_seq`; an exact retry returns
 the same receipt, while conflicting reuse fails. The original outcome remains
-unknown. A retry requests inspection and, if necessary, a fresh authorized tool
+unknown. Optional `resume: true` explicitly schedules an advisory wake after
+admission; it never forces another provider turn for an already-promoted exact
+retry. A retry requests inspection and, if necessary, a fresh authorized tool
 call; it never replays the previous dispatch. An abandon requests continuation
 without retrying that operation. The Session must be idle and Location-bound.
 
-Neither command schedules model work. Use a separate explicit `resume` to
-promote the durable instruction. See [ADR-16](docs/adr/0016-explicit-tool-recovery.md).
+By default neither command schedules model work. Use explicit `resume: true`,
+a separate `resume`, or a later prompt to promote the durable instruction.
+See [ADR-16](docs/adr/0016-explicit-tool-recovery.md).

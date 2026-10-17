@@ -15,7 +15,7 @@ import { HttpApiBuilder, HttpApiSchema } from "effect/unstable/httpapi"
 import { Api } from "../api"
 import { Project } from "@miao/core/project"
 import { NativeEngine } from "../native-engine"
-import { requireTypescriptOwner } from "../native-command"
+import { requireNativeOwner, requireTypescriptOwner } from "../native-command"
 import { SessionEnginePlacement } from "@miao/core/session/engine-placement"
 import { nativeExecution, nativeTodos } from "../native-state"
 import { nativeSessionEvents } from "../native-events"
@@ -262,6 +262,34 @@ export const SessionHandler = HttpApiBuilder.group(Api, "server.session", (handl
             Effect.catchTag("Session.LegacyNotMigratedError", (error) => Effect.fail(legacyNotMigrated(error))),
           )
           return HttpApiSchema.NoContent.make()
+        }),
+      )
+      .handle(
+        "session.recoveries",
+        Effect.fn(function* (ctx) {
+          const owner = yield* requireNativeOwner(ctx.params.sessionID)
+          return {
+            data: yield* owner.native.recoveries({
+              sessionID: ctx.params.sessionID,
+              storage: owner.placement.storage,
+              location: owner.placement.location,
+              after: ctx.query.after,
+            }),
+          }
+        }),
+      )
+      .handle(
+        "session.resolveRecovery",
+        Effect.fn(function* (ctx) {
+          const owner = yield* requireNativeOwner(ctx.params.sessionID)
+          return {
+            data: yield* owner.native.resolveRecovery({
+              sessionID: ctx.params.sessionID,
+              storage: owner.placement.storage,
+              location: owner.placement.location,
+              ...ctx.payload,
+            }),
+          }
         }),
       )
       .handle(

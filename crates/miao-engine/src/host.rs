@@ -64,9 +64,10 @@ impl Host {
                 call_id,
                 operation_id,
                 decision,
+                resume,
             } => {
                 runtime
-                    .resolve_recovery(&session_id, &call_id, &operation_id, decision)
+                    .resolve_recovery(&session_id, &call_id, &operation_id, decision, resume)
                     .await
             }
             Command::Mode { session_id, mode } => runtime
