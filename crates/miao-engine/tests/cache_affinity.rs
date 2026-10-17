@@ -237,3 +237,60 @@ async fn api_profile_uses_a_body_key_without_subscription_headers() {
     assert!(header.is_none());
     server.abort();
 }
+
+#[tokio::test]
+async fn fork_lineage_preserves_cache_hints_after_restart_without_joining_unrelated_sessions() {
+    let (url, mut requests, server) = peer(vec![(200, answer()); 4]).await;
+    let dir = tempfile::tempdir().unwrap();
+    let db = dir.path().join("engine.db");
+    let store = Store::open(&db).await.unwrap();
+    let provider = Arc::new(OpenAIResponses::new(url, "fixture".into(), "model".into()).unwrap());
+    let runtime = Runtime::new(
+        store.clone(),
+        provider.clone(),
+        Tools::new(dir.path()).await.unwrap(),
+    )
+    .await
+    .unwrap();
+    admit(&runtime, "parent", "parent-input").await;
+    runtime.shutdown().await;
+    drop(runtime);
+    store.fork("parent", "child", None).await.unwrap();
+    drop(store);
+    let store = Store::open(&db).await.unwrap();
+    let runtime = Runtime::new(
+        store.clone(),
+        provider.clone(),
+        Tools::new(dir.path()).await.unwrap(),
+    )
+    .await
+    .unwrap();
+    admit(&runtime, "child", "child-input").await;
+    runtime.shutdown().await;
+    drop(runtime);
+    store.fork("child", "grandchild", None).await.unwrap();
+    let runtime = Runtime::new(store, provider, Tools::new(dir.path()).await.unwrap())
+        .await
+        .unwrap();
+    tokio::join!(
+        admit(&runtime, "grandchild", "grandchild-input"),
+        admit(&runtime, "unrelated", "unrelated-input")
+    );
+    runtime.shutdown().await;
+    let parent = requests.recv().await.unwrap().0;
+    let child = requests.recv().await.unwrap().0;
+    assert_eq!(parent["prompt_cache_key"], child["prompt_cache_key"]);
+    let prefix = parent["input"].as_array().unwrap();
+    assert_eq!(&child["input"].as_array().unwrap()[..prefix.len()], prefix);
+    let tail = [
+        requests.recv().await.unwrap().0,
+        requests.recv().await.unwrap().0,
+    ];
+    assert_eq!(
+        tail.iter()
+            .filter(|body| body["prompt_cache_key"] == parent["prompt_cache_key"])
+            .count(),
+        1
+    );
+    server.abort();
+}

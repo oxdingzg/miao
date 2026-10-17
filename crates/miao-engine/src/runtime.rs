@@ -119,6 +119,8 @@ impl Runtime {
             ));
         }
         let mut tools = tools
+            .enable_web(policy.web_enabled())
+            .map_err(|error| Error::Invalid(error.to_string()))?
             .with_cron(policy.cron_enabled())
             .with_wakeup(policy.wakeup_enabled())
             .with_writes(policy.writes_enabled())
@@ -598,10 +600,15 @@ fn boxed_drain(
     force: bool,
     cancel: CancellationToken,
 ) -> std::pin::Pin<Box<dyn std::future::Future<Output = Result<(), Error>> + Send>> {
-    Box::pin(crate::cache_affinity::scoped(
-        session.clone(),
-        drain(session, inner, force, cancel),
-    ))
+    Box::pin(async move {
+        let affinity = inner.store.cache_affinity(&session).await?;
+        crate::cache_affinity::scoped_candidate(
+            session.clone(),
+            affinity,
+            drain(session, inner, force, cancel),
+        )
+        .await
+    })
 }
 
 async fn drain(
@@ -1217,6 +1224,7 @@ async fn execute(
                                     None => Err(ToolError::Interrupted),
                                 },
                                 "session_state" => Ok(inner.store.state(session).await?),
+                                "knowledge"=>inner.tools.execute_knowledge(prepared,&inner.policy,session,cancel.child_token()).await,
                                 "todowrite" | "goal" => match crate::state::Mutation::parse(
                                     name,
                                     prepared.input().clone(),
@@ -2264,30 +2272,20 @@ async fn delegate(
     // price parent+child without reconstructing provenance. Wall-clock cost
     // stays on the ephemeral progress feed — the replayed journal pins
     // payloads, and durations are not reproducible.
-    let mut billed_input = 0u64;
-    let mut billed_output = 0u64;
-    let mut turns = 0u64;
-    for event in inner
+    let usage = inner
         .store
-        .events(&child, 0, 10_000)
+        .usage_report(&child)
         .await
-        .unwrap_or_default()
-    {
-        if event.kind != "usage" || event.data["partial"].as_bool() == Some(true) {
-            continue;
-        }
-        turns += 1;
-        billed_input += event.data["usage"]["inputTokens"].as_u64().unwrap_or(0);
-        billed_output += event.data["usage"]["outputTokens"].as_u64().unwrap_or(0);
-    }
+        .map_err(|_| ToolError::External("subagent usage report unavailable".into()))?;
     inner
         .store
         .record(
             parent,
             crate::events::Lifecycle::SubagentStop.name(),
             json!({"run_id":run,"subagent_id":child,"call_id":call,"reason":"completed",
-                   "tokens":{"input":billed_input,"output":billed_output},
-                   "turns":turns}),
+                   "tokens":{"input":usage["providerUsage"]["tokens"]["input"].as_u64().unwrap_or(0),"output":usage["providerUsage"]["tokens"]["output"].as_u64().unwrap_or(0)},
+                   "usageCoverage":usage["providerUsage"],
+                   "turns":usage["turns"]}),
         )
         .await
         .map_err(|_| ToolError::External("subagent stop could not be recorded".into()))?;

@@ -14,6 +14,9 @@ they are not the current capability-gap checklist.
 
 ## Running
 
+The native [source-bound knowledge tool](docs/source-bound-knowledge.md) provides a short workspace
+index, reviewable notes, source invalidation and conditional updates across Sessions.
+
 Optional [stable extension tool disclosure](docs/tool-disclosure.md) keeps the provider tool surface
 fixed while discovering extension schemas and filtering results on demand (`--tool-disclosure compact`).
 
@@ -45,6 +48,8 @@ bearer token taken from `--http-token` or `MIAO_ENGINE_HTTP_TOKEN`, generated at
 to stderr when absent. Non-loopback addresses are rejected, and TLS is left to a local reverse proxy.
 
 ### Optional Responses cache controls
+
+Verified deployments can independently opt into [Session WebSocket reuse and strict suffix continuation](docs/responses-websocket.md).
 
 `--responses-cache-contract JSON` declares cache capabilities for an exact wire model, normalized
 endpoint URL (including its query), and authentication profile (`api` or `subscription`). Declare
@@ -491,6 +496,61 @@ configured with the `mcp_*` tool matcher and the `@mcp/local_service/**` resourc
 Remote HTTP transport, dynamic catalog notifications, resources/prompts, MCP OAuth, and TS plugin
 compatibility are not implemented today.
 
+## Host-authorized skill directories
+
+`--skills-config /absolute/path/skills.json` supplies an array of directories,
+e.g. `[{ "path": ".miao/skills" }, { "path": "/absolute/host/skills" }]`.
+Workspace-relative directories stay within the workspace; absolute directories
+require an explicit read-only directory grant in `--references-config`.
+An exact-file reference does not authorize enumeration of its parent directory.
+
+Directory enumeration follows `glob` policy, and every candidate skill file is
+resolved and checked against `read_file` policy before its frontmatter is read.
+Ask/deny decisions hide that metadata from the model. Discovery skips symlinks,
+is depth/count bounded, and lists only names/descriptions/paths in Context.
+Skill bodies are read on demand through ordinary authorized tools. External
+skill paths remain absolute so a later read uses the same reference boundary.
+
+## Native web tools
+
+Enable native HTTP reads/search through the ordinary policy boundary:
+
+```json
+{
+  "allow_web": true,
+  "rules": [
+    { "tool": "webfetch", "path": "@web/**", "decision": "allow" },
+    { "tool": "websearch", "path": "@web/**", "decision": "allow" }
+  ]
+}
+```
+
+`webfetch` accepts an HTTP(S) URL, `format: "markdown" | "text" | "html"`
+(default markdown), and `timeout` in seconds (1–120, default 30). HTML uses a
+native DOM converter; text excludes head/script/style content. Declared text
+encodings and compressed responses are decoded before enforcing the 2 MiB body
+limit. Returned content is UTF-8 bounded to 64 KiB with an explicit `truncated`
+flag. URL fragments are not transmitted. Up to five redirects are followed only
+when their targets independently have an allow rule; otherwise the target URL
+is returned in the permission error for a separate authorized call. Read-only
+collaboration does not grant write/process authority through these tools.
+
+`websearch` is disclosed only when the host has configured a supported search
+credential. Set `EXA_API_KEY` or `PARALLEL_API_KEY`; if both exist Exa is the
+default. `MIAO_WEB_SEARCH_PROVIDER=exa|parallel` explicitly selects one, and
+`MIAO_WEB_SEARCH_ENDPOINT` optionally selects the host's deployment endpoint.
+These deployment variables are forwarded by the product's native child
+environment boundary. They are never model tool arguments or returned in tool
+results. Search never follows redirects, and upstream error bodies are not
+returned to the model.
+
+Search input is `query`, optional `numResults` (1–20, default 8), `type`
+(`auto|fast|deep`) and `contextMaxCharacters` (1–50000, default 10000). The native
+adapters use Exa `/search` or Parallel `/v1/search` and return bounded source URLs,
+titles, excerpts and truncation flags. Permission resources are namespaced as
+`@web/<host>[:port]/<path>`; normal once-only controller approval is supported
+when rules ask rather than allow.
+
 ## Explicit Context Sources
 
 `--context-config /absolute/path/context.json` selects additional instruction/persona files:
@@ -779,8 +839,9 @@ Environment values override embedded settings. Use absolute manifest paths when
 one product process serves multiple Locations.
 
 The manifests use the native formats documented above. Instruction and reference
-manifests can name explicitly authorized external files; skill directories remain
-workspace-relative. Manifests must stay outside model-writable workspaces. An
+manifests can name explicitly authorized external files. Relative skill directories
+stay workspace-contained; absolute skill directories need explicit read-only
+directory references and directory/file policy authorization. Manifests must stay outside model-writable workspaces. An
 external instruction file needs its own read-only reference grant; granting one
 file never grants its parent directory or siblings. Normal Context permission
 rules still apply. These inputs select host-owned sources, not literal prompt
@@ -808,6 +869,9 @@ observe the final history, and verify the file. Its unconfigured-policy case
 verifies that the same request does not write a file.
 
 ## Completion verification receipts
+
+Provider reporting also exposes [auxiliary usage and coverage](docs/auxiliary-usage.md) for complete
+and partial primary observations, role attempts and child outcome evidence.
 
 Configured completion commands produce [version-bound verification receipts](docs/verification-receipts.md)
 with actual exit/output, task revisions and bounded source coverage.

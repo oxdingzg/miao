@@ -2,7 +2,7 @@ import { SessionModelRoute } from "@miao/schema/session-model-route"
 import os from "node:os"
 import path from "node:path"
 import { Config } from "@miao/core/config"
-import { ResponsesCacheContract } from "@miao/schema/config"
+import { ResponsesCacheContract, ResponsesWebSocketContract } from "@miao/schema/config"
 import { Global } from "@miao/core/global"
 import { makeGlobalNode } from "@miao/core/effect/app-node"
 import { ClientEvents } from "@miao/server/client-events"
@@ -74,6 +74,10 @@ export const nativeEngineOptions = (
     merged.responsesCacheContract = Schema.decodeUnknownSync(Schema.fromJsonString(ResponsesCacheContract), {
       onExcessProperty: "error",
     })(environment.MIAO_ENGINE_RESPONSES_CACHE_CONTRACT)
+  if (environment.MIAO_ENGINE_RESPONSES_WEBSOCKET_CONTRACT)
+    merged.responsesWebSocketContract = Schema.decodeUnknownSync(Schema.fromJsonString(ResponsesWebSocketContract), {
+      onExcessProperty: "error",
+    })(environment.MIAO_ENGINE_RESPONSES_WEBSOCKET_CONTRACT)
   merged.promptCache = environment.MIAO_ENGINE_PROMPT_CACHE
     ? environment.MIAO_ENGINE_PROMPT_CACHE === "on"
     : merged.promptCache
@@ -102,6 +106,7 @@ export const nativeEngineOptions = (
     toolDisclosure: merged.toolDisclosure,
     roles: merged.roles,
     responsesCacheContract: merged.responsesCacheContract,
+    responsesWebSocketContract: merged.responsesWebSocketContract,
     promptCache: merged.promptCache,
     verifyCommand: merged.verifyCommand,
     mcpConfigFile: merged.mcpConfigFile,
@@ -141,6 +146,7 @@ export const engineSettings = async (
       toolDisclosure: engine.tool_disclosure,
       roles: engine.roles,
       responsesCacheContract: engine.responses_cache_contract,
+      responsesWebSocketContract: engine.responses_websocket_contract,
       promptCache: engine.prompt_cache,
       verifyCommand: engine.verify_command,
       mcpConfigFile: engine.mcp_config ? path.resolve(globalConfig, engine.mcp_config) : undefined,

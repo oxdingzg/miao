@@ -44,20 +44,22 @@ export function nativeSessionInfo(input: {
   const created = number(input.snapshot["created_at_ms"])
   const updated = number(input.snapshot["updated_at_ms"])
   const title = input.snapshot["title"]
-  const tokens = input.usage
-    ? input.usage.models.reduce(
-        (totals, model) => ({
-          input: totals.input + model.tokens.input,
-          output: totals.output + model.tokens.output,
-          reasoning: totals.reasoning + model.tokens.reasoning,
-          cache: {
-            read: totals.cache.read + model.tokens.cache.read,
-            write: totals.cache.write + model.tokens.cache.write,
-          },
-        }),
-        { input: 0, output: 0, reasoning: 0, cache: { read: 0, write: 0 } },
-      )
-    : { input: 0, output: 0, reasoning: 0, cache: { read: 0, write: 0 } }
+  const tokens =
+    input.usage?.coverage?.observedTokens ??
+    (input.usage
+      ? input.usage.models.reduce(
+          (totals, model) => ({
+            input: totals.input + model.tokens.input,
+            output: totals.output + model.tokens.output,
+            reasoning: totals.reasoning + model.tokens.reasoning,
+            cache: {
+              read: totals.cache.read + model.tokens.cache.read,
+              write: totals.cache.write + model.tokens.cache.write,
+            },
+          }),
+          { input: 0, output: 0, reasoning: 0, cache: { read: 0, write: 0 } },
+        )
+      : { input: 0, output: 0, reasoning: 0, cache: { read: 0, write: 0 } })
   return {
     id: input.sessionID,
     ...(typeof input.snapshot["parent_session_id"] === "string"
@@ -83,6 +85,8 @@ function number(value: unknown): number | undefined {
 }
 
 const count = (value: unknown): number => Math.max(0, number(value) ?? 0)
+const record = (value: unknown): value is Record<string, unknown> =>
+  typeof value === "object" && value !== null && !Array.isArray(value)
 
 /**
  * Project the engine's usage report into the product's lifetime usage block,
@@ -90,6 +94,9 @@ const count = (value: unknown): number => Math.max(0, number(value) ?? 0)
  * product catalog at each turn's own tier, newest turn first. `undefined`
  * when nothing was ever billed or called, so a fresh Session omits the block.
  *
+ * New native reports include partial and auxiliary observations separately
+ * from conversational turn counts. Missing axes are not priced as measured
+ * zero; coverage identifies unknown usage and unavailable catalog pricing.
  * Wall-clock comes from the engine's timing side table; turns that predate
  * that column degrade to the Session's update time (a display fact, not a
  * billing one), and a model the catalog does not know still contributes its
@@ -100,7 +107,17 @@ export function nativeSessionUsage(input: {
   models: readonly ModelV2.Info[]
   snapshot: Readonly<Record<string, unknown>>
 }): SessionInfo.Usage | undefined {
-  const detail = Array.isArray(input.report["turnsDetail"]) ? input.report["turnsDetail"] : []
+  const detail = Array.isArray(input.report["providerDetail"])
+    ? input.report["providerDetail"]
+    : Array.isArray(input.report["turnsDetail"])
+      ? input.report["turnsDetail"]
+      : []
+  const providerUsage = record(input.report["providerUsage"]) ? input.report["providerUsage"] : undefined
+  const auxiliary = record(input.report["auxiliary"]) ? input.report["auxiliary"] : {}
+  const auxiliaryUsage = record(auxiliary["usage"]) ? auxiliary["usage"] : {}
+  const axes = record(providerUsage?.["coverage"]) ? providerUsage["coverage"] : {}
+  const observedTokens = record(providerUsage?.["tokens"]) ? providerUsage["tokens"] : undefined
+  let unknownPriceObservations = 0
   const tools =
     typeof input.report["tools"] === "object" && input.report["tools"] !== null
       ? (input.report["tools"] as Readonly<Record<string, unknown>>)
@@ -108,21 +125,22 @@ export function nativeSessionUsage(input: {
   const calls = count(tools["calls"])
   const failures = count(tools["failures"])
   if (detail.length === 0 && calls === 0) return undefined
-  const groups = new Map<string, {
-    providerID: ReturnType<typeof ModelV2.parse>["providerID"]
-    id: ReturnType<typeof ModelV2.parse>["modelID"]
-    turns: number
-    cost: number
-    tokens: { input: number; output: number; reasoning: number; cache: { read: number; write: number } }
-    lastTurnMs: number
-  }>()
+  const groups = new Map<
+    string,
+    {
+      providerID: ReturnType<typeof ModelV2.parse>["providerID"]
+      id: ReturnType<typeof ModelV2.parse>["modelID"]
+      turns: number
+      cost: number
+      tokens: { input: number; output: number; reasoning: number; cache: { read: number; write: number } }
+      lastTurnMs: number
+    }
+  >()
   for (const row of detail) {
     if (typeof row !== "object" || row === null) continue
     const entry = row as Readonly<Record<string, unknown>>
-    const usage =
-      typeof entry["usage"] === "object" && entry["usage"] !== null
-        ? (entry["usage"] as Readonly<Record<string, unknown>>)
-        : {}
+    const rawUsage = "observedUsage" in entry ? entry["observedUsage"] : entry["usage"]
+    const usage = record(rawUsage) ? rawUsage : {}
     const turnMs = number(entry["turnMs"]) ?? number(input.snapshot["updated_at_ms"]) ?? 0
     const billed = usage as {
       inputTokens?: number
@@ -133,8 +151,16 @@ export function nativeSessionUsage(input: {
       cacheWriteInputTokens?: number
     }
     const model = typeof entry["model"] === "string" ? entry["model"] : ""
-    if (model === "") continue
+    if (model === "") {
+      unknownPriceObservations += 1
+      continue
+    }
     const ref = ModelV2.parse(model)
+    const costs =
+      input.models.find((candidate) => candidate.providerID === ref.providerID && candidate.id === ref.modelID)?.cost ??
+      []
+    if (costs.length === 0) unknownPriceObservations += 1
+    if (!Object.values(usage).some((value) => number(value) !== undefined)) continue
     const group = groups.get(model) ?? {
       providerID: ref.providerID,
       id: ref.modelID,
@@ -143,7 +169,6 @@ export function nativeSessionUsage(input: {
       tokens: { input: 0, output: 0, reasoning: 0, cache: { read: 0, write: 0 } },
       lastTurnMs: 0,
     }
-    const costs = input.models.find((candidate) => candidate.providerID === ref.providerID && candidate.id === ref.modelID)?.cost ?? []
     group.turns += 1
     group.cost += SessionRunnerCost.ofTurn(costs, billed)
     group.tokens.input += count(billed.inputTokens)
@@ -155,6 +180,34 @@ export function nativeSessionUsage(input: {
     groups.set(model, group)
   }
   return {
+    ...(providerUsage
+      ? {
+          coverage: {
+            observations: count(providerUsage["observations"]),
+            auxiliaryObservations: count(auxiliaryUsage["observations"]),
+            missingUsageObservations: count(providerUsage["missingUsageObservations"]),
+            unknownPriceObservations,
+            ...(observedTokens
+              ? {
+                  observedTokens: {
+                    input: count(observedTokens["input"]),
+                    output: count(observedTokens["output"]),
+                    reasoning: count(observedTokens["reasoning"]),
+                    cache: { read: count(observedTokens["cacheRead"]), write: count(observedTokens["cacheWrite"]) },
+                  },
+                }
+              : {}),
+            axes: {
+              input: count(axes["input"]),
+              output: count(axes["output"]),
+              cacheRead: count(axes["cacheRead"]),
+              cacheWrite: count(axes["cacheWrite"]),
+              nonCached: count(axes["nonCached"]),
+              reasoning: count(axes["reasoning"]),
+            },
+          },
+        }
+      : {}),
     turns: count(input.report["turns"]),
     tools: { calls, failures },
     models: [...groups.values()]
