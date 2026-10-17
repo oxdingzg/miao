@@ -284,7 +284,15 @@ export const { use: useLocal, provider: LocalProvider } = createSimpleContext({
           return modelStore.favorite
         },
         parsed: createMemo(() => {
-          if (selectionLocked()) return { provider: "Operator configured", model: "Native runtime", reasoning: false }
+          if (selectionLocked()) {
+            const current = route.data
+            const model = current.type === "session" ? sync.session.get(current.sessionID)?.model : undefined
+            return {
+              provider: "Native runtime",
+              model: model?.providerID === "native-engine-default" ? "Host default" : (model?.id ?? "Host configured"),
+              reasoning: false,
+            }
+          }
           const value = currentModel()
           if (!value) {
             return {
