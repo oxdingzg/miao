@@ -2622,7 +2622,7 @@ async fn start_monitor(
     }
     let admission = inner
         .store
-        .create_job(session, run, call, prepared.input().clone())
+        .create_job_for(session, run, call, prepared.input().clone(), "monitor")
         .await
         .map_err(|error| ToolError::Io(std::io::Error::other(error.to_string())))?;
     if admission["duplicate"] == true {
@@ -2670,6 +2670,18 @@ async fn start_monitor(
             }
         };
         let stdout = child.stdout.take().expect("monitor stdout piped");
+        if let Err(error) = task_inner.store.start_job(&owner, &task_id).await {
+            let _ = task_inner
+                .store
+                .record(
+                    &owner,
+                    "monitor.failed",
+                    json!({"job_id":task_id,"message":error.to_string()}),
+                )
+                .await;
+            task_inner.jobs.lock().await.remove(&task_id);
+            return;
+        }
         let mut reader = tokio::io::BufReader::new(stdout).lines();
         let mut batcher = crate::monitor::Batcher::default();
         let mut window = tokio::time::interval(tokio::time::Duration::from_millis(
@@ -2684,10 +2696,14 @@ async fn start_monitor(
                 biased;
                 _ = token.cancelled() => {
                     let _ = child.kill().await;
-                    let _ = task_inner
-                        .store
-                        .record(&owner, "monitor.cancelled", json!({"job_id":task_id}))
-                        .await;
+                    let _ = finish_background_job(
+                        &task_inner,
+                        &owner,
+                        &task_id,
+                        "cancelled",
+                        json!({"reason":"cancelled_by_request"}),
+                    )
+                    .await;
                     task_inner.jobs.lock().await.remove(&task_id);
                     return;
                 }
