@@ -132,6 +132,15 @@ impl Fallback {
 }
 #[async_trait]
 impl Provider for Fallback {
+    fn for_model(&self, model: &str) -> Option<Arc<dyn Provider>> {
+        let primary = self.primary.for_model(model)?;
+        if primary.identity() == self.secondary.identity() {
+            return Some(primary);
+        }
+        Self::new(primary, Arc::clone(&self.secondary))
+            .ok()
+            .map(|provider| Arc::new(provider) as Arc<dyn Provider>)
+    }
     fn identity(&self) -> Option<Identity> {
         Some(self.first.clone())
     }
