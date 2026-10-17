@@ -72,6 +72,8 @@ export interface EngineOptions {
   workspaceInstructions?: boolean
   skillsConfigFile?: string
   referencesConfigFile?: string
+  /** Host-owned lifecycle hooks; commands run under the same sandbox as bash. */
+  hooksConfigFile?: string
   /** Host-owned exact model routes; endpoint/credential bindings never come from a Session request. */
   modelRoutesConfigFile?: string
   /**
@@ -172,6 +174,7 @@ export function engineArgs(options: EngineOptions): string[] {
     args.push("--workspace-instructions", String(options.workspaceInstructions))
   if (options.skillsConfigFile) args.push("--skills-config", options.skillsConfigFile)
   if (options.referencesConfigFile) args.push("--references-config", options.referencesConfigFile)
+  if (options.hooksConfigFile) args.push("--hooks-config", options.hooksConfigFile)
   if (options.modelRoutesConfigFile) args.push("--model-routes-config", options.modelRoutesConfigFile)
   if (options.promptCache !== undefined) args.push("--prompt-cache", options.promptCache ? "on" : "off")
   if (options.responsesCacheContract)
