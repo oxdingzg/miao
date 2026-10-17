@@ -324,7 +324,8 @@ async fn nonrecurring_expiry_recovery_and_fork_have_no_hidden_replay() {
         store.record("s", "cron.scheduled", orphan).await.unwrap();
         store.recover_crons().await.unwrap();
         store.recover_crons().await.unwrap();
-        assert_eq!(store.crons("s").await.unwrap()[0]["state"], "interrupted");
+        // Adoption is non-terminal; the re-armed loop still owns occurrence firing.
+        assert_eq!(store.crons("s").await.unwrap()[0]["state"], "scheduled");
         assert_eq!(
             store
                 .events("s", 0, 100)
