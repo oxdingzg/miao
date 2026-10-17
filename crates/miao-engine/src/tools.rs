@@ -95,6 +95,10 @@ pub struct Prepared {
     select: Option<Vec<String>>,
 }
 impl Prepared {
+    pub(crate) fn resolved_path(&self) -> &std::path::Path {
+        &self.path
+    }
+
     pub fn name(&self) -> &str {
         &self.name
     }
