@@ -215,6 +215,12 @@ async fn capacity_and_recovery_are_bounded_and_fork_does_not_copy_timers() {
     // Adoption is non-terminal: the re-armed process loop still owns firing,
     // so the timer reports scheduled rather than a resolved state.
     assert_eq!(recovered[0]["state"], "scheduled");
+    let sessions = store.timer_sessions().await.unwrap();
+    assert_eq!(
+        sessions,
+        vec![json!({"session_id": "s"})],
+        "the supervisor scan must surface the adopted session"
+    );
     assert_eq!(
         store
             .events("s", 0, 100)

@@ -1025,6 +1025,20 @@ impl Store {
         }).await
     }
 
+    /// Sessions holding unresolved (scheduled or adopted) timers, wakeup and
+    /// cron combined, budget-capped for the supervisor scan.
+    pub async fn timer_sessions(&self) -> Result<Vec<Value>, Error> {
+        self.call(|conn| {
+            let mut stmt=conn.prepare(
+                "SELECT DISTINCT q.session_id FROM engine_event q WHERE q.kind IN ('wakeup.scheduled','cron.scheduled') AND NOT EXISTS(SELECT 1 FROM engine_event r WHERE r.session_id=q.session_id AND r.kind IN ('wakeup.resolved','cron.resolved') AND json_extract(r.data,'$.timer_id')=json_extract(q.data,'$.timer_id') AND json_extract(r.data,'$.cron_id')=json_extract(q.data,'$.cron_id')) LIMIT 65",
+            )?;
+            let rows=stmt.query_map([],|row|{
+                let session:String=row.get(0)?;
+                Ok(json!({"session_id":session}))
+            })?;
+            rows.collect::<Result<Vec<_>,_>>().map_err(Error::from)
+        }).await
+    }
     /// Process heartbeat for timer ownership. The epoch advances on every
     /// renewal so a future cross-process supervisor can order leases.
     pub async fn heartbeat_lease(&self, session: &str, interval_ms: i64) -> Result<i64, Error> {

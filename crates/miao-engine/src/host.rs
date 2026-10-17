@@ -66,6 +66,7 @@ impl Host {
             Command::Recoveries { session_id, after } => {
                 runtime.store().recoveries(&session_id, &after).await
             }
+            Command::TimerSessions => runtime.store().timer_sessions().await,
             Command::ResolveRecovery {
                 session_id,
                 call_id,
