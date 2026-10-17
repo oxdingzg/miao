@@ -12,7 +12,12 @@ export const MAX_READ_LINES = 2_000
 export const MAX_READ_BYTES = 50 * 1024
 export const MAX_MEDIA_INGEST_BYTES = 20 * 1024 * 1024
 const MAX_LINE_LENGTH = 2_000
-const MAX_LINE_SUFFIX = `... (line truncated to ${MAX_LINE_LENGTH} chars)`
+
+// A clipped line says exactly how to ask for the rest, so a model that needs
+// the tail of a minified file or a long log row can read it without pulling the
+// whole file again or giving up on the line.
+const lineTruncationNotice = (line: number, end: number) =>
+  `... (line truncated at ${end} chars; read the rest with offset=${line}, columns={"from":${end + 1}})`
 
 export class BinaryFileError extends Schema.TaggedErrorClass<BinaryFileError>()("ReadTool.BinaryFileError", {
   resource: Schema.String,
@@ -82,6 +87,10 @@ export type ReadError =
 export const PageInput = Schema.Struct({
   offset: PositiveInt.pipe(Schema.optional),
   limit: PositiveInt.check(Schema.isLessThanOrEqualTo(MAX_READ_LINES)).pipe(Schema.optional),
+  columns: Schema.Struct({
+    from: PositiveInt,
+    to: PositiveInt.pipe(Schema.optional),
+  }).pipe(Schema.optional),
 })
 export type PageInput = typeof PageInput.Type
 
@@ -229,7 +238,11 @@ export const read = Effect.fn("ReadTool.read")(function* (
       if (startsWith(first, [0x25, 0x50, 0x44, 0x46])) return yield* Effect.fail(new PdfFileError({ resource }))
       if (extensions.has(path.extname(resource).toLowerCase()))
         return yield* Effect.fail(new BinaryFileError({ resource }))
-      const paged = info.size > MAX_READ_BYTES || page.offset !== undefined || page.limit !== undefined
+      const paged =
+        info.size > MAX_READ_BYTES ||
+        page.offset !== undefined ||
+        page.limit !== undefined ||
+        page.columns !== undefined
       if (!paged) {
         if (binary(resource, first)) return yield* Effect.fail(new BinaryFileError({ resource }))
         const decoder = new TextDecoder("utf-8", { fatal: true })
@@ -250,6 +263,12 @@ export const read = Effect.fn("ReadTool.read")(function* (
       }
       const offset = page.offset ?? 1
       const limit = Math.min(page.limit ?? MAX_READ_LINES, MAX_READ_LINES)
+      // 1-based inclusive character window inside each selected line. Without
+      // one, a line is clipped at `MAX_LINE_LENGTH` and the notice names the
+      // window that reads the rest.
+      const columnsStart = (page.columns?.from ?? 1) - 1
+      const columnsEnd = page.columns?.to ?? columnsStart + MAX_LINE_LENGTH
+      const retained = columnsEnd + 1
       const lines: string[] = []
       const decoder = new TextDecoder("utf-8", { fatal: true })
       let pending = ""
@@ -257,6 +276,12 @@ export const read = Effect.fn("ReadTool.read")(function* (
       let line = 1
       let bytes = 0
       let next: number | undefined
+      const clip = (lineNumber: number, input: string) => {
+        const text = input.slice(columnsStart, columnsEnd)
+        // `input` is already capped at `retained` characters, so a longer input
+        // still means there is more of the line past this window.
+        return input.length > columnsEnd ? text + lineTruncationNotice(lineNumber, columnsEnd) : text
+      }
       const append = (input: string) => {
         if (line < offset) {
           line++
@@ -266,7 +291,7 @@ export const read = Effect.fn("ReadTool.read")(function* (
           next = line
           return false
         }
-        const text = input.length > MAX_LINE_LENGTH ? input.slice(0, MAX_LINE_LENGTH) + MAX_LINE_SUFFIX : input
+        const text = clip(line, input)
         const size = Buffer.byteLength(text, "utf-8") + (lines.length > 0 ? 1 : 0)
         if (bytes + size > MAX_READ_BYTES) {
           next = line
@@ -284,8 +309,8 @@ export const read = Effect.fn("ReadTool.read")(function* (
           if (index === -1) {
             if (!discard) {
               pending += text
-              if (pending.length > MAX_LINE_LENGTH) {
-                pending = pending.slice(0, MAX_LINE_LENGTH + 1)
+              if (pending.length > retained) {
+                pending = pending.slice(0, retained)
                 discard = true
               }
             }
