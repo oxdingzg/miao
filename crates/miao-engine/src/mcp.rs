@@ -8,27 +8,28 @@ use rmcp::{
         CallToolRequestParams, CallToolResponse, GetPromptRequestParams, GetPromptResponse,
         PaginatedRequestParams, ReadResourceRequestParams, ReadResourceResponse,
     },
-    service::RunningService,
+    service::{MaybeSendFuture, NotificationContext, RunningService},
     transport::{
         streamable_http_client::StreamableHttpClientTransportConfig, StreamableHttpClientTransport,
     },
-    RoleClient, ServiceExt,
+    ClientHandler, RoleClient, ServiceExt,
 };
 use serde::Deserialize;
 use serde_json::Value;
 use std::{
     collections::BTreeMap,
+    future::Future,
     path::Path,
     pin::Pin,
     process::Stdio,
-    sync::Arc,
+    sync::{Arc, RwLock},
     task::{Context, Poll},
     time::Duration,
 };
 use tokio::{
     io::{AsyncRead, AsyncWrite, ReadBuf},
     process::{Child, Command},
-    sync::Mutex,
+    sync::{Mutex, Notify},
 };
 use tokio_util::sync::CancellationToken;
 
@@ -63,13 +64,45 @@ enum Operation {
 }
 struct Server {
     name: String,
-    client: Mutex<RunningService<RoleClient, ()>>,
+    client: Mutex<RunningService<RoleClient, CatalogWatch>>,
+    changed: Arc<Notify>,
+}
+
+/// List-changed notifications arrive unsolicited; the watcher coalesces them
+/// into a debounced catalog refresh per server. Failures keep the previous
+/// catalog until the server announces a change again.
+#[derive(Clone)]
+struct CatalogWatch {
+    changed: Arc<Notify>,
+}
+impl ClientHandler for CatalogWatch {
+    fn on_tool_list_changed(
+        &self,
+        _context: NotificationContext<RoleClient>,
+    ) -> impl Future<Output = ()> + MaybeSendFuture + '_ {
+        self.changed.notify_waiters();
+        std::future::ready(())
+    }
+    fn on_resource_list_changed(
+        &self,
+        _context: NotificationContext<RoleClient>,
+    ) -> impl Future<Output = ()> + MaybeSendFuture + '_ {
+        self.changed.notify_waiters();
+        std::future::ready(())
+    }
+    fn on_prompt_list_changed(
+        &self,
+        _context: NotificationContext<RoleClient>,
+    ) -> impl Future<Output = ()> + MaybeSendFuture + '_ {
+        self.changed.notify_waiters();
+        std::future::ready(())
+    }
 }
 
 /// Connections are explicitly trusted host services, not model-selected URLs
 /// or commands. Tool calls are separate External authority and remain gated.
 pub struct Registry {
-    tools: BTreeMap<String, Tool>,
+    tools: RwLock<BTreeMap<String, Tool>>,
     servers: Vec<Arc<Server>>,
     children: Mutex<Vec<Child>>,
 }
@@ -79,7 +112,7 @@ impl Registry {
             return Err(Error::Invalid("MCP server limit".into()));
         }
         let mut registry = Self {
-            tools: BTreeMap::new(),
+            tools: RwLock::new(BTreeMap::new()),
             servers: vec![],
             children: Mutex::new(vec![]),
         };
@@ -162,11 +195,18 @@ impl Registry {
                         .max_sse_event_size(262144)
                         .reinit_on_expired_session(false),
                 );
-                let client = tokio::time::timeout(Duration::from_secs(15), ().serve(transport))
-                    .await
-                    .map_err(|_| Error::Invalid("MCP HTTP initialization timed out".into()))?
-                    .map_err(|_| Error::Invalid("MCP HTTP initialization failed".into()))?;
-                registry.attach(config.name, client).await?;
+                let changed = Arc::new(Notify::new());
+                let client = tokio::time::timeout(
+                    Duration::from_secs(15),
+                    CatalogWatch {
+                        changed: changed.clone(),
+                    }
+                    .serve(transport),
+                )
+                .await
+                .map_err(|_| Error::Invalid("MCP HTTP initialization timed out".into()))?
+                .map_err(|_| Error::Invalid("MCP HTTP initialization failed".into()))?;
+                registry.attach(config.name, client, changed).await?;
                 continue;
             }
             if !config.headers.is_empty() {
@@ -201,14 +241,18 @@ impl Registry {
                 .stdin
                 .take()
                 .ok_or_else(|| Error::Invalid("MCP stdin missing".into()))?;
+            let changed = Arc::new(Notify::new());
             let client = tokio::time::timeout(
                 Duration::from_secs(15),
-                ().serve((FrameReader::new(read), write)),
+                CatalogWatch {
+                    changed: changed.clone(),
+                }
+                .serve((FrameReader::new(read), write)),
             )
             .await
             .map_err(|_| Error::Invalid("MCP initialization timed out".into()))?
             .map_err(|_| Error::Invalid("MCP initialization failed".into()))?;
-            registry.attach(config.name, client).await?;
+            registry.attach(config.name, client, changed).await?;
             registry.children.lock().await.push(child);
         }
         Ok(registry)
@@ -220,31 +264,99 @@ impl Registry {
         W: AsyncWrite + Unpin + Send + 'static,
     {
         validate_name(&name)?;
+        let changed = Arc::new(Notify::new());
         let client = tokio::time::timeout(
             Duration::from_secs(15),
-            ().serve((FrameReader::new(read), write)),
+            CatalogWatch {
+                changed: changed.clone(),
+            }
+            .serve((FrameReader::new(read), write)),
         )
         .await
         .map_err(|_| Error::Invalid("MCP initialization timed out".into()))?
         .map_err(|_| Error::Invalid("MCP initialization failed".into()))?;
         let mut registry = Self {
-            tools: BTreeMap::new(),
+            tools: RwLock::new(BTreeMap::new()),
             servers: vec![],
             children: Mutex::new(vec![]),
         };
-        registry.attach(name, client).await?;
+        registry.attach(name, client, changed).await?;
         Ok(registry)
     }
 
     async fn attach(
         &mut self,
         name: String,
-        client: RunningService<RoleClient, ()>,
+        client: RunningService<RoleClient, CatalogWatch>,
+        changed: Arc<Notify>,
     ) -> Result<(), Error> {
         let capabilities = client
             .peer_info()
             .map(|info| info.capabilities.clone())
             .unwrap_or_default();
+        let catalog = Self::list_catalog(&client, &capabilities).await?;
+        let server = Arc::new(Server {
+            name: name.clone(),
+            client: Mutex::new(client),
+            changed,
+        });
+        let mut tools = self.tools.write().unwrap();
+        Self::register_catalog(&mut tools, &server, &capabilities, catalog)?;
+        self.servers.push(server);
+        Ok(())
+    }
+    pub fn definitions(&self) -> Vec<ToolDefinition> {
+        self.tools
+            .read()
+            .unwrap()
+            .values()
+            .map(|tool| tool.definition.clone())
+            .collect()
+    }
+    /// Re-list one server's catalog in place. The previous catalog survives a
+    /// failed refresh; callers learn of success through the definitions change.
+    pub async fn refresh(&self, name: &str) -> Result<(), Error> {
+        let server = self
+            .servers
+            .iter()
+            .find(|server| server.name == name)
+            .ok_or_else(|| Error::Invalid("unknown MCP server".into()))?
+            .clone();
+        let client = server.client.lock().await;
+        let capabilities = client
+            .peer_info()
+            .map(|info| info.capabilities.clone())
+            .unwrap_or_default();
+        let catalog = Self::list_catalog(&client, &capabilities).await?;
+        let mut tools = self.tools.write().unwrap();
+        tools.retain(|_, tool| tool.server.name != name);
+        Self::register_catalog(&mut tools, &server, &capabilities, catalog)
+    }
+
+    /// Spawn one debounced watcher per connected server. Dropping the registry
+    /// ends the watchers; a refresh failure only keeps the previous catalog.
+    pub fn start_watchers(self: &Arc<Self>) {
+        for server in self.servers.clone() {
+            let weak = Arc::downgrade(self);
+            let name = server.name.clone();
+            let changed = server.changed.clone();
+            tokio::spawn(async move {
+                loop {
+                    changed.notified().await;
+                    tokio::time::sleep(Duration::from_millis(500)).await;
+                    let Some(registry) = weak.upgrade() else {
+                        break;
+                    };
+                    let _ = registry.refresh(&name).await;
+                }
+            });
+        }
+    }
+
+    async fn list_catalog(
+        client: &RunningService<RoleClient, CatalogWatch>,
+        capabilities: &rmcp::model::ServerCapabilities,
+    ) -> Result<Vec<rmcp::model::Tool>, Error> {
         let mut cursor = None;
         let mut catalog = Vec::new();
         let mut pages = 0;
@@ -273,10 +385,16 @@ impl Registry {
                 break;
             }
         }
-        let server = Arc::new(Server {
-            name: name.clone(),
-            client: Mutex::new(client),
-        });
+        Ok(catalog)
+    }
+
+    fn register_catalog(
+        tools: &mut BTreeMap<String, Tool>,
+        server: &Arc<Server>,
+        capabilities: &rmcp::model::ServerCapabilities,
+        catalog: Vec<rmcp::model::Tool>,
+    ) -> Result<(), Error> {
+        let name = server.name.clone();
         let page_schema = serde_json::json!({"type":"object","properties":{"cursor":{"type":"string","minLength":1,"maxLength":4096}},"additionalProperties":false});
         let mut operations = Vec::new();
         if capabilities.resources.is_some() {
@@ -296,7 +414,7 @@ impl Registry {
             let alias = format!("mcp_{name}_{suffix}");
             let validator = jsonschema::validator_for(&input_schema)
                 .map_err(|_| Error::Invalid("invalid MCP operation schema".into()))?;
-            self.tools.insert(alias.clone(), Tool {definition:ToolDefinition{name:alias,description:format!("[MCP server {name}; requires external-tool authorization] {description}"),input_schema},native:suffix.into(),operation,server:server.clone(),validator});
+            tools.insert(alias.clone(), Tool {definition:ToolDefinition{name:alias,description:format!("[MCP server {name}; requires external-tool authorization] {description}"),input_schema},native:suffix.into(),operation,server:server.clone(),validator});
         }
         for tool in catalog {
             let native = tool.name.to_string();
@@ -326,8 +444,7 @@ impl Registry {
                 ),
                 input_schema,
             };
-            if self
-                .tools
+            if tools
                 .insert(
                     alias,
                     Tool {
@@ -343,22 +460,18 @@ impl Registry {
                 return Err(Error::Invalid("duplicate MCP tool alias".into()));
             }
         }
-        self.servers.push(server);
         Ok(())
-    }
-    pub fn definitions(&self) -> Vec<ToolDefinition> {
-        self.tools
-            .values()
-            .map(|tool| tool.definition.clone())
-            .collect()
     }
     pub fn resource(&self, name: &str) -> Option<String> {
         self.tools
+            .read()
+            .unwrap()
             .get(name)
             .map(|tool| format!("@mcp/{}/{}", tool.server.name, name))
     }
     pub fn validate(&self, name: &str, input: &Value) -> Result<(), ToolError> {
-        let tool = self.tools.get(name).ok_or(ToolError::Unsupported)?;
+        let tools = self.tools.read().unwrap();
+        let tool = tools.get(name).ok_or(ToolError::Unsupported)?;
         if !input.is_object() || !tool.validator.is_valid(input) {
             return Err(ToolError::InvalidInput);
         }
@@ -371,17 +484,20 @@ impl Registry {
         cancel: CancellationToken,
     ) -> Result<Value, ToolError> {
         self.validate(name, &input)?;
-        let tool = self.tools.get(name).ok_or(ToolError::Unsupported)?;
+        let (server, native, operation) = {
+            let tools = self.tools.read().unwrap();
+            let tool = tools.get(name).ok_or(ToolError::Unsupported)?;
+            (tool.server.clone(), tool.native.clone(), tool.operation)
+        };
         let args = input.as_object().ok_or(ToolError::InvalidInput)?.clone();
-        let client = tokio::select! {biased; _=cancel.cancelled()=>return Err(ToolError::Interrupted),client=tool.server.client.lock()=>client};
+        let client = tokio::select! {biased; _=cancel.cancelled()=>return Err(ToolError::Interrupted),client=server.client.lock()=>client};
         let request = async {
-            match tool.operation {
+            match operation {
                 Operation::Tool => {
                     let response = wire(
                         client
                             .call_tool_once(
-                                CallToolRequestParams::new(tool.native.clone())
-                                    .with_arguments(args),
+                                CallToolRequestParams::new(native.clone()).with_arguments(args),
                             )
                             .await,
                     )?;
