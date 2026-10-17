@@ -5,11 +5,11 @@ use serde_json::{json, Value};
 
 #[derive(Clone, Serialize, Deserialize)]
 pub(crate) struct Proof {
-    affinity_session: String,
-    route_hash: String,
-    parameters_hash: String,
-    history_hash: String,
-    message_count: usize,
+    pub(crate) affinity_session: String,
+    pub(crate) route_hash: String,
+    pub(crate) parameters_hash: String,
+    pub(crate) history_hash: String,
+    pub(crate) message_count: usize,
 }
 
 tokio::task_local! {

@@ -728,7 +728,11 @@ impl Store {
     }
 
     /// Wall-clock-free side-table write. Losing it only loses an optimization.
-    pub async fn record_cache_prefix(&self, session: &str, proof: crate::cache_affinity::Proof) {
+    pub(crate) async fn record_cache_prefix(
+        &self,
+        session: &str,
+        proof: crate::cache_affinity::Proof,
+    ) {
         let session = session.to_owned();
         let _ = self.call(move |conn| {
             conn.execute(
