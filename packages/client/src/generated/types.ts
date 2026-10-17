@@ -739,6 +739,17 @@ export type SessionsSwitchAgentInput = {
 
 export type SessionsSwitchAgentOutput = void
 
+export type SessionsModelRoutesInput = { readonly sessionID: { readonly sessionID: string }["sessionID"] }
+
+export type SessionsModelRoutesOutput = {
+  readonly data: ReadonlyArray<{
+    readonly model: { readonly id: string; readonly providerID: string; readonly variant?: string }
+    readonly protocol: string
+    readonly wireModel: string
+    readonly default: boolean
+  }>
+}["data"]
+
 export type SessionsSwitchModelInput = {
   readonly sessionID: { readonly sessionID: string }["sessionID"]
   readonly model: {

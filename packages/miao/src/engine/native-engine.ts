@@ -1,3 +1,4 @@
+import { SessionModelRoute } from "@miao/schema/session-model-route"
 import os from "node:os"
 import path from "node:path"
 import { Config } from "@miao/core/config"
@@ -191,7 +192,48 @@ export const fromOwners = (owners: Owners): NativeEngine.Interface => {
       ),
       Effect.mapError((error) => refusal(input.sessionID ?? input.storage, error)),
     )
+  const routes = async (connection: Effect.Success<ReturnType<Owners["get"]>>) =>
+    Schema.decodeUnknownSync(
+      Schema.Array(
+        Schema.Struct({
+          route_id: Schema.NullOr(Schema.String),
+          protocol: Schema.String,
+          model: Schema.String,
+        }),
+      ),
+    )(await connection.client.request("model_catalog"))
   return {
+    modelRoutes: (input) =>
+      read<readonly SessionModelRoute.Info[]>(input, async (connection) => {
+        await connection.client.request("snapshot", { session_id: input.sessionID })
+        return (await routes(connection)).map((entry) => ({
+          model: SessionModelRoute.reference(entry.route_id),
+          protocol: entry.protocol,
+          wireModel: entry.model,
+          default: entry.route_id === null,
+        }))
+      }),
+    selectModel: (input) =>
+      read(input, async (connection) => {
+        if (input.model.variant !== undefined)
+          throw new EngineError("unsupported_model_variant", "Native model routes do not accept product variants")
+        const entry = (await routes(connection)).find((entry) => {
+          const model = SessionModelRoute.reference(entry.route_id)
+          return model.providerID === input.model.providerID && model.id === input.model.id
+        })
+        if (!entry) throw new EngineError("unknown_model_route", "Model is not in the native host route catalog")
+        return connection.client.request("select_model", {
+          session_id: input.sessionID,
+          binding:
+            entry.route_id === null
+              ? null
+              : {
+                  route_id: entry.route_id,
+                  protocol: entry.protocol,
+                  model: entry.model,
+                },
+        })
+      }).pipe(Effect.asVoid),
     recoveries: (input) =>
       read<ReturnType<typeof NativeRecovery.page>>(input, async (connection) =>
         NativeRecovery.page(
