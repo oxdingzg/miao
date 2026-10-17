@@ -1,4 +1,6 @@
-import { createEffect, createMemo, createSignal } from "solid-js"
+import { useRoute } from "../context/route"
+import { DialogNativeModel } from "./dialog-native-model"
+import { createEffect, createMemo, createSignal, Show } from "solid-js"
 import { useLocal } from "../context/local"
 import { map, pipe, flatMap, entries, filter, sortBy, take } from "remeda"
 import { DialogSelect } from "../ui/dialog-select"
@@ -13,6 +15,22 @@ import { useSync } from "../context/sync"
 import { useToast } from "../ui/toast"
 
 export function DialogModel(props: { providerID?: string }) {
+  const route = useRoute()
+  const sync = useSync()
+  const nativeSessionID = createMemo(() => {
+    const current = route.data
+    return current.type === "session" && sync.session.get(current.sessionID)?.execution?.engine === "rust"
+      ? current.sessionID
+      : undefined
+  })
+  return (
+    <Show when={nativeSessionID()} keyed fallback={<DialogProductModel {...props} />}>
+      {(sessionID) => <DialogNativeModel sessionID={sessionID} />}
+    </Show>
+  )
+}
+
+function DialogProductModel(props: { providerID?: string }) {
   const local = useLocal()
   const sync = useSync()
   const dialog = useDialog()
