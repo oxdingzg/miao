@@ -9,8 +9,10 @@ import { WorkspaceEvent } from "../src/workspace-event"
 
 describe("public event manifest", () => {
   test("owns the complete public event surface", () => {
-    expect(EventManifest.ServerDefinitions.length).toBe(130)
-    expect(EventManifest.Definitions.length).toBe(106)
+    // The account-switch event reaches this surface twice: it is durable and it
+    // is part of the bridged `session.next.*` family.
+    expect(EventManifest.ServerDefinitions.length).toBe(132)
+    expect(EventManifest.Definitions.length).toBe(107)
     expect(SessionV1.Event.Definitions).toEqual([
       SessionV1.Event.Created,
       SessionV1.Event.Updated,
@@ -23,9 +25,10 @@ describe("public event manifest", () => {
       SessionV1.Event.Diff,
       SessionV1.Event.Error,
     ])
-    expect(EventManifest.Latest.size).toBe(106)
+    expect(EventManifest.Latest.size).toBe(107)
     // Durable background subagent handoff added the delegation pair.
-    expect(EventManifest.Durable.size).toBe(45)
+    // Pinning a conversation to one provider account added one durable event.
+    expect(EventManifest.Durable.size).toBe(46)
     // The `/api/event` surface carries the whole bridged `session.next.*`
     // family: a type missing here fails `clientEvent` validation and kills
     // live delivery for attached clients.

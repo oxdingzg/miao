@@ -2,6 +2,7 @@ export * as SessionInfo from "./session-info"
 
 import { Schema } from "effect"
 import { Agent } from "./agent"
+import { Credential } from "./credential"
 import { Location } from "./location"
 import { Model } from "./model"
 import { Project } from "./project"
@@ -54,6 +55,8 @@ export const Info = Schema.Struct({
   projectID: Project.ID,
   agent: Agent.ID.pipe(optional),
   model: Model.Ref.pipe(optional),
+  /** Account this conversation is pinned to; unset follows the provider's own resolution. */
+  credentialID: Credential.ID.pipe(optional),
   execution: Schema.Struct({
     engine: Schema.Literals(["typescript", "rust"]),
     selection: Schema.Literals(["session", "operator"]),

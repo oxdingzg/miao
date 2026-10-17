@@ -295,7 +295,7 @@ describe("ReadTool", () => {
       readFailure = new ReadToolFileSystem.PdfFileError({ resource: "doc.pdf" })
       expect(yield* call("call-pdf-offset", { path: "doc.pdf", offset: 2 })).toEqual({
         type: "error",
-        value: "offset and limit do not apply to PDF files; select PDF pages with pages instead.",
+        value: "offset, limit, and columns do not apply to PDF files; select PDF pages with pages instead.",
       })
       expect(pdfCalls).toEqual([])
     }),
