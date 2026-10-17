@@ -312,7 +312,7 @@ pub async fn assemble(
     for source in tools
         .context_sources()
         .filter(|source| std::path::Path::new(&source.path).is_absolute())
-        .chain(std::iter::once(&root))
+        .chain(tools.workspace_instructions().then_some(&root))
         .chain(
             tools
                 .context_sources()

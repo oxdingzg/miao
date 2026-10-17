@@ -143,6 +143,7 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
             "--context-limits",
             "--hooks-config",
             "--context-config",
+            "--workspace-instructions",
             "--skills-config",
             "--references-config",
             "--worker-config",
@@ -317,6 +318,13 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
     let policy = Policy::new(config)?;
     let mut tools = Tools::new(workspace)
         .await?
+        .with_workspace_instructions(
+            match options.get("--workspace-instructions").map(String::as_str) {
+                None | Some("true") => true,
+                Some("false") => false,
+                Some(_) => return Err("--workspace-instructions must be true or false".into()),
+            },
+        )
         .with_process_runner(std::env::current_exe()?)
         .with_edit_recovery(match options.get("--edit-recovery").map(String::as_str) {
             None | Some("on") => true,
