@@ -4,6 +4,7 @@ use miao_engine::{
     tools::{ToolError, Tools},
 };
 use serde_json::{json, Value};
+use std::collections::HashMap;
 use std::sync::{
     atomic::{AtomicUsize, Ordering},
     Arc,
@@ -493,6 +494,7 @@ for line in sys.stdin:
             name: "process".into(),
             argv: vec!["python3".into(), "-u".into(), "-c".into(), script.into()],
             env: Default::default(),
+            oauth: None,
         }],
         dir.path(),
     )

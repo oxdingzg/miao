@@ -12,7 +12,7 @@ path = "src/main.rs"
 [dependencies]
 async-trait = "0.1"
 base64 = "0.22"
-axum = { version = "0.8", default-features = false, features = ["http1", "tokio", "json", "query"] }
+axum = { version = "0.8", default-features = false, features = ["http1", "tokio", "json", "query", "form"] }
 cap-std = "3"
 cap-fs-ext = "3"
 regex = "1"
@@ -41,6 +41,7 @@ percent-encoding = "2"
 thiserror = "2"
 tokio = { version = "1", features = ["macros", "rt-multi-thread", "sync", "io-util", "io-std", "time", "net", "fs", "process"] }
 tokio-util = { version = "0.7", features = ["rt"] }
+tokio-tungstenite = { version = "0.28", default-features = false, features = ["connect", "handshake", "rustls-tls-webpki-roots"] }
 uuid = { version = "1", features = ["v4"] }
 
 [build-dependencies]
