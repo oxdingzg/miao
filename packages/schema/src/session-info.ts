@@ -18,6 +18,26 @@ import { Revert } from "./revert"
  */
 export interface Usage extends Schema.Schema.Type<typeof Usage> {}
 export const Usage = Schema.Struct({
+  coverage: Schema.Struct({
+    observations: Schema.Finite,
+    auxiliaryObservations: Schema.Finite,
+    missingUsageObservations: Schema.Finite,
+    unknownPriceObservations: Schema.Finite,
+    observedTokens: Schema.Struct({
+      input: Schema.Finite,
+      output: Schema.Finite,
+      reasoning: Schema.Finite,
+      cache: Schema.Struct({ read: Schema.Finite, write: Schema.Finite }),
+    }).pipe(optional),
+    axes: Schema.Struct({
+      input: Schema.Finite,
+      output: Schema.Finite,
+      cacheRead: Schema.Finite,
+      cacheWrite: Schema.Finite,
+      nonCached: Schema.Finite,
+      reasoning: Schema.Finite,
+    }),
+  }).pipe(optional),
   turns: Schema.Finite,
   tools: Schema.Struct({
     calls: Schema.Finite,

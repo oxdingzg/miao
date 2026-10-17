@@ -1,7 +1,10 @@
+import { LocationServiceMap } from "@miao/core/location-service-map"
+import { SessionModelRoute } from "@miao/schema/session-model-route"
+import { AmbientContext } from "./ambient-context"
 import os from "node:os"
 import path from "node:path"
 import { Config } from "@miao/core/config"
-import { ResponsesCacheContract } from "@miao/schema/config"
+import { ResponsesCacheContract, ResponsesWebSocketContract } from "@miao/schema/config"
 import { Global } from "@miao/core/global"
 import { makeGlobalNode } from "@miao/core/effect/app-node"
 import { ClientEvents } from "@miao/server/client-events"
@@ -73,6 +76,10 @@ export const nativeEngineOptions = (
     merged.responsesCacheContract = Schema.decodeUnknownSync(Schema.fromJsonString(ResponsesCacheContract), {
       onExcessProperty: "error",
     })(environment.MIAO_ENGINE_RESPONSES_CACHE_CONTRACT)
+  if (environment.MIAO_ENGINE_RESPONSES_WEBSOCKET_CONTRACT)
+    merged.responsesWebSocketContract = Schema.decodeUnknownSync(Schema.fromJsonString(ResponsesWebSocketContract), {
+      onExcessProperty: "error",
+    })(environment.MIAO_ENGINE_RESPONSES_WEBSOCKET_CONTRACT)
   merged.promptCache = environment.MIAO_ENGINE_PROMPT_CACHE
     ? environment.MIAO_ENGINE_PROMPT_CACHE === "on"
     : merged.promptCache
@@ -101,6 +108,7 @@ export const nativeEngineOptions = (
     toolDisclosure: merged.toolDisclosure,
     roles: merged.roles,
     responsesCacheContract: merged.responsesCacheContract,
+    responsesWebSocketContract: merged.responsesWebSocketContract,
     promptCache: merged.promptCache,
     verifyCommand: merged.verifyCommand,
     mcpConfigFile: merged.mcpConfigFile,
@@ -109,6 +117,8 @@ export const nativeEngineOptions = (
     contextConfigFile: environment.MIAO_ENGINE_CONTEXT_CONFIG ?? merged.contextConfigFile,
     skillsConfigFile: environment.MIAO_ENGINE_SKILLS_CONFIG ?? merged.skillsConfigFile,
     referencesConfigFile: environment.MIAO_ENGINE_REFERENCES_CONFIG ?? merged.referencesConfigFile,
+    workspaceInstructions: merged.workspaceInstructions,
+    modelRoutesConfigFile: environment.MIAO_ENGINE_MODEL_ROUTES_CONFIG ?? merged.modelRoutesConfigFile,
     contextLimits: merged.contextLimits,
   }
 }
@@ -139,6 +149,7 @@ export const engineSettings = async (
       toolDisclosure: engine.tool_disclosure,
       roles: engine.roles,
       responsesCacheContract: engine.responses_cache_contract,
+      responsesWebSocketContract: engine.responses_websocket_contract,
       promptCache: engine.prompt_cache,
       verifyCommand: engine.verify_command,
       mcpConfigFile: engine.mcp_config ? path.resolve(globalConfig, engine.mcp_config) : undefined,
@@ -171,11 +182,12 @@ type Owners = Effect.Success<ReturnType<typeof makeEngineOwners>>
  * from the layer so tests exercise the exact code the server runs.
  */
 export const fromOwners = (owners: Owners): NativeEngine.Interface => {
-  const connect = (input: { storage: string; location: Location.Ref }) =>
+  const connect = (input: { storage: string; location: Location.Ref; refreshContext?: boolean }) =>
     owners.get({
       storage: input.storage,
       engineID: input.storage,
       location: input.location,
+      refreshContext: input.refreshContext,
     })
   const read = <T>(
     input: { storage: string; location: Location.Ref; sessionID?: string },
@@ -190,7 +202,48 @@ export const fromOwners = (owners: Owners): NativeEngine.Interface => {
       ),
       Effect.mapError((error) => refusal(input.sessionID ?? input.storage, error)),
     )
+  const routes = async (connection: Effect.Success<ReturnType<Owners["get"]>>) =>
+    Schema.decodeUnknownSync(
+      Schema.Array(
+        Schema.Struct({
+          route_id: Schema.NullOr(Schema.String),
+          protocol: Schema.String,
+          model: Schema.String,
+        }),
+      ),
+    )(await connection.client.request("model_catalog"))
   return {
+    modelRoutes: (input) =>
+      read<readonly SessionModelRoute.Info[]>(input, async (connection) => {
+        await connection.client.request("snapshot", { session_id: input.sessionID })
+        return (await routes(connection)).map((entry) => ({
+          model: SessionModelRoute.reference(entry.route_id),
+          protocol: entry.protocol,
+          wireModel: entry.model,
+          default: entry.route_id === null,
+        }))
+      }),
+    selectModel: (input) =>
+      read(input, async (connection) => {
+        if (input.model.variant !== undefined)
+          throw new EngineError("unsupported_model_variant", "Native model routes do not accept product variants")
+        const entry = (await routes(connection)).find((entry) => {
+          const model = SessionModelRoute.reference(entry.route_id)
+          return model.providerID === input.model.providerID && model.id === input.model.id
+        })
+        if (!entry) throw new EngineError("unknown_model_route", "Model is not in the native host route catalog")
+        return connection.client.request("select_model", {
+          session_id: input.sessionID,
+          binding:
+            entry.route_id === null
+              ? null
+              : {
+                  route_id: entry.route_id,
+                  protocol: entry.protocol,
+                  model: entry.model,
+                },
+        })
+      }).pipe(Effect.asVoid),
     recoveries: (input) =>
       read<ReturnType<typeof NativeRecovery.page>>(input, async (connection) =>
         NativeRecovery.page(
@@ -206,7 +259,7 @@ export const fromOwners = (owners: Owners): NativeEngine.Interface => {
         connection.client.request("initialize", { session_id: input.sessionID, title: input.title }),
       ).pipe(Effect.asVoid),
     admit: (input) =>
-      connect(input).pipe(
+      connect({ ...input, refreshContext: true }).pipe(
         Effect.flatMap((connection) =>
           Effect.tryPromise({
             try: () =>
@@ -411,6 +464,7 @@ const layer = Layer.effect(
   NativeEngine.Service,
   Effect.gen(function* () {
     const global = yield* Global.Service
+    const locations = yield* LocationServiceMap.Service
     const settings = yield* Effect.promise(() => engineSettings(global.config))
     const configuration = nativeEngineOptions(process.env, settings)
     if (!configuration) return yield* Effect.die("NativeEngine layer built without MIAO_ENGINE_BIN")
@@ -425,11 +479,24 @@ const layer = Layer.effect(
       configuration.workerConfigFile = workerConfigFile
       console.log("[worker-host] config written:", workerConfigFile)
     }
-    const owners = yield* makeEngineOwners(configuration)
+    const owners = yield* makeEngineOwners(configuration, (location) =>
+      AmbientContext.prepare(location, configuration).pipe(
+        Effect.provide(locations.get(location)),
+        Effect.mapError((error) =>
+          error instanceof EngineError
+            ? error
+            : new EngineError("engine_context_unavailable", "could not prepare product Context for native Location"),
+        ),
+      ),
+    )
     return fromOwners(owners)
   }),
 )
 
-export const node = makeGlobalNode({ service: NativeEngine.Service, layer, deps: [ClientEvents.node, Global.node] })
+export const node = makeGlobalNode({
+  service: NativeEngine.Service,
+  layer,
+  deps: [ClientEvents.node, Global.node, LocationServiceMap.node],
+})
 
 export * as NativeEngineNode from "./native-engine"

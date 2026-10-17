@@ -40,6 +40,7 @@ import { Global } from "../../global"
 import { SkillGuidance } from "../../skill/guidance"
 import { ReferenceGuidance } from "../../reference/guidance"
 import { ToolRegistry } from "../../tool/registry"
+import { ToolSearch } from "../../tool/tool-search"
 import { BashTool } from "../../tool/bash"
 import { LocationMutation } from "../../location-mutation"
 import { SessionCommandPrepare } from "../command-prepare"
@@ -63,6 +64,7 @@ import { SessionCreate } from "../../session-create"
 import { SessionContextEpoch } from "../context-epoch"
 import { SessionCompaction, RESTORE_TOKENS, RESTORE_FILES, RESTORE_FILE_TOKENS } from "../compaction"
 import { SessionCompactRequest } from "../compact-request"
+import { SessionCacheProbe } from "../cache-probe"
 import { SessionEvent } from "../event"
 import { SessionHistory } from "../history"
 import { SessionDelegation } from "../delegation"
@@ -182,6 +184,13 @@ const MAX_STREAM_CONTINUATIONS = 2
  */
 const MAX_OUTPUT_CONTINUATIONS = 2
 const MAX_TOOL_INPUT_CORRECTIONS = 2
+/**
+ * Empty `tool_search` results in a row before the deferred catalog is dropped
+ * and every tool is advertised again. One miss is a model guessing at a name;
+ * two in a row means it cannot find what it needs through search, and the search
+ * tool is then costing a step per attempt instead of saving schema bytes.
+ */
+const MAX_DISCLOSURE_MISSES = 2
 
 /**
  * How many compactions in one Session before the frequency is worth surfacing.
@@ -314,6 +323,11 @@ const layer = Layer.effect(
     const seenModelSwitches = new Map<string, number>()
     const streamContinuations = new Map<string, number>()
     const outputContinuations = new Map<string, number>()
+    // Consecutive empty `tool_search` results per Session, and the Sessions
+    // whose deferred catalog was dropped for the rest of the drain. Both are
+    // process-local and cleared with the other per-drain counters.
+    const disclosureMisses = new Map<string, number>()
+    const disclosureEscalated = new Set<string>()
     const toolInputCorrections = new Map<string, number>()
     // A new input may legitimately ask for the same operation again. Drain
     // boundaries are scheduler details, not user-request boundaries.
@@ -731,7 +745,9 @@ const layer = Layer.effect(
         ? undefined
         : yield* tools.materialize(agent.info?.permissions, {
             codeMode: Flag.MIAO_EXPERIMENTAL_CODE_MODE,
-            disclosure: settings.disclosure ?? Flag.MIAO_EXPERIMENTAL_TOOL_DISCLOSURE,
+            disclosure:
+              (settings.disclosure ?? Flag.MIAO_EXPERIMENTAL_TOOL_DISCLOSURE) &&
+              !disclosureEscalated.has(session.id),
             alwaysLoad: settings.alwaysLoad,
             sessionID: session.id,
             disabledTools: settings.disabledTools,
@@ -844,6 +860,7 @@ const layer = Layer.effect(
         })
         if (attempt.result === "compacted") {
           turns.set(session.id, { at: Date.now(), afterCompaction: true })
+          SessionCacheProbe.current.invalidate(session.id)
           lastPromptTokens.delete(session.id)
           lastPromptMessages.delete(session.id)
           lastPromptPrefix.delete(session.id)
@@ -867,6 +884,7 @@ const layer = Layer.effect(
       const contextBudget = yield* compaction.budget(compactionInput)
       if (yield* compaction.compactIfNeeded(compactionInput, contextBudget)) {
         turns.set(session.id, { at: Date.now(), afterCompaction: true })
+        SessionCacheProbe.current.invalidate(session.id)
         lastPromptTokens.delete(session.id)
         lastPromptMessages.delete(session.id)
         lastPromptPrefix.delete(session.id)
@@ -940,6 +958,8 @@ const layer = Layer.effect(
       const providerSource = blackbox
         ? SessionBlackbox.stream(session.id, request, () => llm.stream(request), execution)
         : llm.stream(request)
+      const forkCacheProbe = SessionCacheProbe.current.consume(session.id, request)
+      if (forkCacheProbe) yield* Effect.logInfo("session.fork.cache-probe", { sessionID: session.id, ...forkCacheProbe })
       const providerStream = providerSource.pipe(
         SessionFirstByteGuard.wrap,
         SessionToolInputGuard.wrap,
@@ -1018,11 +1038,37 @@ const layer = Layer.effect(
               ? SessionBlackbox.tool(session.id, event.name, event.input, settlement)
               : settlement
             ).pipe(
-              Effect.flatMap((settlement) =>
-                publish(
-                  LLMEvent.toolResult({ id: event.id, name: event.name, result: settlement.result, output: settlement.output }),
-                  settlement.outputPaths ?? [],
-                ),
+              Effect.flatMap((settled) =>
+                Effect.gen(function* () {
+                  // A deferred catalog the model cannot search its way out of
+                  // costs a step per miss; after the limit, advertise everything
+                  // again for the rest of the drain.
+                  if (event.name === ToolSearch.TOOL_SEARCH_TOOL && !disclosureEscalated.has(session.id)) {
+                    const output = settled.result
+                    const missed =
+                      output.type === "error" ||
+                      (output.type === "text" && typeof output.value === "string" && output.value.startsWith("No deferred tool"))
+                    const misses = missed ? (disclosureMisses.get(session.id) ?? 0) + 1 : 0
+                    disclosureMisses.set(session.id, misses)
+                    if (misses >= MAX_DISCLOSURE_MISSES) {
+                      disclosureEscalated.add(session.id)
+                      yield* Effect.logInfo("session.disclosure-escalated", {
+                        sessionID: session.id,
+                        misses,
+                        reason: "Repeated tool_search misses; advertising the full catalog again.",
+                      })
+                    }
+                  }
+                  return yield* publish(
+                    LLMEvent.toolResult({
+                      id: event.id,
+                      name: event.name,
+                      result: settled.result,
+                      output: settled.output,
+                    }),
+                    settled.outputPaths ?? [],
+                  )
+                }),
               ),
             )
             yield* Effect.uninterruptibleMask((restore) =>
@@ -1160,6 +1206,7 @@ const layer = Layer.effect(
             (yield* restore(recoverOverflow({ sessionID: session.id, entries, model, summarizeModel, request, report: phase })))
           ) {
             turns.set(session.id, { at: Date.now(), afterCompaction: true })
+            SessionCacheProbe.current.invalidate(session.id)
             yield* recordCompaction(session.id, "recovery")
             return yield* Effect.die(continueAfterOverflowCompaction(currentStep))
           }
@@ -1214,6 +1261,7 @@ const layer = Layer.effect(
             yield* withPublication(publisher.failAssistant("Provider stream ended without a completion frame"))
           const stepSettlement = publisher.stepSettlement()
           if (stepSettlement && !publisher.hasProviderError()) {
+            SessionCacheProbe.current.complete(session.id, request, SessionRunnerMetrics.promptTokens(stepSettlement.tokens))
             // Feed the next compaction decision the provider's own count.
             lastPromptTokens.set(session.id, SessionRunnerMetrics.promptTokens(stepSettlement.tokens))
             lastPromptMessages.set(session.id, request.messages.length)
@@ -1897,10 +1945,14 @@ const layer = Layer.effect(
         Effect.gen(function* () {
           streamContinuations.delete(input.sessionID)
           outputContinuations.delete(input.sessionID)
+          disclosureMisses.delete(input.sessionID)
+          disclosureEscalated.delete(input.sessionID)
           toolInputCorrections.delete(input.sessionID)
           yield* Effect.addFinalizer(() => Effect.sync(() => {
             streamContinuations.delete(input.sessionID)
             outputContinuations.delete(input.sessionID)
+            disclosureMisses.delete(input.sessionID)
+            disclosureEscalated.delete(input.sessionID)
             toolInputCorrections.delete(input.sessionID)
           }))
           const drainSession = yield* store.get(input.sessionID)

@@ -7,6 +7,14 @@ import { connectEngine } from "./connection"
 /** Native children belong to the server scope, never to an individual HTTP request. */
 export const makeEngineOwners = Effect.fn("Engine.owners")(function* (
   options: Omit<EngineOptions, "db" | "workspace">,
+  prepare?: (location: Location.Ref) => Effect.Effect<
+    {
+      options: Partial<EngineOptions>
+      refresh: Effect.Effect<void, EngineError>
+    },
+    EngineError,
+    Scope.Scope
+  >,
 ) {
   const clients = yield* ClientEvents.Service
   const scope = yield* Scope.make()
@@ -16,6 +24,7 @@ export const makeEngineOwners = Effect.fn("Engine.owners")(function* (
     {
       engineID: string
       location: Location.Ref
+      refresh: Effect.Effect<void, EngineError>
       connection: Effect.Success<ReturnType<typeof connectEngine>>
     }
   >()
@@ -31,6 +40,7 @@ export const makeEngineOwners = Effect.fn("Engine.owners")(function* (
   return {
     get: Effect.fn("Engine.owners.get")(function* (input: {
       storage: string
+      refreshContext?: boolean
       engineID: string
       location: Location.Ref
     }) {
@@ -51,16 +61,22 @@ export const makeEngineOwners = Effect.fn("Engine.owners")(function* (
                   "native storage already belongs to a different engine or Location",
                 ),
               )
+            if (input.refreshContext) yield* existing.refresh
             return existing.connection
           }
+          const context = prepare
+            ? yield* prepare(input.location).pipe(Effect.provideService(Scope.Scope, scope))
+            : { options: {}, refresh: Effect.void }
           const connection = yield* connectEngine({
             ...configuration,
+            ...context.options,
             db: input.storage,
             workspace: input.location.directory,
             engineID: input.engineID,
             location: input.location,
           }).pipe(Effect.provideService(Scope.Scope, scope), Effect.provideService(ClientEvents.Service, clients))
           owners.set(input.storage, {
+            refresh: context.refresh,
             engineID: input.engineID,
             location: { ...input.location },
             connection,

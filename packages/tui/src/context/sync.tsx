@@ -1412,6 +1412,9 @@ export const {
         query() {
           return sessionListQuery()
         },
+        async reload(sessionID: string) {
+          await refreshSession?.(sessionID)
+        },
         async refresh() {
           const list = await listSessions()
           setStore("session", reconcile(list))

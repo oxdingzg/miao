@@ -56,6 +56,9 @@ impl Host {
                 .resume(&session_id)
                 .await
                 .map(|_| json!({ "accepted": true })),
+            Command::ModelCatalog => {
+                serde_json::to_value(runtime.model_catalog()).map_err(Error::from)
+            }
             Command::SelectModel {
                 session_id,
                 binding,

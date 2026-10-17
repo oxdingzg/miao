@@ -15,6 +15,7 @@ import { Git } from "./git"
 import { FileSystemSearch } from "./filesystem/search"
 import { Watcher } from "./filesystem/watcher"
 import { Image } from "./image"
+import { InstructionContext } from "./instruction-context"
 import { Integration } from "./integration"
 import { Location } from "./location"
 import { LocationMutation } from "./location-mutation"
@@ -76,6 +77,7 @@ export const locationServices = LayerNode.group([
   Pty.node,
   SkillV2.node,
   SystemContextRegistry.node,
+  InstructionContext.node,
   SystemContextBuiltIns.node,
   LocationMutation.node,
   FileMutation.node,

@@ -104,7 +104,10 @@ async fn fixture(mode: usize) -> (String, Arc<AtomicUsize>, tokio::task::JoinHan
                     {
                         return;
                     }
-                    tokio::time::sleep(Duration::from_millis(250)).await;
+                    // This gap is the probe: it must stay comfortably longer than
+                    // the mode-3 budget so a first event that failed to release
+                    // the deadline still surfaces as a retry.
+                    tokio::time::sleep(Duration::from_millis(3_000)).await;
                     let body=[
                         json!({"type":"content_block_start","index":0,"content_block":{"type":"text","text":"HEALTHY"}}),
                         json!({"type":"content_block_stop","index":0}),
@@ -142,7 +145,17 @@ async fn actual_native_process_bounds_headers_silence_and_pings_without_refillin
                 &endpoint,
             ])
             .env("ANTHROPIC_API_KEY", "fixture-key")
-            .env("MIAO_LLM_FIRST_BYTE_TIMEOUT_MS", "100")
+            // Modes 0-2 exercise the bound itself, so they keep a budget tight
+            // enough to fire three times inside the event wait. Mode 3 is the
+            // healthy control: its first event releases the deadline, and that
+            // must not depend on how fast a loaded runner accepts and reads the
+            // request, so it gets a budget no healthy setup can miss while the
+            // fixture's 3s mid-stream gap stays the probe for a release that
+            // never happened.
+            .env(
+                "MIAO_LLM_FIRST_BYTE_TIMEOUT_MS",
+                if mode == 3 { "1000" } else { "100" },
+            )
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
             .stderr(Stdio::null())
