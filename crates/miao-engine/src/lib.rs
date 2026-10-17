@@ -33,6 +33,7 @@ pub mod roles;
 pub mod routing;
 pub mod runtime;
 mod search;
+pub mod session_model;
 pub mod state;
 pub mod store;
 pub mod subagent;

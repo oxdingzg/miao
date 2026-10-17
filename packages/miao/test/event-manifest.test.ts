@@ -9,7 +9,8 @@ describe("public event manifest", () => {
     expect(EventManifest.Definitions).toBe(SchemaEventManifest.Definitions)
     expect(EventManifest.Latest).toBe(SchemaEventManifest.Latest)
     expect(EventManifest.Durable).toBe(SchemaEventManifest.Durable)
-    expect(EventManifest.Latest.size).toBe(106)
+    // Pinning a conversation to one provider account added one wire type.
+    expect(EventManifest.Latest.size).toBe(107)
     expect(EventManifest.Latest.get("session.next.stream.discarded")).toBe(SessionEvent.StreamDiscarded)
     expect([...EventManifest.Durable.values()]).not.toContain(SessionEvent.StreamDiscarded)
     expect(EventManifest.Latest.has("session.next.assistant.identity")).toBe(true)

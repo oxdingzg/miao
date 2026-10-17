@@ -5,6 +5,7 @@ import { useSync } from "../context/sync"
 import { useToast } from "../ui/toast"
 import { DialogSelect } from "../ui/dialog-select"
 import { useDialog } from "../ui/dialog"
+import { DialogAccounts } from "./dialog-accounts"
 import { DialogModel } from "./dialog-model"
 import { DialogProvider } from "./dialog-provider"
 
@@ -63,6 +64,14 @@ export function DialogProviderSwitch() {
           title: "Connect provider",
           onTrigger() {
             dialog.replace(() => <DialogProvider />)
+          },
+        },
+        {
+          command: "provider.accounts",
+          title: "Accounts",
+          disabled: (option) => !option || option.value.startsWith("connect:"),
+          onTrigger: (option) => {
+            dialog.replace(() => <DialogAccounts providerID={option.value} />)
           },
         },
       ]}

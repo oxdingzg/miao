@@ -265,6 +265,26 @@ export const SessionHandler = HttpApiBuilder.group(Api, "server.session", (handl
         }),
       )
       .handle(
+        "session.switchAccount",
+        Effect.fn(function* (ctx) {
+          yield* requireTypescriptOwner(ctx.params.sessionID, "session.switchAccount")
+          yield* session
+            .switchAccount({ sessionID: ctx.params.sessionID, credentialID: ctx.payload.credentialID })
+            .pipe(
+              Effect.catchTag("Session.NotFoundError", (error) =>
+                Effect.fail(
+                  new SessionNotFoundError({
+                    sessionID: error.sessionID,
+                    message: `Session not found: ${error.sessionID}`,
+                  }),
+                ),
+              ),
+              Effect.catchTag("Session.LegacyNotMigratedError", (error) => Effect.fail(legacyNotMigrated(error))),
+            )
+          return HttpApiSchema.NoContent.make()
+        }),
+      )
+      .handle(
         "session.recoveries",
         Effect.fn(function* (ctx) {
           const owner = yield* requireNativeOwner(ctx.params.sessionID)

@@ -343,7 +343,8 @@ impl Daemon {
         let refresh_token = value.get("refresh").and_then(Value::as_str);
         match refresh_token {
             Some(token) if !token.is_empty() => {
-                self.refresh_value(credential_id, integration, value).await
+                self.refresh_value(credential_id, integration, value, false)
+                    .await
             }
             // Inside the margin with no refresh token the stored access is
             // all there is; hand it out and let the stored expiry speak.
@@ -355,7 +356,7 @@ impl Daemon {
     pub async fn refresh_row(&self, credential_id: &str, integration: &str) -> Result<u64, Error> {
         let value = store::load(&self.db, credential_id, integration)?;
         let refreshed = self
-            .refresh_value(credential_id, integration, value)
+            .refresh_value(credential_id, integration, value, true)
             .await?;
         refreshed
             .get("expires")
@@ -370,6 +371,7 @@ impl Daemon {
         credential_id: &str,
         integration: &str,
         value: Value,
+        force: bool,
     ) -> Result<Value, Error> {
         if !self.profiles.contains_key(integration) {
             return Err(Error::Integration);
@@ -401,11 +403,14 @@ impl Daemon {
         if current["metadata"]["miaoCredentialSocket"].as_str() != socket.to_str() {
             return Err(Error::NotRefreshable);
         }
-        if current.get("refresh").and_then(Value::as_str) != Some(&refresh_token) {
+        if current.get("refresh").and_then(Value::as_str) != Some(&refresh_token)
+            || current.get("access") != value.get("access")
+            || current.get("expires") != value.get("expires")
+        {
             return Ok(current);
         }
         if let Some(expires) = current.get("expires").and_then(Value::as_u64) {
-            if expires > now_ms() + self.margin_ms {
+            if !force && expires > now_ms() + self.margin_ms {
                 return Ok(current);
             }
         }

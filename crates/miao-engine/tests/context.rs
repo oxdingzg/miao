@@ -314,7 +314,7 @@ async fn explicit_sources_reject_ambiguous_paths_and_total_context_overflow() {
     let tools = Tools::new(dir.path()).await.unwrap();
     for path in [
         "../private",
-        "/absolute",
+        "/absolute/../private",
         "a/../b",
         "a/./b",
         "AGENTS.md",
@@ -358,4 +358,81 @@ async fn explicit_sources_reject_ambiguous_paths_and_total_context_overflow() {
         assemble(&tools, &Policy::new(Config::default()).unwrap(), token).await,
         Err(ToolError::Interrupted)
     ));
+}
+
+#[tokio::test]
+async fn host_instruction_files_require_an_exact_reference_and_refresh_context_epochs() {
+    use miao_engine::{
+        context::{Reference, Source},
+        tools::ToolError,
+    };
+    let dir = tempfile::tempdir().unwrap();
+    let host = tempfile::tempdir().unwrap();
+    let instructions = host.path().join("AGENTS.md");
+    let sibling = host.path().join("private.txt");
+    std::fs::write(&instructions, "HOST_RULE_ONE").unwrap();
+    std::fs::write(&sibling, "not authorized").unwrap();
+    let instructions = instructions.canonicalize().unwrap();
+    let source = Source {
+        label: "global-instructions".into(),
+        path: instructions.to_string_lossy().into_owned(),
+    };
+    let tools = Tools::new(dir.path())
+        .await
+        .unwrap()
+        .with_context_sources(vec![source.clone()])
+        .unwrap();
+    let policy = Policy::new(Config::default()).unwrap();
+    let skipped = assemble(&tools, &policy, CancellationToken::new())
+        .await
+        .unwrap();
+    assert!(!skipped.system.contains("HOST_RULE_ONE"));
+    assert!(skipped
+        .sources
+        .iter()
+        .any(|entry| entry["label"] == "global-instructions"
+            && entry["reason"] == "outside_context_authority"));
+    let tools = tools
+        .with_references(vec![Reference {
+            path: source.path.clone(),
+            description: "Global instructions only".into(),
+        }])
+        .unwrap();
+    assert!(matches!(
+        tools.prepare("read_file", json!({"path":sibling})).await,
+        Err(ToolError::OutsideWorkspace)
+    ));
+    let first = assemble(&tools, &policy, CancellationToken::new())
+        .await
+        .unwrap();
+    assert!(first.system.contains("HOST_RULE_ONE"));
+    let store = Store::open(dir.path().join("engine.db")).await.unwrap();
+    store.admit(input("s", "one")).await.unwrap();
+    assert_eq!(store.select_context("s", first.clone()).await.unwrap(), 1);
+    std::fs::write(&instructions, "HOST_RULE_TWO").unwrap();
+    let second = assemble(&tools, &policy, CancellationToken::new())
+        .await
+        .unwrap();
+    assert!(second.system.contains("HOST_RULE_TWO"));
+    assert_ne!(first.fingerprint, second.fingerprint);
+    assert_eq!(store.select_context("s", second).await.unwrap(), 2);
+    for decision in [Decision::Deny, Decision::Ask] {
+        let denied = Policy::new(Config {
+            rules: vec![Rule {
+                tool: "read_file".into(),
+                path: "@reference/**".into(),
+                decision,
+            }],
+            ..Config::default()
+        })
+        .unwrap();
+        let bundle = assemble(&tools, &denied, CancellationToken::new())
+            .await
+            .unwrap();
+        assert!(!bundle.system.contains("HOST_RULE_TWO"));
+        assert!(bundle
+            .sources
+            .iter()
+            .any(|entry| entry["label"] == "global-instructions" && entry["status"] == "skipped"));
+    }
 }

@@ -542,6 +542,7 @@ export type SessionsListOutput = {
     readonly projectID: string
     readonly agent?: string
     readonly model?: { readonly id: string; readonly providerID: string; readonly variant?: string }
+    readonly credentialID?: string
     readonly execution?: { readonly engine: "typescript" | "rust"; readonly selection: "session" | "operator" }
     readonly cost: number
     readonly usage?: {
@@ -624,6 +625,7 @@ export type SessionsCreateOutput = {
     readonly projectID: string
     readonly agent?: string
     readonly model?: { readonly id: string; readonly providerID: string; readonly variant?: string }
+    readonly credentialID?: string
     readonly execution?: { readonly engine: "typescript" | "rust"; readonly selection: "session" | "operator" }
     readonly cost: number
     readonly usage?: {
@@ -682,6 +684,7 @@ export type SessionsGetOutput = {
     readonly projectID: string
     readonly agent?: string
     readonly model?: { readonly id: string; readonly providerID: string; readonly variant?: string }
+    readonly credentialID?: string
     readonly execution?: { readonly engine: "typescript" | "rust"; readonly selection: "session" | "operator" }
     readonly cost: number
     readonly usage?: {
@@ -744,6 +747,13 @@ export type SessionsSwitchModelInput = {
 }
 
 export type SessionsSwitchModelOutput = void
+
+export type SessionsSwitchAccountInput = {
+  readonly sessionID: { readonly sessionID: string }["sessionID"]
+  readonly credentialID: { readonly credentialID: string | null }["credentialID"]
+}
+
+export type SessionsSwitchAccountOutput = void
 
 export type SessionsRecoveriesInput = {
   readonly sessionID: { readonly sessionID: string }["sessionID"]
@@ -1229,6 +1239,7 @@ export type SessionsForkOutput = {
     readonly projectID: string
     readonly agent?: string
     readonly model?: { readonly id: string; readonly providerID: string; readonly variant?: string }
+    readonly credentialID?: string
     readonly execution?: { readonly engine: "typescript" | "rust"; readonly selection: "session" | "operator" }
     readonly cost: number
     readonly usage?: {
@@ -1434,6 +1445,7 @@ export type SessionsChildrenOutput = {
     readonly projectID: string
     readonly agent?: string
     readonly model?: { readonly id: string; readonly providerID: string; readonly variant?: string }
+    readonly credentialID?: string
     readonly execution?: { readonly engine: "typescript" | "rust"; readonly selection: "session" | "operator" }
     readonly cost: number
     readonly usage?: {
@@ -1504,6 +1516,7 @@ export type SessionsHistoryOutput = {
             readonly projectID: string
             readonly agent?: string
             readonly model?: { readonly id: string; readonly providerID: string; readonly variant?: string }
+            readonly credentialID?: string
             readonly execution?: { readonly engine: "typescript" | "rust"; readonly selection: "session" | "operator" }
             readonly cost: number
             readonly usage?: {
@@ -1591,6 +1604,19 @@ export type SessionsHistoryOutput = {
           readonly sessionID: string
           readonly messageID: string
           readonly model: { readonly id: string; readonly providerID: string; readonly variant?: string }
+        }
+      }
+    | {
+        readonly id: string
+        readonly metadata?: { readonly [x: string]: JsonValue }
+        readonly type: "session.next.account.switched"
+        readonly durable?: { readonly aggregateID: string; readonly seq: number; readonly version: number }
+        readonly location?: { readonly directory: string; readonly workspaceID?: string }
+        readonly data: {
+          readonly timestamp: number
+          readonly sessionID: string
+          readonly messageID: string
+          readonly credentialID: string | null
         }
       }
     | {
@@ -2190,6 +2216,7 @@ export type SessionsEventsOutput =
           readonly projectID: string
           readonly agent?: string
           readonly model?: { readonly id: string; readonly providerID: string; readonly variant?: string }
+          readonly credentialID?: string
           readonly execution?: { readonly engine: "typescript" | "rust"; readonly selection: "session" | "operator" }
           readonly cost: number
           readonly usage?: {
@@ -2277,6 +2304,19 @@ export type SessionsEventsOutput =
         readonly sessionID: string
         readonly messageID: string
         readonly model: { readonly id: string; readonly providerID: string; readonly variant?: string }
+      }
+    }
+  | {
+      readonly id: string
+      readonly metadata?: { readonly [x: string]: unknown }
+      readonly type: "session.next.account.switched"
+      readonly durable?: { readonly aggregateID: string; readonly seq: number; readonly version: number }
+      readonly location?: { readonly directory: string; readonly workspaceID?: string }
+      readonly data: {
+        readonly timestamp: number
+        readonly sessionID: string
+        readonly messageID: string
+        readonly credentialID: string | null
       }
     }
   | {
@@ -5002,6 +5042,7 @@ export type EventsDurableOutput =
           readonly projectID: string
           readonly agent?: string
           readonly model?: { readonly id: string; readonly providerID: string; readonly variant?: string }
+          readonly credentialID?: string
           readonly execution?: { readonly engine: "typescript" | "rust"; readonly selection: "session" | "operator" }
           readonly cost: number
           readonly usage?: {
@@ -5067,6 +5108,7 @@ export type EventsDurableOutput =
           readonly projectID: string
           readonly agent?: string
           readonly model?: { readonly id: string; readonly providerID: string; readonly variant?: string }
+          readonly credentialID?: string
           readonly execution?: { readonly engine: "typescript" | "rust"; readonly selection: "session" | "operator" }
           readonly cost: number
           readonly usage?: {
@@ -5193,6 +5235,32 @@ export type EventsDurableOutput =
         readonly sessionID: string
         readonly messageID: string
         readonly model: { readonly id: string; readonly providerID: string; readonly variant?: string }
+      }
+    }
+  | {
+      readonly id: string
+      readonly metadata?: { readonly [x: string]: unknown }
+      readonly type: "session.next.account.switched"
+      readonly durable?: { readonly aggregateID: string; readonly seq: number; readonly version: number }
+      readonly location?: { readonly directory: string; readonly workspaceID?: string }
+      readonly data: {
+        readonly timestamp: number
+        readonly sessionID: string
+        readonly messageID: string
+        readonly credentialID: string | null
+      }
+    }
+  | {
+      readonly id: string
+      readonly metadata?: { readonly [x: string]: unknown }
+      readonly type: "session.next.account.switched"
+      readonly durable?: { readonly aggregateID: string; readonly seq: number; readonly version: number }
+      readonly location?: { readonly directory: string; readonly workspaceID?: string }
+      readonly data: {
+        readonly timestamp: number
+        readonly sessionID: string
+        readonly messageID: string
+        readonly credentialID: string | null
       }
     }
   | {

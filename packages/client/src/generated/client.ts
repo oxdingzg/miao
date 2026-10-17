@@ -43,6 +43,8 @@ import type {
   SessionsSwitchAgentOutput,
   SessionsSwitchModelInput,
   SessionsSwitchModelOutput,
+  SessionsSwitchAccountInput,
+  SessionsSwitchAccountOutput,
   SessionsRecoveriesInput,
   SessionsRecoveriesOutput,
   SessionsResolveRecoveryInput,
@@ -689,6 +691,18 @@ export function make(options: ClientOptions) {
             method: "POST",
             path: `/api/session/${encodeURIComponent(input.sessionID)}/model`,
             body: { model: input["model"] },
+            successStatus: 204,
+            declaredStatuses: [404, 503, 400, 410, 409, 401],
+            empty: true,
+          },
+          requestOptions,
+        ),
+      switchAccount: (input: SessionsSwitchAccountInput, requestOptions?: RequestOptions) =>
+        request<SessionsSwitchAccountOutput>(
+          {
+            method: "POST",
+            path: `/api/session/${encodeURIComponent(input.sessionID)}/account`,
+            body: { credentialID: input["credentialID"] },
             successStatus: 204,
             declaredStatuses: [404, 503, 400, 410, 409, 401],
             empty: true,
