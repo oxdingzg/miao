@@ -343,12 +343,9 @@ export const SessionHandler = HttpApiBuilder.group(Api, "server.session", (handl
           // placement was resolved by the location middleware.
           const native = yield* Effect.serviceOption(NativeEngine.Service)
           const placement = Option.getOrUndefined(yield* Effect.serviceOption(NativeEngine.Placement))
-          if (Option.isSome(native)) {
-            if (!placement)
-              return yield* new ConflictError({
-                message: `Session ${ctx.params.sessionID} is missing its native placement.`,
-                resource: ctx.params.sessionID,
-              })
+          // Composing the native transport does not migrate existing TS Sessions.
+          // Only a resolved Rust placement selects native admission.
+          if (Option.isSome(native) && placement) {
             // Last point before the prompt becomes durable, and the only one that
             // holds the session Location's services, so image attachments are
             // shrunk to the configured budget here rather than stored at full size.
