@@ -191,35 +191,44 @@ struct RemoteView: View {
             }.accessibilityLabel("关闭侧栏").buttonStyle(.plain)
         }
         Label(client.connectionDescription, systemImage: client.ready ? "checkmark.circle.fill" : "network")
-            .font(.footnote).foregroundStyle(client.ready ? .green : .secondary)
+            .font(.footnote).foregroundStyle(client.ready ? Color.green : Color.secondary)
         if let error = client.error { Text(error).font(.footnote).foregroundStyle(.red) }
     }
 
     @ViewBuilder private func sessionSections(_ client: HostClient) -> some View {
         ForEach(client.lists.keys.sorted(), id: \.self) { project in
-            Section(projectName(project)) {
-                ForEach(client.lists[project] ?? []) { session in
-                    Button {
-                        select(session)
-                    } label: {
-                        HStack(spacing: 10) {
-                            Image(systemName: "bubble.left.and.text.bubble.right")
-                                .foregroundStyle(sessionID == session.id ? .tint : .secondary)
-                            Text(session.title)
-                                .font(sessionID == session.id ? .body.weight(.semibold) : .body)
-                                .lineLimit(2)
-                            Spacer(minLength: 4)
-                            if sessionID == session.id {
-                                Image(systemName: "checkmark").font(.caption.weight(.semibold)).foregroundStyle(.tint)
-                            }
-                        }.contentShape(Rectangle())
-                    }.buttonStyle(.plain)
-                }
-                if client.next[project] != nil {
-                    Button("更多会话") { Task { await client.refreshLists(more: project) } }.disabled(!client.ready)
-                }
+            sessionSection(client, project: project)
+        }
+    }
+
+    private func sessionSection(_ client: HostClient, project: String) -> some View {
+        Section(projectName(project)) {
+            ForEach(client.lists[project] ?? []) { session in
+                sessionRow(client, session: session)
+            }
+            if client.next[project] != nil {
+                Button("更多会话") { Task { await client.refreshLists(more: project) } }.disabled(!client.ready)
             }
         }
+    }
+
+    private func sessionRow(_ client: HostClient, session: SessionSummary) -> some View {
+        let active = sessionID == session.id
+        return Button {
+            select(session)
+        } label: {
+            HStack(spacing: 10) {
+                Image(systemName: "bubble.left.and.text.bubble.right")
+                    .foregroundStyle(active ? Color.tint : Color.secondary)
+                Text(session.title)
+                    .font(active ? Font.body.weight(.semibold) : Font.body)
+                    .lineLimit(2)
+                Spacer(minLength: 4)
+                if active {
+                    Image(systemName: "checkmark").font(.caption.weight(.semibold)).foregroundStyle(Color.tint)
+                }
+            }.contentShape(Rectangle())
+        }.buttonStyle(.plain)
     }
 
     @ViewBuilder private func sidebarActions(_ client: HostClient) -> some View {
