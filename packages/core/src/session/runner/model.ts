@@ -18,6 +18,7 @@ import { produce } from "immer"
 import { AwsCredentials } from "../../aws-credentials"
 import { AzureEntra } from "../../azure-entra"
 import { Catalog } from "../../catalog"
+import { Config } from "../../config"
 import { Credential } from "../../credential"
 import { Flag } from "../../flag/flag"
 import { GoogleCloudAuth } from "../../google-cloud-auth"
@@ -619,8 +620,32 @@ export const locationLayer = Layer.effect(
   Service,
   Effect.gen(function* () {
     const catalog = yield* Catalog.Service
+    const config = yield* Config.Service
     const integrations = yield* Integration.Service
     const plugins = yield* PluginV2.Service
+    const decodeConfig = Schema.decodeUnknownOption(Config.Info, { errors: "all", onExcessProperty: "ignore" })
+    // Config may name the account a provider should use: `accounts.<providerID>`
+    // for the Location, with the agent's own choice taking precedence. The value
+    // is a credential label or id; a stale entry falls back to the provider's
+    // active account instead of failing the turn.
+    const resolveConnection = Effect.fn("SessionRunnerModel.resolveConnection")(function* (
+      session: SessionSchema.Info,
+      integrationID: Integration.ID,
+      providerID: string,
+    ) {
+      const merged = decodeConfig(Config.merge(yield* config.entries())).pipe(Option.getOrUndefined)
+      const account =
+        (session.agent ? merged?.agents?.[session.agent]?.accounts?.[providerID] : undefined) ??
+        merged?.accounts?.[providerID]
+      if (!account) return yield* integrations.connection.active(integrationID)
+      const integration = yield* integrations.get(integrationID)
+      const match = integration?.connections.find(
+        (candidate) => candidate.type === "credential" && (candidate.label === account || candidate.id === account),
+      )
+      if (match) return match
+      yield* Effect.logWarning("configured provider account not found", { providerID, account })
+      return yield* integrations.connection.active(integrationID)
+    })
     return Service.of({
       resolve: Effect.fn("SessionRunnerModel.resolve")(function* (session) {
         const resolveStartedAt = Date.now()
@@ -661,8 +686,10 @@ export const locationLayer = Layer.effect(
         const selectionMs = Date.now() - resolveStartedAt
         const connectionStartedAt = Date.now()
         const provider = yield* catalog.provider.get(selected.providerID)
-        const connection = yield* integrations.connection.active(
+        const connection = yield* resolveConnection(
+          session,
           provider?.integrationID ?? Integration.ID.make(selected.providerID),
+          selected.providerID,
         )
         const connectionMs = Date.now() - connectionStartedAt
         const credentialStartedAt = Date.now()
@@ -689,8 +716,10 @@ export const locationLayer = Layer.effect(
           const selected = yield* catalog.model.small(providerID)
           if (!selected || !supported(selected)) return undefined
           const provider = yield* catalog.provider.get(selected.providerID)
-          const connection = yield* integrations.connection.active(
+          const connection = yield* resolveConnection(
+            session,
             provider?.integrationID ?? Integration.ID.make(selected.providerID),
+            selected.providerID,
           )
           return yield* fromCatalogModel(
             selected,
@@ -705,5 +734,6 @@ export const locationLayer = Layer.effect(
 export const node = makeLocationNode({
   service: Service,
   layer: locationLayer,
-  deps: [Catalog.node, Integration.node, PluginV2.node],
+  // Config carries the per-provider account choice, so the layer reads it.
+  deps: [Catalog.node, Config.node, Integration.node, PluginV2.node],
 })
