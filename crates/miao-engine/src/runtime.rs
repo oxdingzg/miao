@@ -2679,42 +2679,26 @@ async fn start_monitor(
         .to_owned();
     let token = inner.stop.child_token();
     let owner = session.to_owned();
-    let workspace = inner.tools.location().to_owned();
     let task_id = id.clone();
     let task_inner = inner.clone();
     let (job_owner, job_token, job_id) = (owner.clone(), token.clone(), id.clone());
     let join = tokio::spawn(async move {
-        let home = std::env::var("HOME").unwrap_or_else(|_| "/root".into());
-        let mut command = tokio::process::Command::new("sh");
-        command
-            .arg("-c")
-            .arg(&input.command)
-            .current_dir(&workspace)
-            .stdin(std::process::Stdio::null())
-            .stdout(std::process::Stdio::piped())
-            .stderr(std::process::Stdio::null())
-            .env_clear()
-            .envs([
-                ("PATH", "/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin"),
-                ("HOME", home.as_str()),
-                ("LANG", "C.UTF-8"),
-            ]);
-        let mut child = match command.spawn() {
-            Ok(child) => child,
-            Err(error) => {
-                let _ = task_inner
-                    .store
-                    .record(
-                        &owner,
-                        "monitor.failed",
-                        json!({"job_id":task_id,"message":error.to_string()}),
-                    )
-                    .await;
-                task_inner.jobs.lock().await.remove(&task_id);
-                return;
-            }
-        };
-        let stdout = child.stdout.take().expect("monitor stdout piped");
+        let (mut group, stdout, _temp) =
+            match spawn_sandboxed_monitor(&task_inner, &input, timeout).await {
+                Ok(spawned) => spawned,
+                Err(error) => {
+                    let _ = task_inner
+                        .store
+                        .record(
+                            &owner,
+                            "monitor.failed",
+                            json!({"job_id":task_id,"message":error.to_string()}),
+                        )
+                        .await;
+                    task_inner.jobs.lock().await.remove(&task_id);
+                    return;
+                }
+            };
         if let Err(error) = task_inner.store.start_job(&owner, &task_id).await {
             let _ = task_inner
                 .store
@@ -2740,7 +2724,7 @@ async fn start_monitor(
             tokio::select! {
                 biased;
                 _ = token.cancelled() => {
-                    let _ = child.kill().await;
+                    group.terminate();
                     let _ = finish_background_job(
                         &task_inner,
                         &owner,
@@ -2753,7 +2737,7 @@ async fn start_monitor(
                     return;
                 }
                 _ = tokio::time::sleep_until(deadline) => {
-                    let _ = child.kill().await;
+                    group.terminate();
                     let _ = task_inner
                         .store
                         .record(&owner, "monitor.timeout", json!({"job_id":task_id,"timeout_ms":input.timeout()}))
@@ -2771,7 +2755,12 @@ async fn start_monitor(
                             batcher.feed(matcher.as_ref(), &line);
                         }
                         _ => {
-                            let status = child.wait().await.map(|status| status.code().unwrap_or(-1)).unwrap_or(-1);
+                            let status = group
+                                .child
+                                .wait()
+                                .await
+                                .map(|status| status.code().unwrap_or(-1))
+                                .unwrap_or(-1);
                             let _ = task_inner
                                 .store
                                 .record(&owner, "monitor.exited", json!({"job_id":task_id,"code":status}))
@@ -2785,7 +2774,7 @@ async fn start_monitor(
                 }
             }
         }
-        let _ = child.kill().await;
+        group.terminate();
         task_inner.jobs.lock().await.remove(&task_id);
     });
     jobs.insert(
@@ -2802,6 +2791,58 @@ async fn start_monitor(
         "output":"watching stdout; matching lines arrive as monitor.notice progress events; cancel with cancel_job",
         "timeout_ms":timeout,
     }))
+}
+
+/// Launch a monitor command through the same sandboxed runner the process
+/// tools use: seatbelt on macOS, Landlock on Linux, AppContainer on Windows.
+/// stdout stays piped so the caller can stream matching lines; the minimal
+/// environment matches the previous direct spawn.
+async fn spawn_sandboxed_monitor(
+    inner: &Arc<Inner>,
+    input: &crate::monitor::Input,
+    timeout_ms: u64,
+) -> Result<
+    (
+        crate::process::Group,
+        tokio::process::ChildStdout,
+        tempfile::TempDir,
+    ),
+    ToolError,
+> {
+    let runner = inner
+        .tools
+        .process_runner()
+        .ok_or(ToolError::Unsupported)?
+        .to_owned();
+    let workspace = inner.tools.location().to_owned();
+    let envs = [
+        (
+            "PATH".to_owned(),
+            "/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin".to_owned(),
+        ),
+        (
+            "HOME".to_owned(),
+            std::env::var("HOME").unwrap_or_else(|_| "/root".into()),
+        ),
+        ("LANG".to_owned(), "C.UTF-8".to_owned()),
+    ];
+    let (mut group, master, temp) = crate::process::spawn(
+        std::path::Path::new(&runner),
+        std::path::Path::new(&workspace),
+        std::path::Path::new("."),
+        vec!["sh".into(), "-c".into(), input.command.clone()],
+        timeout_ms,
+        false,
+        false,
+        inner.tools.process_network_allowed(),
+        &envs,
+    )
+    .await?;
+    if master.is_some() {
+        return Err(ToolError::Unsupported);
+    }
+    let stdout = group.child.stdout.take().ok_or(ToolError::Unsupported)?;
+    Ok((group, stdout, temp))
 }
 
 async fn start_background(
