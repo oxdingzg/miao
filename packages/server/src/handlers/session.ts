@@ -247,9 +247,32 @@ export const SessionHandler = HttpApiBuilder.group(Api, "server.session", (handl
         }),
       )
       .handle(
+        "session.modelRoutes",
+        Effect.fn(function* (ctx) {
+          const owner = yield* requireNativeOwner(ctx.params.sessionID)
+          return {
+            data: yield* owner.native.modelRoutes({
+              sessionID: ctx.params.sessionID,
+              storage: owner.placement.storage,
+              location: owner.placement.location,
+            }),
+          }
+        }),
+      )
+      .handle(
         "session.switchModel",
         Effect.fn(function* (ctx) {
-          yield* requireTypescriptOwner(ctx.params.sessionID, "session.switchModel")
+          const placement = yield* Effect.serviceOption(NativeEngine.Placement)
+          if (Option.isSome(placement)) {
+            const owner = yield* requireNativeOwner(ctx.params.sessionID)
+            yield* owner.native.selectModel({
+              sessionID: ctx.params.sessionID,
+              storage: owner.placement.storage,
+              location: owner.placement.location,
+              model: ctx.payload.model,
+            })
+            return HttpApiSchema.NoContent.make()
+          }
           yield* session.switchModel({ sessionID: ctx.params.sessionID, model: ctx.payload.model }).pipe(
             Effect.catchTag("Session.NotFoundError", (error) =>
               Effect.fail(

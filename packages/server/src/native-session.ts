@@ -1,3 +1,4 @@
+import { SessionModelRoute } from "@miao/schema/session-model-route"
 import { Project } from "@miao/schema/project"
 import type { AbsolutePath } from "@miao/schema/schema"
 import type { Location } from "@miao/schema/location"
@@ -5,7 +6,7 @@ import { SessionInfo } from "@miao/schema/session-info"
 import { SessionID } from "@miao/schema/session-id"
 import { ModelV2 } from "@miao/core/model"
 import { SessionRunnerCost } from "@miao/core/session/runner/cost"
-import { DateTime, Effect, Schema } from "effect"
+import { DateTime, Effect, Option, Schema } from "effect"
 import { Database } from "@miao/core/database/database"
 import { SessionEnginePlacement } from "@miao/core/session/engine-placement"
 import { NativeEngine } from "./native-engine"
@@ -19,9 +20,9 @@ import { NativeEngine } from "./native-engine"
  * Honesty rules, matching the agreed conventions: `cost` stays 0 (pricing is
  * a product catalog the engine does not own) unless the caller projects the
  * engine's usage report through that catalog, `tokens` are 0 until then,
- * `agent`/`model` stay unknown (the engine knows collaboration mode, not
- * product identities), and a missing creation time renders as epoch only for
- * Sessions that predate the metadata column.
+ * `agent` stays unknown; model routes use the reserved native namespace.
+ * Missing creation time renders as epoch only for Sessions that predate
+ * the metadata column.
  */
 export function nativeSessionInfo(input: {
   sessionID: SessionID
@@ -30,6 +31,16 @@ export function nativeSessionInfo(input: {
   snapshot: Readonly<Record<string, unknown>>
   usage?: SessionInfo.Usage
 }): SessionInfo.Info {
+  const selection = Schema.decodeUnknownOption(Schema.NullOr(SessionModelRoute.Binding))(
+    input.snapshot["model_selection"],
+  )
+  const model = Option.isSome(selection)
+    ? selection.value === null
+      ? SessionModelRoute.reference(null)
+      : selection.value.route_id
+        ? SessionModelRoute.reference(selection.value.route_id)
+        : undefined
+    : undefined
   const created = number(input.snapshot["created_at_ms"])
   const updated = number(input.snapshot["updated_at_ms"])
   const title = input.snapshot["title"]
@@ -63,6 +74,7 @@ export function nativeSessionInfo(input: {
       created: DateTime.makeUnsafe(created ?? 0),
       updated: DateTime.makeUnsafe(updated ?? created ?? 0),
     },
+    model,
     title: typeof title === "string" ? title : "",
     location: input.location,
   }
