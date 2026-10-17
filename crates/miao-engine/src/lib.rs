@@ -16,6 +16,7 @@ pub mod hooks;
 pub mod host;
 pub mod http;
 mod jobs;
+pub mod knowledge;
 pub mod lsp;
 pub mod mcp;
 pub mod openai_chat;
@@ -43,6 +44,7 @@ pub mod tools;
 pub mod usage;
 mod verification;
 pub mod wakeup;
+pub mod web;
 pub mod worker;
 
 pub mod tool_catalog;

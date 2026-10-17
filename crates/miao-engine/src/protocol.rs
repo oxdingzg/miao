@@ -209,6 +209,8 @@ pub enum Command {
         call_id: String,
         operation_id: String,
         decision: crate::recovery::Decision,
+        #[serde(default)]
+        resume: bool,
     },
     Mode {
         session_id: String,

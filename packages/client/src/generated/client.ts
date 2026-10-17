@@ -45,6 +45,10 @@ import type {
   SessionsSwitchModelOutput,
   SessionsSwitchAccountInput,
   SessionsSwitchAccountOutput,
+  SessionsRecoveriesInput,
+  SessionsRecoveriesOutput,
+  SessionsResolveRecoveryInput,
+  SessionsResolveRecoveryOutput,
   SessionsPromptInput,
   SessionsPromptOutput,
   SessionsSkillInput,
@@ -705,6 +709,35 @@ export function make(options: ClientOptions) {
           },
           requestOptions,
         ),
+      recoveries: (input: SessionsRecoveriesInput, requestOptions?: RequestOptions) =>
+        request<{ readonly data: SessionsRecoveriesOutput }>(
+          {
+            method: "GET",
+            path: `/api/session/${encodeURIComponent(input.sessionID)}/recovery`,
+            query: { after: input["after"] },
+            successStatus: 200,
+            declaredStatuses: [409, 404, 503, 400, 410, 401],
+            empty: false,
+          },
+          requestOptions,
+        ).then((value) => value.data),
+      resolveRecovery: (input: SessionsResolveRecoveryInput, requestOptions?: RequestOptions) =>
+        request<{ readonly data: SessionsResolveRecoveryOutput }>(
+          {
+            method: "POST",
+            path: `/api/session/${encodeURIComponent(input.sessionID)}/recovery`,
+            body: {
+              callID: input["callID"],
+              operationID: input["operationID"],
+              decision: input["decision"],
+              resume: input["resume"],
+            },
+            successStatus: 200,
+            declaredStatuses: [409, 404, 503, 400, 410, 401],
+            empty: false,
+          },
+          requestOptions,
+        ).then((value) => value.data),
       prompt: (input: SessionsPromptInput, requestOptions?: RequestOptions) =>
         request<{ readonly data: SessionsPromptOutput }>(
           {

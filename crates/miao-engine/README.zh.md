@@ -8,6 +8,8 @@
 
 ## 运行
 
+原生[来源绑定知识工具](docs/source-bound-knowledge.md)提供跨 Session 的短索引、可审阅记忆、来源失效检测与条件更新。
+
 可选的[稳定扩展工具披露](docs/tool-disclosure.md)通过 `--tool-disclosure compact` 固定顶层工具 schema，按需发现扩展能力并过滤结果；也可设置全局 `engine.tool_disclosure` 或 `MIAO_ENGINE_TOOL_DISCLOSURE`。
 
 检索和诊断结果附带[源码版本来源信息](docs/revision-bound-observations.md)，区分实际观察到的内容、过期诊断与未报告版本的诊断；这类观察本身不构成整体任务完成的证明。
@@ -284,6 +286,12 @@ MCP server 是拥有自身 filesystem/network authority 的可信外部服务，
 
 目前未实现远程 HTTP transport、动态 catalog notifications、resources/prompts、MCP OAuth 或 TS plugin compatibility。
 
+
+## 产品 sidecar 的 Context manifest
+
+产品通过 `MIAO_ENGINE_CONTEXT_CONFIG`、`MIAO_ENGINE_SKILLS_CONFIG`、`MIAO_ENGINE_REFERENCES_CONFIG` 将可信 manifest 分别传给原生 `--context-config`、`--skills-config`、`--references-config`。嵌入端对应设置 `EngineOptions.contextConfigFile`、`skillsConfigFile`、`referencesConfigFile`，环境变量优先。跨 Location 使用时应指定绝对 manifest 路径，并将 manifest 放在模型可写 workspace 之外。
+
+manifest 格式沿用下文原生格式，skill 目录仍须相对 workspace。外部 instruction 文件需要单独的只读 reference 授权；授权一个文件不会授权父目录或兄弟文件，Context 权限规则仍生效。这里传递来源路径而非拼接的 prompt 文本，因此 Context Epoch 保留来源信息并可观察后续编辑。
 
 ## 显式 workspace Context Sources
 

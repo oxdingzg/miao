@@ -28,6 +28,7 @@ pub enum Access {
     Background,
     Delegate,
     External,
+    Web,
     SessionState,
     Schedule,
     Cron,
@@ -55,6 +56,8 @@ pub struct Config {
     #[serde(default)]
     pub allow_mcp: bool,
     #[serde(default)]
+    pub allow_web: bool,
+    #[serde(default)]
     pub allow_wakeup: bool,
     #[serde(default)]
     pub allow_cron: bool,
@@ -81,6 +84,7 @@ impl Default for Config {
             allow_background: false,
             allow_subagents: false,
             allow_mcp: false,
+            allow_web: false,
             allow_wakeup: false,
             allow_cron: false,
             process_network: false,
@@ -212,6 +216,10 @@ impl Policy {
         self.config.mode == Mode::Workspace && self.config.allow_mcp
     }
 
+    pub fn web_enabled(&self) -> bool {
+        self.config.allow_web
+    }
+
     pub fn process_network(&self) -> bool {
         self.config.process_network
     }
@@ -241,6 +249,7 @@ impl Policy {
             || (access == Access::Background && !self.background_enabled())
             || (access == Access::Delegate && !self.subagents_enabled())
             || (access == Access::External && !self.mcp_enabled())
+            || (access == Access::Web && !self.web_enabled())
             || (access == Access::Write && self.config.mode == Mode::ReadOnly)
         {
             return (
