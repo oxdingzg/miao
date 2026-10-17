@@ -762,3 +762,13 @@ verifies that the same request does not write a file.
 
 Configured completion commands produce [version-bound verification receipts](docs/verification-receipts.md)
 with actual exit/output, task revisions and bounded source coverage.
+
+### Provider-turn budget
+
+The host policy accepts `max_provider_turns` (1–10000, default 25). For a
+long multi-step task, set e.g. `"max_provider_turns": 100` in the policy JSON.
+This budget applies to provider turns per admitted user input, including tool
+round trips and transport continuations. External user admissions reset it;
+synthetic autonomous-continuation inputs do not. Exhaustion remains an explicit
+failed run and never silently replays tool calls. The policy revision records
+the configured budget.

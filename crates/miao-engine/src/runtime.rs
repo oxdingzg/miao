@@ -662,7 +662,7 @@ async fn execute(
     cancel: CancellationToken,
 ) -> Result<(), Error> {
     let mut step = 0;
-    let mut allowance = 25;
+    let mut allowance = inner.policy.max_provider_turns();
     let mut input_corrections = 0;
     let mut transport_continuations = 0;
     // Consecutive provider turns that produced neither text nor tool calls.
@@ -956,7 +956,7 @@ async fn execute(
                                 .as_str()
                                 .is_none_or(|id| !internal_inputs.contains(id))
                         }) {
-                            allowance = 25;
+                            allowance = inner.policy.max_provider_turns();
                             input_corrections = 0;
                             repeats.clear();
                             transport_continuations = 0;
@@ -1709,7 +1709,7 @@ async fn execute(
                     .as_str()
                     .is_none_or(|id| !internal_inputs.contains(id))
             }) {
-                allowance = 25;
+                allowance = inner.policy.max_provider_turns();
                 input_corrections = 0;
                 transport_continuations = 0;
                 empty_completions = 0;
