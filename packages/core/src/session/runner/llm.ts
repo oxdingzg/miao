@@ -1044,7 +1044,8 @@ const layer = Layer.effect(
                   // costs a step per miss; after the limit, advertise everything
                   // again for the rest of the drain.
                   if (event.name === ToolSearch.TOOL_SEARCH_TOOL && !disclosureEscalated.has(session.id)) {
-                    const missed = settled.result.type === "error" || (settled.result.type === "text" && settled.result.value.startsWith("No deferred tool"))
+                    const output = settled.result
+                    const missed = output.type === "error" || (output.type === "text" && output.value.startsWith("No deferred tool"))
                     const misses = missed ? (disclosureMisses.get(session.id) ?? 0) + 1 : 0
                     disclosureMisses.set(session.id, misses)
                     if (misses >= MAX_DISCLOSURE_MISSES) {
