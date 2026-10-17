@@ -499,9 +499,18 @@ endpoints are trusted host configuration, never model arguments. HTTP connection
 use the same external-tool policy and schema validation as process servers.
 Redirects are refused, SSE events are bounded to 256 KiB, and session expiry
 fails the call rather than transparently replaying a possible side effect.
-Shared product remote servers with `oauth: false` are materialized into this
-manifest; explicit OAuth settings and implicit OAuth discovery are refused until
-the native OAuth route is available. The temporary manifest is mode 0600.
+A host manifest may carry an explicit refresh grant instead of a static
+authorization header: `{"oauth":{"token_endpoint":"https://issuer/token",
+"client_id":"...","refresh_token":"...","scopes":["mcp"]}}`. The engine exchanges
+it exactly once when the connection starts, attaches the returned bearer token,
+refuses redirects and userinfo/fragment endpoints, bounds the request and the
+64 KiB response, and reports generic failures without echoing provider bodies or
+tokens. Rotated refresh tokens in the response are ignored for the child's
+lifetime; the host provisions a fresh grant on restart. OAuth conflicts with a
+static `authorization` header and is unavailable to process servers. Shared
+product remote servers still require explicit `oauth: false` in product
+configuration until the product-side flow ships. The temporary manifest is mode
+0600.
 
 Servers advertising resources expose `mcp_<server>_resources_list`,
 `mcp_<server>_resource_templates_list` and `mcp_<server>_resource_read`. Servers
@@ -515,8 +524,8 @@ resource contents remain untrusted tool data: retrieval neither executes the
 prompt nor changes system instructions. Cancellation and input/task continuation
 do not trigger automatic replays.
 
-Dynamic catalog notifications, MCP OAuth, and TS plugin compatibility are not
-implemented today.
+Dynamic catalog notifications and TS plugin compatibility are not implemented
+today.
 
 ## Host-authorized skill directories
 

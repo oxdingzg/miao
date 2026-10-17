@@ -44,6 +44,21 @@ pub struct Config {
     pub headers: BTreeMap<String, String>,
     #[serde(default)]
     pub env: BTreeMap<String, String>,
+    #[serde(default)]
+    pub oauth: Option<Oauth>,
+}
+
+/// A host-provisioned refresh grant. The browser part of the authorization
+/// code flow belongs to the product host; the engine only exchanges the
+/// refresh token for a bearer access token when a connection starts.
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct Oauth {
+    pub token_endpoint: String,
+    pub client_id: String,
+    pub refresh_token: String,
+    #[serde(default)]
+    pub scopes: Vec<String>,
 }
 struct Tool {
     definition: ToolDefinition,
@@ -116,6 +131,16 @@ impl Registry {
                         "MCP HTTP configuration cannot include a process".into(),
                     ));
                 }
+                if config.oauth.is_some()
+                    && config
+                        .headers
+                        .keys()
+                        .any(|name| name.eq_ignore_ascii_case("authorization"))
+                {
+                    return Err(Error::Invalid(
+                        "MCP OAuth conflicts with a static authorization header".into(),
+                    ));
+                }
                 let url = reqwest::Url::parse(&endpoint)
                     .map_err(|_| Error::Invalid("invalid MCP HTTP URL".into()))?;
                 if endpoint.len() > 8192
@@ -156,12 +181,14 @@ impl Registry {
                 // The SDK client refuses redirects, keeping host-supplied credentials
                 // on the configured endpoint. Never replay calls on session expiry:
                 // a lost response may follow a completed external side effect.
-                let transport = StreamableHttpClientTransport::from_config(
-                    StreamableHttpClientTransportConfig::with_uri(endpoint)
-                        .custom_headers(headers)
-                        .max_sse_event_size(262144)
-                        .reinit_on_expired_session(false),
-                );
+                let mut transport_config = StreamableHttpClientTransportConfig::with_uri(endpoint)
+                    .custom_headers(headers)
+                    .max_sse_event_size(262144)
+                    .reinit_on_expired_session(false);
+                if let Some(oauth) = config.oauth.as_ref() {
+                    transport_config.auth_header = Some(oauth_bearer(oauth).await?);
+                }
+                let transport = StreamableHttpClientTransport::from_config(transport_config);
                 let client = tokio::time::timeout(Duration::from_secs(15), ().serve(transport))
                     .await
                     .map_err(|_| Error::Invalid("MCP HTTP initialization timed out".into()))?
@@ -173,6 +200,9 @@ impl Registry {
                 return Err(Error::Invalid(
                     "MCP process configuration cannot include HTTP headers".into(),
                 ));
+            }
+            if config.oauth.is_some() {
+                return Err(Error::Invalid("MCP OAuth requires an HTTP endpoint".into()));
             }
             let mut command = Command::new(&config.argv[0]);
             command
@@ -524,4 +554,75 @@ fn encode(value: impl serde::Serialize) -> Result<Value, ToolError> {
 }
 fn continuation() -> ToolError {
     ToolError::External("MCP input/task continuation is not supported; no automatic replay".into())
+}
+
+/// Exchange a host-provisioned refresh token for a bearer access token. The
+/// issuer is a trusted host service: no discovery, no redirects, one bounded
+/// request, and generic failures that never echo provider bodies or tokens.
+async fn oauth_bearer(oauth: &Oauth) -> Result<String, Error> {
+    let invalid = || Error::Invalid("MCP OAuth token refresh failed".into());
+    if oauth.client_id.is_empty()
+        || oauth.client_id.len() > 2048
+        || oauth.refresh_token.is_empty()
+        || oauth.refresh_token.len() > 8192
+        || oauth.token_endpoint.contains('\0')
+        || oauth.token_endpoint.len() > 8192
+        || oauth.scopes.len() > 16
+        || oauth
+            .scopes
+            .iter()
+            .any(|scope| scope.is_empty() || scope.len() > 256 || scope.contains('\0'))
+    {
+        return Err(invalid());
+    }
+    let url = reqwest::Url::parse(&oauth.token_endpoint)
+        .ok()
+        .filter(|url| {
+            matches!(url.scheme(), "http" | "https")
+                && url.host_str().is_some()
+                && url.username().is_empty()
+                && url.password().is_none()
+                && url.fragment().is_none()
+        })
+        .ok_or_else(invalid)?;
+    let client = reqwest::Client::builder()
+        .redirect(reqwest::redirect::Policy::none())
+        .timeout(Duration::from_secs(15))
+        .build()
+        .map_err(|_| invalid())?;
+    let scope = oauth.scopes.join(" ");
+    let mut form = vec![
+        ("grant_type", "refresh_token"),
+        ("refresh_token", oauth.refresh_token.as_str()),
+        ("client_id", oauth.client_id.as_str()),
+    ];
+    if !scope.is_empty() {
+        form.push(("scope", scope.as_str()));
+    }
+    let response = client
+        .post(url)
+        .form(&form)
+        .send()
+        .await
+        .map_err(|_| invalid())?;
+    if !response.status().is_success() {
+        return Err(invalid());
+    }
+    let body = response.bytes().await.map_err(|_| invalid())?;
+    if body.len() > 65536 {
+        return Err(invalid());
+    }
+    let token: Value = serde_json::from_slice(&body).map_err(|_| invalid())?;
+    let access = token["access_token"]
+        .as_str()
+        .filter(|access| !access.is_empty() && access.len() <= 8192)
+        .ok_or_else(invalid)?;
+    if !token["token_type"]
+        .as_str()
+        .unwrap_or("bearer")
+        .eq_ignore_ascii_case("bearer")
+    {
+        return Err(Error::Invalid("MCP OAuth token type is unsupported".into()));
+    }
+    Ok(access.to_owned())
 }
