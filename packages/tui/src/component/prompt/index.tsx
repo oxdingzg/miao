@@ -236,10 +236,6 @@ export function Prompt(props: PromptProps) {
   }
 
   function openModelList() {
-    if (local.selectionLocked()) {
-      toast.show({ message: "This native Session uses operator-configured agent/model settings", variant: "info" })
-      return
-    }
     dialog.replace(() => <DialogModel providerID={local.model.current()?.providerID} />)
   }
 
