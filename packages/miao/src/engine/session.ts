@@ -3,7 +3,7 @@ import { Prompt } from "@miao/schema/prompt"
 import { SessionInput } from "@miao/schema/session-input"
 import { SessionMessage } from "@miao/schema/session-message"
 import { SessionID } from "@miao/schema/session-id"
-import { EngineClient, EngineError, type EngineEvent, type EngineProgress } from "./client"
+import { EngineError, type EngineEvent, type EngineProgress, type EngineTransport } from "./client"
 import { adoptSession, messageID } from "./identity"
 import {
   type BufferedUsage,
@@ -214,11 +214,11 @@ export class EngineTranslator {
  * events land.
  */
 export class EngineSession {
-  #client: EngineClient
+  #client: EngineTransport
   #translator: EngineTranslator
   #subscriptions = new Map<string, { mode: "live" | "restored"; ready: Promise<unknown> }>()
 
-  constructor(client: EngineClient, publish: EnginePublish) {
+  constructor(client: EngineTransport, publish: EnginePublish) {
     this.#client = client
     this.#translator = new EngineTranslator(publish)
     client.onEvent((event) => this.#translator.dispatch(event))
