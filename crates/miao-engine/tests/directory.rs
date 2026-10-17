@@ -23,6 +23,7 @@ async fn directory_catalog_and_execution_have_bounded_workspace_scope() {
             "grep",
             "read_image",
             "load_skill",
+            "knowledge",
             "recall",
             "session_state",
             "todowrite",

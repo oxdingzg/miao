@@ -135,6 +135,21 @@ struct RetryScope {
     limit: usize,
 }
 tokio::task_local! {static RETRY_SCOPE:RetryScope;}
+pub(crate) fn transport_attempt() -> Result<(tokio::time::Instant, usize), ProviderError> {
+    let scope = RETRY_SCOPE
+        .try_with(Clone::clone)
+        .unwrap_or_else(|_| RetryScope {
+            budget: Budget::new(),
+            limit: 3,
+        });
+    if scope.limit == 0
+        || tokio::time::Instant::now() >= scope.budget.deadline
+        || !scope.budget.take()
+    {
+        return Err(ProviderError::Transport);
+    }
+    Ok((scope.budget.deadline, scope.budget.used()))
+}
 pub(crate) async fn scoped<F: std::future::Future<Output = Result<Reply, ProviderError>>>(
     budget: Arc<Budget>,
     limit: usize,
@@ -168,6 +183,20 @@ pub trait Provider: Send + Sync {
     /// credential ownership. Custom/composite providers opt in explicitly.
     fn for_model(&self, _model: &str) -> Option<Arc<dyn Provider>> {
         None
+    }
+    /// Exact host-registered routes only; controller input cannot retarget them.
+    fn for_route(&self, _route_id: &str) -> Option<Arc<dyn Provider>> {
+        None
+    }
+    fn model_catalog(&self) -> Vec<crate::model_catalog::Info> {
+        self.identity()
+            .into_iter()
+            .map(|identity| crate::model_catalog::Info {
+                route_id: None,
+                protocol: identity.protocol,
+                model: identity.model,
+            })
+            .collect()
     }
     fn protected_resources(&self) -> Vec<std::path::PathBuf> {
         vec![]

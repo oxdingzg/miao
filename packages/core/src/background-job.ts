@@ -1,10 +1,34 @@
 export * as BackgroundJob from "./background-job"
 
-import { Cause, Clock, Context, Deferred, Effect, Exit, Layer, Scope, SynchronizedRef } from "effect"
+import { Cause, Clock, Context, Deferred, Effect, Exit, Layer, Schema, Scope, SynchronizedRef } from "effect"
 import { Identifier } from "./id/id"
 import { makeGlobalNode, makeLocationNode } from "./effect/app-node"
 
 export type Status = "running" | "completed" | "error" | "cancelled"
+
+/**
+ * How many background jobs may run at once per process. Only running jobs count:
+ * a Session that has already run a hundred commands can still start the next
+ * one, and a finished job frees its slot immediately. Without a bound, parallel
+ * subagents starting monitors and servers can leave more processes running than
+ * the machine will schedule, and nothing in the Session makes that visible.
+ *
+ * `MIAO_MAX_BACKGROUND_JOBS` raises or lowers it; a value that is not a positive
+ * number is ignored.
+ */
+const MAX_RUNNING_JOBS = 8
+
+const maxRunningJobs = () => {
+  const parsed = Number(process.env.MIAO_MAX_BACKGROUND_JOBS ?? MAX_RUNNING_JOBS)
+  return Number.isFinite(parsed) && parsed > 0 ? Math.max(1, Math.floor(parsed)) : MAX_RUNNING_JOBS
+}
+
+/** Refusal to start a job while the running-job limit is reached. */
+export class CapacityError extends Schema.TaggedErrorClass<CapacityError>()("BackgroundJob.CapacityError", {
+  message: Schema.String,
+  limit: Schema.Number,
+  running: Schema.Number,
+}) {}
 
 export type Info = {
   id: string
@@ -92,7 +116,7 @@ export type WaitResult = {
 export interface Interface {
   readonly list: () => Effect.Effect<Info[]>
   readonly get: (id: string) => Effect.Effect<Info | undefined>
-  readonly start: (input: StartInput) => Effect.Effect<Info>
+  readonly start: (input: StartInput) => Effect.Effect<Info, CapacityError>
   readonly extend: (input: ExtendInput) => Effect.Effect<boolean>
   readonly wait: (input: WaitInput) => Effect.Effect<WaitResult>
   readonly waitForPromotion: (id: string) => Effect.Effect<Info>
@@ -240,6 +264,18 @@ export const make = Effect.gen(function* () {
             if (existing?.info.status === "running") {
               return [{ info: snapshot(existing) }, jobs] as readonly [StartResult, Map<string, Active>]
             }
+            // Starting the same job id again adopts it, so the limit only cares
+            // about slots a new process would occupy.
+            const limit = maxRunningJobs()
+            const running = Array.from(jobs.values()).filter((job) => job.info.status === "running").length
+            if (running >= limit)
+              return yield* Effect.fail(
+                new CapacityError({
+                  message: `Refusing to start a background job: ${running} of ${limit} are already running. Wait for one to finish (job_list, job_wait) or cancel one (job_cancel), then start this one.`,
+                  limit,
+                  running,
+                }),
+              )
             const scope = yield* Scope.fork(state.scope, "parallel")
             const token = {}
             const job = {

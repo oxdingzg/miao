@@ -16,6 +16,7 @@ pub mod hooks;
 pub mod host;
 pub mod http;
 mod jobs;
+pub mod knowledge;
 pub mod lsp;
 pub mod mcp;
 pub mod openai_chat;
@@ -29,6 +30,7 @@ pub mod question;
 pub mod recall;
 pub mod recovery;
 pub mod responses_cache;
+pub mod responses_websocket;
 pub mod roles;
 pub mod routing;
 pub mod runtime;
@@ -43,6 +45,7 @@ pub mod tools;
 pub mod usage;
 mod verification;
 pub mod wakeup;
+pub mod web;
 pub mod worker;
 
 pub mod tool_catalog;
@@ -52,3 +55,6 @@ mod first_event;
 
 mod delta;
 mod runtime_profile;
+
+pub mod model_catalog;
+pub mod model_routes;

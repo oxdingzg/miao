@@ -8,6 +8,8 @@
 
 ## 运行
 
+原生[来源绑定知识工具](docs/source-bound-knowledge.md)提供跨 Session 的短索引、可审阅记忆、来源失效检测与条件更新。
+
 可选的[稳定扩展工具披露](docs/tool-disclosure.md)通过 `--tool-disclosure compact` 固定顶层工具 schema，按需发现扩展能力并过滤结果；也可设置全局 `engine.tool_disclosure` 或 `MIAO_ENGINE_TOOL_DISCLOSURE`。
 
 检索和诊断结果附带[源码版本来源信息](docs/revision-bound-observations.md)，区分实际观察到的内容、过期诊断与未报告版本的诊断；这类观察本身不构成整体任务完成的证明。
@@ -32,6 +34,8 @@ cargo build --manifest-path crates/miao-engine/Cargo.toml
 
 ### 可选的 Responses 缓存控制
 
+已验证支持的部署还可独立启用 [Session WebSocket 复用与严格后缀增量](docs/responses-websocket.md)。
+
 `--responses-cache-contract JSON` 声明精确 wire model、规范化 endpoint URL（含 query）与认证类型（`api` 或 `subscription`）对应的缓存能力。只声明已验证的部署能力，不根据模型名称推断。集成的原生引擎读取全局配置 `engine.responses_cache_contract`，也可用 `MIAO_ENGINE_RESPONSES_CACHE_CONTRACT` 覆盖整个契约。
 
 ```json
@@ -52,6 +56,26 @@ cargo build --manifest-path crates/miao-engine/Cargo.toml
 `acp` 模式在 stdio 上提供 ACP（newline-delimited JSON-RPC 2.0），供编辑器直接对接：`miao-engine acp --db PATH --workspace PATH --model MODEL [--provider ...] [--endpoint URL] [--policy PATH]`。当前实现 `initialize`/`authenticate`/`session/new`/`session/prompt`/`session/cancel`，把引擎审批映射为 `session/request_permission` 往返，把已提交的工具调用流式推送为 `tool_call`/`tool_call_update`，支持 `session/load`（历史回放）/`session/fork`/`session/resume`/`session/close`/`session/set_mode`，并把已提交的 todos 推送为 `plan`，支持 `session/list`；config/usage 更新为后续切片。
 
 本地安装（不触碰 release 管理的 `miao` 与 `miao-preview`）：在构建机编译后 `./script/install-engine.sh --binary /path/to/miao-engine`。安装到 `~/.local/bin/miao-engine`（版本化于 `~/.local/share/miao-engine/bin`），保留一次旧版本用于一步回滚，并以 `--version` 冒烟。
+
+### 宿主模型路由
+
+`--model-routes-config /host/routes.json` 可注册最多 64 个精确 provider 实例。
+manifest 必须位于工作区之外，并受到模型工具保护。产品桥接支持
+`EngineOptions.modelRoutesConfigFile` 或 `MIAO_ENGINE_MODEL_ROUTES_CONFIG`。
+
+```json
+[{"id":"account-two/shared","provider":"openai-chat","model":"shared","endpoint":"https://example.org/v1/chat/completions","credential":{"type":"environment","key":"OPENAI_API_KEY"}}]
+```
+
+凭据来源支持 `environment`（`key` 为环境变量名，订阅可选 `account` 变量名）、
+`database`（`path`、`id`、`integration`）、`legacy`（`path`、`integration`）和
+`daemon`（`path`、`id`、`integration`）。文件来源须位于工作区外；产品子进程
+仍使用环境变量白名单，自定义凭据变量须通过 `EngineOptions.env` 显式传入。
+
+控制器 `model_catalog` 仅返回 `route_id`、`protocol`、`model`；将精确条目作为
+`select_model.params.binding`，或使用 null 恢复默认。未知路由和身份不匹配在
+调用 provider 前失败。即使两个 endpoint 使用相同模型名，opaque 历史仍绑定
+原路由，切换前须先在原路由压缩历史。
 
 ## stdio 协议 v0
 
@@ -506,5 +530,7 @@ fail-closed 阻止派发，工具结果为 `blocked by tool_before hook (outcome
 也不给模型任何新 authority。目前没有 per-hook 网络、stdin 注入、run/turn 级事件或远程 hook。
 
 ## 完成检查收据
+
+Provider 报告还提供[辅助用量与覆盖范围](docs/auxiliary-usage.md)，包含主请求的完整/部分观察、角色尝试及子 Session 结果证据。
 
 配置的完成检查会记录[版本绑定的验证收据](docs/verification-receipts.md)，包含实际退出码/输出、任务版本与有明确边界的源码覆盖范围。

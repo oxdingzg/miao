@@ -1,7 +1,7 @@
 import { spawn } from "bun"
 import { EOL } from "os"
 import type { ConfigMCP } from "@miao/schema/config/mcp"
-import type { ResponsesCacheContract } from "@miao/schema/config"
+import type { ResponsesCacheContract, ResponsesWebSocketContract } from "@miao/schema/config"
 import { prepareMcpConfig } from "./mcp-config"
 
 /**
@@ -43,6 +43,7 @@ export interface EngineOptions {
   /** Transport-failure fallback model on the same route. */
   fallbackModel?: string
   responsesCacheContract?: ResponsesCacheContract
+  responsesWebSocketContract?: ResponsesWebSocketContract
   toolDisclosure?: "full" | "compact"
   /** Purpose-role model bindings (ADR-14): model ids on the engine's own route. */
   roles?: { summarize?: string; retrieve?: string; verify?: string }
@@ -71,6 +72,8 @@ export interface EngineOptions {
   workspaceInstructions?: boolean
   skillsConfigFile?: string
   referencesConfigFile?: string
+  /** Host-owned exact model routes; endpoint/credential bindings never come from a Session request. */
+  modelRoutesConfigFile?: string
   /**
    * Explicit prefix-cache policy for the first model turn's stable prefix.
    * Absent leaves each provider's own caching behavior untouched.
@@ -119,6 +122,10 @@ const INHERITED_ENVIRONMENT = [
   "OPENAI_ACCESS_TOKEN",
   "OPENAI_ACCOUNT_ID",
   "GEMINI_API_KEY",
+  "EXA_API_KEY",
+  "PARALLEL_API_KEY",
+  "MIAO_WEB_SEARCH_PROVIDER",
+  "MIAO_WEB_SEARCH_ENDPOINT",
   // Engine deployment knobs.
   "MIAO_ENGINE_VERSION",
   "MIAO_ENGINE_HTTP_TOKEN",
@@ -165,9 +172,12 @@ export function engineArgs(options: EngineOptions): string[] {
     args.push("--workspace-instructions", String(options.workspaceInstructions))
   if (options.skillsConfigFile) args.push("--skills-config", options.skillsConfigFile)
   if (options.referencesConfigFile) args.push("--references-config", options.referencesConfigFile)
+  if (options.modelRoutesConfigFile) args.push("--model-routes-config", options.modelRoutesConfigFile)
   if (options.promptCache !== undefined) args.push("--prompt-cache", options.promptCache ? "on" : "off")
   if (options.responsesCacheContract)
     args.push("--responses-cache-contract", JSON.stringify(options.responsesCacheContract))
+  if (options.responsesWebSocketContract)
+    args.push("--responses-websocket-contract", JSON.stringify(options.responsesWebSocketContract))
   if (options.verifyCommand) args.push("--verify-command", options.verifyCommand)
   if (options.fallbackModel) args.push("--fallback-model", options.fallbackModel)
   if (options.toolDisclosure) args.push("--tool-disclosure", options.toolDisclosure)

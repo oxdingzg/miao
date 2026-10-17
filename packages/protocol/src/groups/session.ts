@@ -1,3 +1,4 @@
+import { SessionModelRoute } from "@miao/schema/session-model-route"
 import { SessionMessage } from "@miao/schema/session-message"
 import { SessionInput } from "@miao/schema/session-input"
 import { PromptInput } from "@miao/schema/prompt-input"
@@ -200,11 +201,26 @@ export const makeSessionGroup = <I extends HttpApiMiddleware.AnyId, S>(sessionLo
         ),
     )
     .add(
+      HttpApiEndpoint.get("session.modelRoutes", "/api/session/:sessionID/model-routes", {
+        params: { sessionID: Session.ID },
+        success: Schema.Struct({ data: Schema.Array(SessionModelRoute.Info) }),
+        error: [ConflictError, SessionNotFoundError, ServiceUnavailableError],
+      })
+        .middleware(sessionLocationMiddleware)
+        .annotateMerge(
+          OpenApi.annotations({
+            identifier: "v2.session.modelRoutes",
+            summary: "List native session model routes",
+            description: "List host-registered model references without exposing endpoint or credential bindings.",
+          }),
+        ),
+    )
+    .add(
       HttpApiEndpoint.post("session.switchModel", "/api/session/:sessionID/model", {
         params: { sessionID: Session.ID },
         payload: Schema.Struct({ model: Model.Ref }),
         success: HttpApiSchema.NoContent,
-        error: [SessionNotFoundError, ServiceUnavailableError],
+        error: [ConflictError, SessionNotFoundError, ServiceUnavailableError],
       })
         .middleware(sessionLocationMiddleware)
         .annotateMerge(

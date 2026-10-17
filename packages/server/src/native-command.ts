@@ -20,7 +20,7 @@ export const requireNativeOwner = Effect.fn("NativeCommand.requireNativeOwner")(
   const placement = yield* Effect.serviceOption(NativeEngine.Placement)
   if (Option.isNone(native) || Option.isNone(placement))
     return yield* new ConflictError({
-      message: "Structured recovery requires a Rust-owned Session and its native transport.",
+      message: "This operation requires a Rust-owned Session and its native transport.",
       resource: sessionID,
     })
   return { native: native.value, placement: placement.value }
