@@ -465,7 +465,17 @@ configured with the `mcp_*` tool matcher and the `@mcp/local_service/**` resourc
 - cancel stops the local wait, and a dispatched call may still be executing on the server; Session recovery follows the unknown intent boundary.
 - A normal shutdown closes the transport and kills/reaps the configured direct child process. A hard engine exit and server-derived/daemon processes do not yet have a full cross-process ownership guarantee.
 
-Remote HTTP transport, dynamic catalog notifications, resources/prompts, MCP OAuth, and TS plugin
+Streamable HTTP servers use `{"name":"remote","url":"https://example.test/mcp",
+"headers":{"Authorization":"Bearer ..."}}` instead of `argv`/`env`. Headers and
+endpoints are trusted host configuration, never model arguments. HTTP connections
+use the same external-tool policy and schema validation as process servers.
+Redirects are refused, SSE events are bounded to 256 KiB, and session expiry
+fails the call rather than transparently replaying a possible side effect.
+Shared product remote servers with `oauth: false` are materialized into this
+manifest; explicit OAuth settings and implicit OAuth discovery are refused until
+the native OAuth route is available. The temporary manifest is mode 0600.
+
+Dynamic catalog notifications, resources/prompts, MCP OAuth, and TS plugin
 compatibility are not implemented today.
 
 ## Explicit workspace Context Sources

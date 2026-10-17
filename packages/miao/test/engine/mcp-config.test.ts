@@ -72,3 +72,36 @@ test("unsupported shared MCP transport or identity settings are not silently dis
     ).toThrow("Native MCP shared configuration")
   }
 })
+
+test("shared HTTP MCP snapshots preserve trusted URL and headers", async () => {
+  await using tmp = await tmpdir()
+  const policyFile = path.join(tmp.path, "policy.json")
+  await Bun.write(policyFile, JSON.stringify({ mode: "workspace", allow_mcp: true }))
+  const snapshot = prepareMcpConfig({
+    binary: "unused",
+    model: "unused",
+    db: "unused",
+    workspace: tmp.path,
+    policyFile,
+    mcpSettings: Schema.decodeUnknownSync(ConfigMCP.Info)({
+      servers: {
+        remote: {
+          type: "remote",
+          url: "https://example.invalid/mcp",
+          oauth: false,
+          headers: { Authorization: "Bearer fixture" },
+        },
+      },
+    }),
+  })
+  if (!snapshot) throw new Error("authorized HTTP config must produce a snapshot")
+  try {
+    expect(await Bun.file(snapshot.file).json()).toEqual([
+      { name: "remote", url: "https://example.invalid/mcp", headers: { Authorization: "Bearer fixture" } },
+    ])
+    if (process.platform !== "win32") expect(statSync(snapshot.file).mode & 0o777).toBe(0o600)
+  } finally {
+    snapshot.dispose()
+  }
+  expect(existsSync(snapshot.file)).toBe(false)
+})

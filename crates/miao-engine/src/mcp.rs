@@ -6,6 +6,9 @@ use crate::{
 use rmcp::{
     model::{CallToolRequestParams, CallToolResponse, PaginatedRequestParams},
     service::RunningService,
+    transport::{
+        streamable_http_client::StreamableHttpClientTransportConfig, StreamableHttpClientTransport,
+    },
     RoleClient, ServiceExt,
 };
 use serde::Deserialize;
@@ -30,7 +33,12 @@ use tokio_util::sync::CancellationToken;
 #[serde(deny_unknown_fields)]
 pub struct Config {
     pub name: String,
+    #[serde(default)]
     pub argv: Vec<String>,
+    #[serde(default)]
+    pub url: Option<String>,
+    #[serde(default)]
+    pub headers: BTreeMap<String, String>,
     #[serde(default)]
     pub env: BTreeMap<String, String>,
 }
@@ -64,9 +72,9 @@ impl Registry {
         };
         for config in configs {
             validate_name(&config.name)?;
-            if config.argv.is_empty()
+            if (config.url.is_none() && config.argv.is_empty())
                 || config.argv.len() > 128
-                || config.argv[0].is_empty()
+                || config.argv.first().is_some_and(|arg| arg.is_empty())
                 || config
                     .argv
                     .iter()
@@ -88,6 +96,70 @@ impl Registry {
                 .any(|server| server.name == config.name)
             {
                 return Err(Error::Invalid("duplicate MCP server name".into()));
+            }
+            if let Some(endpoint) = config.url {
+                if !config.argv.is_empty() || !config.env.is_empty() || config.headers.len() > 32 {
+                    return Err(Error::Invalid(
+                        "MCP HTTP configuration cannot include a process".into(),
+                    ));
+                }
+                let url = reqwest::Url::parse(&endpoint)
+                    .map_err(|_| Error::Invalid("invalid MCP HTTP URL".into()))?;
+                if endpoint.len() > 8192
+                    || !matches!(url.scheme(), "http" | "https")
+                    || url.host_str().is_none()
+                    || !url.username().is_empty()
+                    || url.password().is_some()
+                    || url.fragment().is_some()
+                {
+                    return Err(Error::Invalid("invalid MCP HTTP URL".into()));
+                }
+                let mut headers = std::collections::HashMap::new();
+                for (name, value) in config.headers {
+                    let name = http::HeaderName::from_bytes(name.as_bytes())
+                        .map_err(|_| Error::Invalid("invalid MCP HTTP header".into()))?;
+                    if value.len() > 8192
+                        || matches!(
+                            name.as_str(),
+                            "host"
+                                | "content-length"
+                                | "transfer-encoding"
+                                | "connection"
+                                | "content-type"
+                                | "accept"
+                                | "mcp-session-id"
+                                | "mcp-protocol-version"
+                        )
+                    {
+                        return Err(Error::Invalid("invalid MCP HTTP header".into()));
+                    }
+                    let mut value = http::HeaderValue::from_str(&value)
+                        .map_err(|_| Error::Invalid("invalid MCP HTTP header".into()))?;
+                    value.set_sensitive(true);
+                    if headers.insert(name, value).is_some() {
+                        return Err(Error::Invalid("duplicate MCP HTTP header".into()));
+                    }
+                }
+                // The SDK client refuses redirects, keeping host-supplied credentials
+                // on the configured endpoint. Never replay calls on session expiry:
+                // a lost response may follow a completed external side effect.
+                let transport = StreamableHttpClientTransport::from_config(
+                    StreamableHttpClientTransportConfig::with_uri(endpoint)
+                        .custom_headers(headers)
+                        .max_sse_event_size(262144)
+                        .reinit_on_expired_session(false),
+                );
+                let client = tokio::time::timeout(Duration::from_secs(15), ().serve(transport))
+                    .await
+                    .map_err(|_| Error::Invalid("MCP HTTP initialization timed out".into()))?
+                    .map_err(|_| Error::Invalid("MCP HTTP initialization failed".into()))?;
+                registry.attach(config.name, client).await?;
+                continue;
+            }
+            if !config.headers.is_empty() {
+                return Err(Error::Invalid(
+                    "MCP process configuration cannot include HTTP headers".into(),
+                ));
             }
             let mut command = Command::new(&config.argv[0]);
             command

@@ -282,7 +282,9 @@ MCP server 是拥有自身 filesystem/network authority 的可信外部服务，
 - 正常 shutdown 关闭 transport 并 kill/reap 配置的直接子进程。引擎硬退出、server 派生/daemon 进程
   尚无完整跨进程归属保证。
 
-目前未实现远程 HTTP transport、动态 catalog notifications、resources/prompts、MCP OAuth 或 TS plugin compatibility。
+远程 Streamable HTTP server 用 `{"name":"remote","url":"https://example.test/mcp","headers":{"Authorization":"Bearer ..."}}` 代替 `argv`/`env`。URL 和 headers 来自可信宿主配置，工具调用仍受同一 external authority 和 schema 校验约束。拒绝重定向，单个 SSE event 限制为 256 KiB，Session 过期时返回失败而不自动重放可能产生副作用的请求。产品共享 remote 配置须显式设置 `oauth: false`，临时 manifest 权限为 0600。
+
+动态 catalog notifications、resources/prompts、MCP OAuth 和 TS plugin compatibility 仍未实现。
 
 
 ## 显式 workspace Context Sources

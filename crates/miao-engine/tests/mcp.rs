@@ -488,6 +488,8 @@ for line in sys.stdin:
 "#;
     let registry = Registry::connect(
         vec![miao_engine::mcp::Config {
+            url: None,
+            headers: Default::default(),
             name: "process".into(),
             argv: vec!["python3".into(), "-u".into(), "-c".into(), script.into()],
             env: Default::default(),
