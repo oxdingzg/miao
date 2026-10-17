@@ -15,6 +15,21 @@ use std::sync::Arc;
 use tokio::sync::{mpsc, Notify};
 use tokio_util::sync::CancellationToken;
 
+/// The dedicated SQLite worker releases the store lease when the last handle
+/// drops, and that release is asynchronous: a reopen in the same process can
+/// briefly observe `Busy` even though the previous store is gone. Wait for it
+/// instead of asserting on scheduler timing.
+async fn reopen(path: &std::path::Path) -> Store {
+    for _ in 0..200 {
+        match Store::open(path).await {
+            Ok(store) => return store,
+            Err(Error::Busy) => tokio::time::sleep(std::time::Duration::from_millis(5)).await,
+            Err(error) => panic!("open {path:?}: {error:?}"),
+        }
+    }
+    panic!("store lease for {path:?} was not released");
+}
+
 fn input(id: &str) -> Input {
     Input {
         session_id: "s".into(),
@@ -131,12 +146,12 @@ async fn rewind_survives_recovery_and_fork_excludes_reverted() {
         )
     };
     {
-        let store = Store::open(&path).await.unwrap();
+        let store = reopen(&path).await;
         store.revert("s", &second).await.unwrap();
         assert_eq!(store.history("s").await.unwrap().len(), 2);
     }
     // Recovery: a fresh Store over the same database keeps the rewind.
-    let store = Store::open(&path).await.unwrap();
+    let store = reopen(&path).await;
     let remaining = store.history("s").await.unwrap();
     assert_eq!(remaining.len(), 2);
     assert_eq!(remaining[0].checkpoint.clone().unwrap(), first);
@@ -147,6 +162,6 @@ async fn rewind_survives_recovery_and_fork_excludes_reverted() {
     store.unrevert("s").await.unwrap();
     assert_eq!(store.history("s").await.unwrap().len(), 4);
     drop(store);
-    let reopened = Store::open(&path).await.unwrap();
+    let reopened = reopen(&path).await;
     assert_eq!(reopened.history("s").await.unwrap().len(), 4);
 }
