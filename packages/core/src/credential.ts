@@ -1,6 +1,6 @@
 export * as Credential from "./credential"
 
-import { and, asc, eq, ne } from "drizzle-orm"
+import { asc, eq } from "drizzle-orm"
 import path from "path"
 import { Context, Effect, Layer, Option, Schema } from "effect"
 import { Credential } from "@miao/schema/credential"
@@ -220,9 +220,13 @@ const layer = Layer.effect(
               .from(CredentialTable)
               .where(eq(CredentialTable.integration_id, input.integrationID))
               .all()
-            const owned = existing.find((row) => CredentialDaemon.socket(decode(row.value)))
-            if (owned) yield* Effect.die(new DaemonOwnedError({ id: owned.id }))
             const twin = existing.find((row) => row.label === label && (row.method_id ?? undefined) === methodID)
+            // Only the account this call replaces is off limits. Another
+            // daemon-owned account of the same provider must not block adding
+            // or rotating a different one.
+            if (twin && CredentialDaemon.socket(decode(twin.value))) {
+              yield* Effect.die(new DaemonOwnedError({ id: twin.id }))
+            }
             const id = twin?.id ?? ID.create()
             if (twin) {
               yield* tx
@@ -243,11 +247,16 @@ const layer = Layer.effect(
                 })
                 .run()
             }
-            yield* tx
-              .update(CredentialTable)
-              .set({ active: false })
-              .where(and(eq(CredentialTable.integration_id, input.integrationID), ne(CredentialTable.id, id)))
-              .run()
+            // Clearing the flag is a write too, so a daemon-owned row keeps
+            // whatever its owner decided — the rule `activate` already follows.
+            yield* Effect.forEach(
+              existing,
+              (row) =>
+                row.id === id || row.active === false || CredentialDaemon.socket(decode(row.value))
+                  ? Effect.void
+                  : tx.update(CredentialTable).set({ active: false }).where(eq(CredentialTable.id, row.id)).run(),
+              { discard: true },
+            )
             return id
           }),
         )

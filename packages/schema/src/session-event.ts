@@ -5,6 +5,7 @@ import { optional } from "./schema"
 import { Event } from "./event"
 import { ProviderMetadata, ToolContent } from "./llm"
 import { Delivery } from "./session-delivery"
+import { Credential } from "./credential"
 import { Model } from "./model"
 import { AbsolutePath, DateTimeUtcFromMillis, NonNegativeInt, RelativePath } from "./schema"
 import { FileAttachment, Prompt } from "./prompt"
@@ -73,6 +74,17 @@ export const ModelSwitched = Event.define({
   },
 })
 export type ModelSwitched = typeof ModelSwitched.Type
+
+export const AccountSwitched = Event.define({
+  type: "session.next.account.switched",
+  ...options,
+  schema: {
+    ...Base,
+    messageID: SessionMessage.ID,
+    credentialID: Schema.NullOr(Credential.ID),
+  },
+})
+export type AccountSwitched = typeof AccountSwitched.Type
 
 export const Moved = Event.define({
   type: "session.next.moved",
@@ -678,6 +690,7 @@ export const DurableDefinitions = Event.inventory(
   Info.Updated,
   AgentSwitched,
   ModelSwitched,
+  AccountSwitched,
   Moved,
   Prompted,
   PromptAdmitted,
@@ -719,6 +732,7 @@ export const Definitions = Event.inventory(
   Info.Updated,
   AgentSwitched,
   ModelSwitched,
+  AccountSwitched,
   Moved,
   Prompted,
   PromptAdmitted,

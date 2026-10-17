@@ -28,6 +28,10 @@ const LocationInput = Schema.Struct({
   limit: ReadToolFileSystem.PageInput.fields.limit.annotate({
     description: "The maximum number of directory entries or text lines to read",
   }),
+  columns: ReadToolFileSystem.PageInput.fields.columns.annotate({
+    description:
+      'Character window inside each selected line, 1-based and inclusive. Use it to read the rest of a line the tool reported as truncated, for example {"from": 2001}.',
+  }),
   pages: Schema.String.pipe(Schema.optional).annotate({
     description: `PDF only: 1-based pages to read, such as "3", "1-5", or "1,3,7-9" (at most ${ReadToolPdf.MAX_PAGES}; default: the first ${ReadToolPdf.DEFAULT_PAGES})`,
   }),
@@ -109,14 +113,17 @@ const layer = Layer.effectDiscard(
                   return yield* new ReadToolPdf.PagesError({ reason: PAGES_PDF_ONLY })
                 if (type === "directory")
                   return yield* reader.list(absolute, { offset: input.offset, limit: input.limit })
-                const read = yield* reader.read(absolute, resource, { offset: input.offset, limit: input.limit }).pipe(
-                  Effect.map((content) => ({ content })),
-                  Effect.catchTag("ReadTool.PdfFileError", () => Effect.succeed({ pdf: true as const })),
-                )
+                const read = yield* reader
+                  .read(absolute, resource, { offset: input.offset, limit: input.limit, columns: input.columns })
+                  .pipe(
+                    Effect.map((content) => ({ content })),
+                    Effect.catchTag("ReadTool.PdfFileError", () => Effect.succeed({ pdf: true as const })),
+                  )
                 if ("pdf" in read) {
-                  if (input.offset !== undefined || input.limit !== undefined)
+                  if (input.offset !== undefined || input.limit !== undefined || input.columns !== undefined)
                     return yield* new ReadToolPdf.PagesError({
-                      reason: "offset and limit do not apply to PDF files; select PDF pages with pages instead.",
+                      reason:
+                        "offset, limit, and columns do not apply to PDF files; select PDF pages with pages instead.",
                     })
                   const pages = yield* pdf.read(absolute, resource, { pages: input.pages })
                   const images = yield* Effect.forEach(pages.images, (page) =>

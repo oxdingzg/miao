@@ -131,6 +131,14 @@ export const createLLMEventPublisher = (events: EventV2.Interface, input: Input)
   // reasoning. Reasoning is live-only, so a retry after a drop that streamed
   // only reasoning replays nothing the user already saw as an answer.
   let visibleOutput = false
+  // Answer text alone gates a replay: a streamed answer is content the user has
+  // already seen, while a prepared (not yet called) tool input is scaffolding the
+  // runner can discard and restate.
+  let answerText = false
+  // Call ids whose prepared input the runner discarded to replay an attempt. A
+  // replayed call may reuse one, and that is not the duplicate-start defect the
+  // fresh-attempt guard exists to catch.
+  const abandoned = new Set<string>()
   let stepSettlement:
     | { readonly finish: string; readonly cost: number; readonly tokens: ReturnType<typeof tokens> }
     | undefined
@@ -238,7 +246,11 @@ export const createLLMEventPublisher = (events: EventV2.Interface, input: Input)
       replayed.add(event.id)
       return yield* Effect.logWarning("ignoring replayed tool call", { callID: event.id, tool: event.name })
     }
-    if (existing) return yield* Effect.die(`Duplicate tool input start: ${event.id}`)
+    if (existing) {
+      if (!abandoned.has(event.id)) return yield* Effect.die(`Duplicate tool input start: ${event.id}`)
+      abandoned.delete(event.id)
+      tools.delete(event.id)
+    }
     const assistantMessageID = yield* startAssistant()
     tools.set(event.id, {
       assistantMessageID,
@@ -323,6 +335,19 @@ export const createLLMEventPublisher = (events: EventV2.Interface, input: Input)
     }
   })
 
+  /**
+   * Closes the prepared calls of an attempt the runner is about to replay. Each
+   * becomes a durable failure, so history never keeps a call that was neither
+   * executed nor closed, and its id may start again in the replay.
+   */
+  const discardPreparedTools = Effect.fn("SessionRunner.discardPreparedTools")(function* (message: string) {
+    for (const [callID, tool] of tools) {
+      if (tool.called || tool.settled) continue
+      abandoned.add(callID)
+      yield* failTool(callID, message)
+    }
+  })
+
   const assistantMessageIDForTool = (callID: string) => {
     const tool = tools.get(callID)
     return tool ? Effect.succeed(tool.assistantMessageID) : Effect.die(`Unknown tool call: ${callID}`)
@@ -355,6 +380,7 @@ export const createLLMEventPublisher = (events: EventV2.Interface, input: Input)
         return
       case "text-start":
         visibleOutput = true
+        answerText = true
         yield* text.start(event.id)
         yield* events.publish(SessionEvent.Text.Started, {
           sessionID: input.sessionID,
@@ -365,6 +391,7 @@ export const createLLMEventPublisher = (events: EventV2.Interface, input: Input)
         return
       case "text-delta":
         visibleOutput = true
+        answerText = true
         yield* text.append(event.id, event.text)
         yield* events.publish(SessionEvent.Text.Delta, {
           sessionID: input.sessionID,
@@ -549,6 +576,9 @@ export const createLLMEventPublisher = (events: EventV2.Interface, input: Input)
     failPreparedTools,
     hasActiveAssistant: () => assistantActive,
     hasVisibleOutput: () => visibleOutput,
+    hasAnswerText: () => answerText,
+    hasDispatchedToolCall: () => [...tools.values()].some((tool) => tool.called),
+    discardPreparedTools,
     discardInFlight,
     hasToolCalls: () => tools.size > 0,
     toolCalled: (callID: string) => tools.get(callID)?.called === true,

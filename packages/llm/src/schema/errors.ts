@@ -159,6 +159,9 @@ export class InvalidProviderOutputReason extends Schema.Class<InvalidProviderOut
       name: Schema.String,
       characters: Schema.Number,
       canCorrect: Schema.Boolean,
+      // Which argument budget gave up: `bytes` is deterministic for the same
+      // input, `idle` reports a stream that stopped making progress.
+      budget: Schema.optional(Schema.Literals(["bytes", "idle"])),
     }),
   ),
   raw: Schema.optional(Schema.String),

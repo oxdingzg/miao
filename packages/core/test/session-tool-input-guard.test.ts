@@ -67,6 +67,11 @@ describe("SessionToolInputGuard", () => {
       const error = yield* SessionToolInputGuard.wrap(stream, { timeoutMs: 20 }).pipe(Stream.runDrain, Effect.flip)
       expect(error.reason.message).toContain("idle limit 20ms")
       expect(error.retryable).toBe(false)
+      // The runner needs to tell an idle trip from the byte budget it must not replay.
+      const reason = error.reason
+      expect(reason._tag).toBe("InvalidProviderOutput")
+      if (reason._tag === "InvalidProviderOutput")
+        expect(reason.toolInput).toMatchObject({ callID: "call", budget: "idle" })
     }),
   )
 

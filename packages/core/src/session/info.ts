@@ -1,5 +1,6 @@
 import { DateTime } from "effect"
 import { AgentV2 } from "../agent"
+import { Credential } from "../credential"
 import { Location } from "../location"
 import { ModelV2 } from "../model"
 import { ProjectV2 } from "../project"
@@ -25,6 +26,7 @@ export function fromRow(row: typeof SessionTable.$inferSelect): SessionSchema.In
           variant: ModelV2.VariantID.make(row.model.variant ?? "default"),
         }
       : undefined,
+    credentialID: row.credential_id ? Credential.ID.make(row.credential_id) : undefined,
     cost: row.cost,
     tokens: {
       input: row.tokens_input,
