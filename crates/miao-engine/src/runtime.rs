@@ -2669,7 +2669,7 @@ async fn start_monitor(
             }
         };
         let stdout = child.stdout.take().expect("monitor stdout piped");
-        let mut reader = BufReader::new(stdout).lines();
+        let mut reader = tokio::io::BufReader::new(stdout).lines();
         let mut batcher = crate::monitor::Batcher::default();
         let mut window = tokio::time::interval(tokio::time::Duration::from_millis(
             crate::monitor::BATCH_WINDOW_MS,
