@@ -134,7 +134,14 @@ async fn monitor_streams_pattern_matched_notices_and_cancel_stops_it() {
         }
         assert!(
             tokio::time::Instant::now() < deadline,
-            "monitor job never settled after cancel"
+            "monitor job never settled after cancel: {jobs:?} events={:?}",
+            store
+                .events("s", 0, 200)
+                .await
+                .unwrap()
+                .iter()
+                .map(|event| (event.kind.clone(), event.data.clone()))
+                .collect::<Vec<_>>(),
         );
         tokio::time::sleep(std::time::Duration::from_millis(10)).await;
     }
