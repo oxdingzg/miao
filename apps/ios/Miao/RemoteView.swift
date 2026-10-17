@@ -164,44 +164,11 @@ struct RemoteView: View {
 
     @ViewBuilder private func sidebarContent(_ client: HostClient) -> some View {
         List {
-            Section {
-                HStack {
-                    Text(client.record.host.label).font(.headline)
-                    Spacer()
-                    Button { withAnimation(.easeInOut(duration: 0.25)) { sidebarVisible = false } } label: {
-                        Image(systemName: "xmark")
-                    }.accessibilityLabel("关闭侧栏").buttonStyle(.plain)
-                }
-                Label(client.connectionDescription, systemImage: client.ready ? "checkmark.circle.fill" : "network")
-                    .font(.footnote).foregroundStyle(client.ready ? .green : .secondary)
-                if let error = client.error { Text(error).font(.footnote).foregroundStyle(.red) }
-            }
-            ForEach(client.lists.keys.sorted(), id: \.self) { project in
-                Section(projectName(project)) {
-                    ForEach(client.lists[project] ?? []) { session in
-                        Button {
-                            sessionID = session.id
-                            withAnimation(.easeInOut(duration: 0.25)) { sidebarVisible = false }
-                        } label: {
-                            HStack(spacing: 10) {
-                                Image(systemName: "bubble.left.and.text.bubble.right")
-                                    .foregroundStyle(sessionID == session.id ? .tint : .secondary)
-                                Text(session.title)
-                                    .font(sessionID == session.id ? .body.weight(.semibold) : .body)
-                                    .lineLimit(2)
-                                Spacer(minLength: 4)
-                                if sessionID == session.id { Image(systemName: "checkmark").font(.caption.weight(.semibold)).foregroundStyle(.tint) }
-                            }.contentShape(Rectangle())
-                        }.buttonStyle(.plain)
-                    }
-                    if client.next[project] != nil {
-                        Button("更多会话") { Task { await client.refreshLists(more: project) } }.disabled(!client.ready)
-                    }
-                }
-            }
-            if !client.operations.filter({ [.prepared, .awaitingConfirmation, .outcomeUnknown].contains($0.status) }).isEmpty {
+            Section { sidebarHeader(client) }
+            sessionSections(client)
+            if !pendingOperations(client).isEmpty {
                 Section("待核对操作") {
-                    ForEach(client.operations.filter { [.prepared, .awaitingConfirmation, .outcomeUnknown].contains($0.status) }) { operation in
+                    ForEach(pendingOperations(client)) { operation in
                         VStack(alignment: .leading) {
                             Text(operation.kind.rawValue)
                             Text("结果尚未确认；不会自动重新发送").font(.caption).foregroundStyle(.secondary)
@@ -210,28 +177,79 @@ struct RemoteView: View {
                     Button("核对操作结果") { Task { await client.reconcileOperations() } }.disabled(!client.ready)
                 }
             }
-            Section {
-                if client.record.grant.permissions.contains(.sessionCreate) {
-                    Button { creating = true } label: {
-                        Label("新会话", systemImage: "plus").frame(maxWidth: .infinity, alignment: .leading)
-                    }.disabled(!client.ready)
+            Section { sidebarActions(client) }
+        }
+        .listStyle(.insetGrouped)
+    }
+
+    @ViewBuilder private func sidebarHeader(_ client: HostClient) -> some View {
+        HStack {
+            Text(client.record.host.label).font(.headline)
+            Spacer()
+            Button { withAnimation(.easeInOut(duration: 0.25)) { sidebarVisible = false } } label: {
+                Image(systemName: "xmark")
+            }.accessibilityLabel("关闭侧栏").buttonStyle(.plain)
+        }
+        Label(client.connectionDescription, systemImage: client.ready ? "checkmark.circle.fill" : "network")
+            .font(.footnote).foregroundStyle(client.ready ? .green : .secondary)
+        if let error = client.error { Text(error).font(.footnote).foregroundStyle(.red) }
+    }
+
+    @ViewBuilder private func sessionSections(_ client: HostClient) -> some View {
+        ForEach(client.lists.keys.sorted(), id: \.self) { project in
+            Section(projectName(project)) {
+                ForEach(client.lists[project] ?? []) { session in
+                    Button {
+                        select(session)
+                    } label: {
+                        HStack(spacing: 10) {
+                            Image(systemName: "bubble.left.and.text.bubble.right")
+                                .foregroundStyle(sessionID == session.id ? .tint : .secondary)
+                            Text(session.title)
+                                .font(sessionID == session.id ? .body.weight(.semibold) : .body)
+                                .lineLimit(2)
+                            Spacer(minLength: 4)
+                            if sessionID == session.id {
+                                Image(systemName: "checkmark").font(.caption.weight(.semibold)).foregroundStyle(.tint)
+                            }
+                        }.contentShape(Rectangle())
+                    }.buttonStyle(.plain)
                 }
-                Button { Task { await client.refreshLists() } } label: {
-                    Label("刷新会话", systemImage: "arrow.clockwise").frame(maxWidth: .infinity, alignment: .leading)
-                }.disabled(!client.ready)
-                Button { accountPresented = true } label: {
-                    Label(model.accountSignedIn ? "中继账号" : "登录中继", systemImage: "person.crop.circle")
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                }.accessibilityIdentifier("hubAccount")
-                Button { pairing = true } label: {
-                    Label("连接电脑", systemImage: "qrcode.viewfinder").frame(maxWidth: .infinity, alignment: .leading)
-                }
-                Button(role: .destructive) { forgetConfirmation = true } label: {
-                    Label("从这台设备移除", systemImage: "trash").frame(maxWidth: .infinity, alignment: .leading)
+                if client.next[project] != nil {
+                    Button("更多会话") { Task { await client.refreshLists(more: project) } }.disabled(!client.ready)
                 }
             }
         }
-        .listStyle(.insetGrouped)
+    }
+
+    @ViewBuilder private func sidebarActions(_ client: HostClient) -> some View {
+        if client.record.grant.permissions.contains(.sessionCreate) {
+            Button { creating = true } label: {
+                Label("新会话", systemImage: "plus").frame(maxWidth: .infinity, alignment: .leading)
+            }.disabled(!client.ready)
+        }
+        Button { Task { await client.refreshLists() } } label: {
+            Label("刷新会话", systemImage: "arrow.clockwise").frame(maxWidth: .infinity, alignment: .leading)
+        }.disabled(!client.ready)
+        Button { accountPresented = true } label: {
+            Label(model.accountSignedIn ? "中继账号" : "登录中继", systemImage: "person.crop.circle")
+                .frame(maxWidth: .infinity, alignment: .leading)
+        }.accessibilityIdentifier("hubAccount")
+        Button { pairing = true } label: {
+            Label("连接电脑", systemImage: "qrcode.viewfinder").frame(maxWidth: .infinity, alignment: .leading)
+        }
+        Button(role: .destructive) { forgetConfirmation = true } label: {
+            Label("从这台设备移除", systemImage: "trash").frame(maxWidth: .infinity, alignment: .leading)
+        }
+    }
+
+    private func pendingOperations(_ client: HostClient) -> [PendingOperation] {
+        client.operations.filter { [.prepared, .awaitingConfirmation, .outcomeUnknown].contains($0.status) }
+    }
+
+    private func select(_ session: SessionSummary) {
+        sessionID = session.id
+        withAnimation(.easeInOut(duration: 0.25)) { sidebarVisible = false }
     }
 
     private var emptySidebar: some View {
