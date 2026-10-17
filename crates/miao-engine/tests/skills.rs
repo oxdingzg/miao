@@ -108,7 +108,7 @@ async fn invalid_skill_directories_are_rejected() {
         .await
         .unwrap()
         .with_skill_directories(vec![SkillDirectory {
-            path: "/absolute".into(),
+            path: dir.path().to_string_lossy().into_owned(),
         }]);
     assert!(
         absolute.is_ok(),

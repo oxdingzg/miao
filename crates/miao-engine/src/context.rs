@@ -178,7 +178,7 @@ async fn discover_skills(
             if skills.len() >= 64 {
                 break;
             }
-            let path = file.to_string_lossy().replace('\\', "/");
+            let path = file.to_string_lossy().into_owned();
             let prepared = match tools.prepare("read_file", json!({"path":path})).await {
                 Ok(prepared) => prepared,
                 Err(ToolError::Io(error)) if error.kind() == std::io::ErrorKind::NotFound => {
@@ -223,11 +223,11 @@ async fn discover_skills(
             if name.is_empty() || name.len() > 64 || description.len() > 512 {
                 continue;
             }
+            // Keep Windows absolute/verbatim prefixes intact for later read_file calls.
             let path = file
                 .strip_prefix(root)
-                .unwrap_or(&file)
-                .to_string_lossy()
-                .replace('\\', "/");
+                .map(|path| path.to_string_lossy().replace('\\', "/"))
+                .unwrap_or_else(|_| file.to_string_lossy().into_owned());
             skills.push(Skill {
                 name,
                 description,
