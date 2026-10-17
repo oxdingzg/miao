@@ -1,4 +1,6 @@
+import { LocationServiceMap } from "@miao/core/location-service-map"
 import { SessionModelRoute } from "@miao/schema/session-model-route"
+import { AmbientContext } from "./ambient-context"
 import os from "node:os"
 import path from "node:path"
 import { Config } from "@miao/core/config"
@@ -115,6 +117,7 @@ export const nativeEngineOptions = (
     contextConfigFile: environment.MIAO_ENGINE_CONTEXT_CONFIG ?? merged.contextConfigFile,
     skillsConfigFile: environment.MIAO_ENGINE_SKILLS_CONFIG ?? merged.skillsConfigFile,
     referencesConfigFile: environment.MIAO_ENGINE_REFERENCES_CONFIG ?? merged.referencesConfigFile,
+    workspaceInstructions: merged.workspaceInstructions,
     modelRoutesConfigFile: environment.MIAO_ENGINE_MODEL_ROUTES_CONFIG ?? merged.modelRoutesConfigFile,
     contextLimits: merged.contextLimits,
   }
@@ -179,11 +182,12 @@ type Owners = Effect.Success<ReturnType<typeof makeEngineOwners>>
  * from the layer so tests exercise the exact code the server runs.
  */
 export const fromOwners = (owners: Owners): NativeEngine.Interface => {
-  const connect = (input: { storage: string; location: Location.Ref }) =>
+  const connect = (input: { storage: string; location: Location.Ref; refreshContext?: boolean }) =>
     owners.get({
       storage: input.storage,
       engineID: input.storage,
       location: input.location,
+      refreshContext: input.refreshContext,
     })
   const read = <T>(
     input: { storage: string; location: Location.Ref; sessionID?: string },
@@ -255,7 +259,7 @@ export const fromOwners = (owners: Owners): NativeEngine.Interface => {
         connection.client.request("initialize", { session_id: input.sessionID, title: input.title }),
       ).pipe(Effect.asVoid),
     admit: (input) =>
-      connect(input).pipe(
+      connect({ ...input, refreshContext: true }).pipe(
         Effect.flatMap((connection) =>
           Effect.tryPromise({
             try: () =>
@@ -460,6 +464,7 @@ const layer = Layer.effect(
   NativeEngine.Service,
   Effect.gen(function* () {
     const global = yield* Global.Service
+    const locations = yield* LocationServiceMap.Service
     const settings = yield* Effect.promise(() => engineSettings(global.config))
     const configuration = nativeEngineOptions(process.env, settings)
     if (!configuration) return yield* Effect.die("NativeEngine layer built without MIAO_ENGINE_BIN")
@@ -474,11 +479,24 @@ const layer = Layer.effect(
       configuration.workerConfigFile = workerConfigFile
       console.log("[worker-host] config written:", workerConfigFile)
     }
-    const owners = yield* makeEngineOwners(configuration)
+    const owners = yield* makeEngineOwners(configuration, (location) =>
+      AmbientContext.prepare(location, configuration).pipe(
+        Effect.provide(locations.get(location)),
+        Effect.mapError((error) =>
+          error instanceof EngineError
+            ? error
+            : new EngineError("engine_context_unavailable", "could not prepare product Context for native Location"),
+        ),
+      ),
+    )
     return fromOwners(owners)
   }),
 )
 
-export const node = makeGlobalNode({ service: NativeEngine.Service, layer, deps: [ClientEvents.node, Global.node] })
+export const node = makeGlobalNode({
+  service: NativeEngine.Service,
+  layer,
+  deps: [ClientEvents.node, Global.node, LocationServiceMap.node],
+})
 
 export * as NativeEngineNode from "./native-engine"

@@ -30,6 +30,8 @@ const REMOTE_RETRY_MS = 60 * 1000
 const REMOTE_TIMEOUT = "5 seconds"
 
 export interface Interface {
+  /** Resolved ambient instructions, including configured remote sources. */
+  readonly ambient: () => Effect.Effect<ReadonlyArray<File> | SystemContext.Unavailable>
   /**
    * Returns instruction files between `path` and the Location directory that
    * ambient context does not already carry and that this Session has not been
@@ -213,7 +215,11 @@ const layer = Layer.effect(
       return files.filter((file): file is File => file !== undefined)
     }, Effect.catch(() => Effect.succeed([] as File[])))
 
-    return Service.of({ nearby })
+    return Service.of({
+      ambient: () =>
+        observe().pipe(Effect.catch(() => Effect.succeed<SystemContext.Unavailable>(SystemContext.unavailable))),
+      nearby,
+    })
   }),
 )
 

@@ -136,6 +136,7 @@ pub struct Tools {
     worker: Option<Arc<crate::worker::Registry>>,
     lsp: Option<Arc<crate::lsp::Registry>>,
     context_sources: Arc<Vec<crate::context::Source>>,
+    workspace_instructions: bool,
     skill_directories: Arc<Vec<crate::context::SkillDirectory>>,
     references: Arc<Vec<crate::context::Reference>>,
     read_roots: Arc<Vec<std::path::PathBuf>>,
@@ -179,6 +180,7 @@ impl Tools {
             worker: None,
             lsp: None,
             context_sources: Arc::new(vec![]),
+            workspace_instructions: true,
             skill_directories: Arc::new(vec![]),
             references: Arc::new(vec![]),
             read_roots: Arc::new(vec![]),
@@ -226,6 +228,15 @@ impl Tools {
         self.process_enabled = enabled && self.runner.is_some() && process::enforced();
         self.process_network = network;
         self
+    }
+    /// A product host can supply its resolved aggregate without standalone
+    /// discovery reintroducing disabled sources or duplicating instructions.
+    pub fn with_workspace_instructions(mut self, enabled: bool) -> Self {
+        self.workspace_instructions = enabled;
+        self
+    }
+    pub(crate) fn workspace_instructions(&self) -> bool {
+        self.workspace_instructions
     }
     pub fn with_context_sources(
         mut self,
