@@ -264,3 +264,73 @@ async fn process_enabled_runtime_cannot_put_authority_database_in_command_worksp
         Err(Error::Invalid(_))
     ));
 }
+
+#[tokio::test]
+async fn run_command_emits_started_and_progress_events() {
+    let dir = tempfile::tempdir().unwrap();
+    let workspace = dir.path().join("workspace");
+    std::fs::create_dir_all(&workspace).unwrap();
+    let store = Store::open(dir.path().join("engine.db")).await.unwrap();
+    let tools = Tools::new(&workspace)
+        .await
+        .unwrap()
+        .with_process_runner(env!("CARGO_BIN_EXE_miao-engine").into());
+    let runtime = Runtime::with_policy(
+        store.clone(),
+        Arc::new(Executor {
+            input: json!({"argv":["/bin/sh","-c","echo first; sleep 0.3; echo second"],"timeout_ms":10000}),
+        }),
+        tools,
+        policy(false),
+    )
+    .await
+    .unwrap();
+    let mut progress = runtime.progress();
+    runtime
+        .admit(
+            Input {
+                session_id: "s".into(),
+                input_id: "one".into(),
+                prompt: "execute".into(),
+                delivery: Delivery::Steer,
+            },
+            true,
+        )
+        .await
+        .unwrap();
+    let mut started = false;
+    let mut first = false;
+    let mut second = false;
+    let deadline = tokio::time::Instant::now() + std::time::Duration::from_secs(10);
+    while tokio::time::Instant::now() < deadline {
+        if store
+            .events("s", 0, 100)
+            .await
+            .unwrap()
+            .iter()
+            .any(|event| event.kind == "run.finished")
+        {
+            break;
+        }
+        if let Ok(Ok(event)) =
+            tokio::time::timeout(std::time::Duration::from_millis(50), progress.recv()).await
+        {
+            match event["kind"].as_str() {
+                Some("tool.started") if event["tool"] == "run_command" => started = true,
+                Some("tool.progress") => {
+                    assert_eq!(event["output"]["stream"], "stdout");
+                    let text = event["output"]["text"].as_str().unwrap_or_default();
+                    first |= text.contains("first");
+                    second |= text.contains("second");
+                }
+                _ => {}
+            }
+        }
+    }
+    assert!(started, "tool.started event missing");
+    assert!(
+        first && second,
+        "progress chunks missing: first={first} second={second}"
+    );
+    runtime.shutdown().await;
+}

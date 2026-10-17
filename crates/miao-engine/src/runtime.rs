@@ -1180,6 +1180,11 @@ async fn execute(
                                 {
                                     (Ok(output), Some(is_error))
                                 } else {
+                                    let _ = inner.progress.send(json!({
+                                        "session_id": session, "run_id": run, "step": step,
+                                        "kind": "tool.started", "tool": name,
+                                        "resource": prepared.resource(),
+                                    }));
                                     (                                match name {
                                 "cron_create" => {
                                     start_cron(inner, session, run, id, &prepared).await?
@@ -1290,12 +1295,32 @@ async fn execute(
                                     }
                                 }
                                 _ => {
+                                    let progress =
+                                        if prepared.access() == crate::permission::Access::Execute {
+                                            let (tx, mut rx) = mpsc::channel::<Value>(16);
+                                            let sink = inner.progress.clone();
+                                            let session = session.to_owned();
+                                            let run = run.to_owned();
+                                            tokio::spawn(async move {
+                                                while let Some(chunk) = rx.recv().await {
+                                                    let _ = sink.send(json!({
+                                                        "session_id": session, "run_id": run,
+                                                        "step": step, "kind": "tool.progress",
+                                                        "output": chunk,
+                                                    }));
+                                                }
+                                            });
+                                            Some(tx)
+                                        } else {
+                                            None
+                                        };
                                     inner
                                         .tools
-                                        .execute_prepared(
+                                        .execute_prepared_with_progress(
                                             prepared,
                                             &inner.policy,
                                             cancel.child_token(),
+                                            progress,
                                         )
                                         .await
                                 }

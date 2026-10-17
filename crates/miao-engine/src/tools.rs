@@ -1148,6 +1148,17 @@ impl Tools {
         policy: &Policy,
         cancel: CancellationToken,
     ) -> Result<Value, ToolError> {
+        self.execute_prepared_with_progress(prepared, policy, cancel, None)
+            .await
+    }
+
+    pub(crate) async fn execute_prepared_with_progress(
+        &self,
+        prepared: Prepared,
+        policy: &Policy,
+        cancel: CancellationToken,
+        progress: Option<process::Progress>,
+    ) -> Result<Value, ToolError> {
         if prepared.name() == "knowledge" && prepared.access() == Access::Read {
             return self.execute_knowledge(prepared, policy, "", cancel).await;
         }
@@ -1217,13 +1228,14 @@ impl Tools {
             } else {
                 process::Input::parse(prepared.input)?
             };
-            return process::execute(
+            return process::execute_with_progress(
                 runner,
                 &self.root,
                 &prepared.path,
                 input,
                 self.process_network,
                 cancel,
+                progress,
             )
             .await;
         }
