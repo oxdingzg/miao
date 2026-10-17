@@ -475,8 +475,20 @@ Shared product remote servers with `oauth: false` are materialized into this
 manifest; explicit OAuth settings and implicit OAuth discovery are refused until
 the native OAuth route is available. The temporary manifest is mode 0600.
 
-Dynamic catalog notifications, resources/prompts, MCP OAuth, and TS plugin
-compatibility are not implemented today.
+Servers advertising resources expose `mcp_<server>_resources_list`,
+`mcp_<server>_resource_templates_list` and `mcp_<server>_resource_read`. Servers
+advertising prompts expose `mcp_<server>_prompts_list` and
+`mcp_<server>_prompt_get`. Catalog operations accept an optional `cursor`; reads
+accept `uri`, and prompt retrieval accepts `name` plus optional string
+`arguments`. Resource/prompt-only servers need not implement `tools/list`.
+All operations require normal external-tool authority, validate input before
+wire dispatch and enforce the same 64 KiB result budget. Prompt messages and
+resource contents remain untrusted tool data: retrieval neither executes the
+prompt nor changes system instructions. Cancellation and input/task continuation
+do not trigger automatic replays.
+
+Dynamic catalog notifications, MCP OAuth, and TS plugin compatibility are not
+implemented today.
 
 ## Explicit workspace Context Sources
 
