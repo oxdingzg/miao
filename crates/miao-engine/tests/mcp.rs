@@ -511,3 +511,198 @@ for line in sys.stdin:
         Some(libc::ESRCH)
     );
 }
+
+#[tokio::test]
+async fn list_changed_notification_refreshes_catalog_without_reconnect() {
+    let (client, server) = tokio::io::duplex(131072);
+    let (read, mut write) = tokio::io::split(server);
+    let generation = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+    let counter = generation.clone();
+    let task = tokio::spawn(async move {
+        let mut lines = BufReader::new(read).lines();
+        while let Some(line) = lines.next_line().await.unwrap() {
+            let request: Value = serde_json::from_str(&line).unwrap();
+            let Some(id) = request.get("id") else {
+                continue;
+            };
+            let generation = counter.clone();
+            let result = match request["method"].as_str().unwrap() {
+                "initialize" => {
+                    json!({"protocolVersion":request["params"]["protocolVersion"],"capabilities":{"tools":{}},"serverInfo":{"name":"dynamic","version":"1"}})
+                }
+                "tools/list" => {
+                    let current = generation.load(Ordering::SeqCst);
+                    let mut tools = vec![
+                        json!({"name":"flip","description":"advance catalog","inputSchema":{"type":"object","properties":{},"additionalProperties":false}}),
+                    ];
+                    if current == 1 {
+                        tools.push(json!({"name":"second","description":"added in generation one","inputSchema":{"type":"object","properties":{},"additionalProperties":false}}));
+                    }
+                    json!({"tools":tools})
+                }
+                "tools/call" => {
+                    if request["params"]["name"] == "flip" {
+                        generation.fetch_add(1, Ordering::SeqCst);
+                        write
+                            .write_all(
+                                format!(
+                                    "{}\n",
+                                    json!({"jsonrpc":"2.0","method":"notifications/tools/list_changed"})
+                                )
+                                .as_bytes(),
+                            )
+                            .await
+                            .unwrap();
+                    }
+                    json!({"content":[{"type":"text","text":"flipped"}]})
+                }
+                other => panic!("unexpected MCP method {other}"),
+            };
+            write
+                .write_all(
+                    format!("{}\n", json!({"jsonrpc":"2.0","id":id,"result":result})).as_bytes(),
+                )
+                .await
+                .unwrap();
+        }
+    });
+    let (read, write) = tokio::io::split(client);
+    let registry = Arc::new(
+        Registry::connect_io("dynamic".into(), read, write)
+            .await
+            .unwrap(),
+    );
+    registry.start_watchers();
+    assert_eq!(registry.definitions().len(), 1);
+    let flip = registry.definitions()[0].name.clone();
+    registry
+        .call(&flip, json!({}), CancellationToken::new())
+        .await
+        .unwrap();
+    let deadline = tokio::time::Instant::now() + std::time::Duration::from_secs(5);
+    while registry.definitions().len() < 2 && tokio::time::Instant::now() < deadline {
+        tokio::time::sleep(std::time::Duration::from_millis(20)).await;
+    }
+    let definitions = registry.definitions();
+    assert_eq!(definitions.len(), 2, "{definitions:?}");
+    let second = definitions
+        .iter()
+        .find(|d| d.name.contains("second"))
+        .unwrap()
+        .name
+        .clone();
+    let result = registry
+        .call(&second, json!({}), CancellationToken::new())
+        .await
+        .unwrap();
+    assert_eq!(result["content"][0]["text"], "flipped");
+    registry
+        .call(&flip, json!({}), CancellationToken::new())
+        .await
+        .unwrap();
+    let deadline = tokio::time::Instant::now() + std::time::Duration::from_secs(5);
+    while registry.definitions().len() > 1 && tokio::time::Instant::now() < deadline {
+        tokio::time::sleep(std::time::Duration::from_millis(20)).await;
+    }
+    assert_eq!(registry.definitions().len(), 1);
+    assert!(matches!(
+        registry
+            .call(&second, json!({}), CancellationToken::new())
+            .await,
+        Err(ToolError::Unsupported)
+    ));
+    registry.shutdown().await;
+    task.abort();
+}
+
+#[tokio::test]
+async fn failed_refresh_keeps_previous_catalog_until_next_change() {
+    let (client, server) = tokio::io::duplex(131072);
+    let (read, mut write) = tokio::io::split(server);
+    let generation = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+    let counter = generation.clone();
+    let task = tokio::spawn(async move {
+        let mut lines = BufReader::new(read).lines();
+        while let Some(line) = lines.next_line().await.unwrap() {
+            let request: Value = serde_json::from_str(&line).unwrap();
+            let Some(id) = request.get("id") else {
+                continue;
+            };
+            let generation = counter.clone();
+            let outcome = match request["method"].as_str().unwrap() {
+                "initialize" => Ok(
+                    json!({"protocolVersion":request["params"]["protocolVersion"],"capabilities":{"tools":{}},"serverInfo":{"name":"dynamic","version":"1"}}),
+                ),
+                "tools/list" => {
+                    let current = generation.load(Ordering::SeqCst);
+                    if current == 1 {
+                        Err(json!({"code":-32000,"message":"catalog fixture failure"}))
+                    } else {
+                        let mut tools = vec![
+                            json!({"name":"flip","description":"advance catalog","inputSchema":{"type":"object","properties":{},"additionalProperties":false}}),
+                        ];
+                        if current >= 2 {
+                            tools.push(json!({"name":"second","description":"added later","inputSchema":{"type":"object","properties":{},"additionalProperties":false}}));
+                        }
+                        Ok(json!({"tools":tools}))
+                    }
+                }
+                "tools/call" => {
+                    if request["params"]["name"] == "flip" {
+                        generation.fetch_add(1, Ordering::SeqCst);
+                        write
+                            .write_all(
+                                format!(
+                                    "{}\n",
+                                    json!({"jsonrpc":"2.0","method":"notifications/tools/list_changed"})
+                                )
+                                .as_bytes(),
+                            )
+                            .await
+                            .unwrap();
+                    }
+                    Ok(json!({"content":[{"type":"text","text":"flipped"}]}))
+                }
+                other => panic!("unexpected MCP method {other}"),
+            };
+            let message = match outcome {
+                Ok(result) => json!({"jsonrpc":"2.0","id":id,"result":result}),
+                Err(error) => json!({"jsonrpc":"2.0","id":id,"error":error}),
+            };
+            write
+                .write_all(format!("{}\n", message).as_bytes())
+                .await
+                .unwrap();
+        }
+    });
+    let (read, write) = tokio::io::split(client);
+    let registry = Arc::new(
+        Registry::connect_io("dynamic".into(), read, write)
+            .await
+            .unwrap(),
+    );
+    registry.start_watchers();
+    assert_eq!(registry.definitions().len(), 1);
+    let flip = registry.definitions()[0].name.clone();
+    registry
+        .call(&flip, json!({}), CancellationToken::new())
+        .await
+        .unwrap();
+    tokio::time::sleep(std::time::Duration::from_millis(1200)).await;
+    assert_eq!(
+        registry.definitions().len(),
+        1,
+        "failed refresh must keep the catalog"
+    );
+    registry
+        .call(&flip, json!({}), CancellationToken::new())
+        .await
+        .unwrap();
+    let deadline = tokio::time::Instant::now() + std::time::Duration::from_secs(5);
+    while registry.definitions().len() < 2 && tokio::time::Instant::now() < deadline {
+        tokio::time::sleep(std::time::Duration::from_millis(20)).await;
+    }
+    assert_eq!(registry.definitions().len(), 2);
+    registry.shutdown().await;
+    task.abort();
+}

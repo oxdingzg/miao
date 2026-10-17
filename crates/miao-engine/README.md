@@ -524,8 +524,12 @@ resource contents remain untrusted tool data: retrieval neither executes the
 prompt nor changes system instructions. Cancellation and input/task continuation
 do not trigger automatic replays.
 
-Dynamic catalog notifications and TS plugin compatibility are not implemented
-today.
+Dynamic catalog notifications refresh in place: the engine subscribes to
+`notifications/tools/list_changed` (and the resource/prompt equivalents) per
+connected server, debounces them into a bounded re-list, and swaps the catalog
+under a lock so the next turn sees the new definitions without a reconnect.
+A failed refresh keeps the previous catalog until the next change. TS plugin
+compatibility is not implemented today.
 
 ## Host-authorized skill directories
 

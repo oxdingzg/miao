@@ -462,9 +462,9 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
         let registry =
             miao_engine::mcp::Registry::connect(configs, std::path::Path::new(tools.location()))
                 .await?;
-        tools = tools
-            .with_protected_resource(&path)
-            .with_mcp(Arc::new(registry));
+        let registry = Arc::new(registry);
+        registry.start_watchers();
+        tools = tools.with_protected_resource(&path).with_mcp(registry);
     }
     if let Some(path) = options.get("--lsp-config") {
         let path = tokio::fs::canonicalize(path).await?;

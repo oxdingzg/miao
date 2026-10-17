@@ -312,7 +312,10 @@ MCP server 是拥有自身 filesystem/network authority 的可信外部服务，
 
 这些操作全部经过 external-tool authority、发送前输入校验和 64 KiB 返回预算。返回的资源和提示词消息只是外部工具数据，不会自动执行，也不会替换 system instructions。取消和 input/task continuation 不会触发自动重放。
 
-动态 catalog notifications 和 TS plugin compatibility 仍未实现。
+动态 catalog notifications 已支持就地刷新：引擎对每个已连接 server 订阅
+`notifications/tools/list_changed`（含 resource/prompt 等价通知），防抖后有界
+重新拉取并在锁内替换目录，下一轮即可看到新定义而无需重连；刷新失败保留原
+目录直至下次变更。TS plugin compatibility 仍未实现。
 
 
 ## 宿主授权的 skill 目录
