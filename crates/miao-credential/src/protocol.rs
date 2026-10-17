@@ -25,6 +25,10 @@ pub enum Request {
         credential_id: String,
         integration: String,
     },
+    Release {
+        credential_id: String,
+        integration: String,
+    },
     LoginStart {
         #[serde(default = "default_integration")]
         integration: String,
