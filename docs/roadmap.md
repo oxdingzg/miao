@@ -1,8 +1,8 @@
 # miao Roadmap — Remaining Work
 
-Status snapshot: **2026-10-18**, main head a788a011e0. The native (Rust) engine
-build-out has landed — see §0. The published tag is still v0.1.4; the next release
-carries the entire native-engine stream.
+Status snapshot: **2026-10-18**, main head 54357739c0. The native (Rust) engine
+build-out has landed — see §0. Release v0.2.15 is the first to carry the entire
+native-engine stream (the latest prior published tag is v0.2.14).
 
 This is the single authoritative inventory of every open item in the V1→V2 rebuild. It replaces
 the earlier distributed trackers (the remaining-work checklist and handoff, the V2 todo list, the
@@ -50,8 +50,8 @@ all of the following natively:
 What the engine does **not** cover is the product layer: TS plugins,
 product-level tools (`send_message`/`list_sessions`/`push_notification`/
 `workflow`/plan tools), and auth-integration flows (Bedrock SigV4, Copilot
-device flow) — see the new §9 enablement gates. PR #1027 (draft) carries the
-reverse bridge for product tools.
+device flow) — see the §9 enablement gates. #1027 landed the product-tool
+reverse bridge.
 
 Sections below keep their original text; items this closes are annotated
 inline with `[RS: …]`.
@@ -111,18 +111,15 @@ inline with `[RS: …]`.
 1. **§9.1** Ship the engine binary by default: bundle with the release flow and
    auto-discover an installed `miao-engine`, so native sessions work without a
    manual `MIAO_ENGINE_BIN`.
-2. **§9.2** Product-tool reverse bridge: register product-level tools into
-   native sessions and reverse-dispatch execution to the server (#1027, draft
-   — the e2e harness needs event-visibility debugging before merge).
-3. **§9.3** Land the declarative provider manifest docs; declare
+2. **§9.3** Land the declarative provider manifest docs; declare
    Bedrock/Copilot unsupported natively (or gateway-only).
-4. **§6** Live acceptance: Gemini/Anthropic real accounts (blocked on
+3. **§6** Live acceptance: Gemini/Anthropic real accounts (blocked on
    credentials), released-binary upgrade path.
-5. **§1.2** App transcript retype onto V2 types (its own cutover, per the
+4. **§1.2** App transcript retype onto V2 types (its own cutover, per the
    staged note below).
-6. **§2.4** Crash-recovery idempotency on the RS primitives (tool replay +
+5. **§2.4** Crash-recovery idempotency on the RS primitives (tool replay +
    outcome-unknown).
-7. Then the remaining TS-side and operational items in section order (§1.3
+6. Then the remaining TS-side and operational items in section order (§1.3
    confirmation, §2.5 body caps, §2.7 CIMD ordering, §2.8 monitor sandboxing,
    §3 hot reload, §4 storage ops, §5 report, §7 docs, §8 push/APNs).
 
@@ -367,7 +364,7 @@ work.
 
 ### 2.11 SendMessage remainder
 **Entry:** `send_message` / `list_sessions` tools registered by the runner.
-[RS: product session tools are absent in native sessions pending §9.2.]
+[RS: product session tools reverse-dispatch to the host (#1027).]
 
 Progress: `send_message` resolves a Session ID or `@slug`, rejects missing and cross-project
 targets, refuses to overflow the target's inbound queue (`MAX_INBOUND_QUEUE`), admits a queued
@@ -615,6 +612,27 @@ open PRs and recent merges.
 - [ ] Design doc for unified session remote control (#64).
 
 ---
+
+## 9. Native-engine enablement gates
+
+Landing the engine was the build; these gates decide when native sessions are
+the default path.
+
+1. **Engine binary by default** — open. `NativeEngine.Placement` still requires
+   an explicit `MIAO_ENGINE_BIN`. The release already ships per-platform
+   `miao-engine` archives, so what remains is auto-discovering an installed
+   engine (and ultimately bundling it) so placement needs no environment
+   variable.
+2. **Product-tool reverse bridge** — landed (#1027). Native sessions register
+   host-supplied product tools and reverse-dispatch execution to the server
+   over the engine's stdio bridge; replies settle as durable tool results.
+3. **Declarative provider manifest docs** — open. Any base-url provider or
+   gateway is route-manifest configuration (#1026), but the supported surface
+   is undocumented; declare Bedrock SigV4 and the Copilot device flow as
+   product-side (TS or gateway-only) until the engine grows those credential
+   flows.
+4. **Live acceptance** — open, blocked on Gemini/Anthropic credentials: run
+   real daily sessions on a released binary with the engine placed by default.
 
 ## Working-tree drafts (not committed)
 
