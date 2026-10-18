@@ -119,37 +119,6 @@ export function DialogSelect<T>(props: DialogSelectProps<T>) {
 
   let input: InputRenderable
 
-  const actions = createMemo(() => props.actions ?? [])
-  const shownActions = createMemo(() => actions().filter((item) => !item.hidden))
-  const actionBindings = useKeymapSelector((keymap) =>
-    keymap.getCommandBindings({
-      visibility: "registered",
-      commands: shownActions().map((item) => item.command),
-    }),
-  )
-
-  const actionLabels = createMemo(() => {
-    const labels = new Map<string, string>()
-
-    for (const action of shownActions()) {
-      const label = formatKeyBindings(actionBindings().get(action.command), tuiConfig)
-      if (label) labels.set(action.command, label)
-    }
-
-    return labels
-  })
-  const visibleActions = createMemo(() => [
-    ...shownActions()
-      .map((item) => ({ ...item, label: actionLabels().get(item.command) ?? "" }))
-      .filter((item) => item.label),
-    ...(props.footerHints ?? []),
-  ])
-  const actionItems = createMemo(() =>
-    visibleActions()
-      .filter(isActionItem)
-      .filter((item) => !isActionDisabled(item)),
-  )
-
   createEffect(() => {
     const index = focusedAction()
     if (index !== undefined && index >= actionItems().length) setFocusedAction(undefined)
@@ -222,6 +191,45 @@ export function DialogSelect<T>(props: DialogSelectProps<T>) {
   )
 
   const selected = createMemo(() => flat()[store.selected])
+
+  // The footer action bars read the selected option: `actionItems` filters
+  // through `isActionDisabled`, whose function form is called with `selected()`.
+  // A memo computes eagerly at creation, so these must be created after
+  // `selected` — declared earlier, their first computation reads `selected` while
+  // it is still in its temporal dead zone ("Cannot access 'selected' before
+  // initialization.") whenever an action carries a function `disabled` and its
+  // command is already bound, as when the model dialog switches to the provider
+  // list.
+  const actions = createMemo(() => props.actions ?? [])
+  const shownActions = createMemo(() => actions().filter((item) => !item.hidden))
+  const actionBindings = useKeymapSelector((keymap) =>
+    keymap.getCommandBindings({
+      visibility: "registered",
+      commands: shownActions().map((item) => item.command),
+    }),
+  )
+
+  const actionLabels = createMemo(() => {
+    const labels = new Map<string, string>()
+
+    for (const action of shownActions()) {
+      const label = formatKeyBindings(actionBindings().get(action.command), tuiConfig)
+      if (label) labels.set(action.command, label)
+    }
+
+    return labels
+  })
+  const visibleActions = createMemo(() => [
+    ...shownActions()
+      .map((item) => ({ ...item, label: actionLabels().get(item.command) ?? "" }))
+      .filter((item) => item.label),
+    ...(props.footerHints ?? []),
+  ])
+  const actionItems = createMemo(() =>
+    visibleActions()
+      .filter(isActionItem)
+      .filter((item) => !isActionDisabled(item)),
+  )
 
   createEffect(
     on(
