@@ -22,6 +22,8 @@ struct Route {
     #[serde(default)]
     auth: Option<Auth>,
     #[serde(default)]
+    input_modalities: Vec<String>,
+    #[serde(default)]
     request: crate::request_options::Options,
     #[serde(default)]
     variants: Vec<Variant>,
@@ -168,12 +170,20 @@ pub async fn load(
             entry.prompt_cache,
             entry.auth.as_ref(),
         )?;
+        let provider = if entry.input_modalities.is_empty() {
+            provider
+        } else {
+            provider.with_input_modalities(entry.input_modalities.clone())?
+        };
         entry.request.validate()?;
         if entry.primary {
             if default_seen || primary.identity() != provider.identity() {
                 return Err("invalid default model route".into());
             }
             default_seen = true;
+            if !entry.input_modalities.is_empty() {
+                primary = primary.with_input_modalities(entry.input_modalities.clone())?;
+            }
         }
         let mut default_provider = if entry.request.is_empty() {
             Arc::clone(&provider)

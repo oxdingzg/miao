@@ -93,6 +93,7 @@ it.live("product routes bind active accounts without persisting secrets and keep
             draft.model.update(ProviderV2.ID.make("commandcode"), ModelV2.ID.make(`model-${i}`), (model) => {
               model.api.id = ModelV2.ID.make(`remote-${i}`)
               model.capabilities.tools = true
+              model.capabilities.input = ["text", "image", "pdf"]
               model.capabilities.output = ["text"]
               model.request.headers = { Authorization: "HEADER_SECRET", "User-Agent": "fixture" }
               model.request.body = { temperature: 0.1 }
@@ -149,6 +150,7 @@ it.live("product routes bind active accounts without persisting secrets and keep
         expect(routes).toHaveLength(103)
         expect(routes.find((route: { id: string }) => route.id === "commandcode/model-0")).toMatchObject({
           primary: true,
+          input_modalities: ["text", "image", "pdf"],
           default_variant: "high",
           request: { body: { temperature: 0.1 } },
           variants: [{ id: "high", body: { reasoning_effort: "high" }, headers: { "x-variant": "high" } }],

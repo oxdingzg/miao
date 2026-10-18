@@ -25,6 +25,7 @@ pub struct OpenAIChat {
     source: Source,
     model: String,
     request_options: crate::request_options::Options,
+    input_modalities: Vec<String>,
     auth_style: AuthStyle,
     query: Option<String>,
     extra_headers: std::collections::BTreeMap<String, String>,
@@ -86,6 +87,7 @@ impl OpenAIChat {
             source,
             model,
             request_options: Default::default(),
+            input_modalities: vec![],
             auth_style,
             query,
             extra_headers,
@@ -95,6 +97,15 @@ impl OpenAIChat {
 
 #[async_trait]
 impl Provider for OpenAIChat {
+    fn with_input_modalities(
+        &self,
+        input: Vec<String>,
+    ) -> Result<std::sync::Arc<dyn Provider>, ProviderError> {
+        crate::media::validate_modalities(&input)?;
+        let mut selected = self.clone();
+        selected.input_modalities = input;
+        Ok(std::sync::Arc::new(selected))
+    }
     fn with_request_options(
         &self,
         mut options: crate::request_options::Options,
@@ -158,6 +169,7 @@ impl OpenAIChat {
         cancel: CancellationToken,
         without_tools: bool,
     ) -> Result<Reply, ProviderError> {
+        let request = crate::media::normalize(request, "openai-chat", &self.input_modalities)?;
         let credential = self.source.load().await?;
         if credential.kind() != Kind::Key {
             return Err(ProviderError::AuthProfile);

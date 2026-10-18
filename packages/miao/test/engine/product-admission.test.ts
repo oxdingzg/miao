@@ -10,7 +10,7 @@ const binary = process.env.MIAO_ENGINE_BIN
 const real = binary ? test : test.skip
 
 real(
-  "product admission retains durable time and identity, reconciles exact retries, and refuses richer input before admission",
+  "product admission retains durable time and identity, reconciles exact retries, and refuses unsupported input before admission",
   async () => {
     await using tmp = await tmpdir()
     if (!binary) throw new Error("missing native binary")
@@ -26,7 +26,7 @@ real(
     const input = { sessionID: SessionID.descending("ses_product_admission"), prompt: { text: "text" }, resume: false }
     try {
       for (const prompt of [
-        { text: "files", files: [{ uri: "data:text/plain;base64,YQ==", mime: "text/plain" }] },
+        { text: "audio", files: [{ uri: "data:audio/wav;base64,YQ==", mime: "audio/wav" }] },
         { text: "agents", agents: [{ name: "selected" }] },
         { text: "command", command: { name: "custom", arguments: "", subtask: false } },
       ])

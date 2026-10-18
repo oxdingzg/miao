@@ -106,6 +106,7 @@ export const prepare = Effect.fn("Engine.productRoutes")(function* (
         ...transport,
         model: model.api.id,
         primary: model.providerID === defaultModel.providerID && model.id === defaultModel.id,
+        ...(model.capabilities.input.length ? { input_modalities: model.capabilities.input } : {}),
         ...(model.request.variant === undefined ? {} : { default_variant: model.request.variant }),
         request: { body: model.request.body },
         variants: model.variants.map((variant) => ({

@@ -208,21 +208,31 @@ Session is reported as `{accepted:false, reason:"unknown"}` rather than
 refused, so a half-finished removal can be retried by the caller.
 
 
-### Inline image admission
+### Inline attachment admission
 
-`admit.attachments` accepts up to eight PNG, JPEG, GIF or WebP images. Each
-attachment carries `mime`, base64 `data` (at most 8 MiB), and optional object
-`metadata` (at most 64 KiB). Metadata is presentation evidence, not provider
-instructions. It participates in exact-retry identity along with the bytes.
-An image-only input may use an empty `input.prompt`; an input with neither text
-nor attachments is rejected.
+`admit.attachments` accepts up to eight PNG/JPEG/GIF/WebP images, `application/pdf`
+documents and UTF-8 `text/*` files. Each carries `mime`, canonical base64 `data`
+(at most 8 MiB), and optional object `metadata` (at most 64 KiB). Empty text files
+may have empty data. PDFs must start with a PDF header; invalid UTF-8 text is
+rejected before admission. An attachment-only input may have an empty prompt.
 
-Promotion journals the attachments in `input.promoted` and commits their image
-parts in the same transaction. Presentation metadata survives replay and fork;
-provider adapters send the image bytes without forwarding that metadata.
-The product facade sends a metadata object, including when it is empty, so an
-older engine that lacks product attachment projection rejects the request
-instead of accepting an image that disappears from product history.
+Bytes and metadata form durable retry identity. Promotion/replay/fork retain
+image or file parts with the original bytes. Product projection reconstructs
+attachments, including their name, description, client path and source range.
+The product host snapshots bounded `blob://`, local `file:` and HTTP(S) references
+before admission, so replay does not need the original source URI.
+
+Host model-route manifests may declare `input_modalities` using the product's
+catalog values (for example `["text", "image", "pdf"]`). Empty/absent declarations
+remain unknown. Each adapter normalizes a request copy: text files become UTF-8
+text; unsupported images/PDFs become explicit text placeholders while durable
+history stays intact. PDFs use Anthropic document blocks, Responses input_file,
+and Gemini inline_data. Chat Completions uses the same PDF placeholder as the
+product protocol contract. Provider-native counting uses normalized media too.
+
+Product admissions always include a metadata object, even when empty. An older
+engine that cannot project these attachments rejects unsupported input rather
+than accepting it and losing product history.
 
 ### Idle Session initialization
 

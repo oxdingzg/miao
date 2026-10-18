@@ -984,3 +984,14 @@ round trips and transport continuations. External user admissions reset it;
 synthetic autonomous-continuation inputs do not. Exhaustion remains an explicit
 failed run and never silently replays tool calls. The policy revision records
 the configured budget.
+
+
+## Prompt attachments
+
+Native admission retains bounded images, PDFs and UTF-8 text files through replay
+and fork. The product host can snapshot managed blob, local file and HTTP(S)
+references before admission. Host-declared model `input_modalities` control media
+lowering per route: unsupported media becomes an explicit text placeholder in
+that provider request, while original attachment bytes remain in durable history.
+PDFs are carried directly by Anthropic, Responses and Gemini; Chat Completions
+uses the product's tool-reading placeholder. See [PROTOCOL.md](PROTOCOL.md#inline-attachment-admission).

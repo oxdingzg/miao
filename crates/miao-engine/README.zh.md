@@ -573,3 +573,13 @@ fail-closed 阻止派发，工具结果为 `blocked by tool_before hook (outcome
 Provider 报告还提供[辅助用量与覆盖范围](docs/auxiliary-usage.md)，包含主请求的完整/部分观察、角色尝试及子 Session 结果证据。
 
 配置的完成检查会记录[版本绑定的验证收据](docs/verification-receipts.md)，包含实际退出码/输出、任务版本与有明确边界的源码覆盖范围。
+
+
+## Prompt 附件
+
+原生 admission 会持久保存有界图片、PDF 和 UTF-8 文本文件，并在 replay/fork 中保留。
+产品 host 在 admission 前可将托管 blob、本地文件和 HTTP(S) 引用快照为 inline 字节。
+每条 route 的 host `input_modalities` 控制实际 provider 请求中的媒体归一化：不支持的媒体
+变成明确的文本占位，原始附件字节仍保存在 durable history 中。Anthropic、Responses 和
+Gemini 直接承载 PDF；Chat Completions 沿用产品契约中的工具读取占位。
+详见 [PROTOCOL.md](PROTOCOL.md#inline-attachment-admission)。

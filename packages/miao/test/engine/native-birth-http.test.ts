@@ -254,6 +254,14 @@ if (binary)
                 uri: pathToFileURL(imageFile).href,
                 name: "http-image.png",
               },
+              {
+                uri: "data:application/pdf;base64," + Buffer.from("%PDF-1.4\nfixture\n%%EOF\n").toString("base64"),
+                name: "manual.pdf",
+              },
+              {
+                uri: "data:text/plain;base64," + Buffer.from("native document text").toString("base64"),
+                name: "notes.txt",
+              },
             ],
           },
           resume: false,
@@ -261,8 +269,10 @@ if (binary)
       })
       expect(image.status).toBe(200)
       const admittedImage = await image.json()
-      expect(admittedImage.data.prompt.files).toHaveLength(1)
+      expect(admittedImage.data.prompt.files).toHaveLength(3)
       expect(admittedImage.data.prompt.files[0]).toMatchObject({ name: "http-image.png", mime: "image/png" })
+      expect(admittedImage.data.prompt.files[1]).toMatchObject({ name: "manual.pdf", mime: "application/pdf" })
+      expect(admittedImage.data.prompt.files[2]).toMatchObject({ name: "notes.txt", mime: "text/plain" })
     } finally {
       clearTimeout(timer)
       child.kill()

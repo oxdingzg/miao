@@ -28,6 +28,7 @@ pub struct OpenAIResponses {
     source: Source,
     model: String,
     request_options: crate::request_options::Options,
+    input_modalities: Vec<String>,
     cache_contract: Option<crate::responses_cache::Contract>,
     websocket_contract: Option<crate::responses_websocket::Contract>,
     websocket_pool: std::sync::Arc<crate::responses_websocket::Pool>,
@@ -56,6 +57,7 @@ impl OpenAIResponses {
             source,
             model,
             request_options: Default::default(),
+            input_modalities: vec![],
             profile,
             cache_contract: None,
             websocket_contract: None,
@@ -93,6 +95,15 @@ impl OpenAIResponses {
 }
 #[async_trait]
 impl Provider for OpenAIResponses {
+    fn with_input_modalities(
+        &self,
+        input: Vec<String>,
+    ) -> Result<std::sync::Arc<dyn Provider>, ProviderError> {
+        crate::media::validate_modalities(&input)?;
+        let mut selected = self.clone();
+        selected.input_modalities = input;
+        Ok(std::sync::Arc::new(selected))
+    }
     fn with_request_options(
         &self,
         options: crate::request_options::Options,
@@ -164,6 +175,7 @@ impl OpenAIResponses {
         cancel: CancellationToken,
         without_tools: bool,
     ) -> Result<Reply, ProviderError> {
+        let request = crate::media::normalize(request, "openai-responses", &self.input_modalities)?;
         let credential = self.source.load().await?;
         if !matches!(
             (self.profile, credential.kind()),
@@ -186,6 +198,7 @@ impl OpenAIResponses {
         let (cache_key, cache_prefix) = crate::cache_affinity::select(
             &body,
             &json!({
+                "input_modalities":self.input_modalities,
                 "endpoint":self.endpoint,"profile":match self.profile {Profile::Api=>"api",Profile::Subscription=>"subscription"},"account":credential.account(),
                 "generation":crate::permission::digest(credential.secret().as_bytes()),
                 "request_options":crate::permission::digest(&serde_json::to_vec(&self.request_options).map_err(|_| ProviderError::Transport)?),
@@ -281,6 +294,14 @@ fn items(history: &[Message], model: &str) -> Result<Vec<Value>, ProviderError> 
             match (message.role.as_str(), block["type"].as_str()) {
                 ("user" | "assistant", Some("text")) => {
                     items.push(json!({"role":message.role,"content":[{"type":if message.role=="user"{"input_text"}else{"output_text"},"text":block["text"].as_str().ok_or_else(invalid)?}]}));
+                }
+                ("user", Some("file")) => {
+                    let mime = block["mime"].as_str().ok_or_else(invalid)?;
+                    let data = block["data"].as_str().ok_or_else(invalid)?;
+                    let name = block["metadata"]["name"]
+                        .as_str()
+                        .unwrap_or("attachment.pdf");
+                    items.push(json!({"role":"user","content":[{"type":"input_file","filename":name,"file_data":format!("data:{mime};base64,{data}")}]}));
                 }
                 ("user", Some("image")) => {
                     let mime = block["mime"].as_str().ok_or_else(invalid)?;
