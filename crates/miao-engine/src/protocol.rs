@@ -25,6 +25,14 @@ pub enum CollaborationMode {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Input {
+    /// Trusted host-resolved names; never manifests supplied by a model tool.
+    #[serde(
+        default,
+        skip_serializing_if = "crate::session_agent::AgentReferences::is_empty"
+    )]
+    pub agent_references: crate::session_agent::AgentReferences,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub command: Option<Box<crate::session_command::Reference>>,
     pub session_id: String,
     pub input_id: String,
     pub prompt: String,

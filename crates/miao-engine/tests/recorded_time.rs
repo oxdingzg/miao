@@ -14,6 +14,8 @@ async fn commit_times_survive_replay_reopen_fork_and_export() {
     let before = now_ms();
     store
         .admit(Input {
+            agent_references: Default::default(),
+            command: None,
             session_id: "s".into(),
             input_id: "one".into(),
             prompt: "hello".into(),

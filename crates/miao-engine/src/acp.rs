@@ -248,6 +248,8 @@ async fn prompt(conn: &Arc<Conn>, id: Value, params: Value) {
         .and_then(|snapshot| snapshot["cursor"].as_u64())
         .unwrap_or(0);
     let input = Input {
+        agent_references: Default::default(),
+        command: None,
         session_id: session.clone(),
         input_id: format!("acp_{}", uuid::Uuid::new_v4().simple()),
         prompt: prompt_text(params.get("prompt")),

@@ -67,6 +67,8 @@ async fn run_usage_aggregates_provider_attempts() {
     runtime
         .admit(
             Input {
+                agent_references: Default::default(),
+                command: None,
                 session_id: "s".into(),
                 input_id: "one".into(),
                 prompt: "read".into(),
@@ -154,6 +156,8 @@ async fn run_usage_counts_normalized_fields_once_and_keeps_raw_for_audit() {
     runtime
         .admit(
             Input {
+                agent_references: Default::default(),
+                command: None,
                 session_id: "s".into(),
                 input_id: "one".into(),
                 prompt: "read".into(),

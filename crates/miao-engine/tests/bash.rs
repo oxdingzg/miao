@@ -72,6 +72,8 @@ async fn start(parent: &Path, tool: &'static str, input: Value) -> (Runtime, Sto
     runtime
         .admit(
             Input {
+                agent_references: Default::default(),
+                command: None,
                 session_id: "s".into(),
                 input_id: "one".into(),
                 prompt: "execute".into(),

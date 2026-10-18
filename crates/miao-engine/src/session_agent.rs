@@ -65,6 +65,41 @@ pub struct AgentManifest {
     pub steps: Option<u32>,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct AgentMention {
+    pub name: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub source: Option<Value>,
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct AgentReferences {
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub catalog: Vec<AgentManifest>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub mentions: Vec<AgentMention>,
+}
+impl AgentReferences {
+    pub fn is_empty(&self) -> bool {
+        self.catalog.is_empty() && self.mentions.is_empty()
+    }
+    pub fn validate(&self) -> Result<(), Error> {
+        validate_references(&self.catalog)?;
+        if self.mentions.len() > 32
+            || serde_json::to_vec(self)?.len() > 512 * 1024
+            || self.mentions.iter().any(|mention| {
+                !self.catalog.iter().any(|agent| agent.name == mention.name)
+                    || serde_json::to_vec(mention).map_or(true, |bytes| bytes.len() > 16 * 1024)
+            })
+        {
+            return Err(Error::Invalid("invalid captured agent mentions".into()));
+        }
+        Ok(())
+    }
+}
+
 impl AgentManifest {
     pub fn validate(&self) -> Result<(), Error> {
         let invalid = |reason: &str| Error::Invalid(format!("invalid agent manifest: {reason}"));
@@ -208,51 +243,12 @@ impl Store {
     /// permissions, model and mode produce the same hash and append nothing.
     pub async fn set_agent(&self, session: &str, agent: AgentManifest) -> Result<Value, Error> {
         agent.validate()?;
-        let hash = agent.digest()?;
         let session = session.to_owned();
         self.call(move |connection| {
             let tx = write_tx(connection)?;
-            let exists: bool = tx.query_row(
-                "SELECT EXISTS(SELECT 1 FROM engine_session WHERE id=?1)",
-                [&session],
-                |row| row.get(0),
-            )?;
-            if !exists {
-                return Err(Error::Invalid("Session does not exist".into()));
-            }
-            if selected(&tx, &session)?.is_some_and(|(_, recorded)| recorded == hash) {
-                return Ok(json!({"agent_hash": hash, "changed": false}));
-            }
-            // A queued approval reply must not outlive the authority it was
-            // requested under. Invalidate pending approvals in this same write
-            // transaction, so a concurrent reply either resolves before the
-            // switch or observes a resolved approval afterwards.
-            let pending = {
-                let mut statement = tx.prepare(
-                    "SELECT id FROM engine_approval WHERE session_id=?1 AND state='pending'",
-                )?;
-                let rows = statement.query_map([&session], |row| row.get::<_, String>(0))?;
-                rows.collect::<Result<Vec<_>, _>>()?
-            };
-            for id in pending {
-                tx.execute("UPDATE engine_approval SET state='deny' WHERE id=?1", [&id])?;
-                append(
-                    &tx,
-                    &session,
-                    "approval.resolved",
-                    json!({
-                        "request_id":id,"state":"deny","reason":"agent_changed",
-                    }),
-                )?;
-            }
-            append(
-                &tx,
-                &session,
-                "session.agent.selected",
-                json!({"agent": agent, "agent_hash": hash}),
-            )?;
+            let value = set_agent_tx(&tx, &session, &agent)?;
             tx.commit()?;
-            Ok(json!({"agent_hash": hash, "changed": true}))
+            Ok(value)
         })
         .await
     }
@@ -263,6 +259,182 @@ impl Store {
         self.call(move |connection| {
             let tx = connection.transaction()?;
             selected(&tx, &session)
+        })
+        .await
+    }
+}
+
+pub(crate) fn set_agent_tx(
+    tx: &Transaction<'_>,
+    session: &str,
+    agent: &AgentManifest,
+) -> Result<Value, Error> {
+    agent.validate()?;
+    let hash = agent.digest()?;
+    let exists: bool = tx.query_row(
+        "SELECT EXISTS(SELECT 1 FROM engine_session WHERE id=?1)",
+        [session],
+        |row| row.get(0),
+    )?;
+    if !exists {
+        return Err(Error::Invalid("Session does not exist".into()));
+    }
+    if selected(tx, session)?.is_some_and(|(_, recorded)| recorded == hash) {
+        return Ok(json!({"agent_hash": hash, "changed": false}));
+    }
+    // A queued approval reply must not outlive the authority it was
+    // requested under. Invalidate pending approvals in this same write
+    // transaction, so a concurrent reply either resolves before the
+    // switch or observes a resolved approval afterwards.
+    let pending = {
+        let mut statement =
+            tx.prepare("SELECT id FROM engine_approval WHERE session_id=?1 AND state='pending'")?;
+        let rows = statement.query_map([session], |row| row.get::<_, String>(0))?;
+        rows.collect::<Result<Vec<_>, _>>()?
+    };
+    for id in pending {
+        tx.execute("UPDATE engine_approval SET state='deny' WHERE id=?1", [&id])?;
+        append(
+            tx,
+            session,
+            "approval.resolved",
+            json!({
+                "request_id":id,"state":"deny","reason":"agent_changed",
+            }),
+        )?;
+    }
+    append(
+        tx,
+        session,
+        "session.agent.selected",
+        json!({"agent": agent, "agent_hash": hash}),
+    )?;
+    Ok(json!({"agent_hash":hash,"changed":true}))
+}
+
+impl PartialEq for AgentManifest {
+    fn eq(&self, other: &Self) -> bool {
+        serde_json::to_value(self).expect("serializable agent manifest")
+            == serde_json::to_value(other).expect("serializable agent manifest")
+    }
+}
+impl Eq for AgentManifest {}
+
+pub(crate) fn validate_references(agents: &[AgentManifest]) -> Result<(), Error> {
+    if agents.len() > 64 || serde_json::to_vec(agents)?.len() > 512 * 1024 {
+        return Err(Error::Invalid(
+            "named agent references exceed their capture bound".into(),
+        ));
+    }
+    let mut names = std::collections::HashSet::new();
+    for agent in agents {
+        agent.validate()?;
+        if !names.insert(&agent.name) {
+            return Err(Error::Invalid("duplicate named agent reference".into()));
+        }
+    }
+    Ok(())
+}
+
+pub(crate) fn references_at(
+    tx: &Transaction<'_>,
+    session: &str,
+    cursor: u64,
+) -> Result<Vec<AgentManifest>, Error> {
+    let data:Option<String>=tx.query_row("SELECT data FROM engine_event WHERE session_id=?1 AND kind='session.agents.registered' AND seq<=?2 ORDER BY seq DESC LIMIT 1",rusqlite::params![session,cursor],|row|row.get(0)).optional()?;
+    data.map(|data| {
+        let data: Value = serde_json::from_str(&data)?;
+        serde_json::from_value(data["agents"].clone()).map_err(Error::from)
+    })
+    .transpose()
+    .map(Option::unwrap_or_default)
+}
+
+pub(crate) fn register_references(
+    tx: &Transaction<'_>,
+    session: &str,
+    agents: &[AgentManifest],
+) -> Result<(), Error> {
+    if agents.is_empty() {
+        return Ok(());
+    }
+    validate_references(agents)?;
+    let mut merged = references_at(tx, session, i64::MAX as u64)?
+        .into_iter()
+        .map(|agent| (agent.name.clone(), agent))
+        .collect::<std::collections::BTreeMap<_, _>>();
+    for agent in agents {
+        merged.insert(agent.name.clone(), agent.clone());
+    }
+    let merged = merged.into_values().collect::<Vec<_>>();
+    validate_references(&merged)?;
+    append(
+        tx,
+        session,
+        "session.agents.registered",
+        json!({"agents":merged}),
+    )?;
+    Ok(())
+}
+
+pub(crate) fn input_references(
+    tx: &Transaction<'_>,
+    session: &str,
+    input: &str,
+) -> Result<AgentReferences, Error> {
+    let data:Option<String>=tx.query_row("SELECT e.data FROM engine_input i JOIN engine_event e ON e.session_id=i.session_id AND e.seq=i.admitted_seq WHERE i.session_id=?1 AND i.id=?2",rusqlite::params![session,input],|row|row.get(0)).optional()?;
+    data.map(|data| {
+        let data: Value = serde_json::from_str(&data)?;
+        serde_json::from_value(
+            data.get("agent_references")
+                .cloned()
+                .unwrap_or_else(|| json!({})),
+        )
+        .map_err(Error::from)
+    })
+    .transpose()
+    .map(Option::unwrap_or_default)
+}
+
+impl Store {
+    pub(crate) async fn named_agents(&self, session: &str) -> Result<Vec<AgentManifest>, Error> {
+        let session = session.to_owned();
+        self.call(move |connection| {
+            let tx = connection.transaction()?;
+            references_at(&tx, &session, i64::MAX as u64)
+        })
+        .await
+    }
+}
+
+impl Store {
+    pub(crate) async fn inherit_delegation_profile(
+        &self,
+        session: &str,
+        agent: Option<AgentManifest>,
+        model: Option<Binding>,
+        account: Option<crate::session_account::Selection>,
+        receipt: Option<Binding>,
+    ) -> Result<(), Error> {
+        let session = session.to_owned();
+        self.call(move |connection| {
+            let tx = write_tx(connection)?;
+            if let Some(agent) = &agent {
+                set_agent_tx(&tx, &session, agent)?;
+            }
+            if let Some(model) = &model {
+                crate::session_model::select_model_tx(&tx, &session, Some(model))?;
+            }
+            if let Some(account) = account {
+                append(
+                    &tx,
+                    &session,
+                    "session.account.selected",
+                    json!({"account":account,"binding":receipt,"inherited":true}),
+                )?;
+            }
+            tx.commit()?;
+            Ok(())
         })
         .await
     }

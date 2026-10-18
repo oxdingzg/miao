@@ -155,6 +155,8 @@ async fn setup(path: &std::path::Path) -> (Runtime, Store, Arc<Answer>) {
     // requires an existing Session, exactly as the product's flow does.
     store
         .admit(Input {
+            agent_references: Default::default(),
+            command: None,
             session_id: "s".into(),
             input_id: "warm".into(),
             prompt: "warm".into(),
@@ -171,6 +173,8 @@ async fn turn(runtime: &Runtime, store: &Store, input_id: &str) {
     runtime
         .admit(
             Input {
+                agent_references: Default::default(),
+                command: None,
                 session_id: "s".into(),
                 input_id: input_id.into(),
                 prompt: "go".into(),
@@ -380,6 +384,8 @@ async fn switching_agents_invalidates_pending_approval_and_its_late_reply() {
     runtime
         .admit(
             Input {
+                agent_references: Default::default(),
+                command: None,
                 session_id: "s".into(),
                 input_id: "one".into(),
                 prompt: "go".into(),
@@ -483,6 +489,8 @@ async fn parallel_read_fast_path_cannot_bypass_agent_denial() {
     .unwrap();
     store
         .admit(Input {
+            agent_references: Default::default(),
+            command: None,
             session_id: "s".into(),
             input_id: "warm".into(),
             prompt: "warm".into(),
@@ -574,6 +582,8 @@ async fn real_adapter_records_agent_identity_and_selected_context() {
     .unwrap();
     store
         .admit(Input {
+            agent_references: Default::default(),
+            command: None,
             session_id: "s".into(),
             input_id: "warm".into(),
             prompt: "warm".into(),

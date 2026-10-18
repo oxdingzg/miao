@@ -62,6 +62,8 @@ fn binding(model: &str) -> Binding {
 }
 fn input(session: &str, id: &str) -> Input {
     Input {
+        agent_references: Default::default(),
+        command: None,
         session_id: session.into(),
         input_id: id.into(),
         prompt: id.into(),

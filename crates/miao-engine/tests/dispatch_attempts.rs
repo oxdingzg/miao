@@ -8,6 +8,8 @@ use std::{io::Write, process::Command};
 async fn plan(store: &Store, run: &str, input: &str) {
     store
         .admit(Input {
+            agent_references: Default::default(),
+            command: None,
             session_id: "session".into(),
             input_id: input.into(),
             prompt: "append one line".into(),

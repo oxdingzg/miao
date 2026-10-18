@@ -32,6 +32,8 @@ async fn copied_user_prompts_are_promoted_exact_retries_not_new_work() {
         .unwrap();
     store
         .admit(Input {
+            agent_references: Default::default(),
+            command: None,
             session_id: "parent".into(),
             input_id: "msg_source".into(),
             prompt: "request".into(),
@@ -46,6 +48,8 @@ async fn copied_user_prompts_are_promoted_exact_retries_not_new_work() {
     let copied_id = format!("msg_child_{seq}");
     let receipt = store
         .admit(Input {
+            agent_references: Default::default(),
+            command: None,
             session_id: "child".into(),
             input_id: copied_id.clone(),
             prompt: "request".into(),
@@ -57,6 +61,8 @@ async fn copied_user_prompts_are_promoted_exact_retries_not_new_work() {
     assert_eq!(store.snapshot("child").await.unwrap(), before);
     assert!(store
         .admit(Input {
+            agent_references: Default::default(),
+            command: None,
             session_id: "child".into(),
             input_id: copied_id,
             prompt: "changed".into(),

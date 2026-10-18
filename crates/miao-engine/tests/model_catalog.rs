@@ -18,6 +18,8 @@ use tokio_util::sync::CancellationToken;
 
 fn input(id: &str) -> Input {
     Input {
+        agent_references: Default::default(),
+        command: None,
         session_id: "s".into(),
         input_id: id.into(),
         prompt: id.into(),

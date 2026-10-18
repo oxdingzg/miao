@@ -137,7 +137,7 @@ impl Provider for OpenAIResponses {
                 .extra_headers
                 .retain(|key, _| !key.eq_ignore_ascii_case(name));
         }
-        selected.request_options = options;
+        selected.request_options = self.request_options.merged(&options)?;
         Ok(std::sync::Arc::new(selected))
     }
     fn for_model(&self, model: &str) -> Option<std::sync::Arc<dyn Provider>> {

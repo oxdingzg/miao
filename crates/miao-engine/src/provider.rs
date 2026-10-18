@@ -642,7 +642,7 @@ impl Provider for Anthropic {
                 .retain(|key, _| !key.eq_ignore_ascii_case(&name));
             selected.extra_headers.insert(name, value);
         }
-        selected.request_options = options;
+        selected.request_options = self.request_options.merged(&options)?;
         Ok(std::sync::Arc::new(selected))
     }
     fn for_model(&self, model: &str) -> Option<Arc<dyn Provider>> {

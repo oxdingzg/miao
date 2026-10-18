@@ -28,6 +28,8 @@ pub struct Reference {
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Input {
+    #[serde(default)]
+    pub agent: Option<String>,
     pub prompt: String,
     #[serde(default)]
     pub session_id: Option<String>,
@@ -44,7 +46,9 @@ impl Input {
                     || reference.tool_use_id.contains('\0')
                     || reference.offset > 64 * 1024 * 1024
             });
-        if parsed.prompt.trim().is_empty()
+        if parsed.agent.as_ref().is_some_and(|name| {
+            name.is_empty() || name.len() > 128 || name.chars().any(char::is_control)
+        }) || parsed.prompt.trim().is_empty()
             || parsed.prompt.len() > PROMPT_LIMIT
             || reference_invalid
             || parsed

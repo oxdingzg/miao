@@ -415,6 +415,37 @@ become wildcard rules or TypeScript permission rules. Caller-owned extension
 transports use per-instance identity so grants cannot outlive that boundary.
 The Store also exposes exact revocation primitives.
 
+### Captured commands and named agent references
+
+`admit.input.command` captures `name`, raw `arguments`, optional attribution `source`,
+`agent`, product `model`, `subtask`, and trusted resolved `authority`. The host renders
+positional arguments and captures definitions without executing shell substitutions or
+reading referenced files. `input.agent_references` contains a trusted bounded `catalog`
+of agent manifests and ordered `mentions` with source metadata. Both fields participate
+in exact admission retry identity; changing either under an existing input key conflicts.
+An empty command prompt remains an operator command record.
+
+After promotion, the serialized Session actor writes `command.started`, then prepares
+shell substitutions and file/directory references through native policy, approvals,
+workspace confinement and cancellation. A command is a promotion barrier: later inputs
+are promoted after its preparation settles. Shell substitutions retain operator shell
+provenance and reuse the current run rather than closing it. Files are bounded to 1 MiB;
+there are at most 32 substitutions/references and eight attachments. Mention offsets use
+UTF-16 indices to preserve product source coordinates.
+
+Captured command/agent model defaults are validated against the active account and
+provider history before application. Named subtasks use native child Sessions, the
+parent task authority and the captured child manifest; nested subtasks are refused.
+`command.completed` atomically replaces the selected user message's prepared parts;
+`command.failed` preserves a visible diagnostic. Forks retain the command chip,
+settled preparation state, reference sources and operator shell provenance. A command
+cursor before preparation settlement cannot be forked.
+
+A preparation already marked started after restart is failed as unknown and never
+replayed. Exact retries do not rerun substitutions or child Sessions. Schema version 15
+is a semantic reader guard: older engines would interpret an unprepared command as
+ordinary prompt text and ignore its authority and once-only preparation ledger.
+
 ### Injected context
 
 `{"type":"inject","session_id":"...","input_id":"optional-retry-key","text":"...","source":"skill:name"}` commits one `message.synthetic` history fact. The source is a bounded attribution label, not a command or credential. Injection creates no inbox row and does not start a provider turn. The host may request advisory `wake` afterwards; this drains eligible pending inbox work without forcing continuation. Unlike explicit `resume`, `wake` leaves an idle Session with no eligible input idle. An exact retry with the same Session and input identity reconciles; changed text/source conflicts. Forks preserve the synthetic record and original timestamp rather than promoting it as an operator prompt. Text is bounded to 1 MiB.

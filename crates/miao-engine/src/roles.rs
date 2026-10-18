@@ -339,6 +339,8 @@ mod tests {
             .unwrap();
         store
             .admit(crate::protocol::Input {
+                agent_references: Default::default(),
+                command: None,
                 session_id: "s".into(),
                 input_id: "seed".into(),
                 prompt: "task".into(),
@@ -385,6 +387,8 @@ mod tests {
             .unwrap();
         store
             .admit(crate::protocol::Input {
+                agent_references: Default::default(),
+                command: None,
                 session_id: "s".into(),
                 input_id: "seed".into(),
                 prompt: "task".into(),

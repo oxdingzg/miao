@@ -74,6 +74,8 @@ async fn start(parent: &Path, input: Value, network: bool) -> (Runtime, Store, P
     runtime
         .admit(
             Input {
+                agent_references: Default::default(),
+                command: None,
                 session_id: "s".into(),
                 input_id: "one".into(),
                 prompt: "execute".into(),
@@ -289,6 +291,8 @@ async fn run_command_emits_started_and_progress_events() {
     runtime
         .admit(
             Input {
+                agent_references: Default::default(),
+                command: None,
                 session_id: "s".into(),
                 input_id: "one".into(),
                 prompt: "execute".into(),

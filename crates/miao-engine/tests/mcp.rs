@@ -324,6 +324,8 @@ async fn discovery_and_filtered_execution_keep_the_provider_surface_stable() {
     runtime
         .admit(
             Input {
+                agent_references: Default::default(),
+                command: None,
                 session_id: "s".into(),
                 input_id: "p".into(),
                 prompt: "find and call fixture".into(),
@@ -439,6 +441,8 @@ async fn runtime_permission_denial_prevents_wire_dispatch_and_allowed_error_is_d
         runtime
             .admit(
                 Input {
+                    agent_references: Default::default(),
+                    command: None,
                     session_id: "s".into(),
                     input_id: "input".into(),
                     prompt: "call external tool".into(),

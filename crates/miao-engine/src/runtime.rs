@@ -1,3 +1,4 @@
+mod command;
 mod shell;
 use crate::{
     approval::{now_ms, Approval, Response},
@@ -333,11 +334,7 @@ impl Runtime {
         session: &str,
         agent: crate::session_agent::AgentManifest,
     ) -> Result<Value, Error> {
-        agent.validate()?;
-        self.inner.policy.for_agent(Some(&agent))?;
-        if let Some(binding) = &agent.model {
-            crate::session_model::select(&self.inner.provider, Some(binding))?;
-        }
+        validate_agent(&self.inner, &agent)?;
         let binding = self
             .inner
             .store
@@ -363,22 +360,6 @@ impl Runtime {
             binding.as_ref(),
             provider.identity(),
         )?;
-        if let Some(surface) = &agent.tools {
-            let known = self
-                .inner
-                .tools
-                .definitions()
-                .into_iter()
-                .map(|tool| tool.name)
-                .collect::<std::collections::HashSet<_>>();
-            for name in surface.allow.iter().chain(surface.deny.iter()) {
-                if !known.contains(name) {
-                    return Err(Error::Invalid(format!(
-                        "agent references an unknown tool: {name}"
-                    )));
-                }
-            }
-        }
         self.inner.store.set_agent(session, agent).await
     }
 
@@ -522,6 +503,32 @@ impl Runtime {
     ) -> Result<Admission, Error> {
         if self.inner.stop.is_cancelled() {
             return Err(Error::Closed);
+        }
+        for agent in &input.agent_references.catalog {
+            validate_agent(&self.inner, agent)?;
+        }
+        if let Some(command) = &input.command {
+            command.validate()?;
+            if let Some(authority) = &command.authority {
+                if authority.default_agent.as_ref().is_some_and(|name| {
+                    !input
+                        .agent_references
+                        .catalog
+                        .iter()
+                        .any(|agent| &agent.name == name)
+                }) {
+                    return Err(Error::Invalid(
+                        "default command agent is not in the captured host catalog".into(),
+                    ));
+                }
+
+                if let Some(agent) = &authority.agent {
+                    validate_agent(&self.inner, agent)?;
+                }
+                if let Some(model) = &authority.model {
+                    crate::session_model::select(&self.inner.provider, Some(model))?;
+                }
+            }
         }
         let session = input.session_id.clone();
         let admission = self
@@ -1227,6 +1234,18 @@ async fn execute(
         if cancel.is_cancelled() {
             return Ok(());
         }
+        loop {
+            command::prepare_pending(inner, session, run, lease, cancel.clone()).await?;
+            if cancel.is_cancelled() {
+                return Ok(());
+            }
+            let promoted = inner.store.promote_fenced(session, false, lease).await?;
+            if promoted.is_empty() {
+                break;
+            }
+            record_promotions(inner, session, run, &promoted, lease).await?;
+            reset_allowance = true;
+        }
         // A host-resolved agent (ADR-0017) applies at this boundary: its pinned
         // model only while the Session has no explicit selection of its own.
         let agent = inner.store.agent(session).await?;
@@ -1250,7 +1269,8 @@ async fn execute(
             (None, Some((manifest, _))) => manifest.model.clone(),
             (None, None) => None,
         };
-        let binding = match inner.store.account_selection(session).await? {
+        let account = inner.store.account_selection(session).await?;
+        let binding = match account.as_ref() {
             Some(account) => crate::session_account::resolve(
                 &inner.provider,
                 binding.as_ref(),
@@ -1403,10 +1423,17 @@ async fn execute(
                 }
             }
         }
+        let named = inner.store.named_agents(session).await?;
+        let mut tools = agent_tools(&inner.tools, agent.as_ref(), &policy);
+        for tool in &mut tools {
+            if tool.name == "task" && !named.is_empty() {
+                tool.input_schema["properties"]["agent"] = json!({"type":"string","enum":named.iter().map(|agent|&agent.name).collect::<Vec<_>>()});
+            }
+        }
         let request = ModelRequest {
             system,
             messages: history,
-            tools: agent_tools(&inner.tools, agent.as_ref(), &policy),
+            tools,
         };
         let prefix_through = if inner.context.lock().await.is_some() {
             Some(inner.store.max_message_seq(session).await?)
@@ -1572,6 +1599,8 @@ async fn execute(
                         transport_continuations += 1;
                         let input_id = format!("transport:{run}:{transport_continuations}");
                         inner.store.admit(crate::protocol::Input {
+agent_references: Default::default(),
+command: None,
                             session_id: session.into(), input_id: input_id.clone(),
                             prompt: "The provider stream was interrupted by a transport failure. Continue from committed history and retained partial text. Previously completed tools remain completed; do not repeat their side effects. Unfinished local calls from the interrupted response were not dispatched; regenerate only the remaining work.".into(),
                             delivery: crate::protocol::Delivery::Steer,
@@ -1867,6 +1896,7 @@ async fn execute(
                                         id,
                                         &prepared,
                                         cancel.child_token(),
+                                        Delegation {target:None,referenced_agents:&[],agent:manifest,binding:binding.as_ref(),account:account.as_ref(),model_override:None,attachments:&[],agent_references:&[]},
                                     )
                                     .await
                                 }
@@ -2238,6 +2268,8 @@ async fn execute(
                     goal_iterations += 1;
                     let input_id = format!("goal:{run}:{goal_iterations}");
                     let admission = inner.store.admit(Input {
+agent_references: Default::default(),
+command: None,
                             session_id: session.into(), input_id: input_id.clone(),
                             prompt: "Continue the next dependency-ready todo independently of background waits. Choose only tasks whose depends_on prerequisites are completed. Preserve completed operations, make concrete progress, and update the todo list. If no task is runnable, wait for existing completion notifications rather than polling.".into(),
                             delivery: crate::protocol::Delivery::Queue,
@@ -2268,6 +2300,8 @@ async fn execute(
                 let admission = inner
                     .store
                     .admit(Input {
+agent_references: Default::default(),
+command: None,
                         session_id: session.into(),
                         input_id: input_id.clone(),
                         prompt: "Your previous reply contained neither text nor tool calls, so nothing advanced. Continue the task now: act with a tool, or state the final result explicitly.".into(),
@@ -2379,6 +2413,8 @@ async fn execute(
                     let admission = inner
                         .store
                         .admit(Input {
+                            agent_references: Default::default(),
+                            command: None,
                             session_id: session.into(),
                             input_id: input_id.clone(),
                             prompt: format!(
@@ -2908,6 +2944,17 @@ async fn reference_block(
     format!("{header}{block}")
 }
 
+struct Delegation<'a> {
+    target: Option<&'a crate::session_agent::AgentManifest>,
+    referenced_agents: &'a [crate::session_agent::AgentMention],
+    agent: Option<&'a crate::session_agent::AgentManifest>,
+    binding: Option<&'a crate::session_model::Binding>,
+    account: Option<&'a crate::session_account::Selection>,
+    model_override: Option<&'a crate::session_model::Binding>,
+    attachments: &'a [Attachment],
+    agent_references: &'a [crate::session_agent::AgentManifest],
+}
+
 async fn delegate(
     inner: &Arc<Inner>,
     parent: &str,
@@ -2915,8 +2962,64 @@ async fn delegate(
     call: &str,
     prepared: &Prepared,
     cancel: CancellationToken,
+    context: Delegation<'_>,
 ) -> Result<Value, ToolError> {
     let task = crate::subagent::Input::parse(prepared.input().clone())?;
+    let catalog = inner
+        .store
+        .named_agents(parent)
+        .await
+        .map_err(|error| ToolError::External(error.to_string()))?;
+    let selected = if let Some(target) = context.target {
+        if task.agent.as_deref() != Some(&target.name) {
+            return Err(ToolError::InvalidInput);
+        }
+        Some(target.clone())
+    } else {
+        match &task.agent {
+            Some(name) => Some(
+                catalog
+                    .iter()
+                    .find(|agent| &agent.name == name)
+                    .cloned()
+                    .ok_or_else(|| {
+                        ToolError::External(
+                            "named subagent was not registered by the trusted host".into(),
+                        )
+                    })?,
+            ),
+            None => context.agent.cloned(),
+        }
+    };
+    let model = context.model_override.cloned().or_else(|| {
+        if task.agent.is_some() && selected.as_ref().is_some_and(|agent| agent.model.is_some()) {
+            None
+        } else {
+            context.binding.cloned()
+        }
+    });
+    let effective = model
+        .as_ref()
+        .or_else(|| selected.as_ref().and_then(|agent| agent.model.as_ref()));
+    let receipt = match context.account {
+        Some(account) => crate::session_account::resolve(
+            &inner.provider,
+            effective,
+            account.credential_id.as_deref(),
+        ),
+        None => Ok(effective.cloned()),
+    }
+    .map_err(|error| ToolError::External(error.to_string()))?;
+    let provider = crate::session_model::select(&inner.provider, receipt.as_ref())
+        .map_err(|error| ToolError::External(error.to_string()))?;
+    if let Some(agent) = &selected {
+        validate_agent(inner, agent).map_err(|error| ToolError::External(error.to_string()))?;
+        if let Some(request) = &agent.request {
+            provider
+                .with_request_options(request.clone())
+                .map_err(|error| ToolError::External(error.to_string()))?;
+        }
+    }
 
     let mut depth = 0u32;
     let mut current = parent.to_owned();
@@ -2943,11 +3046,37 @@ async fn delegate(
         .session_id
         .clone()
         .unwrap_or_else(|| format!("{parent}/sub-{}", uuid::Uuid::new_v4()));
-    inner
+    let fork = inner
         .store
         .fork(parent, &child, Some(0))
         .await
         .map_err(|_| ToolError::External("subagent session could not be created".into()))?;
+    if fork["duplicate"] != true {
+        inner
+            .store
+            .inherit_delegation_profile(
+                &child,
+                selected.clone(),
+                model,
+                context.account.cloned(),
+                receipt,
+            )
+            .await
+            .map_err(|error| ToolError::External(error.to_string()))?;
+    } else if task.agent.is_some()
+        && inner
+            .store
+            .agent(&child)
+            .await
+            .map_err(|error| ToolError::External(error.to_string()))?
+            .map(|(agent, _)| agent)
+            != selected
+    {
+        return Err(ToolError::External(
+            "existing child Session has a different captured agent; adopt its authority explicitly"
+                .into(),
+        ));
+    }
     inner
         .store
         .record(
@@ -2965,12 +3094,21 @@ async fn delegate(
         .store
         .admit_attachments_at(
             Input {
+                agent_references: crate::session_agent::AgentReferences {
+                    catalog: if context.agent_references.is_empty() {
+                        catalog
+                    } else {
+                        context.agent_references.to_vec()
+                    },
+                    mentions: context.referenced_agents.to_vec(),
+                },
+                command: None,
                 session_id: child.clone(),
                 input_id: format!("{call}:subagent"),
                 prompt: format!("{references}{}", task.prompt),
                 delivery: crate::protocol::Delivery::Steer,
             },
-            Vec::new(),
+            context.attachments.to_vec(),
             Some(inner.tools.location().to_owned()),
         )
         .await
@@ -3462,6 +3600,8 @@ async fn emit_monitor_notice(inner: &Inner, session: &str, job: &str, notice: Va
     let admitted = inner
         .store
         .admit(Input {
+            agent_references: Default::default(),
+            command: None,
             session_id: session.to_owned(),
             input_id: format!("monitor:{job}:{}", uuid::Uuid::new_v4()),
             prompt: format!("Monitor job {job} produced matching output:\n{notice}"),
@@ -3826,4 +3966,29 @@ async fn execute_read_batch(
             .await?;
     }
     Ok(results)
+}
+
+fn validate_agent(inner: &Inner, agent: &crate::session_agent::AgentManifest) -> Result<(), Error> {
+    agent.validate()?;
+    inner.policy.for_agent(Some(agent))?;
+    if let Some(model) = &agent.model {
+        crate::session_model::select(&inner.provider, Some(model))?;
+    }
+    if let Some(surface) = &agent.tools {
+        let known = inner
+            .tools
+            .definitions()
+            .into_iter()
+            .map(|tool| tool.name)
+            .collect::<std::collections::HashSet<_>>();
+        for name in surface.allow.iter().chain(surface.deny.iter()) {
+            if !known.contains(name) {
+                return Err(Error::Invalid(format!(
+                    "agent references an unknown tool: {name}"
+                )));
+            }
+        }
+    }
+
+    Ok(())
 }

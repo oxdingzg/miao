@@ -102,6 +102,8 @@ async fn stale_edit_rejection_carries_fingerprint_and_settles_as_error() {
     runtime
         .admit(
             Input {
+                agent_references: Default::default(),
+                command: None,
                 session_id: "s".into(),
                 input_id: "one".into(),
                 prompt: "edit".into(),

@@ -96,6 +96,8 @@ async fn headless_small_fix_reads_patches_and_verifies() {
     runtime
         .admit(
             Input {
+                agent_references: Default::default(),
+                command: None,
                 session_id: "s".into(),
                 input_id: "one".into(),
                 prompt: "fix the value in answer.txt so the check passes".into(),

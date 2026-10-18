@@ -71,6 +71,8 @@ async fn host_budget_allows_long_tasks_and_still_bounds_provider_work() {
         runtime
             .admit(
                 Input {
+                    agent_references: Default::default(),
+                    command: None,
                     session_id: "s".into(),
                     input_id: "one".into(),
                     prompt: "Read and verify the fixture in 32 steps".into(),

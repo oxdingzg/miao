@@ -42,6 +42,8 @@ async fn seed(store: &Store, root: &std::path::Path) {
     store
         .admit_at(
             Input {
+                agent_references: Default::default(),
+                command: None,
                 session_id: "s".into(),
                 input_id: "initial".into(),
                 prompt: "do the work".into(),
@@ -277,6 +279,8 @@ async fn admission_conflict_rolls_back_the_decision_and_leaves_unknown_unresolve
     store.recover().await.unwrap();
     store
         .admit(Input {
+            agent_references: Default::default(),
+            command: None,
             session_id: "s".into(),
             input_id: "recovery_collision".into(),
             prompt: "different prompt".into(),

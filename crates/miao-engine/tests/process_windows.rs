@@ -65,6 +65,8 @@ async fn execute(root: &Path, input: Value) -> Value {
     runtime
         .admit(
             Input {
+                agent_references: Default::default(),
+                command: None,
                 session_id: "s".into(),
                 input_id: "one".into(),
                 prompt: "execute".into(),

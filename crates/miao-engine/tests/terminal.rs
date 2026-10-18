@@ -304,6 +304,8 @@ async fn runtime_dispatches_terminal_tools_through_durable_history() {
     runtime
         .admit(
             Input {
+                agent_references: Default::default(),
+                command: None,
                 session_id: "s".into(),
                 input_id: "one".into(),
                 prompt: "test terminal".into(),
