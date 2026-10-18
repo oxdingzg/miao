@@ -222,7 +222,17 @@ impl Runtime {
                 };
                 for session in sessions {
                     // A draining Session renews its own claim; a heartbeat here
-                    // would advance the epoch and fence the active owner.
+                    // would advance the epoch and fence the active owner. Check
+                    // the durable lease, not just this process's drains, because
+                    // the owner may be another window.
+                    if heartbeat_inner
+                        .store
+                        .lease_alive(&session)
+                        .await
+                        .unwrap_or(false)
+                    {
+                        continue;
+                    }
                     if heartbeat_inner
                         .draining
                         .lock()
@@ -819,6 +829,10 @@ async fn drain(
         .store
         .claim_session(&session, SESSION_LEASE_MS)
         .await?;
+    // The lease is ours now, so a run still marked running belongs to a process
+    // that lost it. Reconcile it before opening a new run; otherwise the active
+    // run index would reject the start.
+    inner.store.recover_session(Some(&session)).await?;
     let promoted = inner.store.promote_fenced(&session, true, &lease).await?;
     if promoted.is_empty() && !force {
         return Ok(());
