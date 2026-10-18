@@ -289,18 +289,16 @@ end to end (`session.next.tool.progress`).
 Progress: a tool left running by a prior process is settled with an outcome-unknown error
 (`failInterruptedTools`), and undispatched calls are distinguished from unknown-outcome calls (#101).
 - [x] On restart, mark unsettled calls outcome-unknown and require explicit retry/abandon.
-- [ ] Idempotency key (`callID` + attempt) plus a one-shot consume token. The token must be
-  scoped to a dispatch attempt: scanning the whole Session for a settled call id + name + input is
-  not a substitute, because providers reuse local ids across messages and a later turn may
-  legitimately repeat the exact call (`executes the same provider-local call again in a later turn`).
-  The observable boundaries are covered by regression tests instead: a replayed call executes once
-  within one provider attempt (`executes a replayed call once within the same provider attempt`), a
-  call left running by a prior process is settled unknown without re-executing
-  (`durably fails local tools left running by a prior process before continuing`), and a later turn
-  may legitimately repeat it (`executes the same provider-local call again in a later turn`). A
-  durable attempt-scoped token therefore remains unimplemented until a reproduction shows a double
-  execution these boundaries miss.
-- **Acceptance:** kill mid-tool, resume → no repeated side effect; the model sees "result unknown".
+- [x] Persist a one-shot dispatch token keyed by Session, assistant/provider-turn and `callID`.
+  `Tool.Called` commits the plan atomically; the local execution effect consumes it with a SQLite
+  compare-and-swap before invoking the registry. Terminal events retire authority, and explicit
+  recovery leaves consumed attempts `unknown` and unconsumed plans `cancelled`. Event replay never
+  mints execution authority. A new turn can legitimately repeat the same local id, tool and input.
+- **Acceptance:** a real child process fsyncs an external write and exits before settlement;
+  reopening the database refuses that attempt's token, while a new turn can execute the same call.
+  Runner regressions cover repeated stream events, unknown-outcome history and later legal calls.
+  This fences redispatch of the same attempt; it does not promise external exactly-once execution
+  or introduce automatic post-crash provider continuation.
 
 ### 2.5 Output bounds / timeouts / caps (G7)
 **Entry:** `packages/core/src/tool/bash.ts`, `packages/core/src/ripgrep.ts`,

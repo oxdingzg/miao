@@ -50,5 +50,6 @@ export const migrations = (
     import("./migration/20261011123454_unknown_message_clocks"),
     import("./migration/20261011151147_session_engine_placement"),
     import("./migration/20261017014113_session_account_pin"),
+    import("./migration/20261018114612_session_tool_dispatch"),
   ])
 ).map((module) => module.default) satisfies DatabaseMigration.Migration[]

@@ -78,6 +78,7 @@ import {
   SessionInputTable,
   SessionMessageTable,
   SessionTable,
+  SessionToolDispatchTable,
 } from "@miao/core/session/sql"
 import { SessionStore } from "@miao/core/session/store"
 import { SessionDelegation } from "@miao/core/session/delegation"
@@ -3781,6 +3782,8 @@ describe("SessionRunnerLLM", () => {
       yield* session.resume(sessionID)
 
       expect(executions).toEqual(["once"])
+      const database = yield* Database.Service
+      expect(yield* database.db.select({ status: SessionToolDispatchTable.status }).from(SessionToolDispatchTable).all()).toEqual([{ status: "settled" }])
     }),
   )
 

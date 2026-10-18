@@ -1,9 +1,9 @@
 {
   "version": "7",
   "dialect": "sqlite",
-  "id": "f5f77b80-1c50-4105-8e7e-a58486bb0e24",
+  "id": "adf6becd-91cb-4320-9661-a6a795d960b5",
   "prevIds": [
-    "f21f0e8f-3b52-40d0-998f-d8d009c9f898"
+    "f5f77b80-1c50-4105-8e7e-a58486bb0e24"
   ],
   "ddl": [
     {
@@ -88,6 +88,10 @@
     },
     {
       "name": "session",
+      "entityType": "tables"
+    },
+    {
+      "name": "session_tool_dispatch",
       "entityType": "tables"
     },
     {
@@ -1734,6 +1738,76 @@
       "generated": null,
       "name": "session_id",
       "entityType": "columns",
+      "table": "session_tool_dispatch"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "assistant_message_id",
+      "entityType": "columns",
+      "table": "session_tool_dispatch"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "call_id",
+      "entityType": "columns",
+      "table": "session_tool_dispatch"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "token",
+      "entityType": "columns",
+      "table": "session_tool_dispatch"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "tool",
+      "entityType": "columns",
+      "table": "session_tool_dispatch"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "input",
+      "entityType": "columns",
+      "table": "session_tool_dispatch"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "status",
+      "entityType": "columns",
+      "table": "session_tool_dispatch"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "session_id",
+      "entityType": "columns",
       "table": "session_tool_usage"
     },
     {
@@ -2302,6 +2376,21 @@
       "onUpdate": "NO ACTION",
       "onDelete": "CASCADE",
       "nameExplicit": false,
+      "name": "fk_session_tool_dispatch_session_id_session_id_fk",
+      "entityType": "fks",
+      "table": "session_tool_dispatch"
+    },
+    {
+      "columns": [
+        "session_id"
+      ],
+      "tableTo": "session",
+      "columnsTo": [
+        "id"
+      ],
+      "onUpdate": "NO ACTION",
+      "onDelete": "CASCADE",
+      "nameExplicit": false,
       "name": "fk_session_tool_usage_session_id_session_id_fk",
       "entityType": "fks",
       "table": "session_tool_usage"
@@ -2380,6 +2469,17 @@
       "name": "project_directory_pk",
       "entityType": "pks",
       "table": "project_directory"
+    },
+    {
+      "columns": [
+        "session_id",
+        "assistant_message_id",
+        "call_id"
+      ],
+      "nameExplicit": false,
+      "name": "session_tool_dispatch_pk",
+      "entityType": "pks",
+      "table": "session_tool_dispatch"
     },
     {
       "columns": [
