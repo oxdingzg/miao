@@ -1,0 +1,61 @@
+diff --git a/src/terminal.ts b/src/terminal.ts
+index ec248d46a939f8a09cd669e853cefb126922c80a..0a45de6d99bf5e2075fb55130a5a69aabbe03843 100644
+--- a/src/terminal.ts
++++ b/src/terminal.ts
+@@ -143,6 +143,7 @@ export class Terminal implements IPty {
+ 
+ 	private readonly _onData = new EventEmitter<string>();
+ 	private readonly _onExit = new EventEmitter<IExitEvent>();
++	private _exitEvent?: IExitEvent;
+ 
+ 	constructor(
+ 		file = DEFAULT_FILE,
+@@ -172,7 +173,8 @@ export class Terminal implements IPty {
+ 		if (this.handle < 0) throw new Error("PTY spawn failed");
+ 
+ 		this._pid = lib.symbols.bun_pty_get_pid(this.handle);
+-		this._startReadLoop();
++		// Give the caller a chance to attach output/exit listeners first.
++		queueMicrotask(() => void this._startReadLoop());
+ 	}
+ 
+ 	/* ------------- accessors ------------- */
+@@ -194,7 +196,19 @@ export class Terminal implements IPty {
+ 		return this._onData.event;
+ 	}
+ 	get onExit() {
+-		return this._onExit.event;
++		return (listener: (event: IExitEvent) => void) => {
++			const event = this._exitEvent;
++			if (!event) return this._onExit.event(listener);
++			let active = true;
++			queueMicrotask(() => { if (active) listener(event); });
++			return { dispose() { active = false; } };
++		};
++	}
++
++	private _emitExit(event: IExitEvent) {
++		if (this._exitEvent) return;
++		this._exitEvent = event;
++		this._onExit.fire(event);
+ 	}
+ 
+ 	/* ------------- IO methods ------------- */
+@@ -217,7 +231,7 @@ export class Terminal implements IPty {
+ 		this._closing = true;
+ 		lib.symbols.bun_pty_kill(this.handle);
+ 		lib.symbols.bun_pty_close(this.handle);
+-		this._onExit.fire({ exitCode: 0, signal });
++		this._emitExit({ exitCode: 0, signal });
+ 	}
+ 
+ 	/* ------------- read-loop ------------- */
+@@ -244,7 +258,7 @@ export class Terminal implements IPty {
+ 					this._onData.fire(remaining);
+ 				}
+ 				const exitCode = lib.symbols.bun_pty_get_exit_code(this.handle);
+-				this._onExit.fire({ exitCode });
++				this._emitExit({ exitCode });
+ 				break;
+ 			} else if (n < 0) {
+ 				// error - flush decoder before breaking
