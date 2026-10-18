@@ -44,6 +44,7 @@ export function nativeSessionInfo(input: {
     : undefined
   const created = number(input.snapshot["created_at_ms"])
   const updated = number(input.snapshot["updated_at_ms"])
+  const archived = number(input.snapshot["archived_at_ms"])
   const title = input.snapshot["title"]
   const tokens =
     input.usage?.coverage?.observedTokens ??
@@ -74,6 +75,7 @@ export function nativeSessionInfo(input: {
     time: {
       created: DateTime.makeUnsafe(created ?? 0),
       updated: DateTime.makeUnsafe(updated ?? created ?? 0),
+      ...(archived !== undefined ? { archived: DateTime.makeUnsafe(archived) } : {}),
     },
     model,
     title: typeof title === "string" ? title : "",

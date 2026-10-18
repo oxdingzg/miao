@@ -243,6 +243,11 @@ export const fromOwners = (owners: Owners): NativeEngine.Interface => {
         if (input.model.variant !== undefined)
           throw new EngineError("unsupported_model_variant", "Native model routes do not accept product variants")
         const entry = (await routes(connection)).find((entry) => {
+          if (
+            input.model.providerID !== SessionModelRoute.ProviderID &&
+            input.model.providerID !== SessionModelRoute.DefaultProviderID
+          )
+            return entry.route_id === `${input.model.providerID}/${input.model.id}`
           const model = SessionModelRoute.reference(entry.route_id)
           return model.providerID === input.model.providerID && model.id === input.model.id
         })
@@ -280,6 +285,17 @@ export const fromOwners = (owners: Owners): NativeEngine.Interface => {
           input_id: input.inputID,
         }),
       ).pipe(Effect.map((value) => Schema.decodeUnknownSync(AcceptedReply)(value).accepted)),
+    archive: (input) =>
+      read<unknown>(input, (connection) =>
+        connection.client.request("archive", {
+          session_id: input.sessionID,
+          archived: input.archived,
+        }),
+      ).pipe(Effect.map((value) => Schema.decodeUnknownSync(AcceptedReply)(value).accepted)),
+    remove: (input) =>
+      read<unknown>(input, (connection) => connection.client.request("remove", { session_id: input.sessionID })).pipe(
+        Effect.asVoid,
+      ),
     admit: (input) =>
       connect({ ...input, refreshContext: true }).pipe(
         Effect.flatMap((connection) =>

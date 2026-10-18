@@ -56,6 +56,11 @@ impl Host {
                 .resume(&session_id)
                 .await
                 .map(|_| json!({ "accepted": true })),
+            Command::Archive {
+                session_id,
+                archived,
+            } => runtime.store().set_archived(&session_id, archived).await,
+            Command::Remove { session_id } => runtime.remove(&session_id).await,
             Command::CancelInput {
                 session_id,
                 input_id,

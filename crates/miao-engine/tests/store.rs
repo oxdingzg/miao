@@ -102,6 +102,66 @@ async fn cancelling_a_promoted_input_defers_to_the_turn_cancel() {
 }
 
 #[tokio::test]
+async fn archiving_is_reversible_and_never_invents_a_session() {
+    let dir = tempfile::tempdir().unwrap();
+    let store = Store::open(dir.path().join("engine.db")).await.unwrap();
+    assert!(matches!(
+        store.set_archived("s", true).await,
+        Err(Error::Invalid(_))
+    ));
+    store.admit(input("one", Delivery::Steer)).await.unwrap();
+    assert!(store.snapshot("s").await.unwrap()["archived_at_ms"].is_null());
+    assert_eq!(
+        store.set_archived("s", true).await.unwrap(),
+        json!({"accepted": true, "archived": true})
+    );
+    assert!(store.snapshot("s").await.unwrap()["archived_at_ms"].is_number());
+    // Archiving is a catalog fact: the admitted input is untouched.
+    assert_eq!(store.promote("s", false).await.unwrap().len(), 1);
+    assert_eq!(
+        store.set_archived("s", false).await.unwrap(),
+        json!({"accepted": true, "archived": false})
+    );
+    assert!(store.snapshot("s").await.unwrap()["archived_at_ms"].is_null());
+}
+
+#[tokio::test]
+async fn removing_a_session_deletes_its_rows_and_orphans_its_children() {
+    let dir = tempfile::tempdir().unwrap();
+    let store = Store::open(dir.path().join("engine.db")).await.unwrap();
+    store
+        .admit(input("parent-input", Delivery::Steer))
+        .await
+        .unwrap();
+    store.promote("s", false).await.unwrap();
+    store.fork("s", "child", None).await.unwrap();
+    assert_eq!(store.sessions().await.unwrap().len(), 2);
+    assert_eq!(
+        store.remove_session("s").await.unwrap(),
+        json!({"accepted": true})
+    );
+    // The child keeps its own rows and becomes a root instead of failing on the
+    // lineage foreign key.
+    assert_eq!(store.sessions().await.unwrap(), vec!["child".to_owned()]);
+    let snapshot = store.snapshot("child").await.unwrap();
+    assert!(snapshot["parent_session_id"].is_null(), "{snapshot}");
+    assert_eq!(store.history("child").await.unwrap().len(), 1);
+    assert!(
+        !store.events("child", 0, 100).await.unwrap().is_empty(),
+        "the child keeps its own ledger"
+    );
+    // Nothing of the parent survives, and a retry reports rather than refuses.
+    assert!(matches!(store.snapshot("s").await, Err(Error::Invalid(_))));
+    assert!(store.events("s", 0, 100).await.unwrap().is_empty());
+    assert!(store.history("s").await.unwrap().is_empty());
+    assert!(store.wakeups("s").await.unwrap().is_empty());
+    assert_eq!(
+        store.remove_session("s").await.unwrap(),
+        json!({"accepted": false, "reason": "unknown"})
+    );
+}
+
+#[tokio::test]
 async fn promotion_serializes_admissions_and_queues_only_at_idle() {
     let dir = tempfile::tempdir().unwrap();
     let store = Store::open(dir.path().join("engine.db")).await.unwrap();
