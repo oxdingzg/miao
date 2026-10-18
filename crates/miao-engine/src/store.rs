@@ -11,7 +11,7 @@ use rusqlite::{params, Connection, OptionalExtension, Transaction};
 use serde_json::{json, Value};
 use std::{
     collections::HashSet,
-    fs::{File, OpenOptions},
+    fs::OpenOptions,
     path::{Path, PathBuf},
     sync::{
         atomic::{AtomicBool, Ordering},
@@ -21,7 +21,7 @@ use std::{
 use tokio::sync::{mpsc, oneshot, watch};
 
 pub(crate) const APPLICATION_ID: u32 = 0x4d494145;
-pub(crate) const SCHEMA_VERSION: u32 = 11;
+pub(crate) const SCHEMA_VERSION: u32 = 12;
 
 type Work = Box<dyn FnOnce(&mut Connection) + Send>;
 
@@ -43,11 +43,12 @@ fn locked_paths() -> &'static Mutex<HashSet<PathBuf>> {
     LOCKED.get_or_init(|| Mutex::new(HashSet::new()))
 }
 
-struct FileLease {
+/// Process-lifetime ownership of one store path. Several processes may open the
+/// same database; this only keeps one owner per path inside a process.
+struct PathLease {
     path: PathBuf,
-    _file: File,
 }
-impl Drop for FileLease {
+impl Drop for PathLease {
     fn drop(&mut self) {
         if let Ok(mut locked) = locked_paths().lock() {
             locked.remove(&self.path);
@@ -110,9 +111,9 @@ impl Store {
                             .ok_or_else(|| Error::Invalid("store path".into()))?,
                     )
                 };
-                // In-process ownership is checked first: it is authoritative for
-                // same-process opens and does not depend on platform lock
-                // semantics. The OS lock then provides the cross-process lease.
+                // One process may hold a path once, but several processes may
+                // open the same database: execution ownership is fenced per
+                // Session instead of by whole-store exclusion.
                 if !locked_paths()
                     .lock()
                     .map_err(|_| Error::Busy)?
@@ -120,35 +121,24 @@ impl Store {
                 {
                     return Err(Error::Busy);
                 }
-                let file = match OpenOptions::new()
+                let lease = PathLease {
+                    path: canonical.clone(),
+                };
+                // Only schema checks and migrations are exclusive across
+                // processes. The lease is released before this store serves, so
+                // a second runtime can open the same database while the first is
+                // executing its own Sessions.
+                let migration = OpenOptions::new()
                     .create(true)
                     .truncate(false)
                     .read(true)
                     .write(true)
-                    .open(canonical.with_extension("engine-lock"))
-                {
-                    Ok(file) => file,
-                    Err(error) => {
-                        if let Ok(mut locked) = locked_paths().lock() {
-                            locked.remove(&canonical);
-                        }
-                        return Err(Error::Io(error));
-                    }
-                };
-                // Any failure here means another process holds the lease. Windows
-                // reports lock contention as a lock-violation error, not
-                // `WouldBlock`, so treat every failure as `Busy`.
-                if file.try_lock_exclusive().is_err() {
-                    if let Ok(mut locked) = locked_paths().lock() {
-                        locked.remove(&canonical);
-                    }
-                    return Err(Error::Busy);
-                }
-                let lease = FileLease {
-                    path: canonical.clone(),
-                    _file: file,
-                };
+                    .open(canonical.with_extension("engine-migrate-lock"))?;
+                migration.lock_exclusive()?;
                 let conn = Connection::open(&canonical)?;
+                // Concurrent writers wait for SQLite's write lock instead of
+                // failing the statement with SQLITE_BUSY.
+                conn.busy_timeout(std::time::Duration::from_secs(5))?;
                 let app_id: u32 = conn.query_row("PRAGMA application_id", [], |r| r.get(0))?;
                 let engine:bool=conn.query_row("SELECT EXISTS(SELECT 1 FROM sqlite_master WHERE name='engine_session' AND type='table')",[],|r|r.get(0))?;
                 let existing:u32=conn.query_row("SELECT count(*) FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%'",[],|r|r.get(0))?;
@@ -179,7 +169,7 @@ impl Store {
                     CREATE INDEX IF NOT EXISTS engine_pending_inputs ON engine_input(session_id,state,admitted_seq);
                     CREATE TABLE IF NOT EXISTS engine_context(session_id TEXT NOT NULL REFERENCES engine_session(id),epoch INTEGER NOT NULL,fingerprint TEXT NOT NULL,system TEXT NOT NULL,sources TEXT NOT NULL,selected_seq INTEGER NOT NULL,PRIMARY KEY(session_id,epoch));
                     CREATE TABLE IF NOT EXISTS engine_job(id TEXT PRIMARY KEY,session_id TEXT NOT NULL REFERENCES engine_session(id),request_key TEXT UNIQUE NOT NULL REFERENCES engine_tool(id),state TEXT NOT NULL,input TEXT NOT NULL,result TEXT);
-                    CREATE TABLE IF NOT EXISTS engine_compaction(id TEXT PRIMARY KEY,session_id TEXT NOT NULL REFERENCES engine_session(id),through_seq INTEGER NOT NULL,summary TEXT NOT NULL,created_seq INTEGER NOT NULL);CREATE TABLE IF NOT EXISTS engine_lease(session_id TEXT PRIMARY KEY REFERENCES engine_session(id),interval_ms INTEGER NOT NULL,last_ms INTEGER NOT NULL,epoch INTEGER NOT NULL);"))?;
+                    CREATE TABLE IF NOT EXISTS engine_compaction(id TEXT PRIMARY KEY,session_id TEXT NOT NULL REFERENCES engine_session(id),through_seq INTEGER NOT NULL,summary TEXT NOT NULL,created_seq INTEGER NOT NULL);CREATE TABLE IF NOT EXISTS engine_lease(session_id TEXT PRIMARY KEY REFERENCES engine_session(id),interval_ms INTEGER NOT NULL,last_ms INTEGER NOT NULL,epoch INTEGER NOT NULL,owner_pid INTEGER);"))?;
                 let has_mode:bool=conn.query_row("SELECT EXISTS(SELECT 1 FROM pragma_table_info('engine_session') WHERE name='mode')",[],|r|r.get(0))?;
                 if !has_mode {
                     conn.execute(
@@ -228,6 +218,13 @@ impl Store {
                         [],
                     )?;
                 }
+                let has_owner_pid: bool = conn.query_row(
+                    "SELECT EXISTS(SELECT 1 FROM pragma_table_info('engine_lease') WHERE name='owner_pid')",
+                    [], |row| row.get(0),
+                )?;
+                if !has_owner_pid {
+                    conn.execute("ALTER TABLE engine_lease ADD COLUMN owner_pid INTEGER", [])?;
+                }
                 // Nullable migration deliberately leaves historical times unknown.
                 for table in ["engine_event", "engine_message"] {
                     let has_time: bool = conn.query_row(
@@ -241,6 +238,9 @@ impl Store {
                         )?;
                     }
                 }
+                // The schema is current; serving is shared from here on.
+                fs2::FileExt::unlock(&migration)?;
+                drop(migration);
                 Ok((conn, lease, canonical))
             })();
             match opened {
@@ -648,9 +648,26 @@ impl Store {
     }
 
     pub async fn recover_jobs(&self) -> Result<(), Error> {
-        self.call(|conn| {
+        self.recover_jobs_inner(false).await
+    }
+
+    /// Startup reconciliation: leave jobs alone while another runtime still
+    /// holds a live lease on their Session.
+    pub async fn recover_jobs_unowned(&self) -> Result<(), Error> {
+        self.recover_jobs_inner(true).await
+    }
+
+    async fn recover_jobs_inner(&self, honor_leases: bool) -> Result<(), Error> {
+        self.call(move |conn| {
             let tx=conn.transaction()?;
-            let jobs:Vec<(String,String,String)>={let mut stmt=tx.prepare("SELECT id,session_id,state FROM engine_job WHERE state IN ('queued','running')")?;let rows=stmt.query_map([],|r|Ok((r.get(0)?,r.get(1)?,r.get(2)?)))?;rows.collect::<Result<_,_>>()?};
+            let jobs:Vec<(String,String,String)>={
+                let mut stmt=tx.prepare("SELECT j.id,j.session_id,j.state,l.last_ms,l.interval_ms,l.owner_pid FROM engine_job j LEFT JOIN engine_lease l ON l.session_id=j.session_id WHERE j.state IN ('queued','running')")?;
+                let rows=stmt.query_map([],|r|Ok((r.get::<_,String>(0)?,r.get::<_,String>(1)?,r.get::<_,String>(2)?,r.get::<_,Option<i64>>(3)?,r.get::<_,Option<i64>>(4)?,r.get::<_,Option<u32>>(5)?)))?;
+                rows.collect::<Result<Vec<_>,_>>()?.into_iter()
+                    .filter(|(_,_,_,last,interval,pid)| !honor_leases || !last.is_some_and(|last| lease_live(last, interval.unwrap_or(1), *pid)))
+                    .map(|(id,session,state,_,_,_)|(id,session,state))
+                    .collect()
+            };
             for (id,session,state) in jobs {
                 let terminal=if state=="queued"{"interrupted"}else{"unknown"};let result=json!({"error":"runtime ownership lost; no automatic replay"});
                 tx.execute("UPDATE engine_job SET state=?2,result=?3 WHERE id=?1",params![id,terminal,serde_json::to_string(&result)?])?;
@@ -1206,8 +1223,8 @@ impl Store {
         self.call(move |conn| {
             let now = crate::approval::now_ms() as i64;
             let changed = conn.execute(
-                "UPDATE engine_lease SET last_ms=?3, interval_ms=?4 WHERE session_id=?1 AND epoch=?2",
-                params![lease.session, lease.epoch as i64, now, interval_ms],
+                "UPDATE engine_lease SET last_ms=?3, interval_ms=?4, owner_pid=?5 WHERE session_id=?1 AND epoch=?2",
+                params![lease.session, lease.epoch as i64, now, interval_ms, std::process::id()],
             )?;
             if changed != 1 {
                 return Err(Error::Fenced);
@@ -1227,8 +1244,8 @@ impl Store {
         self.call(move |conn| {
             let now = crate::approval::now_ms() as i64;
             let epoch: i64 = conn.query_row(
-                "INSERT INTO engine_lease(session_id,interval_ms,last_ms,epoch) VALUES(?1,?2,?3,1)\n                 ON CONFLICT(session_id) DO UPDATE SET interval_ms=excluded.interval_ms,last_ms=excluded.last_ms,epoch=engine_lease.epoch+1 RETURNING epoch",
-                params![session, interval_ms, now],
+                "INSERT INTO engine_lease(session_id,interval_ms,last_ms,epoch,owner_pid) VALUES(?1,?2,?3,1,?4)\n                 ON CONFLICT(session_id) DO UPDATE SET interval_ms=excluded.interval_ms,last_ms=excluded.last_ms,epoch=engine_lease.epoch+1,owner_pid=excluded.owner_pid RETURNING epoch",
+                params![session, interval_ms, now, std::process::id()],
                 |row| row.get(0),
             )?;
             Ok(SessionLease { session: session.clone(), epoch: epoch as u64 })
@@ -1251,16 +1268,14 @@ impl Store {
     pub async fn lease_alive(&self, session: &str) -> Result<bool, Error> {
         let session = session.to_owned();
         self.call(move |conn| {
-            let row: Option<(i64, i64)> = conn
+            let row: Option<(i64, i64, Option<u32>)> = conn
                 .query_row(
-                    "SELECT interval_ms,last_ms FROM engine_lease WHERE session_id=?1",
+                    "SELECT interval_ms,last_ms,owner_pid FROM engine_lease WHERE session_id=?1",
                     [&session],
-                    |row| Ok((row.get(0)?, row.get(1)?)),
+                    |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
                 )
                 .optional()?;
-            Ok(row.is_some_and(|(interval, last)| {
-                crate::approval::now_ms().saturating_sub(last as u64) < 2 * interval.max(1) as u64
-            }))
+            Ok(row.is_some_and(|(interval, last, pid)| lease_live(last, interval, pid)))
         })
         .await
     }
@@ -1649,19 +1664,47 @@ impl Store {
     }
 
     /// Startup reconciliation never resumes provider work or repeats tools.
+    /// Startup reconciliation: adopt only runs no live owner holds. A Session
+    /// whose lease is still fresh belongs to another process and must not be
+    /// interrupted here.
     pub async fn recover(&self) -> Result<Vec<Event>, Error> {
-        self.recover_session(None).await
+        self.recover_session_inner(None, true).await
     }
 
+    /// Reconcile one Session this process was driving; its own live lease must
+    /// not stop the cleanup.
     pub async fn recover_session(&self, session: Option<&str>) -> Result<Vec<Event>, Error> {
+        self.recover_session_inner(session, false).await
+    }
+
+    async fn recover_session_inner(
+        &self,
+        session: Option<&str>,
+        honor_leases: bool,
+    ) -> Result<Vec<Event>, Error> {
         let session = session.map(str::to_owned);
         self.call(move |conn| {
             let tx = conn.transaction()?;
             let runs: Vec<(String, String)> = {
-                let mut stmt =
-                    tx.prepare("SELECT id,session_id FROM engine_run WHERE state='running' AND (?1 IS NULL OR session_id=?1)")?;
-                let rows = stmt.query_map([session], |r| Ok((r.get(0)?, r.get(1)?)))?;
-                rows.collect::<Result<_, _>>()?
+                let mut stmt = tx.prepare(
+                    "SELECT r.id,r.session_id,l.last_ms,l.interval_ms,l.owner_pid FROM engine_run r LEFT JOIN engine_lease l ON l.session_id=r.session_id WHERE r.state='running' AND (?1 IS NULL OR r.session_id=?1)",
+                )?;
+                let rows = stmt.query_map([&session], |r| {
+                    Ok((
+                        r.get::<_, String>(0)?,
+                        r.get::<_, String>(1)?,
+                        r.get::<_, Option<i64>>(2)?,
+                        r.get::<_, Option<i64>>(3)?,
+                        r.get::<_, Option<u32>>(4)?,
+                    ))
+                })?;
+                rows.collect::<Result<Vec<_>, _>>()?
+                    .into_iter()
+                    .filter(|(_, _, last, interval, pid)| {
+                        !honor_leases || !last.is_some_and(|last| lease_live(last, interval.unwrap_or(1), *pid))
+                    })
+                    .map(|(run, session, _, _, _)| (run, session))
+                    .collect()
             };
             let mut events = Vec::new();
             for (run, session) in runs {
@@ -1686,6 +1729,29 @@ impl Store {
         })
         .await
     }
+}
+
+/// A lease is live while its heartbeat is fresh and, on hosts where the owner
+/// pid can be probed, that process still runs. A crashed owner therefore stops
+/// being live immediately instead of blocking adoption for a full interval.
+pub(crate) fn lease_live(last_ms: i64, interval_ms: i64, pid: Option<u32>) -> bool {
+    if crate::approval::now_ms() as i64 - last_ms >= 2 * interval_ms.max(1) {
+        return false;
+    }
+    pid.is_none_or(pid_alive)
+}
+
+#[cfg(unix)]
+fn pid_alive(pid: u32) -> bool {
+    // Signal 0 probes existence without delivering anything; EPERM still means
+    // the process exists.
+    let result = unsafe { libc::kill(pid as i32, 0) };
+    result == 0 || std::io::Error::last_os_error().raw_os_error() == Some(libc::EPERM)
+}
+
+#[cfg(not(unix))]
+fn pid_alive(_pid: u32) -> bool {
+    true
 }
 
 /// Recursively sum numeric leaves so per-step provider usage aggregates across a

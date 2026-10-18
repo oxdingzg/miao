@@ -40,7 +40,7 @@ test("a closed client refuses new requests", async () => {
 const binary = process.env.MIAO_ENGINE_BIN
 
 test.skipIf(!binary)(
-  "native storage contention reports Busy instead of losing the exit reason",
+  "native storage is shared by concurrent runtimes",
   async () => {
     await using tmp = await tmpdir()
     const options = {
@@ -52,16 +52,15 @@ test.skipIf(!binary)(
       env: { OPENAI_API_KEY: "fixture-only" },
     }
     const owner = EngineClient.start(options)
+    const other = EngineClient.start(options)
     try {
+      // Session ownership is fenced per Session, so a second runtime on the same
+      // storage is expected to serve too instead of failing with Busy.
       expect(await owner.request("sessions")).toEqual([])
-      const other = EngineClient.start(options)
-      try {
-        await expect(other.request("sessions")).rejects.toMatchObject({ code: "engine_busy" })
-        await expect(other.request("sessions")).rejects.toMatchObject({ code: "engine_busy" })
-      } finally {
-        await other.close()
-      }
+      expect(await other.request("sessions")).toEqual([])
+      expect(await owner.request("sessions")).toEqual([])
     } finally {
+      await other.close()
       await owner.close()
     }
   },

@@ -1,6 +1,18 @@
 import { expect, test } from "bun:test"
 import { nativeEngineOptions } from "@/engine/native-engine"
 import { engineArgs } from "@/engine/client"
+import path from "node:path"
+
+test("explicit formatter manifest survives native option resolution and reaches argv", () => {
+  const options = nativeEngineOptions({
+    MIAO_ENGINE_BIN: "/tmp/engine",
+    MIAO_ENGINE_FORMATTER_CONFIG: "formatter.json",
+  })
+  if (!options) throw new Error("native options missing")
+  const args = engineArgs({ ...options, db: "/tmp/engine.db", workspace: "/workspace" })
+  expect(args).toContain("--formatter-config")
+  expect(args[args.indexOf("--formatter-config") + 1]).toBe(path.resolve("formatter.json"))
+})
 
 test("native coding receives only explicitly configured policy and endpoint", () => {
   expect(nativeEngineOptions({ MIAO_ENGINE_POLICY: "/tmp/policy.json" })).toBeUndefined()
