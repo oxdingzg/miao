@@ -341,6 +341,57 @@ impl Store {
         .await
     }
 
+    /// Drop one durably admitted input before promotion.
+    ///
+    /// The row is retained as `cancelled` evidence instead of being deleted, so
+    /// an exact retry of the same admission identity reports `duplicate` with
+    /// `pending:false` rather than resurrecting the prompt. An unknown id, or
+    /// one already promoted, is reported as not accepted: cancelling a promoted
+    /// prompt is the turn `cancel` operation, not this one.
+    pub async fn cancel_input(&self, session: &str, input_id: &str) -> Result<Value, Error> {
+        if session.is_empty() || input_id.is_empty() || session.len() > 256 || input_id.len() > 256
+        {
+            return Err(Error::Invalid(
+                "session_id and input_id must be nonempty".into(),
+            ));
+        }
+        let (session, input_id) = (session.to_owned(), input_id.to_owned());
+        self.call(move |conn| {
+            let tx = write_tx(conn)?;
+            let state: Option<String> = tx
+                .query_row(
+                    "SELECT state FROM engine_input WHERE id=?1 AND session_id=?2",
+                    params![input_id, session],
+                    |row| row.get(0),
+                )
+                .optional()?;
+            let reply = match state.as_deref() {
+                None => json!({"accepted": false, "reason": "unknown"}),
+                Some("promoted") => json!({"accepted": false, "reason": "promoted"}),
+                // A retry of a completed cancel reports the same accepted
+                // outcome without appending a second event.
+                Some("cancelled") => json!({"accepted": true, "duplicate": true}),
+                Some("pending") => {
+                    tx.execute(
+                        "UPDATE engine_input SET state='cancelled' WHERE id=?1",
+                        [&input_id],
+                    )?;
+                    append(
+                        &tx,
+                        &session,
+                        "input.cancelled",
+                        json!({"input_id": input_id}),
+                    )?;
+                    json!({"accepted": true, "duplicate": false})
+                }
+                Some(other) => return Err(Error::Invalid(format!("unknown input state: {other}"))),
+            };
+            tx.commit()?;
+            Ok(reply)
+        })
+        .await
+    }
+
     pub async fn active_run(&self, session: &str) -> Result<Option<String>, Error> {
         let session = session.to_owned();
         self.call(move |conn| {
@@ -1887,7 +1938,13 @@ pub(crate) fn admit_input(
         Delivery::Steer => "steer",
         Delivery::Queue => "queue",
     };
-    if let Some((session, prompt, mode, _, _, stored)) = &existing {
+    if let Some((session, prompt, mode, _, state, stored)) = &existing {
+        // A cancelled admission identity is dead. Re-admitting it would either
+        // resurrect a prompt the operator dropped or report a receipt whose
+        // prompt never runs, so it conflicts like any other reused identity.
+        if state == "cancelled" {
+            return Err(Error::Conflict);
+        }
         let stored = stored.clone().unwrap_or_else(|| "[]".into());
         if session != &input.session_id
             || prompt != &input.prompt

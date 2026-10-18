@@ -39,6 +39,69 @@ async fn lost_ack_is_exact_retry_and_conflicts_do_not_change_history() {
 }
 
 #[tokio::test]
+async fn cancelling_a_pending_input_keeps_it_from_being_promoted_or_resurrected() {
+    let dir = tempfile::tempdir().unwrap();
+    let store = Store::open(dir.path().join("engine.db")).await.unwrap();
+    store.admit(input("drop", Delivery::Queue)).await.unwrap();
+    store.admit(input("keep", Delivery::Steer)).await.unwrap();
+    assert_eq!(
+        store.cancel_input("s", "drop").await.unwrap(),
+        json!({"accepted": true, "duplicate": false})
+    );
+    // An exact retry reports the same accepted outcome and appends no event.
+    assert_eq!(
+        store.cancel_input("s", "drop").await.unwrap(),
+        json!({"accepted": true, "duplicate": true})
+    );
+    // An exact retry of the cancelled admission conflicts: the identity is
+    // dead, so it can neither resurrect the prompt nor report a receipt.
+    assert!(matches!(
+        store.admit(input("drop", Delivery::Queue)).await,
+        Err(Error::Conflict)
+    ));
+    assert_eq!(store.promote("s", false).await.unwrap().len(), 1);
+    assert!(store.promote("s", true).await.unwrap().is_empty());
+    assert_eq!(store.history("s").await.unwrap().len(), 1);
+    assert_eq!(
+        store.cancel_input("s", "missing").await.unwrap(),
+        json!({"accepted": false, "reason": "unknown"})
+    );
+    assert_eq!(
+        store.cancel_input("other", "keep").await.unwrap(),
+        json!({"accepted": false, "reason": "unknown"})
+    );
+    assert_eq!(
+        store
+            .events("s", 0, 100)
+            .await
+            .unwrap()
+            .into_iter()
+            .map(|event| event.kind)
+            .collect::<Vec<_>>(),
+        vec![
+            "input.admitted",
+            "input.admitted",
+            "input.cancelled",
+            "input.promoted"
+        ],
+        "the cancel retry appends no second event"
+    );
+}
+
+#[tokio::test]
+async fn cancelling_a_promoted_input_defers_to_the_turn_cancel() {
+    let dir = tempfile::tempdir().unwrap();
+    let store = Store::open(dir.path().join("engine.db")).await.unwrap();
+    store.admit(input("live", Delivery::Steer)).await.unwrap();
+    store.promote("s", false).await.unwrap();
+    assert_eq!(
+        store.cancel_input("s", "live").await.unwrap(),
+        json!({"accepted": false, "reason": "promoted"})
+    );
+    assert_eq!(store.history("s").await.unwrap().len(), 1);
+}
+
+#[tokio::test]
 async fn promotion_serializes_admissions_and_queues_only_at_idle() {
     let dir = tempfile::tempdir().unwrap();
     let store = Store::open(dir.path().join("engine.db")).await.unwrap();
