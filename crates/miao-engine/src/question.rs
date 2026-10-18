@@ -215,11 +215,25 @@ impl Store {
         }).await
     }
     pub async fn recover_questions(&self) -> Result<(), Error> {
+        self.recover_questions_inner(false).await
+    }
+
+    /// Startup reconciliation: leave questions alone while another runtime still
+    /// holds a live lease on their Session.
+    pub async fn recover_questions_unowned(&self) -> Result<(), Error> {
+        self.recover_questions_inner(true).await
+    }
+
+    async fn recover_questions_inner(&self, honor_leases: bool) -> Result<(), Error> {
         self.call(move|conn|{
             let tx=conn.transaction()?;
-            let requests={
-                let mut stmt=tx.prepare("SELECT q.session_id,q.data FROM engine_event q WHERE q.kind='question.requested' AND NOT EXISTS(SELECT 1 FROM engine_event r WHERE r.session_id=q.session_id AND r.kind='question.resolved' AND json_extract(r.data,'$.question_id')=json_extract(q.data,'$.question_id')) LIMIT 257")?;
-                let rows=stmt.query_map([],|row|Ok((row.get::<_,String>(0)?,row.get::<_,String>(1)?)))?;rows.collect::<Result<Vec<_>,_>>()?
+            let requests: Vec<(String, String)> = {
+                let mut stmt=tx.prepare("SELECT q.session_id,q.data,l.last_ms,l.interval_ms,l.owner_pid FROM engine_event q LEFT JOIN engine_lease l ON l.session_id=q.session_id WHERE q.kind='question.requested' AND NOT EXISTS(SELECT 1 FROM engine_event r WHERE r.session_id=q.session_id AND r.kind='question.resolved' AND json_extract(r.data,'$.question_id')=json_extract(q.data,'$.question_id')) LIMIT 257")?;
+                let rows=stmt.query_map([],|row|Ok((row.get::<_,String>(0)?,row.get::<_,String>(1)?,row.get::<_,Option<i64>>(2)?,row.get::<_,Option<i64>>(3)?,row.get::<_,Option<u32>>(4)?)))?;
+                rows.collect::<Result<Vec<_>,_>>()?.into_iter()
+                    .filter(|(_,_,last,interval,pid)| !honor_leases || !last.is_some_and(|last| crate::store::lease_live(last, interval.unwrap_or(1), *pid)))
+                    .map(|(session,data,_,_,_)|(session,data))
+                    .collect()
             };
             if requests.len()>256{return Err(Error::Invalid("question recovery budget exceeded".into()));}
             for (session,data) in requests {
