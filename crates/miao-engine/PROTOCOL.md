@@ -29,6 +29,7 @@ does not claim ACP or the existing miao HttpApi is compatible.
 | `cancel` | `session_id` | `{accepted:bool}` |
 | `archive` | `session_id`, `archived` | `{accepted:true, archived}` |
 | `remove` | `session_id` | `{accepted:bool, reason?}` |
+| `request_compact` | `session_id` | `{accepted:true, duplicate, pending}` |
 | `events` | `session_id`, `after` | `Event[]` (page ≤ 100) |
 | `snapshot` | `session_id` | committed Session snapshot |
 | `sessions` | — | `string[]` (Session ids) |
@@ -159,6 +160,27 @@ A cancelled identity is terminal: admitting the same `session_id`/`input_id`
 again fails with `input_conflict` instead of resurrecting the dropped prompt or
 returning a receipt whose prompt never runs. A client that wants to re-send a
 cancelled prompt admits it under a fresh `input_id`.
+
+### Operator-requested compaction
+
+`request_compact` takes `session_id` and asks for one compaction at the next
+settled assistant boundary even when the budget gate is under its threshold. The
+request is durable — `compaction.requested` — and idempotent: a retried command
+reports `duplicate` instead of queueing a second compaction. One attempt answers
+it at that boundary, appending `compaction.settled` with `compacted`, so a
+summarizer the provider keeps refusing cannot pin a Session; asking again is what
+asks for another try.
+
+The request is itself the trigger, so a forced pass runs even on a runtime
+without configured context limits (it summarizes the selected history instead of
+retaining the exact last provider request, and elision stays off). Every other
+gate still applies: only a completed answer is cut, never a tool continuation or
+a reverted transcript. Automatic compaction keeps its own trigger; this command
+does not change the budget.
+
+An idle Session honours the request at its next provider turn rather than
+compacting in the middle of nothing, which is where a Session's settled boundary
+actually exists.
 
 ### Archiving
 

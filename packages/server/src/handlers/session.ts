@@ -448,6 +448,19 @@ export const SessionHandler = HttpApiBuilder.group(Api, "server.session", (handl
       .handle(
         "session.compact",
         Effect.fn(function* (ctx) {
+          const native = yield* Effect.serviceOption(NativeEngine.Service)
+          const placement = Option.getOrUndefined(yield* Effect.serviceOption(NativeEngine.Placement))
+          if (Option.isSome(native) && placement) {
+            // The engine records a durable request and honours it at the next
+            // settled assistant boundary; an idle Session therefore compacts on
+            // its next provider turn rather than in the middle of one.
+            yield* native.value.requestCompact({
+              sessionID: ctx.params.sessionID,
+              storage: placement.storage,
+              location: placement.location,
+            })
+            return
+          }
           yield* requireTypescriptOwner(ctx.params.sessionID, "session.compact")
           yield* session.compact({ sessionID: ctx.params.sessionID }).pipe(
             Effect.catchTag("Session.NotFoundError", (error) =>

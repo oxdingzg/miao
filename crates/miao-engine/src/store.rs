@@ -642,6 +642,73 @@ impl Store {
         .await
     }
 
+    /// Record an operator request to compact at the next settled boundary.
+    ///
+    /// The request is durable rather than in-memory because the serialized drain
+    /// reads it where the automatic trigger's machinery already lives: a settled
+    /// assistant boundary. An unanswered request is idempotent, so a retried
+    /// command neither queues a second compaction nor loses the intent.
+    pub async fn request_compaction(&self, session: &str) -> Result<Value, Error> {
+        let session = session.to_owned();
+        self.call(move |conn| {
+            let tx = write_tx(conn)?;
+            let exists: bool = tx.query_row(
+                "SELECT EXISTS(SELECT 1 FROM engine_session WHERE id=?1)",
+                [&session],
+                |row| row.get(0),
+            )?;
+            if !exists {
+                return Err(Error::Invalid("Session does not exist".into()));
+            }
+            if pending_compaction_request_seq(&tx, &session)?.is_some() {
+                return Ok(json!({"accepted": true, "duplicate": true, "pending": true}));
+            }
+            append(
+                &tx,
+                &session,
+                "compaction.requested",
+                json!({"requested_at_ms": now_ms()}),
+            )?;
+            tx.commit()?;
+            Ok(json!({"accepted": true, "duplicate": false, "pending": true}))
+        })
+        .await
+    }
+
+    /// The seq of the operator request no attempt has answered yet.
+    pub async fn pending_compaction_request(&self, session: &str) -> Result<Option<u64>, Error> {
+        let session = session.to_owned();
+        self.call(move |conn| pending_compaction_request_seq(conn, &session))
+            .await
+    }
+
+    /// Close a compaction request. One attempt answers it either way, so a
+    /// summarizer the provider keeps refusing cannot pin the Session forever and
+    /// a second request is what asks for another try.
+    pub async fn settle_compaction_request(
+        &self,
+        session: &str,
+        request_seq: u64,
+        compacted: bool,
+    ) -> Result<Option<Event>, Error> {
+        let session = session.to_owned();
+        self.call(move |conn| {
+            let tx = write_tx(conn)?;
+            if pending_compaction_request_seq(&tx, &session)? != Some(request_seq) {
+                return Ok(None);
+            }
+            let event = append(
+                &tx,
+                &session,
+                "compaction.settled",
+                json!({"request_seq": request_seq, "compacted": compacted}),
+            )?;
+            tx.commit()?;
+            Ok(Some(event))
+        })
+        .await
+    }
+
     pub async fn promote(&self, session: &str, idle: bool) -> Result<Vec<Event>, Error> {
         self.promote_inner(session, idle, None).await
     }
@@ -1952,6 +2019,24 @@ fn pid_alive(_pid: u32) -> bool {
 /// Recursively sum numeric leaves so per-step provider usage aggregates across a
 /// run regardless of provider field names (`input_tokens` vs `prompt_tokens`, or
 /// nested `*_details`). Non-numeric leaves take the latest value.
+/// The newest operator compaction request that no settled attempt has answered.
+fn pending_compaction_request_seq(conn: &Connection, session: &str) -> Result<Option<u64>, Error> {
+    let requested: Option<u64> = conn.query_row(
+        "SELECT MAX(seq) FROM engine_event WHERE session_id=?1 AND kind='compaction.requested'",
+        [session],
+        |row| row.get(0),
+    )?;
+    let Some(requested) = requested else {
+        return Ok(None);
+    };
+    let settled: bool = conn.query_row(
+        "SELECT EXISTS(SELECT 1 FROM engine_event WHERE session_id=?1 AND kind='compaction.settled' AND json_extract(data,'$.request_seq')=?2)",
+        params![session, requested],
+        |row| row.get(0),
+    )?;
+    Ok((!settled).then_some(requested))
+}
+
 fn merge_usage(acc: &mut Value, next: &Value) {
     match next {
         Value::Object(update) => {

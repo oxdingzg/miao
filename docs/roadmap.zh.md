@@ -153,6 +153,11 @@ V1 形状的遗留：
       `session.archive`/`session.remove` 承接）。归档是可逆的目录事实，快照会回报；
       删除会先中断 drain、停掉该会话的 job/timer/cron/terminal，再删掉它的行并释放
       产品侧 placement，fork 子会话保留、只丢掉 lineage 边。
+- [x] 操作者请求压缩 —— RS 原生 `request_compact`（原生会话已由
+      `session.compact` 承接）。请求是持久且幂等的，下一次已闭合的 assistant 边界会
+      强制执行一次压缩（未配置 context limits 也生效），无论成败都会结算。空闲会话
+      在它的下一个 provider turn 生效（TS runner 是直接 resume 会话；引擎在 run 之外
+      没有压缩入口）。
 - [ ] 核心工具产出增量工具进度检查点（bash 目前为缓冲输出）。
 - [ ] 在 provider 历史降级前物化 remote 与 managed URI（`to-llm-message.ts:80` TODO）。
 - **验收：** 中断一个带子任务与悬挂审批的会话 → 无悬挂/丢失状态，无丢失的排队消息。

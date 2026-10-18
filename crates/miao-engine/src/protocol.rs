@@ -262,6 +262,12 @@ pub enum Command {
     Remove {
         session_id: String,
     },
+    /// Ask for one compaction at the next settled assistant boundary, even when
+    /// the automatic trigger's budget gate is under its threshold. The request is
+    /// durable and idempotent; one attempt answers it, either way.
+    RequestCompact {
+        session_id: String,
+    },
     Cancel {
         session_id: String,
     },

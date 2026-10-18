@@ -61,6 +61,16 @@ export interface Interface {
     inputID: SessionMessage.ID
   }) => Effect.Effect<boolean, ConflictError>
   /**
+   * Ask the engine for one compaction at its next settled assistant boundary,
+   * even when automatic compaction is not configured or under its threshold.
+   * The request is durable and idempotent.
+   */
+  readonly requestCompact: (input: {
+    sessionID: SessionID
+    storage: AbsolutePath
+    location: Location.Ref
+  }) => Effect.Effect<void, ConflictError>
+  /**
    * Set or clear the engine's archive timestamp. Archiving is a catalog fact
    * that survives in the snapshot, so the product projection can filter on it.
    */
