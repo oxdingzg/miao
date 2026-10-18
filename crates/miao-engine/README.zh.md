@@ -330,7 +330,7 @@ MCP server 是拥有自身 filesystem/network authority 的可信外部服务，
 - schema 最多 32 KiB，JSON Schema 校验在授权及派发之前完成；description 最多 4 KiB。
 - 初始化默认 15 秒，catalog 与工具请求默认 60 秒。每个 server 可通过 `timeout.startup` / `timeout.request` 设置正整数毫秒。wire frame 256 KiB，返回结果 64 KiB。
 - 进程 server 可设置 `cwd`，相对路径从 engine workspace 解析。产品共享 MCP 配置会保留该字段；全局和 server 超时逐字段合并，server 值优先。
-- 可选 `call_meta` 字符串映射会逐次写入 `tools/call` 的 `_meta`，与模型参数和公开目录分离。`{env:VAR}` 在每次调用前从 engine 进程环境解析；缺失或非法值会在发送前失败。最多 32 个键、每值 8 KiB、总量 64 KiB。产品共享配置对两种传输都会保留模板。
+- 可选 `call_meta` 字符串映射会逐次写入 `tools/call` 的 `_meta`，与模型参数和公开目录分离。`{env:VAR}` 在每次调用前从 engine 进程环境解析；缺失或非法值会在发送前失败。最多 32 个键、每值 8 KiB、总量 64 KiB。产品共享配置对两种传输都会保留模板；启动 engine 时仅转发模板显式引用的父进程变量，后续解析读取 engine 自身环境。
 - input/task continuation 显式失败；断连/超时不自动重放，不能断言外部副作用未发生。
 - cancel 停止本地等待，已派发调用可能仍在 server 执行；Session 恢复沿用 unknown intent 边界。
 - 正常 shutdown 关闭 transport 并 kill/reap 配置的直接子进程。引擎硬退出、server 派生/daemon 进程

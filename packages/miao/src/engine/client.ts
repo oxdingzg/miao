@@ -275,7 +275,7 @@ export class EngineClient {
         stdin: "pipe",
         stdout: "pipe",
         stderr: "pipe",
-        env: engineEnvironment(options.env),
+        env: engineEnvironment({ ...manifest?.environment, ...options.env }),
       })
       return new EngineClient(child, manifest?.dispose)
     } catch (error) {

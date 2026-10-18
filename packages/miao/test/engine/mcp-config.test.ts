@@ -4,6 +4,7 @@ import { existsSync, statSync } from "node:fs"
 import { Schema } from "effect"
 import { ConfigMCP } from "@miao/schema/config/mcp"
 import { prepareMcpConfig } from "@/engine/mcp-config"
+import { engineEnvironment } from "../../src/engine/client"
 import { tmpdir } from "../fixture/fixture"
 
 const local = Schema.decodeUnknownSync(ConfigMCP.Info)({
@@ -148,6 +149,68 @@ test("shared cwd and per-field startup/request timeout overrides reach native MC
       },
       { name: "remote", url: "https://example.invalid/mcp", headers: {}, timeout: { startup: 1000, request: 9000 } },
     ])
+  } finally {
+    snapshot.dispose()
+  }
+})
+
+test("authorized call metadata forwards only referenced environment identities to a real child", async () => {
+  await using tmp = await tmpdir()
+  const policyFile = path.join(tmp.path, "policy.json")
+  await Bun.write(policyFile, JSON.stringify({ mode: "workspace", allow_mcp: true }))
+  const snapshot = prepareMcpConfig(
+    {
+      binary: "unused",
+      model: "unused",
+      db: "unused",
+      workspace: tmp.path,
+      policyFile,
+      mcpSettings: Schema.decodeUnknownSync(ConfigMCP.Info)({
+        servers: {
+          fixture: {
+            type: "local",
+            command: ["unused"],
+            call_meta: {
+              identity: "Bearer {env:MCP_IDENTITY_FIXTURE}",
+              duplicate: "{env:MCP_IDENTITY_FIXTURE}",
+              missing: "{env:MCP_MISSING_FIXTURE}",
+            },
+          },
+          disabled: {
+            type: "local",
+            command: ["unused"],
+            disabled: true,
+            call_meta: { identity: "{env:MCP_DISABLED_FIXTURE}" },
+          },
+        },
+      }),
+    },
+    {
+      MCP_IDENTITY_FIXTURE: "selected-identity",
+      MCP_DISABLED_FIXTURE: "disabled-identity",
+      MCP_UNDECLARED_FIXTURE: "unrelated-identity",
+    },
+  )
+  if (!snapshot) throw new Error("authorized config must produce a snapshot")
+  try {
+    expect(snapshot.environment).toEqual({ MCP_IDENTITY_FIXTURE: "selected-identity" })
+    expect(await Bun.file(snapshot.file).text()).not.toContain("selected-identity")
+    const script = path.join(tmp.path, "environment.ts")
+    await Bun.write(
+      script,
+      "console.log(JSON.stringify({ selected: process.env.MCP_IDENTITY_FIXTURE, unrelated: process.env.MCP_UNDECLARED_FIXTURE ?? null, disabled: process.env.MCP_DISABLED_FIXTURE ?? null }))",
+    )
+    const child = Bun.spawn([process.execPath, script], {
+      env: engineEnvironment(snapshot.environment),
+      stdout: "pipe",
+      stderr: "pipe",
+    })
+    const output = await new Response(child.stdout).json()
+    expect(await child.exited).toBe(0)
+    expect(output).toEqual({ selected: "selected-identity", unrelated: null, disabled: null })
+    expect(engineEnvironment({ ...snapshot.environment, MCP_IDENTITY_FIXTURE: "explicit" }).MCP_IDENTITY_FIXTURE).toBe(
+      "explicit",
+    )
   } finally {
     snapshot.dispose()
   }
