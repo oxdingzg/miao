@@ -69,6 +69,22 @@ Claude Code 的升级生效时机和 Remote Control 退出语义有明确文档�
 | 自动升级         | `cli/upgrade.ts` 已有锁、缓存、通知和不重启当前进程的意图；TUI 默认 Runtime 分支跳过下方 Worker 的 `checkUpgrade` 调用                  | 核对所有发布入口，迁移为运行作用域内的后台任务                            |
 | 安装原子性       | Unix 下载用临时目录后 `mv`，本地 binary 路径直接 `cp`；跨文件系统 mv 与覆盖复制不构成统一的原子安装契约；Windows 有 staging、验证、备份 | 安装器与 `installation/windows.ts`                                        |
 
+### 3.1 实施后现状（2026-10-18）
+
+上表是改动前的调查基线，其中以下各行已经关闭：
+
+- **窗口生命周期**：`cli/cmd/tui.ts` 在 `!external` 时直接 `RuntimeHost.start`，
+  不再 `RuntimeConnect.ensure` 共享 Runtime；`runtime/connect.ts` 只启动"本次调用拥有"
+  的 runtime，注释明确 "No discovery or detached processes"。宿主随窗口退出，无 detached
+  进程可回收，因此 `runtime-lifetime.md` 的空闲退出策略不再适用。
+- **本地执行所有权**：`SessionExecutionLocal` 在 drain 前调用
+  `SessionOwnership.claim(sessionID)`（`core/src/session/execution/local.ts:92`），
+  跨窗口同 Session 的"单一执行所有者"已由持久所有权保证。
+- **整库锁**：产品库仍使用 `RuntimeOwnership.acquireShared` 共享打开；原生引擎库已改为
+  "迁移期独占、运行期共享 + 按 Session 的 fenced 租约"（#1046/#1050/#1051），
+  与本节"多窗口同一历史库"的契约一致。
+- **剩余**：`miao serve` / 显式 attach 仍是前台服务语义；没有常驻 daemon 需要 `status`。
+
 当前能保证“安装不会主动重启旧 Runtime”，却不能保证“新窗口由新执行代码运行”。
 把 linger 设为 0 也无济于事：其他窗口、执行或 remote pin 仍可保留旧 owner。
 不能仅恢复 Worker 分支或删掉 detached：全库锁会拒绝第二个窗口，进程内事件/协调器又无法独自保护跨进程执行。

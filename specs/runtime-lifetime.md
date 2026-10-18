@@ -4,13 +4,17 @@
 > product contract and implementation schedule. The idle vector, remote pins,
 > supervisor mode and automatic replacement below are historical proposals,
 > not work to continue. Closing the owning window ends its execution and remote
-> resources even while busy. Activity/linger primitives have landed, but the
-> host does not yet implement the idle-exit policy described below.
+> resources even while busy.
+>
+> Current implementation: there is no detached runtime to reap. `RuntimeHost.start`
+> runs the runtime inside the owning window, `RuntimeConnect.open` starts a fresh
+> runtime owned by the invocation, and both stop with that process
+> (`packages/miao/src/runtime/host.ts`, `packages/miao/src/runtime/connect.ts`).
+> The idle-exit policy below therefore has no target and is not planned.
 
-Status: design, 2026-10-06. Extends `specs/runtime-upgrades.md` and supplies the
-quiescence signal its "Future service replacement" requires. Prerequisite for the
-automatic replacement discussed there and for `specs/v2/execution-workers.md`.
-Historical design; partially implemented primitives only.
+Status: historical design, 2026-10-06. Extends `specs/runtime-upgrades.md` and
+supplied the quiescence signal its "Future service replacement" required. Kept
+for the reasoning only; the window-owned runtime replaced it.
 
 ## Problem
 
