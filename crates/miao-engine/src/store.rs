@@ -1193,6 +1193,29 @@ impl Store {
     pub async fn heartbeat_lease(&self, session: &str, interval_ms: i64) -> Result<i64, Error> {
         Ok(self.claim_session(session, interval_ms).await?.epoch as i64)
     }
+
+    /// Renew this writer's claim without changing its epoch. Renewal must not
+    /// bump the fence, or a long turn would invalidate its own lease on every
+    /// heartbeat; a superseded writer learns it lost ownership here.
+    pub async fn renew_session(
+        &self,
+        lease: &SessionLease,
+        interval_ms: i64,
+    ) -> Result<SessionLease, Error> {
+        let (lease, interval_ms) = (lease.clone(), interval_ms);
+        self.call(move |conn| {
+            let now = crate::approval::now_ms() as i64;
+            let changed = conn.execute(
+                "UPDATE engine_lease SET last_ms=?3, interval_ms=?4 WHERE session_id=?1 AND epoch=?2",
+                params![lease.session, lease.epoch as i64, now, interval_ms],
+            )?;
+            if changed != 1 {
+                return Err(Error::Fenced);
+            }
+            Ok(lease)
+        })
+        .await
+    }
     /// Claim Session execution ownership. Every claim advances the durable
     /// epoch, which is the fence that Session-scoped writes must present.
     pub async fn claim_session(

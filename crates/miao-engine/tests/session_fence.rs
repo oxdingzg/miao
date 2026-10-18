@@ -131,3 +131,22 @@ async fn execution_writes_reject_a_superseded_lease() {
         .unwrap()
         .is_empty());
 }
+
+#[tokio::test]
+async fn renewal_keeps_the_epoch_but_a_takeover_ends_it() {
+    let dir = tempfile::tempdir().unwrap();
+    let store = open(&dir).await;
+    let lease = store.claim_session("ses_fence", 30_000).await.unwrap();
+    let renewed = store.renew_session(&lease, 30_000).await.unwrap();
+    assert_eq!(renewed.epoch, lease.epoch);
+    store
+        .record_fenced("ses_fence", "note", json!({"text": "renewed"}), &renewed)
+        .await
+        .unwrap();
+    let takeover = store.claim_session("ses_fence", 30_000).await.unwrap();
+    assert_eq!(takeover.epoch, lease.epoch + 1);
+    assert!(matches!(
+        store.renew_session(&renewed, 30_000).await.unwrap_err(),
+        Error::Fenced
+    ));
+}
