@@ -85,6 +85,13 @@ impl Scope {
         )
     }
 
+    pub(crate) fn matches_approval(&self, approval: &crate::approval::Approval) -> bool {
+        self.workspace == approval.location
+            && self.tool == approval.tool
+            && self.resource == approval.resource
+            && self.input_hash == approval.input_hash
+    }
+
     fn encode(&self) -> Result<String, Error> {
         let encoded = serde_json::to_string(self)?;
         if encoded.len() > MAX_BYTES {
@@ -106,12 +113,48 @@ fn invalid() -> Error {
 }
 
 pub(crate) fn initialize(connection: &Connection) -> Result<(), Error> {
-    connection.execute_batch("CREATE TABLE IF NOT EXISTS engine_permission_grant(scope_hash TEXT PRIMARY KEY, scope TEXT NOT NULL, created_at_ms INTEGER NOT NULL);")?;
+    connection.execute_batch("CREATE TABLE IF NOT EXISTS engine_permission_grant(scope_hash TEXT PRIMARY KEY, scope TEXT NOT NULL, created_at_ms INTEGER NOT NULL); CREATE TABLE IF NOT EXISTS engine_permission_request_scope(request_id TEXT PRIMARY KEY REFERENCES engine_approval(id) ON DELETE CASCADE,scope TEXT NOT NULL);")?;
     Ok(())
 }
 
+pub(crate) fn bind_request(
+    transaction: &Transaction<'_>,
+    approval: &crate::approval::Approval,
+    scope: &Scope,
+) -> Result<(), Error> {
+    if !scope.matches_approval(approval) {
+        return Err(Error::ApprovalMismatch);
+    }
+    transaction.execute(
+        "INSERT INTO engine_permission_request_scope(request_id,scope) VALUES(?1,?2)",
+        params![approval.request_id, scope.encode()?],
+    )?;
+    Ok(())
+}
+
+pub(crate) fn request_scope(
+    connection: &Connection,
+    approval: &crate::approval::Approval,
+) -> Result<Scope, Error> {
+    let stored: Option<String> = connection
+        .query_row(
+            "SELECT scope FROM engine_permission_request_scope WHERE request_id=?1",
+            [&approval.request_id],
+            |row| row.get(0),
+        )
+        .optional()?;
+    let scope =
+        Scope::decode(&stored.ok_or_else(|| {
+            Error::Invalid("persistent scope unavailable for this approval".into())
+        })?)?;
+    if !scope.matches_approval(approval) {
+        return Err(Error::ApprovalMismatch);
+    }
+    Ok(scope)
+}
+
 /// The caller owns the transaction so approval resolution and grant creation
-/// can commit together. No approval-resolution API calls this primitive yet.
+/// commit together.
 pub(crate) fn insert(
     transaction: &Transaction<'_>,
     scope: &Scope,

@@ -78,7 +78,7 @@ enum Command {
     Wake(bool),
     Cancel(oneshot::Sender<bool>),
     CancelIf(String, oneshot::Sender<Result<bool, Error>>),
-    Approve(Response, oneshot::Sender<Result<(), Error>>),
+    Approve(Response, bool, oneshot::Sender<Result<(), Error>>),
 }
 
 impl Runtime {
@@ -399,6 +399,27 @@ impl Runtime {
         session: &str,
         response: Response,
     ) -> Result<(), Error> {
+        self.approve_inner(controller, session, response, false)
+            .await
+    }
+
+    pub async fn approve_persistent(
+        &self,
+        controller: &Controller,
+        session: &str,
+        response: Response,
+    ) -> Result<(), Error> {
+        self.approve_inner(controller, session, response, true)
+            .await
+    }
+
+    async fn approve_inner(
+        &self,
+        controller: &Controller,
+        session: &str,
+        response: Response,
+        persistent: bool,
+    ) -> Result<(), Error> {
         let agent = self.inner.store.agent(session).await?;
         let policy = self
             .inner
@@ -414,7 +435,7 @@ impl Runtime {
         let commands = commands.ok_or(Error::ApprovalResolved)?;
         let (send, receive) = oneshot::channel();
         commands
-            .send(Command::Approve(response, send))
+            .send(Command::Approve(response, persistent, send))
             .await
             .map_err(|_| Error::Closed)?;
         receive.await.map_err(|_| Error::Closed)?
@@ -972,8 +993,8 @@ async fn coordinate(session: String, inner: Arc<Inner>, mut commands: mpsc::Rece
                     };
                     let _ = reply.send(result);
                 },
-                Some(Command::Approve(response,reply))=>{
-                    let result=if active.as_ref().is_none_or(|token|token.is_cancelled()){Err(Error::ApprovalResolved)}else{inner.store.resolve_approval(&session,response).await.map(|_|())};
+                Some(Command::Approve(response,persistent,reply))=>{
+                    let result=if active.as_ref().is_none_or(|token|token.is_cancelled()){Err(Error::ApprovalResolved)}else if persistent {inner.store.resolve_approval_persistent(&session,response).await.map(|_|())} else {inner.store.resolve_approval(&session,response).await.map(|_|())};
                     let _=reply.send(result);
                 },
                 None => break,
@@ -3159,6 +3180,32 @@ async fn authorize(
         }
         Decision::Ask => {}
     }
+    let input_hash = input_digest(
+        inner.tools.location(),
+        prepared.name(),
+        prepared.resource(),
+        prepared.input(),
+    )?;
+    let authority_revision = crate::permission::digest(&serde_json::to_vec(&json!({
+        "semantics":"exact-persistent-authority-v1","policy":policy.revision(),
+        "boundary":inner.tools.grant_authority_descriptor(),"access":format!("{:?}",prepared.access()),
+    }))?);
+    let mut targets = prepared.targets().to_vec();
+    if targets.is_empty() {
+        targets.push(prepared.resolved_path().to_string_lossy().into_owned());
+    }
+    let scope = crate::permission_grant::Scope::new(
+        inner.tools.location().into(),
+        authority_revision,
+        prepared.name().into(),
+        prepared.resource().into(),
+        targets,
+        input_hash.clone(),
+    )?;
+    if inner.store.has_permission_grant(scope.clone()).await? {
+        inner.store.record(session,"permission.grant.used",json!({"run_id":run,"call_id":call,"tool":prepared.name(),"resource":prepared.resource(),"policy_revision":policy.revision()})).await?;
+        return Ok(true);
+    }
     let approval = Approval {
         request_id: uuid::Uuid::new_v4().to_string(),
         session_id: session.into(),
@@ -3168,17 +3215,15 @@ async fn authorize(
         tool: prepared.name().into(),
         resource: prepared.resource().into(),
         input: prepared.input().clone(),
-        input_hash: input_digest(
-            inner.tools.location(),
-            prepared.name(),
-            prepared.resource(),
-            prepared.input(),
-        )?,
+        input_hash,
         policy_revision: policy.revision().into(),
         matcher,
         expires_at_ms: now_ms().saturating_add(policy.timeout_ms()),
     };
-    inner.store.request_approval(approval.clone()).await?;
+    inner
+        .store
+        .request_approval_with_scope(approval.clone(), scope)
+        .await?;
     inner.store.record(session,crate::events::Lifecycle::PermissionRequest.name(),json!({"run_id":run,"call_id":call,"tool":prepared.name(),"resource":prepared.resource()})).await?;
     let deadline =
         tokio::time::Instant::now() + std::time::Duration::from_millis(policy.timeout_ms());

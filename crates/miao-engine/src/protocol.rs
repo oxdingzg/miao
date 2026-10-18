@@ -432,6 +432,10 @@ pub enum Command {
         session_id: String,
         response: Response,
     },
+    ApprovePersistent {
+        session_id: String,
+        response: Response,
+    },
     Shutdown,
 }
 

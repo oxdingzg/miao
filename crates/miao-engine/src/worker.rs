@@ -8,7 +8,7 @@ use crate::{
     protocol::{Error, ToolDefinition},
     tools::ToolError,
 };
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use std::{
     collections::BTreeMap,
@@ -32,7 +32,7 @@ const CALL_TIMEOUT: Duration = Duration::from_secs(60);
 const CANCEL_TIMEOUT: Duration = Duration::from_millis(200);
 const STOP_TIMEOUT: Duration = Duration::from_secs(1);
 
-#[derive(Deserialize)]
+#[derive(Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct Config {
     pub argv: Vec<String>,
@@ -129,12 +129,16 @@ struct Tool {
 /// One optional worker process. `connect` spawns it; `connect_io` attaches a
 /// fake transport for tests. A failure here degrades the capabilities it serves.
 pub struct Registry {
+    authority: String,
     tools: BTreeMap<String, Tool>,
     client: Mutex<Client>,
     child: Mutex<Option<Child>>,
     available: AtomicBool,
 }
 impl Registry {
+    pub(crate) fn authority(&self) -> &str {
+        &self.authority
+    }
     pub async fn connect(config: Config, workspace: &Path) -> Result<Self, Error> {
         if config.argv.is_empty()
             || config.argv.len() > 128
@@ -175,6 +179,7 @@ impl Registry {
             .take()
             .ok_or_else(|| Error::Invalid("worker stdin missing".into()))?;
         let mut registry = Self {
+            authority: crate::permission::digest(&serde_json::to_vec(&config)?),
             tools: BTreeMap::new(),
             client: Mutex::new(Client::new(read, write)),
             child: Mutex::new(Some(child)),
@@ -190,6 +195,7 @@ impl Registry {
         W: AsyncWrite + Unpin + Send + 'static,
     {
         let mut registry = Self {
+            authority: uuid::Uuid::new_v4().to_string(),
             tools: BTreeMap::new(),
             client: Mutex::new(Client::new(read, write)),
             child: Mutex::new(None),

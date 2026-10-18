@@ -422,24 +422,20 @@ export const fromOwners = (
       }),
     replyPermission: (input) =>
       read(input, async (connection) => {
-        // An engine allow is once-only. Never silently turn a persistent grant
-        // into a one-off approval (or create a TS rule the engine cannot read).
-        if (input.reply === "always")
-          throw new EngineError(
-            "persistent_approval_unavailable",
-            "Native approvals are once-only; configure a native policy rule for persistent grants",
-          )
         const snapshot = await connection.client.request("snapshot", { session_id: input.sessionID })
         const binding = Schema.decodeUnknownSync(ApprovalBindings)(snapshot).approvals.find(
           (binding) => binding.session_id === input.sessionID && `per_${binding.request_id}` === input.requestID,
         )
         if (!binding) throw new EngineError("approval_not_found", "No pending approval in this Session")
-        return connection.client.approve(input.sessionID, {
+        const response = {
           request_id: binding.request_id,
           input_hash: binding.input_hash,
           policy_revision: binding.policy_revision,
-          decision: input.reply === "once" ? "allow" : "deny",
-        })
+          decision: input.reply === "reject" ? ("deny" as const) : ("allow" as const),
+        }
+        if (input.reply === "always")
+          return connection.client.request("approve_persistent", { session_id: input.sessionID, response })
+        return connection.client.approve(input.sessionID, response)
       }).pipe(Effect.asVoid),
     questions: (input) =>
       read<readonly Question.Request[]>(input, async (connection) => {

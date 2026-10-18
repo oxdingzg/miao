@@ -309,6 +309,13 @@ impl Host {
                 .approve(&self.controller, &session_id, response)
                 .await
                 .map(|_| json!({ "accepted": true })),
+            Command::ApprovePersistent {
+                session_id,
+                response,
+            } => runtime
+                .approve_persistent(&self.controller, &session_id, response)
+                .await
+                .map(|_| json!({"accepted":true})),
             Command::Sessions => runtime
                 .store()
                 .sessions()
