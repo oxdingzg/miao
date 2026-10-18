@@ -311,6 +311,10 @@ export class EngineClient {
     })
   }
 
+  get available() {
+    return !this.closed && !this.failure
+  }
+
   private inputClosed() {
     // EPIPE can beat process exit and otherwise permanently hide its stderr.
     // Still reject a live child that closed stdin instead of waiting forever.
