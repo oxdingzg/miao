@@ -123,9 +123,10 @@ final class PairingUITests: XCTestCase {
                 let accountEntry = app.buttons["emptyHubAccount"]
                 XCTAssertTrue(accountEntry.waitForExistence(timeout: 15))
                 accountEntry.tap()
-                XCTAssertTrue(app.textFields["hubOrigin"].waitForExistence(timeout: 15))
-                app.textFields["hubOrigin"].tap(); app.textFields["hubOrigin"].typeText(account.origin)
             }
+            // Both account paths authenticate against this run's isolated Hub.
+            XCTAssertTrue(app.textFields["hubOrigin"].waitForExistence(timeout: 15))
+            app.textFields["hubOrigin"].tap(); app.textFields["hubOrigin"].typeText(account.origin)
             app.textFields["hubEmail"].tap(); app.textFields["hubEmail"].typeText(account.email)
             app.secureTextFields["hubPassword"].tap(); app.secureTextFields["hubPassword"].typeText(account.password)
             app.buttons["hubSignIn"].tap()
@@ -204,8 +205,8 @@ final class PairingUITests: XCTestCase {
             // That sheet is gone, so notification enrolment is reached by
             // reopening it rather than by lingering on the sign-in path.
             app.buttons["关闭"].tap()
-            XCTAssertTrue(app.buttons["hubAccount"].waitForExistence(timeout: 15))
-            app.buttons["hubAccount"].tap()
+            XCTAssertTrue(app.buttons["emptyHubAccount"].waitForExistence(timeout: 15))
+            app.buttons["emptyHubAccount"].tap()
             XCTAssertTrue(app.buttons["enableNotifications"].waitForExistence(timeout: 15))
             app.buttons["enableNotifications"].tap()
             XCTAssertTrue(app.staticTexts["此连接暂不支持通知"].waitForExistence(timeout: 10))
@@ -295,7 +296,13 @@ final class PairingUITests: XCTestCase {
         let variantPicker = app.descendants(matching: .any).matching(identifier: "variantChoice").firstMatch
         XCTAssertTrue(variantPicker.waitForExistence(timeout: 10))
         variantPicker.tap()
-        app.buttons["reasoning"].tap()
+        let reasoning = app.buttons["reasoning"]
+        XCTAssertTrue(reasoning.waitForExistence(timeout: 5))
+        expectation(for: NSPredicate { _, _ in reasoning.isHittable }, evaluatedWith: reasoning)
+        waitForExpectations(timeout: 5)
+        reasoning.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).tap()
+        expectation(for: NSPredicate(format: "label CONTAINS %@", "reasoning"), evaluatedWith: variantPicker)
+        waitForExpectations(timeout: 5)
         // The expanded registration disclosure pushes the save action off-screen.
         let saveModel = app.buttons["保存模型"]
         for _ in 0..<6 where saveModel.exists && !saveModel.isHittable { app.swipeUp() }
