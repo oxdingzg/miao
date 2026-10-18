@@ -42,7 +42,9 @@ const transcript: SessionMessage[] = [
 // A minimal server: the transcript appears once the prompt is admitted, the event
 // stream then carries a permission ask and a question, and only after both have
 // been answered does the step settle and session.wait return.
-function server(options: { failPrompt?: boolean; models?: { providerID: string; id: string }[] } = {}) {
+function server(
+  options: { failPrompt?: boolean; models?: { providerID: string; id: string }[]; transcript?: SessionMessage[] } = {},
+) {
   const calls: string[] = []
   const replies: { path: string; body: unknown }[] = []
   const answered = new Set<string>()
@@ -66,7 +68,8 @@ function server(options: { failPrompt?: boolean; models?: { providerID: string; 
     if (url.pathname === "/api/model" && options.models) return json({ location: { directory }, data: options.models })
     if (url.pathname === `/api/session/${sessionID}`)
       return json({ data: { id: sessionID, agent: "build", title: "t", location: { directory } } })
-    if (url.pathname === `/api/session/${sessionID}/context`) return json({ data: admitted ? transcript : [] })
+    if (url.pathname === `/api/session/${sessionID}/context`)
+      return json({ data: admitted ? (options.transcript ?? transcript) : [] })
     if (url.pathname.endsWith("/model") || url.pathname.endsWith("/agent")) return new Response(null, { status: 204 })
     if (url.pathname === `/api/session/${sessionID}/prompt`) {
       if (options.failPrompt) return json({ name: "ConflictError", data: { message: "prompt rejected" } }, 409)
@@ -142,6 +145,27 @@ const base = {
 }
 
 describe("headless V2 run", () => {
+  test("prints a native answer without inventing missing assistant identity", async () => {
+    const { client } = server({
+      transcript: [
+        { id: "msg_user", type: "user", text: "hi", time: { created: 1 } },
+        {
+          id: "msg_native",
+          type: "assistant",
+          agent: null,
+          model: null,
+          time: { created: 2, completed: 3 },
+          finish: "stop",
+          content: [{ type: "text", id: "txt_native", text: "ENGINE_OK" }],
+        },
+      ],
+    })
+    const out = capture()
+    const error = await runHeadless({ ...base, client, auto: false, ...out.output(false) })
+    expect(error).toBeUndefined()
+    expect(out.printed.filter((line) => line === "text ENGINE_OK")).toHaveLength(1)
+  })
+
   test("prints each settled part once and declines what nobody can answer", async () => {
     const { calls, client } = server()
     const out = capture()
