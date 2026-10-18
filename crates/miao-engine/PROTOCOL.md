@@ -420,3 +420,22 @@ The Store also exposes exact revocation primitives.
 `{"type":"inject","session_id":"...","input_id":"optional-retry-key","text":"...","source":"skill:name"}` commits one `message.synthetic` history fact. The source is a bounded attribution label, not a command or credential. Injection creates no inbox row and does not start a provider turn. The host may request advisory `wake` afterwards; this drains eligible pending inbox work without forcing continuation. Unlike explicit `resume`, `wake` leaves an idle Session with no eligible input idle. An exact retry with the same Session and input identity reconciles; changed text/source conflicts. Forks preserve the synthetic record and original timestamp rather than promoting it as an operator prompt. Text is bounded to 1 MiB.
 
 If injected context arrives between a model tool call and its results, the immutable transcript keeps admission order; provider history defers that context until the tool block closes, preserving required tool-result adjacency.
+
+### Product-owned MCP OAuth
+
+Product-native owners materialize authorized global remote MCP servers through a
+scoped loopback HTTP route. The route forwards MCP protocol bodies/streams while
+borrowing the product's URL-bound OAuth authority. Native manifests contain only
+the ephemeral local route, never OAuth access tokens, refresh tokens or client
+secrets. Browser login and registration use the existing product OAuth routes.
+Missing or rejected grants surface an authentication failure and require login.
+
+SDK Streamable HTTP and SSE connections use the same request-time authority.
+An inter-process refresh lock covers re-read, SDK token exchange and durable
+rotation. A generation/URL compare-and-set prevents an in-flight old refresh
+from replacing a newly authorized grant or a changed server binding. Omitted
+refresh tokens preserve the stored grant. Expiry and concurrent 401 retries
+refresh one observed generation; bodies are replayed only after rejection.
+Refresh discovery/exchange has a bounded deadline and errors contain a stable
+authentication status rather than provider response bodies. The product scope
+owns the loopback service, so restarting a native child reuses its authority.
