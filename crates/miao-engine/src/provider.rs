@@ -160,6 +160,115 @@ pub(crate) async fn scoped<F: std::future::Future<Output = Result<Reply, Provide
         .await
 }
 
+/// Trusted route manifests may bind a gateway header to the current opaque
+/// Session routing key. Keep that identity out of the model request contract.
+pub(crate) fn route_headers(
+    mut request: reqwest::RequestBuilder,
+    headers: &BTreeMap<String, String>,
+) -> Result<reqwest::RequestBuilder, ProviderError> {
+    for (name, value) in headers {
+        if value == "$session" {
+            let key = crate::cache_affinity::session_key().ok_or_else(|| {
+                ProviderError::Stream("session header requires a Session-scoped request".into())
+            })?;
+            request = request.header(name, key);
+            continue;
+        }
+        request = request.header(name, value);
+    }
+    Ok(request)
+}
+
+#[cfg(test)]
+mod route_header_tests {
+    use super::*;
+    use axum::{extract::State, http::HeaderMap, routing::post, Router};
+    use tokio::sync::Mutex;
+
+    type Requests = Arc<Mutex<Vec<(String, String)>>>;
+
+    #[tokio::test]
+    async fn gateway_headers_follow_actual_session_across_protocols_and_model_selection() {
+        let seen = Arc::new(Mutex::new(Vec::<(String, String)>::new()));
+        let router = Router::new()
+            .route(
+                "/fixture",
+                post(
+                    |State(seen): State<Requests>, headers: HeaderMap| async move {
+                        seen.lock().await.push((
+                            headers["x-opencode-session"].to_str().unwrap().to_owned(),
+                            headers["x-route-fixture"].to_str().unwrap().to_owned(),
+                        ));
+                        axum::http::StatusCode::BAD_REQUEST
+                    },
+                ),
+            )
+            .with_state(seen.clone());
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let endpoint = format!("http://{}/fixture", listener.local_addr().unwrap());
+        let server = tokio::spawn(async move { axum::serve(listener, router).await.unwrap() });
+        let auth = serde_json::from_value::<crate::model_routes::Auth>(json!({
+            "headers": {"x-opencode-session":"$session", "x-route-fixture":"kept"}
+        }))
+        .unwrap();
+        for protocol in ["anthropic", "openai-chat"] {
+            let provider = crate::routing::build_with_auth(
+                protocol,
+                Some(&endpoint),
+                Source::Static(Credential::key("fixture".into())),
+                "model".into(),
+                false,
+                Some(&auth),
+            )
+            .unwrap()
+            .for_model("selected-model")
+            .unwrap();
+            for session in ["parent", "child"] {
+                let (progress, _received) = mpsc::channel(16);
+                let result = crate::cache_affinity::scoped_with(
+                    "shared-affinity".into(),
+                    session.into(),
+                    provider.stream(
+                        ModelRequest {
+                            system: String::new(),
+                            messages: vec![],
+                            tools: vec![],
+                        },
+                        progress,
+                        CancellationToken::new(),
+                    ),
+                )
+                .await;
+                assert!(matches!(result, Err(ProviderError::Http(400))));
+            }
+            let (progress, _received) = mpsc::channel(16);
+            assert!(matches!(
+                provider
+                    .stream(
+                        ModelRequest {
+                            system: String::new(),
+                            messages: vec![],
+                            tools: vec![]
+                        },
+                        progress,
+                        CancellationToken::new(),
+                    )
+                    .await,
+                Err(ProviderError::Stream(_))
+            ));
+        }
+        let seen = seen.lock().await;
+        assert_eq!(seen.len(), 4);
+        for (index, (key, value)) in seen.iter().enumerate() {
+            let session = if index % 2 == 0 { "parent" } else { "child" };
+            assert_eq!(key, &crate::permission::digest(session.as_bytes()));
+            assert_eq!(value, "kept");
+        }
+        assert_ne!(seen[0].0, seen[1].0);
+        server.abort();
+    }
+}
+
 #[derive(Debug, Clone)]
 pub struct Reply {
     pub content: Value,
@@ -256,6 +365,7 @@ pub struct Anthropic {
     /// Vertex AI authenticates with an OAuth bearer and a `:rawPredict`
     /// endpoint instead of the `x-api-key` header.
     bearer: bool,
+    extra_headers: BTreeMap<String, String>,
 }
 
 impl Anthropic {
@@ -279,6 +389,7 @@ impl Anthropic {
             max_tokens: 4096,
             prompt_cache: false,
             bearer: false,
+            extra_headers: BTreeMap::new(),
         })
     }
 
@@ -299,6 +410,7 @@ impl Anthropic {
             max_tokens: 4096,
             prompt_cache: false,
             bearer: true,
+            extra_headers: BTreeMap::new(),
         })
     }
 
@@ -306,6 +418,11 @@ impl Anthropic {
     /// default, so a caller that knows the model's limit should set it.
     pub fn with_max_tokens(mut self, max_tokens: u32) -> Self {
         self.max_tokens = max_tokens;
+        self
+    }
+
+    pub fn with_headers(mut self, headers: BTreeMap<String, String>) -> Self {
+        self.extra_headers = headers;
         self
     }
 
@@ -422,10 +539,12 @@ impl Anthropic {
         } else {
             request.header("x-api-key", credential.header()?)
         };
-        let request = request
-            .header("anthropic-version", "2023-06-01")
-            .build()
-            .map_err(|_| ProviderError::Transport)?;
+        let request = route_headers(
+            request.header("anthropic-version", "2023-06-01"),
+            &self.extra_headers,
+        )?
+        .build()
+        .map_err(|_| ProviderError::Transport)?;
         let response =
             request_with_retry("anthropic", &self.client, request, &progress, &cancel).await?;
         read_stream(response, progress, cancel, StreamState::default()).await

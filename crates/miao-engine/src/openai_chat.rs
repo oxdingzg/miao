@@ -163,10 +163,9 @@ impl OpenAIChat {
             AuthStyle::Bearer => request.bearer_auth(credential.secret()),
             AuthStyle::ApiKey => request.header("api-key", credential.secret()),
         };
-        for (name, value) in &self.extra_headers {
-            request = request.header(name, value);
-        }
-        let request = request.build().map_err(|_| ProviderError::Transport)?;
+        let request = crate::provider::route_headers(request, &self.extra_headers)?
+            .build()
+            .map_err(|_| ProviderError::Transport)?;
         let response =
             request_with_retry("openai-chat", &self.client, request, &progress, &cancel).await?;
         read_stream(response, progress, cancel, ChatState::default()).await

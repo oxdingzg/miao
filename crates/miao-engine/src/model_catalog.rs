@@ -15,6 +15,8 @@ use std::{
 use tokio::sync::mpsc;
 use tokio_util::sync::CancellationToken;
 
+pub const MAX_ROUTES: usize = 1024;
+
 #[derive(Clone, Debug, PartialEq, Eq, Serialize)]
 pub struct Info {
     pub route_id: Option<String>,
@@ -31,9 +33,9 @@ impl Catalog {
         primary: Arc<dyn Provider>,
         entries: Vec<(String, Arc<dyn Provider>)>,
     ) -> Result<Self, ProviderError> {
-        if entries.len() > 64 {
+        if entries.len() > MAX_ROUTES {
             return Err(ProviderError::Stream(
-                "model route catalog exceeds 64 entries".into(),
+                "model route catalog exceeds 1024 entries".into(),
             ));
         }
         let mut routes = BTreeMap::new();
