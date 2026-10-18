@@ -5,6 +5,7 @@ import { ProductHooks } from "./product-hooks"
 import { ProductLsp } from "./product-lsp"
 import { ProductFormatter } from "./product-formatter"
 import { ProductRoutes } from "./product-routes"
+import { Credential } from "@miao/core/credential"
 import os from "node:os"
 import path from "node:path"
 import { Config } from "@miao/core/config"
@@ -472,6 +473,7 @@ const layer = Layer.effect(
   NativeEngine.Service,
   Effect.gen(function* () {
     const global = yield* Global.Service
+    const credentials = yield* Credential.Service
     const locations = yield* LocationServiceMap.Service
     const settings = yield* Effect.promise(() => engineSettings(global.config))
     const configuration = nativeEngineOptions(process.env, settings)
@@ -489,7 +491,9 @@ const layer = Layer.effect(
     }
     const owners = yield* makeEngineOwners(configuration, (location) =>
       Effect.gen(function* () {
-        const routes = yield* ProductRoutes.prepare(location, configuration)
+        const routes = yield* ProductRoutes.prepare(location, configuration).pipe(
+          Effect.provideService(Credential.Service, credentials),
+        )
         const effective = { ...configuration, ...routes }
         const context = yield* AmbientContext.prepare(location, effective)
         const hooks = yield* ProductHooks.prepare(location, { ...effective, ...context.options })
@@ -523,7 +527,7 @@ const layer = Layer.effect(
 export const node = makeGlobalNode({
   service: NativeEngine.Service,
   layer,
-  deps: [ClientEvents.node, Global.node, LocationServiceMap.node],
+  deps: [ClientEvents.node, Global.node, Credential.node, LocationServiceMap.node],
 })
 
 export * as NativeEngineNode from "./native-engine"

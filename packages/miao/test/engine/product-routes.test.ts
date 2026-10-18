@@ -179,3 +179,22 @@ it.live("explicit operator routes retain precedence without consulting product s
     }),
   ),
 )
+
+it.live("automatic routes fail explicitly when the Location context omits the global credential broker", () =>
+  Effect.gen(function* () {
+    const error = yield* ProductRoutes.prepare(location, { binary: "fixture", model: "" }).pipe(Effect.flip)
+    expect(error.code).toBe("engine_routes_credentials")
+  }).pipe(
+    Effect.provide(
+      AppNodeBuilder.build(LayerNode.group([Catalog.node, Integration.node, Location.node]), [
+        [
+          Location.node,
+          Layer.succeed(Location.Service, {
+            ...location,
+            project: { id: Project.ID.global, directory: location.directory },
+          }),
+        ],
+      ]),
+    ),
+  ),
+)

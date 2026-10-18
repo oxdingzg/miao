@@ -32,7 +32,14 @@ export const prepare = Effect.fn("Engine.productRoutes")(function* (
   const catalog = Option.getOrUndefined(yield* Effect.serviceOption(Catalog.Service))
   const integrations = Option.getOrUndefined(yield* Effect.serviceOption(Integration.Service))
   const credentials = Option.getOrUndefined(yield* Effect.serviceOption(Credential.Service))
-  if (!catalog || !integrations || !credentials) return options
+  if (!catalog || !integrations) return options
+  if (!credentials)
+    return yield* Effect.fail(
+      new EngineError(
+        "engine_routes_credentials",
+        "product routes require the global credential broker in the native owner context",
+      ),
+    )
   // Provider plugins populate model metadata and active connections during boot.
   const plugins = Option.getOrUndefined(yield* Effect.serviceOption(PluginV2.Service))
   if (plugins) yield* Deferred.await(plugins.booted)
