@@ -222,7 +222,17 @@ impl Runtime {
                 };
                 for session in sessions {
                     // A draining Session renews its own claim; a heartbeat here
-                    // would advance the epoch and fence the active owner.
+                    // would advance the epoch and fence the active owner. Check
+                    // the durable lease, not just this process's drains, because
+                    // the owner may be another window.
+                    if heartbeat_inner
+                        .store
+                        .lease_alive(&session)
+                        .await
+                        .unwrap_or(false)
+                    {
+                        continue;
+                    }
                     if heartbeat_inner
                         .draining
                         .lock()
@@ -577,7 +587,16 @@ impl Runtime {
             actors.get(session).map(|a| a.commands.clone())
         };
         let Some(commands) = commands else {
-            return Ok(false);
+            // No local drain: the Session is owned by another runtime, so ask
+            // its owner through the durable journal.
+            let Some(run) = self.inner.store.active_run(session).await? else {
+                return Ok(false);
+            };
+            self.inner
+                .store
+                .request_cancel(session, &run, "operator")
+                .await?;
+            return Ok(true);
         };
         let (reply, result) = oneshot::channel();
         commands
@@ -595,7 +614,14 @@ impl Runtime {
             actors.get(session).map(|actor| actor.commands.clone())
         };
         let Some(commands) = commands else {
-            return Ok(false);
+            if self.inner.store.active_run(session).await?.as_deref() != Some(run) {
+                return Ok(false);
+            }
+            self.inner
+                .store
+                .request_cancel(session, run, "operator")
+                .await?;
+            return Ok(true);
         };
         let (reply, result) = oneshot::channel();
         commands
@@ -749,16 +775,34 @@ impl Drop for LeaseKeepalive {
     }
 }
 
-/// Renew the drain's claim until the turn ends. A superseded owner cancels its
-/// own work instead of continuing to execute against a lease it no longer holds.
-async fn keep_lease(store: Store, lease: SessionLease, cancel: CancellationToken) {
+/// Renew the drain's claim and consume cross-process cancel requests until the
+/// turn ends. A superseded owner, or one another window asked to stop, cancels
+/// its own work instead of continuing.
+async fn keep_lease(
+    store: Store,
+    lease: SessionLease,
+    run: String,
+    cursor: u64,
+    cancel: CancellationToken,
+) {
+    let mut ticks = 0u32;
     loop {
         tokio::select! {
             biased;
             _ = cancel.cancelled() => return,
-            _ = tokio::time::sleep(std::time::Duration::from_millis((SESSION_LEASE_MS / 4) as u64)) => {}
+            _ = tokio::time::sleep(std::time::Duration::from_millis(250)) => {}
         }
-        if store.renew_session(&lease, SESSION_LEASE_MS).await.is_err() {
+        // Another window can only reach this run through the durable request.
+        if store
+            .cancel_requested(&lease.session, &run, cursor)
+            .await
+            .unwrap_or(false)
+        {
+            cancel.cancel();
+            return;
+        }
+        ticks += 1;
+        if ticks.is_multiple_of(8) && store.renew_session(&lease, SESSION_LEASE_MS).await.is_err() {
             cancel.cancel();
             return;
         }
@@ -779,15 +823,16 @@ async fn drain(
         draining.insert(session.clone());
     }
     let _draining = DrainingGuard(inner.clone(), session.clone());
+    // Cursor before the claim: a cancel request written in between still counts.
+    let cursor = inner.store.latest_seq(&session).await?;
     let lease = inner
         .store
         .claim_session(&session, SESSION_LEASE_MS)
         .await?;
-    let _keepalive = LeaseKeepalive(tokio::spawn(keep_lease(
-        inner.store.clone(),
-        lease.clone(),
-        cancel.clone(),
-    )));
+    // The lease is ours now, so a run still marked running belongs to a process
+    // that lost it. Reconcile it before opening a new run; otherwise the active
+    // run index would reject the start.
+    inner.store.recover_session(Some(&session)).await?;
     let promoted = inner.store.promote_fenced(&session, true, &lease).await?;
     if promoted.is_empty() && !force {
         return Ok(());
@@ -797,6 +842,13 @@ async fn drain(
     }
     let run = uuid::Uuid::new_v4().to_string();
     inner.store.start_run_fenced(&session, &run, &lease).await?;
+    let _keepalive = LeaseKeepalive(tokio::spawn(keep_lease(
+        inner.store.clone(),
+        lease.clone(),
+        run.clone(),
+        cursor,
+        cancel.clone(),
+    )));
     if inner.started.lock().await.insert(session.clone()) {
         inner
             .store
