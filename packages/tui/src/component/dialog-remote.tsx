@@ -203,9 +203,13 @@ export function DialogRemoteView(props: { environment: RemoteEnvironment }) {
       DialogAlert.show(dialog, "无法登录中继", "当前版本缺少中继登录支持，请更新后再试。")
       return
     }
-    void relaySetup(runtime).catch((error: unknown) =>
-      DialogAlert.show(dialog, "Hub 登录未完成", error instanceof Error ? error.message : "请检查 Hub 配置并重试"),
-    )
+    // Defer past the initial dialog mount so replacing the stack here does not
+    // race the first dialog's registration (which breaks its esc handling).
+    setTimeout(() => {
+      void relaySetup(runtime).catch((error: unknown) =>
+        DialogAlert.show(dialog, "Hub 登录未完成", error instanceof Error ? error.message : "请检查 Hub 配置并重试"),
+      )
+    }, 100)
   })
 
   return (
