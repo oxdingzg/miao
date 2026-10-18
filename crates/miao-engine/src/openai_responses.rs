@@ -29,6 +29,7 @@ pub struct OpenAIResponses {
     model: String,
     request_options: crate::request_options::Options,
     input_modalities: Vec<String>,
+    extra_headers: std::collections::BTreeMap<String, String>,
     cache_contract: Option<crate::responses_cache::Contract>,
     websocket_contract: Option<crate::responses_websocket::Contract>,
     websocket_pool: std::sync::Arc<crate::responses_websocket::Pool>,
@@ -58,6 +59,7 @@ impl OpenAIResponses {
             model,
             request_options: Default::default(),
             input_modalities: vec![],
+            extra_headers: Default::default(),
             profile,
             cache_contract: None,
             websocket_contract: None,
@@ -95,6 +97,26 @@ impl OpenAIResponses {
 }
 #[async_trait]
 impl Provider for OpenAIResponses {
+    fn with_route_auth(
+        &self,
+        auth: &crate::model_routes::Auth,
+    ) -> Result<std::sync::Arc<dyn Provider>, ProviderError> {
+        auth.validate()?;
+        if !auth.query.is_empty() || !matches!(auth.style.as_deref(), None | Some("bearer")) {
+            return Err(ProviderError::Stream(
+                "unsupported OpenAIResponses host authentication".into(),
+            ));
+        }
+        let mut selected = self.clone();
+        for name in auth.headers.keys() {
+            selected
+                .request_options
+                .headers
+                .retain(|key, _| !key.eq_ignore_ascii_case(name));
+        }
+        auth.apply_headers(&mut selected.extra_headers);
+        Ok(std::sync::Arc::new(selected))
+    }
     fn with_input_modalities(
         &self,
         input: Vec<String>,
@@ -110,6 +132,11 @@ impl Provider for OpenAIResponses {
     ) -> Result<std::sync::Arc<dyn Provider>, ProviderError> {
         options.validate()?;
         let mut selected = self.clone();
+        for name in options.headers.keys() {
+            selected
+                .extra_headers
+                .retain(|key, _| !key.eq_ignore_ascii_case(name));
+        }
         selected.request_options = options;
         Ok(std::sync::Arc::new(selected))
     }
@@ -199,6 +226,7 @@ impl OpenAIResponses {
             &body,
             &json!({
                 "input_modalities":self.input_modalities,
+                "route_headers":crate::permission::digest(&serde_json::to_vec(&self.extra_headers).map_err(|_| ProviderError::Transport)?),
                 "endpoint":self.endpoint,"profile":match self.profile {Profile::Api=>"api",Profile::Subscription=>"subscription"},"account":credential.account(),
                 "generation":crate::permission::digest(credential.secret().as_bytes()),
                 "request_options":crate::permission::digest(&serde_json::to_vec(&self.request_options).map_err(|_| ProviderError::Transport)?),
@@ -226,6 +254,7 @@ impl OpenAIResponses {
                 builder = builder.header("ChatGPT-Account-Id", account);
             }
         }
+        let builder = crate::provider::route_headers(builder, &self.extra_headers)?;
         let request = self
             .request_options
             .headers(builder)?

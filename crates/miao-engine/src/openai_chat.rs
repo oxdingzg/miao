@@ -97,6 +97,28 @@ impl OpenAIChat {
 
 #[async_trait]
 impl Provider for OpenAIChat {
+    fn with_route_auth(
+        &self,
+        auth: &crate::model_routes::Auth,
+    ) -> Result<std::sync::Arc<dyn Provider>, ProviderError> {
+        auth.validate()?;
+        let mut selected = self.clone();
+        selected.auth_style = match auth.style.as_deref() {
+            None => selected.auth_style,
+            Some("bearer") => AuthStyle::Bearer,
+            Some("api-key") => AuthStyle::ApiKey,
+            _ => {
+                return Err(ProviderError::Stream(
+                    "unsupported Chat route auth style".into(),
+                ))
+            }
+        };
+        if let Some(query) = auth.query_string()? {
+            selected.query = Some(query);
+        }
+        auth.apply_headers(&mut selected.extra_headers);
+        Ok(std::sync::Arc::new(selected))
+    }
     fn with_input_modalities(
         &self,
         input: Vec<String>,

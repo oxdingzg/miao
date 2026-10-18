@@ -23,6 +23,7 @@ pub struct Gemini {
     model: String,
     request_options: crate::request_options::Options,
     input_modalities: Vec<String>,
+    extra_headers: std::collections::BTreeMap<String, String>,
 }
 impl Gemini {
     pub fn new(endpoint: String, key: String, model: String) -> Result<Self, ProviderError> {
@@ -71,11 +72,32 @@ impl Gemini {
             model,
             request_options: Default::default(),
             input_modalities: vec![],
+            extra_headers: Default::default(),
         })
     }
 }
 #[async_trait]
 impl Provider for Gemini {
+    fn with_route_auth(
+        &self,
+        auth: &crate::model_routes::Auth,
+    ) -> Result<std::sync::Arc<dyn Provider>, ProviderError> {
+        auth.validate()?;
+        if !auth.query.is_empty() || !matches!(auth.style.as_deref(), None | Some("api-key")) {
+            return Err(ProviderError::Stream(
+                "unsupported Gemini host authentication".into(),
+            ));
+        }
+        let mut selected = self.clone();
+        for name in auth.headers.keys() {
+            selected
+                .request_options
+                .headers
+                .retain(|key, _| !key.eq_ignore_ascii_case(name));
+        }
+        auth.apply_headers(&mut selected.extra_headers);
+        Ok(std::sync::Arc::new(selected))
+    }
     fn with_input_modalities(
         &self,
         input: Vec<String>,
@@ -91,6 +113,11 @@ impl Provider for Gemini {
     ) -> Result<std::sync::Arc<dyn Provider>, ProviderError> {
         options.validate()?;
         let mut selected = self.clone();
+        for name in options.headers.keys() {
+            selected
+                .extra_headers
+                .retain(|key, _| !key.eq_ignore_ascii_case(name));
+        }
         selected.request_options = options;
         Ok(std::sync::Arc::new(selected))
     }
@@ -146,12 +173,16 @@ impl Provider for Gemini {
             "contents": contents,
             "systemInstruction": {"parts": [{"text": request.system}]},
         });
-        let built = self
+        let builder = self
             .client
             .post(url)
             .header("x-goog-api-key", header)
-            .json(&body)
-            .build();
+            .json(&body);
+        let builder = match crate::provider::route_headers(builder, &self.extra_headers) {
+            Ok(builder) => builder,
+            Err(_) => return CountTokens::Failed("invalid route headers".into()),
+        };
+        let built = builder.build();
         let request = match built {
             Ok(request) => request,
             Err(_) => return CountTokens::Failed("count request build failed".into()),
@@ -220,14 +251,15 @@ impl Gemini {
             body["tools"] = json!([{"functionDeclarations":declarations}]);
             body["toolConfig"] = json!({"functionCallingConfig":{"mode":if without_tools { "NONE" } else { "AUTO" }}});
         }
+        let builder = self
+            .client
+            .post(self.endpoint.clone())
+            .header("x-goog-api-key", credential.header()?)
+            .json(&body);
+        let builder = crate::provider::route_headers(builder, &self.extra_headers)?;
         let request = self
             .request_options
-            .headers(
-                self.client
-                    .post(self.endpoint.clone())
-                    .header("x-goog-api-key", credential.header()?)
-                    .json(&body),
-            )?
+            .headers(builder)?
             .build()
             .map_err(|_| ProviderError::Transport)?;
         let response =

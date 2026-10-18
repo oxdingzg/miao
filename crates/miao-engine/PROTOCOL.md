@@ -300,3 +300,16 @@ without retrying that operation. The Session must be idle and Location-bound.
 By default neither command schedules model work. Use explicit `resume: true`,
 a separate `resume`, or a later prompt to promote the durable instruction.
 See [ADR-16](docs/adr/0016-explicit-tool-recovery.md).
+
+
+### Host route authentication
+
+Host route `auth` applies to both named routes and the owner-default primary.
+It changes only the declared auth style, bounded static headers and supported
+literal query parameters; it retains the configured endpoint, credential source,
+Responses capability contracts and fallback secondary. Credential-owned and
+transport-owned headers cannot be supplied through `auth.headers`. Header names
+merge case-insensitively, and explicit generation-variant headers override the
+corresponding static host defaults exactly once. Chat query values are encoded
+as data; unsupported auth styles or protocol/query combinations fail explicitly.
+Advisory count requests retain the same static host routing headers.

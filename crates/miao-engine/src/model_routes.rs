@@ -56,6 +56,57 @@ pub struct Auth {
     pub(crate) query: std::collections::BTreeMap<String, String>,
 }
 
+impl Auth {
+    pub(crate) fn validate(&self) -> Result<(), crate::provider::ProviderError> {
+        crate::request_options::Options {
+            body: Default::default(),
+            headers: self.headers.clone(),
+        }
+        .validate()?;
+        if self
+            .headers
+            .keys()
+            .map(|key| key.to_ascii_lowercase())
+            .collect::<std::collections::BTreeSet<_>>()
+            .len()
+            != self.headers.len()
+        {
+            return Err(crate::provider::ProviderError::Stream(
+                "duplicate host route header".into(),
+            ));
+        }
+        if self.query.len() > 32
+            || self.query.iter().any(|(key, value)| {
+                key.is_empty()
+                    || key.len() > 256
+                    || value.len() > 8192
+                    || key.chars().any(char::is_control)
+                    || value.chars().any(char::is_control)
+            })
+        {
+            return Err(crate::provider::ProviderError::Stream(
+                "invalid host route query".into(),
+            ));
+        }
+        Ok(())
+    }
+    pub(crate) fn apply_headers(&self, target: &mut std::collections::BTreeMap<String, String>) {
+        for (name, value) in &self.headers {
+            target.retain(|key, _| !key.eq_ignore_ascii_case(name));
+            target.insert(name.clone(), value.clone());
+        }
+    }
+    pub(crate) fn query_string(&self) -> Result<Option<String>, crate::provider::ProviderError> {
+        if self.query.is_empty() {
+            return Ok(None);
+        }
+        let mut url = reqwest::Url::parse("http://localhost")
+            .map_err(|_| crate::provider::ProviderError::Transport)?;
+        url.query_pairs_mut().extend_pairs(self.query.iter());
+        Ok(url.query().map(str::to_owned))
+    }
+}
+
 #[derive(Deserialize)]
 #[serde(tag = "type", rename_all = "snake_case", deny_unknown_fields)]
 enum CredentialSource {
@@ -181,6 +232,9 @@ pub async fn load(
                 return Err("invalid default model route".into());
             }
             default_seen = true;
+            if let Some(auth) = entry.auth.as_ref() {
+                primary = primary.with_route_auth(auth)?;
+            }
             if !entry.input_modalities.is_empty() {
                 primary = primary.with_input_modalities(entry.input_modalities.clone())?;
             }
