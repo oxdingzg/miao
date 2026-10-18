@@ -420,3 +420,29 @@ async fn bounded_shell_history_retains_a_recallable_output_window() {
     );
     runtime.shutdown().await;
 }
+
+#[tokio::test]
+async fn an_agent_plan_mode_is_an_operator_shell_ceiling() {
+    let dir = tempfile::tempdir().unwrap();
+    let (runtime, store, workspace) = fixture(dir.path(), Decision::Allow).await;
+    runtime
+        .set_agent(
+            "s",
+            serde_json::from_value(json!({"name":"read-only-agent","mode":"plan"})).unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(store.mode("s").await.unwrap(), CollaborationMode::Build);
+    runtime
+        .shell("s", invocation("agent-plan", "touch must-not-run"))
+        .await
+        .unwrap();
+    assert_eq!(settled(&runtime, "agent-plan").await["state"], "refused");
+    assert!(!workspace.join("must-not-run").exists());
+    let events = store.events("s", 0, 100).await.unwrap();
+    assert!(!events.iter().any(|event| event.kind == "shell.started"));
+    assert!(events
+        .iter()
+        .any(|event| event.kind == "permission_denied" && event.data["reason"] == "plan_mode"));
+    runtime.shutdown().await;
+}

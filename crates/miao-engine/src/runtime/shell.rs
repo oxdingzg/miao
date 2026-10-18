@@ -61,7 +61,7 @@ pub(super) async fn execute(
             }
         };
         let allowed=authorize(&inner,&session,&run,&invocation.execution_id(&session),&prepared,cancel.clone(),TurnAuthority {
-            plan:inner.store.mode(&session).await?==CollaborationMode::Plan,
+            plan:inner.store.mode(&session).await?==CollaborationMode::Plan || manifest.is_some_and(|agent|agent.mode==Some(CollaborationMode::Plan)),
             policy:&policy,
             agent:manifest,
         }).await?;
