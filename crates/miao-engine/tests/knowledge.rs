@@ -95,6 +95,7 @@ fn writable() -> Config {
 }
 async fn run(runtime: &Runtime, store: &Store, op: Value) -> Value {
     let session = format!("s-{}", uuid::Uuid::new_v4());
+    let mut progress = runtime.progress();
     runtime
         .admit(
             Input {
@@ -107,22 +108,34 @@ async fn run(runtime: &Runtime, store: &Store, op: Value) -> Value {
         )
         .await
         .unwrap();
-    tokio::time::timeout(std::time::Duration::from_secs(5), async {
+    // This verifies committed knowledge semantics, not disk throughput. A 2ms
+    // polling loop competes with the runtime's SQLite writes on hosted Windows.
+    // Keep a bounded hang watchdog, and preserve evidence instead of reporting
+    // only Elapsed(()) when a run fails to settle.
+    let mut observed = Vec::new();
+    let mut events = Vec::new();
+    let settled = tokio::time::timeout(std::time::Duration::from_secs(30), async {
         loop {
-            if store
-                .events(&session, 0, 100)
-                .await
-                .unwrap()
-                .iter()
-                .any(|event| event.kind == "run.finished")
-            {
-                break;
+            events = store.events(&session, 0, 100).await.unwrap();
+            if events.iter().any(|event| event.kind == "run.finished") {
+                return true;
             }
-            tokio::time::sleep(std::time::Duration::from_millis(2)).await;
+            tokio::select! {
+                _ = tokio::time::sleep(std::time::Duration::from_millis(100)) => {},
+                event = progress.recv() => {
+                    if let Ok(event) = event {
+                        if event["session_id"] == session {
+                            let failed = event["kind"] == "runtime.error";
+                            observed.push(event);
+                            if failed { return false; }
+                        }
+                    }
+                }
+            }
         }
     })
-    .await
-    .unwrap();
+    .await;
+    assert!(matches!(settled, Ok(true)), "knowledge run did not settle: session={session}, op={op}, watchdog={settled:?}, events={events:?}, progress={observed:?}");
     let history = store.history(&session).await.unwrap();
     let result = history
         .iter()
