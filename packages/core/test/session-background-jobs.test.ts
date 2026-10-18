@@ -2,6 +2,7 @@ import { SessionBackfill } from "@miao/core/session/backfill"
 import { BackgroundJobTool } from "@miao/core/tool/background-job"
 import { describe, expect } from "bun:test"
 import { DateTime, Effect, Layer, Schema } from "effect"
+import { eq } from "drizzle-orm"
 import { BackgroundJob } from "@miao/core/background-job"
 import { Database } from "@miao/core/database/database"
 import { AppNodeBuilder } from "@miao/core/effect/app-node-builder"
@@ -18,6 +19,7 @@ import { SessionBackgroundJobs } from "@miao/core/session/background-jobs"
 import { SessionDelegationStore } from "@miao/core/session/delegation-store"
 import { SessionEvent } from "@miao/core/session/event"
 import { SessionMessage } from "@miao/core/session/message"
+import { SessionTable } from "@miao/core/session/sql"
 import { testEffect } from "./lib/effect"
 
 const projects = Layer.succeed(
@@ -61,6 +63,138 @@ const setup = Effect.gen(function* () {
       metadata: { backgroundJob: { id: "job_test", command: "do work", status: "finished", ...metadata } },
     })
   return { session, db, events, created, announce, settle }
+})
+
+describe("Session notification delivery", () => {
+  it.effect("promotes a completed batch for one wake unit without losing individual reports", () =>
+    Effect.gen(function* () {
+      const test = yield* setup
+      for (const text of ["first result", "second result", "third result"]) yield* test.settle(text)
+      expect(yield* SessionDelegationStore.promoteBatch(test.db, test.events, test.created.id)).toBe(3)
+      expect(yield* SessionDelegationStore.wakeAllowance(test.db, test.created.id)).toBe(
+        SessionDelegationStore.WAKE_BUDGET - 1,
+      )
+      expect(yield* SessionDelegationStore.pendingCount(test.db, test.created.id)).toBe(0)
+      expect(
+        (yield* test.session.context(test.created.id))
+          .filter((message) => message.type === "synthetic")
+          .map((message) => message.text),
+      ).toEqual(["first result", "second result", "third result"])
+    }),
+  )
+
+  it.effect("bounds batch count and charges only once for each provider-turn snapshot", () =>
+    Effect.gen(function* () {
+      const test = yield* setup
+      for (let i = 0; i < 9; i++) yield* test.settle(`result-${i}`)
+      expect(yield* SessionDelegationStore.promoteBatch(test.db, test.events, test.created.id)).toBe(8)
+      expect(yield* SessionDelegationStore.pendingCount(test.db, test.created.id)).toBe(1)
+      expect(yield* SessionDelegationStore.wakeAllowance(test.db, test.created.id)).toBe(
+        SessionDelegationStore.WAKE_BUDGET - 1,
+      )
+      expect(yield* SessionDelegationStore.promoteBatch(test.db, test.events, test.created.id)).toBe(1)
+      expect(yield* SessionDelegationStore.wakeAllowance(test.db, test.created.id)).toBe(
+        SessionDelegationStore.WAKE_BUDGET - 2,
+      )
+    }),
+  )
+
+  it.effect("bounds batch bytes while retaining FIFO delivery for the remaining reports", () =>
+    Effect.gen(function* () {
+      const test = yield* setup
+      yield* test.settle("a".repeat(40 * 1024))
+      yield* test.settle("b".repeat(40 * 1024))
+      yield* test.settle("last")
+      expect(yield* SessionDelegationStore.promoteBatch(test.db, test.events, test.created.id)).toBe(1)
+      expect(yield* SessionDelegationStore.pendingCount(test.db, test.created.id)).toBe(2)
+      expect(yield* SessionDelegationStore.promoteBatch(test.db, test.events, test.created.id)).toBe(2)
+      const history = (yield* test.session.context(test.created.id)).filter((message) => message.type === "synthetic")
+      expect(history.map((message) => message.text[0])).toEqual(["a", "b", "l"])
+    }),
+  )
+
+  it.effect("honors the admission cutoff and consumes at most one queued tick per idle boundary", () =>
+    Effect.gen(function* () {
+      const test = yield* setup
+      const admit = (text: string, delivery: "queue" | "steer") =>
+        test.events.publish(SessionEvent.NotificationAdmitted, {
+          sessionID: test.created.id,
+          messageID: SessionMessage.ID.create(),
+          timestamp: DateTime.makeUnsafe(2000),
+          text,
+          metadata: { delivery },
+        })
+      yield* admit("queue-1", "queue")
+      yield* admit("steer-1", "steer")
+      const cutoff = yield* EventV2.latestSequence(test.db, test.created.id)
+      yield* admit("queue-2", "queue")
+      yield* admit("steer-2", "steer")
+      expect(yield* SessionDelegationStore.promoteBatch(test.db, test.events, test.created.id, false, cutoff)).toBe(1)
+      expect(yield* SessionDelegationStore.promoteBatch(test.db, test.events, test.created.id)).toBe(1)
+      expect(
+        (yield* test.session.context(test.created.id))
+          .filter((message) => message.type === "synthetic")
+          .map((message) => message.text),
+      ).toEqual(["steer-1", "queue-1"])
+      expect(yield* SessionDelegationStore.promoteBatch(test.db, test.events, test.created.id)).toBe(2)
+      expect(yield* SessionDelegationStore.pendingCount(test.db, test.created.id)).toBe(0)
+    }),
+  )
+
+  it.effect("only one batch can spend the final wake unit", () =>
+    Effect.gen(function* () {
+      const test = yield* setup
+      yield* test.settle("completed-a")
+      yield* test.settle("completed-b")
+      yield* test.db
+        .update(SessionTable)
+        .set({ wake_allowance: 1 })
+        .where(eq(SessionTable.id, test.created.id))
+        .run()
+        .pipe(Effect.orDie)
+      const results = yield* Effect.all(
+        [
+          SessionDelegationStore.promoteBatch(test.db, test.events, test.created.id),
+          SessionDelegationStore.promoteBatch(test.db, test.events, test.created.id),
+        ],
+        { concurrency: "unbounded" },
+      )
+      expect(results.reduce((sum, count) => sum + count, 0)).toBe(2)
+      expect(yield* SessionDelegationStore.wakeAllowance(test.db, test.created.id)).toBe(0)
+      expect(
+        (yield* test.session.context(test.created.id)).filter((message) => message.type === "synthetic"),
+      ).toHaveLength(2)
+    }),
+  )
+
+  it.effect("records one explicit pause per unread backlog and resumes retained outcomes after recharge", () =>
+    Effect.gen(function* () {
+      const test = yield* setup
+      yield* test.settle("saved result")
+      yield* test.db
+        .update(SessionTable)
+        .set({ wake_allowance: 0 })
+        .where(eq(SessionTable.id, test.created.id))
+        .run()
+        .pipe(Effect.orDie)
+      expect(yield* SessionDelegationStore.promoteBatch(test.db, test.events, test.created.id)).toBe(0)
+      expect(yield* SessionDelegationStore.pauseIfExhausted(test.db, test.events, test.created.id)).toBe(true)
+      yield* test.settle("another saved result")
+      expect(yield* SessionDelegationStore.pauseIfExhausted(test.db, test.events, test.created.id)).toBe(true)
+      const history = (yield* test.session.context(test.created.id)).filter((message) => message.type === "synthetic")
+      expect(history).toHaveLength(1)
+      expect(history[0].text).toContain("Automatic continuation paused")
+      expect(history[0].metadata?.notificationPause).toMatchObject({
+        reason: "wake-allowance-exhausted",
+        pendingAtPause: 1,
+      })
+      expect(yield* SessionDelegationStore.pendingCount(test.db, test.created.id)).toBe(2)
+      yield* SessionDelegationStore.recharge(test.db, test.created.id)
+      expect(yield* SessionDelegationStore.promoteBatch(test.db, test.events, test.created.id)).toBe(2)
+      expect(yield* SessionDelegationStore.pauseIfExhausted(test.db, test.events, test.created.id)).toBe(false)
+      expect(yield* SessionDelegationStore.pendingCount(test.db, test.created.id)).toBe(0)
+    }),
+  )
 })
 
 describe("Session background-job recovery", () => {
@@ -207,13 +341,17 @@ describe("Session background-job recovery", () => {
   )
 })
 
-
 it.effect("durable background observations retain an unknown start after a known settlement", () =>
   Effect.gen(function* () {
     const test = yield* setup
-    const message = SessionMessage.Synthetic.make({ id: SessionMessage.ID.create(), sessionID: test.created.id,
-      type: "synthetic", text: "historical start", time: { created: null },
-      metadata: { backgroundJob: { id: "job_test", command: "do work", status: "started" } } })
+    const message = SessionMessage.Synthetic.make({
+      id: SessionMessage.ID.create(),
+      sessionID: test.created.id,
+      type: "synthetic",
+      text: "historical start",
+      time: { created: null },
+      metadata: { backgroundJob: { id: "job_test", command: "do work", status: "started" } },
+    })
     yield* test.db.transaction((tx) => SessionBackfill.write(tx, test.created.id, [message]))
     const observed = SessionBackgroundJobs.make({ db: test.db, events: test.events, sessionID: test.created.id })
     expect(yield* observed.observe()).toMatchObject([{ started_at: null }])

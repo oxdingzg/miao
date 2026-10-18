@@ -1381,6 +1381,13 @@ export function Session() {
                       <Match when={message.type === "compaction"}>
                         <box marginTop={1} border={["top"]} title=" Context compacted " titleAlignment="center" borderColor={theme.borderActive} />
                       </Match>
+                      <Match when={message.type === "synthetic" && message.metadata?.notificationPause}>
+                        <box marginTop={1} paddingLeft={2} paddingRight={2} flexShrink={0}>
+                          <text fg={theme.warning} wrapMode="word">
+                            {message.type === "synthetic" ? message.text : ""}
+                          </text>
+                        </box>
+                      </Match>
                       <Match when={message.type === "user"}>
                         <UserMessage
                           index={index() + transcript.start()}

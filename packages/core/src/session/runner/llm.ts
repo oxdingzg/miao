@@ -616,7 +616,7 @@ const layer = Layer.effect(
           // A human steer wins even if it arrived after the drain was scheduled.
           promoted += yield* SessionInput.promoteSteers(db, events, initialSession.id, cutoff)
           if (promoted === 0)
-            yield* SessionDelegationStore.promoteNext(db, events, initialSession.id, promotion === "notification")
+            yield* SessionDelegationStore.promoteBatch(db, events, initialSession.id, promotion === "notification", cutoff)
         }
         if (promoted > 0) {
           currentStep = 1
@@ -2076,7 +2076,10 @@ const layer = Layer.effect(
           const hasSteer = yield* SessionInput.hasPending(db, input.sessionID, "steer")
           const hasQueue = hasSteer ? false : yield* SessionInput.hasPending(db, input.sessionID, "queue")
             const hasNotification = yield* SessionDelegationStore.hasPromotableNotifications(db, input.sessionID)
-            if (!input.force && !hasSteer && !hasQueue && !hasNotification) return
+            if (!input.force && !hasSteer && !hasQueue && !hasNotification) {
+              yield* SessionDelegationStore.pauseIfExhausted(db, events, input.sessionID)
+              return
+            }
           // Refuse to run a provider turn on a session whose history is still only
           // in the legacy V1 tables: the projected context would be empty and the
           // turn would silently drop everything recorded before the V2 runtime.
@@ -2247,6 +2250,8 @@ const layer = Layer.effect(
             }
             promotion = shouldRun ? (notificationNext ? "notification" : "queue") : undefined
           }
+          if (!shouldRun && (yield* SessionDelegationStore.pauseIfExhausted(db, events, input.sessionID)))
+            finishReason = "notification-wake-allowance-exhausted"
           if (yield* SessionBlackbox.Current) yield* BlackboxHistory.checkpoint(input.sessionID, "drain.finished", store.context(input.sessionID), db)
           yield* Effect.logInfo("session.drain.finished", { sessionID: input.sessionID, reason: finishReason })
         }),
