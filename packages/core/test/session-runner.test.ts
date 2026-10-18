@@ -1447,9 +1447,9 @@ describe("SessionRunnerLLM", () => {
       expect(yield* SessionDelegationStore.progressCount(db, sessionID, "blocked")).toBe(1)
       expect(yield* SessionDelegationStore.hasPromotableNotifications(db, sessionID)).toBe(false)
       expect(yield* wakeAllowance(sessionID)).toBe(0)
-      expect(
-        (yield* session.context(sessionID)).filter((message) => message.type === "synthetic"),
-      ).toHaveLength(0)
+      const notices = (yield* session.context(sessionID)).filter((message) => message.type === "synthetic")
+      expect(notices).toHaveLength(1)
+      expect(notices[0].metadata?.notificationPause).toMatchObject({ reason: "wake-allowance-exhausted" })
     }),
   )
 
@@ -1582,6 +1582,27 @@ describe("SessionRunnerLLM", () => {
     }),
   )
 
+  it.effect("one notification wake promotes the whole bounded backlog into one provider turn", () =>
+    Effect.gen(function* () {
+      yield* setup
+      const events = yield* EventV2.Service
+      const db = (yield* Database.Service).db
+      const execution = yield* SessionExecution.Service
+      for (const text of ["FIRST COMPLETION", "SECOND COMPLETION", "THIRD COMPLETION"])
+        yield* events.publish(SessionEvent.NotificationAdmitted, {
+          sessionID, messageID: SessionMessage.ID.create(), timestamp: yield* DateTime.now, text,
+        })
+      response = [LLMEvent.stepStart({ index: 0 }), LLMEvent.stepFinish({ index: 0, reason: "stop" }), LLMEvent.finish({ reason: "stop" })]
+      yield* execution.wake(sessionID)
+      yield* execution.wait(sessionID)
+      expect(requests).toHaveLength(1)
+      for (const text of ["FIRST COMPLETION", "SECOND COMPLETION", "THIRD COMPLETION"])
+        expect(JSON.stringify(requests[0].messages)).toContain(text)
+      expect(yield* SessionDelegationStore.pendingCount(db, sessionID)).toBe(0)
+      expect(yield* wakeAllowance(sessionID)).toBe(SessionDelegationStore.WAKE_BUDGET - 1)
+    }),
+  )
+
   itWithMonitor.live("monitor completion wakes an idle Session and can execute follow-up tools without a human prompt", () =>
     Effect.gen(function* () {
       yield* setup
@@ -1618,7 +1639,11 @@ describe("SessionRunnerLLM", () => {
       expect(history.filter((message) => message.type === "user")).toHaveLength(0)
       expect(history.filter((message) => message.type === "synthetic")).toHaveLength(2)
       expect(yield* SessionDelegationStore.pendingCount(db, sessionID)).toBe(0)
-      expect(yield* wakeAllowance(sessionID)).toBe(SessionDelegationStore.WAKE_BUDGET - 2)
+      // The stdout batch and final settlement may arrive in one snapshot or
+      // straddle two provider turns, but never charge once per visible line.
+      const allowance = yield* wakeAllowance(sessionID)
+      expect(allowance).toBeGreaterThanOrEqual(SessionDelegationStore.WAKE_BUDGET - 2)
+      expect(allowance).toBeLessThanOrEqual(SessionDelegationStore.WAKE_BUDGET - 1)
     }),
   )
 
@@ -1640,6 +1665,9 @@ describe("SessionRunnerLLM", () => {
       expect(requests).toHaveLength(0)
       expect(yield* SessionDelegationStore.pendingCount(db, sessionID)).toBe(2)
       expect(yield* wakeAllowance(sessionID)).toBe(0)
+      const history = yield* (yield* SessionV2.Service).context(sessionID)
+      expect(history.filter((message) => message.type === "synthetic")).toHaveLength(1)
+      expect(JSON.stringify(history)).toContain("Automatic continuation paused")
     }),
   )
 
@@ -1683,7 +1711,8 @@ describe("SessionRunnerLLM", () => {
       expect(requests).toHaveLength(0)
       expect(yield* SessionDelegationStore.hasPromotableNotifications(db, sessionID)).toBe(false)
       expect(yield* SessionDelegationStore.notificationCount(db, sessionID)).toBe(1)
-      expect((yield* session.context(sessionID)).filter((m) => m.type === "synthetic")).toHaveLength(0)
+      expect((yield* session.context(sessionID)).filter((m) => m.type === "synthetic")).toHaveLength(1)
+      expect(JSON.stringify(yield* session.context(sessionID))).toContain("wake-allowance-exhausted")
       // A person speaking refills the budget, and the notification that was
       // held back is promoted at the next safe boundary rather than dropped.
       responses = [

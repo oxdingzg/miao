@@ -1,6 +1,6 @@
 export * as SessionDelegationStore from "./delegation-store"
 
-import { and, asc, count, desc, eq, gt, isNull, sql } from "drizzle-orm"
+import { and, asc, count, desc, eq, gt, isNull, lte, sql } from "drizzle-orm"
 import { DateTime, Effect } from "effect"
 import type { Database } from "../database/database"
 import type { EventV2 } from "../event"
@@ -8,7 +8,7 @@ import { Hash } from "../util/hash"
 import { SessionEvent } from "./event"
 import { SessionMessage } from "./message"
 import type { SessionSchema } from "./schema"
-import { SessionDelegationTable, SessionNotificationTable, SessionTable } from "./sql"
+import { SessionDelegationTable, SessionMessageTable, SessionNotificationTable, SessionTable } from "./sql"
 
 type DB = Database.Interface["db"]
 export type Info = typeof SessionDelegationTable.$inferSelect
@@ -32,6 +32,8 @@ export const progressID = (id: string, seq: number) =>
  * work exists, this bounds how much the machine may spend on its own report.
  */
 export const WAKE_BUDGET = 32
+const NOTIFICATION_BATCH_SIZE = 8
+const NOTIFICATION_BATCH_BYTES = 64 * 1024
 
 /**
  * One pending notification for a Session. A notification is durable work the
@@ -94,11 +96,13 @@ export const pendingSchedule = Effect.fn("SessionDelegationStore.pendingSchedule
   return yield* db
     .select({ id: SessionNotificationTable.id })
     .from(SessionNotificationTable)
-    .where(and(
-      eq(SessionNotificationTable.session_id, sessionID),
-      isNull(SessionNotificationTable.promoted_seq),
-      sql`json_extract(${SessionNotificationTable.metadata}, '$.scheduleID') = ${scheduleID}`,
-    ))
+    .where(
+      and(
+        eq(SessionNotificationTable.session_id, sessionID),
+        isNull(SessionNotificationTable.promoted_seq),
+        sql`json_extract(${SessionNotificationTable.metadata}, '$.scheduleID') = ${scheduleID}`,
+      ),
+    )
     .get()
     .pipe(Effect.orDie)
 })
@@ -238,10 +242,7 @@ export const runningForChild = Effect.fn("SessionDelegationStore.runningForChild
     .select()
     .from(SessionDelegationTable)
     .where(
-      and(
-        eq(SessionDelegationTable.child_session_id, childSessionID),
-        eq(SessionDelegationTable.status, "running"),
-      ),
+      and(eq(SessionDelegationTable.child_session_id, childSessionID), eq(SessionDelegationTable.status, "running")),
     )
     .orderBy(desc(SessionDelegationTable.time_created))
     .limit(1)
@@ -291,26 +292,28 @@ export const pendingCount = Effect.fn("SessionDelegationStore.pendingCount")(fun
  * row merely exists — a runner that sees pending work it may not promote loops
  * forever on turns that promote nothing.
  */
-export const hasPromotableNotifications = Effect.fn("SessionDelegationStore.hasPromotableNotifications")(
-  function* (db: DB, sessionID: SessionSchema.ID, includeQueued = true) {
-    const row = yield* db
-      .select({ id: SessionNotificationTable.id })
-      .from(SessionNotificationTable)
-      .innerJoin(SessionTable, eq(SessionTable.id, SessionNotificationTable.session_id))
-      .where(
-        and(
-          eq(SessionNotificationTable.session_id, sessionID),
-          isNull(SessionNotificationTable.promoted_seq),
-          gt(SessionTable.wake_allowance, 0),
-          includeQueued ? undefined : sql`COALESCE(${queuedFlag}, 'steer') != 'queue'`,
-        ),
-      )
-      .limit(1)
-      .get()
-      .pipe(Effect.orDie)
-    return row !== undefined
-  },
-)
+export const hasPromotableNotifications = Effect.fn("SessionDelegationStore.hasPromotableNotifications")(function* (
+  db: DB,
+  sessionID: SessionSchema.ID,
+  includeQueued = true,
+) {
+  const row = yield* db
+    .select({ id: SessionNotificationTable.id })
+    .from(SessionNotificationTable)
+    .innerJoin(SessionTable, eq(SessionTable.id, SessionNotificationTable.session_id))
+    .where(
+      and(
+        eq(SessionNotificationTable.session_id, sessionID),
+        isNull(SessionNotificationTable.promoted_seq),
+        gt(SessionTable.wake_allowance, 0),
+        includeQueued ? undefined : sql`COALESCE(${queuedFlag}, 'steer') != 'queue'`,
+      ),
+    )
+    .limit(1)
+    .get()
+    .pipe(Effect.orDie)
+  return row !== undefined
+})
 
 /**
  * Unread delegation outcomes. Progress notes are excluded: they are bounded per
@@ -337,31 +340,49 @@ export const notificationCount = Effect.fn("SessionDelegationStore.notificationC
 })
 
 /**
- * Promotes at most one notification, spending one unit of the Session's wake
- * allowance. The update is the guard: it only matches a row whose allowance is
+ * Promotes a bounded snapshot for one provider turn, spending one unit of the
+ * Session's wake allowance, not one per report. The update is the guard: it only matches a row whose allowance is
  * above zero, so two drains racing on the last unit cannot both promote. It
  * runs before the publish, so a failure after it wastes a unit rather than
  * letting a Session exceed its budget.
  */
-export const promoteNext = Effect.fn("SessionDelegationStore.promoteNext")(function* (
+const promote = Effect.fn("SessionDelegationStore.promote")(function* (
   db: DB,
   events: EventV2.Interface,
   sessionID: SessionSchema.ID,
-  includeQueued = true,
+  includeQueued: boolean,
+  limit: number,
+  cutoff?: number,
 ) {
-  const row = yield* db
+  const rows = yield* db
     .select()
     .from(SessionNotificationTable)
-    .where(and(
-      eq(SessionNotificationTable.session_id, sessionID),
-      isNull(SessionNotificationTable.promoted_seq),
-      includeQueued ? undefined : sql`COALESCE(${queuedFlag}, 'steer') != 'queue'`,
-    ))
+    .where(
+      and(
+        eq(SessionNotificationTable.session_id, sessionID),
+        isNull(SessionNotificationTable.promoted_seq),
+        includeQueued ? undefined : sql`COALESCE(${queuedFlag}, 'steer') != 'queue'`,
+        cutoff === undefined ? undefined : lte(SessionNotificationTable.admitted_seq, cutoff),
+      ),
+    )
     .orderBy(asc(SessionNotificationTable.admitted_seq))
-    .limit(1)
-    .get()
+    .limit(limit)
+    .all()
     .pipe(Effect.orDie)
-  if (!row) return false
+  const batch: typeof rows = []
+  let bytes = 0
+  let queued = false
+  for (const row of rows) {
+    // One queued tick still buys only one idle boundary. Never pull its next
+    // tick into the same turn just because a monitor report is beside it.
+    if (queued && row.metadata?.delivery === "queue") break
+    const size = Buffer.byteLength(row.text)
+    if (batch.length > 0 && bytes + size > NOTIFICATION_BATCH_BYTES) break
+    batch.push(row)
+    bytes += size
+    queued ||= row.metadata?.delivery === "queue"
+  }
+  if (batch.length === 0) return 0
   const charged = yield* db
     .update(SessionTable)
     .set({ wake_allowance: sql`${SessionTable.wake_allowance} - 1` })
@@ -369,13 +390,76 @@ export const promoteNext = Effect.fn("SessionDelegationStore.promoteNext")(funct
     .returning({ remaining: SessionTable.wake_allowance })
     .get()
     .pipe(Effect.orDie)
-  if (!charged) return false
+  if (!charged) return 0
+  yield* Effect.forEach(batch, (row) =>
+    events.publish(SessionEvent.Synthetic, {
+      sessionID,
+      messageID: row.id,
+      timestamp: DateTime.makeUnsafe(row.time_created),
+      text: row.text,
+      metadata: { ...row.metadata, notificationID: row.id },
+    }),
+  )
+  return batch.length
+})
+
+/** Compatibility for callers that intentionally admit one outcome at a time. */
+export const promoteNext = Effect.fn("SessionDelegationStore.promoteNext")(function* (
+  db: DB,
+  events: EventV2.Interface,
+  sessionID: SessionSchema.ID,
+  includeQueued = true,
+) {
+  return (yield* promote(db, events, sessionID, includeQueued, 1)) > 0
+})
+
+export const promoteBatch = Effect.fn("SessionDelegationStore.promoteBatch")(function* (
+  db: DB,
+  events: EventV2.Interface,
+  sessionID: SessionSchema.ID,
+  includeQueued = true,
+  cutoff?: number,
+) {
+  return yield* promote(db, events, sessionID, includeQueued, NOTIFICATION_BATCH_SIZE, cutoff)
+})
+
+/** Surface a spent allowance once per unread backlog, without starting a model. */
+export const pauseIfExhausted = Effect.fn("SessionDelegationStore.pauseIfExhausted")(function* (
+  db: DB,
+  events: EventV2.Interface,
+  sessionID: SessionSchema.ID,
+) {
+  const pending = yield* db
+    .select({ id: SessionNotificationTable.id })
+    .from(SessionNotificationTable)
+    .innerJoin(SessionTable, eq(SessionTable.id, SessionNotificationTable.session_id))
+    .where(
+      and(
+        eq(SessionNotificationTable.session_id, sessionID),
+        isNull(SessionNotificationTable.promoted_seq),
+        lte(SessionTable.wake_allowance, 0),
+      ),
+    )
+    .orderBy(asc(SessionNotificationTable.admitted_seq))
+    .limit(1)
+    .get()
+    .pipe(Effect.orDie)
+  if (!pending) return false
+  const id = SessionMessage.ID.make(`msg_notification_pause_${Hash.sha256(`${sessionID}:${pending.id}`)}`)
+  const existing = yield* db
+    .select({ id: SessionMessageTable.id })
+    .from(SessionMessageTable)
+    .where(and(eq(SessionMessageTable.session_id, sessionID), eq(SessionMessageTable.id, id)))
+    .get()
+    .pipe(Effect.orDie)
+  if (existing) return true
+  const count = yield* pendingCount(db, sessionID)
   yield* events.publish(SessionEvent.Synthetic, {
     sessionID,
-    messageID: row.id,
-    timestamp: DateTime.makeUnsafe(row.time_created),
-    text: row.text,
-    metadata: { ...row.metadata, notificationID: row.id },
+    messageID: id,
+    timestamp: yield* DateTime.now,
+    text: `Automatic continuation paused: the notification wake allowance is exhausted. At least ${count} background notification(s) are saved and unread. Send a new message (for example, "continue") to resume.`,
+    metadata: { notificationPause: { reason: "wake-allowance-exhausted", pendingAtPause: count, budget: WAKE_BUDGET } },
   })
   return true
 })
@@ -387,10 +471,7 @@ export const promoteNext = Effect.fn("SessionDelegationStore.promoteNext")(funct
  * between Sessions, schedules and the runner's own loop all go through — is
  * therefore deliberately not a recharge point.
  */
-export const recharge = Effect.fn("SessionDelegationStore.recharge")(function* (
-  db: DB,
-  sessionID: SessionSchema.ID,
-) {
+export const recharge = Effect.fn("SessionDelegationStore.recharge")(function* (db: DB, sessionID: SessionSchema.ID) {
   yield* db
     .update(SessionTable)
     .set({ wake_allowance: WAKE_BUDGET })
