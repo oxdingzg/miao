@@ -92,6 +92,7 @@ import { SessionOutputGuard } from "./output-guard"
 import { SessionToolInputGuard } from "./tool-input-guard"
 import { SessionFirstByteGuard } from "./first-byte-guard"
 import { createLLMEventPublisher, progressContent, progressGate } from "./publish-llm-event"
+import { SessionToolDispatch } from "../tool-dispatch"
 import { toLLMMessages } from "./to-llm-message"
 import { inlineTextFiles, materializeBlobRefs } from "./materialize-files"
 import { MAX_STEPS_PROMPT } from "./max-steps"
@@ -443,6 +444,7 @@ const layer = Layer.effect(
     const failInterruptedTools = Effect.fn("SessionRunner.failInterruptedTools")(function* (
       sessionID: SessionSchema.ID,
     ) {
+      yield* SessionToolDispatch.recover(db, sessionID)
       for (const message of yield* getContext(sessionID)) {
         if (message.type !== "assistant") continue
         for (const tool of message.content) {
@@ -936,6 +938,7 @@ const layer = Layer.effect(
         contextBudget,
         normalizeContent: normalizeToolContent,
         normalizeStructured: normalizeToolStructured,
+        dispatch: db,
       })
       const withPublication = Semaphore.makeUnsafe(1).withPermit
       const publish = (event: LLMEvent, outputPaths: ReadonlyArray<string> = []) =>
@@ -1028,16 +1031,19 @@ const layer = Layer.effect(
               return
             }
             const assistantMessageID = yield* publisher.assistantMessageID(event.id)
-            const settlement = toolMaterialization.settle({
+            const dispatch = publisher.dispatchToken(event.id)
+            if (!dispatch) return yield* Effect.die("Local tool call has no durable dispatch authority")
+            const settlement = Effect.suspend(() => toolMaterialization.settle({
               sessionID: session.id,
               agent: agent.id,
               assistantMessageID,
               call: event,
-            })
-            const settleAndPublish = (blackbox
-              ? SessionBlackbox.tool(session.id, event.name, event.input, settlement)
-              : settlement
-            ).pipe(
+            }))
+            const settleAndPublish = SessionToolDispatch.consume(db, dispatch).pipe(
+              Effect.orDie,
+              Effect.andThen(
+                blackbox ? SessionBlackbox.tool(session.id, event.name, event.input, settlement) : settlement,
+              ),
               Effect.flatMap((settled) =>
                 Effect.gen(function* () {
                   // A deferred catalog the model cannot search its way out of

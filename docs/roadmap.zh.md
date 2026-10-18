@@ -166,9 +166,14 @@ V1 形状的遗留：
 **入口：** `packages/core/src/session/runner/llm.ts`。
 进展：由前序进程遗留仍在运行的工具会以「结果未知」错误结算（`failInterruptedTools`），且
 未派发调用与「结果未知」调用已被区分（#101）。
-- [ ] 幂等键（`callID` + attempt）外加一次性消费 token。
-- [ ] 重启时把未结算调用标记为结果未知，并要求显式 retry/abandon。
-- **验收：** 工具执行中途 kill，恢复 → 无重复副作用；模型看到「结果未知」。
+- [x] 持久化以 Session、assistant/provider-turn 和 `callID` 为键的一次性 dispatch token。
+  `Tool.Called` 与计划行原子提交，进入本地工具 registry 前通过 SQLite CAS 消费 token。
+  结算事件只撤销执行权；显式恢复把已消费 attempt 标记为 `unknown`、未消费计划标记为
+  `cancelled`。事件重放不会创建执行权；新 turn 可以合法复用相同调用 id、工具和输入。
+- [x] 恢复时把未结算工具投影为结果未知；保留显式恢复边界。
+- **验收：** 真实子进程写入外部文件并 fsync 后、结算前退出；重开数据库拒绝旧 attempt 的
+  token，新 turn 的相同调用仍可执行。runner 回归覆盖流内重复、未知结果历史和后续合法调用。
+  该机制防止同一 attempt 重派，不承诺外部 exactly-once，也不引入崩溃后的自动 provider 续跑。
 
 ### 2.5 输出边界 / 超时 / 上限（G7）
 **入口：** `packages/core/src/tool/bash.ts`、`packages/core/src/ripgrep.ts`、
