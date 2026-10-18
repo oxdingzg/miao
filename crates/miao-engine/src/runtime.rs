@@ -1036,10 +1036,14 @@ fn boxed_drain(
 ) -> std::pin::Pin<Box<dyn std::future::Future<Output = Result<(), Error>> + Send>> {
     Box::pin(async move {
         let affinity = inner.store.cache_affinity(&session).await?;
-        crate::cache_affinity::scoped_candidate(
-            session.clone(),
-            affinity,
-            drain(session, inner, force, cancel),
+        let child = inner.store.lineage_parent(&session).await?.is_some();
+        crate::copilot::scoped(
+            child,
+            crate::cache_affinity::scoped_candidate(
+                session.clone(),
+                affinity,
+                drain(session, inner, force, cancel),
+            ),
         )
         .await
     })

@@ -4,6 +4,8 @@ import os from "node:os"
 import path from "node:path"
 import { Catalog } from "@miao/core/catalog"
 import { Credential } from "@miao/core/credential"
+import { CopilotModels } from "@miao/core/github-copilot/models"
+import { shouldUseResponsesApi } from "@miao/llm/providers/github-copilot"
 import { DatabaseFile } from "@miao/core/database/file"
 import { Integration } from "@miao/core/integration"
 import { Location } from "@miao/core/location"
@@ -74,7 +76,16 @@ export const prepare = Effect.fn("Engine.productRoutes")(function* (
     if (accounts.has(integration)) continue
     const connection = yield* integrations.connection.active(integration)
     if (!connection) continue
-    const value = yield* integrations.connection.resolve(connection).pipe(Effect.catch(() => Effect.succeed(undefined)))
+    const credential = connection.type === "env" ? undefined : yield* credentials.get(connection.id)
+    // Copilot device grants use zero expiry; generic OAuth resolution treats it as expired.
+    const device =
+      integration === "github-copilot" &&
+      credential?.value.type === "oauth" &&
+      credential.value.expires === 0 &&
+      credential.value.refresh.length > 0
+    const value = device
+      ? credential.value
+      : yield* integrations.connection.resolve(connection).pipe(Effect.catch(() => Effect.succeed(undefined)))
     if (!value) continue
     const entries: Account[] = []
     if (connection.type === "env") {
@@ -98,9 +109,15 @@ export const prepare = Effect.fn("Engine.productRoutes")(function* (
       if (entries.some((entry) => entry.id === credential.id)) continue
       const database = credential.source === "shared" ? shared : DatabaseFile.path()
       if (!database || database === ":memory:") continue
-      const alternate = yield* integrations.connection
-        .resolve({ type: "credential", id: credential.id, label: credential.label, active: false })
-        .pipe(Effect.catch(() => Effect.succeed(undefined)))
+      const alternate =
+        integration === "github-copilot" &&
+        credential.value.type === "oauth" &&
+        credential.value.expires === 0 &&
+        credential.value.refresh.length > 0
+          ? credential.value
+          : yield* integrations.connection
+              .resolve({ type: "credential", id: credential.id, label: credential.label, active: false })
+              .pipe(Effect.catch(() => Effect.succeed(undefined)))
       if (!alternate) continue
       entries.push({
         source: { type: "database", path: database, id: credential.id, integration },
@@ -114,9 +131,12 @@ export const prepare = Effect.fn("Engine.productRoutes")(function* (
   }
   const routes = models.flatMap((model) => {
     const provider = providers.find((provider) => provider.id === model.providerID)
-    const connections = provider ? accounts.get(provider.integrationID ?? Integration.ID.make(provider.id)) : undefined
+    const integration = provider ? (provider.integrationID ?? Integration.ID.make(provider.id)) : undefined
+    const connections = integration === undefined ? undefined : accounts.get(integration)
     return (connections ?? []).flatMap((account) => {
-      const transport = profile(model, account.oauth)
+      if (integration === undefined) return []
+      const copilot = integration === "github-copilot"
+      const transport = profile(model, account, integration)
       if (!transport) return []
       const headers = Object.fromEntries(
         Object.entries(model.request.headers).filter(([key]) =>
@@ -146,9 +166,14 @@ export const prepare = Effect.fn("Engine.productRoutes")(function* (
           })),
           credential: account.source,
           auth: {
-            ...(transport.provider === "anthropic" && account.oauth ? { style: "bearer" } : {}),
+            ...(copilot
+              ? { style: "copilot" }
+              : transport.provider === "anthropic" && account.oauth
+                ? { style: "bearer" }
+                : {}),
             headers: {
               ...headers,
+              ...(copilot ? { ...CopilotModels.headers(), "Openai-Intent": "conversation-edits" } : {}),
               // The trusted native transport resolves this to the current
               // Session's opaque routing key, never an owner-wide static ID.
               ...(model.providerID === "opencode-go" ? { "x-opencode-session": "$session" } : {}),
@@ -222,10 +247,34 @@ export const prepare = Effect.fn("Engine.productRoutes")(function* (
   return options
 })
 
-function profile(model: ModelV2.Info, oauth: boolean) {
+function profile(model: ModelV2.Info, account: Account, integration: string) {
+  const oauth = account.oauth
   if (model.providerID === "commandcode")
     return { provider: "openai-chat", endpoint: "https://api.commandcode.ai/provider/v1/chat/completions" }
   if (model.api.type !== "aisdk") return undefined
+  if (integration === "github-copilot") {
+    const enterprise = account.value.type === "oauth" ? account.value.metadata?.enterpriseUrl : undefined
+    const base =
+      typeof enterprise === "string"
+        ? CopilotModels.baseURL(enterprise)
+        : (model.api.url?.replace(/\/v1\/?$/, "") ?? CopilotModels.DEFAULT_URL)
+    const declared = model.api.settings?.endpoint
+    if (declared !== undefined && declared !== "messages" && declared !== "responses" && declared !== "chat") return
+    const wire =
+      declared ??
+      (model.api.package === "@ai-sdk/anthropic"
+        ? "messages"
+        : shouldUseResponsesApi(model.api.id)
+          ? "responses"
+          : "chat")
+    const suffix = wire === "messages" ? "v1/messages" : wire === "responses" ? "responses" : "chat/completions"
+    const url = endpoint(base, suffix)
+    if (!url) return
+    return {
+      provider: wire === "messages" ? "anthropic" : wire === "responses" ? "openai-responses" : "openai-chat",
+      endpoint: url,
+    }
+  }
   const defaults: Record<string, string> = {
     "@ai-sdk/deepseek": "https://api.deepseek.com/v1",
     "@ai-sdk/groq": "https://api.groq.com/openai/v1",

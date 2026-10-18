@@ -10,6 +10,8 @@ import { ProductHooks } from "./product-hooks"
 import { ProductLsp } from "./product-lsp"
 import { ProductFormatter } from "./product-formatter"
 import { ProductRoutes } from "./product-routes"
+import { ProductMcp } from "./product-mcp"
+import { McpAuth } from "@miao/core/mcp/auth"
 import { PromptMaterialization } from "./prompt-materialization"
 import { Blob } from "@miao/core/blob"
 import { FSUtil } from "@miao/core/fs-util"
@@ -613,6 +615,7 @@ const layer = Layer.effect(
   Effect.gen(function* () {
     const global = yield* Global.Service
     const credentials = yield* Credential.Service
+    const mcpAuth = yield* McpAuth.Service
     const locations = yield* LocationServiceMap.Service
     const blob = yield* Blob.Service
     const fs = yield* FSUtil.Service
@@ -630,18 +633,19 @@ const layer = Layer.effect(
       configuration.workerConfigFile = workerConfigFile
       console.log("[worker-host] config written:", workerConfigFile)
     }
-    const owners = yield* makeEngineOwners(configuration, (location) =>
+    const mcp = yield* ProductMcp.prepare(configuration).pipe(Effect.provideService(McpAuth.Service, mcpAuth))
+    const owners = yield* makeEngineOwners({ ...configuration, ...mcp }, (location) =>
       Effect.gen(function* () {
         const routes = yield* ProductRoutes.prepare(location, configuration).pipe(
           Effect.provideService(Credential.Service, credentials),
         )
-        const effective = { ...configuration, ...routes }
+        const effective = { ...configuration, ...routes, ...mcp }
         const context = yield* AmbientContext.prepare(location, effective)
         const hooks = yield* ProductHooks.prepare(location, { ...effective, ...context.options })
         const lsp = yield* ProductLsp.prepare(location, effective)
         const formatter = yield* ProductFormatter.prepare(location, effective)
         return {
-          options: { ...routes, ...context.options, ...hooks, ...lsp, ...formatter },
+          options: { ...routes, ...mcp, ...context.options, ...hooks, ...lsp, ...formatter },
           refresh: context.refresh,
         }
       }).pipe(
@@ -689,7 +693,15 @@ const layer = Layer.effect(
 export const node = makeGlobalNode({
   service: NativeEngine.Service,
   layer,
-  deps: [ClientEvents.node, Global.node, Credential.node, LocationServiceMap.node, Blob.node, FSUtil.node],
+  deps: [
+    ClientEvents.node,
+    Global.node,
+    Credential.node,
+    McpAuth.node,
+    LocationServiceMap.node,
+    Blob.node,
+    FSUtil.node,
+  ],
 })
 
 export * as NativeEngineNode from "./native-engine"
