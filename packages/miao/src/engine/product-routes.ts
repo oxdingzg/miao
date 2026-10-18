@@ -14,9 +14,12 @@ import { PluginV2 } from "@miao/core/plugin"
 import { Deferred, Effect, Option } from "effect"
 import { EngineError, type EngineOptions } from "./client"
 
-type Source = { type: "database"; path: string; id: string; integration: string } | { type: "environment"; key: string }
+type Source =
+  | { type: "database"; path: string; id: string; integration: string }
+  | { type: "environment"; key: string }
+  | { type: "aws"; region: string; profile?: string }
 
-type Account = { source: Source; oauth: boolean; value: Credential.Value; id?: string; isDefault: boolean }
+type Account = { source: Source; oauth: boolean; value?: Credential.Value; id?: string; isDefault: boolean }
 
 /** Build exact host routes from the product catalog and active connections.
  * The manifest holds credential references only; refresh stays with its owner. */
@@ -74,6 +77,32 @@ export const prepare = Effect.fn("Engine.productRoutes")(function* (
   for (const provider of providers) {
     const integration = provider.integrationID ?? Integration.ID.make(provider.id)
     if (accounts.has(integration)) continue
+    // Bedrock uses the AWS SDK default chain rather than a product credential.
+    // Region/profile are host configuration; no secret enters the manifest.
+    if (provider.id === "amazon-bedrock") {
+      const settings = provider.api.type === "aisdk" ? provider.api.settings : undefined
+      const region =
+        (typeof settings?.region === "string" ? settings.region : undefined) ??
+        (typeof provider.request.body.region === "string" ? provider.request.body.region : undefined) ??
+        process.env.AWS_REGION ??
+        "us-east-1"
+      const profile =
+        (typeof settings?.profile === "string" ? settings.profile : undefined) ??
+        (typeof provider.request.body.profile === "string" ? provider.request.body.profile : undefined) ??
+        process.env.AWS_PROFILE
+      const bearer = process.env.AWS_BEARER_TOKEN_BEDROCK
+      accounts.set(integration, [
+        {
+          source: bearer
+            ? { type: "environment", key: "AWS_BEARER_TOKEN_BEDROCK" }
+            : { type: "aws", region, ...(profile === undefined ? {} : { profile }) },
+          oauth: false,
+          ...(bearer ? { value: { type: "key" as const, key: bearer } } : {}),
+          isDefault: true,
+        },
+      ])
+      continue
+    }
     const connection = yield* integrations.connection.active(integration)
     if (!connection) continue
     const credential = connection.type === "env" ? undefined : yield* credentials.get(connection.id)
@@ -215,7 +244,7 @@ export const prepare = Effect.fn("Engine.productRoutes")(function* (
   const environment = Array.from(accounts.values())
     .flat()
     .flatMap((account) =>
-      account.source.type === "environment"
+      account.source.type === "environment" && account.value
         ? [[account.source.key, account.value.type === "key" ? account.value.key : account.value.access]]
         : [],
     )
@@ -230,7 +259,7 @@ export const prepare = Effect.fn("Engine.productRoutes")(function* (
     const account = provider
       ? accounts.get(provider.integrationID ?? Integration.ID.make(provider.id))?.find((account) => account.isDefault)
       : undefined
-    if (account) {
+    if (account?.value) {
       const key =
         primary.provider === "anthropic"
           ? "ANTHROPIC_API_KEY"
@@ -252,8 +281,13 @@ function profile(model: ModelV2.Info, account: Account, integration: string) {
   if (model.providerID === "commandcode")
     return { provider: "openai-chat", endpoint: "https://api.commandcode.ai/provider/v1/chat/completions" }
   if (model.api.type !== "aisdk") return undefined
+  if (model.api.package === "@ai-sdk/amazon-bedrock") {
+    const url =
+      model.api.url ?? (typeof model.request.body.endpoint === "string" ? model.request.body.endpoint : undefined)
+    return { provider: "amazon-bedrock", ...(url === undefined ? {} : { endpoint: url }) }
+  }
   if (integration === "github-copilot") {
-    const enterprise = account.value.type === "oauth" ? account.value.metadata?.enterpriseUrl : undefined
+    const enterprise = account.value?.type === "oauth" ? account.value.metadata?.enterpriseUrl : undefined
     const base =
       typeof enterprise === "string"
         ? CopilotModels.baseURL(enterprise)
