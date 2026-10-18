@@ -342,6 +342,14 @@ impl Runtime {
             .model_selection(session)
             .await?
             .or_else(|| agent.model.clone());
+        let binding = match self.inner.store.account_selection(session).await? {
+            Some(account) => crate::session_account::resolve(
+                &self.inner.provider,
+                binding.as_ref(),
+                account.credential_id.as_deref(),
+            )?,
+            None => binding,
+        };
         let provider = crate::session_model::select(&self.inner.provider, binding.as_ref())?;
         if let Some(request) = &agent.request {
             provider
@@ -549,6 +557,47 @@ impl Runtime {
         self.inner.provider.model_catalog()
     }
 
+    pub async fn select_account(
+        &self,
+        session: &str,
+        credential_id: Option<String>,
+    ) -> Result<Value, Error> {
+        if self.inner.stop.is_cancelled() {
+            return Err(Error::Closed);
+        }
+        if self.inner.store.location(session).await?.as_deref() != Some(self.inner.tools.location())
+        {
+            return Err(Error::Conflict);
+        }
+        if credential_id
+            .as_ref()
+            .is_some_and(|id| id.is_empty() || id.len() > 256 || id.chars().any(char::is_control))
+        {
+            return Err(Error::Invalid("invalid credential identity".into()));
+        }
+        let current = match self.inner.store.model_selection(session).await? {
+            Some(binding) => Some(binding),
+            None => self
+                .inner
+                .store
+                .agent(session)
+                .await?
+                .and_then(|(agent, _)| agent.model),
+        };
+        let binding = crate::session_account::resolve(
+            &self.inner.provider,
+            current.as_ref(),
+            credential_id.as_deref(),
+        )?;
+        let provider = crate::session_model::select(&self.inner.provider, binding.as_ref())?;
+        let (history, _) = self.inner.store.selected_input(session).await?;
+        crate::session_model::validate_history(&history, binding.as_ref(), provider.identity())?;
+        self.inner
+            .store
+            .select_account_binding(session, binding, credential_id)
+            .await
+    }
+
     pub async fn select_model(
         &self,
         session: &str,
@@ -561,11 +610,43 @@ impl Runtime {
         {
             return Err(Error::Conflict);
         }
-        // Resolve an immutable host route before durable admission.
-        let selected = crate::session_model::select(&self.inner.provider, binding.as_ref())?;
+        let explicit = binding
+            .as_ref()
+            .and_then(|binding| binding.route_id.as_ref())
+            .and_then(|route| self.inner.provider.route_account(route))
+            .filter(|account| !account.is_default);
+        let account = match &explicit {
+            Some(account) => account
+                .id
+                .as_ref()
+                .map(|id| crate::session_account::Selection {
+                    credential_id: Some(id.clone()),
+                }),
+            None => self.inner.store.account_selection(session).await?,
+        };
+        let effective = if explicit.is_some() {
+            binding.clone()
+        } else {
+            match &account {
+                Some(account) => crate::session_account::resolve(
+                    &self.inner.provider,
+                    binding.as_ref(),
+                    account.credential_id.as_deref(),
+                )?,
+                None => binding.clone(),
+            }
+        };
+        let selected = crate::session_model::select(&self.inner.provider, effective.as_ref())?;
         let (history, _) = self.inner.store.selected_input(session).await?;
-        crate::session_model::validate_history(&history, binding.as_ref(), selected.identity())?;
-        self.inner.store.select_model(session, binding).await
+        crate::session_model::validate_history(&history, effective.as_ref(), selected.identity())?;
+        if explicit.is_some() {
+            self.inner
+                .store
+                .select_model_with_account(session, binding, account)
+                .await
+        } else {
+            self.inner.store.select_model(session, binding).await
+        }
     }
 
     pub async fn resolve_recovery(
@@ -1043,6 +1124,14 @@ async fn execute(
             (Some(selection), _) => Some(selection),
             (None, Some((manifest, _))) => manifest.model.clone(),
             (None, None) => None,
+        };
+        let binding = match inner.store.account_selection(session).await? {
+            Some(account) => crate::session_account::resolve(
+                &inner.provider,
+                binding.as_ref(),
+                account.credential_id.as_deref(),
+            )?,
+            None => binding,
         };
         let selected_provider = crate::session_model::select(&inner.provider, binding.as_ref())?;
         let provider = match manifest.and_then(|agent| agent.request.as_ref()) {

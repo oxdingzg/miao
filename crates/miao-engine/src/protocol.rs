@@ -240,6 +240,10 @@ pub enum Command {
         session_id: String,
         binding: Option<crate::session_model::Binding>,
     },
+    SelectAccount {
+        session_id: String,
+        credential_id: Option<String>,
+    },
     Recoveries {
         session_id: String,
         #[serde(default)]

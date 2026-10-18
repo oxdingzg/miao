@@ -238,6 +238,13 @@ export const fromOwners = (
       ),
     )(await connection.client.request("model_catalog"))
   return {
+    selectAccount: (input) =>
+      read(input, (connection) =>
+        connection.client.request("select_account", {
+          session_id: input.sessionID,
+          credential_id: input.credentialID,
+        }),
+      ).pipe(Effect.asVoid),
     selectAgent: (input) =>
       read(input, async (connection) =>
         connection.client.request("select_agent", {

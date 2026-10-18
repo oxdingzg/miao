@@ -1,3 +1,4 @@
+import { Credential } from "@miao/schema/credential"
 import { Agent } from "@miao/schema/agent"
 import { SessionModelRoute } from "@miao/schema/session-model-route"
 import { Project } from "@miao/schema/project"
@@ -46,6 +47,9 @@ export function nativeSessionInfo(input: {
   const created = number(input.snapshot["created_at_ms"])
   const updated = number(input.snapshot["updated_at_ms"])
   const archived = number(input.snapshot["archived_at_ms"])
+  const account = Schema.decodeUnknownOption(Schema.Struct({ credential_id: Schema.NullOr(Credential.ID) }))(
+    input.snapshot["account_selection"],
+  )
   const title = input.snapshot["title"]
   const agent = Schema.decodeUnknownOption(Schema.Struct({ name: Agent.ID }))(input.snapshot["agent"])
   const tokens =
@@ -66,6 +70,9 @@ export function nativeSessionInfo(input: {
       : { input: 0, output: 0, reasoning: 0, cache: { read: 0, write: 0 } })
   return {
     id: input.sessionID,
+    ...(Option.isSome(account) && account.value.credential_id !== null
+      ? { credentialID: account.value.credential_id }
+      : {}),
     ...(Option.isSome(agent) ? { agent: agent.value.name } : {}),
     ...(typeof input.snapshot["parent_session_id"] === "string"
       ? { parentID: Schema.decodeUnknownSync(SessionID)(input.snapshot["parent_session_id"]) }

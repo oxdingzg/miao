@@ -39,6 +39,7 @@ pub mod roles;
 pub mod routing;
 pub mod runtime;
 mod search;
+pub mod session_account;
 pub mod session_agent;
 pub mod session_model;
 pub mod state;

@@ -380,6 +380,13 @@ P99 25.4 ms / max 27.3 ms；主 isolate RSS 725.6 MB → 747.9 MB；FD 稳定在
 
 ---
 
+### 原生会话切换账号
+
+`session.switchAccount` 在所选逻辑模型族内解析已登记凭据，并保留显式 variant
+（ADR-0020）。账号 pin 独立于显式模型选择与 agent 默认模型；修改模型/variant
+不会丢失账号，fork 按历史边界继承，加密 provider 历史不能跨路由搬用。
+Host manifest 只保存凭据引用，枚举或选择备选账号都不会修改全局 active 连接。
+
 ### 原生会话切换 agent
 
 `session.switchAgent` 从 host 目录解析 agent，再向引擎提交有界 manifest

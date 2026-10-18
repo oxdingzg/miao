@@ -639,6 +639,15 @@ open PRs and recent merges.
 
 ---
 
+### Native Session account switching
+
+`session.switchAccount` resolves a registered credential inside the selected
+logical model family and retains its explicit variant (ADR-0020). The account pin
+is independent of explicit model selection and agent defaults; model/variant
+changes retain it, forks inherit it, and opaque provider history cannot cross
+routes. Host manifests contain credential references only, and enumerating or
+selecting alternatives never changes the global active connection.
+
 ### Native Session agent switching
 
 `session.switchAgent` resolves an agent through the host catalog and sends a

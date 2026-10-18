@@ -41,6 +41,13 @@ it.live("product routes bind active accounts without persisting secrets and keep
       "commandcode",
       "first",
       JSON.stringify({ type: "key", key: "COMMAND_SECRET" }),
+      2,
+    )
+    db.query("INSERT INTO credential VALUES (?,?,?,?,?)").run(
+      "cred_backup",
+      "commandcode",
+      "backup",
+      JSON.stringify({ type: "key", key: "BACKUP_SECRET" }),
       0,
     )
     db.query("INSERT INTO credential VALUES (?,?,?,?,?)").run(
@@ -144,10 +151,30 @@ it.live("product routes bind active accounts without persisting secrets and keep
         const file = options.modelRoutesConfigFile
         if (!file) throw new Error("missing product routes manifest")
         const content = yield* Effect.promise(() => Bun.file(file).text())
-        for (const secret of ["COMMAND_SECRET", "OAUTH_SECRET", "REFRESH_SECRET", "HEADER_SECRET", "EXPIRED_SECRET"])
+        for (const secret of [
+          "COMMAND_SECRET",
+          "BACKUP_SECRET",
+          "OAUTH_SECRET",
+          "REFRESH_SECRET",
+          "HEADER_SECRET",
+          "EXPIRED_SECRET",
+        ])
           expect(content).not.toContain(secret)
         const routes = yield* Effect.promise(() => Bun.file(file).json())
-        expect(routes).toHaveLength(103)
+        expect(routes).toHaveLength(205)
+        const alternate = routes.find(
+          (route: { account?: { id?: string; model_key: string } }) =>
+            route.account?.id === "cred_backup" && route.account.model_key === "commandcode/model-0",
+        )
+        expect(alternate).toMatchObject({
+          account: { id: "cred_backup", model_key: "commandcode/model-0", default: false },
+          credential: { id: "cred_backup" },
+        })
+        expect(alternate.id).toMatch(/^account\/[a-f0-9]{64}$/)
+        expect(yield* integrations.connection.active(Integration.ID.make("commandcode"))).toMatchObject({
+          type: "credential",
+          id: Credential.ID.make("cred_command"),
+        })
         expect(routes.find((route: { id: string }) => route.id === "commandcode/model-0")).toMatchObject({
           primary: true,
           input_modalities: ["text", "image", "pdf"],

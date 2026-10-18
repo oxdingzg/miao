@@ -76,6 +76,10 @@ impl Host {
                 session_id,
                 binding,
             } => runtime.select_model(&session_id, binding).await,
+            Command::SelectAccount {
+                session_id,
+                credential_id,
+            } => runtime.select_account(&session_id, credential_id).await,
             Command::Recoveries { session_id, after } => {
                 runtime.store().recoveries(&session_id, &after).await
             }
