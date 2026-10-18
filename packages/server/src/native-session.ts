@@ -10,6 +10,7 @@ import { DateTime, Effect, Option, Schema } from "effect"
 import { Database } from "@miao/core/database/database"
 import { SessionEnginePlacement } from "@miao/core/session/engine-placement"
 import { NativeEngine } from "./native-engine"
+import { nativeIdle } from "./native-state"
 
 /**
  * Project the engine-owned Session snapshot into the product record the HTTP
@@ -353,4 +354,30 @@ export const mergeNativeSessions = Effect.fn("NativeSession.mergeSessions")(func
     direction: input.anchor?.direction,
     limit: input.limit,
   })
+})
+
+/**
+ * Wait until a native Session would otherwise become idle: the engine has no
+ * active run and no admitted input is still awaiting promotion.
+ *
+ * The engine owns execution, so the product holds no local run to observe, and
+ * the durable event projection carries no run-terminal marker of its own. The
+ * snapshot is therefore polled at the same cadence as
+ * {@link nativeSessionEvents} until the engine reports idleness.
+ */
+export const waitNative = Effect.fn("NativeSession.wait")(function* (input: {
+  native: Pick<NativeEngine.Interface, "snapshot">
+  sessionID: SessionID
+  storage: AbsolutePath
+  location: Location.Ref
+}) {
+  while (true) {
+    const snapshot = yield* input.native.snapshot({
+      sessionID: input.sessionID,
+      storage: input.storage,
+      location: input.location,
+    })
+    if (nativeIdle(snapshot)) return
+    yield* Effect.sleep("250 millis")
+  }
 })
