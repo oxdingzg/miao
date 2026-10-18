@@ -11,7 +11,7 @@ use rusqlite::{params, Connection, OptionalExtension, Transaction};
 use serde_json::{json, Value};
 use std::{
     collections::HashSet,
-    fs::{File, OpenOptions},
+    fs::OpenOptions,
     path::{Path, PathBuf},
     sync::{
         atomic::{AtomicBool, Ordering},
@@ -43,11 +43,12 @@ fn locked_paths() -> &'static Mutex<HashSet<PathBuf>> {
     LOCKED.get_or_init(|| Mutex::new(HashSet::new()))
 }
 
-struct FileLease {
+/// Process-lifetime ownership of one store path. Several processes may open the
+/// same database; this only keeps one owner per path inside a process.
+struct PathLease {
     path: PathBuf,
-    _file: File,
 }
-impl Drop for FileLease {
+impl Drop for PathLease {
     fn drop(&mut self) {
         if let Ok(mut locked) = locked_paths().lock() {
             locked.remove(&self.path);
@@ -110,9 +111,9 @@ impl Store {
                             .ok_or_else(|| Error::Invalid("store path".into()))?,
                     )
                 };
-                // In-process ownership is checked first: it is authoritative for
-                // same-process opens and does not depend on platform lock
-                // semantics. The OS lock then provides the cross-process lease.
+                // One process may hold a path once, but several processes may
+                // open the same database: execution ownership is fenced per
+                // Session instead of by whole-store exclusion.
                 if !locked_paths()
                     .lock()
                     .map_err(|_| Error::Busy)?
@@ -120,35 +121,24 @@ impl Store {
                 {
                     return Err(Error::Busy);
                 }
-                let file = match OpenOptions::new()
+                let lease = PathLease {
+                    path: canonical.clone(),
+                };
+                // Only schema checks and migrations are exclusive across
+                // processes. The lease is released before this store serves, so
+                // a second runtime can open the same database while the first is
+                // executing its own Sessions.
+                let migration = OpenOptions::new()
                     .create(true)
                     .truncate(false)
                     .read(true)
                     .write(true)
-                    .open(canonical.with_extension("engine-lock"))
-                {
-                    Ok(file) => file,
-                    Err(error) => {
-                        if let Ok(mut locked) = locked_paths().lock() {
-                            locked.remove(&canonical);
-                        }
-                        return Err(Error::Io(error));
-                    }
-                };
-                // Any failure here means another process holds the lease. Windows
-                // reports lock contention as a lock-violation error, not
-                // `WouldBlock`, so treat every failure as `Busy`.
-                if file.try_lock_exclusive().is_err() {
-                    if let Ok(mut locked) = locked_paths().lock() {
-                        locked.remove(&canonical);
-                    }
-                    return Err(Error::Busy);
-                }
-                let lease = FileLease {
-                    path: canonical.clone(),
-                    _file: file,
-                };
+                    .open(canonical.with_extension("engine-migrate-lock"))?;
+                migration.lock_exclusive()?;
                 let conn = Connection::open(&canonical)?;
+                // Concurrent writers wait for SQLite's write lock instead of
+                // failing the statement with SQLITE_BUSY.
+                conn.busy_timeout(std::time::Duration::from_secs(5))?;
                 let app_id: u32 = conn.query_row("PRAGMA application_id", [], |r| r.get(0))?;
                 let engine:bool=conn.query_row("SELECT EXISTS(SELECT 1 FROM sqlite_master WHERE name='engine_session' AND type='table')",[],|r|r.get(0))?;
                 let existing:u32=conn.query_row("SELECT count(*) FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%'",[],|r|r.get(0))?;
@@ -241,6 +231,9 @@ impl Store {
                         )?;
                     }
                 }
+                // The schema is current; serving is shared from here on.
+                fs2::FileExt::unlock(&migration)?;
+                drop(migration);
                 Ok((conn, lease, canonical))
             })();
             match opened {
@@ -650,7 +643,8 @@ impl Store {
     pub async fn recover_jobs(&self) -> Result<(), Error> {
         self.call(|conn| {
             let tx=conn.transaction()?;
-            let jobs:Vec<(String,String,String)>={let mut stmt=tx.prepare("SELECT id,session_id,state FROM engine_job WHERE state IN ('queued','running')")?;let rows=stmt.query_map([],|r|Ok((r.get(0)?,r.get(1)?,r.get(2)?)))?;rows.collect::<Result<_,_>>()?};
+            let now=crate::approval::now_ms() as i64;
+            let jobs:Vec<(String,String,String)>={let mut stmt=tx.prepare("SELECT id,session_id,state FROM engine_job WHERE state IN ('queued','running') AND NOT EXISTS(SELECT 1 FROM engine_lease l WHERE l.session_id=engine_job.session_id AND ?1 - l.last_ms < 2*l.interval_ms)")?;let rows=stmt.query_map([now],|r|Ok((r.get(0)?,r.get(1)?,r.get(2)?)))?;rows.collect::<Result<_,_>>()?};
             for (id,session,state) in jobs {
                 let terminal=if state=="queued"{"interrupted"}else{"unknown"};let result=json!({"error":"runtime ownership lost; no automatic replay"});
                 tx.execute("UPDATE engine_job SET state=?2,result=?3 WHERE id=?1",params![id,terminal,serde_json::to_string(&result)?])?;
@@ -1649,18 +1643,35 @@ impl Store {
     }
 
     /// Startup reconciliation never resumes provider work or repeats tools.
+    /// Startup reconciliation: adopt only runs no live owner holds. A Session
+    /// whose lease is still fresh belongs to another process and must not be
+    /// interrupted here.
     pub async fn recover(&self) -> Result<Vec<Event>, Error> {
-        self.recover_session(None).await
+        self.recover_session_inner(None, true).await
     }
 
+    /// Reconcile one Session this process was driving; its own live lease must
+    /// not stop the cleanup.
     pub async fn recover_session(&self, session: Option<&str>) -> Result<Vec<Event>, Error> {
+        self.recover_session_inner(session, false).await
+    }
+
+    async fn recover_session_inner(
+        &self,
+        session: Option<&str>,
+        honor_leases: bool,
+    ) -> Result<Vec<Event>, Error> {
         let session = session.map(str::to_owned);
+        let now = crate::approval::now_ms() as i64;
         self.call(move |conn| {
             let tx = conn.transaction()?;
             let runs: Vec<(String, String)> = {
-                let mut stmt =
-                    tx.prepare("SELECT id,session_id FROM engine_run WHERE state='running' AND (?1 IS NULL OR session_id=?1)")?;
-                let rows = stmt.query_map([session], |r| Ok((r.get(0)?, r.get(1)?)))?;
+                let mut stmt = tx.prepare(
+                    "SELECT r.id,r.session_id FROM engine_run r WHERE r.state='running' AND (?1 IS NULL OR r.session_id=?1) AND (?2=0 OR NOT EXISTS(SELECT 1 FROM engine_lease l WHERE l.session_id=r.session_id AND ?3 - l.last_ms < 2*l.interval_ms))",
+                )?;
+                let rows = stmt.query_map(params![session, honor_leases as i64, now], |r| {
+                    Ok((r.get(0)?, r.get(1)?))
+                })?;
                 rows.collect::<Result<_, _>>()?
             };
             let mut events = Vec::new();

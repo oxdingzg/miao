@@ -217,9 +217,10 @@ impl Store {
     pub async fn recover_questions(&self) -> Result<(), Error> {
         self.call(move|conn|{
             let tx=conn.transaction()?;
+            let now=now_ms() as i64;
             let requests={
-                let mut stmt=tx.prepare("SELECT q.session_id,q.data FROM engine_event q WHERE q.kind='question.requested' AND NOT EXISTS(SELECT 1 FROM engine_event r WHERE r.session_id=q.session_id AND r.kind='question.resolved' AND json_extract(r.data,'$.question_id')=json_extract(q.data,'$.question_id')) LIMIT 257")?;
-                let rows=stmt.query_map([],|row|Ok((row.get::<_,String>(0)?,row.get::<_,String>(1)?)))?;rows.collect::<Result<Vec<_>,_>>()?
+                let mut stmt=tx.prepare("SELECT q.session_id,q.data FROM engine_event q WHERE q.kind='question.requested' AND NOT EXISTS(SELECT 1 FROM engine_event r WHERE r.session_id=q.session_id AND r.kind='question.resolved' AND json_extract(r.data,'$.question_id')=json_extract(q.data,'$.question_id')) AND NOT EXISTS(SELECT 1 FROM engine_lease l WHERE l.session_id=q.session_id AND ?1 - l.last_ms < 2*l.interval_ms) LIMIT 257")?;
+                let rows=stmt.query_map([now],|row|Ok((row.get::<_,String>(0)?,row.get::<_,String>(1)?)))?;rows.collect::<Result<Vec<_>,_>>()?
             };
             if requests.len()>256{return Err(Error::Invalid("question recovery budget exceeded".into()));}
             for (session,data) in requests {
