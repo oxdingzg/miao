@@ -82,11 +82,17 @@ async fn execution_writes_reject_a_superseded_lease() {
     let stale = store.claim_session("ses_fence", 30_000).await.unwrap();
     let current = store.claim_session("ses_fence", 30_000).await.unwrap();
     assert!(matches!(
-        store.promote_fenced("ses_fence", true, &stale).await.unwrap_err(),
+        store
+            .promote_fenced("ses_fence", true, &stale)
+            .await
+            .unwrap_err(),
         Error::Fenced
     ));
     assert!(matches!(
-        store.start_run_fenced("ses_fence", "run-1", &stale).await.unwrap_err(),
+        store
+            .start_run_fenced("ses_fence", "run-1", &stale)
+            .await
+            .unwrap_err(),
         Error::Fenced
     ));
     assert!(matches!(
@@ -97,15 +103,31 @@ async fn execution_writes_reject_a_superseded_lease() {
         Error::Fenced
     ));
     assert!(matches!(
-        store.tool_settle_fenced("ses_fence", "call", json!({}), &stale).await.unwrap_err(),
+        store
+            .tool_settle_fenced("ses_fence", "call", json!({}), &stale)
+            .await
+            .unwrap_err(),
         Error::Fenced
     ));
     assert!(matches!(
-        store.finish_run_fenced("ses_fence", "run-1", "stop", &stale).await.unwrap_err(),
+        store
+            .finish_run_fenced("ses_fence", "run-1", "stop", &stale)
+            .await
+            .unwrap_err(),
         Error::Fenced
     ));
     // The active owner still settles the turn.
-    store.start_run_fenced("ses_fence", "run-1", &current).await.unwrap();
-    store.finish_run_fenced("ses_fence", "run-1", "stop", &current).await.unwrap();
-    assert!(store.promote_fenced("ses_fence", true, &current).await.unwrap().is_empty());
+    store
+        .start_run_fenced("ses_fence", "run-1", &current)
+        .await
+        .unwrap();
+    store
+        .finish_run_fenced("ses_fence", "run-1", "stop", &current)
+        .await
+        .unwrap();
+    assert!(store
+        .promote_fenced("ses_fence", true, &current)
+        .await
+        .unwrap()
+        .is_empty());
 }

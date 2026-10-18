@@ -1019,7 +1019,8 @@ impl Store {
         run: &str,
         lease: &SessionLease,
     ) -> Result<Event, Error> {
-        self.start_run_inner(session, run, Some(lease.clone())).await
+        self.start_run_inner(session, run, Some(lease.clone()))
+            .await
     }
 
     async fn start_run_inner(
@@ -1031,7 +1032,9 @@ impl Store {
         let (session, run) = (session.to_owned(), run.to_owned());
         self.call(move |conn| {
             let tx = conn.transaction()?;
-            if let Some(lease) = &lease { require_lease(&tx, &session, lease)?; }
+            if let Some(lease) = &lease {
+                require_lease(&tx, &session, lease)?;
+            }
             tx.execute(
                 "INSERT INTO engine_run VALUES(?1,?2,'running')",
                 params![run, session],
@@ -1071,7 +1074,8 @@ impl Store {
         name: &str,
         input: Value,
     ) -> Result<Event, Error> {
-        self.tool_dispatch_inner(session, run, id, name, input, None).await
+        self.tool_dispatch_inner(session, run, id, name, input, None)
+            .await
     }
 
     /// `tool_dispatch` under a Session claim: a superseded writer cannot start a
@@ -1106,7 +1110,9 @@ impl Store {
         );
         self.call(move |conn| {
             let tx = conn.transaction()?;
-            if let Some(lease) = &lease { require_lease(&tx, &session, lease)?; }
+            if let Some(lease) = &lease {
+                require_lease(&tx, &session, lease)?;
+            }
             tx.execute(
                 "INSERT INTO engine_tool VALUES(?1,?2,?3,?4,'dispatched')",
                 params![id, run, name, serde_json::to_string(&input)?],
@@ -1189,7 +1195,11 @@ impl Store {
     }
     /// Claim Session execution ownership. Every claim advances the durable
     /// epoch, which is the fence that Session-scoped writes must present.
-    pub async fn claim_session(&self, session: &str, interval_ms: i64) -> Result<SessionLease, Error> {
+    pub async fn claim_session(
+        &self,
+        session: &str,
+        interval_ms: i64,
+    ) -> Result<SessionLease, Error> {
         let (session, interval_ms) = (session.to_owned(), interval_ms);
         self.call(move |conn| {
             let now = crate::approval::now_ms() as i64;
@@ -1497,7 +1507,9 @@ impl Store {
         let (session, run, reason) = (session.to_owned(), run.to_owned(), reason.to_owned());
         self.call(move |conn| {
             let tx = conn.transaction()?;
-            if let Some(lease) = &lease { require_lease(&tx, &session, lease)?; }
+            if let Some(lease) = &lease {
+                require_lease(&tx, &session, lease)?;
+            }
             let changed = tx.execute(
                 "UPDATE engine_run SET state=?3 WHERE id=?1 AND session_id=?2 AND state='running'",
                 params![run, session, reason],
@@ -1753,9 +1765,11 @@ pub(crate) fn require_lease(
         return Err(Error::Fenced);
     }
     let epoch: Option<i64> = tx
-        .query_row("SELECT epoch FROM engine_lease WHERE session_id=?1", [session], |row| {
-            row.get(0)
-        })
+        .query_row(
+            "SELECT epoch FROM engine_lease WHERE session_id=?1",
+            [session],
+            |row| row.get(0),
+        )
         .optional()?;
     if epoch != Some(lease.epoch as i64) {
         return Err(Error::Fenced);
