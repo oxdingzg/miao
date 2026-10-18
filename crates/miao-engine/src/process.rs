@@ -411,6 +411,13 @@ impl Group {
             libc::kill(-(self.pid as i32), signal);
         }
     }
+    /// Kill the whole sandboxed tree: the process group on Unix, the runner's
+    /// job object on Windows.
+    pub(crate) fn terminate(&mut self) {
+        #[cfg(unix)]
+        self.signal(libc::SIGKILL);
+        let _ = self.child.start_kill();
+    }
 }
 impl Drop for Group {
     fn drop(&mut self) {
@@ -463,6 +470,7 @@ pub(crate) async fn execute_with_progress(
         input.pty,
         false,
         allow_network,
+        &[],
     )
     .await?;
     let mut readers = JoinSet::new();
@@ -585,6 +593,7 @@ pub(crate) async fn spawn(
     pty: bool,
     interactive: bool,
     allow_network: bool,
+    envs: &[(String, String)],
 ) -> Result<(Group, Option<std::fs::File>, tempfile::TempDir), ToolError> {
     let temp = tokio::task::spawn_blocking(tempfile::tempdir)
         .await
@@ -609,6 +618,10 @@ pub(crate) async fn spawn(
         .arg(runner_mode)
         .arg(serde_json::to_string(&spec).map_err(|_| ToolError::InvalidInput)?)
         .env_clear()
+        .envs(
+            envs.iter()
+                .map(|(key, value)| (key.as_str(), value.as_str())),
+        )
         .kill_on_drop(true)
         .current_dir(cwd);
     #[cfg(unix)]

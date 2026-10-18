@@ -327,6 +327,7 @@ async fn real_rust_analyzer_observes_edited_document() {
             argv: vec!["rust-analyzer".into()],
             extensions: vec!["rs".into()],
             env: Default::default(),
+            initialization: None,
         }],
         dir.path(),
     )

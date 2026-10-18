@@ -235,6 +235,13 @@ impl Tools {
         self.process_network = network;
         self
     }
+    /// The sandbox runner executable; background tools fail closed without it.
+    pub(crate) fn process_runner(&self) -> Option<&std::path::Path> {
+        self.runner.as_ref().map(|path| path.as_path())
+    }
+    pub(crate) fn process_network_allowed(&self) -> bool {
+        self.process_network
+    }
     /// A product host can supply its resolved aggregate without standalone
     /// discovery reintroducing disabled sources or duplicating instructions.
     pub fn with_workspace_instructions(mut self, enabled: bool) -> Self {

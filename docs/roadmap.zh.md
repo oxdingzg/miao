@@ -192,6 +192,8 @@ webfetch/websearch 对响应体设界；MCP 图片结果上限 5 MB base64；完
 `packages/core/src/sandbox/{runner,policy}.ts`、`packages/core/src/config/sandbox.ts`。
 进展：V2 bash 与 code-mode 在 core OS 沙箱下运行；catch-all allow 规则无法解除它。
 - [ ] 把同一 core-owned 沙箱扩展到其他变更型工具（workdir、允许路径、网络），fail-closed、
+- [x] RS：`monitor` 工具已纳入同一沙箱——monitor 命令现经沙箱 runner 启动
+      （seatbelt/Landlock/AppContainer），保持最小环境，取消与超时时按进程组终止。
       面向模型的拒绝提示。
 - [ ] 让沙箱对剩余工具默认开启。
 - **验收：** 沙箱内的变更型工具无法写到允许路径之外；配置时拒绝网络；拒绝以工具错误呈现。
