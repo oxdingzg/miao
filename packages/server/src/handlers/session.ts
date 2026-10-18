@@ -308,6 +308,17 @@ export const SessionHandler = HttpApiBuilder.group(Api, "server.session", (handl
       .handle(
         "session.switchAccount",
         Effect.fn(function* (ctx) {
+          const placement = yield* Effect.serviceOption(NativeEngine.Placement)
+          if (Option.isSome(placement)) {
+            const owner = yield* requireNativeOwner(ctx.params.sessionID)
+            yield* owner.native.selectAccount({
+              sessionID: ctx.params.sessionID,
+              storage: owner.placement.storage,
+              location: owner.placement.location,
+              credentialID: ctx.payload.credentialID,
+            })
+            return HttpApiSchema.NoContent.make()
+          }
           yield* requireTypescriptOwner(ctx.params.sessionID, "session.switchAccount")
           yield* session
             .switchAccount({ sessionID: ctx.params.sessionID, credentialID: ctx.payload.credentialID })

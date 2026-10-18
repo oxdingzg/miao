@@ -31,6 +31,7 @@ does not claim ACP or the existing miao HttpApi is compatible.
 | `remove` | `session_id` | `{accepted:bool, reason?}` |
 | `request_compact` | `session_id` | `{accepted:true, duplicate, pending}` |
 | `select_agent` | `session_id`, `agent` | `{agent_hash, changed}` |
+| `select_account` | `session_id`, `credential_id` (string or null) | `{binding, account, changed}` |
 | `events` | `session_id`, `after` | `Event[]` (page ≤ 100) |
 | `snapshot` | `session_id` | committed Session snapshot |
 | `sessions` | — | `string[]` (Session ids) |
@@ -290,6 +291,30 @@ or scheduling model execution. `snapshot` and `sessions` immediately see it.
 An exact retry returns `duplicate: true` and preserves edited metadata and the
 journal cursor; reusing an identity belonging to another workspace fails.
 The product initializes identity before publishing its durable native placement.
+
+### Session account selection
+
+`select_account` accepts an opaque `credential_id` or null and resolves it only
+against registered host routes (ADR-0020). A route may carry trusted account
+metadata `{id:string|null, model_key:string, default:boolean}`. The logical model
+key, not a wire model name or a route-id prefix, determines the family. The
+metadata stays out of public model catalogs; no endpoint or secret can be passed
+in a controller account command.
+
+The command retains the current explicit variant. Missing or ambiguous accounts,
+unsupported variants and incompatible opaque history fail before mutation. Null
+restores that logical model's configured default account. Account intent is its
+own `session.account.selected` fact rather than an explicit model pin, so agent
+model defaults remain effective and ordinary model/variant changes retain an
+account pin. Explicit account-specific model aliases update both axes atomically.
+The snapshot exposes `account_selection`, and forks inherit it at the selected
+history watermark.
+
+The product bridge enumerates usable alternative credential references without
+changing the global active connection, and the credential broker alone owns
+refresh. External host manifests must declare account metadata to support
+selection; a non-bearer default chain can use `id:null` without inventing a
+stored credential.
 
 ### Session model selection
 

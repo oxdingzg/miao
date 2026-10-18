@@ -328,6 +328,20 @@ pub trait Provider: Send + Sync {
             "provider does not support generation overrides".into(),
         ))
     }
+    /// Resolve a credential only against the host's registered model family.
+    /// This private lookup never makes credential metadata part of the catalog.
+    fn route_account(&self, _route: &str) -> Option<crate::model_catalog::Account> {
+        None
+    }
+
+    fn account_route(
+        &self,
+        _credential: Option<&str>,
+        _current: Option<&crate::session_model::Binding>,
+        _identity: &Identity,
+    ) -> Result<Option<crate::model_catalog::Info>, ProviderError> {
+        Ok(None)
+    }
     fn model_catalog(&self) -> Vec<crate::model_catalog::Info> {
         self.identity()
             .into_iter()

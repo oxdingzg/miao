@@ -30,3 +30,4 @@ overview and `../PROTOCOL.md` for the stdio wire contract.
 - `adr/0017-session-agent-manifest.md` — Session-owned agent manifests: the host resolves, the engine applies.
 - `adr/0018-command-synthetic-and-shell-records.md` — command references, injected synthetic messages, and engine-executed shell records.
 - `adr/0019-session-file-snapshots.md` — settled-boundary file snapshots behind three-phase revert (stage/clear/commit).
+- `adr/0020-session-account-routing.md` — independent account intent over trusted logical model families.

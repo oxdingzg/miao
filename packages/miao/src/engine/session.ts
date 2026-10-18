@@ -1,3 +1,4 @@
+import { Credential } from "@miao/schema/credential"
 import { DateTime, Option, Schema } from "effect"
 import { Prompt } from "@miao/schema/prompt"
 import type { PromptInput } from "@miao/schema/prompt-input"
@@ -88,6 +89,21 @@ export class EngineTranslator {
             timestamp: DateTime.makeUnsafe(event.recorded_at_ms),
             messageID: messageID(event.session_id, event.seq),
             agent: selected.value.agent.name,
+          },
+        })
+    }
+    if (event.kind === "session.account.selected" && typeof event.recorded_at_ms === "number") {
+      const selected = Schema.decodeUnknownOption(
+        Schema.Struct({ account: Schema.NullOr(Schema.Struct({ credential_id: Schema.NullOr(Credential.ID) })) }),
+      )(event.data)
+      if (Option.isSome(selected))
+        publish({
+          type: "session.next.account.switched",
+          data: {
+            sessionID: adoptSession(event.session_id),
+            timestamp: DateTime.makeUnsafe(event.recorded_at_ms),
+            messageID: messageID(event.session_id, event.seq),
+            credentialID: selected.value.account?.credential_id ?? null,
           },
         })
     }

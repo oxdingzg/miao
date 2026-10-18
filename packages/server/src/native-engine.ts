@@ -1,3 +1,4 @@
+import type { Credential } from "@miao/schema/credential"
 import type { Agent } from "@miao/schema/agent"
 import { Context, Effect } from "effect"
 import type { OpenCodeEvent } from "@miao/protocol/groups/event"
@@ -17,6 +18,13 @@ import type { PromptInput } from "@miao/schema/prompt-input"
 import type { AbsolutePath } from "@miao/core/schema"
 
 export interface Interface {
+  readonly selectAccount: (input: {
+    sessionID: SessionID
+    storage: AbsolutePath
+    location: Location.Ref
+    credentialID: Credential.ID | null
+  }) => Effect.Effect<void, ConflictError>
+
   readonly selectAgent: (input: {
     sessionID: SessionID
     storage: AbsolutePath

@@ -31,6 +31,8 @@ struct Route {
     primary: bool,
     #[serde(default)]
     default_variant: Option<String>,
+    #[serde(default)]
+    account: Option<crate::model_catalog::Account>,
 }
 
 #[derive(Deserialize)]
@@ -158,7 +160,15 @@ pub async fn load(
     let mut variants = Vec::new();
     let mut primary_variants = Vec::new();
     let mut default_seen = false;
+    let mut accounts = Vec::new();
+    let mut primary_account_route = None;
     for entry in entries {
+        if let Some(account) = entry.account {
+            if entry.primary {
+                primary_account_route = Some(entry.id.clone());
+            }
+            accounts.push((entry.id.clone(), account));
+        }
         let source = match entry.credential {
             CredentialSource::Environment { key, account } => {
                 let secret = std::env::var(key)
@@ -290,6 +300,8 @@ pub async fn load(
         routes.push((entry.id, default_provider));
     }
     Ok(Arc::new(
-        Catalog::new(primary, routes)?.with_variants(variants, primary_variants)?,
+        Catalog::new(primary, routes)?
+            .with_variants(variants, primary_variants)?
+            .with_accounts(accounts, primary_account_route)?,
     ))
 }
