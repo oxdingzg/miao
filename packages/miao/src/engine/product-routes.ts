@@ -106,7 +106,15 @@ export const prepare = Effect.fn("Engine.productRoutes")(function* (
         ...transport,
         model: model.api.id,
         credential: account.source,
-        auth: { ...(transport.provider === "anthropic" && account.oauth ? { style: "bearer" } : {}), headers },
+        auth: {
+          ...(transport.provider === "anthropic" && account.oauth ? { style: "bearer" } : {}),
+          headers: {
+            ...headers,
+            // The trusted native transport resolves this to the current
+            // Session's opaque routing key, never an owner-wide static ID.
+            ...(model.providerID === "opencode-go" ? { "x-opencode-session": "$session" } : {}),
+          },
+        },
       },
     ]
   })

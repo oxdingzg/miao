@@ -103,12 +103,17 @@ it.live("product routes bind active accounts without persisting secrets and keep
             model.capabilities.output = ["text"]
           })
           draft.model.default.set(ProviderV2.ID.make("commandcode"), ModelV2.ID.make("model-0"))
-          for (const id of ["expired", "unsupported", "custom"]) {
+          for (const id of ["expired", "unsupported", "custom", "opencode-go"]) {
             draft.provider.update(ProviderV2.ID.make(id), (provider) => {
               provider.integrationID = Integration.ID.make(id === "expired" ? "expired" : "commandcode")
               provider.api = {
                 type: "aisdk",
-                package: id === "unsupported" ? "@ai-sdk/unknown" : "@ai-sdk/openai-compatible",
+                package:
+                  id === "unsupported"
+                    ? "@ai-sdk/unknown"
+                    : id === "opencode-go"
+                      ? "@ai-sdk/anthropic"
+                      : "@ai-sdk/openai-compatible",
                 url: "https://example.invalid/v1/chat/completions?version=v1",
               }
             })
@@ -132,7 +137,10 @@ it.live("product routes bind active accounts without persisting secrets and keep
         for (const secret of ["COMMAND_SECRET", "OAUTH_SECRET", "REFRESH_SECRET", "HEADER_SECRET", "EXPIRED_SECRET"])
           expect(content).not.toContain(secret)
         const routes = yield* Effect.promise(() => Bun.file(file).json())
-        expect(routes).toHaveLength(102)
+        expect(routes).toHaveLength(103)
+        expect(routes.find((route: { id: string }) => route.id === "opencode-go/model").auth.headers).toEqual({
+          "x-opencode-session": "$session",
+        })
         expect(routes.find((route: { id: string }) => route.id === "custom/model").endpoint).toBe(
           "https://example.invalid/v1/chat/completions?version=v1",
         )

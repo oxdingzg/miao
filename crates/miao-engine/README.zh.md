@@ -59,7 +59,23 @@ cargo build --manifest-path crates/miao-engine/Cargo.toml
 
 ### 宿主模型路由
 
-`--model-routes-config /host/routes.json` 可注册最多 64 个精确 provider 实例。
+`--model-routes-config /host/routes.json` 可注册最多 1024 个精确 provider 实例，manifest 上限为 1 MiB。
+
+产品宿主可从支持工具和文本输出的可用模型、活动 integration 连接及默认模型生成此 manifest，
+并等待 provider 插件启动完成。显式 operator 路由优先。生成文件只包含凭据引用，不包含 token；
+临时文件使用私有权限，在 native owner 关闭时删除。刷新仍由产品 credential broker 独占。
+
+路由是否可用取决于实际 transport 元数据：已支持的 AI SDK profile 映射到原生 codec，
+未知 package 和仅由插件实现的 native transport 会被跳过。Commandcode 使用网关的 Chat 兼容端点；
+OpenAI 订阅凭据使用订阅 Responses 端点。公开模型目录不等于账户权限列表，
+需要使用账户当前实际支持的模型验证，才能宣称请求可用。
+
+Anthropic 和 Chat 兼容路由会传递受信任 manifest headers。值 `$session` 在发请求时解析为
+当前 Session 的不透明路由标识；缺少 Session scope 时明确报错。产品用它提供 opencode-go
+必需的 `x-opencode-session`，即使兄弟 Session 共享 cache affinity，也保留独立路由身份。
+
+验收分为 manifest/catalog 回归、独立 storage 的真实账户请求，以及产品多窗口 TUI 验收。
+生成路由或单次 headless 请求成功不能替代后续验收。验证 schema 变更时，开发原生数据库应与发布版存储隔离。
 manifest 必须位于工作区之外，并受到模型工具保护。产品桥接支持
 `EngineOptions.modelRoutesConfigFile` 或 `MIAO_ENGINE_MODEL_ROUTES_CONFIG`。
 
