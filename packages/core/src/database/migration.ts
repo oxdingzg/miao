@@ -17,14 +17,7 @@ const initialization = Semaphore.makeUnsafe(1)
 export function initialize(db: Database, usage: { exclusive: () => void; share: () => void }) {
   return initialization.withPermit(
     Effect.gen(function* () {
-      const table = yield* db.get(sql`SELECT name FROM sqlite_master WHERE type = 'table' AND name = ${"migration"}`)
-      const completed = table
-        ? new Set((yield* db.all<{ id: string }>(sql`SELECT id FROM migration`)).map((row) => row.id))
-        : new Set<string>()
-      if (!table || migrations.some((migration) => !completed.has(migration.id))) {
-        yield* upgradeExclusive(usage)
-        yield* apply(db)
-      }
+      if (yield* upgradeExclusive(db, usage)) yield* apply(db)
       yield* Effect.sync(usage.share)
       yield* verify(db)
     }),
@@ -36,11 +29,21 @@ export function initialize(db: Database, usage: { exclusive: () => void; share: 
 // miao cannot be opened while one is running". Wait for the other window to
 // quit instead — the runtime lock is held only by live connections, so the
 // wait ends on its own; Ctrl+C cancels it.
-function upgradeExclusive(usage: { exclusive: () => void }) {
+function upgradeExclusive(db: Database, usage: { exclusive: () => void }) {
   let noticed = false
-  return Effect.try({
-    try: () => usage.exclusive(),
-    catch: (error) => error,
+  return Effect.gen(function* () {
+    // A peer may finish initialization and retain shared usage while we wait.
+    // Recheck every attempt instead of demanding it close an up-to-date DB.
+    const table = yield* db.get(sql`SELECT name FROM sqlite_master WHERE type = 'table' AND name = ${"migration"}`)
+    const completed = table
+      ? new Set((yield* db.all<{ id: string }>(sql`SELECT id FROM migration`)).map((row) => row.id))
+      : new Set<string>()
+    if (table && migrations.every((migration) => completed.has(migration.id))) return false
+    yield* Effect.try({
+      try: () => usage.exclusive(),
+      catch: (error) => error,
+    })
+    return true
   }).pipe(
     Effect.catch((error) => (error instanceof RuntimeOwnership.BusyError ? Effect.fail(error) : Effect.die(error))),
     Effect.tapError((error) => {
