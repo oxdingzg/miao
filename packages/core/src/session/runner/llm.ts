@@ -15,6 +15,7 @@ import {
 } from "@miao/llm"
 import { SessionGoal } from "../goal"
 import { SessionExecution } from "../execution"
+import { SessionEnginePlacement } from "../engine-placement"
 import { Cause, DateTime, Duration, Effect, FiberSet, Layer, Option, Semaphore, Stream, Schema } from "effect"
 import { and, asc, desc, eq, isNull, ne, sql } from "drizzle-orm"
 import { AgentV2 } from "../../agent"
@@ -1942,6 +1943,7 @@ const layer = Layer.effect(
         readonly phase?: ReportPhase
     }) {
       yield* ownership.claim(input.sessionID)
+      yield* SessionEnginePlacement.requireTypeScript(db, input.sessionID)
       if (yield* SessionBlackbox.Current) yield* BlackboxHistory.checkpoint(input.sessionID, "drain.started", store.context(input.sessionID), db)
       const report: ReportPhase = input.phase ?? (() => Effect.void)
       return yield* Effect.scoped(

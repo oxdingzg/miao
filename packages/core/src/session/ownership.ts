@@ -7,6 +7,7 @@ import { Database } from "../database/database"
 import { makeGlobalNode } from "../effect/app-node"
 import { RuntimeOwnership } from "../runtime/ownership"
 import type { SessionSchema } from "./schema"
+import { SessionEnginePlacement } from "./engine-placement"
 
 export class BusyError extends Error {
   override readonly name = "SessionOwnership.BusyError"
@@ -23,7 +24,7 @@ export interface Interface {
 export class Service extends Context.Service<Service, Interface>()("@miao/SessionOwnership") {}
 
 /** A lease covers every turn and side effect, including idle time, until this runtime closes. */
-export const make = (storage: string) =>
+export const make = (storage: string, db?: Database.Interface["db"]) =>
   Effect.gen(function* () {
     const owners = new Map<string, RuntimeOwnership.Owner | undefined>()
     const gate = Semaphore.makeUnsafe(1)
@@ -49,6 +50,7 @@ export const make = (storage: string) =>
           Effect.uninterruptible(
             Effect.gen(function* () {
               if (state.closing) return yield* Effect.die("This miao window is closing")
+              if (db) yield* SessionEnginePlacement.requireTypeScript(db, sessionID)
               if (owners.has(sessionID)) return
               const owner =
                 storage === ":memory:"
@@ -75,7 +77,7 @@ export const node = makeGlobalNode({
     Service,
     Effect.gen(function* () {
       const database = yield* Database.Service
-      return yield* make(database.storage)
+      return yield* make(database.storage, database.db)
     }),
   ),
   deps: [Database.node],
