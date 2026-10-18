@@ -970,12 +970,13 @@ impl Store {
             let wakeups=crate::wakeup::pending(&tx,&session)?;
             let crons=crate::cron::pending(&tx,&session)?;
             let model_selection=crate::session_model::selected(&tx,&session)?;
+            let agent=crate::session_agent::selected(&tx,&session)?.map(|(agent,hash)|json!({"name":agent.name,"semantics":agent.semantics,"agent_hash":hash}));
             let mode:String=tx.query_row("SELECT mode FROM engine_session WHERE id=?1",[&session],|r|r.get(0)).optional()?.unwrap_or_else(||"build".into());
             let (title,created_at_ms,updated_at_ms,archived_at_ms):(String,Option<i64>,Option<i64>,Option<i64>)=tx.query_row(
                 "SELECT title,created_at_ms,updated_at_ms,archived_at_ms FROM engine_session WHERE id=?1",
                 [&session],|r|Ok((r.get(0)?,r.get(1)?,r.get(2)?,r.get(3)?)),
             )?;
-            let snapshot=json!({"session_id":session,"parent_session_id":parent,"cursor":cursor,"location":location,"mode":mode,"title":title,"created_at_ms":created_at_ms,"updated_at_ms":updated_at_ms,"archived_at_ms":archived_at_ms,"messages":messages,"selection":selection,"pending":pending,"active_run":active,"approvals":approvals,"context":context,"state":state,"questions":questions,"wakeups":wakeups,"crons":crons,"model_selection":model_selection});
+            let snapshot=json!({"session_id":session,"parent_session_id":parent,"cursor":cursor,"location":location,"mode":mode,"title":title,"created_at_ms":created_at_ms,"updated_at_ms":updated_at_ms,"archived_at_ms":archived_at_ms,"messages":messages,"selection":selection,"pending":pending,"active_run":active,"approvals":approvals,"context":context,"state":state,"questions":questions,"wakeups":wakeups,"crons":crons,"model_selection":model_selection,"agent":agent});
             if serde_json::to_vec(&snapshot)?.len()>4*1024*1024{return Err(Error::Invalid("snapshot exceeds limit; use events pagination".into()));}
             tx.commit()?;Ok(snapshot)
         }).await

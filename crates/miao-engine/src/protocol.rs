@@ -285,6 +285,13 @@ pub enum Command {
     RequestCompact {
         session_id: String,
     },
+    /// Apply a host-resolved agent manifest to this Session's subsequent
+    /// provider turns (ADR-0017). Resolution stays with the host; the engine
+    /// records the manifest and applies it at the turn boundary.
+    SelectAgent {
+        session_id: String,
+        agent: crate::session_agent::AgentManifest,
+    },
     Cancel {
         session_id: String,
     },

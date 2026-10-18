@@ -22,7 +22,7 @@ pub struct Binding {
 }
 
 impl Binding {
-    fn validate(&self) -> Result<(), Error> {
+    pub(crate) fn validate(&self) -> Result<(), Error> {
         if !crate::provider::valid_model(&self.model)
             || self.protocol.is_empty()
             || self.protocol.len() > 128
