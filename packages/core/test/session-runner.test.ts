@@ -3759,6 +3759,31 @@ describe("SessionRunnerLLM", () => {
     }),
   )
 
+  it.effect("executes a replayed call once within the same provider attempt", () =>
+    Effect.gen(function* () {
+      yield* setup
+      const session = yield* SessionV2.Service
+      yield* session.prompt({ sessionID, prompt: Prompt.make({ text: "Replay once" }), resume: false })
+
+      requests.length = 0
+      executions.length = 0
+      responses = [
+        [
+          LLMEvent.stepStart({ index: 0 }),
+          LLMEvent.toolCall({ id: "call-once", name: "echo", input: { text: "once" } }),
+          LLMEvent.toolCall({ id: "call-once", name: "echo", input: { text: "once" } }),
+          LLMEvent.stepFinish({ index: 0, reason: "tool-calls" }),
+          LLMEvent.finish({ reason: "tool-calls" }),
+        ],
+        [],
+      ]
+
+      yield* session.resume(sessionID)
+
+      expect(executions).toEqual(["once"])
+    }),
+  )
+
   it.effect("bounds eager tool settlements running at once", () =>
     Effect.gen(function* () {
       yield* setup
@@ -5975,6 +6000,44 @@ describe("SessionRunnerLLM", () => {
     }),
   )
 
+  it.effect("executes the same provider-local call again in a later turn", () =>
+    Effect.gen(function* () {
+      yield* setup
+      const session = yield* SessionV2.Service
+      yield* session.prompt({ sessionID, prompt: Prompt.make({ text: "Echo" }), resume: false })
+      requests.length = 0
+      executions.length = 0
+      responses = [
+        [
+          LLMEvent.stepStart({ index: 0 }),
+          LLMEvent.toolCall({ id: "tool_0", name: "echo", input: { text: "same" } }),
+          LLMEvent.stepFinish({ index: 0, reason: "tool-calls" }),
+          LLMEvent.finish({ reason: "tool-calls" }),
+        ],
+        [],
+      ]
+      yield* session.resume(sessionID)
+      expect(executions).toEqual(["same"])
+
+      // A later user turn may legitimately repeat the exact same call: provider
+      // ids are local to their message, so id + name + input must not be treated
+      // as an already-consumed dispatch across turns.
+      yield* session.prompt({ sessionID, prompt: Prompt.make({ text: "Echo again" }), resume: false })
+      executions.length = 0
+      responses = [
+        [
+          LLMEvent.stepStart({ index: 0 }),
+          LLMEvent.toolCall({ id: "tool_0", name: "echo", input: { text: "same" } }),
+          LLMEvent.stepFinish({ index: 0, reason: "tool-calls" }),
+          LLMEvent.finish({ reason: "tool-calls" }),
+        ],
+        [],
+      ]
+      yield* session.resume(sessionID)
+      expect(executions).toEqual(["same"])
+    }),
+  )
+
   it.effect("joins concurrent resume calls into one active provider run", () =>
     Effect.gen(function* () {
       yield* setup
@@ -6438,7 +6501,9 @@ describe("SessionRunnerLLM", () => {
       })
       requests.length = 0
       response = []
+      executions.length = 0
       yield* session.resume(sessionID)
+      expect(executions).toEqual([])
 
       expect(requests).toHaveLength(1)
       expect(requests[0]?.messages.map((message) => message.role)).toEqual(["user", "assistant", "tool"])
