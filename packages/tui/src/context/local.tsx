@@ -289,7 +289,12 @@ export const { use: useLocal, provider: LocalProvider } = createSimpleContext({
             const model = current.type === "session" ? sync.session.get(current.sessionID)?.model : undefined
             return {
               provider: "Native runtime",
-              model: model?.providerID === "native-engine-default" ? "Host default" : (model?.id ?? "Host configured"),
+              model: [
+                model?.providerID === "native-engine-default" ? "Host default" : (model?.id ?? "Host configured"),
+                model?.variant,
+              ]
+                .filter(Boolean)
+                .join(" · "),
               reasoning: false,
             }
           }

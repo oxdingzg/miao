@@ -66,6 +66,7 @@ async function mount(root: string, reject = false) {
           },
           {
             model: { providerID: "native-engine", id: "account-two/shared" },
+            variants: ["high"],
             protocol: "openai-chat",
             wireModel: "shared",
             default: false,
@@ -201,6 +202,23 @@ test("keeps the route dialog open and shows engine selection errors", async () =
     const frame = await view.until((value) => value.includes("opaque history"))
     expect(frame).toContain("Select native model route")
     expect(view.selected).toHaveLength(1)
+  } finally {
+    view.cleanup()
+  }
+})
+
+test("host-advertised variants are selectable without inventing routes", async () => {
+  await using tmp = await tmpdir()
+  const view = await mount(tmp.path)
+  try {
+    await view.until((value) => value.includes("account-two/shared · high"))
+    await view.app.mockInput.pressArrow("down")
+    await view.app.mockInput.pressArrow("down")
+    await view.app.mockInput.pressEnter()
+    await view.until(() => view.selected.length === 1)
+    expect(view.selected).toEqual([
+      { model: { providerID: "native-engine", id: "account-two/shared", variant: "high" } },
+    ])
   } finally {
     view.cleanup()
   }

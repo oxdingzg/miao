@@ -236,7 +236,8 @@ The product initializes identity before publishing its durable native placement.
 ### Session model selection
 
 `select_model` takes `session_id` and `binding` (`protocol`, canonical wire
-`model`), or `binding: null` to reset to the configured default. The Runtime
+`model`, optional exact `route_id`, and optional host-advertised `variant`), or
+`binding: null` to reset to the configured default. The Runtime
 validates that its configured provider can select that model without changing
 route, endpoint or credential source before committing `session.model.selected`.
 An identical selection is a no-op. Unsupported models/routes fail without
@@ -251,9 +252,21 @@ A fork inherits selection at its explicit message boundary, or the parent's
 latest selection when no boundary was requested. Reverting transcript history
 does not alter this configuration binding.
 
-This command selects models on the configured provider route. Cross-route
-catalog routing and product model-picker wiring require their own facade
-integration; it does not infer endpoints or borrow credentials from model names.
+`model_catalog` exposes available variant names alongside each route. A variant
+must be declared by the host, preserves the route's protocol/model identity,
+and cannot substitute an endpoint or credential source. The binding includes
+its variant across restart, fork and provider-turn boundaries. An older engine
+that does not advertise variants cannot accept a product variant selection.
+
+Host route manifests may supply `request: {body, headers}`, a `variants` array
+of `{id, body, headers}`, and `primary: true` on one route to declare the default
+route's variants. Variant bodies recursively merge over base generation
+options; headers override case-insensitively. Structural transcript/tool fields,
+streaming controls and credential headers are rejected, and options are bounded
+to 64 KiB. Responses prefix-cache affinity includes the effective request
+options, so a generation-profile change does not reuse a previous profile's
+continuation accidentally. The public catalog exposes names, not parameters
+or credentials.
 
 ### Explicit unknown-tool recovery
 

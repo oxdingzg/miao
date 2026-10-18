@@ -93,6 +93,18 @@ manifest 必须位于工作区之外，并受到模型工具保护。产品桥�
 调用 provider 前失败。即使两个 endpoint 使用相同模型名，opaque 历史仍绑定
 原路由，切换前须先在原路由压缩历史。
 
+### 产品模型变体
+
+原生 host manifest 可在 route 声明 `request: {body, headers}` 与
+`variants: [{id, body, headers}]`。变体参数递归合并到基础生成参数，header
+按大小写不敏感的名称覆盖；不能替换模型身份、历史、工具目录、凭据或流控制。
+一条与默认模型相符的 route 可标为 `primary: true`，为默认入口声明相同的参数与变体。
+
+`model_catalog` 只公开变体名字，不公开参数或凭据。产品自动导出 catalog 声明的变体；
+CLI 的 `run --model ... --variant ...` 与原生选模弹窗均使用这些名字。
+选中的 `variant` 属于持久化模型绑定，在下一个 provider-turn 边界生效，
+重启和 fork 后保留；未知变体或身份不符的请求在 provider 执行前拒绝。
+
 ## stdio 协议 v0
 
 一行一个 JSON 对象。请求带字符串/数字 `id`，响应带同一个 `id` 与 `result` 或 `error`。

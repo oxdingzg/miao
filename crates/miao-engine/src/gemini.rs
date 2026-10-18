@@ -15,11 +15,13 @@ use tokio::sync::mpsc;
 use tokio_util::sync::CancellationToken;
 
 const PROTOCOL: &str = "gemini-generate-content";
+#[derive(Clone)]
 pub struct Gemini {
     client: reqwest::Client,
     endpoint: reqwest::Url,
     source: Source,
     model: String,
+    request_options: crate::request_options::Options,
 }
 impl Gemini {
     pub fn new(endpoint: String, key: String, model: String) -> Result<Self, ProviderError> {
@@ -66,11 +68,21 @@ impl Gemini {
             endpoint,
             source,
             model,
+            request_options: Default::default(),
         })
     }
 }
 #[async_trait]
 impl Provider for Gemini {
+    fn with_request_options(
+        &self,
+        options: crate::request_options::Options,
+    ) -> Result<std::sync::Arc<dyn Provider>, ProviderError> {
+        options.validate()?;
+        let mut selected = self.clone();
+        selected.request_options = options;
+        Ok(std::sync::Arc::new(selected))
+    }
     fn for_model(&self, model: &str) -> Option<std::sync::Arc<dyn Provider>> {
         let model = model.strip_prefix("models/").unwrap_or(model);
         let suffix = format!("/models/{}:streamGenerateContent", self.model);
@@ -79,7 +91,10 @@ impl Provider for Gemini {
         endpoint.set_path(&format!("{prefix}/models/{model}:streamGenerateContent"));
         Self::with_source(endpoint.into(), self.source.clone(), model.into())
             .ok()
-            .map(|provider| std::sync::Arc::new(provider) as std::sync::Arc<dyn Provider>)
+            .map(|mut provider| {
+                provider.request_options = self.request_options.clone();
+                std::sync::Arc::new(provider) as std::sync::Arc<dyn Provider>
+            })
     }
     fn identity(&self) -> Option<crate::provider::Identity> {
         Some(crate::provider::Identity {
@@ -183,15 +198,19 @@ impl Gemini {
         let contents = lower(&request.messages, &self.model)?;
         let declarations=request.tools.iter().map(|tool|json!({"name":tool.name,"description":tool.description,"parametersJsonSchema":tool.input_schema})).collect::<Vec<_>>();
         let mut body = json!({"contents":contents,"generationConfig":{"candidateCount":1,"maxOutputTokens":8192},"systemInstruction":{"parts":[{"text":request.system}]}});
+        self.request_options.apply(&mut body);
         if !declarations.is_empty() {
             body["tools"] = json!([{"functionDeclarations":declarations}]);
             body["toolConfig"] = json!({"functionCallingConfig":{"mode":if without_tools { "NONE" } else { "AUTO" }}});
         }
         let request = self
-            .client
-            .post(self.endpoint.clone())
-            .header("x-goog-api-key", credential.header()?)
-            .json(&body)
+            .request_options
+            .headers(
+                self.client
+                    .post(self.endpoint.clone())
+                    .header("x-goog-api-key", credential.header()?)
+                    .json(&body),
+            )?
             .build()
             .map_err(|_| ProviderError::Transport)?;
         let response =

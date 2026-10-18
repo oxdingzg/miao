@@ -15,6 +15,7 @@ if (binary)
       JSON.stringify([
         {
           id: "account-two/shared",
+          variants: [{ id: "high", body: { reasoning_effort: "high" } }],
           provider: "openai-chat",
           model: "fixture",
           endpoint: "http://127.0.0.1:1/private-route",
@@ -171,6 +172,7 @@ if (binary)
           },
           {
             model: { providerID: "native-engine", id: "account-two/shared" },
+            variants: ["high"],
             protocol: "openai-chat",
             wireModel: "fixture",
             default: false,
@@ -198,15 +200,23 @@ if (binary)
       expect(productSelected.status).toBe(204)
       const productGet = await fetch(url + "/api/session/" + body.id, { headers })
       expect((await productGet.json()).data.model).toEqual(catalog.data[1].model)
+      const variantSelected = await fetch(modelPath, {
+        method: "POST",
+        headers,
+        body: JSON.stringify({ model: { providerID: "account-two", id: "shared", variant: "high" } }),
+      })
+      expect(variantSelected.status).toBe(204)
+      const variantGet = await fetch(url + "/api/session/" + body.id, { headers })
+      expect((await variantGet.json()).data.model).toEqual({ ...catalog.data[1].model, variant: "high" })
       const unchanged = await fetch(url + "/api/session/" + anotherBody.id, { headers: anotherHeaders })
       expect((await unchanged.json()).data.model).toEqual(catalog.data[0].model)
       const inherited = await fetch(url + "/api/session/" + body.id + "/fork", { method: "POST", headers, body: "{}" })
       expect(inherited.status).toBe(200)
-      expect((await inherited.json()).data.model).toEqual(catalog.data[1].model)
+      expect((await inherited.json()).data.model).toEqual({ ...catalog.data[1].model, variant: "high" })
       const variant = await fetch(modelPath, {
         method: "POST",
         headers,
-        body: JSON.stringify({ model: { ...catalog.data[1].model, variant: "high" } }),
+        body: JSON.stringify({ model: { ...catalog.data[1].model, variant: "missing" } }),
       })
       expect(variant.status).toBe(409)
       const unknown = await fetch(modelPath, {

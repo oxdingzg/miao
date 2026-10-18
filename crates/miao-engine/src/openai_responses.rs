@@ -27,6 +27,7 @@ pub struct OpenAIResponses {
     endpoint: String,
     source: Source,
     model: String,
+    request_options: crate::request_options::Options,
     cache_contract: Option<crate::responses_cache::Contract>,
     websocket_contract: Option<crate::responses_websocket::Contract>,
     websocket_pool: std::sync::Arc<crate::responses_websocket::Pool>,
@@ -54,6 +55,7 @@ impl OpenAIResponses {
             endpoint,
             source,
             model,
+            request_options: Default::default(),
             profile,
             cache_contract: None,
             websocket_contract: None,
@@ -91,6 +93,15 @@ impl OpenAIResponses {
 }
 #[async_trait]
 impl Provider for OpenAIResponses {
+    fn with_request_options(
+        &self,
+        options: crate::request_options::Options,
+    ) -> Result<std::sync::Arc<dyn Provider>, ProviderError> {
+        options.validate()?;
+        let mut selected = self.clone();
+        selected.request_options = options;
+        Ok(std::sync::Arc::new(selected))
+    }
     fn for_model(&self, model: &str) -> Option<std::sync::Arc<dyn Provider>> {
         if !crate::provider::valid_model(model) {
             return None;
@@ -163,6 +174,7 @@ impl OpenAIResponses {
         let input = items(&request.messages, &self.model)?;
         let tools:Vec<Value>=request.tools.iter().map(|tool|json!({"type":"function","name":tool.name,"description":tool.description,"parameters":tool.input_schema})).collect();
         let mut body = json!({"model":self.model,"instructions":request.system,"input":input,"tools":tools,"stream":true,"store":false,"include":["reasoning.encrypted_content"]});
+        self.request_options.apply(&mut body);
         if let Some(contract) = &self.cache_contract {
             contract
                 .project(&mut body, &request.system)
@@ -176,6 +188,7 @@ impl OpenAIResponses {
             &json!({
                 "endpoint":self.endpoint,"profile":match self.profile {Profile::Api=>"api",Profile::Subscription=>"subscription"},"account":credential.account(),
                 "generation":crate::permission::digest(credential.secret().as_bytes()),
+                "request_options":crate::permission::digest(&serde_json::to_vec(&self.request_options).map_err(|_| ProviderError::Transport)?),
             }),
         )?;
         if let Some(key) = &cache_key {
@@ -200,7 +213,11 @@ impl OpenAIResponses {
                 builder = builder.header("ChatGPT-Account-Id", account);
             }
         }
-        let request = builder.build().map_err(|_| ProviderError::Transport)?;
+        let request = self
+            .request_options
+            .headers(builder)?
+            .build()
+            .map_err(|_| ProviderError::Transport)?;
         if let Some(contract) = &self.websocket_contract {
             if let Some(reply) = crate::responses_websocket::try_stream(
                 &self.websocket_pool,

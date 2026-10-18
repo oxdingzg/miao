@@ -807,6 +807,7 @@ export type SessionsModelRoutesOutput = {
     readonly protocol: string
     readonly wireModel: string
     readonly default: boolean
+    readonly variants?: ReadonlyArray<string> | null
   }>
 }["data"]
 

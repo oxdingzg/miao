@@ -76,6 +76,7 @@ async fn model_selection_queues_on_the_host_write_reservation() {
                     protocol: "fixture".into(),
                     model: "selected".into(),
                     route_id: None,
+                    variant: None,
                 }),
             )
             .await

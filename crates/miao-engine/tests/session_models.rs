@@ -55,6 +55,7 @@ impl Provider for Selectable {
 fn binding(model: &str) -> Binding {
     Binding {
         route_id: None,
+        variant: None,
         protocol: "fixture".into(),
         model: model.into(),
     }
@@ -194,6 +195,7 @@ async fn invalid_or_unsupported_models_do_not_replace_the_committed_selection() 
         binding("bad\nmodel"),
         Binding {
             route_id: None,
+            variant: None,
             protocol: "other-route".into(),
             model: "chosen".into(),
         },

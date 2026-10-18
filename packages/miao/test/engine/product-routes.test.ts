@@ -95,6 +95,14 @@ it.live("product routes bind active accounts without persisting secrets and keep
               model.capabilities.tools = true
               model.capabilities.output = ["text"]
               model.request.headers = { Authorization: "HEADER_SECRET", "User-Agent": "fixture" }
+              model.request.body = { temperature: 0.1 }
+              model.variants = [
+                {
+                  id: ModelV2.VariantID.make("high"),
+                  headers: { "x-variant": "high" },
+                  body: { reasoning_effort: "high" },
+                },
+              ]
             })
           }
           draft.model.update(ProviderV2.ID.make("openai"), ModelV2.ID.make("subscription-model"), (model) => {
@@ -138,6 +146,11 @@ it.live("product routes bind active accounts without persisting secrets and keep
           expect(content).not.toContain(secret)
         const routes = yield* Effect.promise(() => Bun.file(file).json())
         expect(routes).toHaveLength(103)
+        expect(routes.find((route: { id: string }) => route.id === "commandcode/model-0")).toMatchObject({
+          primary: true,
+          request: { body: { temperature: 0.1 } },
+          variants: [{ id: "high", body: { reasoning_effort: "high" }, headers: { "x-variant": "high" } }],
+        })
         expect(routes.find((route: { id: string }) => route.id === "opencode-go/model").auth.headers).toEqual({
           "x-opencode-session": "$session",
         })

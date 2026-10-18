@@ -22,11 +22,15 @@ pub struct Info {
     pub route_id: Option<String>,
     pub protocol: String,
     pub model: String,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub variants: Vec<String>,
 }
 
 pub struct Catalog {
     primary: Arc<dyn Provider>,
     routes: BTreeMap<String, Arc<dyn Provider>>,
+    variants: BTreeMap<(String, String), Arc<dyn Provider>>,
+    primary_variants: BTreeMap<String, Arc<dyn Provider>>,
 }
 impl Catalog {
     pub fn new(
@@ -49,8 +53,51 @@ impl Catalog {
                 return Err(ProviderError::Stream("duplicate model route id".into()));
             }
         }
-        Ok(Self { primary, routes })
+        Ok(Self {
+            primary,
+            routes,
+            variants: BTreeMap::new(),
+            primary_variants: BTreeMap::new(),
+        })
     }
+
+    pub fn with_variants(
+        mut self,
+        entries: Vec<(String, String, Arc<dyn Provider>)>,
+        primary: Vec<(String, Arc<dyn Provider>)>,
+    ) -> Result<Self, ProviderError> {
+        if entries.len() + primary.len() > 8192 {
+            return Err(ProviderError::Stream("model variant catalog limit".into()));
+        }
+        for (route, variant, provider) in entries {
+            if !valid_variant(&variant)
+                || self
+                    .routes
+                    .get(&route)
+                    .is_none_or(|base| base.identity() != provider.identity())
+                || self.variants.insert((route, variant), provider).is_some()
+            {
+                return Err(ProviderError::Stream(
+                    "invalid or duplicate model variant".into(),
+                ));
+            }
+        }
+        for (variant, provider) in primary {
+            if !valid_variant(&variant)
+                || self.primary.identity() != provider.identity()
+                || self.primary_variants.insert(variant, provider).is_some()
+            {
+                return Err(ProviderError::Stream(
+                    "invalid or duplicate default model variant".into(),
+                ));
+            }
+        }
+        Ok(self)
+    }
+}
+
+pub(crate) fn valid_variant(variant: &str) -> bool {
+    !variant.is_empty() && variant.len() <= 128 && !variant.chars().any(char::is_control)
 }
 
 pub(crate) fn valid_id(id: &str) -> bool {
@@ -75,6 +122,15 @@ impl Provider for Catalog {
     fn for_route(&self, id: &str) -> Option<Arc<dyn Provider>> {
         self.routes.get(id).cloned()
     }
+    fn for_route_variant(&self, id: Option<&str>, variant: &str) -> Option<Arc<dyn Provider>> {
+        match id {
+            Some(id) => self
+                .variants
+                .get(&(id.to_owned(), variant.to_owned()))
+                .cloned(),
+            None => self.primary_variants.get(variant).cloned(),
+        }
+    }
     fn model_catalog(&self) -> Vec<Info> {
         self.primary
             .identity()
@@ -83,12 +139,19 @@ impl Provider for Catalog {
                 route_id: None,
                 protocol: identity.protocol,
                 model: identity.model,
+                variants: self.primary_variants.keys().cloned().collect(),
             })
             .chain(self.routes.iter().filter_map(|(id, provider)| {
                 provider.identity().map(|identity| Info {
                     route_id: Some(id.clone()),
                     protocol: identity.protocol,
                     model: identity.model,
+                    variants: self
+                        .variants
+                        .range((id.clone(), String::new())..)
+                        .take_while(|((route, _), _)| route == id)
+                        .map(|((_, variant), _)| variant.clone())
+                        .collect(),
                 })
             }))
             .collect()
