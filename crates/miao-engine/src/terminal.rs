@@ -541,6 +541,28 @@ impl Registry {
         }
     }
 
+    /// Kill every terminal one Session owns. A removed Session must not leave a
+    /// running PTY behind, so its removal reaps the trees instead of just
+    /// dropping the registry entries.
+    pub async fn close_session(&self, session: &str) -> usize {
+        let owned = {
+            let mut terminals = self.terminals.lock().await;
+            let keys = terminals
+                .keys()
+                .filter(|(owner, _)| owner == session)
+                .cloned()
+                .collect::<Vec<_>>();
+            keys.into_iter()
+                .filter_map(|key| terminals.remove(&key))
+                .collect::<Vec<_>>()
+        };
+        let count = owned.len();
+        for terminal in owned {
+            terminal.reap().await;
+        }
+        count
+    }
+
     pub async fn shutdown(&self) {
         self.stop.cancel();
         let terminals = std::mem::take(&mut *self.terminals.lock().await);

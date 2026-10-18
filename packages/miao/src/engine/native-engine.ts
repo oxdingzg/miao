@@ -45,6 +45,8 @@ const QuestionBindings = Schema.Array(
     input: Schema.Unknown,
   }),
 )
+/** The engine's `{accepted: boolean}` reply shared by cancel-shaped commands. */
+const AcceptedReply = Schema.Struct({ accepted: Schema.Boolean })
 
 import { replayJournal } from "./journal"
 import { readTranscript } from "./transcript"
@@ -62,8 +64,7 @@ export const nativeEngineOptions = (
   // An explicit binary wins; otherwise use a discovered, protocol-compatible
   // installation so native Sessions need no environment variable. A custom
   // environment object stays deterministic for tests.
-  const binary =
-    environment.MIAO_ENGINE_BIN ?? (environment === process.env ? discoveredEngine() : undefined)
+  const binary = environment.MIAO_ENGINE_BIN ?? (environment === process.env ? discoveredEngine() : undefined)
   if (!binary) return undefined
   const limits = environment.MIAO_CONTEXT_LIMITS
   // Precedence: the operator's environment overrides the global config file
@@ -277,6 +278,24 @@ export const fromOwners = (owners: Owners): NativeEngine.Interface => {
       read(input, (connection) =>
         connection.client.request("initialize", { session_id: input.sessionID, title: input.title }),
       ).pipe(Effect.asVoid),
+    cancelInput: (input) =>
+      read<unknown>(input, (connection) =>
+        connection.client.request("cancel_input", {
+          session_id: input.sessionID,
+          input_id: input.inputID,
+        }),
+      ).pipe(Effect.map((value) => Schema.decodeUnknownSync(AcceptedReply)(value).accepted)),
+    archive: (input) =>
+      read<unknown>(input, (connection) =>
+        connection.client.request("archive", {
+          session_id: input.sessionID,
+          archived: input.archived,
+        }),
+      ).pipe(Effect.map((value) => Schema.decodeUnknownSync(AcceptedReply)(value).accepted)),
+    remove: (input) =>
+      read<unknown>(input, (connection) => connection.client.request("remove", { session_id: input.sessionID })).pipe(
+        Effect.asVoid,
+      ),
     admit: (input) =>
       connect({ ...input, refreshContext: true }).pipe(
         Effect.flatMap((connection) =>

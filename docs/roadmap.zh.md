@@ -145,6 +145,14 @@ V1 形状的遗留：
 `Replied(reject)`/`Rejected`；附件在请求构建时按模型能力归一化；工具进度事件已端到端接通
 （`session.next.tool.progress`）。
 - [ ] 把级联取消子 fiber、排空 inbox、结算悬挂审批作为一条第一类取消路径。
+- [RS：级联取消在原生侧——进程组被杀掉、整条 run 作为一条路径结算（#1019 时期）；TS 侧级联仍待办。]
+- [x] 按身份取消单个待提升输入 —— RS 原生 `cancel_input`（原生会话已由
+      `session.inputCancel` 承接）；已取消的 admission 身份为终态，重新 admit 会
+      冲突而不会让被丢弃的提示词复活，重复取消只是无副作用的状态回报。
+- [x] 归档与删除会话 —— RS 原生 `archive`/`remove`（原生会话已由
+      `session.archive`/`session.remove` 承接）。归档是可逆的目录事实，快照会回报；
+      删除会先中断 drain、停掉该会话的 job/timer/cron/terminal，再删掉它的行并释放
+      产品侧 placement，fork 子会话保留、只丢掉 lineage 边。
 - [ ] 核心工具产出增量工具进度检查点（bash 目前为缓冲输出）。
 - [ ] 在 provider 历史降级前物化 remote 与 managed URI（`to-llm-message.ts:80` TODO）。
 - **验收：** 中断一个带子任务与悬挂审批的会话 → 无悬挂/丢失状态，无丢失的排队消息。

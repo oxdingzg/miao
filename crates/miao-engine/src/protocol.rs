@@ -198,6 +198,14 @@ pub enum Command {
     Resume {
         session_id: String,
     },
+    /// Drop one durably admitted input before promotion. The admission row is
+    /// retained as cancelled evidence, so an exact retry cannot resurrect a
+    /// prompt the operator dropped; an unknown or already promoted input is
+    /// reported as not accepted instead.
+    CancelInput {
+        session_id: String,
+        input_id: String,
+    },
     ModelCatalog,
     SelectModel {
         session_id: String,
@@ -226,6 +234,21 @@ pub enum Command {
     Rename {
         session_id: String,
         title: String,
+    },
+    /// Set or clear a Session's archive timestamp. Archiving is a catalog fact:
+    /// it changes no message, run or inbox row, so a Session can be archived
+    /// while a drain is active and un-archived later.
+    Archive {
+        session_id: String,
+        archived: bool,
+    },
+    /// Delete everything a Session owns. Not a tombstone: the conversation,
+    /// inbox, runs, approvals, jobs and schedules are gone and the identity can
+    /// be re-created. Children keep their Sessions; only their lineage rows are
+    /// dropped, matching the product rule that removing a Session does not
+    /// delete its forks.
+    Remove {
+        session_id: String,
     },
     Cancel {
         session_id: String,

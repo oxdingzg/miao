@@ -260,6 +260,16 @@ end to end (`session.next.tool.progress`).
   settles as one path (#1019 era). TS-side cascade remains open.]
 - [ ] Cascade-cancel child fibers, drain the inbox, and settle pending approvals as one first-class
       cancellation path.
+- [x] Drop one admitted input before promotion — RS native `cancel_input`
+      (`session.inputCancel` serves native sessions); the cancelled admission
+      identity is terminal, so re-admitting it conflicts instead of resurrecting
+      the prompt, and a repeat cancel is a no-op report.
+- [x] Archive and remove a Session — RS native `archive`/`remove`
+      (`session.archive`/`session.remove` serve native sessions). Archive is a
+      reversible catalog fact the snapshot reports; removal interrupts the drain,
+      stops the Session's jobs/timers/crons/terminals, deletes its rows and
+      releases the product placement, leaving forks alive with only their lineage
+      edge dropped.
 - [x] Emit incremental tool-progress checkpoints — RS native (#1019:
       `tool.started`/`tool.progress` streamed for process tools and the
       `monitor` tool). TS core tools remain open.
