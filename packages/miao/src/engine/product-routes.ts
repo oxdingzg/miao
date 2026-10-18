@@ -67,8 +67,8 @@ export const prepare = Effect.fn("Engine.productRoutes")(function* (
   const providers = yield* catalog.provider.available()
   const accounts = new Map<string, { source: Source; oauth: boolean; value: Credential.Value }>()
   for (const provider of providers) {
-    const integration = provider.integrationID
-    if (!integration || accounts.has(integration)) continue
+    const integration = provider.integrationID ?? Integration.ID.make(provider.id)
+    if (accounts.has(integration)) continue
     const connection = yield* integrations.connection.active(integration)
     if (!connection) continue
     const value = yield* integrations.connection.resolve(connection).pipe(Effect.catch(() => Effect.succeed(undefined)))
@@ -89,7 +89,7 @@ export const prepare = Effect.fn("Engine.productRoutes")(function* (
   }
   const routes = models.flatMap((model) => {
     const provider = providers.find((provider) => provider.id === model.providerID)
-    const account = provider?.integrationID ? accounts.get(provider.integrationID) : undefined
+    const account = provider ? accounts.get(provider.integrationID ?? Integration.ID.make(provider.id)) : undefined
     if (!account) return []
     const transport = profile(model, account.oauth)
     if (!transport) return []
@@ -152,7 +152,7 @@ export const prepare = Effect.fn("Engine.productRoutes")(function* (
   }
   if (primary.credential.type === "environment") {
     const provider = providers.find((provider) => provider.id === defaultModel.providerID)
-    const account = provider?.integrationID ? accounts.get(provider.integrationID) : undefined
+    const account = provider ? accounts.get(provider.integrationID ?? Integration.ID.make(provider.id)) : undefined
     if (account) {
       const key =
         primary.provider === "anthropic"

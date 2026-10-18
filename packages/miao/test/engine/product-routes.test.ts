@@ -82,7 +82,7 @@ it.live("product routes bind active accounts without persisting secrets and keep
         yield* catalog.transform((draft) => {
           for (const id of ["commandcode", "openai"]) {
             draft.provider.update(ProviderV2.ID.make(id), (provider) => {
-              provider.integrationID = Integration.ID.make(id)
+              provider.integrationID = id === "commandcode" ? Integration.ID.make(id) : undefined
               provider.api = {
                 type: "aisdk",
                 package: id === "openai" ? "@ai-sdk/openai" : "@ai-sdk/openai-compatible",
