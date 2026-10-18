@@ -159,6 +159,22 @@ returning a receipt whose prompt never runs. A client that wants to re-send a
 cancelled prompt admits it under a fresh `input_id`.
 
 
+### Inline image admission
+
+`admit.attachments` accepts up to eight PNG, JPEG, GIF or WebP images. Each
+attachment carries `mime`, base64 `data` (at most 8 MiB), and optional object
+`metadata` (at most 64 KiB). Metadata is presentation evidence, not provider
+instructions. It participates in exact-retry identity along with the bytes.
+An image-only input may use an empty `input.prompt`; an input with neither text
+nor attachments is rejected.
+
+Promotion journals the attachments in `input.promoted` and commits their image
+parts in the same transaction. Presentation metadata survives replay and fork;
+provider adapters send the image bytes without forwarding that metadata.
+The product facade sends a metadata object, including when it is empty, so an
+older engine that lacks product attachment projection rejects the request
+instead of accepting an image that disappears from product history.
+
 ### Idle Session initialization
 
 `initialize` takes `session_id` and `title`. It creates an idle identity in the

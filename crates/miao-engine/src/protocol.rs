@@ -40,10 +40,18 @@ pub struct Input {
 pub struct Attachment {
     pub mime: String,
     pub data: String,
+    /// Presentation metadata belongs to admission identity, not model instructions.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub metadata: Option<serde_json::Map<String, Value>>,
 }
 
 impl Attachment {
     pub fn validate(&self) -> Result<(), Error> {
+        if self.metadata.as_ref().is_some_and(|metadata| {
+            serde_json::to_vec(metadata).map_or(true, |bytes| bytes.len() > 64 * 1024)
+        }) {
+            return Err(Error::Invalid("attachment metadata exceeds 64 KiB".into()));
+        }
         if !matches!(
             self.mime.as_str(),
             "image/png" | "image/jpeg" | "image/gif" | "image/webp"
@@ -64,7 +72,11 @@ impl Attachment {
     }
 
     pub fn part(&self) -> Value {
-        serde_json::json!({"type":"image","mime":self.mime,"data":self.data})
+        let mut part = serde_json::json!({"type":"image","mime":self.mime,"data":self.data});
+        if let Some(metadata) = &self.metadata {
+            part["metadata"] = serde_json::json!(metadata);
+        }
+        part
     }
 }
 

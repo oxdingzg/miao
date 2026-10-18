@@ -12,6 +12,7 @@ import type { SessionInfo } from "@miao/schema/session-info"
 import type { Model } from "@miao/schema/model"
 import type { SessionModelRoute } from "@miao/schema/session-model-route"
 import type { SessionRecovery } from "@miao/schema/session-recovery"
+import type { PromptInput } from "@miao/schema/prompt-input"
 import type { AbsolutePath } from "@miao/core/schema"
 
 export interface Interface {
@@ -69,8 +70,7 @@ export interface Interface {
     storage: AbsolutePath
     location: Location.Ref
     id?: SessionMessage.ID
-    /** Only the text reaches native admission; richer inputs are refused. */
-    prompt: { readonly text: string }
+    prompt: PromptInput.Prompt
     delivery?: "steer" | "queue"
     resume?: boolean
   }) => Effect.Effect<SessionInput.Admitted, ConflictError>

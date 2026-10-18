@@ -1,10 +1,12 @@
 import { DateTime, Schema } from "effect"
 import { Prompt } from "@miao/schema/prompt"
+import type { PromptInput } from "@miao/schema/prompt-input"
 import { SessionInput } from "@miao/schema/session-input"
 import { SessionMessage } from "@miao/schema/session-message"
 import { SessionID } from "@miao/schema/session-id"
 import { EngineError, type EngineEvent, type EngineProgress, type EngineTransport } from "./client"
 import { adoptSession, messageID } from "./identity"
+import { decodeAttachments, encodeAttachments, type NativeAttachment } from "./prompt-attachments"
 import {
   type BufferedUsage,
   PromptBridge,
@@ -258,7 +260,12 @@ export class EngineSession {
   async prompt(
     sessionID: string,
     prompt: string,
-    options: { inputID?: string; delivery?: "steer" | "queue"; resume?: boolean } = {},
+    options: {
+      inputID?: string
+      delivery?: "steer" | "queue"
+      resume?: boolean
+      attachments?: readonly NativeAttachment[]
+    } = {},
   ): Promise<unknown> {
     await this.watch(sessionID)
     return this.#client.admit(
@@ -269,6 +276,7 @@ export class EngineSession {
         delivery: options.delivery,
       },
       options.resume ?? true,
+      options.attachments,
     )
   }
 
@@ -321,21 +329,21 @@ export class EngineSession {
   /** Product admission receipt sourced from the committed native admission row. */
   async promptProduct(input: {
     sessionID: SessionID
-    prompt: Prompt
+    prompt: PromptInput.Prompt & { command?: Prompt["command"] }
     id?: SessionMessage.ID
     delivery?: "steer" | "queue"
     resume?: boolean
   }): Promise<SessionInput.Admitted> {
-    // The native prompt vocabulary currently carries plain text only. Reject
-    // richer product inputs before admission, so they cannot be silently lost.
-    if (input.prompt.command || input.prompt.files?.length || input.prompt.agents?.length)
-      throw new EngineError("engine_prompt_unsupported", "native product admission currently requires plain text")
+    if (input.prompt.command || input.prompt.agents?.length)
+      throw new EngineError("engine_prompt_unsupported", "native command and agent inputs require product preparation")
+    const attachments = encodeAttachments(input.prompt.files)
     const id = input.id ?? SessionMessage.ID.create()
     const delivery = input.delivery ?? "steer"
     const admitted = await this.prompt(input.sessionID, input.prompt.text, {
       inputID: id,
       delivery,
       resume: input.resume,
+      attachments,
     })
     if (
       typeof admitted !== "object" ||
@@ -387,7 +395,7 @@ export class EngineSession {
       sessionID: input.sessionID,
       admittedSeq: event.seq,
       delivery,
-      prompt: { text: input.prompt.text },
+      prompt: { text: input.prompt.text, ...(attachments.length ? { files: decodeAttachments(attachments) } : {}) },
       timeCreated: event.recorded_at_ms,
       ...(copied ? { promotedSeq: event.seq } : {}),
     })
