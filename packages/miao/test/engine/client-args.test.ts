@@ -82,6 +82,10 @@ test("the child inherits the engine's own surface and nothing else", () => {
     MIAO_WEB_SEARCH_ENDPOINT: "https://search.example.test/search",
     MIAO_TOOL_INPUT_MAX_BYTES: "4096",
     AWS_SECRET_ACCESS_KEY: "aws-parent",
+    AWS_ACCESS_KEY_ID: "aws-id-parent",
+    AWS_PROFILE: "aws-profile-parent",
+    AWS_REGION: "eu-west-1",
+    AWS_BEARER_TOKEN_BEDROCK: "aws-bearer-parent",
     CI_JOB_TOKEN: "ci-parent",
     GH_TOKEN: "gh-parent",
   }
@@ -97,8 +101,13 @@ test("the child inherits the engine's own surface and nothing else", () => {
   expect(child.MIAO_WEB_SEARCH_ENDPOINT).toBe("https://search.example.test/search")
   expect(child.MIAO_TOOL_INPUT_MAX_BYTES).toBe("4096")
   expect(child.OPENAI_API_KEY).toBe("explicit")
+  // The AWS default chain is part of the supported Bedrock surface.
+  expect(child.AWS_ACCESS_KEY_ID).toBe("aws-id-parent")
+  expect(child.AWS_SECRET_ACCESS_KEY).toBe("aws-parent")
+  expect(child.AWS_PROFILE).toBe("aws-profile-parent")
+  expect(child.AWS_REGION).toBe("eu-west-1")
+  expect(child.AWS_BEARER_TOKEN_BEDROCK).toBe("aws-bearer-parent")
   // Unrelated secrets in the operator's environment never reach the engine.
-  expect(child.AWS_SECRET_ACCESS_KEY).toBeUndefined()
   expect(child.CI_JOB_TOKEN).toBeUndefined()
   expect(child.GH_TOKEN).toBeUndefined()
 })
