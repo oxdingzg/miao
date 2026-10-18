@@ -66,6 +66,7 @@ export interface EngineOptions {
   mcpSettings?: ConfigMCP.Info
   /** Absolute path to an LSP host config; must live outside the workspace. */
   lspConfigFile?: string
+  formatterConfigFile?: string
   /** Trusted instruction sources, skill directories, and exact read-only reference grants. */
   contextConfigFile?: string
   /** Whether standalone workspace AGENTS.md discovery is enabled (default true). */
@@ -169,6 +170,7 @@ export function engineArgs(options: EngineOptions): string[] {
   if (options.lspDiagnostics === false) args.push("--lsp-diagnostics", "off")
   if (options.mcpConfigFile) args.push("--mcp-config", options.mcpConfigFile)
   if (options.lspConfigFile) args.push("--lsp-config", options.lspConfigFile)
+  if (options.formatterConfigFile) args.push("--formatter-config", options.formatterConfigFile)
   if (options.contextConfigFile) args.push("--context-config", options.contextConfigFile)
   if (options.workspaceInstructions !== undefined)
     args.push("--workspace-instructions", String(options.workspaceInstructions))
