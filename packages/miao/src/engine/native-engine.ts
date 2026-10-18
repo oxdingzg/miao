@@ -6,6 +6,10 @@ import { ProductHooks } from "./product-hooks"
 import { ProductLsp } from "./product-lsp"
 import { ProductFormatter } from "./product-formatter"
 import { ProductRoutes } from "./product-routes"
+import { PromptMaterialization } from "./prompt-materialization"
+import { Blob } from "@miao/core/blob"
+import { FSUtil } from "@miao/core/fs-util"
+import type { PromptInput } from "@miao/schema/prompt-input"
 import { Credential } from "@miao/core/credential"
 import os from "node:os"
 import path from "node:path"
@@ -197,7 +201,10 @@ type Owners = Effect.Success<ReturnType<typeof makeEngineOwners>>
  * The transport implementation over a server-scoped owner registry. Kept apart
  * from the layer so tests exercise the exact code the server runs.
  */
-export const fromOwners = (owners: Owners): NativeEngine.Interface => {
+export const fromOwners = (
+  owners: Owners,
+  preparePrompt?: (input: Parameters<NativeEngine.Interface["admit"]>[0]) => Effect.Effect<PromptInput.Prompt, unknown>,
+): NativeEngine.Interface => {
   const connect = (input: { storage: string; location: Location.Ref; refreshContext?: boolean }) =>
     owners.get({
       storage: input.storage,
@@ -305,19 +312,23 @@ export const fromOwners = (owners: Owners): NativeEngine.Interface => {
         Effect.asVoid,
       ),
     admit: (input) =>
-      connect({ ...input, refreshContext: true }).pipe(
-        Effect.flatMap((connection) =>
-          Effect.tryPromise({
-            try: () =>
-              connection.session.promptProduct({
-                sessionID: input.sessionID,
-                prompt: input.prompt,
-                id: input.id,
-                delivery: input.delivery,
-                resume: input.resume,
+      (preparePrompt ? preparePrompt(input) : Effect.succeed(input.prompt)).pipe(
+        Effect.flatMap((prompt) =>
+          connect({ ...input, refreshContext: true }).pipe(
+            Effect.flatMap((connection) =>
+              Effect.tryPromise({
+                try: () =>
+                  connection.session.promptProduct({
+                    sessionID: input.sessionID,
+                    prompt,
+                    id: input.id,
+                    delivery: input.delivery,
+                    resume: input.resume,
+                  }),
+                catch: (error) => refusal(input.sessionID, error),
               }),
-            catch: (error) => refusal(input.sessionID, error),
-          }),
+            ),
+          ),
         ),
         Effect.mapError((error) => refusal(input.sessionID, error)),
       ),
@@ -512,6 +523,8 @@ const layer = Layer.effect(
     const global = yield* Global.Service
     const credentials = yield* Credential.Service
     const locations = yield* LocationServiceMap.Service
+    const blob = yield* Blob.Service
+    const fs = yield* FSUtil.Service
     const settings = yield* Effect.promise(() => engineSettings(global.config))
     const configuration = nativeEngineOptions(process.env, settings)
     if (!configuration) return yield* Effect.die("NativeEngine layer built without MIAO_ENGINE_BIN")
@@ -557,14 +570,19 @@ const layer = Layer.effect(
         yield* Effect.ignore(owners.sweepTimers())
       }),
     ).pipe(Effect.forkScoped)
-    return fromOwners(owners)
+    return fromOwners(owners, (input) =>
+      PromptMaterialization.prepare(input.prompt).pipe(
+        Effect.provideService(Blob.Service, blob),
+        Effect.provideService(FSUtil.Service, fs),
+      ),
+    )
   }),
 )
 
 export const node = makeGlobalNode({
   service: NativeEngine.Service,
   layer,
-  deps: [ClientEvents.node, Global.node, Credential.node, LocationServiceMap.node],
+  deps: [ClientEvents.node, Global.node, Credential.node, LocationServiceMap.node, Blob.node, FSUtil.node],
 })
 
 export * as NativeEngineNode from "./native-engine"

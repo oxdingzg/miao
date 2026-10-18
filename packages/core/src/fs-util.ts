@@ -3,7 +3,7 @@ import { dirname, isAbsolute, join, relative, resolve as pathResolve, sep } from
 import { realpathSync } from "fs"
 import * as NFS from "fs/promises"
 import { lookup } from "mime-types"
-import { Context, Effect, FileSystem, Layer, Schema } from "effect"
+import { Context, Effect, FileSystem, Layer, Option, Schema } from "effect"
 import type { PlatformError } from "effect/PlatformError"
 import { Glob } from "./util/glob"
 import { serviceUse } from "./effect/service-use"
@@ -47,6 +47,31 @@ export namespace FSUtil {
   }
 
   export class Service extends Context.Service<Service, Interface>()("@miao/FileSystem") {}
+
+  /** Enforce the byte bound while reading, including a file that grows after stat. */
+  export const readBounded = Effect.fn("FileSystem.readBounded")(function* (
+    fs: Interface,
+    path: string,
+    maximumBytes: number,
+  ) {
+    if (!Number.isSafeInteger(maximumBytes) || maximumBytes < 0)
+      return yield* new FileSystemError({ method: "readBounded", cause: new Error("Invalid byte limit") })
+    return yield* Effect.scoped(
+      Effect.gen(function* () {
+        const file = yield* fs.open(path)
+        const chunks: Uint8Array[] = []
+        let size = 0
+        while (true) {
+          const chunk = yield* file.readAlloc(Math.min(64 * 1024, maximumBytes + 1 - size))
+          if (Option.isNone(chunk)) return Buffer.concat(chunks, size)
+          size += chunk.value.byteLength
+          if (size > maximumBytes)
+            return yield* new FileSystemError({ method: "readBounded", cause: new Error("File exceeds byte limit") })
+          chunks.push(chunk.value)
+        }
+      }),
+    )
+  })
 
   export const use = serviceUse(Service)
 

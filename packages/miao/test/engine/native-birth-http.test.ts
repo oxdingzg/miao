@@ -1,5 +1,6 @@
 import { expect, test } from "bun:test"
 import path from "node:path"
+import { pathToFileURL } from "node:url"
 import { tmpdir } from "../fixture/fixture"
 
 const binary = process.env.MIAO_ENGINE_BIN
@@ -233,6 +234,14 @@ if (binary)
       expect(reset.status).toBe(204)
       const resetGet = await fetch(url + "/api/session/" + body.id, { headers })
       expect((await resetGet.json()).data.model).toEqual(catalog.data[0].model)
+      const imageFile = path.join(directory, "attachment.png")
+      await Bun.write(
+        imageFile,
+        Buffer.from(
+          "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+M8AAAMBAQDJ/pLvAAAAAElFTkSuQmCC",
+          "base64",
+        ),
+      )
       const image = await fetch(url + "/api/session/" + body.id + "/prompt", {
         method: "POST",
         headers,
@@ -242,7 +251,7 @@ if (binary)
             text: "inspect the image",
             files: [
               {
-                uri: "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+M8AAAMBAQDJ/pLvAAAAAElFTkSuQmCC",
+                uri: pathToFileURL(imageFile).href,
                 name: "http-image.png",
               },
             ],
