@@ -641,10 +641,20 @@ impl Store {
     }
 
     pub async fn recover_jobs(&self) -> Result<(), Error> {
-        self.call(|conn| {
+        self.recover_jobs_inner(false).await
+    }
+
+    /// Startup reconciliation: leave jobs alone while another runtime still
+    /// holds a live lease on their Session.
+    pub async fn recover_jobs_unowned(&self) -> Result<(), Error> {
+        self.recover_jobs_inner(true).await
+    }
+
+    async fn recover_jobs_inner(&self, honor_leases: bool) -> Result<(), Error> {
+        self.call(move |conn| {
             let tx=conn.transaction()?;
             let now=crate::approval::now_ms() as i64;
-            let jobs:Vec<(String,String,String)>={let mut stmt=tx.prepare("SELECT id,session_id,state FROM engine_job WHERE state IN ('queued','running') AND NOT EXISTS(SELECT 1 FROM engine_lease l WHERE l.session_id=engine_job.session_id AND ?1 - l.last_ms < 2*l.interval_ms)")?;let rows=stmt.query_map([now],|r|Ok((r.get(0)?,r.get(1)?,r.get(2)?)))?;rows.collect::<Result<_,_>>()?};
+            let jobs:Vec<(String,String,String)>={let mut stmt=tx.prepare("SELECT id,session_id,state FROM engine_job WHERE state IN ('queued','running') AND (?1=0 OR NOT EXISTS(SELECT 1 FROM engine_lease l WHERE l.session_id=engine_job.session_id AND ?2 - l.last_ms < 2*l.interval_ms))")?;let rows=stmt.query_map(params![honor_leases as i64,now],|r|Ok((r.get(0)?,r.get(1)?,r.get(2)?)))?;rows.collect::<Result<_,_>>()?};
             for (id,session,state) in jobs {
                 let terminal=if state=="queued"{"interrupted"}else{"unknown"};let result=json!({"error":"runtime ownership lost; no automatic replay"});
                 tx.execute("UPDATE engine_job SET state=?2,result=?3 WHERE id=?1",params![id,terminal,serde_json::to_string(&result)?])?;

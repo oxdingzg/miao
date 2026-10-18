@@ -215,12 +215,22 @@ impl Store {
         }).await
     }
     pub async fn recover_questions(&self) -> Result<(), Error> {
+        self.recover_questions_inner(false).await
+    }
+
+    /// Startup reconciliation: leave questions alone while another runtime still
+    /// holds a live lease on their Session.
+    pub async fn recover_questions_unowned(&self) -> Result<(), Error> {
+        self.recover_questions_inner(true).await
+    }
+
+    async fn recover_questions_inner(&self, honor_leases: bool) -> Result<(), Error> {
+        let now = now_ms() as i64;
         self.call(move|conn|{
             let tx=conn.transaction()?;
-            let now=now_ms() as i64;
             let requests={
-                let mut stmt=tx.prepare("SELECT q.session_id,q.data FROM engine_event q WHERE q.kind='question.requested' AND NOT EXISTS(SELECT 1 FROM engine_event r WHERE r.session_id=q.session_id AND r.kind='question.resolved' AND json_extract(r.data,'$.question_id')=json_extract(q.data,'$.question_id')) AND NOT EXISTS(SELECT 1 FROM engine_lease l WHERE l.session_id=q.session_id AND ?1 - l.last_ms < 2*l.interval_ms) LIMIT 257")?;
-                let rows=stmt.query_map([now],|row|Ok((row.get::<_,String>(0)?,row.get::<_,String>(1)?)))?;rows.collect::<Result<Vec<_>,_>>()?
+                let mut stmt=tx.prepare("SELECT q.session_id,q.data FROM engine_event q WHERE q.kind='question.requested' AND NOT EXISTS(SELECT 1 FROM engine_event r WHERE r.session_id=q.session_id AND r.kind='question.resolved' AND json_extract(r.data,'$.question_id')=json_extract(q.data,'$.question_id')) AND (?1=0 OR NOT EXISTS(SELECT 1 FROM engine_lease l WHERE l.session_id=q.session_id AND ?2 - l.last_ms < 2*l.interval_ms)) LIMIT 257")?;
+                let rows=stmt.query_map(params![honor_leases as i64,now],|row|Ok((row.get::<_,String>(0)?,row.get::<_,String>(1)?)))?;rows.collect::<Result<Vec<_>,_>>()?
             };
             if requests.len()>256{return Err(Error::Invalid("question recovery budget exceeded".into()));}
             for (session,data) in requests {

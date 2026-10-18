@@ -142,8 +142,8 @@ impl Runtime {
         }
         let lease = store.claim_runtime()?;
         store.recover().await?;
-        store.recover_jobs().await?;
-        store.recover_questions().await?;
+        store.recover_jobs_unowned().await?;
+        store.recover_questions_unowned().await?;
         store.adopt_wakeups().await?;
         store.adopt_crons().await?;
         let (progress, _) = broadcast::channel(256);
