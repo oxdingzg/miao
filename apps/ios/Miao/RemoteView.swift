@@ -89,27 +89,40 @@ struct RemoteView: View {
     }
 
     @ViewBuilder private var mainContent: some View {
-        if let hostID, let client = model.clients[hostID] {
-            NavigationStack {
-                sessionContent(client)
-                    .onChange(of: sessionCount(client)) { _, count in
-                        if sessionID == nil, count > 0, let first = client.lists.values.flatMap({ $0 }).first {
-                            sessionID = first.id
+        NavigationStack {
+            Group {
+                if let hostID, let client = model.clients[hostID] {
+                    sessionContent(client)
+                        .onChange(of: sessionCount(client)) { _, count in
+                            if sessionID == nil, count > 0, let first = client.lists.values.flatMap({ $0 }).first {
+                                sessionID = first.id
+                            }
                         }
+                } else {
+                    ContentUnavailableView {
+                        Label("随时接回会话", systemImage: "bubble.left.and.bubble.right")
+                    } description: {
+                        Text("登录同一账号后，这台电脑的会话会出现在侧栏里。")
+                    } actions: {
+                        Button("中继账号") { accountPresented = true }
+                            .buttonStyle(.bordered).accessibilityIdentifier("hubAccount")
+                        Button("连接电脑") { pairing = true }.buttonStyle(.borderedProminent)
                     }
+                }
             }
-            .id(hostID.uuidString + ":" + String(model.connectionEpoch))
-        } else {
-            ContentUnavailableView {
-                Label("随时接回会话", systemImage: "bubble.left.and.bubble.right")
-            } description: {
-                Text("登录同一账号后，这台电脑的会话会出现在侧栏里。")
-            } actions: {
-                Button("中继账号") { accountPresented = true }
-                    .buttonStyle(.bordered).accessibilityIdentifier("hubAccount")
-                Button("连接电脑") { pairing = true }.buttonStyle(.borderedProminent)
+            .toolbar {
+                ToolbarItem(placement: .topBarLeading) {
+                    Button {
+                        withAnimation(.easeInOut(duration: 0.25)) { sidebarVisible = true }
+                    } label: {
+                        Image(systemName: "line.3.horizontal")
+                    }.accessibilityLabel("会话侧栏").accessibilityIdentifier("sessionSidebar")
+                }
             }
+            .navigationTitle("miao")
+            .navigationBarTitleDisplayMode(.inline)
         }
+        .id((hostID?.uuidString ?? "no-host") + ":" + String(model.connectionEpoch))
     }
 
     @ViewBuilder private func sessionContent(_ client: HostClient) -> some View {
