@@ -243,6 +243,17 @@ impl Fallback {
 }
 #[async_trait]
 impl Provider for Fallback {
+    fn with_request_options(
+        &self,
+        options: crate::request_options::Options,
+    ) -> Result<Arc<dyn Provider>, ProviderError> {
+        // The host declared these options for the primary model. A secondary
+        // model retains its own route/credential and generation defaults.
+        Ok(Arc::new(Self::new(
+            self.primary.with_request_options(options)?,
+            Arc::clone(&self.secondary),
+        )?))
+    }
     fn for_model(&self, model: &str) -> Option<Arc<dyn Provider>> {
         let primary = self.primary.for_model(model)?;
         if primary.identity() == self.secondary.identity() {
