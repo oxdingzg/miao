@@ -29,6 +29,7 @@ at `docs/releases/vX.Y.Z.md` and `docs/releases/vX.Y.Z.zh.md`; both are required
 - **engine**: add authenticated HTTP attachments to a shared native runtime (#1035) (`4fd1a990d2`)
 
 ### Fixed
+- **ios**: always show the sidebar toggle, including on the empty screen (#1065) (`d3128a0cc5`)
 - **engine**: coordinate remaining mutations without locking readers (#1066) (`8c6432dd74`)
 - **tui**: make the /login command searchable by title (#1063) (`1a86c1bee2`)
 - **engine**: serialize store writes across processes (#1062) (`4e097c773e`)
