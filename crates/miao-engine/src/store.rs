@@ -25,6 +25,15 @@ pub(crate) const SCHEMA_VERSION: u32 = 11;
 
 type Work = Box<dyn FnOnce(&mut Connection) + Send>;
 
+/// A durable, fenced claim on one Session's execution. Every claim advances
+/// `epoch`, so a writer whose ownership was superseded is rejected even while
+/// it is still running. This is the fence later cross-process ownership uses.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SessionLease {
+    pub session: String,
+    pub epoch: u64,
+}
+
 /// In-process guard on the set of locked store paths. The OS file lock provides
 /// the cross-process guarantee; this additionally rejects a second open in the
 /// same process on platforms whose file locks do not (for example Windows), and
@@ -1061,16 +1070,22 @@ impl Store {
     /// Process heartbeat for timer ownership. The epoch advances on every
     /// renewal so a future cross-process supervisor can order leases.
     pub async fn heartbeat_lease(&self, session: &str, interval_ms: i64) -> Result<i64, Error> {
+        Ok(self.claim_session(session, interval_ms).await?.epoch as i64)
+    }
+    /// Claim Session execution ownership. Every claim advances the durable
+    /// epoch, which is the fence that Session-scoped writes must present.
+    pub async fn claim_session(&self, session: &str, interval_ms: i64) -> Result<SessionLease, Error> {
         let (session, interval_ms) = (session.to_owned(), interval_ms);
-        self.call(move|conn|{
-            let now=crate::approval::now_ms() as i64;
-            let epoch:i64=conn.query_row(
+        self.call(move |conn| {
+            let now = crate::approval::now_ms() as i64;
+            let epoch: i64 = conn.query_row(
                 "INSERT INTO engine_lease(session_id,interval_ms,last_ms,epoch) VALUES(?1,?2,?3,1)\n                 ON CONFLICT(session_id) DO UPDATE SET interval_ms=excluded.interval_ms,last_ms=excluded.last_ms,epoch=engine_lease.epoch+1 RETURNING epoch",
-                params![session,interval_ms,now],
-                |row|row.get(0),
+                params![session, interval_ms, now],
+                |row| row.get(0),
             )?;
-            Ok(epoch)
-        }).await
+            Ok(SessionLease { session: session.clone(), epoch: epoch as u64 })
+        })
+        .await
     }
     /// A lease is alive while its last heartbeat is within twice the declared
     /// interval; expired or missing leases make timers adoptable.
@@ -1106,6 +1121,26 @@ impl Store {
         self.call(move |conn| {
             let tx = conn.transaction()?;
             let event = append(&tx, &session, &kind, data)?;
+            tx.commit()?;
+            Ok(event)
+        })
+        .await
+    }
+
+    /// Append one Session-scoped event only while this writer still holds the
+    /// claim. The fence check runs inside the same transaction as the append,
+    /// so a superseding claim cannot slip in between them.
+    pub async fn record_fenced(
+        &self,
+        session: &str,
+        kind: &str,
+        data: Value,
+        lease: &SessionLease,
+    ) -> Result<Event, Error> {
+        let (session, kind, lease) = (session.to_owned(), kind.to_owned(), lease.clone());
+        self.call(move |conn| {
+            let tx = conn.transaction()?;
+            let event = append_fenced(&tx, &session, &kind, data, &lease)?;
             tx.commit()?;
             Ok(event)
         })
@@ -1527,6 +1562,39 @@ pub(crate) fn append(
     data: Value,
 ) -> Result<Event, Error> {
     append_at(tx, session, kind, data, Some(now_ms()))
+}
+
+/// Reject a write from a writer whose Session lease was superseded. The check
+/// belongs inside the caller's transaction: a claim that arrives concurrently
+/// then either precedes the fence (and fails here) or follows the commit.
+pub(crate) fn require_lease(
+    tx: &Transaction<'_>,
+    session: &str,
+    lease: &SessionLease,
+) -> Result<(), Error> {
+    if lease.session != session {
+        return Err(Error::Fenced);
+    }
+    let epoch: Option<i64> = tx
+        .query_row("SELECT epoch FROM engine_lease WHERE session_id=?1", [session], |row| {
+            row.get(0)
+        })
+        .optional()?;
+    if epoch != Some(lease.epoch as i64) {
+        return Err(Error::Fenced);
+    }
+    Ok(())
+}
+
+pub(crate) fn append_fenced(
+    tx: &Transaction<'_>,
+    session: &str,
+    kind: &str,
+    data: Value,
+    lease: &SessionLease,
+) -> Result<Event, Error> {
+    require_lease(tx, session, lease)?;
+    append(tx, session, kind, data)
 }
 
 fn append_at(
