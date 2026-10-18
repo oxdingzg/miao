@@ -354,6 +354,16 @@ impl Tools {
             "processRunnerConfigured":self.runner.is_some(),"mcpAttached":self.mcp.is_some(),
             "workerAttached":self.worker.is_some(),"lspAttached":self.lsp.is_some(),"formatter":self.formatter.as_ref().map(|registry| registry.descriptor()),"web":self.web.as_ref().map(|client|client.descriptor())})
     }
+    /// Grants bind host registration identity without changing replay's tool
+    /// boundary vocabulary. Caller-owned IO transports have a per-instance id.
+    pub(crate) fn grant_authority_descriptor(&self) -> Value {
+        json!({"boundary":self.authority_descriptor(),
+            "mcp":self.mcp.as_ref().map(|registry|registry.authority()),
+            "worker":self.worker.as_ref().map(|registry|registry.authority()),
+            "lsp":self.lsp.as_ref().map(|registry|registry.authority()),"processRunner":self.runner,
+            "hooks":self.hooks.iter().map(|hook|json!({"event":hook.event.name(),"tool":hook.tool,"argv":hook.argv,"timeout_ms":hook.timeout_ms})).collect::<Vec<_>>()})
+    }
+
     pub(crate) fn references(&self) -> &[crate::context::Reference] {
         &self.references
     }
