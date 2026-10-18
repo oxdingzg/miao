@@ -97,7 +97,31 @@ version for one-step rollback, and smoke-tests `--version`.
 
 ### Host-owned model routes
 
-`--model-routes-config /host/routes.json` registers up to 64 exact provider instances.
+`--model-routes-config /host/routes.json` registers up to 1024 exact provider instances
+in a manifest bounded to 1 MiB.
+
+The product host can generate this manifest from its available tool-capable text models,
+active integration connections, and selected default model. It waits for provider plugins
+to finish booting. Explicit operator routes take precedence. Generated files contain
+credential references, not tokens; they are private temporary files removed when the
+native owner closes. Refresh remains with the product credential broker.
+
+Route eligibility depends on the actual transport metadata: supported AI SDK profiles
+map to native codecs; unknown packages and native-only plugin transports are omitted.
+Commandcode uses its gateway's Chat-compatible endpoint. OpenAI subscription credentials
+use the subscription Responses endpoint rather than the public API-key endpoint. A
+public model catalog is not an account entitlement list: verify a model against the
+subscription account's current supported models before claiming it works.
+
+Anthropic and Chat-compatible routes preserve trusted manifest headers. A header value
+of `$session` binds to the current Session's opaque routing key at send time; it fails
+explicitly outside a Session scope. The product uses this for opencode-go's required
+`x-opencode-session`, keeping sibling Sessions separate even when cache affinity is shared.
+
+Verification has separate gates: manifest/catalog tests, actual isolated-storage account
+requests, and product multi-window TUI acceptance. A generated route or a successful
+headless request does not establish the later gates. Keep development native databases
+separate from release storage when validating schema changes.
 The manifest must be outside the workspace and is protected from model tools.
 The product bridge forwards `EngineOptions.modelRoutesConfigFile` or
 `MIAO_ENGINE_MODEL_ROUTES_CONFIG`. Each entry binds its own credential source:

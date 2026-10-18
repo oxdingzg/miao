@@ -95,7 +95,8 @@ pub fn build_with_auth(
                 _ => Anthropic::with_source(endpoint, source, model)
                     .map_err(|_| ProviderError::Transport)?,
             }
-            .with_prompt_cache(prompt_cache);
+            .with_prompt_cache(prompt_cache)
+            .with_headers(headers);
             Ok(Arc::new(provider))
         }
         _ => build_with_responses(name, endpoint, source, model, prompt_cache, None, None),
