@@ -336,6 +336,23 @@ impl Runtime {
         if let Some(binding) = &agent.model {
             crate::session_model::select(&self.inner.provider, Some(binding))?;
         }
+        let binding = self
+            .inner
+            .store
+            .model_selection(session)
+            .await?
+            .or_else(|| agent.model.clone());
+        let provider = crate::session_model::select(&self.inner.provider, binding.as_ref())?;
+        if let Some(request) = &agent.request {
+            provider
+                .with_request_options(request.clone())
+                .map_err(|error| Error::Invalid(error.to_string()))?;
+        }
+        crate::session_model::validate_history(
+            &self.inner.store.selected_history(session).await?,
+            binding.as_ref(),
+            provider.identity(),
+        )?;
         if let Some(surface) = &agent.tools {
             let known = self
                 .inner
@@ -987,6 +1004,7 @@ async fn execute(
 ) -> Result<(), Error> {
     let mut step = 0;
     let mut allowance = inner.policy.max_provider_turns();
+    let mut reset_allowance = true;
     let mut input_corrections = 0;
     let mut transport_continuations = 0;
     // Consecutive provider turns that produced neither text nor tool calls.
@@ -1000,10 +1018,6 @@ async fn execute(
     let mut goal_stalls = 0;
     let mut goal_signature = None;
     loop {
-        if allowance == 0 {
-            return Err(Error::Invalid("provider turn allowance exceeded".into()));
-        }
-        allowance -= 1;
         if cancel.is_cancelled() {
             return Ok(());
         }
@@ -1012,12 +1026,31 @@ async fn execute(
         let agent = inner.store.agent(session).await?;
         let manifest = agent.as_ref().map(|(manifest, _)| manifest);
         let policy = inner.policy.for_agent(manifest)?;
+        // A newly promoted external input gets the selected agent's whole
+        // allowance, even if that input also switched agents. Internal loop
+        // continuations never reset it.
+        allowance = if reset_allowance {
+            policy.max_provider_turns()
+        } else {
+            allowance.min(policy.max_provider_turns())
+        };
+        reset_allowance = false;
+        if allowance == 0 {
+            return Err(Error::Invalid("provider turn allowance exceeded".into()));
+        }
+        allowance -= 1;
         let binding = match (inner.store.model_selection(session).await?, agent.as_ref()) {
             (Some(selection), _) => Some(selection),
             (None, Some((manifest, _))) => manifest.model.clone(),
             (None, None) => None,
         };
-        let provider = crate::session_model::select(&inner.provider, binding.as_ref())?;
+        let selected_provider = crate::session_model::select(&inner.provider, binding.as_ref())?;
+        let provider = match manifest.and_then(|agent| agent.request.as_ref()) {
+            Some(request) => selected_provider
+                .with_request_options(request.clone())
+                .map_err(|error| Error::Invalid(error.to_string()))?,
+            None => selected_provider,
+        };
         let mut bundle = match crate::context::assemble_for_agent(
             &inner.tools,
             &policy,
@@ -1159,7 +1192,7 @@ async fn execute(
         let request = ModelRequest {
             system,
             messages: history,
-            tools: agent_tools(&inner.tools, agent.as_ref()),
+            tools: agent_tools(&inner.tools, agent.as_ref(), &policy),
         };
         let prefix_through = if inner.context.lock().await.is_some() {
             Some(inner.store.max_message_seq(session).await?)
@@ -1338,6 +1371,7 @@ async fn execute(
                                 .is_none_or(|id| !internal_inputs.contains(id))
                         }) {
                             allowance = policy.max_provider_turns();
+                            reset_allowance = true;
                             input_corrections = 0;
                             repeats.clear();
                             transport_continuations = 0;
@@ -2179,6 +2213,7 @@ async fn execute(
                     .is_none_or(|id| !internal_inputs.contains(id))
             }) {
                 allowance = policy.max_provider_turns();
+                reset_allowance = true;
                 input_corrections = 0;
                 transport_continuations = 0;
                 empty_completions = 0;
@@ -2844,19 +2879,14 @@ async fn cancel_session(inner: &Arc<Inner>, session: &str) -> Result<bool, Error
 fn agent_tools(
     tools: &Tools,
     agent: Option<&(crate::session_agent::AgentManifest, String)>,
+    policy: &Policy,
 ) -> Vec<crate::protocol::ToolDefinition> {
-    let definitions = tools.definitions();
-    let Some((manifest, _)) = agent else {
-        return definitions;
-    };
-    let Some(surface) = &manifest.tools else {
-        return definitions;
-    };
-    definitions
+    tools
+        .definitions()
         .into_iter()
         .filter(|tool| {
-            (surface.allow.is_empty() || surface.allow.iter().any(|name| name == &tool.name))
-                && !surface.deny.iter().any(|name| name == &tool.name)
+            agent.is_none_or(|(manifest, _)| manifest.permits(&tool.name))
+                && policy.tool_visible(&tool.name)
         })
         .collect()
 }
@@ -2901,12 +2931,24 @@ async fn authorize(
         return Ok(false);
     }
     let (decision, matcher) = if prepared.targets().is_empty() {
-        policy.assess(prepared.name(), prepared.resource(), prepared.access())
+        policy.assess_input(
+            prepared.name(),
+            prepared.resource(),
+            prepared.access(),
+            Some(prepared.input()),
+        )
     } else {
         prepared
             .targets()
             .iter()
-            .map(|target| policy.assess(prepared.name(), target, prepared.access()))
+            .map(|target| {
+                policy.assess_input(
+                    prepared.name(),
+                    target,
+                    prepared.access(),
+                    Some(prepared.input()),
+                )
+            })
             .reduce(|acc, next| {
                 if severity(next.0) > severity(acc.0) {
                     next
@@ -3469,7 +3511,15 @@ async fn execute_read_batch(
             || !tool.batchable_read()
             || tool.access() != crate::permission::Access::Read
             || tool.resource().is_empty()
-            || policy.evaluate(tool.name(), tool.resource(), tool.access()) != Decision::Allow
+            || policy
+                .assess_input(
+                    tool.name(),
+                    tool.resource(),
+                    tool.access(),
+                    Some(tool.input()),
+                )
+                .0
+                != Decision::Allow
         {
             break;
         }

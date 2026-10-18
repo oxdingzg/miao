@@ -1,3 +1,4 @@
+import { agentManifest, modelRoute } from "./product-agent"
 import { LocationServiceMap } from "@miao/core/location-service-map"
 import { SessionModelRoute } from "@miao/schema/session-model-route"
 import { Model } from "@miao/schema/model"
@@ -237,6 +238,13 @@ export const fromOwners = (
       ),
     )(await connection.client.request("model_catalog"))
   return {
+    selectAgent: (input) =>
+      read(input, async (connection) =>
+        connection.client.request("select_agent", {
+          session_id: input.sessionID,
+          agent: agentManifest(input.agent, await routes(connection)),
+        }),
+      ).pipe(Effect.asVoid),
     modelRoutes: (input) =>
       read<readonly SessionModelRoute.Info[]>(input, async (connection) => {
         await connection.client.request("snapshot", { session_id: input.sessionID })
@@ -250,29 +258,10 @@ export const fromOwners = (
       }),
     selectModel: (input) =>
       read(input, async (connection) => {
-        const entry = (await routes(connection)).find((entry) => {
-          if (
-            input.model.providerID !== SessionModelRoute.ProviderID &&
-            input.model.providerID !== SessionModelRoute.DefaultProviderID
-          )
-            return entry.route_id === `${input.model.providerID}/${input.model.id}`
-          const model = SessionModelRoute.reference(entry.route_id)
-          return model.providerID === input.model.providerID && model.id === input.model.id
-        })
-        if (!entry) throw new EngineError("unknown_model_route", "Model is not in the native host route catalog")
-        if (input.model.variant !== undefined && !entry.variants?.includes(input.model.variant))
-          throw new EngineError("unknown_model_variant", "Variant is not in the native host route catalog")
+        const binding = modelRoute(input.model, await routes(connection))
         return connection.client.request("select_model", {
           session_id: input.sessionID,
-          binding:
-            entry.route_id === null && input.model.variant === undefined
-              ? null
-              : {
-                  route_id: entry.route_id,
-                  protocol: entry.protocol,
-                  model: entry.model,
-                  ...(input.model.variant === undefined ? {} : { variant: input.model.variant }),
-                },
+          binding: binding.route_id === null && input.model.variant === undefined ? null : binding,
         })
       }).pipe(Effect.asVoid),
     recoveries: (input) =>

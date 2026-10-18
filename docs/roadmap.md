@@ -639,6 +639,18 @@ open PRs and recent merges.
 
 ---
 
+### Native Session agent switching
+
+`session.switchAgent` resolves an agent through the host catalog and sends a
+bounded manifest to the engine (ADR-0017). The next provider turn uses its
+instructions, ordered action/resource permissions, model default, generation
+options and narrowed step budget. The native transcript projects agent switches
+and Session info reports the current identity. A dedicated TypeScript reference
+corpus pins last-match exceptions and Bash AST command extraction; real HTTP
+acceptance proves a read-only switch refuses writes while a later single-file
+allow exception succeeds. Host `permission_mode: auto` is explicitly unsupported
+by this initial bridge; it is never silently downgraded.
+
 ## 9. Native-engine enablement gates
 
 Landing the engine was the build; these gates decide when native sessions are

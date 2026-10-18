@@ -1,3 +1,4 @@
+import { Agent } from "@miao/schema/agent"
 import { SessionModelRoute } from "@miao/schema/session-model-route"
 import { Project } from "@miao/schema/project"
 import type { AbsolutePath } from "@miao/schema/schema"
@@ -21,7 +22,7 @@ import { nativeIdle } from "./native-state"
  * Honesty rules, matching the agreed conventions: `cost` stays 0 (pricing is
  * a product catalog the engine does not own) unless the caller projects the
  * engine's usage report through that catalog, `tokens` are 0 until then,
- * `agent` stays unknown; model routes use the reserved native namespace.
+ * `agent` stays unknown until selected by a manifest; model routes use the reserved native namespace.
  * Missing creation time renders as epoch only for Sessions that predate
  * the metadata column.
  */
@@ -46,6 +47,7 @@ export function nativeSessionInfo(input: {
   const updated = number(input.snapshot["updated_at_ms"])
   const archived = number(input.snapshot["archived_at_ms"])
   const title = input.snapshot["title"]
+  const agent = Schema.decodeUnknownOption(Schema.Struct({ name: Agent.ID }))(input.snapshot["agent"])
   const tokens =
     input.usage?.coverage?.observedTokens ??
     (input.usage
@@ -64,6 +66,7 @@ export function nativeSessionInfo(input: {
       : { input: 0, output: 0, reasoning: 0, cache: { read: 0, write: 0 } })
   return {
     id: input.sessionID,
+    ...(Option.isSome(agent) ? { agent: agent.value.name } : {}),
     ...(typeof input.snapshot["parent_session_id"] === "string"
       ? { parentID: Schema.decodeUnknownSync(SessionID)(input.snapshot["parent_session_id"]) }
       : {}),

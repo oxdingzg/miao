@@ -682,7 +682,7 @@ export function make(options: ClientOptions) {
             path: `/api/session/${encodeURIComponent(input.sessionID)}/agent`,
             body: { agent: input["agent"] },
             successStatus: 204,
-            declaredStatuses: [404, 503, 400, 410, 409, 401],
+            declaredStatuses: [409, 404, 503, 400, 410, 401],
             empty: true,
           },
           requestOptions,

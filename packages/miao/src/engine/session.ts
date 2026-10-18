@@ -1,4 +1,4 @@
-import { DateTime, Schema } from "effect"
+import { DateTime, Option, Schema } from "effect"
 import { Prompt } from "@miao/schema/prompt"
 import type { PromptInput } from "@miao/schema/prompt-input"
 import { SessionInput } from "@miao/schema/session-input"
@@ -75,6 +75,21 @@ export class EngineTranslator {
           recordedAtMs: event.recorded_at_ms ?? null,
         },
       })
+    }
+    if (event.kind === "session.agent.selected" && typeof event.recorded_at_ms === "number") {
+      const selected = Schema.decodeUnknownOption(Schema.Struct({ agent: Schema.Struct({ name: Schema.String }) }))(
+        event.data,
+      )
+      if (Option.isSome(selected))
+        publish({
+          type: "session.next.agent.switched",
+          data: {
+            sessionID: adoptSession(event.session_id),
+            timestamp: DateTime.makeUnsafe(event.recorded_at_ms),
+            messageID: messageID(event.session_id, event.seq),
+            agent: selected.value.agent.name,
+          },
+        })
     }
     this.#tools.note(event)
     const committed =

@@ -1,3 +1,4 @@
+import type { Agent } from "@miao/schema/agent"
 import { Context, Effect } from "effect"
 import type { OpenCodeEvent } from "@miao/protocol/groups/event"
 import type { Permission } from "@miao/schema/permission"
@@ -16,6 +17,13 @@ import type { PromptInput } from "@miao/schema/prompt-input"
 import type { AbsolutePath } from "@miao/core/schema"
 
 export interface Interface {
+  readonly selectAgent: (input: {
+    sessionID: SessionID
+    storage: AbsolutePath
+    location: Location.Ref
+    agent: Agent.Info
+  }) => Effect.Effect<void, ConflictError>
+
   readonly modelRoutes: (input: {
     sessionID: SessionID
     storage: AbsolutePath

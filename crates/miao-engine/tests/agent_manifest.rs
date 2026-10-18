@@ -118,8 +118,11 @@ fn manifest() -> AgentManifest {
             deny: vec!["read_file".into()],
         }),
         permissions: None,
+        ordered_permissions: None,
         model: None,
         mode: None,
+        request: None,
+        steps: None,
     }
 }
 
@@ -603,4 +606,41 @@ async fn real_adapter_records_agent_identity_and_selected_context() {
         .contains("Review the diff before answering."));
     runtime.shutdown().await;
     server.abort();
+}
+
+#[tokio::test]
+async fn ordered_permissions_keep_late_allow_exceptions_at_actual_dispatch() {
+    for (resource, allowed) in [("private/**", false), ("note.txt", true)] {
+        let dir = tempfile::tempdir().unwrap();
+        let (runtime, store, _) = setup(dir.path()).await;
+        let mut agent = manifest();
+        agent.tools = None;
+        agent.ordered_permissions = Some(
+            serde_json::from_value(json!({
+                "semantics":"ordered-wildcard-v1",
+                "bindings":{"write_file":{"action":"edit"}},
+                "rules":[{"action":"*","resource":"*","effect":"deny"},
+                    {"action":"edit","resource":resource,"effect":"allow"}]
+            }))
+            .unwrap(),
+        );
+        runtime.set_agent("s", agent).await.unwrap();
+        turn(&runtime, &store, "one").await;
+        assert_eq!(dir.path().join("work/note.txt").exists(), allowed);
+        runtime.shutdown().await;
+    }
+}
+
+#[tokio::test]
+async fn an_agent_can_narrow_but_not_silently_reset_the_provider_turn_allowance() {
+    let dir = tempfile::tempdir().unwrap();
+    let (runtime, store, provider) = setup(dir.path()).await;
+    let mut agent = manifest();
+    agent.tools = None;
+    agent.steps = Some(1);
+    runtime.set_agent("s", agent).await.unwrap();
+    turn(&runtime, &store, "one").await;
+    assert_eq!(provider.calls.load(Ordering::SeqCst), 1);
+    assert!(store.active_run("s").await.unwrap().is_none());
+    runtime.shutdown().await;
 }

@@ -49,12 +49,20 @@ pub struct AgentManifest {
     /// Overlaid on the configured policy, ahead of its own rules.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub permissions: Option<Vec<Rule>>,
+    /// A host-resolved ordered action/resource contract; native rules above
+    /// remain a separate operator-shaped restriction layer.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub ordered_permissions: Option<crate::agent_policy::OrderedPolicy>,
     /// Applied only while the Session has no explicit model selection.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub model: Option<Binding>,
     /// The collaboration mode this agent runs under, if it pins one.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub mode: Option<CollaborationMode>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub request: Option<crate::request_options::Options>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub steps: Option<u32>,
 }
 
 impl AgentManifest {
@@ -111,6 +119,17 @@ impl AgentManifest {
                 rules: rules.clone(),
                 ..crate::permission::Config::default()
             })?;
+        }
+        if let Some(policy) = &self.ordered_permissions {
+            policy.compile()?;
+        }
+        if self.steps.is_some_and(|steps| steps == 0 || steps > 1000) {
+            return Err(invalid("steps"));
+        }
+        if let Some(request) = &self.request {
+            request
+                .validate()
+                .map_err(|error| Error::Invalid(error.to_string()))?;
         }
         if let Some(binding) = &self.model {
             binding.validate()?;

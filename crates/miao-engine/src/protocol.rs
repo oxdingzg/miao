@@ -290,7 +290,7 @@ pub enum Command {
     /// records the manifest and applies it at the turn boundary.
     SelectAgent {
         session_id: String,
-        agent: crate::session_agent::AgentManifest,
+        agent: Box<crate::session_agent::AgentManifest>,
     },
     Cancel {
         session_id: String,

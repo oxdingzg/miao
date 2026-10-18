@@ -167,7 +167,9 @@ cancelled prompt admits it under a fresh `input_id`.
 `select_agent` accepts a host-resolved `agent` manifest (ADR-0017): `name`,
 optional `semantics`, `instructions`, `tools: {allow, deny}`, `permissions`,
 `model` (the same binding as `select_model`, including its optional variant),
-and collaboration `mode` (`build` or `plan`). Unknown fields are refused.
+and collaboration `mode` (`build` or `plan`). Optional `request` uses the existing
+bounded body/header override contract; `steps` narrows the operator turn budget.
+Unknown fields are refused.
 Names are bounded to 128 bytes, instructions to 64 KiB, tool-name lists and
 permission rules to 256 entries; permission patterns and model bindings are
 validated before admission. Tool lists use exact registered engine names;
@@ -193,6 +195,19 @@ The agent's model pin applies only when the Session has no explicit model
 selection. Collaboration mode applies to both the system instructions and the
 actual tool execution boundary. A turn already in flight keeps its chosen
 manifest; the next provider turn observes the newly selected one.
+
+The product bridge uses optional `ordered_permissions` with
+`semantics:"ordered-wildcard-v1"`, an ordered `rules` array of
+`{action,resource,effect}`, and `bindings` mapping exact native tool names to
+`{action,resource?,explicit?}`. Resource selectors are `native` (default),
+`command` (Bash AST resources or explicit argv) and `program` (the executable of
+an interactive terminal), `{input:"field"}` (a bounded direct input property)
+and `{literal:"value"}` (a bounded fixed resource). Last matching rule wins within this layer, preserving
+late allow exceptions; all resources must pass. An explicit binding ignores a
+catch-all action rule. A missing command input asks rather than matching a
+workspace directory. The host's `auto` classifier mode is explicitly unsupported
+by the initial product adapter; a switch to such an agent fails without changing
+the selected manifest.
 
 ### Operator-requested compaction
 

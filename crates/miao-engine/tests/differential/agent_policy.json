@@ -1,0 +1,187 @@
+{
+  "rules": [
+    {
+      "action": "*",
+      "resource": "*",
+      "effect": "deny"
+    },
+    {
+      "action": "read",
+      "resource": "*",
+      "effect": "allow"
+    },
+    {
+      "action": "read",
+      "resource": "*.env",
+      "effect": "ask"
+    },
+    {
+      "action": "read",
+      "resource": "*.env.example",
+      "effect": "allow"
+    },
+    {
+      "action": "edit",
+      "resource": ".miao/plans/*.md",
+      "effect": "allow"
+    },
+    {
+      "action": "bash",
+      "resource": "git status *",
+      "effect": "allow"
+    },
+    {
+      "action": "read",
+      "resource": "literal[1].txt",
+      "effect": "allow"
+    },
+    {
+      "action": "read",
+      "resource": "file?.txt",
+      "effect": "ask"
+    }
+  ],
+  "cases": [
+    {
+      "action": "read",
+      "resource": "src/file.ts",
+      "expected": "allow"
+    },
+    {
+      "action": "read",
+      "resource": "secret.env",
+      "expected": "ask"
+    },
+    {
+      "action": "read",
+      "resource": "nested/secret.env",
+      "expected": "ask"
+    },
+    {
+      "action": "read",
+      "resource": "nested\\secret.env",
+      "expected": "ask"
+    },
+    {
+      "action": "read",
+      "resource": "nested/secret.env.example",
+      "expected": "allow"
+    },
+    {
+      "action": "edit",
+      "resource": "src/file.ts",
+      "expected": "deny"
+    },
+    {
+      "action": "edit",
+      "resource": ".miao/plans/task.md",
+      "expected": "allow"
+    },
+    {
+      "action": "edit",
+      "resource": ".miao/plans/nested/task.md",
+      "expected": "allow"
+    },
+    {
+      "action": "bash",
+      "resource": "git status",
+      "expected": "allow"
+    },
+    {
+      "action": "bash",
+      "resource": "git status --short",
+      "expected": "allow"
+    },
+    {
+      "action": "bash",
+      "resource": "git status-other",
+      "expected": "deny"
+    },
+    {
+      "action": "read",
+      "resource": "literal[1].txt",
+      "expected": "allow"
+    },
+    {
+      "action": "read",
+      "resource": "file1.txt",
+      "expected": "ask"
+    },
+    {
+      "action": "read",
+      "resource": "file12.txt",
+      "expected": "allow"
+    },
+    {
+      "action": "read",
+      "resource": "line\nbreak.txt",
+      "expected": "allow"
+    },
+    {
+      "action": "unknown",
+      "resource": "anything",
+      "expected": "deny"
+    }
+  ],
+  "shells": [
+    {
+      "command": "git status",
+      "resources": [
+        "git status"
+      ]
+    },
+    {
+      "command": "git status --short",
+      "resources": [
+        "git status --short"
+      ]
+    },
+    {
+      "command": "git status; rm -rf scratch",
+      "resources": [
+        "git status",
+        "rm -rf scratch"
+      ]
+    },
+    {
+      "command": "git status | cat",
+      "resources": [
+        "git status",
+        "cat"
+      ]
+    },
+    {
+      "command": "echo $(cat file)",
+      "resources": [
+        "echo $(cat file)",
+        "cat file"
+      ]
+    },
+    {
+      "command": "git status > out",
+      "resources": [
+        "git status > out"
+      ]
+    },
+    {
+      "command": "cd project && git status",
+      "resources": [
+        "git status"
+      ]
+    },
+    {
+      "command": "printf '%s' \"$(git status)\"",
+      "resources": [
+        "printf '%s' \"$(git status)\"",
+        "git status"
+      ]
+    },
+    {
+      "command": "git status && rm file",
+      "resources": [
+        "git status",
+        "rm file"
+      ]
+    }
+  ]
+}

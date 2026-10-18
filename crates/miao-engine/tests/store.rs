@@ -226,8 +226,11 @@ async fn an_agent_selection_is_derived_from_the_ledger_and_idempotent() {
             deny: vec!["run_command".into()],
         }),
         permissions: None,
+        ordered_permissions: None,
         model: None,
         mode: None,
+        request: None,
+        steps: None,
     };
     assert!(matches!(
         store.set_agent("s", manifest.clone()).await,
@@ -281,8 +284,11 @@ async fn an_agent_manifest_is_bounded() {
             instructions,
             tools,
             permissions: None,
+            ordered_permissions: None,
             model: None,
             mode: None,
+            request: None,
+            steps: None,
         };
     assert!(matches!(
         store.set_agent("s", manifest("".into(), None, None)).await,

@@ -380,6 +380,15 @@ P99 25.4 ms / max 27.3 ms；主 isolate RSS 725.6 MB → 747.9 MB；FD 稳定在
 
 ---
 
+### 原生会话切换 agent
+
+`session.switchAgent` 从 host 目录解析 agent，再向引擎提交有界 manifest
+（ADR-0017）。后续 provider turn 使用其指令、有序动作/资源权限、默认模型、
+生成参数及收窄的 step 预算。原生事件投影保留 agent 切换，会话信息回报当前身份。
+TypeScript 参考语料固定 last-match 例外及 Bash AST 命令提取语义；真实 HTTP 验收
+覆盖只读 agent 拒绝写入，以及后置单文件 allow 例外实际写入成功。
+当前桥接显式拒绝 host 的 `permission_mode: auto`，不会将其静默降级。
+
 ## 9. 原生引擎启用门槛
 
 落地引擎是建设本身；以下门槛决定原生会话何时成为默认路径。

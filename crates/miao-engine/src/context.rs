@@ -307,7 +307,9 @@ pub(crate) async fn assemble_for_agent(
     let names = tools
         .definitions()
         .iter()
-        .filter(|tool| agent.is_none_or(|agent| agent.permits(&tool.name)))
+        .filter(|tool| {
+            agent.is_none_or(|agent| agent.permits(&tool.name)) && policy.tool_visible(&tool.name)
+        })
         .map(|t| t.name.clone())
         .collect::<Vec<_>>()
         .join(", ");

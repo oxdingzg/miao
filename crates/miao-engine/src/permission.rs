@@ -132,6 +132,7 @@ pub struct Policy {
     config: Config,
     revision: String,
     matchers: Vec<CompiledMatcher>,
+    ordered: Option<crate::agent_policy::Compiled>,
 }
 impl Policy {
     /// Derive an immutable policy for one agent turn. Capability limits and all
@@ -147,10 +148,18 @@ impl Policy {
         };
         agent.validate()?;
         let mut config = self.config.clone();
+        if let Some(steps) = agent.steps {
+            config.max_provider_turns = config.max_provider_turns.min(steps);
+        }
         if let Some(rules) = &agent.permissions {
             config.rules.extend(rules.iter().cloned());
         }
         let mut policy = Self::new(config)?;
+        policy.ordered = agent
+            .ordered_permissions
+            .as_ref()
+            .map(|policy| policy.compile())
+            .transpose()?;
         policy.revision = digest(&serde_json::to_vec(&serde_json::json!({
             "policy": policy.revision, "agent": agent.digest()?,
         }))?);
@@ -205,12 +214,24 @@ impl Policy {
             config,
             revision,
             matchers,
+            ordered: None,
         })
     }
     /// Snapshot the same immutable Config whose matchers enforce each tool.
     pub(crate) fn descriptor(&self) -> Value {
-        serde_json::json!({"semantics":"native-policy-v1","revision":self.revision,"config":self.config,"collaboration_mode":"checked_at_tool_dispatch"})
+        let mut descriptor = serde_json::json!({"semantics":"native-policy-v1","revision":self.revision,"config":self.config,"collaboration_mode":"checked_at_tool_dispatch"});
+        if let Some(ordered) = &self.ordered {
+            descriptor["ordered"] =
+                serde_json::to_value(ordered.descriptor()).expect("serializable agent policy");
+        }
+        descriptor
     }
+    pub(crate) fn tool_visible(&self, tool: &str) -> bool {
+        self.ordered
+            .as_ref()
+            .is_none_or(|policy| policy.visible(tool))
+    }
+
     pub fn revision(&self) -> &str {
         &self.revision
     }
@@ -260,6 +281,31 @@ impl Policy {
     /// Like [`Policy::evaluate`] but also returns the matcher that produced the
     /// decision, so callers can carry it on approval messages.
     pub fn assess(&self, tool: &str, path: &str, access: Access) -> (Decision, RuleMatch) {
+        self.assess_input(tool, path, access, None)
+    }
+
+    pub(crate) fn assess_input(
+        &self,
+        tool: &str,
+        path: &str,
+        access: Access,
+        input: Option<&Value>,
+    ) -> (Decision, RuleMatch) {
+        let base = self.assess_base(tool, path, access);
+        // The host's ordered rules never remove a capability/boundary denial
+        // or an explicit operator deny/ask. Default workspace ask may be
+        // decided by the agent's resolved rules.
+        if base.0 == Decision::Deny
+            || (base.0 == Decision::Ask && base.1.source == MatchSource::Rule)
+        {
+            return base;
+        }
+        self.ordered
+            .as_ref()
+            .map_or(base, |policy| policy.assess(tool, path, input))
+    }
+
+    fn assess_base(&self, tool: &str, path: &str, access: Access) -> (Decision, RuleMatch) {
         let bare = |decision| RuleMatch {
             tool: tool.into(),
             path: path.into(),
