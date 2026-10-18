@@ -107,7 +107,7 @@ impl Store {
         );
         let input = serde_json::to_value(input)?;
         self.call(move|conn|{
-            let tx=conn.transaction()?;let key=format!("{run}/{call}");
+            let tx=crate::store::write_tx(conn)?;let key=format!("{run}/{call}");
             let previous:Option<String>=tx.query_row("SELECT data FROM engine_event WHERE session_id=?1 AND kind='cron.scheduled' AND json_extract(data,'$.request_key')=?2 ORDER BY seq DESC LIMIT 1",params![session,key],|row|row.get(0)).optional()?;
             if let Some(previous)=previous {
                 let mut previous:Value=serde_json::from_str(&previous)?;
@@ -133,7 +133,7 @@ impl Store {
     ) -> Result<Option<Admission>, Error> {
         let (session, id) = (session.to_owned(), id.to_owned());
         self.call(move|conn|{
-            let tx=conn.transaction()?;
+            let tx=crate::store::write_tx(conn)?;
             if resolution(&tx,&session,&id)?.is_some(){return Ok(None);}
             let original:Option<String>=tx.query_row("SELECT data FROM engine_event WHERE session_id=?1 AND kind='cron.scheduled' AND json_extract(data,'$.cron_id')=?2 ORDER BY seq DESC LIMIT 1",params![session,id],|row|row.get(0)).optional()?;
             let original:Value=serde_json::from_str(&original.ok_or_else(||Error::Invalid("cron not found in this Session".into()))?)?;
@@ -162,7 +162,7 @@ impl Store {
         }
         let (session, id, state) = (session.to_owned(), id.to_owned(), state.to_owned());
         self.call(move|conn|{
-            let tx=conn.transaction()?;
+            let tx=crate::store::write_tx(conn)?;
             if resolution(&tx,&session,&id)?.is_some(){return Ok(false);}
             let exists:bool=tx.query_row("SELECT EXISTS(SELECT 1 FROM engine_event WHERE session_id=?1 AND kind='cron.scheduled' AND json_extract(data,'$.cron_id')=?2)",params![session,id],|row|row.get(0))?;
             if !exists{return Ok(false);}
@@ -187,7 +187,7 @@ impl Store {
         &self,
     ) -> Result<Vec<(String, String, String, bool, u64, u64)>, Error> {
         self.call(move|conn|{
-            let tx=conn.transaction()?;
+            let tx=crate::store::write_tx(conn)?;
             let crons={let mut stmt=tx.prepare("SELECT q.session_id,q.data FROM engine_event q WHERE q.kind='cron.scheduled' AND NOT EXISTS(SELECT 1 FROM engine_event r WHERE r.session_id=q.session_id AND r.kind='cron.resolved' AND json_extract(r.data,'$.cron_id')=json_extract(q.data,'$.cron_id')) LIMIT 65")?;let rows=stmt.query_map([],|row|Ok((row.get::<_,String>(0)?,row.get::<_,String>(1)?)))?;rows.collect::<Result<Vec<_>,_>>()?};
             if crons.len()>64{return Err(Error::Invalid("cron recovery budget exceeded".into()));}
             let mut rearm=Vec::new();

@@ -48,7 +48,7 @@ impl Store {
         }
         let (session, id) = (session.to_owned(), id.to_owned());
         self.call(move |conn| {
-            let tx=conn.transaction()?;
+            let tx=crate::store::write_tx(conn)?;
             if let Some(run) = &run {
                 let active: bool = tx.query_row(
                     "SELECT EXISTS(SELECT 1 FROM engine_run WHERE id=?1 AND session_id=?2 AND state='running')",
@@ -109,7 +109,7 @@ impl Store {
     ) -> Result<(Vec<Message>, Value), Error> {
         let session = session.to_owned();
         self.call(move |conn| {
-            let tx=conn.transaction()?;
+            let tx=crate::store::write_tx(conn)?;
             let checkpoint:Option<(u64,String)>=tx.query_row("SELECT through_seq,summary FROM engine_compaction WHERE session_id=?1 ORDER BY created_seq DESC LIMIT 1",[&session],|r|Ok((r.get(0)?,r.get(1)?))).optional()?;
             let mut selected=Vec::new();let mut bytes=0;
             let through=if let Some((through,summary))=checkpoint {
