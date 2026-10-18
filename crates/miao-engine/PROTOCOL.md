@@ -25,6 +25,7 @@ does not claim ACP or the existing miao HttpApi is compatible.
 | `unsubscribe` | `session_id` | `{accepted:true}` |
 | `admit` | `input`, `resume`, `attachments?` | `Admission` |
 | `resume` | `session_id` | `{accepted:true}` |
+| `cancel_input` | `session_id`, `input_id` | `{accepted:bool, reason?}` |
 | `cancel` | `session_id` | `{accepted:bool}` |
 | `events` | `session_id`, `after` | `Event[]` (page ≤ 100) |
 | `snapshot` | `session_id` | committed Session snapshot |
@@ -139,6 +140,23 @@ changed-hash and already-answered requests fail.
 run and cancels that owner's token as one serialized command. It returns
 `accepted: false` for a missing, idle, already-cancelled or changed run. A stale
 run ID cannot cancel the next run; a failed match also preserves pending wakes.
+
+### Pending-input cancellation
+
+`cancel_input` takes `session_id` and `input_id` and drops one admitted input
+that has not been promoted yet. The admission row is retained as `cancelled`
+evidence and an `input.cancelled` event is appended, so an exact retry of the
+admission reports `duplicate` with `pending: false` instead of resurrecting a
+prompt the operator dropped. An unknown id, or an id from another Session,
+returns `accepted: false` with `reason: "unknown"`; an already promoted prompt
+returns `accepted: false` with `reason: "promoted"` because interrupting a
+committed turn is `cancel`/`cancel_if`, not this command. Re-cancelling is
+accepted as a duplicate and appends no second event.
+
+A cancelled identity is terminal: admitting the same `session_id`/`input_id`
+again fails with `input_conflict` instead of resurrecting the dropped prompt or
+returning a receipt whose prompt never runs. A client that wants to re-send a
+cancelled prompt admits it under a fresh `input_id`.
 
 
 ### Idle Session initialization

@@ -49,6 +49,17 @@ export interface Interface {
     title: string
   }) => Effect.Effect<void, ConflictError>
   /**
+   * Drop one durably admitted input before the engine promotes it. The engine
+   * keeps the cancelled admission as durable evidence, so an exact retry cannot
+   * resurrect the prompt; an unknown or already promoted input reports `false`.
+   */
+  readonly cancelInput: (input: {
+    sessionID: SessionID
+    storage: AbsolutePath
+    location: Location.Ref
+    inputID: SessionMessage.ID
+  }) => Effect.Effect<boolean, ConflictError>
+  /**
    * Admit one durable prompt into the native engine that owns the Session.
    * The placement catalog's storage and Location are authoritative; the engine
    * child is owned by the server scope, never by the calling request.

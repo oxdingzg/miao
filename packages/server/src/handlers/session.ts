@@ -838,6 +838,17 @@ export const SessionHandler = HttpApiBuilder.group(Api, "server.session", (handl
       .handle(
         "session.inputCancel",
         Effect.fn(function* (ctx) {
+          const native = yield* Effect.serviceOption(NativeEngine.Service)
+          const placement = Option.getOrUndefined(yield* Effect.serviceOption(NativeEngine.Placement))
+          if (Option.isSome(native) && placement)
+            return {
+              cancelled: yield* native.value.cancelInput({
+                sessionID: ctx.params.sessionID,
+                storage: placement.storage,
+                location: placement.location,
+                inputID: ctx.params.messageID,
+              }),
+            }
           yield* requireTypescriptOwner(ctx.params.sessionID, "session.inputCancel")
           const cancelled = yield* session
             .cancelInput({ sessionID: ctx.params.sessionID, messageID: ctx.params.messageID })
