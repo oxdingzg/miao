@@ -134,6 +134,29 @@ pub struct Policy {
     matchers: Vec<CompiledMatcher>,
 }
 impl Policy {
+    /// Derive an immutable policy for one agent turn. Capability limits and all
+    /// configured denials remain authoritative; agent rules use the same
+    /// deny > ask > allow ordering as the base policy. Bind the revision to the
+    /// whole manifest so approvals cannot cross an agent identity change.
+    pub(crate) fn for_agent(
+        &self,
+        agent: Option<&crate::session_agent::AgentManifest>,
+    ) -> Result<Self, Error> {
+        let Some(agent) = agent else {
+            return Ok(self.clone());
+        };
+        agent.validate()?;
+        let mut config = self.config.clone();
+        if let Some(rules) = &agent.permissions {
+            config.rules.extend(rules.iter().cloned());
+        }
+        let mut policy = Self::new(config)?;
+        policy.revision = digest(&serde_json::to_vec(&serde_json::json!({
+            "policy": policy.revision, "agent": agent.digest()?,
+        }))?);
+        Ok(policy)
+    }
+
     pub fn max_provider_turns(&self) -> u32 {
         self.config.max_provider_turns
     }
@@ -328,4 +351,45 @@ pub fn context_digest(system: &str, sources: &[Value]) -> Result<String, Error> 
     Ok(digest(&serde_json::to_vec(
         &serde_json::json!({"version":1,"system":system,"sources":sources}),
     )?))
+}
+
+#[cfg(test)]
+mod agent_policy_tests {
+    use super::*;
+
+    #[test]
+    fn overlay_cannot_lift_base_denial_and_revision_binds_agent_identity() {
+        let base = Policy::new(Config {
+            mode: Mode::Workspace,
+            rules: vec![Rule {
+                tool: "write_file".into(),
+                path: "private/**".into(),
+                decision: Decision::Deny,
+            }],
+            ..Config::default()
+        })
+        .unwrap();
+        let agent: crate::session_agent::AgentManifest =
+            serde_json::from_value(serde_json::json!({
+                "name":"first", "permissions":[{"tool":"write_file","path":"**","decision":"allow"}]
+            }))
+            .unwrap();
+        let policy = base.for_agent(Some(&agent)).unwrap();
+        assert_eq!(
+            policy.evaluate("write_file", "private/a", Access::Write),
+            Decision::Deny
+        );
+        assert_eq!(
+            policy.evaluate("write_file", "public/a", Access::Write),
+            Decision::Allow
+        );
+        assert_ne!(base.revision(), policy.revision());
+        let mut other = agent;
+        other.name = "second".into();
+        assert_ne!(
+            policy.revision(),
+            base.for_agent(Some(&other)).unwrap().revision()
+        );
+        assert_eq!(base.revision(), base.for_agent(None).unwrap().revision());
+    }
 }

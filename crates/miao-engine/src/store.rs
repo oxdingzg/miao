@@ -1109,6 +1109,9 @@ impl Store {
                 tx.execute("INSERT INTO engine_context VALUES(?1,1,?2,?3,?4,?5)",params![target,fingerprint,system,sources,event.seq])?;
             }
             let source_watermark=if message_seq.is_none(){tx.query_row("SELECT next_seq FROM engine_session WHERE id=?1",[&parent],|r|r.get::<_,u64>(0))?}else{seq};
+            if let Some((agent,hash))=crate::session_agent::selected_at(&tx,&parent,source_watermark)? {
+                append(&tx,&target,"session.agent.selected",json!({"agent":agent,"agent_hash":hash,"inherited":true}))?;
+            }
             if let Some(binding)=crate::session_model::selected_at(&tx,&parent,source_watermark)? {
                 append(&tx,&target,"session.model.selected",json!({"binding":binding,"inherited":true}))?;
             }

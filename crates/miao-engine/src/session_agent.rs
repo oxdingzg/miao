@@ -100,10 +100,31 @@ impl AgentManifest {
         {
             return Err(invalid("permissions"));
         }
+        if let Some(rules) = &self.permissions {
+            if rules
+                .iter()
+                .any(|rule| rule.tool.len() > MAX_NAME || rule.path.len() > 4096)
+            {
+                return Err(invalid("permission patterns"));
+            }
+            crate::permission::Policy::new(crate::permission::Config {
+                rules: rules.clone(),
+                ..crate::permission::Config::default()
+            })?;
+        }
         if let Some(binding) = &self.model {
             binding.validate()?;
         }
         Ok(())
+    }
+
+    /// This check also runs at dispatch, not just disclosure: a model may
+    /// hallucinate a call that was never in its advertised tool list.
+    pub(crate) fn permits(&self, name: &str) -> bool {
+        self.tools.as_ref().is_none_or(|surface| {
+            (surface.allow.is_empty() || surface.allow.iter().any(|tool| tool == name))
+                && !surface.deny.iter().any(|tool| tool == name)
+        })
     }
 
     /// The name as an XML attribute value. A name is data: it must not be able
@@ -132,10 +153,18 @@ pub(crate) fn selected(
     tx: &Transaction<'_>,
     session: &str,
 ) -> Result<Option<(AgentManifest, String)>, Error> {
+    selected_at(tx, session, i64::MAX as u64)
+}
+
+pub(crate) fn selected_at(
+    tx: &Transaction<'_>,
+    session: &str,
+    cursor: u64,
+) -> Result<Option<(AgentManifest, String)>, Error> {
     let value: Option<String> = tx
         .query_row(
             "SELECT data FROM engine_event WHERE session_id=?1 AND kind='session.agent.selected' AND seq<=?2 ORDER BY seq DESC LIMIT 1",
-            rusqlite::params![session, i64::MAX],
+            rusqlite::params![session, cursor.min(i64::MAX as u64)],
             |row| row.get(0),
         )
         .optional()?;
@@ -174,6 +203,28 @@ impl Store {
             }
             if selected(&tx, &session)?.is_some_and(|(_, recorded)| recorded == hash) {
                 return Ok(json!({"agent_hash": hash, "changed": false}));
+            }
+            // A queued approval reply must not outlive the authority it was
+            // requested under. Invalidate pending approvals in this same write
+            // transaction, so a concurrent reply either resolves before the
+            // switch or observes a resolved approval afterwards.
+            let pending = {
+                let mut statement = tx.prepare(
+                    "SELECT id FROM engine_approval WHERE session_id=?1 AND state='pending'",
+                )?;
+                let rows = statement.query_map([&session], |row| row.get::<_, String>(0))?;
+                rows.collect::<Result<Vec<_>, _>>()?
+            };
+            for id in pending {
+                tx.execute("UPDATE engine_approval SET state='deny' WHERE id=?1", [&id])?;
+                append(
+                    &tx,
+                    &session,
+                    "approval.resolved",
+                    json!({
+                        "request_id":id,"state":"deny","reason":"agent_changed",
+                    }),
+                )?;
             }
             append(
                 &tx,

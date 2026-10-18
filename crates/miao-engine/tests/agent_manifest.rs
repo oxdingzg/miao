@@ -300,3 +300,247 @@ async fn an_agent_naming_an_unknown_tool_is_refused_at_admission() {
     assert!(store.agent("s").await.unwrap().is_none());
     runtime.shutdown().await;
 }
+
+#[tokio::test]
+async fn a_hallucinated_tool_outside_the_agent_surface_never_executes() {
+    let dir = tempfile::tempdir().unwrap();
+    let (runtime, store, _) = setup(dir.path()).await;
+    let mut agent = manifest();
+    agent.tools = Some(AgentTools {
+        allow: vec!["read_file".into()],
+        deny: vec![],
+    });
+    runtime.set_agent("s", agent).await.unwrap();
+    // The fixture asks for write_file even though it was not advertised.
+    turn(&runtime, &store, "one").await;
+    assert!(!dir.path().join("work/note.txt").exists());
+    assert!(store
+        .events("s", 0, 500)
+        .await
+        .unwrap()
+        .iter()
+        .any(|event| event.kind == "permission_denied"
+            && event.data["reason"] == "agent_tool_surface"));
+    runtime.shutdown().await;
+}
+
+#[tokio::test]
+async fn agent_denial_overrides_base_allow_and_is_used_during_execution() {
+    let dir = tempfile::tempdir().unwrap();
+    let (runtime, store, _) = setup(dir.path()).await;
+    let mut agent = manifest();
+    agent.tools = None;
+    agent.permissions = Some(vec![miao_engine::permission::Rule {
+        tool: "write_file".into(),
+        path: "**".into(),
+        decision: miao_engine::permission::Decision::Deny,
+    }]);
+    runtime.set_agent("s", agent).await.unwrap();
+    turn(&runtime, &store, "one").await;
+    assert!(!dir.path().join("work/note.txt").exists());
+    let events = store.events("s", 0, 500).await.unwrap();
+    let start = events
+        .iter()
+        .find(|event| event.kind == "provider.started")
+        .unwrap();
+    let denial = events
+        .iter()
+        .find(|event| event.kind == "permission_denied" && event.data["reason"] == "policy")
+        .unwrap();
+    assert_eq!(
+        start.data["policy_revision"],
+        denial.data["policy_revision"]
+    );
+    runtime.shutdown().await;
+}
+
+#[tokio::test]
+async fn switching_agents_invalidates_pending_approval_and_its_late_reply() {
+    use miao_engine::{
+        approval::{Approval, Response},
+        permission::Decision,
+        protocol::Error,
+    };
+    let dir = tempfile::tempdir().unwrap();
+    let (runtime, store, _) = setup(dir.path()).await;
+    let mut agent = manifest();
+    agent.tools = None;
+    agent.permissions = Some(vec![miao_engine::permission::Rule {
+        tool: "write_file".into(),
+        path: "**".into(),
+        decision: Decision::Ask,
+    }]);
+    runtime.set_agent("s", agent.clone()).await.unwrap();
+    runtime
+        .admit(
+            Input {
+                session_id: "s".into(),
+                input_id: "one".into(),
+                prompt: "go".into(),
+                delivery: Delivery::Steer,
+            },
+            true,
+        )
+        .await
+        .unwrap();
+    let approval: Approval = tokio::time::timeout(std::time::Duration::from_secs(5), async {
+        loop {
+            if let Some(event) = store
+                .events("s", 0, 500)
+                .await
+                .unwrap()
+                .into_iter()
+                .find(|event| event.kind == "approval.requested")
+            {
+                break serde_json::from_value(event.data).unwrap();
+            }
+            tokio::time::sleep(std::time::Duration::from_millis(5)).await;
+        }
+    })
+    .await
+    .unwrap();
+    agent.name = "different-agent".into();
+    runtime.set_agent("s", agent).await.unwrap();
+    assert_eq!(
+        store.approval_state(&approval.request_id).await.unwrap(),
+        "deny"
+    );
+    let response = Response {
+        request_id: approval.request_id.clone(),
+        input_hash: approval.input_hash,
+        policy_revision: approval.policy_revision,
+        decision: Decision::Allow,
+        matcher: None,
+    };
+    assert!(matches!(
+        runtime
+            .approve(&runtime.controller(), "s", response.clone())
+            .await,
+        Err(Error::ApprovalMismatch)
+    ));
+    // Even a reply queued before the switch cannot bypass the transactional
+    // invalidation by talking straight to the store's final resolution path.
+    assert!(matches!(
+        store.resolve_approval("s", response).await,
+        Err(Error::ApprovalResolved)
+    ));
+    assert!(!dir.path().join("work/note.txt").exists());
+    runtime.shutdown().await;
+}
+
+struct Readers;
+#[async_trait]
+impl Provider for Readers {
+    async fn stream(
+        &self,
+        request: ModelRequest,
+        _: mpsc::Sender<Value>,
+        _: CancellationToken,
+    ) -> Result<Reply, ProviderError> {
+        let done = request.messages.iter().any(|message| {
+            message.role == "tool"
+                || message
+                    .content
+                    .as_array()
+                    .is_some_and(|parts| parts.iter().any(|part| part["type"] == "tool_result"))
+        });
+        Ok(Reply {
+            content: if done {
+                json!([{"type":"text","text":"done"}])
+            } else {
+                json!([
+                    {"type":"tool_use","id":"a","name":"read_file","input":{"path":"a.txt"}},
+                    {"type":"tool_use","id":"b","name":"read_file","input":{"path":"b.txt"}}
+                ])
+            },
+            usage: json!({}),
+            needs_tools: !done,
+        })
+    }
+}
+
+#[tokio::test]
+async fn parallel_read_fast_path_cannot_bypass_agent_denial() {
+    let dir = tempfile::tempdir().unwrap();
+    let workspace = dir.path().join("work");
+    std::fs::create_dir_all(&workspace).unwrap();
+    std::fs::write(workspace.join("a.txt"), "secret-a").unwrap();
+    std::fs::write(workspace.join("b.txt"), "secret-b").unwrap();
+    let store = Store::open(dir.path().join("engine.db")).await.unwrap();
+    let runtime = Runtime::with_policy(
+        store.clone(),
+        Arc::new(Readers),
+        Tools::new(&workspace).await.unwrap(),
+        Policy::new(Config::default()).unwrap(),
+    )
+    .await
+    .unwrap();
+    store
+        .admit(Input {
+            session_id: "s".into(),
+            input_id: "warm".into(),
+            prompt: "warm".into(),
+            delivery: Delivery::Queue,
+        })
+        .await
+        .unwrap();
+    store.cancel_input("s", "warm").await.unwrap();
+    let mut agent = manifest();
+    agent.tools = Some(AgentTools {
+        allow: vec![],
+        deny: vec!["read_file".into()],
+    });
+    runtime.set_agent("s", agent).await.unwrap();
+    turn(&runtime, &store, "one").await;
+    let events = store.events("s", 0, 500).await.unwrap();
+    assert!(!events
+        .iter()
+        .any(|event| event.kind == "tool.parallel.started"));
+    assert_eq!(
+        events
+            .iter()
+            .filter(|event| event.kind == "permission_denied"
+                && event.data["reason"] == "agent_tool_surface")
+            .count(),
+        2
+    );
+    let history = serde_json::to_string(&store.history("s").await.unwrap()).unwrap();
+    assert!(!history.contains("secret-a"));
+    assert!(!history.contains("secret-b"));
+    runtime.shutdown().await;
+}
+
+#[tokio::test]
+async fn a_fork_inherits_the_agent_at_its_selected_history_boundary() {
+    let dir = tempfile::tempdir().unwrap();
+    let (runtime, store, _) = setup(dir.path()).await;
+    let mut first = manifest();
+    first.tools = None;
+    runtime.set_agent("s", first).await.unwrap();
+    turn(&runtime, &store, "one").await;
+    let boundary = store
+        .events("s", 0, 500)
+        .await
+        .unwrap()
+        .into_iter()
+        .rfind(|event| event.kind == "message.committed")
+        .unwrap()
+        .seq;
+    let mut second = manifest();
+    second.name = "later-agent".into();
+    runtime.set_agent("s", second).await.unwrap();
+    store
+        .fork("s", "at-boundary", Some(boundary))
+        .await
+        .unwrap();
+    store.fork("s", "current", None).await.unwrap();
+    assert_eq!(
+        store.agent("at-boundary").await.unwrap().unwrap().0.name,
+        "reviewer"
+    );
+    assert_eq!(
+        store.agent("current").await.unwrap().unwrap().0.name,
+        "later-agent"
+    );
+    runtime.shutdown().await;
+}
