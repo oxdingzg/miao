@@ -505,9 +505,30 @@ impl Store {
     /// Safe-boundary promotion: all steers first, then one queued item only when
     /// idle. Projection and promotion events share the same transaction.
     pub async fn promote(&self, session: &str, idle: bool) -> Result<Vec<Event>, Error> {
+        self.promote_inner(session, idle, None).await
+    }
+
+    /// `promote` under a Session claim: only the current owner may turn admitted
+    /// input into a visible user message.
+    pub async fn promote_fenced(
+        &self,
+        session: &str,
+        idle: bool,
+        lease: &SessionLease,
+    ) -> Result<Vec<Event>, Error> {
+        self.promote_inner(session, idle, Some(lease.clone())).await
+    }
+
+    async fn promote_inner(
+        &self,
+        session: &str,
+        idle: bool,
+        lease: Option<SessionLease>,
+    ) -> Result<Vec<Event>, Error> {
         let session = session.to_owned();
         self.call(move |conn| {
             let tx = conn.transaction()?;
+            if let Some(lease) = &lease { require_lease(&tx, &session, lease)?; }
             let mut pending: Vec<(String, String, Option<String>)> = {
                 let mut stmt = tx.prepare("SELECT id,prompt,attachments FROM engine_input WHERE session_id=?1 AND state='pending' AND delivery='steer' ORDER BY admitted_seq")?;
                 let rows = stmt.query_map([&session], |r| Ok((r.get(0)?,r.get(1)?,r.get(2)?)))?;
@@ -642,6 +663,27 @@ impl Store {
     /// Persist exactly what the provider will observe, independent of mutable
     /// files. Identical baseline/sources reuse the current epoch and cache body.
     pub async fn select_context(&self, session: &str, bundle: ContextBundle) -> Result<u64, Error> {
+        self.select_context_inner(session, bundle, None).await
+    }
+
+    /// `select_context` under a Session claim: a superseded writer cannot move
+    /// the Session to a new context epoch.
+    pub async fn select_context_fenced(
+        &self,
+        session: &str,
+        bundle: ContextBundle,
+        lease: &SessionLease,
+    ) -> Result<u64, Error> {
+        self.select_context_inner(session, bundle, Some(lease.clone()))
+            .await
+    }
+
+    async fn select_context_inner(
+        &self,
+        session: &str,
+        bundle: ContextBundle,
+        lease: Option<SessionLease>,
+    ) -> Result<u64, Error> {
         if bundle.system.len() > 65536
             || bundle.sources.len() > 16
             || serde_json::to_vec(&bundle.sources)?.len() > 65536
@@ -652,6 +694,7 @@ impl Store {
         let session = session.to_owned();
         self.call(move |conn| {
             let tx=conn.transaction()?;
+            if let Some(lease) = &lease { require_lease(&tx, &session, lease)?; }
             let previous:Option<(u64,String)>=tx.query_row("SELECT epoch,fingerprint FROM engine_context WHERE session_id=?1 ORDER BY epoch DESC LIMIT 1",[&session],|r|Ok((r.get(0)?,r.get(1)?))).optional()?;
             if let Some((epoch,fingerprint))=&previous {if fingerprint==&bundle.fingerprint{return Ok(*epoch);}}
             let epoch=previous.map(|(epoch,_)|epoch+1).unwrap_or(1);
@@ -966,9 +1009,29 @@ impl Store {
     }
 
     pub async fn start_run(&self, session: &str, run: &str) -> Result<Event, Error> {
+        self.start_run_inner(session, run, None).await
+    }
+
+    /// `start_run` under a Session claim: a superseded writer cannot open a run.
+    pub async fn start_run_fenced(
+        &self,
+        session: &str,
+        run: &str,
+        lease: &SessionLease,
+    ) -> Result<Event, Error> {
+        self.start_run_inner(session, run, Some(lease.clone())).await
+    }
+
+    async fn start_run_inner(
+        &self,
+        session: &str,
+        run: &str,
+        lease: Option<SessionLease>,
+    ) -> Result<Event, Error> {
         let (session, run) = (session.to_owned(), run.to_owned());
         self.call(move |conn| {
             let tx = conn.transaction()?;
+            if let Some(lease) = &lease { require_lease(&tx, &session, lease)?; }
             tx.execute(
                 "INSERT INTO engine_run VALUES(?1,?2,'running')",
                 params![run, session],
@@ -1008,6 +1071,33 @@ impl Store {
         name: &str,
         input: Value,
     ) -> Result<Event, Error> {
+        self.tool_dispatch_inner(session, run, id, name, input, None).await
+    }
+
+    /// `tool_dispatch` under a Session claim: a superseded writer cannot start a
+    /// tool side effect.
+    pub async fn tool_dispatch_fenced(
+        &self,
+        session: &str,
+        run: &str,
+        id: &str,
+        name: &str,
+        input: Value,
+        lease: &SessionLease,
+    ) -> Result<Event, Error> {
+        self.tool_dispatch_inner(session, run, id, name, input, Some(lease.clone()))
+            .await
+    }
+
+    async fn tool_dispatch_inner(
+        &self,
+        session: &str,
+        run: &str,
+        id: &str,
+        name: &str,
+        input: Value,
+        lease: Option<SessionLease>,
+    ) -> Result<Event, Error> {
         let (session, run, id, name) = (
             session.to_owned(),
             run.to_owned(),
@@ -1016,6 +1106,7 @@ impl Store {
         );
         self.call(move |conn| {
             let tx = conn.transaction()?;
+            if let Some(lease) = &lease { require_lease(&tx, &session, lease)?; }
             tx.execute(
                 "INSERT INTO engine_tool VALUES(?1,?2,?3,?4,'dispatched')",
                 params![id, run, name, serde_json::to_string(&input)?],
@@ -1038,9 +1129,33 @@ impl Store {
         id: &str,
         result: Value,
     ) -> Result<Event, Error> {
+        self.tool_settle_inner(session, id, result, None).await
+    }
+
+    /// `tool_settle` under a Session claim: a superseded writer cannot settle a
+    /// tool call it no longer owns.
+    pub async fn tool_settle_fenced(
+        &self,
+        session: &str,
+        id: &str,
+        result: Value,
+        lease: &SessionLease,
+    ) -> Result<Event, Error> {
+        self.tool_settle_inner(session, id, result, Some(lease.clone()))
+            .await
+    }
+
+    async fn tool_settle_inner(
+        &self,
+        session: &str,
+        id: &str,
+        result: Value,
+        lease: Option<SessionLease>,
+    ) -> Result<Event, Error> {
         let (session, id) = (session.to_owned(), id.to_owned());
         self.call(move |conn| {
             let tx = conn.transaction()?;
+            if let Some(lease) = &lease { require_lease(&tx, &session, lease)?; }
             let changed = tx.execute("UPDATE engine_tool SET state='completed' WHERE id=?1 AND state='dispatched' AND run_id IN (SELECT id FROM engine_run WHERE session_id=?2 AND state='running')",params![id,session])?;
             if changed != 1 { return Err(Error::Invalid("tool call is not dispatchable".into())); }
             let e = append(&tx,&session,"tool.completed",json!({"call_id":id,"result":result}))?;
@@ -1156,7 +1271,20 @@ impl Store {
         anchor: Option<u64>,
         content: Value,
     ) -> Result<Event, Error> {
-        self.assistant_projection(session, run, anchor, content, None)
+        self.assistant_projection(session, run, anchor, content, None, None)
+            .await
+    }
+
+    /// `assistant_reply` under a Session claim.
+    pub async fn assistant_reply_fenced(
+        &self,
+        session: &str,
+        run: &str,
+        anchor: Option<u64>,
+        content: Value,
+        lease: &SessionLease,
+    ) -> Result<Event, Error> {
+        self.assistant_projection(session, run, anchor, content, None, Some(lease.clone()))
             .await
     }
 
@@ -1176,6 +1304,30 @@ impl Store {
             anchor,
             content,
             Some(json!({"run_id":run,"step":step,"provider":identity,"agent":null})),
+            None,
+        )
+        .await
+    }
+
+    /// `assistant_reply_profiled` under a Session claim.
+    #[allow(clippy::too_many_arguments)]
+    pub async fn assistant_reply_profiled_fenced(
+        &self,
+        session: &str,
+        run: &str,
+        step: usize,
+        anchor: Option<u64>,
+        content: Value,
+        identity: Option<crate::provider::Identity>,
+        lease: &SessionLease,
+    ) -> Result<Event, Error> {
+        self.assistant_projection(
+            session,
+            run,
+            anchor,
+            content,
+            Some(json!({"run_id":run,"step":step,"provider":identity,"agent":null})),
+            Some(lease.clone()),
         )
         .await
     }
@@ -1187,10 +1339,12 @@ impl Store {
         anchor: Option<u64>,
         content: Value,
         profile: Option<Value>,
+        lease: Option<SessionLease>,
     ) -> Result<Event, Error> {
         let (session, run) = (session.to_owned(), run.to_owned());
         self.call(move |conn| {
             let tx=conn.transaction()?;
+            if let Some(lease) = &lease { require_lease(&tx, &session, lease)?; }
             let active:bool=tx.query_row("SELECT EXISTS(SELECT 1 FROM engine_run WHERE id=?1 AND session_id=?2 AND state='running')",params![run,session],|r|r.get(0))?;
             if !active { return Err(Error::Invalid("run is not active".into())); }
             for block in content.as_array().ok_or_else(||Error::Invalid("assistant content".into()))? {
@@ -1318,9 +1472,32 @@ impl Store {
     }
 
     pub async fn finish_run(&self, session: &str, run: &str, reason: &str) -> Result<Event, Error> {
+        self.finish_run_inner(session, run, reason, None).await
+    }
+
+    /// `finish_run` under a Session claim: only the current owner closes its run.
+    pub async fn finish_run_fenced(
+        &self,
+        session: &str,
+        run: &str,
+        reason: &str,
+        lease: &SessionLease,
+    ) -> Result<Event, Error> {
+        self.finish_run_inner(session, run, reason, Some(lease.clone()))
+            .await
+    }
+
+    async fn finish_run_inner(
+        &self,
+        session: &str,
+        run: &str,
+        reason: &str,
+        lease: Option<SessionLease>,
+    ) -> Result<Event, Error> {
         let (session, run, reason) = (session.to_owned(), run.to_owned(), reason.to_owned());
         self.call(move |conn| {
             let tx = conn.transaction()?;
+            if let Some(lease) = &lease { require_lease(&tx, &session, lease)?; }
             let changed = tx.execute(
                 "UPDATE engine_run SET state=?3 WHERE id=?1 AND session_id=?2 AND state='running'",
                 params![run, session, reason],
