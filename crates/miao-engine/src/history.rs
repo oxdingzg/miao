@@ -109,7 +109,7 @@ impl Store {
     ) -> Result<(Vec<Message>, Value), Error> {
         let session = session.to_owned();
         self.call(move |conn| {
-            let tx=crate::store::write_tx(conn)?;
+            let tx=conn.transaction()?;
             let checkpoint:Option<(u64,String)>=tx.query_row("SELECT through_seq,summary FROM engine_compaction WHERE session_id=?1 ORDER BY created_seq DESC LIMIT 1",[&session],|r|Ok((r.get(0)?,r.get(1)?))).optional()?;
             let mut selected=Vec::new();let mut bytes=0;
             let through=if let Some((through,summary))=checkpoint {

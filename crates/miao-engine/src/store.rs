@@ -734,7 +734,7 @@ impl Store {
     pub async fn snapshot(&self, session: &str) -> Result<Value, Error> {
         let session = session.to_owned();
         self.call(move |conn| {
-            let tx=write_tx(conn)?;
+            let tx=conn.transaction()?;
             let cursor:u64=tx.query_row("SELECT next_seq FROM engine_session WHERE id=?1",[&session],|r|r.get(0)).optional()?.ok_or_else(||Error::Invalid("Session does not exist".into()))?;
             let location:Option<String>=tx.query_row("SELECT root FROM engine_location WHERE session_id=?1",[&session],|r|r.get(0)).optional()?;
             let messages=projected(&tx,&session,cursor)?;
