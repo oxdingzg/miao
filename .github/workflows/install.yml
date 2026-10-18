@@ -62,6 +62,8 @@ jobs:
           & "$HOME\.miao\bin\miao.exe" --version
       - name: Exercise dedicated engine install and rollback
         run: ./script/test-install-engine.ps1
+      - name: Exercise product engine install and recovery
+        run: ./script/test-install-product-engine.ps1
       - name: Re-run is a no-op for the same version
         run: Get-Content -Raw ./install.ps1 | Invoke-Expression
       - name: Install a pinned version through parameters
