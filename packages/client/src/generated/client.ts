@@ -770,7 +770,7 @@ export function make(options: ClientOptions) {
             path: `/api/session/${encodeURIComponent(input.sessionID)}/skill`,
             body: { skill: input["skill"], resume: input["resume"] },
             successStatus: 204,
-            declaredStatuses: [404, 503, 400, 410, 409, 401],
+            declaredStatuses: [404, 503, 409, 400, 410, 401],
             empty: true,
           },
           requestOptions,

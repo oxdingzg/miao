@@ -238,6 +238,16 @@ export const fromOwners = (
       ),
     )(await connection.client.request("model_catalog"))
   return {
+    inject: (input) =>
+      read(input, async (connection) => {
+        await connection.client.request("inject", {
+          session_id: input.sessionID,
+          ...(input.id ? { input_id: input.id } : {}),
+          text: input.text,
+          source: input.source,
+        })
+        if (input.resume !== false) await connection.client.request("wake", { session_id: input.sessionID })
+      }).pipe(Effect.asVoid),
     selectAccount: (input) =>
       read(input, (connection) =>
         connection.client.request("select_account", {

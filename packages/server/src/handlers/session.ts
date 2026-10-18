@@ -3,6 +3,7 @@ import { Image } from "@miao/core/image"
 import { Database } from "@miao/core/database/database"
 import { Catalog } from "@miao/core/catalog"
 import { SessionV2 } from "@miao/core/session"
+import { SkillV2 } from "@miao/core/skill"
 import { AgentV2 } from "@miao/core/agent"
 import { PluginV2 } from "@miao/core/plugin"
 import { SessionImageNormalize } from "@miao/core/session/image-normalize"
@@ -431,6 +432,25 @@ export const SessionHandler = HttpApiBuilder.group(Api, "server.session", (handl
       .handle(
         "session.skill",
         Effect.fn(function* (ctx) {
+          const native = Option.getOrUndefined(yield* Effect.serviceOption(NativeEngine.Service))
+          const placement = Option.getOrUndefined(yield* Effect.serviceOption(NativeEngine.Placement))
+          if (native && placement) {
+            yield* booted
+            const skills = yield* SkillV2.Service
+            const skill = (yield* skills.list()).find((item) => item.name === ctx.payload.skill)
+            if (!skill)
+              return yield* new SessionNotFoundError({
+                sessionID: ctx.params.sessionID,
+                message: `Skill not found: ${ctx.payload.skill}`,
+              })
+            return yield* native.inject({
+              sessionID: ctx.params.sessionID,
+              ...placement,
+              text: skill.content,
+              source: `skill:${skill.name}`,
+              resume: ctx.payload.resume,
+            })
+          }
           yield* requireTypescriptOwner(ctx.params.sessionID, "session.skill")
           yield* session
             .skill({

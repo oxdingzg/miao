@@ -224,6 +224,17 @@ pub enum Command {
         #[serde(default)]
         attachments: Vec<Attachment>,
     },
+    Inject {
+        session_id: String,
+        #[serde(default)]
+        input_id: Option<String>,
+        text: String,
+        source: String,
+    },
+    /// Advisory wake: drain eligible inbox work without forcing continuation.
+    Wake {
+        session_id: String,
+    },
     Resume {
         session_id: String,
     },

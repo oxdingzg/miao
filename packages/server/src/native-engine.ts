@@ -18,6 +18,16 @@ import type { PromptInput } from "@miao/schema/prompt-input"
 import type { AbsolutePath } from "@miao/core/schema"
 
 export interface Interface {
+  readonly inject: (input: {
+    sessionID: SessionID
+    storage: AbsolutePath
+    location: Location.Ref
+    id?: SessionMessage.ID
+    text: string
+    source: string
+    resume?: boolean
+  }) => Effect.Effect<void, ConflictError>
+
   readonly selectAccount: (input: {
     sessionID: SessionID
     storage: AbsolutePath

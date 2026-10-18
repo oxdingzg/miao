@@ -61,7 +61,11 @@ export async function readTranscript(
   const reducer = SessionTranscript.create()
   let messages: SessionTranscript.Reduction["messages"] = []
   for (const event of page.events) {
-    if (event.type === "session.next.prompt.admitted" && active.has(sequence(event))) ids.add(event.data.messageID)
+    if (
+      (event.type === "session.next.prompt.admitted" || event.type === "session.next.synthetic") &&
+      active.has(sequence(event))
+    )
+      ids.add(event.data.messageID)
     const reduced = project(reducer, messages, event)
     if (reduced) messages = reduced.messages
   }

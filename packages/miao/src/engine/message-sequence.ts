@@ -15,6 +15,7 @@ export function engineMessageSequence(sessionID: string, requested: SessionMessa
       const id = data.input_id.startsWith("msg_") ? data.input_id : messageID(sessionID, event.seq)
       if (id === requested) return event.seq
     }
+    if (event.kind === "message.synthetic" && messageID(sessionID, event.seq) === requested) return event.seq
     if (event.kind === "message.committed") {
       const data = Schema.decodeUnknownSync(Committed)(event.data)
       if (data.role === "assistant" && messageID(sessionID, data.anchor_seq ?? event.seq) === requested)
