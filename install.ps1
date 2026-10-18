@@ -75,15 +75,22 @@ function Get-MiaoEngineCapabilities {
   # Windows PowerShell 5.1 promotes native stderr into an error record. A
   # legacy --capabilities refusal is an expected compatibility result.
   $ErrorActionPreference = 'Continue'
-  $reported = & $Binary --capabilities 2>$null | Out-String
-  if ($LASTEXITCODE -ne 0) { return $null }
+  $previousExitCode = $LASTEXITCODE
   try {
-    $capabilities = $reported | ConvertFrom-Json -ErrorAction Stop
-    if ($capabilities.name -ne 'miao-engine' -or $capabilities.version -isnot [string]) { return $null }
-    if ($capabilities.protocol -isnot [int] -and $capabilities.protocol -isnot [long]) { return $null }
-    if ($capabilities.protocol -lt 2) { return $null }
-    return $capabilities
-  } catch { return $null }
+    $reported = & $Binary --capabilities 2>$null | Out-String
+    if ($LASTEXITCODE -ne 0) { return $null }
+    try {
+      $capabilities = $reported | ConvertFrom-Json -ErrorAction Stop
+      if ($capabilities.name -ne 'miao-engine' -or $capabilities.version -isnot [string]) { return $null }
+      if ($capabilities.protocol -isnot [int] -and $capabilities.protocol -isnot [long]) { return $null }
+      if ($capabilities.protocol -lt 2) { return $null }
+      return $capabilities
+    } catch { return $null }
+  } finally {
+    # CI shells propagate LASTEXITCODE; an optional compatibility probe must
+    # not turn a successful TypeScript-only installation into a failed job.
+    $global:LASTEXITCODE = $previousExitCode
+  }
 }
 
 function Install-MiaoEngine {

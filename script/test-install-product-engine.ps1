@@ -64,6 +64,7 @@ public class Fixture {
     $failed = $false
     try { & $installer -Version '1.0.1' -EngineBinary $bad -NoModifyPath } catch { $failed = $true }
     if (-not $failed) { throw 'Invalid engine source was accepted.' }
+    if ($LASTEXITCODE -ne 0) { throw 'An expected compatibility refusal leaked its process exit code.' }
     if ((Get-FileHash -LiteralPath $current).Hash -ne $currentHash) { throw 'Invalid source replaced the installed engine.' }
     if ((Get-FileHash -LiteralPath $previous).Hash -ne $previousHash) { throw 'Invalid source changed the rollback slot.' }
   }
