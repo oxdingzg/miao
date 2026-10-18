@@ -8,13 +8,13 @@ use miao_engine::{
     tools::Tools,
 };
 use serde_json::{json, Value};
-use std::sync::Arc;
-use tokio::sync::{mpsc, Notify};
+use std::{sync::Arc, time::Duration};
+use tokio::sync::{broadcast, mpsc};
 use tokio_util::sync::CancellationToken;
 
 struct Submitter {
-    next: Arc<Notify>,
-    monitor_command: String,
+    command: String,
+    timeout_ms: u64,
 }
 #[async_trait]
 impl Provider for Submitter {
@@ -26,32 +26,30 @@ impl Provider for Submitter {
     ) -> Result<Reply, ProviderError> {
         if request.messages.len() == 1 {
             return Ok(Reply {
-                content: json!([{"type":"tool_use","id":"call_monitor","name":"monitor","input":{"command":self.monitor_command,"description":"fixture watch","pattern":"READY","timeout_ms":30000}}]),
+                content: json!([{"type":"tool_use","id":"call_monitor","name":"monitor","input":{"command":self.command,"description":"fixture watch","pattern":"READY","timeout_ms":self.timeout_ms}}]),
                 usage: json!({}),
                 needs_tools: true,
             });
-        }
-        if request.messages.last().is_some_and(|message| {
-            message.content.as_array().is_some_and(|parts| {
-                parts.iter().any(|part| {
-                    part["type"] == "text"
-                        && part["text"]
-                            .as_str()
-                            .is_some_and(|text| text.contains("READY"))
-                })
-            })
-        }) {
-            self.next.notify_one();
-            cancel.cancelled().await;
-            return Err(ProviderError::Interrupted);
         }
         cancel.cancelled().await;
         Err(ProviderError::Interrupted)
     }
 }
 
-fn policy() -> Policy {
-    Policy::new(Config {
+async fn start(
+    command: &str,
+    timeout_ms: u64,
+) -> (
+    Runtime,
+    Store,
+    broadcast::Receiver<Value>,
+    tempfile::TempDir,
+) {
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path().join("workspace");
+    std::fs::create_dir(&root).unwrap();
+    let store = Store::open(dir.path().join("engine.db")).await.unwrap();
+    let policy = Policy::new(Config {
         mode: Mode::Workspace,
         allow_process: true,
         allow_background: true,
@@ -62,32 +60,22 @@ fn policy() -> Policy {
         }],
         ..Config::default()
     })
-    .unwrap()
-}
-
-#[tokio::test]
-async fn monitor_streams_pattern_matched_notices_and_cancel_stops_it() {
-    let dir = tempfile::tempdir().unwrap();
-    let root = dir.path().join("workspace");
-    std::fs::create_dir(&root).unwrap();
-    let store = Store::open(dir.path().join("engine.db")).await.unwrap();
-    let next = Arc::new(Notify::new());
-    let monitor_command =
-        "echo READY-line; echo noise-line; echo READY-final; sleep 60".to_string();
+    .unwrap();
     let runtime = Runtime::with_policy(
         store.clone(),
         Arc::new(Submitter {
-            next: next.clone(),
-            monitor_command,
+            command: command.into(),
+            timeout_ms,
         }),
         Tools::new(&root)
             .await
             .unwrap()
             .with_process_runner(env!("CARGO_BIN_EXE_miao-engine").into()),
-        policy(),
+        policy,
     )
     .await
     .unwrap();
+    let progress = runtime.progress();
     runtime
         .admit(
             Input {
@@ -100,50 +88,151 @@ async fn monitor_streams_pattern_matched_notices_and_cancel_stops_it() {
         )
         .await
         .unwrap();
-    // The child is alive for the remainder of the test; cancel it through the
-    // session state flow and assert the cancellation path marks the monitor.
-    let deadline = tokio::time::Instant::now() + std::time::Duration::from_secs(10);
+    (runtime, store, progress, dir)
+}
+
+async fn settled(store: &Store) -> Value {
+    let deadline = tokio::time::Instant::now() + Duration::from_secs(10);
     loop {
         let jobs = store.jobs("s").await.unwrap();
-        if jobs.len() == 1 && jobs[0]["state"] == json!("running") {
-            break;
+        if let Some(job) = jobs
+            .first()
+            .filter(|job| job["state"] != "queued" && job["state"] != "running")
+        {
+            return store
+                .job("s", job["job_id"].as_str().unwrap())
+                .await
+                .unwrap()
+                .unwrap();
         }
         assert!(
             tokio::time::Instant::now() < deadline,
-            "monitor job never reached running: {jobs:?} events={:?}",
-            store
-                .events("s", 0, 200)
-                .await
-                .unwrap()
-                .iter()
-                .map(|event| (event.kind.clone(), event.data.clone()))
-                .collect::<Vec<_>>(),
+            "monitor never settled: {jobs:?}, events={:?}",
+            store.events("s", 0, 200).await.unwrap()
         );
-        tokio::time::sleep(std::time::Duration::from_millis(10)).await;
+        tokio::time::sleep(Duration::from_millis(10)).await;
     }
-    let job_id = store.jobs("s").await.unwrap()[0]["job_id"]
-        .as_str()
+}
+
+fn watching_command() -> &'static str {
+    if cfg!(windows) {
+        "echo READY-line & echo noise-line & echo READY-final & powershell -NoProfile -Command \"Start-Sleep -Seconds 60\""
+    } else {
+        "echo READY-line; echo noise-line; echo READY-final; sleep 60"
+    }
+}
+
+#[tokio::test]
+async fn monitor_streams_pattern_matched_notices_and_cancel_stops_it() {
+    let (runtime, store, mut progress, _dir) = start(watching_command(), 30_000).await;
+    let notice = tokio::time::timeout(Duration::from_secs(10), async {
+        loop {
+            let event = progress.recv().await.unwrap();
+            if event["kind"] == "monitor.notice" {
+                break event;
+            }
+        }
+    })
+    .await
+    .expect("monitor never streamed matching stdout");
+    let lines = notice["lines"].as_array().unwrap();
+    assert!(lines
+        .iter()
+        .any(|line| line.as_str().unwrap().trim() == "READY-line"));
+    assert!(lines
+        .iter()
+        .any(|line| line.as_str().unwrap().trim() == "READY-final"));
+    assert!(!lines
+        .iter()
+        .any(|line| line.as_str().unwrap().trim() == "noise-line"));
+    assert!(
+        store
+            .events("s", 0, 200)
+            .await
+            .unwrap()
+            .iter()
+            .any(|event| {
+                event.kind == "input.admitted"
+                    && event.data["input_id"]
+                        .as_str()
+                        .is_some_and(|id| id.starts_with("monitor:"))
+            }),
+        "monitor output must be durable admission, not only ephemeral progress"
+    );
+    let id = notice["job_id"].as_str().unwrap();
+    assert!(runtime.cancel_job("s", id).await.unwrap());
+    assert_eq!(settled(&store).await["state"], "cancelled");
+    runtime.shutdown().await;
+}
+
+#[tokio::test]
+async fn monitor_natural_exit_settles_the_durable_job() {
+    let command = if cfg!(windows) {
+        "echo READY-line & exit /b 0"
+    } else {
+        "echo READY-line"
+    };
+    let (runtime, store, mut progress, _dir) = start(command, 30_000).await;
+    let job = settled(&store).await;
+    assert_eq!(job["state"], "completed");
+    assert_eq!(job["result"]["exit_code"], 0);
+    let notice = tokio::time::timeout(Duration::from_secs(1), async {
+        loop {
+            let event = progress.recv().await.unwrap();
+            if event["kind"] == "monitor.notice" {
+                break event;
+            }
+        }
+    })
+    .await
+    .expect("short-lived stdout was lost during exit");
+    assert!(notice["lines"]
+        .as_array()
         .unwrap()
-        .to_owned();
-    assert!(runtime.cancel_job("s", &job_id).await.unwrap());
-    let deadline = tokio::time::Instant::now() + std::time::Duration::from_secs(10);
-    loop {
+        .iter()
+        .any(|line| line.as_str().unwrap().trim() == "READY-line"));
+    assert!(
+        store
+            .events("s", 0, 200)
+            .await
+            .unwrap()
+            .iter()
+            .any(|event| {
+                event.kind == "input.admitted"
+                    && event.data["input_id"]
+                        .as_str()
+                        .is_some_and(|id| id.starts_with("monitor:"))
+            }),
+        "short-lived output must be durably admitted before settling"
+    );
+    runtime.shutdown().await;
+}
+
+#[tokio::test]
+async fn monitor_timeout_settles_the_durable_job() {
+    let (runtime, store, _progress, _dir) = start(watching_command(), 100).await;
+    let job = settled(&store).await;
+    assert_eq!(job["state"], "failed");
+    assert_eq!(job["result"]["timed_out"], true);
+    runtime.shutdown().await;
+}
+
+#[cfg(unix)]
+#[tokio::test]
+async fn closing_stdout_does_not_disable_cancellation() {
+    let (runtime, store, _progress, _dir) = start("exec 1>&-; sleep 60", 30_000).await;
+    let deadline = tokio::time::Instant::now() + Duration::from_secs(10);
+    let id = loop {
         let jobs = store.jobs("s").await.unwrap();
-        if jobs[0]["state"] != json!("running") {
-            break;
+        if let Some(job) = jobs.first().filter(|job| job["state"] == "running") {
+            break job["job_id"].as_str().unwrap().to_owned();
         }
-        assert!(
-            tokio::time::Instant::now() < deadline,
-            "monitor job never settled after cancel: {jobs:?} events={:?}",
-            store
-                .events("s", 0, 200)
-                .await
-                .unwrap()
-                .iter()
-                .map(|event| (event.kind.clone(), event.data.clone()))
-                .collect::<Vec<_>>(),
-        );
-        tokio::time::sleep(std::time::Duration::from_millis(10)).await;
-    }
+        assert!(tokio::time::Instant::now() < deadline);
+        tokio::time::sleep(Duration::from_millis(10)).await;
+    };
+    // Let the EOF arrive before cancelling; the process itself remains alive.
+    tokio::time::sleep(Duration::from_millis(100)).await;
+    assert!(runtime.cancel_job("s", &id).await.unwrap());
+    assert_eq!(settled(&store).await["state"], "cancelled");
     runtime.shutdown().await;
 }

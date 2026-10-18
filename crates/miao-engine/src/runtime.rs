@@ -2,7 +2,7 @@ use crate::{
     approval::{now_ms, Approval, Response},
     context_trigger::{self, ContextLimits},
     permission::{input_digest, Config, Decision, Policy},
-    protocol::{Admission, Attachment, Error, Input, ModelRequest},
+    protocol::{Admission, Attachment, Delivery, Error, Input, ModelRequest},
     provider::{Provider, ProviderError},
     store::{RuntimeLease, Store},
     tool_replay::ToolReplay,
@@ -2695,6 +2695,14 @@ async fn start_monitor(
                             json!({"job_id":task_id,"message":error.to_string()}),
                         )
                         .await;
+                    let _ = finish_background_job(
+                        &task_inner,
+                        &owner,
+                        &task_id,
+                        "failed",
+                        json!({"error":error.to_string()}),
+                    )
+                    .await;
                     task_inner.jobs.lock().await.remove(&task_id);
                     return;
                 }
@@ -2720,6 +2728,7 @@ async fn start_monitor(
         window.reset();
         let deadline =
             tokio::time::Instant::now() + std::time::Duration::from_millis(input.timeout());
+        let mut stdout_open = true;
         loop {
             tokio::select! {
                 biased;
@@ -2742,35 +2751,36 @@ async fn start_monitor(
                         .store
                         .record(&owner, "monitor.timeout", json!({"job_id":task_id,"timeout_ms":input.timeout()}))
                         .await;
+                    if let Some(notice) = batcher.flush(true, &task_id, description.as_deref()) {
+                        emit_monitor_notice(&task_inner, &owner, &task_id, notice).await;
+                    }
+                    let _ = finish_background_job(&task_inner, &owner, &task_id, "failed", json!({"timed_out":true})).await;
                     break;
                 }
                 _ = window.tick() => {
                     if let Some(notice) = batcher.flush(true, &task_id, description.as_deref()) {
-                        let _ = task_inner.progress.send(notice);
+                        emit_monitor_notice(&task_inner, &owner, &task_id, notice).await;
                     }
                 }
-                line = reader.next_line() => {
+                line = reader.next_line(), if stdout_open => {
                     match line {
-                        Ok(Some(line)) => {
-                            batcher.feed(matcher.as_ref(), &line);
-                        }
-                        _ => {
-                            let status = group
-                                .child
-                                .wait()
-                                .await
-                                .map(|status| status.code().unwrap_or(-1))
-                                .unwrap_or(-1);
-                            let _ = task_inner
-                                .store
-                                .record(&owner, "monitor.exited", json!({"job_id":task_id,"code":status}))
-                                .await;
-                            if let Some(notice) = batcher.flush(true, &task_id, description.as_deref()) {
-                                let _ = task_inner.progress.send(notice);
-                            }
-                            break;
-                        }
+                        Ok(Some(line)) => { batcher.feed(matcher.as_ref(), &line); }
+                        // Closing stdout is not process exit. Keep polling
+                        // cancellation and timeout while waiting for the child.
+                        _ => { stdout_open = false; }
                     }
+                }
+                // Drain stdout before settling so a short-lived command's last
+                // matching lines cannot lose a race against process exit.
+                status = group.child.wait(), if !stdout_open => {
+                    let code = status.map(|status| status.code().unwrap_or(-1)).unwrap_or(-1);
+                    let _ = task_inner.store.record(&owner, "monitor.exited", json!({"job_id":task_id,"code":code})).await;
+                    if let Some(notice) = batcher.flush(true, &task_id, description.as_deref()) {
+                        emit_monitor_notice(&task_inner, &owner, &task_id, notice).await;
+                    }
+                    let state = if code == 0 { "completed" } else { "failed" };
+                    let _ = finish_background_job(&task_inner, &owner, &task_id, state, json!({"exit_code":code})).await;
+                    break;
                 }
             }
         }
@@ -2791,6 +2801,41 @@ async fn start_monitor(
         "output":"watching stdout; matching lines arrive as monitor.notice progress events; cancel with cancel_job",
         "timeout_ms":timeout,
     }))
+}
+
+async fn emit_monitor_notice(inner: &Inner, session: &str, job: &str, notice: Value) {
+    let admitted = inner
+        .store
+        .admit(Input {
+            session_id: session.to_owned(),
+            input_id: format!("monitor:{job}:{}", uuid::Uuid::new_v4()),
+            prompt: format!("Monitor job {job} produced matching output:\n{notice}"),
+            delivery: Delivery::Steer,
+        })
+        .await;
+    let admitted = match admitted {
+        Ok(admitted) => admitted,
+        Err(error) => {
+            let _ = inner
+                .store
+                .record(
+                    session,
+                    "monitor.notice_failed",
+                    json!({"job_id":job,"message":error.to_string()}),
+                )
+                .await;
+            return;
+        }
+    };
+    let _ = inner.progress.send(notice);
+    let _ = notify_admission(
+        inner,
+        session,
+        &admitted,
+        "monitor.wake_failed",
+        json!({"job_id":job,"input_id":admitted.input_id}),
+    )
+    .await;
 }
 
 /// Launch a monitor command through the same sandboxed runner the process
@@ -2815,22 +2860,54 @@ async fn spawn_sandboxed_monitor(
         .ok_or(ToolError::Unsupported)?
         .to_owned();
     let workspace = inner.tools.location().to_owned();
-    let envs = [
-        (
-            "PATH".to_owned(),
-            "/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin".to_owned(),
-        ),
-        (
-            "HOME".to_owned(),
-            std::env::var("HOME").unwrap_or_else(|_| "/root".into()),
-        ),
-        ("LANG".to_owned(), "C.UTF-8".to_owned()),
-    ];
+    let envs: Vec<(String, String)> = if cfg!(windows) {
+        std::env::vars()
+            .filter(|(key, _)| {
+                matches!(
+                    key.to_ascii_uppercase().as_str(),
+                    "PATH"
+                        | "PATHEXT"
+                        | "SYSTEMROOT"
+                        | "SYSTEMDRIVE"
+                        | "WINDIR"
+                        | "COMSPEC"
+                        | "USERPROFILE"
+                        | "HOMEDRIVE"
+                        | "HOMEPATH"
+                        | "TEMP"
+                        | "TMP"
+                )
+            })
+            .collect()
+    } else {
+        vec![
+            (
+                "PATH".into(),
+                "/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin".into(),
+            ),
+            (
+                "HOME".into(),
+                std::env::var("HOME").unwrap_or_else(|_| "/root".into()),
+            ),
+            ("LANG".into(), "C.UTF-8".into()),
+        ]
+    };
+    let argv = if cfg!(windows) {
+        vec![
+            std::env::var("COMSPEC").unwrap_or_else(|_| "cmd.exe".into()),
+            "/d".into(),
+            "/s".into(),
+            "/c".into(),
+            input.command.clone(),
+        ]
+    } else {
+        vec!["/bin/sh".into(), "-c".into(), input.command.clone()]
+    };
     let (mut group, master, temp) = crate::process::spawn(
         std::path::Path::new(&runner),
         std::path::Path::new(&workspace),
-        std::path::Path::new("."),
-        vec!["sh".into(), "-c".into(), input.command.clone()],
+        std::path::Path::new(&workspace),
+        argv,
         timeout_ms,
         false,
         false,
