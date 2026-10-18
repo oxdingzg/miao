@@ -473,6 +473,8 @@ async fn runtime_permission_denial_prevents_wire_dispatch_and_allowed_error_is_d
 #[tokio::test]
 async fn configured_child_is_initialized_and_reaped_at_shutdown() {
     let dir = tempfile::tempdir().unwrap();
+    let nested = dir.path().join("nested");
+    std::fs::create_dir(&nested).unwrap();
     let script = r#"
 import json,sys,os
 open('server.pid','w').write(str(os.getpid()))
@@ -494,12 +496,14 @@ for line in sys.stdin:
             argv: vec!["python3".into(), "-u".into(), "-c".into(), script.into()],
             env: Default::default(),
             oauth: None,
+            cwd: Some("nested".into()),
+            timeout: None,
         }],
         dir.path(),
     )
     .await
     .unwrap();
-    let pid: libc::pid_t = std::fs::read_to_string(dir.path().join("server.pid"))
+    let pid: libc::pid_t = std::fs::read_to_string(nested.join("server.pid"))
         .unwrap()
         .parse()
         .unwrap();
@@ -509,6 +513,70 @@ for line in sys.stdin:
     assert_eq!(
         std::io::Error::last_os_error().raw_os_error(),
         Some(libc::ESRCH)
+    );
+}
+
+#[cfg(unix)]
+#[tokio::test]
+async fn configured_request_timeout_is_bounded_and_never_replays_the_call() {
+    let dir = tempfile::tempdir().unwrap();
+    let script = r#"
+import json,sys
+for line in sys.stdin:
+    request=json.loads(line)
+    if 'id' not in request: continue
+    method=request['method']
+    if method=='initialize':
+        result={'protocolVersion':request['params']['protocolVersion'],'capabilities':{'tools':{}},'serverInfo':{'name':'process','version':'1'}}
+    elif method=='tools/list':
+        result={'tools':[{'name':'pending','inputSchema':{'type':'object','properties':{},'additionalProperties':False}}]}
+    elif method=='tools/call':
+        with open('calls','a') as f: f.write('one\n')
+        continue
+    else: raise RuntimeError(method)
+    print(json.dumps({'jsonrpc':'2.0','id':request['id'],'result':result}),flush=True)
+"#;
+    let config = serde_json::from_value(json!({
+        "name":"timed",
+        "argv":["python3","-u","-c",script],
+        "timeout":{"startup":5000,"request":200},
+    }))
+    .unwrap();
+    let registry = Registry::connect(vec![config], dir.path()).await.unwrap();
+    let name = registry.definitions()[0].name.clone();
+    let started = std::time::Instant::now();
+    let result = registry
+        .call(&name, json!({}), CancellationToken::new())
+        .await;
+    assert!(
+        matches!(result, Err(ToolError::External(message)) if message.contains("timed out") && message.contains("unknown"))
+    );
+    assert!(started.elapsed() < std::time::Duration::from_secs(5));
+    assert_eq!(
+        std::fs::read_to_string(dir.path().join("calls")).unwrap(),
+        "one\n"
+    );
+    registry.shutdown().await;
+}
+
+#[cfg(unix)]
+#[tokio::test]
+async fn configured_startup_timeout_bounds_a_silent_stdio_server() {
+    let dir = tempfile::tempdir().unwrap();
+    let config = serde_json::from_value(json!({
+        "name":"silent",
+        "argv":["python3","-u","-c","import time; time.sleep(10)"],
+        "timeout":{"startup":100},
+    }))
+    .unwrap();
+    let result = tokio::time::timeout(
+        std::time::Duration::from_secs(2),
+        Registry::connect(vec![config], dir.path()),
+    )
+    .await
+    .unwrap();
+    assert!(
+        matches!(result, Err(miao_engine::protocol::Error::Invalid(message)) if message.contains("initialization timed out"))
     );
 }
 

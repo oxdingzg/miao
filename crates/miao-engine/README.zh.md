@@ -316,7 +316,8 @@ MCP server 是拥有自身 filesystem/network authority 的可信外部服务，
 
 - catalog 在初始化时固定：最多 8 servers、每 server 4 页/128 tools；alias 稳定、限 64 字符且包含原名指纹。
 - schema 最多 32 KiB，JSON Schema 校验在授权及派发之前完成；description 最多 4 KiB。
-- 初始化/catalog 每请求 15 秒，call 60 秒，wire frame 256 KiB，返回结果 64 KiB。
+- 初始化默认 15 秒，catalog 与工具请求默认 60 秒。每个 server 可通过 `timeout.startup` / `timeout.request` 设置正整数毫秒。wire frame 256 KiB，返回结果 64 KiB。
+- 进程 server 可设置 `cwd`，相对路径从 engine workspace 解析。产品共享 MCP 配置会保留该字段；全局和 server 超时逐字段合并，server 值优先。
 - input/task continuation 显式失败；断连/超时不自动重放，不能断言外部副作用未发生。
 - cancel 停止本地等待，已派发调用可能仍在 server 执行；Session 恢复沿用 unknown intent 边界。
 - 正常 shutdown 关闭 transport 并 kill/reap 配置的直接子进程。引擎硬退出、server 派生/daemon 进程

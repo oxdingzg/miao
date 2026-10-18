@@ -20,23 +20,29 @@ export function prepareMcpConfig(options: EngineOptions) {
   const servers = Object.entries(options.mcpSettings.servers)
     .map(([name, server]) => {
       if (server.disabled) return
-      // Refuse unsupported settings rather than silently dropping their semantics.
-      if (
-        (server.type === "local" && server.cwd !== undefined) ||
-        server.timeout ||
-        options.mcpSettings?.timeout ||
-        Object.keys(server.call_meta ?? {}).length
-      ) {
-        throw new Error(`Native MCP shared configuration does not support cwd, call_meta or custom timeouts: ${name}`)
+      if (Object.keys(server.call_meta ?? {}).length)
+        throw new Error(`Native MCP shared configuration does not support call_meta: ${name}`)
+      const startup = server.timeout?.startup ?? options.mcpSettings?.timeout?.startup
+      const request = server.timeout?.request ?? options.mcpSettings?.timeout?.request
+      const timeout = {
+        ...(startup === undefined ? {} : { startup }),
+        ...(request === undefined ? {} : { request }),
       }
+      const limits = Object.keys(timeout).length ? { timeout } : {}
       if (server.type === "remote") {
         if (server.oauth !== false)
           throw new Error(
             `Native MCP shared configuration requires oauth: false until OAuth routing is configured: ${name}`,
           )
-        return { name, url: server.url, headers: server.headers ?? {} }
+        return { name, url: server.url, headers: server.headers ?? {}, ...limits }
       }
-      return { name, argv: server.command, env: server.environment ?? {} }
+      return {
+        name,
+        argv: server.command,
+        env: server.environment ?? {},
+        ...(server.cwd === undefined ? {} : { cwd: path.resolve(options.workspace, server.cwd) }),
+        ...limits,
+      }
     })
     .filter((server) => server !== undefined)
   if (!servers.length) return

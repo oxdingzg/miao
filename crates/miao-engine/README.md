@@ -533,9 +533,11 @@ through the existing durable intent and binding approval; the default is ask, an
 configured with the `mcp_*` tool matcher and the `@mcp/local_service/**` resource matcher.
 `readOnlyHint` grants no permission.
 
+A process server may set `cwd`; relative paths resolve from the engine workspace. The product shared MCP configuration preserves this setting and merges global/server timeouts per field, with the server value taking precedence.
+
 - The catalog is fixed at initialization: at most 8 servers and 4 pages/128 tools per server; the alias is stable, limited to 64 characters, and includes a fingerprint of the original name.
 - The schema is at most 32 KiB and JSON Schema validation completes before authorization and dispatch; the description is at most 4 KiB.
-- Initialization/catalog is 15 seconds per request, a call is 60 seconds, the wire frame is 256 KiB, and a returned result is 64 KiB.
+- Initialization defaults to 15 seconds; catalog and tool requests default to 60 seconds. Set `timeout.startup` and `timeout.request` to positive milliseconds per server. The wire frame is 256 KiB, and a returned result is 64 KiB.
 - input/task continuation fails explicitly; a disconnect/timeout is not auto-replayed, and it cannot be asserted that no external side effect occurred.
 - cancel stops the local wait, and a dispatched call may still be executing on the server; Session recovery follows the unknown intent boundary.
 - A normal shutdown closes the transport and kills/reaps the configured direct child process. A hard engine exit and server-derived/daemon processes do not yet have a full cross-process ownership guarantee.
