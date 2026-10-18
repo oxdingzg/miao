@@ -106,6 +106,16 @@ impl AgentManifest {
         Ok(())
     }
 
+    /// The name as an XML attribute value. A name is data: it must not be able
+    /// to close the instruction block it is written into.
+    pub fn attribute(&self) -> String {
+        self.name
+            .replace('&', "&amp;")
+            .replace('<', "&lt;")
+            .replace('>', "&gt;")
+            .replace('"', "&quot;")
+    }
+
     /// Content hash of the manifest, recorded with the selection and folded
     /// into the turn's provider scope.
     pub fn digest(&self) -> Result<String, Error> {

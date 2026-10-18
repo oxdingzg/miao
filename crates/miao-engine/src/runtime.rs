@@ -321,6 +321,35 @@ impl Runtime {
         self.inner.breaker.lock().await.reset();
     }
 
+    /// Record a host-resolved agent for this Session's subsequent turns.
+    ///
+    /// A tool name the registry does not know is refused here rather than
+    /// silently ignored: a host that typos an agent's tool list must hear about
+    /// it, and `allow`/`deny` only ever narrow the registered surface.
+    pub async fn set_agent(
+        &self,
+        session: &str,
+        agent: crate::session_agent::AgentManifest,
+    ) -> Result<Value, Error> {
+        if let Some(surface) = &agent.tools {
+            let known = self
+                .inner
+                .tools
+                .definitions()
+                .into_iter()
+                .map(|tool| tool.name)
+                .collect::<std::collections::HashSet<_>>();
+            for name in surface.allow.iter().chain(surface.deny.iter()) {
+                if !known.contains(name) {
+                    return Err(Error::Invalid(format!(
+                        "agent references an unknown tool: {name}"
+                    )));
+                }
+            }
+        }
+        self.inner.store.set_agent(session, agent).await
+    }
+
     /// Record an operator request to compact this Session at its next settled
     /// assistant boundary, then wake it. A continuable drain honours the request
     /// at that boundary even when the budget gate is under its threshold; an idle
@@ -970,7 +999,14 @@ async fn execute(
         if cancel.is_cancelled() {
             return Ok(());
         }
-        let binding = inner.store.model_selection(session).await?;
+        // A host-resolved agent (ADR-0017) applies at this boundary: its pinned
+        // model only while the Session has no explicit selection of its own.
+        let agent = inner.store.agent(session).await?;
+        let binding = match (inner.store.model_selection(session).await?, agent.as_ref()) {
+            (Some(selection), _) => Some(selection),
+            (None, Some((manifest, _))) => manifest.model.clone(),
+            (None, None) => None,
+        };
         let provider = crate::session_model::select(&inner.provider, binding.as_ref())?;
         let bundle =
             match crate::context::assemble(&inner.tools, &inner.policy, cancel.child_token()).await
@@ -984,10 +1020,27 @@ async fn execute(
         if cancel.is_cancelled() {
             return Ok(());
         }
-        let plan = inner.store.mode(session).await? == crate::protocol::CollaborationMode::Plan;
+        let mode = match agent.as_ref().and_then(|(manifest, _)| manifest.mode) {
+            Some(mode) => mode,
+            None => inner.store.mode(session).await?,
+        };
+        let plan = mode == crate::protocol::CollaborationMode::Plan;
         let mut system = bundle.system.clone();
         if plan {
             system.push_str("\n\n<collaboration-mode mode=\"plan\">\nYou are in plan mode: investigate and propose a plan. Do not modify files, run commands, or start background work; those capabilities are denied.\n</collaboration-mode>");
+        }
+        if let Some((manifest, _)) = &agent {
+            if let Some(instructions) = manifest
+                .instructions
+                .as_deref()
+                .filter(|text| !text.trim().is_empty())
+            {
+                system.push_str(&format!(
+                    "\n\n<agent name=\"{}\">\n{}\n</agent>",
+                    manifest.attribute(),
+                    instructions
+                ));
+            }
         }
         let sources = bundle.sources.clone();
         let context_epoch = inner
@@ -1080,7 +1133,7 @@ async fn execute(
         let request = ModelRequest {
             system,
             messages: history,
-            tools: inner.tools.definitions(),
+            tools: agent_tools(&inner.tools, agent.as_ref()),
         };
         let prefix_through = if inner.context.lock().await.is_some() {
             Some(inner.store.max_message_seq(session).await?)
@@ -1105,7 +1158,17 @@ async fn execute(
                     run: run.into(),
                     step,
                     context_epoch,
-                    agent: json!({"name":"native-runtime","semantics":"native-runtime-v1","collaborationMode":if plan {"plan"} else {"build"}}),
+                    agent: match &agent {
+                        Some((manifest, hash)) => json!({
+                            "name": manifest.name,
+                            "semantics": manifest.semantics,
+                            "agentHash": hash,
+                            "collaborationMode": if plan { "plan" } else { "build" },
+                        }),
+                        None => {
+                            json!({"name":"native-runtime","semantics":"native-runtime-v1","collaborationMode":if plan {"plan"} else {"build"}})
+                        }
+                    },
                     permissions: json!({"policy":inner.policy.descriptor(),"boundary":inner.tools.authority_descriptor()}),
                 },
                 crate::provider::scoped(
@@ -2737,6 +2800,28 @@ async fn cancel_session(inner: &Arc<Inner>, session: &str) -> Result<bool, Error
         .await
         .map_err(|_| Error::Closed)?;
     result.await.map_err(|_| Error::Closed)
+}
+
+/// An agent's tool surface: `allow`/`deny` intersect the registered definitions
+/// and never add a capability, because permission evaluation still runs per call.
+fn agent_tools(
+    tools: &Tools,
+    agent: Option<&(crate::session_agent::AgentManifest, String)>,
+) -> Vec<crate::protocol::ToolDefinition> {
+    let definitions = tools.definitions();
+    let Some((manifest, _)) = agent else {
+        return definitions;
+    };
+    let Some(surface) = &manifest.tools else {
+        return definitions;
+    };
+    definitions
+        .into_iter()
+        .filter(|tool| {
+            (surface.allow.is_empty() || surface.allow.iter().any(|name| name == &tool.name))
+                && !surface.deny.iter().any(|name| name == &tool.name)
+        })
+        .collect()
 }
 
 async fn authorize(
