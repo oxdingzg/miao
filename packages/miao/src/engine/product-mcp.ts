@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto"
 import { McpAuth } from "@miao/core/mcp/auth"
 import { oauthFetch } from "@miao/core/mcp/oauth-fetch"
 import { Effect } from "effect"
@@ -85,6 +86,12 @@ export const prepare = Effect.fn("Engine.productMcp")(function* (
     (server) => Effect.promise(() => server.stop(true)),
   )
   return {
+    mcpAuthorityRevisions: Object.fromEntries(
+      remotes.map(([name, remote]) => [
+        name,
+        createHash("sha256").update(JSON.stringify({ name, remote })).digest("hex"),
+      ]),
+    ),
     mcpSettings: {
       ...options.mcpSettings,
       servers: Object.fromEntries(

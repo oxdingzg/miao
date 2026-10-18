@@ -64,6 +64,8 @@ export interface EngineOptions {
   mcpConfigFile?: string
   /** Trusted global MCP settings; materialized only with explicit native MCP policy authority. */
   mcpSettings?: ConfigMCP.Info
+  /** Trusted original registration digests for product-owned OAuth proxy routes. */
+  mcpAuthorityRevisions?: Record<string, string>
   /** Absolute path to an LSP host config; must live outside the workspace. */
   lspConfigFile?: string
   formatterConfigFile?: string
