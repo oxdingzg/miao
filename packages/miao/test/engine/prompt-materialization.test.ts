@@ -8,7 +8,7 @@ import { Global } from "@miao/core/global"
 import { AppNodeBuilder } from "@miao/core/effect/app-node-builder"
 import { LayerNode } from "@miao/core/effect/layer-node"
 import { PromptMaterialization } from "../../src/engine/prompt-materialization"
-import { encodeAttachments } from "../../src/engine/prompt-attachments"
+import { decodeAttachments, encodeAttachments } from "../../src/engine/prompt-attachments"
 import { testEffect } from "../lib/effect"
 import { tmpdir } from "../fixture/fixture"
 
@@ -147,6 +147,39 @@ it.live("rejects missing, oversized or invalid references before admission and l
       const exact = yield* blob.put({ bytes: new Uint8Array([1, 2, 3]) })
       expect(yield* blob.get(exact.hash, 3)).toEqual(new Uint8Array([1, 2, 3]))
       expect(Exit.isFailure(yield* blob.get(exact.hash, 2).pipe(Effect.exit))).toBe(true)
+    }),
+  ),
+)
+
+it.live("snapshots PDF and UTF-8 text references, including empty files, with replayable metadata", () =>
+  withStorage((root) =>
+    Effect.gen(function* () {
+      const fs = yield* FSUtil.Service
+      const blob = yield* Blob.Service
+      const pdf = Buffer.from("%PDF-1.4\nfixture\n%%EOF\n")
+      const filename = path.join(root, "document.pdf")
+      const empty = path.join(root, "empty.txt")
+      yield* fs.writeFile(filename, pdf)
+      yield* fs.writeFile(empty, new Uint8Array())
+      const text = yield* blob.put({ bytes: Buffer.from("# 文档\nattached text") })
+      const prompt = yield* PromptMaterialization.prepare({
+        text: "inspect",
+        files: [
+          { uri: pathToFileURL(filename).href, name: "document.pdf", path: filename },
+          { uri: Blob.refUri(text.hash), name: "notes.md" },
+          { uri: pathToFileURL(empty).href, name: "empty.txt" },
+        ],
+      })
+      const encoded = encodeAttachments(prompt.files)
+      expect(encoded.map((file) => file.mime)).toEqual(["application/pdf", "text/plain", "text/plain"])
+      expect(encoded[0]?.data).toBe(pdf.toString("base64"))
+      expect(encoded[2]?.data).toBe("")
+      expect(decodeAttachments(encoded).map((file) => ({ uri: file.uri, name: file.name }))).toEqual(
+        (prompt.files ?? []).map((file) => ({ uri: file.uri, name: file.name })),
+      )
+      expect(encodeAttachments([{ uri: "data:text/markdown;charset=utf-8;base64,IyBoaQ==" }])[0]?.mime).toBe(
+        "text/markdown",
+      )
     }),
   ),
 )

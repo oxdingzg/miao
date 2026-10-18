@@ -928,7 +928,8 @@ export function translateCopiedPrompt(event: EngineEvent): SessionPromptAdmitted
     .join("")
   const files = decodeAttachments(
     event.data.content.filter(
-      (part: unknown) => typeof part === "object" && part !== null && "type" in part && part.type === "image",
+      (part: unknown) =>
+        typeof part === "object" && part !== null && "type" in part && (part.type === "image" || part.type === "file"),
     ),
   )
   return {

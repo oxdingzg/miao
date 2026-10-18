@@ -1,4 +1,5 @@
 use crate::{approval::Response, question::Answer};
+use base64::Engine;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
@@ -33,8 +34,8 @@ pub struct Input {
 
 /// An inline media attachment carried on a prompt. `data` is base64 without a
 /// `data:` prefix; `mime` is the media type (for example `image/png`). The
-/// canonical message part is `{"type":"image","mime":..,"data":..}`; providers
-/// encode it in their own wire format.
+/// canonical message part has type `image` or `file`; providers normalize a
+/// request copy according to protocol and host-declared model input modalities.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Attachment {
@@ -54,11 +55,18 @@ impl Attachment {
         }
         if !matches!(
             self.mime.as_str(),
-            "image/png" | "image/jpeg" | "image/gif" | "image/webp"
-        ) {
+            "image/png" | "image/jpeg" | "image/gif" | "image/webp" | "application/pdf"
+        ) && !(self.mime.starts_with("text/")
+            && self.mime.len() <= 128
+            && self.mime.bytes().all(|byte| {
+                byte.is_ascii_alphanumeric() || matches!(byte, b'/' | b'-' | b'+' | b'.')
+            }))
+        {
             return Err(Error::Invalid("unsupported attachment media type".into()));
         }
-        if self.data.is_empty() || self.data.len() > 8 * 1024 * 1024 {
+        if (self.data.is_empty() && !self.mime.starts_with("text/"))
+            || self.data.len() > 8 * 1024 * 1024
+        {
             return Err(Error::Invalid("attachment data must be 1..8 MiB".into()));
         }
         if !self
@@ -68,11 +76,20 @@ impl Attachment {
         {
             return Err(Error::Invalid("attachment data must be base64".into()));
         }
+        let bytes = base64::engine::general_purpose::STANDARD
+            .decode(&self.data)
+            .map_err(|_| Error::Invalid("attachment data must be canonical base64".into()))?;
+        if self.mime.starts_with("text/") && std::str::from_utf8(&bytes).is_err() {
+            return Err(Error::Invalid("text attachment must be UTF-8".into()));
+        }
+        if self.mime == "application/pdf" && !bytes.starts_with(b"%PDF-") {
+            return Err(Error::Invalid("PDF attachment has no PDF header".into()));
+        }
         Ok(())
     }
 
     pub fn part(&self) -> Value {
-        let mut part = serde_json::json!({"type":"image","mime":self.mime,"data":self.data});
+        let mut part = serde_json::json!({"type":if self.mime.starts_with("image/") {"image"} else {"file"},"mime":self.mime,"data":self.data});
         if let Some(metadata) = &self.metadata {
             part["metadata"] = serde_json::json!(metadata);
         }

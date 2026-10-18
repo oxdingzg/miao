@@ -1,6 +1,7 @@
 export * as PromptMaterialization from "./prompt-materialization"
 
 import { fileURLToPath } from "node:url"
+import { isUtf8 } from "node:buffer"
 import { Blob } from "@miao/core/blob"
 import { FSUtil } from "@miao/core/fs-util"
 import type { PromptInput } from "@miao/schema/prompt-input"
@@ -13,7 +14,7 @@ const failure = (message: string) => new EngineError("engine_prompt_unsupported"
 /** Snapshot referenced bytes before durable admission so replay needs no source URI. */
 export const prepare = Effect.fn("Engine.materializePrompt")(function* (prompt: PromptInput.Prompt) {
   if (!prompt.files?.length) return prompt
-  if (prompt.files.length > 8) return yield* Effect.fail(failure("native prompts accept at most 8 images"))
+  if (prompt.files.length > 8) return yield* Effect.fail(failure("native prompts accept at most 8 attachments"))
   const files = yield* Effect.forEach(prompt.files, (file) =>
     Effect.gen(function* () {
       if (file.uri.startsWith("data:")) return file
@@ -44,22 +45,24 @@ export const prepare = Effect.fn("Engine.materializePrompt")(function* (prompt: 
           })
         return yield* Effect.fail(failure("unsupported attachment URI scheme"))
       }).pipe(Effect.mapError((error) => (error instanceof EngineError ? error : failure(error.message))))
-      const mime = imageMime(bytes)
+      const mime = attachmentMime(bytes)
       if (!mime)
-        return yield* Effect.fail(failure("referenced attachment is not a supported PNG, JPEG, GIF or WebP image"))
+        return yield* Effect.fail(failure("referenced attachment is not a supported image, PDF or UTF-8 text file"))
       return { ...file, uri: `data:${mime};base64,${Buffer.from(bytes).toString("base64")}` }
     }),
   )
   return { ...prompt, files }
 })
 
-function imageMime(bytes: Uint8Array) {
+function attachmentMime(bytes: Uint8Array) {
   const header = Buffer.from(bytes.subarray(0, 12))
+  if (header.subarray(0, 5).toString("ascii") === "%PDF-") return "application/pdf"
   if (header.subarray(0, 8).equals(Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]))) return "image/png"
   if (header[0] === 0xff && header[1] === 0xd8 && header[2] === 0xff) return "image/jpeg"
   if (["GIF87a", "GIF89a"].includes(header.subarray(0, 6).toString("ascii"))) return "image/gif"
   if (header.subarray(0, 4).toString("ascii") === "RIFF" && header.subarray(8, 12).toString("ascii") === "WEBP")
     return "image/webp"
+  if (!bytes.includes(0) && isUtf8(bytes)) return "text/plain"
 }
 
 async function download(uri: string, signal: AbortSignal) {

@@ -254,6 +254,15 @@ impl Provider for Fallback {
             Arc::clone(&self.secondary),
         )?))
     }
+    fn with_input_modalities(
+        &self,
+        input: Vec<String>,
+    ) -> Result<Arc<dyn Provider>, ProviderError> {
+        Ok(Arc::new(Self::new(
+            self.primary.with_input_modalities(input)?,
+            Arc::clone(&self.secondary),
+        )?))
+    }
     fn for_model(&self, model: &str) -> Option<Arc<dyn Provider>> {
         let primary = self.primary.for_model(model)?;
         if primary.identity() == self.secondary.identity() {

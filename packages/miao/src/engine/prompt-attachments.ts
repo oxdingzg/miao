@@ -18,13 +18,26 @@ export type NativeAttachment = Schema.Schema.Type<typeof attachment>
 
 /** Inline bytes and presentation metadata form one durable admission identity. */
 export function encodeAttachments(files: readonly PromptInput.FileAttachment[] = []): NativeAttachment[] {
-  if (files.length > 8) throw new EngineError("engine_prompt_unsupported", "native prompts accept at most 8 images")
+  if (files.length > 8)
+    throw new EngineError("engine_prompt_unsupported", "native prompts accept at most 8 attachments")
   return files.map((file) => {
-    const match = /^data:(image\/(?:png|jpeg|gif|webp));base64,([A-Za-z0-9+/]*={0,2})$/.exec(file.uri)
-    if (!match || !match[1] || !match[2] || match[2].length > 8 * 1024 * 1024)
-      throw new EngineError("engine_prompt_unsupported", "native image inputs require bounded inline base64 data")
+    const match =
+      /^data:((?:image\/(?:png|jpeg|gif|webp)|application\/pdf|text\/[a-zA-Z0-9.+-]+))(?:;charset=utf-8)?;base64,([A-Za-z0-9+/]*={0,2})$/.exec(
+        file.uri,
+      )
+    if (
+      !match ||
+      !match[1] ||
+      match[2] === undefined ||
+      (!match[2] && !match[1].startsWith("text/")) ||
+      match[2].length > 8 * 1024 * 1024
+    )
+      throw new EngineError(
+        "engine_prompt_unsupported",
+        "native attachments require bounded inline image, PDF or text base64 data",
+      )
     if (Buffer.from(match[2], "base64").toString("base64") !== match[2])
-      throw new EngineError("engine_prompt_unsupported", "native image input contains invalid base64")
+      throw new EngineError("engine_prompt_unsupported", "native attachment contains invalid base64")
     const details = {
       ...(file.name === undefined ? {} : { name: file.name }),
       ...(file.description === undefined ? {} : { description: file.description }),

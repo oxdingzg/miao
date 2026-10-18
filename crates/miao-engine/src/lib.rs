@@ -20,6 +20,7 @@ mod jobs;
 pub mod knowledge;
 pub mod lsp;
 pub mod mcp;
+mod media;
 pub mod openai_chat;
 pub mod openai_responses;
 pub mod patch;

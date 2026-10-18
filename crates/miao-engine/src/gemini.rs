@@ -22,6 +22,7 @@ pub struct Gemini {
     source: Source,
     model: String,
     request_options: crate::request_options::Options,
+    input_modalities: Vec<String>,
 }
 impl Gemini {
     pub fn new(endpoint: String, key: String, model: String) -> Result<Self, ProviderError> {
@@ -69,11 +70,21 @@ impl Gemini {
             source,
             model,
             request_options: Default::default(),
+            input_modalities: vec![],
         })
     }
 }
 #[async_trait]
 impl Provider for Gemini {
+    fn with_input_modalities(
+        &self,
+        input: Vec<String>,
+    ) -> Result<std::sync::Arc<dyn Provider>, ProviderError> {
+        crate::media::validate_modalities(&input)?;
+        let mut selected = self.clone();
+        selected.input_modalities = input;
+        Ok(std::sync::Arc::new(selected))
+    }
     fn with_request_options(
         &self,
         options: crate::request_options::Options,
@@ -111,6 +122,11 @@ impl Provider for Gemini {
     /// Advisory pre-send count against Gemini's own endpoint. No retry and a
     /// short timeout: any refusal degrades to the estimate.
     async fn count_tokens(&self, request: &ModelRequest) -> CountTokens {
+        let request =
+            match crate::media::normalize(request.clone(), "gemini", &self.input_modalities) {
+                Ok(request) => request,
+                Err(_) => return CountTokens::Failed("unsupported Gemini media".into()),
+            };
         let credential = match self.source.load().await {
             Ok(credential) if credential.kind() == Kind::Key => credential,
             _ => return CountTokens::Failed("credential unavailable".into()),
@@ -191,6 +207,7 @@ impl Gemini {
         cancel: CancellationToken,
         without_tools: bool,
     ) -> Result<Reply, ProviderError> {
+        let request = crate::media::normalize(request, "gemini", &self.input_modalities)?;
         let credential = self.source.load().await?;
         if credential.kind() != Kind::Key {
             return Err(ProviderError::AuthProfile);
@@ -421,7 +438,7 @@ fn lower(history: &[Message], model: &str) -> Result<Vec<Value>, ProviderError> 
             for block in blocks {
                 match block["type"].as_str() {
                     Some("text") => parts.push(json!({"text":portable_text(block)?})),
-                    Some("image") => {
+                    Some("image" | "file") => {
                         let mime = block["mime"]
                             .as_str()
                             .ok_or_else(|| invalid("invalid Gemini image attachment"))?;
