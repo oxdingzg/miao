@@ -243,6 +243,11 @@ export const fromOwners = (owners: Owners): NativeEngine.Interface => {
         if (input.model.variant !== undefined)
           throw new EngineError("unsupported_model_variant", "Native model routes do not accept product variants")
         const entry = (await routes(connection)).find((entry) => {
+          if (
+            input.model.providerID !== SessionModelRoute.ProviderID &&
+            input.model.providerID !== SessionModelRoute.DefaultProviderID
+          )
+            return entry.route_id === `${input.model.providerID}/${input.model.id}`
           const model = SessionModelRoute.reference(entry.route_id)
           return model.providerID === input.model.providerID && model.id === input.model.id
         })
@@ -298,7 +303,7 @@ export const fromOwners = (owners: Owners): NativeEngine.Interface => {
             try: () =>
               connection.session.promptProduct({
                 sessionID: input.sessionID,
-                prompt: { text: input.prompt.text },
+                prompt: input.prompt,
                 id: input.id,
                 delivery: input.delivery,
                 resume: input.resume,

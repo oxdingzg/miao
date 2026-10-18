@@ -323,8 +323,12 @@ export class EngineClient {
     })
   }
 
-  admit(input: { session_id: string; input_id: string; prompt: string; delivery?: "steer" | "queue" }, resume = true) {
-    return this.request("admit", { input, resume })
+  admit(
+    input: { session_id: string; input_id: string; prompt: string; delivery?: "steer" | "queue" },
+    resume = true,
+    attachments: readonly { mime: string; data: string; metadata?: Readonly<Record<string, unknown>> }[] = [],
+  ) {
+    return this.request("admit", { input, resume, ...(attachments.length ? { attachments } : {}) })
   }
 
   subscribe(session: string, after = 0) {

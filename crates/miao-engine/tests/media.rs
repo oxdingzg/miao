@@ -81,6 +81,7 @@ async fn anthropic_and_chat_encode_image_attachments_and_commit_them() {
                 vec![Attachment {
                     mime: "image/png".into(),
                     data: PNG.into(),
+                    metadata: None,
                 }],
                 true,
             )
@@ -151,6 +152,7 @@ async fn attachment_is_part_of_the_admission_identity_and_validated() {
             vec![Attachment {
                 mime: "image/png".into(),
                 data: PNG.into(),
+                metadata: None,
             }],
         )
         .await
@@ -162,6 +164,7 @@ async fn attachment_is_part_of_the_admission_identity_and_validated() {
             vec![Attachment {
                 mime: "image/png".into(),
                 data: PNG.into(),
+                metadata: None,
             }],
         )
         .await
@@ -175,6 +178,7 @@ async fn attachment_is_part_of_the_admission_identity_and_validated() {
                 vec![Attachment {
                     mime: "image/jpeg".into(),
                     data: PNG.into(),
+                    metadata: None,
                 }],
             )
             .await,
@@ -191,11 +195,57 @@ async fn attachment_is_part_of_the_admission_identity_and_validated() {
                 vec![Attachment {
                     mime: "application/pdf".into(),
                     data: PNG.into(),
+                    metadata: None,
                 }],
             )
             .await,
         Err(Error::Invalid(_))
     ));
+}
+
+#[tokio::test]
+async fn image_only_input_keeps_metadata_in_promotion_history_and_retry_identity() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("engine.db");
+    let store = Store::open(&path).await.unwrap();
+    let metadata = json!({"name":"diagram.png","path":"/client/diagram.png","source":{"start":0,"end":7,"text":"diagram"}});
+    let image: Attachment =
+        serde_json::from_value(json!({"mime":"image/png","data":PNG,"metadata":metadata})).unwrap();
+    let prompt = Input {
+        prompt: String::new(),
+        ..input()
+    };
+    store
+        .admit_with(prompt.clone(), vec![image.clone()])
+        .await
+        .unwrap();
+    let promoted = store.promote("s", true).await.unwrap();
+    assert_eq!(promoted[0].data["attachments"][0]["metadata"], metadata);
+    store.close().await.unwrap();
+    let reopened = Store::open(&path).await.unwrap();
+    let history = reopened.history("s").await.unwrap();
+    assert_eq!(history[0].content[1]["metadata"], metadata);
+    assert_eq!(history[0].content[1]["data"], PNG);
+    assert!(
+        reopened
+            .admit_with(prompt.clone(), vec![image.clone()])
+            .await
+            .unwrap()
+            .duplicate
+    );
+    let changed: Attachment = serde_json::from_value(
+        json!({"mime":"image/png","data":PNG,"metadata":{"name":"different.png"}}),
+    )
+    .unwrap();
+    assert!(matches!(
+        reopened.admit_with(prompt, vec![changed]).await,
+        Err(Error::Conflict)
+    ));
+    let oversized: Attachment = serde_json::from_value(
+        json!({"mime":"image/png","data":PNG,"metadata":{"name":"x".repeat(64 * 1024)}}),
+    )
+    .unwrap();
+    assert!(matches!(oversized.validate(), Err(Error::Invalid(_))));
 }
 
 fn tool_reply(protocol: &str, name: &str, input: Value) -> String {

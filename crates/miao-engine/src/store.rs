@@ -678,14 +678,13 @@ impl Store {
             let mut events = Vec::new();
             for (id,prompt,attachments) in pending {
                 let checkpoint=uuid::Uuid::new_v4().to_string();
-                let e = append(&tx, &session, "input.promoted", json!({"input_id":id,"prompt":prompt,"checkpoint":checkpoint}))?;
+                let media = attachments.as_deref().map(serde_json::from_str::<Vec<Attachment>>).transpose()?.unwrap_or_default();
+                let mut data = json!({"input_id":id,"prompt":prompt,"checkpoint":checkpoint});
+                if !media.is_empty() { data["attachments"] = json!(media); }
+                let e = append(&tx, &session, "input.promoted", data)?;
                 tx.execute("UPDATE engine_input SET state='promoted' WHERE id=?1", [&id])?;
                 let mut parts = vec![json!({"type":"text","text":prompt})];
-                if let Some(attachments) = attachments {
-                    if let Ok(media) = serde_json::from_str::<Vec<Attachment>>(&attachments) {
-                        parts.extend(media.iter().map(Attachment::part));
-                    }
-                }
+                parts.extend(media.iter().map(Attachment::part));
                 tx.execute("INSERT INTO engine_message(session_id,seq,role,content,checkpoint,recorded_at_ms) VALUES(?1,?2,'user',?3,?4,?5)", params![session,e.seq,serde_json::to_string(&Value::Array(parts))?,checkpoint,e.recorded_at_ms])?;
                 events.push(e);
             }
@@ -1995,7 +1994,7 @@ pub(crate) fn admit_input(
 ) -> Result<Admission, Error> {
     if input.session_id.is_empty()
         || input.input_id.is_empty()
-        || input.prompt.is_empty()
+        || (input.prompt.is_empty() && attachments.is_empty())
         || input.session_id.len() > 256
         || input.input_id.len() > 256
         || input.prompt.len() > 1024 * 1024
