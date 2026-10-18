@@ -10,6 +10,7 @@ mod edit_recovery;
 pub mod events;
 pub mod export;
 mod file_mutation;
+pub mod formatter;
 pub mod gemini;
 mod history;
 pub mod hooks;

@@ -140,6 +140,7 @@ pub struct Tools {
     web: Option<Arc<crate::web::Client>>,
     worker: Option<Arc<crate::worker::Registry>>,
     lsp: Option<Arc<crate::lsp::Registry>>,
+    formatter: Option<Arc<crate::formatter::Registry>>,
     context_sources: Arc<Vec<crate::context::Source>>,
     workspace_instructions: bool,
     skill_directories: Arc<Vec<crate::context::SkillDirectory>>,
@@ -184,6 +185,7 @@ impl Tools {
             web: None,
             worker: None,
             lsp: None,
+            formatter: None,
             context_sources: Arc::new(vec![]),
             workspace_instructions: true,
             skill_directories: Arc::new(vec![]),
@@ -350,7 +352,7 @@ impl Tools {
             "background":self.background_enabled,"delegation":self.delegation_enabled,
             "wakeup":self.wakeup_enabled,"cron":self.cron_enabled,"processNetwork":self.process_network,
             "processRunnerConfigured":self.runner.is_some(),"mcpAttached":self.mcp.is_some(),
-            "workerAttached":self.worker.is_some(),"lspAttached":self.lsp.is_some(),"web":self.web.as_ref().map(|client|client.descriptor())})
+            "workerAttached":self.worker.is_some(),"lspAttached":self.lsp.is_some(),"formatter":self.formatter.as_ref().map(|registry| registry.descriptor()),"web":self.web.as_ref().map(|client|client.descriptor())})
     }
     pub(crate) fn references(&self) -> &[crate::context::Reference] {
         &self.references
@@ -367,6 +369,38 @@ impl Tools {
     pub fn with_mcp(mut self, registry: Arc<mcp::Registry>) -> Self {
         self.mcp = Some(registry);
         self
+    }
+
+    pub fn with_formatter(mut self, registry: Arc<crate::formatter::Registry>) -> Self {
+        self.formatter = Some(registry);
+        self
+    }
+
+    async fn format_mutation(&self, path: &Path, value: &mut Value, cancel: &CancellationToken) {
+        let (Some(registry), Some(runner)) = (&self.formatter, &self.runner) else {
+            return;
+        };
+        // The mutation was committed already. Formatting failures must not
+        // make its side effects look uncommitted or safe to repeat.
+        if tokio::fs::canonicalize(path).await.ok().as_deref() != Some(path) {
+            return;
+        }
+        let Ok(before) = tokio::fs::read(path).await else {
+            return;
+        };
+        if value["sha256"] != digest(&before) {
+            value["formatters"] = json!([{"status":"skipped_external_change"}]);
+            return;
+        }
+        let reports = registry.file(path, runner, cancel).await;
+        if reports.is_empty() {
+            return;
+        }
+        value["formatters"] = json!(reports);
+        if let Ok(after) = tokio::fs::read(path).await {
+            value["sha256"] = json!(digest(&after));
+            value["bytes"] = json!(after.len());
+        }
     }
 
     pub fn with_compact_disclosure(mut self, enabled: bool) -> Self {
@@ -1296,12 +1330,23 @@ impl Tools {
             if prepared.name == "apply_patch" {
                 let input = crate::patch::Input::parse(prepared.input)?;
                 let operations = crate::patch::parse(&input)?;
-                return tokio::task::spawn_blocking(move || {
-                    let _lease = lease;
-                    crate::patch::apply(&directory, &operations)
+                let (applied, _lease) = tokio::task::spawn_blocking(move || {
+                    (crate::patch::apply(&directory, &operations), lease)
                 })
                 .await
                 .map_err(|_| ToolError::Io(std::io::Error::other("file commit worker failed")))?;
+                let mut applied = applied?;
+                if let Some(files) = applied["files"].as_array_mut() {
+                    for file in files {
+                        if file["action"] == "delete" {
+                            continue;
+                        }
+                        if let Some(path) = file["path"].as_str().map(|path| self.root.join(path)) {
+                            self.format_mutation(&path, file, &cancel).await;
+                        }
+                    }
+                }
+                return Ok(applied);
             }
             let mutation = Mutation::parse(&prepared.name, prepared.input.clone())?;
             // The rebase statistics describe the text the model asked to
@@ -1319,9 +1364,8 @@ impl Tools {
             } else {
                 None
             };
-            let mut applied = tokio::task::spawn_blocking(move || {
-                let _lease = lease;
-                apply(&directory, &relative, mutation, snapshot)
+            let (mut applied, _lease) = tokio::task::spawn_blocking(move || {
+                (apply(&directory, &relative, mutation, snapshot), lease)
             })
             .await
             .map_err(|_| ToolError::Io(std::io::Error::other("file commit worker failed")))?;
@@ -1345,6 +1389,9 @@ impl Tools {
                     });
                     return Ok(stale);
                 }
+            }
+            if let Ok(value) = applied.as_mut() {
+                self.format_mutation(&prepared.path, value, &cancel).await;
             }
             // Errors and warnings from the file the mutation just changed, so
             // the model can repair them in the same turn instead of discovering
