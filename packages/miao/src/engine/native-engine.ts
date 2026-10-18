@@ -303,7 +303,7 @@ export const fromOwners = (owners: Owners): NativeEngine.Interface => {
             try: () =>
               connection.session.promptProduct({
                 sessionID: input.sessionID,
-                prompt: { text: input.prompt.text },
+                prompt: input.prompt,
                 id: input.id,
                 delivery: input.delivery,
                 resume: input.resume,

@@ -223,6 +223,27 @@ if (binary)
       expect(reset.status).toBe(204)
       const resetGet = await fetch(url + "/api/session/" + body.id, { headers })
       expect((await resetGet.json()).data.model).toEqual(catalog.data[0].model)
+      const image = await fetch(url + "/api/session/" + body.id + "/prompt", {
+        method: "POST",
+        headers,
+        body: JSON.stringify({
+          id: "msg_native_http_image",
+          prompt: {
+            text: "inspect the image",
+            files: [
+              {
+                uri: "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+M8AAAMBAQDJ/pLvAAAAAElFTkSuQmCC",
+                name: "http-image.png",
+              },
+            ],
+          },
+          resume: false,
+        }),
+      })
+      expect(image.status).toBe(200)
+      const admittedImage = await image.json()
+      expect(admittedImage.data.prompt.files).toHaveLength(1)
+      expect(admittedImage.data.prompt.files[0]).toMatchObject({ name: "http-image.png", mime: "image/png" })
     } finally {
       clearTimeout(timer)
       child.kill()
