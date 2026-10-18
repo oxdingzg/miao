@@ -1,241 +1,37 @@
 name: nix-hashes
-
+'on':
+  workflow_dispatch: null
 permissions:
   contents: write
-
-on:
-  workflow_dispatch:
-  push:
-    branches: [main]
-    paths:
-      - "bun.lock"
-      - "package.json"
-      - "packages/*/package.json"
-      - "flake.lock"
-      - "nix/node_modules.nix"
-      - "nix/scripts/**"
-      - "patches/**"
-      - ".github/actions/setup-git-committer/**"
-      - ".github/workflows/nix-hashes.yml"
-
-concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: true
-
+  pull-requests: write
 jobs:
-  # Native runners required: bun install cross-compilation flags (--os/--cpu)
-  # do not produce byte-identical node_modules as native installs.
-  compute-hash:
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - system: x86_64-linux
-            runner: ubuntu-latest
-          - system: aarch64-linux
-            runner: ubuntu-24.04-arm
-          - system: x86_64-darwin
-            runner: macos-15-intel
-          - system: aarch64-darwin
-            runner: macos-latest
-    runs-on: ${{ matrix.runner }}
-
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
-
-      - name: Setup Nix
-        uses: nixbuild/nix-quick-install-action@2c9db80fb984ceb1bcaa77cdda3fdf8cfba92035 # v34
-
-      - name: Compute node_modules hash
-        id: hash
-        env:
-          SYSTEM: ${{ matrix.system }}
-        run: |
-          set -euo pipefail
-
-          BUILD_LOG=$(mktemp)
-          trap 'rm -f "$BUILD_LOG"' EXIT
-
-          HASH=""
-          MAX_ATTEMPTS=3
-          for ((ATTEMPT = 1; ATTEMPT <= MAX_ATTEMPTS; ATTEMPT++)); do
-            # Build with fakeHash to trigger hash mismatch and reveal correct hash
-            nix build ".#packages.${SYSTEM}.node_modules_updater" --no-link 2>&1 | tee "$BUILD_LOG" || true
-
-            HASH="$(nix run --inputs-from . nixpkgs#gnugrep -- -oP 'got:\s*\Ksha256-[A-Za-z0-9+/=]+' "$BUILD_LOG" | tail -n1 || true)"
-
-            [ -n "$HASH" ] && break
-
-            if [ "$ATTEMPT" -lt "$MAX_ATTEMPTS" ]; then
-              echo "::warning::Attempt ${ATTEMPT}/${MAX_ATTEMPTS} produced no hash for ${SYSTEM}; retrying in $((ATTEMPT * 10))s"
-              sleep $((ATTEMPT * 10))
-            fi
-          done
-
-          if [ -z "$HASH" ]; then
-            echo "::error::Failed to compute hash for ${SYSTEM} after ${MAX_ATTEMPTS} attempts"
-            cat "$BUILD_LOG"
-            exit 1
-          fi
-
-          echo "$HASH" > hash.txt
-          echo "Computed hash for ${SYSTEM}: $HASH"
-
-      - name: Upload hash
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
-        with:
-          name: hash-${{ matrix.system }}
-          path: hash.txt
-          retention-days: 1
-
   update-hashes:
-    needs: compute-hash
-    if: github.event_name != 'pull_request'
     runs-on: ubuntu-latest
-    permissions:
-      contents: write
-      pull-requests: write
-
+    timeout-minutes: 60
     steps:
-      - name: Checkout repository
-        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
-        with:
-          persist-credentials: false
-          fetch-depth: 0
-          ref: ${{ github.ref_name }}
+    - name: Checkout repository
+      uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
+      with:
+        persist-credentials: false
+        fetch-depth: 0
+        ref: ${{ github.ref_name }}
+    - name: Setup git committer
+      id: committer
+      uses: ./.github/actions/setup-git-committer
+      with:
+        miao-app-id: ${{ vars.MIAO_APP_ID }}
+        miao-app-secret: ${{ secrets.MIAO_APP_SECRET }}
+    - name: Stub the computed hash
+      run: 'printf ''{"nodeModules":{"x86_64-linux":"sha256-probe-%s"}}\n'' "$GITHUB_RUN_ID" > nix/hashes.json
 
-      - name: Setup git committer
-        id: committer
-        uses: ./.github/actions/setup-git-committer
-        with:
-          miao-app-id: ${{ vars.MIAO_APP_ID }}
-          miao-app-secret: ${{ secrets.MIAO_APP_SECRET }}
-
-      - name: Pull latest changes
-        run: |
-          git pull --rebase --autostash origin "$GITHUB_REF_NAME"
-
-      - name: Download hash artifacts
-        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
-        with:
-          path: hashes
-          pattern: hash-*
-
-      - name: Update hashes.json
-        run: |
-          set -euo pipefail
-
-          HASH_FILE="nix/hashes.json"
-
-          [ -f "$HASH_FILE" ] || echo '{"nodeModules":{}}' > "$HASH_FILE"
-
-          for SYSTEM in x86_64-linux aarch64-linux x86_64-darwin aarch64-darwin; do
-            FILE="hashes/hash-${SYSTEM}/hash.txt"
-            if [ -f "$FILE" ]; then
-              HASH="$(tr -d '[:space:]' < "$FILE")"
-              echo "${SYSTEM}: ${HASH}"
-              jq --arg sys "$SYSTEM" --arg h "$HASH" '.nodeModules[$sys] = $h' "$HASH_FILE" > tmp.json
-              mv tmp.json "$HASH_FILE"
-            else
-              echo "::warning::Missing hash for ${SYSTEM}"
-            fi
-          done
-
-          cat "$HASH_FILE"
-
-      # main requires every change to arrive through a pull request, so the
-      # refreshed hash cannot be pushed to it directly. Push a machine-owned
-      # branch, open the request, and let auto-merge land it once the required
-      # checks pass.
-      - name: Land hashes through a pull request
-        env:
-          APP_TOKEN: ${{ steps.committer.outputs.token }}
-          RELEASE_TOKEN: ${{ secrets.RELEASE_TOKEN }}
-          BRANCH: chore/nix-hashes
-          DEADLINE_MINUTES: "45"
-        run: |
-          set -euo pipefail
-
-          # A pull request opened with the workflow token cannot land: GitHub
-          # holds the runs it triggers at `action_required` with no jobs, so the
-          # required `guard` and `ci-gate` checks never report and the protected
-          # branch refuses the merge. The committer app and release's PAT both
-          # trigger runs and can merge, so landing needs one of them.
-          LAND_TOKEN="${APP_TOKEN:-${RELEASE_TOKEN:-}}"
-          if [ -z "$LAND_TOKEN" ]; then
-            echo "::error::Landing the refreshed hash needs MIAO_APP_ID/MIAO_APP_SECRET or RELEASE_TOKEN: the workflow token only opens a pull request whose checks never run"
-            exit 1
-          fi
-          export GH_TOKEN="$LAND_TOKEN"
-
-          HASH_FILE="nix/hashes.json"
-
-          echo "### Nix hashes" >> "$GITHUB_STEP_SUMMARY"
-
-          if [ -z "$(git status --short -- "$HASH_FILE")" ]; then
-            echo "No changes to commit"
-            echo "Status: no changes" >> "$GITHUB_STEP_SUMMARY"
-            exit 0
-          fi
-
-          git add "$HASH_FILE"
-          git commit -m "chore(nix): update node_modules hashes"
-
-          # The credential in the remote URL is what authenticates the push, so
-          # the landing token goes on the remote rather than the workflow token
-          # that setup-git-committer put there.
-          git remote set-url origin "https://x-access-token:${LAND_TOKEN}@github.com/${GITHUB_REPOSITORY}"
-
-          # Rebasing keeps a reused branch on top of the base branch, which the
-          # required-checks rule demands; force because the branch belongs to
-          # this workflow, so a retry reuses it instead of leaving one behind.
-          push() {
-            git pull --rebase --autostash origin "$GITHUB_REF_NAME"
-            git push --force origin "HEAD:refs/heads/$BRANCH"
-          }
-
-          push
-
-          PR="$(gh pr list --head "$BRANCH" --state open --json number -q '.[0].number')"
-          if [ -z "$PR" ]; then
-            gh pr create \
-              --base "$GITHUB_REF_NAME" \
-              --head "$BRANCH" \
-              --title "chore(nix): update node_modules hashes" \
-              --body "Automated refresh of \`nix/hashes.json\` from [run $GITHUB_RUN_ID]($GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID)." \
-              > /dev/null
-          fi
-
-          # Auto-merge rather than a direct merge: the required checks have not
-          # run yet, and the protected branch refuses a merge while they are
-          # missing. Re-running this step on a request that already has it
-          # enabled is not an error, so only ask when it is missing.
-          if [ "$(gh pr view "$BRANCH" --json autoMergeRequest -q '.autoMergeRequest != null')" != "true" ]; then
-            gh pr merge "$BRANCH" --squash --auto
-          fi
-
-          # Wait for the verdict so a refresh that never lands fails this run
-          # instead of leaving an unnoticed pull request behind. A merge to the
-          # base branch during the checks leaves this branch behind it, which
-          # blocks the merge, so rebase and push again when that happens.
-          DEADLINE=$(( $(date +%s) + DEADLINE_MINUTES * 60 ))
-          while true; do
-            STATE="$(gh pr view "$BRANCH" --json state -q .state)"
-            if [ "$STATE" = "MERGED" ]; then break; fi
-            if [ "$STATE" = "CLOSED" ]; then
-              echo "::error::The hash pull request was closed without merging"
-              exit 1
-            fi
-            if [ "$(date +%s)" -ge "$DEADLINE" ]; then
-              echo "::error::The hash pull request did not merge within ${DEADLINE_MINUTES} minutes"
-              exit 1
-            fi
-            if [ "$(gh pr view "$BRANCH" --json mergeStateStatus -q .mergeStateStatus)" = "BEHIND" ]; then
-              push
-            fi
-            sleep 30
-          done
-
-          # GitHub deletes the head branch on merge for this repository.
-          echo "Status: merged the pull request for $BRANCH" >> "$GITHUB_STEP_SUMMARY"
+        cat nix/hashes.json'
+    - name: Land hashes through a pull request
+      env:
+        APP_TOKEN: ${{ steps.committer.outputs.token }}
+        RELEASE_TOKEN: ${{ secrets.RELEASE_TOKEN }}
+        BRANCH: chore/nix-hashes
+        DEADLINE_MINUTES: '45'
+      run: "set -euo pipefail\n\n# A pull request opened with the workflow token cannot land: GitHub\n# holds the runs it triggers at `action_required` with no jobs, so the\n# required `guard` and `ci-gate` checks never report and the protected\n# branch refuses the merge. The committer app and release's PAT both\n# trigger runs and can merge, so landing needs one of them.\nLAND_TOKEN=\"${APP_TOKEN:-${RELEASE_TOKEN:-}}\"\nif [ -z \"$LAND_TOKEN\" ]; then\n  echo \"::error::Landing the refreshed hash needs MIAO_APP_ID/MIAO_APP_SECRET or RELEASE_TOKEN: the workflow token only opens a pull request whose checks never run\"\n  exit 1\nfi\nexport GH_TOKEN=\"$LAND_TOKEN\"\n\nHASH_FILE=\"nix/hashes.json\"\n\necho \"### Nix hashes\" >> \"$GITHUB_STEP_SUMMARY\"\n\nif [ -z \"$(git status --short -- \"$HASH_FILE\")\" ]; then\n  echo \"No changes to commit\"\n  echo \"Status: no changes\" >> \"$GITHUB_STEP_SUMMARY\"\n  exit 0\nfi\n\ngit add \"$HASH_FILE\"\ngit commit -m \"chore(nix): update node_modules\
+        \ hashes\"\n\n# The credential in the remote URL is what authenticates the push, so\n# the landing token goes on the remote rather than the workflow token\n# that setup-git-committer put there.\ngit remote set-url origin \"https://x-access-token:${LAND_TOKEN}@github.com/${GITHUB_REPOSITORY}\"\n\n# Rebasing keeps a reused branch on top of the base branch, which the\n# required-checks rule demands; force because the branch belongs to\n# this workflow, so a retry reuses it instead of leaving one behind.\npush() {\n  git pull --rebase --autostash origin \"$GITHUB_REF_NAME\"\n  git push --force origin \"HEAD:refs/heads/$BRANCH\"\n}\n\npush\n\nPR=\"$(gh pr list --head \"$BRANCH\" --state open --json number -q '.[0].number')\"\nif [ -z \"$PR\" ]; then\n  gh pr create \\\n    --base \"$GITHUB_REF_NAME\" \\\n    --head \"$BRANCH\" \\\n    --title \"chore(nix): update node_modules hashes\" \\\n    --body \"Automated refresh of \\`nix/hashes.json\\` from [run $GITHUB_RUN_ID]($GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID).\"\
+        \ \\\n    > /dev/null\nfi\n\n# Auto-merge rather than a direct merge: the required checks have not\n# run yet, and the protected branch refuses a merge while they are\n# missing. Re-running this step on a request that already has it\n# enabled is not an error, so only ask when it is missing.\nif [ \"$(gh pr view \"$BRANCH\" --json autoMergeRequest -q '.autoMergeRequest != null')\" != \"true\" ]; then\n  gh pr merge \"$BRANCH\" --squash --auto\nfi\n\n# Wait for the verdict so a refresh that never lands fails this run\n# instead of leaving an unnoticed pull request behind. A merge to the\n# base branch during the checks leaves this branch behind it, which\n# blocks the merge, so rebase and push again when that happens.\nDEADLINE=$(( $(date +%s) + DEADLINE_MINUTES * 60 ))\nwhile true; do\n  STATE=\"$(gh pr view \"$BRANCH\" --json state -q .state)\"\n  if [ \"$STATE\" = \"MERGED\" ]; then break; fi\n  if [ \"$STATE\" = \"CLOSED\" ]; then\n    echo \"::error::The hash pull request was\
+        \ closed without merging\"\n    exit 1\n  fi\n  if [ \"$(date +%s)\" -ge \"$DEADLINE\" ]; then\n    echo \"::error::The hash pull request did not merge within ${DEADLINE_MINUTES} minutes\"\n    exit 1\n  fi\n  if [ \"$(gh pr view \"$BRANCH\" --json mergeStateStatus -q .mergeStateStatus)\" = \"BEHIND\" ]; then\n    push\n  fi\n  sleep 30\ndone\n\n# GitHub deletes the head branch on merge for this repository.\necho \"Status: merged the pull request for $BRANCH\" >> \"$GITHUB_STEP_SUMMARY\"\n"
