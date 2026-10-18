@@ -2,7 +2,7 @@
 
 import { $ } from "bun"
 import { existsSync } from "fs"
-import { rename } from "fs/promises"
+import { copyFile, mkdir, rename } from "fs/promises"
 import path from "path"
 import { fileURLToPath } from "url"
 import { createSolidTransformPlugin } from "@opentui/solid/bun-plugin"
@@ -316,20 +316,26 @@ async function buildEngineArchive(): Promise<string[]> {
       }
     }
     const name = `miao-engine-${os}-${arch}`
+    const staging = `dist/${name}`
+    await mkdir(staging, { recursive: true })
+    const files = [`miao-engine${suffix}`, "LICENSE", "LICENSE-APACHE-2.0", "NOTICE"]
+    await Promise.all([
+      copyFile(bin, path.join(staging, `miao-engine${suffix}`)),
+      copyFile(path.resolve(dir, "../../LICENSE"), path.join(staging, "LICENSE")),
+      ...files.slice(2).map((file) => copyFile(path.join(crate, file), path.join(staging, file))),
+    ])
     if (process.platform === "win32") {
-      await $`powershell -NoProfile -Command ${`Compress-Archive -Path ${bin} -DestinationPath dist/${name}.zip -Force`}`
+      await $`powershell -NoProfile -Command ${`Compress-Archive -Path ${staging}/* -DestinationPath dist/${name}.zip -Force`}`
       archives.push(`./dist/${name}.zip`)
       continue
     }
-    const staging = `dist/${name}`
-    await $`mkdir -p ${staging} && cp ${bin} ${staging}/`
     // darwin uses a zip so the archive is notarizable with the CLI archives.
     if (process.platform === "darwin") {
-      await $`zip -r ../${name}.zip miao-engine`.cwd(staging)
+      await $`zip -r ../${name}.zip ${files}`.cwd(staging)
       archives.push(`./dist/${name}.zip`)
       continue
     }
-    await $`tar -czf ../${name}.tar.gz miao-engine`.cwd(staging)
+    await $`tar -czf ../${name}.tar.gz ${files}`.cwd(staging)
     archives.push(`./dist/${name}.tar.gz`)
   }
   return archives

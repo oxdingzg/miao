@@ -454,3 +454,35 @@ turns use `agent`, and only requests containing images carry the vision header.
 The interaction id follows the Session affinity scope. Anthropic beta flags
 merge with host flags. Copilot Responses routes reject continuation contracts
 that are only supported by the other explicit transport profiles.
+
+### Bedrock Converse transport
+
+The native `amazon-bedrock` provider uses the AWS SDK default credential chain
+for environment, shared profiles, credential processes, SSO, and container or
+instance identities. The SDK owns expiring credentials and SigV4 signing;
+`--aws-region` and `--aws-profile` select the host identity configuration.
+`AWS_BEARER_TOKEN_BEDROCK` or an explicit key credential source selects bearer
+mode instead. Bearer sources are re-read each turn. Region selection applies
+to primary and fallback requests. Credential files remain host-owned resources.
+
+A trusted route manifest may declare a credential source
+`{"type":"aws","region":"us-east-1","profile":"profile-name"}` without
+placing credential bytes in the manifest. The profile is optional. Generic
+bearer-based protocols reject this source. Workspace-owned AWS credential
+resources are rejected, including when they arrive through SDK environment
+configuration.
+
+Converse event streams are CRC-validated by the SDK. Text, fragmented tool
+arguments, signed reasoning, redacted reasoning, and usage are retained;
+unknown or incomplete response content fails explicitly. Signed reasoning
+records bind the exact provider and model before replay. SDK internal retries
+are disabled so the engine request budget and fallback reservation remain the
+transport authority. Stream corruption after response start is not retried.
+Bedrock input token counts already include cache reads and writes; the
+non-cached breakdown is derived without double-counting them.
+
+Generation overrides support bounded `inferenceConfig` and
+`additionalModelRequestFields` with protected identity/history/tool fields.
+Host-declared prompt caching adds SDK cache points to the system prefix and
+latest user message. Native engine release archives include the AWS dependency
+notice and Apache 2.0 license alongside the project license.
