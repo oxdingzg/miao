@@ -1413,9 +1413,44 @@ impl Store {
         result: Value,
         is_error: bool,
     ) -> Result<Event, Error> {
+        self.tool_result_inner(session, run, provider_id, result, is_error, None)
+            .await
+    }
+
+    /// `tool_result` under a Session claim.
+    pub async fn tool_result_fenced(
+        &self,
+        session: &str,
+        run: &str,
+        provider_id: &str,
+        result: Value,
+        is_error: bool,
+        lease: &SessionLease,
+    ) -> Result<Event, Error> {
+        self.tool_result_inner(
+            session,
+            run,
+            provider_id,
+            result,
+            is_error,
+            Some(lease.clone()),
+        )
+        .await
+    }
+
+    async fn tool_result_inner(
+        &self,
+        session: &str,
+        run: &str,
+        provider_id: &str,
+        result: Value,
+        is_error: bool,
+        lease: Option<SessionLease>,
+    ) -> Result<Event, Error> {
         let (session, run, id) = (session.to_owned(), run.to_owned(), provider_id.to_owned());
         self.call(move |conn| {
             let tx=conn.transaction()?;
+            if let Some(lease) = &lease { require_lease(&tx, &session, lease)?; }
             let key=format!("{run}/{id}");
             let changed=tx.execute("UPDATE engine_tool SET state='completed' WHERE id=?1 AND state IN ('planned','dispatched') AND run_id IN (SELECT id FROM engine_run WHERE id=?2 AND session_id=?3 AND state='running')",params![key,run,session])?;
             if changed!=1 { return Err(Error::Invalid("tool is not dispatched".into())); }
@@ -1444,9 +1479,33 @@ impl Store {
         run: &str,
         provider_id: &str,
     ) -> Result<Event, Error> {
+        self.mark_dispatched_inner(session, run, provider_id, None)
+            .await
+    }
+
+    /// `mark_dispatched` under a Session claim.
+    pub async fn mark_dispatched_fenced(
+        &self,
+        session: &str,
+        run: &str,
+        provider_id: &str,
+        lease: &SessionLease,
+    ) -> Result<Event, Error> {
+        self.mark_dispatched_inner(session, run, provider_id, Some(lease.clone()))
+            .await
+    }
+
+    async fn mark_dispatched_inner(
+        &self,
+        session: &str,
+        run: &str,
+        provider_id: &str,
+        lease: Option<SessionLease>,
+    ) -> Result<Event, Error> {
         let (session, run, id) = (session.to_owned(), run.to_owned(), provider_id.to_owned());
         self.call(move |conn| {
             let tx=conn.transaction()?;
+            if let Some(lease) = &lease { require_lease(&tx, &session, lease)?; }
             let key=format!("{run}/{id}");
             let count=tx.execute("UPDATE engine_tool SET state='dispatched' WHERE id=?1 AND state='planned' AND run_id IN (SELECT id FROM engine_run WHERE id=?2 AND session_id=?3 AND state='running')",params![key,run,session])?;
             if count!=1 {return Err(Error::Invalid("tool is not planned".into()));}
