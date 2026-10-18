@@ -107,6 +107,22 @@ export class EngineTranslator {
           },
         })
     }
+    if (event.kind === "message.synthetic" && typeof event.recorded_at_ms === "number") {
+      const injected = Schema.decodeUnknownOption(Schema.Struct({ text: Schema.String, source: Schema.String }))(
+        event.data,
+      )
+      if (Option.isSome(injected))
+        publish({
+          type: "session.next.synthetic",
+          data: {
+            sessionID: adoptSession(event.session_id),
+            timestamp: DateTime.makeUnsafe(event.recorded_at_ms),
+            messageID: messageID(event.session_id, event.seq),
+            text: injected.value.text,
+            metadata: { source: injected.value.source },
+          },
+        })
+    }
     this.#tools.note(event)
     const committed =
       event.kind === "message.committed" &&

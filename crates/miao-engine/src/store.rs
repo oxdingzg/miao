@@ -1072,7 +1072,14 @@ impl Store {
             let mut message_map=std::collections::HashMap::new();
             for message in messages {
                 let mut copied=project_message_at(&tx,&target,message["role"].as_str().ok_or_else(||Error::Invalid("projected role".into()))?,message["content"].clone(),message["checkpoint"].as_str(),None,message["recorded_at_ms"].as_u64())?;
-                if message["role"] == "user" {
+                let synthetic:Option<String>=tx.query_row("SELECT data FROM engine_event WHERE session_id=?1 AND seq=?2 AND kind='message.synthetic'",params![parent,message["seq"].as_u64()],|row|row.get(0)).optional()?;
+                if let Some(data)=&synthetic {
+                    let mut data:Value=serde_json::from_str(data)?;
+                    data["input_id"]=json!(format!("msg_{target}_{}",copied.seq));
+                    data["inherited"]=json!(true);
+                    tx.execute("UPDATE engine_event SET kind='message.synthetic',data=?3 WHERE session_id=?1 AND seq=?2",params![target,copied.seq,serde_json::to_string(&data)?])?;
+                }
+                if message["role"] == "user" && synthetic.is_none() {
                     let source = message["seq"].as_u64().ok_or_else(||Error::Invalid("projected message seq".into()))?;
                     let original:Option<(String,String,Option<String>)>=tx.query_row(
                         "SELECT prompt,delivery,attachments FROM engine_input WHERE session_id=?1 AND id=COALESCE((SELECT json_extract(data,'$.input_id') FROM engine_event WHERE session_id=?1 AND seq=?2 AND kind='input.promoted'),(SELECT id FROM engine_input WHERE session_id=?1 AND admitted_seq=?2 AND state='promoted'))",

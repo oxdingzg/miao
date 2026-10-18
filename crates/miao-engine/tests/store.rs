@@ -510,7 +510,7 @@ async fn reply_identity_is_atomic_replayable_and_preserved_when_forked() {
         store.history("copy").await.unwrap().last().unwrap().content,
         content
     );
-    drop(store);
+    store.close().await.unwrap();
     let reopened = Store::open(&db).await.unwrap();
     assert_eq!(
         reopened.events("s", committed.seq, 100).await.unwrap()[0].data,

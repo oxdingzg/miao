@@ -545,6 +545,14 @@ impl Runtime {
         Ok(())
     }
 
+    pub async fn wake_pending(&self, session: &str) -> Result<(), Error> {
+        if self.inner.store.location(session).await?.as_deref() != Some(self.inner.tools.location())
+        {
+            return Err(Error::Conflict);
+        }
+        self.wake(session, false).await
+    }
+
     pub async fn resume(&self, session: &str) -> Result<(), Error> {
         if self.inner.store.location(session).await?.as_deref() != Some(self.inner.tools.location())
         {
@@ -555,6 +563,31 @@ impl Runtime {
 
     pub fn model_catalog(&self) -> Vec<crate::model_catalog::Info> {
         self.inner.provider.model_catalog()
+    }
+
+    pub async fn inject(
+        &self,
+        session: &str,
+        input_id: Option<String>,
+        text: &str,
+        source: &str,
+    ) -> Result<Value, Error> {
+        if self.inner.stop.is_cancelled() {
+            return Err(Error::Closed);
+        }
+        if self.inner.store.location(session).await?.as_deref() != Some(self.inner.tools.location())
+        {
+            return Err(Error::Conflict);
+        }
+        self.inner
+            .store
+            .inject(
+                session,
+                &input_id.unwrap_or_else(|| uuid::Uuid::new_v4().to_string()),
+                text,
+                source,
+            )
+            .await
     }
 
     pub async fn select_account(

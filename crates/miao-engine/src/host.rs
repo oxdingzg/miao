@@ -52,6 +52,16 @@ impl Host {
                 .admit_with(input, attachments, resume)
                 .await
                 .and_then(|value| serde_json::to_value(value).map_err(Error::from)),
+            Command::Inject {
+                session_id,
+                input_id,
+                text,
+                source,
+            } => runtime.inject(&session_id, input_id, &text, &source).await,
+            Command::Wake { session_id } => runtime
+                .wake_pending(&session_id)
+                .await
+                .map(|_| json!({"accepted":true})),
             Command::Resume { session_id } => runtime
                 .resume(&session_id)
                 .await

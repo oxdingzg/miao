@@ -1,6 +1,6 @@
 # 0018. Command, synthetic and shell records
 
-Status: accepted (design), implementation pending
+Status: accepted; synthetic injection implemented, command references and shell records pending
 
 ## Context
 
