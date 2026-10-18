@@ -253,8 +253,9 @@ export const fromOwners = (
         let receipt = Schema.decodeUnknownSync(status)(admitted)
         while (receipt.state === "pending" || receipt.state === "running") {
           if (Date.now() >= deadline)
-            throw new Error(
-              "Operator shell did not settle before the wait deadline; inspect its durable receipt before retrying",
+            throw new EngineError(
+              "operator_shell_wait_timeout",
+              `session.shell ${callID} did not settle before the wait deadline; inspect its durable receipt before retrying`,
             )
           await Bun.sleep(50)
           receipt = Schema.decodeUnknownSync(status)(
@@ -262,7 +263,10 @@ export const fromOwners = (
           )
         }
         if (receipt.state !== "ended")
-          throw new Error(`Operator shell ${receipt.state}; inspect the recorded refusal or unknown outcome`)
+          throw new EngineError(
+            "operator_shell_refused",
+            `session.shell ${callID} ${receipt.state}; inspect the recorded refusal or unknown outcome`,
+          )
         if (input.resume !== false) await connection.client.request("wake", { session_id: input.sessionID })
       }).pipe(Effect.asVoid),
     inject: (input) =>
