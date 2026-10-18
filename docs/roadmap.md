@@ -318,8 +318,10 @@ Progress: V2 bash and code-mode run under the core OS sandbox; a catch-all allow
 it.
 - [ ] Extend the same core-owned sandbox to the other mutating tools (workdir, allowed paths,
       network), fail-closed, model-visible denials.
-- [ ] RS: fold the new `monitor` tool into the same sandbox (it currently
-      spawns `sh -c` directly with a cleared environment).
+- [x] RS: fold the `monitor` tool into the same sandbox — done; monitor
+      commands now launch through the sandboxed runner (seatbelt/Landlock/
+      AppContainer) with the same minimal environment and a process-group
+      kill on cancel and timeout.
 - [ ] Make the sandbox default-on for the remaining tools.
 - **Acceptance:** a mutating tool inside the sandbox cannot write outside allowed paths; network
   denied when configured; denials surface as tool errors.
