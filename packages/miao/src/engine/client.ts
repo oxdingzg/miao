@@ -236,19 +236,22 @@ export class EngineClient {
   private stderr = ""
   private closed = false
   private failure?: Error
+  private readonly exited: Promise<void>
+  private inputFailure?: Promise<void>
 
   private constructor(
     private readonly child: Bun.Subprocess<"pipe", "pipe", "pipe">,
     private readonly cleanup = () => {},
   ) {
-    void this.readStdout().catch(() => {
+    const stdout = this.readStdout().catch(() => {
       this.fail(new EngineError("engine_protocol", "miao-engine output stream failed"), true)
       this.child.kill()
     })
     const stderr = this.readStderr().catch(() => {})
-    void this.child.exited.then(async (code) => {
-      // Drain stderr before rejecting so a failed startup reports its cause.
-      await stderr
+    this.exited = this.child.exited.then(async (code) => {
+      // Drain the final RPC reply and startup diagnostic before settling exit.
+      // A descendant retaining a pipe must not hold failure reporting forever.
+      await Promise.race([Promise.all([stdout, stderr]), Bun.sleep(1_000)])
       const detail = this.stderr.trim()
       const busy = /(?:^|\n)Error: Busy(?:\r?\n|$)/.test(detail)
       this.fail(
@@ -301,12 +304,18 @@ export class EngineClient {
       this.pending.set(id, { resolve, reject })
       try {
         this.child.stdin.write(JSON.stringify({ id, method, params }) + EOL)
-        void Promise.resolve(this.child.stdin.flush()).catch(() =>
-          this.fail(new EngineError("engine_closed", "miao-engine input stream closed"), true),
-        )
+        void Promise.resolve(this.child.stdin.flush()).catch(() => this.inputClosed())
       } catch {
-        this.fail(new EngineError("engine_closed", "miao-engine input stream closed"), true)
+        this.inputClosed()
       }
+    })
+  }
+
+  private inputClosed() {
+    // EPIPE can beat process exit and otherwise permanently hide its stderr.
+    // Still reject a live child that closed stdin instead of waiting forever.
+    this.inputFailure ??= Promise.race([this.exited, Bun.sleep(1_500)]).then(() => {
+      if (!this.failure) this.fail(new EngineError("engine_closed", "miao-engine input stream closed"), true)
     })
   }
 
@@ -335,7 +344,7 @@ export class EngineClient {
   }
 
   shutdown() {
-    return this.request("shutdown", {})
+    return this.request("shutdown")
   }
 
   async close() {
