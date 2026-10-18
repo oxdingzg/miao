@@ -57,6 +57,72 @@ fn stdio_ack_export_and_exact_retry_use_committed_events() {
 }
 
 #[test]
+fn pending_input_cancel_is_a_wire_command_with_a_durable_audit_trail() {
+    let dir = tempfile::tempdir().unwrap();
+    let mut process = Command::new(env!("CARGO_BIN_EXE_miao-engine"))
+        .args([
+            "serve",
+            "--db",
+            dir.path().join("engine.db").to_str().unwrap(),
+            "--workspace",
+            dir.path().to_str().unwrap(),
+            "--model",
+            "fixture",
+        ])
+        .env("ANTHROPIC_API_KEY", "fixture-key")
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .unwrap();
+    let requests = [
+        json!({"id":1,"method":"admit","params":{"input":{"session_id":"s","input_id":"drop","prompt":"drop","delivery":"queue"},"resume":false}}),
+        json!({"id":2,"method":"admit","params":{"input":{"session_id":"s","input_id":"keep","prompt":"keep","delivery":"steer"},"resume":false}}),
+        json!({"id":3,"method":"cancel_input","params":{"session_id":"s","input_id":"drop"}}),
+        json!({"id":4,"method":"cancel_input","params":{"session_id":"s","input_id":"drop"}}),
+        json!({"id":5,"method":"cancel_input","params":{"session_id":"s","input_id":"missing"}}),
+        json!({"id":6,"method":"snapshot","params":{"session_id":"s"}}),
+        json!({"id":7,"method":"events","params":{"session_id":"s","after":0}}),
+        json!({"id":8,"method":"shutdown"}),
+    ];
+    let mut stdin = process.stdin.take().unwrap();
+    for request in requests {
+        writeln!(stdin, "{request}").unwrap();
+    }
+    drop(stdin);
+    let output = process.wait_with_output().unwrap();
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let replies: Vec<Value> = String::from_utf8(output.stdout)
+        .unwrap()
+        .lines()
+        .map(|l| serde_json::from_str(l).unwrap())
+        .collect();
+    let result = |id: u64| replies.iter().find(|r| r["id"] == id).unwrap()["result"].clone();
+    assert_eq!(result(3), json!({"accepted": true, "duplicate": false}));
+    assert_eq!(result(4), json!({"accepted": true, "duplicate": true}));
+    assert_eq!(result(5), json!({"accepted": false, "reason": "unknown"}));
+    let pending = result(6)["pending"].clone();
+    assert_eq!(pending.as_array().unwrap().len(), 1, "{pending}");
+    assert_eq!(pending[0]["input_id"], "keep");
+    assert!(result(6)["messages"].as_array().unwrap().is_empty());
+    let events = result(7).clone();
+    assert_eq!(
+        events
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|event| event["kind"].as_str().unwrap())
+            .collect::<Vec<_>>(),
+        vec!["input.admitted", "input.admitted", "input.cancelled"]
+    );
+    assert_eq!(events[2]["data"]["input_id"], "drop");
+}
+
+#[test]
 fn version_uses_root_manifest_and_no_provider_configuration() {
     let output = Command::new(env!("CARGO_BIN_EXE_miao-engine"))
         .arg("--version")

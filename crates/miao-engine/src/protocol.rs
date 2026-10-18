@@ -198,6 +198,14 @@ pub enum Command {
     Resume {
         session_id: String,
     },
+    /// Drop one durably admitted input before promotion. The admission row is
+    /// retained as cancelled evidence, so an exact retry cannot resurrect a
+    /// prompt the operator dropped; an unknown or already promoted input is
+    /// reported as not accepted instead.
+    CancelInput {
+        session_id: String,
+        input_id: String,
+    },
     ModelCatalog,
     SelectModel {
         session_id: String,
