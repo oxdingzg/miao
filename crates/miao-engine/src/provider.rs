@@ -304,6 +304,14 @@ pub trait Provider: Send + Sync {
     ) -> Option<Arc<dyn Provider>> {
         None
     }
+    fn with_route_auth(
+        &self,
+        _auth: &crate::model_routes::Auth,
+    ) -> Result<Arc<dyn Provider>, ProviderError> {
+        Err(ProviderError::Stream(
+            "provider does not support host route authentication".into(),
+        ))
+    }
     fn with_input_modalities(
         &self,
         _input: Vec<String>,
@@ -575,6 +583,30 @@ impl Anthropic {
 
 #[async_trait]
 impl Provider for Anthropic {
+    fn with_route_auth(
+        &self,
+        auth: &crate::model_routes::Auth,
+    ) -> Result<Arc<dyn Provider>, ProviderError> {
+        auth.validate()?;
+        if !auth.query.is_empty() {
+            return Err(ProviderError::Stream(
+                "Anthropic does not support host route query parameters".into(),
+            ));
+        }
+        let mut selected = self.clone();
+        selected.bearer = match auth.style.as_deref() {
+            None => selected.bearer,
+            Some("bearer") => true,
+            Some("api-key") => false,
+            _ => {
+                return Err(ProviderError::Stream(
+                    "unsupported Anthropic route auth style".into(),
+                ))
+            }
+        };
+        auth.apply_headers(&mut selected.extra_headers);
+        Ok(Arc::new(selected))
+    }
     fn with_input_modalities(
         &self,
         input: Vec<String>,
@@ -677,13 +709,17 @@ impl Provider for Anthropic {
         if self.bearer {
             return CountTokens::Failed("vertex bearer route has no count endpoint".into());
         }
-        let request = self
+        let builder = self
             .client
             .post(format!("{}/count_tokens", self.endpoint))
             .header("x-api-key", header)
             .header("anthropic-version", "2023-06-01")
-            .json(&json!({"model": self.model, "messages": messages}))
-            .build();
+            .json(&json!({"model": self.model, "messages": messages}));
+        let builder = match route_headers(builder, &self.extra_headers) {
+            Ok(builder) => builder,
+            Err(_) => return CountTokens::Failed("invalid route headers".into()),
+        };
+        let request = builder.build();
         let request = match request {
             Ok(request) => request,
             Err(_) => return CountTokens::Failed("count request build failed".into()),
