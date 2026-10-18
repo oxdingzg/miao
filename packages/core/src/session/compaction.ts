@@ -1,9 +1,11 @@
 export * as SessionCompaction from "./compaction"
 
-import { LLM, LLMError, LLMEvent, Message, ModelLimits, type LLMRequest, type Model } from "@miao/llm"
+import { LLM, LLMError, LLMEvent, Message, ModelLimits, mergeJsonRecords, type LLMRequest, type Model } from "@miao/llm"
 import { DateTime, Effect, Stream } from "effect"
 import type { Config } from "../config"
 import type { EventV2 } from "../event"
+import type { ModelV2 } from "../model"
+import { ModelVariants } from "../model-variants"
 import { SessionEvent } from "./event"
 import { SessionMessage } from "./message"
 import { PROTECT_TOKENS } from "./prune"
@@ -13,7 +15,10 @@ import { Token } from "../util/token"
 const DEFAULT_BUFFER = 20_000
 const DEFAULT_KEEP_TOKENS = 8_000
 const TOOL_OUTPUT_MAX_CHARS = 2_000
-const SUMMARY_OUTPUT_TOKENS = 4_096
+// A summary is dense bullets, not prose. The old 4,096 budget let a reasoning
+// model spend minutes generating a checkpoint several times larger than the
+// template asks for; 2,048 tokens still fits every section with room to spare.
+const SUMMARY_OUTPUT_TOKENS = 2_048
 // Recovery must not send another near-window request to an endpoint that already
 // rejected the catalog's window estimate. Summarize the whole head in bounded
 // stages; publish a checkpoint only after every stage succeeds.
@@ -30,6 +35,13 @@ export const RESTORE_TOKENS = 50_000
 export const RESTORE_FILES = 5
 export const RESTORE_FILE_TOKENS = 5_000
 const MAX_SUMMARY_STAGES = 64
+// Slices are independent, so several can be in flight without changing the result.
+// Four turns a 13-call chain into four rounds while staying polite to a provider's
+// concurrency limit.
+const SUMMARY_CONCURRENCY = 4
+// Partial summaries are merged in groups this large. At the 2,048-token output
+// budget one group stays far below the summarizer's input ceiling.
+const SUMMARY_MERGE_GROUP = 8
 // Bound tokenizer work as well as provider input. Tokenizing a giant unbroken
 // output in one pass can be pathological; independent short segments provide a
 // conservative count without making recovery itself stall.
@@ -79,6 +91,7 @@ const SUMMARY_TEMPLATE = `Output exactly the Markdown structure shown inside <te
 
 Rules:
 - Keep every section, even when empty.
+- Keep the whole summary under 1,400 tokens; prefer dense bullets over prose.
 - Use terse bullets, not prose paragraphs.
 - Preserve exact file paths, symbols, commands, error strings, URLs, and identifiers when known.
 - Preserve runnable tasks and their dependencies, waiting job/run IDs and completion conditions, current branch and uncommitted work, PR URLs, and test results with the revision tested.
@@ -145,6 +158,15 @@ type Input = {
   readonly observedMessages?: number
   /** Fingerprint of the complete request prefix covered by the provider report. */
   readonly observedPrefix?: string
+  /**
+   * Prompt size of `request` from the same budget that decided to compact: the
+   * provider's count when it has one, the anchored estimate otherwise. Strategies
+   * must fit against this number instead of re-measuring, or the decision and the
+   * strategy can disagree about the same request.
+   */
+  readonly tokens?: number
+  /** Catalog entry for `model`, when available; lets a summary pin a cheap tier. */
+  readonly modelInfo?: ModelV2.Info
   /**
    * Reports the drain phase while a summary is in flight. A compaction is neither
    * requesting nor streaming, and a long one must not look like an idle Session.
@@ -336,6 +358,26 @@ export const buildHotPrompt = () =>
     SUMMARY_TEMPLATE,
   ].join("\n\n")
 
+/**
+ * Merge partial summaries of consecutive slices. `previousSummary` is folded in
+ * only by the final merge, so intermediate rounds do not repeat it.
+ */
+export const buildMergePrompt = (input: {
+  readonly previousSummary?: string
+  readonly parts: readonly string[]
+}) =>
+  [
+    "The text below is a sequence of summaries of consecutive parts of one conversation, in order.",
+    `<partial-summaries>\n${input.parts.join("\n\n")}\n</partial-summaries>`,
+    ...(input.previousSummary === undefined
+      ? []
+      : [
+          `The <prior-summary> below summarizes everything before those parts:\n\n<prior-summary>\n${input.previousSummary}\n</prior-summary>`,
+        ]),
+    "Combine the partial summaries into one anchored summary so another coding agent can continue the work. Merge related bullets, keep the original objective and the latest state, and do not drop a fact that only one part mentions.",
+    SUMMARY_TEMPLATE,
+  ].join("\n\n")
+
 /** Model/route, instructions, tools and selected history must still match the report. */
 export const prefix = (request: LLMRequest, messages = request.messages.length) =>
   Bun.hash(
@@ -479,6 +521,20 @@ export const make = (dependencies: Dependencies) => {
     return attempt
   })
 
+  // A model's selected variant writes its reasoning effort into the route's HTTP
+  // body, which the protocol body cannot override. A summary must not inherit the
+  // Session's tier: the template asks for terse bullets, and a high-effort summary
+  // call spends minutes producing tokens the checkpoint does not need.
+  const summaryHttp = (input: Input, model: Model) => {
+    const info = model === input.model ? input.modelInfo : undefined
+    const body = info === undefined || info.api.type !== "aisdk" ? undefined : ModelVariants.auxReasoningBody(
+      info.api,
+      info.variants.length > 0 ? info.variants : ModelVariants.generate(info),
+    )
+    if (body === undefined) return input.request.http
+    return { ...input.request.http, body: mergeJsonRecords(input.request.http?.body, body) }
+  }
+
   // One summary of the whole conversation over the request prefix the turn
   // already built (system, tools, and messages): the provider serves that prefix
   // from its prompt cache, and appending the instruction as the final user
@@ -491,7 +547,11 @@ export const make = (dependencies: Dependencies) => {
     const output = input.request.generation?.maxTokens ?? input.model.route.defaults.limits?.output ?? 0
     const summaryOutput = Math.min(output || SUMMARY_OUTPUT_TOKENS, SUMMARY_OUTPUT_TOKENS)
     const instruction = buildHotPrompt()
-    const requestTokens = measureValue({
+    // The decision already sized this exact request. Re-measuring here used to
+    // re-derive a different number (the estimator ignored the provider's count), so
+    // a prefix that triggered compaction could then be declared too large to
+    // summarize and fall through to the staged path.
+    const requestTokens = input.tokens ?? measureValue({
       system: input.request.system,
       messages: input.request.messages,
       tools: input.request.tools,
@@ -514,7 +574,7 @@ export const make = (dependencies: Dependencies) => {
     const requestFor = (model: Model) =>
       LLM.request({
         model,
-        http: input.request.http,
+        http: summaryHttp(input, model),
         providerOptions: input.request.providerOptions,
         system: input.request.system,
         messages: [...input.request.messages, Message.user(instruction)],
@@ -564,7 +624,7 @@ export const make = (dependencies: Dependencies) => {
     const requestFor = (model: Model, prompt: string) =>
       LLM.request({
         model,
-        http: input.request.http,
+        http: summaryHttp(input, model),
         providerOptions: input.request.providerOptions,
         system: input.request.system,
         messages: [Message.user(prompt)],
@@ -594,37 +654,70 @@ export const make = (dependencies: Dependencies) => {
       stages,
     })
     const staged: Effect.Effect<Attempt> = Effect.gen(function* () {
-      let summary = previous
+      // Slices are independent work: each one is summarized on its own and the
+      // partials are merged afterwards. The previous chain fed every slice the
+      // summary produced so far, which serialized the run into N calls at roughly
+      // 70 seconds each — a 1.2M-character history spent 14 minutes compacting.
+      const slices: string[] = []
       let offset = 0
-      for (let stage = 0; stage < MAX_SUMMARY_STAGES; stage++) {
-        const stageStartedAt = Date.now()
-        const overhead = systemTokens + recoveryTokens(buildPrompt({ previousSummary: summary, context: [""] }))
-        const budget = ceiling - summaryOutput - overhead
-        if (budget <= 0) return summaryAttempt.failed()
-        let end = Math.min(source.length, offset + budget * 2)
-        while (end > offset && recoveryTokens(source.slice(offset, end)) > budget)
+      while (offset < source.length && slices.length < MAX_SUMMARY_STAGES) {
+        let end = Math.min(source.length, offset + stageBudget * 2)
+        while (end > offset && recoveryTokens(source.slice(offset, end)) > stageBudget)
           end = offset + Math.floor((end - offset) / 2)
         const last = source.charCodeAt(end - 1)
         if (last >= 0xd800 && last <= 0xdbff) end--
         if (end <= offset) return summaryAttempt.failed()
-        const prompt = buildPrompt({ previousSummary: summary, context: [source.slice(offset, end)] })
-        const model = choose(prompt)
-        let next = yield* summarizeOnce(requestFor(model, prompt))
-        if (next === undefined && model !== input.model) next = yield* summarizeOnce(requestFor(input.model, prompt))
-        if (next === undefined) return summaryAttempt.failed()
-        summary = next
+        slices.push(source.slice(offset, end))
         offset = end
-        if (input.report) yield* input.report("compacting", { stage: stage + 1, stages })
-        yield* Effect.logInfo("session.compaction.stage", {
-          sessionID: input.sessionID,
-          stage: stage + 1,
-          chars: offset,
-          charsTotal: source.length,
-          ms: Date.now() - stageStartedAt,
-        })
-        if (offset === source.length) return summaryAttempt.compacted(summary)
       }
-      return summaryAttempt.failed()
+      if (offset < source.length) return summaryAttempt.failed()
+      let finished = 0
+      const summarize = (prompt: string) =>
+        Effect.gen(function* () {
+          const startedAt = Date.now()
+          const model = choose(prompt)
+          const next = yield* summarizeOnce(requestFor(model, prompt))
+          const text = next ?? (model === input.model ? undefined : yield* summarizeOnce(requestFor(input.model, prompt)))
+          yield* Effect.logInfo("session.compaction.stage", {
+            sessionID: input.sessionID,
+            chars: prompt.length,
+            ms: Date.now() - startedAt,
+          })
+          return text
+        })
+      // Only slices count against the announced plan; merges are the cheap tail.
+      const slice = (prompt: string) =>
+        summarize(prompt).pipe(
+          Effect.tap((text) =>
+            text === undefined || input.report === undefined
+              ? Effect.void
+              : input.report("compacting", { stage: Math.min(++finished, stages), stages }),
+          ),
+        )
+      // A single slice has nothing to merge, so it carries the prior checkpoint
+      // itself. Several slices omit it and fold it into the final merge once.
+      const single = slices.length === 1
+      const partials = yield* Effect.forEach(
+        slices,
+        (part) => slice(single ? buildPrompt({ previousSummary: previous, context: [part] }) : buildPrompt({ context: [part] })),
+        { concurrency: SUMMARY_CONCURRENCY },
+      )
+      if (partials.some((part) => part === undefined)) return summaryAttempt.failed()
+      let summaries = partials.filter((part): part is string => part !== undefined)
+      while (summaries.length > 1) {
+        const current = summaries
+        const groups = Array.from({ length: Math.ceil(current.length / SUMMARY_MERGE_GROUP) }, (_, index) =>
+          current.slice(index * SUMMARY_MERGE_GROUP, (index + 1) * SUMMARY_MERGE_GROUP),
+        )
+        const merged = yield* Effect.forEach(
+          groups,
+          (group, index) => summarize(buildMergePrompt({ previousSummary: groups.length === 1 && index === 0 ? previous : undefined, parts: group })),
+          { concurrency: SUMMARY_CONCURRENCY },
+        )
+        if (merged.some((part) => part === undefined)) return summaryAttempt.failed()
+        summaries = merged.filter((part): part is string => part !== undefined)
+      }
+      return summaries[0] === undefined ? summaryAttempt.failed() : summaryAttempt.compacted(summaries[0])
     })
     return yield* runSummary({
       sessionID: input.sessionID,
@@ -653,7 +746,11 @@ export const make = (dependencies: Dependencies) => {
     input: Input,
     options?: { readonly allowSummaryOnly?: boolean },
   ) {
-    const attempt = config.hotPrefix ? yield* hotAttempt(input) : summaryAttempt.skipped()
+    // The refused attempt is the one moment a provider count is worth a request:
+    // hot only works if the smaller summary reserve brings the request back under
+    // the window, and the fit check needs the same size the decision would use.
+    const size = yield* budget(input)
+    const attempt = config.hotPrefix ? yield* hotAttempt({ ...input, tokens: size.input }) : summaryAttempt.skipped()
     if (attempt.result === "compacted") return true
     return (yield* stagedAttempt(input, options)).result === "compacted"
   })
@@ -700,7 +797,7 @@ export const make = (dependencies: Dependencies) => {
     })
     const key = input.sessionID
     if ((failures.get(key) ?? 0) >= MAX_COMPACTION_FAILURES) return false
-    const attempt = yield* compact(input)
+    const attempt = yield* compact({ ...input, tokens: size.input })
     if (attempt.result === "compacted") {
       failures.delete(key)
       return true

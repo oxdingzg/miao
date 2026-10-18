@@ -627,20 +627,23 @@ test("overflow recovery summarizes every part of a large multilingual history un
   const { compaction, requests, published } = stagedHarness([summary("anchored checkpoint")])
   expect(await Effect.runPromise(compaction.compactAfterOverflow(input))).toBe(true)
   expect(requests.length).toBeGreaterThan(1)
-  const segments = requests.map((request) => {
+  const prompts = requests.map((request) => {
     const prompt = request.messages[0].content[0]
     if (prompt.type !== "text") throw new Error("expected text summary request")
     expect(
       Token.measureValue({ system: request.system, messages: request.messages }, Token.count) +
         (request.generation?.maxTokens ?? 0),
     ).toBeLessThanOrEqual(64_000)
-    return prompt.text.split("<conversation>\n")[1].split("\n</conversation>")[0]
+    return prompt.text
   })
+  const segments = prompts
+    .filter((text) => text.includes("<conversation>\n"))
+    .map((text) => text.split("<conversation>\n")[1].split("\n</conversation>")[0])
   expect(segments.join("")).toBe(`[User]: ${history}`)
   expect(published).toEqual(["anchored checkpoint"])
-  const second = requests[1].messages[0].content[0]
-  if (second.type !== "text") throw new Error("expected text summary request")
-  expect(second.text).toContain("<prior-summary>\nanchored checkpoint")
+  // Slices are independent and merged once, rather than each slice carrying the
+  // summary produced by the one before it.
+  expect(prompts.at(-1)).toContain("<partial-summaries>")
 })
 
 test("overflow recovery summarizes the cached prefix in one call when the summary still fits", async () => {
@@ -788,4 +791,69 @@ test("the sending budget exposes provider counting and reserves generation space
   expect(budget).toMatchObject({ input: 69_000, source: "counted", window: 100_000, limit: 70_000, observed: 68_000 })
   expect(await Effect.runPromise(compaction.compactIfNeeded(input, budget))).toBe(false)
   expect(counts).toBe(1)
+})
+
+test("hot compaction fits the request against the size the decision measured", async () => {
+  const main = model("main", 100_000)
+  const { compaction, requests } = customHarness([], summary("summary"))
+  const input = {
+    sessionID: SessionSchema.ID.make("ses_hot_measured"),
+    entries: overflowEntries(),
+    model: main,
+    request: LLM.request({
+      model: main,
+      messages: [Message.user("filler".repeat(80_000))],
+      generation: { maxTokens: 4_096 },
+    }),
+    // The provider counted this request at 40k; re-measuring the text locally
+    // would read 120k and push it onto the staged path for no reason.
+    tokens: 40_000,
+  } as never
+
+  expect(await Effect.runPromise(compaction.compact(input))).toMatchObject({ result: "compacted" })
+  expect(requests).toHaveLength(1)
+  // The cached-prefix signature: the whole request plus one instruction message.
+  expect(requests[0].messages).toHaveLength(2)
+})
+
+test("a summary pins the cheapest reasoning tier of its own model", async () => {
+  const main = model("main", 100_000)
+  const { compaction, requests } = customHarness([], summary("summary"))
+  const input = {
+    sessionID: SessionSchema.ID.make("ses_summary_tier"),
+    entries: overflowEntries(),
+    model: main,
+    modelInfo: {
+      providerID: "openai",
+      id: "main",
+      api: { type: "aisdk", package: "@ai-sdk/openai", id: "gpt-6.1" },
+      variants: [
+        { id: "high", headers: {}, body: { reasoning: { effort: "high" } } },
+        { id: "low", headers: {}, body: { reasoning: { effort: "low" } } },
+      ],
+    },
+    request: LLM.request({
+      model: main,
+      messages: [Message.user("continue")],
+      http: { body: { reasoning: { effort: "high" } } },
+    }),
+  } as never
+
+  expect(await Effect.runPromise(compaction.compact(input))).toMatchObject({ result: "compacted" })
+  expect(requests).toHaveLength(1)
+  // The selected variant wrote "high" into the route body; the summary overrides
+  // it without dropping the rest of the overlay.
+  expect(requests[0].http?.body).toMatchObject({ reasoning: { effort: "low" } })
+})
+
+test("a merge prompt folds partials once with the prior summary", () => {
+  const prompt = SessionCompaction.buildMergePrompt({
+    previousSummary: "earlier",
+    parts: ["first part", "second part"],
+  })
+
+  expect(prompt).toContain("<partial-summaries>\nfirst part\n\nsecond part\n</partial-summaries>")
+  expect(prompt).toContain("<prior-summary>\nearlier\n</prior-summary>")
+  expect(prompt.indexOf("<partial-summaries>")).toBeLessThan(prompt.indexOf("<prior-summary>"))
+  expect(prompt).toContain("## Work State")
 })
