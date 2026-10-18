@@ -97,6 +97,23 @@ fn default_protect_turns() -> usize {
 }
 
 impl ContextLimits {
+    /// Limits for an operator-requested compaction on a runtime that has no
+    /// automatic context management configured. There is no window to fit, so the
+    /// summary is built from the selected history alone instead of retaining the
+    /// exact last provider request, and elision stays off because that knob
+    /// belongs to the automatic feature rather than to the operator's request.
+    pub fn operator_requested() -> Self {
+        Self {
+            window: 0,
+            ratio: 0.0,
+            headroom: 0,
+            per_pass: 8,
+            prune_chars: None,
+            prune_total_chars: None,
+            protect_turns: default_protect_turns(),
+        }
+    }
+
     /// Parse the wire form the product spawner passes as
     /// `--context-limits <json>` (camelCase fields).
     pub fn from_wire(json: &str) -> Result<Self, String> {
@@ -118,6 +135,10 @@ pub struct CompactRequest<'a, P: FnMut(Value)> {
     pub run: &'a str,
     /// The settled assistant boundary the checkpoint cuts through.
     pub boundary: u64,
+    /// An operator request: one pass happens at this boundary even when the
+    /// budget gate is under its threshold. Every other gate still applies, so a
+    /// forced pass cannot cut a tool continuation or a reverted transcript.
+    pub forced: bool,
     pub budget: &'a Budget,
     /// Summarizer passes carry at most this many selected messages.
     pub per_pass: usize,
@@ -171,6 +192,7 @@ where
         session,
         run,
         boundary,
+        forced,
         budget,
         per_pass,
         breaker,
@@ -186,17 +208,23 @@ where
     // the message it counted. Only the messages appended after that report are
     // still uncounted, and for those gate ② prefers the provider's own count
     // over the char estimate. No marker means the report predates the anchor,
-    // so nothing is invented and the trigger stays off.
-    let Some((context, counted_through)) = store.context_anchor(session).await? else {
-        return Ok(false);
+    // so nothing is invented and the trigger stays off. An operator request
+    // needs neither: it asks for the selected history to be summarized now.
+    let (context, pending_tokens) = match store.context_anchor(session).await? {
+        Some((context, counted_through)) => {
+            let (pending, pending_chars) = store.pending_context(session, counted_through).await?;
+            if pending.is_empty() && !forced {
+                return Ok(false);
+            }
+            (
+                context,
+                resolve_pending_tokens(count(pending).await, pending_chars as usize),
+            )
+        }
+        None if forced => (0, 0),
+        None => return Ok(false),
     };
-    let (pending, pending_chars) = store.pending_context(session, counted_through).await?;
-    if pending.is_empty() {
-        return Ok(false);
-    }
-    let counted = count(pending).await;
-    let pending_tokens = resolve_pending_tokens(counted, pending_chars as usize);
-    if !budget.should_compact(Some(context), pending_tokens) {
+    if !forced && !budget.should_compact(Some(context), pending_tokens) {
         return Ok(false);
     }
     // The summary covers the warm prefix the next turn would re-send, which is

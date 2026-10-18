@@ -270,6 +270,12 @@ end to end (`session.next.tool.progress`).
       stops the Session's jobs/timers/crons/terminals, deletes its rows and
       releases the product placement, leaving forks alive with only their lineage
       edge dropped.
+- [x] Operator-requested compaction — RS native `request_compact`
+      (`session.compact` serves native sessions). The request is durable and
+      idempotent, one forced pass runs at the next settled assistant boundary
+      even without configured context limits, and it settles either way. An idle
+      Session honours it at its next provider turn (the TS runner resumes the
+      Session instead; the engine has no compaction entry outside a run).
 - [x] Emit incremental tool-progress checkpoints — RS native (#1019:
       `tool.started`/`tool.progress` streamed for process tools and the
       `monitor` tool). TS core tools remain open.

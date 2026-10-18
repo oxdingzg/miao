@@ -321,6 +321,17 @@ impl Runtime {
         self.inner.breaker.lock().await.reset();
     }
 
+    /// Record an operator request to compact this Session at its next settled
+    /// assistant boundary, then wake it. A continuable drain honours the request
+    /// at that boundary even when the budget gate is under its threshold; an idle
+    /// Session with no inbox row has nothing to drain, so the request stays
+    /// durable until its next provider turn.
+    pub async fn request_compact(&self, session: &str) -> Result<Value, Error> {
+        let result = self.inner.store.request_compaction(session).await?;
+        let _ = self.wake(session, false).await;
+        Ok(result)
+    }
+
     pub async fn approve(
         &self,
         controller: &Controller,
@@ -1692,13 +1703,20 @@ async fn execute(
                         && part["text"].as_str().is_some_and(|text| !text.is_empty())
                 })
             });
-        if let Some(limits) = inner
-            .context
-            .lock()
-            .await
-            .as_ref()
-            .filter(|_| closed_answer)
-        {
+        // Automatic compaction needs configured limits; an operator request is
+        // itself the trigger, so one forced pass runs without them. Both use the
+        // same settled boundary and the same summarizer.
+        let requested = if closed_answer {
+            inner.store.pending_compaction_request(session).await?
+        } else {
+            None
+        };
+        let limits = inner.context.lock().await.clone().or_else(|| {
+            requested
+                .is_some()
+                .then(crate::context_trigger::ContextLimits::operator_requested)
+        });
+        if let Some(limits) = limits.filter(|_| closed_answer) {
             let primary = Arc::clone(&provider);
             let bindings = inner.roles.lock().await.clone();
             let (role_provider, resolution) =
@@ -1795,12 +1813,20 @@ async fn execute(
                     ).await)
                 }
             };
-            let _ = crate::context_trigger::maybe_compact_with_prefix(
+            // A durable operator request forces one pass at this boundary even
+            // when the budget gate is under threshold, and resets the breaker so
+            // a repaired summarizer gets its fresh try — the same semantics the
+            // host-supplied `compact` command has.
+            if requested.is_some() {
+                breaker.reset();
+            }
+            let compacted = crate::context_trigger::maybe_compact_with_prefix(
                 &inner.store,
                 crate::context_trigger::CompactRequest {
                     session,
                     run,
                     boundary: assistant_boundary,
+                    forced: requested.is_some(),
                     budget: &limits.budget(),
                     per_pass: limits.per_pass,
                     breaker: &mut breaker,
@@ -1810,7 +1836,17 @@ async fn execute(
                 &mut summarize,
                 &mut prefix,
             )
-            .await;
+            .await
+            .unwrap_or(false);
+            if let Some(seq) = requested {
+                // One attempt answers the request either way, so a summarizer the
+                // provider keeps refusing cannot pin the Session: asking again is
+                // what asks for another try.
+                let _ = inner
+                    .store
+                    .settle_compaction_request(session, seq, compacted)
+                    .await;
+            }
         }
         let mut promoted = inner
             .store

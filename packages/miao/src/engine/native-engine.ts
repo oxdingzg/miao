@@ -285,6 +285,10 @@ export const fromOwners = (owners: Owners): NativeEngine.Interface => {
           input_id: input.inputID,
         }),
       ).pipe(Effect.map((value) => Schema.decodeUnknownSync(AcceptedReply)(value).accepted)),
+    requestCompact: (input) =>
+      read<unknown>(input, (connection) =>
+        connection.client.request("request_compact", { session_id: input.sessionID }),
+      ).pipe(Effect.asVoid),
     archive: (input) =>
       read<unknown>(input, (connection) =>
         connection.client.request("archive", {

@@ -183,6 +183,75 @@ fn archive_and_remove_are_wire_commands_with_a_durable_effect() {
 }
 
 #[test]
+fn compaction_requests_are_a_wire_command_with_a_durable_audit_trail() {
+    let dir = tempfile::tempdir().unwrap();
+    let mut process = Command::new(env!("CARGO_BIN_EXE_miao-engine"))
+        .args([
+            "serve",
+            "--db",
+            dir.path().join("engine.db").to_str().unwrap(),
+            "--workspace",
+            dir.path().to_str().unwrap(),
+            "--model",
+            "fixture",
+        ])
+        .env("ANTHROPIC_API_KEY", "fixture-key")
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .unwrap();
+    let requests = [
+        json!({"id":1,"method":"admit","params":{"input":{"session_id":"s","input_id":"one","prompt":"hello"},"resume":false}}),
+        json!({"id":2,"method":"request_compact","params":{"session_id":"missing"}}),
+        json!({"id":3,"method":"request_compact","params":{"session_id":"s"}}),
+        json!({"id":4,"method":"request_compact","params":{"session_id":"s"}}),
+        json!({"id":5,"method":"events","params":{"session_id":"s","after":0}}),
+        json!({"id":6,"method":"shutdown"}),
+    ];
+    let mut stdin = process.stdin.take().unwrap();
+    for request in requests {
+        writeln!(stdin, "{request}").unwrap();
+    }
+    drop(stdin);
+    let output = process.wait_with_output().unwrap();
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let replies: Vec<Value> = String::from_utf8(output.stdout)
+        .unwrap()
+        .lines()
+        .map(|l| serde_json::from_str(l).unwrap())
+        .collect();
+    let reply = |id: u64| replies.iter().find(|r| r["id"] == id).unwrap().clone();
+    let result = |id: u64| reply(id)["result"].clone();
+    // A Session nobody created cannot be compacted.
+    assert!(reply(2)["error"].is_object(), "{replies:?}");
+    assert_eq!(
+        result(3),
+        json!({"accepted": true, "duplicate": false, "pending": true})
+    );
+    // A retried request neither queues a second compaction nor loses the intent.
+    assert_eq!(
+        result(4),
+        json!({"accepted": true, "duplicate": true, "pending": true})
+    );
+    let events = result(5);
+    assert_eq!(
+        events
+            .as_array()
+            .unwrap()
+            .iter()
+            .filter(|event| event["kind"] == "compaction.requested")
+            .count(),
+        1,
+        "{events}"
+    );
+}
+
+#[test]
 fn version_uses_root_manifest_and_no_provider_configuration() {
     let output = Command::new(env!("CARGO_BIN_EXE_miao-engine"))
         .arg("--version")
