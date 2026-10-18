@@ -1,6 +1,6 @@
 use crate::{
     protocol::Error,
-    store::{append, Store},
+    store::{append, write_tx, Store},
     tools::ToolError,
 };
 use rusqlite::{params, Connection, OptionalExtension};
@@ -238,7 +238,7 @@ impl Store {
         }
         let (session, operation_id) = (session.to_owned(), operation_id.to_owned());
         self.call(move|conn|{
-            let tx=conn.transaction()?;
+            let tx=write_tx(conn)?;
             let previous:Option<(u64,String)>=tx.query_row("SELECT seq,data FROM engine_event WHERE session_id=?1 AND kind='session.state.updated' AND json_extract(data,'$.operation_id')=?2 ORDER BY seq DESC LIMIT 1",params![session,operation_id],|row|Ok((row.get(0)?,row.get(1)?))).optional()?;
             if let Some((revision,data))=previous {
                 let data:Value=serde_json::from_str(&data)?;

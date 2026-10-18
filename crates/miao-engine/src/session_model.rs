@@ -3,7 +3,7 @@
 use crate::{
     protocol::Error,
     provider::{Identity, Provider},
-    store::{append, Store},
+    store::{append, write_tx, Store},
 };
 use rusqlite::{OptionalExtension, Transaction};
 use serde::{Deserialize, Serialize};
@@ -129,7 +129,7 @@ impl Store {
         }
         let session = session.to_owned();
         self.call(move |connection| {
-            let tx = connection.transaction()?;
+            let tx = write_tx(connection)?;
             let exists: bool = tx.query_row(
                 "SELECT EXISTS(SELECT 1 FROM engine_session WHERE id=?1)",
                 [&session],

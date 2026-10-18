@@ -2,7 +2,7 @@
 //! durable instruction, never replay of an old external dispatch.
 use crate::{
     protocol::{Delivery, Error, Input},
-    store::{admit_input, append, Store},
+    store::{admit_input, append, write_tx, Store},
 };
 use rusqlite::{params, OptionalExtension};
 use serde::{Deserialize, Serialize};
@@ -66,7 +66,7 @@ impl Store {
         let (session, call, operation) =
             (session.to_owned(), call.to_owned(), operation.to_owned());
         self.call(move |conn| {
-            let tx = conn.transaction()?;
+            let tx = write_tx(conn)?;
             let previous: Option<String> = tx.query_row(
                 "SELECT data FROM engine_event WHERE session_id=?1 AND kind='tool.recovery.resolved'
                  AND (json_extract(data,'$.call_id')=?2 OR json_extract(data,'$.operation_id')=?3) ORDER BY seq LIMIT 1",
