@@ -68,7 +68,8 @@ export const nativeEngineOptions = (
   }
   if (environment.MIAO_ENGINE_PROVIDER) merged.provider = environment.MIAO_ENGINE_PROVIDER
   if (environment.MIAO_ENGINE_ENDPOINT) merged.endpoint = environment.MIAO_ENGINE_ENDPOINT
-  if (environment.MIAO_ENGINE_FORMATTER_CONFIG) merged.formatterConfigFile = environment.MIAO_ENGINE_FORMATTER_CONFIG
+  if (environment.MIAO_ENGINE_FORMATTER_CONFIG)
+    merged.formatterConfigFile = path.resolve(environment.MIAO_ENGINE_FORMATTER_CONFIG)
   if (environment.MIAO_ENGINE_FALLBACK_MODEL) merged.fallbackModel = environment.MIAO_ENGINE_FALLBACK_MODEL
   if (environment.MIAO_ENGINE_TOOL_DISCLOSURE) {
     if (!["full", "compact"].includes(environment.MIAO_ENGINE_TOOL_DISCLOSURE))
@@ -118,6 +119,7 @@ export const nativeEngineOptions = (
     mcpConfigFile: merged.mcpConfigFile,
     mcpSettings: merged.mcpSettings,
     lspConfigFile: merged.lspConfigFile,
+    formatterConfigFile: merged.formatterConfigFile,
     contextConfigFile: environment.MIAO_ENGINE_CONTEXT_CONFIG ?? merged.contextConfigFile,
     skillsConfigFile: environment.MIAO_ENGINE_SKILLS_CONFIG ?? merged.skillsConfigFile,
     referencesConfigFile: environment.MIAO_ENGINE_REFERENCES_CONFIG ?? merged.referencesConfigFile,
