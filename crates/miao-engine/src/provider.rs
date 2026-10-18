@@ -297,6 +297,21 @@ pub trait Provider: Send + Sync {
     fn for_route(&self, _route_id: &str) -> Option<Arc<dyn Provider>> {
         None
     }
+    fn for_route_variant(
+        &self,
+        _route_id: Option<&str>,
+        _variant: &str,
+    ) -> Option<Arc<dyn Provider>> {
+        None
+    }
+    fn with_request_options(
+        &self,
+        _options: crate::request_options::Options,
+    ) -> Result<Arc<dyn Provider>, ProviderError> {
+        Err(ProviderError::Stream(
+            "provider does not support generation overrides".into(),
+        ))
+    }
     fn model_catalog(&self) -> Vec<crate::model_catalog::Info> {
         self.identity()
             .into_iter()
@@ -304,6 +319,7 @@ pub trait Provider: Send + Sync {
                 route_id: None,
                 protocol: identity.protocol,
                 model: identity.model,
+                variants: vec![],
             })
             .collect()
     }
@@ -360,6 +376,7 @@ pub struct Anthropic {
     endpoint: String,
     source: Source,
     model: String,
+    request_options: crate::request_options::Options,
     max_tokens: u32,
     prompt_cache: bool,
     /// Vertex AI authenticates with an OAuth bearer and a `:rawPredict`
@@ -386,6 +403,7 @@ impl Anthropic {
             endpoint,
             source,
             model,
+            request_options: Default::default(),
             max_tokens: 4096,
             prompt_cache: false,
             bearer: false,
@@ -407,6 +425,7 @@ impl Anthropic {
             endpoint,
             source,
             model,
+            request_options: Default::default(),
             max_tokens: 4096,
             prompt_cache: false,
             bearer: true,
@@ -533,6 +552,7 @@ impl Anthropic {
         if without_tools {
             body["tool_choice"] = json!({"type":"none"});
         }
+        self.request_options.apply(&mut body);
         let mut request = self.client.post(&self.endpoint).json(&body);
         request = if self.bearer {
             request.header("Authorization", format!("Bearer {}", credential.secret()))
@@ -540,7 +560,8 @@ impl Anthropic {
             request.header("x-api-key", credential.header()?)
         };
         let request = route_headers(
-            request.header("anthropic-version", "2023-06-01"),
+            self.request_options
+                .headers(request.header("anthropic-version", "2023-06-01"))?,
             &self.extra_headers,
         )?
         .build()
@@ -553,6 +574,21 @@ impl Anthropic {
 
 #[async_trait]
 impl Provider for Anthropic {
+    fn with_request_options(
+        &self,
+        mut options: crate::request_options::Options,
+    ) -> Result<std::sync::Arc<dyn Provider>, ProviderError> {
+        options.validate()?;
+        let mut selected = self.clone();
+        for (name, value) in std::mem::take(&mut options.headers) {
+            selected
+                .extra_headers
+                .retain(|key, _| !key.eq_ignore_ascii_case(&name));
+            selected.extra_headers.insert(name, value);
+        }
+        selected.request_options = options;
+        Ok(std::sync::Arc::new(selected))
+    }
     fn for_model(&self, model: &str) -> Option<Arc<dyn Provider>> {
         if !valid_model(model) {
             return None;

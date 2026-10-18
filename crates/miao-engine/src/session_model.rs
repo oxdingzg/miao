@@ -17,6 +17,8 @@ pub struct Binding {
     pub model: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub route_id: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub variant: Option<String>,
 }
 
 impl Binding {
@@ -29,6 +31,10 @@ impl Binding {
                 .route_id
                 .as_deref()
                 .is_some_and(|id| !crate::model_catalog::valid_id(id))
+            || self
+                .variant
+                .as_deref()
+                .is_some_and(|variant| !crate::model_catalog::valid_variant(variant))
         {
             return Err(Error::Invalid("invalid Session model binding".into()));
         }
@@ -44,6 +50,22 @@ pub(crate) fn select(
         return Ok(Arc::clone(primary));
     };
     binding.validate()?;
+    if let Some(variant) = &binding.variant {
+        let selected = primary
+            .for_route_variant(binding.route_id.as_deref(), variant)
+            .ok_or_else(|| Error::Invalid("model variant is not registered by the host".into()))?;
+        if selected.identity()
+            != Some(Identity {
+                protocol: binding.protocol.clone(),
+                model: binding.model.clone(),
+            })
+        {
+            return Err(Error::Invalid(
+                "model variant identity does not match the host catalog".into(),
+            ));
+        }
+        return Ok(selected);
+    }
     if let Some(id) = &binding.route_id {
         let selected = primary
             .for_route(id)

@@ -1,5 +1,6 @@
 import { LocationServiceMap } from "@miao/core/location-service-map"
 import { SessionModelRoute } from "@miao/schema/session-model-route"
+import { Model } from "@miao/schema/model"
 import { AmbientContext } from "./ambient-context"
 import { ProductHooks } from "./product-hooks"
 import { ProductLsp } from "./product-lsp"
@@ -224,6 +225,7 @@ export const fromOwners = (owners: Owners): NativeEngine.Interface => {
           route_id: Schema.NullOr(Schema.String),
           protocol: Schema.String,
           model: Schema.String,
+          variants: Schema.optionalKey(Schema.Array(Model.VariantID)),
         }),
       ),
     )(await connection.client.request("model_catalog"))
@@ -236,12 +238,11 @@ export const fromOwners = (owners: Owners): NativeEngine.Interface => {
           protocol: entry.protocol,
           wireModel: entry.model,
           default: entry.route_id === null,
+          ...(entry.variants?.length ? { variants: entry.variants } : {}),
         }))
       }),
     selectModel: (input) =>
       read(input, async (connection) => {
-        if (input.model.variant !== undefined)
-          throw new EngineError("unsupported_model_variant", "Native model routes do not accept product variants")
         const entry = (await routes(connection)).find((entry) => {
           if (
             input.model.providerID !== SessionModelRoute.ProviderID &&
@@ -252,15 +253,18 @@ export const fromOwners = (owners: Owners): NativeEngine.Interface => {
           return model.providerID === input.model.providerID && model.id === input.model.id
         })
         if (!entry) throw new EngineError("unknown_model_route", "Model is not in the native host route catalog")
+        if (input.model.variant !== undefined && !entry.variants?.includes(input.model.variant))
+          throw new EngineError("unknown_model_variant", "Variant is not in the native host route catalog")
         return connection.client.request("select_model", {
           session_id: input.sessionID,
           binding:
-            entry.route_id === null
+            entry.route_id === null && input.model.variant === undefined
               ? null
               : {
                   route_id: entry.route_id,
                   protocol: entry.protocol,
                   model: entry.model,
+                  ...(input.model.variant === undefined ? {} : { variant: input.model.variant }),
                 },
         })
       }).pipe(Effect.asVoid),

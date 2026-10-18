@@ -159,9 +159,20 @@ literally to the request URL. Any base-url provider or gateway is therefore
 configuration, not engine code. The product child environment remains allowlisted;
 pass custom credential variables through `EngineOptions.env` explicitly.
 
-Controller `model_catalog` returns only `route_id`, `protocol`, and `model`.
-Use these exact fields as `select_model.params.binding`; a null binding restores
-the default. Unknown routes and mismatched identities fail before provider work.
+Controller `model_catalog` returns `route_id`, `protocol`, `model`, and optional
+host-advertised `variants` names. Use the exact identity fields, plus an optional
+`variant` name, as `select_model.params.binding`; a null binding restores the
+default. Unknown routes/variants and mismatched identities fail before provider
+work. A variant survives restart and fork, applies at the next provider turn,
+and retains its endpoint and credential owner.
+
+A host route may declare `request: {body, headers}` and a `variants` array of
+`{id, body, headers}`. Variant generation options merge over the base options;
+structural transcript/tool fields, credential headers and streaming controls
+cannot be replaced. Mark one matching route `primary: true` to expose its base
+options and variants on the default entry as well. The product exports its
+catalog-declared variants automatically; both `run --model ... --variant ...`
+and the native model dialog use these advertised choices.
 Opaque history remains bound to its original route even when endpoints use the
 same wire model name. Compact on the original route before switching.
 

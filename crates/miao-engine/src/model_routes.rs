@@ -21,6 +21,24 @@ struct Route {
     prompt_cache: bool,
     #[serde(default)]
     auth: Option<Auth>,
+    #[serde(default)]
+    request: crate::request_options::Options,
+    #[serde(default)]
+    variants: Vec<Variant>,
+    #[serde(default)]
+    primary: bool,
+    #[serde(default)]
+    default_variant: Option<String>,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct Variant {
+    id: String,
+    #[serde(default)]
+    body: serde_json::Map<String, serde_json::Value>,
+    #[serde(default)]
+    headers: std::collections::BTreeMap<String, String>,
 }
 
 /// Declarative auth for a route: wire-level auth style plus trusted host
@@ -64,7 +82,7 @@ enum CredentialSource {
 pub async fn load(
     path: &Path,
     workspace: &Path,
-    primary: Arc<dyn Provider>,
+    mut primary: Arc<dyn Provider>,
 ) -> Result<Arc<dyn Provider>, Box<dyn std::error::Error>> {
     if path.starts_with(workspace) {
         return Err("Model routes host config must be outside model-writable workspace".into());
@@ -84,6 +102,9 @@ pub async fn load(
         return Err("model route catalog exceeds 1024 entries".into());
     }
     let mut routes = Vec::new();
+    let mut variants = Vec::new();
+    let mut primary_variants = Vec::new();
+    let mut default_seen = false;
     for entry in entries {
         let source = match entry.credential {
             CredentialSource::Environment { key, account } => {
@@ -139,17 +160,72 @@ pub async fn load(
             return Err("model route credentials must be outside workspace".into());
         }
         source.load().await?;
-        routes.push((
-            entry.id,
-            crate::routing::build_with_auth(
-                &entry.provider,
-                entry.endpoint.as_deref(),
-                source,
-                entry.model,
-                entry.prompt_cache,
-                entry.auth.as_ref(),
-            )?,
-        ));
+        let provider = crate::routing::build_with_auth(
+            &entry.provider,
+            entry.endpoint.as_deref(),
+            source,
+            entry.model,
+            entry.prompt_cache,
+            entry.auth.as_ref(),
+        )?;
+        entry.request.validate()?;
+        if entry.primary {
+            if default_seen || primary.identity() != provider.identity() {
+                return Err("invalid default model route".into());
+            }
+            default_seen = true;
+        }
+        let mut default_provider = if entry.request.is_empty() {
+            Arc::clone(&provider)
+        } else {
+            provider.with_request_options(entry.request.clone())?
+        };
+        let mut default_primary = if entry.primary {
+            Some(if entry.request.is_empty() {
+                Arc::clone(&primary)
+            } else {
+                primary.with_request_options(entry.request.clone())?
+            })
+        } else {
+            None
+        };
+        let mut matched_default = entry.default_variant.is_none();
+        for variant in entry.variants {
+            let options = entry.request.merged(&crate::request_options::Options {
+                body: variant.body,
+                headers: variant.headers,
+            })?;
+            let selected = if options.is_empty() {
+                Arc::clone(&provider)
+            } else {
+                provider.with_request_options(options.clone())?
+            };
+            if entry.primary {
+                let selected = if options.is_empty() {
+                    Arc::clone(&primary)
+                } else {
+                    primary.with_request_options(options)?
+                };
+                if entry.default_variant.as_deref() == Some(variant.id.as_str()) {
+                    default_primary = Some(Arc::clone(&selected));
+                }
+                primary_variants.push((variant.id.clone(), selected));
+            }
+            if entry.default_variant.as_deref() == Some(variant.id.as_str()) {
+                matched_default = true;
+                default_provider = Arc::clone(&selected);
+            }
+            variants.push((entry.id.clone(), variant.id, selected));
+        }
+        if !matched_default {
+            return Err("default model variant is not registered".into());
+        }
+        if let Some(default) = default_primary {
+            primary = default;
+        }
+        routes.push((entry.id, default_provider));
     }
-    Ok(Arc::new(Catalog::new(primary, routes)?))
+    Ok(Arc::new(
+        Catalog::new(primary, routes)?.with_variants(variants, primary_variants)?,
+    ))
 }

@@ -30,6 +30,7 @@ pub mod provider;
 pub mod question;
 pub mod recall;
 pub mod recovery;
+pub mod request_options;
 pub mod responses_cache;
 pub mod responses_websocket;
 pub mod roles;

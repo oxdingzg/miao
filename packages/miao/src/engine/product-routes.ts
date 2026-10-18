@@ -105,6 +105,14 @@ export const prepare = Effect.fn("Engine.productRoutes")(function* (
         id: `${model.providerID}/${model.id}`,
         ...transport,
         model: model.api.id,
+        primary: model.providerID === defaultModel.providerID && model.id === defaultModel.id,
+        ...(model.request.variant === undefined ? {} : { default_variant: model.request.variant }),
+        request: { body: model.request.body },
+        variants: model.variants.map((variant) => ({
+          id: variant.id,
+          body: variant.body,
+          headers: variant.headers,
+        })),
         credential: account.source,
         auth: {
           ...(transport.provider === "anthropic" && account.oauth ? { style: "bearer" } : {}),

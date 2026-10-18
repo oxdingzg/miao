@@ -24,6 +24,7 @@ pub struct OpenAIChat {
     endpoint: String,
     source: Source,
     model: String,
+    request_options: crate::request_options::Options,
     auth_style: AuthStyle,
     query: Option<String>,
     extra_headers: std::collections::BTreeMap<String, String>,
@@ -84,6 +85,7 @@ impl OpenAIChat {
             endpoint,
             source,
             model,
+            request_options: Default::default(),
             auth_style,
             query,
             extra_headers,
@@ -93,6 +95,21 @@ impl OpenAIChat {
 
 #[async_trait]
 impl Provider for OpenAIChat {
+    fn with_request_options(
+        &self,
+        mut options: crate::request_options::Options,
+    ) -> Result<std::sync::Arc<dyn Provider>, ProviderError> {
+        options.validate()?;
+        let mut selected = self.clone();
+        for (name, value) in std::mem::take(&mut options.headers) {
+            selected
+                .extra_headers
+                .retain(|key, _| !key.eq_ignore_ascii_case(&name));
+            selected.extra_headers.insert(name, value);
+        }
+        selected.request_options = options;
+        Ok(std::sync::Arc::new(selected))
+    }
     fn for_model(&self, model: &str) -> Option<std::sync::Arc<dyn Provider>> {
         if !crate::provider::valid_model(model) {
             return None;
@@ -151,6 +168,7 @@ impl OpenAIChat {
         }
         let tools:Vec<Value>=request.tools.iter().map(|tool|json!({"type":"function","function":{"name":tool.name,"description":tool.description,"parameters":tool.input_schema}})).collect();
         let mut body = json!({"model":self.model,"messages":messages,"tools":tools,"stream":true,"stream_options":{"include_usage":true},"n":1});
+        self.request_options.apply(&mut body);
         if without_tools {
             body["tool_choice"] = json!("none");
         }
@@ -163,9 +181,12 @@ impl OpenAIChat {
             AuthStyle::Bearer => request.bearer_auth(credential.secret()),
             AuthStyle::ApiKey => request.header("api-key", credential.secret()),
         };
-        let request = crate::provider::route_headers(request, &self.extra_headers)?
-            .build()
-            .map_err(|_| ProviderError::Transport)?;
+        let request = crate::provider::route_headers(
+            self.request_options.headers(request)?,
+            &self.extra_headers,
+        )?
+        .build()
+        .map_err(|_| ProviderError::Transport)?;
         let response =
             request_with_retry("openai-chat", &self.client, request, &progress, &cancel).await?;
         read_stream(response, progress, cancel, ChatState::default()).await
