@@ -1018,8 +1018,13 @@ async fn execute(
             (None, None) => None,
         };
         let provider = crate::session_model::select(&inner.provider, binding.as_ref())?;
-        let bundle = match crate::context::assemble(&inner.tools, &policy, cancel.child_token())
-            .await
+        let mut bundle = match crate::context::assemble_for_agent(
+            &inner.tools,
+            &policy,
+            cancel.child_token(),
+            manifest,
+        )
+        .await
         {
             Ok(bundle) => bundle,
             Err(ToolError::Interrupted) => return Ok(()),
@@ -1049,6 +1054,19 @@ async fn execute(
                     instructions
                 ));
             }
+        }
+        if let Some((manifest, hash)) = &agent {
+            if system.len() > 65536 {
+                return Err(Error::Invalid(
+                    "agent instructions exceed system context budget".into(),
+                ));
+            }
+            bundle.system = system.clone();
+            bundle
+                .sources
+                .push(json!({"type":"agent","name":manifest.name,"agent_hash":hash}));
+            bundle.fingerprint =
+                crate::permission::context_digest(&bundle.system, &bundle.sources)?;
         }
         let sources = bundle.sources.clone();
         let context_epoch = inner

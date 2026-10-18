@@ -1,3 +1,4 @@
+mod common;
 use async_trait::async_trait;
 use miao_engine::{
     permission::{Config, Mode, Policy},
@@ -543,4 +544,61 @@ async fn a_fork_inherits_the_agent_at_its_selected_history_boundary() {
         "later-agent"
     );
     runtime.shutdown().await;
+}
+
+#[tokio::test]
+async fn real_adapter_records_agent_identity_and_selected_context() {
+    let body = format!(
+        "data: {}\n\ndata: [DONE]\n\n",
+        json!({"choices":[{"index":0,
+        "delta":{"role":"assistant","content":"done"},"finish_reason":"stop"}]})
+    );
+    let (url, mut requests, server) = common::endpoint(vec![(200, body)]).await;
+    let dir = tempfile::tempdir().unwrap();
+    let store = Store::open(dir.path().join("engine.db")).await.unwrap();
+    let runtime = Runtime::with_policy(
+        store.clone(),
+        Arc::new(
+            miao_engine::openai_chat::OpenAIChat::new(url, "fixture".into(), "model".into())
+                .unwrap(),
+        ),
+        Tools::new(dir.path()).await.unwrap(),
+        Policy::new(Config::default()).unwrap(),
+    )
+    .await
+    .unwrap();
+    store
+        .admit(Input {
+            session_id: "s".into(),
+            input_id: "warm".into(),
+            prompt: "warm".into(),
+            delivery: Delivery::Queue,
+        })
+        .await
+        .unwrap();
+    store.cancel_input("s", "warm").await.unwrap();
+    let mut agent = manifest();
+    agent.tools = Some(AgentTools {
+        allow: vec!["read_file".into()],
+        deny: vec![],
+    });
+    runtime.set_agent("s", agent.clone()).await.unwrap();
+    turn(&runtime, &store, "one").await;
+    let request = requests.recv().await.unwrap();
+    assert!(serde_json::to_string(&request)
+        .unwrap()
+        .contains("Review the diff before answering."));
+    let events = store.events("s", 0, 500).await.unwrap();
+    let profile = events
+        .iter()
+        .find(|event| event.kind == "provider.request")
+        .unwrap();
+    assert_eq!(profile.data["agent"]["name"], agent.name);
+    assert_eq!(profile.data["agent"]["agentHash"], agent.digest().unwrap());
+    let context = store.context("s", None).await.unwrap().unwrap();
+    assert!(serde_json::to_string(&context)
+        .unwrap()
+        .contains("Review the diff before answering."));
+    runtime.shutdown().await;
+    server.abort();
 }
