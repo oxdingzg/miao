@@ -439,3 +439,18 @@ refresh one observed generation; bodies are replayed only after rejection.
 Refresh discovery/exchange has a bounded deadline and errors contain a stable
 authentication status rather than provider response bodies. The product scope
 owns the loopback service, so restarting a native child reuses its authority.
+
+`auth.style: "copilot"` selects GitHub Copilot authentication for Chat,
+Responses or Anthropic Messages routes. OAuth credentials bound to the
+`github-copilot` integration use the device grant's `refresh` token; the
+provider's zero-expiry sentinel does not expire that device grant. Other
+integrations retain ordinary expiry validation. Route manifests contain
+credential references, never the token bytes. Enterprise account metadata
+selects the Copilot API base, and product endpoint metadata selects the wire.
+
+Copilot request metadata is derived after media normalization on each request:
+root user turns use `x-initiator: user`, child Session and continuation/tool
+turns use `agent`, and only requests containing images carry the vision header.
+The interaction id follows the Session affinity scope. Anthropic beta flags
+merge with host flags. Copilot Responses routes reject continuation contracts
+that are only supported by the other explicit transport profiles.
