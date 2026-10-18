@@ -757,19 +757,13 @@ export const SessionHandler = HttpApiBuilder.group(Api, "server.session", (handl
               location: placement.location,
               archived: ctx.payload.archived,
             })
-            // The engine owns the projection, but the product catalog still
-            // backs `session list` in the CLI, so the archive fact is recorded
-            // on both sides of the boundary.
-            yield* session.archive({ sessionID: ctx.params.sessionID, archived: ctx.payload.archived }).pipe(
-              Effect.catchTag("Session.NotFoundError", (error) =>
-                Effect.fail(
-                  new SessionNotFoundError({
-                    sessionID: error.sessionID,
-                    message: `Session not found: ${error.sessionID}`,
-                  }),
-                ),
-              ),
-            )
+            // Mirror the accepted native fact into the CLI catalog without
+            // claiming TypeScript execution authority over the Session.
+            yield* events.publish(SessionEvent.Info.Updated, {
+              sessionID: ctx.params.sessionID,
+              timestamp: yield* DateTime.now,
+              archived: ctx.payload.archived,
+            })
             return
           }
           yield* requireTypescriptOwner(ctx.params.sessionID, "session.archive")

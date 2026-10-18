@@ -6,6 +6,7 @@ import { Admitted, Delivery } from "@miao/schema/session-input"
 import type { Database } from "../database/database"
 import type { EventV2 } from "../event"
 import { SessionEvent } from "./event"
+import { SessionEnginePlacement } from "./engine-placement"
 import { SessionMessage } from "./message"
 import { Prompt } from "./prompt"
 import { SessionSchema } from "./schema"
@@ -69,6 +70,7 @@ export const admit = Effect.fn("SessionInput.admit")(function* (
     readonly delivery: Delivery
   },
 ) {
+  yield* SessionEnginePlacement.requireTypeScript(db, input.sessionID)
   const existing = yield* find(db, input.id)
   if (existing !== undefined) return existing
   const timestamp = yield* DateTime.now
@@ -236,6 +238,7 @@ export const cancel = Effect.fn("SessionInput.cancel")(function* (
   events: EventV2.Interface,
   input: { sessionID: SessionSchema.ID; id: SessionMessage.ID },
 ) {
+  yield* SessionEnginePlacement.requireTypeScript(db, input.sessionID)
   const existing = yield* find(db, input.id)
   if (existing === undefined || existing.sessionID !== input.sessionID || existing.promotedSeq !== undefined)
     return false
@@ -324,6 +327,7 @@ export const promoteSteers = Effect.fn("SessionInput.promoteSteers")(function* (
   sessionID: SessionSchema.ID,
   cutoff: number,
 ) {
+  yield* SessionEnginePlacement.requireTypeScript(db, sessionID)
   const rows = yield* db
     .select()
     .from(SessionInputTable)
@@ -346,6 +350,7 @@ export const promoteNextQueued = Effect.fn("SessionInput.promoteNextQueued")(fun
   events: EventV2.Interface,
   sessionID: SessionSchema.ID,
 ) {
+  yield* SessionEnginePlacement.requireTypeScript(db, sessionID)
   const row = yield* db
     .select()
     .from(SessionInputTable)
