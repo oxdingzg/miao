@@ -52,6 +52,27 @@ impl Host {
                 .admit_with(input, attachments, resume)
                 .await
                 .and_then(|value| serde_json::to_value(value).map_err(Error::from)),
+            Command::Shell {
+                session_id,
+                call_id,
+                command,
+                timeout_ms,
+            } => {
+                runtime
+                    .shell(
+                        &session_id,
+                        crate::session_shell::Invocation {
+                            call_id: call_id.unwrap_or_else(|| uuid::Uuid::new_v4().to_string()),
+                            command,
+                            timeout_ms,
+                        },
+                    )
+                    .await
+            }
+            Command::ShellStatus {
+                session_id,
+                call_id,
+            } => runtime.shell_status(&session_id, &call_id).await,
             Command::Inject {
                 session_id,
                 input_id,

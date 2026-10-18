@@ -474,9 +474,14 @@ export const SessionHandler = HttpApiBuilder.group(Api, "server.session", (handl
       .handle(
         "session.shell",
         Effect.fn(function* (ctx) {
+          const native = Option.getOrUndefined(yield* Effect.serviceOption(NativeEngine.Service))
+          const placement = Option.getOrUndefined(yield* Effect.serviceOption(NativeEngine.Placement))
+          if (native && placement)
+            return yield* native.shell({ sessionID: ctx.params.sessionID, ...placement, ...ctx.payload })
           yield* requireTypescriptOwner(ctx.params.sessionID, "session.shell")
           yield* session
             .shell({
+              id: ctx.payload.id,
               sessionID: ctx.params.sessionID,
               command: ctx.payload.command,
               resume: ctx.payload.resume,

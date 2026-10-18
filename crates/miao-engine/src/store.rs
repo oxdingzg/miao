@@ -1071,7 +1071,10 @@ impl Store {
             append(&tx,&target,"session.forked",json!({"parent_session_id":parent,"message_seq":seq}))?;
             let mut message_map=std::collections::HashMap::new();
             for message in messages {
-                let mut copied=project_message_at(&tx,&target,message["role"].as_str().ok_or_else(||Error::Invalid("projected role".into()))?,message["content"].clone(),message["checkpoint"].as_str(),None,message["recorded_at_ms"].as_u64())?;
+                let mut copied=match crate::session_shell::copy_history(&tx,&parent,&target,&message)? {
+                    Some(event)=>event,
+                    None=>project_message_at(&tx,&target,message["role"].as_str().ok_or_else(||Error::Invalid("projected role".into()))?,message["content"].clone(),message["checkpoint"].as_str(),None,message["recorded_at_ms"].as_u64())?,
+                };
                 let synthetic:Option<String>=tx.query_row("SELECT data FROM engine_event WHERE session_id=?1 AND seq=?2 AND kind='message.synthetic'",params![parent,message["seq"].as_u64()],|row|row.get(0)).optional()?;
                 if let Some(data)=&synthetic {
                     let mut data:Value=serde_json::from_str(data)?;
@@ -1079,7 +1082,7 @@ impl Store {
                     data["inherited"]=json!(true);
                     tx.execute("UPDATE engine_event SET kind='message.synthetic',data=?3 WHERE session_id=?1 AND seq=?2",params![target,copied.seq,serde_json::to_string(&data)?])?;
                 }
-                if message["role"] == "user" && synthetic.is_none() {
+                if message["role"] == "user" && synthetic.is_none() && copied.kind!="shell.ended" {
                     let source = message["seq"].as_u64().ok_or_else(||Error::Invalid("projected message seq".into()))?;
                     let original:Option<(String,String,Option<String>)>=tx.query_row(
                         "SELECT prompt,delivery,attachments FROM engine_input WHERE session_id=?1 AND id=COALESCE((SELECT json_extract(data,'$.input_id') FROM engine_event WHERE session_id=?1 AND seq=?2 AND kind='input.promoted'),(SELECT id FROM engine_input WHERE session_id=?1 AND admitted_seq=?2 AND state='promoted'))",
@@ -1918,59 +1921,7 @@ impl Store {
         let (session, run, reason) = (session.to_owned(), run.to_owned(), reason.to_owned());
         self.call(move |conn| {
             let tx = write_tx(conn)?;
-            if let Some(lease) = &lease {
-                require_lease(&tx, &session, lease)?;
-            }
-            let changed = tx.execute(
-                "UPDATE engine_run SET state=?3 WHERE id=?1 AND session_id=?2 AND state='running'",
-                params![run, session, reason],
-            )?;
-            if changed != 1 {
-                return Err(Error::Invalid("run is not active".into()));
-            }
-            reconcile_tools(&tx, &session, &run)?;
-            // An interrupted dispatched tool is unknown, not retryable.
-            tx.execute(
-                "UPDATE engine_tool SET state='unknown' WHERE run_id=?1 AND state='dispatched'",
-                [&run],
-            )?;
-            // Aggregate billed usage for the run: each provider attempt already
-            // recorded a `usage` event, so a turn sums them (including failed
-            // attempts) instead of reporting one step or a character estimate.
-            let usage_events: Vec<String> = {
-                let mut stmt = tx.prepare(
-                    "SELECT data FROM engine_event WHERE session_id=?1 AND kind='usage'",
-                )?;
-                let rows = stmt.query_map([&session], |r| r.get::<_, String>(0))?;
-                rows.collect::<Result<Vec<_>, _>>()?
-                    .into_iter()
-                    .filter(|data| {
-                        serde_json::from_str::<Value>(data)
-                            .ok()
-                            .is_some_and(|event| event["run_id"].as_str() == Some(run.as_str()))
-                    })
-                    .collect()
-            };
-            let mut total = Value::Null;
-            let mut steps = 0u64;
-            for data in usage_events {
-                if let Ok(event) = serde_json::from_str::<Value>(&data) {
-                    steps += 1;
-                    merge_usage(&mut total, &event["usage"]);
-                }
-            }
-            append(
-                &tx,
-                &session,
-                "run.usage",
-                json!({"run_id":run,"steps":steps,"usage":total}),
-            )?;
-            let e = append(
-                &tx,
-                &session,
-                "run.finished",
-                json!({"run_id":run,"reason":reason}),
-            )?;
+            let e = finish_run_tx(&tx, &session, &run, &reason, lease.as_ref())?;
             tx.commit()?;
             Ok(e)
         })
@@ -2352,7 +2303,7 @@ pub(crate) fn append_fenced(
     append(tx, session, kind, data)
 }
 
-fn append_at(
+pub(crate) fn append_at(
     tx: &Transaction<'_>,
     session: &str,
     kind: &str,
@@ -2845,4 +2796,66 @@ impl Store {
         })
         .await
     }
+}
+
+pub(crate) fn finish_run_tx(
+    tx: &Transaction<'_>,
+    session: &str,
+    run: &str,
+    reason: &str,
+    lease: Option<&SessionLease>,
+) -> Result<Event, Error> {
+    if let Some(lease) = lease {
+        require_lease(tx, session, lease)?;
+    }
+    let changed = tx.execute(
+        "UPDATE engine_run SET state=?3 WHERE id=?1 AND session_id=?2 AND state='running'",
+        params![run, session, reason],
+    )?;
+    if changed != 1 {
+        return Err(Error::Invalid("run is not active".into()));
+    }
+    reconcile_tools(tx, session, run)?;
+    // An interrupted dispatched tool is unknown, not retryable.
+    tx.execute(
+        "UPDATE engine_tool SET state='unknown' WHERE run_id=?1 AND state='dispatched'",
+        [run],
+    )?;
+    // Aggregate billed usage for the run: each provider attempt already
+    // recorded a `usage` event, so a turn sums them (including failed
+    // attempts) instead of reporting one step or a character estimate.
+    let usage_events: Vec<String> = {
+        let mut stmt =
+            tx.prepare("SELECT data FROM engine_event WHERE session_id=?1 AND kind='usage'")?;
+        let rows = stmt.query_map([session], |r| r.get::<_, String>(0))?;
+        rows.collect::<Result<Vec<_>, _>>()?
+            .into_iter()
+            .filter(|data| {
+                serde_json::from_str::<Value>(data)
+                    .ok()
+                    .is_some_and(|event| event["run_id"].as_str() == Some(run))
+            })
+            .collect()
+    };
+    let mut total = Value::Null;
+    let mut steps = 0u64;
+    for data in usage_events {
+        if let Ok(event) = serde_json::from_str::<Value>(&data) {
+            steps += 1;
+            merge_usage(&mut total, &event["usage"]);
+        }
+    }
+    append(
+        tx,
+        session,
+        "run.usage",
+        json!({"run_id":run,"steps":steps,"usage":total}),
+    )?;
+    let event = append(
+        tx,
+        session,
+        "run.finished",
+        json!({"run_id":run,"reason":reason}),
+    )?;
+    Ok(event)
 }

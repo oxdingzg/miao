@@ -1,3 +1,4 @@
+import type { Event } from "@miao/schema/event"
 import type { Credential } from "@miao/schema/credential"
 import type { Agent } from "@miao/schema/agent"
 import { Context, Effect } from "effect"
@@ -18,6 +19,15 @@ import type { PromptInput } from "@miao/schema/prompt-input"
 import type { AbsolutePath } from "@miao/core/schema"
 
 export interface Interface {
+  readonly shell: (input: {
+    sessionID: SessionID
+    storage: AbsolutePath
+    location: Location.Ref
+    id?: Event.ID
+    command: string
+    resume?: boolean
+  }) => Effect.Effect<void, ConflictError>
+
   readonly inject: (input: {
     sessionID: SessionID
     storage: AbsolutePath

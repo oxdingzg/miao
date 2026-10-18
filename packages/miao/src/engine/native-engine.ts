@@ -1,3 +1,4 @@
+import { Event } from "@miao/schema/event"
 import { agentManifest, modelRoute } from "./product-agent"
 import { LocationServiceMap } from "@miao/core/location-service-map"
 import { SessionModelRoute } from "@miao/schema/session-model-route"
@@ -238,6 +239,32 @@ export const fromOwners = (
       ),
     )(await connection.client.request("model_catalog"))
   return {
+    shell: (input) =>
+      read(input, async (connection) => {
+        const callID = input.id ?? Event.ID.create()
+        const admitted = await connection.client.request("shell", {
+          session_id: input.sessionID,
+          call_id: callID,
+          command: input.command,
+          timeout_ms: 120_000,
+        })
+        const status = Schema.Struct({ state: Schema.String })
+        const deadline = Date.now() + 15 * 60_000
+        let receipt = Schema.decodeUnknownSync(status)(admitted)
+        while (receipt.state === "pending" || receipt.state === "running") {
+          if (Date.now() >= deadline)
+            throw new Error(
+              "Operator shell did not settle before the wait deadline; inspect its durable receipt before retrying",
+            )
+          await Bun.sleep(50)
+          receipt = Schema.decodeUnknownSync(status)(
+            await connection.client.request("shell_status", { session_id: input.sessionID, call_id: callID }),
+          )
+        }
+        if (receipt.state !== "ended")
+          throw new Error(`Operator shell ${receipt.state}; inspect the recorded refusal or unknown outcome`)
+        if (input.resume !== false) await connection.client.request("wake", { session_id: input.sessionID })
+      }).pipe(Effect.asVoid),
     inject: (input) =>
       read(input, async (connection) => {
         await connection.client.request("inject", {

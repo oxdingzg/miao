@@ -227,6 +227,7 @@ export namespace Shell {
     ...options,
     schema: {
       ...Base,
+      metadata: Schema.Record(Schema.String, Schema.Unknown).pipe(optional),
       messageID: SessionMessage.ID,
       callID: Schema.String,
       command: Schema.String,
@@ -239,6 +240,7 @@ export namespace Shell {
     ...options,
     schema: {
       ...Base,
+      metadata: Schema.Record(Schema.String, Schema.Unknown).pipe(optional),
       callID: Schema.String,
       output: Schema.String,
     },

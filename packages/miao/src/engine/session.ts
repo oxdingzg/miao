@@ -123,6 +123,60 @@ export class EngineTranslator {
           },
         })
     }
+    if (event.kind === "shell.started" && typeof event.recorded_at_ms === "number") {
+      const started = Schema.decodeUnknownOption(
+        Schema.Struct({
+          call_id: Schema.String,
+          command: Schema.String,
+          origin: Schema.Literal("operator"),
+          run_id: Schema.optional(Schema.String),
+        }),
+      )(event.data)
+      if (Option.isSome(started))
+        publish({
+          type: "session.next.shell.started",
+          data: {
+            sessionID: adoptSession(event.session_id),
+            timestamp: DateTime.makeUnsafe(event.recorded_at_ms),
+            messageID: started.value.call_id.startsWith("msg_")
+              ? SessionMessage.ID.make(started.value.call_id)
+              : messageID(event.session_id, event.seq),
+            callID: started.value.call_id,
+            command: started.value.command,
+            metadata: { origin: "operator", runID: started.value.run_id },
+          },
+        })
+    }
+    if (event.kind === "shell.ended" && typeof event.recorded_at_ms === "number") {
+      const ended = Schema.decodeUnknownOption(
+        Schema.Struct({
+          call_id: Schema.String,
+          output: Schema.String,
+          origin: Schema.Literal("operator"),
+          exit_code: Schema.NullOr(Schema.Number),
+          reason: Schema.String,
+          duration_ms: Schema.Number,
+          truncated: Schema.Boolean,
+        }),
+      )(event.data)
+      if (Option.isSome(ended))
+        publish({
+          type: "session.next.shell.ended",
+          data: {
+            sessionID: adoptSession(event.session_id),
+            timestamp: DateTime.makeUnsafe(event.recorded_at_ms),
+            callID: ended.value.call_id,
+            output: ended.value.output,
+            metadata: {
+              origin: "operator",
+              exitCode: ended.value.exit_code,
+              reason: ended.value.reason,
+              durationMs: ended.value.duration_ms,
+              truncated: ended.value.truncated,
+            },
+          },
+        })
+    }
     this.#tools.note(event)
     const committed =
       event.kind === "message.committed" &&
