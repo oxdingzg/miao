@@ -1,0 +1,7 @@
+miao-engine includes AWS SDK for Rust and AWS Smithy Rust runtime components
+under the Apache License, Version 2.0.
+
+Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
+
+The full dependency license and its copyright notice are reproduced in
+LICENSE-APACHE-2.0. The miao project license is provided separately in LICENSE.
