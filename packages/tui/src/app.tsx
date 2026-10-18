@@ -19,7 +19,6 @@ import {
   Match,
   createEffect,
   createMemo,
-  ErrorBoundary,
   createSignal,
   onMount,
   onCleanup,
@@ -33,6 +32,7 @@ import { DialogProvider, useDialog } from "./ui/dialog"
 import { DialogProvider as DialogProviderList } from "./component/dialog-provider"
 import { DialogAccountProviders } from "./component/dialog-accounts"
 import { ErrorComponent } from "./component/error-component"
+import { ErrorBoundary } from "./component/error-boundary"
 import { PluginRouteMissing } from "./component/plugin-route-missing"
 import { ProjectProvider, useProject } from "./context/project"
 import { EditorContextProvider } from "./context/editor"
@@ -308,7 +308,7 @@ export const run = Effect.fn("Tui.run")(function* (input: TuiInput) {
               }}
             >
               <EpilogueProvider set={(value) => (exit.epilogue = value)}>
-                <ErrorBoundary fallback={(error, reset) => <ErrorComponent error={error} reset={reset} mode={mode} />}>
+                <ErrorBoundary fallback={(report, reset) => <ErrorComponent report={report} reset={reset} mode={mode} />}>
                   <TuiPathsProvider
                     value={{
                       cwd: process.cwd(),
@@ -881,6 +881,15 @@ function App(props: {
         slashAliases: ["remote"],
         run: () => {
           dialog.replace(() => <DialogRemote />)
+        },
+      },
+      {
+        name: "remote.login",
+        title: "Sign in to relay",
+        category: "Agent",
+        slashName: "login",
+        run: () => {
+          dialog.replace(() => <DialogRemote startInLogin />)
         },
       },
       {
