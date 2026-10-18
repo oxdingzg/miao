@@ -16,6 +16,7 @@ pub enum AuthStyle {
     /// Microsoft Azure Front Door style: the secret travels in an `api-key`
     /// header, never an Authorization bearer.
     ApiKey,
+    Copilot,
 }
 
 #[derive(Clone)]
@@ -107,6 +108,7 @@ impl Provider for OpenAIChat {
             None => selected.auth_style,
             Some("bearer") => AuthStyle::Bearer,
             Some("api-key") => AuthStyle::ApiKey,
+            Some("copilot") => AuthStyle::Copilot,
             _ => {
                 return Err(ProviderError::Stream(
                     "unsupported Chat route auth style".into(),
@@ -192,8 +194,10 @@ impl OpenAIChat {
         without_tools: bool,
     ) -> Result<Reply, ProviderError> {
         let request = crate::media::normalize(request, "openai-chat", &self.input_modalities)?;
+        let copilot =
+            matches!(self.auth_style, AuthStyle::Copilot).then(|| crate::copilot::turn(&request));
         let credential = self.source.load().await?;
-        if credential.kind() != Kind::Key {
+        if credential.kind() != Kind::Key && !matches!(self.auth_style, AuthStyle::Copilot) {
             return Err(ProviderError::AuthProfile);
         }
         let mut messages = messages(&request.messages)?;
@@ -212,15 +216,18 @@ impl OpenAIChat {
         }
         let mut request = self.client.post(url).json(&body);
         request = match self.auth_style {
-            AuthStyle::Bearer => request.bearer_auth(credential.secret()),
+            AuthStyle::Bearer | AuthStyle::Copilot => request.bearer_auth(credential.secret()),
             AuthStyle::ApiKey => request.header("api-key", credential.secret()),
         };
-        let request = crate::provider::route_headers(
+        let mut request = crate::provider::route_headers(
             self.request_options.headers(request)?,
             &self.extra_headers,
         )?
         .build()
         .map_err(|_| ProviderError::Transport)?;
+        if let Some(headers) = copilot {
+            crate::copilot::apply(&mut request, &headers, false)?;
+        }
         let response =
             request_with_retry("openai-chat", &self.client, request, &progress, &cancel).await?;
         read_stream(response, progress, cancel, ChatState::default()).await

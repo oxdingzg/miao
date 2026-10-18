@@ -432,3 +432,36 @@ Receipts are `pending`, `running`, `ended`, `refused`, or `unknown`. A claim who
 The durable output is bounded by the process runner. Provider history retains a 16 KiB preview with a `recall` handle for the remaining captured output; `recall.tool_use_id` accepts the operator call identity and reports `origin:"operator"`. Forks preserve operator blocks, exit evidence and timestamps under new fork-local identities and recall handles, rather than fabricating user prompts or model tool calls.
 
 The product `session.shell` HTTP payload accepts optional `id` (`evt_...`) for exact native retries. The facade waits for the durable outcome, projects normal shell blocks and carries execution evidence in shell metadata. An unknown/refused native outcome returns Conflict rather than claiming successful execution.
+### Product-owned MCP OAuth
+
+Product-native owners materialize authorized global remote MCP servers through a
+scoped loopback HTTP route. The route forwards MCP protocol bodies/streams while
+borrowing the product's URL-bound OAuth authority. Native manifests contain only
+the ephemeral local route, never OAuth access tokens, refresh tokens or client
+secrets. Browser login and registration use the existing product OAuth routes.
+Missing or rejected grants surface an authentication failure and require login.
+
+SDK Streamable HTTP and SSE connections use the same request-time authority.
+An inter-process refresh lock covers re-read, SDK token exchange and durable
+rotation. A generation/URL compare-and-set prevents an in-flight old refresh
+from replacing a newly authorized grant or a changed server binding. Omitted
+refresh tokens preserve the stored grant. Expiry and concurrent 401 retries
+refresh one observed generation; bodies are replayed only after rejection.
+Refresh discovery/exchange has a bounded deadline and errors contain a stable
+authentication status rather than provider response bodies. The product scope
+owns the loopback service, so restarting a native child reuses its authority.
+
+`auth.style: "copilot"` selects GitHub Copilot authentication for Chat,
+Responses or Anthropic Messages routes. OAuth credentials bound to the
+`github-copilot` integration use the device grant's `refresh` token; the
+provider's zero-expiry sentinel does not expire that device grant. Other
+integrations retain ordinary expiry validation. Route manifests contain
+credential references, never the token bytes. Enterprise account metadata
+selects the Copilot API base, and product endpoint metadata selects the wire.
+
+Copilot request metadata is derived after media normalization on each request:
+root user turns use `x-initiator: user`, child Session and continuation/tool
+turns use `agent`, and only requests containing images carry the vision header.
+The interaction id follows the Session affinity scope. Anthropic beta flags
+merge with host flags. Copilot Responses routes reject continuation contracts
+that are only supported by the other explicit transport profiles.
