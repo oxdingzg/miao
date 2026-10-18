@@ -429,8 +429,8 @@ install_engine() {
     local combo file url tmp_dir engine protocol
     combo="$os-$arch"
     case "$os" in
-        windows) file="miao-engine-${combo}.zip" ;;
-        *) file="miao-engine-${combo}.tar.gz" ;;
+        linux) file="miao-engine-${combo}.tar.gz" ;;
+        *) file="miao-engine-${combo}.zip" ;;
     esac
     url="https://github.com/oxdingzg/miao/releases/download/v${specific_version}/${file}"
     tmp_dir="${TMPDIR:-/tmp}/miao_engine_install_$$"
@@ -440,10 +440,10 @@ install_engine() {
         rm -rf "$tmp_dir"
         return 0
     fi
-    if [ "$os" = "windows" ]; then
-        unzip -q "$tmp_dir/$file" -d "$tmp_dir"
-    else
+    if [ "$os" = "linux" ]; then
         tar -xzf "$tmp_dir/$file" -C "$tmp_dir"
+    else
+        unzip -q "$tmp_dir/$file" -d "$tmp_dir"
     fi
     engine="$tmp_dir/miao-engine${EXE}"
     if [ ! -f "$engine" ]; then
@@ -452,7 +452,9 @@ install_engine() {
         return 0
     fi
     chmod 755 "$engine" 2>/dev/null || true
-    protocol=$("$engine" --capabilities 2>/dev/null | sed -n 's/.*"protocol":\([0-9][0-9]*\).*/\1/p')
+    # An engine from an older release does not know this flag; under `set -e`
+    # an unguarded probe would abort the whole install.
+    protocol=$(("$engine" --capabilities 2>/dev/null || true) | sed -n 's/.*"protocol":\([0-9][0-9]*\).*/\1/p' || true)
     if [ -z "$protocol" ] || [ "$protocol" -lt 2 ]; then
         print_message info "${MUTED}Engine archive predates this product; not installing it.${NC}"
         rm -rf "$tmp_dir"
