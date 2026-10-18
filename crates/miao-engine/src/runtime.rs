@@ -4,7 +4,7 @@ use crate::{
     permission::{input_digest, Config, Decision, Policy},
     protocol::{Admission, Attachment, Delivery, Error, Input, ModelRequest},
     provider::{Provider, ProviderError},
-    store::{RuntimeLease, Store},
+    store::{RuntimeLease, SessionLease, Store},
     tool_replay::ToolReplay,
     tools::{Prepared, ToolError, Tools},
 };
@@ -217,6 +217,18 @@ impl Runtime {
                         .collect()
                 };
                 for session in sessions {
+                    // A draining Session renews its own claim; a heartbeat here
+                    // would advance the epoch and fence the active owner.
+                    if heartbeat_inner
+                        .store
+                        .active_run(&session)
+                        .await
+                        .ok()
+                        .flatten()
+                        .is_some()
+                    {
+                        continue;
+                    }
                     let _ = heartbeat_inner
                         .store
                         .heartbeat_lease(&session, 30_000)
@@ -358,6 +370,17 @@ impl Runtime {
 
     pub fn store(&self) -> &Store {
         &self.inner.store
+    }
+
+    /// Detaching the last UI must not kill useful background work.
+    pub async fn has_live_work(&self) -> Result<bool, Error> {
+        if !self.inner.jobs.lock().await.is_empty()
+            || !self.inner.timers.lock().await.is_empty()
+            || !self.inner.crons.lock().await.is_empty()
+        {
+            return Ok(true);
+        }
+        self.inner.store.has_running_runs().await
     }
 
     /// Ephemeral deltas have no durable cursor. Slow clients lose deltas and
@@ -693,6 +716,33 @@ fn boxed_drain(
     })
 }
 
+/// How long a drain's Session claim stays valid without renewal.
+const SESSION_LEASE_MS: i64 = 30_000;
+
+/// Aborts the renewal task when the drain ends, including on an early return.
+struct LeaseKeepalive(JoinHandle<()>);
+impl Drop for LeaseKeepalive {
+    fn drop(&mut self) {
+        self.0.abort();
+    }
+}
+
+/// Renew the drain's claim until the turn ends. A superseded owner cancels its
+/// own work instead of continuing to execute against a lease it no longer holds.
+async fn keep_lease(store: Store, lease: SessionLease, cancel: CancellationToken) {
+    loop {
+        tokio::select! {
+            biased;
+            _ = cancel.cancelled() => return,
+            _ = tokio::time::sleep(std::time::Duration::from_millis((SESSION_LEASE_MS / 4) as u64)) => {}
+        }
+        if store.renew_session(&lease, SESSION_LEASE_MS).await.is_err() {
+            cancel.cancel();
+            return;
+        }
+    }
+}
+
 async fn drain(
     session: String,
     inner: Arc<Inner>,
@@ -703,7 +753,16 @@ async fn drain(
         _=cancel.cancelled()=>return Ok(()),
         permit=inner.slots.clone().acquire_owned()=>permit.map_err(|_|Error::Closed)?,
     };
-    let promoted = inner.store.promote(&session, true).await?;
+    let lease = inner
+        .store
+        .claim_session(&session, SESSION_LEASE_MS)
+        .await?;
+    let _keepalive = LeaseKeepalive(tokio::spawn(keep_lease(
+        inner.store.clone(),
+        lease.clone(),
+        cancel.clone(),
+    )));
+    let promoted = inner.store.promote_fenced(&session, true, &lease).await?;
     if promoted.is_empty() && !force {
         return Ok(());
     }
@@ -711,7 +770,7 @@ async fn drain(
         return Err(Error::Invalid("Session has no admitted history".into()));
     }
     let run = uuid::Uuid::new_v4().to_string();
-    inner.store.start_run(&session, &run).await?;
+    inner.store.start_run_fenced(&session, &run, &lease).await?;
     if inner.started.lock().await.insert(session.clone()) {
         inner
             .store
@@ -722,8 +781,8 @@ async fn drain(
             )
             .await?;
     }
-    record_promotions(&inner, &session, &run, &promoted).await?;
-    let result = execute(&session, &run, &inner, cancel.clone()).await;
+    record_promotions(&inner, &session, &run, &promoted, &lease).await?;
+    let result = execute(&session, &run, &inner, cancel.clone(), &lease).await;
     let reason = if cancel.is_cancelled() {
         "interrupted"
     } else if result.is_ok() {
@@ -731,7 +790,10 @@ async fn drain(
     } else {
         "failed"
     };
-    inner.store.finish_run(&session, &run, reason).await?;
+    inner
+        .store
+        .finish_run_fenced(&session, &run, reason, &lease)
+        .await?;
     let stop = if reason == "failed" {
         crate::events::Lifecycle::StopFailure
     } else {
@@ -761,14 +823,16 @@ async fn record_promotions(
     session: &str,
     run: &str,
     promoted: &[crate::protocol::Event],
+    lease: &SessionLease,
 ) -> Result<(), Error> {
     for event in promoted {
         inner
             .store
-            .record(
+            .record_fenced(
                 session,
                 crate::events::Lifecycle::UserPromptSubmit.name(),
                 json!({"run_id":run,"input_id":event.data["input_id"]}),
+                lease,
             )
             .await?;
     }
@@ -780,6 +844,7 @@ async fn execute(
     run: &str,
     inner: &Arc<Inner>,
     cancel: CancellationToken,
+    lease: &SessionLease,
 ) -> Result<(), Error> {
     let mut step = 0;
     let mut allowance = inner.policy.max_provider_turns();
@@ -823,7 +888,10 @@ async fn execute(
             system.push_str("\n\n<collaboration-mode mode=\"plan\">\nYou are in plan mode: investigate and propose a plan. Do not modify files, run commands, or start background work; those capabilities are denied.\n</collaboration-mode>");
         }
         let sources = bundle.sources.clone();
-        let context_epoch = inner.store.select_context(session, bundle).await?;
+        let context_epoch = inner
+            .store
+            .select_context_fenced(session, bundle, lease)
+            .await?;
         inner
             .store
             .record(
@@ -1042,11 +1110,12 @@ async fn execute(
                     {
                         inner
                             .store
-                            .assistant_reply(
+                            .assistant_reply_fenced(
                                 session,
                                 run,
                                 Some(started.seq),
                                 partial.content.clone(),
+                                lease,
                             )
                             .await?;
                     }
@@ -1070,8 +1139,8 @@ async fn execute(
                             delivery: crate::protocol::Delivery::Steer,
                         }).await?;
                         internal_inputs.insert(input_id);
-                        let promoted = inner.store.promote(session, false).await?;
-                        record_promotions(inner, session, run, &promoted).await?;
+                        let promoted = inner.store.promote_fenced(session, false, lease).await?;
+                        record_promotions(inner, session, run, &promoted, lease).await?;
                         if promoted.iter().any(|event| {
                             event.data["input_id"]
                                 .as_str()
@@ -1137,13 +1206,14 @@ async fn execute(
         crate::session_model::stamp_route(&mut reply.content, binding.as_ref());
         let assistant_boundary = inner
             .store
-            .assistant_reply_profiled(
+            .assistant_reply_profiled_fenced(
                 session,
                 run,
                 step,
                 Some(started.seq),
                 reply.content.clone(),
                 provider.reply_identity(&reply),
+                lease,
             )
             .await?
             .seq;
@@ -1191,7 +1261,7 @@ async fn execute(
                             "unsupported invalid tool input correction".into(),
                         ));
                     }
-                    inner.store.tool_result(session, run, id, json!({"error":"Invalid JSON tool arguments. This call was not executed. Supply a valid JSON object for this call only; do not repeat completed operations."}), true).await?;
+                    inner.store.tool_result_fenced(session, run, id, json!({"error":"Invalid JSON tool arguments. This call was not executed. Supply a valid JSON object for this call only; do not repeat completed operations."}), true, lease).await?;
                     inner.store.record(session, "tool.input_error", json!({"run_id":run,"step":step,"call_id":id,"tool":name,"reason":"invalid_json","attempt":input_corrections})).await?;
                     continue;
                 }
@@ -1236,7 +1306,10 @@ async fn execute(
                             {
                                 (json!({"error":blocked}), true)
                             } else {
-                                inner.store.mark_dispatched(session, run, id).await?;
+                                inner
+                                    .store
+                                    .mark_dispatched_fenced(session, run, id, lease)
+                                    .await?;
                                 verification_scope.observe(&prepared);
                                 let prepared_external =
                                     prepared.access() == crate::permission::Access::External;
@@ -1648,7 +1721,10 @@ async fn execute(
             )
             .await;
         }
-        let mut promoted = inner.store.promote(session, !reply.needs_tools).await?;
+        let mut promoted = inner
+            .store
+            .promote_fenced(session, !reply.needs_tools, lease)
+            .await?;
         let mut goal_stopped_this_turn = false;
         if !reply.needs_tools && promoted.is_empty() && state_allowed {
             let state = inner.store.state(session).await?;
@@ -1693,7 +1769,7 @@ async fn execute(
                         }).await?;
                     internal_inputs.insert(input_id.clone());
                     inner.store.record(session, "loop.continuation", json!({"run_id":run,"input_id":input_id,"admitted_seq":admission.admitted_seq,"iteration":goal_iterations})).await?;
-                    promoted = inner.store.promote(session, true).await?;
+                    promoted = inner.store.promote_fenced(session, true, lease).await?;
                 }
             }
         }
@@ -1732,8 +1808,8 @@ async fn execute(
                         json!({"run_id":run,"admitted_seq":admission.admitted_seq,"reason":"empty-completion"}),
                     )
                     .await?;
-                promoted = inner.store.promote(session, true).await?;
-                record_promotions(inner, session, run, &promoted).await?;
+                promoted = inner.store.promote_fenced(session, true, lease).await?;
+                record_promotions(inner, session, run, &promoted, lease).await?;
             } else {
                 inner
                     .store
@@ -1846,8 +1922,8 @@ async fn execute(
                             json!({"run_id":run,"admitted_seq":admission.admitted_seq,"reason":"verification-failed"}),
                         )
                         .await?;
-                    promoted = inner.store.promote(session, true).await?;
-                    record_promotions(inner, session, run, &promoted).await?;
+                    promoted = inner.store.promote_fenced(session, true, lease).await?;
+                    record_promotions(inner, session, run, &promoted, lease).await?;
                 } else {
                     inner
                         .store
@@ -1867,7 +1943,7 @@ async fn execute(
             return Ok(());
         }
         if !promoted.is_empty() {
-            record_promotions(inner, session, run, &promoted).await?;
+            record_promotions(inner, session, run, &promoted, lease).await?;
             // Synthetic internal admissions are durable, but do not refill the
             // user-input provider allowance. External admissions still do.
             if promoted.iter().any(|event| {
