@@ -18,6 +18,7 @@ import { ConflictError } from "@miao/protocol/errors"
 import { Location } from "@miao/schema/location"
 import { Effect, Layer, Option, Schema } from "effect"
 import { EngineError, type EngineOptions, type EngineEvent } from "./client"
+import { discoveredEngine } from "./discovery"
 import { makeEngineOwners } from "./owners"
 import { NativeRecovery } from "./recovery"
 import { engineMessageSequence } from "./message-sequence"
@@ -58,7 +59,11 @@ export const nativeEngineOptions = (
   environment: Record<string, string | undefined> = process.env,
   settings: Omit<EngineOptions, "db" | "workspace"> | undefined = undefined,
 ): Omit<EngineOptions, "db" | "workspace"> | undefined => {
-  const binary = environment.MIAO_ENGINE_BIN
+  // An explicit binary wins; otherwise use a discovered, protocol-compatible
+  // installation so native Sessions need no environment variable. A custom
+  // environment object stays deterministic for tests.
+  const binary =
+    environment.MIAO_ENGINE_BIN ?? (environment === process.env ? discoveredEngine() : undefined)
   if (!binary) return undefined
   const limits = environment.MIAO_CONTEXT_LIMITS
   // Precedence: the operator's environment overrides the global config file

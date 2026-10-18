@@ -21,7 +21,7 @@ use std::{
 use tokio::sync::{mpsc, oneshot, watch};
 
 pub(crate) const APPLICATION_ID: u32 = 0x4d494145;
-pub(crate) const SCHEMA_VERSION: u32 = 12;
+pub const SCHEMA_VERSION: u32 = 12;
 
 type Work = Box<dyn FnOnce(&mut Connection) + Send>;
 

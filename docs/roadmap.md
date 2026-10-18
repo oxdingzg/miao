@@ -620,11 +620,15 @@ open PRs and recent merges.
 Landing the engine was the build; these gates decide when native sessions are
 the default path.
 
-1. **Engine binary by default** — open. `NativeEngine.Placement` still requires
-   an explicit `MIAO_ENGINE_BIN`. The release already ships per-platform
-   `miao-engine` archives, so what remains is auto-discovering an installed
-   engine (and ultimately bundling it) so placement needs no environment
-   variable.
+1. **Engine binary by default** — discovery landed. The release ships
+   per-platform `miao-engine` archives next to the CLI, the installer places one
+   at `~/.miao/bin/miao-engine`, and the product discovers it without
+   `MIAO_ENGINE_BIN`. Placement requires protocol 2: `miao-engine
+   --capabilities` reports `{protocol, schema, version}`, an explicit
+   `MIAO_ENGINE_BIN` that is older fails startup with a clear error, and a
+   discovered engine that is older is ignored so the product keeps running
+   TypeScript Sessions. Remaining: bundle the archive inside the CLI install
+   where a release has no engine asset at all.
 2. **Product-tool reverse bridge** — landed (#1027). Native sessions register
    host-supplied product tools and reverse-dispatch execution to the server
    over the engine's stdio bridge; replies settle as durable tool results.
