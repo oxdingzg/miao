@@ -4,6 +4,7 @@ import { AmbientContext } from "./ambient-context"
 import { ProductHooks } from "./product-hooks"
 import { ProductLsp } from "./product-lsp"
 import { ProductFormatter } from "./product-formatter"
+import { ProductRoutes } from "./product-routes"
 import os from "node:os"
 import path from "node:path"
 import { Config } from "@miao/core/config"
@@ -485,26 +486,18 @@ const layer = Layer.effect(
       console.log("[worker-host] config written:", workerConfigFile)
     }
     const owners = yield* makeEngineOwners(configuration, (location) =>
-      AmbientContext.prepare(location, configuration).pipe(
-        Effect.flatMap((context) =>
-          ProductHooks.prepare(location, {
-            ...configuration,
-            ...context.options,
-          }).pipe(
-            Effect.flatMap((hooks) =>
-              ProductLsp.prepare(location, configuration).pipe(
-                Effect.flatMap((lsp) =>
-                  ProductFormatter.prepare(location, configuration).pipe(
-                    Effect.map((formatter) => ({
-                      options: { ...context.options, ...hooks, ...lsp, ...formatter },
-                      refresh: context.refresh,
-                    })),
-                  ),
-                ),
-              ),
-            ),
-          ),
-        ),
+      Effect.gen(function* () {
+        const routes = yield* ProductRoutes.prepare(location, configuration)
+        const effective = { ...configuration, ...routes }
+        const context = yield* AmbientContext.prepare(location, effective)
+        const hooks = yield* ProductHooks.prepare(location, { ...effective, ...context.options })
+        const lsp = yield* ProductLsp.prepare(location, effective)
+        const formatter = yield* ProductFormatter.prepare(location, effective)
+        return {
+          options: { ...routes, ...context.options, ...hooks, ...lsp, ...formatter },
+          refresh: context.refresh,
+        }
+      }).pipe(
         Effect.provide(locations.get(location)),
         Effect.mapError((error) =>
           error instanceof EngineError

@@ -72,16 +72,16 @@ pub async fn load(
     let mut bytes = Vec::new();
     tokio::fs::File::open(path)
         .await?
-        .take(65537)
+        .take(1024 * 1024 + 1)
         .read_to_end(&mut bytes)
         .await?;
-    if bytes.len() > 65536 {
-        return Err("Model routes config exceeds 64 KiB".into());
+    if bytes.len() > 1024 * 1024 {
+        return Err("Model routes config exceeds 1 MiB".into());
     }
     let entries = serde_json::from_slice::<Vec<Route>>(&bytes)
         .map_err(|_| "invalid Model routes host config")?;
-    if entries.len() > 64 {
-        return Err("model route catalog exceeds 64 entries".into());
+    if entries.len() > crate::model_catalog::MAX_ROUTES {
+        return Err("model route catalog exceeds 1024 entries".into());
     }
     let mut routes = Vec::new();
     for entry in entries {
