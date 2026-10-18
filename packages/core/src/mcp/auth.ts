@@ -112,7 +112,8 @@ const layer = Layer.effect(
     const updateField = <K extends keyof Entry>(field: K, spanName: string) =>
       Effect.fn(`McpAuth.${spanName}`)(function* (mcpName: string, value: NonNullable<Entry[K]>, serverUrl?: string) {
         yield* mutate((data) => {
-          const entry = data[mcpName] ?? {}
+          const current = data[mcpName]
+          const entry: Entry = serverUrl && current?.serverUrl !== serverUrl ? {} : (current ?? {})
           entry[field] = value
           if (serverUrl) entry.serverUrl = serverUrl
           return { ...data, [mcpName]: entry }
@@ -129,7 +130,29 @@ const layer = Layer.effect(
         })
       })
 
-    const updateTokens = updateField("tokens", "updateTokens")
+    const updateTokens = Effect.fn("McpAuth.updateTokens")(function* (
+      mcpName: string,
+      tokens: Tokens,
+      serverUrl?: string,
+    ) {
+      yield* mutate((data) => {
+        const current = data[mcpName]
+        const entry: Entry = serverUrl && current?.serverUrl !== serverUrl ? {} : (current ?? {})
+        return {
+          ...data,
+          [mcpName]: {
+            ...entry,
+            ...(serverUrl ? { serverUrl } : {}),
+            tokens: {
+              ...tokens,
+              // OAuth refresh responses may omit an unchanged refresh token.
+              // Re-read and preserve it under the same file lock as the write.
+              refreshToken: tokens.refreshToken ?? entry.tokens?.refreshToken,
+            },
+          },
+        }
+      })
+    })
     const updateClientInfo = updateField("clientInfo", "updateClientInfo")
     const updateCodeVerifier = updateField("codeVerifier", "updateCodeVerifier")
     const updateOAuthState = updateField("oauthState", "updateOAuthState")

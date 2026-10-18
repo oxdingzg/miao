@@ -76,3 +76,55 @@ test("serializes concurrent auth file updates across service instances", async (
     }),
   )
 })
+
+test("preserves omitted refresh tokens and commits explicit rotations for the exact server URL", async () => {
+  const file = authFile()
+  await Effect.runPromise(
+    Effect.gen(function* () {
+      const auth = yield* authService(file.fsLayer)
+      const url = "https://mcp.example.test/one"
+      yield* auth.updateTokens("fixture", { accessToken: "access-one", refreshToken: "refresh-one" }, url)
+      yield* auth.updateTokens("fixture", { accessToken: "access-two" }, url)
+      expect((yield* auth.getForUrl("fixture", url))?.tokens).toMatchObject({
+        accessToken: "access-two",
+        refreshToken: "refresh-one",
+      })
+      yield* auth.updateTokens("fixture", { accessToken: "access-three", refreshToken: "refresh-two" }, url)
+      const reopened = yield* authService(file.fsLayer)
+      expect((yield* reopened.getForUrl("fixture", url))?.tokens).toMatchObject({
+        accessToken: "access-three",
+        refreshToken: "refresh-two",
+      })
+      yield* reopened.updateTokens("fixture", { accessToken: "access-four" }, "https://mcp.example.test/two")
+      expect(yield* reopened.getForUrl("fixture", url)).toBeUndefined()
+      expect(
+        (yield* reopened.getForUrl("fixture", "https://mcp.example.test/two"))?.tokens?.refreshToken,
+      ).toBeUndefined()
+    }),
+  )
+})
+
+test("changing a server URL through client registration cannot rebind old tokens or authorization state", async () => {
+  const file = authFile()
+  await Effect.runPromise(
+    Effect.gen(function* () {
+      const auth = yield* authService(file.fsLayer)
+      yield* auth.set(
+        "fixture",
+        {
+          tokens: { accessToken: "old-access", refreshToken: "old-refresh" },
+          clientInfo: { clientId: "old-client", clientSecret: "old-secret" },
+          codeVerifier: "old-verifier",
+          oauthState: "old-state",
+        },
+        "https://mcp.example.test/old",
+      )
+      yield* auth.updateClientInfo("fixture", { clientId: "new-client" }, "https://mcp.example.test/new")
+      expect(yield* auth.getForUrl("fixture", "https://mcp.example.test/new")).toEqual({
+        clientInfo: { clientId: "new-client" },
+        serverUrl: "https://mcp.example.test/new",
+      })
+      expect(yield* auth.getForUrl("fixture", "https://mcp.example.test/old")).toBeUndefined()
+    }),
+  )
+})
