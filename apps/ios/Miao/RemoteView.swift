@@ -22,6 +22,7 @@ struct RemoteView: View {
     var body: some View {
         ZStack {
             mainContent
+                .accessibilityHidden(sidebarVisible)
             if sidebarVisible { sidebar }
         }
         .task {
@@ -105,7 +106,7 @@ struct RemoteView: View {
                         Text("登录同一账号后，这台电脑的会话会出现在侧栏里。")
                     } actions: {
                         Button("中继账号") { accountPresented = true }
-                            .buttonStyle(.bordered).accessibilityIdentifier("hubAccount")
+                            .buttonStyle(.bordered).accessibilityIdentifier("emptyHubAccount")
                         Button("连接电脑") { pairing = true }.buttonStyle(.borderedProminent)
                     }
                 }
@@ -127,9 +128,7 @@ struct RemoteView: View {
 
     @ViewBuilder private func sessionContent(_ client: HostClient) -> some View {
         if let session = activeSession(client) {
-            SessionView(client: client, session: session, showsSidebarToggle: true, onSidebar: {
-                withAnimation(.easeInOut(duration: 0.25)) { sidebarVisible = true }
-            })
+            SessionView(client: client, session: session)
             .id(session.summary.id)
         } else {
             ContentUnavailableView {

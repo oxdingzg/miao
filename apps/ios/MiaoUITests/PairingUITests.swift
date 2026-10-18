@@ -57,6 +57,14 @@ final class PairingUITests: XCTestCase {
         UIPasteboard.general.string = text
         defer { UIPasteboard.general.string = nil }
         field.tap()
+        // Focusing a multiline field moves the keyboard toolbar over its old
+        // position. Scroll the form margin so the long press reaches the field.
+        for _ in 0..<3 {
+            let keyboard = app.keyboards.firstMatch
+            if !keyboard.exists || field.frame.maxY < keyboard.frame.minY - 60 { break }
+            app.coordinate(withNormalizedOffset: CGVector(dx: 0.95, dy: 0.45))
+                .press(forDuration: 0.1, thenDragTo: app.coordinate(withNormalizedOffset: CGVector(dx: 0.95, dy: 0.2)))
+        }
         field.press(forDuration: 1)
         let label = NSPredicate(format: "label IN %@", ["Paste", "粘贴"])
         let inApp = app.descendants(matching: .any).matching(label).firstMatch
@@ -74,19 +82,21 @@ final class PairingUITests: XCTestCase {
 
     @MainActor
     private func openDrawer(_ app: XCUIApplication) {
-        // Right after pairing, the host/session view can take seconds to replace
-        // the empty screen; wait until the toggle is ready before tapping.
-        let toggle = app.buttons["sessionSidebar"]
-        if toggle.waitForExistence(timeout: 30) {
+        // Account enrollment can dismiss its sheet back to an already-open drawer.
+        let close = app.buttons["关闭侧栏"].firstMatch
+        if !close.exists {
+            // Pairing can take seconds to replace the empty screen.
+            let toggles = app.buttons.matching(identifier: "sessionSidebar")
+            let toggle = toggles.firstMatch
+            XCTAssertTrue(toggle.waitForExistence(timeout: 30))
+            XCTAssertEqual(toggles.count, 1, "The navigation bar owns the only sidebar toggle")
             expectation(for: NSPredicate { _, _ in toggle.isHittable }, evaluatedWith: toggle)
             waitForExpectations(timeout: 30)
-            if toggle.isHittable {
-                toggle.tap()
-                return
-            }
+            if toggle.isHittable { toggle.tap() }
         }
-        let open = app.buttons["打开侧栏"].firstMatch
-        if open.waitForExistence(timeout: 3) && open.isHittable { open.tap() }
+        XCTAssertTrue(close.waitForExistence(timeout: 5))
+        XCTAssertEqual(app.buttons.matching(identifier: "hubAccount").count, 1,
+                       "The sidebar account entry has an unambiguous identifier")
     }
 
     @MainActor
@@ -107,7 +117,10 @@ final class PairingUITests: XCTestCase {
         if let account = fixture.account {
             stage("account")
             if fixture.enrollment != nil {
-                let accountEntry = app.buttons["中继账号"].firstMatch
+                let toggles = app.buttons.matching(identifier: "sessionSidebar")
+                XCTAssertTrue(toggles.firstMatch.waitForExistence(timeout: 15))
+                XCTAssertEqual(toggles.count, 1, "The empty screen exposes the sidebar toggle")
+                let accountEntry = app.buttons["emptyHubAccount"]
                 XCTAssertTrue(accountEntry.waitForExistence(timeout: 15))
                 accountEntry.tap()
                 XCTAssertTrue(app.textFields["hubOrigin"].waitForExistence(timeout: 15))
