@@ -386,3 +386,19 @@ merge case-insensitively, and explicit generation-variant headers override the
 corresponding static host defaults exactly once. Chat query values are encoded
 as data; unsupported auth styles or protocol/query combinations fail explicitly.
 Advisory count requests retain the same static host routing headers.
+
+### Exact permission grant storage
+
+Schema version 13 adds `engine_permission_grant` for durable exact scopes.
+A scope binds the workspace, opaque effective-authority revision (including
+agent manifest), tool, resource, canonical target set, and exact input digest.
+Target strings are literal identifiers; no wildcard or prefix matching occurs.
+Scope decoding rejects unknown fields, control characters, invalid digests,
+more than 64 targets, and encodings larger than 64 KiB. Stored scope bytes are
+validated against the requested scope before a lookup can succeed.
+
+The Store exposes storage and exact revocation primitives. Capability, explicit
+deny, effective-policy checks and approval resolution do not consume these
+records yet. The transaction-level insert primitive is reserved for atomic
+approval-resolution integration once that authority contract is connected.
+Adding this table does not itself make an approval permanent or bypass an ask.

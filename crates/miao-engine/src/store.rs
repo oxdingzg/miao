@@ -21,7 +21,7 @@ use std::{
 use tokio::sync::{mpsc, oneshot, watch};
 
 pub(crate) const APPLICATION_ID: u32 = 0x4d494145;
-pub const SCHEMA_VERSION: u32 = 12;
+pub const SCHEMA_VERSION: u32 = 13;
 
 type Work = Box<dyn FnOnce(&mut Connection) + Send>;
 
@@ -170,6 +170,7 @@ impl Store {
                     CREATE TABLE IF NOT EXISTS engine_context(session_id TEXT NOT NULL REFERENCES engine_session(id),epoch INTEGER NOT NULL,fingerprint TEXT NOT NULL,system TEXT NOT NULL,sources TEXT NOT NULL,selected_seq INTEGER NOT NULL,PRIMARY KEY(session_id,epoch));
                     CREATE TABLE IF NOT EXISTS engine_job(id TEXT PRIMARY KEY,session_id TEXT NOT NULL REFERENCES engine_session(id),request_key TEXT UNIQUE NOT NULL REFERENCES engine_tool(id),state TEXT NOT NULL,input TEXT NOT NULL,result TEXT);
                     CREATE TABLE IF NOT EXISTS engine_compaction(id TEXT PRIMARY KEY,session_id TEXT NOT NULL REFERENCES engine_session(id),through_seq INTEGER NOT NULL,summary TEXT NOT NULL,created_seq INTEGER NOT NULL);CREATE TABLE IF NOT EXISTS engine_lease(session_id TEXT PRIMARY KEY REFERENCES engine_session(id),interval_ms INTEGER NOT NULL,last_ms INTEGER NOT NULL,epoch INTEGER NOT NULL,owner_pid INTEGER);"))?;
+                crate::permission_grant::initialize(&conn)?;
                 let has_mode:bool=conn.query_row("SELECT EXISTS(SELECT 1 FROM pragma_table_info('engine_session') WHERE name='mode')",[],|r|r.get(0))?;
                 if !has_mode {
                     conn.execute(
@@ -1797,6 +1798,42 @@ impl Store {
             let event=append(&tx,&session,"tool.dispatched",json!({"run_id":run,"call_id":key,"provider_id":id}))?;
             tx.commit()?;Ok(event)
         }).await
+    }
+
+    /// Storage primitive only: runtime authorization and approval resolution do
+    /// not consume grants until their effective-authority contract is connected.
+    pub async fn put_permission_grant(
+        &self,
+        scope: crate::permission_grant::Scope,
+    ) -> Result<(), Error> {
+        self.call(move |conn| {
+            let tx = write_tx(conn)?;
+            crate::permission_grant::insert(&tx, &scope, now_ms())?;
+            tx.commit()?;
+            Ok(())
+        })
+        .await
+    }
+
+    pub async fn has_permission_grant(
+        &self,
+        scope: crate::permission_grant::Scope,
+    ) -> Result<bool, Error> {
+        self.call(move |conn| crate::permission_grant::contains(conn, &scope))
+            .await
+    }
+
+    pub async fn revoke_permission_grant(
+        &self,
+        scope: crate::permission_grant::Scope,
+    ) -> Result<bool, Error> {
+        self.call(move |conn| {
+            let tx = write_tx(conn)?;
+            let revoked = crate::permission_grant::revoke(&tx, &scope)?;
+            tx.commit()?;
+            Ok(revoked)
+        })
+        .await
     }
 
     pub async fn request_approval(&self, approval: Approval) -> Result<Event, Error> {

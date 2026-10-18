@@ -26,6 +26,7 @@ pub mod openai_chat;
 pub mod openai_responses;
 pub mod patch;
 pub mod permission;
+pub mod permission_grant;
 pub mod process;
 pub mod protocol;
 pub mod provider;

@@ -52,5 +52,13 @@ export const measureValue = (value: unknown, measure: (text: string) => number =
       (INLINE_BASE64.test(record.uri) || MEDIA_MIME.test(typeof record.mime === "string" ? record.mime : ""))
       ? ATTACHMENT_TOKENS
       : measureValue(record.uri, measure) + measureValue(record.name, measure)
-  return Object.values(record).reduce<number>((total, item) => total + measureValue(item, measure), 0)
+  return Object.entries(record).reduce<number>(
+    // Provider metadata is opaque bookkeeping, not prompt text: the replay of an
+    // encrypted reasoning item is charged by the provider as the reasoning it
+    // represents, not by the length of its base64 envelope. Measuring it by
+    // characters overstated a real request roughly twofold (565k provider tokens
+    // read as 1.1M), which pushed a fitting prefix onto the staged fallback.
+    (total, [key, item]) => (key === "providerMetadata" ? total : total + measureValue(item, measure)),
+    0,
+  )
 }

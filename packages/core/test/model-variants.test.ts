@@ -98,3 +98,18 @@ test("auxiliary calls stay silent without a tier or a writable reasoning body", 
   expect(ModelVariants.auxReasoningOptions("@ai-sdk/anthropic", [{ id: "low" }])).toBeUndefined()
   expect(ModelVariants.auxReasoningOptions(undefined, [{ id: "low" }])).toBeUndefined()
 })
+
+test("auxiliary body overlays pin the cheapest declared tier", () => {
+  expect(
+    ModelVariants.auxReasoningBody({ package: "@ai-sdk/openai" }, [{ id: "high" }, { id: "low" }]),
+  ).toEqual({ reasoning: { effort: "low" } })
+  expect(
+    ModelVariants.auxReasoningBody({ package: "@ai-sdk/openai-compatible" }, [{ id: "minimal" }]),
+  ).toEqual({ reasoning_effort: "minimal" })
+})
+
+test("auxiliary body overlays stay silent without a writable field or tier", () => {
+  expect(ModelVariants.auxReasoningBody({ package: "@ai-sdk/anthropic" }, [{ id: "low" }])).toBeUndefined()
+  expect(ModelVariants.auxReasoningBody({}, [{ id: "low" }])).toBeUndefined()
+  expect(ModelVariants.auxReasoningBody({ package: "@ai-sdk/openai" }, [{ id: "medium" }])).toBeUndefined()
+})
