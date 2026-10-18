@@ -7,10 +7,10 @@ use crate::{
     },
 };
 use fs2::FileExt;
-use rusqlite::{params, Connection, OptionalExtension, Transaction};
+use rusqlite::{params, Connection, OptionalExtension, Transaction, TransactionBehavior};
 use serde_json::{json, Value};
 use std::{
-    collections::HashSet,
+    collections::{HashMap, HashSet},
     fs::OpenOptions,
     path::{Path, PathBuf},
     sync::{
@@ -333,7 +333,7 @@ impl Store {
             attachment.validate()?;
         }
         self.call(move |conn| {
-            let tx = conn.transaction()?;
+            let tx = write_tx(conn)?;
             let admission = admit_input(&tx, &input, root.as_deref(), &attachments)?;
             tx.commit()?;
             Ok(admission)
@@ -363,7 +363,7 @@ impl Store {
         }
         let (session, title, root) = (session.to_owned(), title.to_owned(), root.to_owned());
         self.call(move |conn| {
-            let tx = conn.transaction()?;
+            let tx = write_tx(conn)?;
             let exists: bool = tx.query_row(
                 "SELECT EXISTS(SELECT 1 FROM engine_session WHERE id=?1)",
                 [&session], |row| row.get(0),
@@ -416,7 +416,7 @@ impl Store {
     pub async fn set_mode(&self, session: &str, mode: CollaborationMode) -> Result<Event, Error> {
         let (session, mode) = (session.to_owned(), mode);
         self.call(move |conn| {
-            let tx = conn.transaction()?;
+            let tx = write_tx(conn)?;
             let value = match mode {
                 CollaborationMode::Build => "build",
                 CollaborationMode::Plan => "plan",
@@ -444,7 +444,7 @@ impl Store {
         }
         let (session, title) = (session.to_owned(), title.to_owned());
         self.call(move |conn| {
-            let tx = conn.transaction()?;
+            let tx = write_tx(conn)?;
             let now = crate::approval::now_ms() as i64;
             tx.execute(
                 "INSERT OR IGNORE INTO engine_session(id,next_seq,created_at_ms) VALUES(?1,0,?2)",
@@ -527,7 +527,7 @@ impl Store {
     ) -> Result<Vec<Event>, Error> {
         let session = session.to_owned();
         self.call(move |conn| {
-            let tx = conn.transaction()?;
+            let tx = write_tx(conn)?;
             if let Some(lease) = &lease { require_lease(&tx, &session, lease)?; }
             let mut pending: Vec<(String, String, Option<String>)> = {
                 let mut stmt = tx.prepare("SELECT id,prompt,attachments FROM engine_input WHERE session_id=?1 AND state='pending' AND delivery='steer' ORDER BY admitted_seq")?;
@@ -580,7 +580,7 @@ impl Store {
         let (session, run, call) = (session.to_owned(), run.to_owned(), call.to_owned());
         let tool_name = tool_name.to_owned();
         self.call(move |conn| {
-            let tx=conn.transaction()?;let request=format!("{run}/{call}");
+            let tx=write_tx(conn)?;let request=format!("{run}/{call}");
             let existing:Option<(String,String,String)>=tx.query_row("SELECT id,state,input FROM engine_job WHERE request_key=?1 AND session_id=?2",params![request,session],|r|Ok((r.get(0)?,r.get(1)?,r.get(2)?))).optional()?;
             if let Some((id,state,original))=existing {if serde_json::from_str::<Value>(&original)?!=input{return Err(Error::Conflict);}return Ok(json!({"job_id":id,"state":state,"duplicate":true}));}
             let original:Option<String>=tx.query_row("SELECT t.input FROM engine_tool t JOIN engine_run r ON r.id=t.run_id WHERE t.id=?1 AND t.name=?2 AND t.state='dispatched' AND r.session_id=?3 AND r.state='running'",params![request,tool_name,session],|r|r.get(0)).optional()?;
@@ -616,7 +616,7 @@ impl Store {
     pub async fn start_job(&self, session: &str, id: &str) -> Result<Event, Error> {
         let (session, id) = (session.to_owned(), id.to_owned());
         self.call(move |conn| {
-            let tx=conn.transaction()?;if tx.execute("UPDATE engine_job SET state='running' WHERE id=?1 AND session_id=?2 AND state='queued'",params![id,session])?!=1{return Err(Error::Invalid("job is not queued".into()));}
+            let tx=write_tx(conn)?;if tx.execute("UPDATE engine_job SET state='running' WHERE id=?1 AND session_id=?2 AND state='queued'",params![id,session])?!=1{return Err(Error::Invalid("job is not queued".into()));}
             let event=append(&tx,&session,"job.started",json!({"job_id":id}))?;tx.commit()?;Ok(event)
         }).await
     }
@@ -634,7 +634,7 @@ impl Store {
             return Err(Error::Invalid("invalid terminal job state".into()));
         }
         self.call(move |conn| {
-            let tx=conn.transaction()?;if tx.execute("UPDATE engine_job SET state=?3,result=?4 WHERE id=?1 AND session_id=?2 AND state IN ('queued','running')",params![id,session,state,serde_json::to_string(&result)?])?!=1{return Err(Error::Invalid("job is not active".into()));}
+            let tx=write_tx(conn)?;if tx.execute("UPDATE engine_job SET state=?3,result=?4 WHERE id=?1 AND session_id=?2 AND state IN ('queued','running')",params![id,session,state,serde_json::to_string(&result)?])?!=1{return Err(Error::Invalid("job is not active".into()));}
             append(&tx,&session,"job.finished",json!({"job_id":id,"state":state}))?;
             let admission = admit_input(&tx, &Input {
                 session_id: session.clone(),
@@ -659,7 +659,7 @@ impl Store {
 
     async fn recover_jobs_inner(&self, honor_leases: bool) -> Result<(), Error> {
         self.call(move |conn| {
-            let tx=conn.transaction()?;
+            let tx=write_tx(conn)?;
             let jobs:Vec<(String,String,String)>={
                 let mut stmt=tx.prepare("SELECT j.id,j.session_id,j.state,l.last_ms,l.interval_ms,l.owner_pid FROM engine_job j LEFT JOIN engine_lease l ON l.session_id=j.session_id WHERE j.state IN ('queued','running')")?;
                 let rows=stmt.query_map([],|r|Ok((r.get::<_,String>(0)?,r.get::<_,String>(1)?,r.get::<_,String>(2)?,r.get::<_,Option<i64>>(3)?,r.get::<_,Option<i64>>(4)?,r.get::<_,Option<u32>>(5)?)))?;
@@ -710,7 +710,7 @@ impl Store {
         }
         let session = session.to_owned();
         self.call(move |conn| {
-            let tx=conn.transaction()?;
+            let tx=write_tx(conn)?;
             if let Some(lease) = &lease { require_lease(&tx, &session, lease)?; }
             let previous:Option<(u64,String)>=tx.query_row("SELECT epoch,fingerprint FROM engine_context WHERE session_id=?1 ORDER BY epoch DESC LIMIT 1",[&session],|r|Ok((r.get(0)?,r.get(1)?))).optional()?;
             if let Some((epoch,fingerprint))=&previous {if fingerprint==&bundle.fingerprint{return Ok(*epoch);}}
@@ -734,7 +734,7 @@ impl Store {
     pub async fn snapshot(&self, session: &str) -> Result<Value, Error> {
         let session = session.to_owned();
         self.call(move |conn| {
-            let tx=conn.transaction()?;
+            let tx=write_tx(conn)?;
             let cursor:u64=tx.query_row("SELECT next_seq FROM engine_session WHERE id=?1",[&session],|r|r.get(0)).optional()?.ok_or_else(||Error::Invalid("Session does not exist".into()))?;
             let location:Option<String>=tx.query_row("SELECT root FROM engine_location WHERE session_id=?1",[&session],|r|r.get(0)).optional()?;
             let messages=projected(&tx,&session,cursor)?;
@@ -839,7 +839,7 @@ impl Store {
         }
         let (parent, target) = (parent.to_owned(), target.to_owned());
         self.call(move |conn| {
-            let tx=conn.transaction()?;
+            let tx=write_tx(conn)?;
             let existing:Option<(String,u64)>=tx.query_row("SELECT parent_session_id,message_seq FROM engine_lineage WHERE session_id=?1",[&target],|r|Ok((r.get(0)?,r.get(1)?))).optional()?;
             if let Some((source,seq))=existing {
                 if source!=parent||message_seq.is_some_and(|requested|requested!=seq){return Err(Error::Conflict);}
@@ -932,7 +932,7 @@ impl Store {
         }
         let (session, checkpoint) = (session.to_owned(), checkpoint.to_owned());
         self.call(move |conn| {
-            let tx = conn.transaction()?;
+            let tx = write_tx(conn)?;
             if tx.query_row("SELECT EXISTS(SELECT 1 FROM engine_run WHERE session_id=?1 AND state='running')",[&session],|r|r.get::<_,bool>(0))? {
                 return Err(Error::Invalid("revert requires an idle Session".into()));
             }
@@ -951,7 +951,7 @@ impl Store {
     pub async fn unrevert(&self, session: &str) -> Result<Value, Error> {
         let session = session.to_owned();
         self.call(move |conn| {
-            let tx = conn.transaction()?;
+            let tx = write_tx(conn)?;
             let restored = tx.execute(
                 "UPDATE engine_message SET reverted=0 WHERE session_id=?1 AND reverted=1",
                 [&session],
@@ -1052,7 +1052,7 @@ impl Store {
     ) -> Result<Event, Error> {
         let (session, run, reason) = (session.to_owned(), run.to_owned(), reason.to_owned());
         self.call(move |conn| {
-            let tx = conn.transaction()?;
+            let tx = write_tx(conn)?;
             let event = append(
                 &tx,
                 &session,
@@ -1106,7 +1106,7 @@ impl Store {
     ) -> Result<Event, Error> {
         let (session, run) = (session.to_owned(), run.to_owned());
         self.call(move |conn| {
-            let tx = conn.transaction()?;
+            let tx = write_tx(conn)?;
             if let Some(lease) = &lease {
                 require_lease(&tx, &session, lease)?;
             }
@@ -1124,7 +1124,7 @@ impl Store {
     pub async fn message(&self, session: &str, role: &str, content: Value) -> Result<Event, Error> {
         let (session, role) = (session.to_owned(), role.to_owned());
         self.call(move |conn| {
-            let tx = conn.transaction()?;
+            let tx = write_tx(conn)?;
             let e = append(
                 &tx,
                 &session,
@@ -1184,7 +1184,7 @@ impl Store {
             name.to_owned(),
         );
         self.call(move |conn| {
-            let tx = conn.transaction()?;
+            let tx = write_tx(conn)?;
             if let Some(lease) = &lease {
                 require_lease(&tx, &session, lease)?;
             }
@@ -1235,7 +1235,7 @@ impl Store {
     ) -> Result<Event, Error> {
         let (session, id) = (session.to_owned(), id.to_owned());
         self.call(move |conn| {
-            let tx = conn.transaction()?;
+            let tx = write_tx(conn)?;
             if let Some(lease) = &lease { require_lease(&tx, &session, lease)?; }
             let changed = tx.execute("UPDATE engine_tool SET state='completed' WHERE id=?1 AND state='dispatched' AND run_id IN (SELECT id FROM engine_run WHERE session_id=?2 AND state='running')",params![id,session])?;
             if changed != 1 { return Err(Error::Invalid("tool call is not dispatchable".into())); }
@@ -1340,7 +1340,7 @@ impl Store {
     pub async fn record(&self, session: &str, kind: &str, data: Value) -> Result<Event, Error> {
         let (session, kind) = (session.to_owned(), kind.to_owned());
         self.call(move |conn| {
-            let tx = conn.transaction()?;
+            let tx = write_tx(conn)?;
             let event = append(&tx, &session, &kind, data)?;
             tx.commit()?;
             Ok(event)
@@ -1360,7 +1360,7 @@ impl Store {
     ) -> Result<Event, Error> {
         let (session, kind, lease) = (session.to_owned(), kind.to_owned(), lease.clone());
         self.call(move |conn| {
-            let tx = conn.transaction()?;
+            let tx = write_tx(conn)?;
             let event = append_fenced(&tx, &session, &kind, data, &lease)?;
             tx.commit()?;
             Ok(event)
@@ -1449,7 +1449,7 @@ impl Store {
     ) -> Result<Event, Error> {
         let (session, run) = (session.to_owned(), run.to_owned());
         self.call(move |conn| {
-            let tx=conn.transaction()?;
+            let tx=write_tx(conn)?;
             if let Some(lease) = &lease { require_lease(&tx, &session, lease)?; }
             let active:bool=tx.query_row("SELECT EXISTS(SELECT 1 FROM engine_run WHERE id=?1 AND session_id=?2 AND state='running')",params![run,session],|r|r.get(0))?;
             if !active { return Err(Error::Invalid("run is not active".into())); }
@@ -1522,7 +1522,7 @@ impl Store {
     ) -> Result<Event, Error> {
         let (session, run, id) = (session.to_owned(), run.to_owned(), provider_id.to_owned());
         self.call(move |conn| {
-            let tx=conn.transaction()?;
+            let tx=write_tx(conn)?;
             if let Some(lease) = &lease { require_lease(&tx, &session, lease)?; }
             let key=format!("{run}/{id}");
             let changed=tx.execute("UPDATE engine_tool SET state='completed' WHERE id=?1 AND state IN ('planned','dispatched') AND run_id IN (SELECT id FROM engine_run WHERE id=?2 AND session_id=?3 AND state='running')",params![key,run,session])?;
@@ -1577,7 +1577,7 @@ impl Store {
     ) -> Result<Event, Error> {
         let (session, run, id) = (session.to_owned(), run.to_owned(), provider_id.to_owned());
         self.call(move |conn| {
-            let tx=conn.transaction()?;
+            let tx=write_tx(conn)?;
             if let Some(lease) = &lease { require_lease(&tx, &session, lease)?; }
             let key=format!("{run}/{id}");
             let count=tx.execute("UPDATE engine_tool SET state='dispatched' WHERE id=?1 AND state='planned' AND run_id IN (SELECT id FROM engine_run WHERE id=?2 AND session_id=?3 AND state='running')",params![key,run,session])?;
@@ -1589,7 +1589,7 @@ impl Store {
 
     pub async fn request_approval(&self, approval: Approval) -> Result<Event, Error> {
         self.call(move |conn| {
-            let tx=conn.transaction()?;
+            let tx=write_tx(conn)?;
             let key=format!("{}/{}",approval.run_id,approval.call_id);
             let row:Option<(String,String,String)>=tx.query_row("SELECT t.name,t.input,l.root FROM engine_tool t JOIN engine_run r ON r.id=t.run_id JOIN engine_location l ON l.session_id=r.session_id WHERE t.id=?1 AND t.state='planned' AND r.id=?2 AND r.session_id=?3 AND r.state='running'",params![key,approval.run_id,approval.session_id],|r|Ok((r.get(0)?,r.get(1)?,r.get(2)?))).optional()?;
             let (name,input,root)=row.ok_or(Error::ApprovalResolved)?;
@@ -1609,7 +1609,7 @@ impl Store {
     ) -> Result<Event, Error> {
         let session = session.to_owned();
         self.call(move |conn| {
-            let tx=conn.transaction()?;
+            let tx=write_tx(conn)?;
             let row:Option<(String,String,bool)>=tx.query_row("SELECT a.binding,a.state,r.state='running' FROM engine_approval a JOIN engine_run r ON r.id=a.run_id WHERE a.id=?1 AND a.session_id=?2",params![response.request_id,session],|r|Ok((r.get(0)?,r.get(1)?,r.get(2)?))).optional()?;
             let (binding,state,active)=row.ok_or(Error::ApprovalResolved)?;
             if state!="pending"||!active {return Err(Error::ApprovalResolved);}
@@ -1661,7 +1661,7 @@ impl Store {
     ) -> Result<Event, Error> {
         let (session, run, reason) = (session.to_owned(), run.to_owned(), reason.to_owned());
         self.call(move |conn| {
-            let tx = conn.transaction()?;
+            let tx = write_tx(conn)?;
             if let Some(lease) = &lease {
                 require_lease(&tx, &session, lease)?;
             }
@@ -1742,7 +1742,7 @@ impl Store {
     ) -> Result<Vec<Event>, Error> {
         let session = session.map(str::to_owned);
         self.call(move |conn| {
-            let tx = conn.transaction()?;
+            let tx = write_tx(conn)?;
             let runs: Vec<(String, String)> = {
                 let mut stmt = tx.prepare(
                     "SELECT r.id,r.session_id,l.last_ms,l.interval_ms,l.owner_pid FROM engine_run r LEFT JOIN engine_lease l ON l.session_id=r.session_id WHERE r.state='running' AND (?1 IS NULL OR r.session_id=?1)",
@@ -1948,6 +1948,84 @@ pub(crate) fn admit_input(
         duplicate: false,
         pending: true,
     })
+}
+
+/// One write transaction at a time across every process on this store. SQLite's
+/// own write lock still surfaces `database is locked` under contention
+/// (snapshot upgrades, checkpoint interactions, and a busy handler that is not
+/// consulted on every path), so writers queue on an OS file lock before touching
+/// the database. Readers never take it.
+static WRITE_LOCKS: OnceLock<Mutex<HashMap<String, Arc<std::fs::File>>>> = OnceLock::new();
+
+fn write_lock(path: &str) -> Result<Arc<std::fs::File>, Error> {
+    let mut locks = WRITE_LOCKS
+        .get_or_init(Default::default)
+        .lock()
+        .map_err(|_| Error::Busy)?;
+    if let Some(lock) = locks.get(path) {
+        return Ok(lock.clone());
+    }
+    let lock = Arc::new(
+        OpenOptions::new()
+            .create(true)
+            .truncate(false)
+            .read(true)
+            .write(true)
+            .open(format!("{path}.engine-write-lock"))?,
+    );
+    locks.insert(path.to_owned(), lock.clone());
+    Ok(lock)
+}
+
+/// Releases the cross-process write lock when the transaction ends. The cached
+/// file handle outlives a single transaction, so the lock is released explicitly
+/// rather than by closing the descriptor.
+struct WriteLock(Arc<std::fs::File>);
+
+impl Drop for WriteLock {
+    fn drop(&mut self) {
+        let _ = FileExt::unlock(&*self.0);
+    }
+}
+
+/// A write transaction holding the cross-process write lock.
+pub(crate) struct WriteTx<'a> {
+    tx: Transaction<'a>,
+    _lock: WriteLock,
+}
+
+impl<'a> WriteTx<'a> {
+    pub(crate) fn commit(self) -> Result<(), Error> {
+        self.tx.commit()?;
+        Ok(())
+    }
+}
+
+impl<'a> std::ops::Deref for WriteTx<'a> {
+    type Target = Transaction<'a>;
+    fn deref(&self) -> &Self::Target {
+        &self.tx
+    }
+}
+
+pub(crate) fn write_tx(conn: &mut Connection) -> Result<WriteTx<'_>, Error> {
+    let path = conn.path().ok_or_else(|| {
+        Error::Io(std::io::Error::other(
+            "store opened without a database path",
+        ))
+    })?;
+    let lock = write_lock(path)?;
+    FileExt::lock_exclusive(&*lock)?;
+    match conn.transaction_with_behavior(TransactionBehavior::Immediate) {
+        Ok(tx) => Ok(WriteTx {
+            tx,
+            _lock: WriteLock(lock),
+        }),
+        Err(error) => {
+            let _ = FileExt::unlock(&*lock);
+            Err(error.into())
+        }
+    }
 }
 
 pub(crate) fn append(

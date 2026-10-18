@@ -59,7 +59,7 @@ fn spawn_engine(db: &std::path::Path, workspace: &std::path::Path) -> Child {
         .unwrap()
 }
 
-fn wait_ready(child: &mut Child) {
+fn wait_ready(child: &mut Child) -> String {
     use std::io::{BufRead, BufReader};
     let mut reader = BufReader::new(child.stderr.take().unwrap());
     let deadline = Instant::now() + Duration::from_secs(20);
@@ -72,7 +72,16 @@ fn wait_ready(child: &mut Child) {
         line.clear();
         match reader.read_line(&mut line) {
             Ok(0) => panic!("engine exited before listening"),
-            Ok(_) if line.contains("http listening on") => return,
+            Ok(_) if line.contains("http listening on") => {
+                let address = line
+                    .split("http listening on ")
+                    .nth(1)
+                    .expect("listener address")
+                    .split_whitespace()
+                    .next()
+                    .expect("listener address token");
+                return format!("http://{address}/rpc");
+            }
             Ok(_) => {}
             Err(error) => panic!("read engine output: {error}"),
         }
@@ -98,8 +107,67 @@ fn a_second_process_can_open_the_same_database() {
         second.try_wait().unwrap().is_none(),
         "the second runtime must keep serving"
     );
-    let _ = first.kill();
-    let _ = second.kill();
-    let _ = first.wait();
-    let _ = second.wait();
+}
+
+/// Two runtimes admitting into the same Session at the same time must queue on
+/// SQLite's write lock instead of failing with `database is locked`.
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn concurrent_admits_from_two_processes_do_not_lock() {
+    let dir = tempfile::tempdir().unwrap();
+    let db = dir.path().join("engine.db");
+    let workspace = dir.path().join("workspace");
+    std::fs::create_dir_all(&workspace).unwrap();
+    struct Kill(Child);
+    impl Drop for Kill {
+        fn drop(&mut self) {
+            let _ = self.0.kill();
+            let _ = self.0.wait();
+        }
+    }
+    let mut first = Kill(spawn_engine(&db, &workspace));
+    let url_a = wait_ready(&mut first.0);
+    let mut second = Kill(spawn_engine(&db, &workspace));
+    let url_b = wait_ready(&mut second.0);
+    let client = reqwest::Client::new();
+    let mut set = tokio::task::JoinSet::new();
+    for index in 0..20 {
+        let url = if index % 2 == 0 {
+            url_a.clone()
+        } else {
+            url_b.clone()
+        };
+        let client = client.clone();
+        set.spawn(async move {
+            let body = client
+                .post(url)
+                .bearer_auth("fixture-token")
+                .json(&serde_json::json!({
+                    "id": index,
+                    "method": "admit",
+                    "params": {
+                        "input": {
+                            "session_id": "ses_concurrent",
+                            "input_id": format!("in-{index}"),
+                            "prompt": "concurrent",
+                        },
+                        "resume": false,
+                    },
+                }))
+                .send()
+                .await
+                .unwrap()
+                .json::<serde_json::Value>()
+                .await
+                .unwrap();
+            (index, body)
+        });
+    }
+    while let Some(joined) = set.join_next().await {
+        let (index, body) = joined.unwrap();
+        assert_eq!(
+            body["result"]["input_id"],
+            serde_json::json!(format!("in-{index}")),
+            "admit {index} failed: {body}"
+        );
+    }
 }
