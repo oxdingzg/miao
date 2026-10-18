@@ -849,17 +849,25 @@ const layer = Layer.effect(
       })
       yield* maybeTitle(context)
       const compactStartedAt = Date.now()
+      const compactionInput = {
+        sessionID: session.id,
+        entries,
+        report: phase,
+        model,
+        summarizeModel,
+        modelInfo: resolved.info,
+        request,
+        observedTokens: lastPromptTokens.get(session.id),
+        observedMessages: lastPromptMessages.get(session.id),
+        observedPrefix: lastPromptPrefix.get(session.id),
+      }
       if (SessionCompactRequest.consume(session.id)) {
         // A manual compaction is the user's reset: give the breaker a fresh try.
         yield* compaction.reset(session.id)
-        const attempt = yield* compaction.compact({
-          sessionID: session.id,
-          entries,
-          model,
-          summarizeModel,
-          request,
-          report: phase,
-        })
+        // Size the request the same way an automatic decision would, so the
+        // strategy fits against the provider's count instead of re-measuring.
+        const contextBudget = yield* compaction.budget(compactionInput)
+        const attempt = yield* compaction.compact({ ...compactionInput, tokens: contextBudget.input })
         if (attempt.result === "compacted") {
           turns.set(session.id, { at: Date.now(), afterCompaction: true })
           SessionCacheProbe.current.invalidate(session.id)
@@ -868,21 +876,10 @@ const layer = Layer.effect(
           lastPromptPrefix.delete(session.id)
           lastContextNotice.delete(session.id)
         }
-        yield* recordCompaction(session.id, "overflow", Date.now() - compactStartedAt)
+        yield* recordCompaction(session.id, "manual", Date.now() - compactStartedAt)
         return yield* Effect.die(stopAfterCompaction(currentStep))
       }
       const compactCheckedAt = Date.now()
-      const compactionInput = {
-        sessionID: session.id,
-        entries,
-        report: phase,
-        model,
-        summarizeModel,
-        request,
-        observedTokens: lastPromptTokens.get(session.id),
-        observedMessages: lastPromptMessages.get(session.id),
-        observedPrefix: lastPromptPrefix.get(session.id),
-      }
       const contextBudget = yield* compaction.budget(compactionInput)
       if (yield* compaction.compactIfNeeded(compactionInput, contextBudget)) {
         turns.set(session.id, { at: Date.now(), afterCompaction: true })
@@ -1209,7 +1206,7 @@ const layer = Layer.effect(
             recoverOverflow &&
             !publisher.hasVisibleOutput() &&
             contextOverflow &&
-            (yield* restore(recoverOverflow({ sessionID: session.id, entries, model, summarizeModel, request, report: phase })))
+            (yield* restore(recoverOverflow({ sessionID: session.id, entries, model, summarizeModel, modelInfo: resolved.info, request, report: phase })))
           ) {
             turns.set(session.id, { at: Date.now(), afterCompaction: true })
             SessionCacheProbe.current.invalidate(session.id)
