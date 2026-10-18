@@ -13,10 +13,13 @@
 #
 # The binary goes to $HOME\.miao\bin, the same directory the bash installer uses,
 # and that directory is added to the user PATH.
+# Release installs also fetch the matching native engine. Local prebuilt pairs
+# can use -Binary/-EngineBinary (or MIAO_BINARY/MIAO_ENGINE_BINARY).
 
 param(
   [string]$Version = $(if ($env:MIAO_VERSION) { $env:MIAO_VERSION } else { $env:VERSION }),
   [string]$Binary = $env:MIAO_BINARY,
+  [string]$EngineBinary = $env:MIAO_ENGINE_BINARY,
   [switch]$NoModifyPath = ($env:MIAO_NO_MODIFY_PATH -eq "1")
 )
 
@@ -30,6 +33,9 @@ function Publish-Miao {
     Copy-Item -LiteralPath $Source -Destination $candidate
     & $candidate --version | Out-Null
     if ($LASTEXITCODE -ne 0) { throw 'Executable failed version verification' }
+    if ((Test-Path -LiteralPath $destination) -and (Get-FileHash -LiteralPath $candidate).Hash -eq (Get-FileHash -LiteralPath $destination).Hash) {
+      return
+    }
 
     # Antivirus products briefly lock freshly copied executables, so the publish
     # steps retry with backoff; retention is idempotent across retries (an
@@ -64,8 +70,100 @@ function Publish-Miao {
   } finally { Remove-Item -LiteralPath $stage -Recurse -Force }
 }
 
+function Get-MiaoEngineCapabilities {
+  param([string]$Binary)
+  # Windows PowerShell 5.1 promotes native stderr into an error record. A
+  # legacy --capabilities refusal is an expected compatibility result.
+  $ErrorActionPreference = 'Continue'
+  $previousExitCode = $LASTEXITCODE
+  try {
+    $reported = & $Binary --capabilities 2>$null | Out-String
+    if ($LASTEXITCODE -ne 0) { return $null }
+    try {
+      $capabilities = $reported | ConvertFrom-Json -ErrorAction Stop
+      if ($capabilities.name -ne 'miao-engine' -or $capabilities.version -isnot [string]) { return $null }
+      if ($capabilities.protocol -isnot [int] -and $capabilities.protocol -isnot [long]) { return $null }
+      if ($capabilities.protocol -lt 2) { return $null }
+      return $capabilities
+    } catch { return $null }
+  } finally {
+    # CI shells propagate LASTEXITCODE; an optional compatibility probe must
+    # not turn a successful TypeScript-only installation into a failed job.
+    $global:LASTEXITCODE = $previousExitCode
+  }
+}
+
+function Install-MiaoEngine {
+  param([string]$InstallDirectory, [string]$Version, [string]$Binary, [bool]$Download)
+
+  $ProgressPreference = 'SilentlyContinue'
+  if (-not $Binary -and -not $Download) { return }
+  $destination = Join-Path $InstallDirectory 'miao-engine.exe'
+  if (-not $Binary -and (Test-Path -LiteralPath $destination)) {
+    $capabilities = Get-MiaoEngineCapabilities $destination
+    if ($capabilities -and $capabilities.version -eq $Version) { return }
+  }
+
+  $stage = Join-Path $InstallDirectory ('.engine-install-' + [Guid]::NewGuid().ToString('N'))
+  New-Item -ItemType Directory -Path $stage | Out-Null
+  try {
+    $candidate = Join-Path $stage 'miao-engine.exe'
+    if ($Binary) {
+      if (-not (Test-Path -LiteralPath $Binary -PathType Leaf)) { throw "Engine binary not found: $Binary" }
+      Copy-Item -LiteralPath $Binary -Destination $candidate
+    } else {
+      # The product ships x64 on Windows, including under ARM emulation.
+      $asset = 'miao-engine-windows-x64.zip'
+      $url = "https://github.com/oxdingzg/miao/releases/download/v$Version/$asset"
+      $archive = Join-Path $stage $asset
+      try {
+        Invoke-WebRequest -UseBasicParsing -Uri $url -OutFile $archive -TimeoutSec 300
+      } catch {
+        if ($_.Exception.Response -and [int]$_.Exception.Response.StatusCode -eq 404) {
+          Write-Host 'This release has no native engine archive; keeping TypeScript sessions.' -ForegroundColor DarkGray
+          return
+        }
+        throw
+      }
+      $manifest = Join-Path $stage ($asset + '.sha256')
+      Invoke-WebRequest -UseBasicParsing -Uri ($url + '.sha256') -OutFile $manifest -TimeoutSec 60
+      if ((Get-Content -LiteralPath $manifest -Raw).Trim() -notmatch ('^([a-fA-F0-9]{64})  ' + [regex]::Escape($asset) + '$')) {
+        throw 'Invalid engine checksum manifest.'
+      }
+      $expected = $Matches[1]
+      if ((Get-FileHash -LiteralPath $archive -Algorithm SHA256).Hash -ne $expected) { throw 'Engine archive checksum mismatch.' }
+      Expand-Archive -LiteralPath $archive -DestinationPath $stage -Force
+      if (-not (Test-Path -LiteralPath $candidate -PathType Leaf)) { throw 'Engine archive has no miao-engine.exe.' }
+    }
+    # Old releases predate this handshake. They remain usable through the
+    # TypeScript engine, without replacing an already compatible sidecar.
+    $capabilities = Get-MiaoEngineCapabilities $candidate
+    if (-not $capabilities) {
+      if ($Binary) { throw 'Engine does not support the required protocol (2).' }
+      Write-Host 'This release engine predates the required protocol; keeping TypeScript sessions.' -ForegroundColor DarkGray
+      return
+    }
+    if ($capabilities.version -ne $Version) { throw "Engine version does not match miao $Version." }
+    if ((Test-Path -LiteralPath $destination) -and (Get-FileHash -LiteralPath $candidate).Hash -eq (Get-FileHash -LiteralPath $destination).Hash) {
+      return
+    }
+    foreach ($attempt in 1..8) {
+      try {
+        if (Test-Path -LiteralPath $destination) {
+          [IO.File]::Replace($candidate, $destination, (Join-Path $InstallDirectory 'miao-engine.prev.exe'))
+        } else { [IO.File]::Move($candidate, $destination) }
+        break
+      } catch {
+        if ($attempt -ge 8) { throw }
+        Start-Sleep -Milliseconds (300 * $attempt)
+      }
+    }
+    Write-Host "Native engine installed: $destination" -ForegroundColor DarkGray
+  } finally { Remove-Item -LiteralPath $stage -Recurse -Force }
+}
+
 function Install-Miao {
-  param([string]$Version, [string]$Binary, [bool]$NoModifyPath)
+  param([string]$Version, [string]$Binary, [string]$EngineBinary, [bool]$NoModifyPath)
 
   # Errors throw instead of `exit`: under `irm | iex` an exit would close the
   # user's PowerShell window.
@@ -95,6 +193,8 @@ function Install-Miao {
     if (-not (Test-Path $Binary)) { throw "Binary not found: $Binary" }
     Write-Host "Installing miao from $Binary"
     Publish-Miao $Binary $exe
+    $Version = (& $exe --version | Out-String).Trim()
+    Install-MiaoEngine -InstallDirectory $installDir -Version $Version -Binary $EngineBinary -Download:$false
   }
   else {
     $Version = $Version -replace "^v", ""
@@ -109,6 +209,8 @@ function Install-Miao {
       $installed = (& $exe --version 2>$null | Out-String).Trim()
       if ($installed -eq $Version) {
         Write-Host "miao $Version is already installed at $exe"
+        # Reconcile a missing sidecar even when the product is already current.
+        Install-MiaoEngine -InstallDirectory $installDir -Version $Version -Binary $EngineBinary -Download:$true
         Add-MiaoToPath $installDir $NoModifyPath
         return
       }
@@ -133,6 +235,7 @@ function Install-Miao {
       $actual = (& $downloaded.FullName --version | Out-String).Trim()
       if ($LASTEXITCODE -ne 0 -or $actual -ne $Version) { throw 'Release failed version verification' }
       Publish-Miao $downloaded.FullName $exe
+      Install-MiaoEngine -InstallDirectory $installDir -Version $Version -Binary $EngineBinary -Download:$true
     }
     finally {
       Remove-Item -Recurse -Force $tmp -ErrorAction SilentlyContinue
@@ -172,4 +275,4 @@ function Add-MiaoToPath {
   Write-Host "Added $Dir to your user PATH. Open a new terminal for other windows to pick it up." -ForegroundColor DarkGray
 }
 
-Install-Miao -Version $Version -Binary $Binary -NoModifyPath:$NoModifyPath
+Install-Miao -Version $Version -Binary $Binary -EngineBinary $EngineBinary -NoModifyPath:$NoModifyPath
