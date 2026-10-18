@@ -117,3 +117,12 @@ export const claim = Effect.fn("SessionEnginePlacement.claim")(function* (
     )
     .pipe(Effect.catchTag("SqlError", Effect.die))
 })
+
+/** Core callers must respect placement too; HTTP routing is not a write fence. */
+export const requireTypeScript = Effect.fn("SessionEnginePlacement.requireTypeScript")(function* (
+  db: Db,
+  sessionID: SessionID,
+) {
+  const placement = yield* find(db, sessionID)
+  if (placement?.engine === "rust") return yield* Effect.die(new Conflict({ sessionID }))
+})

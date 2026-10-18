@@ -11,15 +11,22 @@ import { SessionV2 } from "../src/session"
 import { SessionExecution } from "../src/session/execution"
 import { SessionEnginePlacement } from "../src/session/engine-placement"
 import { SessionEnginePlacementTable } from "../src/session/engine-placement.sql"
-import { SessionTable } from "../src/session/sql"
+import { SessionTable, SessionInputTable } from "../src/session/sql"
+import { EventV2 } from "../src/event"
+import { SessionInput } from "../src/session/input"
+import { SessionMessage } from "../src/session/message"
+import { Prompt } from "../src/session/prompt"
 import { AbsolutePath } from "../src/schema"
 import { tmpdir } from "./fixture/tmpdir"
 
-const run = <A, E>(storage: string, effect: Effect.Effect<A, E, Database.Service | SessionV2.Service>) =>
+const run = <A, E>(
+  storage: string,
+  effect: Effect.Effect<A, E, Database.Service | SessionV2.Service | EventV2.Service>,
+) =>
   Effect.runPromise(
     effect.pipe(
       Effect.provide(
-        AppNodeBuilder.build(LayerNode.group([SessionV2.node, Database.node]), [
+        AppNodeBuilder.build(LayerNode.group([SessionV2.node, Database.node, EventV2.node]), [
           [Database.node, Database.layerFromPath(storage)],
           [SessionExecution.node, SessionExecution.noopLayer],
         ]),
@@ -249,6 +256,44 @@ test("listing excludes native catalog projections before limit and anchors", asy
       expect(
         (yield* sessions.list({ directory: AbsolutePath.make(tmp.path), limit: 10 })).map((info) => info.id),
       ).not.toContain(projected.id)
+    }),
+  )
+})
+
+test("direct TS core mutation and admission cannot write a native-owned Session", async () => {
+  await using tmp = await tmpdir()
+  await run(
+    ":memory:",
+    Effect.gen(function* () {
+      const database = yield* Database.Service
+      const sessions = yield* SessionV2.Service
+      const events = yield* EventV2.Service
+      const info = yield* sessions.create({
+        location: native(tmp.path).location,
+        nativeStorage: native(tmp.path).storage,
+      })
+      const before = yield* database.db.select().from(EventTable).all()
+      const denied = yield* Effect.all([
+        sessions.prompt({ sessionID: info.id, prompt: { text: "must not execute" }, resume: false }).pipe(Effect.exit),
+        sessions.rename({ sessionID: info.id, title: "wrong writer" }).pipe(Effect.exit),
+        sessions.archive({ sessionID: info.id, archived: true }).pipe(Effect.exit),
+        sessions.shell({ sessionID: info.id, command: "printf wrong-writer" }).pipe(Effect.exit),
+        sessions.resume(info.id).pipe(Effect.exit),
+        sessions.cancelInput({ sessionID: info.id, messageID: SessionMessage.ID.create() }).pipe(Effect.exit),
+        SessionInput.promoteSteers(database.db, events, info.id, Number.MAX_SAFE_INTEGER).pipe(Effect.exit),
+        SessionInput.promoteNextQueued(database.db, events, info.id).pipe(Effect.exit),
+        SessionInput.admit(database.db, events, {
+          id: SessionMessage.ID.create(),
+          sessionID: info.id,
+          prompt: Prompt.make({ text: "low-level wrong writer" }),
+          delivery: "steer",
+        }).pipe(Effect.exit),
+      ])
+      expect(denied.every((outcome) => outcome._tag === "Failure")).toBe(true)
+      expect(yield* database.db.select().from(EventTable).all()).toEqual(before)
+      expect(yield* database.db.select().from(SessionInputTable).all()).toHaveLength(0)
+      expect((yield* sessions.get(info.id)).title).toBe(info.title)
+      expect(yield* SessionEnginePlacement.find(database.db, info.id)).toEqual(native(tmp.path))
     }),
   )
 })

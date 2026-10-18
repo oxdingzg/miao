@@ -11,6 +11,7 @@ import { SessionExecution } from "../execution"
 import { Database } from "../../database/database"
 import { SessionOwnership } from "../ownership"
 import { SessionDelegation } from "../delegation"
+import { SessionEnginePlacement } from "../engine-placement"
 
 /** Current-process routing for implicit-local Locations. Future remote placement belongs here. */
 const layer = Layer.effect(
@@ -40,6 +41,7 @@ const layer = Layer.effect(
     const coordinator = yield* SessionRunCoordinator.make<SessionSchema.ID, SessionRunner.RunError>({
       maxConcurrent,
       drain: Effect.fnUntraced(function* (sessionID: SessionSchema.ID, force) {
+        yield* SessionEnginePlacement.requireTypeScript(db, sessionID)
         const session = yield* store.get(sessionID)
         if (!session) return yield* Effect.die(`Session not found: ${sessionID}`)
         return yield* SessionRunner.Service.use((runner) =>
@@ -89,17 +91,20 @@ const layer = Layer.effect(
     // a conflict here; claiming would also pin the target's lease to this runtime,
     // which the send_message admission deliberately avoids.
     wake = (sessionID) =>
-      ownership.claim(sessionID).pipe(
-        Effect.as(true),
-        Effect.catchDefect((defect) =>
-          defect instanceof SessionOwnership.BusyError
-            ? Effect.logDebug("Session is owned by another window; leaving the wakeup durable", { sessionID }).pipe(
-                Effect.as(false),
-              )
-            : Effect.die(defect),
-        ),
-        Effect.flatMap((claimed) => (claimed ? coordinator.wake(sessionID) : Effect.void)),
-      )
+      Effect.gen(function* () {
+        if ((yield* SessionEnginePlacement.find(db, sessionID))?.engine === "rust") return
+        yield* ownership.claim(sessionID).pipe(
+          Effect.as(true),
+          Effect.catchDefect((defect) =>
+            defect instanceof SessionOwnership.BusyError
+              ? Effect.logDebug("Session is owned by another window; leaving the wakeup durable", { sessionID }).pipe(
+                  Effect.as(false),
+                )
+              : Effect.die(defect),
+          ),
+          Effect.flatMap((claimed) => (claimed ? coordinator.wake(sessionID) : Effect.void)),
+        )
+      })
     setPhase = coordinator.setPhase
     const backgroundLimit = Number(process.env.MIAO_MAX_BACKGROUND_SUBAGENTS ?? 4)
     delegation = yield* SessionDelegation.make({
@@ -119,7 +124,11 @@ const layer = Layer.effect(
       status: coordinator.status,
       interrupt: coordinator.interrupt,
       interruptIf: coordinator.interruptIf,
-      resume: (sessionID) => ownership.claim(sessionID).pipe(Effect.andThen(coordinator.run(sessionID))),
+      resume: (sessionID) =>
+        SessionEnginePlacement.requireTypeScript(db, sessionID).pipe(
+          Effect.andThen(ownership.claim(sessionID)),
+          Effect.andThen(coordinator.run(sessionID)),
+        ),
       wake,
       wait: coordinator.awaitIdle,
     })
