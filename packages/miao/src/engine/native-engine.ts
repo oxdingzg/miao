@@ -3,6 +3,7 @@ import { SessionModelRoute } from "@miao/schema/session-model-route"
 import { AmbientContext } from "./ambient-context"
 import { ProductHooks } from "./product-hooks"
 import { ProductLsp } from "./product-lsp"
+import { ProductFormatter } from "./product-formatter"
 import os from "node:os"
 import path from "node:path"
 import { Config } from "@miao/core/config"
@@ -67,6 +68,7 @@ export const nativeEngineOptions = (
   }
   if (environment.MIAO_ENGINE_PROVIDER) merged.provider = environment.MIAO_ENGINE_PROVIDER
   if (environment.MIAO_ENGINE_ENDPOINT) merged.endpoint = environment.MIAO_ENGINE_ENDPOINT
+  if (environment.MIAO_ENGINE_FORMATTER_CONFIG) merged.formatterConfigFile = environment.MIAO_ENGINE_FORMATTER_CONFIG
   if (environment.MIAO_ENGINE_FALLBACK_MODEL) merged.fallbackModel = environment.MIAO_ENGINE_FALLBACK_MODEL
   if (environment.MIAO_ENGINE_TOOL_DISCLOSURE) {
     if (!["full", "compact"].includes(environment.MIAO_ENGINE_TOOL_DISCLOSURE))
@@ -491,10 +493,14 @@ const layer = Layer.effect(
           }).pipe(
             Effect.flatMap((hooks) =>
               ProductLsp.prepare(location, configuration).pipe(
-                Effect.map((lsp) => ({
-                  options: { ...context.options, ...hooks, ...lsp },
-                  refresh: context.refresh,
-                })),
+                Effect.flatMap((lsp) =>
+                  ProductFormatter.prepare(location, configuration).pipe(
+                    Effect.map((formatter) => ({
+                      options: { ...context.options, ...hooks, ...lsp, ...formatter },
+                      refresh: context.refresh,
+                    })),
+                  ),
+                ),
               ),
             ),
           ),

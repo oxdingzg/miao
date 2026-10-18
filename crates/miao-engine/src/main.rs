@@ -140,6 +140,7 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
             "--tool-replay",
             "--mcp-config",
             "--lsp-config",
+            "--formatter-config",
             "--lsp-diagnostics",
             "--context-limits",
             "--hooks-config",
@@ -467,6 +468,23 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
         let registry = Arc::new(registry);
         registry.start_watchers();
         tools = tools.with_protected_resource(&path).with_mcp(registry);
+    }
+    if let Some(path) = options.get("--formatter-config") {
+        let path = tokio::fs::canonicalize(path).await?;
+        if path.starts_with(std::path::Path::new(tools.location())) {
+            return Err("formatter host config must be outside model-writable workspace".into());
+        }
+        let bytes = tokio::fs::read(&path).await?;
+        if bytes.len() > 65536 {
+            return Err("formatter config exceeds 64 KiB".into());
+        }
+        let configs = serde_json::from_slice::<Vec<miao_engine::formatter::Config>>(&bytes)
+            .map_err(|_| "invalid formatter host config")?;
+        let registry =
+            miao_engine::formatter::Registry::new(configs, std::path::Path::new(tools.location()))?;
+        tools = tools
+            .with_protected_resource(&path)
+            .with_formatter(Arc::new(registry));
     }
     if let Some(path) = options.get("--lsp-config") {
         let path = tokio::fs::canonicalize(path).await?;
