@@ -27,3 +27,6 @@ overview and `../PROTOCOL.md` for the stdio wire contract.
 - `adr/0013-bounded-parallel-tools.md` — same-turn read parallelism, ordered settlement.
 - `adr/0014-purpose-role-models.md` — role bindings, escalation, and cost attribution.
 - `adr/0016-explicit-tool-recovery.md` — controller-owned retry/abandon decisions without dispatch replay.
+- `adr/0017-session-agent-manifest.md` — Session-owned agent manifests: the host resolves, the engine applies.
+- `adr/0018-command-synthetic-and-shell-records.md` — command references, injected synthetic messages, and engine-executed shell records.
+- `adr/0019-session-file-snapshots.md` — settled-boundary file snapshots behind three-phase revert (stage/clear/commit).
