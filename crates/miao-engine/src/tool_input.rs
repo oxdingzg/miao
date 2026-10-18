@@ -222,7 +222,7 @@ mod tests {
         }
     }
 
-    #[tokio::test]
+    #[tokio::test(start_paused = true)]
     async fn pings_do_not_refill_deadlines_and_finished_calls_release_them() {
         let mut budget = budget();
         budget.frame(&Frame::Json(json!({"type":"response.output_item.added","output_index":0,"item":{"type":"function_call"}}))).unwrap();

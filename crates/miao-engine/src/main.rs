@@ -45,6 +45,21 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
         println!("miao-engine {}", env!("MIAO_ENGINE_VERSION"));
         return Ok(());
     }
+    if args == ["--capabilities"] {
+        // Machine-readable contract for the product's discovery handshake.
+        // `protocol` moves only when a newer product must not reuse an older
+        // engine (shared store, fenced Session ownership, control routing).
+        println!(
+            "{}",
+            serde_json::json!({
+                "name": "miao-engine",
+                "version": env!("MIAO_ENGINE_VERSION"),
+                "protocol": miao_engine::PROTOCOL,
+                "schema": miao_engine::store::SCHEMA_VERSION,
+            })
+        );
+        return Ok(());
+    }
     if args.first().map(String::as_str) == Some("doctor") {
         let path = match &args[1..] {
             [] => None,
