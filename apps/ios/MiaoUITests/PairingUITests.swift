@@ -74,10 +74,16 @@ final class PairingUITests: XCTestCase {
 
     @MainActor
     private func openDrawer(_ app: XCUIApplication) {
+        // Right after pairing, the host/session view can take seconds to replace
+        // the empty screen; wait until the toggle is ready before tapping.
         let toggle = app.buttons["sessionSidebar"]
-        if toggle.waitForExistence(timeout: 5) && toggle.isHittable {
-            toggle.tap()
-            return
+        if toggle.waitForExistence(timeout: 30) {
+            expectation(for: NSPredicate { _, _ in toggle.isHittable }, evaluatedWith: toggle)
+            waitForExpectations(timeout: 30)
+            if toggle.isHittable {
+                toggle.tap()
+                return
+            }
         }
         let open = app.buttons["打开侧栏"].firstMatch
         if open.waitForExistence(timeout: 3) && open.isHittable { open.tap() }
