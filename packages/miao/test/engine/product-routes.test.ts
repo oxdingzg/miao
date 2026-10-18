@@ -76,6 +76,13 @@ it.live("product routes bind active accounts without persisting secrets and keep
       }),
       0,
     )
+    db.query("INSERT INTO credential VALUES (?,?,?,?,?)").run(
+      "cred_copilot",
+      "github-copilot",
+      "device",
+      JSON.stringify({ type: "oauth", methodID: "fixture", access: "", refresh: "COPILOT_SECRET", expires: 0 }),
+      0,
+    )
     db.close()
     const file = yield* Effect.scoped(
       Effect.gen(function* () {
@@ -85,6 +92,7 @@ it.live("product routes bind active accounts without persisting secrets and keep
           draft.update(Integration.ID.make("commandcode"), () => {})
           draft.update(Integration.ID.make("openai"), () => {})
           draft.update(Integration.ID.make("expired"), () => {})
+          draft.update(Integration.ID.make("github-copilot"), () => {})
         })
         yield* catalog.transform((draft) => {
           for (const id of ["commandcode", "openai"]) {
@@ -119,6 +127,26 @@ it.live("product routes bind active accounts without persisting secrets and keep
             model.capabilities.tools = true
             model.capabilities.output = ["text"]
           })
+          draft.provider.update(ProviderV2.ID.make("github-copilot"), (provider) => {
+            provider.integrationID = Integration.ID.make("github-copilot")
+            provider.api = { type: "aisdk", package: "@ai-sdk/github-copilot", url: "https://api.githubcopilot.com" }
+          })
+          for (const [id, endpoint] of [
+            ["claude-sonnet", "messages"],
+            ["gpt-5", "responses"],
+            ["gpt-4.1", "chat"],
+          ]) {
+            draft.model.update(ProviderV2.ID.make("github-copilot"), ModelV2.ID.make(id!), (model) => {
+              model.api = {
+                type: "aisdk",
+                package: "@ai-sdk/github-copilot",
+                id: ModelV2.ID.make(id!),
+                settings: { endpoint },
+              }
+              model.capabilities.tools = true
+              model.capabilities.output = ["text"]
+            })
+          }
           draft.model.default.set(ProviderV2.ID.make("commandcode"), ModelV2.ID.make("model-0"))
           for (const id of ["expired", "unsupported", "custom", "opencode-go"]) {
             draft.provider.update(ProviderV2.ID.make(id), (provider) => {
@@ -154,6 +182,7 @@ it.live("product routes bind active accounts without persisting secrets and keep
         for (const secret of [
           "COMMAND_SECRET",
           "BACKUP_SECRET",
+          "COPILOT_SECRET",
           "OAUTH_SECRET",
           "REFRESH_SECRET",
           "HEADER_SECRET",
@@ -161,7 +190,7 @@ it.live("product routes bind active accounts without persisting secrets and keep
         ])
           expect(content).not.toContain(secret)
         const routes = yield* Effect.promise(() => Bun.file(file).json())
-        expect(routes).toHaveLength(205)
+        expect(routes).toHaveLength(208)
         const alternate = routes.find(
           (route: { account?: { id?: string; model_key: string } }) =>
             route.account?.id === "cred_backup" && route.account.model_key === "commandcode/model-0",
@@ -182,6 +211,18 @@ it.live("product routes bind active accounts without persisting secrets and keep
           request: { body: { temperature: 0.1 } },
           variants: [{ id: "high", body: { reasoning_effort: "high" }, headers: { "x-variant": "high" } }],
         })
+        for (const [id, provider, suffix] of [
+          ["claude-sonnet", "anthropic", "v1/messages"],
+          ["gpt-5", "openai-responses", "responses"],
+          ["gpt-4.1", "openai-chat", "chat/completions"],
+        ]) {
+          expect(routes.find((route: { id: string }) => route.id === `github-copilot/${id}`)).toMatchObject({
+            provider,
+            endpoint: `https://api.githubcopilot.com/${suffix}`,
+            auth: { style: "copilot" },
+            credential: { integration: "github-copilot", id: "cred_copilot" },
+          })
+        }
         expect(routes.find((route: { id: string }) => route.id === "opencode-go/model").auth.headers).toEqual({
           "x-opencode-session": "$session",
         })

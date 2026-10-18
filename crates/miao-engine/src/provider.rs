@@ -413,6 +413,7 @@ pub struct Anthropic {
     /// Vertex AI authenticates with an OAuth bearer and a `:rawPredict`
     /// endpoint instead of the `x-api-key` header.
     bearer: bool,
+    copilot: bool,
     extra_headers: BTreeMap<String, String>,
 }
 
@@ -439,6 +440,7 @@ impl Anthropic {
             max_tokens: 4096,
             prompt_cache: false,
             bearer: false,
+            copilot: false,
             extra_headers: BTreeMap::new(),
         })
     }
@@ -462,6 +464,7 @@ impl Anthropic {
             max_tokens: 4096,
             prompt_cache: false,
             bearer: true,
+            copilot: false,
             extra_headers: BTreeMap::new(),
         })
     }
@@ -496,8 +499,9 @@ impl Anthropic {
         without_tools: bool,
     ) -> Result<Reply, ProviderError> {
         let request = crate::media::normalize(request, "anthropic", &self.input_modalities)?;
+        let copilot = self.copilot.then(|| crate::copilot::turn(&request));
         let credential = self.source.load().await?;
-        if credential.kind() != Kind::Key {
+        if credential.kind() != Kind::Key && !self.copilot {
             return Err(ProviderError::AuthProfile);
         }
         let mut messages = request.messages;
@@ -582,13 +586,16 @@ impl Anthropic {
         } else {
             request.header("x-api-key", credential.header()?)
         };
-        let request = route_headers(
+        let mut request = route_headers(
             self.request_options
                 .headers(request.header("anthropic-version", "2023-06-01"))?,
             &self.extra_headers,
         )?
         .build()
         .map_err(|_| ProviderError::Transport)?;
+        if let Some(headers) = copilot {
+            crate::copilot::apply(&mut request, &headers, true)?;
+        }
         let response =
             request_with_retry("anthropic", &self.client, request, &progress, &cancel).await?;
         read_stream(response, progress, cancel, StreamState::default()).await
@@ -608,16 +615,26 @@ impl Provider for Anthropic {
             ));
         }
         let mut selected = self.clone();
-        selected.bearer = match auth.style.as_deref() {
-            None => selected.bearer,
-            Some("bearer") => true,
-            Some("api-key") => false,
+        match auth.style.as_deref() {
+            None => {}
+            Some("bearer") => {
+                selected.bearer = true;
+                selected.copilot = false;
+            }
+            Some("api-key") => {
+                selected.bearer = false;
+                selected.copilot = false;
+            }
+            Some("copilot") => {
+                selected.bearer = true;
+                selected.copilot = true;
+            }
             _ => {
                 return Err(ProviderError::Stream(
                     "unsupported Anthropic route auth style".into(),
                 ))
             }
-        };
+        }
         auth.apply_headers(&mut selected.extra_headers);
         Ok(Arc::new(selected))
     }
@@ -721,7 +738,7 @@ impl Provider for Anthropic {
             Err(_) => return CountTokens::Failed("unsupported Anthropic media".into()),
         };
         if self.bearer {
-            return CountTokens::Failed("vertex bearer route has no count endpoint".into());
+            return CountTokens::Failed("bearer route has no count endpoint".into());
         }
         let builder = self
             .client

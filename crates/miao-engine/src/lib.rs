@@ -4,6 +4,7 @@ pub mod approval;
 mod cache_affinity;
 pub mod context;
 pub mod context_trigger;
+mod copilot;
 pub mod credential;
 pub mod cron;
 pub mod doctor;

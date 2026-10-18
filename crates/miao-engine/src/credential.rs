@@ -223,8 +223,16 @@ async fn load_daemon(socket: &Path, id: &str, integration: &str) -> Result<Crede
 
 fn parse_bound(value: &Value, integration: &str) -> Result<Credential, Error> {
     let mut credential = parse(value)?;
-    if integration == "github-copilot" && credential.expires == Some(0) {
-        credential.expires = None;
+    if integration == "github-copilot" && credential.kind == Kind::OAuth {
+        // The device grant stores the long-lived GitHub token as refresh;
+        // Copilot accepts it directly, without a secondary token exchange.
+        // Legacy access-only entries already contain that token.
+        if let Some(token) = value["refresh"].as_str().filter(|token| !token.is_empty()) {
+            credential.secret = token.into();
+        }
+        if credential.expires == Some(0) {
+            credential.expires = None;
+        }
     }
     Ok(credential)
 }

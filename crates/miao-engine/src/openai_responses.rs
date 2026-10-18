@@ -18,6 +18,7 @@ use tokio_util::sync::CancellationToken;
 pub enum Profile {
     Api,
     Subscription,
+    Copilot,
 }
 
 #[derive(Clone)]
@@ -70,6 +71,9 @@ impl OpenAIResponses {
         mut self,
         contract: crate::responses_cache::Contract,
     ) -> Result<Self, String> {
+        if matches!(self.profile, Profile::Copilot) {
+            return Err("Copilot does not support Responses continuation contracts".into());
+        }
         let endpoint = reqwest::Url::parse(&self.endpoint)
             .map_err(|_| "invalid Responses endpoint".to_owned())?;
         contract.validate(
@@ -84,6 +88,9 @@ impl OpenAIResponses {
         mut self,
         contract: crate::responses_websocket::Contract,
     ) -> Result<Self, String> {
+        if matches!(self.profile, Profile::Copilot) {
+            return Err("Copilot does not support Responses continuation contracts".into());
+        }
         let endpoint =
             reqwest::Url::parse(&self.endpoint).map_err(|_| "invalid Responses endpoint")?;
         contract.validate(
@@ -102,12 +109,22 @@ impl Provider for OpenAIResponses {
         auth: &crate::model_routes::Auth,
     ) -> Result<std::sync::Arc<dyn Provider>, ProviderError> {
         auth.validate()?;
-        if !auth.query.is_empty() || !matches!(auth.style.as_deref(), None | Some("bearer")) {
+        if !auth.query.is_empty()
+            || !matches!(auth.style.as_deref(), None | Some("bearer" | "copilot"))
+        {
             return Err(ProviderError::Stream(
                 "unsupported OpenAIResponses host authentication".into(),
             ));
         }
         let mut selected = self.clone();
+        if auth.style.as_deref() == Some("copilot") {
+            if self.cache_contract.is_some() || self.websocket_contract.is_some() {
+                return Err(ProviderError::Stream(
+                    "Copilot does not support configured Responses continuation contracts".into(),
+                ));
+            }
+            selected.profile = Profile::Copilot;
+        }
         for name in auth.headers.keys() {
             selected
                 .request_options
@@ -203,10 +220,14 @@ impl OpenAIResponses {
         without_tools: bool,
     ) -> Result<Reply, ProviderError> {
         let request = crate::media::normalize(request, "openai-responses", &self.input_modalities)?;
+        let copilot =
+            matches!(self.profile, Profile::Copilot).then(|| crate::copilot::turn(&request));
         let credential = self.source.load().await?;
         if !matches!(
             (self.profile, credential.kind()),
-            (Profile::Api, Kind::Key) | (Profile::Subscription, Kind::OAuth)
+            (Profile::Api, Kind::Key)
+                | (Profile::Subscription, Kind::OAuth)
+                | (Profile::Copilot, Kind::Key | Kind::OAuth)
         ) {
             return Err(ProviderError::AuthProfile);
         }
@@ -227,7 +248,7 @@ impl OpenAIResponses {
             &json!({
                 "input_modalities":self.input_modalities,
                 "route_headers":crate::permission::digest(&serde_json::to_vec(&self.extra_headers).map_err(|_| ProviderError::Transport)?),
-                "endpoint":self.endpoint,"profile":match self.profile {Profile::Api=>"api",Profile::Subscription=>"subscription"},"account":credential.account(),
+                "endpoint":self.endpoint,"profile":match self.profile {Profile::Api=>"api",Profile::Subscription=>"subscription",Profile::Copilot=>"copilot"},"account":credential.account(),
                 "generation":crate::permission::digest(credential.secret().as_bytes()),
                 "request_options":crate::permission::digest(&serde_json::to_vec(&self.request_options).map_err(|_| ProviderError::Transport)?),
             }),
@@ -255,11 +276,14 @@ impl OpenAIResponses {
             }
         }
         let builder = crate::provider::route_headers(builder, &self.extra_headers)?;
-        let request = self
+        let mut request = self
             .request_options
             .headers(builder)?
             .build()
             .map_err(|_| ProviderError::Transport)?;
+        if let Some(headers) = copilot {
+            crate::copilot::apply(&mut request, &headers, false)?;
+        }
         if let Some(contract) = &self.websocket_contract {
             if let Some(reply) = crate::responses_websocket::try_stream(
                 &self.websocket_pool,
