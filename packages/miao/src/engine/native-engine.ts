@@ -280,6 +280,17 @@ export const fromOwners = (owners: Owners): NativeEngine.Interface => {
           input_id: input.inputID,
         }),
       ).pipe(Effect.map((value) => Schema.decodeUnknownSync(AcceptedReply)(value).accepted)),
+    archive: (input) =>
+      read<unknown>(input, (connection) =>
+        connection.client.request("archive", {
+          session_id: input.sessionID,
+          archived: input.archived,
+        }),
+      ).pipe(Effect.map((value) => Schema.decodeUnknownSync(AcceptedReply)(value).accepted)),
+    remove: (input) =>
+      read<unknown>(input, (connection) => connection.client.request("remove", { session_id: input.sessionID })).pipe(
+        Effect.asVoid,
+      ),
     admit: (input) =>
       connect({ ...input, refreshContext: true }).pipe(
         Effect.flatMap((connection) =>

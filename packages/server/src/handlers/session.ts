@@ -681,6 +681,30 @@ export const SessionHandler = HttpApiBuilder.group(Api, "server.session", (handl
       .handle(
         "session.archive",
         Effect.fn(function* (ctx) {
+          const native = yield* Effect.serviceOption(NativeEngine.Service)
+          const placement = Option.getOrUndefined(yield* Effect.serviceOption(NativeEngine.Placement))
+          if (Option.isSome(native) && placement) {
+            yield* native.value.archive({
+              sessionID: ctx.params.sessionID,
+              storage: placement.storage,
+              location: placement.location,
+              archived: ctx.payload.archived,
+            })
+            // The engine owns the projection, but the product catalog still
+            // backs `session list` in the CLI, so the archive fact is recorded
+            // on both sides of the boundary.
+            yield* session.archive({ sessionID: ctx.params.sessionID, archived: ctx.payload.archived }).pipe(
+              Effect.catchTag("Session.NotFoundError", (error) =>
+                Effect.fail(
+                  new SessionNotFoundError({
+                    sessionID: error.sessionID,
+                    message: `Session not found: ${error.sessionID}`,
+                  }),
+                ),
+              ),
+            )
+            return
+          }
           yield* requireTypescriptOwner(ctx.params.sessionID, "session.archive")
           yield* session.archive({ sessionID: ctx.params.sessionID, archived: ctx.payload.archived }).pipe(
             Effect.catchTag("Session.NotFoundError", (error) =>
@@ -697,6 +721,23 @@ export const SessionHandler = HttpApiBuilder.group(Api, "server.session", (handl
       .handle(
         "session.remove",
         Effect.fn(function* (ctx) {
+          const native = yield* Effect.serviceOption(NativeEngine.Service)
+          const placement = Option.getOrUndefined(yield* Effect.serviceOption(NativeEngine.Placement))
+          if (Option.isSome(native) && placement) {
+            yield* native.value.remove({
+              sessionID: ctx.params.sessionID,
+              storage: placement.storage,
+              location: placement.location,
+            })
+            // Release the catalog binding before the product rows go: a stale
+            // binding would route the next create of this identity back to a
+            // storage that no longer has it.
+            yield* SessionEnginePlacement.release(db, ctx.params.sessionID)
+            yield* session
+              .remove(ctx.params.sessionID)
+              .pipe(Effect.catchTag("Session.NotFoundError", () => Effect.void))
+            return
+          }
           yield* requireTypescriptOwner(ctx.params.sessionID, "session.remove")
           yield* session.remove(ctx.params.sessionID).pipe(
             Effect.catchTag("Session.NotFoundError", (error) =>

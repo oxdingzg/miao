@@ -27,6 +27,8 @@ does not claim ACP or the existing miao HttpApi is compatible.
 | `resume` | `session_id` | `{accepted:true}` |
 | `cancel_input` | `session_id`, `input_id` | `{accepted:bool, reason?}` |
 | `cancel` | `session_id` | `{accepted:bool}` |
+| `archive` | `session_id`, `archived` | `{accepted:true, archived}` |
+| `remove` | `session_id` | `{accepted:bool, reason?}` |
 | `events` | `session_id`, `after` | `Event[]` (page ≤ 100) |
 | `snapshot` | `session_id` | committed Session snapshot |
 | `sessions` | — | `string[]` (Session ids) |
@@ -157,6 +159,31 @@ A cancelled identity is terminal: admitting the same `session_id`/`input_id`
 again fails with `input_conflict` instead of resurrecting the dropped prompt or
 returning a receipt whose prompt never runs. A client that wants to re-send a
 cancelled prompt admits it under a fresh `input_id`.
+
+### Archiving
+
+`archive` takes `session_id` and `archived`. Archiving is a catalog fact: it
+writes the Session's `archived_at_ms` (null when cleared), appends
+`session.archived`, and touches no message, run, inbox or approval row, so a
+Session may be archived while a drain is active and restored with
+`archived: false`. The snapshot reports `archived_at_ms`, and an unarchived
+Session reports `null`. Archiving never initializes a Session: an unknown id
+fails with `invalid_request`.
+
+### Removal
+
+`remove` takes `session_id` and deletes everything the Session owns — its
+conversation, inbox, runs, tools, approvals, jobs, schedules, placement, lease
+and event log — after interrupting any active drain and stopping the
+in-process tasks that belong to it. Stopping those tasks is required, not
+cosmetic: an armed cron or wakeup admits through the inbox, which re-creates
+the Session row.
+
+There is no tombstone, so the identity can be created again from scratch. A
+child keeps its own rows and loses only its lineage edge, matching the
+product's rule that removing a Session does not delete its forks. An unknown
+Session is reported as `{accepted:false, reason:"unknown"}` rather than
+refused, so a half-finished removal can be retried by the caller.
 
 
 ### Idle Session initialization
