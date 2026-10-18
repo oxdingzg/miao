@@ -20,15 +20,16 @@ export function prepareMcpConfig(options: EngineOptions) {
   const servers = Object.entries(options.mcpSettings.servers)
     .map(([name, server]) => {
       if (server.disabled) return
-      if (Object.keys(server.call_meta ?? {}).length)
-        throw new Error(`Native MCP shared configuration does not support call_meta: ${name}`)
       const startup = server.timeout?.startup ?? options.mcpSettings?.timeout?.startup
       const request = server.timeout?.request ?? options.mcpSettings?.timeout?.request
       const timeout = {
         ...(startup === undefined ? {} : { startup }),
         ...(request === undefined ? {} : { request }),
       }
-      const limits = Object.keys(timeout).length ? { timeout } : {}
+      const limits = {
+        ...(Object.keys(timeout).length ? { timeout } : {}),
+        ...(Object.keys(server.call_meta ?? {}).length ? { call_meta: server.call_meta } : {}),
+      }
       if (server.type === "remote") {
         if (server.oauth !== false)
           throw new Error(

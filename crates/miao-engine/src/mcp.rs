@@ -44,6 +44,8 @@ pub struct Config {
     #[serde(default)]
     pub headers: BTreeMap<String, String>,
     #[serde(default)]
+    pub call_meta: BTreeMap<String, String>,
+    #[serde(default)]
     pub env: BTreeMap<String, String>,
     #[serde(default)]
     pub oauth: Option<Oauth>,
@@ -93,6 +95,7 @@ struct Server {
     client: Mutex<RunningService<RoleClient, CatalogWatch>>,
     changed: Arc<Notify>,
     request_timeout: Duration,
+    call_meta: BTreeMap<String, String>,
 }
 
 /// List-changed notifications arrive unsolicited; the watcher coalesces them
@@ -170,6 +173,18 @@ impl Registry {
                 })
             {
                 return Err(Error::Invalid("invalid MCP server configuration".into()));
+            }
+            if config.call_meta.len() > 32
+                || config.call_meta.iter().any(|(key, value)| {
+                    key.is_empty()
+                        || key.len() > 256
+                        || key.contains('\0')
+                        || value.len() > 8192
+                        || value.contains('\0')
+                })
+                || serde_json::to_vec(&config.call_meta)?.len() > 65536
+            {
+                return Err(Error::Invalid("invalid MCP call metadata".into()));
             }
             if registry
                 .servers
@@ -258,7 +273,13 @@ impl Registry {
                 .map_err(|_| Error::Invalid("MCP HTTP initialization timed out".into()))?
                 .map_err(|_| Error::Invalid("MCP HTTP initialization failed".into()))?;
                 registry
-                    .attach(config.name, client, changed, request_timeout)
+                    .attach(
+                        config.name,
+                        client,
+                        changed,
+                        request_timeout,
+                        config.call_meta,
+                    )
                     .await?;
                 continue;
             }
@@ -310,7 +331,13 @@ impl Registry {
             .map_err(|_| Error::Invalid("MCP initialization timed out".into()))?
             .map_err(|_| Error::Invalid("MCP initialization failed".into()))?;
             registry
-                .attach(config.name, client, changed, request_timeout)
+                .attach(
+                    config.name,
+                    client,
+                    changed,
+                    request_timeout,
+                    config.call_meta,
+                )
                 .await?;
             registry.children.lock().await.push(child);
         }
@@ -340,7 +367,13 @@ impl Registry {
             children: Mutex::new(vec![]),
         };
         registry
-            .attach(name, client, changed, Duration::from_secs(60))
+            .attach(
+                name,
+                client,
+                changed,
+                Duration::from_secs(60),
+                BTreeMap::new(),
+            )
             .await?;
         Ok(registry)
     }
@@ -351,6 +384,7 @@ impl Registry {
         client: RunningService<RoleClient, CatalogWatch>,
         changed: Arc<Notify>,
         request_timeout: Duration,
+        call_meta: BTreeMap<String, String>,
     ) -> Result<(), Error> {
         let capabilities = client
             .peer_info()
@@ -389,6 +423,7 @@ impl Registry {
             client: Mutex::new(client),
             changed,
             request_timeout,
+            call_meta,
         });
         let mut tools = self.tools.write().unwrap();
         tools.retain(|_, tool| tool.server.name != name);
@@ -650,13 +685,31 @@ impl Registry {
         let request = async {
             match operation {
                 Operation::Tool => {
-                    let response = wire(
-                        client
-                            .call_tool_once(
-                                CallToolRequestParams::new(native.clone()).with_arguments(args),
-                            )
-                            .await,
-                    )?;
+                    let mut params =
+                        CallToolRequestParams::new(native.clone()).with_arguments(args);
+                    if !server.call_meta.is_empty() {
+                        let metadata = server
+                            .call_meta
+                            .iter()
+                            .map(|(key, value)| {
+                                Ok((key.clone(), Value::String(expand_call_meta(value)?)))
+                            })
+                            .collect::<Result<serde_json::Map<String, Value>, ToolError>>()?;
+                        if serde_json::to_vec(&metadata)
+                            .map_err(|_| ToolError::InvalidInput)?
+                            .len()
+                            > 65536
+                        {
+                            return Err(ToolError::External(
+                                "MCP call metadata exceeds budget".into(),
+                            ));
+                        }
+                        params.meta = Some(
+                            serde_json::from_value(Value::Object(metadata))
+                                .map_err(|_| ToolError::InvalidInput)?,
+                        );
+                    }
+                    let response = wire(client.call_tool_once(params).await)?;
                     let CallToolResponse::Complete(result) = response else {
                         return Err(continuation());
                     };
@@ -867,4 +920,71 @@ async fn oauth_bearer(oauth: &Oauth) -> Result<String, Error> {
         return Err(Error::Invalid("MCP OAuth token type is unsupported".into()));
     }
     Ok(access.to_owned())
+}
+
+/// Resolve trusted host identity at call time; values never enter the tool catalog.
+fn expand_call_meta(input: &str) -> Result<String, ToolError> {
+    let mut remaining = input;
+    let mut result = String::new();
+    while let Some((prefix, tail)) = remaining.split_once("{env:") {
+        result.push_str(prefix);
+        let (key, suffix) = tail.split_once('}').ok_or_else(|| {
+            ToolError::External("invalid MCP call metadata environment reference".into())
+        })?;
+        if key.is_empty()
+            || key.len() > 256
+            || !key.bytes().all(|b| b.is_ascii_alphanumeric() || b == b'_')
+        {
+            return Err(ToolError::External(
+                "invalid MCP call metadata environment reference".into(),
+            ));
+        }
+        let value = std::env::var(key).map_err(|_| {
+            ToolError::External("MCP call metadata environment value is unavailable".into())
+        })?;
+        if value.len() > 8192 || value.contains('\0') {
+            return Err(ToolError::External(
+                "MCP call metadata environment value exceeds budget".into(),
+            ));
+        }
+        result.push_str(&value);
+        if result.len() > 8192 {
+            return Err(ToolError::External(
+                "MCP call metadata value exceeds budget".into(),
+            ));
+        }
+        remaining = suffix;
+    }
+    result.push_str(remaining);
+    if result.len() > 8192 || result.contains('\0') {
+        return Err(ToolError::External(
+            "MCP call metadata value exceeds budget".into(),
+        ));
+    }
+    Ok(result)
+}
+
+#[cfg(test)]
+mod call_metadata_tests {
+    use super::expand_call_meta;
+
+    #[test]
+    fn metadata_interpolation_is_bounded_and_fails_closed() {
+        assert_eq!(expand_call_meta("literal").unwrap(), "literal");
+        let path = std::env::var("PATH").unwrap();
+        assert_eq!(
+            expand_call_meta("prefix-{env:PATH}-{env:PATH}").unwrap(),
+            format!("prefix-{path}-{path}")
+        );
+        for value in [
+            "{env:}",
+            "{env:PATH",
+            "{env:INVALID=KEY}",
+            "{env:MIAO_MCP_NONEXISTENT_FIXTURE_23456789}",
+        ] {
+            assert!(expand_call_meta(value).is_err());
+        }
+        assert!(expand_call_meta(&"x".repeat(8193)).is_err());
+        assert!(expand_call_meta("invalid\0value").is_err());
+    }
 }

@@ -31,6 +31,8 @@ async fn http_initialization_catalog_call_and_host_headers_roundtrip() {
                 },
                 "tools/call" => {
                     assert_eq!(headers["mcp-session-id"], "fixture-session");
+                    assert_eq!(request["params"]["_meta"]["tenant"], "metadata-only");
+                    assert_eq!(request["params"]["_meta"]["path"], std::env::var("PATH").unwrap());
                     counter.fetch_add(1, Ordering::SeqCst);
                     json!({"content":[{"type":"text","text":request["params"]["arguments"]["text"]}]})
                 },
@@ -47,12 +49,15 @@ async fn http_initialization_catalog_call_and_host_headers_roundtrip() {
         axum::serve(listener, router).await.unwrap();
     });
     let dir = tempfile::tempdir().unwrap();
-    let registry = Registry::connect(vec![serde_json::from_value::<Config>(json!({"name":"remote","url":endpoint,"headers":{"Authorization":"Bearer fixture-only","X-Workspace":"fixture"}})).unwrap()],dir.path()).await.unwrap();
+    let registry = Registry::connect(vec![serde_json::from_value::<Config>(json!({"name":"remote","url":endpoint,"headers":{"Authorization":"Bearer fixture-only","X-Workspace":"fixture"},"call_meta":{"tenant":"metadata-only","path":"{env:PATH}"}})).unwrap()],dir.path()).await.unwrap();
     let definitions = registry.definitions();
     assert_eq!(definitions.len(), 1);
     assert!(!serde_json::to_string(&definitions)
         .unwrap()
         .contains("fixture-only"));
+    assert!(!serde_json::to_string(&definitions)
+        .unwrap()
+        .contains("metadata-only"));
     let result = registry
         .call(
             &definitions[0].name,
@@ -79,6 +84,8 @@ async fn http_configuration_rejects_ambiguous_authority_and_unsafe_headers() {
         json!({"name":"remote","url":"http://127.0.0.1:1","headers":{"Host":"unwanted"}}),
         json!({"name":"remote","url":"http://127.0.0.1:1","headers":{"Authorization":"line\r\nbreak"}}),
         json!({"name":"local","argv":["unwanted"],"headers":{"Authorization":"unwanted"}}),
+        json!({"name":"remote","url":"http://127.0.0.1:1","call_meta":{"":"invalid"}}),
+        json!({"name":"remote","url":"http://127.0.0.1:1","call_meta":{"tenant":"x".repeat(8193)}}),
     ] {
         assert!(
             Registry::connect(vec![serde_json::from_value(config).unwrap()], dir.path())

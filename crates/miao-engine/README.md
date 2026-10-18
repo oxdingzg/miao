@@ -546,6 +546,9 @@ configured with the `mcp_*` tool matcher and the `@mcp/local_service/**` resourc
 
 A process server may set `cwd`; relative paths resolve from the engine workspace. The product shared MCP configuration preserves this setting and merges global/server timeouts per field, with the server value taking precedence.
 
+Optional `call_meta` string pairs are stamped into `_meta` on each `tools/call`, separately from model arguments and the public catalog. `{env:VAR}` placeholders are resolved from the engine process environment immediately before each call; missing/invalid values fail before sending. Metadata is limited to 32 keys, 8 KiB per value and 64 KiB total. Product shared configuration preserves these templates for both transports.
+
+
 - The catalog is fixed at initialization: at most 8 servers and 4 pages/128 tools per server; the alias is stable, limited to 64 characters, and includes a fingerprint of the original name.
 - The schema is at most 32 KiB and JSON Schema validation completes before authorization and dispatch; the description is at most 4 KiB.
 - Initialization defaults to 15 seconds; catalog and tool requests default to 60 seconds. Set `timeout.startup` and `timeout.request` to positive milliseconds per server. The wire frame is 256 KiB, and a returned result is 64 KiB.

@@ -8,7 +8,12 @@ import { tmpdir } from "../fixture/fixture"
 
 const local = Schema.decodeUnknownSync(ConfigMCP.Info)({
   servers: {
-    fixture: { type: "local", command: ["node", "peer.js"], environment: { FIXTURE_KEY: "fixture-value" } },
+    fixture: {
+      type: "local",
+      command: ["node", "peer.js"],
+      environment: { FIXTURE_KEY: "fixture-value" },
+      call_meta: { tenant: "{env:MCP_TENANT}" },
+    },
     disabled: { type: "remote", url: "https://example.invalid/mcp", disabled: true },
   },
 })
@@ -40,7 +45,12 @@ test("shared local MCP snapshots preserve environment, skip disabled peers and a
   if (!snapshot) throw new Error("authorized local config must produce a snapshot")
   try {
     expect(await Bun.file(snapshot.file).json()).toEqual([
-      { name: "fixture", argv: ["node", "peer.js"], env: { FIXTURE_KEY: "fixture-value" } },
+      {
+        name: "fixture",
+        argv: ["node", "peer.js"],
+        env: { FIXTURE_KEY: "fixture-value" },
+        call_meta: { tenant: "{env:MCP_TENANT}" },
+      },
     ])
     expect(path.relative(tmp.path, snapshot.file).startsWith("..")).toBe(true)
     if (process.platform !== "win32") expect(statSync(snapshot.file).mode & 0o777).toBe(0o600)
@@ -54,10 +64,7 @@ test("unsupported shared MCP transport or identity settings are not silently dis
   await using tmp = await tmpdir()
   const policyFile = path.join(tmp.path, "policy.json")
   await Bun.write(policyFile, JSON.stringify({ mode: "workspace", allow_mcp: true }))
-  for (const server of [
-    { type: "remote", url: "https://example.invalid/mcp" },
-    { type: "local", command: ["node", "peer.js"], call_meta: { Authorization: "fixture" } },
-  ]) {
+  for (const server of [{ type: "remote", url: "https://example.invalid/mcp" }]) {
     const mcpSettings = Schema.decodeUnknownSync(ConfigMCP.Info)({ servers: { fixture: server } })
     expect(() =>
       prepareMcpConfig({
@@ -89,6 +96,7 @@ test("shared HTTP MCP snapshots preserve trusted URL and headers", async () => {
           url: "https://example.invalid/mcp",
           oauth: false,
           headers: { Authorization: "Bearer fixture" },
+          call_meta: { tenant: "{env:MCP_TENANT}" },
         },
       },
     }),
@@ -96,7 +104,12 @@ test("shared HTTP MCP snapshots preserve trusted URL and headers", async () => {
   if (!snapshot) throw new Error("authorized HTTP config must produce a snapshot")
   try {
     expect(await Bun.file(snapshot.file).json()).toEqual([
-      { name: "remote", url: "https://example.invalid/mcp", headers: { Authorization: "Bearer fixture" } },
+      {
+        name: "remote",
+        url: "https://example.invalid/mcp",
+        headers: { Authorization: "Bearer fixture" },
+        call_meta: { tenant: "{env:MCP_TENANT}" },
+      },
     ])
     if (process.platform !== "win32") expect(statSync(snapshot.file).mode & 0o777).toBe(0o600)
   } finally {
