@@ -38,6 +38,19 @@ const filepath = path.join(Global.Path.data, "mcp-auth.json")
 const lockKey = `mcp-auth:${filepath}`
 
 export interface Interface {
+  readonly updateTokensIfCurrent: (
+    mcpName: string,
+    serverUrl: string,
+    expected: Entry,
+    tokens: Tokens,
+  ) => Effect.Effect<boolean>
+
+  readonly withRefreshLock: <A, E, R>(
+    mcpName: string,
+    serverUrl: string,
+    body: Effect.Effect<A, E, R>,
+  ) => Effect.Effect<A, E | EffectFlock.LockError, R>
+
   readonly all: () => Effect.Effect<Record<string, Entry>>
   readonly get: (mcpName: string) => Effect.Effect<Entry | undefined>
   readonly getForUrl: (mcpName: string, serverUrl: string) => Effect.Effect<Entry | undefined>
@@ -165,6 +178,29 @@ const layer = Layer.effect(
     })
 
     return Service.of({
+      updateTokensIfCurrent: (mcpName, serverUrl, expected, tokens) =>
+        Effect.gen(function* () {
+          const data = yield* read()
+          const entry = data[mcpName]
+          if (entry?.serverUrl !== serverUrl || !entry.tokens || JSON.stringify(entry) !== JSON.stringify(expected))
+            return false
+          yield* fs
+            .writeJson(
+              filepath,
+              {
+                ...data,
+                [mcpName]: {
+                  ...entry,
+                  tokens: { ...tokens, refreshToken: tokens.refreshToken ?? entry.tokens.refreshToken },
+                },
+              },
+              0o600,
+            )
+            .pipe(Effect.orDie)
+          return true
+        }).pipe(flock.withLock(lockKey), Effect.orDie),
+      withRefreshLock: (mcpName, serverUrl, body) =>
+        body.pipe(flock.withLock(`mcp-oauth-refresh:${filepath}:${JSON.stringify([mcpName, serverUrl])}`)),
       all,
       get,
       getForUrl,
