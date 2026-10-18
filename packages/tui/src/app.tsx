@@ -884,6 +884,15 @@ function App(props: {
         },
       },
       {
+        name: "remote.login",
+        title: "Sign in to relay",
+        category: "Agent",
+        slashName: "login",
+        run: () => {
+          dialog.replace(() => <DialogRemote startInLogin />)
+        },
+      },
+      {
         name: "agent.cycle",
         title: "Agent cycle",
         category: "Agent",
