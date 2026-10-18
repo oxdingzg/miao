@@ -581,6 +581,19 @@ impl Runtime {
         Ok(true)
     }
 
+    /// Delete a Session and everything it owns.
+    ///
+    /// A running drain is interrupted and awaited first, then every in-process
+    /// task the Session owns is stopped, and only then are its durable rows
+    /// deleted. Stopping the tasks is not cosmetic: an armed cron or wakeup
+    /// re-admits through `admit_input`, which re-creates the Session row, so a
+    /// surviving task would resurrect the identity just removed.
+    pub async fn remove(&self, session: &str) -> Result<Value, Error> {
+        let _ = self.detach(session).await?;
+        stop_session(&self.inner, session).await;
+        self.inner.store.remove_session(session).await
+    }
+
     pub async fn cancel(&self, session: &str) -> Result<bool, Error> {
         let commands = {
             let actors = self.inner.actors.lock().await;
@@ -2202,6 +2215,44 @@ fn spawn_cron_task(
         join,
     }
 }
+/// Stop every in-process task a Session owns, before its rows are deleted.
+async fn stop_session(inner: &Arc<Inner>, session: &str) {
+    let (jobs, timers, crons) = tokio::join!(
+        take_session_background(&inner.jobs, session),
+        take_session_background(&inner.timers, session),
+        take_session_background(&inner.crons, session),
+    );
+    inner.started.lock().await.remove(session);
+    inner.terminals.close_session(session).await;
+    let backgrounds = jobs
+        .into_iter()
+        .chain(timers)
+        .chain(crons)
+        .collect::<Vec<_>>();
+    for background in &backgrounds {
+        background.cancel.cancel();
+    }
+    for background in backgrounds {
+        let _ = background.join.await;
+    }
+}
+
+/// Take the background tasks of one Session out of an id-keyed table.
+async fn take_session_background(
+    table: &Mutex<HashMap<String, Background>>,
+    session: &str,
+) -> Vec<Background> {
+    let mut table = table.lock().await;
+    let keys = table
+        .iter()
+        .filter(|(_, background)| background.session == session)
+        .map(|(key, _)| key.clone())
+        .collect::<Vec<_>>();
+    keys.into_iter()
+        .filter_map(|key| table.remove(&key))
+        .collect()
+}
+
 async fn cancel_cron(inner: &Inner, session: &str, id: &str) -> Result<bool, Error> {
     let token = inner
         .crons

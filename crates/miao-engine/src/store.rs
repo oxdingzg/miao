@@ -186,7 +186,7 @@ impl Store {
                 }
                 // Nullable on purpose: sessions that predate the columns keep an
                 // unknown creation/update time instead of a fabricated one.
-                for column in ["created_at_ms", "updated_at_ms"] {
+                for column in ["created_at_ms", "updated_at_ms", "archived_at_ms"] {
                     let has_time:bool=conn.query_row(
                         "SELECT EXISTS(SELECT 1 FROM pragma_table_info('engine_session') WHERE name=?1)",
                         [column],|r|r.get(0))?;
@@ -555,6 +555,93 @@ impl Store {
 
     /// Safe-boundary promotion: all steers first, then one queued item only when
     /// idle. Projection and promotion events share the same transaction.
+    /// Set or clear a Session's archive timestamp.
+    ///
+    /// Archiving is a catalog fact, not an execution one: it touches no message,
+    /// run, inbox or approval row, so it is legal while a drain is active and
+    /// reversible with `archived: false`. Unlike `rename` it never initializes a
+    /// Session, because archiving an identity that was never created would
+    /// invent product state.
+    pub async fn set_archived(&self, session: &str, archived: bool) -> Result<Value, Error> {
+        let (session, archived) = (session.to_owned(), archived);
+        self.call(move |conn| {
+            let tx = write_tx(conn)?;
+            let exists: bool = tx.query_row(
+                "SELECT EXISTS(SELECT 1 FROM engine_session WHERE id=?1)",
+                [&session],
+                |row| row.get(0),
+            )?;
+            if !exists {
+                return Err(Error::Invalid("Session does not exist".into()));
+            }
+            let now = now_ms() as i64;
+            tx.execute(
+                "UPDATE engine_session SET archived_at_ms=?2, updated_at_ms=?3 WHERE id=?1",
+                params![session, archived.then_some(now), now],
+            )?;
+            append(
+                &tx,
+                &session,
+                "session.archived",
+                json!({"archived": archived}),
+            )?;
+            tx.commit()?;
+            Ok(json!({"accepted": true, "archived": archived}))
+        })
+        .await
+    }
+
+    /// Delete every row a Session owns, in foreign-key order.
+    ///
+    /// There is no tombstone: the conversation, inbox, runs, tools, approvals,
+    /// jobs, schedules, placement and event log are all gone, and the identity
+    /// can be created again from scratch. Children keep their own rows; only
+    /// their lineage edges are dropped, so removing a parent leaves a readable
+    /// child instead of failing on the lineage foreign key — the product's rule
+    /// is that removing a Session does not delete its forks.
+    ///
+    /// An unknown Session is reported rather than refused, so a half-finished
+    /// removal can be retried after the caller's own cleanup.
+    pub async fn remove_session(&self, session: &str) -> Result<Value, Error> {
+        let session = session.to_owned();
+        self.call(move |conn| {
+            let tx = write_tx(conn)?;
+            let exists: bool = tx.query_row(
+                "SELECT EXISTS(SELECT 1 FROM engine_session WHERE id=?1)",
+                [&session],
+                |row| row.get(0),
+            )?;
+            if !exists {
+                return Ok(json!({"accepted": false, "reason": "unknown"}));
+            }
+            // Approvals and jobs reference tools; tools and approvals reference
+            // runs. Those three go before the run rows they point at.
+            for statement in [
+                "DELETE FROM engine_approval WHERE session_id=?1",
+                "DELETE FROM engine_job WHERE session_id=?1",
+                "DELETE FROM engine_tool WHERE run_id IN (SELECT id FROM engine_run WHERE session_id=?1)",
+                "DELETE FROM engine_run WHERE session_id=?1",
+                "DELETE FROM engine_timing WHERE session_id=?1",
+                "DELETE FROM engine_cache_prefix WHERE session_id=?1",
+                "DELETE FROM engine_message WHERE session_id=?1",
+                "DELETE FROM engine_compaction WHERE session_id=?1",
+                "DELETE FROM engine_context WHERE session_id=?1",
+                "DELETE FROM engine_input WHERE session_id=?1",
+                "DELETE FROM engine_location WHERE session_id=?1",
+                "DELETE FROM engine_event WHERE session_id=?1",
+                "DELETE FROM engine_lease WHERE session_id=?1",
+                "DELETE FROM engine_lineage WHERE parent_session_id=?1",
+                "DELETE FROM engine_lineage WHERE session_id=?1",
+                "DELETE FROM engine_session WHERE id=?1",
+            ] {
+                tx.execute(statement, [&session])?;
+            }
+            tx.commit()?;
+            Ok(json!({"accepted": true}))
+        })
+        .await
+    }
+
     pub async fn promote(&self, session: &str, idle: bool) -> Result<Vec<Event>, Error> {
         self.promote_inner(session, idle, None).await
     }
@@ -817,11 +904,11 @@ impl Store {
             let crons=crate::cron::pending(&tx,&session)?;
             let model_selection=crate::session_model::selected(&tx,&session)?;
             let mode:String=tx.query_row("SELECT mode FROM engine_session WHERE id=?1",[&session],|r|r.get(0)).optional()?.unwrap_or_else(||"build".into());
-            let (title,created_at_ms,updated_at_ms):(String,Option<i64>,Option<i64>)=tx.query_row(
-                "SELECT title,created_at_ms,updated_at_ms FROM engine_session WHERE id=?1",
-                [&session],|r|Ok((r.get(0)?,r.get(1)?,r.get(2)?)),
+            let (title,created_at_ms,updated_at_ms,archived_at_ms):(String,Option<i64>,Option<i64>,Option<i64>)=tx.query_row(
+                "SELECT title,created_at_ms,updated_at_ms,archived_at_ms FROM engine_session WHERE id=?1",
+                [&session],|r|Ok((r.get(0)?,r.get(1)?,r.get(2)?,r.get(3)?)),
             )?;
-            let snapshot=json!({"session_id":session,"parent_session_id":parent,"cursor":cursor,"location":location,"mode":mode,"title":title,"created_at_ms":created_at_ms,"updated_at_ms":updated_at_ms,"messages":messages,"selection":selection,"pending":pending,"active_run":active,"approvals":approvals,"context":context,"state":state,"questions":questions,"wakeups":wakeups,"crons":crons,"model_selection":model_selection});
+            let snapshot=json!({"session_id":session,"parent_session_id":parent,"cursor":cursor,"location":location,"mode":mode,"title":title,"created_at_ms":created_at_ms,"updated_at_ms":updated_at_ms,"archived_at_ms":archived_at_ms,"messages":messages,"selection":selection,"pending":pending,"active_run":active,"approvals":approvals,"context":context,"state":state,"questions":questions,"wakeups":wakeups,"crons":crons,"model_selection":model_selection});
             if serde_json::to_vec(&snapshot)?.len()>4*1024*1024{return Err(Error::Invalid("snapshot exceeds limit; use events pagination".into()));}
             tx.commit()?;Ok(snapshot)
         }).await

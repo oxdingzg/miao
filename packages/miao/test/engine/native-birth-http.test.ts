@@ -188,6 +188,16 @@ if (binary)
       expect(selected.status).toBe(204)
       const selectedGet = await fetch(url + "/api/session/" + body.id, { headers })
       expect((await selectedGet.json()).data.model).toEqual(catalog.data[1].model)
+      // CLI --model accepts product identifiers; the native picker continues
+      // using its canonical route references. Both must select the same route.
+      const productSelected = await fetch(modelPath, {
+        method: "POST",
+        headers,
+        body: JSON.stringify({ model: { providerID: "account-two", id: "shared" } }),
+      })
+      expect(productSelected.status).toBe(204)
+      const productGet = await fetch(url + "/api/session/" + body.id, { headers })
+      expect((await productGet.json()).data.model).toEqual(catalog.data[1].model)
       const unchanged = await fetch(url + "/api/session/" + anotherBody.id, { headers: anotherHeaders })
       expect((await unchanged.json()).data.model).toEqual(catalog.data[0].model)
       const inherited = await fetch(url + "/api/session/" + body.id + "/fork", { method: "POST", headers, body: "{}" })

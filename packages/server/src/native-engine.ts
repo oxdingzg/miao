@@ -61,6 +61,27 @@ export interface Interface {
     inputID: SessionMessage.ID
   }) => Effect.Effect<boolean, ConflictError>
   /**
+   * Set or clear the engine's archive timestamp. Archiving is a catalog fact
+   * that survives in the snapshot, so the product projection can filter on it.
+   */
+  readonly archive: (input: {
+    sessionID: SessionID
+    storage: AbsolutePath
+    location: Location.Ref
+    archived: boolean
+  }) => Effect.Effect<void, ConflictError>
+  /**
+   * Delete the engine's copy of a Session: its conversation, inbox, runs,
+   * approvals, background work and schedules. Children keep their Sessions and
+   * lose only their lineage edge, matching the product's rule that removing a
+   * Session does not delete its forks.
+   */
+  readonly remove: (input: {
+    sessionID: SessionID
+    storage: AbsolutePath
+    location: Location.Ref
+  }) => Effect.Effect<void, ConflictError>
+  /**
    * Admit one durable prompt into the native engine that owns the Session.
    * The placement catalog's storage and Location are authoritative; the engine
    * child is owned by the server scope, never by the calling request.
