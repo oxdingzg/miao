@@ -48,6 +48,9 @@ struct Inner {
     slots: Arc<Semaphore>,
     subagent_slots: Arc<Semaphore>,
     started: Mutex<std::collections::HashSet<String>>,
+    /// Sessions with a drain in this process. The timer heartbeat must not claim
+    /// one: claiming advances the epoch and would fence the active drain.
+    draining: std::sync::Mutex<std::collections::HashSet<String>>,
     stop: CancellationToken,
     progress: broadcast::Sender<Value>,
     product: Arc<std::sync::RwLock<crate::product::State>>,
@@ -142,8 +145,8 @@ impl Runtime {
         }
         let lease = store.claim_runtime()?;
         store.recover().await?;
-        store.recover_jobs().await?;
-        store.recover_questions().await?;
+        store.recover_jobs_unowned().await?;
+        store.recover_questions_unowned().await?;
         store.adopt_wakeups().await?;
         store.adopt_crons().await?;
         let (progress, _) = broadcast::channel(256);
@@ -165,6 +168,7 @@ impl Runtime {
                 slots: Arc::new(Semaphore::new(8)),
                 subagent_slots: Arc::new(Semaphore::new(crate::subagent::CONCURRENCY_LIMIT)),
                 started: Mutex::new(std::collections::HashSet::new()),
+                draining: std::sync::Mutex::new(std::collections::HashSet::new()),
                 stop: CancellationToken::new(),
                 progress,
                 product: Arc::new(std::sync::RwLock::new(crate::product::State::default())),
@@ -219,6 +223,14 @@ impl Runtime {
                 for session in sessions {
                     // A draining Session renews its own claim; a heartbeat here
                     // would advance the epoch and fence the active owner.
+                    if heartbeat_inner
+                        .draining
+                        .lock()
+                        .map(|draining| draining.contains(&session))
+                        .unwrap_or(false)
+                    {
+                        continue;
+                    }
                     if heartbeat_inner
                         .store
                         .active_run(&session)
@@ -719,6 +731,16 @@ fn boxed_drain(
 /// How long a drain's Session claim stays valid without renewal.
 const SESSION_LEASE_MS: i64 = 30_000;
 
+/// Marks a Session as draining for the timer heartbeat's duration check.
+struct DrainingGuard(Arc<Inner>, String);
+impl Drop for DrainingGuard {
+    fn drop(&mut self) {
+        if let Ok(mut draining) = self.0.draining.lock() {
+            draining.remove(&self.1);
+        }
+    }
+}
+
 /// Aborts the renewal task when the drain ends, including on an early return.
 struct LeaseKeepalive(JoinHandle<()>);
 impl Drop for LeaseKeepalive {
@@ -753,6 +775,10 @@ async fn drain(
         _=cancel.cancelled()=>return Ok(()),
         permit=inner.slots.clone().acquire_owned()=>permit.map_err(|_|Error::Closed)?,
     };
+    if let Ok(mut draining) = inner.draining.lock() {
+        draining.insert(session.clone());
+    }
+    let _draining = DrainingGuard(inner.clone(), session.clone());
     let lease = inner
         .store
         .claim_session(&session, SESSION_LEASE_MS)
