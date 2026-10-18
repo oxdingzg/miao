@@ -48,6 +48,8 @@ async fn manifest_variants_reach_the_wire_and_survive_reopen_and_fork() {
         let send = send.clone();
         async move {
             assert_eq!(headers["authorization"], "Bearer variant-fixture-secret");
+            if body["reasoning_effort"] == "low" { assert_eq!(headers["x-low"], "true"); }
+            else { assert!(!headers.contains_key("x-low")); }
             send.send(body).await.unwrap();
             ([("content-type", "text/event-stream")], format!("data: {}\n\ndata: [DONE]\n\n", json!({"choices":[{"index":0,"delta":{"content":"done"},"finish_reason":"stop"}]})))
         }
@@ -66,10 +68,10 @@ async fn manifest_variants_reach_the_wire_and_survive_reopen_and_fork() {
     .unwrap();
     let manifest = host.path().join("routes.json");
     std::fs::write(&manifest, json!([{
-        "id":"account/chat", "primary":true, "provider":"openai-chat", "model":"wire-model", "endpoint":endpoint,
+        "id":"account/chat", "primary":true, "default_variant":"low", "provider":"openai-chat", "model":"wire-model", "endpoint":endpoint,
         "credential":{"type":"legacy","path":credentials,"integration":"fixture"},
         "request":{"body":{"temperature":0.1}},
-        "variants":[{"id":"high","body":{"reasoning_effort":"high"}},{"id":"low","body":{"reasoning_effort":"low"}}]
+        "variants":[{"id":"high","body":{"reasoning_effort":"high"}},{"id":"low","body":{"reasoning_effort":"low"},"headers":{"x-low":"true"}}]
     }]).to_string()).unwrap();
     let primary: Arc<dyn Provider> = Arc::new(
         OpenAIChat::new(
@@ -211,6 +213,37 @@ async fn manifest_variants_reach_the_wire_and_survive_reopen_and_fork() {
             ..high
         })
     );
+    for (id, selected) in [
+        (
+            "base-default",
+            Some(Binding {
+                protocol: "openai-chat".into(),
+                model: "wire-model".into(),
+                route_id: Some("account/chat".into()),
+                variant: None,
+            }),
+        ),
+        ("owner-default", None),
+    ] {
+        runtime.select_model("s", selected).await.unwrap();
+        let cursor = store.snapshot("s").await.unwrap()["cursor"]
+            .as_u64()
+            .unwrap();
+        runtime
+            .admit(
+                Input {
+                    session_id: "s".into(),
+                    input_id: id.into(),
+                    prompt: id.into(),
+                    delivery: Delivery::Steer,
+                },
+                true,
+            )
+            .await
+            .unwrap();
+        finished(&store, cursor).await;
+        assert_eq!(requests.recv().await.unwrap()["reasoning_effort"], "low");
+    }
     runtime.shutdown().await;
     server.abort();
 }

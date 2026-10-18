@@ -11,13 +11,15 @@ import { TestTuiContexts } from "../../fixture/tui-environment"
 
 const sessionID = "ses_native_model"
 
-async function mount(root: string, reject = false) {
+async function mount(root: string, reject = false, variant = false) {
   const state = path.join(root, "state")
   await mkdir(state, { recursive: true })
   await Bun.write(path.join(state, "kv.json"), "{}")
   const [
     { DialogProvider, useDialog },
     { DialogNativeModel },
+    { DialogVariant },
+    { LocalProvider, useLocal },
     { KVProvider },
     { ThemeProvider },
     { TuiConfigProvider },
@@ -36,6 +38,8 @@ async function mount(root: string, reject = false) {
   ] = await Promise.all([
     import("../../../src/ui/dialog"),
     import("../../../src/component/dialog-native-model"),
+    import("../../../src/component/dialog-variant"),
+    import("../../../src/context/local"),
     import("../../../src/context/kv"),
     import("../../../src/context/theme"),
     import("../../../src/config"),
@@ -53,7 +57,10 @@ async function mount(root: string, reject = false) {
     import("../../fixture/tui-sdk"),
   ])
 
-  const selected: unknown[] = []
+  const selected: { model: { providerID: string; id: string; variant?: string } }[] = []
+  let cycle: (() => void) | undefined
+  let restore: (() => void) | undefined
+  let busy: (() => boolean) | undefined
   const fetch = createFetch((url, request) => {
     if (url.pathname === `/api/session/${sessionID}/model-routes`)
       return json({
@@ -63,6 +70,7 @@ async function mount(root: string, reject = false) {
             protocol: "openai-chat",
             wireModel: "shared",
             default: true,
+            variants: variant ? ["high"] : [],
           },
           {
             model: { providerID: "native-engine", id: "account-two/shared" },
@@ -76,7 +84,7 @@ async function mount(root: string, reject = false) {
     if (url.pathname === `/api/session/${sessionID}/model`) {
       if (!request) throw new Error("missing model selection request")
       return request.json().then((body: unknown) => {
-        selected.push(body)
+        selected.push(body as (typeof selected)[number])
         return reject
           ? json(
               { _tag: "ConflictError", message: "opaque history belongs to another route", resource: sessionID },
@@ -95,9 +103,10 @@ async function mount(root: string, reject = false) {
           tokens: { input: 0, output: 0, reasoning: 0, cache: { read: 0, write: 0 } },
           time: { created: 0, updated: 0 },
           location: { directory },
+          execution: { selection: "operator" },
           model:
             selected.length && !reject
-              ? { providerID: "native-engine", id: "account-two/shared" }
+              ? selected.at(-1)!.model
               : { providerID: "native-engine-default", id: "default" },
         },
       })
@@ -108,8 +117,14 @@ async function mount(root: string, reject = false) {
   function Opener() {
     const dialog = useDialog()
     const sync = useSync()
+    const local = useLocal()
+    cycle = () => local.model.variant.cycle()
+    restore = () => local.model.variant.set("high")
+    busy = () => local.model.variant.busy()
     onMount(() => {
-      void sync.session.sync(sessionID).then(() => dialog.replace(() => <DialogNativeModel sessionID={sessionID} />))
+      void sync.session
+        .sync(sessionID)
+        .then(() => dialog.replace(() => (variant ? <DialogVariant /> : <DialogNativeModel sessionID={sessionID} />)))
     })
     return <text>Conversation model: {sync.session.get(sessionID)?.model?.id}</text>
   }
@@ -133,12 +148,14 @@ async function mount(root: string, reject = false) {
                           <ProjectProvider>
                             <ExitProvider exit={() => {}}>
                               <SyncProvider>
-                                <RouteProvider>
+                                <RouteProvider initialRoute={{ type: "session", sessionID }}>
                                   <LocationProvider location={{ directory }}>
-                                    <DialogProvider>
-                                      <Opener />
-                                      <Toast />
-                                    </DialogProvider>
+                                    <LocalProvider>
+                                      <DialogProvider>
+                                        <Opener />
+                                        <Toast />
+                                      </DialogProvider>
+                                    </LocalProvider>
                                   </LocationProvider>
                                 </RouteProvider>
                               </SyncProvider>
@@ -168,7 +185,15 @@ async function mount(root: string, reject = false) {
     }
     throw new Error(`frame never matched:\n${app.captureCharFrame()}`)
   }
-  return { app, until, selected, cleanup: () => app.renderer.destroy() }
+  return {
+    app,
+    until,
+    selected,
+    cycle: () => cycle?.(),
+    restore: () => restore?.(),
+    busy: () => busy?.(),
+    cleanup: () => app.renderer.destroy(),
+  }
 }
 
 test("renders host routes and submits the exact reference through the native model API", async () => {
@@ -219,6 +244,40 @@ test("host-advertised variants are selectable without inventing routes", async (
     expect(view.selected).toEqual([
       { model: { providerID: "native-engine", id: "account-two/shared", variant: "high" } },
     ])
+  } finally {
+    view.cleanup()
+  }
+})
+
+test("native variant dialog selects the owning route and cycle restores its configured default", async () => {
+  await using tmp = await tmpdir()
+  const view = await mount(tmp.path, false, true)
+  try {
+    await view.until((value) => value.includes("Select variant") && value.includes("high"))
+    view.restore()
+    expect(view.selected).toHaveLength(0)
+    await view.app.mockInput.pressArrow("down")
+    await view.app.mockInput.pressEnter()
+    await view.until(() => view.selected.length === 1)
+    expect(view.selected[0]).toEqual({ model: { providerID: "native-engine-default", id: "default", variant: "high" } })
+    await view.until((value) => !value.includes("Select variant") && !view.busy())
+    view.cycle()
+    await view.until(() => view.selected.length === 2)
+    expect(view.selected[1]).toEqual({ model: { providerID: "native-engine-default", id: "default" } })
+  } finally {
+    view.cleanup()
+  }
+})
+
+test("native variant cycle reports rejected selections without changing the owner model", async () => {
+  await using tmp = await tmpdir()
+  const view = await mount(tmp.path, true, true)
+  try {
+    await view.until((value) => value.includes("Select variant") && value.includes("high"))
+    view.cycle()
+    const frame = await view.until((value) => value.includes("opaque history"))
+    expect(frame).toContain("Conversation model: default")
+    expect(view.selected).toEqual([{ model: { providerID: "native-engine-default", id: "default", variant: "high" } }])
   } finally {
     view.cleanup()
   }

@@ -260,7 +260,9 @@ that does not advertise variants cannot accept a product variant selection.
 
 Host route manifests may supply `request: {body, headers}`, a `variants` array
 of `{id, body, headers}`, and `primary: true` on one route to declare the default
-route's variants. Variant bodies recursively merge over base generation
+route's variants. Optional `default_variant` selects a declared tier when no
+explicit variant was requested, independently of other variants' options.
+Variant bodies recursively merge over base generation
 options; headers override case-insensitively. Structural transcript/tool fields,
 streaming controls and credential headers are rejected, and options are bounded
 to 64 KiB. Responses prefix-cache affinity includes the effective request

@@ -27,6 +27,8 @@ struct Route {
     variants: Vec<Variant>,
     #[serde(default)]
     primary: bool,
+    #[serde(default)]
+    default_variant: Option<String>,
 }
 
 #[derive(Deserialize)]
@@ -172,10 +174,22 @@ pub async fn load(
                 return Err("invalid default model route".into());
             }
             default_seen = true;
-            if !entry.request.is_empty() {
-                primary = primary.with_request_options(entry.request.clone())?;
-            }
         }
+        let mut default_provider = if entry.request.is_empty() {
+            Arc::clone(&provider)
+        } else {
+            provider.with_request_options(entry.request.clone())?
+        };
+        let mut default_primary = if entry.primary {
+            Some(if entry.request.is_empty() {
+                Arc::clone(&primary)
+            } else {
+                primary.with_request_options(entry.request.clone())?
+            })
+        } else {
+            None
+        };
+        let mut matched_default = entry.default_variant.is_none();
         for variant in entry.variants {
             let options = entry.request.merged(&crate::request_options::Options {
                 body: variant.body,
@@ -192,16 +206,24 @@ pub async fn load(
                 } else {
                     primary.with_request_options(options)?
                 };
+                if entry.default_variant.as_deref() == Some(variant.id.as_str()) {
+                    default_primary = Some(Arc::clone(&selected));
+                }
                 primary_variants.push((variant.id.clone(), selected));
+            }
+            if entry.default_variant.as_deref() == Some(variant.id.as_str()) {
+                matched_default = true;
+                default_provider = Arc::clone(&selected);
             }
             variants.push((entry.id.clone(), variant.id, selected));
         }
-        let provider = if entry.request.is_empty() {
-            provider
-        } else {
-            provider.with_request_options(entry.request)?
-        };
-        routes.push((entry.id, provider));
+        if !matched_default {
+            return Err("default model variant is not registered".into());
+        }
+        if let Some(default) = default_primary {
+            primary = default;
+        }
+        routes.push((entry.id, default_provider));
     }
     Ok(Arc::new(
         Catalog::new(primary, routes)?.with_variants(variants, primary_variants)?,
