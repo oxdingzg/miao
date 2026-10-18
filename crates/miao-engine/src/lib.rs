@@ -39,6 +39,10 @@ mod search;
 pub mod session_model;
 pub mod state;
 pub mod store;
+
+/// Engine-host contract version. A product build requires at least the protocol
+/// it was written against; older engines report nothing and are refused.
+pub const PROTOCOL: u32 = 2;
 pub mod subagent;
 pub mod terminal;
 pub mod tool_replay;
