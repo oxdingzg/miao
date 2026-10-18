@@ -27,7 +27,12 @@ export function messageTurnSummaryCommit(
   providers?: RunProvider[],
 ): StreamCommit | undefined {
   const info = message.info
-  if (info.role !== "assistant") {
+  if (
+    info.role !== "assistant" ||
+    info.agent === undefined ||
+    info.modelID === undefined ||
+    info.providerID === undefined
+  ) {
     return
   }
 

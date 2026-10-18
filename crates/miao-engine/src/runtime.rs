@@ -2,7 +2,7 @@ use crate::{
     approval::{now_ms, Approval, Response},
     context_trigger::{self, ContextLimits},
     permission::{input_digest, Config, Decision, Policy},
-    protocol::{Admission, Attachment, Error, Input, ModelRequest},
+    protocol::{Admission, Attachment, Delivery, Error, Input, ModelRequest},
     provider::{Provider, ProviderError},
     store::{RuntimeLease, Store},
     tool_replay::ToolReplay,
@@ -2690,42 +2690,34 @@ async fn start_monitor(
         .to_owned();
     let token = inner.stop.child_token();
     let owner = session.to_owned();
-    let workspace = inner.tools.location().to_owned();
     let task_id = id.clone();
     let task_inner = inner.clone();
     let (job_owner, job_token, job_id) = (owner.clone(), token.clone(), id.clone());
     let join = tokio::spawn(async move {
-        let home = std::env::var("HOME").unwrap_or_else(|_| "/root".into());
-        let mut command = tokio::process::Command::new("sh");
-        command
-            .arg("-c")
-            .arg(&input.command)
-            .current_dir(&workspace)
-            .stdin(std::process::Stdio::null())
-            .stdout(std::process::Stdio::piped())
-            .stderr(std::process::Stdio::null())
-            .env_clear()
-            .envs([
-                ("PATH", "/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin"),
-                ("HOME", home.as_str()),
-                ("LANG", "C.UTF-8"),
-            ]);
-        let mut child = match command.spawn() {
-            Ok(child) => child,
-            Err(error) => {
-                let _ = task_inner
-                    .store
-                    .record(
+        let (mut group, stdout, _temp) =
+            match spawn_sandboxed_monitor(&task_inner, &input, timeout).await {
+                Ok(spawned) => spawned,
+                Err(error) => {
+                    let _ = task_inner
+                        .store
+                        .record(
+                            &owner,
+                            "monitor.failed",
+                            json!({"job_id":task_id,"message":error.to_string()}),
+                        )
+                        .await;
+                    let _ = finish_background_job(
+                        &task_inner,
                         &owner,
-                        "monitor.failed",
-                        json!({"job_id":task_id,"message":error.to_string()}),
+                        &task_id,
+                        "failed",
+                        json!({"error":error.to_string()}),
                     )
                     .await;
-                task_inner.jobs.lock().await.remove(&task_id);
-                return;
-            }
-        };
-        let stdout = child.stdout.take().expect("monitor stdout piped");
+                    task_inner.jobs.lock().await.remove(&task_id);
+                    return;
+                }
+            };
         if let Err(error) = task_inner.store.start_job(&owner, &task_id).await {
             let _ = task_inner
                 .store
@@ -2747,11 +2739,12 @@ async fn start_monitor(
         window.reset();
         let deadline =
             tokio::time::Instant::now() + std::time::Duration::from_millis(input.timeout());
+        let mut stdout_open = true;
         loop {
             tokio::select! {
                 biased;
                 _ = token.cancelled() => {
-                    let _ = child.kill().await;
+                    group.terminate();
                     let _ = finish_background_job(
                         &task_inner,
                         &owner,
@@ -2764,39 +2757,45 @@ async fn start_monitor(
                     return;
                 }
                 _ = tokio::time::sleep_until(deadline) => {
-                    let _ = child.kill().await;
+                    group.terminate();
                     let _ = task_inner
                         .store
                         .record(&owner, "monitor.timeout", json!({"job_id":task_id,"timeout_ms":input.timeout()}))
                         .await;
+                    if let Some(notice) = batcher.flush(true, &task_id, description.as_deref()) {
+                        emit_monitor_notice(&task_inner, &owner, &task_id, notice).await;
+                    }
+                    let _ = finish_background_job(&task_inner, &owner, &task_id, "failed", json!({"timed_out":true})).await;
                     break;
                 }
                 _ = window.tick() => {
                     if let Some(notice) = batcher.flush(true, &task_id, description.as_deref()) {
-                        let _ = task_inner.progress.send(notice);
+                        emit_monitor_notice(&task_inner, &owner, &task_id, notice).await;
                     }
                 }
-                line = reader.next_line() => {
+                line = reader.next_line(), if stdout_open => {
                     match line {
-                        Ok(Some(line)) => {
-                            batcher.feed(matcher.as_ref(), &line);
-                        }
-                        _ => {
-                            let status = child.wait().await.map(|status| status.code().unwrap_or(-1)).unwrap_or(-1);
-                            let _ = task_inner
-                                .store
-                                .record(&owner, "monitor.exited", json!({"job_id":task_id,"code":status}))
-                                .await;
-                            if let Some(notice) = batcher.flush(true, &task_id, description.as_deref()) {
-                                let _ = task_inner.progress.send(notice);
-                            }
-                            break;
-                        }
+                        Ok(Some(line)) => { batcher.feed(matcher.as_ref(), &line); }
+                        // Closing stdout is not process exit. Keep polling
+                        // cancellation and timeout while waiting for the child.
+                        _ => { stdout_open = false; }
                     }
+                }
+                // Drain stdout before settling so a short-lived command's last
+                // matching lines cannot lose a race against process exit.
+                status = group.child.wait(), if !stdout_open => {
+                    let code = status.map(|status| status.code().unwrap_or(-1)).unwrap_or(-1);
+                    let _ = task_inner.store.record(&owner, "monitor.exited", json!({"job_id":task_id,"code":code})).await;
+                    if let Some(notice) = batcher.flush(true, &task_id, description.as_deref()) {
+                        emit_monitor_notice(&task_inner, &owner, &task_id, notice).await;
+                    }
+                    let state = if code == 0 { "completed" } else { "failed" };
+                    let _ = finish_background_job(&task_inner, &owner, &task_id, state, json!({"exit_code":code})).await;
+                    break;
                 }
             }
         }
-        let _ = child.kill().await;
+        group.terminate();
         task_inner.jobs.lock().await.remove(&task_id);
     });
     jobs.insert(
@@ -2813,6 +2812,125 @@ async fn start_monitor(
         "output":"watching stdout; matching lines arrive as monitor.notice progress events; cancel with cancel_job",
         "timeout_ms":timeout,
     }))
+}
+
+async fn emit_monitor_notice(inner: &Inner, session: &str, job: &str, notice: Value) {
+    let admitted = inner
+        .store
+        .admit(Input {
+            session_id: session.to_owned(),
+            input_id: format!("monitor:{job}:{}", uuid::Uuid::new_v4()),
+            prompt: format!("Monitor job {job} produced matching output:\n{notice}"),
+            delivery: Delivery::Steer,
+        })
+        .await;
+    let admitted = match admitted {
+        Ok(admitted) => admitted,
+        Err(error) => {
+            let _ = inner
+                .store
+                .record(
+                    session,
+                    "monitor.notice_failed",
+                    json!({"job_id":job,"message":error.to_string()}),
+                )
+                .await;
+            return;
+        }
+    };
+    let _ = inner.progress.send(notice);
+    let _ = notify_admission(
+        inner,
+        session,
+        &admitted,
+        "monitor.wake_failed",
+        json!({"job_id":job,"input_id":admitted.input_id}),
+    )
+    .await;
+}
+
+/// Launch a monitor command through the same sandboxed runner the process
+/// tools use: seatbelt on macOS, Landlock on Linux, AppContainer on Windows.
+/// stdout stays piped so the caller can stream matching lines; the minimal
+/// environment matches the previous direct spawn.
+async fn spawn_sandboxed_monitor(
+    inner: &Arc<Inner>,
+    input: &crate::monitor::Input,
+    timeout_ms: u64,
+) -> Result<
+    (
+        crate::process::Group,
+        tokio::process::ChildStdout,
+        tempfile::TempDir,
+    ),
+    ToolError,
+> {
+    let runner = inner
+        .tools
+        .process_runner()
+        .ok_or(ToolError::Unsupported)?
+        .to_owned();
+    let workspace = inner.tools.location().to_owned();
+    let envs: Vec<(String, String)> = if cfg!(windows) {
+        std::env::vars()
+            .filter(|(key, _)| {
+                matches!(
+                    key.to_ascii_uppercase().as_str(),
+                    "PATH"
+                        | "PATHEXT"
+                        | "SYSTEMROOT"
+                        | "SYSTEMDRIVE"
+                        | "WINDIR"
+                        | "COMSPEC"
+                        | "USERPROFILE"
+                        | "HOMEDRIVE"
+                        | "HOMEPATH"
+                        | "TEMP"
+                        | "TMP"
+                )
+            })
+            .collect()
+    } else {
+        vec![
+            (
+                "PATH".into(),
+                "/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin".into(),
+            ),
+            (
+                "HOME".into(),
+                std::env::var("HOME").unwrap_or_else(|_| "/root".into()),
+            ),
+            ("LANG".into(), "C.UTF-8".into()),
+        ]
+    };
+    let argv = if cfg!(windows) {
+        vec![
+            std::env::var("COMSPEC").unwrap_or_else(|_| "cmd.exe".into()),
+            "/d".into(),
+            "/s".into(),
+            "/c".into(),
+            input.command.clone(),
+        ]
+    } else {
+        vec!["/bin/sh".into(), "-c".into(), input.command.clone()]
+    };
+    let (mut group, master, temp) = crate::process::spawn(
+        std::path::Path::new(&runner),
+        std::path::Path::new(&workspace),
+        std::path::Path::new(&workspace),
+        argv,
+        timeout_ms,
+        false,
+        false,
+        inner.tools.process_network_allowed(),
+        &envs,
+    )
+    .await?;
+    if master.is_some() {
+        return Err(ToolError::Unsupported);
+    }
+    let stdout = group.child.stdout.take().ok_or(ToolError::Unsupported)?;
+    Ok((group, stdout, temp))
 }
 
 async fn start_background(

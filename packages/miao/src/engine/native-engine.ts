@@ -2,6 +2,7 @@ import { LocationServiceMap } from "@miao/core/location-service-map"
 import { SessionModelRoute } from "@miao/schema/session-model-route"
 import { AmbientContext } from "./ambient-context"
 import { ProductHooks } from "./product-hooks"
+import { ProductLsp } from "./product-lsp"
 import os from "node:os"
 import path from "node:path"
 import { Config } from "@miao/core/config"
@@ -488,10 +489,14 @@ const layer = Layer.effect(
             ...configuration,
             ...context.options,
           }).pipe(
-            Effect.map((hooks) => ({
-              options: { ...context.options, ...hooks },
-              refresh: context.refresh,
-            })),
+            Effect.flatMap((hooks) =>
+              ProductLsp.prepare(location, configuration).pipe(
+                Effect.map((lsp) => ({
+                  options: { ...context.options, ...hooks, ...lsp },
+                  refresh: context.refresh,
+                })),
+              ),
+            ),
           ),
         ),
         Effect.provide(locations.get(location)),
