@@ -5,7 +5,7 @@ import { fileURLToPath } from "url"
 import path from "path"
 import { SqliteClient } from "@effect/sql-sqlite-bun"
 import { EffectDrizzleSqlite } from "@miao/effect-drizzle-sqlite"
-import { Effect, Layer } from "effect"
+import { Effect, Fiber, Layer } from "effect"
 import { eq, inArray, sql } from "drizzle-orm"
 import { DatabaseMigration } from "@miao/core/database/migration"
 import { migrations } from "@miao/core/database/migration.gen"
@@ -145,6 +145,45 @@ describe("DatabaseMigration", () => {
     expect(completed).toHaveLength(1)
     journal.close()
   }, 20_000)
+
+  test("a waiting initializer observes a peer migration without requiring that peer to quit", async () => {
+    await using tmp = await tmpdir()
+    const filename = path.join(tmp.path, "peer-initialized.sqlite")
+    const holder = await RuntimeOwnership.use(filename)
+    holder.share()
+    const waiter = await RuntimeOwnership.use(filename)
+    const blocked = Promise.withResolvers<void>()
+    try {
+      await Effect.gen(function* () {
+        const db = yield* makeDb
+        const waiting = yield* DatabaseMigration.initialize(db, {
+          exclusive: () => {
+            try {
+              waiter.exclusive()
+            } catch (error) {
+              if (error instanceof RuntimeOwnership.BusyError) blocked.resolve()
+              throw error
+            }
+          },
+          share: waiter.share,
+        }).pipe(Effect.forkChild)
+        yield* Effect.promise(() => blocked.promise).pipe(Effect.timeout("2 seconds"))
+        // The failed upgrade released the waiter's read lease. The peer can now
+        // migrate, then stay alive with shared usage throughout our verification.
+        yield* Effect.sync(holder.exclusive)
+        yield* DatabaseMigration.apply(db)
+        yield* Effect.sync(holder.share)
+        yield* Fiber.join(waiting).pipe(Effect.timeout("2 seconds"))
+        yield* DatabaseMigration.verify(db)
+        expect(yield* db.get<{ count: number }>(sql`SELECT count(*) AS count FROM migration`)).toEqual({
+          count: migrations.length,
+        })
+      }).pipe(Effect.provide(SqliteClient.layer({ filename })), Effect.scoped, Effect.runPromise)
+    } finally {
+      waiter.release()
+      holder.release()
+    }
+  }, 10_000)
 
   test("enables incremental auto-vacuum on a new database", async () => {
     await using tmp = await tmpdir()

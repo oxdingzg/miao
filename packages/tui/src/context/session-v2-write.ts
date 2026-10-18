@@ -60,19 +60,39 @@ type ProjectionInput = {
   only?: ReadonlySet<string>
 }
 
-/** Rendering does not require usage to have arrived; missing metrics remain missing. */
+/** Rendering does not require identity or usage metadata; missing facts remain missing. */
 export type RenderMessage =
   | Exclude<Message, { role: "assistant" }>
-  | (Omit<Extract<Message, { role: "assistant" }>, "cost" | "tokens"> &
-      Partial<Pick<Extract<Message, { role: "assistant" }>, "cost" | "tokens">>)
+  | (Omit<Extract<Message, { role: "assistant" }>, "cost" | "tokens" | "modelID" | "providerID" | "mode" | "agent"> &
+      Partial<
+        Pick<Extract<Message, { role: "assistant" }>, "cost" | "tokens" | "modelID" | "providerID" | "mode" | "agent">
+      >)
 
 export function sessionContextToMessages(input: ProjectionInput): { info: Message; parts: Part[] }[] {
   return renderSessionContext(input).map((message) => {
     const info = message.info
     if (info.role !== "assistant") return { ...message, info }
-    if (info.cost === undefined || info.tokens === undefined)
+    if (
+      info.cost === undefined ||
+      info.tokens === undefined ||
+      info.modelID === undefined ||
+      info.providerID === undefined ||
+      info.mode === undefined ||
+      info.agent === undefined
+    )
       throw new Error("Legacy export cannot represent unknown assistant metadata")
-    return { ...message, info: { ...info, cost: info.cost, tokens: info.tokens } }
+    return {
+      ...message,
+      info: {
+        ...info,
+        cost: info.cost,
+        tokens: info.tokens,
+        modelID: info.modelID,
+        providerID: info.providerID,
+        mode: info.mode,
+        agent: info.agent,
+      },
+    }
   })
 }
 
@@ -109,8 +129,7 @@ export function renderSessionContext(input: ProjectionInput): { info: RenderMess
     }
     if (message.type === "assistant") {
       if (input.only && !input.only.has(message.id)) continue
-      if (message.time.created === null || message.agent === null || message.model === null)
-        throw new Error("Legacy export cannot represent unknown assistant metadata")
+      if (message.time.created === null) throw new Error("Legacy export cannot represent unknown assistant metadata")
       result.push({
         info: {
           id: message.id,
@@ -118,11 +137,10 @@ export function renderSessionContext(input: ProjectionInput): { info: RenderMess
           role: "assistant",
           time: { created: message.time.created, completed: message.time.completed },
           parentID: lastUserID,
-          modelID: message.model.id,
-          providerID: message.model.providerID,
-          variant: message.model.variant,
-          mode: message.agent,
-          agent: message.agent,
+          ...(message.model
+            ? { modelID: message.model.id, providerID: message.model.providerID, variant: message.model.variant }
+            : {}),
+          ...(message.agent !== null ? { mode: message.agent, agent: message.agent } : {}),
           path: { cwd: input.cwd, root: input.root },
           cost: message.cost,
           tokens: message.tokens,

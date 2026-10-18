@@ -253,6 +253,9 @@ pub struct Anthropic {
     model: String,
     max_tokens: u32,
     prompt_cache: bool,
+    /// Vertex AI authenticates with an OAuth bearer and a `:rawPredict`
+    /// endpoint instead of the `x-api-key` header.
+    bearer: bool,
 }
 
 impl Anthropic {
@@ -275,6 +278,27 @@ impl Anthropic {
             model,
             max_tokens: 4096,
             prompt_cache: false,
+            bearer: false,
+        })
+    }
+
+    /// Vertex AI carries the Anthropic codec over an OAuth bearer credential.
+    pub fn with_bearer_source(
+        endpoint: String,
+        source: Source,
+        model: String,
+    ) -> Result<Self, reqwest::Error> {
+        Ok(Self {
+            client: reqwest::Client::builder()
+                .redirect(reqwest::redirect::Policy::none())
+                .connect_timeout(Duration::from_secs(15))
+                .build()?,
+            endpoint,
+            source,
+            model,
+            max_tokens: 4096,
+            prompt_cache: false,
+            bearer: true,
         })
     }
 
@@ -392,12 +416,14 @@ impl Anthropic {
         if without_tools {
             body["tool_choice"] = json!({"type":"none"});
         }
-        let request = self
-            .client
-            .post(&self.endpoint)
-            .header("x-api-key", credential.header()?)
+        let mut request = self.client.post(&self.endpoint).json(&body);
+        request = if self.bearer {
+            request.header("Authorization", format!("Bearer {}", credential.secret()))
+        } else {
+            request.header("x-api-key", credential.header()?)
+        };
+        let request = request
             .header("anthropic-version", "2023-06-01")
-            .json(&body)
             .build()
             .map_err(|_| ProviderError::Transport)?;
         let response =
@@ -464,6 +490,9 @@ impl Provider for Anthropic {
             .iter()
             .map(|message| json!({"role": message.role, "content": message.content}))
             .collect();
+        if self.bearer {
+            return CountTokens::Failed("vertex bearer route has no count endpoint".into());
+        }
         let request = self
             .client
             .post(format!("{}/count_tokens", self.endpoint))

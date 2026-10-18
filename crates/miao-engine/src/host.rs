@@ -66,6 +66,11 @@ impl Host {
             Command::Recoveries { session_id, after } => {
                 runtime.store().recoveries(&session_id, &after).await
             }
+            Command::TimerSessions => runtime
+                .store()
+                .timer_sessions()
+                .await
+                .map(|sessions| serde_json::json!({"sessions": sessions })),
             Command::ResolveRecovery {
                 session_id,
                 call_id,

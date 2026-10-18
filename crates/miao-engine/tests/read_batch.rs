@@ -168,6 +168,68 @@ async fn native_reads_dispatch_together_and_project_results_in_call_order() {
 }
 
 #[tokio::test]
+async fn runtime_owned_session_reads_are_barriers_not_local_executor_batch_members() {
+    let dir = tempfile::tempdir().unwrap();
+    std::fs::write(dir.path().join("a"), "alpha").unwrap();
+    std::fs::write(dir.path().join("b"), "beta").unwrap();
+    let store = execute(
+        dir.path(),
+        json!([
+            call("file-a", "read_file", json!({"path":"a"})),
+            call("history", "recall", json!({"query":"run tools"})),
+            call("file-b", "read_file", json!({"path":"b"}))
+        ]),
+        false,
+    )
+    .await;
+    let events = store.events("s", 0, 1000).await.unwrap();
+    assert!(!events
+        .iter()
+        .any(|event| event.kind == "tool.parallel.started"));
+    let history = store.history("s").await.unwrap();
+    let results: Vec<_> = history
+        .iter()
+        .flat_map(|message| message.content.as_array().into_iter().flatten())
+        .filter(|block| block["type"] == "tool_result")
+        .collect();
+    assert_eq!(results.len(), 3);
+    assert!(results.iter().all(|block| block["is_error"] != true));
+    let recalled: Value = serde_json::from_str(results[1]["content"].as_str().unwrap()).unwrap();
+    assert!(!recalled["matches"].as_array().unwrap().is_empty());
+}
+
+#[tokio::test]
+async fn long_read_prefixes_keep_the_bounded_parallel_prefix_and_ordered_remainder() {
+    let dir = tempfile::tempdir().unwrap();
+    let calls: Vec<_> = (0..20)
+        .map(|index| {
+            let path = format!("file-{index}");
+            std::fs::write(dir.path().join(&path), format!("value-{index}")).unwrap();
+            call(&format!("read-{index}"), "read_file", json!({"path":path}))
+        })
+        .collect();
+    let store = execute(dir.path(), json!(calls), false).await;
+    let events = store.events("s", 0, 1000).await.unwrap();
+    let batch = events
+        .iter()
+        .find(|event| event.kind == "tool.parallel.started")
+        .unwrap();
+    assert_eq!(batch.data["call_ids"].as_array().unwrap().len(), 16);
+    assert_eq!(batch.data["concurrency"], 4);
+    let history = store.history("s").await.unwrap();
+    let results: Vec<_> = history
+        .iter()
+        .flat_map(|message| message.content.as_array().into_iter().flatten())
+        .filter(|block| block["type"] == "tool_result")
+        .collect();
+    assert_eq!(results.len(), 20);
+    for (index, result) in results.iter().enumerate() {
+        assert_eq!(result["tool_use_id"], format!("read-{index}"));
+        assert!(result["is_error"] != true);
+    }
+}
+
+#[tokio::test]
 async fn mixed_turn_keeps_write_then_read_barrier() {
     let dir = tempfile::tempdir().unwrap();
     let store = execute(

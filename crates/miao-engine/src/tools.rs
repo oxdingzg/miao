@@ -92,9 +92,13 @@ pub struct Prepared {
     /// evaluated against policy; a single deny rejects the whole call.
     targets: Vec<String>,
     access: Access,
+    batchable_read: bool,
     select: Option<Vec<String>>,
 }
 impl Prepared {
+    pub fn batchable_read(&self) -> bool {
+        self.batchable_read
+    }
     pub(crate) fn resolved_path(&self) -> &std::path::Path {
         &self.path
     }
@@ -125,6 +129,7 @@ pub struct Tools {
     process_enabled: bool,
     background_enabled: bool,
     delegation_enabled: bool,
+    product_tools: Vec<ToolDefinition>,
     wakeup_enabled: bool,
     cron_enabled: bool,
     process_network: bool,
@@ -189,6 +194,7 @@ impl Tools {
             edit_recovery: true,
             lsp_diagnostics: true,
             compact_disclosure: false,
+            product_tools: Vec::new(),
         })
     }
 
@@ -228,6 +234,13 @@ impl Tools {
         self.process_enabled = enabled && self.runner.is_some() && process::enforced();
         self.process_network = network;
         self
+    }
+    /// The sandbox runner executable; background tools fail closed without it.
+    pub(crate) fn process_runner(&self) -> Option<&std::path::Path> {
+        self.runner.as_ref().map(|path| path.as_path())
+    }
+    pub(crate) fn process_network_allowed(&self) -> bool {
+        self.process_network
     }
     /// A product host can supply its resolved aggregate without standalone
     /// discovery reintroducing disabled sources or duplicating instructions.
@@ -743,6 +756,11 @@ impl Tools {
         self
     }
 
+    pub fn with_product_tools(mut self, tools: Vec<ToolDefinition>) -> Self {
+        self.product_tools = tools;
+        self
+    }
+
     pub(crate) fn with_background(mut self, enabled: bool) -> Self {
         self.background_enabled = enabled && self.process_enabled;
         self
@@ -783,6 +801,10 @@ impl Tools {
         self
     }
 
+    fn is_product(&self, name: &str) -> bool {
+        self.product_tools.iter().any(|tool| tool.name == name)
+    }
+
     pub fn location(&self) -> &str {
         self.root.to_str().expect("validated UTF-8 Location")
     }
@@ -809,6 +831,7 @@ impl Tools {
                 targets: vec![],
                 access: Access::Web,
                 select: None,
+                batchable_read: false,
             });
         }
         let invocation = if self.compact_disclosure && name == "tool_call" {
@@ -831,6 +854,7 @@ impl Tools {
                     resource,
                     targets: Vec::new(),
                     access: Access::External,
+                    batchable_read: false,
                     select,
                 });
             }
@@ -845,6 +869,7 @@ impl Tools {
                     resource,
                     targets: Vec::new(),
                     access: Access::External,
+                    batchable_read: false,
                     select,
                 });
             }
@@ -965,6 +990,8 @@ impl Tools {
                 }
                 ".".into()
             }
+            "monitor" if self.background_enabled => ".".into(),
+            _ if self.is_product(name) => ".".into(),
             "start_job" if self.background_enabled => process::Input::parse(input.clone())?.cwd,
             "job_status" | "cancel_job" if self.background_enabled => {
                 crate::jobs::Selector::parse(input.clone())?;
@@ -1012,7 +1039,7 @@ impl Tools {
         }
         if matches!(
             name,
-            "run_command" | "bash" | "start_job" | "terminal_start" | "glob" | "grep"
+            "run_command" | "bash" | "start_job" | "monitor" | "terminal_start" | "glob" | "grep"
         ) && !tokio::fs::metadata(&path).await?.is_dir()
         {
             return Err(ToolError::InvalidInput);
@@ -1081,9 +1108,11 @@ impl Tools {
             Access::Cron
         } else if name == "schedule_wakeup" {
             Access::Schedule
-        } else if matches!(name, "cancel_wakeup" | "todowrite" | "goal" | "cron_delete") {
+        } else if matches!(name, "cancel_wakeup" | "todowrite" | "goal" | "cron_delete")
+            || self.is_product(name)
+        {
             Access::SessionState
-        } else if name == "start_job" || name.starts_with("terminal_") {
+        } else if name == "start_job" || name == "monitor" || name.starts_with("terminal_") {
             Access::Background
         } else if name == "task" {
             Access::Delegate
@@ -1106,6 +1135,12 @@ impl Tools {
             Vec::new()
         };
         Ok(Prepared {
+            // Runtime-owned operations cannot run through the local filesystem/LSP executor.
+            batchable_read: access == Access::Read
+                && !matches!(
+                    name,
+                    "question" | "recall" | "cron_list" | "job_status" | "cancel_job"
+                ),
             access,
             name: name.into(),
             input,
@@ -1147,6 +1182,17 @@ impl Tools {
         prepared: Prepared,
         policy: &Policy,
         cancel: CancellationToken,
+    ) -> Result<Value, ToolError> {
+        self.execute_prepared_with_progress(prepared, policy, cancel, None)
+            .await
+    }
+
+    pub(crate) async fn execute_prepared_with_progress(
+        &self,
+        prepared: Prepared,
+        policy: &Policy,
+        cancel: CancellationToken,
+        progress: Option<process::Progress>,
     ) -> Result<Value, ToolError> {
         if prepared.name() == "knowledge" && prepared.access() == Access::Read {
             return self.execute_knowledge(prepared, policy, "", cancel).await;
@@ -1217,13 +1263,14 @@ impl Tools {
             } else {
                 process::Input::parse(prepared.input)?
             };
-            return process::execute(
+            return process::execute_with_progress(
                 runner,
                 &self.root,
                 &prepared.path,
                 input,
                 self.process_network,
                 cancel,
+                progress,
             )
             .await;
         }
@@ -1533,6 +1580,8 @@ impl Tools {
             for name in ["job_status", "cancel_job"] {
                 definitions.push(ToolDefinition{name:name.into(),description:if name=="job_status"{"Inspect this Session's job state and bounded terminal output.".into()}else{"Request cancellation of this Session's active background job.".into()},input_schema:json!({"type":"object","properties":{"job_id":{"type":"string"}},"required":["job_id"],"additionalProperties":false})});
             }
+            definitions.push(ToolDefinition{name:"monitor".into(),description:"Run a shell command in the background and stream stdout lines as monitor.notice progress events. Optional regex pattern filters delivered lines (batched ~200ms, max 200 lines/8KiB each, 64 notices then suppressed). Default timeout 600000 ms, max 3600000 ms kills the command. Cancel with cancel_job.".into(),input_schema:json!({"type":"object","properties":{"command":{"type":"string","minLength":1},"description":{"type":"string","maxLength":256},"pattern":{"type":"string","maxLength":512},"timeout_ms":{"type":"integer","minimum":1,"maximum":3600000}},"required":["command"],"additionalProperties":false})});
+            definitions.extend(self.product_tools.iter().cloned());
         }
         if let Some(web) = &self.web {
             definitions.extend(web.definitions());

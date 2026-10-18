@@ -2,9 +2,9 @@ use crate::{
     approval::{now_ms, Approval, Response},
     context_trigger::{self, ContextLimits},
     permission::{input_digest, Config, Decision, Policy},
-    protocol::{Admission, Attachment, Error, Input, ModelRequest},
+    protocol::{Admission, Attachment, Delivery, Error, Input, ModelRequest},
     provider::{Provider, ProviderError},
-    store::{RuntimeLease, Store},
+    store::{RuntimeLease, SessionLease, Store},
     tool_replay::ToolReplay,
     tools::{Prepared, ToolError, Tools},
 };
@@ -15,6 +15,7 @@ use std::{
     collections::{HashMap, HashSet},
     sync::Arc,
 };
+use tokio::io::AsyncBufReadExt;
 use tokio::sync::{broadcast, mpsc, oneshot, Mutex, Semaphore};
 use tokio::task::{JoinHandle, JoinSet};
 use tokio_util::sync::CancellationToken;
@@ -49,6 +50,7 @@ struct Inner {
     started: Mutex<std::collections::HashSet<String>>,
     stop: CancellationToken,
     progress: broadcast::Sender<Value>,
+    product: Arc<std::sync::RwLock<crate::product::State>>,
     context: Mutex<Option<ContextLimits>>,
     roles: Mutex<crate::roles::Bindings>,
     /// Task-specific verification command run before a run may finish.
@@ -142,10 +144,10 @@ impl Runtime {
         store.recover().await?;
         store.recover_jobs().await?;
         store.recover_questions().await?;
-        store.recover_wakeups().await?;
-        store.recover_crons().await?;
+        store.adopt_wakeups().await?;
+        store.adopt_crons().await?;
         let (progress, _) = broadcast::channel(256);
-        Ok(Self {
+        let runtime = Self {
             inner: Arc::new(Inner {
                 id: uuid::Uuid::new_v4().to_string(),
                 _lease: lease,
@@ -165,12 +167,104 @@ impl Runtime {
                 started: Mutex::new(std::collections::HashSet::new()),
                 stop: CancellationToken::new(),
                 progress,
+                product: Arc::new(std::sync::RwLock::new(crate::product::State::default())),
                 context: Mutex::new(None),
                 roles: Mutex::new(crate::roles::Bindings::default()),
                 verification: Mutex::new(None),
                 breaker: Mutex::new(crate::context_trigger::Breaker::new(3)),
             }),
-        })
+        };
+        let inner = runtime.inner.clone();
+        for (session, timer_id, due_at_ms) in inner.store.adopt_wakeups().await? {
+            let background = arm_wakeup(&inner, session.clone(), timer_id.clone(), due_at_ms);
+            inner.timers.lock().await.insert(timer_id, background);
+        }
+        for (session, cron_id, pattern, recurring, next, expires) in
+            inner.store.adopt_crons().await?
+        {
+            let background = spawn_cron_task(
+                &inner,
+                session.clone(),
+                cron_id.clone(),
+                pattern,
+                recurring,
+                next,
+                expires,
+            );
+            inner.crons.lock().await.insert(cron_id, background);
+        }
+        // Timer ownership heartbeat: while this runtime is alive it owns the
+        // armed timers; the ticker lets a supervisor distinguish live engines
+        // from dead ones before adopting their sessions.
+        let heartbeat_inner = runtime.inner.clone();
+        let heartbeat_stop = runtime.inner.stop.clone();
+        tokio::spawn(async move {
+            loop {
+                tokio::select! {
+                    biased;
+                    _ = heartbeat_stop.cancelled() => return,
+                    _ = tokio::time::sleep(std::time::Duration::from_secs(30)) => {}
+                }
+                let sessions: Vec<String> = {
+                    let timers = heartbeat_inner.timers.lock().await;
+                    let crons = heartbeat_inner.crons.lock().await;
+                    timers
+                        .values()
+                        .chain(crons.values())
+                        .map(|background| background.session.clone())
+                        .collect::<std::collections::HashSet<_>>()
+                        .into_iter()
+                        .collect()
+                };
+                for session in sessions {
+                    // A draining Session renews its own claim; a heartbeat here
+                    // would advance the epoch and fence the active owner.
+                    if heartbeat_inner
+                        .store
+                        .active_run(&session)
+                        .await
+                        .ok()
+                        .flatten()
+                        .is_some()
+                    {
+                        continue;
+                    }
+                    let _ = heartbeat_inner
+                        .store
+                        .heartbeat_lease(&session, 30_000)
+                        .await;
+                }
+            }
+        });
+        Ok(runtime)
+    }
+
+    /// Register host-provided product tools and the reverse bridge used to
+    /// execute them. Call once at startup, before any run.
+    pub fn with_product_tools(
+        &self,
+        tools: Vec<crate::protocol::ToolDefinition>,
+        bridge: crate::product::Bridge,
+    ) {
+        let mut state = self.inner.product.write().unwrap();
+        state.tools = tools;
+        state.bridge = Some(bridge);
+    }
+
+    /// Route a host reply for a product-tool bridge call.
+    pub fn deliver_product_reply(&self, bridge_id: u64, value: Value) -> bool {
+        match self
+            .inner
+            .product
+            .read()
+            .unwrap()
+            .bridge
+            .as_ref()
+            .map(|bridge| bridge.pending())
+        {
+            Some(pending) => crate::product::deliver(pending, bridge_id, value),
+            None => false,
+        }
     }
 
     pub fn controller(&self) -> Controller {
@@ -276,6 +370,17 @@ impl Runtime {
 
     pub fn store(&self) -> &Store {
         &self.inner.store
+    }
+
+    /// Detaching the last UI must not kill useful background work.
+    pub async fn has_live_work(&self) -> Result<bool, Error> {
+        if !self.inner.jobs.lock().await.is_empty()
+            || !self.inner.timers.lock().await.is_empty()
+            || !self.inner.crons.lock().await.is_empty()
+        {
+            return Ok(true);
+        }
+        self.inner.store.has_running_runs().await
     }
 
     /// Ephemeral deltas have no durable cursor. Slow clients lose deltas and
@@ -611,6 +716,33 @@ fn boxed_drain(
     })
 }
 
+/// How long a drain's Session claim stays valid without renewal.
+const SESSION_LEASE_MS: i64 = 30_000;
+
+/// Aborts the renewal task when the drain ends, including on an early return.
+struct LeaseKeepalive(JoinHandle<()>);
+impl Drop for LeaseKeepalive {
+    fn drop(&mut self) {
+        self.0.abort();
+    }
+}
+
+/// Renew the drain's claim until the turn ends. A superseded owner cancels its
+/// own work instead of continuing to execute against a lease it no longer holds.
+async fn keep_lease(store: Store, lease: SessionLease, cancel: CancellationToken) {
+    loop {
+        tokio::select! {
+            biased;
+            _ = cancel.cancelled() => return,
+            _ = tokio::time::sleep(std::time::Duration::from_millis((SESSION_LEASE_MS / 4) as u64)) => {}
+        }
+        if store.renew_session(&lease, SESSION_LEASE_MS).await.is_err() {
+            cancel.cancel();
+            return;
+        }
+    }
+}
+
 async fn drain(
     session: String,
     inner: Arc<Inner>,
@@ -621,7 +753,16 @@ async fn drain(
         _=cancel.cancelled()=>return Ok(()),
         permit=inner.slots.clone().acquire_owned()=>permit.map_err(|_|Error::Closed)?,
     };
-    let promoted = inner.store.promote(&session, true).await?;
+    let lease = inner
+        .store
+        .claim_session(&session, SESSION_LEASE_MS)
+        .await?;
+    let _keepalive = LeaseKeepalive(tokio::spawn(keep_lease(
+        inner.store.clone(),
+        lease.clone(),
+        cancel.clone(),
+    )));
+    let promoted = inner.store.promote_fenced(&session, true, &lease).await?;
     if promoted.is_empty() && !force {
         return Ok(());
     }
@@ -629,7 +770,7 @@ async fn drain(
         return Err(Error::Invalid("Session has no admitted history".into()));
     }
     let run = uuid::Uuid::new_v4().to_string();
-    inner.store.start_run(&session, &run).await?;
+    inner.store.start_run_fenced(&session, &run, &lease).await?;
     if inner.started.lock().await.insert(session.clone()) {
         inner
             .store
@@ -640,8 +781,8 @@ async fn drain(
             )
             .await?;
     }
-    record_promotions(&inner, &session, &run, &promoted).await?;
-    let result = execute(&session, &run, &inner, cancel.clone()).await;
+    record_promotions(&inner, &session, &run, &promoted, &lease).await?;
+    let result = execute(&session, &run, &inner, cancel.clone(), &lease).await;
     let reason = if cancel.is_cancelled() {
         "interrupted"
     } else if result.is_ok() {
@@ -649,7 +790,10 @@ async fn drain(
     } else {
         "failed"
     };
-    inner.store.finish_run(&session, &run, reason).await?;
+    inner
+        .store
+        .finish_run_fenced(&session, &run, reason, &lease)
+        .await?;
     let stop = if reason == "failed" {
         crate::events::Lifecycle::StopFailure
     } else {
@@ -679,14 +823,16 @@ async fn record_promotions(
     session: &str,
     run: &str,
     promoted: &[crate::protocol::Event],
+    lease: &SessionLease,
 ) -> Result<(), Error> {
     for event in promoted {
         inner
             .store
-            .record(
+            .record_fenced(
                 session,
                 crate::events::Lifecycle::UserPromptSubmit.name(),
                 json!({"run_id":run,"input_id":event.data["input_id"]}),
+                lease,
             )
             .await?;
     }
@@ -698,9 +844,10 @@ async fn execute(
     run: &str,
     inner: &Arc<Inner>,
     cancel: CancellationToken,
+    lease: &SessionLease,
 ) -> Result<(), Error> {
     let mut step = 0;
-    let mut allowance = 25;
+    let mut allowance = inner.policy.max_provider_turns();
     let mut input_corrections = 0;
     let mut transport_continuations = 0;
     // Consecutive provider turns that produced neither text nor tool calls.
@@ -741,7 +888,10 @@ async fn execute(
             system.push_str("\n\n<collaboration-mode mode=\"plan\">\nYou are in plan mode: investigate and propose a plan. Do not modify files, run commands, or start background work; those capabilities are denied.\n</collaboration-mode>");
         }
         let sources = bundle.sources.clone();
-        let context_epoch = inner.store.select_context(session, bundle).await?;
+        let context_epoch = inner
+            .store
+            .select_context_fenced(session, bundle, lease)
+            .await?;
         inner
             .store
             .record(
@@ -960,11 +1110,12 @@ async fn execute(
                     {
                         inner
                             .store
-                            .assistant_reply(
+                            .assistant_reply_fenced(
                                 session,
                                 run,
                                 Some(started.seq),
                                 partial.content.clone(),
+                                lease,
                             )
                             .await?;
                     }
@@ -988,14 +1139,14 @@ async fn execute(
                             delivery: crate::protocol::Delivery::Steer,
                         }).await?;
                         internal_inputs.insert(input_id);
-                        let promoted = inner.store.promote(session, false).await?;
-                        record_promotions(inner, session, run, &promoted).await?;
+                        let promoted = inner.store.promote_fenced(session, false, lease).await?;
+                        record_promotions(inner, session, run, &promoted, lease).await?;
                         if promoted.iter().any(|event| {
                             event.data["input_id"]
                                 .as_str()
                                 .is_none_or(|id| !internal_inputs.contains(id))
                         }) {
-                            allowance = 25;
+                            allowance = inner.policy.max_provider_turns();
                             input_corrections = 0;
                             repeats.clear();
                             transport_continuations = 0;
@@ -1055,13 +1206,14 @@ async fn execute(
         crate::session_model::stamp_route(&mut reply.content, binding.as_ref());
         let assistant_boundary = inner
             .store
-            .assistant_reply_profiled(
+            .assistant_reply_profiled_fenced(
                 session,
                 run,
                 step,
                 Some(started.seq),
                 reply.content.clone(),
                 provider.reply_identity(&reply),
+                lease,
             )
             .await?
             .seq;
@@ -1109,7 +1261,7 @@ async fn execute(
                             "unsupported invalid tool input correction".into(),
                         ));
                     }
-                    inner.store.tool_result(session, run, id, json!({"error":"Invalid JSON tool arguments. This call was not executed. Supply a valid JSON object for this call only; do not repeat completed operations."}), true).await?;
+                    inner.store.tool_result_fenced(session, run, id, json!({"error":"Invalid JSON tool arguments. This call was not executed. Supply a valid JSON object for this call only; do not repeat completed operations."}), true, lease).await?;
                     inner.store.record(session, "tool.input_error", json!({"run_id":run,"step":step,"call_id":id,"tool":name,"reason":"invalid_json","attempt":input_corrections})).await?;
                     continue;
                 }
@@ -1154,7 +1306,10 @@ async fn execute(
                             {
                                 (json!({"error":blocked}), true)
                             } else {
-                                inner.store.mark_dispatched(session, run, id).await?;
+                                inner
+                                    .store
+                                    .mark_dispatched_fenced(session, run, id, lease)
+                                    .await?;
                                 verification_scope.observe(&prepared);
                                 let prepared_external =
                                     prepared.access() == crate::permission::Access::External;
@@ -1180,6 +1335,11 @@ async fn execute(
                                 {
                                     (Ok(output), Some(is_error))
                                 } else {
+                                    let _ = inner.progress.send(json!({
+                                        "session_id": session, "run_id": run, "step": step,
+                                        "kind": "tool.started", "tool": name,
+                                        "resource": prepared.resource(),
+                                    }));
                                     (                                match name {
                                 "cron_create" => {
                                     start_cron(inner, session, run, id, &prepared).await?
@@ -1263,6 +1423,9 @@ async fn execute(
                                 "start_job" => {
                                     start_background(inner, session, run, id, prepared).await
                                 }
+                                "monitor" => {
+                                    start_monitor(inner, session, run, id, prepared).await
+                                }
                                 "terminal_start" => {
                                     inner.tools.start_terminal(&inner.terminals, session, prepared, cancel.child_token()).await
                                 }
@@ -1289,13 +1452,48 @@ async fn execute(
                                         Err(error) => Err(error),
                                     }
                                 }
+                                name if inner.product.read().unwrap().has(name) => {
+                                    let input = prepared.input().clone();
+                                    let bridge = inner
+                                        .product
+                                        .read()
+                                        .unwrap()
+                                        .bridge
+                                        .clone();
+                                    match bridge {
+                                        Some(bridge) => {
+                                            bridge.call(name, input).await
+                                        }
+                                        None => Err(ToolError::Unsupported),
+                                    }
+                                }
                                 _ => {
+                                    let progress =
+                                        if prepared.access() == crate::permission::Access::Execute {
+                                            let (tx, mut rx) = mpsc::channel::<Value>(16);
+                                            let sink = inner.progress.clone();
+                                            let session = session.to_owned();
+                                            let run = run.to_owned();
+                                            tokio::spawn(async move {
+                                                while let Some(chunk) = rx.recv().await {
+                                                    let _ = sink.send(json!({
+                                                        "session_id": session, "run_id": run,
+                                                        "step": step, "kind": "tool.progress",
+                                                        "output": chunk,
+                                                    }));
+                                                }
+                                            });
+                                            Some(tx)
+                                        } else {
+                                            None
+                                        };
                                     inner
                                         .tools
-                                        .execute_prepared(
+                                        .execute_prepared_with_progress(
                                             prepared,
                                             &inner.policy,
                                             cancel.child_token(),
+                                            progress,
                                         )
                                         .await
                                 }
@@ -1523,7 +1721,10 @@ async fn execute(
             )
             .await;
         }
-        let mut promoted = inner.store.promote(session, !reply.needs_tools).await?;
+        let mut promoted = inner
+            .store
+            .promote_fenced(session, !reply.needs_tools, lease)
+            .await?;
         let mut goal_stopped_this_turn = false;
         if !reply.needs_tools && promoted.is_empty() && state_allowed {
             let state = inner.store.state(session).await?;
@@ -1568,7 +1769,7 @@ async fn execute(
                         }).await?;
                     internal_inputs.insert(input_id.clone());
                     inner.store.record(session, "loop.continuation", json!({"run_id":run,"input_id":input_id,"admitted_seq":admission.admitted_seq,"iteration":goal_iterations})).await?;
-                    promoted = inner.store.promote(session, true).await?;
+                    promoted = inner.store.promote_fenced(session, true, lease).await?;
                 }
             }
         }
@@ -1607,8 +1808,8 @@ async fn execute(
                         json!({"run_id":run,"admitted_seq":admission.admitted_seq,"reason":"empty-completion"}),
                     )
                     .await?;
-                promoted = inner.store.promote(session, true).await?;
-                record_promotions(inner, session, run, &promoted).await?;
+                promoted = inner.store.promote_fenced(session, true, lease).await?;
+                record_promotions(inner, session, run, &promoted, lease).await?;
             } else {
                 inner
                     .store
@@ -1721,8 +1922,8 @@ async fn execute(
                             json!({"run_id":run,"admitted_seq":admission.admitted_seq,"reason":"verification-failed"}),
                         )
                         .await?;
-                    promoted = inner.store.promote(session, true).await?;
-                    record_promotions(inner, session, run, &promoted).await?;
+                    promoted = inner.store.promote_fenced(session, true, lease).await?;
+                    record_promotions(inner, session, run, &promoted, lease).await?;
                 } else {
                     inner
                         .store
@@ -1742,7 +1943,7 @@ async fn execute(
             return Ok(());
         }
         if !promoted.is_empty() {
-            record_promotions(inner, session, run, &promoted).await?;
+            record_promotions(inner, session, run, &promoted, lease).await?;
             // Synthetic internal admissions are durable, but do not refill the
             // user-input provider allowance. External admissions still do.
             if promoted.iter().any(|event| {
@@ -1750,7 +1951,7 @@ async fn execute(
                     .as_str()
                     .is_none_or(|id| !internal_inputs.contains(id))
             }) {
-                allowance = 25;
+                allowance = inner.policy.max_provider_turns();
                 input_corrections = 0;
                 transport_continuations = 0;
                 empty_completions = 0;
@@ -1799,7 +2000,6 @@ async fn start_cron(
         .map_err(|_| Error::Invalid("invalid cron input".into()))?;
     let anchor = chrono::Local::now();
     let anchor_ms = anchor.timestamp_millis() as u64;
-    let clock = tokio::time::Instant::now();
     let first = match crate::cron::next(input.cron.clone(), anchor).await {
         Ok(next) => next.timestamp_millis() as u64,
         Err(error) => return Ok(Err(ToolError::External(error.to_string()))),
@@ -1846,17 +2046,47 @@ async fn start_cron(
     if data["state"] != "scheduled" || crons.contains_key(&id) {
         return Ok(Ok(data));
     }
-    let mut next = data["first_occurrence_ms"]
+    let next = data["first_occurrence_ms"]
         .as_u64()
         .ok_or_else(|| Error::Invalid("cron occurrence missing".into()))?;
     let expires = data["expires_at_ms"]
         .as_u64()
         .ok_or_else(|| Error::Invalid("cron lifetime missing".into()))?;
+    drop(crons);
+    let background = spawn_cron_task(
+        inner,
+        session.to_owned(),
+        id.clone(),
+        pattern,
+        recurring,
+        next,
+        expires,
+    );
+    let mut crons = inner.crons.lock().await;
+    crons.insert(id, background);
+    Ok(Ok(data))
+}
+
+/// (Re-)arm a durable cron from stored schedule fields. Shared by the
+/// create path and process restart adoption.
+#[allow(clippy::too_many_arguments)]
+fn spawn_cron_task(
+    inner: &Arc<Inner>,
+    source: String,
+    cron_id: String,
+    pattern: String,
+    recurring: bool,
+    mut next: u64,
+    expires: u64,
+) -> Background {
+    let anchor = chrono::Local::now();
+    let anchor_ms = anchor.timestamp_millis() as u64;
+    let clock = tokio::time::Instant::now();
     let cancel = inner.stop.child_token();
     let token = cancel.clone();
     let owner = inner.clone();
-    let cron_id = id.clone();
-    let source = session.to_owned();
+    let background_source = source.clone();
+    let source = source.clone();
     let join = tokio::spawn(async move {
         let result=async {
             loop {
@@ -1888,15 +2118,11 @@ async fn start_cron(
                 .await;
         }
     });
-    crons.insert(
-        id,
-        Background {
-            session: session.into(),
-            cancel,
-            join,
-        },
-    );
-    Ok(Ok(data))
+    Background {
+        session: background_source,
+        cancel,
+        join,
+    }
 }
 async fn cancel_cron(inner: &Inner, session: &str, id: &str) -> Result<bool, Error> {
     let token = inner
@@ -1951,16 +2177,45 @@ async fn start_wakeup(
     if data["state"] != "scheduled" || timers.contains_key(&id) {
         return Ok(Ok(data));
     }
-    let delay = data["due_at_ms"]
-        .as_u64()
-        .unwrap_or(now_ms())
-        .saturating_sub(now_ms());
+    drop(timers);
+    let background = arm_wakeup(
+        inner,
+        session.to_owned(),
+        id.clone(),
+        data["due_at_ms"].as_u64().unwrap_or(now_ms()),
+    );
+    let mut timers = inner.timers.lock().await;
+    timers.insert(id, background);
+    Ok(Ok(data))
+}
+async fn cancel_wakeup(inner: &Inner, session: &str, id: &str) -> Result<bool, Error> {
+    let token = inner
+        .timers
+        .lock()
+        .await
+        .get(id)
+        .filter(|timer| timer.session == session)
+        .map(|timer| timer.cancel.clone());
+    let Some(token) = token else {
+        return Ok(false);
+    };
+    let accepted = inner.store.close_wakeup(session, id, "cancelled").await?;
+    if accepted {
+        token.cancel();
+    }
+    Ok(accepted)
+}
+
+/// (Re-)arm a durable wakeup from its stored due time. Shared by the
+/// schedule tool path and process restart adoption.
+fn arm_wakeup(inner: &Arc<Inner>, source: String, timer_id: String, due_at_ms: u64) -> Background {
+    let delay = due_at_ms.saturating_sub(now_ms());
     let deadline = tokio::time::Instant::now() + std::time::Duration::from_millis(delay);
     let cancel = inner.stop.child_token();
     let token = cancel.clone();
     let owner = inner.clone();
-    let timer_id = id.clone();
-    let source = session.to_owned();
+    let timer_id = timer_id.clone();
+    let background_source = source.clone();
     let join = tokio::spawn(async move {
         let result=async {
             tokio::select!{biased;_=token.cancelled()=>{owner.store.close_wakeup(&source,&timer_id,"cancelled").await?;return Ok::<_,Error>(());},_=tokio::time::sleep_until(deadline)=>{}}
@@ -1982,32 +2237,11 @@ async fn start_wakeup(
                 .await;
         }
     });
-    timers.insert(
-        id,
-        Background {
-            session: session.into(),
-            cancel,
-            join,
-        },
-    );
-    Ok(Ok(data))
-}
-async fn cancel_wakeup(inner: &Inner, session: &str, id: &str) -> Result<bool, Error> {
-    let token = inner
-        .timers
-        .lock()
-        .await
-        .get(id)
-        .filter(|timer| timer.session == session)
-        .map(|timer| timer.cancel.clone());
-    let Some(token) = token else {
-        return Ok(false);
-    };
-    let accepted = inner.store.close_wakeup(session, id, "cancelled").await?;
-    if accepted {
-        token.cancel();
+    Background {
+        session: background_source,
+        cancel,
+        join,
     }
-    Ok(accepted)
 }
 
 async fn ask_question(
@@ -2485,6 +2719,285 @@ async fn cancel_background(inner: &Inner, session: &str, id: &str) -> Result<boo
     Ok(true)
 }
 
+/// Admit a background command watch: durable job admission, live stdout
+/// filtered by an optional regex, batched notices on the progress channel,
+/// hard timeout kills the child. Cancel flows through cancel_job.
+async fn start_monitor(
+    inner: &Arc<Inner>,
+    session: &str,
+    run: &str,
+    call: &str,
+    prepared: Prepared,
+) -> Result<Value, ToolError> {
+    if inner.stop.is_cancelled() {
+        return Err(ToolError::Interrupted);
+    }
+    let input = crate::monitor::Input::parse(prepared.input().clone())?;
+    let matcher = input.matcher()?;
+    let timeout = input.timeout();
+    let description = input.description.clone();
+    let output_description = description.clone();
+    let mut jobs = inner.jobs.lock().await;
+    if jobs.len() >= 32 {
+        return Err(ToolError::InvalidInput);
+    }
+    let admission = inner
+        .store
+        .create_job_for(session, run, call, prepared.input().clone(), "monitor")
+        .await
+        .map_err(|error| ToolError::Io(std::io::Error::other(error.to_string())))?;
+    if admission["duplicate"] == true {
+        return Ok(admission);
+    }
+    let id = admission["job_id"]
+        .as_str()
+        .ok_or(ToolError::InvalidInput)?
+        .to_owned();
+    let token = inner.stop.child_token();
+    let owner = session.to_owned();
+    let task_id = id.clone();
+    let task_inner = inner.clone();
+    let (job_owner, job_token, job_id) = (owner.clone(), token.clone(), id.clone());
+    let join = tokio::spawn(async move {
+        let (mut group, stdout, _temp) =
+            match spawn_sandboxed_monitor(&task_inner, &input, timeout).await {
+                Ok(spawned) => spawned,
+                Err(error) => {
+                    let _ = task_inner
+                        .store
+                        .record(
+                            &owner,
+                            "monitor.failed",
+                            json!({"job_id":task_id,"message":error.to_string()}),
+                        )
+                        .await;
+                    let _ = finish_background_job(
+                        &task_inner,
+                        &owner,
+                        &task_id,
+                        "failed",
+                        json!({"error":error.to_string()}),
+                    )
+                    .await;
+                    task_inner.jobs.lock().await.remove(&task_id);
+                    return;
+                }
+            };
+        if let Err(error) = task_inner.store.start_job(&owner, &task_id).await {
+            let _ = task_inner
+                .store
+                .record(
+                    &owner,
+                    "monitor.failed",
+                    json!({"job_id":task_id,"message":error.to_string()}),
+                )
+                .await;
+            task_inner.jobs.lock().await.remove(&task_id);
+            return;
+        }
+        let mut reader = tokio::io::BufReader::new(stdout).lines();
+        let mut batcher = crate::monitor::Batcher::default();
+        let mut window = tokio::time::interval(tokio::time::Duration::from_millis(
+            crate::monitor::BATCH_WINDOW_MS,
+        ));
+        window.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
+        window.reset();
+        let deadline =
+            tokio::time::Instant::now() + std::time::Duration::from_millis(input.timeout());
+        let mut stdout_open = true;
+        loop {
+            tokio::select! {
+                biased;
+                _ = token.cancelled() => {
+                    group.terminate();
+                    let _ = finish_background_job(
+                        &task_inner,
+                        &owner,
+                        &task_id,
+                        "cancelled",
+                        json!({"reason":"cancelled_by_request"}),
+                    )
+                    .await;
+                    task_inner.jobs.lock().await.remove(&task_id);
+                    return;
+                }
+                _ = tokio::time::sleep_until(deadline) => {
+                    group.terminate();
+                    let _ = task_inner
+                        .store
+                        .record(&owner, "monitor.timeout", json!({"job_id":task_id,"timeout_ms":input.timeout()}))
+                        .await;
+                    if let Some(notice) = batcher.flush(true, &task_id, description.as_deref()) {
+                        emit_monitor_notice(&task_inner, &owner, &task_id, notice).await;
+                    }
+                    let _ = finish_background_job(&task_inner, &owner, &task_id, "failed", json!({"timed_out":true})).await;
+                    break;
+                }
+                _ = window.tick() => {
+                    if let Some(notice) = batcher.flush(true, &task_id, description.as_deref()) {
+                        emit_monitor_notice(&task_inner, &owner, &task_id, notice).await;
+                    }
+                }
+                line = reader.next_line(), if stdout_open => {
+                    match line {
+                        Ok(Some(line)) => { batcher.feed(matcher.as_ref(), &line); }
+                        // Closing stdout is not process exit. Keep polling
+                        // cancellation and timeout while waiting for the child.
+                        _ => { stdout_open = false; }
+                    }
+                }
+                // Drain stdout before settling so a short-lived command's last
+                // matching lines cannot lose a race against process exit.
+                status = group.child.wait(), if !stdout_open => {
+                    let code = status.map(|status| status.code().unwrap_or(-1)).unwrap_or(-1);
+                    let _ = task_inner.store.record(&owner, "monitor.exited", json!({"job_id":task_id,"code":code})).await;
+                    if let Some(notice) = batcher.flush(true, &task_id, description.as_deref()) {
+                        emit_monitor_notice(&task_inner, &owner, &task_id, notice).await;
+                    }
+                    let state = if code == 0 { "completed" } else { "failed" };
+                    let _ = finish_background_job(&task_inner, &owner, &task_id, state, json!({"exit_code":code})).await;
+                    break;
+                }
+            }
+        }
+        group.terminate();
+        task_inner.jobs.lock().await.remove(&task_id);
+    });
+    jobs.insert(
+        job_id,
+        Background {
+            session: job_owner,
+            cancel: job_token,
+            join,
+        },
+    );
+    Ok(json!({
+        "job_id":id,
+        "description":output_description,
+        "output":"watching stdout; matching lines arrive as monitor.notice progress events; cancel with cancel_job",
+        "timeout_ms":timeout,
+    }))
+}
+
+async fn emit_monitor_notice(inner: &Inner, session: &str, job: &str, notice: Value) {
+    let admitted = inner
+        .store
+        .admit(Input {
+            session_id: session.to_owned(),
+            input_id: format!("monitor:{job}:{}", uuid::Uuid::new_v4()),
+            prompt: format!("Monitor job {job} produced matching output:\n{notice}"),
+            delivery: Delivery::Steer,
+        })
+        .await;
+    let admitted = match admitted {
+        Ok(admitted) => admitted,
+        Err(error) => {
+            let _ = inner
+                .store
+                .record(
+                    session,
+                    "monitor.notice_failed",
+                    json!({"job_id":job,"message":error.to_string()}),
+                )
+                .await;
+            return;
+        }
+    };
+    let _ = inner.progress.send(notice);
+    let _ = notify_admission(
+        inner,
+        session,
+        &admitted,
+        "monitor.wake_failed",
+        json!({"job_id":job,"input_id":admitted.input_id}),
+    )
+    .await;
+}
+
+/// Launch a monitor command through the same sandboxed runner the process
+/// tools use: seatbelt on macOS, Landlock on Linux, AppContainer on Windows.
+/// stdout stays piped so the caller can stream matching lines; the minimal
+/// environment matches the previous direct spawn.
+async fn spawn_sandboxed_monitor(
+    inner: &Arc<Inner>,
+    input: &crate::monitor::Input,
+    timeout_ms: u64,
+) -> Result<
+    (
+        crate::process::Group,
+        tokio::process::ChildStdout,
+        tempfile::TempDir,
+    ),
+    ToolError,
+> {
+    let runner = inner
+        .tools
+        .process_runner()
+        .ok_or(ToolError::Unsupported)?
+        .to_owned();
+    let workspace = inner.tools.location().to_owned();
+    let envs: Vec<(String, String)> = if cfg!(windows) {
+        std::env::vars()
+            .filter(|(key, _)| {
+                matches!(
+                    key.to_ascii_uppercase().as_str(),
+                    "PATH"
+                        | "PATHEXT"
+                        | "SYSTEMROOT"
+                        | "SYSTEMDRIVE"
+                        | "WINDIR"
+                        | "COMSPEC"
+                        | "USERPROFILE"
+                        | "HOMEDRIVE"
+                        | "HOMEPATH"
+                        | "TEMP"
+                        | "TMP"
+                )
+            })
+            .collect()
+    } else {
+        vec![
+            (
+                "PATH".into(),
+                "/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin".into(),
+            ),
+            (
+                "HOME".into(),
+                std::env::var("HOME").unwrap_or_else(|_| "/root".into()),
+            ),
+            ("LANG".into(), "C.UTF-8".into()),
+        ]
+    };
+    let argv = if cfg!(windows) {
+        vec![
+            std::env::var("COMSPEC").unwrap_or_else(|_| "cmd.exe".into()),
+            "/d".into(),
+            "/s".into(),
+            "/c".into(),
+            input.command.clone(),
+        ]
+    } else {
+        vec!["/bin/sh".into(), "-c".into(), input.command.clone()]
+    };
+    let (mut group, master, temp) = crate::process::spawn(
+        std::path::Path::new(&runner),
+        std::path::Path::new(&workspace),
+        std::path::Path::new(&workspace),
+        argv,
+        timeout_ms,
+        false,
+        false,
+        inner.tools.process_network_allowed(),
+        &envs,
+    )
+    .await?;
+    if master.is_some() {
+        return Err(ToolError::Unsupported);
+    }
+    let stdout = group.child.stdout.take().ok_or(ToolError::Unsupported)?;
+    Ok((group, stdout, temp))
+}
+
 async fn start_background(
     inner: &Arc<Inner>,
     session: &str,
@@ -2651,7 +3164,8 @@ async fn execute_read_batch(
         // when its own declaration says it only reads a named resource, not
         // because of its name. Anything that declares a write — or anything
         // undeclared — conflicts with the batch and stays serial.
-        if tool.access() != crate::permission::Access::Read
+        if !tool.batchable_read()
+            || tool.access() != crate::permission::Access::Read
             || tool.resource().is_empty()
             || inner
                 .policy
@@ -2661,6 +3175,9 @@ async fn execute_read_batch(
             break;
         }
         prepared.push((id.to_owned(), tool));
+        if prepared.len() == 16 {
+            break;
+        }
     }
     if !(2..=16).contains(&prepared.len()) || cancel.is_cancelled() {
         return Ok(HashMap::new());

@@ -106,6 +106,8 @@ pub enum Error {
     Conflict,
     #[error("runtime already owns this store")]
     Busy,
+    #[error("session lease was superseded by another owner")]
+    Fenced,
     #[error("invalid request: {0}")]
     Invalid(String),
     #[error("storage: {0}")]
@@ -129,6 +131,7 @@ impl Error {
         match self {
             Self::Conflict => "input_conflict",
             Self::Busy => "store_busy",
+            Self::Fenced => "store_fenced",
             Self::Invalid(_) => "invalid_request",
             Self::Closed => "runtime_closed",
             Self::ApprovalMismatch => "approval_mismatch",
@@ -205,6 +208,9 @@ pub enum Command {
         #[serde(default)]
         after: String,
     },
+    /// Sessions with unresolved timers whose engine is gone; the supervisor
+    /// re-owns them so the child's startup re-arm can fire.
+    TimerSessions,
     ResolveRecovery {
         session_id: String,
         call_id: String,

@@ -66,7 +66,8 @@ const invoke = (registry: ToolRegistry.Interface, input: typeof KnowledgeTool.In
   settleTool(registry, call(input, session)).pipe(
     Effect.map((settled) => {
       expect(settled.result.type).toBe("text")
-      if (settled.result.type !== "text") throw new Error("Expected knowledge text")
+      if (settled.result.type !== "text" || typeof settled.result.value !== "string")
+        throw new Error("Expected knowledge text")
       return JSON.parse(settled.result.value)
     }),
   )

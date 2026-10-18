@@ -202,7 +202,15 @@ impl Registry {
             ));
         }
         let (mut group, master, temp) = crate::process::spawn(
-            runner, workspace, cwd, input.argv, 86_400_000, true, true, network,
+            runner,
+            workspace,
+            cwd,
+            input.argv,
+            86_400_000,
+            true,
+            true,
+            network,
+            &[],
         )
         .await?;
         let master = master.ok_or(ToolError::Unsupported)?;

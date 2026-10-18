@@ -22,6 +22,7 @@ export const makeEngineOwners = Effect.fn("Engine.owners")(function* (
   const owners = new Map<
     string,
     {
+      input: { storage: string; refreshContext?: boolean; engineID: string; location: Location.Ref }
       engineID: string
       location: Location.Ref
       refresh: Effect.Effect<void, EngineError>
@@ -37,53 +38,82 @@ export const makeEngineOwners = Effect.fn("Engine.owners")(function* (
       }).pipe(Effect.andThen(Scope.close(scope, exit)), Effect.ensuring(Effect.sync(() => owners.clear()))),
     ),
   )
-  return {
-    get: Effect.fn("Engine.owners.get")(function* (input: {
-      storage: string
-      refreshContext?: boolean
-      engineID: string
-      location: Location.Ref
-    }) {
-      return yield* gate.withPermit(
-        Effect.gen(function* () {
-          if (state.closing)
-            return yield* Effect.fail(new EngineError("engine_owner_closed", "native owner scope is closed"))
-          const existing = owners.get(input.storage)
-          if (existing) {
-            if (
-              existing.engineID !== input.engineID ||
-              existing.location.directory !== input.location.directory ||
-              existing.location.workspaceID !== input.location.workspaceID
+  const get = Effect.fn("Engine.owners.get")(function* (input: {
+    storage: string
+    refreshContext?: boolean
+    engineID: string
+    location: Location.Ref
+  }) {
+    return yield* gate.withPermit(
+      Effect.gen(function* () {
+        if (state.closing)
+          return yield* Effect.fail(new EngineError("engine_owner_closed", "native owner scope is closed"))
+        const existing = owners.get(input.storage)
+        if (existing) {
+          if (
+            existing.engineID !== input.engineID ||
+            existing.location.directory !== input.location.directory ||
+            existing.location.workspaceID !== input.location.workspaceID
+          )
+            return yield* Effect.fail(
+              new EngineError(
+                "engine_owner_conflict",
+                "native storage already belongs to a different engine or Location",
+              ),
             )
-              return yield* Effect.fail(
-                new EngineError(
-                  "engine_owner_conflict",
-                  "native storage already belongs to a different engine or Location",
-                ),
-              )
-            if (input.refreshContext) yield* existing.refresh
-            return existing.connection
-          }
-          const context = prepare
-            ? yield* prepare(input.location).pipe(Effect.provideService(Scope.Scope, scope))
-            : { options: {}, refresh: Effect.void }
-          const connection = yield* connectEngine({
-            ...configuration,
-            ...context.options,
-            db: input.storage,
-            workspace: input.location.directory,
-            engineID: input.engineID,
-            location: input.location,
-          }).pipe(Effect.provideService(Scope.Scope, scope), Effect.provideService(ClientEvents.Service, clients))
-          owners.set(input.storage, {
-            refresh: context.refresh,
-            engineID: input.engineID,
-            location: { ...input.location },
-            connection,
+          if (input.refreshContext) yield* existing.refresh
+          return existing.connection
+        }
+        const context = prepare
+          ? yield* prepare(input.location).pipe(Effect.provideService(Scope.Scope, scope))
+          : { options: {}, refresh: Effect.void }
+        const connection = yield* connectEngine({
+          ...configuration,
+          ...context.options,
+          db: input.storage,
+          workspace: input.location.directory,
+          engineID: input.engineID,
+          location: input.location,
+        }).pipe(Effect.provideService(Scope.Scope, scope), Effect.provideService(ClientEvents.Service, clients))
+        owners.set(input.storage, {
+          input,
+          refresh: context.refresh,
+          engineID: input.engineID,
+          location: { ...input.location },
+          connection,
+        })
+        return connection
+      }),
+    )
+  })
+  const sweepTimers = Effect.fn("Engine.owners.sweepTimers")(function* () {
+    return yield* gate.withPermit(
+      Effect.gen(function* () {
+        const results: { storage: string; sessions: Array<{ session_id: string }> }[] = []
+        const probe = (connection: Effect.Success<ReturnType<typeof get>>) =>
+          Effect.tryPromise({
+            try: () =>
+              connection.client.request("timer_sessions", {}) as Promise<{
+                sessions: Array<{ session_id: string }>
+              }>,
+            catch: (error) =>
+              error instanceof EngineError
+                ? error
+                : new EngineError("engine_owner_sweep", "native timer session probe failed"),
           })
-          return connection
-        }),
-      )
-    }),
-  }
+        for (const [storage, owner] of owners) {
+          // A dead child still holds unresolved timers; re-owning spawns a
+          // fresh engine whose startup adoption re-arms and fires them.
+          const sessions = yield* probe(owner.connection).pipe(
+            Effect.catch(() =>
+              Effect.flatMap(get({ ...owner.input, refreshContext: true }), (connection) => probe(connection)),
+            ),
+          )
+          results.push({ storage, sessions: sessions.sessions })
+        }
+        return results
+      }),
+    )
+  })
+  return { get, sweepTimers }
 })

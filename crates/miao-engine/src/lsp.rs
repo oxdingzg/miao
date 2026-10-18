@@ -26,6 +26,8 @@ pub struct Config {
     pub extensions: Vec<String>,
     #[serde(default)]
     pub env: BTreeMap<String, String>,
+    #[serde(default)]
+    pub initialization: Option<Value>,
 }
 
 /// A parsed `lsp_*` tool input.
@@ -145,13 +147,17 @@ impl Client {
             .await
     }
 
-    async fn initialize(&mut self, root: &Path) -> Result<(), Error> {
+    async fn initialize(
+        &mut self,
+        root: &Path,
+        initialization: Option<&Value>,
+    ) -> Result<(), Error> {
         if self.initialized {
             return Ok(());
         }
         let id = self.next;
         self.next += 1;
-        self.send(&json!({"jsonrpc":"2.0","id":id,"method":"initialize","params":{"processId":null,"rootUri":uri(root)?,"capabilities":{"textDocument":{"publishDiagnostics":{"versionSupport":true}}}}})).await?;
+        self.send(&json!({"jsonrpc":"2.0","id":id,"method":"initialize","params":{"processId":null,"rootUri":uri(root)?,"initializationOptions":initialization,"capabilities":{"textDocument":{"publishDiagnostics":{"versionSupport":true}}}}})).await?;
         loop {
             let frame = self
                 .read_frame()
@@ -392,6 +398,7 @@ impl Registry {
             argv: vec!["fixture".into()],
             extensions: extensions.clone(),
             env: BTreeMap::new(),
+            initialization: None,
         };
         let mut by_extension = BTreeMap::new();
         for extension in &extensions {
@@ -401,7 +408,7 @@ impl Registry {
             );
         }
         let mut client = Client::new(read, write);
-        client.initialize(&PathBuf::from(".")).await?;
+        client.initialize(&PathBuf::from("."), None).await?;
         let mut clients = BTreeMap::new();
         clients.insert(
             name,
@@ -464,9 +471,12 @@ impl Registry {
             .take()
             .ok_or_else(|| Error::Invalid("LSP stdin missing".into()))?;
         let mut client = Client::new(read, write);
-        tokio::time::timeout(Duration::from_secs(15), client.initialize(&self.workspace))
-            .await
-            .map_err(|_| Error::Invalid("LSP initialization timed out".into()))??;
+        tokio::time::timeout(
+            Duration::from_secs(15),
+            client.initialize(&self.workspace, config.initialization.as_ref()),
+        )
+        .await
+        .map_err(|_| Error::Invalid("LSP initialization timed out".into()))??;
         self.children.lock().await.push(child);
         let server = Arc::new(Server {
             client: Mutex::new(client),
@@ -698,4 +708,40 @@ fn validate_name(name: &str) -> Result<(), Error> {
         ));
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn initialization_options_reach_the_language_server() {
+        let (host, server) = tokio::io::duplex(16 * 1024);
+        let (read, write) = tokio::io::split(host);
+        let mut client = Client::new(read, write);
+        let fixture = tokio::spawn(async move {
+            let (read, write) = tokio::io::split(server);
+            let mut server = Client::new(read, write);
+            let frame = server.read_frame().await.unwrap().unwrap();
+            assert_eq!(frame["method"], "initialize");
+            assert_eq!(
+                frame["params"]["initializationOptions"],
+                json!({"fixture":true})
+            );
+            server
+                .send(&json!({"jsonrpc":"2.0","id":frame["id"],"result":{"capabilities":{}}}))
+                .await
+                .unwrap();
+            let initialized = server.read_frame().await.unwrap().unwrap();
+            assert_eq!(initialized["method"], "initialized");
+        });
+        client
+            .initialize(
+                &std::env::current_dir().unwrap(),
+                Some(&json!({"fixture":true})),
+            )
+            .await
+            .unwrap();
+        fixture.await.unwrap();
+    }
 }

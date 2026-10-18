@@ -1,7 +1,8 @@
 # miao Roadmap — Remaining Work
 
-Status snapshot: **2026-10-05**, latest published tag **v0.1.4** (0.1.5–0.1.7 prepared;
-0.1.8 open in PR #151).
+Status snapshot: **2026-10-18**, main head 54357739c0. The native (Rust) engine
+build-out has landed — see §0. Release v0.2.15 is the first to carry the entire
+native-engine stream (the latest prior published tag is v0.2.14).
 
 This is the single authoritative inventory of every open item in the V1→V2 rebuild. It replaces
 the earlier distributed trackers (the remaining-work checklist and handoff, the V2 todo list, the
@@ -15,6 +16,45 @@ entry points where known, and an observable acceptance check.
 - **Acceptance** is the observable proof the slice is done, not just "code merged".
 - Ordered by the **Next up** list below, then by section.
 - Ground rules that apply to every slice are collected at the end.
+
+## 0. Native engine (RS) — landed 2026-10-10…18, and what it changes
+
+The Rust engine (`crates/miao-engine`) is now feature-complete for daily coding
+sessions and landed through #973 #978 #983 #986 #996 #999–1003 #1008–1010
+#1013 #1014 #1018–1023 #1025–1026 (each with its full matrix green). Sessions
+placed on the native engine (`NativeEngine.Placement`, `MIAO_ENGINE_BIN`) get
+all of the following natively:
+
+- Session core: durable admission, steer/queue, fork, revert, compaction
+  (§2.13/2.14), recovery API/SDK/TUI (#974), cancellation cascade with
+  process-group cleanup, incremental tool progress (`tool.started` /
+  `tool.progress`, #1019 — §2.3).
+- Tool surface at full parity with the TS builtin catalog, including LSP,
+  timer/CRON, knowledge, webfetch/websearch, and the new `monitor` tool
+  (#1025 — §2.5-style bounds).
+- MCP: stdio/HTTP + resources/prompts (#983 + #985), OAuth refresh grants
+  (#1014), deterministic catalogs with `list_changed` refresh (#1018 — §2.7),
+  extension discovery via `tool_search`.
+- Trusted model routing: host manifests → engine catalog → product API → TUI
+  picker (#999–1002), with opaque-history isolation and credential ownership.
+- Automatic ambient Context: product instructions/skills/references map into
+  host-owned manifests (#1008), including nested-instruction discovery (§3);
+  product hooks configuration (#1020).
+- Timers across restarts: adoption + process re-arm + `engine_lease` heartbeat
+  + supervisor sweep (#1013 #1021 #1022 #1023).
+- Providers: anthropic, openai-chat, openai-responses (+ WebSocket/cache
+  contracts), subscription, gemini, plus new declarative route manifests with
+  Azure (`api-key` + `api-version`) and Vertex-Anthropic (bearer + rawPredict)
+  (#1026) — any base-url provider or gateway is now configuration, not code.
+
+What the engine does **not** cover is the product layer: TS plugins,
+product-level tools (`send_message`/`list_sessions`/`push_notification`/
+`workflow`/plan tools), and auth-integration flows (Bedrock SigV4, Copilot
+device flow) — see the §9 enablement gates. #1027 landed the product-tool
+reverse bridge.
+
+Sections below keep their original text; items this closes are annotated
+inline with `[RS: …]`.
 
 ## Already done (context, not remaining)
 
@@ -68,27 +108,20 @@ entry points where known, and an observable acceptance check.
 
 ## Next up (ordered)
 
-1. **§1.3** Remove the `packages/miao` `app-runtime` V1 layer and remaining non-session routes;
-   switch the release server to the V2-only assembly. Finishes the V1→V2 reset.
-2. **§1.2** Retire the app's legacy types, transitional session/message events, and route mocks.
-3. **§2.1** Finish the runner slices: coalesce streamed deltas + covering projected-history
-   indexes, drop the `@miao/llm` tool loop, expose replayable Session event cursors.
-4. **§2.5** Remaining output bounds: non-streamed JSON/image body caps.
-5. **§2.3** Cancellation: cascade cancel as one first-class path, incremental tool progress,
-   materialize remote/managed URIs before history lowering.
-6. **§2.4** Crash-recovery idempotency: idempotency key + one-shot consume token.
-7. **§2.8** Extend the core sandbox to the remaining mutating tools, then default-on.
-8. **§2.7** MCP progressive discovery / CIMD OAuth / deterministic `tools/list`.
-9. **§2.2** ACP terminal contract (`terminal/create`, `wait_for_exit`, `kill`, `release`).
-10. **§3** Finish config/plugin/service rework (nested instructions, per-service hot reload,
-    providers-as-plugins).
-11. **§4** Storage operational acceptance (compact `miao-main.db`, measure `miao.db`, delta-only
-    events).
-12. **§2.9** Design durable continuation recovery (currently blocked).
-13. **§5** Produce the bilingual performance report.
-14. **§7** Refresh stale guides.
-15. **§6** Released-binary acceptance (mostly owner/credential-blocked).
-16. **§8** Land the remote-control / Hub / iOS / push stream.
+1. **§9.1** Ship the engine binary by default: bundle with the release flow and
+   auto-discover an installed `miao-engine`, so native sessions work without a
+   manual `MIAO_ENGINE_BIN`.
+2. **§9.3** Land the declarative provider manifest docs; declare
+   Bedrock/Copilot unsupported natively (or gateway-only).
+3. **§6** Live acceptance: Gemini/Anthropic real accounts (blocked on
+   credentials), released-binary upgrade path.
+4. **§1.2** App transcript retype onto V2 types (its own cutover, per the
+   staged note below).
+5. **§2.4** Crash-recovery idempotency on the RS primitives (tool replay +
+   outcome-unknown).
+6. Then the remaining TS-side and operational items in section order (§1.3
+   confirmation, §2.5 body caps, §2.7 CIMD ordering, §2.8 monitor sandboxing,
+   §3 hot reload, §4 storage ops, §5 report, §7 docs, §8 push/APNs).
 
 ---
 
@@ -223,9 +256,13 @@ interrupt; interrupt clears tool fibers and fails unsettled tools while durable 
 survives; interrupting a pending permission/question publishes `Replied(reject)`/`Rejected`;
 attachments are normalized by model capability at request build; tool progress events are wired
 end to end (`session.next.tool.progress`).
+- [RS: cascade cancel is native — process groups are killed and the run
+  settles as one path (#1019 era). TS-side cascade remains open.]
 - [ ] Cascade-cancel child fibers, drain the inbox, and settle pending approvals as one first-class
       cancellation path.
-- [ ] Emit incremental tool-progress checkpoints from core tools (bash currently buffers output).
+- [x] Emit incremental tool-progress checkpoints — RS native (#1019:
+      `tool.started`/`tool.progress` streamed for process tools and the
+      `monitor` tool). TS core tools remain open.
 - [ ] Materialize remote and managed URIs before provider-history lowering
       (`to-llm-message.ts:80` TODO).
 - **Acceptance:** interrupt a session with a child task and a pending approval → no dangling or
@@ -267,6 +304,8 @@ Progress: canonical MCP tool names are deduped deterministically (codepoint orde
       after the cache breakpoint, never reorder).
 - [ ] OAuth via CIMD ordering (pre-registered → CIMD → DCR → prompt), credentials keyed by AS
       `issuer`, validate `iss` (RFC 9207).
+- [RS: deterministic catalogs with `list_changed` refresh landed (#1018);
+  CIMD OAuth ordering remains open.]
 - [ ] Deterministic `tools/list` with `ttlMs`/`cacheScope` where the installed
       `@modelcontextprotocol/sdk` exposes them.
 - **Acceptance:** a large MCP catalog loads lazily without disturbing the prompt-cache prefix;
@@ -279,6 +318,10 @@ Progress: V2 bash and code-mode run under the core OS sandbox; a catch-all allow
 it.
 - [ ] Extend the same core-owned sandbox to the other mutating tools (workdir, allowed paths,
       network), fail-closed, model-visible denials.
+- [x] RS: fold the `monitor` tool into the same sandbox — done; monitor
+      commands now launch through the sandboxed runner (seatbelt/Landlock/
+      AppContainer) with the same minimal environment and a process-group
+      kill on cancel and timeout.
 - [ ] Make the sandbox default-on for the remaining tools.
 - **Acceptance:** a mutating tool inside the sandbox cannot write outside allowed paths; network
   denied when configured; denials surface as tool errors.
@@ -323,6 +366,8 @@ work.
 
 ### 2.11 SendMessage remainder
 **Entry:** `send_message` / `list_sessions` tools registered by the runner.
+[RS: product session tools reverse-dispatch to the host (#1027).]
+
 Progress: `send_message` resolves a Session ID or `@slug`, rejects missing and cross-project
 targets, refuses to overflow the target's inbound queue (`MAX_INBOUND_QUEUE`), admits a queued
 `<message from session="…">` input, and wakes the target through a `wake` callback on
@@ -446,8 +491,9 @@ provider-as-plugin remain.
 - [x] A V2 plugin surface with a scoped context/registration seam exists
       (`packages/plugin/src/v2/{promise,effect}` including `context.ts` and `registration.ts` on top
       of `packages/core/src/system-context/registry.ts`).
-- [ ] Nested project instruction discovery after successful reads, admitted durably at the next
-      Safe Provider-Turn Boundary (`packages/core/src/instruction-context.ts` is the entry point).
+- [x] Nested project instruction discovery — RS native (#1008: product
+      instructions/skills/references map into host-owned manifests at owner
+      creation; TS-side discovery for TS sessions remains).
 - [ ] Design the server plugin API and hooks (immer drafts so bad mutations can be thrown away, a
       global instance, tool registration).
 - [ ] Make every service hot-reloadable via granular events instead of teardown, so services react
@@ -568,6 +614,27 @@ open PRs and recent merges.
 - [ ] Design doc for unified session remote control (#64).
 
 ---
+
+## 9. Native-engine enablement gates
+
+Landing the engine was the build; these gates decide when native sessions are
+the default path.
+
+1. **Engine binary by default** — open. `NativeEngine.Placement` still requires
+   an explicit `MIAO_ENGINE_BIN`. The release already ships per-platform
+   `miao-engine` archives, so what remains is auto-discovering an installed
+   engine (and ultimately bundling it) so placement needs no environment
+   variable.
+2. **Product-tool reverse bridge** — landed (#1027). Native sessions register
+   host-supplied product tools and reverse-dispatch execution to the server
+   over the engine's stdio bridge; replies settle as durable tool results.
+3. **Declarative provider manifest docs** — open. Any base-url provider or
+   gateway is route-manifest configuration (#1026), but the supported surface
+   is undocumented; declare Bedrock SigV4 and the Copilot device flow as
+   product-side (TS or gateway-only) until the engine grows those credential
+   flows.
+4. **Live acceptance** — open, blocked on Gemini/Anthropic credentials: run
+   real daily sessions on a released binary with the engine placed by default.
 
 ## Working-tree drafts (not committed)
 

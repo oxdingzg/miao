@@ -306,7 +306,16 @@ MCP server 是拥有自身 filesystem/network authority 的可信外部服务，
 - 正常 shutdown 关闭 transport 并 kill/reap 配置的直接子进程。引擎硬退出、server 派生/daemon 进程
   尚无完整跨进程归属保证。
 
-目前未实现远程 HTTP transport、动态 catalog notifications、resources/prompts、MCP OAuth 或 TS plugin compatibility。
+远程 Streamable HTTP server 用 `{"name":"remote","url":"https://example.test/mcp","headers":{"Authorization":"Bearer ..."}}` 代替 `argv`/`env`。URL 和 headers 来自可信宿主配置，工具调用仍受同一 external authority 和 schema 校验约束。拒绝重定向，单个 SSE event 限制为 256 KiB，Session 过期时返回失败而不自动重放可能产生副作用的请求。宿主 manifest 也可携带显式 refresh grant 代替静态 authorization 头：`{"oauth":{"token_endpoint":"https://issuer/token","client_id":"...","refresh_token":"...","scopes":["mcp"]}}`。引擎在建立连接时恰好执行一次刷新换取并附加返回的 bearer token；拒绝重定向及含 userinfo/fragment 的 endpoint，请求与 64 KiB 响应有界，失败只报通用错误且不回显 provider 响应或 token。响应中轮换的 refresh token 在子进程生命周期内被忽略，宿主重启时重新下发；OAuth 与静态 `authorization` 头冲突，进程型 server 不可使用。产品共享 remote 配置仍须显式设置 `oauth: false`，待产品侧流程落地；临时 manifest 权限为 0600。
+
+声明 resources 能力的 server 暴露 `mcp_<server>_resources_list`、`mcp_<server>_resource_templates_list`、`mcp_<server>_resource_read`；声明 prompts 能力的 server 暴露 `mcp_<server>_prompts_list`、`mcp_<server>_prompt_get`。目录接口支持可选 `cursor`，资源读取接收 `uri`，提示词读取接收 `name` 和可选字符串 `arguments`。只有 resources/prompts 的 server 不必实现 `tools/list`。
+
+这些操作全部经过 external-tool authority、发送前输入校验和 64 KiB 返回预算。返回的资源和提示词消息只是外部工具数据，不会自动执行，也不会替换 system instructions。取消和 input/task continuation 不会触发自动重放。
+
+动态 catalog notifications 已支持就地刷新：引擎对每个已连接 server 订阅
+`notifications/tools/list_changed`（含 resource/prompt 等价通知），防抖后有界
+重新拉取并在锁内替换目录，下一轮即可看到新定义而无需重连；刷新失败保留原
+目录直至下次变更。TS plugin compatibility 仍未实现。
 
 
 ## 宿主授权的 skill 目录

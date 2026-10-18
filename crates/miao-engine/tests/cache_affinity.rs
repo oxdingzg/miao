@@ -256,7 +256,9 @@ async fn fork_lineage_preserves_cache_hints_after_restart_without_joining_unrela
     runtime.shutdown().await;
     drop(runtime);
     store.fork("parent", "child", None).await.unwrap();
-    drop(store);
+    // Dropping the handle only starts worker teardown; wait for the file lease
+    // to be released before testing restart persistence.
+    store.close().await.unwrap();
     let store = Store::open(&db).await.unwrap();
     let runtime = Runtime::new(
         store.clone(),

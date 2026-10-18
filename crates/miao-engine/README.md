@@ -109,7 +109,30 @@ The product bridge forwards `EngineOptions.modelRoutesConfigFile` or
 Credential types are `environment` (`key`: variable name, optional subscription
 `account`: variable name), `database` (`path`, `id`, `integration`), `legacy`
 (`path`, `integration`), or `daemon` (`path`, `id`, `integration`). File sources
-must be outside the workspace. The product child environment remains allowlisted;
+must be outside the workspace.
+
+Each route may also carry a declarative auth block — wire auth style plus
+trusted headers and literal query parameters, sourced from the trusted host
+manifest (secrets still travel through the credential source):
+
+```json
+[{
+  "id": "azure-prod",
+  "provider": "openai-chat",
+  "model": "gpt-4o",
+  "endpoint": "https://my-resource.openai.azure.com/openai/deployments/gpt-4o",
+  "credential": {"type": "environment", "key": "AZURE_OPENAI_API_KEY"},
+  "auth": {
+    "style": "api-key",
+    "headers": {"x-gateway": "edge1"},
+    "query": {"api-version": "2024-10-21"}
+  }
+}]
+```
+
+`style` is `bearer` (default) or `api-key`; `query` entries are appended
+literally to the request URL. Any base-url provider or gateway is therefore
+configuration, not engine code. The product child environment remains allowlisted;
 pass custom credential variables through `EngineOptions.env` explicitly.
 
 Controller `model_catalog` returns only `route_id`, `protocol`, and `model`.
@@ -493,8 +516,43 @@ configured with the `mcp_*` tool matcher and the `@mcp/local_service/**` resourc
 - cancel stops the local wait, and a dispatched call may still be executing on the server; Session recovery follows the unknown intent boundary.
 - A normal shutdown closes the transport and kills/reaps the configured direct child process. A hard engine exit and server-derived/daemon processes do not yet have a full cross-process ownership guarantee.
 
-Remote HTTP transport, dynamic catalog notifications, resources/prompts, MCP OAuth, and TS plugin
-compatibility are not implemented today.
+Streamable HTTP servers use `{"name":"remote","url":"https://example.test/mcp",
+"headers":{"Authorization":"Bearer ..."}}` instead of `argv`/`env`. Headers and
+endpoints are trusted host configuration, never model arguments. HTTP connections
+use the same external-tool policy and schema validation as process servers.
+Redirects are refused, SSE events are bounded to 256 KiB, and session expiry
+fails the call rather than transparently replaying a possible side effect.
+A host manifest may carry an explicit refresh grant instead of a static
+authorization header: `{"oauth":{"token_endpoint":"https://issuer/token",
+"client_id":"...","refresh_token":"...","scopes":["mcp"]}}`. The engine exchanges
+it exactly once when the connection starts, attaches the returned bearer token,
+refuses redirects and userinfo/fragment endpoints, bounds the request and the
+64 KiB response, and reports generic failures without echoing provider bodies or
+tokens. Rotated refresh tokens in the response are ignored for the child's
+lifetime; the host provisions a fresh grant on restart. OAuth conflicts with a
+static `authorization` header and is unavailable to process servers. Shared
+product remote servers still require explicit `oauth: false` in product
+configuration until the product-side flow ships. The temporary manifest is mode
+0600.
+
+Servers advertising resources expose `mcp_<server>_resources_list`,
+`mcp_<server>_resource_templates_list` and `mcp_<server>_resource_read`. Servers
+advertising prompts expose `mcp_<server>_prompts_list` and
+`mcp_<server>_prompt_get`. Catalog operations accept an optional `cursor`; reads
+accept `uri`, and prompt retrieval accepts `name` plus optional string
+`arguments`. Resource/prompt-only servers need not implement `tools/list`.
+All operations require normal external-tool authority, validate input before
+wire dispatch and enforce the same 64 KiB result budget. Prompt messages and
+resource contents remain untrusted tool data: retrieval neither executes the
+prompt nor changes system instructions. Cancellation and input/task continuation
+do not trigger automatic replays.
+
+Dynamic catalog notifications refresh in place: the engine subscribes to
+`notifications/tools/list_changed` (and the resource/prompt equivalents) per
+connected server, debounces them into a bounded re-list, and swaps the catalog
+under a lock so the next turn sees the new definitions without a reconnect.
+A failed refresh keeps the previous catalog until the next change. TS plugin
+compatibility is not implemented today.
 
 ## Host-authorized skill directories
 
@@ -876,3 +934,13 @@ and partial primary observations, role attempts and child outcome evidence.
 
 Configured completion commands produce [version-bound verification receipts](docs/verification-receipts.md)
 with actual exit/output, task revisions and bounded source coverage.
+
+### Provider-turn budget
+
+The host policy accepts `max_provider_turns` (1–10000, default 25). For a
+long multi-step task, set e.g. `"max_provider_turns": 100` in the policy JSON.
+This budget applies to provider turns per admitted user input, including tool
+round trips and transport continuations. External user admissions reset it;
+synthetic autonomous-continuation inputs do not. Exhaustion remains an explicit
+failed run and never silently replays tool calls. The policy revision records
+the configured budget.

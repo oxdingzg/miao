@@ -1,6 +1,7 @@
 # miao 路线图 — 剩余工作
 
-状态快照：**2026-10-05**，最新发布 tag **v0.1.4**（0.1.5–0.1.7 已准备；0.1.8 在 PR #151）。
+状态快照：**2026-10-18**，main head 54357739c0。原生（Rust）引擎建设已落地——
+见 §0。v0.2.15 是首个携带整条原生引擎主线的版本（此前最新发布 tag 为 v0.2.14）。
 
 本文档是 V1→V2 重建中所有未完成项的**唯一权威清单**。它取代了此前分散的追踪文档
 （remaining-work checklist 与 handoff、V2 todo 列表、P7 路由盘点、app API 迁移清单，以及
@@ -50,24 +51,15 @@
 
 ## 下一步（Next up，按序）
 
-1. **§1.3** 移除 `packages/miao` 的 `app-runtime` V1 层与剩余非会话路由；发布服务端切到
-   V2-only 组装。收尾 V1→V2 重置。
-2. **§1.2** 退役 app 的 legacy 类型、过渡会话/消息事件与路由 mock。
-3. **§2.1** 完成 runner 切片：合批流式 delta + 补覆盖性投影历史索引、移除 `@miao/llm` 工具
-   循环、暴露可重放 Session 事件游标。
-4. **§2.5** 剩余输出边界：非流式 JSON/image body 上限。
-5. **§2.3** 取消：级联取消作为单一路径、增量工具进度、历史降级前物化 remote/managed URI。
-6. **§2.4** 崩溃恢复幂等：幂等键 + 一次性消费 token。
-7. **§2.8** 把 core 沙箱扩展到其余变更型工具，再默认开启。
-8. **§2.7** MCP 渐进发现 / CIMD OAuth / 确定性 `tools/list`。
-9. **§2.2** ACP terminal 契约（`terminal/create`、`wait_for_exit`、`kill`、`release`）。
-10. **§3** 完成 config/插件/service 重构（嵌套指令、每 service 热重载、provider 作为插件）。
-11. **§4** 存储运维验收（压缩 `miao-main.db`、量测 `miao.db`、仅 delta 事件）。
-12. **§2.9** 设计 durable 续跑恢复（当前 blocked）。
-13. **§5** 产出双语性能报告。
-14. **§7** 刷新过时指南。
-15. **§6** 发布二进制验收（多为 owner/凭据受阻）。
-16. **§8** 落地远程控制 / Hub / iOS / push 主线。
+1. **§9.1** 引擎二进制默认就位：接入发布流并自动发现已安装的 `miao-engine`，
+   使原生会话无需手动 `MIAO_ENGINE_BIN`。
+2. **§9.3** 落地声明式 provider manifest 文档；声明 Bedrock/Copilot 原生不支持
+   （或仅网关）。
+3. **§6** 实时验收：Gemini/Anthropic 实账号（缺凭据受阻）、发布二进制升级路径。
+4. **§1.2** app transcript 迁移到 V2 类型（按下文分阶段说明独立切换）。
+5. **§2.4** 基于 RS 原语的崩溃恢复幂等（tool replay + outcome-unknown）。
+6. 其余 TS 侧与运维项按节顺序推进（§1.3 确认、§2.5 body 上限、§2.7 CIMD 排序、
+   §2.8 monitor 沙箱化、§3 热重载、§4 存储运维、§5 报告、§7 文档、§8 push/APNs）。
 
 ---
 
@@ -200,6 +192,8 @@ webfetch/websearch 对响应体设界；MCP 图片结果上限 5 MB base64；完
 `packages/core/src/sandbox/{runner,policy}.ts`、`packages/core/src/config/sandbox.ts`。
 进展：V2 bash 与 code-mode 在 core OS 沙箱下运行；catch-all allow 规则无法解除它。
 - [ ] 把同一 core-owned 沙箱扩展到其他变更型工具（workdir、允许路径、网络），fail-closed、
+- [x] RS：`monitor` 工具已纳入同一沙箱——monitor 命令现经沙箱 runner 启动
+      （seatbelt/Landlock/AppContainer），保持最小环境，取消与超时时按进程组终止。
       面向模型的拒绝提示。
 - [ ] 让沙箱对剩余工具默认开启。
 - **验收：** 沙箱内的变更型工具无法写到允许路径之外；配置时拒绝网络；拒绝以工具错误呈现。
@@ -367,6 +361,21 @@ P99 25.4 ms / max 27.3 ms；主 isolate RSS 725.6 MB → 747.9 MB；FD 稳定在
 - [ ] 统一会话远程控制设计文档（#64）。
 
 ---
+
+## 9. 原生引擎启用门槛
+
+落地引擎是建设本身；以下门槛决定原生会话何时成为默认路径。
+
+1. **引擎二进制默认就位** — 开放。`NativeEngine.Placement` 仍要求显式
+   `MIAO_ENGINE_BIN`。发布流已分发各平台 `miao-engine` 压缩包，剩余工作是
+   自动发现已安装的引擎（最终随包内置），使放置无需环境变量。
+2. **产品工具反向桥** — 已落地（#1027）。原生会话注册宿主提供的产品工具，
+   经引擎 stdio 桥反向调度到服务端执行；回复作为持久工具结果结算。
+3. **声明式 provider manifest 文档** — 开放。任何 base-url provider 或网关
+   已是路由 manifest 配置（#1026），但支持面尚无文档；在引擎具备相应凭据
+   流程前，声明 Bedrock SigV4 与 Copilot 设备流为产品侧（TS 或仅网关）。
+4. **实时验收** — 开放，缺 Gemini/Anthropic 凭据受阻：在已发布二进制上以
+   默认放置引擎的方式运行真实日常会话。
 
 ## 工作区草稿（未提交）
 
