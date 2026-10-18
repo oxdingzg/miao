@@ -492,6 +492,7 @@ for line in sys.stdin:
         vec![miao_engine::mcp::Config {
             url: None,
             headers: Default::default(),
+            call_meta: Default::default(),
             name: "process".into(),
             argv: vec!["python3".into(), "-u".into(), "-c".into(), script.into()],
             env: Default::default(),
@@ -521,7 +522,7 @@ for line in sys.stdin:
 async fn configured_request_timeout_is_bounded_and_never_replays_the_call() {
     let dir = tempfile::tempdir().unwrap();
     let script = r#"
-import json,sys
+import json,sys,os
 for line in sys.stdin:
     request=json.loads(line)
     if 'id' not in request: continue
@@ -531,6 +532,8 @@ for line in sys.stdin:
     elif method=='tools/list':
         result={'tools':[{'name':'pending','inputSchema':{'type':'object','properties':{},'additionalProperties':False}}]}
     elif method=='tools/call':
+        assert request['params']['_meta']['tenant']=='metadata-only'
+        assert request['params']['_meta']['path']==os.environ['PATH']
         with open('calls','a') as f: f.write('one\n')
         continue
     else: raise RuntimeError(method)
@@ -538,6 +541,7 @@ for line in sys.stdin:
 "#;
     let config = serde_json::from_value(json!({
         "name":"timed",
+        "call_meta":{"tenant":"metadata-only","path":"{env:PATH}"},
         "argv":["python3","-u","-c",script],
         "timeout":{"startup":5000,"request":200},
     }))
