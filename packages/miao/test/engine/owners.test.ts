@@ -56,6 +56,26 @@ if (binary)
             expect(yield* Effect.promise(() => other.client.request("events", { session_id: "s", after: 0 }))).toEqual(
               [],
             )
+            expect(yield* owners.sweepTimers().pipe(Effect.timeout("2 seconds"))).toEqual([
+              { storage: input.storage, sessions: [] },
+              { storage: path.join(tmp.path, "other.db"), sessions: [] },
+            ])
+            yield* Effect.promise(() => connections[0].client.close())
+            expect(connections[0].client.available).toBe(false)
+            const sweeps = yield* Effect.all([owners.sweepTimers(), owners.sweepTimers()], {
+              concurrency: "unbounded",
+            }).pipe(Effect.timeout("3 seconds"))
+            expect(sweeps.every((result) => result.length === 2)).toBe(true)
+            const recovered = yield* owners.get(input)
+            expect(recovered).not.toBe(connections[0])
+            expect(recovered.client.available).toBe(true)
+            expect(yield* owners.get(input)).toBe(recovered)
+            expect(yield* owners.get({ ...input, storage: path.join(tmp.path, "other.db"), engineID: "other" })).toBe(
+              other,
+            )
+            expect(
+              yield* Effect.promise(() => recovered.client.request("events", { session_id: "s", after: 0 })),
+            ).toEqual([])
             return owners
           }),
         )
