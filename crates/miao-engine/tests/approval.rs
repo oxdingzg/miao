@@ -202,6 +202,7 @@ async fn approval_matches_controller_input_policy_and_only_resolves_once() {
         .as_str()
         .unwrap()
         .contains("contents"));
+    assert_eq!(grants(&dir.path().join("engine.db")), 0);
     runtime.shutdown().await;
     foreign.shutdown().await;
 }
@@ -359,4 +360,364 @@ async fn approval_carries_matcher_semantics_and_scopes_the_resolution() {
         .unwrap();
     finished(&store).await;
     runtime.shutdown().await;
+}
+
+async fn session_event(store: &Store, session: &str, kind: &str) -> miao_engine::protocol::Event {
+    let result = tokio::time::timeout(std::time::Duration::from_secs(5), async {
+        loop {
+            if let Some(event) = store
+                .events(session, 0, 200)
+                .await
+                .unwrap()
+                .into_iter()
+                .find(|event| event.kind == kind)
+            {
+                return event;
+            }
+            tokio::time::sleep(std::time::Duration::from_millis(2)).await;
+        }
+    })
+    .await;
+    match result {
+        Ok(event) => event,
+        Err(error) => panic!(
+            "{session} waiting for {kind}: {error}; events: {:?}",
+            store.events(session, 0, 200).await.unwrap()
+        ),
+    }
+}
+fn grants(database: &std::path::Path) -> u64 {
+    rusqlite::Connection::open(database)
+        .unwrap()
+        .query_row("SELECT count(*) FROM engine_permission_grant", [], |row| {
+            row.get(0)
+        })
+        .unwrap()
+}
+fn ask_reads() -> Policy {
+    Policy::new(Config {
+        rules: vec![Rule {
+            tool: "read_file".into(),
+            path: "*".into(),
+            decision: Decision::Ask,
+        }],
+        approval_timeout_ms: 60_000,
+        ..Config::default()
+    })
+    .unwrap()
+}
+struct OtherReader;
+#[async_trait]
+impl Provider for OtherReader {
+    async fn stream(
+        &self,
+        request: ModelRequest,
+        progress: mpsc::Sender<Value>,
+        cancel: CancellationToken,
+    ) -> Result<Reply, ProviderError> {
+        let mut reply = Reader.stream(request, progress, cancel).await?;
+        if reply.needs_tools {
+            reply.content[0]["input"]["path"] = json!("other");
+        }
+        Ok(reply)
+    }
+}
+#[tokio::test]
+async fn persistent_grant_survives_restart_across_sessions_but_not_changed_input() {
+    let directory = tempfile::tempdir().unwrap();
+    std::fs::write(directory.path().join("file"), "original").unwrap();
+    std::fs::write(directory.path().join("other"), "different").unwrap();
+    let database = directory.path().join("engine.db");
+    let store = Store::open(&database).await.unwrap();
+    let runtime = Runtime::with_policy(
+        store.clone(),
+        Arc::new(Reader),
+        Tools::new(directory.path()).await.unwrap(),
+        ask_reads(),
+    )
+    .await
+    .unwrap();
+    runtime.admit(input(), true).await.unwrap();
+    let binding = approval(&store).await;
+    let mut forged = response(&binding, Decision::Allow);
+    forged.input_hash = "wrong".into();
+    assert!(matches!(
+        runtime
+            .approve_persistent(&runtime.controller(), "s", forged)
+            .await,
+        Err(Error::ApprovalMismatch)
+    ));
+    assert_eq!(grants(&database), 0);
+    runtime
+        .approve_persistent(
+            &runtime.controller(),
+            "s",
+            response(&binding, Decision::Allow),
+        )
+        .await
+        .unwrap();
+    finished(&store).await;
+    assert_eq!(grants(&database), 1);
+    assert!(matches!(
+        runtime
+            .approve_persistent(
+                &runtime.controller(),
+                "s",
+                response(&binding, Decision::Allow)
+            )
+            .await,
+        Err(Error::ApprovalResolved)
+    ));
+    assert_eq!(grants(&database), 1);
+    runtime.shutdown().await;
+    drop(runtime);
+    store.close().await.unwrap();
+    let store = Store::open(&database).await.unwrap();
+    let runtime = Runtime::with_policy(
+        store.clone(),
+        Arc::new(Reader),
+        Tools::new(directory.path()).await.unwrap(),
+        ask_reads(),
+    )
+    .await
+    .unwrap();
+    let mut next = input();
+    next.session_id = "second".into();
+    next.input_id = "second-input".into();
+    runtime.admit(next, true).await.unwrap();
+    session_event(&store, "second", "run.finished").await;
+    let events = store.events("second", 0, 200).await.unwrap();
+    assert!(events
+        .iter()
+        .any(|event| event.kind == "permission.grant.used"));
+    assert!(events
+        .iter()
+        .all(|event| event.kind != "approval.requested"));
+    runtime.shutdown().await;
+    drop(runtime);
+    store.close().await.unwrap();
+    let store = Store::open(&database).await.unwrap();
+    let runtime = Runtime::with_policy(
+        store.clone(),
+        Arc::new(OtherReader),
+        Tools::new(directory.path()).await.unwrap(),
+        ask_reads(),
+    )
+    .await
+    .unwrap();
+    let mut next = input();
+    next.session_id = "changed".into();
+    next.input_id = "changed-input".into();
+    runtime.admit(next, true).await.unwrap();
+    let event = session_event(&store, "changed", "approval.requested").await;
+    let binding: Approval = serde_json::from_value(event.data).unwrap();
+    assert_eq!(binding.resource, "other");
+    runtime
+        .approve(
+            &runtime.controller(),
+            "changed",
+            response(&binding, Decision::Deny),
+        )
+        .await
+        .unwrap();
+    session_event(&store, "changed", "run.finished").await;
+    assert_eq!(grants(&database), 1);
+    runtime.shutdown().await;
+    drop(runtime);
+    store.close().await.unwrap();
+    for (session, boundary, deny) in [("boundary", true, false), ("denied", false, true)] {
+        let store = Store::open(&database).await.unwrap();
+        let selected = if deny {
+            policy(60_000, Decision::Deny)
+        } else {
+            ask_reads()
+        };
+        let tools = Tools::new(directory.path()).await.unwrap();
+        let tools = if boundary {
+            tools.with_protected_resource(&directory.path().join("other"))
+        } else {
+            tools
+        };
+        let runtime = Runtime::with_policy(store.clone(), Arc::new(Reader), tools, selected)
+            .await
+            .unwrap();
+        let mut next = input();
+        next.session_id = session.into();
+        next.input_id = format!("{session}-input");
+        runtime.admit(next, true).await.unwrap();
+        if !deny {
+            let event = session_event(&store, session, "approval.requested").await;
+            let binding: Approval = serde_json::from_value(event.data).unwrap();
+            runtime
+                .approve(
+                    &runtime.controller(),
+                    session,
+                    response(&binding, Decision::Deny),
+                )
+                .await
+                .unwrap();
+        }
+        session_event(&store, session, "run.finished").await;
+        let events = store.events(session, 0, 200).await.unwrap();
+        assert!(events
+            .iter()
+            .all(|event| event.kind != "permission.grant.used"));
+        if deny {
+            assert!(events
+                .iter()
+                .all(|event| event.kind != "approval.requested"));
+        }
+        assert_eq!(grants(&database), 1);
+        runtime.shutdown().await;
+        drop(runtime);
+        store.close().await.unwrap();
+    }
+}
+
+#[tokio::test]
+async fn grant_and_resolution_roll_back_together_when_event_commit_fails() {
+    let directory = tempfile::tempdir().unwrap();
+    std::fs::write(directory.path().join("file"), "original").unwrap();
+    let database = directory.path().join("engine.db");
+    let store = Store::open(&database).await.unwrap();
+    let runtime = Runtime::with_policy(
+        store.clone(),
+        Arc::new(Reader),
+        Tools::new(directory.path()).await.unwrap(),
+        ask_reads(),
+    )
+    .await
+    .unwrap();
+    runtime.admit(input(), true).await.unwrap();
+    let binding = approval(&store).await;
+    let connection = rusqlite::Connection::open(&database).unwrap();
+    connection
+        .busy_timeout(std::time::Duration::from_secs(2))
+        .unwrap();
+    connection.execute_batch("CREATE TRIGGER reject_resolution BEFORE INSERT ON engine_event WHEN NEW.kind='approval.resolved' BEGIN SELECT RAISE(ABORT,'fixture rollback'); END;").unwrap();
+    assert!(runtime
+        .approve_persistent(
+            &runtime.controller(),
+            "s",
+            response(&binding, Decision::Allow)
+        )
+        .await
+        .is_err());
+    assert_eq!(grants(&database), 0);
+    assert_eq!(
+        store.approval_state(&binding.request_id).await.unwrap(),
+        "pending"
+    );
+    assert!(!store
+        .events("s", 0, 200)
+        .await
+        .unwrap()
+        .iter()
+        .any(|event| event.kind == "approval.resolved"));
+    connection
+        .execute_batch("DROP TRIGGER reject_resolution;")
+        .unwrap();
+    runtime
+        .approve_persistent(
+            &runtime.controller(),
+            "s",
+            response(&binding, Decision::Allow),
+        )
+        .await
+        .unwrap();
+    finished(&store).await;
+    assert_eq!(grants(&database), 1);
+    let event = session_event(&store, "s", "approval.resolved").await;
+    assert_eq!(event.data["persistent"], true);
+    runtime.shutdown().await;
+    drop(runtime);
+    store.close().await.unwrap();
+}
+
+#[tokio::test]
+async fn agent_switch_invalidates_pending_permanent_resolution_without_a_grant() {
+    let directory = tempfile::tempdir().unwrap();
+    std::fs::write(directory.path().join("file"), "original").unwrap();
+    let database = directory.path().join("engine.db");
+    let store = Store::open(&database).await.unwrap();
+    let runtime = Runtime::with_policy(
+        store.clone(),
+        Arc::new(Reader),
+        Tools::new(directory.path()).await.unwrap(),
+        ask_reads(),
+    )
+    .await
+    .unwrap();
+    runtime.admit(input(), true).await.unwrap();
+    let binding = approval(&store).await;
+    runtime
+        .set_agent(
+            "s",
+            serde_json::from_value(json!({"name":"restricted","tools":{"deny":["read_file"]}}))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert!(runtime
+        .approve_persistent(
+            &runtime.controller(),
+            "s",
+            response(&binding, Decision::Allow)
+        )
+        .await
+        .is_err());
+    assert_ne!(
+        store.approval_state(&binding.request_id).await.unwrap(),
+        "pending"
+    );
+    assert_eq!(grants(&database), 0);
+    runtime.shutdown().await;
+    drop(runtime);
+    store.close().await.unwrap();
+}
+
+#[tokio::test]
+async fn expired_or_cancelled_approval_cannot_commit_a_permanent_grant() {
+    for expire in [true, false] {
+        let directory = tempfile::tempdir().unwrap();
+        std::fs::write(directory.path().join("file"), "original").unwrap();
+        let database = directory.path().join("engine.db");
+        let store = Store::open(&database).await.unwrap();
+        let runtime = Runtime::with_policy(
+            store.clone(),
+            Arc::new(Reader),
+            Tools::new(directory.path()).await.unwrap(),
+            ask_reads(),
+        )
+        .await
+        .unwrap();
+        runtime.admit(input(), true).await.unwrap();
+        let binding = approval(&store).await;
+        if expire {
+            let connection = rusqlite::Connection::open(&database).unwrap();
+            connection
+                .busy_timeout(std::time::Duration::from_secs(2))
+                .unwrap();
+            connection.execute("UPDATE engine_approval SET binding=json_set(binding,'$.expires_at_ms',0),expires_at=0 WHERE id=?1",[&binding.request_id]).unwrap();
+        }
+        if !expire {
+            runtime.cancel("s").await.unwrap();
+        }
+        assert!(runtime
+            .approve_persistent(
+                &runtime.controller(),
+                "s",
+                response(&binding, Decision::Allow)
+            )
+            .await
+            .is_err());
+        assert_eq!(grants(&database), 0);
+        assert_ne!(
+            store.approval_state(&binding.request_id).await.unwrap(),
+            "allow"
+        );
+        runtime.shutdown().await;
+        drop(runtime);
+        store.close().await.unwrap();
+    }
 }
