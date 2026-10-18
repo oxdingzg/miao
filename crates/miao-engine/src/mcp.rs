@@ -47,6 +47,17 @@ pub struct Config {
     pub env: BTreeMap<String, String>,
     #[serde(default)]
     pub oauth: Option<Oauth>,
+    #[serde(default)]
+    pub cwd: Option<String>,
+    #[serde(default)]
+    pub timeout: Option<Timeout>,
+}
+
+#[derive(Default, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct Timeout {
+    pub startup: Option<u64>,
+    pub request: Option<u64>,
 }
 
 /// A host-provisioned refresh grant. The browser part of the authorization
@@ -81,6 +92,7 @@ struct Server {
     name: String,
     client: Mutex<RunningService<RoleClient, CatalogWatch>>,
     changed: Arc<Notify>,
+    request_timeout: Duration,
 }
 
 /// List-changed notifications arrive unsolicited; the watcher coalesces them
@@ -133,6 +145,14 @@ impl Registry {
         };
         for config in configs {
             validate_name(&config.name)?;
+            let timeout = config.timeout.unwrap_or_default();
+            if timeout.startup == Some(0) || timeout.request == Some(0) {
+                return Err(Error::Invalid(
+                    "MCP timeouts must be positive milliseconds".into(),
+                ));
+            }
+            let startup_timeout = Duration::from_millis(timeout.startup.unwrap_or(15_000));
+            let request_timeout = Duration::from_millis(timeout.request.unwrap_or(60_000));
             if (config.url.is_none() && config.argv.is_empty())
                 || config.argv.len() > 128
                 || config.argv.first().is_some_and(|arg| arg.is_empty())
@@ -159,7 +179,11 @@ impl Registry {
                 return Err(Error::Invalid("duplicate MCP server name".into()));
             }
             if let Some(endpoint) = config.url {
-                if !config.argv.is_empty() || !config.env.is_empty() || config.headers.len() > 32 {
+                if !config.argv.is_empty()
+                    || !config.env.is_empty()
+                    || config.cwd.is_some()
+                    || config.headers.len() > 32
+                {
                     return Err(Error::Invalid(
                         "MCP HTTP configuration cannot include a process".into(),
                     ));
@@ -224,7 +248,7 @@ impl Registry {
                 let transport = StreamableHttpClientTransport::from_config(transport_config);
                 let changed = Arc::new(Notify::new());
                 let client = tokio::time::timeout(
-                    Duration::from_secs(15),
+                    startup_timeout,
                     CatalogWatch {
                         changed: changed.clone(),
                     }
@@ -233,7 +257,9 @@ impl Registry {
                 .await
                 .map_err(|_| Error::Invalid("MCP HTTP initialization timed out".into()))?
                 .map_err(|_| Error::Invalid("MCP HTTP initialization failed".into()))?;
-                registry.attach(config.name, client, changed).await?;
+                registry
+                    .attach(config.name, client, changed, request_timeout)
+                    .await?;
                 continue;
             }
             if !config.headers.is_empty() {
@@ -244,11 +270,12 @@ impl Registry {
             if config.oauth.is_some() {
                 return Err(Error::Invalid("MCP OAuth requires an HTTP endpoint".into()));
             }
+            let cwd = config
+                .cwd
+                .map(|cwd| workspace.join(cwd))
+                .unwrap_or_else(|| workspace.to_path_buf());
             let mut command = Command::new(&config.argv[0]);
-            command
-                .args(&config.argv[1..])
-                .current_dir(workspace)
-                .env_clear();
+            command.args(&config.argv[1..]).current_dir(cwd).env_clear();
             for key in ["PATH", "HOME", "LANG", "LC_ALL", "TERM"] {
                 if let Some(value) = std::env::var_os(key) {
                     command.env(key, value);
@@ -273,7 +300,7 @@ impl Registry {
                 .ok_or_else(|| Error::Invalid("MCP stdin missing".into()))?;
             let changed = Arc::new(Notify::new());
             let client = tokio::time::timeout(
-                Duration::from_secs(15),
+                startup_timeout,
                 CatalogWatch {
                     changed: changed.clone(),
                 }
@@ -282,7 +309,9 @@ impl Registry {
             .await
             .map_err(|_| Error::Invalid("MCP initialization timed out".into()))?
             .map_err(|_| Error::Invalid("MCP initialization failed".into()))?;
-            registry.attach(config.name, client, changed).await?;
+            registry
+                .attach(config.name, client, changed, request_timeout)
+                .await?;
             registry.children.lock().await.push(child);
         }
         Ok(registry)
@@ -310,7 +339,9 @@ impl Registry {
             servers: vec![],
             children: Mutex::new(vec![]),
         };
-        registry.attach(name, client, changed).await?;
+        registry
+            .attach(name, client, changed, Duration::from_secs(60))
+            .await?;
         Ok(registry)
     }
 
@@ -319,6 +350,7 @@ impl Registry {
         name: String,
         client: RunningService<RoleClient, CatalogWatch>,
         changed: Arc<Notify>,
+        request_timeout: Duration,
     ) -> Result<(), Error> {
         let capabilities = client
             .peer_info()
@@ -339,7 +371,7 @@ impl Registry {
                     )
                 })
                 .transpose()?;
-            let page = tokio::time::timeout(Duration::from_secs(15), client.list_tools(params))
+            let page = tokio::time::timeout(request_timeout, client.list_tools(params))
                 .await
                 .map_err(|_| Error::Invalid("MCP catalog timed out".into()))?
                 .map_err(|_| Error::Invalid("MCP catalog failed".into()))?;
@@ -356,6 +388,7 @@ impl Registry {
             name: name.clone(),
             client: Mutex::new(client),
             changed,
+            request_timeout,
         });
         let mut tools = self.tools.write().unwrap();
         tools.retain(|_, tool| tool.server.name != name);
@@ -449,7 +482,7 @@ impl Registry {
             .peer_info()
             .map(|info| info.capabilities.clone())
             .unwrap_or_default();
-        let catalog = Self::list_catalog(&client, &capabilities).await?;
+        let catalog = Self::list_catalog(&client, &capabilities, server.request_timeout).await?;
         let mut tools = self.tools.write().unwrap();
         tools.retain(|_, tool| tool.server.name != name);
         Self::register_catalog(&mut tools, &server, &capabilities, catalog)
@@ -478,6 +511,7 @@ impl Registry {
     async fn list_catalog(
         client: &RunningService<RoleClient, CatalogWatch>,
         capabilities: &rmcp::model::ServerCapabilities,
+        request_timeout: Duration,
     ) -> Result<Vec<rmcp::model::Tool>, Error> {
         let mut cursor = None;
         let mut catalog = Vec::new();
@@ -494,7 +528,7 @@ impl Registry {
                     )
                 })
                 .transpose()?;
-            let page = tokio::time::timeout(Duration::from_secs(15), client.list_tools(params))
+            let page = tokio::time::timeout(request_timeout, client.list_tools(params))
                 .await
                 .map_err(|_| Error::Invalid("MCP catalog timed out".into()))?
                 .map_err(|_| Error::Invalid("MCP catalog failed".into()))?;
@@ -656,7 +690,7 @@ impl Registry {
         let result = tokio::select! {
             biased;
             _=cancel.cancelled()=>return Err(ToolError::Interrupted),
-            response=tokio::time::timeout(Duration::from_secs(60),request)=>response.map_err(|_|ToolError::External("MCP request timed out; outcome may be unknown".into()))??,
+            response=tokio::time::timeout(server.request_timeout,request)=>response.map_err(|_|ToolError::External("MCP request timed out; outcome may be unknown".into()))??,
         };
         if serde_json::to_vec(&result)
             .map_err(|_| ToolError::InvalidInput)?

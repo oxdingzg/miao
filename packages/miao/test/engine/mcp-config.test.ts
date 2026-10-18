@@ -57,7 +57,6 @@ test("unsupported shared MCP transport or identity settings are not silently dis
   for (const server of [
     { type: "remote", url: "https://example.invalid/mcp" },
     { type: "local", command: ["node", "peer.js"], call_meta: { Authorization: "fixture" } },
-    { type: "local", command: ["node", "peer.js"], cwd: "nested" },
   ]) {
     const mcpSettings = Schema.decodeUnknownSync(ConfigMCP.Info)({ servers: { fixture: server } })
     expect(() =>
@@ -104,4 +103,39 @@ test("shared HTTP MCP snapshots preserve trusted URL and headers", async () => {
     snapshot.dispose()
   }
   expect(existsSync(snapshot.file)).toBe(false)
+})
+
+test("shared cwd and per-field startup/request timeout overrides reach native MCP", async () => {
+  await using tmp = await tmpdir()
+  const policyFile = path.join(tmp.path, "policy.json")
+  await Bun.write(policyFile, JSON.stringify({ mode: "workspace", allow_mcp: true }))
+  const snapshot = prepareMcpConfig({
+    binary: "unused",
+    model: "unused",
+    db: "unused",
+    workspace: tmp.path,
+    policyFile,
+    mcpSettings: Schema.decodeUnknownSync(ConfigMCP.Info)({
+      timeout: { startup: 5000, request: 9000 },
+      servers: {
+        local: { type: "local", command: ["node", "peer.js"], cwd: "nested", timeout: { request: 250 } },
+        remote: { type: "remote", url: "https://example.invalid/mcp", oauth: false, timeout: { startup: 1000 } },
+      },
+    }),
+  })
+  if (!snapshot) throw new Error("authorized config must produce a snapshot")
+  try {
+    expect(await Bun.file(snapshot.file).json()).toEqual([
+      {
+        name: "local",
+        argv: ["node", "peer.js"],
+        env: {},
+        cwd: path.join(tmp.path, "nested"),
+        timeout: { startup: 5000, request: 250 },
+      },
+      { name: "remote", url: "https://example.invalid/mcp", headers: {}, timeout: { startup: 1000, request: 9000 } },
+    ])
+  } finally {
+    snapshot.dispose()
+  }
 })
