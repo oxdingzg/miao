@@ -7,7 +7,8 @@ import { DatabaseFile } from "@miao/core/database/file"
 import { Integration } from "@miao/core/integration"
 import { Location } from "@miao/core/location"
 import { ModelV2 } from "@miao/core/model"
-import { Effect, Option } from "effect"
+import { PluginV2 } from "@miao/core/plugin"
+import { Deferred, Effect, Option } from "effect"
 import { EngineError, type EngineOptions } from "./client"
 
 type Source = { type: "database"; path: string; id: string; integration: string } | { type: "environment"; key: string }
@@ -32,6 +33,9 @@ export const prepare = Effect.fn("Engine.productRoutes")(function* (
   const integrations = Option.getOrUndefined(yield* Effect.serviceOption(Integration.Service))
   const credentials = Option.getOrUndefined(yield* Effect.serviceOption(Credential.Service))
   if (!catalog || !integrations || !credentials) return options
+  // Provider plugins populate model metadata and active connections during boot.
+  const plugins = Option.getOrUndefined(yield* Effect.serviceOption(PluginV2.Service))
+  if (plugins) yield* Deferred.await(plugins.booted)
   const current = yield* Location.Service
   if (current.directory !== location.directory)
     return yield* Effect.fail(new EngineError("engine_routes_location", "product model Location does not match owner"))
