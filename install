@@ -34,6 +34,8 @@ Options:
     -h, --help              Display this help message
     -v, --version <version> Install a specific version (e.g., 0.0.1)
     -b, --binary <path>     Install from a local binary instead of downloading
+        --engine-binary <path>  Install a local miao-engine next to the CLI
+        --no-engine         Don't install the native engine
         --no-modify-path    Don't modify shell config files (.zshrc, .bashrc, etc.)
 
 Examples:
@@ -46,6 +48,8 @@ EOF
 requested_version=${VERSION:-}
 no_modify_path=false
 binary_path=""
+engine_binary=""
+no_engine=false
 
 while [[ $# -gt 0 ]]; do
     case "$1" in
@@ -70,6 +74,19 @@ while [[ $# -gt 0 ]]; do
                 echo -e "${RED}Error: --binary requires a path argument${NC}"
                 exit 1
             fi
+            ;;
+        --engine-binary)
+            if [[ -n "${2:-}" ]]; then
+                engine_binary="$2"
+                shift 2
+            else
+                echo -e "${RED}Error: --engine-binary requires a path argument${NC}"
+                exit 1
+            fi
+            ;;
+        --no-engine)
+            no_engine=true
+            shift
             ;;
         --no-modify-path)
             no_modify_path=true
@@ -402,11 +419,70 @@ install_from_binary() {
     publish_binary "$binary_path"
 }
 
+# The native engine rides the same release. It is optional: an older product or
+# an incompatible archive leaves miao on TypeScript sessions instead of failing
+# the install.
+install_engine() {
+    if [ "$no_engine" = true ] || [ "$specific_version" = "local" ]; then
+        return 0
+    fi
+    local combo file url tmp_dir engine protocol
+    combo="$os-$arch"
+    case "$os" in
+        windows) file="miao-engine-${combo}.zip" ;;
+        *) file="miao-engine-${combo}.tar.gz" ;;
+    esac
+    url="https://github.com/oxdingzg/miao/releases/download/v${specific_version}/${file}"
+    tmp_dir="${TMPDIR:-/tmp}/miao_engine_install_$$"
+    mkdir -p "$tmp_dir"
+    if ! curl -f -sS -L -o "$tmp_dir/$file" "$url"; then
+        print_message info "${MUTED}No native engine archive in this release; miao runs TypeScript sessions.${NC}"
+        rm -rf "$tmp_dir"
+        return 0
+    fi
+    if [ "$os" = "windows" ]; then
+        unzip -q "$tmp_dir/$file" -d "$tmp_dir"
+    else
+        tar -xzf "$tmp_dir/$file" -C "$tmp_dir"
+    fi
+    engine="$tmp_dir/miao-engine${EXE}"
+    if [ ! -f "$engine" ]; then
+        print_message info "${MUTED}Engine archive was not usable; keeping TypeScript sessions.${NC}"
+        rm -rf "$tmp_dir"
+        return 0
+    fi
+    chmod 755 "$engine" 2>/dev/null || true
+    protocol=$("$engine" --capabilities 2>/dev/null | sed -n 's/.*"protocol":\([0-9][0-9]*\).*/\1/p')
+    if [ -z "$protocol" ] || [ "$protocol" -lt 2 ]; then
+        print_message info "${MUTED}Engine archive predates this product; not installing it.${NC}"
+        rm -rf "$tmp_dir"
+        return 0
+    fi
+    mv -f "$engine" "$INSTALL_DIR/miao-engine${EXE}"
+    print_message info "${MUTED}Native engine installed: ${NC}$INSTALL_DIR/miao-engine${EXE}"
+    rm -rf "$tmp_dir"
+}
+
+install_engine_binary() {
+    if [ -z "$engine_binary" ]; then
+        return 0
+    fi
+    if [ ! -f "$engine_binary" ]; then
+        print_message error "Engine binary not found at ${engine_binary}"
+        return 1
+    fi
+    cp "$engine_binary" "$INSTALL_DIR/miao-engine${EXE}"
+    chmod 755 "$INSTALL_DIR/miao-engine${EXE}"
+    print_message info "${MUTED}Native engine installed: ${NC}$INSTALL_DIR/miao-engine${EXE}"
+}
+
 if [ -n "$binary_path" ]; then
     install_from_binary
+    install_engine_binary
 else
     check_version
     download_and_install
+    install_engine
 fi
 
 
