@@ -1025,6 +1025,64 @@ impl Store {
         }).await
     }
 
+    /// Seq of the last committed event, used as a cursor before a run starts.
+    pub async fn latest_seq(&self, session: &str) -> Result<u64, Error> {
+        let session = session.to_owned();
+        self.call(move |conn| {
+            Ok(conn
+                .query_row(
+                    "SELECT next_seq FROM engine_session WHERE id=?1",
+                    [&session],
+                    |r| r.get(0),
+                )
+                .optional()?
+                .unwrap_or(0))
+        })
+        .await
+    }
+
+    /// Ask the Session's current owner to stop. Any window may write this; the
+    /// owner consumes it and cancels its own run, so an interrupt issued to a
+    /// runtime that does not own the Session still takes effect.
+    pub async fn request_cancel(
+        &self,
+        session: &str,
+        run: &str,
+        reason: &str,
+    ) -> Result<Event, Error> {
+        let (session, run, reason) = (session.to_owned(), run.to_owned(), reason.to_owned());
+        self.call(move |conn| {
+            let tx = conn.transaction()?;
+            let event = append(
+                &tx,
+                &session,
+                "run.cancel_requested",
+                json!({"run_id":run,"reason":reason}),
+            )?;
+            tx.commit()?;
+            Ok(event)
+        })
+        .await
+    }
+
+    /// Whether a cancel request for this run arrived after the owner's cursor.
+    pub async fn cancel_requested(
+        &self,
+        session: &str,
+        run: &str,
+        after: u64,
+    ) -> Result<bool, Error> {
+        let (session, run) = (session.to_owned(), run.to_owned());
+        self.call(move |conn| {
+            Ok(conn.query_row(
+                "SELECT EXISTS(SELECT 1 FROM engine_event WHERE session_id=?1 AND seq>?2 AND kind='run.cancel_requested' AND json_extract(data,'$.run_id')=?3)",
+                params![session, after, run],
+                |row| row.get(0),
+            )?)
+        })
+        .await
+    }
+
     pub async fn start_run(&self, session: &str, run: &str) -> Result<Event, Error> {
         self.start_run_inner(session, run, None).await
     }

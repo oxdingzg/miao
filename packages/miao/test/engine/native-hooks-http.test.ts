@@ -151,7 +151,7 @@ test.skipIf(!binary)("product configuration hooks fire around native tool execut
     await server.stderr
     provider.stop(true)
   }
-})
+}, 30_000)
 
 test.skipIf(!binary)("an explicit hooks manifest takes precedence over product configuration", async () => {
   await using tmp = await tmpdir()

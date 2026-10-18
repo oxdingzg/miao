@@ -150,3 +150,33 @@ async fn renewal_keeps_the_epoch_but_a_takeover_ends_it() {
         Error::Fenced
     ));
 }
+
+#[tokio::test]
+async fn cancel_requests_are_durable_and_run_scoped() {
+    let dir = tempfile::tempdir().unwrap();
+    let store = open(&dir).await;
+    let cursor = store.latest_seq("ses_fence").await.unwrap();
+    store.start_run("ses_fence", "run-a").await.unwrap();
+    assert!(!store
+        .cancel_requested("ses_fence", "run-a", cursor)
+        .await
+        .unwrap());
+    let event = store
+        .request_cancel("ses_fence", "run-a", "operator")
+        .await
+        .unwrap();
+    assert_eq!(event.kind, "run.cancel_requested");
+    assert!(store
+        .cancel_requested("ses_fence", "run-a", cursor)
+        .await
+        .unwrap());
+    assert!(!store
+        .cancel_requested("ses_fence", "run-b", cursor)
+        .await
+        .unwrap());
+    // A cursor at the request itself does not see it again.
+    assert!(!store
+        .cancel_requested("ses_fence", "run-a", event.seq)
+        .await
+        .unwrap());
+}
