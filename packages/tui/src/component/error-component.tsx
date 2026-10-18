@@ -6,8 +6,9 @@ import { useClipboard } from "../context/clipboard"
 import { InstallationVersion } from "@miao/core/installation/version"
 import { useExit } from "../context/exit"
 import { describeOS, describeTerminal } from "../util/system"
+import type { CrashReport } from "./error-boundary"
 
-export function ErrorComponent(props: { error: Error; reset: () => void; mode?: "dark" | "light" }) {
+export function ErrorComponent(props: { report: CrashReport; reset: () => void; mode?: "dark" | "light" }) {
   const term = useTerminalDimensions()
   const exit = useExit()
   const clipboard = useClipboard()
@@ -40,9 +41,9 @@ export function ErrorComponent(props: { error: Error; reset: () => void; mode?: 
         success: "#7fd88f",
       }
 
-  const message = props.error.message || "An unknown error occurred."
-  const stack = props.error.stack || "No stack trace available."
-  const issueURL = buildIssueURL(message, stack)
+  const message = props.report.error.message || "An unknown error occurred."
+  const stack = props.report.error.stack || "No stack trace available."
+  const issueURL = buildIssueURL(message, stack, props.report)
 
   const copyReport = () => {
     void clipboard.write?.(issueURL.toString()).then(() => setCopied(true))
@@ -125,8 +126,12 @@ export function ErrorComponent(props: { error: Error; reset: () => void; mode?: 
           titleColor={colors.error}
           paddingLeft={2}
           paddingRight={2}
+          flexDirection="column"
         >
           <text fg={colors.text}>{message}</text>
+          <Show when={props.report.count > 1}>
+            <text fg={colors.muted}>{`First of ${props.report.count} errors; the report includes what followed.`}</text>
+          </Show>
         </box>
 
         {/* Actions */}
@@ -200,7 +205,7 @@ export function ErrorComponent(props: { error: Error; reset: () => void; mode?: 
   )
 }
 
-function buildIssueURL(message: string, stack: string) {
+function buildIssueURL(message: string, stack: string, report: CrashReport) {
   // Field keys match the ids in .github/ISSUE_TEMPLATE/bug-report.yml so the issue
   // form opens pre-filled. Populating os/terminal/reproduce keeps the report past
   // the contributing-guidelines compliance check, which pushes for system info.
@@ -214,14 +219,24 @@ function buildIssueURL(message: string, stack: string) {
     "Reported automatically from the miao crash screen. If you can, describe what you were doing when it crashed.",
   )
 
+  // Errors handled after the first are usually cascades of it; keeping them in
+  // the report shows how far the failure spread without hiding the cause.
+  const following = report.following.length
+    ? `\n\n**${report.count - 1} further errors followed** (listed in order${
+        report.count - 1 > report.following.length ? ", the first ones only" : ""
+      }):\n${report.following.map((item, index) => `${index + 2}. ${item.message}`).join("\n")}`
+    : ""
+
   // Budget the stack against the fully URL-encoded length (not the raw length) so
   // the final link stays under GitHub's practical limit; flag truncation so a
   // clipped trace is obvious. searchParams.set handles encoding without throwing,
   // so measuring url.toString() is both correct and safe on any input.
   const MAX_URL_LENGTH = 6000
   const marker = "\n… (truncated)"
-  const head = `The miao TUI crashed with an unexpected error.\n\n**Error:** ${message}\n\n**Stack trace:**\n`
-  const setBody = (body: string) => url.searchParams.set("description", head + "```\n" + body + "\n```")
+  const head = `The miao TUI crashed with an unexpected error.${
+    report.count > 1 ? ` The first of ${report.count} errors is below; the rest were caused by it.` : ""
+  }\n\n**Error:** ${message}\n\n**Stack trace:**\n`
+  const setBody = (body: string) => url.searchParams.set("description", head + "```\n" + body + "\n```" + following)
 
   setBody(stack)
   if (url.toString().length <= MAX_URL_LENGTH) return url
