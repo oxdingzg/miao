@@ -33,7 +33,12 @@ use axum::{
 use futures_util::stream;
 use serde::Deserialize;
 use serde_json::{json, Value};
-use std::{collections::VecDeque, convert::Infallible, sync::Arc, time::Duration};
+use std::{
+    collections::{HashMap, VecDeque},
+    convert::Infallible,
+    sync::Arc,
+    time::Duration,
+};
 use tokio::{
     net::TcpListener,
     sync::{broadcast, Mutex},
@@ -53,23 +58,133 @@ struct Shared {
     host: Mutex<Host>,
     runtime: Runtime,
     token: String,
+    leases: Mutex<HashMap<String, tokio::time::Instant>>,
+    stop: tokio_util::sync::CancellationToken,
 }
 
 /// Serve the command table over HTTP until the listener fails. The caller binds
 /// the listener and supplies the bearer token; this never binds on its own.
 pub async fn serve(runtime: Runtime, listener: TcpListener, token: String) -> std::io::Result<()> {
+    serve_with_idle_timeout(runtime, listener, token, None).await
+}
+
+/// Shared-engine attachments renew leases independently. An optional idle
+/// timeout lets the engine outlive one window without becoming an orphan.
+pub async fn serve_with_idle_timeout(
+    runtime: Runtime,
+    listener: TcpListener,
+    token: String,
+    idle: Option<Duration>,
+) -> std::io::Result<()> {
     let state = Arc::new(Shared {
         host: Mutex::new(Host::new(runtime.clone())),
         runtime,
         token,
+        leases: Mutex::new(HashMap::new()),
+        stop: tokio_util::sync::CancellationToken::new(),
     });
     let router = Router::new()
         .route("/rpc", post(rpc))
         .route("/events", get(events))
         .route("/version", get(version))
+        .route("/lease", post(lease))
         .layer(DefaultBodyLimit::max(MAX_BODY))
-        .with_state(state);
-    axum::serve(listener, router).await
+        .with_state(state.clone());
+    axum::serve(listener, router)
+        .with_graceful_shutdown(async move {
+            let Some(idle) = idle else {
+                std::future::pending::<()>().await;
+                return;
+            };
+            let mut occupied = tokio::time::Instant::now();
+            loop {
+                tokio::time::sleep(idle.min(Duration::from_millis(250))).await;
+                let now = tokio::time::Instant::now();
+                let attached = {
+                    let mut leases = state.leases.lock().await;
+                    leases.retain(|_, renewed| now.duration_since(*renewed) < idle);
+                    !leases.is_empty()
+                };
+                // A scheduled wake, running turn, or background job is still
+                // useful work even after every window has detached.
+                if attached || state.runtime.has_live_work().await.unwrap_or(true) {
+                    occupied = now;
+                    continue;
+                }
+                if now.duration_since(occupied) >= idle {
+                    let leases = state.leases.lock().await;
+                    if !leases.is_empty() {
+                        occupied = now;
+                        continue;
+                    }
+                    state.stop.cancel();
+                    return;
+                }
+            }
+        })
+        .await
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct Lease {
+    client_id: String,
+    #[serde(default)]
+    release: bool,
+}
+
+async fn lease(State(state): State<Arc<Shared>>, headers: HeaderMap, body: Bytes) -> Response {
+    if !authorized(&headers, &state.token) {
+        return fail(
+            StatusCode::UNAUTHORIZED,
+            "unauthorized",
+            "missing or invalid bearer token",
+        );
+    }
+    let value: Lease = match serde_json::from_slice(&body) {
+        Ok(value) => value,
+        Err(_) => {
+            return fail(
+                StatusCode::BAD_REQUEST,
+                "invalid_request",
+                "expected a client lease",
+            )
+        }
+    };
+    if value.client_id.is_empty()
+        || value.client_id.len() > 128
+        || !value
+            .client_id
+            .bytes()
+            .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'-' | b'_'))
+    {
+        return fail(
+            StatusCode::BAD_REQUEST,
+            "invalid_request",
+            "invalid client identity",
+        );
+    }
+    let mut leases = state.leases.lock().await;
+    if state.stop.is_cancelled() {
+        return fail(
+            StatusCode::SERVICE_UNAVAILABLE,
+            "engine_closing",
+            "native engine is shutting down",
+        );
+    }
+    if value.release {
+        leases.remove(&value.client_id);
+        return ok(json!({"accepted":true}));
+    }
+    if leases.len() >= 128 && !leases.contains_key(&value.client_id) {
+        return fail(
+            StatusCode::TOO_MANY_REQUESTS,
+            "lease_limit",
+            "too many engine attachments",
+        );
+    }
+    leases.insert(value.client_id, tokio::time::Instant::now());
+    ok(json!({"accepted":true}))
 }
 
 async fn version() -> Response {
@@ -123,6 +238,7 @@ async fn events(
         cursor: after,
         pending: VecDeque::new(),
         progress: state.runtime.progress(),
+        stop: state.stop.clone(),
     };
     tagged(
         Sse::new(stream::unfold(start, next_event))
@@ -137,10 +253,14 @@ struct Stream {
     cursor: u64,
     pending: VecDeque<Event>,
     progress: broadcast::Receiver<Value>,
+    stop: tokio_util::sync::CancellationToken,
 }
 
 async fn next_event(mut stream: Stream) -> Option<(Result<Event, Infallible>, Stream)> {
     loop {
+        if stream.stop.is_cancelled() {
+            return None;
+        }
         if let Some(frame) = stream.pending.pop_front() {
             return Some((Ok(frame), stream));
         }

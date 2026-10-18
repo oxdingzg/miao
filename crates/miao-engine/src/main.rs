@@ -157,6 +157,7 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
             "--auth-file",
             "--http",
             "--http-token",
+            "--http-idle-ms",
         ]
         .contains(&flag[0].as_str())
             || options.insert(flag[0].clone(), flag[1].clone()).is_some()
@@ -528,10 +529,19 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
         result?;
         return Ok(());
     }
-    if options.contains_key("--http-token") && !options.contains_key("--http") {
-        return Err("--http-token requires --http".into());
+    if (options.contains_key("--http-token") || options.contains_key("--http-idle-ms"))
+        && !options.contains_key("--http")
+    {
+        return Err("HTTP token and idle timeout require --http".into());
     }
     if let Some(address) = options.get("--http") {
+        let idle = options
+            .get("--http-idle-ms")
+            .map(|value| value.parse::<u64>())
+            .transpose()?;
+        if idle.is_some_and(|value| !(1_000..=3_600_000).contains(&value)) {
+            return Err("--http-idle-ms must be between 1000 and 3600000".into());
+        }
         let address: SocketAddr = address
             .parse()
             .map_err(|_| "--http must be an IP:port socket address")?;
@@ -558,7 +568,13 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
             listener.local_addr()?,
             miao_engine::http::PROTOCOL_VERSION
         );
-        let result = miao_engine::http::serve(runtime.clone(), listener, token).await;
+        let result = miao_engine::http::serve_with_idle_timeout(
+            runtime.clone(),
+            listener,
+            token,
+            idle.map(Duration::from_millis),
+        )
+        .await;
         runtime.shutdown().await;
         result?;
         return Ok(());

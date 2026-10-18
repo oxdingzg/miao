@@ -1074,6 +1074,17 @@ impl Store {
     }
     /// A lease is alive while its last heartbeat is within twice the declared
     /// interval; expired or missing leases make timers adoptable.
+    pub async fn has_running_runs(&self) -> Result<bool, Error> {
+        self.call(|conn| {
+            Ok(conn.query_row(
+                "SELECT EXISTS(SELECT 1 FROM engine_run WHERE state='running')",
+                [],
+                |row| row.get(0),
+            )?)
+        })
+        .await
+    }
+
     pub async fn lease_alive(&self, session: &str) -> Result<bool, Error> {
         let session = session.to_owned();
         self.call(move |conn| {

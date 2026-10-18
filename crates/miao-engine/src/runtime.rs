@@ -360,6 +360,17 @@ impl Runtime {
         &self.inner.store
     }
 
+    /// Detaching the last UI must not kill useful background work.
+    pub async fn has_live_work(&self) -> Result<bool, Error> {
+        if !self.inner.jobs.lock().await.is_empty()
+            || !self.inner.timers.lock().await.is_empty()
+            || !self.inner.crons.lock().await.is_empty()
+        {
+            return Ok(true);
+        }
+        self.inner.store.has_running_runs().await
+    }
+
     /// Ephemeral deltas have no durable cursor. Slow clients lose deltas and
     /// resynchronize from committed messages, never block provider execution.
     pub fn progress(&self) -> broadcast::Receiver<Value> {
