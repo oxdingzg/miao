@@ -189,7 +189,7 @@ export const makeSessionGroup = <I extends HttpApiMiddleware.AnyId, S>(sessionLo
         params: { sessionID: Session.ID },
         payload: Schema.Struct({ agent: Agent.ID }),
         success: HttpApiSchema.NoContent,
-        error: [SessionNotFoundError, ServiceUnavailableError],
+        error: [ConflictError, SessionNotFoundError, ServiceUnavailableError],
       })
         .middleware(sessionLocationMiddleware)
         .annotateMerge(

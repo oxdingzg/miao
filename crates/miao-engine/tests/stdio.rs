@@ -252,6 +252,67 @@ fn compaction_requests_are_a_wire_command_with_a_durable_audit_trail() {
 }
 
 #[test]
+fn agent_selection_is_a_wire_command_that_reports_its_derived_hash() {
+    let dir = tempfile::tempdir().unwrap();
+    let mut process = Command::new(env!("CARGO_BIN_EXE_miao-engine"))
+        .args([
+            "serve",
+            "--db",
+            dir.path().join("engine.db").to_str().unwrap(),
+            "--workspace",
+            dir.path().to_str().unwrap(),
+            "--model",
+            "fixture",
+        ])
+        .env("ANTHROPIC_API_KEY", "fixture-key")
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .unwrap();
+    let agent = json!({"name":"reviewer","semantics":"product-agent-v1","instructions":"Review the diff.","tools":{"allow":["read_file"]}});
+    let requests = [
+        json!({"id":1,"method":"admit","params":{"input":{"session_id":"s","input_id":"one","prompt":"hello"},"resume":false}}),
+        json!({"id":2,"method":"select_agent","params":{"session_id":"missing","agent":agent}}),
+        json!({"id":3,"method":"select_agent","params":{"session_id":"s","agent":agent}}),
+        json!({"id":4,"method":"select_agent","params":{"session_id":"s","agent":agent}}),
+        json!({"id":5,"method":"select_agent","params":{"session_id":"s","agent":{"name":""}}}),
+        json!({"id":6,"method":"snapshot","params":{"session_id":"s"}}),
+        json!({"id":7,"method":"shutdown"}),
+    ];
+    let mut stdin = process.stdin.take().unwrap();
+    for request in requests {
+        writeln!(stdin, "{request}").unwrap();
+    }
+    drop(stdin);
+    let output = process.wait_with_output().unwrap();
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let replies: Vec<Value> = String::from_utf8(output.stdout)
+        .unwrap()
+        .lines()
+        .map(|l| serde_json::from_str(l).unwrap())
+        .collect();
+    let reply = |id: u64| replies.iter().find(|r| r["id"] == id).unwrap().clone();
+    let result = |id: u64| reply(id)["result"].clone();
+    assert!(reply(2)["error"].is_object(), "{replies:?}");
+    let applied = result(3);
+    assert_eq!(applied["changed"], true);
+    let hash = applied["agent_hash"].as_str().unwrap().to_owned();
+    assert_eq!(hash.len(), 64);
+    // The same manifest is the same selection.
+    assert_eq!(result(4), json!({"agent_hash":hash,"changed":false}));
+    assert!(reply(5)["error"].is_object(), "{replies:?}");
+    let snapshot = result(6);
+    assert_eq!(snapshot["agent"]["name"], "reviewer");
+    assert_eq!(snapshot["agent"]["agent_hash"], hash.as_str());
+    assert_eq!(snapshot["agent"]["semantics"], "product-agent-v1");
+}
+
+#[test]
 fn version_uses_root_manifest_and_no_provider_configuration() {
     let output = Command::new(env!("CARGO_BIN_EXE_miao-engine"))
         .arg("--version")

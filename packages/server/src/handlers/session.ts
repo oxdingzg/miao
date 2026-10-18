@@ -3,9 +3,11 @@ import { Image } from "@miao/core/image"
 import { Database } from "@miao/core/database/database"
 import { Catalog } from "@miao/core/catalog"
 import { SessionV2 } from "@miao/core/session"
+import { AgentV2 } from "@miao/core/agent"
+import { PluginV2 } from "@miao/core/plugin"
 import { SessionImageNormalize } from "@miao/core/session/image-normalize"
 import { SessionUsageStore } from "@miao/core/session/usage-store"
-import { Clock, DateTime, Effect, Option, Schema, Stream } from "effect"
+import { Clock, DateTime, Deferred, Effect, Option, Schema, Stream } from "effect"
 import { BackgroundJob } from "@miao/core/background-job"
 import { SessionBackgroundJobs } from "@miao/core/session/background-jobs"
 import { SessionSchedule } from "@miao/core/session/schedule"
@@ -231,6 +233,22 @@ export const SessionHandler = HttpApiBuilder.group(Api, "server.session", (handl
       .handle(
         "session.switchAgent",
         Effect.fn(function* (ctx) {
+          const placement = yield* Effect.serviceOption(NativeEngine.Placement)
+          if (Option.isSome(placement)) {
+            const owner = yield* requireNativeOwner(ctx.params.sessionID)
+            const plugins = yield* PluginV2.Service
+            yield* Deferred.await(plugins.booted)
+            const agents = yield* AgentV2.Service
+            const agent = yield* agents.get(ctx.payload.agent)
+            if (!agent) return yield* new ConflictError({ message: `Agent is not selectable: ${ctx.payload.agent}` })
+            yield* owner.native.selectAgent({
+              sessionID: ctx.params.sessionID,
+              storage: owner.placement.storage,
+              location: owner.placement.location,
+              agent,
+            })
+            return HttpApiSchema.NoContent.make()
+          }
           yield* requireTypescriptOwner(ctx.params.sessionID, "session.switchAgent")
           yield* session.switchAgent({ sessionID: ctx.params.sessionID, agent: ctx.payload.agent }).pipe(
             Effect.catchTag("Session.NotFoundError", (error) =>

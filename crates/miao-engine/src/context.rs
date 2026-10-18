@@ -292,12 +292,24 @@ pub async fn assemble(
     policy: &Policy,
     cancel: CancellationToken,
 ) -> Result<ContextBundle, ToolError> {
+    assemble_for_agent(tools, policy, cancel, None).await
+}
+
+pub(crate) async fn assemble_for_agent(
+    tools: &Tools,
+    policy: &Policy,
+    cancel: CancellationToken,
+    agent: Option<&crate::session_agent::AgentManifest>,
+) -> Result<ContextBundle, ToolError> {
     if cancel.is_cancelled() {
         return Err(ToolError::Interrupted);
     }
     let names = tools
         .definitions()
         .iter()
+        .filter(|tool| {
+            agent.is_none_or(|agent| agent.permits(&tool.name)) && policy.tool_visible(&tool.name)
+        })
         .map(|t| t.name.clone())
         .collect::<Vec<_>>()
         .join(", ");

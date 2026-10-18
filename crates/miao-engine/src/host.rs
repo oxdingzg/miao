@@ -62,6 +62,9 @@ impl Host {
             } => runtime.store().set_archived(&session_id, archived).await,
             Command::Remove { session_id } => runtime.remove(&session_id).await,
             Command::RequestCompact { session_id } => runtime.request_compact(&session_id).await,
+            Command::SelectAgent { session_id, agent } => {
+                runtime.set_agent(&session_id, *agent).await
+            }
             Command::CancelInput {
                 session_id,
                 input_id,

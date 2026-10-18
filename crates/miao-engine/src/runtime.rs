@@ -321,6 +321,57 @@ impl Runtime {
         self.inner.breaker.lock().await.reset();
     }
 
+    /// Record a host-resolved agent for this Session's subsequent turns.
+    ///
+    /// A tool name the registry does not know is refused here rather than
+    /// silently ignored: a host that typos an agent's tool list must hear about
+    /// it, and `allow`/`deny` only ever narrow the registered surface.
+    pub async fn set_agent(
+        &self,
+        session: &str,
+        agent: crate::session_agent::AgentManifest,
+    ) -> Result<Value, Error> {
+        agent.validate()?;
+        self.inner.policy.for_agent(Some(&agent))?;
+        if let Some(binding) = &agent.model {
+            crate::session_model::select(&self.inner.provider, Some(binding))?;
+        }
+        let binding = self
+            .inner
+            .store
+            .model_selection(session)
+            .await?
+            .or_else(|| agent.model.clone());
+        let provider = crate::session_model::select(&self.inner.provider, binding.as_ref())?;
+        if let Some(request) = &agent.request {
+            provider
+                .with_request_options(request.clone())
+                .map_err(|error| Error::Invalid(error.to_string()))?;
+        }
+        crate::session_model::validate_history(
+            &self.inner.store.selected_history(session).await?,
+            binding.as_ref(),
+            provider.identity(),
+        )?;
+        if let Some(surface) = &agent.tools {
+            let known = self
+                .inner
+                .tools
+                .definitions()
+                .into_iter()
+                .map(|tool| tool.name)
+                .collect::<std::collections::HashSet<_>>();
+            for name in surface.allow.iter().chain(surface.deny.iter()) {
+                if !known.contains(name) {
+                    return Err(Error::Invalid(format!(
+                        "agent references an unknown tool: {name}"
+                    )));
+                }
+            }
+        }
+        self.inner.store.set_agent(session, agent).await
+    }
+
     /// Record an operator request to compact this Session at its next settled
     /// assistant boundary, then wake it. A continuable drain honours the request
     /// at that boundary even when the budget gate is under its threshold; an idle
@@ -338,9 +389,12 @@ impl Runtime {
         session: &str,
         response: Response,
     ) -> Result<(), Error> {
-        if controller.runtime_id != self.inner.id
-            || response.policy_revision != self.inner.policy.revision()
-        {
+        let agent = self.inner.store.agent(session).await?;
+        let policy = self
+            .inner
+            .policy
+            .for_agent(agent.as_ref().map(|(manifest, _)| manifest))?;
+        if controller.runtime_id != self.inner.id || response.policy_revision != policy.revision() {
             return Err(Error::ApprovalMismatch);
         }
         let commands = {
@@ -950,6 +1004,7 @@ async fn execute(
 ) -> Result<(), Error> {
     let mut step = 0;
     let mut allowance = inner.policy.max_provider_turns();
+    let mut reset_allowance = true;
     let mut input_corrections = 0;
     let mut transport_continuations = 0;
     // Consecutive provider turns that produced neither text nor tool calls.
@@ -963,31 +1018,88 @@ async fn execute(
     let mut goal_stalls = 0;
     let mut goal_signature = None;
     loop {
+        if cancel.is_cancelled() {
+            return Ok(());
+        }
+        // A host-resolved agent (ADR-0017) applies at this boundary: its pinned
+        // model only while the Session has no explicit selection of its own.
+        let agent = inner.store.agent(session).await?;
+        let manifest = agent.as_ref().map(|(manifest, _)| manifest);
+        let policy = inner.policy.for_agent(manifest)?;
+        // A newly promoted external input gets the selected agent's whole
+        // allowance, even if that input also switched agents. Internal loop
+        // continuations never reset it.
+        allowance = if reset_allowance {
+            policy.max_provider_turns()
+        } else {
+            allowance.min(policy.max_provider_turns())
+        };
+        reset_allowance = false;
         if allowance == 0 {
             return Err(Error::Invalid("provider turn allowance exceeded".into()));
         }
         allowance -= 1;
+        let binding = match (inner.store.model_selection(session).await?, agent.as_ref()) {
+            (Some(selection), _) => Some(selection),
+            (None, Some((manifest, _))) => manifest.model.clone(),
+            (None, None) => None,
+        };
+        let selected_provider = crate::session_model::select(&inner.provider, binding.as_ref())?;
+        let provider = match manifest.and_then(|agent| agent.request.as_ref()) {
+            Some(request) => selected_provider
+                .with_request_options(request.clone())
+                .map_err(|error| Error::Invalid(error.to_string()))?,
+            None => selected_provider,
+        };
+        let mut bundle = match crate::context::assemble_for_agent(
+            &inner.tools,
+            &policy,
+            cancel.child_token(),
+            manifest,
+        )
+        .await
+        {
+            Ok(bundle) => bundle,
+            Err(ToolError::Interrupted) => return Ok(()),
+            Err(error) => return Err(Error::Invalid(format!("context assembly failed: {error}"))),
+        };
         if cancel.is_cancelled() {
             return Ok(());
         }
-        let binding = inner.store.model_selection(session).await?;
-        let provider = crate::session_model::select(&inner.provider, binding.as_ref())?;
-        let bundle =
-            match crate::context::assemble(&inner.tools, &inner.policy, cancel.child_token()).await
-            {
-                Ok(bundle) => bundle,
-                Err(ToolError::Interrupted) => return Ok(()),
-                Err(error) => {
-                    return Err(Error::Invalid(format!("context assembly failed: {error}")))
-                }
-            };
-        if cancel.is_cancelled() {
-            return Ok(());
-        }
-        let plan = inner.store.mode(session).await? == crate::protocol::CollaborationMode::Plan;
+        let mode = match agent.as_ref().and_then(|(manifest, _)| manifest.mode) {
+            Some(mode) => mode,
+            None => inner.store.mode(session).await?,
+        };
+        let plan = mode == crate::protocol::CollaborationMode::Plan;
         let mut system = bundle.system.clone();
         if plan {
             system.push_str("\n\n<collaboration-mode mode=\"plan\">\nYou are in plan mode: investigate and propose a plan. Do not modify files, run commands, or start background work; those capabilities are denied.\n</collaboration-mode>");
+        }
+        if let Some((manifest, _)) = &agent {
+            if let Some(instructions) = manifest
+                .instructions
+                .as_deref()
+                .filter(|text| !text.trim().is_empty())
+            {
+                system.push_str(&format!(
+                    "\n\n<agent name=\"{}\">\n{}\n</agent>",
+                    manifest.attribute(),
+                    instructions
+                ));
+            }
+        }
+        if let Some((manifest, hash)) = &agent {
+            if system.len() > 65536 {
+                return Err(Error::Invalid(
+                    "agent instructions exceed system context budget".into(),
+                ));
+            }
+            bundle.system = system.clone();
+            bundle
+                .sources
+                .push(json!({"type":"agent","name":manifest.name,"agent_hash":hash}));
+            bundle.fingerprint =
+                crate::permission::context_digest(&bundle.system, &bundle.sources)?;
         }
         let sources = bundle.sources.clone();
         let context_epoch = inner
@@ -1004,7 +1116,7 @@ async fn execute(
             .await?;
         let (mut history, state) = inner.store.selected_input(session).await?;
         crate::session_model::validate_history(&history, binding.as_ref(), provider.identity())?;
-        let state_allowed = inner.policy.evaluate(
+        let state_allowed = policy.evaluate(
             "session_state",
             "@session/state/session_state",
             crate::permission::Access::Read,
@@ -1058,7 +1170,7 @@ async fn execute(
             .record(
                 session,
                 "provider.started",
-                json!({"run_id":run,"step":step,"context_epoch":context_epoch,"policy_revision":inner.policy.revision(),"state_selection":state_selection,"identity":provider.identity().map(|i|json!({"protocol":i.protocol,"model":i.model}))}),
+                json!({"run_id":run,"step":step,"context_epoch":context_epoch,"policy_revision":policy.revision(),"state_selection":state_selection,"identity":provider.identity().map(|i|json!({"protocol":i.protocol,"model":i.model}))}),
             )
             .await?;
         // Durable history retains null plus the error marker for unavailable
@@ -1080,7 +1192,7 @@ async fn execute(
         let request = ModelRequest {
             system,
             messages: history,
-            tools: inner.tools.definitions(),
+            tools: agent_tools(&inner.tools, agent.as_ref(), &policy),
         };
         let prefix_through = if inner.context.lock().await.is_some() {
             Some(inner.store.max_message_seq(session).await?)
@@ -1105,8 +1217,18 @@ async fn execute(
                     run: run.into(),
                     step,
                     context_epoch,
-                    agent: json!({"name":"native-runtime","semantics":"native-runtime-v1","collaborationMode":if plan {"plan"} else {"build"}}),
-                    permissions: json!({"policy":inner.policy.descriptor(),"boundary":inner.tools.authority_descriptor()}),
+                    agent: match &agent {
+                        Some((manifest, hash)) => json!({
+                            "name": manifest.name,
+                            "semantics": manifest.semantics,
+                            "agentHash": hash,
+                            "collaborationMode": if plan { "plan" } else { "build" },
+                        }),
+                        None => {
+                            json!({"name":"native-runtime","semantics":"native-runtime-v1","collaborationMode":if plan {"plan"} else {"build"}})
+                        }
+                    },
+                    permissions: json!({"policy":policy.descriptor(),"boundary":inner.tools.authority_descriptor()}),
                 },
                 crate::provider::scoped(
                     transport_budget.clone(),
@@ -1248,7 +1370,8 @@ async fn execute(
                                 .as_str()
                                 .is_none_or(|id| !internal_inputs.contains(id))
                         }) {
-                            allowance = inner.policy.max_provider_turns();
+                            allowance = policy.max_provider_turns();
+                            reset_allowance = true;
                             input_corrections = 0;
                             repeats.clear();
                             transport_continuations = 0;
@@ -1329,9 +1452,16 @@ async fn execute(
             input_corrections += 1;
         }
         if reply.needs_tools {
-            let mut reads =
-                execute_read_batch(inner, session, run, &reply.content, cancel.child_token())
-                    .await?;
+            let mut reads = execute_read_batch(
+                inner,
+                session,
+                run,
+                &reply.content,
+                cancel.child_token(),
+                &policy,
+                manifest,
+            )
+            .await?;
             for block in reply
                 .content
                 .as_array()
@@ -1390,7 +1520,11 @@ async fn execute(
                                 id,
                                 &prepared,
                                 cancel.child_token(),
-                                plan,
+                                TurnAuthority {
+                                    plan,
+                                    policy: &policy,
+                                    agent: manifest,
+                                },
                             )
                             .await?;
                             if cancel.is_cancelled() {
@@ -1486,7 +1620,7 @@ async fn execute(
                                     None => Err(ToolError::Interrupted),
                                 },
                                 "session_state" => Ok(inner.store.state(session).await?),
-                                "knowledge"=>inner.tools.execute_knowledge(prepared,&inner.policy,session,cancel.child_token()).await,
+                                "knowledge"=>inner.tools.execute_knowledge(prepared,&policy,session,cancel.child_token()).await,
                                 "todowrite" | "goal" => match crate::state::Mutation::parse(
                                     name,
                                     prepared.input().clone(),
@@ -1593,7 +1727,7 @@ async fn execute(
                                         .tools
                                         .execute_prepared_with_progress(
                                             prepared,
-                                            &inner.policy,
+                                            &policy,
                                             cancel.child_token(),
                                             progress,
                                         )
@@ -1791,7 +1925,7 @@ async fn execute(
                 let store = inner.store.clone();
                 let stop = inner.stop.clone();
                 let mut snapshot = request.clone();
-                let permissions = json!({"policy":inner.policy.descriptor(),"boundary":inner.tools.authority_descriptor()});
+                let permissions = json!({"policy":policy.descriptor(),"boundary":inner.tools.authority_descriptor()});
                 async move {
                     if !prefix_allowed {
                         return None;
@@ -1980,7 +2114,7 @@ async fn execute(
                     Err(error) => json!({"error":error.to_string()}),
                     Ok(prepared) => match inner
                         .tools
-                        .execute_prepared(prepared, &inner.policy, cancel.child_token())
+                        .execute_prepared(prepared, &policy, cancel.child_token())
                         .await
                     {
                         Err(error) => json!({"error":error.to_string()}),
@@ -2078,7 +2212,8 @@ async fn execute(
                     .as_str()
                     .is_none_or(|id| !internal_inputs.contains(id))
             }) {
-                allowance = inner.policy.max_provider_turns();
+                allowance = policy.max_provider_turns();
+                reset_allowance = true;
                 input_corrections = 0;
                 transport_continuations = 0;
                 empty_completions = 0;
@@ -2739,6 +2874,31 @@ async fn cancel_session(inner: &Arc<Inner>, session: &str) -> Result<bool, Error
     result.await.map_err(|_| Error::Closed)
 }
 
+/// An agent's tool surface: `allow`/`deny` intersect the registered definitions
+/// and never add a capability, because permission evaluation still runs per call.
+fn agent_tools(
+    tools: &Tools,
+    agent: Option<&(crate::session_agent::AgentManifest, String)>,
+    policy: &Policy,
+) -> Vec<crate::protocol::ToolDefinition> {
+    tools
+        .definitions()
+        .into_iter()
+        .filter(|tool| {
+            agent.is_none_or(|(manifest, _)| manifest.permits(&tool.name))
+                && policy.tool_visible(&tool.name)
+        })
+        .collect()
+}
+
+/// Immutable authority chosen at the provider-turn boundary, shared by every
+/// call that reply produces. Never rebuilt from a mid-turn agent switch.
+struct TurnAuthority<'a> {
+    plan: bool,
+    policy: &'a Policy,
+    agent: Option<&'a crate::session_agent::AgentManifest>,
+}
+
 async fn authorize(
     inner: &Arc<Inner>,
     session: &str,
@@ -2746,8 +2906,18 @@ async fn authorize(
     call: &str,
     prepared: &Prepared,
     cancel: CancellationToken,
-    plan: bool,
+    authority: TurnAuthority<'_>,
 ) -> Result<bool, Error> {
+    let TurnAuthority {
+        plan,
+        policy,
+        agent,
+    } = authority;
+    if agent.is_some_and(|agent| !agent.permits(prepared.name())) {
+        inner.store.record(session, crate::events::Lifecycle::PermissionDenied.name(),
+            json!({"run_id":run,"call_id":call,"tool":prepared.name(),"resource":prepared.resource(),"reason":"agent_tool_surface","policy_revision":policy.revision()})).await?;
+        return Ok(false);
+    }
     if plan
         && matches!(
             prepared.access(),
@@ -2761,17 +2931,23 @@ async fn authorize(
         return Ok(false);
     }
     let (decision, matcher) = if prepared.targets().is_empty() {
-        inner
-            .policy
-            .assess(prepared.name(), prepared.resource(), prepared.access())
+        policy.assess_input(
+            prepared.name(),
+            prepared.resource(),
+            prepared.access(),
+            Some(prepared.input()),
+        )
     } else {
         prepared
             .targets()
             .iter()
             .map(|target| {
-                inner
-                    .policy
-                    .assess(prepared.name(), target, prepared.access())
+                policy.assess_input(
+                    prepared.name(),
+                    target,
+                    prepared.access(),
+                    Some(prepared.input()),
+                )
             })
             .reduce(|acc, next| {
                 if severity(next.0) > severity(acc.0) {
@@ -2785,7 +2961,7 @@ async fn authorize(
     match decision {
         Decision::Allow => return Ok(true),
         Decision::Deny => {
-            inner.store.record(session,crate::events::Lifecycle::PermissionDenied.name(),json!({"run_id":run,"call_id":call,"tool":prepared.name(),"resource":prepared.resource(),"reason":"policy","policy_revision":inner.policy.revision()})).await?;
+            inner.store.record(session,crate::events::Lifecycle::PermissionDenied.name(),json!({"run_id":run,"call_id":call,"tool":prepared.name(),"resource":prepared.resource(),"reason":"policy","policy_revision":policy.revision()})).await?;
             return Ok(false);
         }
         Decision::Ask => {}
@@ -2805,14 +2981,14 @@ async fn authorize(
             prepared.resource(),
             prepared.input(),
         )?,
-        policy_revision: inner.policy.revision().into(),
+        policy_revision: policy.revision().into(),
         matcher,
-        expires_at_ms: now_ms().saturating_add(inner.policy.timeout_ms()),
+        expires_at_ms: now_ms().saturating_add(policy.timeout_ms()),
     };
     inner.store.request_approval(approval.clone()).await?;
     inner.store.record(session,crate::events::Lifecycle::PermissionRequest.name(),json!({"run_id":run,"call_id":call,"tool":prepared.name(),"resource":prepared.resource()})).await?;
     let deadline =
-        tokio::time::Instant::now() + std::time::Duration::from_millis(inner.policy.timeout_ms());
+        tokio::time::Instant::now() + std::time::Duration::from_millis(policy.timeout_ms());
     loop {
         if cancel.is_cancelled() {
             return Ok(false);
@@ -3299,6 +3475,8 @@ async fn execute_read_batch(
     run: &str,
     content: &Value,
     cancel: CancellationToken,
+    policy: &Policy,
+    agent: Option<&crate::session_agent::AgentManifest>,
 ) -> Result<HashMap<String, (Value, bool)>, Error> {
     if cancel.is_cancelled() || !inner.tools.hooks().is_empty() || inner.tool_replay.is_some() {
         return Ok(HashMap::new());
@@ -3329,12 +3507,18 @@ async fn execute_read_batch(
         // when its own declaration says it only reads a named resource, not
         // because of its name. Anything that declares a write — or anything
         // undeclared — conflicts with the batch and stays serial.
-        if !tool.batchable_read()
+        if agent.is_some_and(|agent| !agent.permits(tool.name()))
+            || !tool.batchable_read()
             || tool.access() != crate::permission::Access::Read
             || tool.resource().is_empty()
-            || inner
-                .policy
-                .evaluate(tool.name(), tool.resource(), tool.access())
+            || policy
+                .assess_input(
+                    tool.name(),
+                    tool.resource(),
+                    tool.access(),
+                    Some(tool.input()),
+                )
+                .0
                 != Decision::Allow
         {
             break;
@@ -3373,10 +3557,7 @@ async fn execute_read_batch(
     let mut pending = futures_util::stream::iter(prepared.into_iter().map(|(id, tool)| {
         let cancel = cancel.child_token();
         async move {
-            let result = inner
-                .tools
-                .execute_prepared(tool, &inner.policy, cancel)
-                .await;
+            let result = inner.tools.execute_prepared(tool, policy, cancel).await;
             (id, result)
         }
     }))

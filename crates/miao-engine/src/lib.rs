@@ -1,4 +1,5 @@
 pub mod acp;
+pub mod agent_policy;
 pub mod approval;
 mod cache_affinity;
 pub mod context;
@@ -38,6 +39,7 @@ pub mod roles;
 pub mod routing;
 pub mod runtime;
 mod search;
+pub mod session_agent;
 pub mod session_model;
 pub mod state;
 pub mod store;

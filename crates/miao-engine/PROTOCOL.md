@@ -30,6 +30,7 @@ does not claim ACP or the existing miao HttpApi is compatible.
 | `archive` | `session_id`, `archived` | `{accepted:true, archived}` |
 | `remove` | `session_id` | `{accepted:bool, reason?}` |
 | `request_compact` | `session_id` | `{accepted:true, duplicate, pending}` |
+| `select_agent` | `session_id`, `agent` | `{agent_hash, changed}` |
 | `events` | `session_id`, `after` | `Event[]` (page ≤ 100) |
 | `snapshot` | `session_id` | committed Session snapshot |
 | `sessions` | — | `string[]` (Session ids) |
@@ -160,6 +161,53 @@ A cancelled identity is terminal: admitting the same `session_id`/`input_id`
 again fails with `input_conflict` instead of resurrecting the dropped prompt or
 returning a receipt whose prompt never runs. A client that wants to re-send a
 cancelled prompt admits it under a fresh `input_id`.
+
+### Session agent selection
+
+`select_agent` accepts a host-resolved `agent` manifest (ADR-0017): `name`,
+optional `semantics`, `instructions`, `tools: {allow, deny}`, `permissions`,
+`model` (the same binding as `select_model`, including its optional variant),
+and collaboration `mode` (`build` or `plan`). Optional `request` uses the existing
+bounded body/header override contract; `steps` narrows the operator turn budget.
+Unknown fields are refused.
+Names are bounded to 128 bytes, instructions to 64 KiB, tool-name lists and
+permission rules to 256 entries; permission patterns and model bindings are
+validated before admission. Tool lists use exact registered engine names;
+unknown names are refused. An omitted or empty `allow` leaves the registered
+surface available, while `deny` always removes its entries.
+
+The engine appends `session.agent.selected` with the manifest and its SHA-256.
+Selecting identical content reports `changed:false` and appends nothing. The
+snapshot exposes the selected name, semantics and `agent_hash`; forks inherit
+only the manifest that existed at the chosen history boundary.
+
+Each provider turn takes an immutable agent and effective policy snapshot.
+Instructions, effective tool names and the agent source participate in the
+selected context fingerprint; the real provider request profile carries the
+agent identity and hash. Tool restrictions apply at dispatch as well as in the
+advertised schema, including the parallel-read path. Permission rules combine
+with the configured policy using its deny-over-ask-over-allow ordering and
+cannot lift a configured denial or a disabled capability. The effective policy
+revision includes the manifest hash, and changing agents transactionally denies
+pending approvals so a late reply cannot authorize a call under old authority.
+
+The agent's model pin applies only when the Session has no explicit model
+selection. Collaboration mode applies to both the system instructions and the
+actual tool execution boundary. A turn already in flight keeps its chosen
+manifest; the next provider turn observes the newly selected one.
+
+The product bridge uses optional `ordered_permissions` with
+`semantics:"ordered-wildcard-v1"`, an ordered `rules` array of
+`{action,resource,effect}`, and `bindings` mapping exact native tool names to
+`{action,resource?,explicit?}`. Resource selectors are `native` (default),
+`command` (Bash AST resources or explicit argv) and `program` (the executable of
+an interactive terminal), `{input:"field"}` (a bounded direct input property)
+and `{literal:"value"}` (a bounded fixed resource). Last matching rule wins within this layer, preserving
+late allow exceptions; all resources must pass. An explicit binding ignores a
+catch-all action rule. A missing command input asks rather than matching a
+workspace directory. The host's `auto` classifier mode is explicitly unsupported
+by the initial product adapter; a switch to such an agent fails without changing
+the selected manifest.
 
 ### Operator-requested compaction
 
