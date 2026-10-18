@@ -263,6 +263,7 @@ async fn an_agent_pinned_model_applies_only_without_an_explicit_selection() {
         protocol: "openai-chat".into(),
         model: "fixture-alt".into(),
         route_id: Some("account-two/shared".into()),
+        variant: None,
     });
     runtime.set_agent("s", agent).await.unwrap();
     turn(&runtime, &store, "one").await;
@@ -276,6 +277,7 @@ async fn an_agent_pinned_model_applies_only_without_an_explicit_selection() {
                 protocol: "openai-chat".into(),
                 model: "fixture".into(),
                 route_id: None,
+                variant: None,
             }),
         )
         .await
