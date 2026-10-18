@@ -96,6 +96,7 @@ function Get-MiaoEngineCapabilities {
 function Install-MiaoEngine {
   param([string]$InstallDirectory, [string]$Version, [string]$Binary, [bool]$Download)
 
+  $ProgressPreference = 'SilentlyContinue'
   if (-not $Binary -and -not $Download) { return }
   $destination = Join-Path $InstallDirectory 'miao-engine.exe'
   if (-not $Binary -and (Test-Path -LiteralPath $destination)) {
@@ -116,7 +117,7 @@ function Install-MiaoEngine {
       $url = "https://github.com/oxdingzg/miao/releases/download/v$Version/$asset"
       $archive = Join-Path $stage $asset
       try {
-        Invoke-WebRequest -UseBasicParsing -Uri $url -OutFile $archive
+        Invoke-WebRequest -UseBasicParsing -Uri $url -OutFile $archive -TimeoutSec 300
       } catch {
         if ($_.Exception.Response -and [int]$_.Exception.Response.StatusCode -eq 404) {
           Write-Host 'This release has no native engine archive; keeping TypeScript sessions.' -ForegroundColor DarkGray
@@ -125,7 +126,7 @@ function Install-MiaoEngine {
         throw
       }
       $manifest = Join-Path $stage ($asset + '.sha256')
-      Invoke-WebRequest -UseBasicParsing -Uri ($url + '.sha256') -OutFile $manifest
+      Invoke-WebRequest -UseBasicParsing -Uri ($url + '.sha256') -OutFile $manifest -TimeoutSec 60
       if ((Get-Content -LiteralPath $manifest -Raw).Trim() -notmatch ('^([a-fA-F0-9]{64})  ' + [regex]::Escape($asset) + '$')) {
         throw 'Invalid engine checksum manifest.'
       }
