@@ -21,7 +21,7 @@ use std::{
 use tokio::sync::{mpsc, oneshot, watch};
 
 pub(crate) const APPLICATION_ID: u32 = 0x4d494145;
-pub const SCHEMA_VERSION: u32 = 13;
+pub const SCHEMA_VERSION: u32 = 14;
 
 type Work = Box<dyn FnOnce(&mut Connection) + Send>;
 
@@ -1807,8 +1807,7 @@ impl Store {
         }).await
     }
 
-    /// Storage primitive only: runtime authorization and approval resolution do
-    /// not consume grants until their effective-authority contract is connected.
+    /// Trusted storage primitive. Product approvals use atomic resolution instead.
     pub async fn put_permission_grant(
         &self,
         scope: crate::permission_grant::Scope,
@@ -1844,6 +1843,22 @@ impl Store {
     }
 
     pub async fn request_approval(&self, approval: Approval) -> Result<Event, Error> {
+        self.request_approval_inner(approval, None).await
+    }
+
+    pub async fn request_approval_with_scope(
+        &self,
+        approval: Approval,
+        scope: crate::permission_grant::Scope,
+    ) -> Result<Event, Error> {
+        self.request_approval_inner(approval, Some(scope)).await
+    }
+
+    async fn request_approval_inner(
+        &self,
+        approval: Approval,
+        scope: Option<crate::permission_grant::Scope>,
+    ) -> Result<Event, Error> {
         self.call(move |conn| {
             let tx=write_tx(conn)?;
             let key=format!("{}/{}",approval.run_id,approval.call_id);
@@ -1853,6 +1868,7 @@ impl Store {
             if name!=approval.tool||root!=approval.location||original["input"]!=approval.input||input_digest(&root,&name,&approval.resource,&approval.input)?!=approval.input_hash {return Err(Error::ApprovalMismatch);}
             if approval.expires_at_ms<=now_ms(){return Err(Error::ApprovalExpired);}
             tx.execute("INSERT INTO engine_approval VALUES(?1,?2,?3,?4,?5,?6,'pending')",params![approval.request_id,approval.session_id,approval.run_id,key,serde_json::to_string(&approval)?,approval.expires_at_ms])?;
+            if let Some(scope) = &scope { crate::permission_grant::bind_request(&tx,&approval,scope)?; }
             let event=append(&tx,&approval.session_id,"approval.requested",serde_json::to_value(&approval)?)?;
             tx.commit()?;Ok(event)
         }).await
@@ -1863,6 +1879,23 @@ impl Store {
         session: &str,
         response: Response,
     ) -> Result<Event, Error> {
+        self.resolve_approval_inner(session, response, false).await
+    }
+
+    pub async fn resolve_approval_persistent(
+        &self,
+        session: &str,
+        response: Response,
+    ) -> Result<Event, Error> {
+        self.resolve_approval_inner(session, response, true).await
+    }
+
+    async fn resolve_approval_inner(
+        &self,
+        session: &str,
+        response: Response,
+        persistent: bool,
+    ) -> Result<Event, Error> {
         let session = session.to_owned();
         self.call(move |conn| {
             let tx=write_tx(conn)?;
@@ -1872,8 +1905,18 @@ impl Store {
             let approval:Approval=serde_json::from_str(&binding)?;
             if response.input_hash!=approval.input_hash||response.policy_revision!=approval.policy_revision||response.decision==Decision::Ask||response.matcher.as_ref().is_some_and(|matcher|matcher!=&approval.matcher) {return Err(Error::ApprovalMismatch);}
             let state=if approval.expires_at_ms<=now_ms(){"expired"}else if response.decision==Decision::Allow{"allow"}else{"deny"};
+            if persistent {
+                if response.decision != Decision::Allow { return Err(Error::ApprovalMismatch); }
+                if state == "allow" {
+                    let scope = crate::permission_grant::request_scope(&tx,&approval)?;
+                    crate::permission_grant::insert(&tx,&scope,now_ms())?;
+                }
+            }
             tx.execute("UPDATE engine_approval SET state=?2 WHERE id=?1",params![response.request_id,state])?;
-            let event=append(&tx,&session,"approval.resolved",json!({"request_id":response.request_id,"state":state}))?;
+            tx.execute("DELETE FROM engine_permission_request_scope WHERE request_id=?1",[&response.request_id])?;
+            let mut data=json!({"request_id":response.request_id,"state":state});
+            if persistent && state=="allow" { data["persistent"]=json!(true); }
+            let event=append(&tx,&session,"approval.resolved",data)?;
             tx.commit()?;
             if state=="expired" {return Err(Error::ApprovalExpired);}
             Ok(event)

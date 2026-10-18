@@ -14,7 +14,7 @@ use rmcp::{
     },
     ClientHandler, RoleClient, ServiceExt,
 };
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::{
     collections::BTreeMap,
@@ -33,7 +33,7 @@ use tokio::{
 };
 use tokio_util::sync::CancellationToken;
 
-#[derive(Deserialize)]
+#[derive(Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct Config {
     pub name: String,
@@ -55,7 +55,7 @@ pub struct Config {
     pub timeout: Option<Timeout>,
 }
 
-#[derive(Default, Deserialize)]
+#[derive(Default, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct Timeout {
     pub startup: Option<u64>,
@@ -65,7 +65,7 @@ pub struct Timeout {
 /// A host-provisioned refresh grant. The browser part of the authorization
 /// code flow belongs to the product host; the engine only exchanges the
 /// refresh token for a bearer access token when a connection starts.
-#[derive(Deserialize)]
+#[derive(Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct Oauth {
     pub token_endpoint: String,
@@ -132,16 +132,21 @@ impl ClientHandler for CatalogWatch {
 /// Connections are explicitly trusted host services, not model-selected URLs
 /// or commands. Tool calls are separate External authority and remain gated.
 pub struct Registry {
+    authority: String,
     tools: RwLock<BTreeMap<String, Tool>>,
     servers: Vec<Arc<Server>>,
     children: Mutex<Vec<Child>>,
 }
 impl Registry {
+    pub(crate) fn authority(&self) -> &str {
+        &self.authority
+    }
     pub async fn connect(configs: Vec<Config>, workspace: &Path) -> Result<Self, Error> {
         if configs.len() > 8 {
             return Err(Error::Invalid("MCP server limit".into()));
         }
         let mut registry = Self {
+            authority: digest(&serde_json::to_vec(&configs)?),
             tools: RwLock::new(BTreeMap::new()),
             servers: vec![],
             children: Mutex::new(vec![]),
@@ -362,6 +367,9 @@ impl Registry {
         .map_err(|_| Error::Invalid("MCP initialization timed out".into()))?
         .map_err(|_| Error::Invalid("MCP initialization failed".into()))?;
         let mut registry = Self {
+            // Unidentified caller-owned streams cannot share durable grants
+            // with a later transport merely because its logical name matches.
+            authority: uuid::Uuid::new_v4().to_string(),
             tools: RwLock::new(BTreeMap::new()),
             servers: vec![],
             children: Mutex::new(vec![]),

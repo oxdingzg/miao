@@ -39,6 +39,7 @@ does not claim ACP or the existing miao HttpApi is compatible.
 | `revert` | `session_id`, `checkpoint` | `{checkpoint, from_seq, reverted}` |
 | `unrevert` | `session_id` | `{restored}` |
 | `approve` | `session_id`, `response` | `{accepted:true}` |
+| `approve_persistent` | `session_id`, `response` (allow only) | `{accepted:true}` |
 | `history` | `session_id`, `selected` | `Message[]` |
 | `context` | `session_id`, `epoch?` | Context Epoch or null |
 | `compact` | `session_id`, `compaction_id`, `through_message_seq`, `summary` | checkpoint |
@@ -397,11 +398,22 @@ Scope decoding rejects unknown fields, control characters, invalid digests,
 more than 64 targets, and encodings larger than 64 KiB. Stored scope bytes are
 validated against the requested scope before a lookup can succeed.
 
-The Store exposes storage and exact revocation primitives. Capability, explicit
-deny, effective-policy checks and approval resolution do not consume these
-records yet. The transaction-level insert primitive is reserved for atomic
-approval-resolution integration once that authority contract is connected.
-Adding this table does not itself make an approval permanent or bypass an ask.
+Schema version 14 adds `engine_permission_request_scope`. The Runtime snapshots
+its trusted exact scope in the same transaction as `approval.requested`.
+`approve_persistent` accepts the same bound response as `approve`, with decision
+`allow` only. Resolution atomically commits the stored scope, approval state and
+`approval.resolved` event (`persistent: true`). Missing legacy request scopes,
+forged, expired, cancelled and already-resolved requests cannot create grants.
+An older engine rejects the new command; hosts must not fall back to once.
+
+Capability and explicit-deny checks precede grant lookup. Effective policy/agent,
+actual tool access, prepared targets, configured extension identities, process
+runner and lifecycle hooks bind the authority revision. Changed scope asks
+again; a matching scope records `permission.grant.used`. Grants survive engine
+restart and are reusable across Sessions in the same workspace. They never
+become wildcard rules or TypeScript permission rules. Caller-owned extension
+transports use per-instance identity so grants cannot outlive that boundary.
+The Store also exposes exact revocation primitives.
 
 ### Injected context
 
