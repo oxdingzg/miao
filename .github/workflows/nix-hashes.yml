@@ -106,6 +106,7 @@ jobs:
           ref: ${{ github.ref_name }}
 
       - name: Setup git committer
+        id: committer
         uses: ./.github/actions/setup-git-committer
         with:
           miao-app-id: ${{ vars.MIAO_APP_ID }}
@@ -145,13 +146,28 @@ jobs:
 
       # main requires every change to arrive through a pull request, so the
       # refreshed hash cannot be pushed to it directly. Push a machine-owned
-      # branch and merge that instead.
+      # branch, open the request, and let auto-merge land it once the required
+      # checks pass.
       - name: Land hashes through a pull request
         env:
-          GH_TOKEN: ${{ github.token }}
+          APP_TOKEN: ${{ steps.committer.outputs.token }}
+          RELEASE_TOKEN: ${{ secrets.RELEASE_TOKEN }}
           BRANCH: chore/nix-hashes
+          DEADLINE_MINUTES: "45"
         run: |
           set -euo pipefail
+
+          # A pull request opened with the workflow token cannot land: GitHub
+          # holds the runs it triggers at `action_required` with no jobs, so the
+          # required `guard` and `ci-gate` checks never report and the protected
+          # branch refuses the merge. The committer app and release's PAT both
+          # trigger runs and can merge, so landing needs one of them.
+          LAND_TOKEN="${APP_TOKEN:-${RELEASE_TOKEN:-}}"
+          if [ -z "$LAND_TOKEN" ]; then
+            echo "::error::Landing the refreshed hash needs MIAO_APP_ID/MIAO_APP_SECRET or RELEASE_TOKEN: the workflow token only opens a pull request whose checks never run"
+            exit 1
+          fi
+          export GH_TOKEN="$LAND_TOKEN"
 
           HASH_FILE="nix/hashes.json"
 
@@ -165,10 +181,21 @@ jobs:
 
           git add "$HASH_FILE"
           git commit -m "chore(nix): update node_modules hashes"
-          git pull --rebase --autostash origin "$GITHUB_REF_NAME"
-          # Force: the branch belongs to this workflow, so a retry after a
-          # failed run reuses it instead of leaving a branch behind.
-          git push --force origin "HEAD:refs/heads/$BRANCH"
+
+          # The credential in the remote URL is what authenticates the push, so
+          # the landing token goes on the remote rather than the workflow token
+          # that setup-git-committer put there.
+          git remote set-url origin "https://x-access-token:${LAND_TOKEN}@github.com/${GITHUB_REPOSITORY}"
+
+          # Rebasing keeps a reused branch on top of the base branch, which the
+          # required-checks rule demands; force because the branch belongs to
+          # this workflow, so a retry reuses it instead of leaving one behind.
+          push() {
+            git pull --rebase --autostash origin "$GITHUB_REF_NAME"
+            git push --force origin "HEAD:refs/heads/$BRANCH"
+          }
+
+          push
 
           PR="$(gh pr list --head "$BRANCH" --state open --json number -q '.[0].number')"
           if [ -z "$PR" ]; then
@@ -180,14 +207,35 @@ jobs:
               > /dev/null
           fi
 
-          # A fresh pull request is not immediately mergeable while GitHub
-          # computes its status, so retry rather than fail on the race.
-          for attempt in 1 2 3 4 5; do
-            if gh pr merge "$BRANCH" --squash; then break; fi
-            [ "$attempt" = 5 ] && exit 1
-            sleep 10
+          # Auto-merge rather than a direct merge: the required checks have not
+          # run yet, and the protected branch refuses a merge while they are
+          # missing. Re-running this step on a request that already has it
+          # enabled is not an error, so only ask when it is missing.
+          if [ "$(gh pr view "$BRANCH" --json autoMergeRequest -q '.autoMergeRequest != null')" != "true" ]; then
+            gh pr merge "$BRANCH" --squash --auto
+          fi
+
+          # Wait for the verdict so a refresh that never lands fails this run
+          # instead of leaving an unnoticed pull request behind. A merge to the
+          # base branch during the checks leaves this branch behind it, which
+          # blocks the merge, so rebase and push again when that happens.
+          DEADLINE=$(( $(date +%s) + DEADLINE_MINUTES * 60 ))
+          while true; do
+            STATE="$(gh pr view "$BRANCH" --json state -q .state)"
+            if [ "$STATE" = "MERGED" ]; then break; fi
+            if [ "$STATE" = "CLOSED" ]; then
+              echo "::error::The hash pull request was closed without merging"
+              exit 1
+            fi
+            if [ "$(date +%s)" -ge "$DEADLINE" ]; then
+              echo "::error::The hash pull request did not merge within ${DEADLINE_MINUTES} minutes"
+              exit 1
+            fi
+            if [ "$(gh pr view "$BRANCH" --json mergeStateStatus -q .mergeStateStatus)" = "BEHIND" ]; then
+              push
+            fi
+            sleep 30
           done
 
-          git push origin --delete "$BRANCH" || true
-
-          echo "Status: landed through the pull request for $BRANCH" >> "$GITHUB_STEP_SUMMARY"
+          # GitHub deletes the head branch on merge for this repository.
+          echo "Status: merged the pull request for $BRANCH" >> "$GITHUB_STEP_SUMMARY"
