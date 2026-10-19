@@ -290,7 +290,8 @@ export async function runBaselineTs(input: BaselineTsInput): Promise<BaselineRun
   // without writing the product database.
   const data = path.join(input.root, "data")
   await mkdir(path.join(data, "miao"), { recursive: true })
-  if (input.credentialDatabase) await seedSharedCredentials(input.credentialDatabase, path.join(data, "miao", "miao.db"))
+  if (input.credentialDatabase)
+    await seedSharedCredentials(input.credentialDatabase, path.join(data, "miao", "miao.db"))
   const startedAtMs = Date.now()
   const parts: Array<Record<string, Schema.Json>> = []
   const drifts = new Map(Object.entries(input.drifts ?? {}))
@@ -322,8 +323,7 @@ export async function runBaselineTs(input: BaselineTsInput): Promise<BaselineRun
         MIAO_BLACKBOX_RECORD: blackbox,
         NO_COLOR: "1",
       },
-    },
-  )
+    })
     const stdout = readJsonLines(child.stdout, (message) => {
       if (typeof message.sessionID === "string") session = message.sessionID
       if (message.type === "tool_use" || message.type === "text" || message.type === "step_start") parts.push(message)
@@ -443,9 +443,12 @@ function finishBaselineRun(input: FinishedBaselineRun): BaselineRun {
     profileReceipts: profile?.receipts ?? 0,
     loops: input.loops,
     toolCalls: input.toolCalls,
-    parallel: input.parallel,
-    context: input.context,
-    providerAttempts: input.providerAttempts,
+    // An observation the engine does not produce stays absent rather than
+    // present and undefined: the receipt hash canonicalizes this record as
+    // JSON, which has no undefined.
+    ...(input.parallel === undefined ? {} : { parallel: input.parallel }),
+    ...(input.context === undefined ? {} : { context: input.context }),
+    ...(input.providerAttempts === undefined ? {} : { providerAttempts: input.providerAttempts }),
     textHash: digest(input.answer),
     binarySha256: input.binarySha256 ?? null,
     startedAtMs: input.startedAtMs,
@@ -453,8 +456,7 @@ function finishBaselineRun(input: FinishedBaselineRun): BaselineRun {
     elapsedMs: input.verifiedAtMs - input.startedAtMs,
   }
   const rejection = rejectionReason(input, evidence)
-  if (rejection)
-    return { sample: null, rejection, evidence, assessment: input.assessment, answer: input.answer }
+  if (rejection) return { sample: null, rejection, evidence, assessment: input.assessment, answer: input.answer }
   const outcome = baselineOutcome(input, evidence)
   const sample: BaselineSample = {
     task: input.task,
@@ -580,10 +582,7 @@ function numberOrNull(value: unknown) {
 /// Automatic context management the run exercised: compaction reports by kind
 /// -- they arrive as progress, not as durable events, so counting events alone
 /// saw nothing -- and the recall calls that restore an archived output.
-function observedContextManagement(
-  events: EngineEvent[],
-  progress: Array<{ item: EngineProgress; atMs: number }>,
-) {
+function observedContextManagement(events: EngineEvent[], progress: Array<{ item: EngineProgress; atMs: number }>) {
   const compaction: Record<string, number> = {}
   const reasons: string[] = []
   for (const { item } of progress) {
@@ -652,14 +651,12 @@ function observedReadBatches(events: EngineEvent[], observed: Map<number, number
 function engineLoops(events: EngineEvent[]) {
   const reason = (event: EngineEvent) => {
     const data = BlackboxTape.json(event.data)
-    return BlackboxTape.isObject(data) && typeof data.reason === "string" ? data.reason : "unknown";
-  };
+    return BlackboxTape.isObject(data) && typeof data.reason === "string" ? data.reason : "unknown"
+  }
   return {
-    continuations: events
-      .filter((event) => event.kind === "loop.continuation")
-      .map(reason),
+    continuations: events.filter((event) => event.kind === "loop.continuation").map(reason),
     stopped: events.filter((event) => event.kind === "loop.stopped").map(reason),
-  };
+  }
 }
 
 function engineReceipts(events: EngineEvent[]) {
@@ -743,7 +740,10 @@ function enginePhases(
     .map((event) => ({
       phase: event.kind,
       atMs: event.recorded_at_ms ?? observed.get(event.seq) ?? Date.now(),
-      clock: event.recorded_at_ms === null || event.recorded_at_ms === undefined ? ("observed" as const) : ("recorded" as const),
+      clock:
+        event.recorded_at_ms === null || event.recorded_at_ms === undefined
+          ? ("observed" as const)
+          : ("recorded" as const),
     }))
   const firstDelta = progress.find((entry) => entry.item.kind === "provider.delta")
   const firstProviderError = progress.find((entry) => entry.item.kind === "runtime.error")
@@ -1030,11 +1030,13 @@ function tsPermissionDenied(parts: Array<Record<string, Schema.Json>>, stderr: s
     if (typeof value !== "string") return false
     return /permission denied|denied by|rejected by the user|denied/i.test(value)
   }
-  return parts.some((message) => {
-    const part = message.part
-    if (!BlackboxTape.isObject(part) || !BlackboxTape.isObject(part.state)) return false
-    return denied(part.state.error)
-  }) || denied(stderr)
+  return (
+    parts.some((message) => {
+      const part = message.part
+      if (!BlackboxTape.isObject(part) || !BlackboxTape.isObject(part.state)) return false
+      return denied(part.state.error)
+    }) || denied(stderr)
+  )
 }
 
 function interactionAttempt(interaction: BlackboxTape.Interaction): BaselineAttempt {
@@ -1100,11 +1102,7 @@ function tsProfile(interactions: ReadonlyArray<BlackboxTape.Interaction>) {
   return { profile: first, receipts: requests.length }
 }
 
-function tsPhases(
-  parts: Array<Record<string, Schema.Json>>,
-  exitAtMs: number,
-  verifiedAtMs: number,
-): BaselinePhase[] {
+function tsPhases(parts: Array<Record<string, Schema.Json>>, exitAtMs: number, verifiedAtMs: number): BaselinePhase[] {
   const observed = parts.flatMap((message) => {
     if (typeof message.timestamp !== "number") return []
     const part = message.part
