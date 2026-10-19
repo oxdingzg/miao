@@ -204,7 +204,7 @@ export function update(adapter: Adapter, event: SessionEvent.Event) {
           SessionMessage.Shell.make({
             id: event.data.messageID,
             type: "shell",
-            metadata: event.metadata,
+            metadata: { ...event.metadata, ...event.data.metadata },
             callID: event.data.callID,
             command: event.data.command,
             output: "",
@@ -219,6 +219,7 @@ export function update(adapter: Adapter, event: SessionEvent.Event) {
             yield* adapter.updateShell(
               produce(currentShell, (draft) => {
                 draft.output = event.data.output
+                draft.metadata = { ...draft.metadata, ...event.data.metadata }
                 draft.time.completed = event.data.timestamp
               }),
             )

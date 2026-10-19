@@ -19,7 +19,8 @@ import { Location } from "./location"
 import { McpAuth } from "./mcp/auth"
 import { McpBrowser } from "./mcp/browser"
 import { McpOAuthCallback } from "./mcp/oauth-callback"
-import { McpOAuthPendingProvider, McpOAuthProvider, OAUTH_CALLBACK_PATH, type McpOAuthConfig } from "./mcp/oauth-provider"
+import { McpOAuthPendingProvider, OAUTH_CALLBACK_PATH, type McpOAuthConfig } from "./mcp/oauth-provider"
+import { oauthFetch } from "./mcp/oauth-fetch"
 import { PermissionV2 } from "./permission"
 import { ToolRegistry } from "./tool/registry"
 import { Tool } from "./tool/tool"
@@ -200,14 +201,10 @@ function connectRemote(
     const url = URL.canParse(server.url) ? new URL(server.url) : undefined
     if (!url) return { status: { status: "failed", error: `Invalid MCP URL "${server.url}"` } satisfies Status }
     const requestInit = server.headers ? { headers: server.headers } : undefined
-    // Stored tokens ride along and refresh through the provider; it never starts a browser flow.
-    const authProvider =
-      server.oauth === false
-        ? undefined
-        : new McpOAuthProvider(name, server.url, oauthConfig(server.oauth), { onRedirect: async () => {} }, auth)
+    const fetch = server.oauth === false ? undefined : oauthFetch(name, server.url, oauthConfig(server.oauth), auth)
     const transports = [
-      { name: "StreamableHTTP", transport: new StreamableHTTPClientTransport(url, { authProvider, requestInit }) },
-      { name: "SSE", transport: new SSEClientTransport(url, { authProvider, requestInit }) },
+      { name: "StreamableHTTP", transport: new StreamableHTTPClientTransport(url, { fetch, requestInit }) },
+      { name: "SSE", transport: new SSEClientTransport(url, { fetch, requestInit }) },
     ]
     let last: Status = { status: "failed", error: "Unknown error" }
     for (const { transport } of transports) {

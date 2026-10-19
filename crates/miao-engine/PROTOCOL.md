@@ -25,7 +25,13 @@ does not claim ACP or the existing miao HttpApi is compatible.
 | `unsubscribe` | `session_id` | `{accepted:true}` |
 | `admit` | `input`, `resume`, `attachments?` | `Admission` |
 | `resume` | `session_id` | `{accepted:true}` |
+| `cancel_input` | `session_id`, `input_id` | `{accepted:bool, reason?}` |
 | `cancel` | `session_id` | `{accepted:bool}` |
+| `archive` | `session_id`, `archived` | `{accepted:true, archived}` |
+| `remove` | `session_id` | `{accepted:bool, reason?}` |
+| `request_compact` | `session_id` | `{accepted:true, duplicate, pending}` |
+| `select_agent` | `session_id`, `agent` | `{agent_hash, changed}` |
+| `select_account` | `session_id`, `credential_id` (string or null) | `{binding, account, changed}` |
 | `events` | `session_id`, `after` | `Event[]` (page ≤ 100) |
 | `snapshot` | `session_id` | committed Session snapshot |
 | `sessions` | — | `string[]` (Session ids) |
@@ -33,6 +39,7 @@ does not claim ACP or the existing miao HttpApi is compatible.
 | `revert` | `session_id`, `checkpoint` | `{checkpoint, from_seq, reverted}` |
 | `unrevert` | `session_id` | `{restored}` |
 | `approve` | `session_id`, `response` | `{accepted:true}` |
+| `approve_persistent` | `session_id`, `response` (allow only) | `{accepted:true}` |
 | `history` | `session_id`, `selected` | `Message[]` |
 | `context` | `session_id`, `epoch?` | Context Epoch or null |
 | `compact` | `session_id`, `compaction_id`, `through_message_seq`, `summary` | checkpoint |
@@ -140,6 +147,142 @@ run and cancels that owner's token as one serialized command. It returns
 `accepted: false` for a missing, idle, already-cancelled or changed run. A stale
 run ID cannot cancel the next run; a failed match also preserves pending wakes.
 
+### Pending-input cancellation
+
+`cancel_input` takes `session_id` and `input_id` and drops one admitted input
+that has not been promoted yet. The admission row is retained as `cancelled`
+evidence and an `input.cancelled` event is appended, so an exact retry of the
+admission reports `duplicate` with `pending: false` instead of resurrecting a
+prompt the operator dropped. An unknown id, or an id from another Session,
+returns `accepted: false` with `reason: "unknown"`; an already promoted prompt
+returns `accepted: false` with `reason: "promoted"` because interrupting a
+committed turn is `cancel`/`cancel_if`, not this command. Re-cancelling is
+accepted as a duplicate and appends no second event.
+
+A cancelled identity is terminal: admitting the same `session_id`/`input_id`
+again fails with `input_conflict` instead of resurrecting the dropped prompt or
+returning a receipt whose prompt never runs. A client that wants to re-send a
+cancelled prompt admits it under a fresh `input_id`.
+
+### Session agent selection
+
+`select_agent` accepts a host-resolved `agent` manifest (ADR-0017): `name`,
+optional `semantics`, `instructions`, `tools: {allow, deny}`, `permissions`,
+`model` (the same binding as `select_model`, including its optional variant),
+and collaboration `mode` (`build` or `plan`). Optional `request` uses the existing
+bounded body/header override contract; `steps` narrows the operator turn budget.
+Unknown fields are refused.
+Names are bounded to 128 bytes, instructions to 64 KiB, tool-name lists and
+permission rules to 256 entries; permission patterns and model bindings are
+validated before admission. Tool lists use exact registered engine names;
+unknown names are refused. An omitted or empty `allow` leaves the registered
+surface available, while `deny` always removes its entries.
+
+The engine appends `session.agent.selected` with the manifest and its SHA-256.
+Selecting identical content reports `changed:false` and appends nothing. The
+snapshot exposes the selected name, semantics and `agent_hash`; forks inherit
+only the manifest that existed at the chosen history boundary.
+
+Each provider turn takes an immutable agent and effective policy snapshot.
+Instructions, effective tool names and the agent source participate in the
+selected context fingerprint; the real provider request profile carries the
+agent identity and hash. Tool restrictions apply at dispatch as well as in the
+advertised schema, including the parallel-read path. Permission rules combine
+with the configured policy using its deny-over-ask-over-allow ordering and
+cannot lift a configured denial or a disabled capability. The effective policy
+revision includes the manifest hash, and changing agents transactionally denies
+pending approvals so a late reply cannot authorize a call under old authority.
+
+The agent's model pin applies only when the Session has no explicit model
+selection. Collaboration mode applies to both the system instructions and the
+actual tool execution boundary. A turn already in flight keeps its chosen
+manifest; the next provider turn observes the newly selected one.
+
+The product bridge uses optional `ordered_permissions` with
+`semantics:"ordered-wildcard-v1"`, an ordered `rules` array of
+`{action,resource,effect}`, and `bindings` mapping exact native tool names to
+`{action,resource?,explicit?}`. Resource selectors are `native` (default),
+`command` (Bash AST resources or explicit argv) and `program` (the executable of
+an interactive terminal), `{input:"field"}` (a bounded direct input property)
+and `{literal:"value"}` (a bounded fixed resource). Last matching rule wins within this layer, preserving
+late allow exceptions; all resources must pass. An explicit binding ignores a
+catch-all action rule. A missing command input asks rather than matching a
+workspace directory. The host's `auto` classifier mode is explicitly unsupported
+by the initial product adapter; a switch to such an agent fails without changing
+the selected manifest.
+
+### Operator-requested compaction
+
+`request_compact` takes `session_id` and asks for one compaction at the next
+settled assistant boundary even when the budget gate is under its threshold. The
+request is durable — `compaction.requested` — and idempotent: a retried command
+reports `duplicate` instead of queueing a second compaction. One attempt answers
+it at that boundary, appending `compaction.settled` with `compacted`, so a
+summarizer the provider keeps refusing cannot pin a Session; asking again is what
+asks for another try.
+
+The request is itself the trigger, so a forced pass runs even on a runtime
+without configured context limits (it summarizes the selected history instead of
+retaining the exact last provider request, and elision stays off). Every other
+gate still applies: only a completed answer is cut, never a tool continuation or
+a reverted transcript. Automatic compaction keeps its own trigger; this command
+does not change the budget.
+
+An idle Session honours the request at its next provider turn rather than
+compacting in the middle of nothing, which is where a Session's settled boundary
+actually exists.
+
+### Archiving
+
+`archive` takes `session_id` and `archived`. Archiving is a catalog fact: it
+writes the Session's `archived_at_ms` (null when cleared), appends
+`session.archived`, and touches no message, run, inbox or approval row, so a
+Session may be archived while a drain is active and restored with
+`archived: false`. The snapshot reports `archived_at_ms`, and an unarchived
+Session reports `null`. Archiving never initializes a Session: an unknown id
+fails with `invalid_request`.
+
+### Removal
+
+`remove` takes `session_id` and deletes everything the Session owns — its
+conversation, inbox, runs, tools, approvals, jobs, schedules, placement, lease
+and event log — after interrupting any active drain and stopping the
+in-process tasks that belong to it. Stopping those tasks is required, not
+cosmetic: an armed cron or wakeup admits through the inbox, which re-creates
+the Session row.
+
+There is no tombstone, so the identity can be created again from scratch. A
+child keeps its own rows and loses only its lineage edge, matching the
+product's rule that removing a Session does not delete its forks. An unknown
+Session is reported as `{accepted:false, reason:"unknown"}` rather than
+refused, so a half-finished removal can be retried by the caller.
+
+
+### Inline attachment admission
+
+`admit.attachments` accepts up to eight PNG/JPEG/GIF/WebP images, `application/pdf`
+documents and UTF-8 `text/*` files. Each carries `mime`, canonical base64 `data`
+(at most 8 MiB), and optional object `metadata` (at most 64 KiB). Empty text files
+may have empty data. PDFs must start with a PDF header; invalid UTF-8 text is
+rejected before admission. An attachment-only input may have an empty prompt.
+
+Bytes and metadata form durable retry identity. Promotion/replay/fork retain
+image or file parts with the original bytes. Product projection reconstructs
+attachments, including their name, description, client path and source range.
+The product host snapshots bounded `blob://`, local `file:` and HTTP(S) references
+before admission, so replay does not need the original source URI.
+
+Host model-route manifests may declare `input_modalities` using the product's
+catalog values (for example `["text", "image", "pdf"]`). Empty/absent declarations
+remain unknown. Each adapter normalizes a request copy: text files become UTF-8
+text; unsupported images/PDFs become explicit text placeholders while durable
+history stays intact. PDFs use Anthropic document blocks, Responses input_file,
+and Gemini inline_data. Chat Completions uses the same PDF placeholder as the
+product protocol contract. Provider-native counting uses normalized media too.
+
+Product admissions always include a metadata object, even when empty. An older
+engine that cannot project these attachments rejects unsupported input rather
+than accepting it and losing product history.
 
 ### Idle Session initialization
 
@@ -150,10 +293,35 @@ An exact retry returns `duplicate: true` and preserves edited metadata and the
 journal cursor; reusing an identity belonging to another workspace fails.
 The product initializes identity before publishing its durable native placement.
 
+### Session account selection
+
+`select_account` accepts an opaque `credential_id` or null and resolves it only
+against registered host routes (ADR-0020). A route may carry trusted account
+metadata `{id:string|null, model_key:string, default:boolean}`. The logical model
+key, not a wire model name or a route-id prefix, determines the family. The
+metadata stays out of public model catalogs; no endpoint or secret can be passed
+in a controller account command.
+
+The command retains the current explicit variant. Missing or ambiguous accounts,
+unsupported variants and incompatible opaque history fail before mutation. Null
+restores that logical model's configured default account. Account intent is its
+own `session.account.selected` fact rather than an explicit model pin, so agent
+model defaults remain effective and ordinary model/variant changes retain an
+account pin. Explicit account-specific model aliases update both axes atomically.
+The snapshot exposes `account_selection`, and forks inherit it at the selected
+history watermark.
+
+The product bridge enumerates usable alternative credential references without
+changing the global active connection, and the credential broker alone owns
+refresh. External host manifests must declare account metadata to support
+selection; a non-bearer default chain can use `id:null` without inventing a
+stored credential.
+
 ### Session model selection
 
 `select_model` takes `session_id` and `binding` (`protocol`, canonical wire
-`model`), or `binding: null` to reset to the configured default. The Runtime
+`model`, optional exact `route_id`, and optional host-advertised `variant`), or
+`binding: null` to reset to the configured default. The Runtime
 validates that its configured provider can select that model without changing
 route, endpoint or credential source before committing `session.model.selected`.
 An identical selection is a no-op. Unsupported models/routes fail without
@@ -168,9 +336,23 @@ A fork inherits selection at its explicit message boundary, or the parent's
 latest selection when no boundary was requested. Reverting transcript history
 does not alter this configuration binding.
 
-This command selects models on the configured provider route. Cross-route
-catalog routing and product model-picker wiring require their own facade
-integration; it does not infer endpoints or borrow credentials from model names.
+`model_catalog` exposes available variant names alongside each route. A variant
+must be declared by the host, preserves the route's protocol/model identity,
+and cannot substitute an endpoint or credential source. The binding includes
+its variant across restart, fork and provider-turn boundaries. An older engine
+that does not advertise variants cannot accept a product variant selection.
+
+Host route manifests may supply `request: {body, headers}`, a `variants` array
+of `{id, body, headers}`, and `primary: true` on one route to declare the default
+route's variants. Optional `default_variant` selects a declared tier when no
+explicit variant was requested, independently of other variants' options.
+Variant bodies recursively merge over base generation
+options; headers override case-insensitively. Structural transcript/tool fields,
+streaming controls and credential headers are rejected, and options are bounded
+to 64 KiB. Responses prefix-cache affinity includes the effective request
+options, so a generation-profile change does not reuse a previous profile's
+continuation accidentally. The public catalog exposes names, not parameters
+or credentials.
 
 ### Explicit unknown-tool recovery
 
@@ -192,3 +374,137 @@ without retrying that operation. The Session must be idle and Location-bound.
 By default neither command schedules model work. Use explicit `resume: true`,
 a separate `resume`, or a later prompt to promote the durable instruction.
 See [ADR-16](docs/adr/0016-explicit-tool-recovery.md).
+
+
+### Host route authentication
+
+Host route `auth` applies to both named routes and the owner-default primary.
+It changes only the declared auth style, bounded static headers and supported
+literal query parameters; it retains the configured endpoint, credential source,
+Responses capability contracts and fallback secondary. Credential-owned and
+transport-owned headers cannot be supplied through `auth.headers`. Header names
+merge case-insensitively, and explicit generation-variant headers override the
+corresponding static host defaults exactly once. Chat query values are encoded
+as data; unsupported auth styles or protocol/query combinations fail explicitly.
+Advisory count requests retain the same static host routing headers.
+
+### Exact permission grant storage
+
+Schema version 13 adds `engine_permission_grant` for durable exact scopes.
+A scope binds the workspace, opaque effective-authority revision (including
+agent manifest), tool, resource, canonical target set, and exact input digest.
+Target strings are literal identifiers; no wildcard or prefix matching occurs.
+Scope decoding rejects unknown fields, control characters, invalid digests,
+more than 64 targets, and encodings larger than 64 KiB. Stored scope bytes are
+validated against the requested scope before a lookup can succeed.
+
+Schema version 14 adds `engine_permission_request_scope`. The Runtime snapshots
+its trusted exact scope in the same transaction as `approval.requested`.
+`approve_persistent` accepts the same bound response as `approve`, with decision
+`allow` only. Resolution atomically commits the stored scope, approval state and
+`approval.resolved` event (`persistent: true`). Missing legacy request scopes,
+forged, expired, cancelled and already-resolved requests cannot create grants.
+An older engine rejects the new command; hosts must not fall back to once.
+
+Capability and explicit-deny checks precede grant lookup. Effective policy/agent,
+actual tool access, prepared targets, configured extension identities, process
+runner and lifecycle hooks bind the authority revision. Changed scope asks
+again; a matching scope records `permission.grant.used`. Grants survive engine
+restart and are reusable across Sessions in the same workspace. They never
+become wildcard rules or TypeScript permission rules. Caller-owned extension
+transports use per-instance identity so grants cannot outlive that boundary.
+The Store also exposes exact revocation primitives.
+
+### Injected context
+
+`{"type":"inject","session_id":"...","input_id":"optional-retry-key","text":"...","source":"skill:name"}` commits one `message.synthetic` history fact. The source is a bounded attribution label, not a command or credential. Injection creates no inbox row and does not start a provider turn. The host may request advisory `wake` afterwards; this drains eligible pending inbox work without forcing continuation. Unlike explicit `resume`, `wake` leaves an idle Session with no eligible input idle. An exact retry with the same Session and input identity reconciles; changed text/source conflicts. Forks preserve the synthetic record and original timestamp rather than promoting it as an operator prompt. Text is bounded to 1 MiB.
+
+If injected context arrives between a model tool call and its results, the immutable transcript keeps admission order; provider history defers that context until the tool block closes, preserving required tool-result adjacency.
+
+### Operator shell records
+
+`{"type":"shell","session_id":"...","call_id":"optional-operation-key","command":"...","timeout_ms":120000}` admits a durable operator operation and returns its receipt before execution. `shell_status` takes `session_id` and `call_id` and reads that same identity. An exact retry reconciles; changed command/timeout conflicts. Missing keys are generated. Commands are bounded to 32 KiB and timeouts to the existing process runner's 1–120000 ms range.
+
+The Session actor serializes operator shells with model drains. Shells use the native workspace process runner, bash preparation, capability/agent/plan policy, exact bound approvals, cancellation, output limits and sandbox. `shell.started` is an authorized operator dispatch, never an assistant tool call. `shell.ended` records output, nullable exit code, reason, duration, truncation and `origin:"operator"`; the output and run settlement commit together. A policy/preparation refusal or cancellation before dispatch records `shell.refused` and no execution block. Session interruption also durably refuses queued shells. No shell operation admits a user prompt or starts a provider turn; a later prompt sees a bounded attributed operator-result history block including its exit status. An advisory `wake` may drain already-pending inbox work.
+
+Receipts are `pending`, `running`, `ended`, `refused`, or `unknown`. A claim whose process died has an unknown outcome and is never automatically redispatched, including after an exact retry. Generic model-tool recovery refuses operator calls; inspect the operator receipt/current workspace and explicitly issue a new shell identity if another execution is necessary. Recovery listings identify operator provenance.
+
+The durable output is bounded by the process runner. Provider history retains a 16 KiB preview with a `recall` handle for the remaining captured output; `recall.tool_use_id` accepts the operator call identity and reports `origin:"operator"`. Forks preserve operator blocks, exit evidence and timestamps under new fork-local identities and recall handles, rather than fabricating user prompts or model tool calls.
+
+The product `session.shell` HTTP payload accepts optional `id` (`evt_...`) for exact native retries. The facade waits for the durable outcome, projects normal shell blocks and carries execution evidence in shell metadata. An unknown/refused native outcome returns Conflict rather than claiming successful execution.
+### Product-owned MCP OAuth
+
+Product-native owners materialize authorized global remote MCP servers through a
+scoped loopback HTTP route. The route forwards MCP protocol bodies/streams while
+borrowing the product's URL-bound OAuth authority. Native manifests contain only
+the ephemeral local route, never OAuth access tokens, refresh tokens or client
+secrets. Browser login and registration use the existing product OAuth routes.
+Missing or rejected grants surface an authentication failure and require login.
+
+SDK Streamable HTTP and SSE connections use the same request-time authority.
+An inter-process refresh lock covers re-read, SDK token exchange and durable
+rotation. A generation/URL compare-and-set prevents an in-flight old refresh
+from replacing a newly authorized grant or a changed server binding. Omitted
+refresh tokens preserve the stored grant. Expiry and concurrent 401 retries
+refresh one observed generation; bodies are replayed only after rejection.
+Refresh discovery/exchange has a bounded deadline and errors contain a stable
+authentication status rather than provider response bodies. The product scope
+owns the loopback service, so restarting a native child reuses its authority.
+
+`auth.style: "copilot"` selects GitHub Copilot authentication for Chat,
+Responses or Anthropic Messages routes. OAuth credentials bound to the
+`github-copilot` integration use the device grant's `refresh` token; the
+provider's zero-expiry sentinel does not expire that device grant. Other
+integrations retain ordinary expiry validation. Route manifests contain
+credential references, never the token bytes. Enterprise account metadata
+selects the Copilot API base, and product endpoint metadata selects the wire.
+
+Copilot request metadata is derived after media normalization on each request:
+root user turns use `x-initiator: user`, child Session and continuation/tool
+turns use `agent`, and only requests containing images carry the vision header.
+The interaction id follows the Session affinity scope. Anthropic beta flags
+merge with host flags. Copilot Responses routes reject continuation contracts
+that are only supported by the other explicit transport profiles.
+
+Product-owned loopback registrations carry a host-computed `authority_revision`
+(SHA256 of the original remote registration). Only the transient local URL is
+normalized for exact permission grants; the trusted original revision, other
+configuration and effective call-metadata environment values remain bound.
+Thus restarting the product proxy preserves a grant, while changing its remote
+URL, headers, client configuration or identity metadata asks again. The revision
+is accepted only for an explicit loopback HTTP transport with no competing
+headers, OAuth grant or process command. It is never a model tool argument.
+Older binaries reject the unknown registration field rather than consuming an
+unbound grant. Native replay descriptors retain their existing semantics.
+
+### Bedrock Converse transport
+
+The native `amazon-bedrock` provider uses the AWS SDK default credential chain
+for environment, shared profiles, credential processes, SSO, and container or
+instance identities. The SDK owns expiring credentials and SigV4 signing;
+`--aws-region` and `--aws-profile` select the host identity configuration.
+`AWS_BEARER_TOKEN_BEDROCK` or an explicit key credential source selects bearer
+mode instead. Bearer sources are re-read each turn. Region selection applies
+to primary and fallback requests. Credential files remain host-owned resources.
+
+A trusted route manifest may declare a credential source
+`{"type":"aws","region":"us-east-1","profile":"profile-name"}` without
+placing credential bytes in the manifest. The profile is optional. Generic
+bearer-based protocols reject this source. Workspace-owned AWS credential
+resources are rejected, including when they arrive through SDK environment
+configuration.
+
+Converse event streams are CRC-validated by the SDK. Text, fragmented tool
+arguments, signed reasoning, redacted reasoning, and usage are retained;
+unknown or incomplete response content fails explicitly. Signed reasoning
+records bind the exact provider and model before replay. SDK internal retries
+are disabled so the engine request budget and fallback reservation remain the
+transport authority. Stream corruption after response start is not retried.
+Bedrock input token counts already include cache reads and writes; the
+non-cached breakdown is derived without double-counting them.
+
+Generation overrides support bounded `inferenceConfig` and
+`additionalModelRequestFields` with protected identity/history/tool fields.
+Host-declared prompt caching adds SDK cache points to the system prefix and
+latest user message. Native engine release archives include the AWS dependency
+notice and Apache 2.0 license alongside the project license.

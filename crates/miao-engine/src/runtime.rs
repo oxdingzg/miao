@@ -1,3 +1,4 @@
+mod shell;
 use crate::{
     approval::{now_ms, Approval, Response},
     context_trigger::{self, ContextLimits},
@@ -73,10 +74,11 @@ struct Background {
 }
 
 enum Command {
+    Shell(crate::session_shell::Invocation),
     Wake(bool),
     Cancel(oneshot::Sender<bool>),
     CancelIf(String, oneshot::Sender<Result<bool, Error>>),
-    Approve(Response, oneshot::Sender<Result<(), Error>>),
+    Approve(Response, bool, oneshot::Sender<Result<(), Error>>),
 }
 
 impl Runtime {
@@ -321,15 +323,109 @@ impl Runtime {
         self.inner.breaker.lock().await.reset();
     }
 
+    /// Record a host-resolved agent for this Session's subsequent turns.
+    ///
+    /// A tool name the registry does not know is refused here rather than
+    /// silently ignored: a host that typos an agent's tool list must hear about
+    /// it, and `allow`/`deny` only ever narrow the registered surface.
+    pub async fn set_agent(
+        &self,
+        session: &str,
+        agent: crate::session_agent::AgentManifest,
+    ) -> Result<Value, Error> {
+        agent.validate()?;
+        self.inner.policy.for_agent(Some(&agent))?;
+        if let Some(binding) = &agent.model {
+            crate::session_model::select(&self.inner.provider, Some(binding))?;
+        }
+        let binding = self
+            .inner
+            .store
+            .model_selection(session)
+            .await?
+            .or_else(|| agent.model.clone());
+        let binding = match self.inner.store.account_selection(session).await? {
+            Some(account) => crate::session_account::resolve(
+                &self.inner.provider,
+                binding.as_ref(),
+                account.credential_id.as_deref(),
+            )?,
+            None => binding,
+        };
+        let provider = crate::session_model::select(&self.inner.provider, binding.as_ref())?;
+        if let Some(request) = &agent.request {
+            provider
+                .with_request_options(request.clone())
+                .map_err(|error| Error::Invalid(error.to_string()))?;
+        }
+        crate::session_model::validate_history(
+            &self.inner.store.selected_history(session).await?,
+            binding.as_ref(),
+            provider.identity(),
+        )?;
+        if let Some(surface) = &agent.tools {
+            let known = self
+                .inner
+                .tools
+                .definitions()
+                .into_iter()
+                .map(|tool| tool.name)
+                .collect::<std::collections::HashSet<_>>();
+            for name in surface.allow.iter().chain(surface.deny.iter()) {
+                if !known.contains(name) {
+                    return Err(Error::Invalid(format!(
+                        "agent references an unknown tool: {name}"
+                    )));
+                }
+            }
+        }
+        self.inner.store.set_agent(session, agent).await
+    }
+
+    /// Record an operator request to compact this Session at its next settled
+    /// assistant boundary, then wake it. A continuable drain honours the request
+    /// at that boundary even when the budget gate is under its threshold; an idle
+    /// Session with no inbox row has nothing to drain, so the request stays
+    /// durable until its next provider turn.
+    pub async fn request_compact(&self, session: &str) -> Result<Value, Error> {
+        let result = self.inner.store.request_compaction(session).await?;
+        let _ = self.wake(session, false).await;
+        Ok(result)
+    }
+
     pub async fn approve(
         &self,
         controller: &Controller,
         session: &str,
         response: Response,
     ) -> Result<(), Error> {
-        if controller.runtime_id != self.inner.id
-            || response.policy_revision != self.inner.policy.revision()
-        {
+        self.approve_inner(controller, session, response, false)
+            .await
+    }
+
+    pub async fn approve_persistent(
+        &self,
+        controller: &Controller,
+        session: &str,
+        response: Response,
+    ) -> Result<(), Error> {
+        self.approve_inner(controller, session, response, true)
+            .await
+    }
+
+    async fn approve_inner(
+        &self,
+        controller: &Controller,
+        session: &str,
+        response: Response,
+        persistent: bool,
+    ) -> Result<(), Error> {
+        let agent = self.inner.store.agent(session).await?;
+        let policy = self
+            .inner
+            .policy
+            .for_agent(agent.as_ref().map(|(manifest, _)| manifest))?;
+        if controller.runtime_id != self.inner.id || response.policy_revision != policy.revision() {
             return Err(Error::ApprovalMismatch);
         }
         let commands = {
@@ -339,7 +435,7 @@ impl Runtime {
         let commands = commands.ok_or(Error::ApprovalResolved)?;
         let (send, receive) = oneshot::channel();
         commands
-            .send(Command::Approve(response, send))
+            .send(Command::Approve(response, persistent, send))
             .await
             .map_err(|_| Error::Closed)?;
         receive.await.map_err(|_| Error::Closed)?
@@ -472,6 +568,49 @@ impl Runtime {
         Ok(())
     }
 
+    pub async fn shell(
+        &self,
+        session: &str,
+        invocation: crate::session_shell::Invocation,
+    ) -> Result<Value, Error> {
+        if self.inner.stop.is_cancelled() {
+            return Err(Error::Closed);
+        }
+        if self.inner.store.location(session).await?.as_deref() != Some(self.inner.tools.location())
+        {
+            return Err(Error::Conflict);
+        }
+        let receipt = self
+            .inner
+            .store
+            .admit_shell(session, invocation.clone())
+            .await?;
+        if receipt["state"] == "pending" {
+            let commands = self.actor(session).await?;
+            commands
+                .send(Command::Shell(invocation))
+                .await
+                .map_err(|_| Error::Closed)?;
+        }
+        Ok(receipt)
+    }
+
+    pub async fn shell_status(&self, session: &str, call: &str) -> Result<Value, Error> {
+        if self.inner.store.location(session).await?.as_deref() != Some(self.inner.tools.location())
+        {
+            return Err(Error::Conflict);
+        }
+        self.inner.store.shell_status(session, call).await
+    }
+
+    pub async fn wake_pending(&self, session: &str) -> Result<(), Error> {
+        if self.inner.store.location(session).await?.as_deref() != Some(self.inner.tools.location())
+        {
+            return Err(Error::Conflict);
+        }
+        self.wake(session, false).await
+    }
+
     pub async fn resume(&self, session: &str) -> Result<(), Error> {
         if self.inner.store.location(session).await?.as_deref() != Some(self.inner.tools.location())
         {
@@ -482,6 +621,72 @@ impl Runtime {
 
     pub fn model_catalog(&self) -> Vec<crate::model_catalog::Info> {
         self.inner.provider.model_catalog()
+    }
+
+    pub async fn inject(
+        &self,
+        session: &str,
+        input_id: Option<String>,
+        text: &str,
+        source: &str,
+    ) -> Result<Value, Error> {
+        if self.inner.stop.is_cancelled() {
+            return Err(Error::Closed);
+        }
+        if self.inner.store.location(session).await?.as_deref() != Some(self.inner.tools.location())
+        {
+            return Err(Error::Conflict);
+        }
+        self.inner
+            .store
+            .inject(
+                session,
+                &input_id.unwrap_or_else(|| uuid::Uuid::new_v4().to_string()),
+                text,
+                source,
+            )
+            .await
+    }
+
+    pub async fn select_account(
+        &self,
+        session: &str,
+        credential_id: Option<String>,
+    ) -> Result<Value, Error> {
+        if self.inner.stop.is_cancelled() {
+            return Err(Error::Closed);
+        }
+        if self.inner.store.location(session).await?.as_deref() != Some(self.inner.tools.location())
+        {
+            return Err(Error::Conflict);
+        }
+        if credential_id
+            .as_ref()
+            .is_some_and(|id| id.is_empty() || id.len() > 256 || id.chars().any(char::is_control))
+        {
+            return Err(Error::Invalid("invalid credential identity".into()));
+        }
+        let current = match self.inner.store.model_selection(session).await? {
+            Some(binding) => Some(binding),
+            None => self
+                .inner
+                .store
+                .agent(session)
+                .await?
+                .and_then(|(agent, _)| agent.model),
+        };
+        let binding = crate::session_account::resolve(
+            &self.inner.provider,
+            current.as_ref(),
+            credential_id.as_deref(),
+        )?;
+        let provider = crate::session_model::select(&self.inner.provider, binding.as_ref())?;
+        let (history, _) = self.inner.store.selected_input(session).await?;
+        crate::session_model::validate_history(&history, binding.as_ref(), provider.identity())?;
+        self.inner
+            .store
+            .select_account_binding(session, binding, credential_id)
+            .await
     }
 
     pub async fn select_model(
@@ -496,11 +701,43 @@ impl Runtime {
         {
             return Err(Error::Conflict);
         }
-        // Resolve an immutable host route before durable admission.
-        let selected = crate::session_model::select(&self.inner.provider, binding.as_ref())?;
+        let explicit = binding
+            .as_ref()
+            .and_then(|binding| binding.route_id.as_ref())
+            .and_then(|route| self.inner.provider.route_account(route))
+            .filter(|account| !account.is_default);
+        let account = match &explicit {
+            Some(account) => account
+                .id
+                .as_ref()
+                .map(|id| crate::session_account::Selection {
+                    credential_id: Some(id.clone()),
+                }),
+            None => self.inner.store.account_selection(session).await?,
+        };
+        let effective = if explicit.is_some() {
+            binding.clone()
+        } else {
+            match &account {
+                Some(account) => crate::session_account::resolve(
+                    &self.inner.provider,
+                    binding.as_ref(),
+                    account.credential_id.as_deref(),
+                )?,
+                None => binding.clone(),
+            }
+        };
+        let selected = crate::session_model::select(&self.inner.provider, effective.as_ref())?;
         let (history, _) = self.inner.store.selected_input(session).await?;
-        crate::session_model::validate_history(&history, binding.as_ref(), selected.identity())?;
-        self.inner.store.select_model(session, binding).await
+        crate::session_model::validate_history(&history, effective.as_ref(), selected.identity())?;
+        if explicit.is_some() {
+            self.inner
+                .store
+                .select_model_with_account(session, binding, account)
+                .await
+        } else {
+            self.inner.store.select_model(session, binding).await
+        }
     }
 
     pub async fn resolve_recovery(
@@ -579,6 +816,19 @@ impl Runtime {
         drop(actor.commands);
         let _ = actor.join.await;
         Ok(true)
+    }
+
+    /// Delete a Session and everything it owns.
+    ///
+    /// A running drain is interrupted and awaited first, then every in-process
+    /// task the Session owns is stopped, and only then are its durable rows
+    /// deleted. Stopping the tasks is not cosmetic: an armed cron or wakeup
+    /// re-admits through `admit_input`, which re-creates the Session row, so a
+    /// surviving task would resurrect the identity just removed.
+    pub async fn remove(&self, session: &str) -> Result<Value, Error> {
+        let _ = self.detach(session).await?;
+        stop_session(&self.inner, session).await;
+        self.inner.store.remove_session(session).await
     }
 
     pub async fn cancel(&self, session: &str) -> Result<bool, Error> {
@@ -669,13 +919,41 @@ impl Runtime {
     }
 }
 
+async fn refuse_shell_queue(
+    inner: &Inner,
+    session: &str,
+    shells: &mut std::collections::VecDeque<crate::session_shell::Invocation>,
+) {
+    for invocation in std::mem::take(shells) {
+        if let Err(error) = inner
+            .store
+            .refuse_pending_shell(session, &invocation.call_id)
+            .await
+        {
+            let _=inner.progress.send(json!({"session_id":session,"kind":"runtime.error","code":error.code(),"message":error.to_string()}));
+        }
+    }
+}
+
 async fn coordinate(session: String, inner: Arc<Inner>, mut commands: mpsc::Receiver<Command>) {
     let mut tasks = JoinSet::new();
     let mut active: Option<CancellationToken> = None;
     let mut wake = None;
+    let mut shells = std::collections::VecDeque::<crate::session_shell::Invocation>::new();
+    let mut active_shell = None;
     loop {
         if active.is_none() {
-            if let Some(force) = wake.take() {
+            if let Some(invocation) = shells.pop_front() {
+                let cancel = inner.stop.child_token();
+                active = Some(cancel.clone());
+                active_shell = Some(invocation.call_id.clone());
+                tasks.spawn(shell::execute(
+                    session.clone(),
+                    inner.clone(),
+                    invocation,
+                    cancel,
+                ));
+            } else if let Some(force) = wake.take() {
                 let cancel = inner.stop.child_token();
                 active = Some(cancel.clone());
                 let (session, inner) = (session.clone(), inner.clone());
@@ -690,9 +968,13 @@ async fn coordinate(session: String, inner: Arc<Inner>, mut commands: mpsc::Rece
                 break;
             }
             command=commands.recv() => match command {
+                Some(Command::Shell(invocation)) => {
+                    if active_shell.as_deref()!=Some(&invocation.call_id) && !shells.iter().any(|item|item.call_id==invocation.call_id) {shells.push_back(invocation);}
+                },
                 Some(Command::Wake(force)) => wake=Some(wake.unwrap_or(false)||(force && active.is_none())),
                 Some(Command::Cancel(reply)) => {
                     wake=None;
+                    refuse_shell_queue(&inner,&session,&mut shells).await;
                     if let Some(cancel)=&active { cancel.cancel(); }
                     let _=reply.send(active.is_some());
                 }
@@ -702,6 +984,7 @@ async fn coordinate(session: String, inner: Arc<Inner>, mut commands: mpsc::Rece
                     let result = match inner.store.active_run(&session).await {
                         Ok(Some(run)) if run == expected && active.as_ref().is_some_and(|token| !token.is_cancelled()) => {
                             wake = None;
+                            refuse_shell_queue(&inner,&session,&mut shells).await;
                             if let Some(token) = &active { token.cancel(); }
                             Ok(true)
                         }
@@ -710,14 +993,15 @@ async fn coordinate(session: String, inner: Arc<Inner>, mut commands: mpsc::Rece
                     };
                     let _ = reply.send(result);
                 },
-                Some(Command::Approve(response,reply))=>{
-                    let result=if active.as_ref().is_none_or(|token|token.is_cancelled()){Err(Error::ApprovalResolved)}else{inner.store.resolve_approval(&session,response).await.map(|_|())};
+                Some(Command::Approve(response,persistent,reply))=>{
+                    let result=if active.as_ref().is_none_or(|token|token.is_cancelled()){Err(Error::ApprovalResolved)}else if persistent {inner.store.resolve_approval_persistent(&session,response).await.map(|_|())} else {inner.store.resolve_approval(&session,response).await.map(|_|())};
                     let _=reply.send(result);
                 },
                 None => break,
             },
             result=tasks.join_next(), if active.is_some() => {
                 active=None;
+                active_shell=None;
                 match result {
                     Some(Ok(Ok(()))) => {},
                     Some(Ok(Err(error))) => { let _=inner.progress.send(json!({"session_id":session,"kind":"runtime.error","code":error.code(),"message":error.to_string()})); },
@@ -745,10 +1029,14 @@ fn boxed_drain(
 ) -> std::pin::Pin<Box<dyn std::future::Future<Output = Result<(), Error>> + Send>> {
     Box::pin(async move {
         let affinity = inner.store.cache_affinity(&session).await?;
-        crate::cache_affinity::scoped_candidate(
-            session.clone(),
-            affinity,
-            drain(session, inner, force, cancel),
+        let child = inner.store.lineage_parent(&session).await?.is_some();
+        crate::copilot::scoped(
+            child,
+            crate::cache_affinity::scoped_candidate(
+                session.clone(),
+                affinity,
+                drain(session, inner, force, cancel),
+            ),
         )
         .await
     })
@@ -926,6 +1214,7 @@ async fn execute(
 ) -> Result<(), Error> {
     let mut step = 0;
     let mut allowance = inner.policy.max_provider_turns();
+    let mut reset_allowance = true;
     let mut input_corrections = 0;
     let mut transport_continuations = 0;
     // Consecutive provider turns that produced neither text nor tool calls.
@@ -939,31 +1228,96 @@ async fn execute(
     let mut goal_stalls = 0;
     let mut goal_signature = None;
     loop {
+        if cancel.is_cancelled() {
+            return Ok(());
+        }
+        // A host-resolved agent (ADR-0017) applies at this boundary: its pinned
+        // model only while the Session has no explicit selection of its own.
+        let agent = inner.store.agent(session).await?;
+        let manifest = agent.as_ref().map(|(manifest, _)| manifest);
+        let policy = inner.policy.for_agent(manifest)?;
+        // A newly promoted external input gets the selected agent's whole
+        // allowance, even if that input also switched agents. Internal loop
+        // continuations never reset it.
+        allowance = if reset_allowance {
+            policy.max_provider_turns()
+        } else {
+            allowance.min(policy.max_provider_turns())
+        };
+        reset_allowance = false;
         if allowance == 0 {
             return Err(Error::Invalid("provider turn allowance exceeded".into()));
         }
         allowance -= 1;
+        let binding = match (inner.store.model_selection(session).await?, agent.as_ref()) {
+            (Some(selection), _) => Some(selection),
+            (None, Some((manifest, _))) => manifest.model.clone(),
+            (None, None) => None,
+        };
+        let binding = match inner.store.account_selection(session).await? {
+            Some(account) => crate::session_account::resolve(
+                &inner.provider,
+                binding.as_ref(),
+                account.credential_id.as_deref(),
+            )?,
+            None => binding,
+        };
+        let selected_provider = crate::session_model::select(&inner.provider, binding.as_ref())?;
+        let provider = match manifest.and_then(|agent| agent.request.as_ref()) {
+            Some(request) => selected_provider
+                .with_request_options(request.clone())
+                .map_err(|error| Error::Invalid(error.to_string()))?,
+            None => selected_provider,
+        };
+        let mut bundle = match crate::context::assemble_for_agent(
+            &inner.tools,
+            &policy,
+            cancel.child_token(),
+            manifest,
+        )
+        .await
+        {
+            Ok(bundle) => bundle,
+            Err(ToolError::Interrupted) => return Ok(()),
+            Err(error) => return Err(Error::Invalid(format!("context assembly failed: {error}"))),
+        };
         if cancel.is_cancelled() {
             return Ok(());
         }
-        let binding = inner.store.model_selection(session).await?;
-        let provider = crate::session_model::select(&inner.provider, binding.as_ref())?;
-        let bundle =
-            match crate::context::assemble(&inner.tools, &inner.policy, cancel.child_token()).await
-            {
-                Ok(bundle) => bundle,
-                Err(ToolError::Interrupted) => return Ok(()),
-                Err(error) => {
-                    return Err(Error::Invalid(format!("context assembly failed: {error}")))
-                }
-            };
-        if cancel.is_cancelled() {
-            return Ok(());
-        }
-        let plan = inner.store.mode(session).await? == crate::protocol::CollaborationMode::Plan;
+        let mode = match agent.as_ref().and_then(|(manifest, _)| manifest.mode) {
+            Some(mode) => mode,
+            None => inner.store.mode(session).await?,
+        };
+        let plan = mode == crate::protocol::CollaborationMode::Plan;
         let mut system = bundle.system.clone();
         if plan {
             system.push_str("\n\n<collaboration-mode mode=\"plan\">\nYou are in plan mode: investigate and propose a plan. Do not modify files, run commands, or start background work; those capabilities are denied.\n</collaboration-mode>");
+        }
+        if let Some((manifest, _)) = &agent {
+            if let Some(instructions) = manifest
+                .instructions
+                .as_deref()
+                .filter(|text| !text.trim().is_empty())
+            {
+                system.push_str(&format!(
+                    "\n\n<agent name=\"{}\">\n{}\n</agent>",
+                    manifest.attribute(),
+                    instructions
+                ));
+            }
+        }
+        if let Some((manifest, hash)) = &agent {
+            if system.len() > 65536 {
+                return Err(Error::Invalid(
+                    "agent instructions exceed system context budget".into(),
+                ));
+            }
+            bundle.system = system.clone();
+            bundle
+                .sources
+                .push(json!({"type":"agent","name":manifest.name,"agent_hash":hash}));
+            bundle.fingerprint =
+                crate::permission::context_digest(&bundle.system, &bundle.sources)?;
         }
         let sources = bundle.sources.clone();
         let context_epoch = inner
@@ -980,7 +1334,7 @@ async fn execute(
             .await?;
         let (mut history, state) = inner.store.selected_input(session).await?;
         crate::session_model::validate_history(&history, binding.as_ref(), provider.identity())?;
-        let state_allowed = inner.policy.evaluate(
+        let state_allowed = policy.evaluate(
             "session_state",
             "@session/state/session_state",
             crate::permission::Access::Read,
@@ -1034,7 +1388,7 @@ async fn execute(
             .record(
                 session,
                 "provider.started",
-                json!({"run_id":run,"step":step,"context_epoch":context_epoch,"policy_revision":inner.policy.revision(),"state_selection":state_selection,"identity":provider.identity().map(|i|json!({"protocol":i.protocol,"model":i.model}))}),
+                json!({"run_id":run,"step":step,"context_epoch":context_epoch,"policy_revision":policy.revision(),"state_selection":state_selection,"identity":provider.identity().map(|i|json!({"protocol":i.protocol,"model":i.model}))}),
             )
             .await?;
         // Durable history retains null plus the error marker for unavailable
@@ -1056,7 +1410,7 @@ async fn execute(
         let request = ModelRequest {
             system,
             messages: history,
-            tools: inner.tools.definitions(),
+            tools: agent_tools(&inner.tools, agent.as_ref(), &policy),
         };
         let prefix_through = if inner.context.lock().await.is_some() {
             Some(inner.store.max_message_seq(session).await?)
@@ -1081,8 +1435,18 @@ async fn execute(
                     run: run.into(),
                     step,
                     context_epoch,
-                    agent: json!({"name":"native-runtime","semantics":"native-runtime-v1","collaborationMode":if plan {"plan"} else {"build"}}),
-                    permissions: json!({"policy":inner.policy.descriptor(),"boundary":inner.tools.authority_descriptor()}),
+                    agent: match &agent {
+                        Some((manifest, hash)) => json!({
+                            "name": manifest.name,
+                            "semantics": manifest.semantics,
+                            "agentHash": hash,
+                            "collaborationMode": if plan { "plan" } else { "build" },
+                        }),
+                        None => {
+                            json!({"name":"native-runtime","semantics":"native-runtime-v1","collaborationMode":if plan {"plan"} else {"build"}})
+                        }
+                    },
+                    permissions: json!({"policy":policy.descriptor(),"boundary":inner.tools.authority_descriptor()}),
                 },
                 crate::provider::scoped(
                     transport_budget.clone(),
@@ -1224,7 +1588,8 @@ async fn execute(
                                 .as_str()
                                 .is_none_or(|id| !internal_inputs.contains(id))
                         }) {
-                            allowance = inner.policy.max_provider_turns();
+                            allowance = policy.max_provider_turns();
+                            reset_allowance = true;
                             input_corrections = 0;
                             repeats.clear();
                             transport_continuations = 0;
@@ -1305,9 +1670,16 @@ async fn execute(
             input_corrections += 1;
         }
         if reply.needs_tools {
-            let mut reads =
-                execute_read_batch(inner, session, run, &reply.content, cancel.child_token())
-                    .await?;
+            let mut reads = execute_read_batch(
+                inner,
+                session,
+                run,
+                &reply.content,
+                cancel.child_token(),
+                &policy,
+                manifest,
+            )
+            .await?;
             for block in reply
                 .content
                 .as_array()
@@ -1366,7 +1738,11 @@ async fn execute(
                                 id,
                                 &prepared,
                                 cancel.child_token(),
-                                plan,
+                                TurnAuthority {
+                                    plan,
+                                    policy: &policy,
+                                    agent: manifest,
+                                },
                             )
                             .await?;
                             if cancel.is_cancelled() {
@@ -1462,7 +1838,7 @@ async fn execute(
                                     None => Err(ToolError::Interrupted),
                                 },
                                 "session_state" => Ok(inner.store.state(session).await?),
-                                "knowledge"=>inner.tools.execute_knowledge(prepared,&inner.policy,session,cancel.child_token()).await,
+                                "knowledge"=>inner.tools.execute_knowledge(prepared,&policy,session,cancel.child_token()).await,
                                 "todowrite" | "goal" => match crate::state::Mutation::parse(
                                     name,
                                     prepared.input().clone(),
@@ -1569,7 +1945,7 @@ async fn execute(
                                         .tools
                                         .execute_prepared_with_progress(
                                             prepared,
-                                            &inner.policy,
+                                            &policy,
                                             cancel.child_token(),
                                             progress,
                                         )
@@ -1679,13 +2055,20 @@ async fn execute(
                         && part["text"].as_str().is_some_and(|text| !text.is_empty())
                 })
             });
-        if let Some(limits) = inner
-            .context
-            .lock()
-            .await
-            .as_ref()
-            .filter(|_| closed_answer)
-        {
+        // Automatic compaction needs configured limits; an operator request is
+        // itself the trigger, so one forced pass runs without them. Both use the
+        // same settled boundary and the same summarizer.
+        let requested = if closed_answer {
+            inner.store.pending_compaction_request(session).await?
+        } else {
+            None
+        };
+        let limits = inner.context.lock().await.clone().or_else(|| {
+            requested
+                .is_some()
+                .then(crate::context_trigger::ContextLimits::operator_requested)
+        });
+        if let Some(limits) = limits.filter(|_| closed_answer) {
             let primary = Arc::clone(&provider);
             let bindings = inner.roles.lock().await.clone();
             let (role_provider, resolution) =
@@ -1760,7 +2143,7 @@ async fn execute(
                 let store = inner.store.clone();
                 let stop = inner.stop.clone();
                 let mut snapshot = request.clone();
-                let permissions = json!({"policy":inner.policy.descriptor(),"boundary":inner.tools.authority_descriptor()});
+                let permissions = json!({"policy":policy.descriptor(),"boundary":inner.tools.authority_descriptor()});
                 async move {
                     if !prefix_allowed {
                         return None;
@@ -1782,12 +2165,20 @@ async fn execute(
                     ).await)
                 }
             };
-            let _ = crate::context_trigger::maybe_compact_with_prefix(
+            // A durable operator request forces one pass at this boundary even
+            // when the budget gate is under threshold, and resets the breaker so
+            // a repaired summarizer gets its fresh try — the same semantics the
+            // host-supplied `compact` command has.
+            if requested.is_some() {
+                breaker.reset();
+            }
+            let compacted = crate::context_trigger::maybe_compact_with_prefix(
                 &inner.store,
                 crate::context_trigger::CompactRequest {
                     session,
                     run,
                     boundary: assistant_boundary,
+                    forced: requested.is_some(),
                     budget: &limits.budget(),
                     per_pass: limits.per_pass,
                     breaker: &mut breaker,
@@ -1797,7 +2188,17 @@ async fn execute(
                 &mut summarize,
                 &mut prefix,
             )
-            .await;
+            .await
+            .unwrap_or(false);
+            if let Some(seq) = requested {
+                // One attempt answers the request either way, so a summarizer the
+                // provider keeps refusing cannot pin the Session: asking again is
+                // what asks for another try.
+                let _ = inner
+                    .store
+                    .settle_compaction_request(session, seq, compacted)
+                    .await;
+            }
         }
         let mut promoted = inner
             .store
@@ -1931,7 +2332,7 @@ async fn execute(
                     Err(error) => json!({"error":error.to_string()}),
                     Ok(prepared) => match inner
                         .tools
-                        .execute_prepared(prepared, &inner.policy, cancel.child_token())
+                        .execute_prepared(prepared, &policy, cancel.child_token())
                         .await
                     {
                         Err(error) => json!({"error":error.to_string()}),
@@ -2029,7 +2430,8 @@ async fn execute(
                     .as_str()
                     .is_none_or(|id| !internal_inputs.contains(id))
             }) {
-                allowance = inner.policy.max_provider_turns();
+                allowance = policy.max_provider_turns();
+                reset_allowance = true;
                 input_corrections = 0;
                 transport_continuations = 0;
                 empty_completions = 0;
@@ -2202,6 +2604,44 @@ fn spawn_cron_task(
         join,
     }
 }
+/// Stop every in-process task a Session owns, before its rows are deleted.
+async fn stop_session(inner: &Arc<Inner>, session: &str) {
+    let (jobs, timers, crons) = tokio::join!(
+        take_session_background(&inner.jobs, session),
+        take_session_background(&inner.timers, session),
+        take_session_background(&inner.crons, session),
+    );
+    inner.started.lock().await.remove(session);
+    inner.terminals.close_session(session).await;
+    let backgrounds = jobs
+        .into_iter()
+        .chain(timers)
+        .chain(crons)
+        .collect::<Vec<_>>();
+    for background in &backgrounds {
+        background.cancel.cancel();
+    }
+    for background in backgrounds {
+        let _ = background.join.await;
+    }
+}
+
+/// Take the background tasks of one Session out of an id-keyed table.
+async fn take_session_background(
+    table: &Mutex<HashMap<String, Background>>,
+    session: &str,
+) -> Vec<Background> {
+    let mut table = table.lock().await;
+    let keys = table
+        .iter()
+        .filter(|(_, background)| background.session == session)
+        .map(|(key, _)| key.clone())
+        .collect::<Vec<_>>();
+    keys.into_iter()
+        .filter_map(|key| table.remove(&key))
+        .collect()
+}
+
 async fn cancel_cron(inner: &Inner, session: &str, id: &str) -> Result<bool, Error> {
     let token = inner
         .crons
@@ -2652,6 +3092,31 @@ async fn cancel_session(inner: &Arc<Inner>, session: &str) -> Result<bool, Error
     result.await.map_err(|_| Error::Closed)
 }
 
+/// An agent's tool surface: `allow`/`deny` intersect the registered definitions
+/// and never add a capability, because permission evaluation still runs per call.
+fn agent_tools(
+    tools: &Tools,
+    agent: Option<&(crate::session_agent::AgentManifest, String)>,
+    policy: &Policy,
+) -> Vec<crate::protocol::ToolDefinition> {
+    tools
+        .definitions()
+        .into_iter()
+        .filter(|tool| {
+            agent.is_none_or(|(manifest, _)| manifest.permits(&tool.name))
+                && policy.tool_visible(&tool.name)
+        })
+        .collect()
+}
+
+/// Immutable authority chosen at the provider-turn boundary, shared by every
+/// call that reply produces. Never rebuilt from a mid-turn agent switch.
+struct TurnAuthority<'a> {
+    plan: bool,
+    policy: &'a Policy,
+    agent: Option<&'a crate::session_agent::AgentManifest>,
+}
+
 async fn authorize(
     inner: &Arc<Inner>,
     session: &str,
@@ -2659,8 +3124,18 @@ async fn authorize(
     call: &str,
     prepared: &Prepared,
     cancel: CancellationToken,
-    plan: bool,
+    authority: TurnAuthority<'_>,
 ) -> Result<bool, Error> {
+    let TurnAuthority {
+        plan,
+        policy,
+        agent,
+    } = authority;
+    if agent.is_some_and(|agent| !agent.permits(prepared.name())) {
+        inner.store.record(session, crate::events::Lifecycle::PermissionDenied.name(),
+            json!({"run_id":run,"call_id":call,"tool":prepared.name(),"resource":prepared.resource(),"reason":"agent_tool_surface","policy_revision":policy.revision()})).await?;
+        return Ok(false);
+    }
     if plan
         && matches!(
             prepared.access(),
@@ -2674,17 +3149,23 @@ async fn authorize(
         return Ok(false);
     }
     let (decision, matcher) = if prepared.targets().is_empty() {
-        inner
-            .policy
-            .assess(prepared.name(), prepared.resource(), prepared.access())
+        policy.assess_input(
+            prepared.name(),
+            prepared.resource(),
+            prepared.access(),
+            Some(prepared.input()),
+        )
     } else {
         prepared
             .targets()
             .iter()
             .map(|target| {
-                inner
-                    .policy
-                    .assess(prepared.name(), target, prepared.access())
+                policy.assess_input(
+                    prepared.name(),
+                    target,
+                    prepared.access(),
+                    Some(prepared.input()),
+                )
             })
             .reduce(|acc, next| {
                 if severity(next.0) > severity(acc.0) {
@@ -2698,10 +3179,36 @@ async fn authorize(
     match decision {
         Decision::Allow => return Ok(true),
         Decision::Deny => {
-            inner.store.record(session,crate::events::Lifecycle::PermissionDenied.name(),json!({"run_id":run,"call_id":call,"tool":prepared.name(),"resource":prepared.resource(),"reason":"policy","policy_revision":inner.policy.revision()})).await?;
+            inner.store.record(session,crate::events::Lifecycle::PermissionDenied.name(),json!({"run_id":run,"call_id":call,"tool":prepared.name(),"resource":prepared.resource(),"reason":"policy","policy_revision":policy.revision()})).await?;
             return Ok(false);
         }
         Decision::Ask => {}
+    }
+    let input_hash = input_digest(
+        inner.tools.location(),
+        prepared.name(),
+        prepared.resource(),
+        prepared.input(),
+    )?;
+    let authority_revision = crate::permission::digest(&serde_json::to_vec(&json!({
+        "semantics":"exact-persistent-authority-v1","policy":policy.revision(),
+        "boundary":inner.tools.grant_authority_descriptor(),"access":format!("{:?}",prepared.access()),
+    }))?);
+    let mut targets = prepared.targets().to_vec();
+    if targets.is_empty() {
+        targets.push(prepared.resolved_path().to_string_lossy().into_owned());
+    }
+    let scope = crate::permission_grant::Scope::new(
+        inner.tools.location().into(),
+        authority_revision,
+        prepared.name().into(),
+        prepared.resource().into(),
+        targets,
+        input_hash.clone(),
+    )?;
+    if inner.store.has_permission_grant(scope.clone()).await? {
+        inner.store.record(session,"permission.grant.used",json!({"run_id":run,"call_id":call,"tool":prepared.name(),"resource":prepared.resource(),"policy_revision":policy.revision()})).await?;
+        return Ok(true);
     }
     let approval = Approval {
         request_id: uuid::Uuid::new_v4().to_string(),
@@ -2712,20 +3219,18 @@ async fn authorize(
         tool: prepared.name().into(),
         resource: prepared.resource().into(),
         input: prepared.input().clone(),
-        input_hash: input_digest(
-            inner.tools.location(),
-            prepared.name(),
-            prepared.resource(),
-            prepared.input(),
-        )?,
-        policy_revision: inner.policy.revision().into(),
+        input_hash,
+        policy_revision: policy.revision().into(),
         matcher,
-        expires_at_ms: now_ms().saturating_add(inner.policy.timeout_ms()),
+        expires_at_ms: now_ms().saturating_add(policy.timeout_ms()),
     };
-    inner.store.request_approval(approval.clone()).await?;
+    inner
+        .store
+        .request_approval_with_scope(approval.clone(), scope)
+        .await?;
     inner.store.record(session,crate::events::Lifecycle::PermissionRequest.name(),json!({"run_id":run,"call_id":call,"tool":prepared.name(),"resource":prepared.resource()})).await?;
     let deadline =
-        tokio::time::Instant::now() + std::time::Duration::from_millis(inner.policy.timeout_ms());
+        tokio::time::Instant::now() + std::time::Duration::from_millis(policy.timeout_ms());
     loop {
         if cancel.is_cancelled() {
             return Ok(false);
@@ -3212,6 +3717,8 @@ async fn execute_read_batch(
     run: &str,
     content: &Value,
     cancel: CancellationToken,
+    policy: &Policy,
+    agent: Option<&crate::session_agent::AgentManifest>,
 ) -> Result<HashMap<String, (Value, bool)>, Error> {
     if cancel.is_cancelled() || !inner.tools.hooks().is_empty() || inner.tool_replay.is_some() {
         return Ok(HashMap::new());
@@ -3242,12 +3749,18 @@ async fn execute_read_batch(
         // when its own declaration says it only reads a named resource, not
         // because of its name. Anything that declares a write — or anything
         // undeclared — conflicts with the batch and stays serial.
-        if !tool.batchable_read()
+        if agent.is_some_and(|agent| !agent.permits(tool.name()))
+            || !tool.batchable_read()
             || tool.access() != crate::permission::Access::Read
             || tool.resource().is_empty()
-            || inner
-                .policy
-                .evaluate(tool.name(), tool.resource(), tool.access())
+            || policy
+                .assess_input(
+                    tool.name(),
+                    tool.resource(),
+                    tool.access(),
+                    Some(tool.input()),
+                )
+                .0
                 != Decision::Allow
         {
             break;
@@ -3286,10 +3799,7 @@ async fn execute_read_batch(
     let mut pending = futures_util::stream::iter(prepared.into_iter().map(|(id, tool)| {
         let cancel = cancel.child_token();
         async move {
-            let result = inner
-                .tools
-                .execute_prepared(tool, &inner.policy, cancel)
-                .await;
+            let result = inner.tools.execute_prepared(tool, policy, cancel).await;
             (id, result)
         }
     }))

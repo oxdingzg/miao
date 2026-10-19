@@ -1,5 +1,6 @@
 import { expect, test } from "bun:test"
 import path from "node:path"
+import { pathToFileURL } from "node:url"
 import { tmpdir } from "../fixture/fixture"
 
 const binary = process.env.MIAO_ENGINE_BIN
@@ -15,6 +16,7 @@ if (binary)
       JSON.stringify([
         {
           id: "account-two/shared",
+          variants: [{ id: "high", body: { reasoning_effort: "high" } }],
           provider: "openai-chat",
           model: "fixture",
           endpoint: "http://127.0.0.1:1/private-route",
@@ -171,6 +173,7 @@ if (binary)
           },
           {
             model: { providerID: "native-engine", id: "account-two/shared" },
+            variants: ["high"],
             protocol: "openai-chat",
             wireModel: "fixture",
             default: false,
@@ -188,15 +191,33 @@ if (binary)
       expect(selected.status).toBe(204)
       const selectedGet = await fetch(url + "/api/session/" + body.id, { headers })
       expect((await selectedGet.json()).data.model).toEqual(catalog.data[1].model)
+      // CLI --model accepts product identifiers; the native picker continues
+      // using its canonical route references. Both must select the same route.
+      const productSelected = await fetch(modelPath, {
+        method: "POST",
+        headers,
+        body: JSON.stringify({ model: { providerID: "account-two", id: "shared" } }),
+      })
+      expect(productSelected.status).toBe(204)
+      const productGet = await fetch(url + "/api/session/" + body.id, { headers })
+      expect((await productGet.json()).data.model).toEqual(catalog.data[1].model)
+      const variantSelected = await fetch(modelPath, {
+        method: "POST",
+        headers,
+        body: JSON.stringify({ model: { providerID: "account-two", id: "shared", variant: "high" } }),
+      })
+      expect(variantSelected.status).toBe(204)
+      const variantGet = await fetch(url + "/api/session/" + body.id, { headers })
+      expect((await variantGet.json()).data.model).toEqual({ ...catalog.data[1].model, variant: "high" })
       const unchanged = await fetch(url + "/api/session/" + anotherBody.id, { headers: anotherHeaders })
       expect((await unchanged.json()).data.model).toEqual(catalog.data[0].model)
       const inherited = await fetch(url + "/api/session/" + body.id + "/fork", { method: "POST", headers, body: "{}" })
       expect(inherited.status).toBe(200)
-      expect((await inherited.json()).data.model).toEqual(catalog.data[1].model)
+      expect((await inherited.json()).data.model).toEqual({ ...catalog.data[1].model, variant: "high" })
       const variant = await fetch(modelPath, {
         method: "POST",
         headers,
-        body: JSON.stringify({ model: { ...catalog.data[1].model, variant: "high" } }),
+        body: JSON.stringify({ model: { ...catalog.data[1].model, variant: "missing" } }),
       })
       expect(variant.status).toBe(409)
       const unknown = await fetch(modelPath, {
@@ -213,6 +234,45 @@ if (binary)
       expect(reset.status).toBe(204)
       const resetGet = await fetch(url + "/api/session/" + body.id, { headers })
       expect((await resetGet.json()).data.model).toEqual(catalog.data[0].model)
+      const imageFile = path.join(directory, "attachment.png")
+      await Bun.write(
+        imageFile,
+        Buffer.from(
+          "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+M8AAAMBAQDJ/pLvAAAAAElFTkSuQmCC",
+          "base64",
+        ),
+      )
+      const image = await fetch(url + "/api/session/" + body.id + "/prompt", {
+        method: "POST",
+        headers,
+        body: JSON.stringify({
+          id: "msg_native_http_image",
+          prompt: {
+            text: "inspect the image",
+            files: [
+              {
+                uri: pathToFileURL(imageFile).href,
+                name: "http-image.png",
+              },
+              {
+                uri: "data:application/pdf;base64," + Buffer.from("%PDF-1.4\nfixture\n%%EOF\n").toString("base64"),
+                name: "manual.pdf",
+              },
+              {
+                uri: "data:text/plain;base64," + Buffer.from("native document text").toString("base64"),
+                name: "notes.txt",
+              },
+            ],
+          },
+          resume: false,
+        }),
+      })
+      expect(image.status).toBe(200)
+      const admittedImage = await image.json()
+      expect(admittedImage.data.prompt.files).toHaveLength(3)
+      expect(admittedImage.data.prompt.files[0]).toMatchObject({ name: "http-image.png", mime: "image/png" })
+      expect(admittedImage.data.prompt.files[1]).toMatchObject({ name: "manual.pdf", mime: "application/pdf" })
+      expect(admittedImage.data.prompt.files[2]).toMatchObject({ name: "notes.txt", mime: "text/plain" })
     } finally {
       clearTimeout(timer)
       child.kill()

@@ -159,9 +159,20 @@ literally to the request URL. Any base-url provider or gateway is therefore
 configuration, not engine code. The product child environment remains allowlisted;
 pass custom credential variables through `EngineOptions.env` explicitly.
 
-Controller `model_catalog` returns only `route_id`, `protocol`, and `model`.
-Use these exact fields as `select_model.params.binding`; a null binding restores
-the default. Unknown routes and mismatched identities fail before provider work.
+Controller `model_catalog` returns `route_id`, `protocol`, `model`, and optional
+host-advertised `variants` names. Use the exact identity fields, plus an optional
+`variant` name, as `select_model.params.binding`; a null binding restores the
+default. Unknown routes/variants and mismatched identities fail before provider
+work. A variant survives restart and fork, applies at the next provider turn,
+and retains its endpoint and credential owner.
+
+A host route may declare `request: {body, headers}` and a `variants` array of
+`{id, body, headers}`. Variant generation options merge over the base options;
+structural transcript/tool fields, credential headers and streaming controls
+cannot be replaced. Mark one matching route `primary: true` to expose its base
+options and variants on the default entry as well. The product exports its
+catalog-declared variants automatically; both `run --model ... --variant ...`
+and the native model dialog use these advertised choices.
 Opaque history remains bound to its original route even when endpoints use the
 same wire model name. Compact on the original route before switching.
 
@@ -533,9 +544,14 @@ through the existing durable intent and binding approval; the default is ask, an
 configured with the `mcp_*` tool matcher and the `@mcp/local_service/**` resource matcher.
 `readOnlyHint` grants no permission.
 
+A process server may set `cwd`; relative paths resolve from the engine workspace. The product shared MCP configuration preserves this setting and merges global/server timeouts per field, with the server value taking precedence.
+
+Optional `call_meta` string pairs are stamped into `_meta` on each `tools/call`, separately from model arguments and the public catalog. `{env:VAR}` placeholders are resolved from the engine process environment immediately before each call; missing/invalid values fail before sending. Metadata is limited to 32 keys, 8 KiB per value and 64 KiB total. Product shared configuration preserves these templates for both transports and forwards only their referenced parent variables when spawning the engine; subsequent resolution reads the engine process environment.
+
+
 - The catalog is fixed at initialization: at most 8 servers and 4 pages/128 tools per server; the alias is stable, limited to 64 characters, and includes a fingerprint of the original name.
 - The schema is at most 32 KiB and JSON Schema validation completes before authorization and dispatch; the description is at most 4 KiB.
-- Initialization/catalog is 15 seconds per request, a call is 60 seconds, the wire frame is 256 KiB, and a returned result is 64 KiB.
+- Initialization defaults to 15 seconds; catalog and tool requests default to 60 seconds. Set `timeout.startup` and `timeout.request` to positive milliseconds per server. The wire frame is 256 KiB, and a returned result is 64 KiB.
 - input/task continuation fails explicitly; a disconnect/timeout is not auto-replayed, and it cannot be asserted that no external side effect occurred.
 - cancel stops the local wait, and a dispatched call may still be executing on the server; Session recovery follows the unknown intent boundary.
 - A normal shutdown closes the transport and kills/reaps the configured direct child process. A hard engine exit and server-derived/daemon processes do not yet have a full cross-process ownership guarantee.
@@ -968,3 +984,14 @@ round trips and transport continuations. External user admissions reset it;
 synthetic autonomous-continuation inputs do not. Exhaustion remains an explicit
 failed run and never silently replays tool calls. The policy revision records
 the configured budget.
+
+
+## Prompt attachments
+
+Native admission retains bounded images, PDFs and UTF-8 text files through replay
+and fork. The product host can snapshot managed blob, local file and HTTP(S)
+references before admission. Host-declared model `input_modalities` control media
+lowering per route: unsupported media becomes an explicit text placeholder in
+that provider request, while original attachment bytes remain in durable history.
+PDFs are carried directly by Anthropic, Responses and Gemini; Chat Completions
+uses the product's tool-reading placeholder. See [PROTOCOL.md](PROTOCOL.md#inline-attachment-admission).

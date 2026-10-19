@@ -145,6 +145,19 @@ V1 形状的遗留：
 `Replied(reject)`/`Rejected`；附件在请求构建时按模型能力归一化；工具进度事件已端到端接通
 （`session.next.tool.progress`）。
 - [ ] 把级联取消子 fiber、排空 inbox、结算悬挂审批作为一条第一类取消路径。
+- [RS：级联取消在原生侧——进程组被杀掉、整条 run 作为一条路径结算（#1019 时期）；TS 侧级联仍待办。]
+- [x] 按身份取消单个待提升输入 —— RS 原生 `cancel_input`（原生会话已由
+      `session.inputCancel` 承接）；已取消的 admission 身份为终态，重新 admit 会
+      冲突而不会让被丢弃的提示词复活，重复取消只是无副作用的状态回报。
+- [x] 归档与删除会话 —— RS 原生 `archive`/`remove`（原生会话已由
+      `session.archive`/`session.remove` 承接）。归档是可逆的目录事实，快照会回报；
+      删除会先中断 drain、停掉该会话的 job/timer/cron/terminal，再删掉它的行并释放
+      产品侧 placement，fork 子会话保留、只丢掉 lineage 边。
+- [x] 操作者请求压缩 —— RS 原生 `request_compact`（原生会话已由
+      `session.compact` 承接）。请求是持久且幂等的，下一次已闭合的 assistant 边界会
+      强制执行一次压缩（未配置 context limits 也生效），无论成败都会结算。空闲会话
+      在它的下一个 provider turn 生效（TS runner 是直接 resume 会话；引擎在 run 之外
+      没有压缩入口）。
 - [ ] 核心工具产出增量工具进度检查点（bash 目前为缓冲输出）。
 - [ ] 在 provider 历史降级前物化 remote 与 managed URI（`to-llm-message.ts:80` TODO）。
 - **验收：** 中断一个带子任务与悬挂审批的会话 → 无悬挂/丢失状态，无丢失的排队消息。
@@ -153,9 +166,14 @@ V1 形状的遗留：
 **入口：** `packages/core/src/session/runner/llm.ts`。
 进展：由前序进程遗留仍在运行的工具会以「结果未知」错误结算（`failInterruptedTools`），且
 未派发调用与「结果未知」调用已被区分（#101）。
-- [ ] 幂等键（`callID` + attempt）外加一次性消费 token。
-- [ ] 重启时把未结算调用标记为结果未知，并要求显式 retry/abandon。
-- **验收：** 工具执行中途 kill，恢复 → 无重复副作用；模型看到「结果未知」。
+- [x] 持久化以 Session、assistant/provider-turn 和 `callID` 为键的一次性 dispatch token。
+  `Tool.Called` 与计划行原子提交，进入本地工具 registry 前通过 SQLite CAS 消费 token。
+  结算事件只撤销执行权；显式恢复把已消费 attempt 标记为 `unknown`、未消费计划标记为
+  `cancelled`。事件重放不会创建执行权；新 turn 可以合法复用相同调用 id、工具和输入。
+- [x] 恢复时把未结算工具投影为结果未知；保留显式恢复边界。
+- **验收：** 真实子进程写入外部文件并 fsync 后、结算前退出；重开数据库拒绝旧 attempt 的
+  token，新 turn 的相同调用仍可执行。runner 回归覆盖流内重复、未知结果历史和后续合法调用。
+  该机制防止同一 attempt 重派，不承诺外部 exactly-once，也不引入崩溃后的自动 provider 续跑。
 
 ### 2.5 输出边界 / 超时 / 上限（G7）
 **入口：** `packages/core/src/tool/bash.ts`、`packages/core/src/ripgrep.ts`、
@@ -361,6 +379,22 @@ P99 25.4 ms / max 27.3 ms；主 isolate RSS 725.6 MB → 747.9 MB；FD 稳定在
 - [ ] 统一会话远程控制设计文档（#64）。
 
 ---
+
+### 原生会话切换账号
+
+`session.switchAccount` 在所选逻辑模型族内解析已登记凭据，并保留显式 variant
+（ADR-0020）。账号 pin 独立于显式模型选择与 agent 默认模型；修改模型/variant
+不会丢失账号，fork 按历史边界继承，加密 provider 历史不能跨路由搬用。
+Host manifest 只保存凭据引用，枚举或选择备选账号都不会修改全局 active 连接。
+
+### 原生会话切换 agent
+
+`session.switchAgent` 从 host 目录解析 agent，再向引擎提交有界 manifest
+（ADR-0017）。后续 provider turn 使用其指令、有序动作/资源权限、默认模型、
+生成参数及收窄的 step 预算。原生事件投影保留 agent 切换，会话信息回报当前身份。
+TypeScript 参考语料固定 last-match 例外及 Bash AST 命令提取语义；真实 HTTP 验收
+覆盖只读 agent 拒绝写入，以及后置单文件 allow 例外实际写入成功。
+当前桥接显式拒绝 host 的 `permission_mode: auto`，不会将其静默降级。
 
 ## 9. 原生引擎启用门槛
 

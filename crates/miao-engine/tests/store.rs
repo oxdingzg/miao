@@ -39,6 +39,295 @@ async fn lost_ack_is_exact_retry_and_conflicts_do_not_change_history() {
 }
 
 #[tokio::test]
+async fn cancelling_a_pending_input_keeps_it_from_being_promoted_or_resurrected() {
+    let dir = tempfile::tempdir().unwrap();
+    let store = Store::open(dir.path().join("engine.db")).await.unwrap();
+    store.admit(input("drop", Delivery::Queue)).await.unwrap();
+    store.admit(input("keep", Delivery::Steer)).await.unwrap();
+    assert_eq!(
+        store.cancel_input("s", "drop").await.unwrap(),
+        json!({"accepted": true, "duplicate": false})
+    );
+    // An exact retry reports the same accepted outcome and appends no event.
+    assert_eq!(
+        store.cancel_input("s", "drop").await.unwrap(),
+        json!({"accepted": true, "duplicate": true})
+    );
+    // An exact retry of the cancelled admission conflicts: the identity is
+    // dead, so it can neither resurrect the prompt nor report a receipt.
+    assert!(matches!(
+        store.admit(input("drop", Delivery::Queue)).await,
+        Err(Error::Conflict)
+    ));
+    assert_eq!(store.promote("s", false).await.unwrap().len(), 1);
+    assert!(store.promote("s", true).await.unwrap().is_empty());
+    assert_eq!(store.history("s").await.unwrap().len(), 1);
+    assert_eq!(
+        store.cancel_input("s", "missing").await.unwrap(),
+        json!({"accepted": false, "reason": "unknown"})
+    );
+    assert_eq!(
+        store.cancel_input("other", "keep").await.unwrap(),
+        json!({"accepted": false, "reason": "unknown"})
+    );
+    assert_eq!(
+        store
+            .events("s", 0, 100)
+            .await
+            .unwrap()
+            .into_iter()
+            .map(|event| event.kind)
+            .collect::<Vec<_>>(),
+        vec![
+            "input.admitted",
+            "input.admitted",
+            "input.cancelled",
+            "input.promoted"
+        ],
+        "the cancel retry appends no second event"
+    );
+}
+
+#[tokio::test]
+async fn cancelling_a_promoted_input_defers_to_the_turn_cancel() {
+    let dir = tempfile::tempdir().unwrap();
+    let store = Store::open(dir.path().join("engine.db")).await.unwrap();
+    store.admit(input("live", Delivery::Steer)).await.unwrap();
+    store.promote("s", false).await.unwrap();
+    assert_eq!(
+        store.cancel_input("s", "live").await.unwrap(),
+        json!({"accepted": false, "reason": "promoted"})
+    );
+    assert_eq!(store.history("s").await.unwrap().len(), 1);
+}
+
+#[tokio::test]
+async fn an_operator_compaction_request_is_durable_idempotent_and_settled_once() {
+    let dir = tempfile::tempdir().unwrap();
+    let store = Store::open(dir.path().join("engine.db")).await.unwrap();
+    assert!(matches!(
+        store.request_compaction("s").await,
+        Err(Error::Invalid(_))
+    ));
+    store.admit(input("one", Delivery::Steer)).await.unwrap();
+    assert_eq!(
+        store.request_compaction("s").await.unwrap(),
+        json!({"accepted": true, "duplicate": false, "pending": true})
+    );
+    let request = store
+        .pending_compaction_request("s")
+        .await
+        .unwrap()
+        .unwrap();
+    // A retried command neither queues a second request nor loses the intent.
+    assert_eq!(
+        store.request_compaction("s").await.unwrap(),
+        json!({"accepted": true, "duplicate": true, "pending": true})
+    );
+    assert_eq!(
+        store.pending_compaction_request("s").await.unwrap(),
+        Some(request)
+    );
+    // One attempt answers it, either way, and a second settle is a no-op.
+    assert!(store
+        .settle_compaction_request("s", request, false)
+        .await
+        .unwrap()
+        .is_some());
+    assert_eq!(store.pending_compaction_request("s").await.unwrap(), None);
+    assert!(store
+        .settle_compaction_request("s", request, true)
+        .await
+        .unwrap()
+        .is_none());
+    // Asking again is what asks for another try.
+    assert_eq!(
+        store.request_compaction("s").await.unwrap(),
+        json!({"accepted": true, "duplicate": false, "pending": true})
+    );
+    assert!(store
+        .pending_compaction_request("s")
+        .await
+        .unwrap()
+        .is_some());
+}
+
+#[tokio::test]
+async fn archiving_is_reversible_and_never_invents_a_session() {
+    let dir = tempfile::tempdir().unwrap();
+    let store = Store::open(dir.path().join("engine.db")).await.unwrap();
+    assert!(matches!(
+        store.set_archived("s", true).await,
+        Err(Error::Invalid(_))
+    ));
+    store.admit(input("one", Delivery::Steer)).await.unwrap();
+    assert!(store.snapshot("s").await.unwrap()["archived_at_ms"].is_null());
+    assert_eq!(
+        store.set_archived("s", true).await.unwrap(),
+        json!({"accepted": true, "archived": true})
+    );
+    assert!(store.snapshot("s").await.unwrap()["archived_at_ms"].is_number());
+    // Archiving is a catalog fact: the admitted input is untouched.
+    assert_eq!(store.promote("s", false).await.unwrap().len(), 1);
+    assert_eq!(
+        store.set_archived("s", false).await.unwrap(),
+        json!({"accepted": true, "archived": false})
+    );
+    assert!(store.snapshot("s").await.unwrap()["archived_at_ms"].is_null());
+}
+
+#[tokio::test]
+async fn removing_a_session_deletes_its_rows_and_orphans_its_children() {
+    let dir = tempfile::tempdir().unwrap();
+    let store = Store::open(dir.path().join("engine.db")).await.unwrap();
+    store
+        .admit(input("parent-input", Delivery::Steer))
+        .await
+        .unwrap();
+    store.promote("s", false).await.unwrap();
+    store.fork("s", "child", None).await.unwrap();
+    assert_eq!(store.sessions().await.unwrap().len(), 2);
+    assert_eq!(
+        store.remove_session("s").await.unwrap(),
+        json!({"accepted": true})
+    );
+    // The child keeps its own rows and becomes a root instead of failing on the
+    // lineage foreign key.
+    assert_eq!(store.sessions().await.unwrap(), vec!["child".to_owned()]);
+    let snapshot = store.snapshot("child").await.unwrap();
+    assert!(snapshot["parent_session_id"].is_null(), "{snapshot}");
+    assert_eq!(store.history("child").await.unwrap().len(), 1);
+    assert!(
+        !store.events("child", 0, 100).await.unwrap().is_empty(),
+        "the child keeps its own ledger"
+    );
+    // Nothing of the parent survives, and a retry reports rather than refuses.
+    assert!(matches!(store.snapshot("s").await, Err(Error::Invalid(_))));
+    assert!(store.events("s", 0, 100).await.unwrap().is_empty());
+    assert!(store.history("s").await.unwrap().is_empty());
+    assert!(store.wakeups("s").await.unwrap().is_empty());
+    assert_eq!(
+        store.remove_session("s").await.unwrap(),
+        json!({"accepted": false, "reason": "unknown"})
+    );
+}
+
+#[tokio::test]
+async fn an_agent_selection_is_derived_from_the_ledger_and_idempotent() {
+    use miao_engine::session_agent::{AgentManifest, AgentTools};
+    let dir = tempfile::tempdir().unwrap();
+    let store = Store::open(dir.path().join("engine.db")).await.unwrap();
+    let manifest = AgentManifest {
+        name: "reviewer".into(),
+        semantics: Some("product-agent-v1".into()),
+        instructions: Some("Review the diff before answering.".into()),
+        tools: Some(AgentTools {
+            allow: vec!["read_file".into()],
+            deny: vec!["run_command".into()],
+        }),
+        permissions: None,
+        ordered_permissions: None,
+        model: None,
+        mode: None,
+        request: None,
+        steps: None,
+    };
+    assert!(matches!(
+        store.set_agent("s", manifest.clone()).await,
+        Err(Error::Invalid(_))
+    ));
+    store.admit(input("one", Delivery::Steer)).await.unwrap();
+    assert!(store.agent("s").await.unwrap().is_none());
+    assert!(store.snapshot("s").await.unwrap()["agent"].is_null());
+    let applied = store.set_agent("s", manifest.clone()).await.unwrap();
+    assert_eq!(applied["changed"], true);
+    let hash = applied["agent_hash"].as_str().unwrap().to_owned();
+    let (recorded, recorded_hash) = store.agent("s").await.unwrap().unwrap();
+    assert_eq!(recorded.name, "reviewer");
+    assert_eq!(recorded_hash, hash);
+    assert_eq!(
+        store.snapshot("s").await.unwrap()["agent"]["name"],
+        "reviewer"
+    );
+    // The same manifest is the same selection: no second event, no new hash.
+    assert_eq!(
+        store.set_agent("s", manifest.clone()).await.unwrap(),
+        json!({"agent_hash": hash, "changed": false})
+    );
+    let mut changed = manifest.clone();
+    changed.instructions = Some("Answer with a diff summary.".into());
+    let next = store.set_agent("s", changed).await.unwrap();
+    assert_eq!(next["changed"], true);
+    assert_ne!(next["agent_hash"].as_str().unwrap(), hash);
+    assert_eq!(
+        store
+            .events("s", 0, 500)
+            .await
+            .unwrap()
+            .into_iter()
+            .filter(|event| event.kind == "session.agent.selected")
+            .count(),
+        2
+    );
+}
+
+#[tokio::test]
+async fn an_agent_manifest_is_bounded() {
+    use miao_engine::session_agent::{AgentManifest, AgentTools};
+    let dir = tempfile::tempdir().unwrap();
+    let store = Store::open(dir.path().join("engine.db")).await.unwrap();
+    store.admit(input("one", Delivery::Steer)).await.unwrap();
+    let manifest =
+        |name: String, instructions: Option<String>, tools: Option<AgentTools>| AgentManifest {
+            name,
+            semantics: None,
+            instructions,
+            tools,
+            permissions: None,
+            ordered_permissions: None,
+            model: None,
+            mode: None,
+            request: None,
+            steps: None,
+        };
+    assert!(matches!(
+        store.set_agent("s", manifest("".into(), None, None)).await,
+        Err(Error::Invalid(_))
+    ));
+    assert!(matches!(
+        store
+            .set_agent("s", manifest("x".repeat(129), None, None))
+            .await,
+        Err(Error::Invalid(_))
+    ));
+    assert!(matches!(
+        store
+            .set_agent(
+                "s",
+                manifest("ok".into(), Some("x".repeat(64 * 1024 + 1)), None)
+            )
+            .await,
+        Err(Error::Invalid(_))
+    ));
+    assert!(matches!(
+        store
+            .set_agent(
+                "s",
+                manifest(
+                    "ok".into(),
+                    None,
+                    Some(AgentTools {
+                        allow: vec!["".into()],
+                        deny: vec![],
+                    }),
+                ),
+            )
+            .await,
+        Err(Error::Invalid(_))
+    ));
+}
+
+#[tokio::test]
 async fn promotion_serializes_admissions_and_queues_only_at_idle() {
     let dir = tempfile::tempdir().unwrap();
     let store = Store::open(dir.path().join("engine.db")).await.unwrap();
@@ -221,7 +510,7 @@ async fn reply_identity_is_atomic_replayable_and_preserved_when_forked() {
         store.history("copy").await.unwrap().last().unwrap().content,
         content
     );
-    drop(store);
+    store.close().await.unwrap();
     let reopened = Store::open(&db).await.unwrap();
     assert_eq!(
         reopened.events("s", committed.seq, 100).await.unwrap()[0].data,

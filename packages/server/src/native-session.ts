@@ -1,3 +1,5 @@
+import { Credential } from "@miao/schema/credential"
+import { Agent } from "@miao/schema/agent"
 import { SessionModelRoute } from "@miao/schema/session-model-route"
 import { Project } from "@miao/schema/project"
 import type { AbsolutePath } from "@miao/schema/schema"
@@ -21,7 +23,7 @@ import { nativeIdle } from "./native-state"
  * Honesty rules, matching the agreed conventions: `cost` stays 0 (pricing is
  * a product catalog the engine does not own) unless the caller projects the
  * engine's usage report through that catalog, `tokens` are 0 until then,
- * `agent` stays unknown; model routes use the reserved native namespace.
+ * `agent` stays unknown until selected by a manifest; model routes use the reserved native namespace.
  * Missing creation time renders as epoch only for Sessions that predate
  * the metadata column.
  */
@@ -38,13 +40,18 @@ export function nativeSessionInfo(input: {
   const model = Option.isSome(selection)
     ? selection.value === null
       ? SessionModelRoute.reference(null)
-      : selection.value.route_id
-        ? SessionModelRoute.reference(selection.value.route_id)
+      : selection.value.route_id || selection.value.variant
+        ? SessionModelRoute.reference(selection.value.route_id ?? null, selection.value.variant ?? undefined)
         : undefined
     : undefined
   const created = number(input.snapshot["created_at_ms"])
   const updated = number(input.snapshot["updated_at_ms"])
+  const archived = number(input.snapshot["archived_at_ms"])
+  const account = Schema.decodeUnknownOption(Schema.Struct({ credential_id: Schema.NullOr(Credential.ID) }))(
+    input.snapshot["account_selection"],
+  )
   const title = input.snapshot["title"]
+  const agent = Schema.decodeUnknownOption(Schema.Struct({ name: Agent.ID }))(input.snapshot["agent"])
   const tokens =
     input.usage?.coverage?.observedTokens ??
     (input.usage
@@ -63,6 +70,10 @@ export function nativeSessionInfo(input: {
       : { input: 0, output: 0, reasoning: 0, cache: { read: 0, write: 0 } })
   return {
     id: input.sessionID,
+    ...(Option.isSome(account) && account.value.credential_id !== null
+      ? { credentialID: account.value.credential_id }
+      : {}),
+    ...(Option.isSome(agent) ? { agent: agent.value.name } : {}),
     ...(typeof input.snapshot["parent_session_id"] === "string"
       ? { parentID: Schema.decodeUnknownSync(SessionID)(input.snapshot["parent_session_id"]) }
       : {}),
@@ -74,6 +85,7 @@ export function nativeSessionInfo(input: {
     time: {
       created: DateTime.makeUnsafe(created ?? 0),
       updated: DateTime.makeUnsafe(updated ?? created ?? 0),
+      ...(archived !== undefined ? { archived: DateTime.makeUnsafe(archived) } : {}),
     },
     model,
     title: typeof title === "string" ? title : "",

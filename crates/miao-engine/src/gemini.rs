@@ -15,11 +15,15 @@ use tokio::sync::mpsc;
 use tokio_util::sync::CancellationToken;
 
 const PROTOCOL: &str = "gemini-generate-content";
+#[derive(Clone)]
 pub struct Gemini {
     client: reqwest::Client,
     endpoint: reqwest::Url,
     source: Source,
     model: String,
+    request_options: crate::request_options::Options,
+    input_modalities: Vec<String>,
+    extra_headers: std::collections::BTreeMap<String, String>,
 }
 impl Gemini {
     pub fn new(endpoint: String, key: String, model: String) -> Result<Self, ProviderError> {
@@ -66,11 +70,57 @@ impl Gemini {
             endpoint,
             source,
             model,
+            request_options: Default::default(),
+            input_modalities: vec![],
+            extra_headers: Default::default(),
         })
     }
 }
 #[async_trait]
 impl Provider for Gemini {
+    fn with_route_auth(
+        &self,
+        auth: &crate::model_routes::Auth,
+    ) -> Result<std::sync::Arc<dyn Provider>, ProviderError> {
+        auth.validate()?;
+        if !auth.query.is_empty() || !matches!(auth.style.as_deref(), None | Some("api-key")) {
+            return Err(ProviderError::Stream(
+                "unsupported Gemini host authentication".into(),
+            ));
+        }
+        let mut selected = self.clone();
+        for name in auth.headers.keys() {
+            selected
+                .request_options
+                .headers
+                .retain(|key, _| !key.eq_ignore_ascii_case(name));
+        }
+        auth.apply_headers(&mut selected.extra_headers);
+        Ok(std::sync::Arc::new(selected))
+    }
+    fn with_input_modalities(
+        &self,
+        input: Vec<String>,
+    ) -> Result<std::sync::Arc<dyn Provider>, ProviderError> {
+        crate::media::validate_modalities(&input)?;
+        let mut selected = self.clone();
+        selected.input_modalities = input;
+        Ok(std::sync::Arc::new(selected))
+    }
+    fn with_request_options(
+        &self,
+        options: crate::request_options::Options,
+    ) -> Result<std::sync::Arc<dyn Provider>, ProviderError> {
+        options.validate()?;
+        let mut selected = self.clone();
+        for name in options.headers.keys() {
+            selected
+                .extra_headers
+                .retain(|key, _| !key.eq_ignore_ascii_case(name));
+        }
+        selected.request_options = options;
+        Ok(std::sync::Arc::new(selected))
+    }
     fn for_model(&self, model: &str) -> Option<std::sync::Arc<dyn Provider>> {
         let model = model.strip_prefix("models/").unwrap_or(model);
         let suffix = format!("/models/{}:streamGenerateContent", self.model);
@@ -79,7 +129,10 @@ impl Provider for Gemini {
         endpoint.set_path(&format!("{prefix}/models/{model}:streamGenerateContent"));
         Self::with_source(endpoint.into(), self.source.clone(), model.into())
             .ok()
-            .map(|provider| std::sync::Arc::new(provider) as std::sync::Arc<dyn Provider>)
+            .map(|mut provider| {
+                provider.request_options = self.request_options.clone();
+                std::sync::Arc::new(provider) as std::sync::Arc<dyn Provider>
+            })
     }
     fn identity(&self) -> Option<crate::provider::Identity> {
         Some(crate::provider::Identity {
@@ -96,6 +149,11 @@ impl Provider for Gemini {
     /// Advisory pre-send count against Gemini's own endpoint. No retry and a
     /// short timeout: any refusal degrades to the estimate.
     async fn count_tokens(&self, request: &ModelRequest) -> CountTokens {
+        let request =
+            match crate::media::normalize(request.clone(), "gemini", &self.input_modalities) {
+                Ok(request) => request,
+                Err(_) => return CountTokens::Failed("unsupported Gemini media".into()),
+            };
         let credential = match self.source.load().await {
             Ok(credential) if credential.kind() == Kind::Key => credential,
             _ => return CountTokens::Failed("credential unavailable".into()),
@@ -115,12 +173,16 @@ impl Provider for Gemini {
             "contents": contents,
             "systemInstruction": {"parts": [{"text": request.system}]},
         });
-        let built = self
+        let builder = self
             .client
             .post(url)
             .header("x-goog-api-key", header)
-            .json(&body)
-            .build();
+            .json(&body);
+        let builder = match crate::provider::route_headers(builder, &self.extra_headers) {
+            Ok(builder) => builder,
+            Err(_) => return CountTokens::Failed("invalid route headers".into()),
+        };
+        let built = builder.build();
         let request = match built {
             Ok(request) => request,
             Err(_) => return CountTokens::Failed("count request build failed".into()),
@@ -176,6 +238,7 @@ impl Gemini {
         cancel: CancellationToken,
         without_tools: bool,
     ) -> Result<Reply, ProviderError> {
+        let request = crate::media::normalize(request, "gemini", &self.input_modalities)?;
         let credential = self.source.load().await?;
         if credential.kind() != Kind::Key {
             return Err(ProviderError::AuthProfile);
@@ -183,15 +246,20 @@ impl Gemini {
         let contents = lower(&request.messages, &self.model)?;
         let declarations=request.tools.iter().map(|tool|json!({"name":tool.name,"description":tool.description,"parametersJsonSchema":tool.input_schema})).collect::<Vec<_>>();
         let mut body = json!({"contents":contents,"generationConfig":{"candidateCount":1,"maxOutputTokens":8192},"systemInstruction":{"parts":[{"text":request.system}]}});
+        self.request_options.apply(&mut body);
         if !declarations.is_empty() {
             body["tools"] = json!([{"functionDeclarations":declarations}]);
             body["toolConfig"] = json!({"functionCallingConfig":{"mode":if without_tools { "NONE" } else { "AUTO" }}});
         }
-        let request = self
+        let builder = self
             .client
             .post(self.endpoint.clone())
             .header("x-goog-api-key", credential.header()?)
-            .json(&body)
+            .json(&body);
+        let builder = crate::provider::route_headers(builder, &self.extra_headers)?;
+        let request = self
+            .request_options
+            .headers(builder)?
             .build()
             .map_err(|_| ProviderError::Transport)?;
         let response =
@@ -402,7 +470,7 @@ fn lower(history: &[Message], model: &str) -> Result<Vec<Value>, ProviderError> 
             for block in blocks {
                 match block["type"].as_str() {
                     Some("text") => parts.push(json!({"text":portable_text(block)?})),
-                    Some("image") => {
+                    Some("image" | "file") => {
                         let mime = block["mime"]
                             .as_str()
                             .ok_or_else(|| invalid("invalid Gemini image attachment"))?;

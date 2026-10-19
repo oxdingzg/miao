@@ -807,6 +807,7 @@ export type SessionsModelRoutesOutput = {
     readonly protocol: string
     readonly wireModel: string
     readonly default: boolean
+    readonly variants?: ReadonlyArray<string> | null
   }>
 }["data"]
 
@@ -1015,8 +1016,21 @@ export type SessionsSkillOutput = void
 
 export type SessionsShellInput = {
   readonly sessionID: { readonly sessionID: string }["sessionID"]
-  readonly command: { readonly command: string; readonly resume?: boolean | undefined }["command"]
-  readonly resume?: { readonly command: string; readonly resume?: boolean | undefined }["resume"]
+  readonly id?: {
+    readonly id?: string | undefined
+    readonly command: string
+    readonly resume?: boolean | undefined
+  }["id"]
+  readonly command: {
+    readonly id?: string | undefined
+    readonly command: string
+    readonly resume?: boolean | undefined
+  }["command"]
+  readonly resume?: {
+    readonly id?: string | undefined
+    readonly command: string
+    readonly resume?: boolean | undefined
+  }["resume"]
 }
 
 export type SessionsShellOutput = void
@@ -1993,6 +2007,7 @@ export type SessionsHistoryOutput = {
         readonly data: {
           readonly timestamp: number
           readonly sessionID: string
+          readonly metadata?: { readonly [x: string]: JsonValue }
           readonly messageID: string
           readonly callID: string
           readonly command: string
@@ -2007,6 +2022,7 @@ export type SessionsHistoryOutput = {
         readonly data: {
           readonly timestamp: number
           readonly sessionID: string
+          readonly metadata?: { readonly [x: string]: JsonValue }
           readonly callID: string
           readonly output: string
         }
@@ -2713,6 +2729,7 @@ export type SessionsEventsOutput =
       readonly data: {
         readonly timestamp: number
         readonly sessionID: string
+        readonly metadata?: { readonly [x: string]: unknown }
         readonly messageID: string
         readonly callID: string
         readonly command: string
@@ -2727,6 +2744,7 @@ export type SessionsEventsOutput =
       readonly data: {
         readonly timestamp: number
         readonly sessionID: string
+        readonly metadata?: { readonly [x: string]: unknown }
         readonly callID: string
         readonly output: string
       }
@@ -5991,6 +6009,7 @@ export type EventsDurableOutput =
       readonly data: {
         readonly timestamp: number
         readonly sessionID: string
+        readonly metadata?: { readonly [x: string]: unknown }
         readonly messageID: string
         readonly callID: string
         readonly command: string
@@ -6005,6 +6024,7 @@ export type EventsDurableOutput =
       readonly data: {
         readonly timestamp: number
         readonly sessionID: string
+        readonly metadata?: { readonly [x: string]: unknown }
         readonly messageID: string
         readonly callID: string
         readonly command: string
@@ -6019,6 +6039,7 @@ export type EventsDurableOutput =
       readonly data: {
         readonly timestamp: number
         readonly sessionID: string
+        readonly metadata?: { readonly [x: string]: unknown }
         readonly callID: string
         readonly output: string
       }
@@ -6032,6 +6053,7 @@ export type EventsDurableOutput =
       readonly data: {
         readonly timestamp: number
         readonly sessionID: string
+        readonly metadata?: { readonly [x: string]: unknown }
         readonly callID: string
         readonly output: string
       }

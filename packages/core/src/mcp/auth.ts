@@ -38,6 +38,19 @@ const filepath = path.join(Global.Path.data, "mcp-auth.json")
 const lockKey = `mcp-auth:${filepath}`
 
 export interface Interface {
+  readonly updateTokensIfCurrent: (
+    mcpName: string,
+    serverUrl: string,
+    expected: Entry,
+    tokens: Tokens,
+  ) => Effect.Effect<boolean>
+
+  readonly withRefreshLock: <A, E, R>(
+    mcpName: string,
+    serverUrl: string,
+    body: Effect.Effect<A, E, R>,
+  ) => Effect.Effect<A, E | EffectFlock.LockError, R>
+
   readonly all: () => Effect.Effect<Record<string, Entry>>
   readonly get: (mcpName: string) => Effect.Effect<Entry | undefined>
   readonly getForUrl: (mcpName: string, serverUrl: string) => Effect.Effect<Entry | undefined>
@@ -112,7 +125,8 @@ const layer = Layer.effect(
     const updateField = <K extends keyof Entry>(field: K, spanName: string) =>
       Effect.fn(`McpAuth.${spanName}`)(function* (mcpName: string, value: NonNullable<Entry[K]>, serverUrl?: string) {
         yield* mutate((data) => {
-          const entry = data[mcpName] ?? {}
+          const current = data[mcpName]
+          const entry: Entry = serverUrl && current?.serverUrl !== serverUrl ? {} : (current ?? {})
           entry[field] = value
           if (serverUrl) entry.serverUrl = serverUrl
           return { ...data, [mcpName]: entry }
@@ -129,7 +143,29 @@ const layer = Layer.effect(
         })
       })
 
-    const updateTokens = updateField("tokens", "updateTokens")
+    const updateTokens = Effect.fn("McpAuth.updateTokens")(function* (
+      mcpName: string,
+      tokens: Tokens,
+      serverUrl?: string,
+    ) {
+      yield* mutate((data) => {
+        const current = data[mcpName]
+        const entry: Entry = serverUrl && current?.serverUrl !== serverUrl ? {} : (current ?? {})
+        return {
+          ...data,
+          [mcpName]: {
+            ...entry,
+            ...(serverUrl ? { serverUrl } : {}),
+            tokens: {
+              ...tokens,
+              // OAuth refresh responses may omit an unchanged refresh token.
+              // Re-read and preserve it under the same file lock as the write.
+              refreshToken: tokens.refreshToken ?? entry.tokens?.refreshToken,
+            },
+          },
+        }
+      })
+    })
     const updateClientInfo = updateField("clientInfo", "updateClientInfo")
     const updateCodeVerifier = updateField("codeVerifier", "updateCodeVerifier")
     const updateOAuthState = updateField("oauthState", "updateOAuthState")
@@ -142,6 +178,29 @@ const layer = Layer.effect(
     })
 
     return Service.of({
+      updateTokensIfCurrent: (mcpName, serverUrl, expected, tokens) =>
+        Effect.gen(function* () {
+          const data = yield* read()
+          const entry = data[mcpName]
+          if (entry?.serverUrl !== serverUrl || !entry.tokens || JSON.stringify(entry) !== JSON.stringify(expected))
+            return false
+          yield* fs
+            .writeJson(
+              filepath,
+              {
+                ...data,
+                [mcpName]: {
+                  ...entry,
+                  tokens: { ...tokens, refreshToken: tokens.refreshToken ?? entry.tokens.refreshToken },
+                },
+              },
+              0o600,
+            )
+            .pipe(Effect.orDie)
+          return true
+        }).pipe(flock.withLock(lockKey), Effect.orDie),
+      withRefreshLock: (mcpName, serverUrl, body) =>
+        body.pipe(flock.withLock(`mcp-oauth-refresh:${filepath}:${JSON.stringify([mcpName, serverUrl])}`)),
       all,
       get,
       getForUrl,

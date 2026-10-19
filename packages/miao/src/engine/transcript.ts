@@ -10,6 +10,7 @@ const Sequence = Schema.Finite.check(Schema.isInt(), Schema.isGreaterThanOrEqual
 const Snapshot = Schema.Struct({
   session_id: Schema.String,
   cursor: Sequence,
+  active_run: Schema.optional(Schema.NullOr(Schema.String)),
   messages: Schema.Array(
     Schema.Struct({
       seq: Sequence,
@@ -58,13 +59,27 @@ export async function readTranscript(
     if (row.role === "assistant" && active.has(row.seq))
       ids.add(messageID(input.sessionID, row.identity?.anchor_seq ?? row.seq))
   }
+  const shells = new Map<string, { id: SessionMessage.ID; runID: unknown }>()
   const reducer = SessionTranscript.create()
   let messages: SessionTranscript.Reduction["messages"] = []
   for (const event of page.events) {
-    if (event.type === "session.next.prompt.admitted" && active.has(sequence(event))) ids.add(event.data.messageID)
+    if (event.type === "session.next.shell.started")
+      shells.set(event.data.callID, { id: event.data.messageID, runID: event.data.metadata?.runID })
+    if (event.type === "session.next.shell.ended") {
+      const shell = shells.get(event.data.callID)
+      if (shell && active.has(sequence(event))) ids.add(shell.id)
+      shells.delete(event.data.callID)
+    }
+    if (
+      (event.type === "session.next.prompt.admitted" || event.type === "session.next.synthetic") &&
+      active.has(sequence(event))
+    )
+      ids.add(event.data.messageID)
     const reduced = project(reducer, messages, event)
     if (reduced) messages = reduced.messages
   }
+  for (const shell of shells.values())
+    if (typeof shell.runID === "string" && shell.runID === snapshot.active_run) ids.add(shell.id)
   const result = messages
     .filter((message) => ids.has(message.id))
     .map((message) => decodeMessage(JSON.stringify(message)))

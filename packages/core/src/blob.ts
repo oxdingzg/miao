@@ -53,7 +53,7 @@ export class Ref extends Schema.Class<Ref>("Blob.Ref")({
 
 export interface Interface {
   readonly put: (input: { readonly bytes: Uint8Array; readonly mime?: string }) => Effect.Effect<Ref, Error>
-  readonly get: (hash: string) => Effect.Effect<Uint8Array | undefined, Error>
+  readonly get: (hash: string, maximumBytes?: number) => Effect.Effect<Uint8Array | undefined, Error>
   /** Base64 of the stored bytes, or undefined when the blob is missing. */
   readonly getBase64: (hash: string) => Effect.Effect<string | undefined, Error>
   readonly has: (hash: string) => Effect.Effect<boolean>
@@ -103,12 +103,12 @@ const layer = Layer.effect(
         return base64
       })
 
-    const get: Interface["get"] = Effect.fn("Blob.get")(function* (hash) {
+    const get: Interface["get"] = Effect.fn("Blob.get")(function* (hash, maximumBytes) {
       const target = pathFor(hash)
       if (!(yield* fs.existsSafe(target))) return undefined
-      return yield* fs
-        .readFile(target)
-        .pipe(Effect.mapError((cause) => new StorageError({ operation: "read", hash, cause })))
+      const read: Effect.Effect<Uint8Array, FSUtil.Error> =
+        maximumBytes === undefined ? fs.readFile(target) : FSUtil.readBounded(fs, target, maximumBytes)
+      return yield* read.pipe(Effect.mapError((cause) => new StorageError({ operation: "read", hash, cause })))
     })
 
     const put: Interface["put"] = Effect.fn("Blob.put")(function* (input) {
@@ -120,9 +120,9 @@ const layer = Layer.effect(
       })
       if (yield* fs.existsSafe(pathFor(hash))) return ref
       const temp = path.join(directory, `.${hash}.${Identifier.ascending()}.tmp`)
-      yield* fs.ensureDir(directory).pipe(
-        Effect.mapError((cause) => new StorageError({ operation: "write", hash, cause })),
-      )
+      yield* fs
+        .ensureDir(directory)
+        .pipe(Effect.mapError((cause) => new StorageError({ operation: "write", hash, cause })))
       // Write to a temporary sibling and rename so a crash never leaves a
       // partially written blob under its content address.
       yield* fs

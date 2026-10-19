@@ -24,6 +24,9 @@ export interface EngineOptions {
   workerConfigFile?: string
   provider?: string
   endpoint?: string
+  /** Host-owned AWS SDK chain selection; credentials remain out of argv. */
+  awsRegion?: string
+  awsProfile?: string
   authFile?: string
   policyFile?: string
   toolReplayFile?: string
@@ -64,6 +67,8 @@ export interface EngineOptions {
   mcpConfigFile?: string
   /** Trusted global MCP settings; materialized only with explicit native MCP policy authority. */
   mcpSettings?: ConfigMCP.Info
+  /** Trusted original registration digests for product-owned OAuth proxy routes. */
+  mcpAuthorityRevisions?: Record<string, string>
   /** Absolute path to an LSP host config; must live outside the workspace. */
   lspConfigFile?: string
   formatterConfigFile?: string
@@ -159,6 +164,8 @@ export function engineArgs(options: EngineOptions): string[] {
   if (options.workerConfigFile) args.push("--worker-config", options.workerConfigFile)
   if (options.provider) args.push("--provider", options.provider)
   if (options.endpoint) args.push("--endpoint", options.endpoint)
+  if (options.awsRegion) args.push("--aws-region", options.awsRegion)
+  if (options.awsProfile) args.push("--aws-profile", options.awsProfile)
   if (options.authFile) args.push("--auth-file", options.authFile)
   if (options.policyFile) args.push("--policy", options.policyFile)
   if (options.toolReplayFile) args.push("--tool-replay", options.toolReplayFile)
@@ -275,7 +282,7 @@ export class EngineClient {
         stdin: "pipe",
         stdout: "pipe",
         stderr: "pipe",
-        env: engineEnvironment(options.env),
+        env: engineEnvironment({ ...manifest?.environment, ...options.env }),
       })
       return new EngineClient(child, manifest?.dispose)
     } catch (error) {
@@ -323,8 +330,12 @@ export class EngineClient {
     })
   }
 
-  admit(input: { session_id: string; input_id: string; prompt: string; delivery?: "steer" | "queue" }, resume = true) {
-    return this.request("admit", { input, resume })
+  admit(
+    input: { session_id: string; input_id: string; prompt: string; delivery?: "steer" | "queue" },
+    resume = true,
+    attachments: readonly { mime: string; data: string; metadata?: Readonly<Record<string, unknown>> }[] = [],
+  ) {
+    return this.request("admit", { input, resume, ...(attachments.length ? { attachments } : {}) })
   }
 
   subscribe(session: string, after = 0) {

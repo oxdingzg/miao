@@ -29,7 +29,9 @@ jobs:
         with:
           install-flags: --frozen-lockfile --ignore-scripts
       - name: Verify corpus against the live TypeScript reference
-        run: bun crates/miao-engine/tests/differential/generate.ts --check
+        run: |
+          bun crates/miao-engine/tests/differential/generate.ts --check
+          bun crates/miao-engine/tests/differential/generate-agent-policy.ts --check
 
   engine:
     name: engine (${{ matrix.os }})

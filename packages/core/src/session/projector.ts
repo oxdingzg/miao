@@ -15,6 +15,7 @@ import { SessionHistory } from "./history"
 import { SessionInput } from "./input"
 import { SessionDelegationStore } from "./delegation-store"
 import { SessionUsageStore } from "./usage-store"
+import { SessionToolDispatch } from "./tool-dispatch"
 import { SessionLegacyTables } from "./legacy-tables"
 import { SessionSchema } from "./schema"
 import { WorkspaceV2 } from "../workspace"
@@ -621,10 +622,16 @@ const layer = Layer.effectDiscard(
     )
     yield* events.project(SessionEvent.Tool.Progress, (event) => run(db, event))
     yield* events.project(SessionEvent.Tool.Success, (event) =>
-      SessionUsageStore.projectToolSettled(db, event, "success").pipe(Effect.andThen(run(db, event))),
+      SessionToolDispatch.settle(db, event.data).pipe(
+        Effect.andThen(SessionUsageStore.projectToolSettled(db, event, "success")),
+        Effect.andThen(run(db, event)),
+      ),
     )
     yield* events.project(SessionEvent.Tool.Failed, (event) =>
-      SessionUsageStore.projectToolSettled(db, event, "failed").pipe(Effect.andThen(run(db, event))),
+      SessionToolDispatch.settle(db, event.data).pipe(
+        Effect.andThen(SessionUsageStore.projectToolSettled(db, event, "failed")),
+        Effect.andThen(run(db, event)),
+      ),
     )
     yield* events.project(SessionEvent.Reasoning.Started, (event) => run(db, event))
     yield* events.project(SessionEvent.Reasoning.Ended, (event) => run(db, event))

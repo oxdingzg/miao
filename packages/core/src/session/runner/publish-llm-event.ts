@@ -7,6 +7,8 @@ import { SessionMessage } from "../message"
 import { SessionSchema } from "../schema"
 import { SessionRunnerCost } from "./cost"
 import type { Tool } from "../../tool/tool"
+import type { Database } from "../../database/database"
+import { SessionToolDispatch } from "../tool-dispatch"
 
 type Input = {
   readonly sessionID: SessionSchema.ID
@@ -15,6 +17,8 @@ type Input = {
   readonly cost?: ModelV2.Info["cost"]
   readonly snapshot?: string
   readonly contextBudget?: SessionMessage.ContextBudget
+  /** Local execution authority is committed with Tool.Called, never by replay. */
+  readonly dispatch?: Database.Interface["db"]
   /**
    * Applied to a settled tool result before it becomes durable. Every tool
    * reaches this one point, so the bound lives here rather than in each tool.
@@ -82,9 +86,7 @@ export const PROGRESS_MIN_INTERVAL_MS = 500
 export const PROGRESS_MAX_INLINE_BASE64 = 256 * 1024
 
 /** Durable progress content, without oversized inline file previews. */
-export const progressContent = (
-  parts: ReadonlyArray<Tool.Content>,
-): SessionEvent.Tool.Progress["data"]["content"] => {
+export const progressContent = (parts: ReadonlyArray<Tool.Content>): SessionEvent.Tool.Progress["data"]["content"] => {
   const content: Array<SessionEvent.Tool.Progress["data"]["content"][number]> = []
   for (const part of parts) {
     if (part.type !== "file") {
@@ -115,6 +117,7 @@ export const createLLMEventPublisher = (events: EventV2.Interface, input: Input)
       readonly name: string
       inputEnded: boolean
       called: boolean
+      dispatch?: SessionToolDispatch.Token
       settled: boolean
       providerExecuted: boolean
       providerMetadata?: ProviderMetadata
@@ -464,18 +467,39 @@ export const createLLMEventPublisher = (events: EventV2.Interface, input: Input)
         tool.called = true
         tool.providerExecuted = event.providerExecuted === true
         tool.providerMetadata = event.providerMetadata
-        yield* events.publish(SessionEvent.Tool.Called, {
-          sessionID: input.sessionID,
-          timestamp: yield* timestamp,
-          assistantMessageID: tool.assistantMessageID,
-          callID: event.id,
-          tool: event.name,
-          input: record(event.input),
-          provider: {
-            executed: tool.providerExecuted,
-            ...(event.providerMetadata === undefined ? {} : { metadata: event.providerMetadata }),
+        const database = input.dispatch
+        const dispatch =
+          database && !tool.providerExecuted
+            ? SessionToolDispatch.token({
+                sessionID: input.sessionID,
+                assistantMessageID: tool.assistantMessageID,
+                callID: event.id,
+              })
+            : undefined
+        tool.dispatch = dispatch
+        yield* events.publish(
+          SessionEvent.Tool.Called,
+          {
+            sessionID: input.sessionID,
+            timestamp: yield* timestamp,
+            assistantMessageID: tool.assistantMessageID,
+            callID: event.id,
+            tool: event.name,
+            input: record(event.input),
+            provider: {
+              executed: tool.providerExecuted,
+              ...(event.providerMetadata === undefined ? {} : { metadata: event.providerMetadata }),
+            },
           },
-        })
+          dispatch && database
+            ? {
+                commit: () =>
+                  SessionToolDispatch.plan(database, dispatch, { tool: event.name, input: record(event.input) }).pipe(
+                    Effect.orDie,
+                  ),
+              }
+            : undefined,
+        )
         return
       }
       case "tool-result": {
@@ -582,6 +606,7 @@ export const createLLMEventPublisher = (events: EventV2.Interface, input: Input)
     discardInFlight,
     hasToolCalls: () => tools.size > 0,
     toolCalled: (callID: string) => tools.get(callID)?.called === true,
+    dispatchToken: (callID: string) => tools.get(callID)?.dispatch,
     hasProviderError: () => providerFailed,
     stepSettlement: () => stepSettlement,
     startAssistant,

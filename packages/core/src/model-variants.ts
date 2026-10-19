@@ -70,6 +70,21 @@ export const auxReasoningOptions = (
   return effort === undefined ? undefined : { [packageName]: { reasoningEffort: effort } }
 }
 
+/**
+ * HTTP body overlay for the same pin. A model's selected variant lives in the
+ * route's `http.body`, which is merged over the protocol body, so provider options
+ * alone cannot override it. Only the model that owns the variant is eligible.
+ */
+export const auxReasoningBody = (
+  api: { readonly package?: string },
+  variants: ReadonlyArray<{ readonly id: string }>,
+): Record<string, unknown> | undefined => {
+  if (api.package === undefined || !supportsReasoningBody(api)) return undefined
+  const effort = AUX_EFFORTS.find((candidate) => variants.some((variant) => variant.id === candidate))
+  if (effort === undefined) return undefined
+  return api.package === "@ai-sdk/openai" ? { reasoning: { effort } } : { reasoning_effort: effort }
+}
+
 /** Reasoning families whose own catalog entry is not always the one in use. */
 const COMPATIBLE_REASONING = [
   // GLM-5.2 exposes high/max through an OpenAI-compatible reasoning_effort.

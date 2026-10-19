@@ -41,6 +41,13 @@ it.live("product routes bind active accounts without persisting secrets and keep
       "commandcode",
       "first",
       JSON.stringify({ type: "key", key: "COMMAND_SECRET" }),
+      2,
+    )
+    db.query("INSERT INTO credential VALUES (?,?,?,?,?)").run(
+      "cred_backup",
+      "commandcode",
+      "backup",
+      JSON.stringify({ type: "key", key: "BACKUP_SECRET" }),
       0,
     )
     db.query("INSERT INTO credential VALUES (?,?,?,?,?)").run(
@@ -69,6 +76,13 @@ it.live("product routes bind active accounts without persisting secrets and keep
       }),
       0,
     )
+    db.query("INSERT INTO credential VALUES (?,?,?,?,?)").run(
+      "cred_copilot",
+      "github-copilot",
+      "device",
+      JSON.stringify({ type: "oauth", methodID: "fixture", access: "", refresh: "COPILOT_SECRET", expires: 0 }),
+      0,
+    )
     db.close()
     const file = yield* Effect.scoped(
       Effect.gen(function* () {
@@ -78,6 +92,7 @@ it.live("product routes bind active accounts without persisting secrets and keep
           draft.update(Integration.ID.make("commandcode"), () => {})
           draft.update(Integration.ID.make("openai"), () => {})
           draft.update(Integration.ID.make("expired"), () => {})
+          draft.update(Integration.ID.make("github-copilot"), () => {})
         })
         yield* catalog.transform((draft) => {
           for (const id of ["commandcode", "openai"]) {
@@ -93,8 +108,18 @@ it.live("product routes bind active accounts without persisting secrets and keep
             draft.model.update(ProviderV2.ID.make("commandcode"), ModelV2.ID.make(`model-${i}`), (model) => {
               model.api.id = ModelV2.ID.make(`remote-${i}`)
               model.capabilities.tools = true
+              model.capabilities.input = ["text", "image", "pdf"]
               model.capabilities.output = ["text"]
               model.request.headers = { Authorization: "HEADER_SECRET", "User-Agent": "fixture" }
+              model.request.body = { temperature: 0.1 }
+              model.request.variant = "high"
+              model.variants = [
+                {
+                  id: ModelV2.VariantID.make("high"),
+                  headers: { "x-variant": "high" },
+                  body: { reasoning_effort: "high" },
+                },
+              ]
             })
           }
           draft.model.update(ProviderV2.ID.make("openai"), ModelV2.ID.make("subscription-model"), (model) => {
@@ -102,6 +127,26 @@ it.live("product routes bind active accounts without persisting secrets and keep
             model.capabilities.tools = true
             model.capabilities.output = ["text"]
           })
+          draft.provider.update(ProviderV2.ID.make("github-copilot"), (provider) => {
+            provider.integrationID = Integration.ID.make("github-copilot")
+            provider.api = { type: "aisdk", package: "@ai-sdk/github-copilot", url: "https://api.githubcopilot.com" }
+          })
+          for (const [id, endpoint] of [
+            ["claude-sonnet", "messages"],
+            ["gpt-5", "responses"],
+            ["gpt-4.1", "chat"],
+          ]) {
+            draft.model.update(ProviderV2.ID.make("github-copilot"), ModelV2.ID.make(id!), (model) => {
+              model.api = {
+                type: "aisdk",
+                package: "@ai-sdk/github-copilot",
+                id: ModelV2.ID.make(id!),
+                settings: { endpoint },
+              }
+              model.capabilities.tools = true
+              model.capabilities.output = ["text"]
+            })
+          }
           draft.model.default.set(ProviderV2.ID.make("commandcode"), ModelV2.ID.make("model-0"))
           for (const id of ["expired", "unsupported", "custom", "opencode-go"]) {
             draft.provider.update(ProviderV2.ID.make(id), (provider) => {
@@ -134,10 +179,50 @@ it.live("product routes bind active accounts without persisting secrets and keep
         const file = options.modelRoutesConfigFile
         if (!file) throw new Error("missing product routes manifest")
         const content = yield* Effect.promise(() => Bun.file(file).text())
-        for (const secret of ["COMMAND_SECRET", "OAUTH_SECRET", "REFRESH_SECRET", "HEADER_SECRET", "EXPIRED_SECRET"])
+        for (const secret of [
+          "COMMAND_SECRET",
+          "BACKUP_SECRET",
+          "COPILOT_SECRET",
+          "OAUTH_SECRET",
+          "REFRESH_SECRET",
+          "HEADER_SECRET",
+          "EXPIRED_SECRET",
+        ])
           expect(content).not.toContain(secret)
         const routes = yield* Effect.promise(() => Bun.file(file).json())
-        expect(routes).toHaveLength(103)
+        expect(routes).toHaveLength(208)
+        const alternate = routes.find(
+          (route: { account?: { id?: string; model_key: string } }) =>
+            route.account?.id === "cred_backup" && route.account.model_key === "commandcode/model-0",
+        )
+        expect(alternate).toMatchObject({
+          account: { id: "cred_backup", model_key: "commandcode/model-0", default: false },
+          credential: { id: "cred_backup" },
+        })
+        expect(alternate.id).toMatch(/^account\/[a-f0-9]{64}$/)
+        expect(yield* integrations.connection.active(Integration.ID.make("commandcode"))).toMatchObject({
+          type: "credential",
+          id: Credential.ID.make("cred_command"),
+        })
+        expect(routes.find((route: { id: string }) => route.id === "commandcode/model-0")).toMatchObject({
+          primary: true,
+          input_modalities: ["text", "image", "pdf"],
+          default_variant: "high",
+          request: { body: { temperature: 0.1 } },
+          variants: [{ id: "high", body: { reasoning_effort: "high" }, headers: { "x-variant": "high" } }],
+        })
+        for (const [id, provider, suffix] of [
+          ["claude-sonnet", "anthropic", "v1/messages"],
+          ["gpt-5", "openai-responses", "responses"],
+          ["gpt-4.1", "openai-chat", "chat/completions"],
+        ]) {
+          expect(routes.find((route: { id: string }) => route.id === `github-copilot/${id}`)).toMatchObject({
+            provider,
+            endpoint: `https://api.githubcopilot.com/${suffix}`,
+            auth: { style: "copilot" },
+            credential: { integration: "github-copilot", id: "cred_copilot" },
+          })
+        }
         expect(routes.find((route: { id: string }) => route.id === "opencode-go/model").auth.headers).toEqual({
           "x-opencode-session": "$session",
         })

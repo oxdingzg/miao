@@ -21,7 +21,7 @@ use std::{
 use tokio::sync::{mpsc, oneshot, watch};
 
 pub(crate) const APPLICATION_ID: u32 = 0x4d494145;
-pub const SCHEMA_VERSION: u32 = 12;
+pub const SCHEMA_VERSION: u32 = 14;
 
 type Work = Box<dyn FnOnce(&mut Connection) + Send>;
 
@@ -170,6 +170,7 @@ impl Store {
                     CREATE TABLE IF NOT EXISTS engine_context(session_id TEXT NOT NULL REFERENCES engine_session(id),epoch INTEGER NOT NULL,fingerprint TEXT NOT NULL,system TEXT NOT NULL,sources TEXT NOT NULL,selected_seq INTEGER NOT NULL,PRIMARY KEY(session_id,epoch));
                     CREATE TABLE IF NOT EXISTS engine_job(id TEXT PRIMARY KEY,session_id TEXT NOT NULL REFERENCES engine_session(id),request_key TEXT UNIQUE NOT NULL REFERENCES engine_tool(id),state TEXT NOT NULL,input TEXT NOT NULL,result TEXT);
                     CREATE TABLE IF NOT EXISTS engine_compaction(id TEXT PRIMARY KEY,session_id TEXT NOT NULL REFERENCES engine_session(id),through_seq INTEGER NOT NULL,summary TEXT NOT NULL,created_seq INTEGER NOT NULL);CREATE TABLE IF NOT EXISTS engine_lease(session_id TEXT PRIMARY KEY REFERENCES engine_session(id),interval_ms INTEGER NOT NULL,last_ms INTEGER NOT NULL,epoch INTEGER NOT NULL,owner_pid INTEGER);"))?;
+                crate::permission_grant::initialize(&conn)?;
                 let has_mode:bool=conn.query_row("SELECT EXISTS(SELECT 1 FROM pragma_table_info('engine_session') WHERE name='mode')",[],|r|r.get(0))?;
                 if !has_mode {
                     conn.execute(
@@ -186,7 +187,7 @@ impl Store {
                 }
                 // Nullable on purpose: sessions that predate the columns keep an
                 // unknown creation/update time instead of a fabricated one.
-                for column in ["created_at_ms", "updated_at_ms"] {
+                for column in ["created_at_ms", "updated_at_ms", "archived_at_ms"] {
                     let has_time:bool=conn.query_row(
                         "SELECT EXISTS(SELECT 1 FROM pragma_table_info('engine_session') WHERE name=?1)",
                         [column],|r|r.get(0))?;
@@ -337,6 +338,57 @@ impl Store {
             let admission = admit_input(&tx, &input, root.as_deref(), &attachments)?;
             tx.commit()?;
             Ok(admission)
+        })
+        .await
+    }
+
+    /// Drop one durably admitted input before promotion.
+    ///
+    /// The row is retained as `cancelled` evidence instead of being deleted, so
+    /// an exact retry of the same admission identity reports `duplicate` with
+    /// `pending:false` rather than resurrecting the prompt. An unknown id, or
+    /// one already promoted, is reported as not accepted: cancelling a promoted
+    /// prompt is the turn `cancel` operation, not this one.
+    pub async fn cancel_input(&self, session: &str, input_id: &str) -> Result<Value, Error> {
+        if session.is_empty() || input_id.is_empty() || session.len() > 256 || input_id.len() > 256
+        {
+            return Err(Error::Invalid(
+                "session_id and input_id must be nonempty".into(),
+            ));
+        }
+        let (session, input_id) = (session.to_owned(), input_id.to_owned());
+        self.call(move |conn| {
+            let tx = write_tx(conn)?;
+            let state: Option<String> = tx
+                .query_row(
+                    "SELECT state FROM engine_input WHERE id=?1 AND session_id=?2",
+                    params![input_id, session],
+                    |row| row.get(0),
+                )
+                .optional()?;
+            let reply = match state.as_deref() {
+                None => json!({"accepted": false, "reason": "unknown"}),
+                Some("promoted") => json!({"accepted": false, "reason": "promoted"}),
+                // A retry of a completed cancel reports the same accepted
+                // outcome without appending a second event.
+                Some("cancelled") => json!({"accepted": true, "duplicate": true}),
+                Some("pending") => {
+                    tx.execute(
+                        "UPDATE engine_input SET state='cancelled' WHERE id=?1",
+                        [&input_id],
+                    )?;
+                    append(
+                        &tx,
+                        &session,
+                        "input.cancelled",
+                        json!({"input_id": input_id}),
+                    )?;
+                    json!({"accepted": true, "duplicate": false})
+                }
+                Some(other) => return Err(Error::Invalid(format!("unknown input state: {other}"))),
+            };
+            tx.commit()?;
+            Ok(reply)
         })
         .await
     }
@@ -504,6 +556,160 @@ impl Store {
 
     /// Safe-boundary promotion: all steers first, then one queued item only when
     /// idle. Projection and promotion events share the same transaction.
+    /// Set or clear a Session's archive timestamp.
+    ///
+    /// Archiving is a catalog fact, not an execution one: it touches no message,
+    /// run, inbox or approval row, so it is legal while a drain is active and
+    /// reversible with `archived: false`. Unlike `rename` it never initializes a
+    /// Session, because archiving an identity that was never created would
+    /// invent product state.
+    pub async fn set_archived(&self, session: &str, archived: bool) -> Result<Value, Error> {
+        let (session, archived) = (session.to_owned(), archived);
+        self.call(move |conn| {
+            let tx = write_tx(conn)?;
+            let exists: bool = tx.query_row(
+                "SELECT EXISTS(SELECT 1 FROM engine_session WHERE id=?1)",
+                [&session],
+                |row| row.get(0),
+            )?;
+            if !exists {
+                return Err(Error::Invalid("Session does not exist".into()));
+            }
+            let now = now_ms() as i64;
+            tx.execute(
+                "UPDATE engine_session SET archived_at_ms=?2, updated_at_ms=?3 WHERE id=?1",
+                params![session, archived.then_some(now), now],
+            )?;
+            append(
+                &tx,
+                &session,
+                "session.archived",
+                json!({"archived": archived}),
+            )?;
+            tx.commit()?;
+            Ok(json!({"accepted": true, "archived": archived}))
+        })
+        .await
+    }
+
+    /// Delete every row a Session owns, in foreign-key order.
+    ///
+    /// There is no tombstone: the conversation, inbox, runs, tools, approvals,
+    /// jobs, schedules, placement and event log are all gone, and the identity
+    /// can be created again from scratch. Children keep their own rows; only
+    /// their lineage edges are dropped, so removing a parent leaves a readable
+    /// child instead of failing on the lineage foreign key — the product's rule
+    /// is that removing a Session does not delete its forks.
+    ///
+    /// An unknown Session is reported rather than refused, so a half-finished
+    /// removal can be retried after the caller's own cleanup.
+    pub async fn remove_session(&self, session: &str) -> Result<Value, Error> {
+        let session = session.to_owned();
+        self.call(move |conn| {
+            let tx = write_tx(conn)?;
+            let exists: bool = tx.query_row(
+                "SELECT EXISTS(SELECT 1 FROM engine_session WHERE id=?1)",
+                [&session],
+                |row| row.get(0),
+            )?;
+            if !exists {
+                return Ok(json!({"accepted": false, "reason": "unknown"}));
+            }
+            // Approvals and jobs reference tools; tools and approvals reference
+            // runs. Those three go before the run rows they point at.
+            for statement in [
+                "DELETE FROM engine_approval WHERE session_id=?1",
+                "DELETE FROM engine_job WHERE session_id=?1",
+                "DELETE FROM engine_tool WHERE run_id IN (SELECT id FROM engine_run WHERE session_id=?1)",
+                "DELETE FROM engine_run WHERE session_id=?1",
+                "DELETE FROM engine_timing WHERE session_id=?1",
+                "DELETE FROM engine_cache_prefix WHERE session_id=?1",
+                "DELETE FROM engine_message WHERE session_id=?1",
+                "DELETE FROM engine_compaction WHERE session_id=?1",
+                "DELETE FROM engine_context WHERE session_id=?1",
+                "DELETE FROM engine_input WHERE session_id=?1",
+                "DELETE FROM engine_location WHERE session_id=?1",
+                "DELETE FROM engine_event WHERE session_id=?1",
+                "DELETE FROM engine_lease WHERE session_id=?1",
+                "DELETE FROM engine_lineage WHERE parent_session_id=?1",
+                "DELETE FROM engine_lineage WHERE session_id=?1",
+                "DELETE FROM engine_session WHERE id=?1",
+            ] {
+                tx.execute(statement, [&session])?;
+            }
+            tx.commit()?;
+            Ok(json!({"accepted": true}))
+        })
+        .await
+    }
+
+    /// Record an operator request to compact at the next settled boundary.
+    ///
+    /// The request is durable rather than in-memory because the serialized drain
+    /// reads it where the automatic trigger's machinery already lives: a settled
+    /// assistant boundary. An unanswered request is idempotent, so a retried
+    /// command neither queues a second compaction nor loses the intent.
+    pub async fn request_compaction(&self, session: &str) -> Result<Value, Error> {
+        let session = session.to_owned();
+        self.call(move |conn| {
+            let tx = write_tx(conn)?;
+            let exists: bool = tx.query_row(
+                "SELECT EXISTS(SELECT 1 FROM engine_session WHERE id=?1)",
+                [&session],
+                |row| row.get(0),
+            )?;
+            if !exists {
+                return Err(Error::Invalid("Session does not exist".into()));
+            }
+            if pending_compaction_request_seq(&tx, &session)?.is_some() {
+                return Ok(json!({"accepted": true, "duplicate": true, "pending": true}));
+            }
+            append(
+                &tx,
+                &session,
+                "compaction.requested",
+                json!({"requested_at_ms": now_ms()}),
+            )?;
+            tx.commit()?;
+            Ok(json!({"accepted": true, "duplicate": false, "pending": true}))
+        })
+        .await
+    }
+
+    /// The seq of the operator request no attempt has answered yet.
+    pub async fn pending_compaction_request(&self, session: &str) -> Result<Option<u64>, Error> {
+        let session = session.to_owned();
+        self.call(move |conn| pending_compaction_request_seq(conn, &session))
+            .await
+    }
+
+    /// Close a compaction request. One attempt answers it either way, so a
+    /// summarizer the provider keeps refusing cannot pin the Session forever and
+    /// a second request is what asks for another try.
+    pub async fn settle_compaction_request(
+        &self,
+        session: &str,
+        request_seq: u64,
+        compacted: bool,
+    ) -> Result<Option<Event>, Error> {
+        let session = session.to_owned();
+        self.call(move |conn| {
+            let tx = write_tx(conn)?;
+            if pending_compaction_request_seq(&tx, &session)? != Some(request_seq) {
+                return Ok(None);
+            }
+            let event = append(
+                &tx,
+                &session,
+                "compaction.settled",
+                json!({"request_seq": request_seq, "compacted": compacted}),
+            )?;
+            tx.commit()?;
+            Ok(Some(event))
+        })
+        .await
+    }
+
     pub async fn promote(&self, session: &str, idle: bool) -> Result<Vec<Event>, Error> {
         self.promote_inner(session, idle, None).await
     }
@@ -540,14 +746,13 @@ impl Store {
             let mut events = Vec::new();
             for (id,prompt,attachments) in pending {
                 let checkpoint=uuid::Uuid::new_v4().to_string();
-                let e = append(&tx, &session, "input.promoted", json!({"input_id":id,"prompt":prompt,"checkpoint":checkpoint}))?;
+                let media = attachments.as_deref().map(serde_json::from_str::<Vec<Attachment>>).transpose()?.unwrap_or_default();
+                let mut data = json!({"input_id":id,"prompt":prompt,"checkpoint":checkpoint});
+                if !media.is_empty() { data["attachments"] = json!(media); }
+                let e = append(&tx, &session, "input.promoted", data)?;
                 tx.execute("UPDATE engine_input SET state='promoted' WHERE id=?1", [&id])?;
                 let mut parts = vec![json!({"type":"text","text":prompt})];
-                if let Some(attachments) = attachments {
-                    if let Ok(media) = serde_json::from_str::<Vec<Attachment>>(&attachments) {
-                        parts.extend(media.iter().map(Attachment::part));
-                    }
-                }
+                parts.extend(media.iter().map(Attachment::part));
                 tx.execute("INSERT INTO engine_message(session_id,seq,role,content,checkpoint,recorded_at_ms) VALUES(?1,?2,'user',?3,?4,?5)", params![session,e.seq,serde_json::to_string(&Value::Array(parts))?,checkpoint,e.recorded_at_ms])?;
                 events.push(e);
             }
@@ -734,7 +939,7 @@ impl Store {
     pub async fn snapshot(&self, session: &str) -> Result<Value, Error> {
         let session = session.to_owned();
         self.call(move |conn| {
-            let tx=write_tx(conn)?;
+            let tx=conn.transaction()?;
             let cursor:u64=tx.query_row("SELECT next_seq FROM engine_session WHERE id=?1",[&session],|r|r.get(0)).optional()?.ok_or_else(||Error::Invalid("Session does not exist".into()))?;
             let location:Option<String>=tx.query_row("SELECT root FROM engine_location WHERE session_id=?1",[&session],|r|r.get(0)).optional()?;
             let messages=projected(&tx,&session,cursor)?;
@@ -766,12 +971,14 @@ impl Store {
             let wakeups=crate::wakeup::pending(&tx,&session)?;
             let crons=crate::cron::pending(&tx,&session)?;
             let model_selection=crate::session_model::selected(&tx,&session)?;
+            let account_selection=crate::session_account::selected_at(&tx,&session,i64::MAX as u64)?;
+            let agent=crate::session_agent::selected(&tx,&session)?.map(|(agent,hash)|json!({"name":agent.name,"semantics":agent.semantics,"agent_hash":hash}));
             let mode:String=tx.query_row("SELECT mode FROM engine_session WHERE id=?1",[&session],|r|r.get(0)).optional()?.unwrap_or_else(||"build".into());
-            let (title,created_at_ms,updated_at_ms):(String,Option<i64>,Option<i64>)=tx.query_row(
-                "SELECT title,created_at_ms,updated_at_ms FROM engine_session WHERE id=?1",
-                [&session],|r|Ok((r.get(0)?,r.get(1)?,r.get(2)?)),
+            let (title,created_at_ms,updated_at_ms,archived_at_ms):(String,Option<i64>,Option<i64>,Option<i64>)=tx.query_row(
+                "SELECT title,created_at_ms,updated_at_ms,archived_at_ms FROM engine_session WHERE id=?1",
+                [&session],|r|Ok((r.get(0)?,r.get(1)?,r.get(2)?,r.get(3)?)),
             )?;
-            let snapshot=json!({"session_id":session,"parent_session_id":parent,"cursor":cursor,"location":location,"mode":mode,"title":title,"created_at_ms":created_at_ms,"updated_at_ms":updated_at_ms,"messages":messages,"selection":selection,"pending":pending,"active_run":active,"approvals":approvals,"context":context,"state":state,"questions":questions,"wakeups":wakeups,"crons":crons,"model_selection":model_selection});
+            let snapshot=json!({"session_id":session,"parent_session_id":parent,"cursor":cursor,"location":location,"mode":mode,"title":title,"created_at_ms":created_at_ms,"updated_at_ms":updated_at_ms,"archived_at_ms":archived_at_ms,"messages":messages,"selection":selection,"pending":pending,"active_run":active,"approvals":approvals,"context":context,"state":state,"questions":questions,"wakeups":wakeups,"crons":crons,"model_selection":model_selection,"account_selection":account_selection,"agent":agent});
             if serde_json::to_vec(&snapshot)?.len()>4*1024*1024{return Err(Error::Invalid("snapshot exceeds limit; use events pagination".into()));}
             tx.commit()?;Ok(snapshot)
         }).await
@@ -864,8 +1071,18 @@ impl Store {
             append(&tx,&target,"session.forked",json!({"parent_session_id":parent,"message_seq":seq}))?;
             let mut message_map=std::collections::HashMap::new();
             for message in messages {
-                let mut copied=project_message_at(&tx,&target,message["role"].as_str().ok_or_else(||Error::Invalid("projected role".into()))?,message["content"].clone(),message["checkpoint"].as_str(),None,message["recorded_at_ms"].as_u64())?;
-                if message["role"] == "user" {
+                let mut copied=match crate::session_shell::copy_history(&tx,&parent,&target,&message)? {
+                    Some(event)=>event,
+                    None=>project_message_at(&tx,&target,message["role"].as_str().ok_or_else(||Error::Invalid("projected role".into()))?,message["content"].clone(),message["checkpoint"].as_str(),None,message["recorded_at_ms"].as_u64())?,
+                };
+                let synthetic:Option<String>=tx.query_row("SELECT data FROM engine_event WHERE session_id=?1 AND seq=?2 AND kind='message.synthetic'",params![parent,message["seq"].as_u64()],|row|row.get(0)).optional()?;
+                if let Some(data)=&synthetic {
+                    let mut data:Value=serde_json::from_str(data)?;
+                    data["input_id"]=json!(format!("msg_{target}_{}",copied.seq));
+                    data["inherited"]=json!(true);
+                    tx.execute("UPDATE engine_event SET kind='message.synthetic',data=?3 WHERE session_id=?1 AND seq=?2",params![target,copied.seq,serde_json::to_string(&data)?])?;
+                }
+                if message["role"] == "user" && synthetic.is_none() && copied.kind!="shell.ended" {
                     let source = message["seq"].as_u64().ok_or_else(||Error::Invalid("projected message seq".into()))?;
                     let original:Option<(String,String,Option<String>)>=tx.query_row(
                         "SELECT prompt,delivery,attachments FROM engine_input WHERE session_id=?1 AND id=COALESCE((SELECT json_extract(data,'$.input_id') FROM engine_event WHERE session_id=?1 AND seq=?2 AND kind='input.promoted'),(SELECT id FROM engine_input WHERE session_id=?1 AND admitted_seq=?2 AND state='promoted'))",
@@ -904,8 +1121,14 @@ impl Store {
                 tx.execute("INSERT INTO engine_context VALUES(?1,1,?2,?3,?4,?5)",params![target,fingerprint,system,sources,event.seq])?;
             }
             let source_watermark=if message_seq.is_none(){tx.query_row("SELECT next_seq FROM engine_session WHERE id=?1",[&parent],|r|r.get::<_,u64>(0))?}else{seq};
+            if let Some((agent,hash))=crate::session_agent::selected_at(&tx,&parent,source_watermark)? {
+                append(&tx,&target,"session.agent.selected",json!({"agent":agent,"agent_hash":hash,"inherited":true}))?;
+            }
             if let Some(binding)=crate::session_model::selected_at(&tx,&parent,source_watermark)? {
                 append(&tx,&target,"session.model.selected",json!({"binding":binding,"inherited":true}))?;
+            }
+            if let Some(account)=crate::session_account::selected_at(&tx,&parent,source_watermark)? {
+                append(&tx,&target,"session.account.selected",json!({"account":account,"inherited":true}))?;
             }
             let inherited=crate::state::projection(&tx,&parent,source_watermark)?;
             for kind in ["todos","goal"] {
@@ -1587,7 +1810,58 @@ impl Store {
         }).await
     }
 
+    /// Trusted storage primitive. Product approvals use atomic resolution instead.
+    pub async fn put_permission_grant(
+        &self,
+        scope: crate::permission_grant::Scope,
+    ) -> Result<(), Error> {
+        self.call(move |conn| {
+            let tx = write_tx(conn)?;
+            crate::permission_grant::insert(&tx, &scope, now_ms())?;
+            tx.commit()?;
+            Ok(())
+        })
+        .await
+    }
+
+    pub async fn has_permission_grant(
+        &self,
+        scope: crate::permission_grant::Scope,
+    ) -> Result<bool, Error> {
+        self.call(move |conn| crate::permission_grant::contains(conn, &scope))
+            .await
+    }
+
+    pub async fn revoke_permission_grant(
+        &self,
+        scope: crate::permission_grant::Scope,
+    ) -> Result<bool, Error> {
+        self.call(move |conn| {
+            let tx = write_tx(conn)?;
+            let revoked = crate::permission_grant::revoke(&tx, &scope)?;
+            tx.commit()?;
+            Ok(revoked)
+        })
+        .await
+    }
+
     pub async fn request_approval(&self, approval: Approval) -> Result<Event, Error> {
+        self.request_approval_inner(approval, None).await
+    }
+
+    pub async fn request_approval_with_scope(
+        &self,
+        approval: Approval,
+        scope: crate::permission_grant::Scope,
+    ) -> Result<Event, Error> {
+        self.request_approval_inner(approval, Some(scope)).await
+    }
+
+    async fn request_approval_inner(
+        &self,
+        approval: Approval,
+        scope: Option<crate::permission_grant::Scope>,
+    ) -> Result<Event, Error> {
         self.call(move |conn| {
             let tx=write_tx(conn)?;
             let key=format!("{}/{}",approval.run_id,approval.call_id);
@@ -1597,6 +1871,7 @@ impl Store {
             if name!=approval.tool||root!=approval.location||original["input"]!=approval.input||input_digest(&root,&name,&approval.resource,&approval.input)?!=approval.input_hash {return Err(Error::ApprovalMismatch);}
             if approval.expires_at_ms<=now_ms(){return Err(Error::ApprovalExpired);}
             tx.execute("INSERT INTO engine_approval VALUES(?1,?2,?3,?4,?5,?6,'pending')",params![approval.request_id,approval.session_id,approval.run_id,key,serde_json::to_string(&approval)?,approval.expires_at_ms])?;
+            if let Some(scope) = &scope { crate::permission_grant::bind_request(&tx,&approval,scope)?; }
             let event=append(&tx,&approval.session_id,"approval.requested",serde_json::to_value(&approval)?)?;
             tx.commit()?;Ok(event)
         }).await
@@ -1607,6 +1882,23 @@ impl Store {
         session: &str,
         response: Response,
     ) -> Result<Event, Error> {
+        self.resolve_approval_inner(session, response, false).await
+    }
+
+    pub async fn resolve_approval_persistent(
+        &self,
+        session: &str,
+        response: Response,
+    ) -> Result<Event, Error> {
+        self.resolve_approval_inner(session, response, true).await
+    }
+
+    async fn resolve_approval_inner(
+        &self,
+        session: &str,
+        response: Response,
+        persistent: bool,
+    ) -> Result<Event, Error> {
         let session = session.to_owned();
         self.call(move |conn| {
             let tx=write_tx(conn)?;
@@ -1616,8 +1908,18 @@ impl Store {
             let approval:Approval=serde_json::from_str(&binding)?;
             if response.input_hash!=approval.input_hash||response.policy_revision!=approval.policy_revision||response.decision==Decision::Ask||response.matcher.as_ref().is_some_and(|matcher|matcher!=&approval.matcher) {return Err(Error::ApprovalMismatch);}
             let state=if approval.expires_at_ms<=now_ms(){"expired"}else if response.decision==Decision::Allow{"allow"}else{"deny"};
+            if persistent {
+                if response.decision != Decision::Allow { return Err(Error::ApprovalMismatch); }
+                if state == "allow" {
+                    let scope = crate::permission_grant::request_scope(&tx,&approval)?;
+                    crate::permission_grant::insert(&tx,&scope,now_ms())?;
+                }
+            }
             tx.execute("UPDATE engine_approval SET state=?2 WHERE id=?1",params![response.request_id,state])?;
-            let event=append(&tx,&session,"approval.resolved",json!({"request_id":response.request_id,"state":state}))?;
+            tx.execute("DELETE FROM engine_permission_request_scope WHERE request_id=?1",[&response.request_id])?;
+            let mut data=json!({"request_id":response.request_id,"state":state});
+            if persistent && state=="allow" { data["persistent"]=json!(true); }
+            let event=append(&tx,&session,"approval.resolved",data)?;
             tx.commit()?;
             if state=="expired" {return Err(Error::ApprovalExpired);}
             Ok(event)
@@ -1662,59 +1964,7 @@ impl Store {
         let (session, run, reason) = (session.to_owned(), run.to_owned(), reason.to_owned());
         self.call(move |conn| {
             let tx = write_tx(conn)?;
-            if let Some(lease) = &lease {
-                require_lease(&tx, &session, lease)?;
-            }
-            let changed = tx.execute(
-                "UPDATE engine_run SET state=?3 WHERE id=?1 AND session_id=?2 AND state='running'",
-                params![run, session, reason],
-            )?;
-            if changed != 1 {
-                return Err(Error::Invalid("run is not active".into()));
-            }
-            reconcile_tools(&tx, &session, &run)?;
-            // An interrupted dispatched tool is unknown, not retryable.
-            tx.execute(
-                "UPDATE engine_tool SET state='unknown' WHERE run_id=?1 AND state='dispatched'",
-                [&run],
-            )?;
-            // Aggregate billed usage for the run: each provider attempt already
-            // recorded a `usage` event, so a turn sums them (including failed
-            // attempts) instead of reporting one step or a character estimate.
-            let usage_events: Vec<String> = {
-                let mut stmt = tx.prepare(
-                    "SELECT data FROM engine_event WHERE session_id=?1 AND kind='usage'",
-                )?;
-                let rows = stmt.query_map([&session], |r| r.get::<_, String>(0))?;
-                rows.collect::<Result<Vec<_>, _>>()?
-                    .into_iter()
-                    .filter(|data| {
-                        serde_json::from_str::<Value>(data)
-                            .ok()
-                            .is_some_and(|event| event["run_id"].as_str() == Some(run.as_str()))
-                    })
-                    .collect()
-            };
-            let mut total = Value::Null;
-            let mut steps = 0u64;
-            for data in usage_events {
-                if let Ok(event) = serde_json::from_str::<Value>(&data) {
-                    steps += 1;
-                    merge_usage(&mut total, &event["usage"]);
-                }
-            }
-            append(
-                &tx,
-                &session,
-                "run.usage",
-                json!({"run_id":run,"steps":steps,"usage":total}),
-            )?;
-            let e = append(
-                &tx,
-                &session,
-                "run.finished",
-                json!({"run_id":run,"reason":reason}),
-            )?;
+            let e = finish_run_tx(&tx, &session, &run, &reason, lease.as_ref())?;
             tx.commit()?;
             Ok(e)
         })
@@ -1815,6 +2065,24 @@ fn pid_alive(_pid: u32) -> bool {
 /// Recursively sum numeric leaves so per-step provider usage aggregates across a
 /// run regardless of provider field names (`input_tokens` vs `prompt_tokens`, or
 /// nested `*_details`). Non-numeric leaves take the latest value.
+/// The newest operator compaction request that no settled attempt has answered.
+fn pending_compaction_request_seq(conn: &Connection, session: &str) -> Result<Option<u64>, Error> {
+    let requested: Option<u64> = conn.query_row(
+        "SELECT MAX(seq) FROM engine_event WHERE session_id=?1 AND kind='compaction.requested'",
+        [session],
+        |row| row.get(0),
+    )?;
+    let Some(requested) = requested else {
+        return Ok(None);
+    };
+    let settled: bool = conn.query_row(
+        "SELECT EXISTS(SELECT 1 FROM engine_event WHERE session_id=?1 AND kind='compaction.settled' AND json_extract(data,'$.request_seq')=?2)",
+        params![session, requested],
+        |row| row.get(0),
+    )?;
+    Ok((!settled).then_some(requested))
+}
+
 fn merge_usage(acc: &mut Value, next: &Value) {
     match next {
         Value::Object(update) => {
@@ -1857,7 +2125,7 @@ pub(crate) fn admit_input(
 ) -> Result<Admission, Error> {
     if input.session_id.is_empty()
         || input.input_id.is_empty()
-        || input.prompt.is_empty()
+        || (input.prompt.is_empty() && attachments.is_empty())
         || input.session_id.len() > 256
         || input.input_id.len() > 256
         || input.prompt.len() > 1024 * 1024
@@ -1887,7 +2155,13 @@ pub(crate) fn admit_input(
         Delivery::Steer => "steer",
         Delivery::Queue => "queue",
     };
-    if let Some((session, prompt, mode, _, _, stored)) = &existing {
+    if let Some((session, prompt, mode, _, state, stored)) = &existing {
+        // A cancelled admission identity is dead. Re-admitting it would either
+        // resurrect a prompt the operator dropped or report a receipt whose
+        // prompt never runs, so it conflicts like any other reused identity.
+        if state == "cancelled" {
+            return Err(Error::Conflict);
+        }
         let stored = stored.clone().unwrap_or_else(|| "[]".into());
         if session != &input.session_id
             || prompt != &input.prompt
@@ -2072,7 +2346,7 @@ pub(crate) fn append_fenced(
     append(tx, session, kind, data)
 }
 
-fn append_at(
+pub(crate) fn append_at(
     tx: &Transaction<'_>,
     session: &str,
     kind: &str,
@@ -2565,4 +2839,66 @@ impl Store {
         })
         .await
     }
+}
+
+pub(crate) fn finish_run_tx(
+    tx: &Transaction<'_>,
+    session: &str,
+    run: &str,
+    reason: &str,
+    lease: Option<&SessionLease>,
+) -> Result<Event, Error> {
+    if let Some(lease) = lease {
+        require_lease(tx, session, lease)?;
+    }
+    let changed = tx.execute(
+        "UPDATE engine_run SET state=?3 WHERE id=?1 AND session_id=?2 AND state='running'",
+        params![run, session, reason],
+    )?;
+    if changed != 1 {
+        return Err(Error::Invalid("run is not active".into()));
+    }
+    reconcile_tools(tx, session, run)?;
+    // An interrupted dispatched tool is unknown, not retryable.
+    tx.execute(
+        "UPDATE engine_tool SET state='unknown' WHERE run_id=?1 AND state='dispatched'",
+        [run],
+    )?;
+    // Aggregate billed usage for the run: each provider attempt already
+    // recorded a `usage` event, so a turn sums them (including failed
+    // attempts) instead of reporting one step or a character estimate.
+    let usage_events: Vec<String> = {
+        let mut stmt =
+            tx.prepare("SELECT data FROM engine_event WHERE session_id=?1 AND kind='usage'")?;
+        let rows = stmt.query_map([session], |r| r.get::<_, String>(0))?;
+        rows.collect::<Result<Vec<_>, _>>()?
+            .into_iter()
+            .filter(|data| {
+                serde_json::from_str::<Value>(data)
+                    .ok()
+                    .is_some_and(|event| event["run_id"].as_str() == Some(run))
+            })
+            .collect()
+    };
+    let mut total = Value::Null;
+    let mut steps = 0u64;
+    for data in usage_events {
+        if let Ok(event) = serde_json::from_str::<Value>(&data) {
+            steps += 1;
+            merge_usage(&mut total, &event["usage"]);
+        }
+    }
+    append(
+        tx,
+        session,
+        "run.usage",
+        json!({"run_id":run,"steps":steps,"usage":total}),
+    )?;
+    let event = append(
+        tx,
+        session,
+        "run.finished",
+        json!({"run_id":run,"reason":reason}),
+    )?;
+    Ok(event)
 }

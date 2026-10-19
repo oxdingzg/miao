@@ -1,4 +1,5 @@
 use crate::{approval::Response, question::Answer};
+use base64::Engine;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
@@ -33,24 +34,39 @@ pub struct Input {
 
 /// An inline media attachment carried on a prompt. `data` is base64 without a
 /// `data:` prefix; `mime` is the media type (for example `image/png`). The
-/// canonical message part is `{"type":"image","mime":..,"data":..}`; providers
-/// encode it in their own wire format.
+/// canonical message part has type `image` or `file`; providers normalize a
+/// request copy according to protocol and host-declared model input modalities.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Attachment {
     pub mime: String,
     pub data: String,
+    /// Presentation metadata belongs to admission identity, not model instructions.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub metadata: Option<serde_json::Map<String, Value>>,
 }
 
 impl Attachment {
     pub fn validate(&self) -> Result<(), Error> {
+        if self.metadata.as_ref().is_some_and(|metadata| {
+            serde_json::to_vec(metadata).map_or(true, |bytes| bytes.len() > 64 * 1024)
+        }) {
+            return Err(Error::Invalid("attachment metadata exceeds 64 KiB".into()));
+        }
         if !matches!(
             self.mime.as_str(),
-            "image/png" | "image/jpeg" | "image/gif" | "image/webp"
-        ) {
+            "image/png" | "image/jpeg" | "image/gif" | "image/webp" | "application/pdf"
+        ) && !(self.mime.starts_with("text/")
+            && self.mime.len() <= 128
+            && self.mime.bytes().all(|byte| {
+                byte.is_ascii_alphanumeric() || matches!(byte, b'/' | b'-' | b'+' | b'.')
+            }))
+        {
             return Err(Error::Invalid("unsupported attachment media type".into()));
         }
-        if self.data.is_empty() || self.data.len() > 8 * 1024 * 1024 {
+        if (self.data.is_empty() && !self.mime.starts_with("text/"))
+            || self.data.len() > 8 * 1024 * 1024
+        {
             return Err(Error::Invalid("attachment data must be 1..8 MiB".into()));
         }
         if !self
@@ -60,11 +76,24 @@ impl Attachment {
         {
             return Err(Error::Invalid("attachment data must be base64".into()));
         }
+        let bytes = base64::engine::general_purpose::STANDARD
+            .decode(&self.data)
+            .map_err(|_| Error::Invalid("attachment data must be canonical base64".into()))?;
+        if self.mime.starts_with("text/") && std::str::from_utf8(&bytes).is_err() {
+            return Err(Error::Invalid("text attachment must be UTF-8".into()));
+        }
+        if self.mime == "application/pdf" && !bytes.starts_with(b"%PDF-") {
+            return Err(Error::Invalid("PDF attachment has no PDF header".into()));
+        }
         Ok(())
     }
 
     pub fn part(&self) -> Value {
-        serde_json::json!({"type":"image","mime":self.mime,"data":self.data})
+        let mut part = serde_json::json!({"type":if self.mime.starts_with("image/") {"image"} else {"file"},"mime":self.mime,"data":self.data});
+        if let Some(metadata) = &self.metadata {
+            part["metadata"] = serde_json::json!(metadata);
+        }
+        part
     }
 }
 
@@ -195,13 +224,48 @@ pub enum Command {
         #[serde(default)]
         attachments: Vec<Attachment>,
     },
+    Shell {
+        session_id: String,
+        #[serde(default)]
+        call_id: Option<String>,
+        command: String,
+        #[serde(default = "shell_timeout")]
+        timeout_ms: u64,
+    },
+    ShellStatus {
+        session_id: String,
+        call_id: String,
+    },
+    Inject {
+        session_id: String,
+        #[serde(default)]
+        input_id: Option<String>,
+        text: String,
+        source: String,
+    },
+    /// Advisory wake: drain eligible inbox work without forcing continuation.
+    Wake {
+        session_id: String,
+    },
     Resume {
         session_id: String,
+    },
+    /// Drop one durably admitted input before promotion. The admission row is
+    /// retained as cancelled evidence, so an exact retry cannot resurrect a
+    /// prompt the operator dropped; an unknown or already promoted input is
+    /// reported as not accepted instead.
+    CancelInput {
+        session_id: String,
+        input_id: String,
     },
     ModelCatalog,
     SelectModel {
         session_id: String,
         binding: Option<crate::session_model::Binding>,
+    },
+    SelectAccount {
+        session_id: String,
+        credential_id: Option<String>,
     },
     Recoveries {
         session_id: String,
@@ -226,6 +290,34 @@ pub enum Command {
     Rename {
         session_id: String,
         title: String,
+    },
+    /// Set or clear a Session's archive timestamp. Archiving is a catalog fact:
+    /// it changes no message, run or inbox row, so a Session can be archived
+    /// while a drain is active and un-archived later.
+    Archive {
+        session_id: String,
+        archived: bool,
+    },
+    /// Delete everything a Session owns. Not a tombstone: the conversation,
+    /// inbox, runs, approvals, jobs and schedules are gone and the identity can
+    /// be re-created. Children keep their Sessions; only their lineage rows are
+    /// dropped, matching the product rule that removing a Session does not
+    /// delete its forks.
+    Remove {
+        session_id: String,
+    },
+    /// Ask for one compaction at the next settled assistant boundary, even when
+    /// the automatic trigger's budget gate is under its threshold. The request is
+    /// durable and idempotent; one attempt answers it, either way.
+    RequestCompact {
+        session_id: String,
+    },
+    /// Apply a host-resolved agent manifest to this Session's subsequent
+    /// provider turns (ADR-0017). Resolution stays with the host; the engine
+    /// records the manifest and applies it at the turn boundary.
+    SelectAgent {
+        session_id: String,
+        agent: Box<crate::session_agent::AgentManifest>,
     },
     Cancel {
         session_id: String,
@@ -340,6 +432,10 @@ pub enum Command {
         session_id: String,
         response: Response,
     },
+    ApprovePersistent {
+        session_id: String,
+        response: Response,
+    },
     Shutdown,
 }
 
@@ -349,4 +445,8 @@ fn recall_limit() -> usize {
 
 fn yes() -> bool {
     true
+}
+
+fn shell_timeout() -> u64 {
+    120_000
 }

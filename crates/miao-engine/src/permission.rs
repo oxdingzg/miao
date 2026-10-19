@@ -132,8 +132,40 @@ pub struct Policy {
     config: Config,
     revision: String,
     matchers: Vec<CompiledMatcher>,
+    ordered: Option<crate::agent_policy::Compiled>,
 }
 impl Policy {
+    /// Derive an immutable policy for one agent turn. Capability limits and all
+    /// configured denials remain authoritative; agent rules use the same
+    /// deny > ask > allow ordering as the base policy. Bind the revision to the
+    /// whole manifest so approvals cannot cross an agent identity change.
+    pub(crate) fn for_agent(
+        &self,
+        agent: Option<&crate::session_agent::AgentManifest>,
+    ) -> Result<Self, Error> {
+        let Some(agent) = agent else {
+            return Ok(self.clone());
+        };
+        agent.validate()?;
+        let mut config = self.config.clone();
+        if let Some(steps) = agent.steps {
+            config.max_provider_turns = config.max_provider_turns.min(steps);
+        }
+        if let Some(rules) = &agent.permissions {
+            config.rules.extend(rules.iter().cloned());
+        }
+        let mut policy = Self::new(config)?;
+        policy.ordered = agent
+            .ordered_permissions
+            .as_ref()
+            .map(|policy| policy.compile())
+            .transpose()?;
+        policy.revision = digest(&serde_json::to_vec(&serde_json::json!({
+            "policy": policy.revision, "agent": agent.digest()?,
+        }))?);
+        Ok(policy)
+    }
+
     pub fn max_provider_turns(&self) -> u32 {
         self.config.max_provider_turns
     }
@@ -182,12 +214,24 @@ impl Policy {
             config,
             revision,
             matchers,
+            ordered: None,
         })
     }
     /// Snapshot the same immutable Config whose matchers enforce each tool.
     pub(crate) fn descriptor(&self) -> Value {
-        serde_json::json!({"semantics":"native-policy-v1","revision":self.revision,"config":self.config,"collaboration_mode":"checked_at_tool_dispatch"})
+        let mut descriptor = serde_json::json!({"semantics":"native-policy-v1","revision":self.revision,"config":self.config,"collaboration_mode":"checked_at_tool_dispatch"});
+        if let Some(ordered) = &self.ordered {
+            descriptor["ordered"] =
+                serde_json::to_value(ordered.descriptor()).expect("serializable agent policy");
+        }
+        descriptor
     }
+    pub(crate) fn tool_visible(&self, tool: &str) -> bool {
+        self.ordered
+            .as_ref()
+            .is_none_or(|policy| policy.visible(tool))
+    }
+
     pub fn revision(&self) -> &str {
         &self.revision
     }
@@ -237,6 +281,31 @@ impl Policy {
     /// Like [`Policy::evaluate`] but also returns the matcher that produced the
     /// decision, so callers can carry it on approval messages.
     pub fn assess(&self, tool: &str, path: &str, access: Access) -> (Decision, RuleMatch) {
+        self.assess_input(tool, path, access, None)
+    }
+
+    pub(crate) fn assess_input(
+        &self,
+        tool: &str,
+        path: &str,
+        access: Access,
+        input: Option<&Value>,
+    ) -> (Decision, RuleMatch) {
+        let base = self.assess_base(tool, path, access);
+        // The host's ordered rules never remove a capability/boundary denial
+        // or an explicit operator deny/ask. Default workspace ask may be
+        // decided by the agent's resolved rules.
+        if base.0 == Decision::Deny
+            || (base.0 == Decision::Ask && base.1.source == MatchSource::Rule)
+        {
+            return base;
+        }
+        self.ordered
+            .as_ref()
+            .map_or(base, |policy| policy.assess(tool, path, input))
+    }
+
+    fn assess_base(&self, tool: &str, path: &str, access: Access) -> (Decision, RuleMatch) {
         let bare = |decision| RuleMatch {
             tool: tool.into(),
             path: path.into(),
@@ -328,4 +397,45 @@ pub fn context_digest(system: &str, sources: &[Value]) -> Result<String, Error> 
     Ok(digest(&serde_json::to_vec(
         &serde_json::json!({"version":1,"system":system,"sources":sources}),
     )?))
+}
+
+#[cfg(test)]
+mod agent_policy_tests {
+    use super::*;
+
+    #[test]
+    fn overlay_cannot_lift_base_denial_and_revision_binds_agent_identity() {
+        let base = Policy::new(Config {
+            mode: Mode::Workspace,
+            rules: vec![Rule {
+                tool: "write_file".into(),
+                path: "private/**".into(),
+                decision: Decision::Deny,
+            }],
+            ..Config::default()
+        })
+        .unwrap();
+        let agent: crate::session_agent::AgentManifest =
+            serde_json::from_value(serde_json::json!({
+                "name":"first", "permissions":[{"tool":"write_file","path":"**","decision":"allow"}]
+            }))
+            .unwrap();
+        let policy = base.for_agent(Some(&agent)).unwrap();
+        assert_eq!(
+            policy.evaluate("write_file", "private/a", Access::Write),
+            Decision::Deny
+        );
+        assert_eq!(
+            policy.evaluate("write_file", "public/a", Access::Write),
+            Decision::Allow
+        );
+        assert_ne!(base.revision(), policy.revision());
+        let mut other = agent;
+        other.name = "second".into();
+        assert_ne!(
+            policy.revision(),
+            base.for_agent(Some(&other)).unwrap().revision()
+        );
+        assert_eq!(base.revision(), base.for_agent(None).unwrap().revision());
+    }
 }

@@ -3,9 +3,12 @@ import { Image } from "@miao/core/image"
 import { Database } from "@miao/core/database/database"
 import { Catalog } from "@miao/core/catalog"
 import { SessionV2 } from "@miao/core/session"
+import { SkillV2 } from "@miao/core/skill"
+import { AgentV2 } from "@miao/core/agent"
+import { PluginV2 } from "@miao/core/plugin"
 import { SessionImageNormalize } from "@miao/core/session/image-normalize"
 import { SessionUsageStore } from "@miao/core/session/usage-store"
-import { Clock, DateTime, Effect, Option, Schema, Stream } from "effect"
+import { Clock, DateTime, Deferred, Effect, Option, Schema, Stream } from "effect"
 import { BackgroundJob } from "@miao/core/background-job"
 import { SessionBackgroundJobs } from "@miao/core/session/background-jobs"
 import { SessionSchedule } from "@miao/core/session/schedule"
@@ -231,6 +234,22 @@ export const SessionHandler = HttpApiBuilder.group(Api, "server.session", (handl
       .handle(
         "session.switchAgent",
         Effect.fn(function* (ctx) {
+          const placement = yield* Effect.serviceOption(NativeEngine.Placement)
+          if (Option.isSome(placement)) {
+            const owner = yield* requireNativeOwner(ctx.params.sessionID)
+            const plugins = yield* PluginV2.Service
+            yield* Deferred.await(plugins.booted)
+            const agents = yield* AgentV2.Service
+            const agent = yield* agents.get(ctx.payload.agent)
+            if (!agent) return yield* new ConflictError({ message: `Agent is not selectable: ${ctx.payload.agent}` })
+            yield* owner.native.selectAgent({
+              sessionID: ctx.params.sessionID,
+              storage: owner.placement.storage,
+              location: owner.placement.location,
+              agent,
+            })
+            return HttpApiSchema.NoContent.make()
+          }
           yield* requireTypescriptOwner(ctx.params.sessionID, "session.switchAgent")
           yield* session.switchAgent({ sessionID: ctx.params.sessionID, agent: ctx.payload.agent }).pipe(
             Effect.catchTag("Session.NotFoundError", (error) =>
@@ -290,6 +309,17 @@ export const SessionHandler = HttpApiBuilder.group(Api, "server.session", (handl
       .handle(
         "session.switchAccount",
         Effect.fn(function* (ctx) {
+          const placement = yield* Effect.serviceOption(NativeEngine.Placement)
+          if (Option.isSome(placement)) {
+            const owner = yield* requireNativeOwner(ctx.params.sessionID)
+            yield* owner.native.selectAccount({
+              sessionID: ctx.params.sessionID,
+              storage: owner.placement.storage,
+              location: owner.placement.location,
+              credentialID: ctx.payload.credentialID,
+            })
+            return HttpApiSchema.NoContent.make()
+          }
           yield* requireTypescriptOwner(ctx.params.sessionID, "session.switchAccount")
           yield* session
             .switchAccount({ sessionID: ctx.params.sessionID, credentialID: ctx.payload.credentialID })
@@ -402,6 +432,25 @@ export const SessionHandler = HttpApiBuilder.group(Api, "server.session", (handl
       .handle(
         "session.skill",
         Effect.fn(function* (ctx) {
+          const native = Option.getOrUndefined(yield* Effect.serviceOption(NativeEngine.Service))
+          const placement = Option.getOrUndefined(yield* Effect.serviceOption(NativeEngine.Placement))
+          if (native && placement) {
+            yield* booted
+            const skills = yield* SkillV2.Service
+            const skill = (yield* skills.list()).find((item) => item.name === ctx.payload.skill)
+            if (!skill)
+              return yield* new SessionNotFoundError({
+                sessionID: ctx.params.sessionID,
+                message: `Skill not found: ${ctx.payload.skill}`,
+              })
+            return yield* native.inject({
+              sessionID: ctx.params.sessionID,
+              ...placement,
+              text: skill.content,
+              source: `skill:${skill.name}`,
+              resume: ctx.payload.resume,
+            })
+          }
           yield* requireTypescriptOwner(ctx.params.sessionID, "session.skill")
           yield* session
             .skill({
@@ -425,9 +474,14 @@ export const SessionHandler = HttpApiBuilder.group(Api, "server.session", (handl
       .handle(
         "session.shell",
         Effect.fn(function* (ctx) {
+          const native = Option.getOrUndefined(yield* Effect.serviceOption(NativeEngine.Service))
+          const placement = Option.getOrUndefined(yield* Effect.serviceOption(NativeEngine.Placement))
+          if (native && placement)
+            return yield* native.shell({ sessionID: ctx.params.sessionID, ...placement, ...ctx.payload })
           yield* requireTypescriptOwner(ctx.params.sessionID, "session.shell")
           yield* session
             .shell({
+              id: ctx.payload.id,
               sessionID: ctx.params.sessionID,
               command: ctx.payload.command,
               resume: ctx.payload.resume,
@@ -448,6 +502,19 @@ export const SessionHandler = HttpApiBuilder.group(Api, "server.session", (handl
       .handle(
         "session.compact",
         Effect.fn(function* (ctx) {
+          const native = yield* Effect.serviceOption(NativeEngine.Service)
+          const placement = Option.getOrUndefined(yield* Effect.serviceOption(NativeEngine.Placement))
+          if (Option.isSome(native) && placement) {
+            // The engine records a durable request and honours it at the next
+            // settled assistant boundary; an idle Session therefore compacts on
+            // its next provider turn rather than in the middle of one.
+            yield* native.value.requestCompact({
+              sessionID: ctx.params.sessionID,
+              storage: placement.storage,
+              location: placement.location,
+            })
+            return
+          }
           yield* requireTypescriptOwner(ctx.params.sessionID, "session.compact")
           yield* session.compact({ sessionID: ctx.params.sessionID }).pipe(
             Effect.catchTag("Session.NotFoundError", (error) =>
@@ -681,6 +748,24 @@ export const SessionHandler = HttpApiBuilder.group(Api, "server.session", (handl
       .handle(
         "session.archive",
         Effect.fn(function* (ctx) {
+          const native = yield* Effect.serviceOption(NativeEngine.Service)
+          const placement = Option.getOrUndefined(yield* Effect.serviceOption(NativeEngine.Placement))
+          if (Option.isSome(native) && placement) {
+            yield* native.value.archive({
+              sessionID: ctx.params.sessionID,
+              storage: placement.storage,
+              location: placement.location,
+              archived: ctx.payload.archived,
+            })
+            // Mirror the accepted native fact into the CLI catalog without
+            // claiming TypeScript execution authority over the Session.
+            yield* events.publish(SessionEvent.Info.Updated, {
+              sessionID: ctx.params.sessionID,
+              timestamp: yield* DateTime.now,
+              archived: ctx.payload.archived,
+            })
+            return
+          }
           yield* requireTypescriptOwner(ctx.params.sessionID, "session.archive")
           yield* session.archive({ sessionID: ctx.params.sessionID, archived: ctx.payload.archived }).pipe(
             Effect.catchTag("Session.NotFoundError", (error) =>
@@ -697,6 +782,23 @@ export const SessionHandler = HttpApiBuilder.group(Api, "server.session", (handl
       .handle(
         "session.remove",
         Effect.fn(function* (ctx) {
+          const native = yield* Effect.serviceOption(NativeEngine.Service)
+          const placement = Option.getOrUndefined(yield* Effect.serviceOption(NativeEngine.Placement))
+          if (Option.isSome(native) && placement) {
+            yield* native.value.remove({
+              sessionID: ctx.params.sessionID,
+              storage: placement.storage,
+              location: placement.location,
+            })
+            // Release the catalog binding before the product rows go: a stale
+            // binding would route the next create of this identity back to a
+            // storage that no longer has it.
+            yield* SessionEnginePlacement.release(db, ctx.params.sessionID)
+            yield* session
+              .remove(ctx.params.sessionID)
+              .pipe(Effect.catchTag("Session.NotFoundError", () => Effect.void))
+            return
+          }
           yield* requireTypescriptOwner(ctx.params.sessionID, "session.remove")
           yield* session.remove(ctx.params.sessionID).pipe(
             Effect.catchTag("Session.NotFoundError", (error) =>
@@ -838,6 +940,17 @@ export const SessionHandler = HttpApiBuilder.group(Api, "server.session", (handl
       .handle(
         "session.inputCancel",
         Effect.fn(function* (ctx) {
+          const native = yield* Effect.serviceOption(NativeEngine.Service)
+          const placement = Option.getOrUndefined(yield* Effect.serviceOption(NativeEngine.Placement))
+          if (Option.isSome(native) && placement)
+            return {
+              cancelled: yield* native.value.cancelInput({
+                sessionID: ctx.params.sessionID,
+                storage: placement.storage,
+                location: placement.location,
+                inputID: ctx.params.messageID,
+              }),
+            }
           yield* requireTypescriptOwner(ctx.params.sessionID, "session.inputCancel")
           const cancelled = yield* session
             .cancelInput({ sessionID: ctx.params.sessionID, messageID: ctx.params.messageID })

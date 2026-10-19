@@ -93,6 +93,18 @@ manifest 必须位于工作区之外，并受到模型工具保护。产品桥�
 调用 provider 前失败。即使两个 endpoint 使用相同模型名，opaque 历史仍绑定
 原路由，切换前须先在原路由压缩历史。
 
+### 产品模型变体
+
+原生 host manifest 可在 route 声明 `request: {body, headers}` 与
+`variants: [{id, body, headers}]`。变体参数递归合并到基础生成参数，header
+按大小写不敏感的名称覆盖；不能替换模型身份、历史、工具目录、凭据或流控制。
+一条与默认模型相符的 route 可标为 `primary: true`，为默认入口声明相同的参数与变体。
+
+`model_catalog` 只公开变体名字，不公开参数或凭据。产品自动导出 catalog 声明的变体；
+CLI 的 `run --model ... --variant ...` 与原生选模弹窗均使用这些名字。
+选中的 `variant` 属于持久化模型绑定，在下一个 provider-turn 边界生效，
+重启和 fork 后保留；未知变体或身份不符的请求在 provider 执行前拒绝。
+
 ## stdio 协议 v0
 
 一行一个 JSON 对象。请求带字符串/数字 `id`，响应带同一个 `id` 与 `result` 或 `error`。
@@ -316,7 +328,9 @@ MCP server 是拥有自身 filesystem/network authority 的可信外部服务，
 
 - catalog 在初始化时固定：最多 8 servers、每 server 4 页/128 tools；alias 稳定、限 64 字符且包含原名指纹。
 - schema 最多 32 KiB，JSON Schema 校验在授权及派发之前完成；description 最多 4 KiB。
-- 初始化/catalog 每请求 15 秒，call 60 秒，wire frame 256 KiB，返回结果 64 KiB。
+- 初始化默认 15 秒，catalog 与工具请求默认 60 秒。每个 server 可通过 `timeout.startup` / `timeout.request` 设置正整数毫秒。wire frame 256 KiB，返回结果 64 KiB。
+- 进程 server 可设置 `cwd`，相对路径从 engine workspace 解析。产品共享 MCP 配置会保留该字段；全局和 server 超时逐字段合并，server 值优先。
+- 可选 `call_meta` 字符串映射会逐次写入 `tools/call` 的 `_meta`，与模型参数和公开目录分离。`{env:VAR}` 在每次调用前从 engine 进程环境解析；缺失或非法值会在发送前失败。最多 32 个键、每值 8 KiB、总量 64 KiB。产品共享配置对两种传输都会保留模板；启动 engine 时仅转发模板显式引用的父进程变量，后续解析读取 engine 自身环境。
 - input/task continuation 显式失败；断连/超时不自动重放，不能断言外部副作用未发生。
 - cancel 停止本地等待，已派发调用可能仍在 server 执行；Session 恢复沿用 unknown intent 边界。
 - 正常 shutdown 关闭 transport 并 kill/reap 配置的直接子进程。引擎硬退出、server 派生/daemon 进程
@@ -559,3 +573,13 @@ fail-closed 阻止派发，工具结果为 `blocked by tool_before hook (outcome
 Provider 报告还提供[辅助用量与覆盖范围](docs/auxiliary-usage.md)，包含主请求的完整/部分观察、角色尝试及子 Session 结果证据。
 
 配置的完成检查会记录[版本绑定的验证收据](docs/verification-receipts.md)，包含实际退出码/输出、任务版本与有明确边界的源码覆盖范围。
+
+
+## Prompt 附件
+
+原生 admission 会持久保存有界图片、PDF 和 UTF-8 文本文件，并在 replay/fork 中保留。
+产品 host 在 admission 前可将托管 blob、本地文件和 HTTP(S) 引用快照为 inline 字节。
+每条 route 的 host `input_modalities` 控制实际 provider 请求中的媒体归一化：不支持的媒体
+变成明确的文本占位，原始附件字节仍保存在 durable history 中。Anthropic、Responses 和
+Gemini 直接承载 PDF；Chat Completions 沿用产品契约中的工具读取占位。
+详见 [PROTOCOL.md](PROTOCOL.md#inline-attachment-admission)。

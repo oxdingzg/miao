@@ -1,3 +1,4 @@
+import { Event } from "@miao/schema/event"
 import { SessionModelRoute } from "@miao/schema/session-model-route"
 import { SessionMessage } from "@miao/schema/session-message"
 import { SessionInput } from "@miao/schema/session-input"
@@ -189,7 +190,7 @@ export const makeSessionGroup = <I extends HttpApiMiddleware.AnyId, S>(sessionLo
         params: { sessionID: Session.ID },
         payload: Schema.Struct({ agent: Agent.ID }),
         success: HttpApiSchema.NoContent,
-        error: [SessionNotFoundError, ServiceUnavailableError],
+        error: [ConflictError, SessionNotFoundError, ServiceUnavailableError],
       })
         .middleware(sessionLocationMiddleware)
         .annotateMerge(
@@ -236,7 +237,7 @@ export const makeSessionGroup = <I extends HttpApiMiddleware.AnyId, S>(sessionLo
         params: { sessionID: Session.ID },
         payload: Schema.Struct({ credentialID: Schema.NullOr(Credential.ID) }),
         success: HttpApiSchema.NoContent,
-        error: [SessionNotFoundError, ServiceUnavailableError],
+        error: [ConflictError, SessionNotFoundError, ServiceUnavailableError],
       })
         .middleware(sessionLocationMiddleware)
         .annotateMerge(
@@ -315,7 +316,7 @@ export const makeSessionGroup = <I extends HttpApiMiddleware.AnyId, S>(sessionLo
           resume: Schema.Boolean.pipe(Schema.optional),
         }),
         success: HttpApiSchema.NoContent,
-        error: [SessionNotFoundError, ServiceUnavailableError],
+        error: [SessionNotFoundError, ServiceUnavailableError, ConflictError],
       })
         .middleware(sessionLocationMiddleware)
         .annotateMerge(
@@ -330,11 +331,12 @@ export const makeSessionGroup = <I extends HttpApiMiddleware.AnyId, S>(sessionLo
       HttpApiEndpoint.post("session.shell", "/api/session/:sessionID/shell", {
         params: { sessionID: Session.ID },
         payload: Schema.Struct({
+          id: Event.ID.pipe(Schema.optional),
           command: Schema.String,
           resume: Schema.Boolean.pipe(Schema.optional),
         }),
         success: HttpApiSchema.NoContent,
-        error: [SessionNotFoundError, ServiceUnavailableError],
+        error: [SessionNotFoundError, ServiceUnavailableError, ConflictError],
       })
         .middleware(sessionLocationMiddleware)
         .annotateMerge(

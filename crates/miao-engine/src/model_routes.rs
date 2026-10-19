@@ -21,6 +21,28 @@ struct Route {
     prompt_cache: bool,
     #[serde(default)]
     auth: Option<Auth>,
+    #[serde(default)]
+    input_modalities: Vec<String>,
+    #[serde(default)]
+    request: crate::request_options::Options,
+    #[serde(default)]
+    variants: Vec<Variant>,
+    #[serde(default)]
+    primary: bool,
+    #[serde(default)]
+    default_variant: Option<String>,
+    #[serde(default)]
+    account: Option<crate::model_catalog::Account>,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct Variant {
+    id: String,
+    #[serde(default)]
+    body: serde_json::Map<String, serde_json::Value>,
+    #[serde(default)]
+    headers: std::collections::BTreeMap<String, String>,
 }
 
 /// Declarative auth for a route: wire-level auth style plus trusted host
@@ -36,9 +58,64 @@ pub struct Auth {
     pub(crate) query: std::collections::BTreeMap<String, String>,
 }
 
+impl Auth {
+    pub(crate) fn validate(&self) -> Result<(), crate::provider::ProviderError> {
+        crate::request_options::Options {
+            body: Default::default(),
+            headers: self.headers.clone(),
+        }
+        .validate()?;
+        if self
+            .headers
+            .keys()
+            .map(|key| key.to_ascii_lowercase())
+            .collect::<std::collections::BTreeSet<_>>()
+            .len()
+            != self.headers.len()
+        {
+            return Err(crate::provider::ProviderError::Stream(
+                "duplicate host route header".into(),
+            ));
+        }
+        if self.query.len() > 32
+            || self.query.iter().any(|(key, value)| {
+                key.is_empty()
+                    || key.len() > 256
+                    || value.len() > 8192
+                    || key.chars().any(char::is_control)
+                    || value.chars().any(char::is_control)
+            })
+        {
+            return Err(crate::provider::ProviderError::Stream(
+                "invalid host route query".into(),
+            ));
+        }
+        Ok(())
+    }
+    pub(crate) fn apply_headers(&self, target: &mut std::collections::BTreeMap<String, String>) {
+        for (name, value) in &self.headers {
+            target.retain(|key, _| !key.eq_ignore_ascii_case(name));
+            target.insert(name.clone(), value.clone());
+        }
+    }
+    pub(crate) fn query_string(&self) -> Result<Option<String>, crate::provider::ProviderError> {
+        if self.query.is_empty() {
+            return Ok(None);
+        }
+        let mut url = reqwest::Url::parse("http://localhost")
+            .map_err(|_| crate::provider::ProviderError::Transport)?;
+        url.query_pairs_mut().extend_pairs(self.query.iter());
+        Ok(url.query().map(str::to_owned))
+    }
+}
+
 #[derive(Deserialize)]
 #[serde(tag = "type", rename_all = "snake_case", deny_unknown_fields)]
 enum CredentialSource {
+    Aws {
+        region: String,
+        profile: Option<String>,
+    },
     Environment {
         key: String,
         account: Option<String>,
@@ -64,7 +141,7 @@ enum CredentialSource {
 pub async fn load(
     path: &Path,
     workspace: &Path,
-    primary: Arc<dyn Provider>,
+    mut primary: Arc<dyn Provider>,
 ) -> Result<Arc<dyn Provider>, Box<dyn std::error::Error>> {
     if path.starts_with(workspace) {
         return Err("Model routes host config must be outside model-writable workspace".into());
@@ -84,8 +161,20 @@ pub async fn load(
         return Err("model route catalog exceeds 1024 entries".into());
     }
     let mut routes = Vec::new();
+    let mut variants = Vec::new();
+    let mut primary_variants = Vec::new();
+    let mut default_seen = false;
+    let mut accounts = Vec::new();
+    let mut primary_account_route = None;
     for entry in entries {
+        if let Some(account) = entry.account {
+            if entry.primary {
+                primary_account_route = Some(entry.id.clone());
+            }
+            accounts.push((entry.id.clone(), account));
+        }
         let source = match entry.credential {
+            CredentialSource::Aws { region, profile } => Source::Aws { region, profile },
             CredentialSource::Environment { key, account } => {
                 let secret = std::env::var(key)
                     .map_err(|_| "route credential environment variable is missing")?;
@@ -138,18 +227,90 @@ pub async fn load(
         {
             return Err("model route credentials must be outside workspace".into());
         }
-        source.load().await?;
-        routes.push((
-            entry.id,
-            crate::routing::build_with_auth(
-                &entry.provider,
-                entry.endpoint.as_deref(),
-                source,
-                entry.model,
-                entry.prompt_cache,
-                entry.auth.as_ref(),
-            )?,
-        ));
+        source.validate().await?;
+        let provider = crate::routing::build_with_auth(
+            &entry.provider,
+            entry.endpoint.as_deref(),
+            source,
+            entry.model,
+            entry.prompt_cache,
+            entry.auth.as_ref(),
+        )?;
+        if entry.provider == "amazon-bedrock" {
+            crate::bedrock::validate_credential_paths(provider.protected_resources(), workspace)
+                .await?;
+        }
+        let provider = if entry.input_modalities.is_empty() {
+            provider
+        } else {
+            provider.with_input_modalities(entry.input_modalities.clone())?
+        };
+        entry.request.validate()?;
+        if entry.primary {
+            if default_seen || primary.identity() != provider.identity() {
+                return Err("invalid default model route".into());
+            }
+            default_seen = true;
+            if let Some(auth) = entry.auth.as_ref() {
+                primary = primary.with_route_auth(auth)?;
+            }
+            if !entry.input_modalities.is_empty() {
+                primary = primary.with_input_modalities(entry.input_modalities.clone())?;
+            }
+        }
+        let mut default_provider = if entry.request.is_empty() {
+            Arc::clone(&provider)
+        } else {
+            provider.with_request_options(entry.request.clone())?
+        };
+        let mut default_primary = if entry.primary {
+            Some(if entry.request.is_empty() {
+                Arc::clone(&primary)
+            } else {
+                primary.with_request_options(entry.request.clone())?
+            })
+        } else {
+            None
+        };
+        let mut matched_default = entry.default_variant.is_none();
+        for variant in entry.variants {
+            let options = entry.request.merged(&crate::request_options::Options {
+                body: variant.body,
+                headers: variant.headers,
+            })?;
+            let selected = if options.is_empty() {
+                Arc::clone(&provider)
+            } else {
+                provider.with_request_options(options.clone())?
+            };
+            if entry.primary {
+                let selected = if options.is_empty() {
+                    Arc::clone(&primary)
+                } else {
+                    primary.with_request_options(options)?
+                };
+                if entry.default_variant.as_deref() == Some(variant.id.as_str()) {
+                    default_primary = Some(Arc::clone(&selected));
+                }
+                primary_variants.push((variant.id.clone(), selected));
+            }
+            if entry.default_variant.as_deref() == Some(variant.id.as_str()) {
+                matched_default = true;
+                default_provider = Arc::clone(&selected);
+            }
+            variants.push((entry.id.clone(), variant.id, selected));
+        }
+        if !matched_default {
+            return Err("default model variant is not registered".into());
+        }
+        if let Some(default) = default_primary {
+            primary = default;
+        }
+        routes.push((entry.id, default_provider));
     }
-    Ok(Arc::new(Catalog::new(primary, routes)?))
+    Ok(Arc::new(
+        Catalog::new(primary, routes)?
+            .with_variants(variants, primary_variants)?
+            .with_accounts(accounts, primary_account_route)?,
+    ))
 }

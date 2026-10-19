@@ -14,7 +14,7 @@ export function DialogVariant() {
         title: "Default",
         onSelect: () => {
           dialog.clear()
-          local.model.variant.set(undefined)
+          void local.model.variant.select(undefined)
         },
       },
       ...local.model.variant.list().map((variant) => ({
@@ -22,7 +22,7 @@ export function DialogVariant() {
         title: variant,
         onSelect: () => {
           dialog.clear()
-          local.model.variant.set(variant)
+          void local.model.variant.select(variant)
         },
       })),
     ]
@@ -32,6 +32,7 @@ export function DialogVariant() {
     <DialogSelect<string>
       compact
       options={options()}
+      locked={local.model.variant.busy()}
       title={"Select variant"}
       current={local.model.variant.selected()}
       flat={true}

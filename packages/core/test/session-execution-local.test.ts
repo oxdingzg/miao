@@ -14,6 +14,7 @@ import { SessionV2 } from "@miao/core/session"
 import { SessionEvent } from "@miao/core/session/event"
 import { SessionExecution } from "@miao/core/session/execution"
 import { SessionExecutionLocal } from "@miao/core/session/execution/local"
+import { SessionEnginePlacement } from "@miao/core/session/engine-placement"
 import { MessageTable, SessionTable } from "@miao/core/session/sql"
 import { SessionStore } from "@miao/core/session/store"
 import { ApplicationTools } from "@miao/core/tool/application-tools"
@@ -162,6 +163,33 @@ routed.live("Location drains retain the active process-global execution service"
         const execution = yield* SessionExecution.Service
         yield* execution.resume(sessionID)
         expect(yield* execution.active).toEqual(new Set())
+      }),
+    (dir) => Effect.promise(() => dir[Symbol.asyncDispose]()),
+  ),
+)
+
+it.live("native placement rejects TS resume and makes advisory wakes inert", () =>
+  Effect.acquireUseRelease(
+    Effect.promise(() => tmpdir()),
+    (dir) =>
+      Effect.gen(function* () {
+        const database = yield* Database.Service
+        const execution = yield* SessionExecution.Service
+        const sessionID = SessionV2.ID.make("ses_execution_native")
+        yield* SessionEnginePlacement.claim(database.db, {
+          sessionID,
+          placement: {
+            engine: "rust",
+            storage: AbsolutePath.make(`${dir.path}/native.db`),
+            location: { directory: AbsolutePath.make(dir.path) },
+          },
+        })
+        const before = yield* EventV2.latestSequence(database.db, sessionID)
+        yield* execution.wake(sessionID)
+        const resumed = yield* execution.resume(sessionID).pipe(Effect.exit)
+        expect(resumed._tag).toBe("Failure")
+        expect(yield* execution.active).toEqual(new Set())
+        expect(yield* EventV2.latestSequence(database.db, sessionID)).toBe(before)
       }),
     (dir) => Effect.promise(() => dir[Symbol.asyncDispose]()),
   ),
