@@ -806,8 +806,10 @@ fn registration_authority(configs: &[Config]) -> Result<String, Error> {
 
 fn validate_name(name: &str) -> Result<(), Error> {
     if name.is_empty()
-        || name.len() > 32
-        || !name.bytes().all(|b| b.is_ascii_alphanumeric() || b == b'_')
+        || name.len() > 64
+        || !name
+            .bytes()
+            .all(|b| b.is_ascii_alphanumeric() || matches!(b, b'_' | b'-' | b'.'))
     {
         return Err(Error::Invalid(
             "MCP server name must be bounded ASCII".into(),
@@ -824,7 +826,15 @@ fn alias(server: &str, tool: &str) -> String {
         .collect();
     format!(
         "mcp_{}_{}_{}",
-        server.chars().take(12).collect::<String>(),
+        server
+            .chars()
+            .take(12)
+            .map(|c| if c.is_ascii_alphanumeric() || c == '_' {
+                c
+            } else {
+                '_'
+            })
+            .collect::<String>(),
         slug,
         &suffix[..32]
     )
@@ -1023,5 +1033,26 @@ mod call_metadata_tests {
         }
         assert!(expand_call_meta(&"x".repeat(8193)).is_err());
         assert!(expand_call_meta("invalid\0value").is_err());
+    }
+}
+
+#[cfg(test)]
+mod naming_tests {
+    use super::{alias, validate_name};
+
+    #[test]
+    fn product_server_names_are_bounded_and_aliases_stay_tool_safe() {
+        for name in ["docs", "aws-bedrock", "vendor.mcp", "a_b"] {
+            assert!(validate_name(name).is_ok(), "{name}");
+        }
+        for name in ["", "a/b", "spaces here", &"a".repeat(65)] {
+            assert!(validate_name(name).is_err(), "{name}");
+        }
+        let first = alias("aws-bedrock", "read_file");
+        assert_eq!(first, alias("aws-bedrock", "read_file"));
+        assert_ne!(first, alias("aws_bedrock", "read_file"));
+        assert!(first
+            .bytes()
+            .all(|byte| byte.is_ascii_alphanumeric() || byte == b'_'));
     }
 }
