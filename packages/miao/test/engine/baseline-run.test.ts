@@ -405,3 +405,21 @@ test("measures the TypeScript leg when the optional observations are absent", as
   expect(result.evidence.providerAttempts).toBeUndefined()
   expect(Object.keys(result.evidence)).not.toContain("parallel")
 })
+
+test("records every input's provider interactions on a multi-input task", async () => {
+  await using tmp = await tmpdir()
+  const result = await runBaselineTs({
+    revision,
+    root: path.join(tmp.path, "multi-input"),
+    task: "long-session",
+    repetition: 0,
+    model: "fixture-model",
+    entry: path.join(import.meta.dir, "..", "fixture", "ts-run-fake.ts"),
+  })
+  // One process per input, so the recorder's last snapshot alone would report a
+  // single attempt; every input's interaction has to survive the merge.
+  expect(result.rejection).toBeNull()
+  expect(result.evidence.attempts).toHaveLength(5)
+  expect(result.evidence.profileReceipts).toBe(5)
+  expect(result.evidence.attempts.map((attempt) => attempt.inputTokens)).toEqual(Array(5).fill(120))
+})
