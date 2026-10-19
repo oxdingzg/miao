@@ -167,6 +167,20 @@ describe("SessionRunnerModel", () => {
     }),
   )
 
+  it.effect("routes gateway-only providers through the OpenAI-compatible chat endpoint", () =>
+    Effect.gen(function* () {
+      const resolved = yield* SessionRunnerModel.fromCatalogModel(
+        model({ type: "native", url: "https://gateway.test/v1", settings: {} }),
+      )
+      expect(resolved.route.endpoint.baseURL).toBe("https://gateway.test/v1")
+      expect(resolved.route.defaults.headers).toMatchObject({ "x-test": "header" })
+      const missing = yield* SessionRunnerModel.fromCatalogModel(model({ type: "native", settings: {} })).pipe(
+        Effect.flip,
+      )
+      expect(missing.message).toBe("Unsupported API for test-provider/test-model: native")
+    }),
+  )
+
   it.effect("routes ChatGPT OAuth to Codex and disables storage", () =>
     Effect.gen(function* () {
       const catalog = ModelV2.Info.make({

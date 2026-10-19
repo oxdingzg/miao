@@ -220,8 +220,19 @@ export const fromCatalogModel = (
   // endpoint, not an OpenAI/Anthropic-compatible API, so it has its own route.
   if (resolved.providerID === ProviderV2.ID.make("commandcode"))
     return Effect.succeed(commandCode(resolved, credential))
-  if (resolved.api.type !== "aisdk") return Effect.fail(unsupported(resolved))
   const bearer = key === undefined ? Auth.none : Auth.bearer(key)
+  // Catalog and OpenCode-console providers may declare a gateway endpoint
+  // without an npm package. Those endpoints speak the OpenAI-compatible chat
+  // API, so a `native` api with a URL keeps that route instead of failing every
+  // turn; without any URL there is no route to build.
+  if (resolved.api.type !== "aisdk") {
+    if (!resolved.api.url) return Effect.fail(unsupported(resolved))
+    return Effect.succeed(
+      withDefaults(resolved, OpenAICompatibleChat.route)
+        .with({ endpoint: { baseURL: resolved.api.url }, auth: bearer })
+        .model({ id: resolved.api.id }),
+    )
+  }
   if (resolved.providerID === ProviderV2.ID.githubCopilot) return Effect.succeed(copilot(resolved, credential))
   if (resolved.api.package === "@ai-sdk/azure") return azure(resolved, credential)
   if (isVertex(resolved)) return vertex(resolved, credential)
