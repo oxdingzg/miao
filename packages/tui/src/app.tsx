@@ -874,11 +874,28 @@ function App(props: {
         },
       },
       {
-        name: "remote.manage",
-        title: "Remote control (App, Web, WeChat, QQ)",
+        name: "remote.toggle",
+        title: "Toggle remote control",
         category: "Agent",
         slashName: "remote-control",
         slashAliases: ["remote"],
+        run: () => {
+          const runtime = sdk.api["server.runtime"]
+          const sessionID = route.data.type === "session" ? route.data.sessionID : undefined
+          void (async () => {
+            const status = await runtime.get()
+            const enable = !status.enabled
+            await runtime.setEnabled({ enabled: enable })
+            if (sessionID) await runtime.setSessionEnabled?.({ sessionID, enabled: enable })
+            toast.show({ message: enable ? "远程控制已开启" : "远程控制已关闭" })
+          })().catch(() => toast.show({ message: "远程控制状态切换失败", variant: "error" }))
+        },
+      },
+      {
+        name: "remote.settings",
+        title: "Remote control settings",
+        category: "Agent",
+        slashName: "remote-settings",
         run: () => {
           dialog.replace(() => <DialogRemote />)
         },
