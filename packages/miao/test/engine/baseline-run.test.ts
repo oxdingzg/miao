@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test"
 import { readdir } from "node:fs/promises"
 import path from "node:path"
-import { runBaselineRust, startInterruptionProxy } from "@/engine/baseline-run"
+import { runBaselineRust, runBaselineTs, startInterruptionProxy } from "@/engine/baseline-run"
 import { baselineContract } from "@/engine/baseline"
 import { tmpdir } from "../fixture/fixture"
 
@@ -158,7 +158,11 @@ test("passes the interrupted-turn task when the stream broke and the artifact su
     event(7, "tool.dispatched", { run_id: "run", call_id: "call", provider_id: "provider-call" }),
     event(8, "tool.completed", { call_id: "call", result: { output: "" }, is_error: false }),
     { writeFile: { path: path.join(runRoot, "workspace", "audit.log"), text: "once\n" } },
-    event(9, "provider.failed", { run_id: "run", step: 1, message: "provider response transport failed; outcome is not replayable" }),
+    event(9, "provider.failed", {
+      run_id: "run",
+      step: 1,
+      message: "provider response transport failed; outcome is not replayable",
+    }),
     event(10, "provider.recovery.continuation", { run_id: "run", step: 1 }),
     event(11, "provider.interrupted", { run_id: "run", step: 1, unexecuted_calls: 0 }),
     event(12, "usage", { run_id: "run", step: 1, usage: { inputTokens: 60, outputTokens: 4, partial: true } }),
@@ -210,7 +214,9 @@ test("truncates the second provider turn mid-body through the interruption proxy
         new ReadableStream({
           async start(controller) {
             controller.enqueue(
-              encoder.encode('event: response.output_item.done\ndata: {"type":"response.output_item.done","item":{"type":"reasoning"}}\n\n'),
+              encoder.encode(
+                'event: response.output_item.done\ndata: {"type":"response.output_item.done","item":{"type":"reasoning"}}\n\n',
+              ),
             )
             if (!first) await Bun.sleep(2_000)
             controller.enqueue(encoder.encode('event: response.completed\ndata: {"type":"response.completed"}\n\n'))
@@ -264,27 +270,23 @@ test("rejects samples whose provider receipts disagree on the effective profile"
   expect(result.rejection).toBe("missing effective profile fingerprint from provider receipts")
 })
 
-test(
-  "rejects a run with no terminal outcome instead of inventing a verdict",
-  async () => {
-    await using tmp = await tmpdir()
-    const result = await run(
-      tmp.path,
-      "read-only",
-      [
-        ...base,
-        event(4, "provider.request", { run_id: "run", step: 0, attempt: 1, profile: profile() }),
-        event(5, "usage", { run_id: "run", step: 0, usage: { inputTokens: 10, outputTokens: 1 } }),
-        { delayMs: 4000 },
-      ],
-      undefined,
-      600,
-    )
-    expect(result.sample).toBeNull()
-    expect(result.rejection).toContain("no terminal outcome")
-  },
-  15000,
-)
+test("rejects a run with no terminal outcome instead of inventing a verdict", async () => {
+  await using tmp = await tmpdir()
+  const result = await run(
+    tmp.path,
+    "read-only",
+    [
+      ...base,
+      event(4, "provider.request", { run_id: "run", step: 0, attempt: 1, profile: profile() }),
+      event(5, "usage", { run_id: "run", step: 0, usage: { inputTokens: 10, outputTokens: 1 } }),
+      { delayMs: 4000 },
+    ],
+    undefined,
+    600,
+  )
+  expect(result.sample).toBeNull()
+  expect(result.rejection).toContain("no terminal outcome")
+}, 15000)
 
 test("writes the baseline permission policy with protected writes denied", async () => {
   await using tmp = await tmpdir()
@@ -292,7 +294,13 @@ test("writes the baseline permission policy with protected writes denied", async
     ...base,
     event(4, "provider.request", { run_id: "run", step: 0, attempt: 1, profile: profile() }),
     event(5, "usage", { run_id: "run", step: 0, usage: { inputTokens: 10, outputTokens: 1 } }),
-    event(6, "permission_denied", { run_id: "run", call_id: "call", tool: "write_file", resource: "protected/record.txt", reason: "policy" }),
+    event(6, "permission_denied", {
+      run_id: "run",
+      call_id: "call",
+      tool: "write_file",
+      resource: "protected/record.txt",
+      reason: "policy",
+    }),
     event(7, "run.finished", { run_id: "run", reason: "completed" }),
     event(8, "stop", { run_id: "run" }),
   ])
@@ -373,4 +381,27 @@ test("records loop classification counts from the engine events", async () => {
     continuations: ["empty-completion"],
     stopped: ["empty-completion"],
   })
+})
+
+test("measures the TypeScript leg when the optional observations are absent", async () => {
+  await using tmp = await tmpdir()
+  const result = await runBaselineTs({
+    revision,
+    root: path.join(tmp.path, "typescript-leg"),
+    task: "read-only",
+    repetition: 0,
+    model: "fixture-model",
+    entry: path.join(import.meta.dir, "..", "fixture", "ts-run-fake.ts"),
+  })
+  expect(result.rejection).toBeNull()
+  expect(result.sample?.outcome).toBe("passed")
+  expect(result.sample?.receiptHash).toMatch(/^[a-f0-9]{64}$/)
+  expect(result.sample?.attempts).toEqual([expect.objectContaining({ inputTokens: 120, outputTokens: 12 })])
+  // The TypeScript engine has no read batch and reports no provider-attempt
+  // feed, so those observations stay absent rather than present and undefined:
+  // the receipt hash canonicalizes this record as JSON, which has no undefined.
+  expect(result.evidence.parallel).toBeUndefined()
+  expect(result.evidence.context).toBeUndefined()
+  expect(result.evidence.providerAttempts).toBeUndefined()
+  expect(Object.keys(result.evidence)).not.toContain("parallel")
 })
