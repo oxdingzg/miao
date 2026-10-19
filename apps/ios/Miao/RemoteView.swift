@@ -134,7 +134,7 @@ struct RemoteView: View {
                         Image(systemName: "line.3.horizontal")
                     }.accessibilityLabel("会话侧栏").accessibilityIdentifier("sessionSidebar")
                         .accessibilityValue(model.accountSignedIn
-                            ? "已登录；电脑：\(model.hosts.count)；已连接：\(model.clients.values.filter { $0.ready }.count)"
+                            ? "已登录；电脑：\(model.hosts.count)；已连接：\(model.clients.values.filter { $0.ready }.count)；状态：\(model.error ?? model.accountError ?? "正常")"
                             : "未登录")
                 }
             }

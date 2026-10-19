@@ -342,6 +342,7 @@ final class AppModel {
             let resolved = raw.isEmpty ? defaultAccountURL : raw
             guard let url = URL(string: resolved) else { throw HubAccountError.invalidEndpoint }
             let next = try HubAccount(origin: url, keychainService: accountService, allowLoopbackHTTP: AppTestConfiguration.allowLoopbackHTTP)
+            accountIdentityID = nil
             accountSignedIn = false; discoveredHosts = []
             await clearEnrollment()
             let pendingPair = pairTask
@@ -383,6 +384,7 @@ final class AppModel {
             let raw = (accountURL.isEmpty ? defaultAccountURL : accountURL).trimmingCharacters(in: .whitespacesAndNewlines)
             guard let url = URL(string: raw) else { throw HubAccountError.invalidEndpoint }
             let next = try HubAccount(origin: url, keychainService: accountService, allowLoopbackHTTP: AppTestConfiguration.allowLoopbackHTTP)
+            accountIdentityID = nil
             accountSignedIn = false; discoveredHosts = []
             await clearEnrollment()
             let pendingPair = pairTask
@@ -477,6 +479,7 @@ final class AppModel {
             guard generation == accountEpoch else { return }
             accountError = accountMessage(error)
             if error as? HubAccountError == .authenticationRequired {
+                accountIdentityID = nil
                 accountSignedIn = false; discoveredHosts = []
                 for client in clients.values { await client.close() }
                 connectionEpoch += 1
