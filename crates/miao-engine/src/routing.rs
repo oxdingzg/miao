@@ -1,7 +1,6 @@
 use crate::{
     credential::Source,
     gemini::Gemini,
-    openai_chat::AuthStyle,
     openai_chat::OpenAIChat,
     openai_responses::{OpenAIResponses, Profile},
     protocol::ModelRequest,
@@ -9,10 +8,7 @@ use crate::{
 };
 use async_trait::async_trait;
 use serde_json::{json, Value};
-use std::{
-    collections::{BTreeMap, BTreeSet},
-    sync::Arc,
-};
+use std::{collections::BTreeSet, sync::Arc};
 use tokio::sync::mpsc;
 use tokio_util::sync::CancellationToken;
 
@@ -48,58 +44,10 @@ pub fn build_with_auth(
     prompt_cache: bool,
     auth: Option<&crate::model_routes::Auth>,
 ) -> Result<Arc<dyn Provider>, ProviderError> {
-    let (style, headers, query) = match auth {
-        Some(auth) => (
-            auth.style.as_deref(),
-            auth.headers.clone(),
-            auth.query.clone(),
-        ),
-        None => (None, BTreeMap::new(), BTreeMap::new()),
-    };
-    let query = if query.is_empty() {
-        None
-    } else {
-        Some(
-            query
-                .iter()
-                .map(|(name, value)| format!("{}={}", name, value))
-                .collect::<Vec<_>>()
-                .join("&"),
-        )
-    };
-    match (name, style) {
-        ("openai-chat", style) => {
-            let endpoint = endpoint
-                .ok_or_else(|| ProviderError::Stream("route requires an endpoint".into()))?;
-            let provider = OpenAIChat::with_auth(
-                endpoint.into(),
-                source,
-                model,
-                match style {
-                    Some("api-key") => AuthStyle::ApiKey,
-                    _ => AuthStyle::Bearer,
-                },
-                headers,
-                query.clone(),
-            )
-            .map_err(|_| ProviderError::Transport)?;
-            Ok(Arc::new(provider))
-        }
-        ("anthropic", style) => {
-            let endpoint = endpoint
-                .unwrap_or("https://api.anthropic.com/v1/messages")
-                .into();
-            let provider = match style {
-                Some("bearer") => Anthropic::with_bearer_source(endpoint, source, model)
-                    .map_err(|_| ProviderError::Transport)?,
-                _ => Anthropic::with_source(endpoint, source, model)
-                    .map_err(|_| ProviderError::Transport)?,
-            }
-            .with_prompt_cache(prompt_cache)
-            .with_headers(headers);
-            Ok(Arc::new(provider))
-        }
-        _ => build_with_responses(name, endpoint, source, model, prompt_cache, None, None),
+    let provider = build_with_responses(name, endpoint, source, model, prompt_cache, None, None)?;
+    match auth {
+        Some(auth) => provider.with_route_auth(auth),
+        None => Ok(provider),
     }
 }
 
@@ -112,6 +60,9 @@ pub fn build_with_responses(
     cache: Option<crate::responses_cache::Contract>,
     websocket: Option<crate::responses_websocket::Contract>,
 ) -> Result<Arc<dyn Provider>, ProviderError> {
+    if matches!(&source, Source::Aws { .. }) && name != "amazon-bedrock" {
+        return Err(ProviderError::AuthProfile);
+    }
     if (cache.is_some() || websocket.is_some())
         && !matches!(name, "openai-responses" | "subscription-responses")
     {
@@ -120,6 +71,7 @@ pub fn build_with_responses(
         ));
     }
     match name {
+        "amazon-bedrock" => build_bedrock(endpoint, source, model, None, prompt_cache),
         "anthropic" => Ok(Arc::new(
             Anthropic::with_source(
                 endpoint
@@ -208,6 +160,49 @@ pub fn build_with_responses(
         _ => Err(ProviderError::Stream("unknown provider".into())),
     }
 }
+pub fn build_bedrock(
+    endpoint: Option<&str>,
+    source: Source,
+    model: String,
+    region: Option<&str>,
+    prompt_cache: bool,
+) -> Result<Arc<dyn Provider>, ProviderError> {
+    let provider = match source {
+        Source::Aws {
+            region: selected,
+            profile,
+        } => crate::bedrock::Bedrock::with_chain(
+            endpoint.map(str::to_owned),
+            model,
+            region.unwrap_or(&selected).into(),
+            profile,
+        )?,
+        source => {
+            let selected = region
+                .map(str::to_owned)
+                .or_else(|| {
+                    endpoint
+                        .and_then(|endpoint| reqwest::Url::parse(endpoint).ok())
+                        .and_then(|url| {
+                            url.host_str()
+                                .and_then(|host| host.strip_prefix("bedrock-runtime."))
+                                .and_then(|suffix| suffix.split('.').next())
+                                .map(str::to_owned)
+                        })
+                })
+                .or_else(|| std::env::var("AWS_REGION").ok())
+                .unwrap_or_else(|| "us-east-1".into());
+            crate::bedrock::Bedrock::with_bearer_source(
+                endpoint.map(str::to_owned),
+                model,
+                selected,
+                source,
+            )?
+        }
+    };
+    Ok(Arc::new(provider.with_prompt_cache(prompt_cache)))
+}
+
 pub struct Fallback {
     primary: Arc<dyn Provider>,
     secondary: Arc<dyn Provider>,
@@ -243,6 +238,35 @@ impl Fallback {
 }
 #[async_trait]
 impl Provider for Fallback {
+    fn with_route_auth(
+        &self,
+        auth: &crate::model_routes::Auth,
+    ) -> Result<Arc<dyn Provider>, ProviderError> {
+        Ok(Arc::new(Self::new(
+            self.primary.with_route_auth(auth)?,
+            Arc::clone(&self.secondary),
+        )?))
+    }
+    fn with_request_options(
+        &self,
+        options: crate::request_options::Options,
+    ) -> Result<Arc<dyn Provider>, ProviderError> {
+        // The host declared these options for the primary model. A secondary
+        // model retains its own route/credential and generation defaults.
+        Ok(Arc::new(Self::new(
+            self.primary.with_request_options(options)?,
+            Arc::clone(&self.secondary),
+        )?))
+    }
+    fn with_input_modalities(
+        &self,
+        input: Vec<String>,
+    ) -> Result<Arc<dyn Provider>, ProviderError> {
+        Ok(Arc::new(Self::new(
+            self.primary.with_input_modalities(input)?,
+            Arc::clone(&self.secondary),
+        )?))
+    }
     fn for_model(&self, model: &str) -> Option<Arc<dyn Provider>> {
         let primary = self.primary.for_model(model)?;
         if primary.identity() == self.secondary.identity() {

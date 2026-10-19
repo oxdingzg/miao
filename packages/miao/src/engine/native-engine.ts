@@ -1,10 +1,19 @@
+import { Event } from "@miao/schema/event"
+import { agentManifest, modelRoute } from "./product-agent"
 import { LocationServiceMap } from "@miao/core/location-service-map"
 import { SessionModelRoute } from "@miao/schema/session-model-route"
+import { Model } from "@miao/schema/model"
 import { AmbientContext } from "./ambient-context"
 import { ProductHooks } from "./product-hooks"
 import { ProductLsp } from "./product-lsp"
 import { ProductFormatter } from "./product-formatter"
 import { ProductRoutes } from "./product-routes"
+import { ProductMcp } from "./product-mcp"
+import { McpAuth } from "@miao/core/mcp/auth"
+import { PromptMaterialization } from "./prompt-materialization"
+import { Blob } from "@miao/core/blob"
+import { FSUtil } from "@miao/core/fs-util"
+import type { PromptInput } from "@miao/schema/prompt-input"
 import { Credential } from "@miao/core/credential"
 import os from "node:os"
 import path from "node:path"
@@ -18,6 +27,7 @@ import { ConflictError } from "@miao/protocol/errors"
 import { Location } from "@miao/schema/location"
 import { Effect, Layer, Option, Schema } from "effect"
 import { EngineError, type EngineOptions, type EngineEvent } from "./client"
+import { discoveredEngine } from "./discovery"
 import { makeEngineOwners } from "./owners"
 import { NativeRecovery } from "./recovery"
 import { engineMessageSequence } from "./message-sequence"
@@ -44,6 +54,8 @@ const QuestionBindings = Schema.Array(
     input: Schema.Unknown,
   }),
 )
+/** The engine's `{accepted: boolean}` reply shared by cancel-shaped commands. */
+const AcceptedReply = Schema.Struct({ accepted: Schema.Boolean })
 
 import { replayJournal } from "./journal"
 import { readTranscript } from "./transcript"
@@ -58,7 +70,10 @@ export const nativeEngineOptions = (
   environment: Record<string, string | undefined> = process.env,
   settings: Omit<EngineOptions, "db" | "workspace"> | undefined = undefined,
 ): Omit<EngineOptions, "db" | "workspace"> | undefined => {
-  const binary = environment.MIAO_ENGINE_BIN
+  // An explicit binary wins; otherwise use a discovered, protocol-compatible
+  // installation so native Sessions need no environment variable. A custom
+  // environment object stays deterministic for tests.
+  const binary = environment.MIAO_ENGINE_BIN ?? (environment === process.env ? discoveredEngine() : undefined)
   if (!binary) return undefined
   const limits = environment.MIAO_CONTEXT_LIMITS
   // Precedence: the operator's environment overrides the global config file
@@ -190,7 +205,10 @@ type Owners = Effect.Success<ReturnType<typeof makeEngineOwners>>
  * The transport implementation over a server-scoped owner registry. Kept apart
  * from the layer so tests exercise the exact code the server runs.
  */
-export const fromOwners = (owners: Owners): NativeEngine.Interface => {
+export const fromOwners = (
+  owners: Owners,
+  preparePrompt?: (input: Parameters<NativeEngine.Interface["admit"]>[0]) => Effect.Effect<PromptInput.Prompt, unknown>,
+): NativeEngine.Interface => {
   const connect = (input: { storage: string; location: Location.Ref; refreshContext?: boolean }) =>
     owners.get({
       storage: input.storage,
@@ -218,10 +236,65 @@ export const fromOwners = (owners: Owners): NativeEngine.Interface => {
           route_id: Schema.NullOr(Schema.String),
           protocol: Schema.String,
           model: Schema.String,
+          variants: Schema.optionalKey(Schema.Array(Model.VariantID)),
         }),
       ),
     )(await connection.client.request("model_catalog"))
   return {
+    shell: (input) =>
+      read(input, async (connection) => {
+        const callID = input.id ?? Event.ID.create()
+        const admitted = await connection.client.request("shell", {
+          session_id: input.sessionID,
+          call_id: callID,
+          command: input.command,
+          timeout_ms: 120_000,
+        })
+        const status = Schema.Struct({ state: Schema.String })
+        const deadline = Date.now() + 15 * 60_000
+        let receipt = Schema.decodeUnknownSync(status)(admitted)
+        while (receipt.state === "pending" || receipt.state === "running") {
+          if (Date.now() >= deadline)
+            throw new EngineError(
+              "operator_shell_wait_timeout",
+              `session.shell ${callID} did not settle before the wait deadline; inspect its durable receipt before retrying`,
+            )
+          await Bun.sleep(50)
+          receipt = Schema.decodeUnknownSync(status)(
+            await connection.client.request("shell_status", { session_id: input.sessionID, call_id: callID }),
+          )
+        }
+        if (receipt.state !== "ended")
+          throw new EngineError(
+            "operator_shell_refused",
+            `session.shell ${callID} ${receipt.state}; inspect the recorded refusal or unknown outcome`,
+          )
+        if (input.resume !== false) await connection.client.request("wake", { session_id: input.sessionID })
+      }).pipe(Effect.asVoid),
+    inject: (input) =>
+      read(input, async (connection) => {
+        await connection.client.request("inject", {
+          session_id: input.sessionID,
+          ...(input.id ? { input_id: input.id } : {}),
+          text: input.text,
+          source: input.source,
+        })
+        if (input.resume !== false) await connection.client.request("wake", { session_id: input.sessionID })
+      }).pipe(Effect.asVoid),
+    selectAccount: (input) =>
+      read(input, (connection) =>
+        connection.client.request("select_account", {
+          session_id: input.sessionID,
+          credential_id: input.credentialID,
+        }),
+      ).pipe(Effect.asVoid),
+    selectAgent: (input) =>
+      read(input, async (connection) =>
+        connection.client.request("select_agent", {
+          session_id: input.sessionID,
+          agent: agentManifest(input.agent, await routes(connection)),
+        }),
+      ).pipe(Effect.asVoid),
     modelRoutes: (input) =>
       read<readonly SessionModelRoute.Info[]>(input, async (connection) => {
         await connection.client.request("snapshot", { session_id: input.sessionID })
@@ -230,27 +303,15 @@ export const fromOwners = (owners: Owners): NativeEngine.Interface => {
           protocol: entry.protocol,
           wireModel: entry.model,
           default: entry.route_id === null,
+          ...(entry.variants?.length ? { variants: entry.variants } : {}),
         }))
       }),
     selectModel: (input) =>
       read(input, async (connection) => {
-        if (input.model.variant !== undefined)
-          throw new EngineError("unsupported_model_variant", "Native model routes do not accept product variants")
-        const entry = (await routes(connection)).find((entry) => {
-          const model = SessionModelRoute.reference(entry.route_id)
-          return model.providerID === input.model.providerID && model.id === input.model.id
-        })
-        if (!entry) throw new EngineError("unknown_model_route", "Model is not in the native host route catalog")
+        const binding = modelRoute(input.model, await routes(connection))
         return connection.client.request("select_model", {
           session_id: input.sessionID,
-          binding:
-            entry.route_id === null
-              ? null
-              : {
-                  route_id: entry.route_id,
-                  protocol: entry.protocol,
-                  model: entry.model,
-                },
+          binding: binding.route_id === null && input.model.variant === undefined ? null : binding,
         })
       }).pipe(Effect.asVoid),
     recoveries: (input) =>
@@ -267,20 +328,46 @@ export const fromOwners = (owners: Owners): NativeEngine.Interface => {
       read(input, (connection) =>
         connection.client.request("initialize", { session_id: input.sessionID, title: input.title }),
       ).pipe(Effect.asVoid),
+    cancelInput: (input) =>
+      read<unknown>(input, (connection) =>
+        connection.client.request("cancel_input", {
+          session_id: input.sessionID,
+          input_id: input.inputID,
+        }),
+      ).pipe(Effect.map((value) => Schema.decodeUnknownSync(AcceptedReply)(value).accepted)),
+    requestCompact: (input) =>
+      read<unknown>(input, (connection) =>
+        connection.client.request("request_compact", { session_id: input.sessionID }),
+      ).pipe(Effect.asVoid),
+    archive: (input) =>
+      read<unknown>(input, (connection) =>
+        connection.client.request("archive", {
+          session_id: input.sessionID,
+          archived: input.archived,
+        }),
+      ).pipe(Effect.map((value) => Schema.decodeUnknownSync(AcceptedReply)(value).accepted)),
+    remove: (input) =>
+      read<unknown>(input, (connection) => connection.client.request("remove", { session_id: input.sessionID })).pipe(
+        Effect.asVoid,
+      ),
     admit: (input) =>
-      connect({ ...input, refreshContext: true }).pipe(
-        Effect.flatMap((connection) =>
-          Effect.tryPromise({
-            try: () =>
-              connection.session.promptProduct({
-                sessionID: input.sessionID,
-                prompt: { text: input.prompt.text },
-                id: input.id,
-                delivery: input.delivery,
-                resume: input.resume,
+      (preparePrompt ? preparePrompt(input) : Effect.succeed(input.prompt)).pipe(
+        Effect.flatMap((prompt) =>
+          connect({ ...input, refreshContext: true }).pipe(
+            Effect.flatMap((connection) =>
+              Effect.tryPromise({
+                try: () =>
+                  connection.session.promptProduct({
+                    sessionID: input.sessionID,
+                    prompt,
+                    id: input.id,
+                    delivery: input.delivery,
+                    resume: input.resume,
+                  }),
+                catch: (error) => refusal(input.sessionID, error),
               }),
-            catch: (error) => refusal(input.sessionID, error),
-          }),
+            ),
+          ),
         ),
         Effect.mapError((error) => refusal(input.sessionID, error)),
       ),
@@ -337,24 +424,20 @@ export const fromOwners = (owners: Owners): NativeEngine.Interface => {
       }),
     replyPermission: (input) =>
       read(input, async (connection) => {
-        // An engine allow is once-only. Never silently turn a persistent grant
-        // into a one-off approval (or create a TS rule the engine cannot read).
-        if (input.reply === "always")
-          throw new EngineError(
-            "persistent_approval_unavailable",
-            "Native approvals are once-only; configure a native policy rule for persistent grants",
-          )
         const snapshot = await connection.client.request("snapshot", { session_id: input.sessionID })
         const binding = Schema.decodeUnknownSync(ApprovalBindings)(snapshot).approvals.find(
           (binding) => binding.session_id === input.sessionID && `per_${binding.request_id}` === input.requestID,
         )
         if (!binding) throw new EngineError("approval_not_found", "No pending approval in this Session")
-        return connection.client.approve(input.sessionID, {
+        const response = {
           request_id: binding.request_id,
           input_hash: binding.input_hash,
           policy_revision: binding.policy_revision,
-          decision: input.reply === "once" ? "allow" : "deny",
-        })
+          decision: input.reply === "reject" ? ("deny" as const) : ("allow" as const),
+        }
+        if (input.reply === "always")
+          return connection.client.request("approve_persistent", { session_id: input.sessionID, response })
+        return connection.client.approve(input.sessionID, response)
       }).pipe(Effect.asVoid),
     questions: (input) =>
       read<readonly Question.Request[]>(input, async (connection) => {
@@ -474,7 +557,10 @@ const layer = Layer.effect(
   Effect.gen(function* () {
     const global = yield* Global.Service
     const credentials = yield* Credential.Service
+    const mcpAuth = yield* McpAuth.Service
     const locations = yield* LocationServiceMap.Service
+    const blob = yield* Blob.Service
+    const fs = yield* FSUtil.Service
     const settings = yield* Effect.promise(() => engineSettings(global.config))
     const configuration = nativeEngineOptions(process.env, settings)
     if (!configuration) return yield* Effect.die("NativeEngine layer built without MIAO_ENGINE_BIN")
@@ -489,18 +575,19 @@ const layer = Layer.effect(
       configuration.workerConfigFile = workerConfigFile
       console.log("[worker-host] config written:", workerConfigFile)
     }
-    const owners = yield* makeEngineOwners(configuration, (location) =>
+    const mcp = yield* ProductMcp.prepare(configuration).pipe(Effect.provideService(McpAuth.Service, mcpAuth))
+    const owners = yield* makeEngineOwners({ ...configuration, ...mcp }, (location) =>
       Effect.gen(function* () {
         const routes = yield* ProductRoutes.prepare(location, configuration).pipe(
           Effect.provideService(Credential.Service, credentials),
         )
-        const effective = { ...configuration, ...routes }
+        const effective = { ...configuration, ...routes, ...mcp }
         const context = yield* AmbientContext.prepare(location, effective)
         const hooks = yield* ProductHooks.prepare(location, { ...effective, ...context.options })
         const lsp = yield* ProductLsp.prepare(location, effective)
         const formatter = yield* ProductFormatter.prepare(location, effective)
         return {
-          options: { ...routes, ...context.options, ...hooks, ...lsp, ...formatter },
+          options: { ...routes, ...mcp, ...context.options, ...hooks, ...lsp, ...formatter },
           refresh: context.refresh,
         }
       }).pipe(
@@ -520,14 +607,27 @@ const layer = Layer.effect(
         yield* Effect.ignore(owners.sweepTimers())
       }),
     ).pipe(Effect.forkScoped)
-    return fromOwners(owners)
+    return fromOwners(owners, (input) =>
+      PromptMaterialization.prepare(input.prompt).pipe(
+        Effect.provideService(Blob.Service, blob),
+        Effect.provideService(FSUtil.Service, fs),
+      ),
+    )
   }),
 )
 
 export const node = makeGlobalNode({
   service: NativeEngine.Service,
   layer,
-  deps: [ClientEvents.node, Global.node, Credential.node, LocationServiceMap.node],
+  deps: [
+    ClientEvents.node,
+    Global.node,
+    Credential.node,
+    McpAuth.node,
+    LocationServiceMap.node,
+    Blob.node,
+    FSUtil.node,
+  ],
 })
 
 export * as NativeEngineNode from "./native-engine"

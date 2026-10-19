@@ -15,6 +15,7 @@ import {
 } from "@miao/llm"
 import { SessionGoal } from "../goal"
 import { SessionExecution } from "../execution"
+import { SessionEnginePlacement } from "../engine-placement"
 import { Cause, DateTime, Duration, Effect, FiberSet, Layer, Option, Semaphore, Stream, Schema } from "effect"
 import { and, asc, desc, eq, isNull, ne, sql } from "drizzle-orm"
 import { AgentV2 } from "../../agent"
@@ -92,6 +93,7 @@ import { SessionOutputGuard } from "./output-guard"
 import { SessionToolInputGuard } from "./tool-input-guard"
 import { SessionFirstByteGuard } from "./first-byte-guard"
 import { createLLMEventPublisher, progressContent, progressGate } from "./publish-llm-event"
+import { SessionToolDispatch } from "../tool-dispatch"
 import { toLLMMessages } from "./to-llm-message"
 import { inlineTextFiles, materializeBlobRefs } from "./materialize-files"
 import { MAX_STEPS_PROMPT } from "./max-steps"
@@ -443,6 +445,7 @@ const layer = Layer.effect(
     const failInterruptedTools = Effect.fn("SessionRunner.failInterruptedTools")(function* (
       sessionID: SessionSchema.ID,
     ) {
+      yield* SessionToolDispatch.recover(db, sessionID)
       for (const message of yield* getContext(sessionID)) {
         if (message.type !== "assistant") continue
         for (const tool of message.content) {
@@ -847,17 +850,25 @@ const layer = Layer.effect(
       })
       yield* maybeTitle(context)
       const compactStartedAt = Date.now()
+      const compactionInput = {
+        sessionID: session.id,
+        entries,
+        report: phase,
+        model,
+        summarizeModel,
+        modelInfo: resolved.info,
+        request,
+        observedTokens: lastPromptTokens.get(session.id),
+        observedMessages: lastPromptMessages.get(session.id),
+        observedPrefix: lastPromptPrefix.get(session.id),
+      }
       if (SessionCompactRequest.consume(session.id)) {
         // A manual compaction is the user's reset: give the breaker a fresh try.
         yield* compaction.reset(session.id)
-        const attempt = yield* compaction.compact({
-          sessionID: session.id,
-          entries,
-          model,
-          summarizeModel,
-          request,
-          report: phase,
-        })
+        // Size the request the same way an automatic decision would, so the
+        // strategy fits against the provider's count instead of re-measuring.
+        const contextBudget = yield* compaction.budget(compactionInput)
+        const attempt = yield* compaction.compact({ ...compactionInput, tokens: contextBudget.input })
         if (attempt.result === "compacted") {
           turns.set(session.id, { at: Date.now(), afterCompaction: true })
           SessionCacheProbe.current.invalidate(session.id)
@@ -866,21 +877,10 @@ const layer = Layer.effect(
           lastPromptPrefix.delete(session.id)
           lastContextNotice.delete(session.id)
         }
-        yield* recordCompaction(session.id, "overflow", Date.now() - compactStartedAt)
+        yield* recordCompaction(session.id, "manual", Date.now() - compactStartedAt)
         return yield* Effect.die(stopAfterCompaction(currentStep))
       }
       const compactCheckedAt = Date.now()
-      const compactionInput = {
-        sessionID: session.id,
-        entries,
-        report: phase,
-        model,
-        summarizeModel,
-        request,
-        observedTokens: lastPromptTokens.get(session.id),
-        observedMessages: lastPromptMessages.get(session.id),
-        observedPrefix: lastPromptPrefix.get(session.id),
-      }
       const contextBudget = yield* compaction.budget(compactionInput)
       if (yield* compaction.compactIfNeeded(compactionInput, contextBudget)) {
         turns.set(session.id, { at: Date.now(), afterCompaction: true })
@@ -936,6 +936,7 @@ const layer = Layer.effect(
         contextBudget,
         normalizeContent: normalizeToolContent,
         normalizeStructured: normalizeToolStructured,
+        dispatch: db,
       })
       const withPublication = Semaphore.makeUnsafe(1).withPermit
       const publish = (event: LLMEvent, outputPaths: ReadonlyArray<string> = []) =>
@@ -1028,16 +1029,19 @@ const layer = Layer.effect(
               return
             }
             const assistantMessageID = yield* publisher.assistantMessageID(event.id)
-            const settlement = toolMaterialization.settle({
+            const dispatch = publisher.dispatchToken(event.id)
+            if (!dispatch) return yield* Effect.die("Local tool call has no durable dispatch authority")
+            const settlement = Effect.suspend(() => toolMaterialization.settle({
               sessionID: session.id,
               agent: agent.id,
               assistantMessageID,
               call: event,
-            })
-            const settleAndPublish = (blackbox
-              ? SessionBlackbox.tool(session.id, event.name, event.input, settlement)
-              : settlement
-            ).pipe(
+            }))
+            const settleAndPublish = SessionToolDispatch.consume(db, dispatch).pipe(
+              Effect.orDie,
+              Effect.andThen(
+                blackbox ? SessionBlackbox.tool(session.id, event.name, event.input, settlement) : settlement,
+              ),
               Effect.flatMap((settled) =>
                 Effect.gen(function* () {
                   // A deferred catalog the model cannot search its way out of
@@ -1203,7 +1207,7 @@ const layer = Layer.effect(
             recoverOverflow &&
             !publisher.hasVisibleOutput() &&
             contextOverflow &&
-            (yield* restore(recoverOverflow({ sessionID: session.id, entries, model, summarizeModel, request, report: phase })))
+            (yield* restore(recoverOverflow({ sessionID: session.id, entries, model, summarizeModel, modelInfo: resolved.info, request, report: phase })))
           ) {
             turns.set(session.id, { at: Date.now(), afterCompaction: true })
             SessionCacheProbe.current.invalidate(session.id)
@@ -1939,6 +1943,7 @@ const layer = Layer.effect(
         readonly phase?: ReportPhase
     }) {
       yield* ownership.claim(input.sessionID)
+      yield* SessionEnginePlacement.requireTypeScript(db, input.sessionID)
       if (yield* SessionBlackbox.Current) yield* BlackboxHistory.checkpoint(input.sessionID, "drain.started", store.context(input.sessionID), db)
       const report: ReportPhase = input.phase ?? (() => Effect.void)
       return yield* Effect.scoped(

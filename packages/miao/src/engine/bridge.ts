@@ -8,6 +8,7 @@ import { Delivery } from "@miao/schema/session-delivery"
 import { StatusInfo } from "@miao/schema/session-event"
 import { adoptSession, messageID } from "./identity"
 import type { EngineEvent, EngineProgress } from "./client"
+import { decodeAttachments } from "./prompt-attachments"
 
 /**
  * The product `session.next.status` payload for one status transition. Status is
@@ -80,6 +81,7 @@ export function translatePrompt(
   if (typeof event.data !== "object" || event.data === null || !("prompt" in event.data)) return undefined
   const text = event.data.prompt
   if (typeof text !== "string") return undefined
+  const files = "attachments" in event.data ? decodeAttachments(event.data.attachments) : []
   return {
     sessionID: adoptSession(event.session_id),
     timestamp: eventTimestamp(event),
@@ -87,7 +89,7 @@ export function translatePrompt(
       "input_id" in event.data && typeof event.data.input_id === "string" && event.data.input_id.startsWith("msg_")
         ? SessionMessage.ID.make(event.data.input_id)
         : messageID(event.session_id, event.seq),
-    prompt: { text },
+    prompt: { text, ...(files.length ? { files } : {}) },
     delivery,
   }
 }
@@ -924,6 +926,12 @@ export function translateCopiedPrompt(event: EngineEvent): SessionPromptAdmitted
       return [part.text]
     })
     .join("")
+  const files = decodeAttachments(
+    event.data.content.filter(
+      (part: unknown) =>
+        typeof part === "object" && part !== null && "type" in part && (part.type === "image" || part.type === "file"),
+    ),
+  )
   return {
     sessionID: adoptSession(event.session_id),
     timestamp: eventTimestamp(event),
@@ -931,7 +939,7 @@ export function translateCopiedPrompt(event: EngineEvent): SessionPromptAdmitted
       "input_id" in event.data && typeof event.data.input_id === "string" && event.data.input_id.startsWith("msg_")
         ? SessionMessage.ID.make(event.data.input_id)
         : messageID(event.session_id, event.seq),
-    prompt: { text },
+    prompt: { text, ...(files.length ? { files } : {}) },
     delivery: "delivery" in event.data && event.data.delivery === "queue" ? "queue" : "steer",
   }
 }

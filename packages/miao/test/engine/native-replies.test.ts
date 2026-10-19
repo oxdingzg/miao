@@ -15,7 +15,7 @@ import { tmpdir } from "../fixture/fixture"
 
 const it = testEffectShared(AppNodeBuilder.build(ClientEvents.node))
 const binary = process.env.MIAO_ENGINE_BIN
-for (const kind of ["permission", "permission-reject", "question"] as const) {
+for (const kind of ["permission", "permission-reject", "permission-persistent", "question"] as const) {
   if (!binary) test.skip(`native ${kind} replies resolve the engine-owned request`, () => {})
   if (binary)
     it.live(
@@ -102,9 +102,6 @@ for (const kind of ["permission", "permission-reject", "question"] as const) {
           if (kind !== "question") {
             expect(pending.id).toStartWith("per_")
             const requestID = Permission.ID.make(pending.id)
-            const persistent = yield* native.replyPermission({ ...input, requestID, reply: "always" }).pipe(Effect.flip)
-            expect(persistent._tag).toBe("ConflictError")
-            expect(yield* native.permissions(input)).toHaveLength(1)
             const wrong = yield* native
               .replyPermission({ ...input, requestID: Permission.ID.make("per_absent"), reply: "once" })
               .pipe(Effect.flip)
@@ -117,7 +114,7 @@ for (const kind of ["permission", "permission-reject", "question"] as const) {
             yield* native.replyPermission({
               ...input,
               requestID,
-              reply: kind === "permission-reject" ? "reject" : "once",
+              reply: kind === "permission-reject" ? "reject" : kind === "permission-persistent" ? "always" : "once",
             })
           }
           if (kind === "question") {
@@ -151,6 +148,30 @@ for (const kind of ["permission", "permission-reject", "question"] as const) {
             throw new Error(`native ${kind} reply did not complete the run`)
           })
           expect(kind !== "question" ? yield* native.permissions(input) : yield* native.questions(input)).toEqual([])
+          if (kind === "permission-persistent") {
+            const events = yield* Effect.promise(() =>
+              connection.client.request("events", { session_id: input.sessionID, after: 0 }),
+            )
+            expect(
+              Array.isArray(events) &&
+                events.some((event) => event.kind === "approval.resolved" && event.data.persistent === true),
+            ).toBe(true)
+            const reuse = { ...input, sessionID: SessionID.make("ses_native_grant_reuse") }
+            yield* native.admit({ ...reuse, prompt: { text: "same read in another Session" } })
+            yield* Effect.promise(async () => {
+              const deadline = Date.now() + 10_000
+              while (Date.now() < deadline) {
+                const events = await connection.client.request("events", { session_id: reuse.sessionID, after: 0 })
+                if (Array.isArray(events) && events.some((event) => event.kind === "run.finished")) {
+                  expect(events.some((event) => event.kind === "permission.grant.used")).toBe(true)
+                  expect(events.some((event) => event.kind === "approval.requested")).toBe(false)
+                  return
+                }
+                await Bun.sleep(5)
+              }
+              throw new Error("persistent grant was not reused across native Sessions")
+            })
+          }
         }),
       20_000,
     )

@@ -885,7 +885,7 @@ function App(props: {
       },
       {
         name: "remote.login",
-        title: "Sign in to relay",
+        title: "Login / 登录中继",
         category: "Agent",
         slashName: "login",
         run: () => {

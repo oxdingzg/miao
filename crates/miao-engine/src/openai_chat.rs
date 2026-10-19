@@ -16,6 +16,7 @@ pub enum AuthStyle {
     /// Microsoft Azure Front Door style: the secret travels in an `api-key`
     /// header, never an Authorization bearer.
     ApiKey,
+    Copilot,
 }
 
 #[derive(Clone)]
@@ -24,6 +25,8 @@ pub struct OpenAIChat {
     endpoint: String,
     source: Source,
     model: String,
+    request_options: crate::request_options::Options,
+    input_modalities: Vec<String>,
     auth_style: AuthStyle,
     query: Option<String>,
     extra_headers: std::collections::BTreeMap<String, String>,
@@ -84,6 +87,8 @@ impl OpenAIChat {
             endpoint,
             source,
             model,
+            request_options: Default::default(),
+            input_modalities: vec![],
             auth_style,
             query,
             extra_headers,
@@ -93,6 +98,53 @@ impl OpenAIChat {
 
 #[async_trait]
 impl Provider for OpenAIChat {
+    fn with_route_auth(
+        &self,
+        auth: &crate::model_routes::Auth,
+    ) -> Result<std::sync::Arc<dyn Provider>, ProviderError> {
+        auth.validate()?;
+        let mut selected = self.clone();
+        selected.auth_style = match auth.style.as_deref() {
+            None => selected.auth_style,
+            Some("bearer") => AuthStyle::Bearer,
+            Some("api-key") => AuthStyle::ApiKey,
+            Some("copilot") => AuthStyle::Copilot,
+            _ => {
+                return Err(ProviderError::Stream(
+                    "unsupported Chat route auth style".into(),
+                ))
+            }
+        };
+        if let Some(query) = auth.query_string()? {
+            selected.query = Some(query);
+        }
+        auth.apply_headers(&mut selected.extra_headers);
+        Ok(std::sync::Arc::new(selected))
+    }
+    fn with_input_modalities(
+        &self,
+        input: Vec<String>,
+    ) -> Result<std::sync::Arc<dyn Provider>, ProviderError> {
+        crate::media::validate_modalities(&input)?;
+        let mut selected = self.clone();
+        selected.input_modalities = input;
+        Ok(std::sync::Arc::new(selected))
+    }
+    fn with_request_options(
+        &self,
+        mut options: crate::request_options::Options,
+    ) -> Result<std::sync::Arc<dyn Provider>, ProviderError> {
+        options.validate()?;
+        let mut selected = self.clone();
+        for (name, value) in std::mem::take(&mut options.headers) {
+            selected
+                .extra_headers
+                .retain(|key, _| !key.eq_ignore_ascii_case(&name));
+            selected.extra_headers.insert(name, value);
+        }
+        selected.request_options = options;
+        Ok(std::sync::Arc::new(selected))
+    }
     fn for_model(&self, model: &str) -> Option<std::sync::Arc<dyn Provider>> {
         if !crate::provider::valid_model(model) {
             return None;
@@ -141,8 +193,11 @@ impl OpenAIChat {
         cancel: CancellationToken,
         without_tools: bool,
     ) -> Result<Reply, ProviderError> {
+        let request = crate::media::normalize(request, "openai-chat", &self.input_modalities)?;
+        let copilot =
+            matches!(self.auth_style, AuthStyle::Copilot).then(|| crate::copilot::turn(&request));
         let credential = self.source.load().await?;
-        if credential.kind() != Kind::Key {
+        if credential.kind() != Kind::Key && !matches!(self.auth_style, AuthStyle::Copilot) {
             return Err(ProviderError::AuthProfile);
         }
         let mut messages = messages(&request.messages)?;
@@ -151,6 +206,7 @@ impl OpenAIChat {
         }
         let tools:Vec<Value>=request.tools.iter().map(|tool|json!({"type":"function","function":{"name":tool.name,"description":tool.description,"parameters":tool.input_schema}})).collect();
         let mut body = json!({"model":self.model,"messages":messages,"tools":tools,"stream":true,"stream_options":{"include_usage":true},"n":1});
+        self.request_options.apply(&mut body);
         if without_tools {
             body["tool_choice"] = json!("none");
         }
@@ -160,12 +216,18 @@ impl OpenAIChat {
         }
         let mut request = self.client.post(url).json(&body);
         request = match self.auth_style {
-            AuthStyle::Bearer => request.bearer_auth(credential.secret()),
+            AuthStyle::Bearer | AuthStyle::Copilot => request.bearer_auth(credential.secret()),
             AuthStyle::ApiKey => request.header("api-key", credential.secret()),
         };
-        let request = crate::provider::route_headers(request, &self.extra_headers)?
-            .build()
-            .map_err(|_| ProviderError::Transport)?;
+        let mut request = crate::provider::route_headers(
+            self.request_options.headers(request)?,
+            &self.extra_headers,
+        )?
+        .build()
+        .map_err(|_| ProviderError::Transport)?;
+        if let Some(headers) = copilot {
+            crate::copilot::apply(&mut request, &headers, false)?;
+        }
         let response =
             request_with_retry("openai-chat", &self.client, request, &progress, &cancel).await?;
         read_stream(response, progress, cancel, ChatState::default()).await

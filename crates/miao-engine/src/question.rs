@@ -126,7 +126,7 @@ impl Store {
         }
         let session = session.to_owned();
         self.call(move |conn| {
-            let tx = conn.transaction()?;
+            let tx = crate::store::write_tx(conn)?;
             let data: Option<String> = tx.query_row(
                 "SELECT data FROM engine_event WHERE session_id=?1 AND kind='question.requested' AND json_extract(data,'$.question_id')=?2 ORDER BY seq DESC LIMIT 1",
                 params![session,rejection.question_id], |row| row.get(0),
@@ -166,7 +166,7 @@ impl Store {
         let input = serde_json::to_value(input)?;
         let hash = input_digest(&location, "question", "@session/question", &input)?;
         self.call(move|conn|{
-            let tx=conn.transaction()?;
+            let tx=crate::store::write_tx(conn)?;
             let key=format!("{run}/{call}");
             let active:bool=tx.query_row("SELECT EXISTS(SELECT 1 FROM engine_tool t JOIN engine_run r ON t.run_id=r.id WHERE t.id=?1 AND t.name='question' AND t.state='dispatched' AND r.id=?2 AND r.session_id=?3 AND r.state='running')",params![key,run,session],|row|row.get(0))?;
             if !active{return Err(Error::Invalid("question has no active dispatched intent".into()));}
@@ -196,7 +196,7 @@ impl Store {
         }
         let session = session.to_owned();
         self.call(move|conn|{
-            let tx=conn.transaction()?;
+            let tx=crate::store::write_tx(conn)?;
             let data:Option<String>=tx.query_row("SELECT data FROM engine_event WHERE session_id=?1 AND kind='question.requested' AND json_extract(data,'$.question_id')=?2 ORDER BY seq DESC LIMIT 1",params![session,answer.question_id],|row|row.get(0)).optional()?;
             let data:Value=serde_json::from_str(&data.ok_or_else(||Error::Invalid("question not found in this Session".into()))?)?;
             if data["input_hash"]!=answer.input_hash{return Err(Error::Invalid("question input binding mismatch".into()));}
@@ -226,7 +226,7 @@ impl Store {
 
     async fn recover_questions_inner(&self, honor_leases: bool) -> Result<(), Error> {
         self.call(move|conn|{
-            let tx=conn.transaction()?;
+            let tx=crate::store::write_tx(conn)?;
             let requests: Vec<(String, String)> = {
                 let mut stmt=tx.prepare("SELECT q.session_id,q.data,l.last_ms,l.interval_ms,l.owner_pid FROM engine_event q LEFT JOIN engine_lease l ON l.session_id=q.session_id WHERE q.kind='question.requested' AND NOT EXISTS(SELECT 1 FROM engine_event r WHERE r.session_id=q.session_id AND r.kind='question.resolved' AND json_extract(r.data,'$.question_id')=json_extract(q.data,'$.question_id')) LIMIT 257")?;
                 let rows=stmt.query_map([],|row|Ok((row.get::<_,String>(0)?,row.get::<_,String>(1)?,row.get::<_,Option<i64>>(2)?,row.get::<_,Option<i64>>(3)?,row.get::<_,Option<u32>>(4)?)))?;
@@ -246,7 +246,7 @@ impl Store {
     pub(crate) async fn expire_question(&self, session: &str, id: &str) -> Result<(), Error> {
         let (session, id) = (session.to_owned(), id.to_owned());
         self.call(move |conn| {
-            let tx = conn.transaction()?;
+            let tx = crate::store::write_tx(conn)?;
             if resolution(&tx, &session, &id)?.is_none() {
                 append(
                     &tx,

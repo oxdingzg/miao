@@ -135,6 +135,9 @@ struct RetryScope {
     limit: usize,
 }
 tokio::task_local! {static RETRY_SCOPE:RetryScope;}
+pub(crate) fn transport_retry_limit() -> usize {
+    RETRY_SCOPE.try_with(|scope| scope.limit).unwrap_or(3)
+}
 pub(crate) fn transport_attempt() -> Result<(tokio::time::Instant, usize), ProviderError> {
     let scope = RETRY_SCOPE
         .try_with(Clone::clone)
@@ -297,6 +300,51 @@ pub trait Provider: Send + Sync {
     fn for_route(&self, _route_id: &str) -> Option<Arc<dyn Provider>> {
         None
     }
+    fn for_route_variant(
+        &self,
+        _route_id: Option<&str>,
+        _variant: &str,
+    ) -> Option<Arc<dyn Provider>> {
+        None
+    }
+    fn with_route_auth(
+        &self,
+        _auth: &crate::model_routes::Auth,
+    ) -> Result<Arc<dyn Provider>, ProviderError> {
+        Err(ProviderError::Stream(
+            "provider does not support host route authentication".into(),
+        ))
+    }
+    fn with_input_modalities(
+        &self,
+        _input: Vec<String>,
+    ) -> Result<Arc<dyn Provider>, ProviderError> {
+        Err(ProviderError::Stream(
+            "provider does not support host input modalities".into(),
+        ))
+    }
+    fn with_request_options(
+        &self,
+        _options: crate::request_options::Options,
+    ) -> Result<Arc<dyn Provider>, ProviderError> {
+        Err(ProviderError::Stream(
+            "provider does not support generation overrides".into(),
+        ))
+    }
+    /// Resolve a credential only against the host's registered model family.
+    /// This private lookup never makes credential metadata part of the catalog.
+    fn route_account(&self, _route: &str) -> Option<crate::model_catalog::Account> {
+        None
+    }
+
+    fn account_route(
+        &self,
+        _credential: Option<&str>,
+        _current: Option<&crate::session_model::Binding>,
+        _identity: &Identity,
+    ) -> Result<Option<crate::model_catalog::Info>, ProviderError> {
+        Ok(None)
+    }
     fn model_catalog(&self) -> Vec<crate::model_catalog::Info> {
         self.identity()
             .into_iter()
@@ -304,6 +352,7 @@ pub trait Provider: Send + Sync {
                 route_id: None,
                 protocol: identity.protocol,
                 model: identity.model,
+                variants: vec![],
             })
             .collect()
     }
@@ -360,11 +409,14 @@ pub struct Anthropic {
     endpoint: String,
     source: Source,
     model: String,
+    request_options: crate::request_options::Options,
+    input_modalities: Vec<String>,
     max_tokens: u32,
     prompt_cache: bool,
     /// Vertex AI authenticates with an OAuth bearer and a `:rawPredict`
     /// endpoint instead of the `x-api-key` header.
     bearer: bool,
+    copilot: bool,
     extra_headers: BTreeMap<String, String>,
 }
 
@@ -386,9 +438,12 @@ impl Anthropic {
             endpoint,
             source,
             model,
+            request_options: Default::default(),
+            input_modalities: vec![],
             max_tokens: 4096,
             prompt_cache: false,
             bearer: false,
+            copilot: false,
             extra_headers: BTreeMap::new(),
         })
     }
@@ -407,9 +462,12 @@ impl Anthropic {
             endpoint,
             source,
             model,
+            request_options: Default::default(),
+            input_modalities: vec![],
             max_tokens: 4096,
             prompt_cache: false,
             bearer: true,
+            copilot: false,
             extra_headers: BTreeMap::new(),
         })
     }
@@ -443,8 +501,10 @@ impl Anthropic {
         cancel: CancellationToken,
         without_tools: bool,
     ) -> Result<Reply, ProviderError> {
+        let request = crate::media::normalize(request, "anthropic", &self.input_modalities)?;
+        let copilot = self.copilot.then(|| crate::copilot::turn(&request));
         let credential = self.source.load().await?;
-        if credential.kind() != Kind::Key {
+        if credential.kind() != Kind::Key && !self.copilot {
             return Err(ProviderError::AuthProfile);
         }
         let mut messages = request.messages;
@@ -454,19 +514,8 @@ impl Anthropic {
                 .as_array_mut()
                 .ok_or_else(|| ProviderError::Stream("unsupported Anthropic history".into()))?;
             for block in blocks {
-                if block["type"] == "image" {
-                    if message.role != "user" {
-                        return Err(ProviderError::Stream(
-                            "image attachments are only valid on user messages".into(),
-                        ));
-                    }
-                    let mime = block["mime"].as_str().ok_or_else(|| {
-                        ProviderError::Stream("invalid Anthropic image attachment".into())
-                    })?;
-                    let data = block["data"].as_str().ok_or_else(|| {
-                        ProviderError::Stream("invalid Anthropic image attachment".into())
-                    })?;
-                    *block = json!({"type":"image","source":{"type":"base64","media_type":mime,"data":data}});
+                if block["type"] == "image" || block["type"] == "file" {
+                    *block = crate::media::anthropic_part(block, &message.role)?;
                     continue;
                 }
                 if message.role == "assistant" && block["type"] == "reasoning" {
@@ -533,18 +582,23 @@ impl Anthropic {
         if without_tools {
             body["tool_choice"] = json!({"type":"none"});
         }
+        self.request_options.apply(&mut body);
         let mut request = self.client.post(&self.endpoint).json(&body);
         request = if self.bearer {
             request.header("Authorization", format!("Bearer {}", credential.secret()))
         } else {
             request.header("x-api-key", credential.header()?)
         };
-        let request = route_headers(
-            request.header("anthropic-version", "2023-06-01"),
+        let mut request = route_headers(
+            self.request_options
+                .headers(request.header("anthropic-version", "2023-06-01"))?,
             &self.extra_headers,
         )?
         .build()
         .map_err(|_| ProviderError::Transport)?;
+        if let Some(headers) = copilot {
+            crate::copilot::apply(&mut request, &headers, true)?;
+        }
         let response =
             request_with_retry("anthropic", &self.client, request, &progress, &cancel).await?;
         read_stream(response, progress, cancel, StreamState::default()).await
@@ -553,6 +607,64 @@ impl Anthropic {
 
 #[async_trait]
 impl Provider for Anthropic {
+    fn with_route_auth(
+        &self,
+        auth: &crate::model_routes::Auth,
+    ) -> Result<Arc<dyn Provider>, ProviderError> {
+        auth.validate()?;
+        if !auth.query.is_empty() {
+            return Err(ProviderError::Stream(
+                "Anthropic does not support host route query parameters".into(),
+            ));
+        }
+        let mut selected = self.clone();
+        match auth.style.as_deref() {
+            None => {}
+            Some("bearer") => {
+                selected.bearer = true;
+                selected.copilot = false;
+            }
+            Some("api-key") => {
+                selected.bearer = false;
+                selected.copilot = false;
+            }
+            Some("copilot") => {
+                selected.bearer = true;
+                selected.copilot = true;
+            }
+            _ => {
+                return Err(ProviderError::Stream(
+                    "unsupported Anthropic route auth style".into(),
+                ))
+            }
+        }
+        auth.apply_headers(&mut selected.extra_headers);
+        Ok(Arc::new(selected))
+    }
+    fn with_input_modalities(
+        &self,
+        input: Vec<String>,
+    ) -> Result<Arc<dyn Provider>, ProviderError> {
+        crate::media::validate_modalities(&input)?;
+        let mut selected = self.clone();
+        selected.input_modalities = input;
+        Ok(Arc::new(selected))
+    }
+    fn with_request_options(
+        &self,
+        mut options: crate::request_options::Options,
+    ) -> Result<std::sync::Arc<dyn Provider>, ProviderError> {
+        options.validate()?;
+        let mut selected = self.clone();
+        for (name, value) in std::mem::take(&mut options.headers) {
+            selected
+                .extra_headers
+                .retain(|key, _| !key.eq_ignore_ascii_case(&name));
+            selected.extra_headers.insert(name, value);
+        }
+        selected.request_options = options;
+        Ok(std::sync::Arc::new(selected))
+    }
     fn for_model(&self, model: &str) -> Option<Arc<dyn Provider>> {
         if !valid_model(model) {
             return None;
@@ -596,6 +708,11 @@ impl Provider for Anthropic {
     /// Advisory pre-send count against the provider's own endpoint. No retry
     /// and a short timeout: any refusal degrades to the estimate.
     async fn count_tokens(&self, request: &ModelRequest) -> CountTokens {
+        let request =
+            match crate::media::normalize(request.clone(), "anthropic", &self.input_modalities) {
+                Ok(request) => request,
+                Err(_) => return CountTokens::Failed("unsupported Anthropic media".into()),
+            };
         let credential = match self.source.load().await {
             Ok(credential) if credential.kind() == Kind::Key => credential,
             _ => return CountTokens::Failed("credential unavailable".into()),
@@ -604,21 +721,39 @@ impl Provider for Anthropic {
             Ok(header) => header,
             Err(_) => return CountTokens::Failed("credential header unavailable".into()),
         };
-        let messages: Vec<Value> = request
+        let messages = request
             .messages
             .iter()
-            .map(|message| json!({"role": message.role, "content": message.content}))
-            .collect();
+            .map(|message| {
+                let parts = message
+                    .content
+                    .as_array()
+                    .ok_or_else(|| ProviderError::Stream("invalid Anthropic history".into()))?;
+                let content = parts
+                    .iter()
+                    .map(|part| crate::media::anthropic_part(part, &message.role))
+                    .collect::<Result<Vec<_>, _>>()?;
+                Ok(json!({"role":message.role,"content":content}))
+            })
+            .collect::<Result<Vec<_>, ProviderError>>();
+        let messages = match messages {
+            Ok(messages) => messages,
+            Err(_) => return CountTokens::Failed("unsupported Anthropic media".into()),
+        };
         if self.bearer {
-            return CountTokens::Failed("vertex bearer route has no count endpoint".into());
+            return CountTokens::Failed("bearer route has no count endpoint".into());
         }
-        let request = self
+        let builder = self
             .client
             .post(format!("{}/count_tokens", self.endpoint))
             .header("x-api-key", header)
             .header("anthropic-version", "2023-06-01")
-            .json(&json!({"model": self.model, "messages": messages}))
-            .build();
+            .json(&json!({"model": self.model, "messages": messages}));
+        let builder = match route_headers(builder, &self.extra_headers) {
+            Ok(builder) => builder,
+            Err(_) => return CountTokens::Failed("invalid route headers".into()),
+        };
+        let request = builder.build();
         let request = match request {
             Ok(request) => request,
             Err(_) => return CountTokens::Failed("count request build failed".into()),

@@ -260,6 +260,22 @@ end to end (`session.next.tool.progress`).
   settles as one path (#1019 era). TS-side cascade remains open.]
 - [ ] Cascade-cancel child fibers, drain the inbox, and settle pending approvals as one first-class
       cancellation path.
+- [x] Drop one admitted input before promotion — RS native `cancel_input`
+      (`session.inputCancel` serves native sessions); the cancelled admission
+      identity is terminal, so re-admitting it conflicts instead of resurrecting
+      the prompt, and a repeat cancel is a no-op report.
+- [x] Archive and remove a Session — RS native `archive`/`remove`
+      (`session.archive`/`session.remove` serve native sessions). Archive is a
+      reversible catalog fact the snapshot reports; removal interrupts the drain,
+      stops the Session's jobs/timers/crons/terminals, deletes its rows and
+      releases the product placement, leaving forks alive with only their lineage
+      edge dropped.
+- [x] Operator-requested compaction — RS native `request_compact`
+      (`session.compact` serves native sessions). The request is durable and
+      idempotent, one forced pass runs at the next settled assistant boundary
+      even without configured context limits, and it settles either way. An idle
+      Session honours it at its next provider turn (the TS runner resumes the
+      Session instead; the engine has no compaction entry outside a run).
 - [x] Emit incremental tool-progress checkpoints — RS native (#1019:
       `tool.started`/`tool.progress` streamed for process tools and the
       `monitor` tool). TS core tools remain open.
@@ -272,9 +288,17 @@ end to end (`session.next.tool.progress`).
 **Entry:** `packages/core/src/session/runner/llm.ts`.
 Progress: a tool left running by a prior process is settled with an outcome-unknown error
 (`failInterruptedTools`), and undispatched calls are distinguished from unknown-outcome calls (#101).
-- [ ] Idempotency key (`callID` + attempt) plus a one-shot consume token.
-- [ ] On restart, mark unsettled calls outcome-unknown and require explicit retry/abandon.
-- **Acceptance:** kill mid-tool, resume → no repeated side effect; the model sees "result unknown".
+- [x] On restart, mark unsettled calls outcome-unknown and require explicit retry/abandon.
+- [x] Persist a one-shot dispatch token keyed by Session, assistant/provider-turn and `callID`.
+  `Tool.Called` commits the plan atomically; the local execution effect consumes it with a SQLite
+  compare-and-swap before invoking the registry. Terminal events retire authority, and explicit
+  recovery leaves consumed attempts `unknown` and unconsumed plans `cancelled`. Event replay never
+  mints execution authority. A new turn can legitimately repeat the same local id, tool and input.
+- **Acceptance:** a real child process fsyncs an external write and exits before settlement;
+  reopening the database refuses that attempt's token, while a new turn can execute the same call.
+  Runner regressions cover repeated stream events, unknown-outcome history and later legal calls.
+  This fences redispatch of the same attempt; it does not promise external exactly-once execution
+  or introduce automatic post-crash provider continuation.
 
 ### 2.5 Output bounds / timeouts / caps (G7)
 **Entry:** `packages/core/src/tool/bash.ts`, `packages/core/src/ripgrep.ts`,
@@ -615,16 +639,41 @@ open PRs and recent merges.
 
 ---
 
+### Native Session account switching
+
+`session.switchAccount` resolves a registered credential inside the selected
+logical model family and retains its explicit variant (ADR-0020). The account pin
+is independent of explicit model selection and agent defaults; model/variant
+changes retain it, forks inherit it, and opaque provider history cannot cross
+routes. Host manifests contain credential references only, and enumerating or
+selecting alternatives never changes the global active connection.
+
+### Native Session agent switching
+
+`session.switchAgent` resolves an agent through the host catalog and sends a
+bounded manifest to the engine (ADR-0017). The next provider turn uses its
+instructions, ordered action/resource permissions, model default, generation
+options and narrowed step budget. The native transcript projects agent switches
+and Session info reports the current identity. A dedicated TypeScript reference
+corpus pins last-match exceptions and Bash AST command extraction; real HTTP
+acceptance proves a read-only switch refuses writes while a later single-file
+allow exception succeeds. Host `permission_mode: auto` is explicitly unsupported
+by this initial bridge; it is never silently downgraded.
+
 ## 9. Native-engine enablement gates
 
 Landing the engine was the build; these gates decide when native sessions are
 the default path.
 
-1. **Engine binary by default** — open. `NativeEngine.Placement` still requires
-   an explicit `MIAO_ENGINE_BIN`. The release already ships per-platform
-   `miao-engine` archives, so what remains is auto-discovering an installed
-   engine (and ultimately bundling it) so placement needs no environment
-   variable.
+1. **Engine binary by default** — discovery landed. The release ships
+   per-platform `miao-engine` archives next to the CLI, the installer places one
+   at `~/.miao/bin/miao-engine`, and the product discovers it without
+   `MIAO_ENGINE_BIN`. Placement requires protocol 2: `miao-engine
+   --capabilities` reports `{protocol, schema, version}`, an explicit
+   `MIAO_ENGINE_BIN` that is older fails startup with a clear error, and a
+   discovered engine that is older is ignored so the product keeps running
+   TypeScript Sessions. Remaining: bundle the archive inside the CLI install
+   where a release has no engine asset at all.
 2. **Product-tool reverse bridge** — landed (#1027). Native sessions register
    host-supplied product tools and reverse-dispatch execution to the server
    over the engine's stdio bridge; replies settle as durable tool results.

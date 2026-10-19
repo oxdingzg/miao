@@ -18,6 +18,7 @@ use tokio_util::sync::CancellationToken;
 pub enum Profile {
     Api,
     Subscription,
+    Copilot,
 }
 
 #[derive(Clone)]
@@ -27,6 +28,9 @@ pub struct OpenAIResponses {
     endpoint: String,
     source: Source,
     model: String,
+    request_options: crate::request_options::Options,
+    input_modalities: Vec<String>,
+    extra_headers: std::collections::BTreeMap<String, String>,
     cache_contract: Option<crate::responses_cache::Contract>,
     websocket_contract: Option<crate::responses_websocket::Contract>,
     websocket_pool: std::sync::Arc<crate::responses_websocket::Pool>,
@@ -54,6 +58,9 @@ impl OpenAIResponses {
             endpoint,
             source,
             model,
+            request_options: Default::default(),
+            input_modalities: vec![],
+            extra_headers: Default::default(),
             profile,
             cache_contract: None,
             websocket_contract: None,
@@ -64,6 +71,9 @@ impl OpenAIResponses {
         mut self,
         contract: crate::responses_cache::Contract,
     ) -> Result<Self, String> {
+        if matches!(self.profile, Profile::Copilot) {
+            return Err("Copilot does not support Responses continuation contracts".into());
+        }
         let endpoint = reqwest::Url::parse(&self.endpoint)
             .map_err(|_| "invalid Responses endpoint".to_owned())?;
         contract.validate(
@@ -78,6 +88,9 @@ impl OpenAIResponses {
         mut self,
         contract: crate::responses_websocket::Contract,
     ) -> Result<Self, String> {
+        if matches!(self.profile, Profile::Copilot) {
+            return Err("Copilot does not support Responses continuation contracts".into());
+        }
         let endpoint =
             reqwest::Url::parse(&self.endpoint).map_err(|_| "invalid Responses endpoint")?;
         contract.validate(
@@ -91,6 +104,59 @@ impl OpenAIResponses {
 }
 #[async_trait]
 impl Provider for OpenAIResponses {
+    fn with_route_auth(
+        &self,
+        auth: &crate::model_routes::Auth,
+    ) -> Result<std::sync::Arc<dyn Provider>, ProviderError> {
+        auth.validate()?;
+        if !auth.query.is_empty()
+            || !matches!(auth.style.as_deref(), None | Some("bearer" | "copilot"))
+        {
+            return Err(ProviderError::Stream(
+                "unsupported OpenAIResponses host authentication".into(),
+            ));
+        }
+        let mut selected = self.clone();
+        if auth.style.as_deref() == Some("copilot") {
+            if self.cache_contract.is_some() || self.websocket_contract.is_some() {
+                return Err(ProviderError::Stream(
+                    "Copilot does not support configured Responses continuation contracts".into(),
+                ));
+            }
+            selected.profile = Profile::Copilot;
+        }
+        for name in auth.headers.keys() {
+            selected
+                .request_options
+                .headers
+                .retain(|key, _| !key.eq_ignore_ascii_case(name));
+        }
+        auth.apply_headers(&mut selected.extra_headers);
+        Ok(std::sync::Arc::new(selected))
+    }
+    fn with_input_modalities(
+        &self,
+        input: Vec<String>,
+    ) -> Result<std::sync::Arc<dyn Provider>, ProviderError> {
+        crate::media::validate_modalities(&input)?;
+        let mut selected = self.clone();
+        selected.input_modalities = input;
+        Ok(std::sync::Arc::new(selected))
+    }
+    fn with_request_options(
+        &self,
+        options: crate::request_options::Options,
+    ) -> Result<std::sync::Arc<dyn Provider>, ProviderError> {
+        options.validate()?;
+        let mut selected = self.clone();
+        for name in options.headers.keys() {
+            selected
+                .extra_headers
+                .retain(|key, _| !key.eq_ignore_ascii_case(name));
+        }
+        selected.request_options = options;
+        Ok(std::sync::Arc::new(selected))
+    }
     fn for_model(&self, model: &str) -> Option<std::sync::Arc<dyn Provider>> {
         if !crate::provider::valid_model(model) {
             return None;
@@ -153,16 +219,22 @@ impl OpenAIResponses {
         cancel: CancellationToken,
         without_tools: bool,
     ) -> Result<Reply, ProviderError> {
+        let request = crate::media::normalize(request, "openai-responses", &self.input_modalities)?;
+        let copilot =
+            matches!(self.profile, Profile::Copilot).then(|| crate::copilot::turn(&request));
         let credential = self.source.load().await?;
         if !matches!(
             (self.profile, credential.kind()),
-            (Profile::Api, Kind::Key) | (Profile::Subscription, Kind::OAuth)
+            (Profile::Api, Kind::Key)
+                | (Profile::Subscription, Kind::OAuth)
+                | (Profile::Copilot, Kind::Key | Kind::OAuth)
         ) {
             return Err(ProviderError::AuthProfile);
         }
         let input = items(&request.messages, &self.model)?;
         let tools:Vec<Value>=request.tools.iter().map(|tool|json!({"type":"function","name":tool.name,"description":tool.description,"parameters":tool.input_schema})).collect();
         let mut body = json!({"model":self.model,"instructions":request.system,"input":input,"tools":tools,"stream":true,"store":false,"include":["reasoning.encrypted_content"]});
+        self.request_options.apply(&mut body);
         if let Some(contract) = &self.cache_contract {
             contract
                 .project(&mut body, &request.system)
@@ -174,8 +246,11 @@ impl OpenAIResponses {
         let (cache_key, cache_prefix) = crate::cache_affinity::select(
             &body,
             &json!({
-                "endpoint":self.endpoint,"profile":match self.profile {Profile::Api=>"api",Profile::Subscription=>"subscription"},"account":credential.account(),
+                "input_modalities":self.input_modalities,
+                "route_headers":crate::permission::digest(&serde_json::to_vec(&self.extra_headers).map_err(|_| ProviderError::Transport)?),
+                "endpoint":self.endpoint,"profile":match self.profile {Profile::Api=>"api",Profile::Subscription=>"subscription",Profile::Copilot=>"copilot"},"account":credential.account(),
                 "generation":crate::permission::digest(credential.secret().as_bytes()),
+                "request_options":crate::permission::digest(&serde_json::to_vec(&self.request_options).map_err(|_| ProviderError::Transport)?),
             }),
         )?;
         if let Some(key) = &cache_key {
@@ -200,7 +275,15 @@ impl OpenAIResponses {
                 builder = builder.header("ChatGPT-Account-Id", account);
             }
         }
-        let request = builder.build().map_err(|_| ProviderError::Transport)?;
+        let builder = crate::provider::route_headers(builder, &self.extra_headers)?;
+        let mut request = self
+            .request_options
+            .headers(builder)?
+            .build()
+            .map_err(|_| ProviderError::Transport)?;
+        if let Some(headers) = copilot {
+            crate::copilot::apply(&mut request, &headers, false)?;
+        }
         if let Some(contract) = &self.websocket_contract {
             if let Some(reply) = crate::responses_websocket::try_stream(
                 &self.websocket_pool,
@@ -264,6 +347,14 @@ fn items(history: &[Message], model: &str) -> Result<Vec<Value>, ProviderError> 
             match (message.role.as_str(), block["type"].as_str()) {
                 ("user" | "assistant", Some("text")) => {
                     items.push(json!({"role":message.role,"content":[{"type":if message.role=="user"{"input_text"}else{"output_text"},"text":block["text"].as_str().ok_or_else(invalid)?}]}));
+                }
+                ("user", Some("file")) => {
+                    let mime = block["mime"].as_str().ok_or_else(invalid)?;
+                    let data = block["data"].as_str().ok_or_else(invalid)?;
+                    let name = block["metadata"]["name"]
+                        .as_str()
+                        .unwrap_or("attachment.pdf");
+                    items.push(json!({"role":"user","content":[{"type":"input_file","filename":name,"file_data":format!("data:{mime};base64,{data}")}]}));
                 }
                 ("user", Some("image")) => {
                     let mime = block["mime"].as_str().ok_or_else(invalid)?;

@@ -282,3 +282,21 @@ export const SessionToolUsageTable = sqliteTable(
     index("session_tool_usage_tool_time_idx").on(table.tool, table.time_called),
   ],
 )
+
+/** Local execution authority, deliberately separate from replayable tool history. */
+export const SessionToolDispatchTable = sqliteTable(
+  "session_tool_dispatch",
+  {
+    session_id: text()
+      .$type<SessionSchema.ID>()
+      .notNull()
+      .references(() => SessionTable.id, { onDelete: "cascade" }),
+    assistant_message_id: text().$type<SessionMessage.ID>().notNull(),
+    call_id: text().notNull(),
+    token: text().notNull(),
+    tool: text().notNull(),
+    input: text({ mode: "json" }).$type<Record<string, unknown>>().notNull(),
+    status: text().$type<"planned" | "dispatched" | "settled" | "unknown" | "cancelled">().notNull(),
+  },
+  (table) => [primaryKey({ columns: [table.session_id, table.assistant_message_id, table.call_id] })],
+)

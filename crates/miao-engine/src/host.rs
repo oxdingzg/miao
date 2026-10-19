@@ -52,10 +52,54 @@ impl Host {
                 .admit_with(input, attachments, resume)
                 .await
                 .and_then(|value| serde_json::to_value(value).map_err(Error::from)),
+            Command::Shell {
+                session_id,
+                call_id,
+                command,
+                timeout_ms,
+            } => {
+                runtime
+                    .shell(
+                        &session_id,
+                        crate::session_shell::Invocation {
+                            call_id: call_id.unwrap_or_else(|| uuid::Uuid::new_v4().to_string()),
+                            command,
+                            timeout_ms,
+                        },
+                    )
+                    .await
+            }
+            Command::ShellStatus {
+                session_id,
+                call_id,
+            } => runtime.shell_status(&session_id, &call_id).await,
+            Command::Inject {
+                session_id,
+                input_id,
+                text,
+                source,
+            } => runtime.inject(&session_id, input_id, &text, &source).await,
+            Command::Wake { session_id } => runtime
+                .wake_pending(&session_id)
+                .await
+                .map(|_| json!({"accepted":true})),
             Command::Resume { session_id } => runtime
                 .resume(&session_id)
                 .await
                 .map(|_| json!({ "accepted": true })),
+            Command::Archive {
+                session_id,
+                archived,
+            } => runtime.store().set_archived(&session_id, archived).await,
+            Command::Remove { session_id } => runtime.remove(&session_id).await,
+            Command::RequestCompact { session_id } => runtime.request_compact(&session_id).await,
+            Command::SelectAgent { session_id, agent } => {
+                runtime.set_agent(&session_id, *agent).await
+            }
+            Command::CancelInput {
+                session_id,
+                input_id,
+            } => runtime.store().cancel_input(&session_id, &input_id).await,
             Command::ModelCatalog => {
                 serde_json::to_value(runtime.model_catalog()).map_err(Error::from)
             }
@@ -63,6 +107,10 @@ impl Host {
                 session_id,
                 binding,
             } => runtime.select_model(&session_id, binding).await,
+            Command::SelectAccount {
+                session_id,
+                credential_id,
+            } => runtime.select_account(&session_id, credential_id).await,
             Command::Recoveries { session_id, after } => {
                 runtime.store().recoveries(&session_id, &after).await
             }
@@ -261,6 +309,13 @@ impl Host {
                 .approve(&self.controller, &session_id, response)
                 .await
                 .map(|_| json!({ "accepted": true })),
+            Command::ApprovePersistent {
+                session_id,
+                response,
+            } => runtime
+                .approve_persistent(&self.controller, &session_id, response)
+                .await
+                .map(|_| json!({"accepted":true})),
             Command::Sessions => runtime
                 .store()
                 .sessions()

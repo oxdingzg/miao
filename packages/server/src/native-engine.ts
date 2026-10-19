@@ -1,3 +1,6 @@
+import type { Event } from "@miao/schema/event"
+import type { Credential } from "@miao/schema/credential"
+import type { Agent } from "@miao/schema/agent"
 import { Context, Effect } from "effect"
 import type { OpenCodeEvent } from "@miao/protocol/groups/event"
 import type { Permission } from "@miao/schema/permission"
@@ -12,9 +15,43 @@ import type { SessionInfo } from "@miao/schema/session-info"
 import type { Model } from "@miao/schema/model"
 import type { SessionModelRoute } from "@miao/schema/session-model-route"
 import type { SessionRecovery } from "@miao/schema/session-recovery"
+import type { PromptInput } from "@miao/schema/prompt-input"
 import type { AbsolutePath } from "@miao/core/schema"
 
 export interface Interface {
+  readonly shell: (input: {
+    sessionID: SessionID
+    storage: AbsolutePath
+    location: Location.Ref
+    id?: Event.ID
+    command: string
+    resume?: boolean
+  }) => Effect.Effect<void, ConflictError>
+
+  readonly inject: (input: {
+    sessionID: SessionID
+    storage: AbsolutePath
+    location: Location.Ref
+    id?: SessionMessage.ID
+    text: string
+    source: string
+    resume?: boolean
+  }) => Effect.Effect<void, ConflictError>
+
+  readonly selectAccount: (input: {
+    sessionID: SessionID
+    storage: AbsolutePath
+    location: Location.Ref
+    credentialID: Credential.ID | null
+  }) => Effect.Effect<void, ConflictError>
+
+  readonly selectAgent: (input: {
+    sessionID: SessionID
+    storage: AbsolutePath
+    location: Location.Ref
+    agent: Agent.Info
+  }) => Effect.Effect<void, ConflictError>
+
   readonly modelRoutes: (input: {
     sessionID: SessionID
     storage: AbsolutePath
@@ -49,6 +86,48 @@ export interface Interface {
     title: string
   }) => Effect.Effect<void, ConflictError>
   /**
+   * Drop one durably admitted input before the engine promotes it. The engine
+   * keeps the cancelled admission as durable evidence, so an exact retry cannot
+   * resurrect the prompt; an unknown or already promoted input reports `false`.
+   */
+  readonly cancelInput: (input: {
+    sessionID: SessionID
+    storage: AbsolutePath
+    location: Location.Ref
+    inputID: SessionMessage.ID
+  }) => Effect.Effect<boolean, ConflictError>
+  /**
+   * Ask the engine for one compaction at its next settled assistant boundary,
+   * even when automatic compaction is not configured or under its threshold.
+   * The request is durable and idempotent.
+   */
+  readonly requestCompact: (input: {
+    sessionID: SessionID
+    storage: AbsolutePath
+    location: Location.Ref
+  }) => Effect.Effect<void, ConflictError>
+  /**
+   * Set or clear the engine's archive timestamp. Archiving is a catalog fact
+   * that survives in the snapshot, so the product projection can filter on it.
+   */
+  readonly archive: (input: {
+    sessionID: SessionID
+    storage: AbsolutePath
+    location: Location.Ref
+    archived: boolean
+  }) => Effect.Effect<void, ConflictError>
+  /**
+   * Delete the engine's copy of a Session: its conversation, inbox, runs,
+   * approvals, background work and schedules. Children keep their Sessions and
+   * lose only their lineage edge, matching the product's rule that removing a
+   * Session does not delete its forks.
+   */
+  readonly remove: (input: {
+    sessionID: SessionID
+    storage: AbsolutePath
+    location: Location.Ref
+  }) => Effect.Effect<void, ConflictError>
+  /**
    * Admit one durable prompt into the native engine that owns the Session.
    * The placement catalog's storage and Location are authoritative; the engine
    * child is owned by the server scope, never by the calling request.
@@ -58,8 +137,7 @@ export interface Interface {
     storage: AbsolutePath
     location: Location.Ref
     id?: SessionMessage.ID
-    /** Only the text reaches native admission; richer inputs are refused. */
-    prompt: { readonly text: string }
+    prompt: PromptInput.Prompt
     delivery?: "steer" | "queue"
     resume?: boolean
   }) => Effect.Effect<SessionInput.Admitted, ConflictError>

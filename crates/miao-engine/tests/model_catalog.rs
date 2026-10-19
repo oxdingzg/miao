@@ -69,6 +69,7 @@ fn binding(route: &str) -> Binding {
         protocol: "openai-chat".into(),
         model: "same-model".into(),
         route_id: Some(route.into()),
+        variant: None,
     }
 }
 
@@ -203,6 +204,7 @@ async fn an_inflight_opaque_reply_cannot_cross_a_later_selected_route() {
         protocol: "fixture".into(),
         model: "same-model".into(),
         route_id: Some("other".into()),
+        variant: None,
     };
     runtime
         .select_model("s", Some(selected.clone()))

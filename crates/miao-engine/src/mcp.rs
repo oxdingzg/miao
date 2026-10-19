@@ -14,8 +14,8 @@ use rmcp::{
     },
     ClientHandler, RoleClient, ServiceExt,
 };
-use serde::Deserialize;
-use serde_json::Value;
+use serde::{Deserialize, Serialize};
+use serde_json::{json, Value};
 use std::{
     collections::BTreeMap,
     future::Future,
@@ -33,7 +33,7 @@ use tokio::{
 };
 use tokio_util::sync::CancellationToken;
 
-#[derive(Deserialize)]
+#[derive(Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct Config {
     pub name: String,
@@ -41,18 +41,34 @@ pub struct Config {
     pub argv: Vec<String>,
     #[serde(default)]
     pub url: Option<String>,
+    /// Trusted original registration digest for a product-owned loopback proxy.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub authority_revision: Option<String>,
     #[serde(default)]
     pub headers: BTreeMap<String, String>,
+    #[serde(default)]
+    pub call_meta: BTreeMap<String, String>,
     #[serde(default)]
     pub env: BTreeMap<String, String>,
     #[serde(default)]
     pub oauth: Option<Oauth>,
+    #[serde(default)]
+    pub cwd: Option<String>,
+    #[serde(default)]
+    pub timeout: Option<Timeout>,
+}
+
+#[derive(Default, Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct Timeout {
+    pub startup: Option<u64>,
+    pub request: Option<u64>,
 }
 
 /// A host-provisioned refresh grant. The browser part of the authorization
 /// code flow belongs to the product host; the engine only exchanges the
 /// refresh token for a bearer access token when a connection starts.
-#[derive(Deserialize)]
+#[derive(Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct Oauth {
     pub token_endpoint: String,
@@ -81,6 +97,8 @@ struct Server {
     name: String,
     client: Mutex<RunningService<RoleClient, CatalogWatch>>,
     changed: Arc<Notify>,
+    request_timeout: Duration,
+    call_meta: BTreeMap<String, String>,
 }
 
 /// List-changed notifications arrive unsolicited; the watcher coalesces them
@@ -117,22 +135,42 @@ impl ClientHandler for CatalogWatch {
 /// Connections are explicitly trusted host services, not model-selected URLs
 /// or commands. Tool calls are separate External authority and remain gated.
 pub struct Registry {
+    authority: String,
     tools: RwLock<BTreeMap<String, Tool>>,
     servers: Vec<Arc<Server>>,
     children: Mutex<Vec<Child>>,
 }
 impl Registry {
+    pub(crate) fn authority(&self) -> String {
+        // Identity templates are resolved at call time. Bind their effective
+        // values too, without exposing them in approval events or tool inputs.
+        digest(&serde_json::to_vec(&json!({
+            "configuration": self.authority,
+            "metadata": self.servers.iter().map(|server| (&server.name,
+                server.call_meta.iter().map(|(key,value)| (key,expand_call_meta(value).ok())).collect::<BTreeMap<_,_>>()
+            )).collect::<BTreeMap<_,_>>()
+        })).expect("MCP authority is JSON"))
+    }
     pub async fn connect(configs: Vec<Config>, workspace: &Path) -> Result<Self, Error> {
         if configs.len() > 8 {
             return Err(Error::Invalid("MCP server limit".into()));
         }
         let mut registry = Self {
+            authority: registration_authority(&configs)?,
             tools: RwLock::new(BTreeMap::new()),
             servers: vec![],
             children: Mutex::new(vec![]),
         };
         for config in configs {
             validate_name(&config.name)?;
+            let timeout = config.timeout.unwrap_or_default();
+            if timeout.startup == Some(0) || timeout.request == Some(0) {
+                return Err(Error::Invalid(
+                    "MCP timeouts must be positive milliseconds".into(),
+                ));
+            }
+            let startup_timeout = Duration::from_millis(timeout.startup.unwrap_or(15_000));
+            let request_timeout = Duration::from_millis(timeout.request.unwrap_or(60_000));
             if (config.url.is_none() && config.argv.is_empty())
                 || config.argv.len() > 128
                 || config.argv.first().is_some_and(|arg| arg.is_empty())
@@ -151,6 +189,18 @@ impl Registry {
             {
                 return Err(Error::Invalid("invalid MCP server configuration".into()));
             }
+            if config.call_meta.len() > 32
+                || config.call_meta.iter().any(|(key, value)| {
+                    key.is_empty()
+                        || key.len() > 256
+                        || key.contains('\0')
+                        || value.len() > 8192
+                        || value.contains('\0')
+                })
+                || serde_json::to_vec(&config.call_meta)?.len() > 65536
+            {
+                return Err(Error::Invalid("invalid MCP call metadata".into()));
+            }
             if registry
                 .servers
                 .iter()
@@ -159,7 +209,11 @@ impl Registry {
                 return Err(Error::Invalid("duplicate MCP server name".into()));
             }
             if let Some(endpoint) = config.url {
-                if !config.argv.is_empty() || !config.env.is_empty() || config.headers.len() > 32 {
+                if !config.argv.is_empty()
+                    || !config.env.is_empty()
+                    || config.cwd.is_some()
+                    || config.headers.len() > 32
+                {
                     return Err(Error::Invalid(
                         "MCP HTTP configuration cannot include a process".into(),
                     ));
@@ -224,7 +278,7 @@ impl Registry {
                 let transport = StreamableHttpClientTransport::from_config(transport_config);
                 let changed = Arc::new(Notify::new());
                 let client = tokio::time::timeout(
-                    Duration::from_secs(15),
+                    startup_timeout,
                     CatalogWatch {
                         changed: changed.clone(),
                     }
@@ -233,7 +287,15 @@ impl Registry {
                 .await
                 .map_err(|_| Error::Invalid("MCP HTTP initialization timed out".into()))?
                 .map_err(|_| Error::Invalid("MCP HTTP initialization failed".into()))?;
-                registry.attach(config.name, client, changed).await?;
+                registry
+                    .attach(
+                        config.name,
+                        client,
+                        changed,
+                        request_timeout,
+                        config.call_meta,
+                    )
+                    .await?;
                 continue;
             }
             if !config.headers.is_empty() {
@@ -244,11 +306,12 @@ impl Registry {
             if config.oauth.is_some() {
                 return Err(Error::Invalid("MCP OAuth requires an HTTP endpoint".into()));
             }
+            let cwd = config
+                .cwd
+                .map(|cwd| workspace.join(cwd))
+                .unwrap_or_else(|| workspace.to_path_buf());
             let mut command = Command::new(&config.argv[0]);
-            command
-                .args(&config.argv[1..])
-                .current_dir(workspace)
-                .env_clear();
+            command.args(&config.argv[1..]).current_dir(cwd).env_clear();
             for key in ["PATH", "HOME", "LANG", "LC_ALL", "TERM"] {
                 if let Some(value) = std::env::var_os(key) {
                     command.env(key, value);
@@ -273,7 +336,7 @@ impl Registry {
                 .ok_or_else(|| Error::Invalid("MCP stdin missing".into()))?;
             let changed = Arc::new(Notify::new());
             let client = tokio::time::timeout(
-                Duration::from_secs(15),
+                startup_timeout,
                 CatalogWatch {
                     changed: changed.clone(),
                 }
@@ -282,7 +345,15 @@ impl Registry {
             .await
             .map_err(|_| Error::Invalid("MCP initialization timed out".into()))?
             .map_err(|_| Error::Invalid("MCP initialization failed".into()))?;
-            registry.attach(config.name, client, changed).await?;
+            registry
+                .attach(
+                    config.name,
+                    client,
+                    changed,
+                    request_timeout,
+                    config.call_meta,
+                )
+                .await?;
             registry.children.lock().await.push(child);
         }
         Ok(registry)
@@ -306,11 +377,22 @@ impl Registry {
         .map_err(|_| Error::Invalid("MCP initialization timed out".into()))?
         .map_err(|_| Error::Invalid("MCP initialization failed".into()))?;
         let mut registry = Self {
+            // Unidentified caller-owned streams cannot share durable grants
+            // with a later transport merely because its logical name matches.
+            authority: uuid::Uuid::new_v4().to_string(),
             tools: RwLock::new(BTreeMap::new()),
             servers: vec![],
             children: Mutex::new(vec![]),
         };
-        registry.attach(name, client, changed).await?;
+        registry
+            .attach(
+                name,
+                client,
+                changed,
+                Duration::from_secs(60),
+                BTreeMap::new(),
+            )
+            .await?;
         Ok(registry)
     }
 
@@ -319,6 +401,8 @@ impl Registry {
         name: String,
         client: RunningService<RoleClient, CatalogWatch>,
         changed: Arc<Notify>,
+        request_timeout: Duration,
+        call_meta: BTreeMap<String, String>,
     ) -> Result<(), Error> {
         let capabilities = client
             .peer_info()
@@ -339,7 +423,7 @@ impl Registry {
                     )
                 })
                 .transpose()?;
-            let page = tokio::time::timeout(Duration::from_secs(15), client.list_tools(params))
+            let page = tokio::time::timeout(request_timeout, client.list_tools(params))
                 .await
                 .map_err(|_| Error::Invalid("MCP catalog timed out".into()))?
                 .map_err(|_| Error::Invalid("MCP catalog failed".into()))?;
@@ -356,6 +440,8 @@ impl Registry {
             name: name.clone(),
             client: Mutex::new(client),
             changed,
+            request_timeout,
+            call_meta,
         });
         let mut tools = self.tools.write().unwrap();
         tools.retain(|_, tool| tool.server.name != name);
@@ -449,7 +535,7 @@ impl Registry {
             .peer_info()
             .map(|info| info.capabilities.clone())
             .unwrap_or_default();
-        let catalog = Self::list_catalog(&client, &capabilities).await?;
+        let catalog = Self::list_catalog(&client, &capabilities, server.request_timeout).await?;
         let mut tools = self.tools.write().unwrap();
         tools.retain(|_, tool| tool.server.name != name);
         Self::register_catalog(&mut tools, &server, &capabilities, catalog)
@@ -478,6 +564,7 @@ impl Registry {
     async fn list_catalog(
         client: &RunningService<RoleClient, CatalogWatch>,
         capabilities: &rmcp::model::ServerCapabilities,
+        request_timeout: Duration,
     ) -> Result<Vec<rmcp::model::Tool>, Error> {
         let mut cursor = None;
         let mut catalog = Vec::new();
@@ -494,7 +581,7 @@ impl Registry {
                     )
                 })
                 .transpose()?;
-            let page = tokio::time::timeout(Duration::from_secs(15), client.list_tools(params))
+            let page = tokio::time::timeout(request_timeout, client.list_tools(params))
                 .await
                 .map_err(|_| Error::Invalid("MCP catalog timed out".into()))?
                 .map_err(|_| Error::Invalid("MCP catalog failed".into()))?;
@@ -616,13 +703,31 @@ impl Registry {
         let request = async {
             match operation {
                 Operation::Tool => {
-                    let response = wire(
-                        client
-                            .call_tool_once(
-                                CallToolRequestParams::new(native.clone()).with_arguments(args),
-                            )
-                            .await,
-                    )?;
+                    let mut params =
+                        CallToolRequestParams::new(native.clone()).with_arguments(args);
+                    if !server.call_meta.is_empty() {
+                        let metadata = server
+                            .call_meta
+                            .iter()
+                            .map(|(key, value)| {
+                                Ok((key.clone(), Value::String(expand_call_meta(value)?)))
+                            })
+                            .collect::<Result<serde_json::Map<String, Value>, ToolError>>()?;
+                        if serde_json::to_vec(&metadata)
+                            .map_err(|_| ToolError::InvalidInput)?
+                            .len()
+                            > 65536
+                        {
+                            return Err(ToolError::External(
+                                "MCP call metadata exceeds budget".into(),
+                            ));
+                        }
+                        params.meta = Some(
+                            serde_json::from_value(Value::Object(metadata))
+                                .map_err(|_| ToolError::InvalidInput)?,
+                        );
+                    }
+                    let response = wire(client.call_tool_once(params).await)?;
                     let CallToolResponse::Complete(result) = response else {
                         return Err(continuation());
                     };
@@ -656,7 +761,7 @@ impl Registry {
         let result = tokio::select! {
             biased;
             _=cancel.cancelled()=>return Err(ToolError::Interrupted),
-            response=tokio::time::timeout(Duration::from_secs(60),request)=>response.map_err(|_|ToolError::External("MCP request timed out; outcome may be unknown".into()))??,
+            response=tokio::time::timeout(server.request_timeout,request)=>response.map_err(|_|ToolError::External("MCP request timed out; outcome may be unknown".into()))??,
         };
         if serde_json::to_vec(&result)
             .map_err(|_| ToolError::InvalidInput)?
@@ -680,10 +785,31 @@ impl Registry {
         }
     }
 }
+fn registration_authority(configs: &[Config]) -> Result<String, Error> {
+    let descriptors = configs.iter().map(|config| {
+        let mut descriptor = serde_json::to_value(config)?;
+        if let Some(revision) = &config.authority_revision {
+            let url = config.url.as_deref().and_then(|value| reqwest::Url::parse(value).ok());
+            if revision.len() != 64 || !revision.bytes().all(|value| value.is_ascii_hexdigit())
+                || !config.argv.is_empty() || !config.headers.is_empty() || config.oauth.is_some()
+                || !url.is_some_and(|url| url.scheme() == "http" && matches!(url.host_str(), Some("127.0.0.1" | "[::1]" | "::1"))) {
+                return Err(Error::Invalid("MCP authority revision requires a trusted loopback transport and SHA256 digest".into()));
+            }
+            // The host attests the original remote registration. Only the
+            // ephemeral loopback address is normalized; all other config stays.
+            descriptor["url"] = json!("product-owned-oauth-loopback");
+        }
+        Ok(descriptor)
+    }).collect::<Result<Vec<Value>, Error>>()?;
+    Ok(digest(&serde_json::to_vec(&descriptors)?))
+}
+
 fn validate_name(name: &str) -> Result<(), Error> {
     if name.is_empty()
-        || name.len() > 32
-        || !name.bytes().all(|b| b.is_ascii_alphanumeric() || b == b'_')
+        || name.len() > 64
+        || !name
+            .bytes()
+            .all(|b| b.is_ascii_alphanumeric() || matches!(b, b'_' | b'-' | b'.'))
     {
         return Err(Error::Invalid(
             "MCP server name must be bounded ASCII".into(),
@@ -700,7 +826,15 @@ fn alias(server: &str, tool: &str) -> String {
         .collect();
     format!(
         "mcp_{}_{}_{}",
-        server.chars().take(12).collect::<String>(),
+        server
+            .chars()
+            .take(12)
+            .map(|c| if c.is_ascii_alphanumeric() || c == '_' {
+                c
+            } else {
+                '_'
+            })
+            .collect::<String>(),
         slug,
         &suffix[..32]
     )
@@ -833,4 +967,92 @@ async fn oauth_bearer(oauth: &Oauth) -> Result<String, Error> {
         return Err(Error::Invalid("MCP OAuth token type is unsupported".into()));
     }
     Ok(access.to_owned())
+}
+
+/// Resolve trusted host identity at call time; values never enter the tool catalog.
+fn expand_call_meta(input: &str) -> Result<String, ToolError> {
+    let mut remaining = input;
+    let mut result = String::new();
+    while let Some((prefix, tail)) = remaining.split_once("{env:") {
+        result.push_str(prefix);
+        let (key, suffix) = tail.split_once('}').ok_or_else(|| {
+            ToolError::External("invalid MCP call metadata environment reference".into())
+        })?;
+        if key.is_empty()
+            || key.len() > 256
+            || !key.bytes().all(|b| b.is_ascii_alphanumeric() || b == b'_')
+        {
+            return Err(ToolError::External(
+                "invalid MCP call metadata environment reference".into(),
+            ));
+        }
+        let value = std::env::var(key).map_err(|_| {
+            ToolError::External("MCP call metadata environment value is unavailable".into())
+        })?;
+        if value.len() > 8192 || value.contains('\0') {
+            return Err(ToolError::External(
+                "MCP call metadata environment value exceeds budget".into(),
+            ));
+        }
+        result.push_str(&value);
+        if result.len() > 8192 {
+            return Err(ToolError::External(
+                "MCP call metadata value exceeds budget".into(),
+            ));
+        }
+        remaining = suffix;
+    }
+    result.push_str(remaining);
+    if result.len() > 8192 || result.contains('\0') {
+        return Err(ToolError::External(
+            "MCP call metadata value exceeds budget".into(),
+        ));
+    }
+    Ok(result)
+}
+
+#[cfg(test)]
+mod call_metadata_tests {
+    use super::expand_call_meta;
+
+    #[test]
+    fn metadata_interpolation_is_bounded_and_fails_closed() {
+        assert_eq!(expand_call_meta("literal").unwrap(), "literal");
+        let path = std::env::var("PATH").unwrap();
+        assert_eq!(
+            expand_call_meta("prefix-{env:PATH}-{env:PATH}").unwrap(),
+            format!("prefix-{path}-{path}")
+        );
+        for value in [
+            "{env:}",
+            "{env:PATH",
+            "{env:INVALID=KEY}",
+            "{env:MIAO_MCP_NONEXISTENT_FIXTURE_23456789}",
+        ] {
+            assert!(expand_call_meta(value).is_err());
+        }
+        assert!(expand_call_meta(&"x".repeat(8193)).is_err());
+        assert!(expand_call_meta("invalid\0value").is_err());
+    }
+}
+
+#[cfg(test)]
+mod naming_tests {
+    use super::{alias, validate_name};
+
+    #[test]
+    fn product_server_names_are_bounded_and_aliases_stay_tool_safe() {
+        for name in ["docs", "aws-bedrock", "vendor.mcp", "a_b"] {
+            assert!(validate_name(name).is_ok(), "{name}");
+        }
+        for name in ["", "a/b", "spaces here", &"a".repeat(65)] {
+            assert!(validate_name(name).is_err(), "{name}");
+        }
+        let first = alias("aws-bedrock", "read_file");
+        assert_eq!(first, alias("aws-bedrock", "read_file"));
+        assert_ne!(first, alias("aws_bedrock", "read_file"));
+        assert!(first
+            .bytes()
+            .all(|byte| byte.is_ascii_alphanumeric() || byte == b'_'));
+    }
 }

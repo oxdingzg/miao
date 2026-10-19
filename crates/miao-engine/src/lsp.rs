@@ -1,5 +1,5 @@
 use crate::{protocol::Error, tools::ToolError};
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use sha2::{Digest, Sha256};
 use std::{
@@ -18,7 +18,7 @@ use tokio::{
 /// A language server the engine may query for diagnostics, definitions and
 /// references. Servers are explicitly configured host services, started lazily
 /// on first use and confined to the workspace.
-#[derive(Deserialize)]
+#[derive(Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct Config {
     pub name: String,
@@ -334,6 +334,7 @@ struct Server {
 }
 
 pub struct Registry {
+    authority: String,
     configs: Vec<Config>,
     by_extension: BTreeMap<String, usize>,
     workspace: PathBuf,
@@ -342,6 +343,9 @@ pub struct Registry {
 }
 
 impl Registry {
+    pub(crate) fn authority(&self) -> &str {
+        &self.authority
+    }
     pub async fn connect(configs: Vec<Config>, workspace: &Path) -> Result<Self, Error> {
         if configs.len() > 8 {
             return Err(Error::Invalid("LSP server limit".into()));
@@ -376,6 +380,7 @@ impl Registry {
             }
         }
         Ok(Self {
+            authority: crate::permission::digest(&serde_json::to_vec(&configs)?),
             configs,
             by_extension,
             workspace: workspace.to_owned(),
@@ -417,6 +422,7 @@ impl Registry {
             }),
         );
         Ok(Self {
+            authority: uuid::Uuid::new_v4().to_string(),
             configs: vec![config],
             by_extension,
             workspace: PathBuf::from("."),

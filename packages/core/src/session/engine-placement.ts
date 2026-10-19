@@ -47,8 +47,25 @@ export const list = Effect.fn("SessionEnginePlacement.list")(function* (db: Db) 
       row.engine === "ts" ? { engine: "ts" } : { engine: "rust", storage: row.native_storage, location: row.location },
     )
     if (placement._tag === "None" || placement.value.engine !== "rust") return []
-    return [{ sessionID: row.session_id, engine: placement.value.engine, storage: placement.value.storage, location: placement.value.location }]
+    return [
+      {
+        sessionID: row.session_id,
+        engine: placement.value.engine,
+        storage: placement.value.storage,
+        location: placement.value.location,
+      },
+    ]
   })
+})
+
+/** Forget a binding. Used when a native Session is removed, so the next create
+ * of the same identity is not routed back to a storage that no longer has it. */
+export const release = Effect.fn("SessionEnginePlacement.release")(function* (db: Db, sessionID: SessionID) {
+  yield* db
+    .delete(SessionEnginePlacementTable)
+    .where(eq(SessionEnginePlacementTable.session_id, sessionID))
+    .run()
+    .pipe(Effect.orDie)
 })
 
 /** Exact retries adopt a binding; a different engine, storage, or Location cannot take it over. */
@@ -99,4 +116,13 @@ export const claim = Effect.fn("SessionEnginePlacement.claim")(function* (
       }),
     )
     .pipe(Effect.catchTag("SqlError", Effect.die))
+})
+
+/** Core callers must respect placement too; HTTP routing is not a write fence. */
+export const requireTypeScript = Effect.fn("SessionEnginePlacement.requireTypeScript")(function* (
+  db: Db,
+  sessionID: SessionID,
+) {
+  const placement = yield* find(db, sessionID)
+  if (placement?.engine === "rust") return yield* Effect.die(new Conflict({ sessionID }))
 })

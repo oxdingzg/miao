@@ -9,6 +9,7 @@ export const Info = Schema.Struct({
   protocol: Schema.String,
   wireModel: Schema.String,
   default: Schema.Boolean,
+  variants: Schema.optional(Schema.Array(Model.VariantID)),
 }).annotate({ identifier: "SessionModelRoute.Info" })
 export type Info = typeof Info.Type
 
@@ -16,13 +17,15 @@ export const Binding = Schema.Struct({
   protocol: Schema.String,
   model: Schema.String,
   route_id: Schema.optional(Schema.NullOr(Schema.String)),
+  variant: Schema.optional(Schema.NullOr(Model.VariantID)),
 })
 export type Binding = typeof Binding.Type
 
-export function reference(routeID: string | null): Model.Ref {
+export function reference(routeID: string | null, variant?: string): Model.Ref {
   return Schema.decodeUnknownSync(Model.Ref)({
     providerID: routeID === null ? DefaultProviderID : ProviderID,
     id: routeID ?? DefaultModelID,
+    ...(variant === undefined ? {} : { variant }),
   })
 }
 

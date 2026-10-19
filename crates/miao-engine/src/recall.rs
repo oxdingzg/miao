@@ -1,5 +1,5 @@
 use crate::{protocol::Error, store::Store, tools::ToolError};
-use rusqlite::{params, Connection};
+use rusqlite::{params, Connection, OptionalExtension};
 use serde::Deserialize;
 use serde_json::{json, Value};
 
@@ -156,6 +156,19 @@ fn archived_window(
     handle: &str,
     offset: usize,
 ) -> Result<Value, Error> {
+    let shell:Option<(u64,String)>=conn.query_row("SELECT seq,data FROM engine_event WHERE session_id=?1 AND kind='shell.ended' AND json_extract(data,'$.call_id')=?2 ORDER BY seq DESC LIMIT 1",params![session,handle],|row|Ok((row.get(0)?,row.get(1)?))).optional()?;
+    if let Some((seq, data)) = shell {
+        let data: Value = serde_json::from_str(&data)?;
+        let mut window = output_window(
+            handle,
+            seq,
+            data["output"].as_str().unwrap_or(""),
+            offset,
+            data["exit_code"] != 0 || data["reason"] != "completed",
+        );
+        window["origin"] = json!("operator");
+        return Ok(window);
+    }
     let mut stmt = conn.prepare(
         "SELECT seq,content FROM engine_message WHERE session_id=?1 AND seq<?2 ORDER BY seq DESC LIMIT 1001",
     )?;
@@ -188,19 +201,13 @@ fn archived_window(
             Some(text) => text.to_owned(),
             None => part["content"].to_string(),
         };
-        let start = floor_boundary(&text, offset.min(text.len()));
-        let end = ceil_boundary(&text, (start + ARCHIVE_WINDOW).min(text.len()));
-        let truncated = end < text.len();
-        return Ok(json!({
-            "tool_use_id": handle,
-            "message_seq": seq,
-            "is_error": part["is_error"].as_bool().unwrap_or(false),
-            "offset": start,
-            "text": &text[start..end],
-            "total_bytes": text.len(),
-            "truncated": truncated,
-            "next_offset": truncated.then_some(end),
-        }));
+        return Ok(output_window(
+            handle,
+            seq,
+            &text,
+            offset,
+            part["is_error"].as_bool().unwrap_or(false),
+        ));
     }
     Ok(json!({
         "tool_use_id": handle,
@@ -247,4 +254,11 @@ fn visible_text(content: &Value) -> String {
         })
         .collect::<Vec<_>>()
         .join("\n")
+}
+
+fn output_window(handle: &str, seq: u64, text: &str, offset: usize, is_error: bool) -> Value {
+    let start = floor_boundary(text, offset.min(text.len()));
+    let end = ceil_boundary(text, (start + ARCHIVE_WINDOW).min(text.len()));
+    let truncated = end < text.len();
+    json!({"tool_use_id":handle,"message_seq":seq,"is_error":is_error,"offset":start,"text":&text[start..end],"total_bytes":text.len(),"truncated":truncated,"next_offset":truncated.then_some(end)})
 }

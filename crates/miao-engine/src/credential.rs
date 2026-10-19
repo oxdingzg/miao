@@ -102,6 +102,12 @@ impl Credential {
 
 #[derive(Clone, Debug)]
 pub enum Source {
+    /// The AWS SDK owns identity resolution and credential refresh for this
+    /// profile. It is not a bearer credential and generic adapters cannot load it.
+    Aws {
+        region: String,
+        profile: Option<String>,
+    },
     Static(Credential),
     Database {
         path: PathBuf,
@@ -123,10 +129,29 @@ pub enum Source {
 impl Source {
     pub fn path(&self) -> Option<&Path> {
         match self {
-            Self::Static(_) => None,
+            Self::Static(_) | Self::Aws { .. } => None,
             Self::Database { path, .. } | Self::Legacy { path, .. } => Some(path),
             Self::Daemon { socket, .. } => Some(socket),
         }
+    }
+    pub async fn validate(&self) -> Result<(), Error> {
+        if let Self::Aws { region, profile } = self {
+            if region.is_empty()
+                || region.len() > 64
+                || !region
+                    .bytes()
+                    .all(|byte| byte.is_ascii_lowercase() || byte.is_ascii_digit() || byte == b'-')
+                || profile.as_ref().is_some_and(|profile| {
+                    profile.is_empty()
+                        || profile.len() > 256
+                        || profile.chars().any(char::is_control)
+                })
+            {
+                return Err(Error::Invalid);
+            }
+            return Ok(());
+        }
+        self.load().await.map(|_| ())
     }
     /// Re-read at every provider turn. An owned database row follows its
     /// durable daemon marker before validating the stale snapshot's expiry.
@@ -146,7 +171,7 @@ impl Source {
         let (credential, owner) = tokio::task::spawn_blocking(move || {
             let loaded = match source {
                 Self::Static(credential) => (credential, None),
-                Self::Daemon { .. } => return Err(Error::Invalid),
+                Self::Daemon { .. } | Self::Aws { .. } => return Err(Error::Invalid),
                 Self::Database {
                     path,
                     id,
@@ -223,8 +248,16 @@ async fn load_daemon(socket: &Path, id: &str, integration: &str) -> Result<Crede
 
 fn parse_bound(value: &Value, integration: &str) -> Result<Credential, Error> {
     let mut credential = parse(value)?;
-    if integration == "github-copilot" && credential.expires == Some(0) {
-        credential.expires = None;
+    if integration == "github-copilot" && credential.kind == Kind::OAuth {
+        // The device grant stores the long-lived GitHub token as refresh;
+        // Copilot accepts it directly, without a secondary token exchange.
+        // Legacy access-only entries already contain that token.
+        if let Some(token) = value["refresh"].as_str().filter(|token| !token.is_empty()) {
+            credential.secret = token.into();
+        }
+        if credential.expires == Some(0) {
+            credential.expires = None;
+        }
     }
     Ok(credential)
 }

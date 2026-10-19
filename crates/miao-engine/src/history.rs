@@ -48,7 +48,7 @@ impl Store {
         }
         let (session, id) = (session.to_owned(), id.to_owned());
         self.call(move |conn| {
-            let tx=conn.transaction()?;
+            let tx=crate::store::write_tx(conn)?;
             if let Some(run) = &run {
                 let active: bool = tx.query_row(
                     "SELECT EXISTS(SELECT 1 FROM engine_run WHERE id=?1 AND session_id=?2 AND state='running')",
@@ -116,11 +116,27 @@ impl Store {
                 let text=format!("<history-summary>\n{summary}\n</history-summary>\nThis summarizes completed history. Do not repeat completed operations or unknown side effects automatically.");
                 bytes=text.len();selected.push(Message{role:"user".into(),content:json!([{"type":"text","text":text}]),checkpoint:None,recorded_at_ms:None});through
             }else{0};
-            let mut stmt=tx.prepare("SELECT role,content,recorded_at_ms FROM engine_message WHERE session_id=?1 AND seq>?2 AND reverted=0 ORDER BY seq LIMIT 1001")?;
+            let mut pending_tools=std::collections::HashSet::new();
+            let mut deferred_context=Vec::new();
+            let mut count=selected.len();
+            let mut stmt=tx.prepare("SELECT m.role,m.content,m.recorded_at_ms,e.kind FROM engine_message m JOIN engine_event e ON e.session_id=m.session_id AND e.seq=m.seq WHERE m.session_id=?1 AND m.seq>?2 AND m.reverted=0 ORDER BY m.seq LIMIT 1001")?;
             let mut rows=stmt.query(params![session,through])?;
             while let Some(row)=rows.next()? {
-                let content:String=row.get(1)?;bytes+=content.len();if bytes>2*1024*1024||selected.len()>=1000{return Err(Error::Invalid("selected history exceeds budget; compact at a closed boundary".into()));}
-                selected.push(Message{role:row.get(0)?,content:serde_json::from_str(&content)?,checkpoint:None,recorded_at_ms:row.get(2)?});
+                let content:String=row.get(1)?;bytes+=content.len();count+=1;if bytes>2*1024*1024||count>1000{return Err(Error::Invalid("selected history exceeds budget; compact at a closed boundary".into()));}
+                let message=Message{role:row.get(0)?,content:serde_json::from_str(&content)?,checkpoint:None,recorded_at_ms:row.get(2)?};
+                // Injected context may arrive while tools execute. Keep the
+                // immutable transcript order, but do not split the provider's
+                // assistant-tool/result block with a synthetic user message.
+                if row.get::<_,String>(3)?=="message.synthetic" && !pending_tools.is_empty() {deferred_context.push(message);continue;}
+                // Recovery history may contain an orphan result whose call
+                // never committed. Track open blocks here without imposing the
+                // stricter closed-prefix validation used by fork/compaction.
+                for part in message.content.as_array().into_iter().flatten() {
+                    if part["type"]=="tool_use" {if let Some(id)=part["id"].as_str(){pending_tools.insert(id.to_owned());}}
+                    if part["type"]=="tool_result" {if let Some(id)=part["tool_use_id"].as_str(){pending_tools.remove(id);}}
+                }
+                selected.push(message);
+                if pending_tools.is_empty() {selected.append(&mut deferred_context);}
             }
             let state=crate::state::projection(&tx,&session,i64::MAX as u64)?;
             Ok((selected,state))

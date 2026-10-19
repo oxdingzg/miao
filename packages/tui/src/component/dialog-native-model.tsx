@@ -25,17 +25,20 @@ export function DialogNativeModel(props: { sessionID: string }) {
       }),
   )
   const options = createMemo(() =>
-    (routes() ?? []).map((route) => ({
-      title: route.default ? `${route.wireModel} (default)` : route.model.id,
-      description: `${route.protocol} · ${route.wireModel}`,
-      category: "Host model routes",
-      value: route.model,
-      footer:
-        sync.session.get(props.sessionID)?.model?.providerID === route.model.providerID &&
-        sync.session.get(props.sessionID)?.model?.id === route.model.id
-          ? "Selected"
-          : undefined,
-    })),
+    (routes() ?? []).flatMap((route) =>
+      [undefined, ...(route.variants ?? [])].map((variant) => ({
+        title: `${route.default ? `${route.wireModel} (default)` : route.model.id}${variant === undefined ? "" : ` · ${variant}`}`,
+        description: `${route.protocol} · ${route.wireModel}`,
+        category: "Host model routes",
+        value: { ...route.model, ...(variant === undefined ? {} : { variant }) },
+        footer:
+          sync.session.get(props.sessionID)?.model?.providerID === route.model.providerID &&
+          sync.session.get(props.sessionID)?.model?.id === route.model.id &&
+          sync.session.get(props.sessionID)?.model?.variant === variant
+            ? "Selected"
+            : undefined,
+      })),
+    ),
   )
   return (
     <DialogSelect

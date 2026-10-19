@@ -1,6 +1,6 @@
 import { createStore } from "solid-js/store"
 import { createSimpleContext } from "./helper"
-import { batch, createEffect, createMemo } from "solid-js"
+import { batch, createEffect, createMemo, createResource, createSignal } from "solid-js"
 import { useSync } from "./sync"
 import { useEvent } from "./event"
 import path from "path"
@@ -14,6 +14,7 @@ import { useToast } from "../ui/toast"
 import { useRoute } from "./route"
 import { usePermission } from "./permission"
 import { useProject } from "./project"
+import { errorMessage } from "../util/error"
 
 export type LocalTheme = {
   secondary: RGBA
@@ -272,6 +273,23 @@ export const { use: useLocal, provider: LocalProvider } = createSimpleContext({
         )
       })
 
+      const [variantBusy, setVariantBusy] = createSignal(false)
+      const [nativeRoutes] = createResource(
+        () => {
+          const current = route.data
+          return selectionLocked() && current.type === "session" ? current.sessionID : undefined
+        },
+        (sessionID) =>
+          sdk.api.sessions.modelRoutes({ sessionID }).catch((error: unknown) => {
+            toast.show({ variant: "error", message: errorMessage(error), duration: 6000 })
+            return []
+          }),
+      )
+      const nativeModel = createMemo(() => {
+        const current = route.data
+        return selectionLocked() && current.type === "session" ? sync.session.get(current.sessionID)?.model : undefined
+      })
+
       return {
         current: currentModel,
         get ready() {
@@ -289,7 +307,12 @@ export const { use: useLocal, provider: LocalProvider } = createSimpleContext({
             const model = current.type === "session" ? sync.session.get(current.sessionID)?.model : undefined
             return {
               provider: "Native runtime",
-              model: model?.providerID === "native-engine-default" ? "Host default" : (model?.id ?? "Host configured"),
+              model: [
+                model?.providerID === "native-engine-default" ? "Host default" : (model?.id ?? "Host configured"),
+                model?.variant,
+              ]
+                .filter(Boolean)
+                .join(" · "),
               reasoning: false,
             }
           }
@@ -400,7 +423,11 @@ export const { use: useLocal, provider: LocalProvider } = createSimpleContext({
           })
         },
         variant: {
+          busy() {
+            return selectionLocked() && (variantBusy() || nativeRoutes.loading)
+          },
           selected() {
+            if (selectionLocked()) return nativeModel()?.variant
             const m = currentModel()
             if (!m) return undefined
             const key = `${m.providerID}/${m.modelID}`
@@ -413,6 +440,14 @@ export const { use: useLocal, provider: LocalProvider } = createSimpleContext({
             return v
           },
           list() {
+            if (selectionLocked()) {
+              const model = nativeModel()
+              return (
+                nativeRoutes()?.find(
+                  (item) => item.model.providerID === model?.providerID && item.model.id === model?.id,
+                )?.variants ?? []
+              )
+            }
             const m = currentModel()
             if (!m) return []
             const provider = sync.data.provider.find((item) => item.id === m.providerID)
@@ -427,20 +462,42 @@ export const { use: useLocal, provider: LocalProvider } = createSimpleContext({
             setModelStore("variant", key, value ?? "default")
             save()
           },
+          async select(value: string | undefined) {
+            if (!selectionLocked()) return this.set(value)
+            if (variantBusy() || nativeRoutes.loading) return
+            const current = route.data
+            const model = nativeModel()
+            if (current.type !== "session" || !model || (value !== undefined && !this.list().includes(value))) return
+            setVariantBusy(true)
+            await sdk.api.sessions
+              .switchModel({
+                sessionID: current.sessionID,
+                model: {
+                  providerID: model.providerID,
+                  id: model.id,
+                  ...(value === undefined ? {} : { variant: value }),
+                },
+              })
+              .then(() => sync.session.reload(current.sessionID))
+              .catch((error: unknown) => {
+                toast.show({ variant: "error", message: errorMessage(error), duration: 6000 })
+              })
+              .finally(() => setVariantBusy(false))
+          },
           cycle() {
             const variants = this.list()
             if (variants.length === 0) return
             const current = this.current()
             if (!current) {
-              this.set(variants[0])
+              void this.select(variants[0])
               return
             }
             const index = variants.indexOf(current)
             if (index === -1 || index === variants.length - 1) {
-              this.set(undefined)
+              void this.select(undefined)
               return
             }
-            this.set(variants[index + 1])
+            void this.select(variants[index + 1])
           },
         },
       }

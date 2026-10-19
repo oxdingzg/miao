@@ -11,6 +11,42 @@ at `docs/releases/vX.Y.Z.md` and `docs/releases/vX.Y.Z.zh.md`; both are required
 
 ## [Unreleased]
 
+## [0.2.16] - 2026-10-18
+
+### Added
+- **install**: install matching native engines on Windows (#1061) (`671bf5b795`)
+- **engine**: discover an installed engine and require its protocol (#1057) (`18b3370975`)
+- **engine**: derive native model routes from product accounts (#1052) (`2878853f71`)
+- **engine**: route interrupts to the Session's owner (#1050) (`d56554cbcc`)
+- **tui**: add a /login slash command that starts the relay sign-in (#1047) (`9e36c60351`)
+- **engine**: share the store across processes (#1046) (`0180b0ead6`)
+- **engine**: format committed file mutations with product settings (#1041) (`8f9cb6b893`)
+- **engine**: hold a Session claim for the whole drain (#1045) (`26d7e0b775`)
+- **engine**: fence Session writes with a durable lease epoch (#1039) (`7c7add73a5`)
+- **engine**: lease shared HTTP attachments and stop idle runtimes (#1037) (`afad78e0ad`)
+- **engine**: inherit product language server configuration (#1038) (`c43c38382c`)
+- **engine**: run the monitor tool through the sandboxed runner (#1030) (`c206dcaceb`)
+- **engine**: add authenticated HTTP attachments to a shared native runtime (#1035) (`4fd1a990d2`)
+
+### Fixed
+- **ios**: always show the sidebar toggle, including on the empty screen (#1065) (`d3128a0cc5`)
+- **engine**: coordinate remaining mutations without locking readers (#1066) (`8c6432dd74`)
+- **tui**: make the /login command searchable by title (#1063) (`1a86c1bee2`)
+- **engine**: serialize store writes across processes (#1062) (`4e097c773e`)
+- **tui**: build dialog action bars after the selected option (#1060) (`f9055208ba`)
+- **engine**: prevent timer supervisor owner deadlocks (#1058) (`afe539b4a9`)
+- **session**: batch background notices and surface exhausted wake allowance (#1056) (`02aef2fe25`)
+- **engine**: settle terminal client commands before exit failures (#1055) (`ea1e21451f`)
+- **engine**: keep heartbeats and stale runs off a live owner (#1051) (`d3d0be3c56`)
+- **tui**: name the first error on the crash screen (#1053) (`e6cf9a3f84`)
+- **engine**: preserve explicit formatter manifest options (#1049) (`bc64257195`)
+- **pty**: replay fast exits to late subscribers (#1042) (`2a1bd18feb`)
+- **cli**: render native replies without fabricating assistant metadata (#1036) (`a3b0ae0a38`)
+- **server**: preserve TS admission when native transport is enabled (#1031) (`703e68e59c`)
+- **server**: settle session.wait on the native engine's run (#1034) (`953f79e6d4`)
+- **core**: recheck peer migrations while waiting for exclusive access (#1033) (`10dd0ec8c1`)
+- **engine**: reject requests after child exit with startup diagnostics (#1032) (`0f53a785e2`)
+
 ## [0.2.15] - 2026-10-18
 
 ### Added

@@ -45,6 +45,21 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
         println!("miao-engine {}", env!("MIAO_ENGINE_VERSION"));
         return Ok(());
     }
+    if args == ["--capabilities"] {
+        // Machine-readable contract for the product's discovery handshake.
+        // `protocol` moves only when a newer product must not reuse an older
+        // engine (shared store, fenced Session ownership, control routing).
+        println!(
+            "{}",
+            serde_json::json!({
+                "name": "miao-engine",
+                "version": env!("MIAO_ENGINE_VERSION"),
+                "protocol": miao_engine::PROTOCOL,
+                "schema": miao_engine::store::SCHEMA_VERSION,
+            })
+        );
+        return Ok(());
+    }
     if args.first().map(String::as_str) == Some("doctor") {
         let path = match &args[1..] {
             [] => None,
@@ -115,7 +130,7 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
     }
     let mode = args.first().map(String::as_str);
     if !matches!(mode, Some("serve" | "acp")) {
-        eprintln!("Usage: miao-engine serve --db PATH --workspace PATH --model MODEL [--provider anthropic|openai-chat|openai-responses|subscription-responses|gemini] [--endpoint URL] [--policy PATH] [--verify-command COMMAND] [--prompt-cache on|off] [--responses-cache-contract JSON] [--responses-websocket-contract JSON] [--tool-disclosure full|compact] [--lsp-diagnostics on|off] [--context-limits JSON] [--http ADDR [--http-token TOKEN]]\n       miao-engine acp --db PATH --workspace PATH --model MODEL [--provider ...] [--endpoint URL] [--policy PATH] [--verify-command COMMAND] [--prompt-cache on|off] [--responses-cache-contract JSON] [--responses-websocket-contract JSON] [--tool-disclosure full|compact] [--lsp-diagnostics on|off]\n       miao-engine export --db PATH --session ID [--after CURSOR]\n       miao-engine doctor [--db PATH]\nUse ANTHROPIC_API_KEY, OPENAI_API_KEY or GEMINI_API_KEY for the selected provider. An explicit engine database is required.");
+        eprintln!("Usage: miao-engine serve --db PATH --workspace PATH --model MODEL [--provider anthropic|openai-chat|openai-responses|subscription-responses|gemini|amazon-bedrock] [--endpoint URL] [--policy PATH] [--verify-command COMMAND] [--prompt-cache on|off] [--responses-cache-contract JSON] [--responses-websocket-contract JSON] [--tool-disclosure full|compact] [--lsp-diagnostics on|off] [--context-limits JSON] [--http ADDR [--http-token TOKEN]]\n       miao-engine acp --db PATH --workspace PATH --model MODEL [--provider ...] [--endpoint URL] [--policy PATH] [--verify-command COMMAND] [--prompt-cache on|off] [--responses-cache-contract JSON] [--responses-websocket-contract JSON] [--tool-disclosure full|compact] [--lsp-diagnostics on|off]\n       miao-engine export --db PATH --session ID [--after CURSOR]\n       miao-engine doctor [--db PATH]\nUse ANTHROPIC_API_KEY, OPENAI_API_KEY or GEMINI_API_KEY for the selected provider. Bedrock uses AWS_BEARER_TOKEN_BEDROCK or the AWS SDK credential chain (--aws-region/--aws-profile). An explicit engine database is required.");
         std::process::exit(2);
     }
     let acp = mode == Some("acp");
@@ -154,6 +169,8 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
             "--credential-db",
             "--credential-id",
             "--credential-integration",
+            "--aws-region",
+            "--aws-profile",
             "--credential-socket",
             "--auth-file",
             "--http",
@@ -184,10 +201,16 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
         "openai-responses",
         "subscription-responses",
         "gemini",
+        "amazon-bedrock",
     ]
     .contains(&provider_name)
     {
         return Err("unknown provider".into());
+    }
+    if provider_name != "amazon-bedrock"
+        && (options.contains_key("--aws-region") || options.contains_key("--aws-profile"))
+    {
+        return Err("AWS selection is only supported by amazon-bedrock".into());
     }
     let integration = options
         .get("--credential-integration")
@@ -195,6 +218,8 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
         .unwrap_or_else(|| {
             if provider_name == "anthropic" {
                 "anthropic".into()
+            } else if provider_name == "amazon-bedrock" {
+                "amazon-bedrock".into()
             } else if provider_name == "gemini" {
                 "google".into()
             } else {
@@ -244,7 +269,22 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
         {
             return Err("credential selection requires a file, database, or socket source".into());
         }
-        if provider_name == "subscription-responses" {
+        if provider_name == "amazon-bedrock" {
+            match std::env::var("AWS_BEARER_TOKEN_BEDROCK") {
+                Ok(token) => Source::Static(Credential::key(token)),
+                Err(_) => Source::Aws {
+                    region: options
+                        .get("--aws-region")
+                        .cloned()
+                        .or_else(|| std::env::var("AWS_REGION").ok())
+                        .unwrap_or_else(|| "us-east-1".into()),
+                    profile: options
+                        .get("--aws-profile")
+                        .cloned()
+                        .or_else(|| std::env::var("AWS_PROFILE").ok()),
+                },
+            }
+        } else if provider_name == "subscription-responses" {
             Source::Static(Credential::token(
                 std::env::var("OPENAI_ACCESS_TOKEN")
                     .map_err(|_| "OPENAI_ACCESS_TOKEN is required")?,
@@ -264,7 +304,7 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
             ))
         }
     };
-    source.load().await?;
+    source.validate().await?;
     if options.contains_key("--fallback-endpoint") && !options.contains_key("--fallback-model") {
         return Err("fallback-endpoint requires fallback-model".into());
     }
@@ -289,15 +329,28 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
         .map(|value| miao_engine::responses_websocket::Contract::from_wire(value))
         .transpose()
         .map_err(std::io::Error::other)?;
-    let provider = miao_engine::routing::build_with_responses(
-        provider_name,
-        options.get("--endpoint").map(String::as_str),
-        source.clone(),
-        model.clone(),
-        prompt_cache,
-        cache_contract,
-        websocket_contract,
-    )?;
+    let provider = if provider_name == "amazon-bedrock" {
+        if cache_contract.is_some() || websocket_contract.is_some() {
+            return Err("Responses continuation contracts are unsupported by Bedrock".into());
+        }
+        miao_engine::routing::build_bedrock(
+            options.get("--endpoint").map(String::as_str),
+            source.clone(),
+            model.clone(),
+            options.get("--aws-region").map(String::as_str),
+            prompt_cache,
+        )?
+    } else {
+        miao_engine::routing::build_with_responses(
+            provider_name,
+            options.get("--endpoint").map(String::as_str),
+            source.clone(),
+            model.clone(),
+            prompt_cache,
+            cache_contract,
+            websocket_contract,
+        )?
+    };
     let provider: Arc<dyn Provider> = if let Some(model) = options.get("--fallback-model") {
         let endpoint = options.get("--fallback-endpoint").or_else(|| {
             if provider_name == "gemini" {
@@ -306,13 +359,23 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
                 options.get("--endpoint")
             }
         });
-        let fallback = miao_engine::routing::build(
-            provider_name,
-            endpoint.map(String::as_str),
-            source.clone(),
-            model.clone(),
-            prompt_cache,
-        )?;
+        let fallback = if provider_name == "amazon-bedrock" {
+            miao_engine::routing::build_bedrock(
+                endpoint.map(String::as_str),
+                source.clone(),
+                model.clone(),
+                options.get("--aws-region").map(String::as_str),
+                prompt_cache,
+            )?
+        } else {
+            miao_engine::routing::build(
+                provider_name,
+                endpoint.map(String::as_str),
+                source.clone(),
+                model.clone(),
+                prompt_cache,
+            )?
+        };
         Arc::new(miao_engine::routing::Fallback::new(provider, fallback)?)
     } else {
         provider
@@ -360,6 +423,13 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
     } else {
         provider
     };
+    if provider_name == "amazon-bedrock" {
+        miao_engine::bedrock::validate_credential_paths(
+            provider.protected_resources(),
+            std::path::Path::new(tools.location()),
+        )
+        .await?;
+    }
     if let Some(path) = source.path() {
         if policy.process_enabled() && path.starts_with(std::path::Path::new(tools.location())) {
             return Err("process-enabled credential sources must be outside workspace".into());

@@ -104,8 +104,12 @@ export class EngineHttpClient implements EngineTransport {
     }
   }
 
-  admit(input: Parameters<EngineTransport["admit"]>[0], resume = true) {
-    return this.request("admit", { input, resume })
+  admit(
+    input: Parameters<EngineTransport["admit"]>[0],
+    resume = true,
+    attachments: Parameters<EngineTransport["admit"]>[2] = [],
+  ) {
+    return this.request("admit", { input, resume, ...(attachments.length ? { attachments } : {}) })
   }
 
   /** Closing one window must not terminate the engine or its other attachments. */

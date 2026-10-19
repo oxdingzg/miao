@@ -155,6 +155,7 @@ export function create() {
           type: "shell",
           callID: event.properties.callID,
           command: event.properties.command,
+          metadata: event.properties.metadata,
           output: "",
           time: { created: event.properties.timestamp },
         })
@@ -165,6 +166,7 @@ export function create() {
           (item) => ({
             ...item,
             output: event.properties.output,
+            metadata: { ...item.metadata, ...event.properties.metadata },
             time: { ...item.time, completed: event.properties.timestamp },
           }),
           event.properties.sessionID,
