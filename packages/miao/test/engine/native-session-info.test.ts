@@ -268,3 +268,28 @@ test("observed token totals survive an unknown auxiliary model identity", () => 
   expect(usage.models).toEqual([])
   expect(usage.coverage?.unknownPriceObservations).toBe(1)
 })
+
+test("a bare engine model id prices when exactly one catalog model claims it", () => {
+  const model = {
+    ...ModelV2.Info.empty(ProviderV2.ID.make("opencode-go"), ModelV2.ID.make("deepseek-v4.1-flash")),
+    cost: [{ input: 1, output: 2, cache: { read: 0.1, write: 0.2 } }],
+  }
+  const usage = nativeSessionUsage({
+    report: {
+      turns: 1,
+      tools: { calls: 0, failures: 0 },
+      turnsDetail: [
+        {
+          protocol: "openai-chat",
+          model: "deepseek-v4.1-flash",
+          usage: { inputTokens: 10_000, outputTokens: 100, nonCachedInputTokens: 1_000, cacheReadInputTokens: 9_000 },
+        },
+      ],
+    },
+    models: [model],
+    snapshot: { updated_at_ms: 1 },
+  })
+  expect(usage!.models).toHaveLength(1)
+  expect(usage!.models[0].providerID).toBe(ProviderV2.ID.make("opencode-go"))
+  expect(usage!.models[0].cost).toBeCloseTo((1_000 * 1 + 100 * 2 + 9_000 * 0.1) / 1_000_000)
+})
