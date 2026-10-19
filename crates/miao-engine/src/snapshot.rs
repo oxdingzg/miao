@@ -226,6 +226,58 @@ impl Store {
         .await
     }
 
+    /// Assemble a provider-facing manifest from retained imported snapshots.
+    /// Imported rows have no native boundary sequence; their order is the
+    /// restored sequence of the referencing assistant, with unreferenced
+    /// manifests last. First touch per path wins, including deletions.
+    /// Symlink entries cannot be represented by native manifests and are
+    /// skipped (counted) instead of being written as regular files.
+    fn imported_manifest(
+        conn: &rusqlite::Connection,
+        session: &str,
+        boundary_seq: u64,
+    ) -> Result<Option<AssembledImport>, Error> {
+        let mut stmt = conn.prepare(
+            "SELECT COALESCE(t.seq, -1), s.snapshot_id, s.manifest
+             FROM engine_transfer_snapshot s
+             JOIN engine_transfer_import i ON i.id = s.import_id AND i.session_id = ?1 AND i.state = 'active'
+             LEFT JOIN engine_transfer_message t ON t.import_id = s.import_id AND t.source_message_id = s.boundary_message_id
+             WHERE s.order_index IS NOT NULL OR t.seq IS NOT NULL
+             ORDER BY COALESCE(t.seq, 9223372036854775807), s.order_index",
+        )?;
+        let rows = stmt.query_map(params![session], |row| {
+            Ok((
+                row.get::<_, i64>(0)?,
+                row.get::<_, String>(1)?,
+                row.get::<_, String>(2)?,
+            ))
+        })?;
+        let mut manifest = BTreeMap::new();
+        let mut identity: Option<String> = None;
+        for row in rows {
+            let (seq, snapshot_id, raw) = row?;
+            if seq >= 0 && seq as u64 > boundary_seq {
+                continue;
+            }
+            let files: Vec<Value> = serde_json::from_str(&raw)?;
+            for file in files {
+                let path = file["path"]
+                    .as_str()
+                    .ok_or_else(|| Error::Invalid("retained snapshot path is missing".into()))?
+                    .to_owned();
+                if file["mode"].as_str() == Some("120000") {
+                    continue;
+                }
+                let hash = file["hash"].as_str().map(str::to_owned);
+                manifest.entry(path).or_insert(hash);
+            }
+            if identity.is_none() {
+                identity = Some(format!("transfer:{snapshot_id}"));
+            }
+        }
+        Ok(identity.map(|id| (id, manifest)))
+    }
+
     pub async fn snapshot_at(&self, session: &str, boundary_seq: u64) -> Result<Value, Error> {
         let session = session.to_owned();
         self.call(move |conn| {
@@ -242,7 +294,13 @@ impl Store {
                     let available = manifest.values().filter_map(|hash| hash.as_deref()).all(|hash| blob_dir(Path::new(conn.path().unwrap_or_default()), &session).join(hash).exists());
                     Ok(json!({"id":id,"boundary_seq":boundary,"available":available}))
                 }
-                None => Ok(Value::Null),
+                None => match Self::imported_manifest(conn, &session, boundary_seq)? {
+                    Some((id, manifest)) => {
+                        let available = manifest.values().filter_map(|hash| hash.as_deref()).all(|hash| blob_dir(Path::new(conn.path().unwrap_or_default()), &session).join(hash).exists());
+                        Ok(json!({"id":id,"boundary_seq":boundary_seq,"available":available,"assembled":true}))
+                    }
+                    None => Ok(Value::Null),
+                },
             }
         })
         .await
@@ -345,9 +403,25 @@ impl Store {
                     |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
                 )
                 .optional()?;
-            let (snapshot_id, boundary, manifest) =
-                found.ok_or_else(|| Error::Invalid("no file snapshot at this boundary".into()))?;
-            let manifest = read_manifest(&manifest)?;
+            let (snapshot_id, boundary, manifest) = match found {
+                Some(found) => found,
+                None => match Self::imported_manifest(conn, &session, boundary_seq)? {
+                    Some((id, manifest)) => (
+                        -1,
+                        boundary_seq as i64,
+                        serde_json::to_string(&(manifest, id))?,
+                    ),
+                    None => return Err(Error::Invalid("no file snapshot at this boundary".into())),
+                },
+            };
+            // An assembled import has no native row id; its identity rides in
+            // the manifest payload as (map, "transfer:<snapshot>").
+            let (manifest, snapshot_id) = if snapshot_id < 0 {
+                let (map, id): ImportedManifest = serde_json::from_str(&manifest)?;
+                (map, id)
+            } else {
+                (read_manifest(&manifest)?, snapshot_id.to_string())
+            };
             // One intent at a time: undo the previous staged restore first.
             if let Some((previous, ..)) = staged(conn, &session)? {
                 let previous: BTreeMap<String, Option<String>> = serde_json::from_str(&previous)?;
@@ -457,8 +531,14 @@ impl Store {
     }
 }
 
+type AssembledImport = (String, BTreeMap<String, Option<String>>);
+type ImportedManifest = (BTreeMap<String, Option<String>>, String);
+
 /// `(previous manifest, boundary_seq, snapshot_id)`
-fn staged(conn: &rusqlite::Connection, session: &str) -> Result<Option<(String, i64, i64)>, Error> {
+fn staged(
+    conn: &rusqlite::Connection,
+    session: &str,
+) -> Result<Option<(String, i64, String)>, Error> {
     Ok(conn
         .query_row(
             "SELECT previous,boundary_seq,snapshot_id FROM engine_staged_revert WHERE session_id=?1",

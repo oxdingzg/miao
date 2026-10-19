@@ -23,7 +23,7 @@ use tokio::sync::{mpsc, oneshot, watch};
 pub(crate) const APPLICATION_ID: u32 = 0x4d494145;
 // Older readers do not understand inactive semantic imports and could execute
 // a destination before its host has switched the authoritative placement.
-pub const SCHEMA_VERSION: u32 = 20;
+pub const SCHEMA_VERSION: u32 = 21;
 
 type Work = Box<dyn FnOnce(&mut Connection) + Send>;
 
@@ -276,7 +276,7 @@ impl Store {
                     import_id TEXT PRIMARY KEY REFERENCES engine_transfer_import(id),data TEXT NOT NULL);
                     CREATE TABLE IF NOT EXISTS engine_transfer_snapshot(
                     import_id TEXT NOT NULL REFERENCES engine_transfer_import(id),snapshot_id TEXT NOT NULL,
-                    boundary_message_id TEXT,manifest TEXT NOT NULL,PRIMARY KEY(import_id,snapshot_id));
+                    boundary_message_id TEXT,manifest TEXT NOT NULL,order_index INTEGER,PRIMARY KEY(import_id,snapshot_id));
                     CREATE TABLE IF NOT EXISTS engine_transfer_message(
                     import_id TEXT NOT NULL REFERENCES engine_transfer_import(id),source_message_id TEXT NOT NULL,seq INTEGER NOT NULL,
                     PRIMARY KEY(import_id,seq));
