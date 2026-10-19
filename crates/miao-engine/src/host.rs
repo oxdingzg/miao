@@ -271,6 +271,18 @@ impl Host {
                 .await
                 .map(|value| value.unwrap_or(Value::Null)),
             Command::Snapshot { session_id } => runtime.store().snapshot(&session_id).await,
+            Command::TransferTimeline { session_id, after } => {
+                runtime
+                    .store()
+                    .transfer_messages(&session_id, after, false)
+                    .await
+            }
+            Command::TransferContext { session_id, after } => {
+                runtime
+                    .store()
+                    .transfer_messages(&session_id, after, true)
+                    .await
+            }
             Command::Fork {
                 session_id,
                 target_session_id,

@@ -409,6 +409,16 @@ pub enum Command {
     Snapshot {
         session_id: String,
     },
+    TransferTimeline {
+        session_id: String,
+        #[serde(default)]
+        after: usize,
+    },
+    TransferContext {
+        session_id: String,
+        #[serde(default)]
+        after: usize,
+    },
     Sessions,
     Fork {
         session_id: String,

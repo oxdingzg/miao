@@ -25,6 +25,40 @@ fn input(session: &str) -> Input {
 }
 
 #[tokio::test]
+async fn canonical_timeline_paging_and_context_selection_preserve_original_json() {
+    let tmp = tempfile::tempdir().unwrap();
+    let store = Store::open(tmp.path().join("engine.db")).await.unwrap();
+    let mut source: serde_json::Value = serde_json::from_str(&bundle("s")).unwrap();
+    source["timeline"] = json!((0..205).map(|i| json!({"id":format!("msg_original_{i}"),"type":"user","text":format!("message {i}"),"time":{"created":123+i},"metadata":{"original":true}})).collect::<Vec<_>>());
+    source["context_ids"] = json!(["msg_original_100", "msg_original_204"]);
+    let encoded = source.to_string();
+    store
+        .stage_session_transfer("transfer", encoded.clone(), &digest(&encoded))
+        .await
+        .unwrap();
+    assert_eq!(
+        store.snapshot("s").await.unwrap()["transfer_import"],
+        "transfer"
+    );
+    let first = store.transfer_messages("s", 0, false).await.unwrap();
+    assert_eq!(first["messages"].as_array().unwrap().len(), 100);
+    assert_eq!(first["next"], 100);
+    let second = store.transfer_messages("s", 100, false).await.unwrap();
+    assert_eq!(second["next"], 200);
+    let third = store.transfer_messages("s", 200, false).await.unwrap();
+    assert!(third["next"].is_null());
+    assert_eq!(third["messages"][4], source["timeline"][204]);
+    let context = store.transfer_messages("s", 0, true).await.unwrap();
+    assert_eq!(
+        context["messages"],
+        json!([source["timeline"][100], source["timeline"][204]])
+    );
+    assert!(context["next"].is_null());
+    assert_eq!(context["bundle_sha256"], digest(&encoded));
+    store.close().await.unwrap();
+}
+
+#[tokio::test]
 async fn inactive_import_preserves_exact_bundle_and_survives_close_reopen_abort() {
     let tmp = tempfile::tempdir().unwrap();
     let path = tmp.path().join("engine.db");
