@@ -738,7 +738,7 @@ test("account trust and cancellation require separate local confirmations and us
     bindAccount: async (input) => {
       calls.push("bind")
       expect(input).not.toHaveProperty("accountID")
-      expect(input.policy.permissions).toEqual(["read"])
+      expect(input.policy.permissions).toEqual(["read", "session.create"])
       expect(input.policy.expiresAt).toBeGreaterThan(Date.now() + 89 * 86400000)
       trust = {
         accountID: "account_owner_fixture_001",
