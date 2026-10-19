@@ -288,7 +288,13 @@ final class PairingUITests: XCTestCase {
         let agentPicker = app.descendants(matching: .any).matching(identifier: "agentChoice").firstMatch
         XCTAssertTrue(agentPicker.waitForExistence(timeout: 15))
         agentPicker.tap()
-        app.buttons["plan"].tap()
+        let plan = app.descendants(matching: .any).matching(identifier: "plan").firstMatch
+        let hasPlan = plan.waitForExistence(timeout: 10)
+        let planButton = app.buttons["plan"].exists
+        let planText = app.staticTexts["plan"].exists
+        print("NativeAgentChoice plan=\(hasPlan) button=\(planButton) staticText=\(planText) picker=\(agentPicker.exists) hittable=\(agentPicker.isHittable)")
+        XCTAssertTrue(hasPlan, "The Agent picker must offer the real Runtime's plan agent")
+        plan.tap()
         app.buttons["保存 Agent"].tap()
         XCTAssertTrue(app.navigationBars["Native phone rename"].waitForExistence(timeout: 15))
         menu.tap()
