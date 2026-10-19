@@ -331,6 +331,7 @@ struct RemoteView: View {
                     Label("连接电脑", systemImage: "qrcode.viewfinder").frame(maxWidth: .infinity, alignment: .leading)
                 }
                 if let error = model.error { Text(error).foregroundStyle(.red).font(.footnote) }
+                if let error = model.accountError { Text(error).foregroundStyle(.red).font(.footnote) }
             } header: { Text("我的电脑") } footer: {
                 Text("在电脑上打开 /remote-control 并登录同一账号，或扫描配对码。")
             }

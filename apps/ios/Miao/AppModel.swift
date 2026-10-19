@@ -653,6 +653,8 @@ final class AppModel {
         case HubAccountError.invalidCredentials, HubAccountError.rejected(401), HubAccountError.rejected(403): return "登录未成功，请核对邮箱、密码和中继地址"
         case HubAccountError.rejected(404): return "这个中继不支持此功能，请更新 App 或核对中继地址"
         case HubAccountError.storage: return "设备凭证暂时不可用，请解锁后重试"
+        case RemoteConnectionError.authorizationBlocked: return "账号远控接入被拒绝，请确认电脑与中继支持账号接入，且两端登录的是同一账号"
+        case RemoteConnectionError.protocolIncompatible: return "请更新电脑和 App 后重试账号远控"
         default: return "暂时无法连接中继，请检查网络后重试"
         }
     }

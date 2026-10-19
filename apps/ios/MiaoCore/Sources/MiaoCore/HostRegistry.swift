@@ -94,13 +94,18 @@ public actor HostRegistry {
 
     public func synchronizeAccount(hubURL: URL, accountID: String, directory: [HubDirectoryHost]) throws {
         var next = try load()
+        let before = next.hosts
         next.hosts.removeAll { record in
             guard record.accountID == accountID, record.host.hubURL == hubURL else { return false }
-            return !directory.contains { host in
-                host.hostID == record.host.target.hostID && host.runtimeID == record.host.target.runtimeID && host.online && host.revokedAt == nil
-            }
+            let known = directory.filter { $0.hostID == record.host.target.hostID }
+            if known.contains(where: { $0.revokedAt != nil }) { return true }
+            // Keep the view stable during a transient relay outage. Replace an
+            // old runtime only when the directory advertises a live replacement.
+            return known.contains(where: { $0.online }) && !known.contains(where: {
+                $0.runtimeID == record.host.target.runtimeID && $0.online
+            })
         }
-        try persist(next)
+        if next.hosts != before { try persist(next) }
     }
 
     /// Computer names come from live directory metadata; a pairing URL only carries identifiers.

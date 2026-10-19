@@ -28,8 +28,8 @@ final class HostRegistryTests: XCTestCase {
         let retained = try await restarted.snapshot()
         XCTAssertEqual(retained.hosts.count, 1)
         try await restarted.synchronizeAccount(hubURL: host.hubURL, accountID: "account-owner-0001", directory: [])
-        let removed = try await restarted.snapshot()
-        XCTAssertTrue(removed.hosts.isEmpty)
+        let offline = try await restarted.snapshot()
+        XCTAssertEqual(offline.hosts.count, 1, "A transient directory outage must not reset navigation")
     }
 
     func testTrustAnchorPrecedesApprovalAndOnlyPublicMetadataSurvivesRestart() async throws {
