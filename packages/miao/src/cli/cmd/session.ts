@@ -17,6 +17,16 @@ import { Process } from "@/util/process"
 import { EOL } from "os"
 import path from "path"
 import { which } from "@miao/core/util/which"
+import { Blob } from "@miao/core/blob"
+import { EventV2 } from "@miao/core/event"
+import { SessionStore } from "@miao/core/session/store"
+import { SessionMigrationCoordinator } from "@miao/core/session/migration-coordinator"
+import { Snapshot } from "@miao/core/snapshot"
+import { AbsolutePath } from "@miao/core/schema"
+import { LayerNode } from "@miao/core/effect/layer-node"
+import { EngineClient } from "@/engine/client"
+import { nativeEngineOptions } from "@/engine/native-engine"
+import { engine as transferEngine } from "@/engine/transfer"
 
 function pagerCmd(): string[] {
   const lessOptions = ["-R", "-S"]
@@ -48,7 +58,8 @@ function pagerCmd(): string[] {
 export const SessionCommand = cmd({
   command: "session",
   describe: "manage sessions",
-  builder: (yargs: Argv) => yargs.command(SessionListCommand).command(SessionDeleteCommand).demandCommand(),
+  builder: (yargs: Argv) =>
+    yargs.command(SessionListCommand).command(SessionDeleteCommand).command(SessionMigrateCommand).demandCommand(),
   async handler() {},
 })
 
@@ -77,6 +88,121 @@ export const removeSession: (
   const sessions = yield* SessionV2.Service
   for (const child of yield* sessions.children(sessionID)) yield* removeSession(child.id)
   yield* sessions.remove(sessionID)
+})
+
+export const SessionMigrateCommand = effectCmd({
+  command: "migrate <sessionID>",
+  describe: "move a session from the TypeScript engine to the native engine",
+  builder: (yargs) =>
+    yargs
+      .positional("sessionID", {
+        describe: "session ID to migrate",
+        type: "string",
+        demandOption: true,
+      })
+      .option("native-db", {
+        describe: "native engine database to stage the Session into",
+        type: "string",
+        demandOption: true,
+      })
+      .option("workspace", {
+        describe: "workspace root recorded for the native Session (defaults to the source location)",
+        type: "string",
+      })
+      .option("protocol", {
+        describe: "target wire protocol recorded for provider history (for example openai-chat)",
+        type: "string",
+        demandOption: true,
+      })
+      .option("model", {
+        describe: "target model id (defaults to the source Session model)",
+        type: "string",
+      })
+      .option("route", {
+        describe: "native engine route binding",
+        type: "string",
+      })
+      .option("agent", {
+        describe: "agent name the native host manifest must match",
+        type: "string",
+      })
+      .option("import-id", {
+        describe: "durable import id reused by retries (defaults to native-<session>)",
+        type: "string",
+      })
+      .option("bundle", {
+        describe: "durable bundle file the native host reads (defaults beside the product database)",
+        type: "string",
+      }),
+  handler: Effect.fn("Cli.session.migrate")(function* (args) {
+    const sessionID = SessionV2.ID.make(args.sessionID)
+    const options = nativeEngineOptions(process.env)
+    if (!options)
+      return yield* fail("Native engine binary not found; set MIAO_ENGINE_BIN or install a compatible engine")
+    const nativeDatabase = path.resolve(args.nativeDb)
+    yield* Effect.gen(function* () {
+      const database = yield* Database.Service
+      const store = yield* SessionStore.Service
+      const session = yield* store.get(sessionID)
+      if (!session) return yield* fail(`Session not found: ${args.sessionID}`)
+      const model = args.model ?? session.model?.id
+      if (!model) return yield* fail("Pass --model: the source Session records no model to bind")
+      const workspace = AbsolutePath.make(args.workspace ? path.resolve(args.workspace) : session.location.directory)
+      const client = EngineClient.start({
+        ...options,
+        model,
+        db: nativeDatabase,
+        workspace,
+      })
+      try {
+        const importID = args.importId ?? `native-${sessionID}`
+        const completed = yield* SessionMigrationCoordinator.toNative({
+          database: database.db,
+          id: importID,
+          sessionID,
+          target: {
+            engine: "rust",
+            storage: AbsolutePath.make(nativeDatabase),
+            location: { directory: workspace },
+          },
+          bundleFile: AbsolutePath.make(
+            args.bundle
+              ? path.resolve(args.bundle)
+              : path.join(path.dirname(database.storage), "migrations", `${importID}.bundle.json`),
+          ),
+          productDatabase: AbsolutePath.make(database.storage),
+          identity: { protocol: args.protocol, model },
+          routeID: args.route,
+          agent: args.agent === undefined ? undefined : { name: args.agent },
+          engine: transferEngine(client),
+        })
+        UI.println(
+          UI.Style.TEXT_SUCCESS_BOLD +
+            `Session ${sessionID} migrated (${completed.state}) to ${nativeDatabase}` +
+            UI.Style.TEXT_NORMAL,
+        )
+      } finally {
+        client.close()
+      }
+    }).pipe(
+      Effect.catch((error) => fail(`Migration failed: ${error instanceof Error ? error.message : String(error)}`)),
+      Effect.provide(
+        AppNodeBuilder.build(
+          LayerNode.group([
+            SessionV2.node,
+            Database.node,
+            EventV2.node,
+            SessionStore.node,
+            Blob.node,
+            Snapshot.node,
+            SessionExecution.node,
+          ]),
+          [[SessionExecution.node, SessionExecution.noopLayer]],
+        ),
+      ),
+      Effect.scoped,
+    )
+  }),
 })
 
 export const SessionListCommand = effectCmd({
