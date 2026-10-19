@@ -887,7 +887,7 @@ function App(props: {
             const enable = !status.enabled
             await runtime.setEnabled({ enabled: enable })
             if (sessionID) await runtime.setSessionEnabled?.({ sessionID, enabled: enable })
-            toast.show({ message: enable ? "远程控制已开启" : "远程控制已关闭" })
+            toast.show({ message: enable ? "远程控制已开启" : "远程控制已关闭", variant: "success" })
           })().catch(() => toast.show({ message: "远程控制状态切换失败", variant: "error" }))
         },
       },

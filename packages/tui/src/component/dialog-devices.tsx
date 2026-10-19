@@ -296,7 +296,7 @@ export function DialogDevices(props: {
                   type: "trust",
                   grant,
                   policy: {
-                    permissions: Array.from(new Set([...grant.permissions, "session.create"])),
+                    permissions: [...new Set<RemoteAccess.Permission>([...grant.permissions, "session.create"])],
                     projectIDs: all ? [props.projectID!] : custom.scope === "current" ? [] : grant.projectIDs,
                     sessionIDs:
                       !all && custom.scope === "current" && props.sessionID ? [props.sessionID!] : grant.sessionIDs,
