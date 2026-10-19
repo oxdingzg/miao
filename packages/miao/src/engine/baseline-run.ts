@@ -301,9 +301,15 @@ export async function runBaselineTs(input: BaselineTsInput): Promise<BaselineRun
   let exit = 0
   let stderrText = ""
   const timeoutMs = input.timeoutMs ?? 300_000
+  // Every input runs its own process, and the recorder snapshots the Session
+  // from scratch, so one shared directory would leave only the last input's
+  // provider interactions. Each input records into its own directory and the
+  // interactions are merged below.
+  const bundles: Array<BlackboxTape.Bundle | undefined> = []
   // Each follow-up continues the same Session in the same workspace, so the
   // run accumulates history instead of starting over.
-  for (const prompt of [task.prompt, ...(task.followups ?? [])]) {
+  for (const [round, prompt] of [task.prompt, ...(task.followups ?? [])].entries()) {
+    const recording = path.join(blackbox, `${round}`)
     const args = [input.bun ?? "bun", input.entry, "run", prompt, "--format", "json", "-m", input.model]
     if (session) args.push("--session", session)
     const child = Bun.spawn(args, {
@@ -320,7 +326,7 @@ export async function runBaselineTs(input: BaselineTsInput): Promise<BaselineRun
         MIAO_CONFIG_CONTENT: tsConfig(),
         MIAO_CONFIG_DIR: path.join(input.root, "config"),
         MIAO_DISABLE_PROJECT_CONFIG: "1",
-        MIAO_BLACKBOX_RECORD: blackbox,
+        MIAO_BLACKBOX_RECORD: recording,
         NO_COLOR: "1",
       },
     })
@@ -355,15 +361,17 @@ export async function runBaselineTs(input: BaselineTsInput): Promise<BaselineRun
     clearTimeout(timer)
     await stdout
     stderrText = await stderr
+    bundles.push(
+      session
+        ? await BlackboxTape.load(path.join(recording, `${session}.json`)).catch(() => undefined)
+        : undefined,
+    )
     if (exit !== 0) break
   }
   const exitAtMs = Date.now()
   const assessment = await assessBaselineArtifacts(workspace, task.id)
   const verifiedAtMs = Date.now()
-  const bundle = session
-    ? await BlackboxTape.load(path.join(blackbox, `${session}.json`)).catch(() => undefined)
-    : undefined
-  const interactions = bundle?.interactions ?? []
+  const interactions = mergeInteractions(bundles)
   const terminal = interrupted && exit === 130 ? "interrupted" : exit === 0 ? "completed" : "failed"
   return finishBaselineRun({
     engine: "typescript",
@@ -1036,6 +1044,17 @@ function tsPermissionDenied(parts: Array<Record<string, Schema.Json>>, stderr: s
       if (!BlackboxTape.isObject(part) || !BlackboxTape.isObject(part.state)) return false
       return denied(part.state.error)
     }) || denied(stderr)
+  )
+}
+
+function mergeInteractions(bundles: Array<BlackboxTape.Bundle | undefined>) {
+  const ordinals = new Map<string, number>()
+  return bundles.flatMap((bundle) =>
+    (bundle?.interactions ?? []).map((interaction) => {
+      const ordinal = ordinals.get(interaction.lane) ?? 0
+      ordinals.set(interaction.lane, ordinal + 1)
+      return { ...interaction, ordinal }
+    }),
   )
 }
 
