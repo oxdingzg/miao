@@ -398,11 +398,16 @@ TypeScript 参考语料固定 last-match 例外及 Bash AST 命令提取语义�
 
 ## 9. 原生引擎启用门槛
 
-落地引擎是建设本身；以下门槛决定原生会话何时成为默认路径。
+落地引擎是建设本身；以下门槛决定原生会话何时成为默认路径。某次把会话放到
+原生引擎后具体启用了什么、缺什么，以及效率证据的现状，见
+[开启原生引擎](native-engine-enablement.zh.md)。
 
-1. **引擎二进制默认就位** — 开放。`NativeEngine.Placement` 仍要求显式
-   `MIAO_ENGINE_BIN`。发布流已分发各平台 `miao-engine` 压缩包，剩余工作是
-   自动发现已安装的引擎（最终随包内置），使放置无需环境变量。
+1. **引擎二进制默认就位** — 自动发现已落地。发布流分发各平台
+   `miao-engine` 压缩包，安装器将其放到 `~/.miao/bin/miao-engine`，产品无需
+   `MIAO_ENGINE_BIN` 即可发现。放置要求 protocol 2：`miao-engine
+   --capabilities` 报告 `{protocol, schema, version}`；显式指定的旧引擎会以明确
+   错误终止启动，自动发现的旧引擎被忽略（产品继续运行 TS 会话）。剩余工作是在
+   完全没有引擎资产的发布中把压缩包内置进 CLI 安装。
 2. **产品工具反向桥** — 已落地（#1027）。原生会话注册宿主提供的产品工具，
    经引擎 stdio 桥反向调度到服务端执行；回复作为持久工具结果结算。
 3. **声明式 provider manifest 文档** — 开放。任何 base-url provider 或网关
