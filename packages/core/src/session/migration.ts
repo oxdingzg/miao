@@ -8,6 +8,7 @@ import { EventV2 } from "../event"
 import { SessionEnginePlacement } from "./engine-placement"
 import { SessionMigrationTable } from "./migration.sql"
 import { SessionTable } from "./sql"
+import { Hash } from "../util/hash"
 
 type Db = Database.Interface["db"]
 type Native = Extract<SessionEnginePlacement.Placement, { engine: "rust" }>
@@ -39,7 +40,7 @@ export const active = Effect.fn("SessionMigration.active")(function* (db: Db, se
  * It does not transfer placement or start target execution. */
 export const freeze = Effect.fn("SessionMigration.freeze")(function* (
   db: Db,
-  input: { id: string; sessionID: SessionID; target: Native; bundleSHA256: string; sourceSeq: number },
+  input: { id: string; sessionID: SessionID; target: Native; bundleSHA256: string; sourceSeq: number; bundle?: string },
 ) {
   if (
     !input.id ||
@@ -47,6 +48,11 @@ export const freeze = Effect.fn("SessionMigration.freeze")(function* (
     !/^[a-f0-9]{64}$/.test(input.bundleSHA256) ||
     !Number.isSafeInteger(input.sourceSeq) ||
     input.sourceSeq < -1
+  )
+    return yield* new Conflict({ sessionID: input.sessionID })
+  if (
+    input.bundle !== undefined &&
+    (Buffer.byteLength(input.bundle) > 64 * 1024 * 1024 || Hash.sha256(input.bundle) !== input.bundleSHA256)
   )
     return yield* new Conflict({ sessionID: input.sessionID })
   const target = Schema.decodeUnknownSync(SessionEnginePlacement.Placement)(input.target)
@@ -94,7 +100,8 @@ export const freeze = Effect.fn("SessionMigration.freeze")(function* (
             existing.location.directory !== target.location.directory ||
             existing.location.workspaceID !== target.location.workspaceID ||
             existing.bundle_sha256 !== input.bundleSHA256 ||
-            existing.source_seq !== input.sourceSeq
+            existing.source_seq !== input.sourceSeq ||
+            (input.bundle !== undefined && existing.bundle !== input.bundle)
           )
             return yield* new Conflict({ sessionID: input.sessionID })
           return existing
@@ -122,6 +129,7 @@ export const freeze = Effect.fn("SessionMigration.freeze")(function* (
             native_storage: target.storage,
             location: target.location,
             bundle_sha256: input.bundleSHA256,
+            bundle: input.bundle,
             source_seq: input.sourceSeq,
             created_at: now,
             updated_at: now,

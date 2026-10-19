@@ -14,6 +14,8 @@ export const SessionMigrationTable = sqliteTable(
     native_storage: text().notNull(),
     location: text({ mode: "json" }).$type<Location.Ref>().notNull(),
     bundle_sha256: text().notNull(),
+    /** Exact encoded semantic payload, committed with the freeze for recovery. */
+    bundle: text(),
     source_seq: integer().notNull(),
     created_at: integer().notNull(),
     updated_at: integer().notNull(),

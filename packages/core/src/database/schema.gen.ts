@@ -57,6 +57,7 @@ export default {
           \`native_storage\` text NOT NULL,
           \`location\` text NOT NULL,
           \`bundle_sha256\` text NOT NULL,
+          \`bundle\` text,
           \`source_seq\` integer NOT NULL,
           \`created_at\` integer NOT NULL,
           \`updated_at\` integer NOT NULL,

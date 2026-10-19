@@ -1,9 +1,9 @@
 {
   "version": "7",
   "dialect": "sqlite",
-  "id": "77190546-1391-44ea-a0b6-29755b509594",
+  "id": "39bf0b1c-dd50-4d16-9492-2f3d89377c66",
   "prevIds": [
-    "adf6becd-91cb-4320-9661-a6a795d960b5"
+    "77190546-1391-44ea-a0b6-29755b509594"
   ],
   "ddl": [
     {
@@ -411,6 +411,16 @@
       "default": null,
       "generated": null,
       "name": "bundle_sha256",
+      "entityType": "columns",
+      "table": "session_migration"
+    },
+    {
+      "type": "text",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "bundle",
       "entityType": "columns",
       "table": "session_migration"
     },
