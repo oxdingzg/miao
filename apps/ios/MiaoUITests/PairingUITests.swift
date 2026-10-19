@@ -311,11 +311,13 @@ final class PairingUITests: XCTestCase {
         let modelPicker = app.descendants(matching: .any).matching(identifier: "modelChoice").firstMatch
         XCTAssertTrue(modelPicker.waitForExistence(timeout: 15))
         modelPicker.tap()
-        app.buttons["fixture / Remote selection fixture"].tap()
+        let selectedModel = app.descendants(matching: .any).matching(identifier: "fixture / Remote selection fixture").firstMatch
+        XCTAssertTrue(selectedModel.waitForExistence(timeout: 10))
+        selectedModel.tap()
         let variantPicker = app.descendants(matching: .any).matching(identifier: "variantChoice").firstMatch
         XCTAssertTrue(variantPicker.waitForExistence(timeout: 10))
         variantPicker.tap()
-        let reasoning = app.buttons["reasoning"]
+        let reasoning = app.descendants(matching: .any).matching(identifier: "reasoning").firstMatch
         XCTAssertTrue(reasoning.waitForExistence(timeout: 5))
         expectation(for: NSPredicate { _, _ in reasoning.isHittable }, evaluatedWith: reasoning)
         waitForExpectations(timeout: 5)

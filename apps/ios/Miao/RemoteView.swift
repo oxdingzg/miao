@@ -814,7 +814,8 @@ private struct SessionSelectionView: View {
                         Picker("Agent", selection: $agent) {
                             Text("请选择").tag("")
                             ForEach(choices.agents, id: \.id) { Text($0.id).tag($0.id) }
-                        }.accessibilityIdentifier("agentChoice").accessibilityValue(agent)
+                        }.pickerStyle(.navigationLink)
+                            .accessibilityIdentifier("agentChoice").accessibilityValue(agent)
                         Button("保存 Agent") {
                             let value = agent
                             busy = true
@@ -831,12 +832,13 @@ private struct SessionSelectionView: View {
                             ForEach(choices.models.indices, id: \.self) { index in
                                 Text(choices.models[index].providerID + " / " + choices.models[index].name).tag(index)
                             }
-                        }.accessibilityIdentifier("modelChoice")
+                        }.pickerStyle(.navigationLink).accessibilityIdentifier("modelChoice")
                         if let model {
                             Picker("变体", selection: $variant) {
                                 Text("默认").tag("")
                                 ForEach(model.variants, id: \.id) { Text($0.id).tag($0.id) }
-                            }.accessibilityIdentifier("variantChoice").accessibilityValue(variant.isEmpty ? "默认" : variant)
+                            }.pickerStyle(.navigationLink)
+                                .accessibilityIdentifier("variantChoice").accessibilityValue(variant.isEmpty ? "默认" : variant)
                         }
                         Button("保存模型") {
                             guard let model else { return }
