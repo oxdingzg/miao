@@ -1,0 +1,244 @@
+{
+  "sample": {
+    "task": "tool-error",
+    "engine": "rust",
+    "repetition": 0,
+    "suiteHash": "bd905b4f81f0a9412b614631a36337723067574848c5f05b50ead1cf48675091",
+    "taskHash": "d805c342f165a7193bf45347ebba54a0e1c0d75e9baffd9c5979d07f5b0fb09e",
+    "profile": {
+      "model": "deepseek-v4.1-flash",
+      "modelParametersHash": "ef3d96a9ec0464401ae599f38c478bab21fa051e068e9d158e5c186628e7a393",
+      "agentManifestHash": "2dbdecca09d38a807edd88d10f18f4febcb6aa5dcbdc2c1bb17f06446b689562",
+      "permissionHash": "2f1e58c74098382731a6229635f5409c49801ca2d4faf7a7225405a44c364054",
+      "toolSurfaceHash": "fb2ab566dec79420e179a024d88e1903ebbc1b7a9f23fe7b0aefb45a9d0dcb28"
+    },
+    "revision": "fa001fbff8b188361bf5848cc31358bba7e7d7bb",
+    "artifactHash": "42a0929bd2c953adb3b7ae60782aeb2d7a5a7101e999baa01b6d9c9d85b7e5ad",
+    "receiptHash": "8e7af696ee4bde9d06bae1e1bcacdd57051d68c14fb622c7bd71130c8f15ef9c",
+    "outcome": "passed",
+    "elapsedMs": 11120,
+    "attempts": [
+      {
+        "inputTokens": 4862,
+        "outputTokens": 49,
+        "cost": null
+      },
+      {
+        "inputTokens": 4944,
+        "outputTokens": 56,
+        "cost": null
+      },
+      {
+        "inputTokens": 5068,
+        "outputTokens": 55,
+        "cost": null
+      }
+    ]
+  },
+  "rejection": null,
+  "evidence": {
+    "engine": "rust",
+    "revision": "fa001fbff8b188361bf5848cc31358bba7e7d7bb",
+    "task": "tool-error",
+    "repetition": 0,
+    "terminal": "completed",
+    "error": null,
+    "receipts": [
+      "tool.error"
+    ],
+    "attempts": [
+      {
+        "inputTokens": 4862,
+        "outputTokens": 49,
+        "cacheReadTokens": 4736,
+        "cacheWriteTokens": null,
+        "reasoningTokens": 0,
+        "cost": null
+      },
+      {
+        "inputTokens": 4944,
+        "outputTokens": 56,
+        "cacheReadTokens": 4736,
+        "cacheWriteTokens": null,
+        "reasoningTokens": 5,
+        "cost": null
+      },
+      {
+        "inputTokens": 5068,
+        "outputTokens": 55,
+        "cacheReadTokens": 4864,
+        "cacheWriteTokens": null,
+        "reasoningTokens": 0,
+        "cost": null
+      }
+    ],
+    "phases": [
+      {
+        "phase": "input.admitted",
+        "atMs": 1792422897473,
+        "clock": "recorded"
+      },
+      {
+        "phase": "input.promoted",
+        "atMs": 1792422897473,
+        "clock": "recorded"
+      },
+      {
+        "phase": "run.started",
+        "atMs": 1792422897474,
+        "clock": "recorded"
+      },
+      {
+        "phase": "provider.request",
+        "atMs": 1792422897476,
+        "clock": "recorded"
+      },
+      {
+        "phase": "provider.request.result",
+        "atMs": 1792422905320,
+        "clock": "recorded"
+      },
+      {
+        "phase": "tool.completed",
+        "atMs": 1792422905352,
+        "clock": "recorded"
+      },
+      {
+        "phase": "provider.request",
+        "atMs": 1792422905354,
+        "clock": "recorded"
+      },
+      {
+        "phase": "provider.request.result",
+        "atMs": 1792422906616,
+        "clock": "recorded"
+      },
+      {
+        "phase": "tool.dispatched",
+        "atMs": 1792422906950,
+        "clock": "recorded"
+      },
+      {
+        "phase": "tool.completed",
+        "atMs": 1792422906951,
+        "clock": "recorded"
+      },
+      {
+        "phase": "provider.request",
+        "atMs": 1792422906953,
+        "clock": "recorded"
+      },
+      {
+        "phase": "provider.request.result",
+        "atMs": 1792422908340,
+        "clock": "recorded"
+      },
+      {
+        "phase": "run.usage",
+        "atMs": 1792422908520,
+        "clock": "recorded"
+      },
+      {
+        "phase": "run.finished",
+        "atMs": 1792422908520,
+        "clock": "recorded"
+      },
+      {
+        "phase": "stop",
+        "atMs": 1792422908520,
+        "clock": "recorded"
+      },
+      {
+        "phase": "first-output",
+        "atMs": 1792422905321,
+        "clock": "observed"
+      },
+      {
+        "phase": "verified",
+        "atMs": 1792422908579,
+        "clock": "observed"
+      }
+    ],
+    "profile": {
+      "model": "deepseek-v4.1-flash",
+      "modelParametersHash": "ef3d96a9ec0464401ae599f38c478bab21fa051e068e9d158e5c186628e7a393",
+      "agentManifestHash": "2dbdecca09d38a807edd88d10f18f4febcb6aa5dcbdc2c1bb17f06446b689562",
+      "permissionHash": "2f1e58c74098382731a6229635f5409c49801ca2d4faf7a7225405a44c364054",
+      "toolSurfaceHash": "fb2ab566dec79420e179a024d88e1903ebbc1b7a9f23fe7b0aefb45a9d0dcb28"
+    },
+    "profileReceipts": 3,
+    "loops": {
+      "continuations": [],
+      "stopped": []
+    },
+    "toolCalls": 2,
+    "parallel": {
+      "batches": 0,
+      "batchedReads": 0,
+      "batchWallMs": 0
+    },
+    "context": {
+      "compaction": {},
+      "reasons": [],
+      "recallCalls": 0
+    },
+    "providerAttempts": [
+      {
+        "attempt": 0,
+        "protocol": "openai-chat",
+        "status": 200,
+        "outcome": "headers_received",
+        "detail": null
+      },
+      {
+        "attempt": 0,
+        "protocol": "openai-chat",
+        "status": 200,
+        "outcome": "headers_received",
+        "detail": null
+      },
+      {
+        "attempt": 0,
+        "protocol": "openai-chat",
+        "status": 200,
+        "outcome": "headers_received",
+        "detail": null
+      }
+    ],
+    "textHash": "ab17ce99a182676b2e2b10a086bd0f215c27e35543d9ca2f3520fab4b06175c4",
+    "binarySha256": "b2c1d67f465561ad7bed58ab28ebe03658b8042e16b0bb3f75a41d65329d14fd",
+    "startedAtMs": 1792422897459,
+    "admissionMs": 1792422897473,
+    "elapsedMs": 11120
+  },
+  "assessment": {
+    "suiteHash": "bd905b4f81f0a9412b614631a36337723067574848c5f05b50ead1cf48675091",
+    "taskHash": "d805c342f165a7193bf45347ebba54a0e1c0d75e9baffd9c5979d07f5b0fb09e",
+    "artifactPass": true,
+    "unexpected": [],
+    "immutable": [
+      {
+        "file": "AGENTS.md",
+        "unchanged": true
+      },
+      {
+        "file": "package.json",
+        "unchanged": true
+      },
+      {
+        "file": "alternate.txt",
+        "unchanged": true
+      }
+    ],
+    "expected": [],
+    "check": null,
+    "executionVerdict": "unverified",
+    "requiredReceipts": [
+      "tool.error"
+    ],
+    "answerContains": [
+      "RECOVERY_TOKEN_83"
+    ]
+  },
+  "answer": "I'll try the missing file first, then recover.\nThe expected error occurred. Recovering with the alternate file:\n- `missing.txt` → error as expected: `No such file or directory (os error 2)`\n- Recovered by reading `alternate.txt`.\n\n**Exact recovery token:** `RECOVERY_TOKEN_83`\n\nNo files were created or modified."
+}

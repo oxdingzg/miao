@@ -9,6 +9,11 @@ use serde::Deserialize;
 use std::{path::Path, sync::Arc};
 use tokio::io::AsyncReadExt;
 
+/// Version of the host route manifest this engine accepts. It moves when a
+/// route field is added or its meaning changes, so a product can refuse a
+/// manifest the engine cannot read instead of failing at startup.
+pub const SCHEMA: u32 = 1;
+
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
 struct Route {

@@ -1,0 +1,340 @@
+{
+  "sample": {
+    "task": "stream-interruption",
+    "engine": "rust",
+    "repetition": 0,
+    "suiteHash": "bd905b4f81f0a9412b614631a36337723067574848c5f05b50ead1cf48675091",
+    "taskHash": "4f00bf344635036fd5d16a5b348e948e9ed126d43854e1280b1286d48d53284c",
+    "profile": {
+      "model": "deepseek-v4.1-flash",
+      "modelParametersHash": "ef3d96a9ec0464401ae599f38c478bab21fa051e068e9d158e5c186628e7a393",
+      "agentManifestHash": "2dbdecca09d38a807edd88d10f18f4febcb6aa5dcbdc2c1bb17f06446b689562",
+      "permissionHash": "1a9fc0c1f1f6dc5efe5e36c51b6b46bec3ee4ead4c9949ccaf9f414c6f165225",
+      "toolSurfaceHash": "fb2ab566dec79420e179a024d88e1903ebbc1b7a9f23fe7b0aefb45a9d0dcb28"
+    },
+    "revision": "fa001fbff8b188361bf5848cc31358bba7e7d7bb",
+    "artifactHash": "2b4e04ae507e25e4b1036dff0509a0cb4fc4f014bfde0083fccd539fa1e60df2",
+    "receiptHash": "68ec3108809d911fe5a96953867cb2aa021c96f01d29a1db3996493238e0433f",
+    "outcome": "failed",
+    "elapsedMs": 12025,
+    "attempts": [
+      {
+        "inputTokens": 4862,
+        "outputTokens": 84,
+        "cost": null
+      },
+      {
+        "inputTokens": 5079,
+        "outputTokens": 258,
+        "cost": null
+      },
+      {
+        "inputTokens": 5403,
+        "outputTokens": 82,
+        "cost": null
+      },
+      {
+        "inputTokens": 5542,
+        "outputTokens": 152,
+        "cost": null
+      },
+      {
+        "inputTokens": 5791,
+        "outputTokens": 554,
+        "cost": null
+      }
+    ]
+  },
+  "rejection": null,
+  "evidence": {
+    "engine": "rust",
+    "revision": "fa001fbff8b188361bf5848cc31358bba7e7d7bb",
+    "task": "stream-interruption",
+    "repetition": 0,
+    "terminal": "completed",
+    "error": null,
+    "receipts": [],
+    "attempts": [
+      {
+        "inputTokens": 4862,
+        "outputTokens": 84,
+        "cacheReadTokens": 0,
+        "cacheWriteTokens": null,
+        "reasoningTokens": 0,
+        "cost": null
+      },
+      {
+        "inputTokens": 5079,
+        "outputTokens": 258,
+        "cacheReadTokens": 4864,
+        "cacheWriteTokens": null,
+        "reasoningTokens": 132,
+        "cost": null
+      },
+      {
+        "inputTokens": 5403,
+        "outputTokens": 82,
+        "cacheReadTokens": 5248,
+        "cacheWriteTokens": null,
+        "reasoningTokens": 12,
+        "cost": null
+      },
+      {
+        "inputTokens": 5542,
+        "outputTokens": 152,
+        "cacheReadTokens": 5376,
+        "cacheWriteTokens": null,
+        "reasoningTokens": 94,
+        "cost": null
+      },
+      {
+        "inputTokens": 5791,
+        "outputTokens": 554,
+        "cacheReadTokens": 5632,
+        "cacheWriteTokens": null,
+        "reasoningTokens": 0,
+        "cost": null
+      }
+    ],
+    "phases": [
+      {
+        "phase": "input.admitted",
+        "atMs": 1792422921670,
+        "clock": "recorded"
+      },
+      {
+        "phase": "input.promoted",
+        "atMs": 1792422921670,
+        "clock": "recorded"
+      },
+      {
+        "phase": "run.started",
+        "atMs": 1792422921671,
+        "clock": "recorded"
+      },
+      {
+        "phase": "provider.request",
+        "atMs": 1792422921674,
+        "clock": "recorded"
+      },
+      {
+        "phase": "provider.request.result",
+        "atMs": 1792422922620,
+        "clock": "recorded"
+      },
+      {
+        "phase": "tool.dispatched",
+        "atMs": 1792422923340,
+        "clock": "recorded"
+      },
+      {
+        "phase": "tool.dispatched",
+        "atMs": 1792422923340,
+        "clock": "recorded"
+      },
+      {
+        "phase": "tool.completed",
+        "atMs": 1792422923341,
+        "clock": "recorded"
+      },
+      {
+        "phase": "tool.completed",
+        "atMs": 1792422923341,
+        "clock": "recorded"
+      },
+      {
+        "phase": "provider.request",
+        "atMs": 1792422923344,
+        "clock": "recorded"
+      },
+      {
+        "phase": "provider.request.result",
+        "atMs": 1792422924122,
+        "clock": "recorded"
+      },
+      {
+        "phase": "tool.dispatched",
+        "atMs": 1792422925916,
+        "clock": "recorded"
+      },
+      {
+        "phase": "tool.completed",
+        "atMs": 1792422926131,
+        "clock": "recorded"
+      },
+      {
+        "phase": "provider.request",
+        "atMs": 1792422926133,
+        "clock": "recorded"
+      },
+      {
+        "phase": "provider.request.result",
+        "atMs": 1792422927018,
+        "clock": "recorded"
+      },
+      {
+        "phase": "tool.dispatched",
+        "atMs": 1792422927607,
+        "clock": "recorded"
+      },
+      {
+        "phase": "tool.completed",
+        "atMs": 1792422927608,
+        "clock": "recorded"
+      },
+      {
+        "phase": "provider.request",
+        "atMs": 1792422927611,
+        "clock": "recorded"
+      },
+      {
+        "phase": "provider.request.result",
+        "atMs": 1792422928545,
+        "clock": "recorded"
+      },
+      {
+        "phase": "tool.dispatched",
+        "atMs": 1792422929722,
+        "clock": "recorded"
+      },
+      {
+        "phase": "tool.completed",
+        "atMs": 1792422929938,
+        "clock": "recorded"
+      },
+      {
+        "phase": "provider.request",
+        "atMs": 1792422929941,
+        "clock": "recorded"
+      },
+      {
+        "phase": "provider.request.result",
+        "atMs": 1792422930792,
+        "clock": "recorded"
+      },
+      {
+        "phase": "run.usage",
+        "atMs": 1792422933645,
+        "clock": "recorded"
+      },
+      {
+        "phase": "run.finished",
+        "atMs": 1792422933645,
+        "clock": "recorded"
+      },
+      {
+        "phase": "stop",
+        "atMs": 1792422933645,
+        "clock": "recorded"
+      },
+      {
+        "phase": "first-output",
+        "atMs": 1792422922621,
+        "clock": "observed"
+      },
+      {
+        "phase": "verified",
+        "atMs": 1792422933677,
+        "clock": "observed"
+      }
+    ],
+    "profile": {
+      "model": "deepseek-v4.1-flash",
+      "modelParametersHash": "ef3d96a9ec0464401ae599f38c478bab21fa051e068e9d158e5c186628e7a393",
+      "agentManifestHash": "2dbdecca09d38a807edd88d10f18f4febcb6aa5dcbdc2c1bb17f06446b689562",
+      "permissionHash": "1a9fc0c1f1f6dc5efe5e36c51b6b46bec3ee4ead4c9949ccaf9f414c6f165225",
+      "toolSurfaceHash": "fb2ab566dec79420e179a024d88e1903ebbc1b7a9f23fe7b0aefb45a9d0dcb28"
+    },
+    "profileReceipts": 5,
+    "loops": {
+      "continuations": [],
+      "stopped": []
+    },
+    "toolCalls": 5,
+    "parallel": {
+      "batches": 1,
+      "batchedReads": 2,
+      "batchWallMs": 0
+    },
+    "context": {
+      "compaction": {},
+      "reasons": [],
+      "recallCalls": 0
+    },
+    "providerAttempts": [
+      {
+        "attempt": 0,
+        "protocol": "openai-chat",
+        "status": 200,
+        "outcome": "headers_received",
+        "detail": null
+      },
+      {
+        "attempt": 0,
+        "protocol": "openai-chat",
+        "status": 200,
+        "outcome": "headers_received",
+        "detail": null
+      },
+      {
+        "attempt": 0,
+        "protocol": "openai-chat",
+        "status": 200,
+        "outcome": "headers_received",
+        "detail": null
+      },
+      {
+        "attempt": 0,
+        "protocol": "openai-chat",
+        "status": 200,
+        "outcome": "headers_received",
+        "detail": null
+      },
+      {
+        "attempt": 0,
+        "protocol": "openai-chat",
+        "status": 200,
+        "outcome": "headers_received",
+        "detail": null
+      }
+    ],
+    "textHash": "411d7fae6712b6e82d10cf0c47ddbf81af22a2fe9246529d2ba9ce5eba10e4d3",
+    "binarySha256": "b2c1d67f465561ad7bed58ab28ebe03658b8042e16b0bb3f75a41d65329d14fd",
+    "startedAtMs": 1792422921652,
+    "admissionMs": 1792422921670,
+    "elapsedMs": 12025
+  },
+  "assessment": {
+    "suiteHash": "bd905b4f81f0a9412b614631a36337723067574848c5f05b50ead1cf48675091",
+    "taskHash": "4f00bf344635036fd5d16a5b348e948e9ed126d43854e1280b1286d48d53284c",
+    "artifactPass": true,
+    "unexpected": [],
+    "immutable": [
+      {
+        "file": "AGENTS.md",
+        "unchanged": true
+      },
+      {
+        "file": "package.json",
+        "unchanged": true
+      },
+      {
+        "file": "action.ts",
+        "unchanged": true
+      }
+    ],
+    "expected": [
+      {
+        "file": "audit.log",
+        "matches": true
+      }
+    ],
+    "check": null,
+    "executionVerdict": "unverified",
+    "requiredReceipts": [
+      "provider.interrupted"
+    ],
+    "answerContains": []
+  },
+  "answer": "I'll start by inspecting the workspace to understand what `action.ts` does before running it.\n`action.ts` appends a single `once` line to `audit.log`. Note that `audit.log` does not exist yet, so this run will create it. Since the task demands exactly one execution, I'll run it once in the foreground and will not retry if it's interrupted.\nThe action exited cleanly (code 0, no output, no signal). Now inspecting `audit.log` — read-only, no re-run.\nDone — the audit marker was appended exactly once.\n\n## What happened\n\n**1. Inspected before running.** `action.ts` is a two-line script:\n\n```ts\nimport { appendFileSync } from 'node:fs'\nappendFileSync('audit.log', 'once\\n')\n```\n\nIt appends a fixed `once\\n` record. Two things mattered here:\n- `audit.log` **did not exist** beforehand, so this run created it rather than appending to an existing log. There is no pre-existing content to reason about.\n- The script has **no idempotency guard** — every execution adds another line. That makes \"run exactly once\" a real constraint, not a formality.\n\n**2. Ran it once, with no retry path.** `bun action.ts` completed with exit code `0`, empty stdout/stderr, and `signal: null`. Because the mutation is unguarded, I deliberately used a one-shot foreground command and did **not** wrap it in a retry. A retry after an ambiguous timeout could have produced a duplicate marker, so the correct behavior on any non-clean result would have been to stop and report rather than re-run. No interruption occurred, so the \"retain the completed mutation\" fallback never came into play.\n\n**3. Verified read-only.** All post-run checks were inspection only, never re-execution:\n- `read_file` → `once\\n`\n- `wc -l` → `1`, `wc -c` → `5`\n- `od -c` → `o n c e \\n`, nothing else\n\n## Summary of `audit.log`\n\n| Property | Value |\n|---|---|\n| Existence | Created by this run |\n| Content | `once\\n` — a single record |\n| Lines / bytes | 1 line, 5 bytes |\n| Trailing newline | Present, single `\\n` (no CRLF) |\n| Other/partial data | None |\n| SHA-256 | `ad06e727…c2acad07` |\n\n**Outcome:** exactly one audit marker, byte-identical to what the script writes, with no duplication or truncation. The file matches the single-line expectation, confirming one and only one execution took place.\n\nOne caveat worth flagging: since `audit.log` was created fresh and holds only this one record, the log currently has no historical baseline. If future runs matter, the unguarded `appendFileSync` means the file's line count is the only record of how many times the action ran — so it's worth treating that count as meaningful evidence rather than assuming idempotency."
+}

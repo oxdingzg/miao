@@ -1,0 +1,12 @@
+{
+  "model": "opencode-go/deepseek-v4.1-flash",
+  "provider": "opencode-go (OpenAI-compatible gateway)",
+  "endpoint": "https://opencode.ai/inference/go/openai/v1/chat/completions",
+  "rates_per_million_tokens": {
+    "input": 0.15,
+    "output": 0.6,
+    "cache_read": 0.003,
+    "cache_write": 0
+  },
+  "source": "catalog list prices reported by `miao models opencode-go --verbose` on 2026-10-19"
+}

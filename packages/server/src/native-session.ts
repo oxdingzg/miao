@@ -97,6 +97,21 @@ function number(value: unknown): number | undefined {
   return typeof value === "number" && Number.isFinite(value) ? value : undefined
 }
 
+/**
+ * The engine records the route's model id, while the product names a model
+ * `provider/model`. Resolve the exact form first, then a bare id that only one
+ * catalog model claims; an ambiguous bare id stays unpriced rather than
+ * charging the wrong model's rate.
+ */
+const resolveModel = (models: readonly ModelV2.Info[], model: string) => {
+  const ref = ModelV2.parse(model)
+  const exact = models.find((candidate) => candidate.providerID === ref.providerID && candidate.id === ref.modelID)
+  if (exact) return exact
+  if (model.includes("/")) return undefined
+  const matches = models.filter((candidate) => candidate.id === model || candidate.api.id === model)
+  return matches.length === 1 ? matches[0] : undefined
+}
+
 const count = (value: unknown): number => Math.max(0, number(value) ?? 0)
 const record = (value: unknown): value is Record<string, unknown> =>
   typeof value === "object" && value !== null && !Array.isArray(value)
@@ -168,13 +183,13 @@ export function nativeSessionUsage(input: {
       unknownPriceObservations += 1
       continue
     }
-    const ref = ModelV2.parse(model)
-    const costs =
-      input.models.find((candidate) => candidate.providerID === ref.providerID && candidate.id === ref.modelID)?.cost ??
-      []
+    const resolved = resolveModel(input.models, model)
+    const costs = resolved?.cost ?? []
     if (costs.length === 0) unknownPriceObservations += 1
     if (!Object.values(usage).some((value) => number(value) !== undefined)) continue
-    const group = groups.get(model) ?? {
+    const ref = resolved ? { providerID: resolved.providerID, modelID: resolved.id } : ModelV2.parse(model)
+    const key = `${ref.providerID}/${ref.modelID}`
+    const group = groups.get(key) ?? {
       providerID: ref.providerID,
       id: ref.modelID,
       turns: 0,
@@ -190,7 +205,7 @@ export function nativeSessionUsage(input: {
     group.tokens.cache.read += count(billed.cacheReadInputTokens)
     group.tokens.cache.write += count(billed.cacheWriteInputTokens)
     group.lastTurnMs = Math.max(group.lastTurnMs, turnMs)
-    groups.set(model, group)
+    groups.set(key, group)
   }
   return {
     ...(providerUsage

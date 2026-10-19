@@ -1,0 +1,192 @@
+{
+  "sample": {
+    "task": "read-only",
+    "engine": "typescript",
+    "repetition": 2,
+    "suiteHash": "bd905b4f81f0a9412b614631a36337723067574848c5f05b50ead1cf48675091",
+    "taskHash": "99609eafd6e7256a96d31d1a93f377283455859087a19e39a86887127c47f3a4",
+    "profile": {
+      "model": "deepseek-v4.1-flash",
+      "modelParametersHash": "010c47caaaf0f8a5f83767f8d8b914bf7700d3f76ff22b050b5967009f006b31",
+      "agentManifestHash": "c82edd883fcf11ca10d7615ab7039327508c1552aacc6b4341e3e93e415bffff",
+      "permissionHash": "18ad354cffb57b93f4430163374fde1a81f9d05d624f32a7de157e48740daac2",
+      "toolSurfaceHash": "04c769ae52448d5fe45ea690050120cee624771222b1291088dc6d832c888106"
+    },
+    "revision": "fa001fbff8b188361bf5848cc31358bba7e7d7bb",
+    "artifactHash": "1cf2a42baae11727ea2f82138beaf289f244a74bdb3488318abcfab660724792",
+    "receiptHash": "1d4c5016179a18392f514b166888dc488192477ee24559e7696ff43a33ad968d",
+    "outcome": "passed",
+    "elapsedMs": 17450,
+    "attempts": [
+      {
+        "inputTokens": 14008,
+        "outputTokens": 107,
+        "cost": null
+      },
+      {
+        "inputTokens": 14269,
+        "outputTokens": 67,
+        "cost": null
+      },
+      {
+        "inputTokens": 14409,
+        "outputTokens": 63,
+        "cost": null
+      },
+      {
+        "inputTokens": 14598,
+        "outputTokens": 141,
+        "cost": null
+      }
+    ]
+  },
+  "rejection": null,
+  "evidence": {
+    "engine": "typescript",
+    "revision": "fa001fbff8b188361bf5848cc31358bba7e7d7bb",
+    "task": "read-only",
+    "repetition": 2,
+    "terminal": "completed",
+    "error": null,
+    "receipts": [],
+    "attempts": [
+      {
+        "inputTokens": 14008,
+        "outputTokens": 107,
+        "cacheReadTokens": 0,
+        "cacheWriteTokens": null,
+        "reasoningTokens": 6,
+        "cost": null
+      },
+      {
+        "inputTokens": 14269,
+        "outputTokens": 67,
+        "cacheReadTokens": 13952,
+        "cacheWriteTokens": null,
+        "reasoningTokens": 15,
+        "cost": null
+      },
+      {
+        "inputTokens": 14409,
+        "outputTokens": 63,
+        "cacheReadTokens": 14208,
+        "cacheWriteTokens": null,
+        "reasoningTokens": 0,
+        "cost": null
+      },
+      {
+        "inputTokens": 14598,
+        "outputTokens": 141,
+        "cacheReadTokens": 14336,
+        "cacheWriteTokens": null,
+        "reasoningTokens": 114,
+        "cost": null
+      }
+    ],
+    "phases": [
+      {
+        "phase": "step-start",
+        "atMs": 1792421589683,
+        "clock": "observed"
+      },
+      {
+        "phase": "tool-part",
+        "atMs": 1792421589988,
+        "clock": "observed"
+      },
+      {
+        "phase": "tool-part",
+        "atMs": 1792421590009,
+        "clock": "observed"
+      },
+      {
+        "phase": "step-start",
+        "atMs": 1792421591635,
+        "clock": "observed"
+      },
+      {
+        "phase": "tool-part",
+        "atMs": 1792421591940,
+        "clock": "observed"
+      },
+      {
+        "phase": "step-start",
+        "atMs": 1792421594003,
+        "clock": "observed"
+      },
+      {
+        "phase": "tool-part",
+        "atMs": 1792421594094,
+        "clock": "observed"
+      },
+      {
+        "phase": "step-start",
+        "atMs": 1792421595378,
+        "clock": "observed"
+      },
+      {
+        "phase": "first-output",
+        "atMs": 1792421596082,
+        "clock": "observed"
+      },
+      {
+        "phase": "exit",
+        "atMs": 1792421596135,
+        "clock": "observed"
+      },
+      {
+        "phase": "verified",
+        "atMs": 1792421596137,
+        "clock": "observed"
+      }
+    ],
+    "profile": {
+      "model": "deepseek-v4.1-flash",
+      "modelParametersHash": "010c47caaaf0f8a5f83767f8d8b914bf7700d3f76ff22b050b5967009f006b31",
+      "agentManifestHash": "c82edd883fcf11ca10d7615ab7039327508c1552aacc6b4341e3e93e415bffff",
+      "permissionHash": "18ad354cffb57b93f4430163374fde1a81f9d05d624f32a7de157e48740daac2",
+      "toolSurfaceHash": "04c769ae52448d5fe45ea690050120cee624771222b1291088dc6d832c888106"
+    },
+    "profileReceipts": 4,
+    "loops": {
+      "continuations": [],
+      "stopped": []
+    },
+    "toolCalls": 4,
+    "textHash": "cc80f6f89ca73a7fc9814dc92e37692bdc7bf2f8bef9de1710a61049d4271762",
+    "binarySha256": null,
+    "startedAtMs": 1792421578687,
+    "admissionMs": null,
+    "elapsedMs": 17450
+  },
+  "assessment": {
+    "suiteHash": "bd905b4f81f0a9412b614631a36337723067574848c5f05b50ead1cf48675091",
+    "taskHash": "99609eafd6e7256a96d31d1a93f377283455859087a19e39a86887127c47f3a4",
+    "artifactPass": true,
+    "unexpected": [],
+    "immutable": [
+      {
+        "file": "AGENTS.md",
+        "unchanged": true
+      },
+      {
+        "file": "package.json",
+        "unchanged": true
+      },
+      {
+        "file": "src/catalog.ts",
+        "unchanged": true
+      }
+    ],
+    "expected": [],
+    "check": null,
+    "executionVerdict": "unverified",
+    "requiredReceipts": [],
+    "answerContains": [
+      "src/catalog.ts",
+      "configureRelay",
+      "7"
+    ]
+  },
+  "answer": "`src/catalog.ts:1` — exported function `configureRelay`, which returns `{ capacity: 7 }`."
+}

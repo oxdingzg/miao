@@ -1,0 +1,3382 @@
+[
+ {
+  "task": "read-only",
+  "engine": "rust",
+  "repetition": 0,
+  "suiteHash": "bd905b4f81f0a9412b614631a36337723067574848c5f05b50ead1cf48675091",
+  "taskHash": "99609eafd6e7256a96d31d1a93f377283455859087a19e39a86887127c47f3a4",
+  "profile": {
+   "model": "deepseek-v4.1-flash",
+   "modelParametersHash": "ef3d96a9ec0464401ae599f38c478bab21fa051e068e9d158e5c186628e7a393",
+   "agentManifestHash": "2dbdecca09d38a807edd88d10f18f4febcb6aa5dcbdc2c1bb17f06446b689562",
+   "permissionHash": "d6fa48e4887a67621aa68af64d76f2fd36f2d6e94ed43972eb134ec7f1d3dd25",
+   "toolSurfaceHash": "fb2ab566dec79420e179a024d88e1903ebbc1b7a9f23fe7b0aefb45a9d0dcb28"
+  },
+  "revision": "fa001fbff8b188361bf5848cc31358bba7e7d7bb",
+  "artifactHash": "1cf2a42baae11727ea2f82138beaf289f244a74bdb3488318abcfab660724792",
+  "receiptHash": "d3eb7f6c673757ab8fb35926dad5344dcab008bea0e89ba71c49526d0a35e4f0",
+  "outcome": "passed",
+  "elapsedMs": 8027,
+  "attempts": [
+   {
+    "inputTokens": 4852,
+    "outputTokens": 106,
+    "cost": null
+   },
+   {
+    "inputTokens": 5120,
+    "outputTokens": 86,
+    "cost": null
+   },
+   {
+    "inputTokens": 5309,
+    "outputTokens": 52,
+    "cost": null
+   }
+  ]
+ },
+ {
+  "task": "read-only",
+  "engine": "rust",
+  "repetition": 1,
+  "suiteHash": "bd905b4f81f0a9412b614631a36337723067574848c5f05b50ead1cf48675091",
+  "taskHash": "99609eafd6e7256a96d31d1a93f377283455859087a19e39a86887127c47f3a4",
+  "profile": {
+   "model": "deepseek-v4.1-flash",
+   "modelParametersHash": "ef3d96a9ec0464401ae599f38c478bab21fa051e068e9d158e5c186628e7a393",
+   "agentManifestHash": "2dbdecca09d38a807edd88d10f18f4febcb6aa5dcbdc2c1bb17f06446b689562",
+   "permissionHash": "dfc8233eef6d99cc26288d90da681e9113c4efee8c0e38bdd5e515e75a63eec5",
+   "toolSurfaceHash": "fb2ab566dec79420e179a024d88e1903ebbc1b7a9f23fe7b0aefb45a9d0dcb28"
+  },
+  "revision": "fa001fbff8b188361bf5848cc31358bba7e7d7bb",
+  "artifactHash": "1cf2a42baae11727ea2f82138beaf289f244a74bdb3488318abcfab660724792",
+  "receiptHash": "91d6dc2dd3998d14477dc1f35f101e5eaff894a7faa246784c1e796b762fe1dd",
+  "outcome": "passed",
+  "elapsedMs": 5321,
+  "attempts": [
+   {
+    "inputTokens": 4852,
+    "outputTokens": 106,
+    "cost": null
+   },
+   {
+    "inputTokens": 5120,
+    "outputTokens": 79,
+    "cost": null
+   },
+   {
+    "inputTokens": 5302,
+    "outputTokens": 121,
+    "cost": null
+   }
+  ]
+ },
+ {
+  "task": "read-only",
+  "engine": "rust",
+  "repetition": 2,
+  "suiteHash": "bd905b4f81f0a9412b614631a36337723067574848c5f05b50ead1cf48675091",
+  "taskHash": "99609eafd6e7256a96d31d1a93f377283455859087a19e39a86887127c47f3a4",
+  "profile": {
+   "model": "deepseek-v4.1-flash",
+   "modelParametersHash": "ef3d96a9ec0464401ae599f38c478bab21fa051e068e9d158e5c186628e7a393",
+   "agentManifestHash": "2dbdecca09d38a807edd88d10f18f4febcb6aa5dcbdc2c1bb17f06446b689562",
+   "permissionHash": "92191ddf99abe4162323127ccfef9ed696052e4c7f627ccd15e79b708bfd7046",
+   "toolSurfaceHash": "fb2ab566dec79420e179a024d88e1903ebbc1b7a9f23fe7b0aefb45a9d0dcb28"
+  },
+  "revision": "fa001fbff8b188361bf5848cc31358bba7e7d7bb",
+  "artifactHash": "1cf2a42baae11727ea2f82138beaf289f244a74bdb3488318abcfab660724792",
+  "receiptHash": "ff229571fc7a26c3a79f25b9187000017938ac3061ad8653f369b087723a0467",
+  "outcome": "passed",
+  "elapsedMs": 8925,
+  "attempts": [
+   {
+    "inputTokens": 4852,
+    "outputTokens": 111,
+    "cost": null
+   },
+   {
+    "inputTokens": 5125,
+    "outputTokens": 131,
+    "cost": null
+   },
+   {
+    "inputTokens": 5359,
+    "outputTokens": 95,
+    "cost": null
+   },
+   {
+    "inputTokens": 5620,
+    "outputTokens": 145,
+    "cost": null
+   }
+  ]
+ },
+ {
+  "task": "multi-read",
+  "engine": "rust",
+  "repetition": 0,
+  "suiteHash": "bd905b4f81f0a9412b614631a36337723067574848c5f05b50ead1cf48675091",
+  "taskHash": "0d7d997929618a514b0f84f56b810cb5280f5b1ac1bca88065d107d1cb7b8147",
+  "profile": {
+   "model": "deepseek-v4.1-flash",
+   "modelParametersHash": "ef3d96a9ec0464401ae599f38c478bab21fa051e068e9d158e5c186628e7a393",
+   "agentManifestHash": "2dbdecca09d38a807edd88d10f18f4febcb6aa5dcbdc2c1bb17f06446b689562",
+   "permissionHash": "e44521491d5a5442943bca80e0eb4c1f7abde4838e52feb763a611d1cc590cdf",
+   "toolSurfaceHash": "fb2ab566dec79420e179a024d88e1903ebbc1b7a9f23fe7b0aefb45a9d0dcb28"
+  },
+  "revision": "fa001fbff8b188361bf5848cc31358bba7e7d7bb",
+  "artifactHash": "586a1fde7e44ffb98847844587b9df8f432114691ef834b8916734a0becc9f63",
+  "receiptHash": "a35d44285b72abc717866edd213f32c74cae1fa066851da95aa479f0eaa82d8d",
+  "outcome": "passed",
+  "elapsedMs": 3934,
+  "attempts": [
+   {
+    "inputTokens": 4864,
+    "outputTokens": 109,
+    "cost": null
+   },
+   {
+    "inputTokens": 5154,
+    "outputTokens": 109,
+    "cost": null
+   }
+  ]
+ },
+ {
+  "task": "multi-read",
+  "engine": "rust",
+  "repetition": 1,
+  "suiteHash": "bd905b4f81f0a9412b614631a36337723067574848c5f05b50ead1cf48675091",
+  "taskHash": "0d7d997929618a514b0f84f56b810cb5280f5b1ac1bca88065d107d1cb7b8147",
+  "profile": {
+   "model": "deepseek-v4.1-flash",
+   "modelParametersHash": "ef3d96a9ec0464401ae599f38c478bab21fa051e068e9d158e5c186628e7a393",
+   "agentManifestHash": "2dbdecca09d38a807edd88d10f18f4febcb6aa5dcbdc2c1bb17f06446b689562",
+   "permissionHash": "067825abbc14069055d782a1092055ec7175cc62230f4ca0b421de4ac60ede51",
+   "toolSurfaceHash": "fb2ab566dec79420e179a024d88e1903ebbc1b7a9f23fe7b0aefb45a9d0dcb28"
+  },
+  "revision": "fa001fbff8b188361bf5848cc31358bba7e7d7bb",
+  "artifactHash": "586a1fde7e44ffb98847844587b9df8f432114691ef834b8916734a0becc9f63",
+  "receiptHash": "90f48059c666f13a5423d234123069d307669323a9351399487b4f87316a0abe",
+  "outcome": "passed",
+  "elapsedMs": 10122,
+  "attempts": [
+   {
+    "inputTokens": 4864,
+    "outputTokens": 111,
+    "cost": null
+   },
+   {
+    "inputTokens": 5156,
+    "outputTokens": 91,
+    "cost": null
+   }
+  ]
+ },
+ {
+  "task": "multi-read",
+  "engine": "rust",
+  "repetition": 2,
+  "suiteHash": "bd905b4f81f0a9412b614631a36337723067574848c5f05b50ead1cf48675091",
+  "taskHash": "0d7d997929618a514b0f84f56b810cb5280f5b1ac1bca88065d107d1cb7b8147",
+  "profile": {
+   "model": "deepseek-v4.1-flash",
+   "modelParametersHash": "ef3d96a9ec0464401ae599f38c478bab21fa051e068e9d158e5c186628e7a393",
+   "agentManifestHash": "2dbdecca09d38a807edd88d10f18f4febcb6aa5dcbdc2c1bb17f06446b689562",
+   "permissionHash": "e8c825124ce60baf6116dbb0de3306746b19a005b071409444db5e3a7594c561",
+   "toolSurfaceHash": "fb2ab566dec79420e179a024d88e1903ebbc1b7a9f23fe7b0aefb45a9d0dcb28"
+  },
+  "revision": "fa001fbff8b188361bf5848cc31358bba7e7d7bb",
+  "artifactHash": "586a1fde7e44ffb98847844587b9df8f432114691ef834b8916734a0becc9f63",
+  "receiptHash": "bacae89805c45507d5462f1d1d0fe7fa4082772b03d6783eb94b1c81ef908153",
+  "outcome": "passed",
+  "elapsedMs": 4823,
+  "attempts": [
+   {
+    "inputTokens": 4864,
+    "outputTokens": 109,
+    "cost": null
+   },
+   {
+    "inputTokens": 5154,
+    "outputTokens": 106,
+    "cost": null
+   }
+  ]
+ },
+ {
+  "task": "small-edit",
+  "engine": "rust",
+  "repetition": 0,
+  "suiteHash": "bd905b4f81f0a9412b614631a36337723067574848c5f05b50ead1cf48675091",
+  "taskHash": "e10bb9be226c895f65c7f6adcc7491a949cd7ba8f1ef6b66480934207de9c0c4",
+  "profile": {
+   "model": "deepseek-v4.1-flash",
+   "modelParametersHash": "ef3d96a9ec0464401ae599f38c478bab21fa051e068e9d158e5c186628e7a393",
+   "agentManifestHash": "2dbdecca09d38a807edd88d10f18f4febcb6aa5dcbdc2c1bb17f06446b689562",
+   "permissionHash": "1d021203964883995430e051af878c176263b40a2e8c4b65e94efad97908137e",
+   "toolSurfaceHash": "fb2ab566dec79420e179a024d88e1903ebbc1b7a9f23fe7b0aefb45a9d0dcb28"
+  },
+  "revision": "fa001fbff8b188361bf5848cc31358bba7e7d7bb",
+  "artifactHash": "bbb2283b67c38e479677b1c7607553703548490c5f7b11fec3ec5b5940d8058c",
+  "receiptHash": "495be7bcff6050aab5ab9430830c5e05b48d8b53865607b31ea93faefbb1bee6",
+  "outcome": "passed",
+  "elapsedMs": 14235,
+  "attempts": [
+   {
+    "inputTokens": 4852,
+    "outputTokens": 78,
+    "cost": null
+   },
+   {
+    "inputTokens": 5054,
+    "outputTokens": 109,
+    "cost": null
+   },
+   {
+    "inputTokens": 5358,
+    "outputTokens": 42,
+    "cost": null
+   },
+   {
+    "inputTokens": 5543,
+    "outputTokens": 239,
+    "cost": null
+   },
+   {
+    "inputTokens": 5940,
+    "outputTokens": 62,
+    "cost": null
+   },
+   {
+    "inputTokens": 6140,
+    "outputTokens": 50,
+    "cost": null
+   },
+   {
+    "inputTokens": 6268,
+    "outputTokens": 266,
+    "cost": null
+   }
+  ]
+ },
+ {
+  "task": "small-edit",
+  "engine": "rust",
+  "repetition": 1,
+  "suiteHash": "bd905b4f81f0a9412b614631a36337723067574848c5f05b50ead1cf48675091",
+  "taskHash": "e10bb9be226c895f65c7f6adcc7491a949cd7ba8f1ef6b66480934207de9c0c4",
+  "profile": {
+   "model": "deepseek-v4.1-flash",
+   "modelParametersHash": "ef3d96a9ec0464401ae599f38c478bab21fa051e068e9d158e5c186628e7a393",
+   "agentManifestHash": "2dbdecca09d38a807edd88d10f18f4febcb6aa5dcbdc2c1bb17f06446b689562",
+   "permissionHash": "5de8c1cb75411bc27432781c5286763f7c23b8624ca1665a6f34fe8b09e378e1",
+   "toolSurfaceHash": "fb2ab566dec79420e179a024d88e1903ebbc1b7a9f23fe7b0aefb45a9d0dcb28"
+  },
+  "revision": "fa001fbff8b188361bf5848cc31358bba7e7d7bb",
+  "artifactHash": "0abc6472dcb7fc6a4cb4a43232e697d13c13e3ecb8c7eeed99cbd59a5909afa2",
+  "receiptHash": "e3689438a0e4731cdc3401d035f080c15692a92b6f81d67ee5a65727ee30ceac",
+  "outcome": "passed",
+  "elapsedMs": 16053,
+  "attempts": [
+   {
+    "inputTokens": 4852,
+    "outputTokens": 74,
+    "cost": null
+   },
+   {
+    "inputTokens": 5050,
+    "outputTokens": 109,
+    "cost": null
+   },
+   {
+    "inputTokens": 5464,
+    "outputTokens": 99,
+    "cost": null
+   },
+   {
+    "inputTokens": 5647,
+    "outputTokens": 52,
+    "cost": null
+   },
+   {
+    "inputTokens": 6000,
+    "outputTokens": 173,
+    "cost": null
+   },
+   {
+    "inputTokens": 6251,
+    "outputTokens": 60,
+    "cost": null
+   },
+   {
+    "inputTokens": 6469,
+    "outputTokens": 323,
+    "cost": null
+   }
+  ]
+ },
+ {
+  "task": "small-edit",
+  "engine": "rust",
+  "repetition": 2,
+  "suiteHash": "bd905b4f81f0a9412b614631a36337723067574848c5f05b50ead1cf48675091",
+  "taskHash": "e10bb9be226c895f65c7f6adcc7491a949cd7ba8f1ef6b66480934207de9c0c4",
+  "profile": {
+   "model": "deepseek-v4.1-flash",
+   "modelParametersHash": "ef3d96a9ec0464401ae599f38c478bab21fa051e068e9d158e5c186628e7a393",
+   "agentManifestHash": "2dbdecca09d38a807edd88d10f18f4febcb6aa5dcbdc2c1bb17f06446b689562",
+   "permissionHash": "ac6f0714dacdb4d093597fb113198bd39d799bcaa49273977dc64e8dbfb9daa1",
+   "toolSurfaceHash": "fb2ab566dec79420e179a024d88e1903ebbc1b7a9f23fe7b0aefb45a9d0dcb28"
+  },
+  "revision": "fa001fbff8b188361bf5848cc31358bba7e7d7bb",
+  "artifactHash": "a1e9a69f3c7df9fea9c70978d8dee6386d96e0ec535680509a0dbd5f0a2379b1",
+  "receiptHash": "47133a54fcc8b94c9d606a9c2a8c3445621213904338e22faea795c073440b58",
+  "outcome": "passed",
+  "elapsedMs": 19545,
+  "attempts": [
+   {
+    "inputTokens": 4852,
+    "outputTokens": 79,
+    "cost": null
+   },
+   {
+    "inputTokens": 5076,
+    "outputTokens": 114,
+    "cost": null
+   },
+   {
+    "inputTokens": 5364,
+    "outputTokens": 140,
+    "cost": null
+   },
+   {
+    "inputTokens": 5733,
+    "outputTokens": 66,
+    "cost": null
+   },
+   {
+    "inputTokens": 5883,
+    "outputTokens": 77,
+    "cost": null
+   },
+   {
+    "inputTokens": 6261,
+    "outputTokens": 204,
+    "cost": null
+   },
+   {
+    "inputTokens": 6543,
+    "outputTokens": 47,
+    "cost": null
+   },
+   {
+    "inputTokens": 6728,
+    "outputTokens": 69,
+    "cost": null
+   },
+   {
+    "inputTokens": 7007,
+    "outputTokens": 253,
+    "cost": null
+   }
+  ]
+ },
+ {
+  "task": "multi-file",
+  "engine": "rust",
+  "repetition": 0,
+  "suiteHash": "bd905b4f81f0a9412b614631a36337723067574848c5f05b50ead1cf48675091",
+  "taskHash": "a5041ea521bf1671656245fae3d7fab12d071b4b5b82cf29607998143aadc602",
+  "profile": {
+   "model": "deepseek-v4.1-flash",
+   "modelParametersHash": "ef3d96a9ec0464401ae599f38c478bab21fa051e068e9d158e5c186628e7a393",
+   "agentManifestHash": "2dbdecca09d38a807edd88d10f18f4febcb6aa5dcbdc2c1bb17f06446b689562",
+   "permissionHash": "795048fb50c2c09e55a1f0adbe9708bbc3c44fbcf0d79026289511dfc7d6768f",
+   "toolSurfaceHash": "fb2ab566dec79420e179a024d88e1903ebbc1b7a9f23fe7b0aefb45a9d0dcb28"
+  },
+  "revision": "fa001fbff8b188361bf5848cc31358bba7e7d7bb",
+  "artifactHash": "8b31dd72184d0c3284d0d3740894ce213ee185260bbe31367bcea6890b1baeb8",
+  "receiptHash": "6c4fdb8180bcd571cec1e017e353d698ad607809eae6fba06a1ca42709a1a839",
+  "outcome": "passed",
+  "elapsedMs": 17143,
+  "attempts": [
+   {
+    "inputTokens": 4862,
+    "outputTokens": 78,
+    "cost": null
+   },
+   {
+    "inputTokens": 5055,
+    "outputTokens": 162,
+    "cost": null
+   },
+   {
+    "inputTokens": 5671,
+    "outputTokens": 496,
+    "cost": null
+   },
+   {
+    "inputTokens": 6312,
+    "outputTokens": 71,
+    "cost": null
+   },
+   {
+    "inputTokens": 6522,
+    "outputTokens": 150,
+    "cost": null
+   },
+   {
+    "inputTokens": 6949,
+    "outputTokens": 96,
+    "cost": null
+   },
+   {
+    "inputTokens": 7236,
+    "outputTokens": 428,
+    "cost": null
+   }
+  ]
+ },
+ {
+  "task": "multi-file",
+  "engine": "rust",
+  "repetition": 1,
+  "suiteHash": "bd905b4f81f0a9412b614631a36337723067574848c5f05b50ead1cf48675091",
+  "taskHash": "a5041ea521bf1671656245fae3d7fab12d071b4b5b82cf29607998143aadc602",
+  "profile": {
+   "model": "deepseek-v4.1-flash",
+   "modelParametersHash": "ef3d96a9ec0464401ae599f38c478bab21fa051e068e9d158e5c186628e7a393",
+   "agentManifestHash": "2dbdecca09d38a807edd88d10f18f4febcb6aa5dcbdc2c1bb17f06446b689562",
+   "permissionHash": "eabd0a172390518cf5b4515615cef461e9ce3f0df250b437fce78568b56962f9",
+   "toolSurfaceHash": "fb2ab566dec79420e179a024d88e1903ebbc1b7a9f23fe7b0aefb45a9d0dcb28"
+  },
+  "revision": "fa001fbff8b188361bf5848cc31358bba7e7d7bb",
+  "artifactHash": "8b31dd72184d0c3284d0d3740894ce213ee185260bbe31367bcea6890b1baeb8",
+  "receiptHash": "ec6df681eb960f3f4317948550a95c02331e891c9104499e6d0049d2abb5f1ff",
+  "outcome": "passed",
+  "elapsedMs": 24040,
+  "attempts": [
+   {
+    "inputTokens": 4862,
+    "outputTokens": 79,
+    "cost": null
+   },
+   {
+    "inputTokens": 5086,
+    "outputTokens": 67,
+    "cost": null
+   },
+   {
+    "inputTokens": 5302,
+    "outputTokens": 103,
+    "cost": null
+   },
+   {
+    "inputTokens": 5697,
+    "outputTokens": 194,
+    "cost": null
+   },
+   {
+    "inputTokens": 5988,
+    "outputTokens": 65,
+    "cost": null
+   },
+   {
+    "inputTokens": 6363,
+    "outputTokens": 232,
+    "cost": null
+   },
+   {
+    "inputTokens": 6732,
+    "outputTokens": 190,
+    "cost": null
+   },
+   {
+    "inputTokens": 7197,
+    "outputTokens": 152,
+    "cost": null
+   },
+   {
+    "inputTokens": 7550,
+    "outputTokens": 370,
+    "cost": null
+   }
+  ]
+ },
+ {
+  "task": "multi-file",
+  "engine": "rust",
+  "repetition": 2,
+  "suiteHash": "bd905b4f81f0a9412b614631a36337723067574848c5f05b50ead1cf48675091",
+  "taskHash": "a5041ea521bf1671656245fae3d7fab12d071b4b5b82cf29607998143aadc602",
+  "profile": {
+   "model": "deepseek-v4.1-flash",
+   "modelParametersHash": "ef3d96a9ec0464401ae599f38c478bab21fa051e068e9d158e5c186628e7a393",
+   "agentManifestHash": "2dbdecca09d38a807edd88d10f18f4febcb6aa5dcbdc2c1bb17f06446b689562",
+   "permissionHash": "d42fc16528687eb95ab02f646f83d9fa332046a89dbd8ab793bb698ed6616fed",
+   "toolSurfaceHash": "fb2ab566dec79420e179a024d88e1903ebbc1b7a9f23fe7b0aefb45a9d0dcb28"
+  },
+  "revision": "fa001fbff8b188361bf5848cc31358bba7e7d7bb",
+  "artifactHash": "112661ffb2246481ff916e8aff9839dc956071bd54f6e615919e51f6ffecea6e",
+  "receiptHash": "5241b0023e4bb24c76caee679c3352d761534dd56f1c673f96725c494368601d",
+  "outcome": "passed",
+  "elapsedMs": 30745,
+  "attempts": [
+   {
+    "inputTokens": 4862,
+    "outputTokens": 79,
+    "cost": null
+   },
+   {
+    "inputTokens": 5086,
+    "outputTokens": 95,
+    "cost": null
+   },
+   {
+    "inputTokens": 5328,
+    "outputTokens": 103,
+    "cost": null
+   },
+   {
+    "inputTokens": 5723,
+    "outputTokens": 156,
+    "cost": null
+   },
+   {
+    "inputTokens": 5976,
+    "outputTokens": 99,
+    "cost": null
+   },
+   {
+    "inputTokens": 6385,
+    "outputTokens": 412,
+    "cost": null
+   },
+   {
+    "inputTokens": 6942,
+    "outputTokens": 281,
+    "cost": null
+   },
+   {
+    "inputTokens": 7459,
+    "outputTokens": 373,
+    "cost": null
+   },
+   {
+    "inputTokens": 7903,
+    "outputTokens": 153,
+    "cost": null
+   },
+   {
+    "inputTokens": 8304,
+    "outputTokens": 428,
+    "cost": null
+   }
+  ]
+ },
+ {
+  "task": "test-repair",
+  "engine": "rust",
+  "repetition": 0,
+  "suiteHash": "bd905b4f81f0a9412b614631a36337723067574848c5f05b50ead1cf48675091",
+  "taskHash": "9012e1117d9ccfbc967186426bc4800a8d6c15344e5ed9fb9d2b8d4dbda1568d",
+  "profile": {
+   "model": "deepseek-v4.1-flash",
+   "modelParametersHash": "ef3d96a9ec0464401ae599f38c478bab21fa051e068e9d158e5c186628e7a393",
+   "agentManifestHash": "2dbdecca09d38a807edd88d10f18f4febcb6aa5dcbdc2c1bb17f06446b689562",
+   "permissionHash": "f6853a360ff803355d88ea2d3b04c20874703b78c28cea8544a7b0cb3fccee97",
+   "toolSurfaceHash": "fb2ab566dec79420e179a024d88e1903ebbc1b7a9f23fe7b0aefb45a9d0dcb28"
+  },
+  "revision": "fa001fbff8b188361bf5848cc31358bba7e7d7bb",
+  "artifactHash": "b90cfd01d5fe28003a5ca719e181df07e0a8a137c97870bcf2e16dfcc490aa1c",
+  "receiptHash": "ca8d3a0bbb4d4cd20620e68e80224906422d4ed0455268fbe43c9fdf783891ef",
+  "outcome": "passed",
+  "elapsedMs": 36349,
+  "attempts": [
+   {
+    "inputTokens": 4863,
+    "outputTokens": 97,
+    "cost": null
+   },
+   {
+    "inputTokens": 5205,
+    "outputTokens": 72,
+    "cost": null
+   },
+   {
+    "inputTokens": 5423,
+    "outputTokens": 58,
+    "cost": null
+   },
+   {
+    "inputTokens": 5794,
+    "outputTokens": 124,
+    "cost": null
+   },
+   {
+    "inputTokens": 5990,
+    "outputTokens": 178,
+    "cost": null
+   },
+   {
+    "inputTokens": 6242,
+    "outputTokens": 47,
+    "cost": null
+   },
+   {
+    "inputTokens": 6427,
+    "outputTokens": 194,
+    "cost": null
+   },
+   {
+    "inputTokens": 6873,
+    "outputTokens": 358,
+    "cost": null
+   }
+  ]
+ },
+ {
+  "task": "test-repair",
+  "engine": "rust",
+  "repetition": 1,
+  "suiteHash": "bd905b4f81f0a9412b614631a36337723067574848c5f05b50ead1cf48675091",
+  "taskHash": "9012e1117d9ccfbc967186426bc4800a8d6c15344e5ed9fb9d2b8d4dbda1568d",
+  "profile": {
+   "model": "deepseek-v4.1-flash",
+   "modelParametersHash": "ef3d96a9ec0464401ae599f38c478bab21fa051e068e9d158e5c186628e7a393",
+   "agentManifestHash": "2dbdecca09d38a807edd88d10f18f4febcb6aa5dcbdc2c1bb17f06446b689562",
+   "permissionHash": "ea0e5cdcb729a4b91dae04714d69d7d28bb02c56af5f323c41a5304a0c2550c0",
+   "toolSurfaceHash": "fb2ab566dec79420e179a024d88e1903ebbc1b7a9f23fe7b0aefb45a9d0dcb28"
+  },
+  "revision": "fa001fbff8b188361bf5848cc31358bba7e7d7bb",
+  "artifactHash": "5a39bf82d64b8a9579a0bc48863c2e2a548f9ac611a2ffd6c480c2a6ed39c8f5",
+  "receiptHash": "5768f3e994dab0028125d1b6bf3168e9cbaafa9413bddf0e6a9894363f067151",
+  "outcome": "passed",
+  "elapsedMs": 14137,
+  "attempts": [
+   {
+    "inputTokens": 4863,
+    "outputTokens": 85,
+    "cost": null
+   },
+   {
+    "inputTokens": 5262,
+    "outputTokens": 64,
+    "cost": null
+   },
+   {
+    "inputTokens": 5672,
+    "outputTokens": 107,
+    "cost": null
+   },
+   {
+    "inputTokens": 6092,
+    "outputTokens": 229,
+    "cost": null
+   },
+   {
+    "inputTokens": 6395,
+    "outputTokens": 57,
+    "cost": null
+   },
+   {
+    "inputTokens": 6641,
+    "outputTokens": 256,
+    "cost": null
+   },
+   {
+    "inputTokens": 7062,
+    "outputTokens": 268,
+    "cost": null
+   }
+  ]
+ },
+ {
+  "task": "test-repair",
+  "engine": "rust",
+  "repetition": 2,
+  "suiteHash": "bd905b4f81f0a9412b614631a36337723067574848c5f05b50ead1cf48675091",
+  "taskHash": "9012e1117d9ccfbc967186426bc4800a8d6c15344e5ed9fb9d2b8d4dbda1568d",
+  "profile": {
+   "model": "deepseek-v4.1-flash",
+   "modelParametersHash": "ef3d96a9ec0464401ae599f38c478bab21fa051e068e9d158e5c186628e7a393",
+   "agentManifestHash": "2dbdecca09d38a807edd88d10f18f4febcb6aa5dcbdc2c1bb17f06446b689562",
+   "permissionHash": "a4eab1b350d5b551af15f0c3e207b156648a7fc9eb7e98624a11cc4df590b158",
+   "toolSurfaceHash": "fb2ab566dec79420e179a024d88e1903ebbc1b7a9f23fe7b0aefb45a9d0dcb28"
+  },
+  "revision": "fa001fbff8b188361bf5848cc31358bba7e7d7bb",
+  "artifactHash": "9f0d8ae20ac0b65e198986d5e9a532b0c7a9075b32b76d48b8ab7c7df98e3c92",
+  "receiptHash": "e170690fef0c7afa59c33ed3ae386e42bf2e6cffefaa1908b3264fe52d204fd6",
+  "outcome": "passed",
+  "elapsedMs": 20048,
+  "attempts": [
+   {
+    "inputTokens": 4863,
+    "outputTokens": 75,
+    "cost": null
+   },
+   {
+    "inputTokens": 5066,
+    "outputTokens": 108,
+    "cost": null
+   },
+   {
+    "inputTokens": 5369,
+    "outputTokens": 42,
+    "cost": null
+   },
+   {
+    "inputTokens": 5544,
+    "outputTokens": 82,
+    "cost": null
+   },
+   {
+    "inputTokens": 5939,
+    "outputTokens": 213,
+    "cost": null
+   },
+   {
+    "inputTokens": 6226,
+    "outputTokens": 63,
+    "cost": null
+   },
+   {
+    "inputTokens": 6427,
+    "outputTokens": 277,
+    "cost": null
+   }
+  ]
+ },
+ {
+  "task": "permission-denial",
+  "engine": "rust",
+  "repetition": 0,
+  "suiteHash": "bd905b4f81f0a9412b614631a36337723067574848c5f05b50ead1cf48675091",
+  "taskHash": "2df87ba94201f509a47096567db29920b8fef2a0408210de17f45c093e386f8d",
+  "profile": {
+   "model": "deepseek-v4.1-flash",
+   "modelParametersHash": "ef3d96a9ec0464401ae599f38c478bab21fa051e068e9d158e5c186628e7a393",
+   "agentManifestHash": "2dbdecca09d38a807edd88d10f18f4febcb6aa5dcbdc2c1bb17f06446b689562",
+   "permissionHash": "048149d07207e76313fa57c24b0240160edca5eaaaa9980c1822b8e4e563f396",
+   "toolSurfaceHash": "fb2ab566dec79420e179a024d88e1903ebbc1b7a9f23fe7b0aefb45a9d0dcb28"
+  },
+  "revision": "fa001fbff8b188361bf5848cc31358bba7e7d7bb",
+  "artifactHash": "5cfbe26fca26011b869b31ce2bab64e2d5ffa09abcb93ab976b9dcbb792ef496",
+  "receiptHash": "569577674a4bda00a484f6ae78b8dc4549aa5fb317638473e754b62897410290",
+  "outcome": "passed",
+  "elapsedMs": 13128,
+  "attempts": [
+   {
+    "inputTokens": 4858,
+    "outputTokens": 67,
+    "cost": null
+   },
+   {
+    "inputTokens": 5205,
+    "outputTokens": 55,
+    "cost": null
+   },
+   {
+    "inputTokens": 5282,
+    "outputTokens": 180,
+    "cost": null
+   },
+   {
+    "inputTokens": 5484,
+    "outputTokens": 127,
+    "cost": null
+   },
+   {
+    "inputTokens": 5706,
+    "outputTokens": 199,
+    "cost": null
+   }
+  ]
+ },
+ {
+  "task": "permission-denial",
+  "engine": "rust",
+  "repetition": 1,
+  "suiteHash": "bd905b4f81f0a9412b614631a36337723067574848c5f05b50ead1cf48675091",
+  "taskHash": "2df87ba94201f509a47096567db29920b8fef2a0408210de17f45c093e386f8d",
+  "profile": {
+   "model": "deepseek-v4.1-flash",
+   "modelParametersHash": "ef3d96a9ec0464401ae599f38c478bab21fa051e068e9d158e5c186628e7a393",
+   "agentManifestHash": "2dbdecca09d38a807edd88d10f18f4febcb6aa5dcbdc2c1bb17f06446b689562",
+   "permissionHash": "214e33ee16d222504695c4ebde462fb21503bcf274b021c18465acaca1166362",
+   "toolSurfaceHash": "fb2ab566dec79420e179a024d88e1903ebbc1b7a9f23fe7b0aefb45a9d0dcb28"
+  },
+  "revision": "fa001fbff8b188361bf5848cc31358bba7e7d7bb",
+  "artifactHash": "5cfbe26fca26011b869b31ce2bab64e2d5ffa09abcb93ab976b9dcbb792ef496",
+  "receiptHash": "89de36d3baf8cfa9d78a510e56a5110b77840299734c59c07e7c8365d11e56a2",
+  "outcome": "passed",
+  "elapsedMs": 10321,
+  "attempts": [
+   {
+    "inputTokens": 4858,
+    "outputTokens": 79,
+    "cost": null
+   },
+   {
+    "inputTokens": 5006,
+    "outputTokens": 304,
+    "cost": null
+   },
+   {
+    "inputTokens": 5359,
+    "outputTokens": 487,
+    "cost": null
+   }
+  ]
+ },
+ {
+  "task": "permission-denial",
+  "engine": "rust",
+  "repetition": 2,
+  "suiteHash": "bd905b4f81f0a9412b614631a36337723067574848c5f05b50ead1cf48675091",
+  "taskHash": "2df87ba94201f509a47096567db29920b8fef2a0408210de17f45c093e386f8d",
+  "profile": {
+   "model": "deepseek-v4.1-flash",
+   "modelParametersHash": "ef3d96a9ec0464401ae599f38c478bab21fa051e068e9d158e5c186628e7a393",
+   "agentManifestHash": "2dbdecca09d38a807edd88d10f18f4febcb6aa5dcbdc2c1bb17f06446b689562",
+   "permissionHash": "c39203ec4077d79f33e46f98b4efda9616ca5ca761c923a18d3eec689ae12e06",
+   "toolSurfaceHash": "fb2ab566dec79420e179a024d88e1903ebbc1b7a9f23fe7b0aefb45a9d0dcb28"
+  },
+  "revision": "fa001fbff8b188361bf5848cc31358bba7e7d7bb",
+  "artifactHash": "5cfbe26fca26011b869b31ce2bab64e2d5ffa09abcb93ab976b9dcbb792ef496",
+  "receiptHash": "d4579dcb0334c13b3f930c703d4ad53a2221080236ff2aa4b412c367fd3956e0",
+  "outcome": "passed",
+  "elapsedMs": 11823,
+  "attempts": [
+   {
+    "inputTokens": 4858,
+    "outputTokens": 80,
+    "cost": null
+   },
+   {
+    "inputTokens": 4987,
+    "outputTokens": 294,
+    "cost": null
+   },
+   {
+    "inputTokens": 5303,
+    "outputTokens": 459,
+    "cost": null
+   }
+  ]
+ },
+ {
+  "task": "tool-error",
+  "engine": "rust",
+  "repetition": 0,
+  "suiteHash": "bd905b4f81f0a9412b614631a36337723067574848c5f05b50ead1cf48675091",
+  "taskHash": "d805c342f165a7193bf45347ebba54a0e1c0d75e9baffd9c5979d07f5b0fb09e",
+  "profile": {
+   "model": "deepseek-v4.1-flash",
+   "modelParametersHash": "ef3d96a9ec0464401ae599f38c478bab21fa051e068e9d158e5c186628e7a393",
+   "agentManifestHash": "2dbdecca09d38a807edd88d10f18f4febcb6aa5dcbdc2c1bb17f06446b689562",
+   "permissionHash": "2f1e58c74098382731a6229635f5409c49801ca2d4faf7a7225405a44c364054",
+   "toolSurfaceHash": "fb2ab566dec79420e179a024d88e1903ebbc1b7a9f23fe7b0aefb45a9d0dcb28"
+  },
+  "revision": "fa001fbff8b188361bf5848cc31358bba7e7d7bb",
+  "artifactHash": "42a0929bd2c953adb3b7ae60782aeb2d7a5a7101e999baa01b6d9c9d85b7e5ad",
+  "receiptHash": "8e7af696ee4bde9d06bae1e1bcacdd57051d68c14fb622c7bd71130c8f15ef9c",
+  "outcome": "passed",
+  "elapsedMs": 11120,
+  "attempts": [
+   {
+    "inputTokens": 4862,
+    "outputTokens": 49,
+    "cost": null
+   },
+   {
+    "inputTokens": 4944,
+    "outputTokens": 56,
+    "cost": null
+   },
+   {
+    "inputTokens": 5068,
+    "outputTokens": 55,
+    "cost": null
+   }
+  ]
+ },
+ {
+  "task": "tool-error",
+  "engine": "rust",
+  "repetition": 1,
+  "suiteHash": "bd905b4f81f0a9412b614631a36337723067574848c5f05b50ead1cf48675091",
+  "taskHash": "d805c342f165a7193bf45347ebba54a0e1c0d75e9baffd9c5979d07f5b0fb09e",
+  "profile": {
+   "model": "deepseek-v4.1-flash",
+   "modelParametersHash": "ef3d96a9ec0464401ae599f38c478bab21fa051e068e9d158e5c186628e7a393",
+   "agentManifestHash": "2dbdecca09d38a807edd88d10f18f4febcb6aa5dcbdc2c1bb17f06446b689562",
+   "permissionHash": "f1c0ce53dfd3609aa665ba3160c604e5d097fb056ac46ee44a9aa568bbf99d45",
+   "toolSurfaceHash": "fb2ab566dec79420e179a024d88e1903ebbc1b7a9f23fe7b0aefb45a9d0dcb28"
+  },
+  "revision": "fa001fbff8b188361bf5848cc31358bba7e7d7bb",
+  "artifactHash": "42a0929bd2c953adb3b7ae60782aeb2d7a5a7101e999baa01b6d9c9d85b7e5ad",
+  "receiptHash": "f4a31995168a2e64a36a57c8276d41bfb5b7fda6eb666fc44f2b2fee8ff96c49",
+  "outcome": "passed",
+  "elapsedMs": 4621,
+  "attempts": [
+   {
+    "inputTokens": 4862,
+    "outputTokens": 51,
+    "cost": null
+   },
+   {
+    "inputTokens": 4946,
+    "outputTokens": 57,
+    "cost": null
+   },
+   {
+    "inputTokens": 5071,
+    "outputTokens": 81,
+    "cost": null
+   }
+  ]
+ },
+ {
+  "task": "tool-error",
+  "engine": "rust",
+  "repetition": 2,
+  "suiteHash": "bd905b4f81f0a9412b614631a36337723067574848c5f05b50ead1cf48675091",
+  "taskHash": "d805c342f165a7193bf45347ebba54a0e1c0d75e9baffd9c5979d07f5b0fb09e",
+  "profile": {
+   "model": "deepseek-v4.1-flash",
+   "modelParametersHash": "ef3d96a9ec0464401ae599f38c478bab21fa051e068e9d158e5c186628e7a393",
+   "agentManifestHash": "2dbdecca09d38a807edd88d10f18f4febcb6aa5dcbdc2c1bb17f06446b689562",
+   "permissionHash": "13472fff8be98d0403ed47af8e5a555701179fa78580eccea7d735eb36dc18c5",
+   "toolSurfaceHash": "fb2ab566dec79420e179a024d88e1903ebbc1b7a9f23fe7b0aefb45a9d0dcb28"
+  },
+  "revision": "fa001fbff8b188361bf5848cc31358bba7e7d7bb",
+  "artifactHash": "42a0929bd2c953adb3b7ae60782aeb2d7a5a7101e999baa01b6d9c9d85b7e5ad",
+  "receiptHash": "fa76bbc3b70ca00bd67c3d4be650d120419d5908ac399cbc23eadb09ce2916fd",
+  "outcome": "passed",
+  "elapsedMs": 6921,
+  "attempts": [
+   {
+    "inputTokens": 4862,
+    "outputTokens": 84,
+    "cost": null
+   },
+   {
+    "inputTokens": 5043,
+    "outputTokens": 156,
+    "cost": null
+   }
+  ]
+ },
+ {
+  "task": "stream-interruption",
+  "engine": "rust",
+  "repetition": 0,
+  "suiteHash": "bd905b4f81f0a9412b614631a36337723067574848c5f05b50ead1cf48675091",
+  "taskHash": "4f00bf344635036fd5d16a5b348e948e9ed126d43854e1280b1286d48d53284c",
+  "profile": {
+   "model": "deepseek-v4.1-flash",
+   "modelParametersHash": "ef3d96a9ec0464401ae599f38c478bab21fa051e068e9d158e5c186628e7a393",
+   "agentManifestHash": "2dbdecca09d38a807edd88d10f18f4febcb6aa5dcbdc2c1bb17f06446b689562",
+   "permissionHash": "1a9fc0c1f1f6dc5efe5e36c51b6b46bec3ee4ead4c9949ccaf9f414c6f165225",
+   "toolSurfaceHash": "fb2ab566dec79420e179a024d88e1903ebbc1b7a9f23fe7b0aefb45a9d0dcb28"
+  },
+  "revision": "fa001fbff8b188361bf5848cc31358bba7e7d7bb",
+  "artifactHash": "2b4e04ae507e25e4b1036dff0509a0cb4fc4f014bfde0083fccd539fa1e60df2",
+  "receiptHash": "68ec3108809d911fe5a96953867cb2aa021c96f01d29a1db3996493238e0433f",
+  "outcome": "failed",
+  "elapsedMs": 12025,
+  "attempts": [
+   {
+    "inputTokens": 4862,
+    "outputTokens": 84,
+    "cost": null
+   },
+   {
+    "inputTokens": 5079,
+    "outputTokens": 258,
+    "cost": null
+   },
+   {
+    "inputTokens": 5403,
+    "outputTokens": 82,
+    "cost": null
+   },
+   {
+    "inputTokens": 5542,
+    "outputTokens": 152,
+    "cost": null
+   },
+   {
+    "inputTokens": 5791,
+    "outputTokens": 554,
+    "cost": null
+   }
+  ]
+ },
+ {
+  "task": "stream-interruption",
+  "engine": "rust",
+  "repetition": 1,
+  "suiteHash": "bd905b4f81f0a9412b614631a36337723067574848c5f05b50ead1cf48675091",
+  "taskHash": "4f00bf344635036fd5d16a5b348e948e9ed126d43854e1280b1286d48d53284c",
+  "profile": {
+   "model": "deepseek-v4.1-flash",
+   "modelParametersHash": "ef3d96a9ec0464401ae599f38c478bab21fa051e068e9d158e5c186628e7a393",
+   "agentManifestHash": "2dbdecca09d38a807edd88d10f18f4febcb6aa5dcbdc2c1bb17f06446b689562",
+   "permissionHash": "675e7b75c291f1fa18f48615d6376ea326b6cdff8e7ae92e91fee5eb95e66bc6",
+   "toolSurfaceHash": "fb2ab566dec79420e179a024d88e1903ebbc1b7a9f23fe7b0aefb45a9d0dcb28"
+  },
+  "revision": "fa001fbff8b188361bf5848cc31358bba7e7d7bb",
+  "artifactHash": "2b4e04ae507e25e4b1036dff0509a0cb4fc4f014bfde0083fccd539fa1e60df2",
+  "receiptHash": "57492add09c95da52e6c01caec14840243074658bfdb0d4dc147d9dbbb63a561",
+  "outcome": "failed",
+  "elapsedMs": 17525,
+  "attempts": [
+   {
+    "inputTokens": 4862,
+    "outputTokens": 84,
+    "cost": null
+   },
+   {
+    "inputTokens": 5079,
+    "outputTokens": 183,
+    "cost": null
+   },
+   {
+    "inputTokens": 5428,
+    "outputTokens": 318,
+    "cost": null
+   },
+   {
+    "inputTokens": 5977,
+    "outputTokens": 193,
+    "cost": null
+   },
+   {
+    "inputTokens": 6236,
+    "outputTokens": 204,
+    "cost": null
+   },
+   {
+    "inputTokens": 6636,
+    "outputTokens": 397,
+    "cost": null
+   },
+   {
+    "inputTokens": 7422,
+    "outputTokens": 535,
+    "cost": null
+   }
+  ]
+ },
+ {
+  "task": "stream-interruption",
+  "engine": "rust",
+  "repetition": 2,
+  "suiteHash": "bd905b4f81f0a9412b614631a36337723067574848c5f05b50ead1cf48675091",
+  "taskHash": "4f00bf344635036fd5d16a5b348e948e9ed126d43854e1280b1286d48d53284c",
+  "profile": {
+   "model": "deepseek-v4.1-flash",
+   "modelParametersHash": "ef3d96a9ec0464401ae599f38c478bab21fa051e068e9d158e5c186628e7a393",
+   "agentManifestHash": "2dbdecca09d38a807edd88d10f18f4febcb6aa5dcbdc2c1bb17f06446b689562",
+   "permissionHash": "72f83f3da9736ed4885670ca7d38934b051edd73c739b350bce3c3d87f3b0146",
+   "toolSurfaceHash": "fb2ab566dec79420e179a024d88e1903ebbc1b7a9f23fe7b0aefb45a9d0dcb28"
+  },
+  "revision": "fa001fbff8b188361bf5848cc31358bba7e7d7bb",
+  "artifactHash": "2b4e04ae507e25e4b1036dff0509a0cb4fc4f014bfde0083fccd539fa1e60df2",
+  "receiptHash": "6a8150294669681bda1b2e0372217736df63be9c3cdeefffa5004eb447ed5013",
+  "outcome": "failed",
+  "elapsedMs": 18325,
+  "attempts": [
+   {
+    "inputTokens": 4862,
+    "outputTokens": 70,
+    "cost": null
+   },
+   {
+    "inputTokens": 5065,
+    "outputTokens": 123,
+    "cost": null
+   },
+   {
+    "inputTokens": 5354,
+    "outputTokens": 177,
+    "cost": null
+   },
+   {
+    "inputTokens": 5597,
+    "outputTokens": 137,
+    "cost": null
+   },
+   {
+    "inputTokens": 5882,
+    "outputTokens": 346,
+    "cost": null
+   }
+  ]
+ },
+ {
+  "task": "long-session",
+  "engine": "rust",
+  "repetition": 0,
+  "suiteHash": "bd905b4f81f0a9412b614631a36337723067574848c5f05b50ead1cf48675091",
+  "taskHash": "acc85904b2dcd251e4f30fbe7b74f29d6ae3d4266a73c7319c966169a74baa82",
+  "profile": {
+   "model": "deepseek-v4.1-flash",
+   "modelParametersHash": "ef3d96a9ec0464401ae599f38c478bab21fa051e068e9d158e5c186628e7a393",
+   "agentManifestHash": "2dbdecca09d38a807edd88d10f18f4febcb6aa5dcbdc2c1bb17f06446b689562",
+   "permissionHash": "8b6b777c975083f62b08b552dfb20de5d239be07f014a162b93d8292ad4d249f",
+   "toolSurfaceHash": "fb2ab566dec79420e179a024d88e1903ebbc1b7a9f23fe7b0aefb45a9d0dcb28"
+  },
+  "revision": "fa001fbff8b188361bf5848cc31358bba7e7d7bb",
+  "artifactHash": "57ee5b30efdbd0b152c011547f96ca138fa6ac6a367bb4a2db6bf40c1b5161b1",
+  "receiptHash": "5be3500529f35757103859e6a9a0cf34b01f366f3874f8d2523bdc3156131609",
+  "outcome": "passed",
+  "elapsedMs": 67218,
+  "attempts": [
+   {
+    "inputTokens": 4846,
+    "outputTokens": 76,
+    "cost": null
+   },
+   {
+    "inputTokens": 4996,
+    "outputTokens": 97,
+    "cost": null
+   },
+   {
+    "inputTokens": 5259,
+    "outputTokens": 132,
+    "cost": null
+   },
+   {
+    "inputTokens": 5424,
+    "outputTokens": 54,
+    "cost": null
+   },
+   {
+    "inputTokens": 5675,
+    "outputTokens": 82,
+    "cost": null
+   },
+   {
+    "inputTokens": 5828,
+    "outputTokens": 41,
+    "cost": null
+   },
+   {
+    "inputTokens": 5930,
+    "outputTokens": 73,
+    "cost": null
+   },
+   {
+    "inputTokens": 4846,
+    "outputTokens": 76,
+    "cost": null
+   },
+   {
+    "inputTokens": 4996,
+    "outputTokens": 97,
+    "cost": null
+   },
+   {
+    "inputTokens": 5259,
+    "outputTokens": 132,
+    "cost": null
+   },
+   {
+    "inputTokens": 5424,
+    "outputTokens": 54,
+    "cost": null
+   },
+   {
+    "inputTokens": 5675,
+    "outputTokens": 82,
+    "cost": null
+   },
+   {
+    "inputTokens": 5828,
+    "outputTokens": 41,
+    "cost": null
+   },
+   {
+    "inputTokens": 5930,
+    "outputTokens": 73,
+    "cost": null
+   },
+   {
+    "inputTokens": 6028,
+    "outputTokens": 168,
+    "cost": null
+   },
+   {
+    "inputTokens": 6273,
+    "outputTokens": 41,
+    "cost": null
+   },
+   {
+    "inputTokens": 6402,
+    "outputTokens": 49,
+    "cost": null
+   },
+   {
+    "inputTokens": 4846,
+    "outputTokens": 76,
+    "cost": null
+   },
+   {
+    "inputTokens": 4996,
+    "outputTokens": 97,
+    "cost": null
+   },
+   {
+    "inputTokens": 5259,
+    "outputTokens": 132,
+    "cost": null
+   },
+   {
+    "inputTokens": 5424,
+    "outputTokens": 54,
+    "cost": null
+   },
+   {
+    "inputTokens": 5675,
+    "outputTokens": 82,
+    "cost": null
+   },
+   {
+    "inputTokens": 5828,
+    "outputTokens": 41,
+    "cost": null
+   },
+   {
+    "inputTokens": 5930,
+    "outputTokens": 73,
+    "cost": null
+   },
+   {
+    "inputTokens": 6028,
+    "outputTokens": 168,
+    "cost": null
+   },
+   {
+    "inputTokens": 6273,
+    "outputTokens": 41,
+    "cost": null
+   },
+   {
+    "inputTokens": 6402,
+    "outputTokens": 49,
+    "cost": null
+   },
+   {
+    "inputTokens": 6484,
+    "outputTokens": 243,
+    "cost": null
+   },
+   {
+    "inputTokens": 6936,
+    "outputTokens": 563,
+    "cost": null
+   },
+   {
+    "inputTokens": 7814,
+    "outputTokens": 1265,
+    "cost": null
+   },
+   {
+    "inputTokens": 9145,
+    "outputTokens": 134,
+    "cost": null
+   },
+   {
+    "inputTokens": 9353,
+    "outputTokens": 71,
+    "cost": null
+   },
+   {
+    "inputTokens": 9565,
+    "outputTokens": 136,
+    "cost": null
+   },
+   {
+    "inputTokens": 10200,
+    "outputTokens": 362,
+    "cost": null
+   },
+   {
+    "inputTokens": 4846,
+    "outputTokens": 76,
+    "cost": null
+   },
+   {
+    "inputTokens": 4996,
+    "outputTokens": 97,
+    "cost": null
+   },
+   {
+    "inputTokens": 5259,
+    "outputTokens": 132,
+    "cost": null
+   },
+   {
+    "inputTokens": 5424,
+    "outputTokens": 54,
+    "cost": null
+   },
+   {
+    "inputTokens": 5675,
+    "outputTokens": 82,
+    "cost": null
+   },
+   {
+    "inputTokens": 5828,
+    "outputTokens": 41,
+    "cost": null
+   },
+   {
+    "inputTokens": 5930,
+    "outputTokens": 73,
+    "cost": null
+   },
+   {
+    "inputTokens": 6028,
+    "outputTokens": 168,
+    "cost": null
+   },
+   {
+    "inputTokens": 6273,
+    "outputTokens": 41,
+    "cost": null
+   },
+   {
+    "inputTokens": 6402,
+    "outputTokens": 49,
+    "cost": null
+   },
+   {
+    "inputTokens": 6484,
+    "outputTokens": 243,
+    "cost": null
+   },
+   {
+    "inputTokens": 6936,
+    "outputTokens": 563,
+    "cost": null
+   },
+   {
+    "inputTokens": 7814,
+    "outputTokens": 1265,
+    "cost": null
+   },
+   {
+    "inputTokens": 9145,
+    "outputTokens": 134,
+    "cost": null
+   },
+   {
+    "inputTokens": 9353,
+    "outputTokens": 71,
+    "cost": null
+   },
+   {
+    "inputTokens": 9565,
+    "outputTokens": 136,
+    "cost": null
+   },
+   {
+    "inputTokens": 10200,
+    "outputTokens": 362,
+    "cost": null
+   },
+   {
+    "inputTokens": 10585,
+    "outputTokens": 106,
+    "cost": null
+   },
+   {
+    "inputTokens": 10835,
+    "outputTokens": 124,
+    "cost": null
+   },
+   {
+    "inputTokens": 4846,
+    "outputTokens": 76,
+    "cost": null
+   },
+   {
+    "inputTokens": 4996,
+    "outputTokens": 97,
+    "cost": null
+   },
+   {
+    "inputTokens": 5259,
+    "outputTokens": 132,
+    "cost": null
+   },
+   {
+    "inputTokens": 5424,
+    "outputTokens": 54,
+    "cost": null
+   },
+   {
+    "inputTokens": 5675,
+    "outputTokens": 82,
+    "cost": null
+   },
+   {
+    "inputTokens": 5828,
+    "outputTokens": 41,
+    "cost": null
+   },
+   {
+    "inputTokens": 5930,
+    "outputTokens": 73,
+    "cost": null
+   },
+   {
+    "inputTokens": 6028,
+    "outputTokens": 168,
+    "cost": null
+   },
+   {
+    "inputTokens": 6273,
+    "outputTokens": 41,
+    "cost": null
+   },
+   {
+    "inputTokens": 6402,
+    "outputTokens": 49,
+    "cost": null
+   },
+   {
+    "inputTokens": 6484,
+    "outputTokens": 243,
+    "cost": null
+   },
+   {
+    "inputTokens": 6936,
+    "outputTokens": 563,
+    "cost": null
+   },
+   {
+    "inputTokens": 7814,
+    "outputTokens": 1265,
+    "cost": null
+   },
+   {
+    "inputTokens": 9145,
+    "outputTokens": 134,
+    "cost": null
+   },
+   {
+    "inputTokens": 9353,
+    "outputTokens": 71,
+    "cost": null
+   },
+   {
+    "inputTokens": 9565,
+    "outputTokens": 136,
+    "cost": null
+   },
+   {
+    "inputTokens": 10200,
+    "outputTokens": 362,
+    "cost": null
+   },
+   {
+    "inputTokens": 10585,
+    "outputTokens": 106,
+    "cost": null
+   },
+   {
+    "inputTokens": 10835,
+    "outputTokens": 124,
+    "cost": null
+   },
+   {
+    "inputTokens": 10976,
+    "outputTokens": 235,
+    "cost": null
+   }
+  ]
+ },
+ {
+  "task": "long-session",
+  "engine": "rust",
+  "repetition": 1,
+  "suiteHash": "bd905b4f81f0a9412b614631a36337723067574848c5f05b50ead1cf48675091",
+  "taskHash": "acc85904b2dcd251e4f30fbe7b74f29d6ae3d4266a73c7319c966169a74baa82",
+  "profile": {
+   "model": "deepseek-v4.1-flash",
+   "modelParametersHash": "ef3d96a9ec0464401ae599f38c478bab21fa051e068e9d158e5c186628e7a393",
+   "agentManifestHash": "2dbdecca09d38a807edd88d10f18f4febcb6aa5dcbdc2c1bb17f06446b689562",
+   "permissionHash": "03c87e4c9ba56d50da28b895b526f8a06b4234e7aac9fb436208a4b8fc3a17b7",
+   "toolSurfaceHash": "fb2ab566dec79420e179a024d88e1903ebbc1b7a9f23fe7b0aefb45a9d0dcb28"
+  },
+  "revision": "fa001fbff8b188361bf5848cc31358bba7e7d7bb",
+  "artifactHash": "bc96f52c39ed399b58cf6fc060510b48f4472cbf96134b9d7adeac3fb752213b",
+  "receiptHash": "6b32e7c3281b469f044aeac12691f86f54f38b0f8ee7ebf21e21eff063155ea0",
+  "outcome": "passed",
+  "elapsedMs": 61912,
+  "attempts": [
+   {
+    "inputTokens": 4846,
+    "outputTokens": 71,
+    "cost": null
+   },
+   {
+    "inputTokens": 4988,
+    "outputTokens": 100,
+    "cost": null
+   },
+   {
+    "inputTokens": 5121,
+    "outputTokens": 52,
+    "cost": null
+   },
+   {
+    "inputTokens": 5239,
+    "outputTokens": 82,
+    "cost": null
+   },
+   {
+    "inputTokens": 5392,
+    "outputTokens": 41,
+    "cost": null
+   },
+   {
+    "inputTokens": 5494,
+    "outputTokens": 64,
+    "cost": null
+   },
+   {
+    "inputTokens": 4846,
+    "outputTokens": 71,
+    "cost": null
+   },
+   {
+    "inputTokens": 4988,
+    "outputTokens": 100,
+    "cost": null
+   },
+   {
+    "inputTokens": 5121,
+    "outputTokens": 52,
+    "cost": null
+   },
+   {
+    "inputTokens": 5239,
+    "outputTokens": 82,
+    "cost": null
+   },
+   {
+    "inputTokens": 5392,
+    "outputTokens": 41,
+    "cost": null
+   },
+   {
+    "inputTokens": 5494,
+    "outputTokens": 64,
+    "cost": null
+   },
+   {
+    "inputTokens": 5583,
+    "outputTokens": 163,
+    "cost": null
+   },
+   {
+    "inputTokens": 5823,
+    "outputTokens": 69,
+    "cost": null
+   },
+   {
+    "inputTokens": 6017,
+    "outputTokens": 105,
+    "cost": null
+   },
+   {
+    "inputTokens": 4846,
+    "outputTokens": 71,
+    "cost": null
+   },
+   {
+    "inputTokens": 4988,
+    "outputTokens": 100,
+    "cost": null
+   },
+   {
+    "inputTokens": 5121,
+    "outputTokens": 52,
+    "cost": null
+   },
+   {
+    "inputTokens": 5239,
+    "outputTokens": 82,
+    "cost": null
+   },
+   {
+    "inputTokens": 5392,
+    "outputTokens": 41,
+    "cost": null
+   },
+   {
+    "inputTokens": 5494,
+    "outputTokens": 64,
+    "cost": null
+   },
+   {
+    "inputTokens": 5583,
+    "outputTokens": 163,
+    "cost": null
+   },
+   {
+    "inputTokens": 5823,
+    "outputTokens": 69,
+    "cost": null
+   },
+   {
+    "inputTokens": 6017,
+    "outputTokens": 105,
+    "cost": null
+   },
+   {
+    "inputTokens": 6155,
+    "outputTokens": 138,
+    "cost": null
+   },
+   {
+    "inputTokens": 6459,
+    "outputTokens": 236,
+    "cost": null
+   },
+   {
+    "inputTokens": 6782,
+    "outputTokens": 1128,
+    "cost": null
+   },
+   {
+    "inputTokens": 8231,
+    "outputTokens": 1652,
+    "cost": null
+   },
+   {
+    "inputTokens": 9916,
+    "outputTokens": 40,
+    "cost": null
+   },
+   {
+    "inputTokens": 10022,
+    "outputTokens": 139,
+    "cost": null
+   },
+   {
+    "inputTokens": 10240,
+    "outputTokens": 71,
+    "cost": null
+   },
+   {
+    "inputTokens": 10891,
+    "outputTokens": 214,
+    "cost": null
+   },
+   {
+    "inputTokens": 11246,
+    "outputTokens": 762,
+    "cost": null
+   },
+   {
+    "inputTokens": 4846,
+    "outputTokens": 71,
+    "cost": null
+   },
+   {
+    "inputTokens": 4988,
+    "outputTokens": 100,
+    "cost": null
+   },
+   {
+    "inputTokens": 5121,
+    "outputTokens": 52,
+    "cost": null
+   },
+   {
+    "inputTokens": 5239,
+    "outputTokens": 82,
+    "cost": null
+   },
+   {
+    "inputTokens": 5392,
+    "outputTokens": 41,
+    "cost": null
+   },
+   {
+    "inputTokens": 5494,
+    "outputTokens": 64,
+    "cost": null
+   },
+   {
+    "inputTokens": 5583,
+    "outputTokens": 163,
+    "cost": null
+   },
+   {
+    "inputTokens": 5823,
+    "outputTokens": 69,
+    "cost": null
+   },
+   {
+    "inputTokens": 6017,
+    "outputTokens": 105,
+    "cost": null
+   },
+   {
+    "inputTokens": 6155,
+    "outputTokens": 138,
+    "cost": null
+   },
+   {
+    "inputTokens": 6459,
+    "outputTokens": 236,
+    "cost": null
+   },
+   {
+    "inputTokens": 6782,
+    "outputTokens": 1128,
+    "cost": null
+   },
+   {
+    "inputTokens": 8231,
+    "outputTokens": 1652,
+    "cost": null
+   },
+   {
+    "inputTokens": 9916,
+    "outputTokens": 40,
+    "cost": null
+   },
+   {
+    "inputTokens": 10022,
+    "outputTokens": 139,
+    "cost": null
+   },
+   {
+    "inputTokens": 10240,
+    "outputTokens": 71,
+    "cost": null
+   },
+   {
+    "inputTokens": 10891,
+    "outputTokens": 214,
+    "cost": null
+   },
+   {
+    "inputTokens": 11246,
+    "outputTokens": 762,
+    "cost": null
+   },
+   {
+    "inputTokens": 12031,
+    "outputTokens": 230,
+    "cost": null
+   },
+   {
+    "inputTokens": 12349,
+    "outputTokens": 238,
+    "cost": null
+   },
+   {
+    "inputTokens": 12668,
+    "outputTokens": 86,
+    "cost": null
+   },
+   {
+    "inputTokens": 12966,
+    "outputTokens": 97,
+    "cost": null
+   },
+   {
+    "inputTokens": 13204,
+    "outputTokens": 336,
+    "cost": null
+   },
+   {
+    "inputTokens": 4846,
+    "outputTokens": 71,
+    "cost": null
+   },
+   {
+    "inputTokens": 4988,
+    "outputTokens": 100,
+    "cost": null
+   },
+   {
+    "inputTokens": 5121,
+    "outputTokens": 52,
+    "cost": null
+   },
+   {
+    "inputTokens": 5239,
+    "outputTokens": 82,
+    "cost": null
+   },
+   {
+    "inputTokens": 5392,
+    "outputTokens": 41,
+    "cost": null
+   },
+   {
+    "inputTokens": 5494,
+    "outputTokens": 64,
+    "cost": null
+   },
+   {
+    "inputTokens": 5583,
+    "outputTokens": 163,
+    "cost": null
+   },
+   {
+    "inputTokens": 5823,
+    "outputTokens": 69,
+    "cost": null
+   },
+   {
+    "inputTokens": 6017,
+    "outputTokens": 105,
+    "cost": null
+   },
+   {
+    "inputTokens": 6155,
+    "outputTokens": 138,
+    "cost": null
+   },
+   {
+    "inputTokens": 6459,
+    "outputTokens": 236,
+    "cost": null
+   },
+   {
+    "inputTokens": 6782,
+    "outputTokens": 1128,
+    "cost": null
+   },
+   {
+    "inputTokens": 8231,
+    "outputTokens": 1652,
+    "cost": null
+   },
+   {
+    "inputTokens": 9916,
+    "outputTokens": 40,
+    "cost": null
+   },
+   {
+    "inputTokens": 10022,
+    "outputTokens": 139,
+    "cost": null
+   },
+   {
+    "inputTokens": 10240,
+    "outputTokens": 71,
+    "cost": null
+   },
+   {
+    "inputTokens": 10891,
+    "outputTokens": 214,
+    "cost": null
+   },
+   {
+    "inputTokens": 11246,
+    "outputTokens": 762,
+    "cost": null
+   },
+   {
+    "inputTokens": 12031,
+    "outputTokens": 230,
+    "cost": null
+   },
+   {
+    "inputTokens": 12349,
+    "outputTokens": 238,
+    "cost": null
+   },
+   {
+    "inputTokens": 12668,
+    "outputTokens": 86,
+    "cost": null
+   },
+   {
+    "inputTokens": 12966,
+    "outputTokens": 97,
+    "cost": null
+   },
+   {
+    "inputTokens": 13204,
+    "outputTokens": 336,
+    "cost": null
+   },
+   {
+    "inputTokens": 13557,
+    "outputTokens": 203,
+    "cost": null
+   }
+  ]
+ },
+ {
+  "task": "long-session",
+  "engine": "rust",
+  "repetition": 2,
+  "suiteHash": "bd905b4f81f0a9412b614631a36337723067574848c5f05b50ead1cf48675091",
+  "taskHash": "acc85904b2dcd251e4f30fbe7b74f29d6ae3d4266a73c7319c966169a74baa82",
+  "profile": {
+   "model": "deepseek-v4.1-flash",
+   "modelParametersHash": "ef3d96a9ec0464401ae599f38c478bab21fa051e068e9d158e5c186628e7a393",
+   "agentManifestHash": "2dbdecca09d38a807edd88d10f18f4febcb6aa5dcbdc2c1bb17f06446b689562",
+   "permissionHash": "5b2d05e4c50f9397e8d5204b2a3f37a9e387ab408d88441221061fee819c7952",
+   "toolSurfaceHash": "fb2ab566dec79420e179a024d88e1903ebbc1b7a9f23fe7b0aefb45a9d0dcb28"
+  },
+  "revision": "fa001fbff8b188361bf5848cc31358bba7e7d7bb",
+  "artifactHash": "f8677986bb2bb400217cfcf36c4fbead369727f275c1be2bb80784a15d3064cc",
+  "receiptHash": "d43d8b307c94316239f87ee93807e6bef6374be2b13d15dbb85362b0ccd7b221",
+  "outcome": "passed",
+  "elapsedMs": 104231,
+  "attempts": [
+   {
+    "inputTokens": 4846,
+    "outputTokens": 67,
+    "cost": null
+   },
+   {
+    "inputTokens": 5040,
+    "outputTokens": 99,
+    "cost": null
+   },
+   {
+    "inputTokens": 5172,
+    "outputTokens": 78,
+    "cost": null
+   },
+   {
+    "inputTokens": 5272,
+    "outputTokens": 46,
+    "cost": null
+   },
+   {
+    "inputTokens": 5384,
+    "outputTokens": 82,
+    "cost": null
+   },
+   {
+    "inputTokens": 5537,
+    "outputTokens": 34,
+    "cost": null
+   },
+   {
+    "inputTokens": 4846,
+    "outputTokens": 67,
+    "cost": null
+   },
+   {
+    "inputTokens": 5040,
+    "outputTokens": 99,
+    "cost": null
+   },
+   {
+    "inputTokens": 5172,
+    "outputTokens": 78,
+    "cost": null
+   },
+   {
+    "inputTokens": 5272,
+    "outputTokens": 46,
+    "cost": null
+   },
+   {
+    "inputTokens": 5384,
+    "outputTokens": 82,
+    "cost": null
+   },
+   {
+    "inputTokens": 5537,
+    "outputTokens": 34,
+    "cost": null
+   },
+   {
+    "inputTokens": 5596,
+    "outputTokens": 41,
+    "cost": null
+   },
+   {
+    "inputTokens": 5698,
+    "outputTokens": 97,
+    "cost": null
+   },
+   {
+    "inputTokens": 5872,
+    "outputTokens": 40,
+    "cost": null
+   },
+   {
+    "inputTokens": 4846,
+    "outputTokens": 67,
+    "cost": null
+   },
+   {
+    "inputTokens": 5040,
+    "outputTokens": 99,
+    "cost": null
+   },
+   {
+    "inputTokens": 5172,
+    "outputTokens": 78,
+    "cost": null
+   },
+   {
+    "inputTokens": 5272,
+    "outputTokens": 46,
+    "cost": null
+   },
+   {
+    "inputTokens": 5384,
+    "outputTokens": 82,
+    "cost": null
+   },
+   {
+    "inputTokens": 5537,
+    "outputTokens": 34,
+    "cost": null
+   },
+   {
+    "inputTokens": 5596,
+    "outputTokens": 41,
+    "cost": null
+   },
+   {
+    "inputTokens": 5698,
+    "outputTokens": 97,
+    "cost": null
+   },
+   {
+    "inputTokens": 5872,
+    "outputTokens": 40,
+    "cost": null
+   },
+   {
+    "inputTokens": 5945,
+    "outputTokens": 160,
+    "cost": null
+   },
+   {
+    "inputTokens": 6215,
+    "outputTokens": 305,
+    "cost": null
+   },
+   {
+    "inputTokens": 6640,
+    "outputTokens": 375,
+    "cost": null
+   },
+   {
+    "inputTokens": 7048,
+    "outputTokens": 46,
+    "cost": null
+   },
+   {
+    "inputTokens": 7160,
+    "outputTokens": 523,
+    "cost": null
+   },
+   {
+    "inputTokens": 7756,
+    "outputTokens": 50,
+    "cost": null
+   },
+   {
+    "inputTokens": 8386,
+    "outputTokens": 345,
+    "cost": null
+   },
+   {
+    "inputTokens": 8812,
+    "outputTokens": 50,
+    "cost": null
+   },
+   {
+    "inputTokens": 9033,
+    "outputTokens": 239,
+    "cost": null
+   },
+   {
+    "inputTokens": 4846,
+    "outputTokens": 67,
+    "cost": null
+   },
+   {
+    "inputTokens": 5040,
+    "outputTokens": 99,
+    "cost": null
+   },
+   {
+    "inputTokens": 5172,
+    "outputTokens": 78,
+    "cost": null
+   },
+   {
+    "inputTokens": 5272,
+    "outputTokens": 46,
+    "cost": null
+   },
+   {
+    "inputTokens": 5384,
+    "outputTokens": 82,
+    "cost": null
+   },
+   {
+    "inputTokens": 5537,
+    "outputTokens": 34,
+    "cost": null
+   },
+   {
+    "inputTokens": 5596,
+    "outputTokens": 41,
+    "cost": null
+   },
+   {
+    "inputTokens": 5698,
+    "outputTokens": 97,
+    "cost": null
+   },
+   {
+    "inputTokens": 5872,
+    "outputTokens": 40,
+    "cost": null
+   },
+   {
+    "inputTokens": 5945,
+    "outputTokens": 160,
+    "cost": null
+   },
+   {
+    "inputTokens": 6215,
+    "outputTokens": 305,
+    "cost": null
+   },
+   {
+    "inputTokens": 6640,
+    "outputTokens": 375,
+    "cost": null
+   },
+   {
+    "inputTokens": 7048,
+    "outputTokens": 46,
+    "cost": null
+   },
+   {
+    "inputTokens": 7160,
+    "outputTokens": 523,
+    "cost": null
+   },
+   {
+    "inputTokens": 7756,
+    "outputTokens": 50,
+    "cost": null
+   },
+   {
+    "inputTokens": 8386,
+    "outputTokens": 345,
+    "cost": null
+   },
+   {
+    "inputTokens": 8812,
+    "outputTokens": 50,
+    "cost": null
+   },
+   {
+    "inputTokens": 9033,
+    "outputTokens": 239,
+    "cost": null
+   },
+   {
+    "inputTokens": 9295,
+    "outputTokens": 85,
+    "cost": null
+   },
+   {
+    "inputTokens": 9550,
+    "outputTokens": 123,
+    "cost": null
+   },
+   {
+    "inputTokens": 4846,
+    "outputTokens": 67,
+    "cost": null
+   },
+   {
+    "inputTokens": 5040,
+    "outputTokens": 99,
+    "cost": null
+   },
+   {
+    "inputTokens": 5172,
+    "outputTokens": 78,
+    "cost": null
+   },
+   {
+    "inputTokens": 5272,
+    "outputTokens": 46,
+    "cost": null
+   },
+   {
+    "inputTokens": 5384,
+    "outputTokens": 82,
+    "cost": null
+   },
+   {
+    "inputTokens": 5537,
+    "outputTokens": 34,
+    "cost": null
+   },
+   {
+    "inputTokens": 5596,
+    "outputTokens": 41,
+    "cost": null
+   },
+   {
+    "inputTokens": 5698,
+    "outputTokens": 97,
+    "cost": null
+   },
+   {
+    "inputTokens": 5872,
+    "outputTokens": 40,
+    "cost": null
+   },
+   {
+    "inputTokens": 5945,
+    "outputTokens": 160,
+    "cost": null
+   },
+   {
+    "inputTokens": 6215,
+    "outputTokens": 305,
+    "cost": null
+   },
+   {
+    "inputTokens": 6640,
+    "outputTokens": 375,
+    "cost": null
+   },
+   {
+    "inputTokens": 7048,
+    "outputTokens": 46,
+    "cost": null
+   },
+   {
+    "inputTokens": 7160,
+    "outputTokens": 523,
+    "cost": null
+   },
+   {
+    "inputTokens": 7756,
+    "outputTokens": 50,
+    "cost": null
+   },
+   {
+    "inputTokens": 8386,
+    "outputTokens": 345,
+    "cost": null
+   },
+   {
+    "inputTokens": 8812,
+    "outputTokens": 50,
+    "cost": null
+   },
+   {
+    "inputTokens": 9033,
+    "outputTokens": 239,
+    "cost": null
+   },
+   {
+    "inputTokens": 9295,
+    "outputTokens": 85,
+    "cost": null
+   },
+   {
+    "inputTokens": 9550,
+    "outputTokens": 123,
+    "cost": null
+   },
+   {
+    "inputTokens": 9690,
+    "outputTokens": 173,
+    "cost": null
+   }
+  ]
+ },
+ {
+  "task": "multi-line-edit",
+  "engine": "rust",
+  "repetition": 0,
+  "suiteHash": "bd905b4f81f0a9412b614631a36337723067574848c5f05b50ead1cf48675091",
+  "taskHash": "9da008a0099a635cb45ea80ebda993c5f627a4e16e8ad28efa7b09d82a6068a2",
+  "profile": {
+   "model": "deepseek-v4.1-flash",
+   "modelParametersHash": "ef3d96a9ec0464401ae599f38c478bab21fa051e068e9d158e5c186628e7a393",
+   "agentManifestHash": "2dbdecca09d38a807edd88d10f18f4febcb6aa5dcbdc2c1bb17f06446b689562",
+   "permissionHash": "0a14dc447492608541df43096daa97117667b1084a9e5c44e52157f17a231068",
+   "toolSurfaceHash": "fb2ab566dec79420e179a024d88e1903ebbc1b7a9f23fe7b0aefb45a9d0dcb28"
+  },
+  "revision": "fa001fbff8b188361bf5848cc31358bba7e7d7bb",
+  "artifactHash": "9f0d8ae20ac0b65e198986d5e9a532b0c7a9075b32b76d48b8ab7c7df98e3c92",
+  "receiptHash": "d820233d01818a55b65e9caf62c62fd8ce7bf6495b1efd8668b7ecac6a65830a",
+  "outcome": "passed",
+  "elapsedMs": 12856,
+  "attempts": [
+   {
+    "inputTokens": 4864,
+    "outputTokens": 82,
+    "cost": null
+   },
+   {
+    "inputTokens": 5123,
+    "outputTokens": 152,
+    "cost": null
+   },
+   {
+    "inputTokens": 5470,
+    "outputTokens": 42,
+    "cost": null
+   },
+   {
+    "inputTokens": 5649,
+    "outputTokens": 230,
+    "cost": null
+   },
+   {
+    "inputTokens": 6033,
+    "outputTokens": 66,
+    "cost": null
+   },
+   {
+    "inputTokens": 6235,
+    "outputTokens": 55,
+    "cost": null
+   },
+   {
+    "inputTokens": 6405,
+    "outputTokens": 259,
+    "cost": null
+   }
+  ]
+ },
+ {
+  "task": "multi-line-edit",
+  "engine": "rust",
+  "repetition": 1,
+  "suiteHash": "bd905b4f81f0a9412b614631a36337723067574848c5f05b50ead1cf48675091",
+  "taskHash": "9da008a0099a635cb45ea80ebda993c5f627a4e16e8ad28efa7b09d82a6068a2",
+  "profile": {
+   "model": "deepseek-v4.1-flash",
+   "modelParametersHash": "ef3d96a9ec0464401ae599f38c478bab21fa051e068e9d158e5c186628e7a393",
+   "agentManifestHash": "2dbdecca09d38a807edd88d10f18f4febcb6aa5dcbdc2c1bb17f06446b689562",
+   "permissionHash": "66fdb1f830b9adeeabe0880a94d9a41c034937744b78ec2fbb905be360418292",
+   "toolSurfaceHash": "fb2ab566dec79420e179a024d88e1903ebbc1b7a9f23fe7b0aefb45a9d0dcb28"
+  },
+  "revision": "fa001fbff8b188361bf5848cc31358bba7e7d7bb",
+  "artifactHash": "4fab435a84f0d1f3f669a24c629e8c3b55c9ebb822fbd6582c345eac97c62a7b",
+  "receiptHash": "7bb631759b951a86ce87df625b96ea963e7f05c4ef5a56d80d38cd6ca881ff91",
+  "outcome": "passed",
+  "elapsedMs": 14637,
+  "attempts": [
+   {
+    "inputTokens": 4864,
+    "outputTokens": 79,
+    "cost": null
+   },
+   {
+    "inputTokens": 5088,
+    "outputTokens": 103,
+    "cost": null
+   },
+   {
+    "inputTokens": 5522,
+    "outputTokens": 254,
+    "cost": null
+   },
+   {
+    "inputTokens": 5850,
+    "outputTokens": 69,
+    "cost": null
+   },
+   {
+    "inputTokens": 6060,
+    "outputTokens": 54,
+    "cost": null
+   },
+   {
+    "inputTokens": 6229,
+    "outputTokens": 255,
+    "cost": null
+   }
+  ]
+ },
+ {
+  "task": "multi-line-edit",
+  "engine": "rust",
+  "repetition": 2,
+  "suiteHash": "bd905b4f81f0a9412b614631a36337723067574848c5f05b50ead1cf48675091",
+  "taskHash": "9da008a0099a635cb45ea80ebda993c5f627a4e16e8ad28efa7b09d82a6068a2",
+  "profile": {
+   "model": "deepseek-v4.1-flash",
+   "modelParametersHash": "ef3d96a9ec0464401ae599f38c478bab21fa051e068e9d158e5c186628e7a393",
+   "agentManifestHash": "2dbdecca09d38a807edd88d10f18f4febcb6aa5dcbdc2c1bb17f06446b689562",
+   "permissionHash": "364ce2baa2b21a7dc979bd873235be314eeb1fed0493f96bebd6c185138aba11",
+   "toolSurfaceHash": "fb2ab566dec79420e179a024d88e1903ebbc1b7a9f23fe7b0aefb45a9d0dcb28"
+  },
+  "revision": "fa001fbff8b188361bf5848cc31358bba7e7d7bb",
+  "artifactHash": "5a39bf82d64b8a9579a0bc48863c2e2a548f9ac611a2ffd6c480c2a6ed39c8f5",
+  "receiptHash": "798948edc2fb54b61f10b18f9e7754a03412a2591a4030f0bd19e4a16bb03ec4",
+  "outcome": "passed",
+  "elapsedMs": 13736,
+  "attempts": [
+   {
+    "inputTokens": 4864,
+    "outputTokens": 76,
+    "cost": null
+   },
+   {
+    "inputTokens": 5117,
+    "outputTokens": 111,
+    "cost": null
+   },
+   {
+    "inputTokens": 5527,
+    "outputTokens": 179,
+    "cost": null
+   },
+   {
+    "inputTokens": 5780,
+    "outputTokens": 66,
+    "cost": null
+   },
+   {
+    "inputTokens": 5982,
+    "outputTokens": 42,
+    "cost": null
+   },
+   {
+    "inputTokens": 6139,
+    "outputTokens": 272,
+    "cost": null
+   }
+  ]
+ },
+ {
+  "task": "typed-repair",
+  "engine": "rust",
+  "repetition": 0,
+  "suiteHash": "bd905b4f81f0a9412b614631a36337723067574848c5f05b50ead1cf48675091",
+  "taskHash": "6d7a5f740fead5293e5e5ffb8d80de678897f4422c739a10fa17ed3caffaaea2",
+  "profile": {
+   "model": "deepseek-v4.1-flash",
+   "modelParametersHash": "ef3d96a9ec0464401ae599f38c478bab21fa051e068e9d158e5c186628e7a393",
+   "agentManifestHash": "2dbdecca09d38a807edd88d10f18f4febcb6aa5dcbdc2c1bb17f06446b689562",
+   "permissionHash": "fdd8e18e6ff33fe97e80fd41bd2463cdf3e1758b4d1c176d3959c0fc6052a251",
+   "toolSurfaceHash": "fb2ab566dec79420e179a024d88e1903ebbc1b7a9f23fe7b0aefb45a9d0dcb28"
+  },
+  "revision": "fa001fbff8b188361bf5848cc31358bba7e7d7bb",
+  "artifactHash": "195852a9f4cb294b3937281d8a816bd942d8e8963c936a06aebea693f526d5f0",
+  "receiptHash": "53337190d664a1279b0d8d1c625d08cdbfac3585a018305e32d926a159c40ef3",
+  "outcome": "passed",
+  "elapsedMs": 22167,
+  "attempts": [
+   {
+    "inputTokens": 4869,
+    "outputTokens": 75,
+    "cost": null
+   },
+   {
+    "inputTokens": 5114,
+    "outputTokens": 114,
+    "cost": null
+   },
+   {
+    "inputTokens": 5505,
+    "outputTokens": 325,
+    "cost": null
+   },
+   {
+    "inputTokens": 5903,
+    "outputTokens": 69,
+    "cost": null
+   },
+   {
+    "inputTokens": 6114,
+    "outputTokens": 167,
+    "cost": null
+   },
+   {
+    "inputTokens": 6378,
+    "outputTokens": 94,
+    "cost": null
+   },
+   {
+    "inputTokens": 6599,
+    "outputTokens": 284,
+    "cost": null
+   }
+  ]
+ },
+ {
+  "task": "typed-repair",
+  "engine": "rust",
+  "repetition": 1,
+  "suiteHash": "bd905b4f81f0a9412b614631a36337723067574848c5f05b50ead1cf48675091",
+  "taskHash": "6d7a5f740fead5293e5e5ffb8d80de678897f4422c739a10fa17ed3caffaaea2",
+  "profile": {
+   "model": "deepseek-v4.1-flash",
+   "modelParametersHash": "ef3d96a9ec0464401ae599f38c478bab21fa051e068e9d158e5c186628e7a393",
+   "agentManifestHash": "2dbdecca09d38a807edd88d10f18f4febcb6aa5dcbdc2c1bb17f06446b689562",
+   "permissionHash": "e6198b1cb7bebd78679799467df6e22e4a7b3136d1eeb1dc322359e757bec508",
+   "toolSurfaceHash": "fb2ab566dec79420e179a024d88e1903ebbc1b7a9f23fe7b0aefb45a9d0dcb28"
+  },
+  "revision": "fa001fbff8b188361bf5848cc31358bba7e7d7bb",
+  "artifactHash": "17e762a2e2e5a2d8661fc99d050b1e5c85a38427173f061a62d5a952e7f7716e",
+  "receiptHash": "44a106f005cb1a85d6818d3f8b33878b4e2ec1a26f4da357663895f025a67782",
+  "outcome": "passed",
+  "elapsedMs": 19863,
+  "attempts": [
+   {
+    "inputTokens": 4869,
+    "outputTokens": 80,
+    "cost": null
+   },
+   {
+    "inputTokens": 5119,
+    "outputTokens": 101,
+    "cost": null
+   },
+   {
+    "inputTokens": 5497,
+    "outputTokens": 292,
+    "cost": null
+   },
+   {
+    "inputTokens": 5862,
+    "outputTokens": 128,
+    "cost": null
+   },
+   {
+    "inputTokens": 6127,
+    "outputTokens": 153,
+    "cost": null
+   },
+   {
+    "inputTokens": 6478,
+    "outputTokens": 79,
+    "cost": null
+   },
+   {
+    "inputTokens": 6627,
+    "outputTokens": 90,
+    "cost": null
+   },
+   {
+    "inputTokens": 6801,
+    "outputTokens": 491,
+    "cost": null
+   }
+  ]
+ },
+ {
+  "task": "typed-repair",
+  "engine": "rust",
+  "repetition": 2,
+  "suiteHash": "bd905b4f81f0a9412b614631a36337723067574848c5f05b50ead1cf48675091",
+  "taskHash": "6d7a5f740fead5293e5e5ffb8d80de678897f4422c739a10fa17ed3caffaaea2",
+  "profile": {
+   "model": "deepseek-v4.1-flash",
+   "modelParametersHash": "ef3d96a9ec0464401ae599f38c478bab21fa051e068e9d158e5c186628e7a393",
+   "agentManifestHash": "2dbdecca09d38a807edd88d10f18f4febcb6aa5dcbdc2c1bb17f06446b689562",
+   "permissionHash": "92acddfb1b827518a5a98d07df588965be69688547ea991c4d1f07e409461332",
+   "toolSurfaceHash": "fb2ab566dec79420e179a024d88e1903ebbc1b7a9f23fe7b0aefb45a9d0dcb28"
+  },
+  "revision": "fa001fbff8b188361bf5848cc31358bba7e7d7bb",
+  "artifactHash": "94c1b31a6f6f19c7d7d22dbaeb171ed46a73cff48dccf052ea1086468f557afc",
+  "receiptHash": "c604bc94ce441347f3f799294b6877c9798d2ef4519a73931fd9f6eaa31eeae7",
+  "outcome": "passed",
+  "elapsedMs": 51962,
+  "attempts": [
+   {
+    "inputTokens": 4869,
+    "outputTokens": 79,
+    "cost": null
+   },
+   {
+    "inputTokens": 5118,
+    "outputTokens": 101,
+    "cost": null
+   },
+   {
+    "inputTokens": 5496,
+    "outputTokens": 308,
+    "cost": null
+   },
+   {
+    "inputTokens": 5877,
+    "outputTokens": 94,
+    "cost": null
+   },
+   {
+    "inputTokens": 6188,
+    "outputTokens": 81,
+    "cost": null
+   },
+   {
+    "inputTokens": 6406,
+    "outputTokens": 185,
+    "cost": null
+   },
+   {
+    "inputTokens": 6662,
+    "outputTokens": 176,
+    "cost": null
+   },
+   {
+    "inputTokens": 6911,
+    "outputTokens": 435,
+    "cost": null
+   }
+  ]
+ },
+ {
+  "task": "large-file",
+  "engine": "rust",
+  "repetition": 0,
+  "suiteHash": "bd905b4f81f0a9412b614631a36337723067574848c5f05b50ead1cf48675091",
+  "taskHash": "55a120909957198a82e321a13a4b2f7b66c2439b3d040e8722add9575c37d311",
+  "profile": {
+   "model": "deepseek-v4.1-flash",
+   "modelParametersHash": "ef3d96a9ec0464401ae599f38c478bab21fa051e068e9d158e5c186628e7a393",
+   "agentManifestHash": "2dbdecca09d38a807edd88d10f18f4febcb6aa5dcbdc2c1bb17f06446b689562",
+   "permissionHash": "b5008de17a22c20ad624530249d2bd3986025a48849eb7e2394ab00b636964fe",
+   "toolSurfaceHash": "fb2ab566dec79420e179a024d88e1903ebbc1b7a9f23fe7b0aefb45a9d0dcb28"
+  },
+  "revision": "fa001fbff8b188361bf5848cc31358bba7e7d7bb",
+  "artifactHash": "2542f610ffd5483a8f423f412a46c1d7c29bc3487f7e7d1d1c6fd6372d4c2959",
+  "receiptHash": "44ce702910abd038b4d1cab8934d9cc56b9448fcbfc745f4e7714fadbf36b0a8",
+  "outcome": "passed",
+  "elapsedMs": 14158,
+  "attempts": [
+   {
+    "inputTokens": 4891,
+    "outputTokens": 110,
+    "cost": null
+   },
+   {
+    "inputTokens": 5273,
+    "outputTokens": 150,
+    "cost": null
+   },
+   {
+    "inputTokens": 5563,
+    "outputTokens": 76,
+    "cost": null
+   },
+   {
+    "inputTokens": 5823,
+    "outputTokens": 237,
+    "cost": null
+   },
+   {
+    "inputTokens": 6921,
+    "outputTokens": 237,
+    "cost": null
+   },
+   {
+    "inputTokens": 7233,
+    "outputTokens": 110,
+    "cost": null
+   },
+   {
+    "inputTokens": 7508,
+    "outputTokens": 324,
+    "cost": null
+   }
+  ]
+ },
+ {
+  "task": "large-file",
+  "engine": "rust",
+  "repetition": 1,
+  "suiteHash": "bd905b4f81f0a9412b614631a36337723067574848c5f05b50ead1cf48675091",
+  "taskHash": "55a120909957198a82e321a13a4b2f7b66c2439b3d040e8722add9575c37d311",
+  "profile": {
+   "model": "deepseek-v4.1-flash",
+   "modelParametersHash": "ef3d96a9ec0464401ae599f38c478bab21fa051e068e9d158e5c186628e7a393",
+   "agentManifestHash": "2dbdecca09d38a807edd88d10f18f4febcb6aa5dcbdc2c1bb17f06446b689562",
+   "permissionHash": "b501317312e6e902a272111639b28484f99354c4bbbeec5c79f134cf1a509cf5",
+   "toolSurfaceHash": "fb2ab566dec79420e179a024d88e1903ebbc1b7a9f23fe7b0aefb45a9d0dcb28"
+  },
+  "revision": "fa001fbff8b188361bf5848cc31358bba7e7d7bb",
+  "artifactHash": "94eed1f8bb85cf28d249f25b2fff8fae068b777966e99381c68833a72c8286b5",
+  "receiptHash": "a1f10a225424450d60f3ca8ec92dcfbd3d0a4b682e1d31a05b0265c7389ece84",
+  "outcome": "passed",
+  "elapsedMs": 69373,
+  "attempts": [
+   {
+    "inputTokens": 4891,
+    "outputTokens": 84,
+    "cost": null
+   },
+   {
+    "inputTokens": 5117,
+    "outputTokens": 133,
+    "cost": null
+   },
+   {
+    "inputTokens": 5434,
+    "outputTokens": 145,
+    "cost": null
+   },
+   {
+    "inputTokens": 5630,
+    "outputTokens": 97,
+    "cost": null
+   },
+   {
+    "inputTokens": 5958,
+    "outputTokens": 198,
+    "cost": null
+   },
+   {
+    "inputTokens": 7547,
+    "outputTokens": 164,
+    "cost": null
+   },
+   {
+    "inputTokens": 7828,
+    "outputTokens": 169,
+    "cost": null
+   },
+   {
+    "inputTokens": 8072,
+    "outputTokens": 114,
+    "cost": null
+   },
+   {
+    "inputTokens": 8454,
+    "outputTokens": 411,
+    "cost": null
+   }
+  ]
+ },
+ {
+  "task": "large-file",
+  "engine": "rust",
+  "repetition": 2,
+  "suiteHash": "bd905b4f81f0a9412b614631a36337723067574848c5f05b50ead1cf48675091",
+  "taskHash": "55a120909957198a82e321a13a4b2f7b66c2439b3d040e8722add9575c37d311",
+  "profile": {
+   "model": "deepseek-v4.1-flash",
+   "modelParametersHash": "ef3d96a9ec0464401ae599f38c478bab21fa051e068e9d158e5c186628e7a393",
+   "agentManifestHash": "2dbdecca09d38a807edd88d10f18f4febcb6aa5dcbdc2c1bb17f06446b689562",
+   "permissionHash": "4731ea5f2876370523461ae5078fa1b29eddb51313a9a41afa1ea384303d50f9",
+   "toolSurfaceHash": "fb2ab566dec79420e179a024d88e1903ebbc1b7a9f23fe7b0aefb45a9d0dcb28"
+  },
+  "revision": "fa001fbff8b188361bf5848cc31358bba7e7d7bb",
+  "artifactHash": "150fa9d919c9ecb2fff771272d31ab35284262256bef57db5c56b2bd19809397",
+  "receiptHash": "a380a1d35f57c78d30c86834783dbedb0637914181c0291f5c22302f3b780814",
+  "outcome": "passed",
+  "elapsedMs": 35767,
+  "attempts": [
+   {
+    "inputTokens": 4891,
+    "outputTokens": 89,
+    "cost": null
+   },
+   {
+    "inputTokens": 5147,
+    "outputTokens": 92,
+    "cost": null
+   },
+   {
+    "inputTokens": 5469,
+    "outputTokens": 110,
+    "cost": null
+   },
+   {
+    "inputTokens": 5619,
+    "outputTokens": 142,
+    "cost": null
+   },
+   {
+    "inputTokens": 13307,
+    "outputTokens": 210,
+    "cost": null
+   },
+   {
+    "inputTokens": 13958,
+    "outputTokens": 92,
+    "cost": null
+   },
+   {
+    "inputTokens": 14158,
+    "outputTokens": 161,
+    "cost": null
+   },
+   {
+    "inputTokens": 14394,
+    "outputTokens": 79,
+    "cost": null
+   },
+   {
+    "inputTokens": 14567,
+    "outputTokens": 66,
+    "cost": null
+   },
+   {
+    "inputTokens": 14771,
+    "outputTokens": 333,
+    "cost": null
+   }
+  ]
+ },
+ {
+  "task": "rename-symbol",
+  "engine": "rust",
+  "repetition": 0,
+  "suiteHash": "bd905b4f81f0a9412b614631a36337723067574848c5f05b50ead1cf48675091",
+  "taskHash": "244db465af9f2320fb9297399084c4c2de91754c7ef63ea7c5ac984145c0fdc0",
+  "profile": {
+   "model": "deepseek-v4.1-flash",
+   "modelParametersHash": "ef3d96a9ec0464401ae599f38c478bab21fa051e068e9d158e5c186628e7a393",
+   "agentManifestHash": "2dbdecca09d38a807edd88d10f18f4febcb6aa5dcbdc2c1bb17f06446b689562",
+   "permissionHash": "d5df06b1820f18e5e15a070071c6208afedea9b22905cbe3647687cf6a853b5e",
+   "toolSurfaceHash": "fb2ab566dec79420e179a024d88e1903ebbc1b7a9f23fe7b0aefb45a9d0dcb28"
+  },
+  "revision": "fa001fbff8b188361bf5848cc31358bba7e7d7bb",
+  "artifactHash": "ece5bdc0aa06979ae8e008ae477590aa640ce80ea879f2a09b905b8cb1af6b62",
+  "receiptHash": "47677866df10dc50ea7107040d6f604fdc8cb53652dd4568dfb0d859d71a2b2b",
+  "outcome": "passed",
+  "elapsedMs": 15258,
+  "attempts": [
+   {
+    "inputTokens": 4880,
+    "outputTokens": 92,
+    "cost": null
+   },
+   {
+    "inputTokens": 5525,
+    "outputTokens": 103,
+    "cost": null
+   },
+   {
+    "inputTokens": 5851,
+    "outputTokens": 534,
+    "cost": null
+   },
+   {
+    "inputTokens": 6534,
+    "outputTokens": 119,
+    "cost": null
+   },
+   {
+    "inputTokens": 6872,
+    "outputTokens": 62,
+    "cost": null
+   },
+   {
+    "inputTokens": 7070,
+    "outputTokens": 97,
+    "cost": null
+   },
+   {
+    "inputTokens": 7240,
+    "outputTokens": 262,
+    "cost": null
+   }
+  ]
+ },
+ {
+  "task": "rename-symbol",
+  "engine": "rust",
+  "repetition": 1,
+  "suiteHash": "bd905b4f81f0a9412b614631a36337723067574848c5f05b50ead1cf48675091",
+  "taskHash": "244db465af9f2320fb9297399084c4c2de91754c7ef63ea7c5ac984145c0fdc0",
+  "profile": {
+   "model": "deepseek-v4.1-flash",
+   "modelParametersHash": "ef3d96a9ec0464401ae599f38c478bab21fa051e068e9d158e5c186628e7a393",
+   "agentManifestHash": "2dbdecca09d38a807edd88d10f18f4febcb6aa5dcbdc2c1bb17f06446b689562",
+   "permissionHash": "5fcb9f1a7c596228cf7b6a51742b1dfb6be4693dc4d04090b41a9a05df094d0d",
+   "toolSurfaceHash": "fb2ab566dec79420e179a024d88e1903ebbc1b7a9f23fe7b0aefb45a9d0dcb28"
+  },
+  "revision": "fa001fbff8b188361bf5848cc31358bba7e7d7bb",
+  "artifactHash": "435c2e6b5d82d18050ad65a8e5f003a79b6dd52037e4d402fd610c6549bb07ab",
+  "receiptHash": "4e271fb3adc2a6b4b0053a3930cc00d7ecfabfd896722b9bfad7c8d6b72b94d3",
+  "outcome": "passed",
+  "elapsedMs": 24454,
+  "attempts": [
+   {
+    "inputTokens": 4880,
+    "outputTokens": 74,
+    "cost": null
+   },
+   {
+    "inputTokens": 5288,
+    "outputTokens": 167,
+    "cost": null
+   },
+   {
+    "inputTokens": 5905,
+    "outputTokens": 316,
+    "cost": null
+   },
+   {
+    "inputTokens": 6381,
+    "outputTokens": 142,
+    "cost": null
+   },
+   {
+    "inputTokens": 6603,
+    "outputTokens": 100,
+    "cost": null
+   },
+   {
+    "inputTokens": 6871,
+    "outputTokens": 129,
+    "cost": null
+   },
+   {
+    "inputTokens": 7178,
+    "outputTokens": 287,
+    "cost": null
+   }
+  ]
+ },
+ {
+  "task": "rename-symbol",
+  "engine": "rust",
+  "repetition": 2,
+  "suiteHash": "bd905b4f81f0a9412b614631a36337723067574848c5f05b50ead1cf48675091",
+  "taskHash": "244db465af9f2320fb9297399084c4c2de91754c7ef63ea7c5ac984145c0fdc0",
+  "profile": {
+   "model": "deepseek-v4.1-flash",
+   "modelParametersHash": "ef3d96a9ec0464401ae599f38c478bab21fa051e068e9d158e5c186628e7a393",
+   "agentManifestHash": "2dbdecca09d38a807edd88d10f18f4febcb6aa5dcbdc2c1bb17f06446b689562",
+   "permissionHash": "9993dddd7e67cde8820f2814d7db230f7d7f4c60375986b82f45ae9771e78a98",
+   "toolSurfaceHash": "fb2ab566dec79420e179a024d88e1903ebbc1b7a9f23fe7b0aefb45a9d0dcb28"
+  },
+  "revision": "fa001fbff8b188361bf5848cc31358bba7e7d7bb",
+  "artifactHash": "ac2ce54004ad6eaa8a5c03cea628e948aa10fcd55423a15c1736dc23bfb6e6ea",
+  "receiptHash": "cb184c0ace6443a615486c30083cddf0726be68136d65e14f3db90ab2c4987c5",
+  "outcome": "passed",
+  "elapsedMs": 16554,
+  "attempts": [
+   {
+    "inputTokens": 4880,
+    "outputTokens": 74,
+    "cost": null
+   },
+   {
+    "inputTokens": 5289,
+    "outputTokens": 145,
+    "cost": null
+   },
+   {
+    "inputTokens": 5763,
+    "outputTokens": 98,
+    "cost": null
+   },
+   {
+    "inputTokens": 6053,
+    "outputTokens": 421,
+    "cost": null
+   },
+   {
+    "inputTokens": 6623,
+    "outputTokens": 93,
+    "cost": null
+   },
+   {
+    "inputTokens": 6864,
+    "outputTokens": 49,
+    "cost": null
+   },
+   {
+    "inputTokens": 6949,
+    "outputTokens": 342,
+    "cost": null
+   }
+  ]
+ },
+ {
+  "task": "create-module",
+  "engine": "rust",
+  "repetition": 0,
+  "suiteHash": "bd905b4f81f0a9412b614631a36337723067574848c5f05b50ead1cf48675091",
+  "taskHash": "4d67f12a4d53767d5219ff7c2739a21fb22df729363f19d7b0d03a12e6ed5049",
+  "profile": {
+   "model": "deepseek-v4.1-flash",
+   "modelParametersHash": "ef3d96a9ec0464401ae599f38c478bab21fa051e068e9d158e5c186628e7a393",
+   "agentManifestHash": "2dbdecca09d38a807edd88d10f18f4febcb6aa5dcbdc2c1bb17f06446b689562",
+   "permissionHash": "e88ff00890cf57153e68bdb7b0055fcd0bb44ce802dd773812f9fd011e443153",
+   "toolSurfaceHash": "fb2ab566dec79420e179a024d88e1903ebbc1b7a9f23fe7b0aefb45a9d0dcb28"
+  },
+  "revision": "fa001fbff8b188361bf5848cc31358bba7e7d7bb",
+  "artifactHash": "166c98dd6c572bd56209dddd8466c44e9bdf69ecb7e173e44a6ebd529c7d1f29",
+  "receiptHash": "f016731add67a8bd1a7ab529b519be839da6bab652faba00182cdbc95fc3aeb6",
+  "outcome": "failed",
+  "elapsedMs": 63051,
+  "attempts": [
+   {
+    "inputTokens": 4878,
+    "outputTokens": 75,
+    "cost": null
+   },
+   {
+    "inputTokens": 5089,
+    "outputTokens": 67,
+    "cost": null
+   },
+   {
+    "inputTokens": 5266,
+    "outputTokens": 42,
+    "cost": null
+   }
+  ]
+ },
+ {
+  "task": "create-module",
+  "engine": "rust",
+  "repetition": 1,
+  "suiteHash": "bd905b4f81f0a9412b614631a36337723067574848c5f05b50ead1cf48675091",
+  "taskHash": "4d67f12a4d53767d5219ff7c2739a21fb22df729363f19d7b0d03a12e6ed5049",
+  "profile": {
+   "model": "deepseek-v4.1-flash",
+   "modelParametersHash": "ef3d96a9ec0464401ae599f38c478bab21fa051e068e9d158e5c186628e7a393",
+   "agentManifestHash": "2dbdecca09d38a807edd88d10f18f4febcb6aa5dcbdc2c1bb17f06446b689562",
+   "permissionHash": "7478b7114164124230892a1b06f7e45377d16b017b6970983fc17e86f479fcea",
+   "toolSurfaceHash": "fb2ab566dec79420e179a024d88e1903ebbc1b7a9f23fe7b0aefb45a9d0dcb28"
+  },
+  "revision": "fa001fbff8b188361bf5848cc31358bba7e7d7bb",
+  "artifactHash": "99f0c6e2905e89531ab86d61da6932a6e5fe2a3e19f8b6111cd418dfab55a5ca",
+  "receiptHash": "59084c991e33e921c4543f976941b891eebe17bbe75baa8ee69996150cc86ae4",
+  "outcome": "passed",
+  "elapsedMs": 27544,
+  "attempts": [
+   {
+    "inputTokens": 4878,
+    "outputTokens": 79,
+    "cost": null
+   },
+   {
+    "inputTokens": 5048,
+    "outputTokens": 101,
+    "cost": null
+   },
+   {
+    "inputTokens": 5461,
+    "outputTokens": 267,
+    "cost": null
+   },
+   {
+    "inputTokens": 5841,
+    "outputTokens": 91,
+    "cost": null
+   },
+   {
+    "inputTokens": 6154,
+    "outputTokens": 155,
+    "cost": null
+   },
+   {
+    "inputTokens": 6387,
+    "outputTokens": 50,
+    "cost": null
+   },
+   {
+    "inputTokens": 6574,
+    "outputTokens": 369,
+    "cost": null
+   },
+   {
+    "inputTokens": 7317,
+    "outputTokens": 81,
+    "cost": null
+   },
+   {
+    "inputTokens": 7487,
+    "outputTokens": 537,
+    "cost": null
+   }
+  ]
+ },
+ {
+  "task": "create-module",
+  "engine": "rust",
+  "repetition": 2,
+  "suiteHash": "bd905b4f81f0a9412b614631a36337723067574848c5f05b50ead1cf48675091",
+  "taskHash": "4d67f12a4d53767d5219ff7c2739a21fb22df729363f19d7b0d03a12e6ed5049",
+  "profile": {
+   "model": "deepseek-v4.1-flash",
+   "modelParametersHash": "ef3d96a9ec0464401ae599f38c478bab21fa051e068e9d158e5c186628e7a393",
+   "agentManifestHash": "2dbdecca09d38a807edd88d10f18f4febcb6aa5dcbdc2c1bb17f06446b689562",
+   "permissionHash": "7d64687c70c6d576f6e587b7933f29540d8dd2cf43d1ddcef786b170872d2b9a",
+   "toolSurfaceHash": "fb2ab566dec79420e179a024d88e1903ebbc1b7a9f23fe7b0aefb45a9d0dcb28"
+  },
+  "revision": "fa001fbff8b188361bf5848cc31358bba7e7d7bb",
+  "artifactHash": "5f93ae46371ee7117137537129d92998951804b3ac1eb39c0cdf24b9e9376277",
+  "receiptHash": "102df0084e0e3a27b3ccee899f9c50df1318d654a9d986987a235a4f8f4fe9f5",
+  "outcome": "passed",
+  "elapsedMs": 43644,
+  "attempts": [
+   {
+    "inputTokens": 4878,
+    "outputTokens": 79,
+    "cost": null
+   },
+   {
+    "inputTokens": 5093,
+    "outputTokens": 67,
+    "cost": null
+   },
+   {
+    "inputTokens": 5270,
+    "outputTokens": 42,
+    "cost": null
+   },
+   {
+    "inputTokens": 5462,
+    "outputTokens": 136,
+    "cost": null
+   },
+   {
+    "inputTokens": 5705,
+    "outputTokens": 253,
+    "cost": null
+   },
+   {
+    "inputTokens": 5991,
+    "outputTokens": 66,
+    "cost": null
+   },
+   {
+    "inputTokens": 6279,
+    "outputTokens": 149,
+    "cost": null
+   },
+   {
+    "inputTokens": 6502,
+    "outputTokens": 49,
+    "cost": null
+   },
+   {
+    "inputTokens": 6688,
+    "outputTokens": 179,
+    "cost": null
+   },
+   {
+    "inputTokens": 7106,
+    "outputTokens": 387,
+    "cost": null
+   }
+  ]
+ },
+ {
+  "task": "docs-sync",
+  "engine": "rust",
+  "repetition": 0,
+  "suiteHash": "bd905b4f81f0a9412b614631a36337723067574848c5f05b50ead1cf48675091",
+  "taskHash": "81770a3ba16cad0c85823ad75587b559a670da480642d3491f6d5b8814394fee",
+  "profile": {
+   "model": "deepseek-v4.1-flash",
+   "modelParametersHash": "ef3d96a9ec0464401ae599f38c478bab21fa051e068e9d158e5c186628e7a393",
+   "agentManifestHash": "2dbdecca09d38a807edd88d10f18f4febcb6aa5dcbdc2c1bb17f06446b689562",
+   "permissionHash": "3fd32c0200d58c3a32c67ef0ec7fdfe289859b10a4625dada721d2d5c3676e95",
+   "toolSurfaceHash": "fb2ab566dec79420e179a024d88e1903ebbc1b7a9f23fe7b0aefb45a9d0dcb28"
+  },
+  "revision": "fa001fbff8b188361bf5848cc31358bba7e7d7bb",
+  "artifactHash": "f45c980517c6640ed715435e1fda1711f7f4db2b182c8823162edbf622d06300",
+  "receiptHash": "db9063ff1b56e0d13de1cec66eda488cbba862cb4b22e6b0fdada7b73961a323",
+  "outcome": "passed",
+  "elapsedMs": 25024,
+  "attempts": [
+   {
+    "inputTokens": 4870,
+    "outputTokens": 52,
+    "cost": null
+   },
+   {
+    "inputTokens": 4973,
+    "outputTokens": 84,
+    "cost": null
+   },
+   {
+    "inputTokens": 5079,
+    "outputTokens": 99,
+    "cost": null
+   },
+   {
+    "inputTokens": 5290,
+    "outputTokens": 145,
+    "cost": null
+   },
+   {
+    "inputTokens": 14909,
+    "outputTokens": 371,
+    "cost": null
+   },
+   {
+    "inputTokens": 15500,
+    "outputTokens": 100,
+    "cost": null
+   },
+   {
+    "inputTokens": 15787,
+    "outputTokens": 327,
+    "cost": null
+   },
+   {
+    "inputTokens": 16194,
+    "outputTokens": 167,
+    "cost": null
+   },
+   {
+    "inputTokens": 16519,
+    "outputTokens": 346,
+    "cost": null
+   },
+   {
+    "inputTokens": 17046,
+    "outputTokens": 336,
+    "cost": null
+   }
+  ]
+ },
+ {
+  "task": "docs-sync",
+  "engine": "rust",
+  "repetition": 1,
+  "suiteHash": "bd905b4f81f0a9412b614631a36337723067574848c5f05b50ead1cf48675091",
+  "taskHash": "81770a3ba16cad0c85823ad75587b559a670da480642d3491f6d5b8814394fee",
+  "profile": {
+   "model": "deepseek-v4.1-flash",
+   "modelParametersHash": "ef3d96a9ec0464401ae599f38c478bab21fa051e068e9d158e5c186628e7a393",
+   "agentManifestHash": "2dbdecca09d38a807edd88d10f18f4febcb6aa5dcbdc2c1bb17f06446b689562",
+   "permissionHash": "3ae3a051f902ff24a8c087348cea86b3288eceb142a7a4200f013844ca6782a2",
+   "toolSurfaceHash": "fb2ab566dec79420e179a024d88e1903ebbc1b7a9f23fe7b0aefb45a9d0dcb28"
+  },
+  "revision": "fa001fbff8b188361bf5848cc31358bba7e7d7bb",
+  "artifactHash": "f45c980517c6640ed715435e1fda1711f7f4db2b182c8823162edbf622d06300",
+  "receiptHash": "c874456c43eb8783161239cc57ca3ece74b223e519a0e642211f5ed32e8f0814",
+  "outcome": "passed",
+  "elapsedMs": 19122,
+  "attempts": [
+   {
+    "inputTokens": 4870,
+    "outputTokens": 52,
+    "cost": null
+   },
+   {
+    "inputTokens": 4973,
+    "outputTokens": 85,
+    "cost": null
+   },
+   {
+    "inputTokens": 5170,
+    "outputTokens": 196,
+    "cost": null
+   },
+   {
+    "inputTokens": 5557,
+    "outputTokens": 234,
+    "cost": null
+   },
+   {
+    "inputTokens": 5871,
+    "outputTokens": 275,
+    "cost": null
+   },
+   {
+    "inputTokens": 9775,
+    "outputTokens": 164,
+    "cost": null
+   },
+   {
+    "inputTokens": 10237,
+    "outputTokens": 317,
+    "cost": null
+   }
+  ]
+ },
+ {
+  "task": "docs-sync",
+  "engine": "rust",
+  "repetition": 2,
+  "suiteHash": "bd905b4f81f0a9412b614631a36337723067574848c5f05b50ead1cf48675091",
+  "taskHash": "81770a3ba16cad0c85823ad75587b559a670da480642d3491f6d5b8814394fee",
+  "profile": {
+   "model": "deepseek-v4.1-flash",
+   "modelParametersHash": "ef3d96a9ec0464401ae599f38c478bab21fa051e068e9d158e5c186628e7a393",
+   "agentManifestHash": "2dbdecca09d38a807edd88d10f18f4febcb6aa5dcbdc2c1bb17f06446b689562",
+   "permissionHash": "cab464ddb78963253d90993d9920286bfb5ca3e26a8ddb64b68ddec5c9532cff",
+   "toolSurfaceHash": "fb2ab566dec79420e179a024d88e1903ebbc1b7a9f23fe7b0aefb45a9d0dcb28"
+  },
+  "revision": "fa001fbff8b188361bf5848cc31358bba7e7d7bb",
+  "artifactHash": "f45c980517c6640ed715435e1fda1711f7f4db2b182c8823162edbf622d06300",
+  "receiptHash": "a26764f408610055e2fef2edcec4cdf11b144e2ae34b78dfe82a441d8e09d3ba",
+  "outcome": "passed",
+  "elapsedMs": 56124,
+  "attempts": [
+   {
+    "inputTokens": 4870,
+    "outputTokens": 53,
+    "cost": null
+   },
+   {
+    "inputTokens": 4974,
+    "outputTokens": 165,
+    "cost": null
+   },
+   {
+    "inputTokens": 5179,
+    "outputTokens": 211,
+    "cost": null
+   },
+   {
+    "inputTokens": 13334,
+    "outputTokens": 581,
+    "cost": null
+   },
+   {
+    "inputTokens": 14266,
+    "outputTokens": 356,
+    "cost": null
+   },
+   {
+    "inputTokens": 14702,
+    "outputTokens": 302,
+    "cost": null
+   },
+   {
+    "inputTokens": 15194,
+    "outputTokens": 273,
+    "cost": null
+   },
+   {
+    "inputTokens": 15642,
+    "outputTokens": 287,
+    "cost": null
+   },
+   {
+    "inputTokens": 16039,
+    "outputTokens": 430,
+    "cost": null
+   }
+  ]
+ }
+]

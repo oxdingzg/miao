@@ -7,105 +7,90 @@
     "taskHash": "acc85904b2dcd251e4f30fbe7b74f29d6ae3d4266a73c7319c966169a74baa82",
     "profile": {
       "model": "deepseek-v4-flash",
-      "modelParametersHash": "727ff2e1ee1e20ca89f3f3f4f7e035ef01fdd336ecc2e32ccf2b87813102a8bb",
-      "agentManifestHash": "bf3a31162c903e7d3a8854fd19633156e20a8a9305b247395d64ec0a99ab8d3d",
-      "permissionHash": "28e80a5118e931d398ff25fd88d73a540c8e0501d6e64dccaab71318ff208a3e",
+      "modelParametersHash": "2a50e585193f85f3a04d45e17ee118e8a608a62a264931eb7648a46438469a41",
+      "agentManifestHash": "5eef6f52864dc63d8e19133aebd8156f4d25a48d14c37e9513cb7140eae2ff8c",
+      "permissionHash": "4cf1a395cefff1d6cf3473be9bc3571c0553c25ed555fb0c2c4e81e7739a0531",
       "toolSurfaceHash": "04c769ae52448d5fe45ea690050120cee624771222b1291088dc6d832c888106"
     },
-    "revision": "83f7c4f935295946d46d1e802cb81ea382f0893c",
-    "artifactHash": "e9ff285d1d0a72e89be756401e591e292f7b5c153a01670d953e994b851d5339",
-    "receiptHash": "69c66fb2792e186b0347962f3aafb735f08e910abbfe97c04624c581c2999013",
+    "revision": "df0419ba27c9f63a9565636719cb398f440c3780",
+    "artifactHash": "2f5044adddd93a8711e417a3ac13f58f4da28dd2caf5192f90afbeafb0219070",
+    "receiptHash": "8710e2fb8a150541c662bb5f6ce7d23cf5341fff9cfa8f23f88f5cc42fdd5214",
     "outcome": "passed",
-    "elapsedMs": 41050,
+    "elapsedMs": 38526,
     "attempts": [
       {
-        "inputTokens": 13990,
-        "outputTokens": 71,
+        "inputTokens": 13991,
+        "outputTokens": 69,
         "cost": null
       },
       {
-        "inputTokens": 14180,
-        "outputTokens": 42,
-        "cost": null
-      },
-      {
-        "inputTokens": 14290,
+        "inputTokens": 14081,
         "outputTokens": 68,
         "cost": null
       },
       {
-        "inputTokens": 14379,
-        "outputTokens": 87,
+        "inputTokens": 14278,
+        "outputTokens": 42,
         "cost": null
       },
       {
-        "inputTokens": 14486,
-        "outputTokens": 41,
+        "inputTokens": 14388,
+        "outputTokens": 63,
         "cost": null
       },
       {
-        "inputTokens": 14552,
-        "outputTokens": 15,
+        "inputTokens": 14476,
+        "outputTokens": 45,
         "cost": null
       },
       {
-        "inputTokens": 14593,
-        "outputTokens": 79,
+        "inputTokens": 14626,
+        "outputTokens": 23,
         "cost": null
       },
       {
-        "inputTokens": 14692,
-        "outputTokens": 25,
+        "inputTokens": 14675,
+        "outputTokens": 289,
         "cost": null
       },
       {
-        "inputTokens": 14751,
-        "outputTokens": 147,
+        "inputTokens": 15004,
+        "outputTokens": 8,
         "cost": null
       },
       {
-        "inputTokens": 14929,
-        "outputTokens": 545,
+        "inputTokens": 15046,
+        "outputTokens": 163,
         "cost": null
       },
       {
-        "inputTokens": 15698,
-        "outputTokens": 423,
+        "inputTokens": 15245,
+        "outputTokens": 546,
         "cost": null
       },
       {
-        "inputTokens": 16209,
-        "outputTokens": 245,
+        "inputTokens": 15923,
+        "outputTokens": 329,
         "cost": null
       },
       {
-        "inputTokens": 16542,
-        "outputTokens": 1130,
+        "inputTokens": 16298,
+        "outputTokens": 397,
         "cost": null
       },
       {
-        "inputTokens": 17722,
-        "outputTokens": 143,
+        "inputTokens": 16770,
+        "outputTokens": 27,
         "cost": null
       },
       {
-        "inputTokens": 17886,
-        "outputTokens": 44,
+        "inputTokens": 16820,
+        "outputTokens": 106,
         "cost": null
       },
       {
-        "inputTokens": 18048,
-        "outputTokens": 98,
-        "cost": null
-      },
-      {
-        "inputTokens": 18169,
-        "outputTokens": 72,
-        "cost": null
-      },
-      {
-        "inputTokens": 18259,
-        "outputTokens": 90,
+        "inputTokens": 16944,
+        "outputTokens": 95,
         "cost": null
       }
     ]
@@ -113,7 +98,7 @@
   "rejection": null,
   "evidence": {
     "engine": "typescript",
-    "revision": "83f7c4f935295946d46d1e802cb81ea382f0893c",
+    "revision": "df0419ba27c9f63a9565636719cb398f440c3780",
     "task": "long-session",
     "repetition": 1,
     "terminal": "completed",
@@ -121,360 +106,306 @@
     "receipts": [],
     "attempts": [
       {
-        "inputTokens": 13990,
-        "outputTokens": 71,
+        "inputTokens": 13991,
+        "outputTokens": 69,
         "cacheReadTokens": 1792,
         "cacheWriteTokens": null,
         "reasoningTokens": 22,
         "cost": null
       },
       {
-        "inputTokens": 14180,
-        "outputTokens": 42,
-        "cacheReadTokens": 13952,
+        "inputTokens": 14081,
+        "outputTokens": 68,
+        "cacheReadTokens": 13824,
         "cacheWriteTokens": null,
-        "reasoningTokens": 0,
+        "reasoningTokens": 20,
         "cost": null
       },
       {
-        "inputTokens": 14290,
-        "outputTokens": 68,
+        "inputTokens": 14278,
+        "outputTokens": 42,
         "cacheReadTokens": 14080,
         "cacheWriteTokens": null,
-        "reasoningTokens": 11,
+        "reasoningTokens": 0,
         "cost": null
       },
       {
-        "inputTokens": 14379,
-        "outputTokens": 87,
+        "inputTokens": 14388,
+        "outputTokens": 63,
         "cacheReadTokens": 14208,
         "cacheWriteTokens": null,
-        "reasoningTokens": 25,
+        "reasoningTokens": 0,
         "cost": null
       },
       {
-        "inputTokens": 14486,
-        "outputTokens": 41,
+        "inputTokens": 14476,
+        "outputTokens": 45,
         "cacheReadTokens": 14336,
         "cacheWriteTokens": null,
         "reasoningTokens": 0,
         "cost": null
       },
       {
-        "inputTokens": 14552,
-        "outputTokens": 15,
-        "cacheReadTokens": 14336,
-        "cacheWriteTokens": null,
-        "reasoningTokens": 0,
-        "cost": null
-      },
-      {
-        "inputTokens": 14593,
-        "outputTokens": 79,
-        "cacheReadTokens": 14336,
-        "cacheWriteTokens": null,
-        "reasoningTokens": 3,
-        "cost": null
-      },
-      {
-        "inputTokens": 14692,
-        "outputTokens": 25,
+        "inputTokens": 14626,
+        "outputTokens": 23,
         "cacheReadTokens": 14464,
         "cacheWriteTokens": null,
         "reasoningTokens": 0,
         "cost": null
       },
       {
-        "inputTokens": 14751,
-        "outputTokens": 147,
-        "cacheReadTokens": 14592,
+        "inputTokens": 14675,
+        "outputTokens": 289,
+        "cacheReadTokens": 14464,
+        "cacheWriteTokens": null,
+        "reasoningTokens": 210,
+        "cost": null
+      },
+      {
+        "inputTokens": 15004,
+        "outputTokens": 8,
+        "cacheReadTokens": 14848,
+        "cacheWriteTokens": null,
+        "reasoningTokens": 0,
+        "cost": null
+      },
+      {
+        "inputTokens": 15046,
+        "outputTokens": 163,
+        "cacheReadTokens": 14848,
         "cacheWriteTokens": null,
         "reasoningTokens": 104,
         "cost": null
       },
       {
-        "inputTokens": 14929,
-        "outputTokens": 545,
-        "cacheReadTokens": 14720,
+        "inputTokens": 15245,
+        "outputTokens": 546,
+        "cacheReadTokens": 15104,
         "cacheWriteTokens": null,
-        "reasoningTokens": 468,
+        "reasoningTokens": 479,
         "cost": null
       },
       {
-        "inputTokens": 15698,
-        "outputTokens": 423,
-        "cacheReadTokens": 15360,
+        "inputTokens": 15923,
+        "outputTokens": 329,
+        "cacheReadTokens": 15744,
         "cacheWriteTokens": null,
-        "reasoningTokens": 352,
+        "reasoningTokens": 280,
         "cost": null
       },
       {
-        "inputTokens": 16209,
-        "outputTokens": 245,
-        "cacheReadTokens": 16000,
+        "inputTokens": 16298,
+        "outputTokens": 397,
+        "cacheReadTokens": 16128,
         "cacheWriteTokens": null,
-        "reasoningTokens": 159,
+        "reasoningTokens": 273,
         "cost": null
       },
       {
-        "inputTokens": 16542,
-        "outputTokens": 1130,
-        "cacheReadTokens": 16384,
-        "cacheWriteTokens": null,
-        "reasoningTokens": 1049,
-        "cost": null
-      },
-      {
-        "inputTokens": 17722,
-        "outputTokens": 143,
-        "cacheReadTokens": 17536,
-        "cacheWriteTokens": null,
-        "reasoningTokens": 28,
-        "cost": null
-      },
-      {
-        "inputTokens": 17886,
-        "outputTokens": 44,
-        "cacheReadTokens": 17664,
+        "inputTokens": 16770,
+        "outputTokens": 27,
+        "cacheReadTokens": 16512,
         "cacheWriteTokens": null,
         "reasoningTokens": 0,
         "cost": null
       },
       {
-        "inputTokens": 18048,
-        "outputTokens": 98,
-        "cacheReadTokens": 17792,
+        "inputTokens": 16820,
+        "outputTokens": 106,
+        "cacheReadTokens": 16640,
         "cacheWriteTokens": null,
-        "reasoningTokens": 21,
+        "reasoningTokens": 85,
         "cost": null
       },
       {
-        "inputTokens": 18169,
-        "outputTokens": 72,
-        "cacheReadTokens": 17920,
+        "inputTokens": 16944,
+        "outputTokens": 95,
+        "cacheReadTokens": 16768,
         "cacheWriteTokens": null,
-        "reasoningTokens": 51,
-        "cost": null
-      },
-      {
-        "inputTokens": 18259,
-        "outputTokens": 90,
-        "cacheReadTokens": 18048,
-        "cacheWriteTokens": null,
-        "reasoningTokens": 0,
+        "reasoningTokens": 27,
         "cost": null
       }
     ],
     "phases": [
       {
         "phase": "step-start",
-        "atMs": 1792418235124,
+        "atMs": 1792426915354,
         "clock": "observed"
       },
       {
         "phase": "tool-part",
-        "atMs": 1792418235464,
+        "atMs": 1792426916346,
         "clock": "observed"
       },
       {
         "phase": "step-start",
-        "atMs": 1792418236411,
+        "atMs": 1792426917368,
         "clock": "observed"
       },
       {
         "phase": "tool-part",
-        "atMs": 1792418236511,
+        "atMs": 1792426917768,
         "clock": "observed"
       },
       {
         "phase": "step-start",
-        "atMs": 1792418237505,
+        "atMs": 1792426918683,
         "clock": "observed"
       },
       {
         "phase": "tool-part",
-        "atMs": 1792418237794,
+        "atMs": 1792426918834,
         "clock": "observed"
       },
       {
         "phase": "step-start",
-        "atMs": 1792418238495,
+        "atMs": 1792426919801,
         "clock": "observed"
       },
       {
         "phase": "tool-part",
-        "atMs": 1792418238842,
+        "atMs": 1792426920012,
         "clock": "observed"
       },
       {
         "phase": "step-start",
-        "atMs": 1792418239848,
+        "atMs": 1792426920920,
         "clock": "observed"
       },
       {
         "phase": "tool-part",
-        "atMs": 1792418239986,
+        "atMs": 1792426921122,
         "clock": "observed"
       },
       {
         "phase": "step-start",
-        "atMs": 1792418240600,
+        "atMs": 1792426921469,
         "clock": "observed"
       },
       {
         "phase": "first-output",
-        "atMs": 1792418240684,
+        "atMs": 1792426921591,
         "clock": "observed"
       },
       {
         "phase": "step-start",
-        "atMs": 1792418243457,
+        "atMs": 1792426925062,
         "clock": "observed"
       },
       {
         "phase": "tool-part",
-        "atMs": 1792418243779,
+        "atMs": 1792426926315,
         "clock": "observed"
       },
       {
         "phase": "step-start",
-        "atMs": 1792418244566,
+        "atMs": 1792426927321,
         "clock": "observed"
       },
       {
         "phase": "first-output",
-        "atMs": 1792418244680,
+        "atMs": 1792426927401,
         "clock": "observed"
       },
       {
         "phase": "step-start",
-        "atMs": 1792418247135,
+        "atMs": 1792426930742,
         "clock": "observed"
       },
       {
         "phase": "tool-part",
-        "atMs": 1792418247972,
+        "atMs": 1792426931561,
         "clock": "observed"
       },
       {
         "phase": "step-start",
-        "atMs": 1792418248756,
+        "atMs": 1792426932138,
         "clock": "observed"
       },
       {
         "phase": "tool-part",
-        "atMs": 1792418251677,
+        "atMs": 1792426934704,
         "clock": "observed"
       },
       {
         "phase": "step-start",
-        "atMs": 1792418252767,
+        "atMs": 1792426935469,
         "clock": "observed"
       },
       {
         "phase": "tool-part",
-        "atMs": 1792418254488,
+        "atMs": 1792426938718,
         "clock": "observed"
       },
       {
         "phase": "step-start",
-        "atMs": 1792418255194,
+        "atMs": 1792426939511,
         "clock": "observed"
       },
       {
         "phase": "tool-part",
-        "atMs": 1792418256294,
+        "atMs": 1792426941200,
         "clock": "observed"
       },
       {
         "phase": "step-start",
-        "atMs": 1792418256946,
-        "clock": "observed"
-      },
-      {
-        "phase": "tool-part",
-        "atMs": 1792418262758,
-        "clock": "observed"
-      },
-      {
-        "phase": "step-start",
-        "atMs": 1792418263499,
-        "clock": "observed"
-      },
-      {
-        "phase": "tool-part",
-        "atMs": 1792418264190,
-        "clock": "observed"
-      },
-      {
-        "phase": "step-start",
-        "atMs": 1792418265107,
-        "clock": "observed"
-      },
-      {
-        "phase": "tool-part",
-        "atMs": 1792418265413,
-        "clock": "observed"
-      },
-      {
-        "phase": "step-start",
-        "atMs": 1792418266071,
+        "atMs": 1792426941838,
         "clock": "observed"
       },
       {
         "phase": "first-output",
-        "atMs": 1792418266562,
+        "atMs": 1792426941978,
         "clock": "observed"
       },
       {
         "phase": "step-start",
-        "atMs": 1792418269496,
+        "atMs": 1792426945583,
         "clock": "observed"
       },
       {
         "phase": "first-output",
-        "atMs": 1792418269955,
+        "atMs": 1792426946150,
         "clock": "observed"
       },
       {
         "phase": "step-start",
-        "atMs": 1792418272771,
+        "atMs": 1792426949778,
         "clock": "observed"
       },
       {
         "phase": "first-output",
-        "atMs": 1792418273093,
+        "atMs": 1792426950163,
         "clock": "observed"
       },
       {
         "phase": "exit",
-        "atMs": 1792418273136,
+        "atMs": 1792426950226,
         "clock": "observed"
       },
       {
         "phase": "verified",
-        "atMs": 1792418273169,
+        "atMs": 1792426950256,
         "clock": "observed"
       }
     ],
     "profile": {
       "model": "deepseek-v4-flash",
-      "modelParametersHash": "727ff2e1ee1e20ca89f3f3f4f7e035ef01fdd336ecc2e32ccf2b87813102a8bb",
-      "agentManifestHash": "bf3a31162c903e7d3a8854fd19633156e20a8a9305b247395d64ec0a99ab8d3d",
-      "permissionHash": "28e80a5118e931d398ff25fd88d73a540c8e0501d6e64dccaab71318ff208a3e",
+      "modelParametersHash": "2a50e585193f85f3a04d45e17ee118e8a608a62a264931eb7648a46438469a41",
+      "agentManifestHash": "5eef6f52864dc63d8e19133aebd8156f4d25a48d14c37e9513cb7140eae2ff8c",
+      "permissionHash": "4cf1a395cefff1d6cf3473be9bc3571c0553c25ed555fb0c2c4e81e7739a0531",
       "toolSurfaceHash": "04c769ae52448d5fe45ea690050120cee624771222b1291088dc6d832c888106"
     },
-    "profileReceipts": 18,
+    "profileReceipts": 15,
     "loops": {
       "continuations": [],
       "stopped": []
     },
-    "toolCalls": 13,
-    "textHash": "d78b1950fa2bb8e162f3cf26bf8477994fd6484ea3510668645056e63686f3fe",
+    "toolCalls": 10,
+    "textHash": "828f6b025b3b00681238a0da4bdfbf1a5d2aa79a1a180e4dbec1603f0d9a39cf",
     "binarySha256": null,
-    "startedAtMs": 1792418232119,
+    "startedAtMs": 1792426911730,
     "admissionMs": null,
-    "elapsedMs": 41050
+    "elapsedMs": 38526
   },
   "assessment": {
     "suiteHash": "bd905b4f81f0a9412b614631a36337723067574848c5f05b50ead1cf48675091",
@@ -500,7 +431,7 @@
       ],
       "exit": 0,
       "stdoutHash": "c384cdaa55dad157820800a4aaa48c4963ea5500be5bd17037485dc40c6e23b8",
-      "stderrHash": "2a51ac921f0cff5efbbd3a4c57363eb2811ff3457b9884375222cac3e32121eb"
+      "stderrHash": "456ac7055b431ee5b1dbb5f8dbbf1f62f3cf16564b69165fbce81482794746d3"
     },
     "executionVerdict": "unverified",
     "requiredReceipts": [],
@@ -508,5 +439,5 @@
       "LONG_SESSION_OK"
     ]
   },
-  "answer": "Created `src/unit.ts` exporting `unit = 21`.\nCreated `src/double.ts` — imports `unit` and exports `double()` returning `unit * 2`.\nCreated `test/long.test.ts` and it passes:\n\n```\n# LONG_SESSION_OK\nok 1 - double() returns 42\n# pass 1\n# fail 0\n```\n\nNote: `src/double.ts`'s import was changed to `'./unit.ts'` so Node's ESM resolver can load it without extra tooling/config.\nTest already passes (`LONG_SESSION_OK`, 1/1), so no repair needed.\nCreated:\n- `src/unit.ts` — exports `unit = 21`\n- `src/double.ts` — imports `unit`, exports `double()` returning `unit * 2` (import path adjusted to `'./unit.ts'` for Node ESM resolution)\n- `test/long.test.ts` — asserts `double() === 42`, prints marker on pass\n\nMarker: `LONG_SESSION_OK`"
+  "answer": "Created `src/unit.ts` with `export const unit = 21;`. No other files touched.\nCreated `src/double.ts`.\n`test/long.test.ts` created and passing:\n\n```\nLONG_SESSION_OK\n1 pass / 0 fail\n```\nTest passed (`1 pass / 0 fail`, marker printed), so no source repair was needed.\nCreated:\n- `src/unit.ts` — `export const unit = 21;`\n- `src/double.ts` — imports `unit`, exports `double()`\n- `test/long.test.ts` — asserts `double() === 42`, prints marker on pass\n\nMarker: `LONG_SESSION_OK`"
 }

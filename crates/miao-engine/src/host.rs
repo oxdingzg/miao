@@ -326,6 +326,12 @@ impl Host {
                     .activate_transfer(&import_id, &bundle_sha256, &product_database)
                     .await
             }
+            Command::TransferExport { import_id, path } => {
+                runtime
+                    .store()
+                    .export_session_transfer_import(&import_id, path)
+                    .await
+            }
             Command::TransferAbort { import_id } => {
                 runtime
                     .store()

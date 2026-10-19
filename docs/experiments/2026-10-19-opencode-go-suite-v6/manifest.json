@@ -1,0 +1,80 @@
+{
+ "arms": {
+  "typescript": {
+   "model": "opencode-go/deepseek-v4.1-flash",
+   "revision": "fa001fbff8b188361bf5848cc31358bba7e7d7bb",
+   "binarySha256": null,
+   "suiteHash": "bd905b4f81f0a9412b614631a36337723067574848c5f05b50ead1cf48675091",
+   "tasks": [
+    "read-only",
+    "multi-read",
+    "small-edit",
+    "multi-file",
+    "test-repair",
+    "permission-denial",
+    "tool-error",
+    "stream-interruption",
+    "long-session",
+    "multi-line-edit",
+    "typed-repair",
+    "large-file",
+    "rename-symbol",
+    "create-module",
+    "docs-sync"
+   ],
+   "repetitions": 3,
+   "runs": 45,
+   "rejected": 0,
+   "chunks": [
+    "go-ts-1",
+    "go-ts-2",
+    "go-ts-3"
+   ],
+   "commands": [
+    "bun run src/engine/baseline-sweep-cli.ts --engine typescript --tasks read-only,multi-read,small-edit,multi-file,test-repair --repetitions 3 --pause-ms 500 --model opencode-go/deepseek-v4.1-flash --entry packages/miao/src/index.ts --credential-db <data>/miao.db --revision fa001fbff8b188361bf5848cc31358bba7e7d7bb",
+    "bun run src/engine/baseline-sweep-cli.ts --engine typescript --tasks permission-denial,tool-error,stream-interruption,long-session,multi-line-edit --repetitions 3 --pause-ms 500 --model opencode-go/deepseek-v4.1-flash --entry packages/miao/src/index.ts --credential-db <data>/miao.db --revision fa001fbff8b188361bf5848cc31358bba7e7d7bb",
+    "bun run src/engine/baseline-sweep-cli.ts --engine typescript --tasks typed-repair,large-file,rename-symbol,create-module,docs-sync --repetitions 3 --pause-ms 500 --model opencode-go/deepseek-v4.1-flash --entry packages/miao/src/index.ts --credential-db <data>/miao.db --revision fa001fbff8b188361bf5848cc31358bba7e7d7bb"
+   ],
+   "startedAtMs": 1792421560086,
+   "finishedAtMs": 1792422512747
+  },
+  "rust": {
+   "model": "deepseek-v4.1-flash",
+   "revision": "fa001fbff8b188361bf5848cc31358bba7e7d7bb",
+   "binarySha256": "b2c1d67f465561ad7bed58ab28ebe03658b8042e16b0bb3f75a41d65329d14fd",
+   "suiteHash": "bd905b4f81f0a9412b614631a36337723067574848c5f05b50ead1cf48675091",
+   "tasks": [
+    "read-only",
+    "multi-read",
+    "small-edit",
+    "multi-file",
+    "test-repair",
+    "permission-denial",
+    "tool-error",
+    "stream-interruption",
+    "long-session",
+    "multi-line-edit",
+    "typed-repair",
+    "large-file",
+    "rename-symbol",
+    "create-module",
+    "docs-sync"
+   ],
+   "repetitions": 3,
+   "runs": 45,
+   "rejected": 0,
+   "chunks": [
+    "go-rs-1",
+    "go-rs-2",
+    "go-rs-3"
+   ],
+   "commands": [
+    "bun run src/engine/baseline-sweep-cli.ts --engine rust --tasks read-only,multi-read,small-edit,multi-file,test-repair --repetitions 3 --pause-ms 500 --model deepseek-v4.1-flash --binary ~/.miao/bin/miao-engine --provider openai-chat --model-routes-config <run>/routes.json --model-route opencode-go/deepseek-v4.1-flash --env-file <env.json> --revision fa001fbff8b188361bf5848cc31358bba7e7d7bb",
+    "bun run src/engine/baseline-sweep-cli.ts --engine rust --tasks permission-denial,tool-error,stream-interruption,long-session,multi-line-edit --repetitions 3 --pause-ms 500 --model deepseek-v4.1-flash --binary ~/.miao/bin/miao-engine --provider openai-chat --model-routes-config <run>/routes.json --model-route opencode-go/deepseek-v4.1-flash --env-file <env.json> --revision fa001fbff8b188361bf5848cc31358bba7e7d7bb",
+    "bun run src/engine/baseline-sweep-cli.ts --engine rust --tasks typed-repair,large-file,rename-symbol,create-module,docs-sync --repetitions 3 --pause-ms 500 --model deepseek-v4.1-flash --binary ~/.miao/bin/miao-engine --provider openai-chat --model-routes-config <run>/routes.json --model-route opencode-go/deepseek-v4.1-flash --env-file <env.json> --revision fa001fbff8b188361bf5848cc31358bba7e7d7bb"
+   ],
+   "startedAtMs": 1792422567921,
+   "finishedAtMs": 1792423867760
+  }
+ }
+}

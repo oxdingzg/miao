@@ -20,7 +20,9 @@ describe("SessionFirstByteGuard", () => {
       const error = yield* SessionFirstByteGuard.wrap(source, { timeoutMs: 20 }).pipe(Stream.runDrain, Effect.flip)
       expect(error).toBeInstanceOf(LLMError)
       expect(error.reason._tag).toBe("Transport")
-      expect(error.reason.message).toBe("provider produced no stream event within 20ms")
+      expect(error.reason.message).toBe(
+        "provider produced no stream event within 20ms (set MIAO_LLM_FIRST_BYTE_TIMEOUT_MS to adjust, 0 disables)",
+      )
       expect(error.retryable).toBe(true)
       expect(closed).toBe(true)
     }),

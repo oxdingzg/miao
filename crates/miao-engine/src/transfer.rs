@@ -273,6 +273,51 @@ impl Store {
         ).optional()?)).await
     }
 
+    /// Export the exact retained payload of an active import to a private
+    /// file for reverse migration. The digest is re-verified on every export,
+    /// so a damaged row can never become a restored Session.
+    pub async fn export_session_transfer_import(
+        &self,
+        id: &str,
+        path: std::path::PathBuf,
+    ) -> Result<Value, Error> {
+        if !path.is_absolute() {
+            return Err(Error::Invalid(
+                "transfer export path must be absolute".into(),
+            ));
+        }
+        let id = id.to_owned();
+        let key = id.clone();
+        let export = self
+            .call(move |conn| {
+                let row: Option<(String, String, String, String)> = conn
+                    .query_row(
+                        "SELECT session_id,bundle_sha256,bundle,state FROM engine_transfer_import WHERE id=?1",
+                        [&key],
+                        |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?)),
+                    )
+                    .optional()?;
+                let (session, digest, bundle, state) = row.ok_or(Error::Conflict)?;
+                if state != "active" || format!("{:x}", Sha256::digest(bundle.as_bytes())) != digest {
+                    return Err(Error::Conflict);
+                }
+                Ok((session, digest, bundle))
+            })
+            .await?;
+        let (session, digest, bundle) = export;
+        let temporary = path.with_extension("tmp");
+        tokio::fs::write(&temporary, bundle.as_bytes()).await?;
+        tokio::fs::rename(&temporary, &path).await?;
+        Ok(json!({
+            "id": id,
+            "session_id": session,
+            "bundle_sha256": digest,
+            "state": "active",
+            "path": path,
+            "bytes": bundle.len(),
+        }))
+    }
+
     /// Aborting an import keeps it inactive forever. It cannot turn the copied
     /// Session into an ordinary native Session or reuse a stale transfer token.
     pub async fn abort_session_transfer_import(&self, id: &str) -> Result<(), Error> {

@@ -11,6 +11,10 @@ export const SessionMigrationTable = sqliteTable(
     id: text().primaryKey(),
     session_id: text().$type<SessionID>().notNull(),
     state: text().$type<"frozen" | "prepared" | "switched" | "completed" | "aborted">().notNull(),
+    /** Which product authority the transfer moves to. Reverse transfers name
+     * the native source in native_storage/location and carry the exported
+     * payload in bundle. */
+    direction: text().$type<"ts_to_rust" | "rust_to_ts">().notNull().default("ts_to_rust"),
     native_storage: text().notNull(),
     location: text({ mode: "json" }).$type<Location.Ref>().notNull(),
     bundle_sha256: text().notNull(),

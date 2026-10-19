@@ -1,0 +1,146 @@
+{
+  "sample": {
+    "task": "read-only",
+    "engine": "typescript",
+    "repetition": 1,
+    "suiteHash": "bd905b4f81f0a9412b614631a36337723067574848c5f05b50ead1cf48675091",
+    "taskHash": "99609eafd6e7256a96d31d1a93f377283455859087a19e39a86887127c47f3a4",
+    "profile": {
+      "model": "deepseek-v4.1-flash",
+      "modelParametersHash": "b93db213d559a83da86ca4f9e7876d61151fc39ad5254a7baab2f91b92895efd",
+      "agentManifestHash": "89028f69273b4d0351045b962fa0decb66dd6c4428eacfa2de249cf3ad3bc7d0",
+      "permissionHash": "7c9a94a854a2f88d33ade148603157d925f59969b3c116cd856247d30c7710a3",
+      "toolSurfaceHash": "04c769ae52448d5fe45ea690050120cee624771222b1291088dc6d832c888106"
+    },
+    "revision": "fa001fbff8b188361bf5848cc31358bba7e7d7bb",
+    "artifactHash": "1cf2a42baae11727ea2f82138beaf289f244a74bdb3488318abcfab660724792",
+    "receiptHash": "8c2202bb5c296efebcac4d4fd6afbb6770b1a0d3d748c142191cc5ca969d193d",
+    "outcome": "passed",
+    "elapsedMs": 8448,
+    "attempts": [
+      {
+        "inputTokens": 14008,
+        "outputTokens": 89,
+        "cost": null
+      },
+      {
+        "inputTokens": 14300,
+        "outputTokens": 43,
+        "cost": null
+      }
+    ]
+  },
+  "rejection": null,
+  "evidence": {
+    "engine": "typescript",
+    "revision": "fa001fbff8b188361bf5848cc31358bba7e7d7bb",
+    "task": "read-only",
+    "repetition": 1,
+    "terminal": "completed",
+    "error": null,
+    "receipts": [],
+    "attempts": [
+      {
+        "inputTokens": 14008,
+        "outputTokens": 89,
+        "cacheReadTokens": 0,
+        "cacheWriteTokens": null,
+        "reasoningTokens": 6,
+        "cost": null
+      },
+      {
+        "inputTokens": 14300,
+        "outputTokens": 43,
+        "cacheReadTokens": 13952,
+        "cacheWriteTokens": null,
+        "reasoningTokens": 23,
+        "cost": null
+      }
+    ],
+    "phases": [
+      {
+        "phase": "step-start",
+        "atMs": 1792421576074,
+        "clock": "observed"
+      },
+      {
+        "phase": "tool-part",
+        "atMs": 1792421576269,
+        "clock": "observed"
+      },
+      {
+        "phase": "tool-part",
+        "atMs": 1792421576302,
+        "clock": "observed"
+      },
+      {
+        "phase": "step-start",
+        "atMs": 1792421577755,
+        "clock": "observed"
+      },
+      {
+        "phase": "first-output",
+        "atMs": 1792421578120,
+        "clock": "observed"
+      },
+      {
+        "phase": "exit",
+        "atMs": 1792421578167,
+        "clock": "observed"
+      },
+      {
+        "phase": "verified",
+        "atMs": 1792421578170,
+        "clock": "observed"
+      }
+    ],
+    "profile": {
+      "model": "deepseek-v4.1-flash",
+      "modelParametersHash": "b93db213d559a83da86ca4f9e7876d61151fc39ad5254a7baab2f91b92895efd",
+      "agentManifestHash": "89028f69273b4d0351045b962fa0decb66dd6c4428eacfa2de249cf3ad3bc7d0",
+      "permissionHash": "7c9a94a854a2f88d33ade148603157d925f59969b3c116cd856247d30c7710a3",
+      "toolSurfaceHash": "04c769ae52448d5fe45ea690050120cee624771222b1291088dc6d832c888106"
+    },
+    "profileReceipts": 2,
+    "loops": {
+      "continuations": [],
+      "stopped": []
+    },
+    "toolCalls": 2,
+    "textHash": "000cb5fb8437e8a5044f4dafdb8aad8404350d09ca4207b7cbcddbec957d1542",
+    "binarySha256": null,
+    "startedAtMs": 1792421569722,
+    "admissionMs": null,
+    "elapsedMs": 8448
+  },
+  "assessment": {
+    "suiteHash": "bd905b4f81f0a9412b614631a36337723067574848c5f05b50ead1cf48675091",
+    "taskHash": "99609eafd6e7256a96d31d1a93f377283455859087a19e39a86887127c47f3a4",
+    "artifactPass": true,
+    "unexpected": [],
+    "immutable": [
+      {
+        "file": "AGENTS.md",
+        "unchanged": true
+      },
+      {
+        "file": "package.json",
+        "unchanged": true
+      },
+      {
+        "file": "src/catalog.ts",
+        "unchanged": true
+      }
+    ],
+    "expected": [],
+    "check": null,
+    "executionVerdict": "unverified",
+    "requiredReceipts": [],
+    "answerContains": [
+      "src/catalog.ts",
+      "configureRelay",
+      "7"
+    ]
+  },
+  "answer": "`src/catalog.ts:1` — `configureRelay()`, capacity `7`."
+}
