@@ -33,13 +33,14 @@ export async function run() {
   const configuration = path.join(directory, "control.json")
   const fixture = path.join(directory, "ui-fixture.json")
   const stream = { calls: 0, finish: () => {} }
+  const providerRequests: Array<{ messages: number; roles: string[] }> = []
   const settlement = new Promise<void>((resolve) => {
     stream.finish = resolve
   })
   const provider = Bun.serve({
     hostname: "127.0.0.1",
     port: 0,
-    fetch(request) {
+    async fetch(request) {
       if (new URL(request.url).pathname === "/approve" && request.method === "POST")
         return approveEnrollment ? approveEnrollment(request) : new Response(null, { status: 503 })
       if (new URL(request.url).pathname === "/finish" && request.method === "GET") {
@@ -48,6 +49,17 @@ export async function run() {
       }
       if (request.method !== "POST") return new Response(null, { status: 404 })
       stream.calls++
+      const body: unknown = await request.json()
+      const messages =
+        body && typeof body === "object" && "messages" in body && Array.isArray(body.messages) ? body.messages : []
+      providerRequests.push({
+        messages: messages.length,
+        roles: messages.map((message: unknown) =>
+          message && typeof message === "object" && "role" in message && typeof message.role === "string"
+            ? message.role
+            : "unknown",
+        ),
+      })
       const encoder = new TextEncoder()
       return new Response(
         new ReadableStream({
@@ -505,7 +517,10 @@ export async function run() {
         }
         console.log("Native App account-only access, empty device grants and Keychain restoration passed")
       }
-      if (stream.calls !== 1) throw new Error("Native reconnect repeated provider execution")
+      if (stream.calls !== 1)
+        throw new Error(
+          `Native reconnect repeated provider execution: count=${stream.calls} shapes=${JSON.stringify(providerRequests)}`,
+        )
       console.log(
         "Native App pairing, real Runtime read/rename/queue admission, protected draft background recovery, live generation/settlement and process restart passed",
       )
