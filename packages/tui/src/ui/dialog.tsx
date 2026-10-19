@@ -53,7 +53,7 @@ export function Dialog(
 
   let dismiss = false
   const width = () => {
-    if (props.size === "xlarge") return 116
+    if (props.size === "xlarge") return 132
     if (props.size === "large") return 88
     return 60
   }

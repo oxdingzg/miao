@@ -156,15 +156,15 @@ export function DialogDevices(props: {
   })
   const qr = createMemo(() => {
     const value = link()
-    return value ? deviceQRRuns(value) : []
+    return value ? deviceQRRuns(value, 1) : []
   })
   const qrWidth = createMemo(() => qr()[0]?.reduce((width, run) => width + run.text.length, 0) ?? 0)
-  // The dialog is a fixed 116-column box; compare against the box, not the raw
+  // The dialog is a fixed 132-column box; compare against the box, not the raw
   // terminal, so a wide terminal with a narrow dialog no longer hides the code.
   const fits = createMemo(() => {
     if (!invitation()) return false
-    const width = Math.min(dimensions().width, 120)
-    const height = Math.min(dimensions().height, 64)
+    const width = Math.min(dimensions().width, 132)
+    const height = Math.min(dimensions().height, 66)
     return qrWidth() <= width - 4 && qr().length + 8 <= height - 4
   })
 
@@ -573,7 +573,12 @@ export function DialogDevices(props: {
           <text fg={theme.text}>用 miao App 扫码，随后在这里核对并批准设备</text>
           <Show
             when={fits()}
-            fallback={<text fg={theme.textMuted}>窗口不足以完整显示二维码，请放大窗口或复制配对链接</text>}
+            fallback={
+              <box>
+                <text fg={theme.textMuted}>窗口不足以显示二维码，请复制下面的配对链接：</text>
+                <text fg={theme.text}>{link()}</text>
+              </box>
+            }
           >
             <box>
               <For each={qr()}>
