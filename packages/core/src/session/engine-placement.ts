@@ -1,6 +1,6 @@
 export * as SessionEnginePlacement from "./engine-placement"
 
-import { eq } from "drizzle-orm"
+import { and, eq, notInArray } from "drizzle-orm"
 import { Effect, Schema } from "effect"
 import { SessionID } from "@miao/schema/session-id"
 import { Database } from "../database/database"
@@ -8,6 +8,7 @@ import { Location } from "../location"
 import { AbsolutePath } from "../schema"
 import { SessionTable } from "./sql"
 import { SessionEnginePlacementTable } from "./engine-placement.sql"
+import { SessionMigrationTable } from "./migration.sql"
 
 export const Placement = Schema.Union([
   Schema.Struct({ engine: Schema.Literal("ts") }),
@@ -125,4 +126,16 @@ export const requireTypeScript = Effect.fn("SessionEnginePlacement.requireTypeSc
 ) {
   const placement = yield* find(db, sessionID)
   if (placement?.engine === "rust") return yield* Effect.die(new Conflict({ sessionID }))
+  const migration = yield* db
+    .select({ id: SessionMigrationTable.id })
+    .from(SessionMigrationTable)
+    .where(
+      and(
+        eq(SessionMigrationTable.session_id, sessionID),
+        notInArray(SessionMigrationTable.state, ["completed", "aborted"]),
+      ),
+    )
+    .get()
+    .pipe(Effect.orDie)
+  if (migration) return yield* Effect.die(new Conflict({ sessionID }))
 })
