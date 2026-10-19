@@ -663,7 +663,9 @@ by this initial bridge; it is never silently downgraded.
 ## 9. Native-engine enablement gates
 
 Landing the engine was the build; these gates decide when native sessions are
-the default path.
+the default path. For what placing a Session on the native engine does and does
+not provide, and the current state of its efficiency evidence, see
+[Enabling the native engine](native-engine-enablement.en.md).
 
 1. **Engine binary by default** — discovery landed. The release ships
    per-platform `miao-engine` archives next to the CLI, the installer places one
