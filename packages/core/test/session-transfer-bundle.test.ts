@@ -11,6 +11,7 @@ import { EventV2 } from "../src/event"
 import { SessionV2 } from "../src/session"
 import { SessionExecution } from "../src/session/execution"
 import { SessionMigration } from "../src/session/migration"
+import { SessionOwnership } from "../src/session/ownership"
 import { SessionTransferBundle } from "../src/session/transfer-bundle"
 import { SessionStore } from "../src/session/store"
 import { SessionEvent } from "../src/session/event"
@@ -50,6 +51,114 @@ const target = (root: string) => ({
   engine: "rust" as const,
   storage: AbsolutePath.make(path.join(root, "native.db")),
   location: { directory: AbsolutePath.make(root) },
+})
+
+test("target rejection leaves the source unfrozen and releases its independent lease", async () => {
+  await using tmp = await tmpdir()
+  const storage = path.join(tmp.path, "source.db")
+  const sessionID = SessionV2.ID.create()
+  await run(
+    storage,
+    Effect.gen(function* () {
+      const sessions = yield* SessionV2.Service
+      yield* sessions.create({ id: sessionID, location: target(tmp.path).location })
+    }),
+  )
+  await run(
+    storage,
+    Effect.gen(function* () {
+      const database = yield* Database.Service
+      const rejected = yield* SessionTransferBundle.prepare({
+        id: "rejected",
+        sessionID,
+        target: target(tmp.path),
+        validate: (input) =>
+          Effect.gen(function* () {
+            expect(Hash.sha256(input.serialized)).toBe(input.digest)
+            expect(yield* SessionMigration.find(database.db, "rejected")).toBeUndefined()
+            return yield* Effect.fail(new Error("target cannot replay this context"))
+          }),
+      }).pipe(Effect.exit)
+      expect(rejected._tag).toBe("Failure")
+      expect(yield* SessionMigration.active(database.db, sessionID)).toBeUndefined()
+      yield* SessionOwnership.exclusive(storage, sessionID).pipe(Effect.scoped)
+      const events = yield* EventV2.Service
+      yield* events.publish(SessionEvent.PromptAdmitted, {
+        sessionID,
+        messageID: SessionMessage.ID.create(),
+        timestamp: yield* DateTime.now,
+        delivery: "steer",
+        prompt: Prompt.make({ text: "source remains usable" }),
+      })
+    }),
+  )
+})
+
+test("old-writer progress during target validation invalidates the captured freeze", async () => {
+  await using tmp = await tmpdir()
+  const storage = path.join(tmp.path, "source.db")
+  const sessionID = SessionV2.ID.create()
+  await run(
+    storage,
+    Effect.gen(function* () {
+      const sessions = yield* SessionV2.Service
+      yield* sessions.create({ id: sessionID, location: target(tmp.path).location })
+    }),
+  )
+  await run(
+    storage,
+    Effect.gen(function* () {
+      const database = yield* Database.Service
+      const events = yield* EventV2.Service
+      const changed = yield* SessionTransferBundle.prepare({
+        id: "changed",
+        sessionID,
+        target: target(tmp.path),
+        validate: () =>
+          events
+            .publish(SessionEvent.Prompted, {
+              sessionID,
+              messageID: SessionMessage.ID.create(),
+              timestamp: DateTime.makeUnsafe(1700000000000),
+              delivery: "steer",
+              prompt: Prompt.make({ text: "legacy writer advanced" }),
+            })
+            .pipe(Effect.asVoid),
+      }).pipe(Effect.exit)
+      expect(changed._tag).toBe("Failure")
+      expect(yield* SessionMigration.find(database.db, "changed")).toBeUndefined()
+      expect(yield* SessionMigration.active(database.db, sessionID)).toBeUndefined()
+      const retry = yield* SessionTransferBundle.prepare({ id: "changed", sessionID, target: target(tmp.path) })
+      expect(retry.bundle.timeline).toHaveLength(1)
+    }),
+  )
+})
+
+test("restart retry validates the identical durable payload rather than recapturing history", async () => {
+  await using tmp = await tmpdir()
+  const storage = path.join(tmp.path, "source.db")
+  const sessionID = SessionV2.ID.create()
+  await run(
+    storage,
+    Effect.gen(function* () {
+      const sessions = yield* SessionV2.Service
+      yield* sessions.create({ id: sessionID, location: target(tmp.path).location })
+    }),
+  )
+  const validated: string[] = []
+  const input = {
+    id: "validated-retry",
+    sessionID,
+    target: target(tmp.path),
+    validate: (payload: { serialized: string; digest: string }) =>
+      Effect.sync(() => {
+        validated.push(payload.serialized)
+      }),
+  }
+  const first = await run(storage, SessionTransferBundle.prepare(input))
+  const retry = await run(storage, SessionTransferBundle.prepare(input))
+  expect(validated).toEqual([first.serialized, first.serialized])
+  expect(retry.serialized).toBe(first.serialized)
 })
 
 test("corrupt artifact and unfinished provider work fail without a durable freeze", async () => {
