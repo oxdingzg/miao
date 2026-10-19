@@ -175,6 +175,7 @@ export async function runBaselineRust(input: BaselineRustInput): Promise<Baselin
   await initializeBaselineWorkspace(workspace, task.id)
   const startedAtMs = Date.now()
   const events: EngineEvent[] = []
+  const seen = new Set<number>()
   const progress: Array<{ item: EngineProgress; atMs: number }> = []
   const observed = new Map<number, number>()
   const session = `ses_${randomUUID()}`
@@ -250,6 +251,15 @@ export async function runBaselineRust(input: BaselineRustInput): Promise<Baselin
       approve: "deny",
       timeoutMs: input.timeoutMs ?? 300_000,
       onEvent: (event) => {
+        // A follow-up input subscribes from zero, so the engine replays the
+        // Session's committed events. Count each sequence once or a multi-input
+        // run reports the earlier inputs' attempts, tokens, and phases again.
+        // A fixture engine may omit the sequence; only a committed sequence can
+        // be a duplicate key, and real engine events always carry one.
+        if (typeof event.seq === "number") {
+          if (seen.has(event.seq)) return
+          seen.add(event.seq)
+        }
         observed.set(event.seq, Date.now())
         events.push(event)
         applyDrift(event)
