@@ -445,6 +445,10 @@ pub enum Command {
         bundle_sha256: String,
         product_database: std::path::PathBuf,
     },
+    TransferExport {
+        import_id: String,
+        path: std::path::PathBuf,
+    },
     TransferAbort {
         import_id: String,
     },
