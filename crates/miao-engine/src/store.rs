@@ -21,9 +21,9 @@ use std::{
 use tokio::sync::{mpsc, oneshot, watch};
 
 pub(crate) const APPLICATION_ID: u32 = 0x4d494145;
-// Older readers treat command prompts as ordinary text and cannot honor captured
-// authority or the once-only preparation ledger, even though no table is added.
-pub const SCHEMA_VERSION: u32 = 17;
+// Older readers can reopen a completed native source or abort after cutover.
+// Execution-authority semantics require a new version even without a new table.
+pub const SCHEMA_VERSION: u32 = 18;
 
 type Work = Box<dyn FnOnce(&mut Connection) + Send>;
 
@@ -251,6 +251,23 @@ impl Store {
                         )?;
                     }
                 }
+                if version < 18 {
+                    // Schema 17 overwrote the request watermark with the stage
+                    // event's sequence. The original request is in that event.
+                    conn.execute_batch("UPDATE engine_migration SET source_high_seq=COALESCE(
+                        (SELECT json_extract(data,'$.source_high_seq') FROM engine_event
+                         WHERE session_id=engine_migration.session_id AND kind='migration.staged'
+                         AND json_extract(data,'$.migration_id')=engine_migration.id ORDER BY seq LIMIT 1),
+                        source_high_seq);")?;
+                }
+                // Older native writers do not honor migration freezes at the
+                // durable-event boundary. Keep this fence in SQLite as well.
+                conn.execute_batch("CREATE TRIGGER IF NOT EXISTS engine_migration_event_fence
+                    BEFORE INSERT ON engine_event
+                    WHEN NEW.kind NOT IN ('migration.staged','migration.cutover','migration.completed','migration.aborted')
+                    AND EXISTS(SELECT 1 FROM engine_migration WHERE session_id=NEW.session_id
+                        AND (state IN ('staged','cutover') OR (state='completed' AND direction='rust_to_ts')))
+                    BEGIN SELECT RAISE(ABORT,'Session is frozen for migration'); END;")?;
                 // The schema is current; serving is shared from here on.
                 fs2::FileExt::unlock(&migration)?;
                 drop(migration);
@@ -2988,10 +3005,7 @@ impl Store {
     fn valid_transition(from: &str, to: &str) -> bool {
         matches!(
             (from, to),
-            ("staged", "cutover")
-                | ("cutover", "completed")
-                | ("staged", "aborted")
-                | ("cutover", "aborted")
+            ("staged", "cutover") | ("cutover", "completed") | ("staged", "aborted")
         )
     }
 
@@ -3028,8 +3042,7 @@ impl Store {
             }
             let now = now_ms();
             if let Some(existing) = Self::migration_row(&tx, &id)? {
-                // Exact retry adopts the recorded transition; the watermark is
-                // the staged fact, not re-asserted against the advanced source.
+                // The request watermark stays immutable across all transitions.
                 if existing.session_id == session
                     && existing.direction == direction
                     && existing.bundle_sha256 == bundle_sha256
@@ -3054,26 +3067,29 @@ impl Store {
             if active {
                 return Err(Error::Conflict);
             }
+            let busy: bool = tx.query_row(
+                "SELECT EXISTS(SELECT 1 FROM engine_run WHERE session_id=?1 AND state='running')
+                 OR EXISTS(SELECT 1 FROM engine_input WHERE session_id=?1 AND state='pending')
+                 OR EXISTS(SELECT 1 FROM engine_approval WHERE session_id=?1 AND state='pending')",
+                [&session], |row| row.get(0),
+            )?;
+            if busy {
+                return Err(Error::Conflict);
+            }
             tx.execute(
                 "INSERT INTO engine_migration(id,session_id,direction,state,bundle_sha256,source_high_seq,created_ms,updated_ms)
                  VALUES(?1,?2,?3,'staged',?4,?5,?6,?6)",
                 params![id, session, direction, bundle_sha256, source_high_seq, now],
             )?;
-            // The frozen watermark includes this transition's own staged
-            // event, so only source-side writes can advance past it.
-            let event = append(&tx, &session, "migration.staged", json!({
+            // The stage is exactly one event after the immutable source watermark.
+            append(&tx, &session, "migration.staged", json!({
                 "migration_id": id,
                 "direction": direction,
                 "bundle_sha256": bundle_sha256,
                 "source_high_seq": source_high_seq,
             }))?;
-            let frozen = event.seq;
-            tx.execute(
-                "UPDATE engine_migration SET source_high_seq=?1 WHERE id=?2",
-                params![frozen, id],
-            )?;
             tx.commit()?;
-            Ok(Self::migration_owned(&id, &session, &direction, &bundle_sha256, frozen, now, now))
+            Ok(Self::migration_owned(&id, &session, &direction, &bundle_sha256, source_high_seq, now, now))
         })
         .await
     }
@@ -3095,7 +3111,12 @@ impl Store {
                 [&migration.session_id],
                 |r| r.get(0),
             )?;
-            if high != migration.source_high_seq {
+            if high
+                != migration
+                    .source_high_seq
+                    .checked_add(1)
+                    .ok_or(Error::Conflict)?
+            {
                 return Err(Error::Conflict);
             }
             Self::migration_set_state(&tx, &id, "cutover", &mut migration)?;
@@ -3128,7 +3149,8 @@ impl Store {
         let session = session.to_owned();
         self.call(move |conn| {
             Ok(conn.query_row(
-                "SELECT EXISTS(SELECT 1 FROM engine_migration WHERE session_id=?1 AND state IN ('staged','cutover'))",
+                "SELECT EXISTS(SELECT 1 FROM engine_migration WHERE session_id=?1 AND
+                    (state IN ('staged','cutover') OR (state='completed' AND direction='rust_to_ts')))",
                 [&session],
                 |r| r.get(0),
             )?)

@@ -84,15 +84,14 @@ async fn migration_stage_cutover_complete_freezes_and_reopens_the_session() {
         .await
         .unwrap();
     assert_eq!(staged.state, "staged");
-    assert_eq!(staged.source_high_seq, before + 1);
-    // The recorded watermark includes the transition's own staged event, so
-    // the exact retry asserts the recorded value, not the pre-stage counter.
+    assert_eq!(staged.source_high_seq, before);
+    // Retrying the exact original request must not need a new watermark.
     let retry = database
-        .migration_stage("mig1", "s", "ts_to_rust", BUNDLE, before + 1)
+        .migration_stage("mig1", "s", "ts_to_rust", BUNDLE, before)
         .await
         .unwrap();
     assert_eq!(retry.id, "mig1");
-    assert_eq!(retry.source_high_seq, before + 1);
+    assert_eq!(retry.source_high_seq, before);
     assert!(matches!(
         database
             .migration_stage(
@@ -131,18 +130,24 @@ async fn migration_stage_cutover_complete_freezes_and_reopens_the_session() {
         (runtime, workspace)
     };
 
-    // Advancing the source between stage and cutover invalidates the frozen
-    // watermark: the transition cannot cut over over a changed history.
-    database
+    // Old low-level writers must hit the SQLite fence too, with no partial
+    // admission or event sequence advance after the failed transaction.
+    assert!(database
         .record("s", "late.append", json!({}))
         .await
-        .unwrap();
-    assert!(matches!(
-        database.migration_cutover("mig1").await,
-        Err(Error::Conflict)
-    ));
-    // A stale transition is aborted, and a fresh id re-stages against the
-    // live watermark; the aborted row can never be revived or reused.
+        .is_err());
+    assert!(database.admit(input("s", "legacy-writer")).await.is_err());
+    assert_eq!(
+        database
+            .events("s", 0, 100)
+            .await
+            .unwrap()
+            .last()
+            .unwrap()
+            .seq,
+        before + 1
+    );
+    // Pre-cutover abort is allowed; terminal tokens cannot be reused.
     database.migration_abort("mig1").await.unwrap();
     assert!(!database.migration_active("s").await.unwrap());
     let live = database
@@ -163,20 +168,33 @@ async fn migration_stage_cutover_complete_freezes_and_reopens_the_session() {
         .await
         .unwrap();
     assert_eq!(re_staged.state, "staged");
-    assert_eq!(re_staged.source_high_seq, live + 1);
+    assert_eq!(re_staged.source_high_seq, live);
 
     let cut = database.migration_cutover("mig1b").await.unwrap();
     assert_eq!(cut.state, "cutover");
     assert!(database.migration_active("s").await.unwrap());
     database.migration_complete("mig1b").await.unwrap();
     assert!(!database.migration_active("s").await.unwrap());
-    // The runtime's actor pool can outlive the transition row; the tempdir
-    // reclaims the file, so no explicit Store close is attempted here.
-    let _ = (runtime, tools_root);
+    runtime.shutdown().await;
+    drop(runtime);
+    let _ = tools_root;
+    database.close().await.unwrap();
+    let reopened = store(dir.path()).await;
+    assert!(!reopened.migration_active("s").await.unwrap());
+    assert_eq!(
+        reopened
+            .migration_find("mig1b")
+            .await
+            .unwrap()
+            .unwrap()
+            .state,
+        "completed"
+    );
+    reopened.close().await.unwrap();
 }
 
 #[tokio::test]
-async fn migration_abort_from_stage_or_cutover_releases_the_freeze() {
+async fn migration_abort_is_pre_cutover_only_and_exported_sources_remain_fenced() {
     let dir = tempfile::tempdir().unwrap();
     let database = store(dir.path()).await;
     database
@@ -211,9 +229,106 @@ async fn migration_abort_from_stage_or_cutover_releases_the_freeze() {
         .await
         .unwrap();
     database.migration_cutover("migB").await.unwrap();
-    database.migration_abort("migB").await.unwrap();
-    assert!(!database.migration_active("s").await.unwrap());
+    assert!(matches!(
+        database.migration_abort("migB").await,
+        Err(Error::Conflict)
+    ));
+    assert!(database.migration_active("s").await.unwrap());
+    database.migration_complete("migB").await.unwrap();
+    assert!(database.migration_active("s").await.unwrap());
+    assert!(database.admit(input("s", "old-source")).await.is_err());
+    assert!(database
+        .record("s", "old-source.write", json!({}))
+        .await
+        .is_err());
     database.close().await.unwrap();
+    let reopened = store(dir.path()).await;
+    assert!(reopened.migration_active("s").await.unwrap());
+    assert!(reopened.admit(input("s", "after-restart")).await.is_err());
+    reopened.close().await.unwrap();
 }
 
 use std::sync::Arc;
+
+#[tokio::test]
+async fn shutdown_joins_the_heartbeat_before_releasing_the_last_store_handle() {
+    let dir = tempfile::tempdir().unwrap();
+    let workspace = dir.path().join("workspace");
+    std::fs::create_dir_all(&workspace).unwrap();
+    for _ in 0..20 {
+        let database = store(dir.path()).await;
+        let runtime = runtime(&database, &workspace).await;
+        runtime.shutdown().await;
+        drop(runtime);
+        database.close().await.unwrap();
+    }
+}
+
+#[tokio::test]
+async fn migration_refuses_pending_inputs_and_upgrades_original_retry_identity() {
+    let dir = tempfile::tempdir().unwrap();
+    let database = store(dir.path()).await;
+    database
+        .initialize("busy", "busy", dir.path().to_str().unwrap())
+        .await
+        .unwrap();
+    database.admit(input("busy", "pending")).await.unwrap();
+    let high = database
+        .events("busy", 0, 100)
+        .await
+        .unwrap()
+        .last()
+        .unwrap()
+        .seq;
+    assert!(matches!(
+        database
+            .migration_stage("busy-token", "busy", "rust_to_ts", BUNDLE, high)
+            .await,
+        Err(Error::Conflict)
+    ));
+    assert!(database
+        .migration_find("busy-token")
+        .await
+        .unwrap()
+        .is_none());
+    database
+        .initialize("s", "idle", dir.path().to_str().unwrap())
+        .await
+        .unwrap();
+    let high = database
+        .events("s", 0, 100)
+        .await
+        .unwrap()
+        .last()
+        .unwrap()
+        .seq;
+    database
+        .migration_stage("legacy-token", "s", "ts_to_rust", BUNDLE, high)
+        .await
+        .unwrap();
+    database.close().await.unwrap();
+    {
+        let conn = rusqlite::Connection::open(dir.path().join("engine.db")).unwrap();
+        conn.execute(
+            "UPDATE engine_migration SET source_high_seq=source_high_seq+1 WHERE id='legacy-token'",
+            [],
+        )
+        .unwrap();
+        conn.pragma_update(None, "user_version", 17).unwrap();
+    }
+    let reopened = store(dir.path()).await;
+    let retry = reopened
+        .migration_stage("legacy-token", "s", "ts_to_rust", BUNDLE, high)
+        .await
+        .unwrap();
+    assert_eq!(retry.source_high_seq, high);
+    reopened.migration_cutover("legacy-token").await.unwrap();
+    assert!(matches!(
+        reopened.migration_abort("legacy-token").await,
+        Err(Error::Conflict)
+    ));
+    reopened.migration_complete("legacy-token").await.unwrap();
+    assert!(!reopened.migration_active("s").await.unwrap());
+    reopened.admit(input("s", "new-authority")).await.unwrap();
+    reopened.close().await.unwrap();
+}
