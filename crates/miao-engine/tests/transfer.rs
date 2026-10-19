@@ -40,15 +40,27 @@ async fn canonical_timeline_paging_and_context_selection_preserve_original_json(
         store.snapshot("s").await.unwrap()["transfer_import"],
         "transfer"
     );
-    let first = store.transfer_messages("s", 0, false).await.unwrap();
+    let first = store
+        .transfer_messages("s", 0, false, u64::MAX)
+        .await
+        .unwrap();
     assert_eq!(first["messages"].as_array().unwrap().len(), 100);
     assert_eq!(first["next"], 100);
-    let second = store.transfer_messages("s", 100, false).await.unwrap();
+    let second = store
+        .transfer_messages("s", 100, false, u64::MAX)
+        .await
+        .unwrap();
     assert_eq!(second["next"], 200);
-    let third = store.transfer_messages("s", 200, false).await.unwrap();
+    let third = store
+        .transfer_messages("s", 200, false, u64::MAX)
+        .await
+        .unwrap();
     assert!(third["next"].is_null());
     assert_eq!(third["messages"][4], source["timeline"][204]);
-    let context = store.transfer_messages("s", 0, true).await.unwrap();
+    let context = store
+        .transfer_messages("s", 0, true, u64::MAX)
+        .await
+        .unwrap();
     assert_eq!(
         context["messages"],
         json!([source["timeline"][100], source["timeline"][204]])

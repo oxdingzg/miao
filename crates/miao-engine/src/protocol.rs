@@ -418,6 +418,8 @@ pub enum Command {
         session_id: String,
         #[serde(default)]
         after: usize,
+        #[serde(default)]
+        cursor: Option<u64>,
     },
     TransferValidate {
         path: std::path::PathBuf,
@@ -425,6 +427,8 @@ pub enum Command {
         identity: crate::provider::Identity,
         #[serde(default)]
         route_id: Option<String>,
+        #[serde(default)]
+        agent: Option<crate::session_agent::AgentManifest>,
     },
     TransferStage {
         import_id: String,
@@ -433,6 +437,13 @@ pub enum Command {
         identity: crate::provider::Identity,
         #[serde(default)]
         route_id: Option<String>,
+        #[serde(default)]
+        agent: Option<crate::session_agent::AgentManifest>,
+    },
+    TransferActivate {
+        import_id: String,
+        bundle_sha256: String,
+        product_database: std::path::PathBuf,
     },
     TransferAbort {
         import_id: String,
