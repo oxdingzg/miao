@@ -35,6 +35,32 @@ const LARGE_SOURCE =
     "export function shift(table: number[], key: number) { return table[key + 1] }",
   ].join("\n") + "\n"
 
+// The docs carrier: a deterministic document past both whole-file read bounds,
+// so the edit has to be located by reading around it rather than by rewriting
+// the file, and every other line has to survive byte for byte.
+const DOC_COMMAND = "Run `miao install` to place the binary on your PATH."
+const DOC_COMMAND_FIXED = "Run `miao setup --fast` to place the binary on your PATH."
+const DOC_README =
+  [
+    "# engine-baseline-fixture",
+    "",
+    ...section(700, "Section", "Generated paragraph describing fixture behavior"),
+    "## Installation",
+    "",
+    DOC_COMMAND,
+    "",
+    ...section(120, "Appendix", "Appendix paragraph"),
+  ].join("\n") + "\n"
+
+function section(count: number, title: string, body: string) {
+  return Array.from({ length: count }, (_, index) => [
+    `## ${title} ${index}`,
+    "",
+    `${body} ${index}, kept identical so only the installation command changes.`,
+    "",
+  ]).flat()
+}
+
 const tasks: BaselineTask[] = [
   {
     id: "read-only",
@@ -212,6 +238,60 @@ const tasks: BaselineTask[] = [
     answerContains: [],
     requiredReceipts: [],
   },
+  {
+    // The cross-file carrier: the helper is defined in one module and used in
+    // another, and the immutable test imports the new name from the wrapper, so
+    // a partial rename fails the oracle instead of passing on behavior alone.
+    id: "rename-symbol",
+    prompt:
+      "Rename the exported helper computeTotal to sumEntries everywhere it is defined or used, and export it under that name from src/index.ts so the existing test imports resolve. Keep the total wrapper's behavior and the test unchanged, then run the test and summarize what changed.",
+    files: {
+      "src/core.ts":
+        "export function computeTotal(values: number[]) { return values.reduce((sum, value) => sum + value, 0) }\n",
+      "src/index.ts": "import { computeTotal } from './core'\nexport const total = (values: number[]) => computeTotal(values)\n",
+      "test/oracle.test.ts":
+        "import { expect, test } from 'bun:test'\nimport { total, sumEntries } from '../src/index'\ntest('sum entries', () => { expect(sumEntries([1, 2, 3])).toBe(6); expect(total([4, 5])).toBe(9) })\n",
+    },
+    editable: ["src/core.ts", "src/index.ts"],
+    expected: {},
+    check: [
+      "bash",
+      "-lc",
+      "bun test test/oracle.test.ts && grep -q 'sumEntries' src/core.ts && ! grep -rq 'computeTotal' src && echo RENAME_SYMBOL_OK",
+    ],
+    answerContains: [],
+    requiredReceipts: [],
+  },
+  {
+    // The creation carrier: nothing to repair, the module does not exist yet and
+    // the immutable test pins the exact returned shape.
+    id: "create-module",
+    prompt:
+      "Add src/report.ts exporting summarize(values: number[]): { count: number; total: number; mean: number }, where mean is 0 for an empty list. The existing test must pass and must not be modified. Run the test and summarize.",
+    files: {
+      "test/oracle.test.ts":
+        "import { expect, test } from 'bun:test'\nimport { summarize } from '../src/report'\ntest('summary of values', () => { expect(summarize([])).toEqual({ count: 0, total: 0, mean: 0 }); expect(summarize([2, 4])).toEqual({ count: 2, total: 6, mean: 3 }) })\n",
+    },
+    editable: ["src/report.ts"],
+    expected: {},
+    check: ["bun", "test", "test/oracle.test.ts"],
+    answerContains: [],
+    requiredReceipts: [],
+  },
+  {
+    // The documentation carrier: the target is one command inside a document
+    // past the whole-file read bounds, and `expected` holds the exact result, so
+    // any collateral rewrite fails the oracle.
+    id: "docs-sync",
+    prompt:
+      "In README.md, change the installation command from `miao install` to `miao setup --fast`, keeping every other byte of the document identical. Do not touch any other file, then summarize the change.",
+    files: { "README.md": DOC_README },
+    editable: ["README.md"],
+    expected: { "README.md": DOC_README.replace(DOC_COMMAND, DOC_COMMAND_FIXED) },
+    check: null,
+    answerContains: [],
+    requiredReceipts: [],
+  },
 ]
 
 const digest = (value: string) => createHash("sha256").update(value).digest("hex")
@@ -221,9 +301,10 @@ export function baselineContract() {
   const suite = tasks.map((task) => baselineTask(task.id))
   return {
     // v2 added the long-session task; v3 added the multi-line-edit and
-    // typed-repair carriers; v4 adds the large-file carrier. Older samples are
+    // typed-repair carriers; v4 added the large-file carrier; v6 adds the
+    // rename-symbol, create-module, and docs-sync carriers. Older samples are
     // foreign.
-    version: 5,
+    version: 6,
     suiteHash: digest(JSON.stringify(suite)),
     tasks: suite.map((task) => ({ id: task.id, taskHash: digest(JSON.stringify(task)) })),
   }
