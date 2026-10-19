@@ -1,9 +1,9 @@
 {
   "version": "7",
   "dialect": "sqlite",
-  "id": "39bf0b1c-dd50-4d16-9492-2f3d89377c66",
+  "id": "97000bb1-774c-4eef-97d6-2ff62f1b45f0",
   "prevIds": [
-    "77190546-1391-44ea-a0b6-29755b509594"
+    "39bf0b1c-dd50-4d16-9492-2f3d89377c66"
   ],
   "ddl": [
     {
@@ -381,6 +381,16 @@
       "default": null,
       "generated": null,
       "name": "state",
+      "entityType": "columns",
+      "table": "session_migration"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": "'ts_to_rust'",
+      "generated": null,
+      "name": "direction",
       "entityType": "columns",
       "table": "session_migration"
     },
