@@ -37,6 +37,7 @@ export class OperationError extends Schema.TaggedErrorClass<OperationError>()("G
     "list_files",
     "diff",
     "restore",
+    "read_tree",
   ]),
   message: Schema.String,
   directory: Schema.optional(AbsolutePath),
@@ -149,6 +150,17 @@ export interface Interface {
     }) => Effect.Effect<ReadonlySet<RelativePath>, OperationError>
   }
   readonly tree: {
+    /** Read exact immutable blob bytes from selected tree/path pairs. Missing
+     * entries represent deletions; mode is retained for portable restore. */
+    readonly read: (input: {
+      repository: Repository
+      files: ReadonlyMap<RelativePath, TreeID>
+      maximumFileBytes: number
+      maximumTotalBytes: number
+    }) => Effect.Effect<
+      ReadonlyArray<{ path: RelativePath; tree: TreeID; mode?: string; bytes?: Uint8Array }>,
+      OperationError
+    >
     readonly capture: (input: {
       repository: Repository
       scopes: readonly RelativePath[]
@@ -453,7 +465,7 @@ const layer = Layer.effect(
       operationName: OperationError["operation"],
       repository: Repository,
       args: string[],
-      options?: { stdin?: string; env?: Record<string, string> },
+      options?: { stdin?: string; env?: Record<string, string>; maxOutputBytes?: number },
     ) {
       const result = yield* proc
         .run(
@@ -462,7 +474,7 @@ const layer = Layer.effect(
             env: options?.env,
             extendEnv: true,
           }),
-          { stdin: options?.stdin },
+          { stdin: options?.stdin, maxOutputBytes: options?.maxOutputBytes },
         )
         .pipe(
           Effect.mapError(
@@ -475,8 +487,14 @@ const layer = Layer.effect(
               }),
           ),
         )
+      if (options?.maxOutputBytes !== undefined && result.stdoutTruncated)
+        return yield* new OperationError({
+          operation: operationName,
+          directory: repository.worktree,
+          message: "Git output exceeded the portable read limit",
+        })
       const text = result.stdout.toString("utf8")
-      if (result.exitCode === 0) return { text, stderr: result.stderr.toString("utf8") }
+      if (result.exitCode === 0) return { text, bytes: result.stdout, stderr: result.stderr.toString("utf8") }
       return yield* new OperationError({
         operation: operationName,
         directory: repository.worktree,
@@ -593,7 +611,12 @@ const layer = Layer.effect(
       // Embedded repositories are listed as `dir/`; update-index records them as gitlinks.
       const list = (args: string[]) =>
         repositoryOperation("refresh", input.repository, args, { env: input.env }).pipe(
-          Effect.map((result) => result.text.split("\0").filter(Boolean).map((file) => file.replace(/\/$/, ""))),
+          Effect.map((result) =>
+            result.text
+              .split("\0")
+              .filter(Boolean)
+              .map((file) => file.replace(/\/$/, "")),
+          ),
         )
       const [tracked, untracked] = yield* Effect.all(
         [
@@ -639,16 +662,14 @@ const layer = Layer.effect(
       if (stage.length) {
         // update-index drops a tracked file replaced by an embedded repository; a second
         // line for the same path, in the same call, records its gitlink.
-        const embedded = (
-          yield* Effect.forEach(
-            tracked.filter((item) => stage.includes(item)),
-            (item) =>
-              fs.existsSafe(path.join(input.repository.worktree, item, ".git")).pipe(
-                Effect.map((found) => (found ? item : undefined)),
-              ),
-            { concurrency: 8 },
-          )
-        ).filter((item): item is string => item !== undefined)
+        const embedded = (yield* Effect.forEach(
+          tracked.filter((item) => stage.includes(item)),
+          (item) =>
+            fs
+              .existsSafe(path.join(input.repository.worktree, item, ".git"))
+              .pipe(Effect.map((found) => (found ? item : undefined))),
+          { concurrency: 8 },
+        )).filter((item): item is string => item !== undefined)
         yield* repositoryOperation(
           "refresh",
           input.repository,
@@ -724,9 +745,11 @@ const layer = Layer.effect(
             const rebuild = Effect.gen(function* () {
               yield* fs.remove(index, { force: true }).pipe(Effect.catch(() => Effect.void))
               yield* fs.remove(temporary, { force: true }).pipe(Effect.catch(() => Effect.void))
-              const head = yield* repositoryOperation("refresh", input.repository, ["rev-parse", "--verify", "HEAD"]).pipe(
-                Effect.exit,
-              )
+              const head = yield* repositoryOperation("refresh", input.repository, [
+                "rev-parse",
+                "--verify",
+                "HEAD",
+              ]).pipe(Effect.exit)
               yield* repositoryOperation(
                 "refresh",
                 input.repository,
@@ -861,6 +884,71 @@ const layer = Layer.effect(
           message: `Invalid tree entry for ${file}`,
         })
       return { mode: match[1], object: match[2] }
+    })
+
+    const readTree = Effect.fn("Git.tree.read")(function* (input: {
+      repository: Repository
+      files: ReadonlyMap<RelativePath, TreeID>
+      maximumFileBytes: number
+      maximumTotalBytes: number
+    }) {
+      const state = { bytes: 0 }
+      return yield* Effect.forEach(input.files, ([file, tree]) =>
+        Effect.gen(function* () {
+          if (
+            !/^[a-f0-9]{40,64}$/.test(tree) ||
+            !Number.isSafeInteger(input.maximumFileBytes) ||
+            input.maximumFileBytes < 0 ||
+            !Number.isSafeInteger(input.maximumTotalBytes) ||
+            input.maximumTotalBytes < 0
+          )
+            return yield* new OperationError({
+              operation: "read_tree",
+              directory: input.repository.worktree,
+              message: "Invalid portable tree read",
+            })
+          const found = yield* entry(input.repository, tree, file)
+          if (!found) return { path: file, tree }
+          if (!["100644", "100755", "120000"].includes(found.mode ?? ""))
+            return yield* new OperationError({
+              operation: "read_tree",
+              directory: input.repository.worktree,
+              message: `Unsupported tree mode for ${file}`,
+            })
+          const size = Number(
+            (yield* repositoryOperation("read_tree", input.repository, [
+              "cat-file",
+              "-s",
+              found.object ?? "",
+            ])).text.trim(),
+          )
+          if (
+            !Number.isSafeInteger(size) ||
+            size < 0 ||
+            size > input.maximumFileBytes ||
+            state.bytes + size > input.maximumTotalBytes
+          )
+            return yield* new OperationError({
+              operation: "read_tree",
+              directory: input.repository.worktree,
+              message: `Portable snapshot byte limit exceeded for ${file}`,
+            })
+          const result = yield* repositoryOperation(
+            "read_tree",
+            input.repository,
+            ["cat-file", "blob", found.object ?? ""],
+            { maxOutputBytes: size + 1 },
+          )
+          if (result.bytes.byteLength !== size)
+            return yield* new OperationError({
+              operation: "read_tree",
+              directory: input.repository.worktree,
+              message: `Incomplete immutable blob for ${file}`,
+            })
+          state.bytes += size
+          return { path: file, tree, mode: found.mode, bytes: result.bytes }
+        }),
+      )
     })
 
     const preview = Effect.fn("Git.tree.preview")(
@@ -1165,6 +1253,7 @@ const layer = Layer.effect(
       worktree: { create: worktreeCreate, remove: worktreeRemove, list: worktreeList },
       index: { refresh, ignored },
       tree: {
+        read: readTree,
         capture: captureTree,
         write: writeTree,
         files: treeFiles,
