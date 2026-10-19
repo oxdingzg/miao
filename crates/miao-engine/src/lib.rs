@@ -53,6 +53,7 @@ pub mod session_synthetic;
 mod snapshot;
 pub mod state;
 pub mod store;
+pub mod transfer;
 
 /// Engine-host contract version. A product build requires at least the protocol
 /// it was written against; older engines report nothing and are refused.
