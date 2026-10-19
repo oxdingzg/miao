@@ -543,7 +543,25 @@ fn staged(
         .query_row(
             "SELECT previous,boundary_seq,snapshot_id FROM engine_staged_revert WHERE session_id=?1",
             [session],
-            |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
+            // Native captures store a numeric row id; assembled imports store
+            // the transfer identity, so accept either stored representation.
+            |row| {
+                Ok((
+                    row.get::<_, String>(0)?,
+                    row.get::<_, i64>(1)?,
+                    match row.get::<_, rusqlite::types::Value>(2)? {
+                        rusqlite::types::Value::Text(id) => id,
+                        rusqlite::types::Value::Integer(id) => id.to_string(),
+                        _ => {
+                            return Err(rusqlite::Error::InvalidColumnType(
+                                2,
+                                "snapshot_id".into(),
+                                rusqlite::types::Type::Null,
+                            ))
+                        }
+                    },
+                ))
+            },
         )
         .optional()?)
 }
