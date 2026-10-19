@@ -21,9 +21,9 @@ use std::{
 use tokio::sync::{mpsc, oneshot, watch};
 
 pub(crate) const APPLICATION_ID: u32 = 0x4d494145;
-// Older readers can reopen a completed native source or abort after cutover.
-// Execution-authority semantics require a new version even without a new table.
-pub const SCHEMA_VERSION: u32 = 18;
+// Older readers do not understand inactive semantic imports and could execute
+// a destination before its host has switched the authoritative placement.
+pub const SCHEMA_VERSION: u32 = 19;
 
 type Work = Box<dyn FnOnce(&mut Connection) + Send>;
 
@@ -268,6 +268,14 @@ impl Store {
                     AND EXISTS(SELECT 1 FROM engine_migration WHERE session_id=NEW.session_id
                         AND (state IN ('staged','cutover') OR (state='completed' AND direction='rust_to_ts')))
                     BEGIN SELECT RAISE(ABORT,'Session is frozen for migration'); END;")?;
+                conn.execute_batch("CREATE TABLE IF NOT EXISTS engine_transfer_import(
+                    id TEXT PRIMARY KEY, session_id TEXT UNIQUE NOT NULL REFERENCES engine_session(id),
+                    bundle_sha256 TEXT NOT NULL, bundle TEXT NOT NULL, state TEXT NOT NULL,
+                    created_ms INTEGER NOT NULL);
+                    CREATE TRIGGER IF NOT EXISTS engine_transfer_import_event_fence
+                    BEFORE INSERT ON engine_event
+                    WHEN EXISTS(SELECT 1 FROM engine_transfer_import WHERE session_id=NEW.session_id AND state!='active')
+                    BEGIN SELECT RAISE(ABORT,'Imported Session has no execution authority'); END;")?;
                 // The schema is current; serving is shared from here on.
                 fs2::FileExt::unlock(&migration)?;
                 drop(migration);
@@ -3150,7 +3158,8 @@ impl Store {
         self.call(move |conn| {
             Ok(conn.query_row(
                 "SELECT EXISTS(SELECT 1 FROM engine_migration WHERE session_id=?1 AND
-                    (state IN ('staged','cutover') OR (state='completed' AND direction='rust_to_ts')))",
+                    (state IN ('staged','cutover') OR (state='completed' AND direction='rust_to_ts')))
+                 OR EXISTS(SELECT 1 FROM engine_transfer_import WHERE session_id=?1 AND state!='active')",
                 [&session],
                 |r| r.get(0),
             )?)
