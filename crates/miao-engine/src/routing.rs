@@ -60,6 +60,9 @@ pub fn build_with_responses(
     cache: Option<crate::responses_cache::Contract>,
     websocket: Option<crate::responses_websocket::Contract>,
 ) -> Result<Arc<dyn Provider>, ProviderError> {
+    if matches!(&source, Source::Aws { .. }) && name != "amazon-bedrock" {
+        return Err(ProviderError::AuthProfile);
+    }
     if (cache.is_some() || websocket.is_some())
         && !matches!(name, "openai-responses" | "subscription-responses")
     {
@@ -68,6 +71,7 @@ pub fn build_with_responses(
         ));
     }
     match name {
+        "amazon-bedrock" => build_bedrock(endpoint, source, model, None, prompt_cache),
         "anthropic" => Ok(Arc::new(
             Anthropic::with_source(
                 endpoint
@@ -156,6 +160,49 @@ pub fn build_with_responses(
         _ => Err(ProviderError::Stream("unknown provider".into())),
     }
 }
+pub fn build_bedrock(
+    endpoint: Option<&str>,
+    source: Source,
+    model: String,
+    region: Option<&str>,
+    prompt_cache: bool,
+) -> Result<Arc<dyn Provider>, ProviderError> {
+    let provider = match source {
+        Source::Aws {
+            region: selected,
+            profile,
+        } => crate::bedrock::Bedrock::with_chain(
+            endpoint.map(str::to_owned),
+            model,
+            region.unwrap_or(&selected).into(),
+            profile,
+        )?,
+        source => {
+            let selected = region
+                .map(str::to_owned)
+                .or_else(|| {
+                    endpoint
+                        .and_then(|endpoint| reqwest::Url::parse(endpoint).ok())
+                        .and_then(|url| {
+                            url.host_str()
+                                .and_then(|host| host.strip_prefix("bedrock-runtime."))
+                                .and_then(|suffix| suffix.split('.').next())
+                                .map(str::to_owned)
+                        })
+                })
+                .or_else(|| std::env::var("AWS_REGION").ok())
+                .unwrap_or_else(|| "us-east-1".into());
+            crate::bedrock::Bedrock::with_bearer_source(
+                endpoint.map(str::to_owned),
+                model,
+                selected,
+                source,
+            )?
+        }
+    };
+    Ok(Arc::new(provider.with_prompt_cache(prompt_cache)))
+}
+
 pub struct Fallback {
     primary: Arc<dyn Provider>,
     secondary: Arc<dyn Provider>,

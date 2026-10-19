@@ -1,6 +1,9 @@
 pub mod acp;
 pub mod agent_policy;
 pub mod approval;
+pub mod bedrock;
+mod bedrock_input;
+mod bedrock_stream;
 mod cache_affinity;
 pub mod context;
 pub mod context_trigger;

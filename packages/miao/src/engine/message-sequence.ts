@@ -48,6 +48,23 @@ export function engineMessageSequence(sessionID: string, requested: SessionMessa
         if (ended) return ended.seq
       }
     }
+    if (event.kind === "shell.started") {
+      const started = Schema.decodeUnknownOption(Schema.Struct({ call_id: Schema.String }))(event.data)
+      if (
+        Option.isSome(started) &&
+        (started.value.call_id === requested || messageID(sessionID, event.seq) === requested)
+      ) {
+        const ended = events.find(
+          (item) =>
+            item.kind === "shell.ended" &&
+            typeof item.data === "object" &&
+            item.data !== null &&
+            "call_id" in item.data &&
+            item.data.call_id === started.value.call_id,
+        )
+        if (ended) return ended.seq
+      }
+    }
     if (event.kind === "message.synthetic" && messageID(sessionID, event.seq) === requested) return event.seq
     if (event.kind === "message.committed") {
       const data = Schema.decodeUnknownSync(Committed)(event.data)
