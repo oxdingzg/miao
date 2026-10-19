@@ -19,11 +19,11 @@ use std::{
 const RETAINED_SNAPSHOTS: i64 = 20;
 const MAX_BLOB_BYTES: u64 = 8 * 1024 * 1024;
 
-fn blob_dir(database: &Path, session: &str) -> PathBuf {
+pub(crate) fn blob_dir(database: &Path, session: &str) -> PathBuf {
     database.with_extension("snapshots").join(session)
 }
 
-fn valid_path(path: &str) -> Option<PathBuf> {
+pub(crate) fn valid_path(path: &str) -> Option<PathBuf> {
     let path = Path::new(path);
     if path.as_os_str().is_empty() || path.is_absolute() {
         return None;
@@ -73,7 +73,7 @@ fn encode_manifest(manifest: &BTreeMap<String, Option<String>>) -> Result<String
     Ok(serde_json::to_string(manifest)?)
 }
 
-fn write_blob(database: &Path, session: &str, bytes: &[u8]) -> Result<String, Error> {
+pub(crate) fn write_blob(database: &Path, session: &str, bytes: &[u8]) -> Result<String, Error> {
     let hash = crate::permission::digest(bytes);
     let dir = blob_dir(database, session);
     fs::create_dir_all(&dir)?;

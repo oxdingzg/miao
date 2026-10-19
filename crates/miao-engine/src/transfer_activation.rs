@@ -9,15 +9,23 @@ use crate::{
     store::{append, write_tx, Store},
     transfer_history::PreparedMessage,
 };
+use base64::Engine;
 use rusqlite::{params, OptionalExtension};
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
+use sha2::{Digest, Sha256};
 use std::path::Path;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Operation {
     pub kind: String,
     pub value: Value,
+}
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct RetainedSnapshot {
+    pub id: String,
+    pub boundary_message_id: Option<String>,
+    pub files: Vec<Value>,
 }
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Preparation {
@@ -29,6 +37,7 @@ pub struct Preparation {
     pub account: Option<Selection>,
     pub messages: Vec<PreparedMessage>,
     pub operations: Vec<Operation>,
+    pub snapshots: Vec<RetainedSnapshot>,
 }
 
 pub fn prepare(
@@ -68,13 +77,77 @@ pub fn prepare(
         .map(|id| Selection {
             credential_id: Some(id.into()),
         });
-    for message in source["timeline"]
+    let inventory = crate::transfer_history::artifacts(&source)?;
+    let mut snapshots: Vec<RetainedSnapshot> = Vec::new();
+    for manifest in source["snapshots"]
         .as_array()
-        .ok_or_else(|| invalid("missing timeline"))?
+        .map(Vec::as_slice)
+        .unwrap_or_default()
     {
-        if message["snapshot"]["start"].is_string() || message["snapshot"]["end"].is_string() {
-            return Err(invalid("snapshot objects need native transfer preparation"));
+        let id = manifest["id"]
+            .as_str()
+            .ok_or_else(|| invalid("snapshot identity"))?
+            .to_owned();
+        if !regex_check_id(&id) || snapshots.iter().any(|kept| kept.id == id) {
+            return Err(invalid("snapshot identity"));
         }
+        let boundary = source["timeline"]
+            .as_array()
+            .ok_or_else(|| invalid("missing timeline"))?
+            .iter()
+            .find_map(|message| {
+                (message["type"].as_str() == Some("assistant")
+                    && [
+                        message["snapshot"]["start"].as_str(),
+                        message["snapshot"]["end"].as_str(),
+                    ]
+                    .into_iter()
+                    .flatten()
+                    .any(|referenced| referenced == id))
+                .then(|| message["id"].as_str().map(str::to_owned))
+                .flatten()
+            });
+        let mut files = Vec::new();
+        for file in manifest["files"]
+            .as_array()
+            .ok_or_else(|| invalid("snapshot manifest"))?
+        {
+            let path = file["path"]
+                .as_str()
+                .ok_or_else(|| invalid("snapshot path"))?;
+            let source_path = file["source_path"]
+                .as_str()
+                .ok_or_else(|| invalid("snapshot source path"))?;
+            if crate::snapshot::valid_path(path).is_none()
+                || crate::snapshot::valid_path(source_path).is_none()
+            {
+                return Err(invalid("snapshot path"));
+            }
+            let mode = file["mode"].as_str();
+            if mode.is_some_and(|mode| !matches!(mode, "100644" | "100755" | "120000")) {
+                return Err(invalid("snapshot mode"));
+            }
+            if let Some(hash) = file["hash"].as_str() {
+                if !regex_check_digest(hash) {
+                    return Err(invalid("snapshot content identity"));
+                }
+                let encoded = inventory.get(hash).ok_or_else(|| {
+                    invalid("snapshot content is missing from the artifact inventory")
+                })?;
+                let bytes = base64::engine::general_purpose::STANDARD
+                    .decode(encoded)
+                    .map_err(|_| invalid("snapshot content encoding"))?;
+                if format!("{:x}", Sha256::digest(&bytes)) != hash {
+                    return Err(invalid("snapshot content identity"));
+                }
+            }
+            files.push(file.clone());
+        }
+        snapshots.push(RetainedSnapshot {
+            id,
+            boundary_message_id: boundary,
+            files,
+        });
     }
     let mut operations = Vec::new();
     if !source["operational"]["goal"].is_null() {
@@ -107,6 +180,7 @@ pub fn prepare(
         account,
         messages,
         operations,
+        snapshots,
     })
 }
 
@@ -159,11 +233,40 @@ impl Store {
             for operation in prepared.operations {
                 append(&tx,&session,"session.state.updated",json!({"operation_id":format!("transfer:{id}:{}",operation.kind),"kind":operation.kind,"value":operation.value,"expected_revision":null}))?;
             }
+            let inventory = crate::transfer_history::artifacts(&source)?;
+            for snapshot in prepared.snapshots {
+                for file in snapshot.files.iter().filter(|file|file["hash"].is_string()) {
+                    let hash=file["hash"].as_str().unwrap();
+                    let bytes=base64::engine::general_purpose::STANDARD
+                        .decode(inventory.get(hash).ok_or(Error::Conflict)?)
+                        .map_err(|_|Error::Conflict)?;
+                    crate::snapshot::write_blob(&target,&session,&bytes)?;
+                }
+                tx.execute(
+                    "INSERT INTO engine_transfer_snapshot(import_id,snapshot_id,boundary_message_id,manifest) VALUES(?1,?2,?3,?4)",
+                    params![id,snapshot.id,snapshot.boundary_message_id,serde_json::to_string(&snapshot.files)?],
+                )?;
+            }
             append(&tx,&session,"session.transfer.activated",json!({"import_id":id,"bundle_sha256":digest}))?;
             tx.commit()?;
             Ok(json!({"id":id,"session_id":session,"bundle_sha256":digest,"state":"active"}))
         }).await
     }
+}
+
+fn regex_check_id(id: &str) -> bool {
+    let bytes = id.as_bytes();
+    (40..=64).contains(&bytes.len())
+        && bytes
+            .iter()
+            .all(|byte| byte.is_ascii_hexdigit() && !byte.is_ascii_uppercase())
+}
+
+fn regex_check_digest(hash: &str) -> bool {
+    hash.len() == 64
+        && hash
+            .bytes()
+            .all(|byte| byte.is_ascii_hexdigit() && !byte.is_ascii_uppercase())
 }
 
 fn invalid(detail: &str) -> Error {

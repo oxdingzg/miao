@@ -1,3 +1,4 @@
+use base64::Engine;
 use miao_engine::{
     protocol::{Error, Input, ModelRequest},
     provider::{Identity, Provider, ProviderError, Reply},
@@ -42,11 +43,19 @@ fn agent() -> AgentManifest {
     serde_json::from_value(json!({"name":"build","semantics":"original-agent","instructions":"original agent instructions"})).unwrap()
 }
 fn source(root: &Path) -> String {
+    let bytes = b"snapshot file bytes";
+    let file_hash = format!("{:x}", Sha256::digest(bytes));
     json!({"format":"miao.session.transfer.v1","source":{"engine":"ts","storage":root.join("product.db"),"sequence":3},
         "session":{"id":"s","title":"Original title","agent":"build","model":{"id":"fixture"},"location":{"directory":root},"time":{"created":123,"updated":456}},
-        "timeline":(0..3).map(|i|json!({"id":format!("msg_original_{i}"),"type":"user","text":format!("original {i}"),"time":{"created":123+i}})).collect::<Vec<_>>(),
-        "context_ids":["msg_original_0","msg_original_1","msg_original_2"],"artifacts":[],"source_state":{},
-        "operational":{"goal":{"objective":"original objective","status":"active","autonomous":false},"todos":[{"task_id":"first","depends_on":null,"content":"Original todo","status":"pending","priority":"high"}]}
+        "timeline":(0..3).map(|i|json!({"id":format!("msg_original_{i}"),"type":"user","text":format!("original {i}"),"time":{"created":123+i}}))
+            .chain(std::iter::once(json!({"id":"msg_original_assistant","type":"assistant","time":{"created":456,"completed":460},"snapshot":{"start":"a".repeat(40)}})))
+            .collect::<Vec<_>>(),
+        "context_ids":["msg_original_0","msg_original_1","msg_original_2"],
+        "artifacts":[{"hash":file_hash,"base64":base64::engine::general_purpose::STANDARD.encode(bytes)}],"source_state":{},
+        "operational":{"goal":{"objective":"original objective","status":"active","autonomous":false},"todos":[{"task_id":"first","depends_on":null,"content":"Original todo","status":"pending","priority":"high"}]},
+        "snapshots":[{"id":"a".repeat(40),"files":[
+            {"path":"src/main.rs","source_path":"src/main.rs","hash":file_hash,"mode":"100755"},
+            {"path":"gone.txt","source_path":"gone.txt","hash":null}]}]
     }).to_string()
 }
 fn digest(bundle: &str) -> String {
@@ -120,6 +129,37 @@ async fn actual_product_cas_is_required_and_activation_restores_provider_context
         .await
         .unwrap();
     assert_eq!(activated["state"], "active");
+    {
+        let conn = rusqlite::Connection::open(&native).unwrap();
+        let (manifest, boundary): (String, String) = conn
+            .query_row(
+                "SELECT manifest,boundary_message_id FROM engine_transfer_snapshot WHERE snapshot_id=?1",
+                ["a".repeat(40)],
+                |row| Ok((row.get(0)?, row.get(1)?)),
+            )
+            .unwrap();
+        let manifest: Value = serde_json::from_str(&manifest).unwrap();
+        assert_eq!(manifest[0]["mode"], "100755");
+        assert_eq!(
+            manifest[0]["hash"],
+            json!(format!("{:x}", Sha256::digest(b"snapshot file bytes")))
+        );
+        assert_eq!(manifest[1]["hash"], Value::Null);
+        assert_eq!(boundary, "msg_original_assistant");
+        assert_eq!(
+            conn.query_row("SELECT COUNT(*) FROM engine_file_snapshot", [], |row| row
+                .get::<_, i64>(
+                0
+            ))
+            .unwrap(),
+            0
+        );
+    }
+    let retained = native
+        .with_extension("snapshots")
+        .join("s")
+        .join(format!("{:x}", Sha256::digest(b"snapshot file bytes")));
+    assert_eq!(std::fs::read(&retained).unwrap(), b"snapshot file bytes");
     let seq = database.latest_seq("s").await.unwrap();
     assert_eq!(
         runtime
@@ -204,6 +244,8 @@ async fn actual_product_cas_is_required_and_activation_restores_provider_context
     let cut = database.latest_seq("s").await.unwrap();
     let selected = database.transfer_messages("s", 0, true, cut).await.unwrap();
     assert!(selected["messages"].as_array().unwrap().is_empty());
+    // Compaction cuts the provider view only; canonical history keeps the
+    // three imported messages plus the run's own assistant reply.
     assert_eq!(
         database
             .transfer_messages("s", 0, false, cut)
@@ -212,7 +254,7 @@ async fn actual_product_cas_is_required_and_activation_restores_provider_context
             .as_array()
             .unwrap()
             .len(),
-        3
+        4
     );
     let input: Input = serde_json::from_value(
         json!({"session_id":"s","input_id":"after-cut","prompt":"again","delivery":"steer"}),
@@ -278,17 +320,29 @@ async fn actual_product_cas_is_required_and_activation_restores_provider_context
             .state,
         "active"
     );
-    assert_eq!(
-        database
-            .transfer_messages("s", 0, false, u64::MAX)
-            .await
-            .unwrap()["messages"]
-            .as_array()
-            .unwrap()
-            .len(),
-        3
-    );
+    let full = database
+        .transfer_messages("s", 0, false, u64::MAX)
+        .await
+        .unwrap()["messages"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|message| message["id"].as_str().unwrap_or_default().to_owned())
+        .collect::<Vec<_>>();
+    for index in 0..3 {
+        assert!(full.contains(&format!("msg_original_{index}")));
+    }
     database.remove_session("s").await.unwrap();
+    {
+        let conn = rusqlite::Connection::open(&native).unwrap();
+        assert_eq!(
+            conn.query_row("SELECT COUNT(*) FROM engine_transfer_snapshot", [], |row| {
+                row.get::<_, i64>(0)
+            })
+            .unwrap(),
+            0
+        );
+    }
     assert!(database
         .session_transfer_import("transfer")
         .await
