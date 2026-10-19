@@ -193,6 +193,9 @@ struct RemoteView: View {
             Section { sidebarActions(client) }
         }
         .listStyle(.insetGrouped)
+        .onAppear {
+            Task { await client.refreshLists() }
+        }
     }
 
     @ViewBuilder private func sidebarHeader(_ client: HostClient) -> some View {
