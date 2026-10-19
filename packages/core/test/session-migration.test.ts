@@ -1,6 +1,7 @@
 import { expect, test } from "bun:test"
 import path from "node:path"
-import { Effect } from "effect"
+import { DateTime, Effect } from "effect"
+import { symlink } from "node:fs/promises"
 import { AppNodeBuilder } from "../src/effect/app-node-builder"
 import { LayerNode } from "../src/effect/layer-node"
 import { Database } from "../src/database/database"
@@ -9,6 +10,8 @@ import { EventTable } from "../src/event/sql"
 import { SessionV2 } from "../src/session"
 import { SessionExecution } from "../src/session/execution"
 import { SessionMigration } from "../src/session/migration"
+import { SessionOwnership } from "../src/session/ownership"
+import { SessionEvent } from "../src/session/event"
 import { SessionInput } from "../src/session/input"
 import { SessionMessage } from "../src/session/message"
 import { Prompt } from "../src/session/prompt"
@@ -36,6 +39,93 @@ const target = (root: string) => ({
   engine: "rust" as const,
   storage: AbsolutePath.make(path.join(root, "native.db")),
   location: { directory: AbsolutePath.make(root) },
+})
+
+test("offline transfer competes with live source ownership and canonical storage aliases", async () => {
+  await using tmp = await tmpdir()
+  const storage = path.join(tmp.path, "product.db")
+  const alias = path.join(tmp.path, "alias.db")
+  const sessionID = SessionV2.ID.create()
+  await run(
+    storage,
+    Effect.gen(function* () {
+      const sessions = yield* SessionV2.Service
+      yield* sessions.create({ id: sessionID, location: target(tmp.path).location })
+      yield* Effect.promise(() => symlink(storage, alias))
+      // Both paths refer to the exact lease held by the live source service.
+      for (const filename of [storage, alias]) {
+        const blocked = yield* SessionOwnership.exclusive(filename, sessionID).pipe(Effect.scoped, Effect.exit)
+        expect(blocked._tag).toBe("Failure")
+      }
+    }),
+  )
+  // Closing the source scope releases its lifetime lease. The operator now
+  // owns it exclusively, including against another operator in this process.
+  await run(
+    storage,
+    Effect.scoped(
+      Effect.gen(function* () {
+        yield* SessionOwnership.exclusive(storage, sessionID)
+        const competitor = yield* SessionOwnership.exclusive(alias, sessionID).pipe(Effect.scoped, Effect.exit)
+        expect(competitor._tag).toBe("Failure")
+      }),
+    ),
+  )
+  await Effect.runPromise(SessionOwnership.exclusive(alias, sessionID).pipe(Effect.scoped))
+})
+
+test("SQLite fence rejects a legacy event publisher after restart without partial source projection", async () => {
+  await using tmp = await tmpdir()
+  const storage = path.join(tmp.path, "product.db")
+  const sessionID = SessionV2.ID.create()
+  await run(
+    storage,
+    Effect.gen(function* () {
+      const database = yield* Database.Service
+      const sessions = yield* SessionV2.Service
+      yield* sessions.create({ id: sessionID, location: target(tmp.path).location })
+      yield* SessionMigration.freeze(database.db, {
+        id: "legacy-fence",
+        sessionID,
+        target: target(tmp.path),
+        bundleSHA256: "a".repeat(64),
+        sourceSeq: yield* EventV2.latestSequence(database.db, sessionID),
+      })
+    }),
+  )
+  await run(
+    storage,
+    Effect.gen(function* () {
+      const database = yield* Database.Service
+      const events = yield* EventV2.Service
+      const sessions = yield* SessionV2.Service
+      const before = yield* EventV2.latestSequence(database.db, sessionID)
+      // An old publisher has neither the migration preflight nor a commit hook.
+      const rejected = yield* events
+        .publish(SessionEvent.PromptAdmitted, {
+          sessionID,
+          messageID: SessionMessage.ID.create(),
+          timestamp: yield* DateTime.now,
+          prompt: Prompt.make({ text: "legacy writer" }),
+          delivery: "steer",
+        })
+        .pipe(Effect.exit)
+      expect(rejected._tag).toBe("Failure")
+      expect(yield* EventV2.latestSequence(database.db, sessionID)).toBe(before)
+      expect(yield* database.db.select().from(SessionInputTable).all()).toHaveLength(0)
+      // The fence is Session-scoped, not a database-wide execution lock.
+      yield* sessions.create({ location: target(tmp.path).location })
+      yield* SessionMigration.abort(database.db, { id: "legacy-fence", sessionID })
+      yield* events.publish(SessionEvent.PromptAdmitted, {
+        sessionID,
+        messageID: SessionMessage.ID.create(),
+        timestamp: yield* DateTime.now,
+        prompt: Prompt.make({ text: "after abort" }),
+        delivery: "steer",
+      })
+      expect(yield* database.db.select().from(SessionInputTable).all()).toHaveLength(1)
+    }),
+  )
 })
 
 test("source freeze persists across restart, rejects conflicting retries and releases only on abort", async () => {

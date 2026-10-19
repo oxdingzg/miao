@@ -1,6 +1,6 @@
 export * as SessionMigration from "./migration"
 
-import { and, eq, notInArray } from "drizzle-orm"
+import { and, eq, notInArray, sql } from "drizzle-orm"
 import { Clock, Effect, Schema } from "effect"
 import { SessionID } from "@miao/schema/session-id"
 import { Database } from "../database/database"
@@ -55,6 +55,36 @@ export const freeze = Effect.fn("SessionMigration.freeze")(function* (
   return yield* db
     .transaction(() =>
       Effect.gen(function* () {
+        // Keep the fence in SQLite as well: a source process using an older
+        // build may not know this table, but its durable writes must fail too.
+        // Completed native transfers allow accepted catalog metadata mirrors;
+        // they still forbid old TS transcript/execution writes.
+        yield* db
+          .run(
+            sql`
+          CREATE TRIGGER IF NOT EXISTS session_migration_event_fence
+          BEFORE INSERT ON event
+          WHEN EXISTS (
+            SELECT 1 FROM session_migration AS migration
+            WHERE migration.session_id = NEW.aggregate_id
+              AND (
+                migration.state IN ('frozen', 'prepared', 'switched')
+                OR (
+                  migration.state = 'completed'
+                  AND NEW.type != 'session.next.info.updated.1'
+                  AND EXISTS (
+                    SELECT 1 FROM session_engine_placement AS placement
+                    WHERE placement.session_id = NEW.aggregate_id AND placement.engine = 'rust'
+                  )
+                )
+              )
+          )
+          BEGIN
+            SELECT RAISE(ABORT, 'Session is frozen for engine migration');
+          END
+        `,
+          )
+          .pipe(Effect.orDie)
         const existing = yield* find(db, input.id)
         if (existing) {
           if (

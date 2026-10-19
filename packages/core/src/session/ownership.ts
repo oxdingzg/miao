@@ -71,6 +71,25 @@ export const make = (storage: string, db?: Database.Interface["db"]) =>
     })
   })
 
+/** Offline transfer must compete with the same kernel lease as the source
+ * runner, including runners in this process. Do not adopt acquireShared here. */
+export const exclusive = Effect.fn("SessionOwnership.exclusive")(function* (
+  storage: string,
+  sessionID: SessionSchema.ID,
+) {
+  const canonical = yield* Effect.promise(() => RuntimeOwnership.canonicalStorage(storage))
+  return yield* Effect.acquireRelease(
+    Effect.tryPromise({
+      try: () =>
+        RuntimeOwnership.acquire(
+          path.join(`${canonical}.sessions`, createHash("sha256").update(sessionID).digest("hex")),
+        ),
+      catch: (error: unknown) => (error instanceof RuntimeOwnership.BusyError ? new BusyError(sessionID) : error),
+    }),
+    (owner) => Effect.sync(() => owner.release()),
+  )
+})
+
 export const node = makeGlobalNode({
   service: Service,
   layer: Layer.effect(
