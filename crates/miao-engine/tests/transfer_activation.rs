@@ -45,17 +45,27 @@ fn agent() -> AgentManifest {
 fn source(root: &Path) -> String {
     let bytes = b"snapshot file bytes";
     let file_hash = format!("{:x}", Sha256::digest(bytes));
+    let second_hash = format!("{:x}", Sha256::digest(b"second snapshot bytes"));
     json!({"format":"miao.session.transfer.v1","source":{"engine":"ts","storage":root.join("product.db"),"sequence":3},
         "session":{"id":"s","title":"Original title","agent":"build","model":{"id":"fixture"},"location":{"directory":root},"time":{"created":123,"updated":456}},
         "timeline":(0..3).map(|i|json!({"id":format!("msg_original_{i}"),"type":"user","text":format!("original {i}"),"time":{"created":123+i}}))
-            .chain(std::iter::once(json!({"id":"msg_original_assistant","type":"assistant","time":{"created":456,"completed":460},"snapshot":{"start":"a".repeat(40)}})))
+            .chain([
+                json!({"id":"msg_original_assistant","type":"assistant","time":{"created":456,"completed":460},"snapshot":{"start":"a".repeat(40)}}),
+                json!({"id":"msg_original_assistant_2","type":"assistant","time":{"created":470,"completed":474},"snapshot":{"start":"b".repeat(40)}}),
+            ])
             .collect::<Vec<_>>(),
         "context_ids":["msg_original_0","msg_original_1","msg_original_2"],
-        "artifacts":[{"hash":file_hash,"base64":base64::engine::general_purpose::STANDARD.encode(bytes)}],"source_state":{},
+        "artifacts":[
+            {"hash":file_hash,"base64":base64::engine::general_purpose::STANDARD.encode(bytes)},
+            {"hash":second_hash,"base64":base64::engine::general_purpose::STANDARD.encode(b"second snapshot bytes")}],"source_state":{},
         "operational":{"goal":{"objective":"original objective","status":"active","autonomous":false},"todos":[{"task_id":"first","depends_on":null,"content":"Original todo","status":"pending","priority":"high"}]},
-        "snapshots":[{"id":"a".repeat(40),"files":[
-            {"path":"src/main.rs","source_path":"src/main.rs","hash":file_hash,"mode":"100755"},
-            {"path":"gone.txt","source_path":"gone.txt","hash":null}]}]
+        "snapshots":[
+            {"id":"b".repeat(40),"files":[
+                {"path":"src/main.rs","source_path":"src/main.rs","hash":second_hash,"mode":"100644"},
+                {"path":"link","source_path":"link","hash":file_hash,"mode":"120000"}]},
+            {"id":"a".repeat(40),"files":[
+                {"path":"src/main.rs","source_path":"src/main.rs","hash":file_hash,"mode":"100755"},
+                {"path":"gone.txt","source_path":"gone.txt","hash":null}]}]
     }).to_string()
 }
 fn digest(bundle: &str) -> String {
@@ -160,6 +170,36 @@ async fn actual_product_cas_is_required_and_activation_restores_provider_context
         .join("s")
         .join(format!("{:x}", Sha256::digest(b"snapshot file bytes")));
     assert_eq!(std::fs::read(&retained).unwrap(), b"snapshot file bytes");
+    let order: Vec<(String, Option<i64>)> = {
+        let conn = rusqlite::Connection::open(&native).unwrap();
+        let mut stmt = conn
+            .prepare(
+                "SELECT snapshot_id,order_index FROM engine_transfer_snapshot ORDER BY order_index",
+            )
+            .unwrap();
+        stmt.query_map([], |row| Ok((row.get(0)?, row.get(1)?)))
+            .unwrap()
+            .collect::<Result<Vec<_>, _>>()
+            .unwrap()
+    };
+    assert_eq!(order[0], ("a".repeat(40), Some(3)));
+    assert_eq!(order[1], ("b".repeat(40), Some(4)));
+    let available = database.snapshot_at("s", 1).await.unwrap();
+    assert_eq!(available["assembled"], true);
+    assert_eq!(available["available"], true);
+    let staged = database.revert_stage("s", 1).await.unwrap();
+    assert!(staged["created"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .any(|path| path == "src/main.rs"));
+    assert_eq!(
+        std::fs::read(workspace.join("src/main.rs")).unwrap(),
+        b"snapshot file bytes"
+    );
+    assert!(!workspace.join("link").exists());
+    database.revert_clear("s").await.unwrap();
+    assert!(!workspace.join("src/main.rs").exists());
     let seq = database.latest_seq("s").await.unwrap();
     assert_eq!(
         runtime
@@ -244,18 +284,20 @@ async fn actual_product_cas_is_required_and_activation_restores_provider_context
     let cut = database.latest_seq("s").await.unwrap();
     let selected = database.transfer_messages("s", 0, true, cut).await.unwrap();
     assert!(selected["messages"].as_array().unwrap().is_empty());
-    // Compaction cuts the provider view only; canonical history keeps the
-    // three imported messages plus the run's own assistant reply.
-    assert_eq!(
-        database
-            .transfer_messages("s", 0, false, cut)
-            .await
-            .unwrap()["messages"]
-            .as_array()
-            .unwrap()
-            .len(),
-        4
-    );
+    // Compaction cuts the provider view only; canonical history keeps every
+    // imported message regardless of later native appends.
+    let full = database
+        .transfer_messages("s", 0, false, cut)
+        .await
+        .unwrap()["messages"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|message| message["id"].as_str().unwrap_or_default().to_owned())
+        .collect::<Vec<_>>();
+    for index in 0..3 {
+        assert!(full.contains(&format!("msg_original_{index}")));
+    }
     let input: Input = serde_json::from_value(
         json!({"session_id":"s","input_id":"after-cut","prompt":"again","delivery":"steer"}),
     )

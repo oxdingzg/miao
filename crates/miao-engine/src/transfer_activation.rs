@@ -25,6 +25,10 @@ pub struct Operation {
 pub struct RetainedSnapshot {
     pub id: String,
     pub boundary_message_id: Option<String>,
+    /// Position of the referencing assistant in the source timeline; manifests
+    /// without any referencing assistant cannot be ordered for first-touch
+    /// assembly and are excluded from imported revert.
+    pub order_index: Option<usize>,
     pub files: Vec<Value>,
 }
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -91,22 +95,22 @@ pub fn prepare(
         if !regex_check_id(&id) || snapshots.iter().any(|kept| kept.id == id) {
             return Err(invalid("snapshot identity"));
         }
-        let boundary = source["timeline"]
+        let timeline = source["timeline"]
             .as_array()
-            .ok_or_else(|| invalid("missing timeline"))?
-            .iter()
-            .find_map(|message| {
-                (message["type"].as_str() == Some("assistant")
-                    && [
-                        message["snapshot"]["start"].as_str(),
-                        message["snapshot"]["end"].as_str(),
-                    ]
-                    .into_iter()
-                    .flatten()
-                    .any(|referenced| referenced == id))
-                .then(|| message["id"].as_str().map(str::to_owned))
+            .ok_or_else(|| invalid("missing timeline"))?;
+        let reference = timeline.iter().position(|message| {
+            message["type"].as_str() == Some("assistant")
+                && [
+                    message["snapshot"]["start"].as_str(),
+                    message["snapshot"]["end"].as_str(),
+                ]
+                .into_iter()
                 .flatten()
-            });
+                .any(|referenced| referenced == id)
+        });
+        let boundary =
+            reference.and_then(|index| timeline[index]["id"].as_str().map(str::to_owned));
+
         let mut files = Vec::new();
         for file in manifest["files"]
             .as_array()
@@ -146,6 +150,7 @@ pub fn prepare(
         snapshots.push(RetainedSnapshot {
             id,
             boundary_message_id: boundary,
+            order_index: reference,
             files,
         });
     }
@@ -243,8 +248,14 @@ impl Store {
                     crate::snapshot::write_blob(&target,&session,&bytes)?;
                 }
                 tx.execute(
-                    "INSERT INTO engine_transfer_snapshot(import_id,snapshot_id,boundary_message_id,manifest) VALUES(?1,?2,?3,?4)",
-                    params![id,snapshot.id,snapshot.boundary_message_id,serde_json::to_string(&snapshot.files)?],
+                    "INSERT INTO engine_transfer_snapshot(import_id,snapshot_id,boundary_message_id,manifest,order_index) VALUES(?1,?2,?3,?4,?5)",
+                    params![
+                        id,
+                        snapshot.id,
+                        snapshot.boundary_message_id,
+                        serde_json::to_string(&snapshot.files)?,
+                        snapshot.order_index.map(|index| index as i64)
+                    ],
                 )?;
             }
             append(&tx,&session,"session.transfer.activated",json!({"import_id":id,"bundle_sha256":digest}))?;
