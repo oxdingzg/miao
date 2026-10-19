@@ -1,0 +1,148 @@
+{
+  "sample": {
+    "task": "tool-error",
+    "engine": "typescript",
+    "repetition": 1,
+    "suiteHash": "bd905b4f81f0a9412b614631a36337723067574848c5f05b50ead1cf48675091",
+    "taskHash": "d805c342f165a7193bf45347ebba54a0e1c0d75e9baffd9c5979d07f5b0fb09e",
+    "profile": {
+      "model": "deepseek-v4.1-flash",
+      "modelParametersHash": "7d19749c73733e9154a8ec248c3dd21458aaf953a43d5d184d2a4d44974cb597",
+      "agentManifestHash": "da02daf3e41e319952f4058384a4a3cd4d64c5678414af69326fd5c666b260cc",
+      "permissionHash": "80e1702cccc5faaf0eb7f0345da0f76e5201039da35f26928052d4e861e8f50f",
+      "toolSurfaceHash": "04c769ae52448d5fe45ea690050120cee624771222b1291088dc6d832c888106"
+    },
+    "revision": "fa001fbff8b188361bf5848cc31358bba7e7d7bb",
+    "artifactHash": "42a0929bd2c953adb3b7ae60782aeb2d7a5a7101e999baa01b6d9c9d85b7e5ad",
+    "receiptHash": "6143bd124481a72ef68ef06e24db3cce0dbeecd2a3f176f08ef103e95e3181d5",
+    "outcome": "passed",
+    "elapsedMs": 7272,
+    "attempts": [
+      {
+        "inputTokens": 14006,
+        "outputTokens": 67,
+        "cost": null
+      },
+      {
+        "inputTokens": 14179,
+        "outputTokens": 44,
+        "cost": null
+      }
+    ]
+  },
+  "rejection": null,
+  "evidence": {
+    "engine": "typescript",
+    "revision": "fa001fbff8b188361bf5848cc31358bba7e7d7bb",
+    "task": "tool-error",
+    "repetition": 1,
+    "terminal": "completed",
+    "error": null,
+    "receipts": [
+      "tool.error"
+    ],
+    "attempts": [
+      {
+        "inputTokens": 14006,
+        "outputTokens": 67,
+        "cacheReadTokens": 1792,
+        "cacheWriteTokens": null,
+        "reasoningTokens": 0,
+        "cost": null
+      },
+      {
+        "inputTokens": 14179,
+        "outputTokens": 44,
+        "cacheReadTokens": 13952,
+        "cacheWriteTokens": null,
+        "reasoningTokens": 16,
+        "cost": null
+      }
+    ],
+    "phases": [
+      {
+        "phase": "step-start",
+        "atMs": 1792421912896,
+        "clock": "observed"
+      },
+      {
+        "phase": "tool-part",
+        "atMs": 1792421913341,
+        "clock": "observed"
+      },
+      {
+        "phase": "tool-part",
+        "atMs": 1792421913382,
+        "clock": "observed"
+      },
+      {
+        "phase": "step-start",
+        "atMs": 1792421914926,
+        "clock": "observed"
+      },
+      {
+        "phase": "first-output",
+        "atMs": 1792421915236,
+        "clock": "observed"
+      },
+      {
+        "phase": "exit",
+        "atMs": 1792421915313,
+        "clock": "observed"
+      },
+      {
+        "phase": "verified",
+        "atMs": 1792421915317,
+        "clock": "observed"
+      }
+    ],
+    "profile": {
+      "model": "deepseek-v4.1-flash",
+      "modelParametersHash": "7d19749c73733e9154a8ec248c3dd21458aaf953a43d5d184d2a4d44974cb597",
+      "agentManifestHash": "da02daf3e41e319952f4058384a4a3cd4d64c5678414af69326fd5c666b260cc",
+      "permissionHash": "80e1702cccc5faaf0eb7f0345da0f76e5201039da35f26928052d4e861e8f50f",
+      "toolSurfaceHash": "04c769ae52448d5fe45ea690050120cee624771222b1291088dc6d832c888106"
+    },
+    "profileReceipts": 2,
+    "loops": {
+      "continuations": [],
+      "stopped": []
+    },
+    "toolCalls": 2,
+    "textHash": "c69b71e76292127665294624987ab1019a028d701d0f91d60623e47bfb6011b8",
+    "binarySha256": null,
+    "startedAtMs": 1792421908045,
+    "admissionMs": null,
+    "elapsedMs": 7272
+  },
+  "assessment": {
+    "suiteHash": "bd905b4f81f0a9412b614631a36337723067574848c5f05b50ead1cf48675091",
+    "taskHash": "d805c342f165a7193bf45347ebba54a0e1c0d75e9baffd9c5979d07f5b0fb09e",
+    "artifactPass": true,
+    "unexpected": [],
+    "immutable": [
+      {
+        "file": "AGENTS.md",
+        "unchanged": true
+      },
+      {
+        "file": "package.json",
+        "unchanged": true
+      },
+      {
+        "file": "alternate.txt",
+        "unchanged": true
+      }
+    ],
+    "expected": [],
+    "check": null,
+    "executionVerdict": "unverified",
+    "requiredReceipts": [
+      "tool.error"
+    ],
+    "answerContains": [
+      "RECOVERY_TOKEN_83"
+    ]
+  },
+  "answer": "`missing.txt` 读取失败；`alternate.txt` 中的恢复令牌是：`RECOVERY_TOKEN_83`"
+}

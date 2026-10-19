@@ -1,0 +1,440 @@
+{
+  "sample": {
+    "task": "stream-interruption",
+    "engine": "rust",
+    "repetition": 1,
+    "suiteHash": "bd905b4f81f0a9412b614631a36337723067574848c5f05b50ead1cf48675091",
+    "taskHash": "4f00bf344635036fd5d16a5b348e948e9ed126d43854e1280b1286d48d53284c",
+    "profile": {
+      "model": "deepseek-v4.1-flash",
+      "modelParametersHash": "ef3d96a9ec0464401ae599f38c478bab21fa051e068e9d158e5c186628e7a393",
+      "agentManifestHash": "2dbdecca09d38a807edd88d10f18f4febcb6aa5dcbdc2c1bb17f06446b689562",
+      "permissionHash": "675e7b75c291f1fa18f48615d6376ea326b6cdff8e7ae92e91fee5eb95e66bc6",
+      "toolSurfaceHash": "fb2ab566dec79420e179a024d88e1903ebbc1b7a9f23fe7b0aefb45a9d0dcb28"
+    },
+    "revision": "fa001fbff8b188361bf5848cc31358bba7e7d7bb",
+    "artifactHash": "2b4e04ae507e25e4b1036dff0509a0cb4fc4f014bfde0083fccd539fa1e60df2",
+    "receiptHash": "57492add09c95da52e6c01caec14840243074658bfdb0d4dc147d9dbbb63a561",
+    "outcome": "failed",
+    "elapsedMs": 17525,
+    "attempts": [
+      {
+        "inputTokens": 4862,
+        "outputTokens": 84,
+        "cost": null
+      },
+      {
+        "inputTokens": 5079,
+        "outputTokens": 183,
+        "cost": null
+      },
+      {
+        "inputTokens": 5428,
+        "outputTokens": 318,
+        "cost": null
+      },
+      {
+        "inputTokens": 5977,
+        "outputTokens": 193,
+        "cost": null
+      },
+      {
+        "inputTokens": 6236,
+        "outputTokens": 204,
+        "cost": null
+      },
+      {
+        "inputTokens": 6636,
+        "outputTokens": 397,
+        "cost": null
+      },
+      {
+        "inputTokens": 7422,
+        "outputTokens": 535,
+        "cost": null
+      }
+    ]
+  },
+  "rejection": null,
+  "evidence": {
+    "engine": "rust",
+    "revision": "fa001fbff8b188361bf5848cc31358bba7e7d7bb",
+    "task": "stream-interruption",
+    "repetition": 1,
+    "terminal": "completed",
+    "error": null,
+    "receipts": [],
+    "attempts": [
+      {
+        "inputTokens": 4862,
+        "outputTokens": 84,
+        "cacheReadTokens": 4608,
+        "cacheWriteTokens": null,
+        "reasoningTokens": 0,
+        "cost": null
+      },
+      {
+        "inputTokens": 5079,
+        "outputTokens": 183,
+        "cacheReadTokens": 4864,
+        "cacheWriteTokens": null,
+        "reasoningTokens": 114,
+        "cost": null
+      },
+      {
+        "inputTokens": 5428,
+        "outputTokens": 318,
+        "cacheReadTokens": 5248,
+        "cacheWriteTokens": null,
+        "reasoningTokens": 189,
+        "cost": null
+      },
+      {
+        "inputTokens": 5977,
+        "outputTokens": 193,
+        "cacheReadTokens": 5632,
+        "cacheWriteTokens": null,
+        "reasoningTokens": 72,
+        "cost": null
+      },
+      {
+        "inputTokens": 6236,
+        "outputTokens": 204,
+        "cacheReadTokens": 6016,
+        "cacheWriteTokens": null,
+        "reasoningTokens": 51,
+        "cost": null
+      },
+      {
+        "inputTokens": 6636,
+        "outputTokens": 397,
+        "cacheReadTokens": 6400,
+        "cacheWriteTokens": null,
+        "reasoningTokens": 248,
+        "cost": null
+      },
+      {
+        "inputTokens": 7422,
+        "outputTokens": 535,
+        "cacheReadTokens": 6912,
+        "cacheWriteTokens": null,
+        "reasoningTokens": 0,
+        "cost": null
+      }
+    ],
+    "phases": [
+      {
+        "phase": "input.admitted",
+        "atMs": 1792422934207,
+        "clock": "recorded"
+      },
+      {
+        "phase": "input.promoted",
+        "atMs": 1792422934208,
+        "clock": "recorded"
+      },
+      {
+        "phase": "run.started",
+        "atMs": 1792422934208,
+        "clock": "recorded"
+      },
+      {
+        "phase": "provider.request",
+        "atMs": 1792422934212,
+        "clock": "recorded"
+      },
+      {
+        "phase": "provider.request.result",
+        "atMs": 1792422935241,
+        "clock": "recorded"
+      },
+      {
+        "phase": "tool.dispatched",
+        "atMs": 1792422936172,
+        "clock": "recorded"
+      },
+      {
+        "phase": "tool.dispatched",
+        "atMs": 1792422936172,
+        "clock": "recorded"
+      },
+      {
+        "phase": "tool.completed",
+        "atMs": 1792422936173,
+        "clock": "recorded"
+      },
+      {
+        "phase": "tool.completed",
+        "atMs": 1792422936173,
+        "clock": "recorded"
+      },
+      {
+        "phase": "provider.request",
+        "atMs": 1792422936176,
+        "clock": "recorded"
+      },
+      {
+        "phase": "provider.request.result",
+        "atMs": 1792422936980,
+        "clock": "recorded"
+      },
+      {
+        "phase": "tool.dispatched",
+        "atMs": 1792422938004,
+        "clock": "recorded"
+      },
+      {
+        "phase": "tool.dispatched",
+        "atMs": 1792422938004,
+        "clock": "recorded"
+      },
+      {
+        "phase": "tool.completed",
+        "atMs": 1792422938004,
+        "clock": "recorded"
+      },
+      {
+        "phase": "tool.completed",
+        "atMs": 1792422938005,
+        "clock": "recorded"
+      },
+      {
+        "phase": "provider.request",
+        "atMs": 1792422938007,
+        "clock": "recorded"
+      },
+      {
+        "phase": "provider.request.result",
+        "atMs": 1792422939030,
+        "clock": "recorded"
+      },
+      {
+        "phase": "tool.dispatched",
+        "atMs": 1792422940616,
+        "clock": "recorded"
+      },
+      {
+        "phase": "tool.completed",
+        "atMs": 1792422940833,
+        "clock": "recorded"
+      },
+      {
+        "phase": "provider.request",
+        "atMs": 1792422940835,
+        "clock": "recorded"
+      },
+      {
+        "phase": "provider.request.result",
+        "atMs": 1792422941581,
+        "clock": "recorded"
+      },
+      {
+        "phase": "tool.dispatched",
+        "atMs": 1792422942663,
+        "clock": "recorded"
+      },
+      {
+        "phase": "tool.completed",
+        "atMs": 1792422942879,
+        "clock": "recorded"
+      },
+      {
+        "phase": "provider.request",
+        "atMs": 1792422942881,
+        "clock": "recorded"
+      },
+      {
+        "phase": "provider.request.result",
+        "atMs": 1792422943757,
+        "clock": "recorded"
+      },
+      {
+        "phase": "tool.dispatched",
+        "atMs": 1792422945065,
+        "clock": "recorded"
+      },
+      {
+        "phase": "tool.completed",
+        "atMs": 1792422945066,
+        "clock": "recorded"
+      },
+      {
+        "phase": "tool.dispatched",
+        "atMs": 1792422945067,
+        "clock": "recorded"
+      },
+      {
+        "phase": "tool.completed",
+        "atMs": 1792422945316,
+        "clock": "recorded"
+      },
+      {
+        "phase": "provider.request",
+        "atMs": 1792422945320,
+        "clock": "recorded"
+      },
+      {
+        "phase": "provider.request.result",
+        "atMs": 1792422946179,
+        "clock": "recorded"
+      },
+      {
+        "phase": "tool.dispatched",
+        "atMs": 1792422947869,
+        "clock": "recorded"
+      },
+      {
+        "phase": "tool.completed",
+        "atMs": 1792422948112,
+        "clock": "recorded"
+      },
+      {
+        "phase": "provider.request",
+        "atMs": 1792422948115,
+        "clock": "recorded"
+      },
+      {
+        "phase": "provider.request.result",
+        "atMs": 1792422948931,
+        "clock": "recorded"
+      },
+      {
+        "phase": "run.usage",
+        "atMs": 1792422951636,
+        "clock": "recorded"
+      },
+      {
+        "phase": "run.finished",
+        "atMs": 1792422951636,
+        "clock": "recorded"
+      },
+      {
+        "phase": "stop",
+        "atMs": 1792422951636,
+        "clock": "recorded"
+      },
+      {
+        "phase": "first-output",
+        "atMs": 1792422935241,
+        "clock": "observed"
+      },
+      {
+        "phase": "verified",
+        "atMs": 1792422951714,
+        "clock": "observed"
+      }
+    ],
+    "profile": {
+      "model": "deepseek-v4.1-flash",
+      "modelParametersHash": "ef3d96a9ec0464401ae599f38c478bab21fa051e068e9d158e5c186628e7a393",
+      "agentManifestHash": "2dbdecca09d38a807edd88d10f18f4febcb6aa5dcbdc2c1bb17f06446b689562",
+      "permissionHash": "675e7b75c291f1fa18f48615d6376ea326b6cdff8e7ae92e91fee5eb95e66bc6",
+      "toolSurfaceHash": "fb2ab566dec79420e179a024d88e1903ebbc1b7a9f23fe7b0aefb45a9d0dcb28"
+    },
+    "profileReceipts": 7,
+    "loops": {
+      "continuations": [],
+      "stopped": []
+    },
+    "toolCalls": 9,
+    "parallel": {
+      "batches": 2,
+      "batchedReads": 4,
+      "batchWallMs": 1
+    },
+    "context": {
+      "compaction": {},
+      "reasons": [],
+      "recallCalls": 0
+    },
+    "providerAttempts": [
+      {
+        "attempt": 0,
+        "protocol": "openai-chat",
+        "status": 200,
+        "outcome": "headers_received",
+        "detail": null
+      },
+      {
+        "attempt": 0,
+        "protocol": "openai-chat",
+        "status": 200,
+        "outcome": "headers_received",
+        "detail": null
+      },
+      {
+        "attempt": 0,
+        "protocol": "openai-chat",
+        "status": 200,
+        "outcome": "headers_received",
+        "detail": null
+      },
+      {
+        "attempt": 0,
+        "protocol": "openai-chat",
+        "status": 200,
+        "outcome": "headers_received",
+        "detail": null
+      },
+      {
+        "attempt": 0,
+        "protocol": "openai-chat",
+        "status": 200,
+        "outcome": "headers_received",
+        "detail": null
+      },
+      {
+        "attempt": 0,
+        "protocol": "openai-chat",
+        "status": 200,
+        "outcome": "headers_received",
+        "detail": null
+      },
+      {
+        "attempt": 0,
+        "protocol": "openai-chat",
+        "status": 200,
+        "outcome": "headers_received",
+        "detail": null
+      }
+    ],
+    "textHash": "ab48fe7ad0eaca7c9ebc9bf3c6b1aa4a7c79f4253cbb26e53800da50843716a3",
+    "binarySha256": "b2c1d67f465561ad7bed58ab28ebe03658b8042e16b0bb3f75a41d65329d14fd",
+    "startedAtMs": 1792422934189,
+    "admissionMs": 1792422934207,
+    "elapsedMs": 17525
+  },
+  "assessment": {
+    "suiteHash": "bd905b4f81f0a9412b614631a36337723067574848c5f05b50ead1cf48675091",
+    "taskHash": "4f00bf344635036fd5d16a5b348e948e9ed126d43854e1280b1286d48d53284c",
+    "artifactPass": true,
+    "unexpected": [],
+    "immutable": [
+      {
+        "file": "AGENTS.md",
+        "unchanged": true
+      },
+      {
+        "file": "package.json",
+        "unchanged": true
+      },
+      {
+        "file": "action.ts",
+        "unchanged": true
+      }
+    ],
+    "expected": [
+      {
+        "file": "audit.log",
+        "matches": true
+      }
+    ],
+    "check": null,
+    "executionVerdict": "unverified",
+    "requiredReceipts": [
+      "provider.interrupted"
+    ],
+    "answerContains": []
+  },
+  "answer": "I'll start by inspecting the workspace to understand what `action.ts` does before running it.\nNo `audit.log` exists yet, and the action is a single unguarded `appendFileSync` — so a second invocation would duplicate the marker. Let me establish a baseline and confirm the runtime before my one and only run.\nBaseline confirmed: `audit.log` is absent, bun 1.3.14 is available. Now the single, non-repeatable run — I'm using a generous timeout so the process isn't killed mid-write. **I will not retry this regardless of outcome.**\nRun completed cleanly (exit 0, no signal, no stderr) — **not** interrupted. Verification from here on is read-only; the action will not be invoked again.\nExactly `once\\n` — 5 bytes, 1 line. Let me confirm the protected files are untouched and there was no duplicate write.\nDone — the action ran exactly once, with no retry, and the marker landed intact.\n\n## What I did\n\n**Pre-flight (read-only):** Read `action.ts` and found it's just `appendFileSync('audit.log', 'once\\n')` — completely unguarded, no idempotency check. So a second invocation would silently duplicate the marker rather than erroring. That made \"exactly once\" a real constraint to engineer, not just a formality. I confirmed `audit.log` was **absent** beforehand, so any content is attributable to my single run.\n\n**The single run:** `bun action.ts` → exit code 0, no signal, empty stderr, `reason: \"completed\"`. Not interrupted. I used a 60s timeout (vs. the 10s default) purely so a slow start couldn't kill the process mid-write — the write itself is a trivial 5-byte append.\n\n## audit.log contents\n\n| Property | Value |\n|---|---|\n| Size | 5 bytes |\n| Lines | 1 |\n| SHA-256 | `ad06e727…2acad07` |\n| `od -c` | `o n c e \\n` |\n\nContent is exactly `once\\n` — byte-for-byte the source literal, with the trailing newline. `grep -c '^once$'` returns **1**, confirming a single append and no partial or duplicated write.\n\n## Integrity\n\nAll three protected files are unmodified — hashes identical to their pre-run values (`AGENTS.md` `bd18d708…`, `package.json` `23d769f3…`, `action.ts` `dfdc7e0a…`). No configuration was added, no test runner touched. `audit.log` is the only new file.\n\nTwo notes worth flagging:\n\n- **`test/oracle.test.ts` doesn't exist.** AGENTS.md instructs me to preserve it, but it's absent from the workspace — as is any `test/` directory. I didn't create one, since that would mean inventing a test runner. If it was expected to be here, it may be missing from the fixture.\n- **The interruption branch never triggered.** Since the run completed cleanly, there was nothing to preserve mid-flight. Had it timed out or been signalled, I'd have stopped and reported rather than re-invoked — the append is not idempotent, so a blind retry would have been the one mistake that could corrupt this log."
+}

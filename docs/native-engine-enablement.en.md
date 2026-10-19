@@ -93,7 +93,7 @@ Per-class ratios (RS/TS):
 
 14 of 15 classes are cheaper on the native engine (0.055–0.847); the exception is `long-session` (82 turns per run against TS's 17, at 3.43×). **Excluding that class: TS $0.10003 against RS $0.04356 — the native engine is 56.5% cheaper.**
 
-**Repeat runs.** A second round of the same suite and model (n=3) gave ratio **0.881**, break-even **4.98×**, and **0.408** excluding `long-session`. Across the two rounds the native advantage moved between 11.9% and 21.5%, driven mainly by the turns/output spread in `long-session` (3.4×–4.3×). One round therefore establishes a direction, not a magnitude; a cost claim should run the same configuration at least twice and report both rounds.
+**Repeat runs and a second model.** A second round of the same suite and model (n=3) gave ratio **0.881**, break-even **4.98×**, and **0.408** excluding `long-session`; a third round on the gateway model `opencode-go/deepseek-v4.1-flash` ([record](experiments/2026-10-19-opencode-go-suite-v6/README.en.md)) gave **0.690**, **8.56×**, and **0.459**. All three agree on direction: the native engine is cheaper overall (11.9%–31.0%) and 54%–59% cheaper once the long-session class is excluded, while the exact magnitude follows the model and task mix; the turns/output spread in `long-session` (2.2×–4.3×) is the main source. One round therefore establishes a direction, not a magnitude; a cost claim should run the same configuration at least twice and report every round.
 
 Two behavioral differences:
 

@@ -1,0 +1,243 @@
+{
+  "sample": {
+    "task": "typed-repair",
+    "engine": "typescript",
+    "repetition": 2,
+    "suiteHash": "bd905b4f81f0a9412b614631a36337723067574848c5f05b50ead1cf48675091",
+    "taskHash": "6d7a5f740fead5293e5e5ffb8d80de678897f4422c739a10fa17ed3caffaaea2",
+    "profile": {
+      "model": "deepseek-v4.1-flash",
+      "modelParametersHash": "7114ff7bf0de26894e156a3691600d79b248548956dd0efb19244f8d7decc34b",
+      "agentManifestHash": "89e377aa0b9bdcb9ea938e9aa7a9d039301f3c651168564d43eb670d235cdab9",
+      "permissionHash": "de3e0daa37941f10fbbad2d5eb6037cb3cd1278f768dac1ff435e1c8f3ce6312",
+      "toolSurfaceHash": "04c769ae52448d5fe45ea690050120cee624771222b1291088dc6d832c888106"
+    },
+    "revision": "fa001fbff8b188361bf5848cc31358bba7e7d7bb",
+    "artifactHash": "4448b2a829b5f3cf40143ca628b7742175c0050d3dfbda4b040d2b215b6e4617",
+    "receiptHash": "5bce231d18cf16060274778cc6cb02734624ac1d709ca2497a8154051272ae8e",
+    "outcome": "passed",
+    "elapsedMs": 25093,
+    "attempts": [
+      {
+        "inputTokens": 14027,
+        "outputTokens": 94,
+        "cost": null
+      },
+      {
+        "inputTokens": 14372,
+        "outputTokens": 78,
+        "cost": null
+      },
+      {
+        "inputTokens": 14720,
+        "outputTokens": 152,
+        "cost": null
+      },
+      {
+        "inputTokens": 14940,
+        "outputTokens": 218,
+        "cost": null
+      },
+      {
+        "inputTokens": 15251,
+        "outputTokens": 69,
+        "cost": null
+      },
+      {
+        "inputTokens": 15396,
+        "outputTokens": 78,
+        "cost": null
+      }
+    ]
+  },
+  "rejection": null,
+  "evidence": {
+    "engine": "typescript",
+    "revision": "fa001fbff8b188361bf5848cc31358bba7e7d7bb",
+    "task": "typed-repair",
+    "repetition": 2,
+    "terminal": "completed",
+    "error": null,
+    "receipts": [],
+    "attempts": [
+      {
+        "inputTokens": 14027,
+        "outputTokens": 94,
+        "cacheReadTokens": 0,
+        "cacheWriteTokens": null,
+        "reasoningTokens": 0,
+        "cost": null
+      },
+      {
+        "inputTokens": 14372,
+        "outputTokens": 78,
+        "cacheReadTokens": 13952,
+        "cacheWriteTokens": null,
+        "reasoningTokens": 0,
+        "cost": null
+      },
+      {
+        "inputTokens": 14720,
+        "outputTokens": 152,
+        "cacheReadTokens": 14336,
+        "cacheWriteTokens": null,
+        "reasoningTokens": 96,
+        "cost": null
+      },
+      {
+        "inputTokens": 14940,
+        "outputTokens": 218,
+        "cacheReadTokens": 14720,
+        "cacheWriteTokens": null,
+        "reasoningTokens": 64,
+        "cost": null
+      },
+      {
+        "inputTokens": 15251,
+        "outputTokens": 69,
+        "cacheReadTokens": 14848,
+        "cacheWriteTokens": null,
+        "reasoningTokens": 0,
+        "cost": null
+      },
+      {
+        "inputTokens": 15396,
+        "outputTokens": 78,
+        "cacheReadTokens": 15232,
+        "cacheWriteTokens": null,
+        "reasoningTokens": 0,
+        "cost": null
+      }
+    ],
+    "phases": [
+      {
+        "phase": "step-start",
+        "atMs": 1792422260827,
+        "clock": "observed"
+      },
+      {
+        "phase": "first-output",
+        "atMs": 1792422261967,
+        "clock": "observed"
+      },
+      {
+        "phase": "tool-part",
+        "atMs": 1792422262121,
+        "clock": "observed"
+      },
+      {
+        "phase": "step-start",
+        "atMs": 1792422264463,
+        "clock": "observed"
+      },
+      {
+        "phase": "tool-part",
+        "atMs": 1792422264708,
+        "clock": "observed"
+      },
+      {
+        "phase": "step-start",
+        "atMs": 1792422270370,
+        "clock": "observed"
+      },
+      {
+        "phase": "tool-part",
+        "atMs": 1792422271050,
+        "clock": "observed"
+      },
+      {
+        "phase": "step-start",
+        "atMs": 1792422273566,
+        "clock": "observed"
+      },
+      {
+        "phase": "tool-part",
+        "atMs": 1792422274670,
+        "clock": "observed"
+      },
+      {
+        "phase": "step-start",
+        "atMs": 1792422276495,
+        "clock": "observed"
+      },
+      {
+        "phase": "tool-part",
+        "atMs": 1792422277200,
+        "clock": "observed"
+      },
+      {
+        "phase": "step-start",
+        "atMs": 1792422280184,
+        "clock": "observed"
+      },
+      {
+        "phase": "first-output",
+        "atMs": 1792422280452,
+        "clock": "observed"
+      },
+      {
+        "phase": "exit",
+        "atMs": 1792422280530,
+        "clock": "observed"
+      },
+      {
+        "phase": "verified",
+        "atMs": 1792422280595,
+        "clock": "observed"
+      }
+    ],
+    "profile": {
+      "model": "deepseek-v4.1-flash",
+      "modelParametersHash": "7114ff7bf0de26894e156a3691600d79b248548956dd0efb19244f8d7decc34b",
+      "agentManifestHash": "89e377aa0b9bdcb9ea938e9aa7a9d039301f3c651168564d43eb670d235cdab9",
+      "permissionHash": "de3e0daa37941f10fbbad2d5eb6037cb3cd1278f768dac1ff435e1c8f3ce6312",
+      "toolSurfaceHash": "04c769ae52448d5fe45ea690050120cee624771222b1291088dc6d832c888106"
+    },
+    "profileReceipts": 6,
+    "loops": {
+      "continuations": [],
+      "stopped": []
+    },
+    "toolCalls": 5,
+    "textHash": "b28708232a5aeda0157199c0428dfd12dea1b168b53f7a7930d21c287a2640ad",
+    "binarySha256": null,
+    "startedAtMs": 1792422255502,
+    "admissionMs": null,
+    "elapsedMs": 25093
+  },
+  "assessment": {
+    "suiteHash": "bd905b4f81f0a9412b614631a36337723067574848c5f05b50ead1cf48675091",
+    "taskHash": "6d7a5f740fead5293e5e5ffb8d80de678897f4422c739a10fa17ed3caffaaea2",
+    "artifactPass": true,
+    "unexpected": [],
+    "immutable": [
+      {
+        "file": "AGENTS.md",
+        "unchanged": true
+      },
+      {
+        "file": "package.json",
+        "unchanged": true
+      },
+      {
+        "file": "test/oracle.test.ts",
+        "unchanged": true
+      }
+    ],
+    "expected": [],
+    "check": {
+      "command": [
+        "bash",
+        "-lc",
+        "bun test test/oracle.test.ts && ! grep -q 'total: string' src/calc.ts && echo TYPED_REPAIR_OK"
+      ],
+      "exit": 0,
+      "stdoutHash": "efb93a940334384e8864956fb03b0b4baa725db808f1358cf83ce3a00cd53051",
+      "stderrHash": "a90e43eace48ad5bc121ad608c3fcf7473a11a0f5c87305d69efb2c30f1e5403"
+    },
+    "executionVerdict": "unverified",
+    "requiredReceipts": [],
+    "answerContains": []
+  },
+  "answer": "I'll inspect the file and its test first.\n已修复 `src/calc.ts:2`：`total` 改为 `number`，去掉多余的 `Number()` 转换；签名 `average(values: number[]): number` 未变。\n\n验证：`bun test` 1 pass / 0 fail，`tsc --noEmit --strict src/calc.ts` 退出码 0。"
+}

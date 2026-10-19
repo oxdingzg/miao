@@ -1,0 +1,62 @@
+[
+ {
+  "engine": "typescript",
+  "model": "opencode-go/deepseek-v4.1-flash",
+  "revision": "fa001fbff8b188361bf5848cc31358bba7e7d7bb",
+  "binarySha256": null,
+  "tasks": [
+   "read-only",
+   "multi-read",
+   "small-edit",
+   "multi-file",
+   "test-repair"
+  ],
+  "repetitions": 3,
+  "suiteHash": "bd905b4f81f0a9412b614631a36337723067574848c5f05b50ead1cf48675091",
+  "startedAtMs": 1792421560086,
+  "finishedAtMs": 1792421766397,
+  "samples": 15,
+  "rejected": 0,
+  "chunk": "go-ts-1"
+ },
+ {
+  "engine": "typescript",
+  "model": "opencode-go/deepseek-v4.1-flash",
+  "revision": "fa001fbff8b188361bf5848cc31358bba7e7d7bb",
+  "binarySha256": null,
+  "tasks": [
+   "permission-denial",
+   "tool-error",
+   "stream-interruption",
+   "long-session",
+   "multi-line-edit"
+  ],
+  "repetitions": 3,
+  "suiteHash": "bd905b4f81f0a9412b614631a36337723067574848c5f05b50ead1cf48675091",
+  "startedAtMs": 1792421845092,
+  "finishedAtMs": 1792422205591,
+  "samples": 15,
+  "rejected": 0,
+  "chunk": "go-ts-2"
+ },
+ {
+  "engine": "typescript",
+  "model": "opencode-go/deepseek-v4.1-flash",
+  "revision": "fa001fbff8b188361bf5848cc31358bba7e7d7bb",
+  "binarySha256": null,
+  "tasks": [
+   "typed-repair",
+   "large-file",
+   "rename-symbol",
+   "create-module",
+   "docs-sync"
+  ],
+  "repetitions": 3,
+  "suiteHash": "bd905b4f81f0a9412b614631a36337723067574848c5f05b50ead1cf48675091",
+  "startedAtMs": 1792422211903,
+  "finishedAtMs": 1792422512747,
+  "samples": 15,
+  "rejected": 0,
+  "chunk": "go-ts-3"
+ }
+]

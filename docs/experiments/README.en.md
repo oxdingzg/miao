@@ -42,6 +42,7 @@ docs/experiments/
 
 ## Experiments
 
-| Date       | Directory                                                                           | Content                                                                                            |
-| ---------- | ----------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------- |
-| 2026-10-19 | [2026-10-19-native-engine-suite-v6](2026-10-19-native-engine-suite-v6/README.en.md) | TypeScript vs native engine: 15 classes × 3 runs, input/cache/output/cost and the break-even ratio |
+| Date       | Directory                                                                           | Content                                                                                                                                                    |
+| ---------- | ----------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 2026-10-19 | [2026-10-19-native-engine-suite-v6](2026-10-19-native-engine-suite-v6/README.en.md) | TypeScript vs native engine: 15 classes × 3 runs, input/cache/output/cost and the break-even ratio                                                         |
+| 2026-10-19 | [2026-10-19-opencode-go-suite-v6](2026-10-19-opencode-go-suite-v6/README.en.md)     | The same suite on the gateway model `opencode-go/deepseek-v4.1-flash` (needs a route and a session header): native 31% cheaper, 54% excluding long-session |
