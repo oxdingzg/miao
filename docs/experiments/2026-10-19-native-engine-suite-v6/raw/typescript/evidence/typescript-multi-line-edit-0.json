@@ -1,0 +1,215 @@
+{
+  "sample": {
+    "task": "multi-line-edit",
+    "engine": "typescript",
+    "repetition": 0,
+    "suiteHash": "bd905b4f81f0a9412b614631a36337723067574848c5f05b50ead1cf48675091",
+    "taskHash": "9da008a0099a635cb45ea80ebda993c5f627a4e16e8ad28efa7b09d82a6068a2",
+    "profile": {
+      "model": "deepseek-v4-flash",
+      "modelParametersHash": "f88f7d235a9e5f0ebc9c0b75355b6c5f093f37d296d7119d5ce7a35251956624",
+      "agentManifestHash": "0c800b7caf1fda8fe98367a5730a45c1c66b64c8e75aa4db8ac51aa013457630",
+      "permissionHash": "604437a740e1966aa6509e0374d098679b52804b67a1f7541dd98fd010718f73",
+      "toolSurfaceHash": "04c769ae52448d5fe45ea690050120cee624771222b1291088dc6d832c888106"
+    },
+    "revision": "83f7c4f935295946d46d1e802cb81ea382f0893c",
+    "artifactHash": "4fab435a84f0d1f3f669a24c629e8c3b55c9ebb822fbd6582c345eac97c62a7b",
+    "receiptHash": "68255a89ca524fe3a1bfcee2239114f0c039f687ff610cbadc12658da340f3a2",
+    "outcome": "passed",
+    "elapsedMs": 6516,
+    "attempts": [
+      {
+        "inputTokens": 14010,
+        "outputTokens": 66,
+        "cost": null
+      },
+      {
+        "inputTokens": 14300,
+        "outputTokens": 51,
+        "cost": null
+      },
+      {
+        "inputTokens": 14498,
+        "outputTokens": 85,
+        "cost": null
+      },
+      {
+        "inputTokens": 14631,
+        "outputTokens": 52,
+        "cost": null
+      },
+      {
+        "inputTokens": 14746,
+        "outputTokens": 78,
+        "cost": null
+      }
+    ]
+  },
+  "rejection": null,
+  "evidence": {
+    "engine": "typescript",
+    "revision": "83f7c4f935295946d46d1e802cb81ea382f0893c",
+    "task": "multi-line-edit",
+    "repetition": 0,
+    "terminal": "completed",
+    "error": null,
+    "receipts": [],
+    "attempts": [
+      {
+        "inputTokens": 14010,
+        "outputTokens": 66,
+        "cacheReadTokens": 1792,
+        "cacheWriteTokens": null,
+        "reasoningTokens": 7,
+        "cost": null
+      },
+      {
+        "inputTokens": 14300,
+        "outputTokens": 51,
+        "cacheReadTokens": 13952,
+        "cacheWriteTokens": null,
+        "reasoningTokens": 0,
+        "cost": null
+      },
+      {
+        "inputTokens": 14498,
+        "outputTokens": 85,
+        "cacheReadTokens": 14336,
+        "cacheWriteTokens": null,
+        "reasoningTokens": 0,
+        "cost": null
+      },
+      {
+        "inputTokens": 14631,
+        "outputTokens": 52,
+        "cacheReadTokens": 14464,
+        "cacheWriteTokens": null,
+        "reasoningTokens": 0,
+        "cost": null
+      },
+      {
+        "inputTokens": 14746,
+        "outputTokens": 78,
+        "cacheReadTokens": 14592,
+        "cacheWriteTokens": null,
+        "reasoningTokens": 0,
+        "cost": null
+      }
+    ],
+    "phases": [
+      {
+        "phase": "step-start",
+        "atMs": 1792418311725,
+        "clock": "observed"
+      },
+      {
+        "phase": "tool-part",
+        "atMs": 1792418311992,
+        "clock": "observed"
+      },
+      {
+        "phase": "step-start",
+        "atMs": 1792418312764,
+        "clock": "observed"
+      },
+      {
+        "phase": "tool-part",
+        "atMs": 1792418312906,
+        "clock": "observed"
+      },
+      {
+        "phase": "step-start",
+        "atMs": 1792418313719,
+        "clock": "observed"
+      },
+      {
+        "phase": "tool-part",
+        "atMs": 1792418313926,
+        "clock": "observed"
+      },
+      {
+        "phase": "step-start",
+        "atMs": 1792418314562,
+        "clock": "observed"
+      },
+      {
+        "phase": "tool-part",
+        "atMs": 1792418314734,
+        "clock": "observed"
+      },
+      {
+        "phase": "step-start",
+        "atMs": 1792418315362,
+        "clock": "observed"
+      },
+      {
+        "phase": "first-output",
+        "atMs": 1792418315596,
+        "clock": "observed"
+      },
+      {
+        "phase": "exit",
+        "atMs": 1792418315652,
+        "clock": "observed"
+      },
+      {
+        "phase": "verified",
+        "atMs": 1792418315668,
+        "clock": "observed"
+      }
+    ],
+    "profile": {
+      "model": "deepseek-v4-flash",
+      "modelParametersHash": "f88f7d235a9e5f0ebc9c0b75355b6c5f093f37d296d7119d5ce7a35251956624",
+      "agentManifestHash": "0c800b7caf1fda8fe98367a5730a45c1c66b64c8e75aa4db8ac51aa013457630",
+      "permissionHash": "604437a740e1966aa6509e0374d098679b52804b67a1f7541dd98fd010718f73",
+      "toolSurfaceHash": "04c769ae52448d5fe45ea690050120cee624771222b1291088dc6d832c888106"
+    },
+    "profileReceipts": 5,
+    "loops": {
+      "continuations": [],
+      "stopped": []
+    },
+    "toolCalls": 4,
+    "textHash": "9ce8c606502b4e21b721aaa7943ed5521cca80f67417cb0cfa19f9014a6b9c32",
+    "binarySha256": null,
+    "startedAtMs": 1792418309152,
+    "admissionMs": null,
+    "elapsedMs": 6516
+  },
+  "assessment": {
+    "suiteHash": "bd905b4f81f0a9412b614631a36337723067574848c5f05b50ead1cf48675091",
+    "taskHash": "9da008a0099a635cb45ea80ebda993c5f627a4e16e8ad28efa7b09d82a6068a2",
+    "artifactPass": true,
+    "unexpected": [],
+    "immutable": [
+      {
+        "file": "AGENTS.md",
+        "unchanged": true
+      },
+      {
+        "file": "package.json",
+        "unchanged": true
+      },
+      {
+        "file": "test/oracle.test.ts",
+        "unchanged": true
+      }
+    ],
+    "expected": [],
+    "check": {
+      "command": [
+        "bun",
+        "test",
+        "test/oracle.test.ts"
+      ],
+      "exit": 0,
+      "stdoutHash": "d6684989b8dd63b37d2f1954270826fbe1bd89a8debd12bcacf03ed1c6140ef6",
+      "stderrHash": "2fc1bc427da96e6577695c1f639939276d78ee58f6c8316701e98e936191eabb"
+    },
+    "executionVerdict": "unverified",
+    "requiredReceipts": [],
+    "answerContains": []
+  },
+  "answer": "Fixed `src/ledger.ts:8`: the loop was subtracting (`sum -= entry.amount`), which made every entry reduce the total. Changed it to accumulate with `sum += entry.amount`; the exported `Entry`/`total` shape and the test are unchanged. `bun test` passes (1 pass, 0 fail, 3 assertions)."
+}

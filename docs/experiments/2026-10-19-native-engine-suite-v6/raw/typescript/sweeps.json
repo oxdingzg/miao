@@ -1,0 +1,62 @@
+[
+ {
+  "engine": "typescript",
+  "model": "deepseek/deepseek-v4-flash",
+  "revision": "83f7c4f935295946d46d1e802cb81ea382f0893c",
+  "binarySha256": null,
+  "tasks": [
+   "read-only",
+   "multi-read",
+   "small-edit",
+   "multi-file",
+   "test-repair"
+  ],
+  "repetitions": 3,
+  "suiteHash": "bd905b4f81f0a9412b614631a36337723067574848c5f05b50ead1cf48675091",
+  "startedAtMs": 1792418006236,
+  "finishedAtMs": 1792418115557,
+  "samples": 15,
+  "rejected": 0,
+  "chunk": "main-ts-1"
+ },
+ {
+  "engine": "typescript",
+  "model": "deepseek/deepseek-v4-flash",
+  "revision": "83f7c4f935295946d46d1e802cb81ea382f0893c",
+  "binarySha256": null,
+  "tasks": [
+   "permission-denial",
+   "tool-error",
+   "stream-interruption",
+   "long-session",
+   "multi-line-edit"
+  ],
+  "repetitions": 3,
+  "suiteHash": "bd905b4f81f0a9412b614631a36337723067574848c5f05b50ead1cf48675091",
+  "startedAtMs": 1792418143453,
+  "finishedAtMs": 1792418331813,
+  "samples": 15,
+  "rejected": 0,
+  "chunk": "main-ts-2"
+ },
+ {
+  "engine": "typescript",
+  "model": "deepseek/deepseek-v4-flash",
+  "revision": "83f7c4f935295946d46d1e802cb81ea382f0893c",
+  "binarySha256": null,
+  "tasks": [
+   "typed-repair",
+   "large-file",
+   "rename-symbol",
+   "create-module",
+   "docs-sync"
+  ],
+  "repetitions": 3,
+  "suiteHash": "bd905b4f81f0a9412b614631a36337723067574848c5f05b50ead1cf48675091",
+  "startedAtMs": 1792418382162,
+  "finishedAtMs": 1792418521193,
+  "samples": 15,
+  "rejected": 0,
+  "chunk": "main-ts-3"
+ }
+]

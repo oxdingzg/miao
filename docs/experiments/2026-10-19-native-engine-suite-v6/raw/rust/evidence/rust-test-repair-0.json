@@ -1,0 +1,572 @@
+{
+  "sample": {
+    "task": "test-repair",
+    "engine": "rust",
+    "repetition": 0,
+    "suiteHash": "bd905b4f81f0a9412b614631a36337723067574848c5f05b50ead1cf48675091",
+    "taskHash": "9012e1117d9ccfbc967186426bc4800a8d6c15344e5ed9fb9d2b8d4dbda1568d",
+    "profile": {
+      "model": "deepseek-v4-flash",
+      "modelParametersHash": "ef3d96a9ec0464401ae599f38c478bab21fa051e068e9d158e5c186628e7a393",
+      "agentManifestHash": "2dbdecca09d38a807edd88d10f18f4febcb6aa5dcbdc2c1bb17f06446b689562",
+      "permissionHash": "9cd0c76a4f602d87793c5b7b0a5f83af1f2ef12fdde02254c6e14b712da197ca",
+      "toolSurfaceHash": "fb2ab566dec79420e179a024d88e1903ebbc1b7a9f23fe7b0aefb45a9d0dcb28"
+    },
+    "revision": "83f7c4f935295946d46d1e802cb81ea382f0893c",
+    "artifactHash": "2ad04538602881f79053442d13eca615e8e647f90f3e50838ccf1f19f2f1076a",
+    "receiptHash": "64ca08b236af0a61635b3fa45c1acb0919943f1a093448d68716f80c5b611a0e",
+    "outcome": "passed",
+    "elapsedMs": 12938,
+    "attempts": [
+      {
+        "inputTokens": 4863,
+        "outputTokens": 79,
+        "cost": null
+      },
+      {
+        "inputTokens": 5087,
+        "outputTokens": 95,
+        "cost": null
+      },
+      {
+        "inputTokens": 5320,
+        "outputTokens": 73,
+        "cost": null
+      },
+      {
+        "inputTokens": 5594,
+        "outputTokens": 72,
+        "cost": null
+      },
+      {
+        "inputTokens": 5750,
+        "outputTokens": 67,
+        "cost": null
+      },
+      {
+        "inputTokens": 6130,
+        "outputTokens": 284,
+        "cost": null
+      },
+      {
+        "inputTokens": 6486,
+        "outputTokens": 74,
+        "cost": null
+      },
+      {
+        "inputTokens": 6698,
+        "outputTokens": 185,
+        "cost": null
+      },
+      {
+        "inputTokens": 7011,
+        "outputTokens": 126,
+        "cost": null
+      },
+      {
+        "inputTokens": 7367,
+        "outputTokens": 452,
+        "cost": null
+      }
+    ]
+  },
+  "rejection": null,
+  "evidence": {
+    "engine": "rust",
+    "revision": "83f7c4f935295946d46d1e802cb81ea382f0893c",
+    "task": "test-repair",
+    "repetition": 0,
+    "terminal": "completed",
+    "error": null,
+    "receipts": [],
+    "attempts": [
+      {
+        "inputTokens": 4863,
+        "outputTokens": 79,
+        "cacheReadTokens": 4608,
+        "cacheWriteTokens": null,
+        "reasoningTokens": 0,
+        "cost": null
+      },
+      {
+        "inputTokens": 5087,
+        "outputTokens": 95,
+        "cacheReadTokens": 4864,
+        "cacheWriteTokens": null,
+        "reasoningTokens": 0,
+        "cost": null
+      },
+      {
+        "inputTokens": 5320,
+        "outputTokens": 73,
+        "cacheReadTokens": 5120,
+        "cacheWriteTokens": null,
+        "reasoningTokens": 0,
+        "cost": null
+      },
+      {
+        "inputTokens": 5594,
+        "outputTokens": 72,
+        "cacheReadTokens": 5376,
+        "cacheWriteTokens": null,
+        "reasoningTokens": 20,
+        "cost": null
+      },
+      {
+        "inputTokens": 5750,
+        "outputTokens": 67,
+        "cacheReadTokens": 5504,
+        "cacheWriteTokens": null,
+        "reasoningTokens": 4,
+        "cost": null
+      },
+      {
+        "inputTokens": 6130,
+        "outputTokens": 284,
+        "cacheReadTokens": 5760,
+        "cacheWriteTokens": null,
+        "reasoningTokens": 112,
+        "cost": null
+      },
+      {
+        "inputTokens": 6486,
+        "outputTokens": 74,
+        "cacheReadTokens": 6144,
+        "cacheWriteTokens": null,
+        "reasoningTokens": 0,
+        "cost": null
+      },
+      {
+        "inputTokens": 6698,
+        "outputTokens": 185,
+        "cacheReadTokens": 6528,
+        "cacheWriteTokens": null,
+        "reasoningTokens": 50,
+        "cost": null
+      },
+      {
+        "inputTokens": 7011,
+        "outputTokens": 126,
+        "cacheReadTokens": 6784,
+        "cacheWriteTokens": null,
+        "reasoningTokens": 53,
+        "cost": null
+      },
+      {
+        "inputTokens": 7367,
+        "outputTokens": 452,
+        "cacheReadTokens": 7040,
+        "cacheWriteTokens": null,
+        "reasoningTokens": 0,
+        "cost": null
+      }
+    ],
+    "phases": [
+      {
+        "phase": "input.admitted",
+        "atMs": 1792418667612,
+        "clock": "recorded"
+      },
+      {
+        "phase": "input.promoted",
+        "atMs": 1792418667613,
+        "clock": "recorded"
+      },
+      {
+        "phase": "run.started",
+        "atMs": 1792418667613,
+        "clock": "recorded"
+      },
+      {
+        "phase": "provider.request",
+        "atMs": 1792418667615,
+        "clock": "recorded"
+      },
+      {
+        "phase": "provider.request.result",
+        "atMs": 1792418667748,
+        "clock": "recorded"
+      },
+      {
+        "phase": "tool.dispatched",
+        "atMs": 1792418668519,
+        "clock": "recorded"
+      },
+      {
+        "phase": "tool.dispatched",
+        "atMs": 1792418668520,
+        "clock": "recorded"
+      },
+      {
+        "phase": "tool.completed",
+        "atMs": 1792418668521,
+        "clock": "recorded"
+      },
+      {
+        "phase": "tool.completed",
+        "atMs": 1792418668521,
+        "clock": "recorded"
+      },
+      {
+        "phase": "provider.request",
+        "atMs": 1792418668523,
+        "clock": "recorded"
+      },
+      {
+        "phase": "provider.request.result",
+        "atMs": 1792418668688,
+        "clock": "recorded"
+      },
+      {
+        "phase": "tool.dispatched",
+        "atMs": 1792418669280,
+        "clock": "recorded"
+      },
+      {
+        "phase": "tool.dispatched",
+        "atMs": 1792418669281,
+        "clock": "recorded"
+      },
+      {
+        "phase": "tool.dispatched",
+        "atMs": 1792418669281,
+        "clock": "recorded"
+      },
+      {
+        "phase": "tool.completed",
+        "atMs": 1792418669281,
+        "clock": "recorded"
+      },
+      {
+        "phase": "tool.completed",
+        "atMs": 1792418669281,
+        "clock": "recorded"
+      },
+      {
+        "phase": "tool.completed",
+        "atMs": 1792418669282,
+        "clock": "recorded"
+      },
+      {
+        "phase": "provider.request",
+        "atMs": 1792418669284,
+        "clock": "recorded"
+      },
+      {
+        "phase": "provider.request.result",
+        "atMs": 1792418669402,
+        "clock": "recorded"
+      },
+      {
+        "phase": "tool.dispatched",
+        "atMs": 1792418670259,
+        "clock": "recorded"
+      },
+      {
+        "phase": "tool.dispatched",
+        "atMs": 1792418670259,
+        "clock": "recorded"
+      },
+      {
+        "phase": "tool.completed",
+        "atMs": 1792418670260,
+        "clock": "recorded"
+      },
+      {
+        "phase": "tool.completed",
+        "atMs": 1792418670260,
+        "clock": "recorded"
+      },
+      {
+        "phase": "provider.request",
+        "atMs": 1792418670262,
+        "clock": "recorded"
+      },
+      {
+        "phase": "provider.request.result",
+        "atMs": 1792418670403,
+        "clock": "recorded"
+      },
+      {
+        "phase": "tool.dispatched",
+        "atMs": 1792418671121,
+        "clock": "recorded"
+      },
+      {
+        "phase": "tool.completed",
+        "atMs": 1792418671338,
+        "clock": "recorded"
+      },
+      {
+        "phase": "provider.request",
+        "atMs": 1792418671341,
+        "clock": "recorded"
+      },
+      {
+        "phase": "provider.request.result",
+        "atMs": 1792418671438,
+        "clock": "recorded"
+      },
+      {
+        "phase": "tool.dispatched",
+        "atMs": 1792418672130,
+        "clock": "recorded"
+      },
+      {
+        "phase": "tool.completed",
+        "atMs": 1792418672346,
+        "clock": "recorded"
+      },
+      {
+        "phase": "provider.request",
+        "atMs": 1792418672349,
+        "clock": "recorded"
+      },
+      {
+        "phase": "provider.request.result",
+        "atMs": 1792418672453,
+        "clock": "recorded"
+      },
+      {
+        "phase": "tool.dispatched",
+        "atMs": 1792418674441,
+        "clock": "recorded"
+      },
+      {
+        "phase": "tool.completed",
+        "atMs": 1792418674452,
+        "clock": "recorded"
+      },
+      {
+        "phase": "provider.request",
+        "atMs": 1792418674454,
+        "clock": "recorded"
+      },
+      {
+        "phase": "provider.request.result",
+        "atMs": 1792418674552,
+        "clock": "recorded"
+      },
+      {
+        "phase": "tool.dispatched",
+        "atMs": 1792418675213,
+        "clock": "recorded"
+      },
+      {
+        "phase": "tool.completed",
+        "atMs": 1792418675429,
+        "clock": "recorded"
+      },
+      {
+        "phase": "provider.request",
+        "atMs": 1792418675432,
+        "clock": "recorded"
+      },
+      {
+        "phase": "provider.request.result",
+        "atMs": 1792418675683,
+        "clock": "recorded"
+      },
+      {
+        "phase": "tool.dispatched",
+        "atMs": 1792418676637,
+        "clock": "recorded"
+      },
+      {
+        "phase": "tool.completed",
+        "atMs": 1792418676852,
+        "clock": "recorded"
+      },
+      {
+        "phase": "provider.request",
+        "atMs": 1792418676854,
+        "clock": "recorded"
+      },
+      {
+        "phase": "provider.request.result",
+        "atMs": 1792418676976,
+        "clock": "recorded"
+      },
+      {
+        "phase": "tool.dispatched",
+        "atMs": 1792418677767,
+        "clock": "recorded"
+      },
+      {
+        "phase": "tool.completed",
+        "atMs": 1792418677983,
+        "clock": "recorded"
+      },
+      {
+        "phase": "provider.request",
+        "atMs": 1792418677985,
+        "clock": "recorded"
+      },
+      {
+        "phase": "provider.request.result",
+        "atMs": 1792418678129,
+        "clock": "recorded"
+      },
+      {
+        "phase": "run.usage",
+        "atMs": 1792418680422,
+        "clock": "recorded"
+      },
+      {
+        "phase": "run.finished",
+        "atMs": 1792418680422,
+        "clock": "recorded"
+      },
+      {
+        "phase": "stop",
+        "atMs": 1792418680422,
+        "clock": "recorded"
+      },
+      {
+        "phase": "first-output",
+        "atMs": 1792418667754,
+        "clock": "observed"
+      },
+      {
+        "phase": "verified",
+        "atMs": 1792418680537,
+        "clock": "observed"
+      }
+    ],
+    "profile": {
+      "model": "deepseek-v4-flash",
+      "modelParametersHash": "ef3d96a9ec0464401ae599f38c478bab21fa051e068e9d158e5c186628e7a393",
+      "agentManifestHash": "2dbdecca09d38a807edd88d10f18f4febcb6aa5dcbdc2c1bb17f06446b689562",
+      "permissionHash": "9cd0c76a4f602d87793c5b7b0a5f83af1f2ef12fdde02254c6e14b712da197ca",
+      "toolSurfaceHash": "fb2ab566dec79420e179a024d88e1903ebbc1b7a9f23fe7b0aefb45a9d0dcb28"
+    },
+    "profileReceipts": 10,
+    "loops": {
+      "continuations": [],
+      "stopped": []
+    },
+    "toolCalls": 13,
+    "parallel": {
+      "batches": 3,
+      "batchedReads": 7,
+      "batchWallMs": 0
+    },
+    "context": {
+      "compaction": {},
+      "reasons": [],
+      "recallCalls": 0
+    },
+    "providerAttempts": [
+      {
+        "attempt": 0,
+        "protocol": "openai-chat",
+        "status": 200,
+        "outcome": "headers_received",
+        "detail": null
+      },
+      {
+        "attempt": 0,
+        "protocol": "openai-chat",
+        "status": 200,
+        "outcome": "headers_received",
+        "detail": null
+      },
+      {
+        "attempt": 0,
+        "protocol": "openai-chat",
+        "status": 200,
+        "outcome": "headers_received",
+        "detail": null
+      },
+      {
+        "attempt": 0,
+        "protocol": "openai-chat",
+        "status": 200,
+        "outcome": "headers_received",
+        "detail": null
+      },
+      {
+        "attempt": 0,
+        "protocol": "openai-chat",
+        "status": 200,
+        "outcome": "headers_received",
+        "detail": null
+      },
+      {
+        "attempt": 0,
+        "protocol": "openai-chat",
+        "status": 200,
+        "outcome": "headers_received",
+        "detail": null
+      },
+      {
+        "attempt": 0,
+        "protocol": "openai-chat",
+        "status": 200,
+        "outcome": "headers_received",
+        "detail": null
+      },
+      {
+        "attempt": 0,
+        "protocol": "openai-chat",
+        "status": 200,
+        "outcome": "headers_received",
+        "detail": null
+      },
+      {
+        "attempt": 0,
+        "protocol": "openai-chat",
+        "status": 200,
+        "outcome": "headers_received",
+        "detail": null
+      },
+      {
+        "attempt": 0,
+        "protocol": "openai-chat",
+        "status": 200,
+        "outcome": "headers_received",
+        "detail": null
+      }
+    ],
+    "textHash": "abe4b875dd6af97687e29f370f8b8e6ac53079800c40bef3aea49ea377c774a5",
+    "binarySha256": "b2c1d67f465561ad7bed58ab28ebe03658b8042e16b0bb3f75a41d65329d14fd",
+    "startedAtMs": 1792418667599,
+    "admissionMs": 1792418667612,
+    "elapsedMs": 12938
+  },
+  "assessment": {
+    "suiteHash": "bd905b4f81f0a9412b614631a36337723067574848c5f05b50ead1cf48675091",
+    "taskHash": "9012e1117d9ccfbc967186426bc4800a8d6c15344e5ed9fb9d2b8d4dbda1568d",
+    "artifactPass": true,
+    "unexpected": [],
+    "immutable": [
+      {
+        "file": "AGENTS.md",
+        "unchanged": true
+      },
+      {
+        "file": "package.json",
+        "unchanged": true
+      },
+      {
+        "file": "test/oracle.test.ts",
+        "unchanged": true
+      }
+    ],
+    "expected": [],
+    "check": {
+      "command": [
+        "bun",
+        "test",
+        "test/oracle.test.ts"
+      ],
+      "exit": 0,
+      "stdoutHash": "d6684989b8dd63b37d2f1954270826fbe1bd89a8debd12bcacf03ed1c6140ef6",
+      "stderrHash": "b10c4c6cad32ceb43b9b7e42ed19bfe2586bc2eb1996df4556e6ba0bcac6c013"
+    },
+    "executionVerdict": "unverified",
+    "requiredReceipts": [],
+    "answerContains": []
+  },
+  "answer": "I'll start by exploring the workspace structure and the relevant files.\nThe test fails as expected. Now I'll repair `src/tokens.ts`, keeping the signature intact.\nNow let me verify the repair by running the test suite:\nThe test passes. Let me do an extra sanity check on edge cases (without adding any files):\nDone. Here's a summary:\n\n## What I found\n\n**`src/tokens.ts`** (before) — just split on commas, with no trimming or filtering:\n```ts\nexport function tokens(value: string) { return value.split(',') }\n```\nThis failed the existing test: `tokens('')` returned `['']` instead of `[]`, and `tokens(' a, ,b ,,c ')` returned `[' a', ' ', 'b ', '', 'c ']` instead of `['a','b','c']`.\n\n## The repair\n\n**`src/tokens.ts`** (after) — same signature `tokens(value: string)`, now trimming each token and dropping empties:\n```ts\nexport function tokens(value: string): string[] {\n  return value\n    .split(',')\n    .map((token) => token.trim())\n    .filter((token) => token !== '')\n}\n```\n\n## Verification\n\n1. **Test run before fix** — `bun test` → `1 fail` (received `['']`, expected `[]`).\n2. **Test run after fix** — `bun test` → **`1 pass, 0 fail`**, 3 `expect()` calls, `test/oracle.test.ts` unchanged.\n3. **Extra edge cases** via `bun -e` (no files added):\n   - `''` → `[]`\n   - `','` / `',,'` → `[]`\n   - `' a '` → `['a']`\n   - `'a,b'` → `['a','b']`\n   - `' a , , b '` → `['a','b']`\n\n## Constraints respected\n\n- Only `src/tokens.ts` was modified — SHA-256 of `AGENTS.md`, `package.json`, and `test/oracle.test.ts` all still match their original values.\n- No configuration files added; the existing `bun` test runner was used as-is.\n- Guards against leading/trailing whitespace-only tokens (e.g. `' '`) since trimming happens before the empty check, not after."
+}

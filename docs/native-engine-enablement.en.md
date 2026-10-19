@@ -62,43 +62,45 @@ Two structural risks move tokens and quality in an unpredictable direction:
 
 ## 5. Measured comparison (2026-10-19)
 
-Both engines ran the frozen suite (v6, 15 classes) **3 times each — 90 live model runs** — sequentially so provider contention stays out of the numbers, on the same model `deepseek-v4-flash` (TS: `--model deepseek/deepseek-v4-flash`; Rust: `--provider openai-chat --endpoint https://api.deepseek.com/chat/completions`). The runner is `packages/miao/src/engine/baseline-sweep-cli.ts`, and the numbers come from each run's evidence and sample.
+The raw data, manifest, reproduction commands, and comparison tool live in [experiments/2026-10-19-native-engine-suite-v6](experiments/2026-10-19-native-engine-suite-v6/README.en.md): the frozen suite v6 (15 classes) run **3 times on both engines — 90 live model runs** — with both arms on the same `main` commit `83f7c4f9`, sequentially so provider capacity is never shared, on one model `deepseek-v4-flash` (TypeScript through the `deepseek/` provider, the native engine over the `openai-chat` protocol).
 
-Billing convention: `inputTokens` is the inclusive total, so billed input is `inputTokens − cacheReadTokens`. Rates are catalog list prices (input $0.15/M, output $0.60/M, cache read $0.003/M, cache write $0), and the amounts use the product's own `SessionRunnerCost.ofTurn`, which matched a manual per-category sum exactly.
+Billing convention: `inputTokens` is the inclusive total, so billed input is `inputTokens − cacheReadTokens`. Rates are catalog list prices (input $0.15/M, output $0.60/M, cache read $0.003/M, cache write $0), and the amounts come from the product's own `SessionRunnerCost.ofTurn`, checked against a per-category manual sum.
 
-| Engine | Passed      | Turns        | Billed input | Cached input | Hit rate | Output  | Cost        | p50    | p95    |
-| ------ | ----------- | ------------ | ------------ | ------------ | -------- | ------- | ----------- | ------ | ------ |
-| TS     | 39/45 86.7% | 246 (5.5/r)  | 621,657      | 3,157,376    | 83.5%    | 25,979  | **$0.1183** | 8.0 s  | 37.2 s |
-| Rust   | 42/45 93.3% | 500 (11.1/r) | 140,807      | 3,421,693    | 96.0%    | 121,389 | **$0.1042** | 10.0 s | 50.7 s |
+| Engine | Passed      | Turns         | Billed input | Cached input | Hit rate | Output | Cost         | p50   | p95    |
+| ------ | ----------- | ------------- | ------------ | ------------ | -------- | ------ | ------------ | ----- | ------ |
+| TS     | 39/45 86.7% | 233 (5.18/r)  | 605,554      | 2,892,288    | 82.7%    | 22,890 | $0.11324     | 7.6 s | 34.9 s |
+| RS     | 42/45 93.3% | 500 (11.11/r) | 154,295      | 3,345,021    | 95.6%    | 92,838 | **$0.08888** | 9.0 s | 28.3 s |
 
-**Which is cheaper.** Rust costs **11.9% less** overall and passes more runs. The money moves in opposite directions:
+**Which is cheaper.** The native engine costs **21.5% less** (ratio 0.785), passes more runs, and trades a slightly slower p50 for a better p95. The money moves in opposite directions:
 
-| Billed category        | TS      | Rust    | Difference   |
+| Billed category        | TS      | RS      | Difference   |
 | ---------------------- | ------- | ------- | ------------ |
-| Billed input × $0.15/M | $0.0932 | $0.0211 | **−$0.0721** |
-| Cache read × $0.003/M  | $0.0095 | $0.0103 | +$0.0008     |
-| Output × $0.60/M       | $0.0156 | $0.0728 | +$0.0572     |
+| Billed input × $0.15/M | $0.0908 | $0.0231 | **−$0.0677** |
+| Cache read × $0.003/M  | $0.0087 | $0.0100 | +$0.0014     |
+| Output × $0.60/M       | $0.0137 | $0.0557 | +$0.0420     |
 
-Rust's input is 4.4× cheaper (roughly 4.9k first-turn prompt against TS's 14k, with a 96% hit rate against 83.5%) and its output is 4.7× more expensive (243 output tokens per turn against 106, at twice the turns). Since output is priced 4× input while the tokens saved and spent are in a 5:1 ratio, the input side still wins. **Break-even: once output is priced at least 5.04× input, the verdict flips** (solved with cache read at input/50).
+The native input is cheaper (roughly 4.9k first-turn prompt against TS's 14k, hit rate 95.6% against 82.7%) and its output is more expensive (11.1 turns per run against 5.2, 93k output tokens against 23k). **Break-even: the verdict flips once output is priced at least 6.32× input**; this model is at 4.0×.
 
-Per task class ($ = Rust/TS):
+Per-class ratios (RS/TS):
 
-| Class           | Ratio | Class             | Ratio | Class               | Ratio    |
-| --------------- | ----- | ----------------- | ----- | ------------------- | -------- |
-| multi-read      | 0.11  | test-repair       | 0.50  | rename-symbol       | 0.57     |
-| tool-error      | 0.12  | create-module     | 0.55  | multi-file          | 0.57     |
-| read-only       | 0.21  | docs-sync         | 0.56  | typed-repair        | 0.58     |
-| multi-line-edit | 0.36  | large-file        | 0.39  | long-session        | **4.28** |
-| small-edit      | 0.44  | permission-denial | 0.43  | stream-interruption | 0.07     |
+| Class               | Ratio | Class             | Ratio | Class         | Ratio    |
+| ------------------- | ----- | ----------------- | ----- | ------------- | -------- |
+| stream-interruption | 0.06  | permission-denial | 0.35  | create-module | 0.61     |
+| multi-read          | 0.12  | multi-line-edit   | 0.34  | typed-repair  | 0.61     |
+| tool-error          | 0.13  | small-edit        | 0.43  | multi-file    | 0.67     |
+| read-only           | 0.19  | test-repair       | 0.46  | docs-sync     | 0.85     |
+| rename-symbol       | 0.50  | large-file        | 0.47  | long-session  | **3.43** |
 
-Rust lands between 0.07× and 0.58× of TS in 14 classes. The exception is `long-session`: Rust takes 82 turns per run against TS's 17, costing **4.28×** as much and finishing in 53.8 s against 39.4 s. **Excluding that class: TS $0.1039 against Rust $0.0423 — Rust is 59% cheaper.** The overall 11.9% is what that one class leaves of the advantage.
+14 of 15 classes are cheaper on the native engine (0.055–0.847); the exception is `long-session` (82 turns per run against TS's 17, at 3.43×). **Excluding that class: TS $0.10003 against RS $0.04356 — the native engine is 56.5% cheaper.**
 
-Two behavioral differences observed alongside:
+**Repeat runs.** A second round of the same suite and model (n=3) gave ratio **0.881**, break-even **4.98×**, and **0.408** excluding `long-session`. Across the two rounds the native advantage moved between 11.9% and 21.5%, driven mainly by the turns/output spread in `long-session` (3.4×–4.3×). One round therefore establishes a direction, not a magnitude; a cost claim should run the same configuration at least twice and report both rounds.
 
-- `permission-denial`: TS 0/3 (the run continues and leaves only a `tool.error`, missing the `permission.denied` receipt the task requires), Rust 3/3 (both receipts present).
-- `stream-interruption`: 0/3 for both, for a protocol reason rather than an engine one: the interruption proxy is built for Responses/SSE, so on the `openai-chat` route TS is SIGINTed without a `provider.interrupted` receipt while Rust receives provider HTTP 418. The class is not comparable on this route.
+Two behavioral differences:
 
-Evidence boundary: one model (deepseek-v4-flash, output/input = 4), n=3 per class, short programmatically gradable tasks, sequential runs on one machine, and tiny absolute amounts (~$0.22 for both arms combined), so the percentages are sensitive to the price table and the task mix. These numbers hold because two harness defects were fixed first — the TypeScript leg dying in the receipt fingerprint on `undefined` observations, and multi-input runs keeping only the last input's provider interactions — and both fixes are merged.
+- `permission-denial`: TS 0/3 (completes with only a `tool.error`, missing the `permission.denied` receipt the task requires), RS 3/3 (both receipts present).
+- `stream-interruption`: 0/3 for both arms, for a protocol reason rather than an engine one (the interruption proxy targets Responses/SSE, so on the `openai-chat` route TS is SIGINTed without a `provider.interrupted` receipt while RS receives provider HTTP 418). The class is not comparable on this route.
+
+Evidence boundary: one model (output/input = 4), n=3 per class, short programmatically gradable tasks, sequential runs on one machine, ~$0.20 for both arms combined; not a product-level or cross-model claim. These numbers hold because two harness defects were fixed first — the TypeScript leg dying in the receipt fingerprint on `undefined` observations, and multi-input runs keeping only the last input's provider interactions — and both fixes are merged.
 
 ## 6. Minimum configuration to enable it today
 
