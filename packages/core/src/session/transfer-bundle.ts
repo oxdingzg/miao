@@ -16,8 +16,10 @@ import { SessionSchema } from "./schema"
 import { SessionMessage } from "./message"
 import { SessionStore } from "./store"
 import { SessionGoal } from "./goal"
+import { SystemContext } from "../system-context/index"
 import {
   SessionDelegationTable,
+  SessionContextEpochTable,
   SessionInputTable,
   SessionNotificationTable,
   SessionTable,
@@ -36,6 +38,14 @@ export const Bundle = Schema.Struct({
   }),
   session: SessionSchema.Info,
   source_state: Schema.Record(Schema.String, Schema.Unknown),
+  context_epoch: Schema.optional(
+    Schema.Struct({
+      session_id: SessionSchema.ID,
+      baseline: Schema.String,
+      snapshot: SystemContext.Snapshot,
+      baseline_seq: Schema.Number.check(Schema.isInt(), Schema.isGreaterThanOrEqualTo(-1)),
+    }),
+  ),
   operational: Schema.Struct({
     goal: Schema.optional(SessionGoal.Info),
     todos: Schema.Array(Schema.Record(Schema.String, Schema.Unknown)),
@@ -199,6 +209,21 @@ export const prepare = Effect.fn("SessionTransferBundle.prepare")(function* (inp
                 sessionID: input.sessionID,
                 reason: "Session-specific permission rules require an explicit target authority mapping",
               })
+            const context_epoch = yield* database.db
+              .select()
+              .from(SessionContextEpochTable)
+              .where(eq(SessionContextEpochTable.session_id, input.sessionID))
+              .get()
+              .pipe(Effect.orDie)
+            const sequence = yield* EventV2.latestSequence(database.db, input.sessionID)
+            if (context_epoch) {
+              yield* Schema.decodeUnknownEffect(SystemContext.Snapshot)(context_epoch.snapshot)
+              if (context_epoch.baseline_seq > sequence)
+                return yield* new Unsupported({
+                  sessionID: input.sessionID,
+                  reason: "Context Epoch baseline points beyond the durable source history",
+                })
+            }
             const operational = {
               goal: yield* SessionGoal.current(database.db, input.sessionID),
               todos: yield* database.db
@@ -242,12 +267,13 @@ export const prepare = Effect.fn("SessionTransferBundle.prepare")(function* (inp
               timeline,
               context_ids: context.map((message) => message.id),
               source_state: source,
+              context_epoch,
               operational,
               events,
               source: {
                 engine: "ts" as const,
                 storage: AbsolutePath.make(storage),
-                sequence: yield* EventV2.latestSequence(database.db, input.sessionID),
+                sequence,
               },
             }
           }),
@@ -259,6 +285,7 @@ export const prepare = Effect.fn("SessionTransferBundle.prepare")(function* (inp
             timeline: Schema.encodeSync(Schema.Array(SessionMessage.Message))(captured.timeline),
             events: captured.events,
             operational: captured.operational,
+            context_epoch: captured.context_epoch,
           }),
         ),
       ].sort()
