@@ -2050,7 +2050,7 @@ command: None,
                                         .clone();
                                     match bridge {
                                         Some(bridge) => {
-                                            bridge.call(name, input).await
+                                            bridge.call(session, name, input).await
                                         }
                                         None => Err(ToolError::Unsupported),
                                     }
