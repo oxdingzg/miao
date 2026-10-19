@@ -254,8 +254,12 @@ export async function runBaselineRust(input: BaselineRustInput): Promise<Baselin
         // A follow-up input subscribes from zero, so the engine replays the
         // Session's committed events. Count each sequence once or a multi-input
         // run reports the earlier inputs' attempts, tokens, and phases again.
-        if (seen.has(event.seq)) return
-        seen.add(event.seq)
+        // A fixture engine may omit the sequence; only a committed sequence can
+        // be a duplicate key, and real engine events always carry one.
+        if (typeof event.seq === "number") {
+          if (seen.has(event.seq)) return
+          seen.add(event.seq)
+        }
         observed.set(event.seq, Date.now())
         events.push(event)
         applyDrift(event)
