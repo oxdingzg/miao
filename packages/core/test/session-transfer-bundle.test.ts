@@ -22,6 +22,8 @@ import { ProviderV2 } from "../src/provider"
 import { AbsolutePath } from "../src/schema"
 import { Hash } from "../src/util/hash"
 import { tmpdir } from "./fixture/tmpdir"
+import { sql } from "drizzle-orm"
+import { SessionEnginePlacement } from "../src/session/engine-placement"
 
 const run = <A, E>(
   storage: string,
@@ -51,6 +53,114 @@ const target = (root: string) => ({
   engine: "rust" as const,
   storage: AbsolutePath.make(path.join(root, "native.db")),
   location: { directory: AbsolutePath.make(root) },
+})
+
+test("prepared placement cutover survives restart and never permits post-switch abort", async () => {
+  await using tmp = await tmpdir()
+  const storage = path.join(tmp.path, "source.db")
+  const sessionID = SessionV2.ID.create()
+  await run(
+    storage,
+    Effect.gen(function* () {
+      const sessions = yield* SessionV2.Service
+      yield* sessions.create({ id: sessionID, location: target(tmp.path).location })
+    }),
+  )
+  const exported = await run(
+    storage,
+    SessionTransferBundle.prepare({ id: "cutover", sessionID, target: target(tmp.path) }),
+  )
+  const input = { id: "cutover", sessionID, target: target(tmp.path), bundleSHA256: exported.digest }
+  const receipt = { id: input.id, session_id: sessionID, bundle_sha256: exported.digest, state: "staged" as const }
+  await run(
+    storage,
+    Effect.gen(function* () {
+      const database = yield* Database.Service
+      expect((yield* SessionMigration.switchToNative(database.db, input).pipe(Effect.exit))._tag).toBe("Failure")
+      expect((yield* SessionMigration.find(database.db, input.id))?.state).toBe("frozen")
+      expect(
+        (yield* SessionMigration.prepared(database.db, {
+          ...input,
+          receipt: { ...receipt, bundle_sha256: "0".repeat(64) },
+        }).pipe(Effect.exit))._tag,
+      ).toBe("Failure")
+      expect((yield* SessionMigration.prepared(database.db, { ...input, receipt })).state).toBe("prepared")
+      expect(
+        (yield* SessionMigration.complete(database.db, { ...input, receipt: { ...receipt, state: "active" } }).pipe(
+          Effect.exit,
+        ))._tag,
+      ).toBe("Failure")
+    }),
+  )
+  await run(
+    storage,
+    Effect.gen(function* () {
+      const database = yield* Database.Service
+      expect((yield* SessionMigration.switchToNative(database.db, input)).state).toBe("switched")
+      expect(yield* SessionEnginePlacement.find(database.db, sessionID)).toEqual(input.target)
+      expect((yield* SessionMigration.abort(database.db, input).pipe(Effect.exit))._tag).toBe("Failure")
+      expect((yield* SessionEnginePlacement.requireTypeScript(database.db, sessionID).pipe(Effect.exit))._tag).toBe(
+        "Failure",
+      )
+    }),
+  )
+  await run(
+    storage,
+    Effect.gen(function* () {
+      const database = yield* Database.Service
+      const completed = yield* SessionMigration.complete(database.db, {
+        ...input,
+        receipt: { ...receipt, state: "active" },
+      })
+      expect(completed.state).toBe("completed")
+      expect(completed.bundle).toBe(exported.serialized)
+      expect((yield* SessionMigration.switchToNative(database.db, input)).state).toBe("completed")
+      expect((yield* SessionMigration.prepared(database.db, { ...input, receipt })).state).toBe("completed")
+      expect((yield* SessionMigration.abort(database.db, input).pipe(Effect.exit))._tag).toBe("Failure")
+      expect((yield* SessionEnginePlacement.requireTypeScript(database.db, sessionID).pipe(Effect.exit))._tag).toBe(
+        "Failure",
+      )
+    }),
+  )
+})
+
+test("placement and switched-state commit roll back together on a durable write failure", async () => {
+  await using tmp = await tmpdir()
+  const storage = path.join(tmp.path, "source.db")
+  const sessionID = SessionV2.ID.create()
+  await run(
+    storage,
+    Effect.gen(function* () {
+      const sessions = yield* SessionV2.Service
+      yield* sessions.create({ id: sessionID, location: target(tmp.path).location })
+    }),
+  )
+  const exported = await run(
+    storage,
+    SessionTransferBundle.prepare({ id: "atomic", sessionID, target: target(tmp.path) }),
+  )
+  await run(
+    storage,
+    Effect.gen(function* () {
+      const database = yield* Database.Service
+      const input = { id: "atomic", sessionID, target: target(tmp.path), bundleSHA256: exported.digest }
+      yield* SessionMigration.prepared(database.db, {
+        ...input,
+        receipt: { id: input.id, session_id: sessionID, bundle_sha256: exported.digest, state: "staged" },
+      })
+      yield* database.db
+        .run(
+          sql`CREATE TRIGGER fail_cutover_state BEFORE UPDATE ON session_migration WHEN NEW.state='switched' BEGIN SELECT RAISE(ABORT,'injected cutover failure'); END;`,
+        )
+        .pipe(Effect.orDie)
+      expect((yield* SessionMigration.switchToNative(database.db, input).pipe(Effect.exit))._tag).toBe("Failure")
+      expect((yield* SessionEnginePlacement.find(database.db, sessionID))?.engine).toBe("ts")
+      expect((yield* SessionMigration.find(database.db, input.id))?.state).toBe("prepared")
+      yield* database.db.run(sql`DROP TRIGGER fail_cutover_state`).pipe(Effect.orDie)
+      expect((yield* SessionMigration.switchToNative(database.db, input)).state).toBe("switched")
+      expect((yield* SessionEnginePlacement.find(database.db, sessionID))?.engine).toBe("rust")
+    }),
+  )
 })
 
 test("target rejection leaves the source unfrozen and releases its independent lease", async () => {
