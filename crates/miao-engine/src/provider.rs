@@ -135,6 +135,9 @@ struct RetryScope {
     limit: usize,
 }
 tokio::task_local! {static RETRY_SCOPE:RetryScope;}
+pub(crate) fn transport_retry_limit() -> usize {
+    RETRY_SCOPE.try_with(|scope| scope.limit).unwrap_or(3)
+}
 pub(crate) fn transport_attempt() -> Result<(tokio::time::Instant, usize), ProviderError> {
     let scope = RETRY_SCOPE
         .try_with(Clone::clone)

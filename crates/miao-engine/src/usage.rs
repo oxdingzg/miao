@@ -133,6 +133,38 @@ fn insert(usage: &mut Map<String, Value>, key: &str, value: Option<u64>) {
 /// Anthropic reports the breakdown natively: `input_tokens` is the non-cached
 /// remainder, and extended thinking is billed inside `output_tokens`, so
 /// `reasoningTokens` stays unknown rather than guessed.
+/// Bedrock input counts include cache reads/writes rather than adding to them.
+pub fn bedrock(raw: &Value) -> Value {
+    let input = field(raw, &["inputTokens"]);
+    let output = field(raw, &["outputTokens"]);
+    let cache_read = field(raw, &["cacheReadInputTokens"]);
+    let cache_write = field(raw, &["cacheWriteInputTokens"]);
+    let mut usage = Map::new();
+    insert(&mut usage, "inputTokens", input);
+    insert(&mut usage, "outputTokens", output);
+    insert(
+        &mut usage,
+        "nonCachedInputTokens",
+        input.map(|input| {
+            input
+                .saturating_sub(cache_read.unwrap_or(0))
+                .saturating_sub(cache_write.unwrap_or(0))
+        }),
+    );
+    insert(&mut usage, "cacheReadInputTokens", cache_read);
+    insert(&mut usage, "cacheWriteInputTokens", cache_write);
+    finish(
+        usage,
+        "bedrock",
+        raw,
+        field(raw, &["totalTokens"]).or_else(|| {
+            input
+                .zip(output)
+                .map(|(input, output)| input.saturating_add(output))
+        }),
+    )
+}
+
 pub fn anthropic(raw: &Value) -> Value {
     let non_cached = field(raw, &["input_tokens"]);
     let cache_read = field(raw, &["cache_read_input_tokens"]);
