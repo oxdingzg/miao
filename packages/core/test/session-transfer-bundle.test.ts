@@ -24,6 +24,9 @@ import { Hash } from "../src/util/hash"
 import { tmpdir } from "./fixture/tmpdir"
 import { sql } from "drizzle-orm"
 import { SessionEnginePlacement } from "../src/session/engine-placement"
+import { SessionContextEpoch } from "../src/session/context-epoch"
+import { SessionContextEpochTable } from "../src/session/sql"
+import { SystemContext } from "../src/system-context/index"
 
 const run = <A, E>(
   storage: string,
@@ -53,6 +56,77 @@ const target = (root: string) => ({
   engine: "rust" as const,
   storage: AbsolutePath.make(path.join(root, "native.db")),
   location: { directory: AbsolutePath.make(root) },
+})
+
+test("semantic bundle retains the Context Epoch baseline, snapshot and provenance after context updates", async () => {
+  await using tmp = await tmpdir()
+  const storage = path.join(tmp.path, "source.db")
+  const sessionID = SessionV2.ID.create()
+  const context = (text: string) =>
+    SystemContext.make({
+      key: SystemContext.Key.make("test/provenance"),
+      codec: Schema.toCodecJson(Schema.Struct({ path: Schema.String, hash: Schema.String, text: Schema.String })),
+      load: Effect.succeed({ path: path.join(tmp.path, "AGENTS.md"), hash: Hash.sha256(text), text }),
+      baseline: (value) => value.text,
+      update: (_previous, value) => `Context changed: ${value.text}`,
+      removed: (value) => `Remove ${value.path}`,
+    })
+  const original = await run(
+    storage,
+    Effect.gen(function* () {
+      const sessions = yield* SessionV2.Service
+      const database = yield* Database.Service
+      const events = yield* EventV2.Service
+      yield* sessions.create({ id: sessionID, location: target(tmp.path).location })
+      yield* SessionContextEpoch.initialize(database.db, Effect.succeed(context("original baseline")), sessionID)
+      yield* SessionContextEpoch.prepare(database.db, events, Effect.succeed(context("updated observation")), sessionID)
+      return yield* database.db.select().from(SessionContextEpochTable).get().pipe(Effect.orDie)
+    }),
+  )
+  const input = { id: "with-epoch", sessionID, target: target(tmp.path) }
+  const captured = await run(storage, SessionTransferBundle.prepare(input))
+  expect(captured.bundle.context_epoch).toEqual(original)
+  expect(captured.bundle.context_epoch?.baseline).toBe("original baseline")
+  expect(captured.bundle.context_epoch?.snapshot[SystemContext.Key.make("test/provenance")]?.value).toEqual({
+    path: path.join(tmp.path, "AGENTS.md"),
+    hash: Hash.sha256("updated observation"),
+    text: "updated observation",
+  })
+  expect(captured.bundle.context_ids).toHaveLength(1)
+  const retry = await run(storage, SessionTransferBundle.prepare(input))
+  expect(retry.serialized).toBe(captured.serialized)
+  expect(retry.bundle.context_epoch).toEqual(original)
+})
+
+test("invalid persisted Context Epoch data is rejected before source freeze", async () => {
+  await using tmp = await tmpdir()
+  const storage = path.join(tmp.path, "source.db")
+  const sessionID = SessionV2.ID.create()
+  await run(
+    storage,
+    Effect.gen(function* () {
+      const sessions = yield* SessionV2.Service
+      const database = yield* Database.Service
+      yield* sessions.create({ id: sessionID, location: target(tmp.path).location })
+      yield* SessionContextEpoch.initialize(database.db, Effect.succeed(SystemContext.empty), sessionID)
+      yield* database.db
+        .run(sql`UPDATE session_context_epoch SET snapshot='{"test/provenance":{"bad":true}}'`)
+        .pipe(Effect.orDie)
+    }),
+  )
+  await run(
+    storage,
+    Effect.gen(function* () {
+      const database = yield* Database.Service
+      expect(
+        (yield* SessionTransferBundle.prepare({ id: "invalid-epoch", sessionID, target: target(tmp.path) }).pipe(
+          Effect.exit,
+        ))._tag,
+      ).toBe("Failure")
+      expect(yield* SessionMigration.find(database.db, "invalid-epoch")).toBeUndefined()
+      expect(yield* SessionMigration.active(database.db, sessionID)).toBeUndefined()
+    }),
+  )
 })
 
 test("prepared placement cutover survives restart and never permits post-switch abort", async () => {
