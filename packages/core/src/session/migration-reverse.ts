@@ -1,12 +1,17 @@
 export * as SessionMigrationReverse from "./migration-reverse"
 
 import { eq } from "drizzle-orm"
-import { Clock, Effect, Schema } from "effect"
+import { Clock, DateTime, Effect, Schema } from "effect"
 import { SessionID } from "@miao/schema/session-id"
+import { Model } from "@miao/schema/model"
+import { SessionEvent } from "@miao/schema/session-event"
+import { Prompt } from "@miao/schema/prompt"
+import { SessionMessage } from "@miao/schema/session-message"
 import { Database } from "../database/database"
 import { SessionEnginePlacement } from "./engine-placement"
 import { SessionEnginePlacementTable } from "./engine-placement.sql"
-import { EventV2 } from "../event"
+import { EventV2, type SerializedEvent } from "../event"
+import { Event as EventSchema } from "@miao/schema/event"
 import { ProjectTable, ProjectDirectoryTable } from "../project/sql"
 import { WorkspaceTable } from "../control-plane/workspace.sql"
 import { ProjectSchema } from "../project/schema"
@@ -232,4 +237,67 @@ export const importHistory = Effect.fn("SessionMigrationReverse.importHistory")(
   if ((yield* EventV2.latestSequence(db, input.sessionID)) !== expected)
     return yield* new Conflict({ sessionID: input.sessionID })
   return session
+})
+
+export const importDelta = Effect.fn("SessionMigrationReverse.importDelta")(function* (
+  db: Db,
+  input: {
+    sessionID: SessionID
+    agent: string
+    model: Model.Ref
+    delta: { timeline: readonly SessionMessage.Message[] }
+  },
+) {
+  const events = yield* EventV2.Service
+  const store = yield* SessionStore.Service
+  const session = yield* store.get(input.sessionID)
+  if (!session) return yield* new Conflict({ sessionID: input.sessionID })
+  for (const message of input.delta.timeline) {
+    const timestamp = message.time.created ?? DateTime.makeUnsafe(0)
+    if (message.type === "user") {
+      yield* events.publish(SessionEvent.Prompted, {
+        sessionID: input.sessionID,
+        timestamp,
+        messageID: message.id,
+        delivery: "steer",
+        prompt: Prompt.make({ text: message.text, files: message.files ?? [] }),
+      })
+      continue
+    }
+    if (message.type !== "assistant") continue
+    yield* events.publish(SessionEvent.Step.Started, {
+      sessionID: input.sessionID,
+      timestamp,
+      assistantMessageID: message.id,
+      agent: input.agent,
+      model: input.model,
+    })
+    for (const part of message.content) {
+      if (part.type !== "text") continue
+      yield* events.publish(SessionEvent.Text.Started, {
+        sessionID: input.sessionID,
+        timestamp,
+        assistantMessageID: message.id,
+        textID: part.id,
+      })
+      yield* events.publish(SessionEvent.Text.Ended, {
+        sessionID: input.sessionID,
+        timestamp,
+        assistantMessageID: message.id,
+        textID: part.id,
+        text: part.text,
+      })
+    }
+    yield* events.publish(SessionEvent.Step.Ended, {
+      sessionID: input.sessionID,
+      timestamp,
+      assistantMessageID: message.id,
+      finish: "stop",
+      cost: 0,
+      tokens: { input: 0, output: 0, reasoning: 0, cache: { read: 0, write: 0 } },
+    })
+  }
+  const restored = yield* store.get(input.sessionID)
+  if (!restored) return yield* new Conflict({ sessionID: input.sessionID })
+  return restored
 })

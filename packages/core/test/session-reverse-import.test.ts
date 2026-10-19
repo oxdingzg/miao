@@ -13,6 +13,8 @@ import { SessionEvent } from "../src/session/event"
 import { SessionMessage } from "../src/session/message"
 import { SessionMigrationReverse } from "../src/session/migration-reverse"
 import { SessionStore } from "../src/session/store"
+import { ModelV2 } from "../src/model"
+import { ProviderV2 } from "../src/provider"
 import { SessionTable } from "../src/session/sql"
 import { Prompt } from "../src/session/prompt"
 import { AbsolutePath } from "../src/schema"
@@ -110,6 +112,107 @@ test("restores exported durable events into an empty TypeScript aggregate", asyn
       expect(restored.id).toBe(sessionID)
       const timeline = yield* store.timeline(sessionID)
       expect(Schema.encodeSync(Schema.Array(SessionMessage.Message))(timeline)).toEqual(original.timeline)
+    }),
+  )
+})
+
+test("appends a native-era delta to the restored catalog with renumbered events", async () => {
+  await using source = await tmpdir()
+  const sourceDB = path.join(source.path, "source.db")
+  const sessionID = SessionV2.ID.create()
+  let row0: { project_id: string } | undefined
+  const rows = await run(
+    sourceDB,
+    source.path,
+    Effect.gen(function* () {
+      const sessions = yield* SessionV2.Service
+      const events = yield* EventV2.Service
+      const database = yield* Database.Service
+      yield* sessions.create({ id: sessionID, location: location(source.path) })
+      yield* events.publish(SessionEvent.Prompted, {
+        sessionID,
+        timestamp: DateTime.makeUnsafe(1700000000000),
+        messageID: SessionMessage.ID.create(),
+        delivery: "steer",
+        prompt: Prompt.make({ text: "base" }),
+      })
+      return yield* database.db
+        .select({
+          id: EventTable.id,
+          aggregateID: EventTable.aggregate_id,
+          seq: EventTable.seq,
+          type: EventTable.type,
+          data: EventTable.data,
+        })
+        .from(EventTable)
+        .where(eq(EventTable.aggregate_id, sessionID))
+        .orderBy(asc(EventTable.seq))
+        .all()
+      row0 = yield* database.db.select({ project_id: SessionTable.project_id }).from(SessionTable).get()
+    }),
+  )
+
+  await using target = await tmpdir()
+  const targetDB = path.join(target.path, "target.db")
+  await run(
+    targetDB,
+    target.path,
+    Effect.gen(function* () {
+      const database = yield* Database.Service
+      const store = yield* SessionStore.Service
+      // Isolate the delta: build the base catalog through the normal creation
+      // path instead of replay, then append native-era turns only.
+      const sessions = yield* SessionV2.Service
+      const events = yield* EventV2.Service
+      yield* sessions.create({ id: sessionID, location: location(target.path) })
+      yield* events.publish(SessionEvent.Prompted, {
+        sessionID,
+        timestamp: DateTime.makeUnsafe(1700000000000),
+        messageID: SessionMessage.ID.create(),
+        delivery: "steer",
+        prompt: Prompt.make({ text: "base" }),
+      })
+      const delta = {
+        timeline: [
+          {
+            id: SessionMessage.ID.make("msg_native_900"),
+            type: "user",
+            text: "native turn",
+            time: { created: DateTime.makeUnsafe(1700000001000) },
+          },
+          {
+            id: SessionMessage.ID.make("msg_native_901"),
+            type: "assistant",
+            model: { id: ModelV2.ID.make("fixture"), providerID: ProviderV2.ID.make("openai") },
+            content: [{ type: "text", id: "txt_native_901_0", text: "native reply" }],
+            time: { created: DateTime.makeUnsafe(1700000002000), completed: DateTime.makeUnsafe(1700000002500) },
+          },
+        ] as SessionMessage.Message[],
+      }
+      const exited = yield* SessionMigrationReverse.importDelta(database.db, {
+        sessionID,
+        agent: "build",
+        model: { id: ModelV2.ID.make("fixture"), providerID: ProviderV2.ID.make("openai") },
+        delta,
+      }).pipe(Effect.exit)
+      if (exited._tag === "Failure") console.error("DELTA_CAUSE", String(exited.cause))
+      expect(exited._tag).toBe("Success")
+      const restored = exited._tag === "Success" ? exited.value : undefined
+      if (!restored) return
+      const timeline = yield* store.timeline(sessionID)
+      expect(timeline.map((message) => String(message.id))).toEqual([
+        expect.any(String),
+        "msg_native_900",
+        "msg_native_901",
+      ])
+      const texts = timeline.map((message) =>
+        message.type === "assistant"
+          ? message.content.map((part) => (part.type === "text" ? part.text : "")).join("")
+          : message.type === "user"
+            ? message.text
+            : "",
+      )
+      expect(texts).toEqual(["base", "native turn", "native reply"])
     }),
   )
 })
