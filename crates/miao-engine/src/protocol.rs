@@ -419,6 +419,24 @@ pub enum Command {
         #[serde(default)]
         after: usize,
     },
+    TransferValidate {
+        path: std::path::PathBuf,
+        bundle_sha256: String,
+        identity: crate::provider::Identity,
+        #[serde(default)]
+        route_id: Option<String>,
+    },
+    TransferStage {
+        import_id: String,
+        path: std::path::PathBuf,
+        bundle_sha256: String,
+        identity: crate::provider::Identity,
+        #[serde(default)]
+        route_id: Option<String>,
+    },
+    TransferAbort {
+        import_id: String,
+    },
     Sessions,
     Fork {
         session_id: String,
