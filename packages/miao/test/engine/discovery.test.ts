@@ -23,10 +23,10 @@ test("a discovered engine is used only when its protocol is new enough", () => {
 test("an explicit binary that is too old is an error, not a fallback", () => {
   expect(() =>
     resolveEngine({ environment: { MIAO_ENGINE_BIN: "/old" }, probe: () => engine(1), exists: () => true }),
-  ).toThrow("requires 2")
+  ).toThrow("requires protocol 2")
   expect(() =>
     resolveEngine({ environment: { MIAO_ENGINE_BIN: "/missing" }, probe: () => engine(2), exists: () => false }),
-  ).toThrow("unknown")
+  ).toThrow("cannot report capabilities")
 })
 
 test("the explicit binary wins over discovery", () => {
@@ -54,3 +54,16 @@ test.skipIf(process.platform === "win32")(
   },
   10_000,
 )
+
+test("an engine whose route manifest schema is too old is refused", () => {
+  const older = { ...engine(2), routesSchema: 0 }
+  expect(() =>
+    resolveEngine({ environment: { MIAO_ENGINE_BIN: "/old" }, probe: () => older, exists: () => true }),
+  ).toThrow("route schema")
+  expect(resolveEngine({ environment: {}, probe: () => older, exists: () => true })).toBeUndefined()
+  expect(
+    resolveEngine({ environment: {}, probe: () => ({ ...engine(2), routesSchema: 1 }), exists: () => true })?.binary,
+  ).toContain("miao-engine")
+  // An engine that predates the field is still used; its loader decides.
+  expect(resolveEngine({ environment: {}, probe: () => engine(2), exists: () => true })?.binary).toContain("miao-engine")
+})

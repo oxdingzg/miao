@@ -10,11 +10,21 @@ import path from "node:path"
  */
 export const REQUIRED_PROTOCOL = 2
 
+/**
+ * Route-manifest version this build writes. An engine that predates the field
+ * is still accepted (it may serve a plain provider); one that reports a lower
+ * version than this build writes is refused before startup, because its loader
+ * would reject the manifest with an opaque parse error.
+ */
+export const REQUIRED_ROUTES_SCHEMA = 1
+
 export type Capabilities = {
   name: string
   version: string
   protocol: number
   schema: number
+  /** Host route manifest version; absent on engines that predate it. */
+  routesSchema?: number
 }
 
 const EXE = process.platform === "win32" ? ".exe" : ""
@@ -38,6 +48,7 @@ export function capabilities(binary: string): Capabilities | undefined {
     if (typeof value.protocol !== "number") return undefined
     if (typeof value.schema !== "number") return undefined
     if (typeof value.version !== "string") return undefined
+    if (value.routesSchema !== undefined && typeof value.routesSchema !== "number") return undefined
     return value as Capabilities
   } catch {
     return undefined
@@ -59,12 +70,17 @@ export function resolveEngine(input: {
   const environment = input.environment ?? process.env
   const probe = input.probe ?? capabilities
   const exists = input.exists ?? existsSync
+  const compatible = (found: Capabilities) =>
+    found.protocol >= REQUIRED_PROTOCOL &&
+    (found.routesSchema === undefined || found.routesSchema >= REQUIRED_ROUTES_SCHEMA)
   const explicit = environment.MIAO_ENGINE_BIN
   if (explicit) {
     const found = exists(explicit) ? probe(explicit) : undefined
-    if (!found || found.protocol < REQUIRED_PROTOCOL) {
+    if (!found || !compatible(found)) {
       throw new Error(
-        `MIAO_ENGINE_BIN=${explicit} reports protocol ${found?.protocol ?? "unknown"} but this build requires ${REQUIRED_PROTOCOL}`,
+        found
+          ? `MIAO_ENGINE_BIN=${explicit} reports protocol ${found.protocol} and route schema ${found.routesSchema ?? "unknown"} but this build requires protocol ${REQUIRED_PROTOCOL} and route schema ${REQUIRED_ROUTES_SCHEMA}`
+          : `MIAO_ENGINE_BIN=${explicit} cannot report capabilities`,
       )
     }
     return { binary: explicit, capabilities: found }
@@ -72,7 +88,7 @@ export function resolveEngine(input: {
   for (const binary of candidates()) {
     if (!exists(binary)) continue
     const found = probe(binary)
-    if (found && found.protocol >= REQUIRED_PROTOCOL) return { binary, capabilities: found }
+    if (found && compatible(found)) return { binary, capabilities: found }
   }
   return undefined
 }
