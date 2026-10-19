@@ -1,6 +1,7 @@
 import { expect, test } from "bun:test"
+import { $ } from "bun"
 import path from "node:path"
-import { writeFile } from "node:fs/promises"
+import { mkdir, writeFile } from "node:fs/promises"
 import { DateTime, Effect, Schema } from "effect"
 import { AppNodeBuilder } from "../src/effect/app-node-builder"
 import { LayerNode } from "../src/effect/layer-node"
@@ -27,24 +28,28 @@ import { SessionEnginePlacement } from "../src/session/engine-placement"
 import { SessionContextEpoch } from "../src/session/context-epoch"
 import { SessionContextEpochTable } from "../src/session/sql"
 import { SystemContext } from "../src/system-context/index"
+import { Snapshot } from "../src/snapshot"
+import { Location } from "../src/location"
 
 const run = <A, E>(
   storage: string,
   body: Effect.Effect<
     A,
     E,
-    Database.Service | SessionV2.Service | EventV2.Service | SessionStore.Service | Blob.Service
+    Database.Service | SessionV2.Service | EventV2.Service | SessionStore.Service | Blob.Service | Snapshot.Service
   >,
+  directory = path.dirname(storage),
 ) =>
   Effect.runPromise(
     body.pipe(
       Effect.provide(
         AppNodeBuilder.build(
-          LayerNode.group([SessionV2.node, Database.node, EventV2.node, SessionStore.node, Blob.node]),
+          LayerNode.group([SessionV2.node, Database.node, EventV2.node, SessionStore.node, Blob.node, Snapshot.node]),
           [
             [Database.node, Database.layerFromPath(storage)],
             [SessionExecution.node, SessionExecution.noopLayer],
             [Global.node, Global.layerWith({ data: path.dirname(storage) })],
+            [Location.node, Location.boundNode(Location.Ref.make({ directory: AbsolutePath.make(directory) }))],
           ],
         ),
       ),
@@ -56,6 +61,92 @@ const target = (root: string) => ({
   engine: "rust" as const,
   storage: AbsolutePath.make(path.join(root, "native.db")),
   location: { directory: AbsolutePath.make(root) },
+})
+
+test("snapshot manifests and immutable file bytes are atomically frozen with the semantic bundle", async () => {
+  await using tmp = await tmpdir()
+  const project = path.join(tmp.path, "project")
+  await mkdir(project)
+  const original = new Uint8Array([0, 255, 10, 128])
+  await Bun.write(path.join(project, "tracked.bin"), original)
+  await $`git init`.cwd(project).quiet()
+  await $`git config core.fsmonitor false`.cwd(project).quiet()
+  await $`git config commit.gpgsign false`.cwd(project).quiet()
+  await $`git config user.email test@miao.test`.cwd(project).quiet()
+  await $`git config user.name Test`.cwd(project).quiet()
+  await $`git add .`.cwd(project).quiet()
+  await $`git commit -m initial`.cwd(project).quiet()
+  const storage = path.join(tmp.path, "source.db")
+  const sessionID = SessionV2.ID.create()
+  const captured = await run(
+    storage,
+    Effect.gen(function* () {
+      const sessions = yield* SessionV2.Service
+      const events = yield* EventV2.Service
+      const snapshots = yield* Snapshot.Service
+      const blobs = yield* Blob.Service
+      yield* sessions.create({ id: sessionID, location: target(project).location })
+      const artifact = yield* blobs.put({ bytes: original })
+      yield* events.publish(SessionEvent.Prompted, {
+        sessionID,
+        timestamp: yield* DateTime.now,
+        messageID: SessionMessage.ID.create(),
+        delivery: "steer",
+        prompt: Prompt.make({
+          text: "edit files",
+          files: [{ uri: Blob.refUri(artifact.hash), mime: "application/octet-stream" }],
+        }),
+      })
+      const before = yield* snapshots.capture()
+      if (!before) throw new Error("Expected initial snapshot")
+      const base = {
+        sessionID,
+        timestamp: DateTime.makeUnsafe(1700000000000),
+        assistantMessageID: SessionMessage.ID.create(),
+      }
+      yield* events.publish(SessionEvent.Step.Started, {
+        ...base,
+        agent: "build",
+        model: { id: ModelV2.ID.make("fixture"), providerID: ProviderV2.ID.openai },
+        snapshot: before,
+      })
+      yield* Effect.promise(async () => {
+        await Bun.write(path.join(project, "tracked.bin"), new Uint8Array([1, 2, 3, 4]))
+        await Bun.write(path.join(project, "new.bin"), original)
+        await Bun.write(path.join(project, "empty.txt"), "")
+      })
+      const after = yield* snapshots.capture()
+      if (!after) throw new Error("Expected final snapshot")
+      yield* events.publish(SessionEvent.Step.Ended, {
+        ...base,
+        finish: "stop",
+        cost: 0,
+        tokens: { input: 1, output: 1, reasoning: 0, cache: { read: 0, write: 0 } },
+        snapshot: after,
+        files: yield* snapshots.files({ from: before, to: after }),
+      })
+      return { before, after }
+    }),
+    project,
+  )
+  const input = { id: "snapshot-bundle", sessionID, target: target(project) }
+  const exported = await run(storage, SessionTransferBundle.prepare(input), project)
+  const before = exported.bundle.snapshots?.find((snapshot) => snapshot.id === captured.before)
+  const after = exported.bundle.snapshots?.find((snapshot) => snapshot.id === captured.after)
+  expect(before?.files.find((file) => file.path === "tracked.bin")?.hash).toBe(Hash.sha256(original))
+  expect(before?.files.find((file) => file.path === "new.bin")?.hash).toBeNull()
+  expect(before?.files.find((file) => file.path === "empty.txt")?.hash).toBeNull()
+  expect(after?.files.find((file) => file.path === "new.bin")?.hash).toBe(Hash.sha256(original))
+  expect(after?.files.find((file) => file.path === "empty.txt")?.hash).toBe(Hash.sha256(new Uint8Array()))
+  expect(exported.bundle.artifacts).toHaveLength(3)
+  expect(exported.bundle.artifacts.find((artifact) => artifact.hash === Hash.sha256(original))?.base64).toBe(
+    Buffer.from(original).toString("base64"),
+  )
+  expect(new Uint8Array(await Bun.file(path.join(project, "tracked.bin")).arrayBuffer())).toEqual(
+    new Uint8Array([1, 2, 3, 4]),
+  )
+  const retry = await run(storage, SessionTransferBundle.prepare(input), project)
+  expect(retry.serialized).toBe(exported.serialized)
 })
 
 test("semantic bundle retains the Context Epoch baseline, snapshot and provenance after context updates", async () => {
