@@ -54,6 +54,7 @@ export default {
           \`id\` text PRIMARY KEY,
           \`session_id\` text NOT NULL,
           \`state\` text NOT NULL,
+          \`direction\` text DEFAULT 'ts_to_rust' NOT NULL,
           \`native_storage\` text NOT NULL,
           \`location\` text NOT NULL,
           \`bundle_sha256\` text NOT NULL,
