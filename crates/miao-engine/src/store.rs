@@ -274,6 +274,9 @@ impl Store {
                     created_ms INTEGER NOT NULL);
                     CREATE TABLE IF NOT EXISTS engine_transfer_preparation(
                     import_id TEXT PRIMARY KEY REFERENCES engine_transfer_import(id),data TEXT NOT NULL);
+                    CREATE TABLE IF NOT EXISTS engine_transfer_snapshot(
+                    import_id TEXT NOT NULL REFERENCES engine_transfer_import(id),snapshot_id TEXT NOT NULL,
+                    boundary_message_id TEXT,manifest TEXT NOT NULL,PRIMARY KEY(import_id,snapshot_id));
                     CREATE TABLE IF NOT EXISTS engine_transfer_message(
                     import_id TEXT NOT NULL REFERENCES engine_transfer_import(id),source_message_id TEXT NOT NULL,seq INTEGER NOT NULL,
                     PRIMARY KEY(import_id,seq));
@@ -661,7 +664,7 @@ impl Store {
             // runs. Those three go before the run rows they point at.
             for statement in [
                 "DELETE FROM engine_transfer_message WHERE import_id IN (SELECT id FROM engine_transfer_import WHERE session_id=?1)",
-                "DELETE FROM engine_transfer_preparation WHERE import_id IN (SELECT id FROM engine_transfer_import WHERE session_id=?1)",
+                "DELETE FROM engine_transfer_snapshot WHERE import_id IN (SELECT id FROM engine_transfer_import WHERE session_id=?1)",                "DELETE FROM engine_transfer_preparation WHERE import_id IN (SELECT id FROM engine_transfer_import WHERE session_id=?1)",
                 "DELETE FROM engine_transfer_import WHERE session_id=?1",
                 "DELETE FROM engine_approval WHERE session_id=?1",
                 "DELETE FROM engine_job WHERE session_id=?1",

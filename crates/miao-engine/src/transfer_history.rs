@@ -176,7 +176,7 @@ pub fn prepare(
     Ok(output)
 }
 
-fn artifacts(source: &Value) -> Result<HashMap<String, String>, Error> {
+pub(crate) fn artifacts(source: &Value) -> Result<HashMap<String, String>, Error> {
     let mut artifacts = HashMap::new();
     for artifact in source["artifacts"]
         .as_array()
