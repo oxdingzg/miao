@@ -16,7 +16,7 @@ export const ID = Schema.String.pipe(Schema.brand("Snapshot.ID"))
 export type ID = typeof ID.Type
 
 export class Error extends Schema.TaggedErrorClass<Error>()("Snapshot.Error", {
-  operation: Schema.Literals(["capture", "files", "diff", "preview", "restore"]),
+  operation: Schema.Literals(["capture", "files", "diff", "preview", "restore", "export"]),
   message: Schema.String,
   cause: Schema.optional(Schema.Defect()),
 }) {}
@@ -42,6 +42,21 @@ export interface PreviewInput extends RestoreInput {
 }
 
 export interface Interface {
+  /** Export selected immutable states, without touching the working tree.
+   * Paths are normalized relative to this Location and retain their source
+   * project-relative spelling for reverse restoration. */
+  readonly exportFiles: (
+    input: RestoreInput & { maximumFileBytes: number; maximumTotalBytes: number },
+  ) => Effect.Effect<
+    ReadonlyArray<{
+      path: RelativePath
+      source_path: RelativePath
+      snapshot: ID
+      mode?: string
+      bytes?: Uint8Array
+    }>,
+    Error
+  >
   /**
    * Capture the current Location-scoped filesystem state as a content-addressed
    * tree. Returns `undefined` when snapshots are disabled, unsupported, or the
@@ -199,7 +214,7 @@ const layer = Layer.effect(
         .pipe(Effect.mapError((cause) => failure("diff", cause)))
     })
 
-    const plan = Effect.fnUntraced(function* (operation: "preview" | "restore", input: RestoreInput) {
+    const plan = Effect.fnUntraced(function* (operation: "preview" | "restore" | "export", input: RestoreInput) {
       const files = new Map<RelativePath, Git.TreeID>()
       for (const [file, snapshot] of input.files) {
         const absolute = path.resolve(worktree, file)
@@ -208,6 +223,30 @@ const layer = Layer.effect(
         files.set(file, Git.TreeID.make(snapshot))
       }
       return files
+    })
+
+    const exportFiles: Interface["exportFiles"] = Effect.fn("Snapshot.exportFiles")(function* (input) {
+      const repo = yield* repository().pipe(Effect.mapError((cause) => failure("export", cause)))
+      const files = yield* plan("export", input)
+      if ([...files.keys()].some((file) => !FSUtil.contains(location.directory, path.resolve(worktree, file))))
+        return yield* new Error({ operation: "export", message: "Snapshot path is outside the Session Location" })
+      const rows = yield* git.tree
+        .read({
+          repository: repo,
+          files,
+          maximumFileBytes: input.maximumFileBytes,
+          maximumTotalBytes: input.maximumTotalBytes,
+        })
+        .pipe(Effect.mapError((cause) => failure("export", cause)))
+      return rows.map((row) => ({
+        path: RelativePath.make(
+          path.relative(location.directory, path.resolve(worktree, row.path)).replaceAll("\\", "/"),
+        ),
+        source_path: row.path,
+        snapshot: ID.make(row.tree),
+        mode: row.mode,
+        bytes: row.bytes,
+      }))
     })
 
     const preview = Effect.fn("Snapshot.preview")(function* (input: PreviewInput) {
@@ -247,7 +286,7 @@ const layer = Layer.effect(
         .pipe(Effect.mapError((cause) => failure("restore", cause)))
     })
 
-    return Service.of({ capture, files, diff, preview, restore, checkout })
+    return Service.of({ capture, files, diff, preview, restore, checkout, exportFiles })
   }),
 )
 
@@ -262,6 +301,7 @@ export const node = makeLocationNode({
 export const noopLayer = Layer.succeed(
   Service,
   Service.of({
+    exportFiles: () => Effect.fail(new Error({ operation: "export", message: "Snapshot export is unavailable" })),
     capture: () => Effect.succeed(undefined),
     files: () => Effect.succeed([]),
     diff: () => Effect.succeed([]),

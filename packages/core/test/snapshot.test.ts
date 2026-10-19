@@ -13,6 +13,100 @@ import { tmpdir } from "./fixture/tmpdir"
 import { testEffect } from "./lib/effect"
 
 describe("Snapshot", () => {
+  testEffect(Layer.empty).live(
+    "exports immutable binary states, missing files, modes and scoped paths without checkout",
+    () =>
+      Effect.acquireUseRelease(
+        Effect.promise(() => tmpdir()),
+        (tmp) =>
+          Effect.gen(function* () {
+            const project = path.join(tmp.path, "project")
+            const location = path.join(project, "scope")
+            const original = new Uint8Array([0, 255, 10, 128])
+            yield* Effect.promise(async () => {
+              await fs.mkdir(location, { recursive: true })
+              await fs.writeFile(path.join(location, "binary[1].bin"), original)
+              await fs.writeFile(path.join(location, "empty.txt"), "")
+              await fs.writeFile(path.join(project, "outside.txt"), "outside")
+              await $`git init`.cwd(project).quiet()
+              await $`git config core.fsmonitor false`.cwd(project).quiet()
+              await $`git config commit.gpgsign false`.cwd(project).quiet()
+              await $`git config user.email test@opencode.test`.cwd(project).quiet()
+              await $`git config user.name Test`.cwd(project).quiet()
+              await $`git add .`.cwd(project).quiet()
+              await $`git commit -m initial`.cwd(project).quiet()
+            })
+            yield* Effect.gen(function* () {
+              const snapshot = yield* Snapshot.Service
+              const before = yield* snapshot.capture()
+              if (!before) throw new Error("Expected a source snapshot")
+              yield* Effect.promise(async () => {
+                await fs.writeFile(path.join(location, "binary[1].bin"), new Uint8Array([1, 2, 3, 4]))
+                await fs.writeFile(path.join(location, "added.txt"), "new")
+              })
+              const files = new Map([
+                [RelativePath.make("scope/binary[1].bin"), before],
+                [RelativePath.make("scope/added.txt"), before],
+                [RelativePath.make("scope/empty.txt"), before],
+              ])
+              const exported = yield* snapshot.exportFiles({ files, maximumFileBytes: 4, maximumTotalBytes: 4 })
+              expect(exported[0]).toMatchObject({
+                path: "binary[1].bin",
+                source_path: "scope/binary[1].bin",
+                snapshot: before,
+                mode: "100644",
+              })
+              expect(Buffer.from(exported[0]?.bytes ?? [])).toEqual(Buffer.from(original))
+              expect(exported[1]).toMatchObject({ path: "added.txt", source_path: "scope/added.txt", snapshot: before })
+              expect(exported[1]?.bytes).toBeUndefined()
+              expect(exported[1]?.mode).toBeUndefined()
+              expect(exported[2]?.bytes?.byteLength).toBe(0)
+              expect(yield* Effect.promise(() => fs.readFile(path.join(location, "binary[1].bin")))).toEqual(
+                Buffer.from([1, 2, 3, 4]),
+              )
+              expect(yield* read(path.join(location, "added.txt"))).toBe("new")
+              expect(
+                (yield* snapshot.exportFiles({ files, maximumFileBytes: 3, maximumTotalBytes: 4 }).pipe(Effect.exit))
+                  ._tag,
+              ).toBe("Failure")
+              expect(
+                (yield* snapshot.exportFiles({ files, maximumFileBytes: 4, maximumTotalBytes: 3 }).pipe(Effect.exit))
+                  ._tag,
+              ).toBe("Failure")
+              expect(
+                (yield* snapshot
+                  .exportFiles({
+                    files: new Map([[RelativePath.make("outside.txt"), before]]),
+                    maximumFileBytes: 100,
+                    maximumTotalBytes: 100,
+                  })
+                  .pipe(Effect.exit))._tag,
+              ).toBe("Failure")
+              if (process.platform !== "win32") {
+                yield* Effect.promise(async () => {
+                  await fs.chmod(path.join(location, "binary[1].bin"), 0o755)
+                  await fs.symlink("binary[1].bin", path.join(location, "link"))
+                })
+                const withModes = yield* snapshot.capture()
+                if (!withModes) throw new Error("Expected mode snapshot")
+                const modes = yield* snapshot.exportFiles({
+                  files: new Map([
+                    [RelativePath.make("scope/binary[1].bin"), withModes],
+                    [RelativePath.make("scope/link"), withModes],
+                  ]),
+                  maximumFileBytes: 100,
+                  maximumTotalBytes: 100,
+                })
+                expect(modes[0]?.mode).toBe("100755")
+                expect(modes[1]?.mode).toBe("120000")
+                expect(Buffer.from(modes[1]?.bytes ?? []).toString()).toBe("binary[1].bin")
+              }
+            }).pipe(Effect.provide(snapshotLayer(tmp.path, location)))
+          }),
+        (tmp) => Effect.promise(() => tmp[Symbol.asyncDispose]()),
+      ),
+  )
+
   testEffect(Layer.empty).live("captures and restores Location-scoped changes", () =>
     Effect.acquireUseRelease(
       Effect.promise(() => tmpdir()),
@@ -144,9 +238,7 @@ describe("Snapshot", () => {
             const after = yield* snapshot.capture()
             expect(after).toBeDefined()
             if (!after) return
-            expect(yield* snapshot.files({ from: before, to: after })).toEqual([
-              RelativePath.make("..foo/tracked.txt"),
-            ])
+            expect(yield* snapshot.files({ from: before, to: after })).toEqual([RelativePath.make("..foo/tracked.txt")])
           }).pipe(Effect.provide(snapshotLayer(tmp.path, location)))
         }),
       (tmp) => Effect.promise(() => tmp[Symbol.asyncDispose]()),
