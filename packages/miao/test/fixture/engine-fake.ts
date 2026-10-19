@@ -25,6 +25,16 @@ const script: { steps: FakeStep[]; cancelSteps?: FakeStep[] } | undefined = proc
   ? await Bun.file(process.env.ENGINE_FAKE_SCRIPT).json()
   : undefined
 
+let seqBase: number | undefined
+async function seqOffset() {
+  if (seqBase !== undefined) return seqBase
+  const file = process.env.ENGINE_FAKE_SCRIPT ? process.env.ENGINE_FAKE_SCRIPT + ".seq" : undefined
+  const previous = file && (await Bun.file(file).exists()) ? Number(await Bun.file(file).text()) : 0
+  seqBase = Number.isFinite(previous) ? previous : 0
+  if (file) await Bun.write(file, String(seqBase + 1_000))
+  return seqBase
+}
+
 function substitute(value: unknown, session: string, inputID: string): unknown {
   if (typeof value === "string")
     return value
@@ -81,7 +91,14 @@ async function emitSteps(steps: FakeStep[], session: string, inputID: string) {
     if (step.delayMs) await Bun.sleep(step.delayMs)
     if (step.writeFile) await Bun.write(step.writeFile.path, step.writeFile.text)
     if (step.progress !== undefined) send({ method: "progress", params: substitute(step.progress, session, inputID) })
-    if (step.event !== undefined) send({ method: "event", params: substitute(step.event, session, inputID) })
+    if (step.event !== undefined) {
+      const payload = substitute(step.event, session, inputID) as { seq?: unknown } | undefined
+      // The real engine commits a Session's events with a monotonic sequence,
+      // and a follow-up subscription replays the older ones. The fixture is
+      // spawned per input, so persist an offset to reproduce that ordering.
+      if (payload && typeof payload.seq === "number") payload.seq += await seqOffset()
+      send({ method: "event", params: payload })
+    }
   }
 }
 
