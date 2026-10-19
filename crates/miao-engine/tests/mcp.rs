@@ -490,6 +490,7 @@ for line in sys.stdin:
 "#;
     let registry = Registry::connect(
         vec![miao_engine::mcp::Config {
+            authority_revision: None,
             url: None,
             headers: Default::default(),
             call_meta: Default::default(),

@@ -15,7 +15,7 @@ use rmcp::{
     ClientHandler, RoleClient, ServiceExt,
 };
 use serde::{Deserialize, Serialize};
-use serde_json::Value;
+use serde_json::{json, Value};
 use std::{
     collections::BTreeMap,
     future::Future,
@@ -41,6 +41,9 @@ pub struct Config {
     pub argv: Vec<String>,
     #[serde(default)]
     pub url: Option<String>,
+    /// Trusted original registration digest for a product-owned loopback proxy.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub authority_revision: Option<String>,
     #[serde(default)]
     pub headers: BTreeMap<String, String>,
     #[serde(default)]
@@ -138,15 +141,22 @@ pub struct Registry {
     children: Mutex<Vec<Child>>,
 }
 impl Registry {
-    pub(crate) fn authority(&self) -> &str {
-        &self.authority
+    pub(crate) fn authority(&self) -> String {
+        // Identity templates are resolved at call time. Bind their effective
+        // values too, without exposing them in approval events or tool inputs.
+        digest(&serde_json::to_vec(&json!({
+            "configuration": self.authority,
+            "metadata": self.servers.iter().map(|server| (&server.name,
+                server.call_meta.iter().map(|(key,value)| (key,expand_call_meta(value).ok())).collect::<BTreeMap<_,_>>()
+            )).collect::<BTreeMap<_,_>>()
+        })).expect("MCP authority is JSON"))
     }
     pub async fn connect(configs: Vec<Config>, workspace: &Path) -> Result<Self, Error> {
         if configs.len() > 8 {
             return Err(Error::Invalid("MCP server limit".into()));
         }
         let mut registry = Self {
-            authority: digest(&serde_json::to_vec(&configs)?),
+            authority: registration_authority(&configs)?,
             tools: RwLock::new(BTreeMap::new()),
             servers: vec![],
             children: Mutex::new(vec![]),
@@ -775,6 +785,25 @@ impl Registry {
         }
     }
 }
+fn registration_authority(configs: &[Config]) -> Result<String, Error> {
+    let descriptors = configs.iter().map(|config| {
+        let mut descriptor = serde_json::to_value(config)?;
+        if let Some(revision) = &config.authority_revision {
+            let url = config.url.as_deref().and_then(|value| reqwest::Url::parse(value).ok());
+            if revision.len() != 64 || !revision.bytes().all(|value| value.is_ascii_hexdigit())
+                || !config.argv.is_empty() || !config.headers.is_empty() || config.oauth.is_some()
+                || !url.is_some_and(|url| url.scheme() == "http" && matches!(url.host_str(), Some("127.0.0.1" | "[::1]" | "::1"))) {
+                return Err(Error::Invalid("MCP authority revision requires a trusted loopback transport and SHA256 digest".into()));
+            }
+            // The host attests the original remote registration. Only the
+            // ephemeral loopback address is normalized; all other config stays.
+            descriptor["url"] = json!("product-owned-oauth-loopback");
+        }
+        Ok(descriptor)
+    }).collect::<Result<Vec<Value>, Error>>()?;
+    Ok(digest(&serde_json::to_vec(&descriptors)?))
+}
+
 fn validate_name(name: &str) -> Result<(), Error> {
     if name.is_empty()
         || name.len() > 32

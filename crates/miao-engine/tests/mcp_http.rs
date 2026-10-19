@@ -76,6 +76,9 @@ async fn http_initialization_catalog_call_and_host_headers_roundtrip() {
 async fn http_configuration_rejects_ambiguous_authority_and_unsafe_headers() {
     let dir = tempfile::tempdir().unwrap();
     for config in [
+        json!({"name":"remote","url":"http://127.0.0.1:1","authority_revision":"short"}),
+        json!({"name":"remote","url":"https://example.test/mcp","authority_revision":"a".repeat(64)}),
+        json!({"name":"remote","argv":["unwanted"],"authority_revision":"a".repeat(64)}),
         json!({"name":"remote","url":"http://127.0.0.1:1","argv":["unwanted"]}),
         json!({"name":"remote","url":"http://127.0.0.1:1","env":{"SECRET":"unwanted"}}),
         json!({"name":"remote","url":"http://user:password@127.0.0.1:1"}),
@@ -323,4 +326,159 @@ async fn http_oauth_configuration_conflicts_are_rejected() {
         let config: Config = serde_json::from_value(config).unwrap();
         assert!(Registry::connect(vec![config], dir.path()).await.is_err());
     }
+}
+
+struct GrantCaller(String);
+#[async_trait::async_trait]
+impl miao_engine::provider::Provider for GrantCaller {
+    async fn stream(
+        &self,
+        request: miao_engine::protocol::ModelRequest,
+        _: tokio::sync::mpsc::Sender<Value>,
+        _: CancellationToken,
+    ) -> Result<miao_engine::provider::Reply, miao_engine::provider::ProviderError> {
+        let needs_tools = request.messages.len() == 1;
+        Ok(miao_engine::provider::Reply {
+            content: if needs_tools {
+                json!([{"type":"tool_use","id":"call","name":self.0,"input":{}}])
+            } else {
+                json!([{"type":"text","text":"done"}])
+            },
+            usage: json!({}),
+            needs_tools,
+        })
+    }
+}
+
+async fn grant_event(
+    store: &miao_engine::store::Store,
+    session: &str,
+    kind: &str,
+) -> miao_engine::protocol::Event {
+    tokio::time::timeout(std::time::Duration::from_secs(10), async {
+        loop {
+            if let Some(event) = store
+                .events(session, 0, 200)
+                .await
+                .unwrap()
+                .into_iter()
+                .find(|event| event.kind == kind)
+            {
+                return event;
+            }
+            tokio::time::sleep(std::time::Duration::from_millis(5)).await;
+        }
+    })
+    .await
+    .unwrap()
+}
+
+#[tokio::test]
+async fn persistent_grants_survive_new_proxy_transport_and_miss_changed_registration_or_metadata() {
+    use miao_engine::{permission::Policy, runtime::Runtime, store::Store, tools::Tools};
+    let calls = Arc::new(AtomicUsize::new(0));
+    let counter = calls.clone();
+    let router = Router::new().route("/mcp", post(move |Json(request): Json<Value>| {
+        let counter = counter.clone();
+        async move {
+            let Some(id) = request.get("id") else { return StatusCode::ACCEPTED.into_response(); };
+            let result = match request["method"].as_str().unwrap() {
+                "initialize" => json!({"protocolVersion":request["params"]["protocolVersion"],"capabilities":{"tools":{}},"serverInfo":{"name":"grant-fixture","version":"1"}}),
+                "tools/list" => json!({"tools":[{"name":"echo","description":"grant fixture","inputSchema":{"type":"object","properties":{},"additionalProperties":false}}]}),
+                "tools/call" => { counter.fetch_add(1,Ordering::SeqCst); json!({"content":[{"type":"text","text":"done"}]}) },
+                _ => panic!("unexpected MCP method"),
+            };
+            Json(json!({"jsonrpc":"2.0","id":id,"result":result})).into_response()
+        }
+    }));
+    let dir = tempfile::tempdir().unwrap();
+    let database = dir.path().join("engine.db");
+    let mut endpoints = Vec::new();
+    let mut servers = Vec::new();
+    for (session, revision, metadata) in [
+        ("grant", "a", "one"),
+        ("restarted", "a", "one"),
+        ("changed_registration", "b", "one"),
+        ("changed_metadata", "a", "two"),
+    ] {
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let endpoint = format!("http://{}/mcp", listener.local_addr().unwrap());
+        assert!(!endpoints.contains(&endpoint));
+        endpoints.push(endpoint.clone());
+        let app = router.clone();
+        let server = tokio::spawn(async move {
+            axum::serve(listener, app).await.unwrap();
+        });
+        let registry = Arc::new(Registry::connect(vec![serde_json::from_value::<Config>(json!({"name":"remote","url":endpoint,"authority_revision":revision.repeat(64),"call_meta":{"tenant":metadata}})).unwrap()],dir.path()).await.unwrap());
+        let provider = Arc::new(GrantCaller(registry.definitions()[0].name.clone()));
+        let store = Store::open(&database).await.unwrap();
+        let runtime = Runtime::with_policy(
+            store.clone(),
+            provider,
+            Tools::new(dir.path())
+                .await
+                .unwrap()
+                .with_mcp(registry.clone()),
+            Policy::new(miao_engine::permission::Config {
+                mode: miao_engine::permission::Mode::Workspace,
+                allow_mcp: true,
+                ..Default::default()
+            })
+            .unwrap(),
+        )
+        .await
+        .unwrap();
+        runtime.initialize(session, "grant").await.unwrap();
+        runtime
+            .admit(
+                miao_engine::protocol::Input {
+                    session_id: session.into(),
+                    input_id: session.into(),
+                    prompt: "call".into(),
+                    delivery: Default::default(),
+                },
+                true,
+            )
+            .await
+            .unwrap();
+        if session == "grant" {
+            let approval = grant_event(&store, session, "approval.requested").await;
+            runtime
+                .approve_persistent(
+                    &runtime.controller(),
+                    session,
+                    miao_engine::approval::Response {
+                        request_id: approval.data["request_id"].as_str().unwrap().into(),
+                        decision: miao_engine::permission::Decision::Allow,
+                        input_hash: approval.data["input_hash"].as_str().unwrap().into(),
+                        policy_revision: approval.data["policy_revision"].as_str().unwrap().into(),
+                        matcher: None,
+                    },
+                )
+                .await
+                .unwrap();
+            grant_event(&store, session, "run.finished").await;
+        }
+        if session == "restarted" {
+            grant_event(&store, session, "run.finished").await;
+            let events = store.events(session, 0, 200).await.unwrap();
+            assert!(events
+                .iter()
+                .any(|event| event.kind == "permission.grant.used"));
+            assert!(!events
+                .iter()
+                .any(|event| event.kind == "approval.requested"));
+        }
+        if session.starts_with("changed_") {
+            grant_event(&store, session, "approval.requested").await;
+            runtime.cancel(session).await.unwrap();
+        }
+        runtime.shutdown().await;
+        drop(runtime);
+        registry.shutdown().await;
+        store.close().await.unwrap();
+        servers.push(server);
+    }
+    servers.into_iter().for_each(|server| server.abort());
+    assert_eq!(calls.load(Ordering::SeqCst), 2);
 }

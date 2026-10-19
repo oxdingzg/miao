@@ -93,6 +93,19 @@ it.live("native MCP and SDK consumers share rotating OAuth authority without cop
       }),
     }
     const prepared = yield* ProductMcp.prepare(options)
+    const restarted = yield* ProductMcp.prepare(options)
+    expect(restarted.mcpAuthorityRevisions).toEqual(prepared.mcpAuthorityRevisions)
+    const firstRemote = prepared.mcpSettings?.servers[name]
+    const secondRemote = restarted.mcpSettings?.servers[name]
+    if (firstRemote?.type !== "remote" || secondRemote?.type !== "remote") throw new Error("native OAuth route missing")
+    expect(firstRemote.url).not.toBe(secondRemote.url)
+    const changed = yield* ProductMcp.prepare({
+      ...options,
+      mcpSettings: Schema.decodeUnknownSync(ConfigMCP.Info)({
+        servers: { [name]: { type: "remote", url: `${upstream.url}other`, oauth: { client_id: "fixture" } } },
+      }),
+    })
+    expect(changed.mcpAuthorityRevisions?.[name]).not.toBe(prepared.mcpAuthorityRevisions?.[name])
     const snapshot = prepareMcpConfig({ ...options, ...prepared })
     if (!snapshot) throw new Error("native OAuth attachment missing")
     yield* Effect.addFinalizer(() => Effect.sync(snapshot.dispose))
@@ -100,6 +113,7 @@ it.live("native MCP and SDK consumers share rotating OAuth authority without cop
     expect(manifest).not.toContain("private-refresh")
     expect(manifest).not.toContain("private-access")
     expect(manifest).not.toContain("client_id")
+    expect(JSON.parse(manifest)[0].authority_revision).toBe(prepared.mcpAuthorityRevisions?.[name])
     const remote = prepared.mcpSettings?.servers[name]
     if (remote?.type !== "remote") throw new Error("native OAuth routing missing")
     const sdk = oauthFetch(name, url, { clientId: "fixture" }, store)
@@ -124,6 +138,22 @@ it.live("native MCP and SDK consumers share rotating OAuth authority without cop
       expect(state.initialized).toBe(1)
       expect(state.listed).toBeGreaterThanOrEqual(2)
       expect(state.rotations).toBe(1)
+    }
+    if (process.env.MIAO_LEGACY_ENGINE_BIN) {
+      const legacy = EngineClient.start({
+        ...options,
+        binary: process.env.MIAO_LEGACY_ENGINE_BIN,
+        db: path.join(tmp.path, "legacy.db"),
+        mcpSettings: undefined,
+        mcpConfigFile: snapshot.file,
+        env: { ANTHROPIC_API_KEY: "fixture" },
+      })
+      yield* Effect.addFinalizer(() => Effect.promise(() => legacy.close()))
+      const rejected = yield* Effect.promise(() =>
+        legacy.request("initialize", { session_id: "legacy_probe", title: "legacy" }),
+      ).pipe(Effect.exit)
+      expect(rejected._tag).toBe("Failure")
+      expect(state.initialized).toBe(process.env.MIAO_ENGINE_BIN ? 1 : 0)
     }
     expect((yield* store.getForUrl(name, url))?.tokens?.refreshToken).toBe("private-refresh-1")
   }),

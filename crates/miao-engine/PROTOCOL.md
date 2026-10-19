@@ -465,3 +465,14 @@ turns use `agent`, and only requests containing images carry the vision header.
 The interaction id follows the Session affinity scope. Anthropic beta flags
 merge with host flags. Copilot Responses routes reject continuation contracts
 that are only supported by the other explicit transport profiles.
+
+Product-owned loopback registrations carry a host-computed `authority_revision`
+(SHA256 of the original remote registration). Only the transient local URL is
+normalized for exact permission grants; the trusted original revision, other
+configuration and effective call-metadata environment values remain bound.
+Thus restarting the product proxy preserves a grant, while changing its remote
+URL, headers, client configuration or identity metadata asks again. The revision
+is accepted only for an explicit loopback HTTP transport with no competing
+headers, OAuth grant or process command. It is never a model tool argument.
+Older binaries reject the unknown registration field rather than consuming an
+unbound grant. Native replay descriptors retain their existing semantics.
