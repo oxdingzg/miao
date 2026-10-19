@@ -11,8 +11,6 @@ import { RuntimeOwnership } from "@miao/core/runtime/ownership"
 import { InstallationVersion } from "@miao/core/installation/version"
 import { ControlHub } from "@miao/remote-control/hub"
 import { SecureChannel } from "@miao/remote-control/secure-channel"
-import { DeviceRoster } from "@miao/remote-control/device-roster"
-import { DeviceEnrollment } from "@miao/remote-control/device-enrollment"
 import { DeviceGrants } from "@miao/remote-control/grants"
 
 export async function run() {
@@ -30,8 +28,6 @@ export async function run() {
     throw error
   })
   const { hub, token } = relay
-  const enrollmentMode = process.env.MIAO_UI_TEST_ENROLLMENT === "1"
-  const rootSigner = enrollmentMode ? await SecureChannel.createIdentity() : undefined
   const approvalToken = crypto.randomUUID() + crypto.randomUUID()
   let approveEnrollment: ((request: Request) => Promise<Response>) | undefined
   const configuration = path.join(directory, "control.json")
@@ -272,85 +268,17 @@ export async function run() {
     const session = Schema.decodeUnknownSync(Session)(await request(`/api/session/${sessionID}`)).data
     if (session.title !== title) throw new Error("Fixture session did not receive its title")
     await request("/api/runtime/control/enabled", { enabled: true })
-    if (enrollmentMode && rootSigner && relay.accountID) {
+    if (relay.account) {
       await request(`/api/runtime/control/session/${sessionID}`, { enabled: true })
-      const ownerGrants = await DeviceGrants.load(path.join(directory, "devices.json"))
-      const rootGrant = await ownerGrants.approve({
-        publicKey: rootSigner.publicKey,
-        label: "Independent signing device",
-        permissions: ["read", "prompt", "session.rename", "session.selection"],
-        projectIDs: [],
-        sessionIDs: [sessionID],
-        expiresAt: Date.now() + 30 * 60_000,
-      })
-      await ownerGrants.close()
-      await request("/api/runtime/control/account/trust", {
-        grantID: rootGrant.id,
-        version: rootGrant.version,
-        policy: {
-          permissions: rootGrant.permissions,
-          projectIDs: rootGrant.projectIDs,
-          sessionIDs: rootGrant.sessionIDs,
-          expiresAt: rootGrant.expiresAt,
-        },
-      })
-      const signed = await DeviceRoster.sign(rootSigner, {
-        version: 1,
-        accountID: relay.accountID,
-        sequence: 1,
-        issuedAt: Date.now(),
-        devices: [
-          { publicKey: rootSigner.publicKey, label: "Independent signing device", signer: true, addedAt: Date.now() },
-        ],
-      })
-      approveEnrollment = async (incoming) => {
-        if (incoming.headers.get("authorization") !== `Bearer ${approvalToken}`)
-          return new Response(null, { status: 403 })
-        const body = await incoming.text()
-        if (body.length > 8192) return new Response(null, { status: 413 })
-        const approved = await DeviceEnrollment.approve(rootSigner, JSON.parse(body), {
-          hubURL: relay.account!.origin,
-          accountID: relay.accountID!,
-          current: signed,
-          authority: {
-            accountID: relay.accountID!,
-            acceptedSequence: 1,
-            acceptedDigest: await DeviceRoster.fingerprint(signed.roster),
-            signerKeys: [rootSigner.publicKey],
-          },
-          hosts: [{ hostID: ownerGrants.hostID, publicKey: ownerGrants.identity.publicKey }],
-          allowLoopbackHTTP: true,
-        })
-        const stored = await fetch(new URL("/api/hub/roster", relay.account!.origin), {
-          method: "PUT",
-          headers: {
-            origin: relay.account!.origin,
-            authorization: `Bearer ${relay.bearer!}`,
-            "content-type": "application/json",
-          },
-          body: JSON.stringify({
-            sequence: approved.roster.roster.sequence,
-            payload: approved.roster.roster,
-            signature: approved.roster.signature,
-            digest: await DeviceRoster.fingerprint(approved.roster.roster),
-          }),
-        })
-        if (!stored.ok) return new Response(null, { status: stored.status })
-        return Response.json(approved)
-      }
       await Bun.write(
         fixture,
         JSON.stringify({
           runID,
           title,
           account: relay.account,
+          accountAccess: true,
           invitation: "",
           finishURL: `http://127.0.0.1:${provider.port}/finish`,
-          enrollment: {
-            approveURL: `http://127.0.0.1:${provider.port}/approve`,
-            approvalToken,
-            rootKey: rootSigner.publicKey,
-          },
         }),
       )
       await chmod(fixture, 0o600)
@@ -562,7 +490,16 @@ export async function run() {
         admissions[0].prompt.text !== "retained phone draft"
       )
         throw new Error("The phone must admit exactly one queued input in the real Runtime")
-      if (relay.account) console.log("Native App Hub account entry and Keychain account restoration passed")
+      if (relay.account) {
+        const accountGrants = await DeviceGrants.load(path.join(directory, "devices.json"))
+        try {
+          if (accountGrants.list().length !== 0 || accountGrants.accountTrust() !== undefined)
+            throw new Error("Account access must not create paired device grants or bootstrap a signer roster")
+        } finally {
+          await accountGrants.close()
+        }
+        console.log("Native App account-only access, empty device grants and Keychain restoration passed")
+      }
       if (stream.calls !== 1) throw new Error("Native reconnect repeated provider execution")
       console.log(
         "Native App pairing, real Runtime read/rename/queue admission, protected draft background recovery, live generation/settlement and process restart passed",

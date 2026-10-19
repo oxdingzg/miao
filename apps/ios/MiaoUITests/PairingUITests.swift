@@ -105,7 +105,7 @@ final class PairingUITests: XCTestCase {
               !path.hasPrefix("$(") else { throw XCTSkip("Live Runtime fixture is supplied by check-app.ts") }
         struct Account: Decodable { let origin: String; let email: String; let password: String }
         struct Enrollment: Decodable { let approveURL: URL; let approvalToken: String; let rootKey: String }
-        struct Fixture: Decodable { let runID: String; let invitation: String; let title: String; let account: Account?; let finishURL: String; let enrollment: Enrollment? }
+        struct Fixture: Decodable { let runID: String; let invitation: String; let title: String; let account: Account?; let finishURL: String; let enrollment: Enrollment?; let accountAccess: Bool? }
         let fixture = try JSONDecoder().decode(Fixture.self, from: Data(contentsOf: URL(fileURLWithPath: path)))
         stage("launch")
         let app = XCUIApplication()
@@ -116,7 +116,7 @@ final class PairingUITests: XCTestCase {
         app.launch()
         if let account = fixture.account {
             stage("account")
-            if fixture.enrollment != nil {
+            if fixture.enrollment != nil || fixture.accountAccess == true {
                 let toggles = app.buttons.matching(identifier: "sessionSidebar")
                 XCTAssertTrue(toggles.firstMatch.waitForExistence(timeout: 15))
                 XCTAssertEqual(toggles.count, 1, "The empty screen exposes the sidebar toggle")
@@ -133,7 +133,12 @@ final class PairingUITests: XCTestCase {
             // A successful sign-in closes the account sheet on its own, and the
             // invitation this run launched with pulls pairing up in its place —
             // nothing taps 关闭 to get out of the sign-in flow.
-            if let enrollment = fixture.enrollment {
+            if fixture.accountAccess == true {
+                XCTAssertTrue(fixture.invitation.isEmpty, "Same-account access must start without any pairing invitation")
+                XCTAssertNil(fixture.enrollment, "Same-account access must not bootstrap a roster signing device")
+                // Sign-in dismisses the account sheet. The directory and encrypted
+                // account handshake must discover the published Session on their own.
+            } else if let enrollment = fixture.enrollment {
                 stage("pairing")
                 openDrawer(app)
                 // Sign-in dismisses the account sheet on its own, so reopening it
@@ -222,7 +227,7 @@ final class PairingUITests: XCTestCase {
 
             }
         }
-        if fixture.enrollment == nil {
+        if fixture.enrollment == nil && fixture.accountAccess != true {
             XCTAssertTrue(app.buttons["开始配对"].waitForExistence(timeout: 15))
             XCTAssertTrue(app.buttons["开始配对"].isEnabled)
             stage("pairing")
