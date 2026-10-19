@@ -25,6 +25,50 @@ pub struct StagedImport {
 }
 
 impl Store {
+    /// Page original canonical messages without rewriting their IDs, timestamps,
+    /// tool correlations or metadata into native event-derived identities.
+    /// `after` is the immutable source timeline offset, not a native event seq.
+    pub async fn transfer_messages(
+        &self,
+        session: &str,
+        after: usize,
+        selected: bool,
+    ) -> Result<Value, Error> {
+        let session = session.to_owned();
+        self.call(move |conn| {
+            let tx = conn.transaction()?;
+            let header: Option<(String,String)> = tx.query_row(
+                "SELECT id,bundle_sha256 FROM engine_transfer_import WHERE session_id=?1",
+                [&session], |row| Ok((row.get(0)?,row.get(1)?)),
+            ).optional()?;
+            let (id,digest) = header.ok_or_else(|| Error::Invalid("Session has no semantic import".into()))?;
+            let mut stmt = tx.prepare(
+                "SELECT t.key,t.value FROM engine_transfer_import i,json_each(i.bundle,'$.timeline') t
+                 WHERE i.session_id=?1 AND t.key>=?2 AND (?3=0 OR json_extract(t.value,'$.id') IN
+                    (SELECT value FROM json_each(i.bundle,'$.context_ids')))
+                 ORDER BY t.key LIMIT 101"
+            )?;
+            let rows = stmt.query_map(params![session,after,selected], |row| Ok((row.get::<_,usize>(0)?,row.get::<_,String>(1)?)))?;
+            let mut messages = Vec::new();
+            let mut bytes = 0;
+            let mut next = None;
+            for row in rows {
+                let (offset,raw) = row?;
+                // A single canonical message remains indivisible. Its maximum
+                // size is already bounded by the validated source bundle.
+                if !messages.is_empty() && (messages.len()==100 || bytes+raw.len()>2*1024*1024) {
+                    next = Some(offset);
+                    break;
+                }
+                bytes += raw.len();
+                messages.push(serde_json::from_str::<Value>(&raw)?);
+            }
+            drop(stmt);
+            tx.commit()?;
+            Ok(json!({"id":id,"bundle_sha256":digest,"after":after,"next":next,"messages":messages}))
+        }).await
+    }
+
     /// Exact retries adopt the original inactive import, including after a
     /// process restart. A Session already present at the destination is never
     /// overwritten, even when its human-readable title happens to match.
