@@ -378,6 +378,42 @@ export const fromOwners = (
           input_id: input.inputID,
         }),
       ).pipe(Effect.map((value) => Schema.decodeUnknownSync(AcceptedReply)(value).accepted)),
+    revertStage: (input) =>
+      read(input, async (connection) => {
+        const snapshot = Schema.decodeUnknownSync(Schema.Struct({ cursor: Schema.Number }))(
+          await connection.client.request("snapshot", { session_id: input.sessionID }),
+        )
+        let after = 0
+        const events: EngineEvent[] = []
+        while (after < snapshot.cursor) {
+          const page = Schema.decodeUnknownSync(
+            Schema.Array(
+              Schema.Struct({
+                session_id: Schema.String,
+                seq: Schema.Number,
+                kind: Schema.String,
+                data: Schema.Unknown,
+              }),
+            ),
+          )(await connection.client.request("events", { session_id: input.sessionID, after }))
+          const next = page.at(-1)?.seq
+          if (next === undefined || next <= after)
+            throw new EngineError("invalid_cursor", "Native message cursor did not advance")
+          events.push(...page.filter((event) => event.seq <= snapshot.cursor))
+          after = next
+        }
+        const boundary = engineMessageSequence(input.sessionID, input.messageID, events)
+        if (boundary === undefined)
+          throw new EngineError("message_not_found", "No committed message for this public ID in the Session")
+        return connection.client.request("revert_stage", {
+          session_id: input.sessionID,
+          boundary_seq: boundary,
+        })
+      }),
+    revertClear: (input) =>
+      read(input, (connection) => connection.client.request("revert_clear", { session_id: input.sessionID })),
+    revertCommit: (input) =>
+      read(input, (connection) => connection.client.request("revert_commit", { session_id: input.sessionID })),
     requestCompact: (input) =>
       read<unknown>(input, (connection) =>
         connection.client.request("request_compact", { session_id: input.sessionID }),
