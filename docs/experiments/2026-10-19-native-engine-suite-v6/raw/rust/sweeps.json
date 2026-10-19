@@ -1,0 +1,62 @@
+[
+ {
+  "engine": "rust",
+  "model": "deepseek-v4-flash",
+  "revision": "83f7c4f935295946d46d1e802cb81ea382f0893c",
+  "binarySha256": "b2c1d67f465561ad7bed58ab28ebe03658b8042e16b0bb3f75a41d65329d14fd",
+  "tasks": [
+   "read-only",
+   "multi-read",
+   "small-edit",
+   "multi-file",
+   "test-repair"
+  ],
+  "repetitions": 3,
+  "suiteHash": "bd905b4f81f0a9412b614631a36337723067574848c5f05b50ead1cf48675091",
+  "startedAtMs": 1792418576669,
+  "finishedAtMs": 1792418699529,
+  "samples": 15,
+  "rejected": 0,
+  "chunk": "main-rs-1"
+ },
+ {
+  "engine": "rust",
+  "model": "deepseek-v4-flash",
+  "revision": "83f7c4f935295946d46d1e802cb81ea382f0893c",
+  "binarySha256": "b2c1d67f465561ad7bed58ab28ebe03658b8042e16b0bb3f75a41d65329d14fd",
+  "tasks": [
+   "permission-denial",
+   "tool-error",
+   "stream-interruption",
+   "long-session",
+   "multi-line-edit"
+  ],
+  "repetitions": 3,
+  "suiteHash": "bd905b4f81f0a9412b614631a36337723067574848c5f05b50ead1cf48675091",
+  "startedAtMs": 1792418727739,
+  "finishedAtMs": 1792418918767,
+  "samples": 15,
+  "rejected": 0,
+  "chunk": "main-rs-2"
+ },
+ {
+  "engine": "rust",
+  "model": "deepseek-v4-flash",
+  "revision": "83f7c4f935295946d46d1e802cb81ea382f0893c",
+  "binarySha256": "b2c1d67f465561ad7bed58ab28ebe03658b8042e16b0bb3f75a41d65329d14fd",
+  "tasks": [
+   "typed-repair",
+   "large-file",
+   "rename-symbol",
+   "create-module",
+   "docs-sync"
+  ],
+  "repetitions": 3,
+  "suiteHash": "bd905b4f81f0a9412b614631a36337723067574848c5f05b50ead1cf48675091",
+  "startedAtMs": 1792418996218,
+  "finishedAtMs": 1792419179418,
+  "samples": 15,
+  "rejected": 0,
+  "chunk": "main-rs-3"
+ }
+]

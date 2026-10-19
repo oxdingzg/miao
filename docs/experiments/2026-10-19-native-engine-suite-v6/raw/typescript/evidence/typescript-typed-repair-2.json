@@ -1,0 +1,215 @@
+{
+  "sample": {
+    "task": "typed-repair",
+    "engine": "typescript",
+    "repetition": 2,
+    "suiteHash": "bd905b4f81f0a9412b614631a36337723067574848c5f05b50ead1cf48675091",
+    "taskHash": "6d7a5f740fead5293e5e5ffb8d80de678897f4422c739a10fa17ed3caffaaea2",
+    "profile": {
+      "model": "deepseek-v4-flash",
+      "modelParametersHash": "2541008e79fcc28bb802ccfdaca56511bb1d2b536f7a4dccb5927005b13764f7",
+      "agentManifestHash": "eff04fc16b409fa813052d53c3b9c0fb5515dddc48a375834a8e2df37d5e8048",
+      "permissionHash": "230621199cc91c6846f00ea4abf5f3950d4a945aa1575b720e61bfa97cece8c0",
+      "toolSurfaceHash": "04c769ae52448d5fe45ea690050120cee624771222b1291088dc6d832c888106"
+    },
+    "revision": "83f7c4f935295946d46d1e802cb81ea382f0893c",
+    "artifactHash": "02cd5c44abf6e197b975ed90f8defb1bb6bcf7df9c94469fce014f2f514180a3",
+    "receiptHash": "9c407179cb3d2e07a5519264070bd5e7c16cb1dbf2090e9db458f7f082c9aa0b",
+    "outcome": "passed",
+    "elapsedMs": 8804,
+    "attempts": [
+      {
+        "inputTokens": 14014,
+        "outputTokens": 77,
+        "cost": null
+      },
+      {
+        "inputTokens": 14280,
+        "outputTokens": 51,
+        "cost": null
+      },
+      {
+        "inputTokens": 14509,
+        "outputTokens": 138,
+        "cost": null
+      },
+      {
+        "inputTokens": 14722,
+        "outputTokens": 85,
+        "cost": null
+      },
+      {
+        "inputTokens": 14881,
+        "outputTokens": 76,
+        "cost": null
+      }
+    ]
+  },
+  "rejection": null,
+  "evidence": {
+    "engine": "typescript",
+    "revision": "83f7c4f935295946d46d1e802cb81ea382f0893c",
+    "task": "typed-repair",
+    "repetition": 2,
+    "terminal": "completed",
+    "error": null,
+    "receipts": [],
+    "attempts": [
+      {
+        "inputTokens": 14014,
+        "outputTokens": 77,
+        "cacheReadTokens": 1792,
+        "cacheWriteTokens": null,
+        "reasoningTokens": 7,
+        "cost": null
+      },
+      {
+        "inputTokens": 14280,
+        "outputTokens": 51,
+        "cacheReadTokens": 14080,
+        "cacheWriteTokens": null,
+        "reasoningTokens": 0,
+        "cost": null
+      },
+      {
+        "inputTokens": 14509,
+        "outputTokens": 138,
+        "cacheReadTokens": 14208,
+        "cacheWriteTokens": null,
+        "reasoningTokens": 26,
+        "cost": null
+      },
+      {
+        "inputTokens": 14722,
+        "outputTokens": 85,
+        "cacheReadTokens": 14464,
+        "cacheWriteTokens": null,
+        "reasoningTokens": 0,
+        "cost": null
+      },
+      {
+        "inputTokens": 14881,
+        "outputTokens": 76,
+        "cacheReadTokens": 14720,
+        "cacheWriteTokens": null,
+        "reasoningTokens": 0,
+        "cost": null
+      }
+    ],
+    "phases": [
+      {
+        "phase": "step-start",
+        "atMs": 1792418402982,
+        "clock": "observed"
+      },
+      {
+        "phase": "tool-part",
+        "atMs": 1792418403336,
+        "clock": "observed"
+      },
+      {
+        "phase": "step-start",
+        "atMs": 1792418404449,
+        "clock": "observed"
+      },
+      {
+        "phase": "tool-part",
+        "atMs": 1792418404603,
+        "clock": "observed"
+      },
+      {
+        "phase": "step-start",
+        "atMs": 1792418405800,
+        "clock": "observed"
+      },
+      {
+        "phase": "tool-part",
+        "atMs": 1792418406313,
+        "clock": "observed"
+      },
+      {
+        "phase": "step-start",
+        "atMs": 1792418407212,
+        "clock": "observed"
+      },
+      {
+        "phase": "tool-part",
+        "atMs": 1792418407942,
+        "clock": "observed"
+      },
+      {
+        "phase": "step-start",
+        "atMs": 1792418408824,
+        "clock": "observed"
+      },
+      {
+        "phase": "first-output",
+        "atMs": 1792418409127,
+        "clock": "observed"
+      },
+      {
+        "phase": "exit",
+        "atMs": 1792418409185,
+        "clock": "observed"
+      },
+      {
+        "phase": "verified",
+        "atMs": 1792418409214,
+        "clock": "observed"
+      }
+    ],
+    "profile": {
+      "model": "deepseek-v4-flash",
+      "modelParametersHash": "2541008e79fcc28bb802ccfdaca56511bb1d2b536f7a4dccb5927005b13764f7",
+      "agentManifestHash": "eff04fc16b409fa813052d53c3b9c0fb5515dddc48a375834a8e2df37d5e8048",
+      "permissionHash": "230621199cc91c6846f00ea4abf5f3950d4a945aa1575b720e61bfa97cece8c0",
+      "toolSurfaceHash": "04c769ae52448d5fe45ea690050120cee624771222b1291088dc6d832c888106"
+    },
+    "profileReceipts": 5,
+    "loops": {
+      "continuations": [],
+      "stopped": []
+    },
+    "toolCalls": 4,
+    "textHash": "be64510aa53d385ae133b79f058a05532cd31d9345f0b5fe48bc5a5d29924a69",
+    "binarySha256": null,
+    "startedAtMs": 1792418400410,
+    "admissionMs": null,
+    "elapsedMs": 8804
+  },
+  "assessment": {
+    "suiteHash": "bd905b4f81f0a9412b614631a36337723067574848c5f05b50ead1cf48675091",
+    "taskHash": "6d7a5f740fead5293e5e5ffb8d80de678897f4422c739a10fa17ed3caffaaea2",
+    "artifactPass": true,
+    "unexpected": [],
+    "immutable": [
+      {
+        "file": "AGENTS.md",
+        "unchanged": true
+      },
+      {
+        "file": "package.json",
+        "unchanged": true
+      },
+      {
+        "file": "test/oracle.test.ts",
+        "unchanged": true
+      }
+    ],
+    "expected": [],
+    "check": {
+      "command": [
+        "bash",
+        "-lc",
+        "bun test test/oracle.test.ts && ! grep -q 'total: string' src/calc.ts && echo TYPED_REPAIR_OK"
+      ],
+      "exit": 0,
+      "stdoutHash": "efb93a940334384e8864956fb03b0b4baa725db808f1358cf83ce3a00cd53051",
+      "stderrHash": "fad999b54253277fd2ddf08b79e89a1d5c9d6c83c0fb88a0319bb612978a36c0"
+    },
+    "executionVerdict": "unverified",
+    "requiredReceipts": [],
+    "answerContains": []
+  },
+  "answer": "修复了 `src/calc.ts:2`：累加变量的类型标注从 `string` 改为 `number`，与 `reduce` 的数字初值及 `average(): number` 签名一致。\n\n验证：`bun test` 通过（1 pass / 0 fail），`tsc --noEmit --strict` 无错误。"
+}
