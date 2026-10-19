@@ -504,6 +504,11 @@ impl Runtime {
         if self.inner.stop.is_cancelled() {
             return Err(Error::Closed);
         }
+        // An active migration transition freezes the Session: neither engine
+        // may admit work until the transfer reaches a terminal state.
+        if self.inner.store.migration_active(&input.session_id).await? {
+            return Err(Error::Conflict);
+        }
         for agent in &input.agent_references.catalog {
             validate_agent(&self.inner, agent)?;
         }
@@ -621,6 +626,9 @@ impl Runtime {
     pub async fn resume(&self, session: &str) -> Result<(), Error> {
         if self.inner.store.location(session).await?.as_deref() != Some(self.inner.tools.location())
         {
+            return Err(Error::Conflict);
+        }
+        if self.inner.store.migration_active(session).await? {
             return Err(Error::Conflict);
         }
         self.wake(session, true).await

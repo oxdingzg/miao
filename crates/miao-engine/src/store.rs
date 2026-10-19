@@ -23,7 +23,7 @@ use tokio::sync::{mpsc, oneshot, watch};
 pub(crate) const APPLICATION_ID: u32 = 0x4d494145;
 // Older readers treat command prompts as ordinary text and cannot honor captured
 // authority or the once-only preparation ledger, even though no table is added.
-pub const SCHEMA_VERSION: u32 = 16;
+pub const SCHEMA_VERSION: u32 = 17;
 
 type Work = Box<dyn FnOnce(&mut Connection) + Send>;
 
@@ -179,7 +179,9 @@ impl Store {
                     "CREATE TABLE IF NOT EXISTS engine_file_snapshot(id INTEGER PRIMARY KEY AUTOINCREMENT,session_id TEXT NOT NULL REFERENCES engine_session(id),boundary_seq INTEGER NOT NULL,kind TEXT NOT NULL,manifest TEXT NOT NULL);
                      CREATE INDEX IF NOT EXISTS engine_snapshot_boundary ON engine_file_snapshot(session_id,boundary_seq);
                      CREATE TABLE IF NOT EXISTS engine_file_touch(session_id TEXT NOT NULL REFERENCES engine_session(id),path TEXT NOT NULL,PRIMARY KEY(session_id,path));
-                     CREATE TABLE IF NOT EXISTS engine_staged_revert(session_id TEXT PRIMARY KEY REFERENCES engine_session(id),boundary_seq INTEGER NOT NULL,snapshot_id INTEGER NOT NULL,restored TEXT NOT NULL,created TEXT NOT NULL,removed TEXT NOT NULL,previous TEXT NOT NULL);",
+                     CREATE TABLE IF NOT EXISTS engine_staged_revert(session_id TEXT PRIMARY KEY REFERENCES engine_session(id),boundary_seq INTEGER NOT NULL,snapshot_id INTEGER NOT NULL,restored TEXT NOT NULL,created TEXT NOT NULL,removed TEXT NOT NULL,previous TEXT NOT NULL);
+                     CREATE TABLE IF NOT EXISTS engine_migration(id TEXT PRIMARY KEY,session_id TEXT NOT NULL REFERENCES engine_session(id),direction TEXT NOT NULL,state TEXT NOT NULL,bundle_sha256 TEXT NOT NULL,source_high_seq INTEGER NOT NULL,created_ms INTEGER NOT NULL,updated_ms INTEGER NOT NULL);
+                     CREATE INDEX IF NOT EXISTS engine_migration_session ON engine_migration(session_id,state);",
                 )?;
                 let has_mode:bool=conn.query_row("SELECT EXISTS(SELECT 1 FROM pragma_table_info('engine_session') WHERE name='mode')",[],|r|r.get(0))?;
                 if !has_mode {
@@ -2963,4 +2965,269 @@ pub(crate) fn finish_run_tx(
         json!({"run_id":run,"reason":reason}),
     )?;
     Ok(event)
+}
+
+/// Explicit TS↔native Session migration authority. A row is a versioned
+/// transition: `staged` freezes writes on one side, `cutover` moves the single
+/// authority, and `completed`/`aborted` are terminal. `bundle_sha256` binds the
+/// exported semantic payload; `source_high_seq` is the frozen side's watermark
+/// and must still match at cutover, or the transition is stale.
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct Migration {
+    pub id: String,
+    pub session_id: String,
+    pub direction: String,
+    pub state: String,
+    pub bundle_sha256: String,
+    pub source_high_seq: u64,
+    pub created_ms: u64,
+    pub updated_ms: u64,
+}
+
+impl Store {
+    fn valid_transition(from: &str, to: &str) -> bool {
+        matches!(
+            (from, to),
+            ("staged", "cutover")
+                | ("cutover", "completed")
+                | ("staged", "aborted")
+                | ("cutover", "aborted")
+        )
+    }
+
+    /// Stage a transition for an existing Session. Exact retry adopts the
+    /// original row when direction/bundle/watermark match; any other shape is a
+    /// Conflict. The row plus its freeze event commit in one transaction.
+    pub async fn migration_stage(
+        &self,
+        id: &str,
+        session: &str,
+        direction: &str,
+        bundle_sha256: &str,
+        source_high_seq: u64,
+    ) -> Result<Migration, Error> {
+        let id = id.to_owned();
+        let session = session.to_owned();
+        let direction = direction.to_owned();
+        let bundle_sha256 = bundle_sha256.to_owned();
+        if id.len() > 128
+            || session.is_empty()
+            || !matches!(direction.as_str(), "ts_to_rust" | "rust_to_ts")
+            || bundle_sha256.len() != 64
+            || !bundle_sha256.bytes().all(|byte| byte.is_ascii_hexdigit())
+        {
+            return Err(Error::Invalid("invalid migration transition".into()));
+        }
+        let bundle_sha256 = bundle_sha256.to_lowercase();
+        self.call(move |conn| {
+            let tx = write_tx(conn)?;
+            let session_exists: bool = tx
+                .query_row("SELECT EXISTS(SELECT 1 FROM engine_session WHERE id=?1)", [&session], |r| r.get(0))?;
+            if !session_exists {
+                return Err(Error::Conflict);
+            }
+            let now = now_ms();
+            if let Some(existing) = Self::migration_row(&tx, &id)? {
+                // Exact retry adopts the recorded transition; the watermark is
+                // the staged fact, not re-asserted against the advanced source.
+                if existing.session_id == session
+                    && existing.direction == direction
+                    && existing.bundle_sha256 == bundle_sha256
+                    && existing.source_high_seq == source_high_seq
+                    && matches!(existing.state.as_str(), "staged" | "cutover")
+                {
+                    return Ok(existing);
+                }
+                return Err(Error::Conflict);
+            }
+            let high: u64 = tx.query_row("SELECT next_seq FROM engine_session WHERE id=?1", [&session], |r| r.get(0))?;
+            if high != source_high_seq {
+                // A fresh stage asserts the live source watermark; a stale
+                // request cannot stage.
+                return Err(Error::Conflict);
+            }
+            let active: bool = tx.query_row(
+                "SELECT EXISTS(SELECT 1 FROM engine_migration WHERE session_id=?1 AND state IN ('staged','cutover'))",
+                [&session],
+                |r| r.get(0),
+            )?;
+            if active {
+                return Err(Error::Conflict);
+            }
+            tx.execute(
+                "INSERT INTO engine_migration(id,session_id,direction,state,bundle_sha256,source_high_seq,created_ms,updated_ms)
+                 VALUES(?1,?2,?3,'staged',?4,?5,?6,?6)",
+                params![id, session, direction, bundle_sha256, source_high_seq, now],
+            )?;
+            // The frozen watermark includes this transition's own staged
+            // event, so only source-side writes can advance past it.
+            let event = append(&tx, &session, "migration.staged", json!({
+                "migration_id": id,
+                "direction": direction,
+                "bundle_sha256": bundle_sha256,
+                "source_high_seq": source_high_seq,
+            }))?;
+            let frozen = event.seq;
+            tx.execute(
+                "UPDATE engine_migration SET source_high_seq=?1 WHERE id=?2",
+                params![frozen, id],
+            )?;
+            tx.commit()?;
+            Ok(Self::migration_owned(&id, &session, &direction, &bundle_sha256, frozen, now, now))
+        })
+        .await
+    }
+
+    /// CAS staged→cutover. The frozen watermark must still match exactly; a
+    /// writer that advanced the source between stage and cutover invalidates
+    /// the transition instead of silently forking history.
+    pub async fn migration_cutover(&self, id: &str) -> Result<Migration, Error> {
+        let id = id.to_owned();
+        self.call(move |conn| {
+            let tx = write_tx(conn)?;
+            let mut migration = Self::migration_row(&tx, &id)?
+                .ok_or_else(|| Error::Invalid("unknown migration transition".into()))?;
+            if migration.state != "staged" {
+                return Err(Error::Conflict);
+            }
+            let high: u64 = tx.query_row(
+                "SELECT next_seq FROM engine_session WHERE id=?1",
+                [&migration.session_id],
+                |r| r.get(0),
+            )?;
+            if high != migration.source_high_seq {
+                return Err(Error::Conflict);
+            }
+            Self::migration_set_state(&tx, &id, "cutover", &mut migration)?;
+            append(
+                &tx,
+                &migration.session_id,
+                "migration.cutover",
+                json!({
+                    "migration_id": id,
+                    "direction": migration.direction,
+                }),
+            )?;
+            tx.commit()?;
+            Ok(migration)
+        })
+        .await
+    }
+
+    pub async fn migration_complete(&self, id: &str) -> Result<Migration, Error> {
+        Self::transition_terminal(self, id, "completed").await
+    }
+
+    pub async fn migration_abort(&self, id: &str) -> Result<Migration, Error> {
+        Self::transition_terminal(self, id, "aborted").await
+    }
+
+    /// An active transition freezes the Session: no admission may start on
+    /// either engine until it reaches a terminal state.
+    pub async fn migration_active(&self, session: &str) -> Result<bool, Error> {
+        let session = session.to_owned();
+        self.call(move |conn| {
+            Ok(conn.query_row(
+                "SELECT EXISTS(SELECT 1 FROM engine_migration WHERE session_id=?1 AND state IN ('staged','cutover'))",
+                [&session],
+                |r| r.get(0),
+            )?)
+        })
+        .await
+    }
+
+    pub async fn migration_find(&self, id: &str) -> Result<Option<Migration>, Error> {
+        let id = id.to_owned();
+        self.call(move |conn| {
+            let tx = write_tx(conn)?;
+            Self::migration_row(&tx, &id)
+        })
+        .await
+    }
+
+    async fn transition_terminal(store: &Store, id: &str, state: &str) -> Result<Migration, Error> {
+        let id = id.to_owned();
+        let state = state.to_owned();
+        store
+            .call(move |conn| {
+                let tx = write_tx(conn)?;
+                let mut migration = Self::migration_row(&tx, &id)?
+                    .ok_or_else(|| Error::Invalid("unknown migration transition".into()))?;
+                if !Self::valid_transition(&migration.state, &state) {
+                    return Err(Error::Conflict);
+                }
+                Self::migration_set_state(&tx, &id, &state, &mut migration)?;
+                append(
+                    &tx,
+                    &migration.session_id,
+                    format!("migration.{state}").as_str(),
+                    json!({
+                        "migration_id": id,
+                        "direction": migration.direction,
+                    }),
+                )?;
+                tx.commit()?;
+                Ok(migration)
+            })
+            .await
+    }
+
+    fn migration_row(tx: &Transaction<'_>, id: &str) -> Result<Option<Migration>, Error> {
+        tx.query_row(
+            "SELECT id,session_id,direction,state,bundle_sha256,source_high_seq,created_ms,updated_ms
+             FROM engine_migration WHERE id=?1",
+            [id],
+            |row| {
+                Ok(Migration {
+                    id: row.get(0)?,
+                    session_id: row.get(1)?,
+                    direction: row.get(2)?,
+                    state: row.get(3)?,
+                    bundle_sha256: row.get(4)?,
+                    source_high_seq: row.get::<_, i64>(5)? as u64,
+                    created_ms: row.get::<_, i64>(6)? as u64,
+                    updated_ms: row.get::<_, i64>(7)? as u64,
+                })
+            },
+        )
+        .optional()
+        .map_err(Error::from)
+    }
+
+    fn migration_set_state(
+        tx: &Transaction<'_>,
+        id: &str,
+        state: &str,
+        migration: &mut Migration,
+    ) -> Result<(), Error> {
+        let now = now_ms();
+        tx.execute(
+            "UPDATE engine_migration SET state=?1,updated_ms=?2 WHERE id=?3",
+            params![state, now, id],
+        )?;
+        migration.state = state.to_owned();
+        migration.updated_ms = now;
+        Ok(())
+    }
+
+    fn migration_owned(
+        id: &str,
+        session_id: &str,
+        direction: &str,
+        bundle_sha256: &str,
+        source_high_seq: u64,
+        created_ms: u64,
+        updated_ms: u64,
+    ) -> Migration {
+        Migration {
+            id: id.to_owned(),
+            session_id: session_id.to_owned(),
+            direction: direction.to_owned(),
+            state: "staged".into(),
+            bundle_sha256: bundle_sha256.to_owned(),
+            source_high_seq,
+            created_ms,
+            updated_ms,
+        }
+    }
 }
