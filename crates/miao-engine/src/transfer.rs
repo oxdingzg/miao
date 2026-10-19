@@ -1,6 +1,7 @@
 //! Durable, inactive semantic imports. Staging retains the exact source bundle;
 //! it grants no execution authority. Activation belongs to the separate host
 //! cutover protocol after projection/provider-history verification.
+use crate::provider::Identity;
 use crate::{
     approval::now_ms,
     protocol::Error,
@@ -13,6 +14,33 @@ use sha2::{Digest, Sha256};
 use std::collections::HashSet;
 
 pub const MAX_BYTES: usize = 64 * 1024 * 1024;
+
+/// The trusted host supplies a private immutable bundle file rather than
+/// placing up to 64 MiB inside the engine's 1 MiB control-frame limit.
+pub async fn read_bundle_file(path: std::path::PathBuf, expected: &str) -> Result<String, Error> {
+    if !path.is_absolute() {
+        return Err(Error::Invalid(
+            "transfer bundle path must be absolute".into(),
+        ));
+    }
+    let expected = expected.to_owned();
+    tokio::task::spawn_blocking(move || {
+        use std::io::Read;
+        let mut bundle = String::new();
+        std::fs::File::open(path)?
+            .take(MAX_BYTES as u64 + 1)
+            .read_to_string(&mut bundle)?;
+        if bundle.len() > MAX_BYTES {
+            return Err(Error::Invalid("transfer bundle size limit".into()));
+        }
+        if format!("{:x}", Sha256::digest(bundle.as_bytes())) != expected {
+            return Err(Error::Conflict);
+        }
+        Ok(bundle)
+    })
+    .await
+    .map_err(|_| Error::Invalid("bundle reader stopped".into()))?
+}
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct StagedImport {
@@ -78,6 +106,35 @@ impl Store {
         bundle: String,
         bundle_sha256: &str,
     ) -> Result<StagedImport, Error> {
+        self.stage_transfer_impl(id, bundle, bundle_sha256, None)
+            .await
+    }
+
+    pub async fn stage_prepared_session_transfer(
+        &self,
+        id: &str,
+        bundle: String,
+        bundle_sha256: &str,
+        identity: Identity,
+        route_id: Option<String>,
+    ) -> Result<StagedImport, Error> {
+        let messages = crate::transfer_history::prepare(&bundle, &identity, route_id.as_deref())?;
+        self.stage_transfer_impl(
+            id,
+            bundle,
+            bundle_sha256,
+            Some(json!({"identity":identity,"route_id":route_id,"messages":messages})),
+        )
+        .await
+    }
+
+    async fn stage_transfer_impl(
+        &self,
+        id: &str,
+        bundle: String,
+        bundle_sha256: &str,
+        preparation: Option<Value>,
+    ) -> Result<StagedImport, Error> {
         if id.is_empty() || id.len() > 128 || bundle.len() > MAX_BYTES {
             return Err(Error::Invalid(
                 "invalid semantic import identity or size".into(),
@@ -141,6 +198,15 @@ impl Store {
                 if existing.session_id != session || existing.bundle != bundle || existing.bundle_sha256 != digest || existing.state != "staged" {
                     return Err(Error::Conflict);
                 }
+                if let Some(preparation) = &preparation {
+                    let recorded:Option<String> = tx.query_row("SELECT data FROM engine_transfer_preparation WHERE import_id=?1",[&id],|row|row.get(0)).optional()?;
+                    if let Some(recorded) = recorded {
+                        if serde_json::from_str::<Value>(&recorded)? != *preparation { return Err(Error::Conflict); }
+                    } else {
+                        tx.execute("INSERT INTO engine_transfer_preparation(import_id,data) VALUES(?1,?2)",params![id,serde_json::to_string(preparation)?])?;
+                    }
+                }
+                tx.commit()?;
                 return Ok(existing);
             }
             let exists: bool = tx.query_row("SELECT EXISTS(SELECT 1 FROM engine_session WHERE id=?1)", [&session], |row| row.get(0))?;
@@ -158,9 +224,28 @@ impl Store {
                 "INSERT INTO engine_transfer_import(id,session_id,bundle_sha256,bundle,state,created_ms) VALUES(?1,?2,?3,?4,'staged',?5)",
                 params![id,session,digest,bundle,created_ms],
             )?;
+            if let Some(preparation) = preparation {
+                tx.execute("INSERT INTO engine_transfer_preparation(import_id,data) VALUES(?1,?2)",params![id,serde_json::to_string(&preparation)?])?;
+            }
             tx.commit()?;
             Ok(StagedImport { id, session_id: session, bundle_sha256: digest, bundle, state: "staged".into(), created_ms })
         }).await
+    }
+
+    pub async fn session_transfer_preparation(&self, id: &str) -> Result<Option<Value>, Error> {
+        let id = id.to_owned();
+        self.call(move |conn| {
+            let data: Option<String> = conn
+                .query_row(
+                    "SELECT data FROM engine_transfer_preparation WHERE import_id=?1",
+                    [id],
+                    |row| row.get(0),
+                )
+                .optional()?;
+            data.map(|data| serde_json::from_str(&data).map_err(Error::from))
+                .transpose()
+        })
+        .await
     }
 
     pub async fn session_transfer_import(&self, id: &str) -> Result<Option<StagedImport>, Error> {

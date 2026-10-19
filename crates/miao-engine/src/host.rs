@@ -271,6 +271,48 @@ impl Host {
                 .await
                 .map(|value| value.unwrap_or(Value::Null)),
             Command::Snapshot { session_id } => runtime.store().snapshot(&session_id).await,
+            Command::TransferValidate {
+                path,
+                bundle_sha256,
+                identity,
+                route_id,
+            } => {
+                let bundle = crate::transfer::read_bundle_file(path, &bundle_sha256).await?;
+                let messages =
+                    crate::transfer_history::prepare(&bundle, &identity, route_id.as_deref())?;
+                Ok(
+                    json!({"bundle_sha256":bundle_sha256,"identity":identity,"route_id":route_id,"message_count":messages.len()}),
+                )
+            }
+            Command::TransferStage {
+                import_id,
+                path,
+                bundle_sha256,
+                identity,
+                route_id,
+            } => {
+                let bundle = crate::transfer::read_bundle_file(path, &bundle_sha256).await?;
+                let staged = runtime
+                    .store()
+                    .stage_prepared_session_transfer(
+                        &import_id,
+                        bundle,
+                        &bundle_sha256,
+                        identity,
+                        route_id,
+                    )
+                    .await?;
+                Ok(
+                    json!({"id":staged.id,"session_id":staged.session_id,"bundle_sha256":staged.bundle_sha256,"state":staged.state}),
+                )
+            }
+            Command::TransferAbort { import_id } => {
+                runtime
+                    .store()
+                    .abort_session_transfer_import(&import_id)
+                    .await?;
+                Ok(json!({"id":import_id,"state":"aborted"}))
+            }
             Command::TransferTimeline { session_id, after } => {
                 runtime
                     .store()

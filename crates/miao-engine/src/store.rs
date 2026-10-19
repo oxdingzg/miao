@@ -272,6 +272,8 @@ impl Store {
                     id TEXT PRIMARY KEY, session_id TEXT UNIQUE NOT NULL REFERENCES engine_session(id),
                     bundle_sha256 TEXT NOT NULL, bundle TEXT NOT NULL, state TEXT NOT NULL,
                     created_ms INTEGER NOT NULL);
+                    CREATE TABLE IF NOT EXISTS engine_transfer_preparation(
+                    import_id TEXT PRIMARY KEY REFERENCES engine_transfer_import(id),data TEXT NOT NULL);
                     CREATE TRIGGER IF NOT EXISTS engine_transfer_import_event_fence
                     BEFORE INSERT ON engine_event
                     WHEN EXISTS(SELECT 1 FROM engine_transfer_import WHERE session_id=NEW.session_id AND state!='active')
