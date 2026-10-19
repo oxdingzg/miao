@@ -103,6 +103,16 @@ export async function start(input: {
       pairing,
       methods: RuntimeControlMethods.make({ client, live, owned: accessible, sessionCreated: publish, run: input.run }),
       sessionEnabled: (sessionID) => published.has(sessionID),
+      accountScope: async () => ({
+        projectIDs: [
+          ...new Set(
+            (await Promise.all([...published].map((id) => projectForSession(id)))).filter(
+              (id): id is string => id !== undefined,
+            ),
+          ),
+        ],
+        sessionIDs: [...published],
+      }),
       projectForSession,
     })
     const notifications = PushSender.make({

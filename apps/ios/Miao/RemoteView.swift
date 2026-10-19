@@ -53,12 +53,23 @@ struct RemoteView: View {
         }
         .onChange(of: model.connectionEpoch) { _, _ in Task { await attach() } }
         .onChange(of: model.hosts.map(\.id)) { _, ids in
-            if hostID == nil { hostID = ids.first }
+            if hostID == nil || !ids.contains(hostID!) { hostID = ids.first; sessionID = nil }
         }
         .onChange(of: phase) { _, value in
             if value == .active { applyNotification() }
             model.scene(sceneID, phase: value)
             Task { if let attached { await model.clients[attached]?.scene(sceneID, phase: value) } }
+        }
+        .task(id: phase) {
+            guard phase == .active else { return }
+            while !Task.isCancelled {
+                await model.refreshDirectory()
+                for client in model.clients.values where client.record.accountID != nil {
+                    await client.scene(sceneID, phase: .active)
+                    if client.ready { await client.refreshLists() }
+                }
+                do { try await Task.sleep(for: .seconds(10)) } catch { return }
+            }
         }
         .onDisappear {
             model.removeScene(sceneID)
@@ -94,6 +105,9 @@ struct RemoteView: View {
             Group {
                 if let hostID, let client = model.clients[hostID] {
                     sessionContent(client)
+                        .onAppear {
+                            if sessionID == nil { sessionID = client.lists.values.flatMap({ $0 }).first?.id }
+                        }
                         .onChange(of: sessionCount(client)) { _, count in
                             if sessionID == nil, count > 0, let first = client.lists.values.flatMap({ $0 }).first {
                                 sessionID = first.id
@@ -177,8 +191,12 @@ struct RemoteView: View {
 
     @ViewBuilder private func sidebarContent(_ client: HostClient) -> some View {
         List {
-            Section { sidebarHeader(client) }
-            sessionSections(client)
+            ForEach(model.hosts) { record in
+                if let host = model.clients[record.id] {
+                    Section { sidebarHeader(host) }
+                    accountSessionSections(host)
+                }
+            }
             if !pendingOperations(client).isEmpty {
                 Section("待核对操作") {
                     ForEach(pendingOperations(client)) { operation in
@@ -214,6 +232,24 @@ struct RemoteView: View {
     @ViewBuilder private func sessionSections(_ client: HostClient) -> some View {
         ForEach(client.lists.keys.sorted(), id: \.self) { project in
             sessionSection(client, project: project)
+        }
+    }
+
+    @ViewBuilder private func accountSessionSections(_ client: HostClient) -> some View {
+        ForEach(client.lists.keys.sorted(), id: \.self) { project in
+            Section(projectName(project)) {
+                ForEach(client.lists[project] ?? []) { session in
+                    Button {
+                        hostID = client.record.id
+                        select(session)
+                    } label: {
+                        Label(session.title, systemImage: "bubble.left.and.text.bubble.right")
+                    }.buttonStyle(.plain)
+                }
+                if client.next[project] != nil {
+                    Button("更多会话") { Task { await client.refreshLists(more: project) } }.disabled(!client.ready)
+                }
+            }
         }
     }
 

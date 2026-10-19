@@ -20,6 +20,22 @@ import MiaoCore
             stage("authenticated-profile")
             let accountID = try await account.authenticatedAccountID()
             let key = P256.Signing.PrivateKey()
+            stage("account-access-without-enrollment")
+            guard let directTarget = try await account.hosts().first(where: { $0.online }) else { throw HubAccountError.malformed }
+            let directRegistry = try HostRegistry(directory: directory.appendingPathComponent("signed-in"),
+                deviceKey: key.publicKey.x963Representation.base64EncodedString().replacingOccurrences(of: "+", with: "-").replacingOccurrences(of: "/", with: "_").replacingOccurrences(of: "=", with: ""), allowLoopbackHTTP: true)
+            let directID = UUID()
+            for _ in 0..<2 {
+                let direct = try await HubConnection.autoAdmit(account: account, discovered: directTarget, identity: key,
+                    accountAccess: true, existingID: directID,
+                    persist: { host, grant in try await directRegistry.admitSignedIn(host: host, grant: grant, accountID: accountID) },
+                    reconcile: { _ in })
+                let value = try await direct.connection.request(.sessionGet, sessionID: "session-one")
+                guard value["title"]?.string == "Native admitted session" else { throw HubAccountError.malformed }
+                await direct.connection.close()
+            }
+            let directHosts = try await directRegistry.hosts()
+            guard directHosts.count == 1, directHosts[0].id == directID else { throw HubAccountError.malformed }
             let deviceKey = key.publicKey.x963Representation.base64EncodedString().replacingOccurrences(of: "+", with: "-").replacingOccurrences(of: "/", with: "_").replacingOccurrences(of: "=", with: "")
             let enrollment = AccountEnrollment(identity: key)
             let request = try await enrollment.begin(hubURL: fixture.origin.absoluteString, accountID: accountID, label: "Native probe", allowLoopbackHTTP: true)

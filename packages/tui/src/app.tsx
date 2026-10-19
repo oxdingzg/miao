@@ -308,7 +308,9 @@ export const run = Effect.fn("Tui.run")(function* (input: TuiInput) {
               }}
             >
               <EpilogueProvider set={(value) => (exit.epilogue = value)}>
-                <ErrorBoundary fallback={(report, reset) => <ErrorComponent report={report} reset={reset} mode={mode} />}>
+                <ErrorBoundary
+                  fallback={(report, reset) => <ErrorComponent report={report} reset={reset} mode={mode} />}
+                >
                   <TuiPathsProvider
                     value={{
                       cwd: process.cwd(),
@@ -883,10 +885,18 @@ function App(props: {
           const runtime = sdk.api["server.runtime"]
           const sessionID = route.data.type === "session" ? route.data.sessionID : undefined
           void (async () => {
+            if (!sessionID) {
+              toast.show({ message: "请先打开要远程控制的会话", variant: "info" })
+              return
+            }
             const status = await runtime.get()
-            const enable = !status.enabled
-            await runtime.setEnabled({ enabled: enable })
-            if (sessionID) await runtime.setSessionEnabled?.({ sessionID, enabled: enable })
+            const enable = !status.sessionIDs?.includes(sessionID)
+            const active = enable && !status.enabled ? await runtime.setEnabled({ enabled: true }) : status
+            if (enable && !active.accountID) {
+              toast.show({ message: "请先使用 /login 登录中继账号", variant: "info" })
+              return
+            }
+            await runtime.setSessionEnabled({ sessionID, enabled: enable })
             toast.show({ message: enable ? "远程控制已开启" : "远程控制已关闭", variant: "success" })
           })().catch(() => toast.show({ message: "远程控制状态切换失败", variant: "error" }))
         },

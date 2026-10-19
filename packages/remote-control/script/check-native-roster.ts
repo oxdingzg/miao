@@ -128,6 +128,7 @@ try {
     runtimeID: crypto.randomUUID(),
     grants,
     accountID,
+    accountScope: async () => ({ projectIDs: ["project-one"], sessionIDs: ["session-one"] }),
     allowLoopbackHTTP: true,
     sessionEnabled: () => true,
     projectForSession: async () => "project-one",
@@ -165,7 +166,7 @@ try {
     throw new Error("Native roster admission probe failed")
   }
   const managed = grants.list().filter((grant) => grant.publicKey === childKey)
-  if (calls !== 2 || managed.length !== 1 || managed[0]!.version !== 1 || grants.list().length !== 2)
+  if (calls !== 4 || managed.length !== 1 || managed[0]!.version !== 1 || grants.list().length !== 2)
     throw new Error("Native reconnect replayed requests or accumulated grants")
   console.log(output.trim())
 } finally {
