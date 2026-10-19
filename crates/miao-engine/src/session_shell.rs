@@ -175,6 +175,7 @@ impl Store {
         invocation: Invocation,
         result: Value,
         lease: &SessionLease,
+        close_run: bool,
     ) -> Result<Value, Error> {
         let (session, run, lease) = (session.to_owned(), run.to_owned(), lease.clone());
         self.call(move |connection| {
@@ -195,7 +196,7 @@ impl Store {
             }
             tx.execute("UPDATE engine_tool SET state=?2 WHERE id=?1",params![format!("{run}/{}",invocation.execution_id(&session)),if data["reason"]=="unknown" {"unknown"} else {"completed"}])?;
             let reason=if refused {"denied"} else if data["reason"]=="cancelled" {"interrupted"} else {"completed"};
-            finish_run_tx(&tx,&session,&run,reason,Some(&lease))?;
+            if close_run {finish_run_tx(&tx,&session,&run,reason,Some(&lease))?;}
             let value=receipt(&tx,&session,&invocation.call_id)?.ok_or_else(||Error::Invalid("operator shell result missing".into()))?;
             tx.commit()?;
             Ok(value)

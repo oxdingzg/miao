@@ -45,6 +45,8 @@ async fn active(store: &Store, running: bool) -> Option<String> {
 
 fn input(id: &str) -> Input {
     Input {
+        agent_references: Default::default(),
+        command: None,
         session_id: "s".into(),
         input_id: id.into(),
         prompt: "wait".into(),

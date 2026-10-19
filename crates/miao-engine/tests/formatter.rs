@@ -98,6 +98,8 @@ async fn drive(tools: Tools, name: &str, input: Value) -> Value {
     runtime
         .admit(
             Input {
+                agent_references: Default::default(),
+                command: None,
                 session_id: "s".into(),
                 input_id: "input".into(),
                 prompt: "mutate".into(),

@@ -7,6 +7,8 @@ async fn usage_report_aggregates_turns_tokens_ttft_and_lineage() {
     let store = Store::open(dir.path().join("engine.db")).await.unwrap();
     store
         .admit(miao_engine::protocol::Input {
+            agent_references: Default::default(),
+            command: None,
             session_id: "s".into(),
             input_id: "seed".into(),
             prompt: "task".into(),

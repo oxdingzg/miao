@@ -147,6 +147,17 @@ it.live("product routes bind active accounts without persisting secrets and keep
               model.capabilities.output = ["text"]
             })
           }
+          draft.provider.update(ProviderV2.ID.amazonBedrock, (provider) => {
+            provider.api = {
+              type: "aisdk",
+              package: "@ai-sdk/amazon-bedrock",
+              settings: { region: "eu-west-1", profile: "native-fixture" },
+            }
+          })
+          draft.model.update(ProviderV2.ID.amazonBedrock, ModelV2.ID.make("anthropic.claude-sonnet-4-5"), (model) => {
+            model.capabilities.tools = true
+            model.capabilities.output = ["text"]
+          })
           draft.model.default.set(ProviderV2.ID.make("commandcode"), ModelV2.ID.make("model-0"))
           for (const id of ["expired", "unsupported", "custom", "opencode-go"]) {
             draft.provider.update(ProviderV2.ID.make(id), (provider) => {
@@ -190,7 +201,7 @@ it.live("product routes bind active accounts without persisting secrets and keep
         ])
           expect(content).not.toContain(secret)
         const routes = yield* Effect.promise(() => Bun.file(file).json())
-        expect(routes).toHaveLength(208)
+        expect(routes).toHaveLength(209)
         const alternate = routes.find(
           (route: { account?: { id?: string; model_key: string } }) =>
             route.account?.id === "cred_backup" && route.account.model_key === "commandcode/model-0",
@@ -225,6 +236,12 @@ it.live("product routes bind active accounts without persisting secrets and keep
         }
         expect(routes.find((route: { id: string }) => route.id === "opencode-go/model").auth.headers).toEqual({
           "x-opencode-session": "$session",
+        })
+        expect(
+          routes.find((route: { id: string }) => route.id === "amazon-bedrock/anthropic.claude-sonnet-4-5"),
+        ).toMatchObject({
+          provider: "amazon-bedrock",
+          credential: { type: "aws", region: "eu-west-1", profile: "native-fixture" },
         })
         expect(routes.find((route: { id: string }) => route.id === "custom/model").endpoint).toBe(
           "https://example.invalid/v1/chat/completions?version=v1",

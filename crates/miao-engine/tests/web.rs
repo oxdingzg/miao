@@ -402,6 +402,8 @@ async fn runtime_fetch_waits_for_bound_controller_approval_before_any_http_reque
     runtime
         .admit(
             Input {
+                agent_references: Default::default(),
+                command: None,
                 session_id: "s".into(),
                 input_id: "one".into(),
                 prompt: "fetch it".into(),

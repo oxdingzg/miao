@@ -1,3 +1,4 @@
+import type { NativeInput } from "./command-manifest"
 import { spawn } from "bun"
 import { EOL } from "os"
 import type { ConfigMCP } from "@miao/schema/config/mcp"
@@ -130,6 +131,24 @@ const INHERITED_ENVIRONMENT = [
   "OPENAI_ACCESS_TOKEN",
   "OPENAI_ACCOUNT_ID",
   "GEMINI_API_KEY",
+  // Bedrock's AWS SDK default credential chain. Region/profile and bearer
+  // selection also travel in the trusted route manifest when configured.
+  "AWS_REGION",
+  "AWS_DEFAULT_REGION",
+  "AWS_PROFILE",
+  "AWS_ACCESS_KEY_ID",
+  "AWS_SECRET_ACCESS_KEY",
+  "AWS_SESSION_TOKEN",
+  "AWS_BEARER_TOKEN_BEDROCK",
+  "AWS_CONTAINER_CREDENTIALS_RELATIVE_URI",
+  "AWS_CONTAINER_CREDENTIALS_FULL_URI",
+  "AWS_CONTAINER_AUTHORIZATION_TOKEN",
+  "AWS_CONTAINER_AUTHORIZATION_TOKEN_FILE",
+  "AWS_WEB_IDENTITY_TOKEN_FILE",
+  "AWS_ROLE_ARN",
+  "AWS_ROLE_SESSION_NAME",
+  "AWS_STS_REGIONAL_ENDPOINTS",
+  "AWS_SDK_LOAD_CONFIG",
   "EXA_API_KEY",
   "PARALLEL_API_KEY",
   "MIAO_WEB_SEARCH_PROVIDER",
@@ -331,7 +350,7 @@ export class EngineClient {
   }
 
   admit(
-    input: { session_id: string; input_id: string; prompt: string; delivery?: "steer" | "queue" },
+    input: NativeInput,
     resume = true,
     attachments: readonly { mime: string; data: string; metadata?: Readonly<Record<string, unknown>> }[] = [],
   ) {

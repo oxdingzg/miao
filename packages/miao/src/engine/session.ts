@@ -1,6 +1,8 @@
+import { SessionModelRoute } from "@miao/schema/session-model-route"
+import type { NativeCommand, NativeAgentReferences } from "./command-manifest"
 import { Credential } from "@miao/schema/credential"
 import { DateTime, Option, Schema } from "effect"
-import { Prompt } from "@miao/schema/prompt"
+import { Prompt, AgentAttachment } from "@miao/schema/prompt"
 import type { PromptInput } from "@miao/schema/prompt-input"
 import { SessionInput } from "@miao/schema/session-input"
 import { SessionMessage } from "@miao/schema/session-message"
@@ -76,6 +78,70 @@ export class EngineTranslator {
           recordedAtMs: event.recorded_at_ms ?? null,
         },
       })
+    }
+    if (
+      (event.kind === "command.started" || event.kind === "command.completed" || event.kind === "command.failed") &&
+      typeof event.recorded_at_ms === "number"
+    ) {
+      const command = Schema.decodeUnknownOption(
+        Schema.Struct({
+          input_id: Schema.String,
+          message_seq: Schema.Number,
+          prompt: Schema.optional(Schema.String),
+          attachments: Schema.optional(Schema.Unknown),
+          agents: Schema.optional(Schema.Array(AgentAttachment)),
+          error: Schema.optional(Schema.NullOr(Schema.String)),
+        }),
+      )(event.data)
+      if (Option.isSome(command)) {
+        const common = {
+          sessionID: adoptSession(event.session_id),
+          timestamp: DateTime.makeUnsafe(event.recorded_at_ms),
+          messageID: command.value.input_id.startsWith("msg_")
+            ? SessionMessage.ID.make(command.value.input_id)
+            : messageID(event.session_id, command.value.message_seq),
+        }
+        if (event.kind === "command.started") publish({ type: "session.next.command.started", data: common })
+        if (event.kind === "command.completed" && command.value.prompt !== undefined)
+          publish({
+            type: "session.next.command.completed",
+            data: {
+              ...common,
+              prompt: {
+                text: command.value.prompt,
+                ...(command.value.attachments ? { files: decodeAttachments(command.value.attachments) } : {}),
+                ...(command.value.agents?.length ? { agents: command.value.agents } : {}),
+              },
+            },
+          })
+        if (event.kind === "command.failed" && typeof command.value.error === "string")
+          publish({
+            type: "session.next.command.failed",
+            data: {
+              ...common,
+              error: command.value.error,
+              text: command.value.prompt ?? `Slash command failed: ${command.value.error}`,
+            },
+          })
+      }
+    }
+    if (event.kind === "session.model.selected" && typeof event.recorded_at_ms === "number") {
+      const selected = Schema.decodeUnknownOption(Schema.Struct({ binding: Schema.NullOr(SessionModelRoute.Binding) }))(
+        event.data,
+      )
+      if (Option.isSome(selected) && selected.value.binding)
+        publish({
+          type: "session.next.model.switched",
+          data: {
+            sessionID: adoptSession(event.session_id),
+            timestamp: DateTime.makeUnsafe(event.recorded_at_ms),
+            messageID: messageID(event.session_id, event.seq),
+            model: SessionModelRoute.reference(
+              selected.value.binding.route_id ?? null,
+              selected.value.binding.variant ?? undefined,
+            ),
+          },
+        })
     }
     if (event.kind === "session.agent.selected" && typeof event.recorded_at_ms === "number") {
       const selected = Schema.decodeUnknownOption(Schema.Struct({ agent: Schema.Struct({ name: Schema.String }) }))(
@@ -235,6 +301,28 @@ export class EngineTranslator {
       // The bridge projects native promotion, not admission alone. Rendering
       // reducers wait for prompted before making a user message visible.
       publish({ type: "session.next.prompted", data: admitted })
+      if (event.kind === "message.committed" && admitted.prompt.command) {
+        const state = Schema.decodeUnknownOption(
+          Schema.Struct({
+            command_state: Schema.Literals(["completed", "failed"]),
+            command_error: Schema.optional(Schema.NullOr(Schema.String)),
+          }),
+        )(event.data)
+        if (Option.isSome(state)) {
+          const common = { sessionID: admitted.sessionID, messageID: admitted.messageID, timestamp: admitted.timestamp }
+          if (state.value.command_state === "completed")
+            publish({ type: "session.next.command.completed", data: { ...common, prompt: admitted.prompt } })
+          if (state.value.command_state === "failed")
+            publish({
+              type: "session.next.command.failed",
+              data: {
+                ...common,
+                text: admitted.prompt.text,
+                error: state.value.command_error ?? "Command preparation failed",
+              },
+            })
+        }
+      }
     }
     const identity = translateAssistantIdentity(event)
     if (identity) publish({ type: "session.next.assistant.identity", data: identity })
@@ -366,6 +454,8 @@ export class EngineSession {
       delivery?: "steer" | "queue"
       resume?: boolean
       attachments?: readonly NativeAttachment[]
+      command?: NativeCommand
+      agentReferences?: NativeAgentReferences
     } = {},
   ): Promise<unknown> {
     await this.watch(sessionID)
@@ -375,6 +465,8 @@ export class EngineSession {
         input_id: options.inputID ?? `in_${crypto.randomUUID()}`,
         prompt,
         delivery: options.delivery,
+        command: options.command,
+        agent_references: options.agentReferences,
       },
       options.resume ?? true,
       options.attachments,
@@ -434,9 +526,17 @@ export class EngineSession {
     id?: SessionMessage.ID
     delivery?: "steer" | "queue"
     resume?: boolean
+    command?: NativeCommand
+    agentReferences?: NativeAgentReferences
   }): Promise<SessionInput.Admitted> {
-    if (input.prompt.command || input.prompt.agents?.length)
-      throw new EngineError("engine_prompt_unsupported", "native command and agent inputs require product preparation")
+    if (input.prompt.command && !input.command)
+      throw new EngineError("engine_prompt_unsupported", "Native commands require a captured host manifest")
+    if (
+      input.prompt.agents?.some(
+        (mention) => !input.agentReferences?.mentions.some((captured) => captured.name === mention.name),
+      )
+    )
+      throw new EngineError("engine_prompt_unsupported", "Native agent references require captured host definitions")
     const attachments = encodeAttachments(input.prompt.files)
     const id = input.id ?? SessionMessage.ID.create()
     const delivery = input.delivery ?? "steer"
@@ -445,6 +545,8 @@ export class EngineSession {
       delivery,
       resume: input.resume,
       attachments,
+      command: input.command,
+      agentReferences: input.agentReferences,
     })
     if (
       typeof admitted !== "object" ||
@@ -496,7 +598,12 @@ export class EngineSession {
       sessionID: input.sessionID,
       admittedSeq: event.seq,
       delivery,
-      prompt: { text: input.prompt.text, ...(attachments.length ? { files: decodeAttachments(attachments) } : {}) },
+      prompt: {
+        text: input.prompt.text,
+        ...(attachments.length ? { files: decodeAttachments(attachments) } : {}),
+        ...(input.prompt.agents?.length ? { agents: input.prompt.agents } : {}),
+        ...(input.prompt.command ? { command: input.prompt.command } : {}),
+      },
       timeCreated: event.recorded_at_ms,
       ...(copied ? { promotedSeq: event.seq } : {}),
     })

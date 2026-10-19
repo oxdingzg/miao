@@ -1,3 +1,4 @@
+import type { Command } from "@miao/schema/command"
 import type { Event } from "@miao/schema/event"
 import type { Credential } from "@miao/schema/credential"
 import type { Agent } from "@miao/schema/agent"
@@ -19,6 +20,16 @@ import type { PromptInput } from "@miao/schema/prompt-input"
 import type { AbsolutePath } from "@miao/core/schema"
 
 export interface Interface {
+  readonly command: (input: {
+    sessionID: SessionID
+    storage: AbsolutePath
+    location: Location.Ref
+    id?: SessionMessage.ID
+    definition: Command.Info
+    arguments: string
+    resume?: boolean
+  }) => Effect.Effect<void, ConflictError>
+
   readonly shell: (input: {
     sessionID: SessionID
     storage: AbsolutePath
@@ -26,6 +37,25 @@ export interface Interface {
     id?: Event.ID
     command: string
     resume?: boolean
+  }) => Effect.Effect<void, ConflictError>
+
+  readonly revertStage: (input: {
+    sessionID: SessionID
+    storage: AbsolutePath
+    location: Location.Ref
+    messageID: SessionMessage.ID
+  }) => Effect.Effect<void, ConflictError>
+
+  readonly revertClear: (input: {
+    sessionID: SessionID
+    storage: AbsolutePath
+    location: Location.Ref
+  }) => Effect.Effect<void, ConflictError>
+
+  readonly revertCommit: (input: {
+    sessionID: SessionID
+    storage: AbsolutePath
+    location: Location.Ref
   }) => Effect.Effect<void, ConflictError>
 
   readonly inject: (input: {

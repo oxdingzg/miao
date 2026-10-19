@@ -36,6 +36,8 @@ async fn readonly_inspection_during_ownership_does_not_reconcile_runs_or_inputs(
     let store = Store::open(&path).await.unwrap();
     store
         .admit(Input {
+            agent_references: Default::default(),
+            command: None,
             session_id: "s".into(),
             input_id: "one".into(),
             prompt: "private prompt is not diagnostic output".into(),

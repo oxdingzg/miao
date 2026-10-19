@@ -93,6 +93,8 @@ async fn run(allow_subagents: bool) -> (Value, Store) {
     runtime
         .admit(
             Input {
+                agent_references: Default::default(),
+                command: None,
                 session_id: "parent".into(),
                 input_id: "one".into(),
                 prompt: "delegate this".into(),
@@ -247,6 +249,8 @@ async fn run_referenced(reference: &str) -> (Value, Store) {
     runtime
         .admit(
             Input {
+                agent_references: Default::default(),
+                command: None,
                 session_id: "parent".into(),
                 input_id: "one".into(),
                 prompt: format!("delegate with a reference to {reference}"),

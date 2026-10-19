@@ -54,6 +54,8 @@ async fn run(root: &std::path::Path, name: &str, input: Value, config: Config) -
     runtime
         .admit(
             Input {
+                agent_references: Default::default(),
+                command: None,
                 session_id: "s".into(),
                 input_id: uuid::Uuid::new_v4().to_string(),
                 prompt: "search".into(),

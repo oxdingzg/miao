@@ -152,25 +152,9 @@ impl Store {
         let session = session.to_owned();
         self.call(move |connection| {
             let tx = write_tx(connection)?;
-            let exists: bool = tx.query_row(
-                "SELECT EXISTS(SELECT 1 FROM engine_session WHERE id=?1)",
-                [&session],
-                |row| row.get(0),
-            )?;
-            if !exists {
-                return Err(Error::Invalid("Session does not exist".into()));
-            }
-            if selected(&tx, &session)? == binding {
-                return Ok(json!({"binding":binding,"changed":false}));
-            }
-            append(
-                &tx,
-                &session,
-                "session.model.selected",
-                json!({"binding":binding}),
-            )?;
+            let value = select_model_tx(&tx, &session, binding.as_ref())?;
             tx.commit()?;
-            Ok(json!({"binding":binding,"changed":true}))
+            Ok(value)
         })
         .await
     }
@@ -220,4 +204,32 @@ pub(crate) fn stamp_route(content: &mut Value, binding: Option<&Binding>) {
             );
         }
     }
+}
+
+pub(crate) fn select_model_tx(
+    tx: &Transaction<'_>,
+    session: &str,
+    binding: Option<&Binding>,
+) -> Result<Value, Error> {
+    if let Some(binding) = binding {
+        binding.validate()?;
+    }
+    let exists: bool = tx.query_row(
+        "SELECT EXISTS(SELECT 1 FROM engine_session WHERE id=?1)",
+        [session],
+        |row| row.get(0),
+    )?;
+    if !exists {
+        return Err(Error::Invalid("Session does not exist".into()));
+    }
+    if selected(tx, session)? == binding.cloned() {
+        return Ok(json!({"binding":binding,"changed":false}));
+    }
+    append(
+        tx,
+        session,
+        "session.model.selected",
+        json!({"binding":binding}),
+    )?;
+    Ok(json!({"binding":binding,"changed":true}))
 }

@@ -45,6 +45,8 @@ fn chat_text(text: &str) -> String {
 }
 fn input() -> Input {
     Input {
+        agent_references: Default::default(),
+        command: None,
         session_id: "s".into(),
         input_id: "one".into(),
         prompt: "what is this".into(),

@@ -1,8 +1,8 @@
-import { DateTime } from "effect"
+import { DateTime, Option, Schema } from "effect"
 import { SessionID } from "@miao/schema/session-id"
 import { SessionMessage } from "@miao/schema/session-message"
 import { Permission } from "@miao/schema/permission"
-import { Prompt } from "@miao/schema/prompt"
+import { Prompt, CommandInvocation, AgentAttachment } from "@miao/schema/prompt"
 import { Question } from "@miao/schema/question"
 import { Delivery } from "@miao/schema/session-delivery"
 import { StatusInfo } from "@miao/schema/session-event"
@@ -89,7 +89,7 @@ export function translatePrompt(
       "input_id" in event.data && typeof event.data.input_id === "string" && event.data.input_id.startsWith("msg_")
         ? SessionMessage.ID.make(event.data.input_id)
         : messageID(event.session_id, event.seq),
-    prompt: { text, ...(files.length ? { files } : {}) },
+    prompt: { text, ...(files.length ? { files } : {}), ...promptMetadata(event.data) },
     delivery,
   }
 }
@@ -911,6 +911,7 @@ export function translateCopiedPrompt(event: EngineEvent): SessionPromptAdmitted
   if (event.kind !== "message.committed" || !hasRecordedTime(event)) return undefined
   if (typeof event.data !== "object" || event.data === null || !("role" in event.data) || event.data.role !== "user")
     return undefined
+  if (!("input_id" in event.data) || typeof event.data.input_id !== "string") return undefined
   if (!("content" in event.data) || !Array.isArray(event.data.content)) return undefined
   const text = event.data.content
     .flatMap((part: unknown) => {
@@ -939,7 +940,7 @@ export function translateCopiedPrompt(event: EngineEvent): SessionPromptAdmitted
       "input_id" in event.data && typeof event.data.input_id === "string" && event.data.input_id.startsWith("msg_")
         ? SessionMessage.ID.make(event.data.input_id)
         : messageID(event.session_id, event.seq),
-    prompt: { text, ...(files.length ? { files } : {}) },
+    prompt: { text, ...(files.length ? { files } : {}), ...promptMetadata(event.data, event.data.content) },
     delivery: "delivery" in event.data && event.data.delivery === "queue" ? "queue" : "steer",
   }
 }
@@ -1029,4 +1030,32 @@ function anchorSeq(event: EngineEvent): number | undefined {
   const value: unknown = Reflect.get(data, "anchor_seq")
   if (typeof value !== "number" || !Number.isSafeInteger(value) || value <= 0) return undefined
   return value
+}
+
+function promptMetadata(data: unknown, content?: readonly unknown[]) {
+  if (typeof data !== "object" || data === null) return {}
+  const command = Schema.decodeUnknownOption(CommandInvocation)("command" in data ? data.command : undefined)
+  const references = Schema.decodeUnknownOption(
+    Schema.Struct({ mentions: Schema.optional(Schema.Array(AgentAttachment)) }),
+  )("agent_references" in data ? data.agent_references : undefined)
+  const agents = content
+    ? content.flatMap((part) => {
+        const reference = Schema.decodeUnknownOption(
+          Schema.Struct({
+            type: Schema.Literal("agent_reference"),
+            name: Schema.String,
+            metadata: Schema.optional(Schema.Record(Schema.String, Schema.Unknown)),
+          }),
+        )(part)
+        if (Option.isNone(reference)) return []
+        const attachment = Schema.decodeUnknownOption(AgentAttachment)({
+          name: reference.value.name,
+          source: reference.value.metadata?.source ?? undefined,
+        })
+        return [Option.isSome(attachment) ? attachment.value : AgentAttachment.make({ name: reference.value.name })]
+      })
+    : Option.isSome(references)
+      ? (references.value.mentions ?? [])
+      : []
+  return { ...(Option.isSome(command) ? { command: command.value } : {}), ...(agents.length ? { agents } : {}) }
 }

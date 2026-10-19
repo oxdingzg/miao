@@ -36,6 +36,26 @@ fn normalize_parts(
     input: &[String],
 ) -> Result<(), ProviderError> {
     for part in parts {
+        if part["type"] == "command_reference" {
+            let name = part["name"]
+                .as_str()
+                .ok_or_else(|| ProviderError::Stream("invalid command reference".into()))?;
+            let arguments = part["arguments"].as_str().unwrap_or("");
+            *part =
+                json!({"type":"text","text":format!("[Operator command: /{name} {arguments}]")});
+            continue;
+        }
+
+        if part["type"] == "agent_reference" {
+            let name = part["name"]
+                .as_str()
+                .filter(|name| {
+                    !name.is_empty() && name.len() <= 128 && !name.chars().any(char::is_control)
+                })
+                .ok_or_else(|| ProviderError::Stream("invalid named agent reference".into()))?;
+            *part = json!({"type":"text","text":format!("[Agent reference: @{name}. Delegate named work with task.agent={}.]",serde_json::to_string(name).expect("serializable agent name"))});
+            continue;
+        }
         if part["type"] == "tool_result" {
             if let Some(content) = part["content"].as_array_mut() {
                 normalize_parts(content, protocol, input)?;

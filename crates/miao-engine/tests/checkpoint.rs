@@ -11,6 +11,8 @@ async fn promoted_user_message_carries_a_checkpoint_uuid() {
     store
         .admit_at(
             Input {
+                agent_references: Default::default(),
+                command: None,
                 session_id: "s".into(),
                 input_id: "one".into(),
                 prompt: "hello".into(),

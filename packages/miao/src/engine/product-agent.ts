@@ -31,6 +31,7 @@ export function modelRoute(model: Model.Ref, catalog: readonly Route[]) {
 // Binding is host-resolved data. The engine keeps ordered rules intact and does
 // not need to know the product's tool vocabulary or import its configuration.
 const bindings = {
+  task: { action: "task" },
   read_file: { action: "read" },
   read_image: { action: "read" },
   list_files: { action: "read" },

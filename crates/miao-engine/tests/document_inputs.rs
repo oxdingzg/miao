@@ -169,6 +169,8 @@ async fn durable_document_only_admission_reopens_forks_and_reconciles_exact_retr
         attachment("text/plain", "文本".as_bytes(), "notes.txt"),
     ];
     let input = Input {
+        agent_references: Default::default(),
+        command: None,
         session_id: "s".into(),
         input_id: "documents".into(),
         prompt: String::new(),

@@ -79,6 +79,8 @@ async fn both_wire_adapters_drive_real_http_tool_dispatch_and_durable_continuati
         runtime
             .admit(
                 Input {
+                    agent_references: Default::default(),
+                    command: None,
                     session_id: "s".into(),
                     input_id: "one".into(),
                     prompt: "read file".into(),

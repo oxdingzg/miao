@@ -85,6 +85,8 @@ async fn turn(runtime: &Runtime, store: &Store, input_id: &str, prompt: &str) {
     runtime
         .admit(
             Input {
+                agent_references: Default::default(),
+                command: None,
                 session_id: "s".into(),
                 input_id: input_id.into(),
                 prompt: prompt.into(),

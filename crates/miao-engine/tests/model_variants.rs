@@ -101,6 +101,8 @@ async fn manifest_variants_reach_the_wire_and_survive_reopen_and_fork() {
     runtime
         .admit(
             Input {
+                agent_references: Default::default(),
+                command: None,
                 session_id: "s".into(),
                 input_id: "first".into(),
                 prompt: "hello".into(),
@@ -180,6 +182,8 @@ async fn manifest_variants_reach_the_wire_and_survive_reopen_and_fork() {
         runtime
             .admit(
                 Input {
+                    agent_references: Default::default(),
+                    command: None,
                     session_id: "s".into(),
                     input_id: id.into(),
                     prompt: id.into(),
@@ -232,6 +236,8 @@ async fn manifest_variants_reach_the_wire_and_survive_reopen_and_fork() {
         runtime
             .admit(
                 Input {
+                    agent_references: Default::default(),
+                    command: None,
                     session_id: "s".into(),
                     input_id: id.into(),
                     prompt: id.into(),

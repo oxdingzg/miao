@@ -174,6 +174,8 @@ async fn run_compaction(reject_prefix: bool) {
     runtime
         .admit(
             Input {
+                agent_references: Default::default(),
+                command: None,
                 session_id: "s".into(),
                 input_id: "first".into(),
                 prompt: "complete the task".into(),

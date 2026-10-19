@@ -88,6 +88,8 @@ async fn setup(
     runtime
         .admit(
             Input {
+                agent_references: Default::default(),
+                command: None,
                 session_id: "s".into(),
                 input_id: "one".into(),
                 prompt: "submit jobs".into(),
@@ -177,6 +179,8 @@ async fn crash_reconciliation_preserves_unknown_running_state_without_replay() {
     let store = Store::open(dir.path().join("engine.db")).await.unwrap();
     store
         .admit(Input {
+            agent_references: Default::default(),
+            command: None,
             session_id: "s".into(),
             input_id: "one".into(),
             prompt: "submit".into(),

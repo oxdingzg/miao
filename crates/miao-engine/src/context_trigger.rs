@@ -1099,6 +1099,8 @@ mod tests {
         let store = Store::open(dir.path().join("engine.db")).await.unwrap();
         store
             .admit(crate::protocol::Input {
+                agent_references: Default::default(),
+                command: None,
                 session_id: "s".into(),
                 input_id: "one".into(),
                 prompt: "task".into(),
@@ -1135,6 +1137,8 @@ mod tests {
         assert_eq!(store.last_context_tokens("s").await.unwrap(), None);
         store
             .admit(Input {
+                agent_references: Default::default(),
+                command: None,
                 session_id: "s".into(),
                 input_id: "one".into(),
                 prompt: "old task".into(),

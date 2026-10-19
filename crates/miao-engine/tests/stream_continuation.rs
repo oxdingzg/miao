@@ -157,6 +157,8 @@ async fn run(
     runtime
         .admit(
             Input {
+                agent_references: Default::default(),
+                command: None,
                 session_id: "s".into(),
                 input_id: "human".into(),
                 prompt: "write once then answer".into(),

@@ -69,6 +69,8 @@ async fn execute(root: &std::path::Path, calls: Value, denied: bool) -> Store {
     runtime
         .admit(
             Input {
+                agent_references: Default::default(),
+                command: None,
                 session_id: "s".into(),
                 input_id: "one".into(),
                 prompt: "run tools".into(),
@@ -374,6 +376,8 @@ async fn cancellation_settles_every_dispatched_read_without_unknown_results() {
     runtime
         .admit(
             Input {
+                agent_references: Default::default(),
+                command: None,
                 session_id: "reader".into(),
                 input_id: "one".into(),
                 prompt: "read".into(),

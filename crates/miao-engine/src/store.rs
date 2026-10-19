@@ -21,7 +21,9 @@ use std::{
 use tokio::sync::{mpsc, oneshot, watch};
 
 pub(crate) const APPLICATION_ID: u32 = 0x4d494145;
-pub const SCHEMA_VERSION: u32 = 14;
+// Older readers treat command prompts as ordinary text and cannot honor captured
+// authority or the once-only preparation ledger, even though no table is added.
+pub const SCHEMA_VERSION: u32 = 16;
 
 type Work = Box<dyn FnOnce(&mut Connection) + Send>;
 
@@ -171,6 +173,14 @@ impl Store {
                     CREATE TABLE IF NOT EXISTS engine_job(id TEXT PRIMARY KEY,session_id TEXT NOT NULL REFERENCES engine_session(id),request_key TEXT UNIQUE NOT NULL REFERENCES engine_tool(id),state TEXT NOT NULL,input TEXT NOT NULL,result TEXT);
                     CREATE TABLE IF NOT EXISTS engine_compaction(id TEXT PRIMARY KEY,session_id TEXT NOT NULL REFERENCES engine_session(id),through_seq INTEGER NOT NULL,summary TEXT NOT NULL,created_seq INTEGER NOT NULL);CREATE TABLE IF NOT EXISTS engine_lease(session_id TEXT PRIMARY KEY REFERENCES engine_session(id),interval_ms INTEGER NOT NULL,last_ms INTEGER NOT NULL,epoch INTEGER NOT NULL,owner_pid INTEGER);"))?;
                 crate::permission_grant::initialize(&conn)?;
+                // ADR-0019: content-addressed Session file snapshots and the one
+                // staged revert intent. Blobs live beside the database.
+                conn.execute_batch(
+                    "CREATE TABLE IF NOT EXISTS engine_file_snapshot(id INTEGER PRIMARY KEY AUTOINCREMENT,session_id TEXT NOT NULL REFERENCES engine_session(id),boundary_seq INTEGER NOT NULL,kind TEXT NOT NULL,manifest TEXT NOT NULL);
+                     CREATE INDEX IF NOT EXISTS engine_snapshot_boundary ON engine_file_snapshot(session_id,boundary_seq);
+                     CREATE TABLE IF NOT EXISTS engine_file_touch(session_id TEXT NOT NULL REFERENCES engine_session(id),path TEXT NOT NULL,PRIMARY KEY(session_id,path));
+                     CREATE TABLE IF NOT EXISTS engine_staged_revert(session_id TEXT PRIMARY KEY REFERENCES engine_session(id),boundary_seq INTEGER NOT NULL,snapshot_id INTEGER NOT NULL,restored TEXT NOT NULL,created TEXT NOT NULL,removed TEXT NOT NULL,previous TEXT NOT NULL);",
+                )?;
                 let has_mode:bool=conn.query_row("SELECT EXISTS(SELECT 1 FROM pragma_table_info('engine_session') WHERE name='mode')",[],|r|r.get(0))?;
                 if !has_mode {
                     conn.execute(
@@ -749,12 +759,21 @@ impl Store {
                 let media = attachments.as_deref().map(serde_json::from_str::<Vec<Attachment>>).transpose()?.unwrap_or_default();
                 let mut data = json!({"input_id":id,"prompt":prompt,"checkpoint":checkpoint});
                 if !media.is_empty() { data["attachments"] = json!(media); }
+                if let Some(command)=crate::session_command::for_input(&tx,&session,&id)? {data["command"]=serde_json::to_value(command)?;}
+                let agents=crate::session_agent::input_references(&tx,&session,&id)?;
+                if !agents.is_empty() {data["agent_references"]=serde_json::to_value(&agents)?;crate::session_agent::register_references(&tx,&session,&agents.catalog)?;}
+                let is_command=data["command"].is_object();
                 let e = append(&tx, &session, "input.promoted", data)?;
                 tx.execute("UPDATE engine_input SET state='promoted' WHERE id=?1", [&id])?;
                 let mut parts = vec![json!({"type":"text","text":prompt})];
                 parts.extend(media.iter().map(Attachment::part));
+                if !is_command {parts.extend(agents.mentions.iter().map(|reference|json!({"type":"agent_reference","name":reference.name,"metadata":{"source":reference.source}})));}
                 tx.execute("INSERT INTO engine_message(session_id,seq,role,content,checkpoint,recorded_at_ms) VALUES(?1,?2,'user',?3,?4,?5)", params![session,e.seq,serde_json::to_string(&Value::Array(parts))?,checkpoint,e.recorded_at_ms])?;
                 events.push(e);
+                // Preparation is a settled operator boundary. Do not promote
+                // a later steer past this command before its effects settle.
+                if is_command {break;}
+
             }
             tx.commit()?;
             Ok(events)
@@ -842,6 +861,8 @@ impl Store {
             let tx=write_tx(conn)?;if tx.execute("UPDATE engine_job SET state=?3,result=?4 WHERE id=?1 AND session_id=?2 AND state IN ('queued','running')",params![id,session,state,serde_json::to_string(&result)?])?!=1{return Err(Error::Invalid("job is not active".into()));}
             append(&tx,&session,"job.finished",json!({"job_id":id,"state":state}))?;
             let admission = admit_input(&tx, &Input {
+agent_references: Default::default(),
+command: None,
                 session_id: session.clone(),
                 input_id: format!("job:{id}:finished"),
                 prompt: format!("Background job {id} finished with state {state}. Read its stored result with job_status and continue eligible work."),
@@ -978,7 +999,9 @@ impl Store {
                 "SELECT title,created_at_ms,updated_at_ms,archived_at_ms FROM engine_session WHERE id=?1",
                 [&session],|r|Ok((r.get(0)?,r.get(1)?,r.get(2)?,r.get(3)?)),
             )?;
-            let snapshot=json!({"session_id":session,"parent_session_id":parent,"cursor":cursor,"location":location,"mode":mode,"title":title,"created_at_ms":created_at_ms,"updated_at_ms":updated_at_ms,"archived_at_ms":archived_at_ms,"messages":messages,"selection":selection,"pending":pending,"active_run":active,"approvals":approvals,"context":context,"state":state,"questions":questions,"wakeups":wakeups,"crons":crons,"model_selection":model_selection,"account_selection":account_selection,"agent":agent});
+            let staged_revert:Option<(i64,i64)>=tx.query_row("SELECT boundary_seq,snapshot_id FROM engine_staged_revert WHERE session_id=?1",[&session],|r|Ok((r.get(0)?,r.get(1)?))).optional()?;
+            let staged_revert=staged_revert.map(|(boundary_seq,snapshot_id)|json!({"boundary_seq":boundary_seq,"snapshot_id":snapshot_id}));
+            let snapshot=json!({"session_id":session,"parent_session_id":parent,"cursor":cursor,"location":location,"mode":mode,"title":title,"created_at_ms":created_at_ms,"updated_at_ms":updated_at_ms,"archived_at_ms":archived_at_ms,"messages":messages,"selection":selection,"pending":pending,"active_run":active,"approvals":approvals,"context":context,"state":state,"questions":questions,"wakeups":wakeups,"crons":crons,"model_selection":model_selection,"account_selection":account_selection,"agent":agent,"staged_revert":staged_revert});
             if serde_json::to_vec(&snapshot)?.len()>4*1024*1024{return Err(Error::Invalid("snapshot exceeds limit; use events pagination".into()));}
             tx.commit()?;Ok(snapshot)
         }).await
@@ -1057,7 +1080,8 @@ impl Store {
             if !exists{return Err(Error::Invalid("parent Session does not exist".into()));}
             if message_seq.is_none()&&tx.query_row("SELECT EXISTS(SELECT 1 FROM engine_run WHERE session_id=?1 AND state='running')",[&parent],|r|r.get::<_,bool>(0))? {return Err(Error::Invalid("active parent requires an explicit closed message boundary".into()));}
             let seq=match message_seq {Some(seq)=>seq,None=>tx.query_row("SELECT COALESCE(MAX(seq),0) FROM engine_message WHERE session_id=?1",[&parent],|r|r.get(0))?};
-            if seq!=0&&!tx.query_row("SELECT EXISTS(SELECT 1 FROM engine_message WHERE session_id=?1 AND seq=?2)",params![parent,seq],|r|r.get::<_,bool>(0))? {return Err(Error::Invalid("fork cursor must be a committed message boundary".into()));}
+            if seq!=0&&!tx.query_row("SELECT EXISTS(SELECT 1 FROM engine_message WHERE session_id=?1 AND seq=?2) OR EXISTS(SELECT 1 FROM engine_event WHERE session_id=?1 AND seq=?2 AND kind IN ('command.completed','command.failed'))",params![parent,seq],|r|r.get::<_,bool>(0))? {return Err(Error::Invalid("fork cursor must be a committed message or settled command boundary".into()));}
+            let source_watermark=if message_seq.is_none(){tx.query_row("SELECT next_seq FROM engine_session WHERE id=?1",[&parent],|r|r.get::<_,u64>(0))?}else{seq};
             let messages=projected(&tx,&parent,seq)?;
             closed_prefix(&messages)?;
             // A fork must not escape the parent's read-only collaboration mode.
@@ -1071,6 +1095,7 @@ impl Store {
             append(&tx,&target,"session.forked",json!({"parent_session_id":parent,"message_seq":seq}))?;
             let mut message_map=std::collections::HashMap::new();
             for message in messages {
+                let source_data:Value=serde_json::from_str(&tx.query_row("SELECT data FROM engine_event WHERE session_id=?1 AND seq=?2",params![parent,message["seq"].as_u64()],|row|row.get::<_,String>(0))?)?;
                 let mut copied=match crate::session_shell::copy_history(&tx,&parent,&target,&message)? {
                     Some(event)=>event,
                     None=>project_message_at(&tx,&target,message["role"].as_str().ok_or_else(||Error::Invalid("projected role".into()))?,message["content"].clone(),message["checkpoint"].as_str(),None,message["recorded_at_ms"].as_u64())?,
@@ -1082,7 +1107,7 @@ impl Store {
                     data["inherited"]=json!(true);
                     tx.execute("UPDATE engine_event SET kind='message.synthetic',data=?3 WHERE session_id=?1 AND seq=?2",params![target,copied.seq,serde_json::to_string(&data)?])?;
                 }
-                if message["role"] == "user" && synthetic.is_none() && copied.kind!="shell.ended" {
+                if message["role"] == "user" && synthetic.is_none() && copied.kind!="shell.ended" && !message["content"].as_array().is_some_and(|parts|parts.iter().any(|part|part["type"]=="tool_result")) {
                     let source = message["seq"].as_u64().ok_or_else(||Error::Invalid("projected message seq".into()))?;
                     let original:Option<(String,String,Option<String>)>=tx.query_row(
                         "SELECT prompt,delivery,attachments FROM engine_input WHERE session_id=?1 AND id=COALESCE((SELECT json_extract(data,'$.input_id') FROM engine_event WHERE session_id=?1 AND seq=?2 AND kind='input.promoted'),(SELECT id FROM engine_input WHERE session_id=?1 AND admitted_seq=?2 AND state='promoted'))",
@@ -1097,6 +1122,19 @@ impl Store {
                     // inputs. Retrying the public copied ID must reconcile it,
                     // not admit the same visible prompt for a second execution.
                     tx.execute("INSERT INTO engine_input(id,session_id,prompt,delivery,state,admitted_seq,attachments) VALUES(?1,?2,?3,?4,'promoted',?5,?6)",params![input_id,target,prompt,delivery,copied.seq,attachments])?;
+                    if source_data["command"].is_object() {
+                        copied.data["command"]=source_data["command"].clone();
+                        let settled:Option<(String,String)>=if source_data["command_state"].is_string() {None} else {tx.query_row("SELECT kind,data FROM engine_event WHERE session_id=?1 AND seq<=?3 AND kind IN ('command.completed','command.failed') AND json_extract(data,'$.input_id')=?2 ORDER BY seq DESC LIMIT 1",params![parent,source_data["input_id"].as_str(),source_watermark],|row|Ok((row.get(0)?,row.get(1)?))).optional()?};
+                        if let Some((kind,data))=settled {
+                            let data:Value=serde_json::from_str(&data)?;
+                            copied.data["command_state"]=json!(if kind=="command.failed" {"failed"} else {"completed"});
+                            copied.data["command_error"]=data["error"].clone();
+                        } else if source_data["command_state"].is_string() {
+                            copied.data["command_state"]=source_data["command_state"].clone();
+                            copied.data["command_error"]=source_data["command_error"].clone();
+                        } else {return Err(Error::Invalid("fork command cursor precedes settled command preparation".into()));}
+                    }
+                    if source_data["agent_references"].is_object() {copied.data["agent_references"]=source_data["agent_references"].clone();}
                     copied.data["input_id"]=json!(input_id);
                     copied.data["delivery"]=json!(delivery);
                     // Finalize the copy payload before this transaction is
@@ -1120,7 +1158,9 @@ impl Store {
                 let event=append(&tx,&target,"context.inherited",json!({"epoch":1,"parent_session_id":parent,"parent_epoch":parent_epoch,"fingerprint":fingerprint}))?;
                 tx.execute("INSERT INTO engine_context VALUES(?1,1,?2,?3,?4,?5)",params![target,fingerprint,system,sources,event.seq])?;
             }
-            let source_watermark=if message_seq.is_none(){tx.query_row("SELECT next_seq FROM engine_session WHERE id=?1",[&parent],|r|r.get::<_,u64>(0))?}else{seq};
+
+            let named=crate::session_agent::references_at(&tx,&parent,source_watermark)?;
+            crate::session_agent::register_references(&tx,&target,&named)?;
             if let Some((agent,hash))=crate::session_agent::selected_at(&tx,&parent,source_watermark)? {
                 append(&tx,&target,"session.agent.selected",json!({"agent":agent,"agent_hash":hash,"inherited":true}))?;
             }
@@ -2125,7 +2165,10 @@ pub(crate) fn admit_input(
 ) -> Result<Admission, Error> {
     if input.session_id.is_empty()
         || input.input_id.is_empty()
-        || (input.prompt.is_empty() && attachments.is_empty())
+        || (input.prompt.is_empty()
+            && attachments.is_empty()
+            && input.command.is_none()
+            && input.agent_references.mentions.is_empty())
         || input.session_id.len() > 256
         || input.input_id.len() > 256
         || input.prompt.len() > 1024 * 1024
@@ -2134,6 +2177,10 @@ pub(crate) fn admit_input(
             "session_id, input_id and prompt must be nonempty".into(),
         ));
     }
+    if let Some(command) = &input.command {
+        command.validate()?;
+    }
+    input.agent_references.validate()?;
     let serialized = serde_json::to_string(attachments)?;
     let existing: Option<(String, String, String, u64, String, Option<String>)> = tx
         .query_row(
@@ -2160,6 +2207,19 @@ pub(crate) fn admit_input(
         // resurrect a prompt the operator dropped or report a receipt whose
         // prompt never runs, so it conflicts like any other reused identity.
         if state == "cancelled" {
+            return Err(Error::Conflict);
+        }
+        if serde_json::to_value(crate::session_command::for_input(
+            tx,
+            session,
+            &input.input_id,
+        )?)? != serde_json::to_value(&input.command)?
+        {
+            return Err(Error::Conflict);
+        }
+        if crate::session_agent::input_references(tx, session, &input.input_id)?
+            != input.agent_references
+        {
             return Err(Error::Conflict);
         }
         let stored = stored.clone().unwrap_or_else(|| "[]".into());
@@ -2199,12 +2259,14 @@ pub(crate) fn admit_input(
             pending: state == "pending",
         });
     }
-    let event = append(
-        tx,
-        &input.session_id,
-        "input.admitted",
-        json!({"input_id":input.input_id,"delivery":delivery}),
-    )?;
+    let mut data = json!({"input_id":input.input_id,"delivery":delivery});
+    if let Some(command) = &input.command {
+        data["command"] = serde_json::to_value(command)?;
+    }
+    if !input.agent_references.is_empty() {
+        data["agent_references"] = serde_json::to_value(&input.agent_references)?;
+    }
+    let event = append(tx, &input.session_id, "input.admitted", data)?;
     tx.execute(
         "INSERT INTO engine_input(id,session_id,prompt,delivery,state,admitted_seq,attachments) VALUES(?1,?2,?3,?4,'pending',?5,?6)",
         params![

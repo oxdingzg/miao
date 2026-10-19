@@ -32,6 +32,8 @@ async fn export_is_read_only_works_during_ownership_and_pins_high_watermark() {
     let store = Store::open(&path).await.unwrap();
     store
         .admit(Input {
+            agent_references: Default::default(),
+            command: None,
             session_id: "s".into(),
             input_id: "one".into(),
             prompt: "hello".into(),

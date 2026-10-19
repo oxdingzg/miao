@@ -78,6 +78,8 @@ async fn consecutive_turns_keep_a_byte_stable_provider_prefix() {
     runtime
         .admit(
             Input {
+                agent_references: Default::default(),
+                command: None,
                 session_id: "s".into(),
                 input_id: "one".into(),
                 prompt: "read a".into(),
