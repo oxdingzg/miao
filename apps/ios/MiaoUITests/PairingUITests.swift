@@ -337,7 +337,7 @@ final class PairingUITests: XCTestCase {
         openDrawer(app)
         let restored = app.staticTexts["已连接"].waitForExistence(timeout: 30)
         if !restored {
-            let states = ["正在连接…", "正在同步会话…", "授权需要重新核对", "请更新电脑和 App 的版本", "离线，回到前台后会重新连接", "正在断开连接…", "等待连接"]
+            let states = ["正在连接…", "正在同步会话…", "授权需要重新核对", "请更新电脑和 App 的版本", "离线，回到前台后会重新连接", "正在断开连接…", "等待连接", "账号远控接入被拒绝，请确认电脑与中继支持账号接入，且两端登录的是同一账号", "请更新电脑和 App 后重试账号远控", "暂时无法连接中继，请检查网络后重试", "中继登录未恢复，请重新登录"]
             let visibleStates = states.filter { app.staticTexts[$0].exists }.joined(separator: ",")
             let toggle = app.buttons["sessionSidebar"].firstMatch
             print("NativeAccountRestore status=\(toggle.value as? String ?? "unknown") states=\(visibleStates) login=\(app.buttons["登录中继"].exists) blocked=\(app.staticTexts["登录已失效，请重新登录中继"].exists)")

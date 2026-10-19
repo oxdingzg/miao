@@ -213,6 +213,12 @@ final class AppModel {
         loadTask = nil
     }
 
+    /// Last verified signed-in account identity. `authenticatedAccountID()`
+    /// performs a network round trip, so visibility must not depend on it
+    /// succeeding on every reload; a transient failure would otherwise hide
+    /// every account host while the UI still reports 已登录.
+    private var accountIdentityID: String?
+
     private func initialize() async {
         do {
             let key = try await identity.loadOrCreate()
@@ -233,7 +239,7 @@ final class AppModel {
         reloadEpoch += 1
         let generation = reloadEpoch
         let snapshot = try await registry.snapshot()
-        let signedInAccount: String? = accountSignedIn ? (try? await account?.authenticatedAccountID()) : nil
+        let signedInAccount = accountSignedIn ? accountIdentityID : nil
         let visible = snapshot.hosts.filter { $0.accountID == signedInAccount && $0.accountID != nil }
             + snapshot.hosts.filter { $0.accountID == nil }
         guard generation == reloadEpoch else { return }
@@ -429,6 +435,7 @@ final class AppModel {
         accountBusy = true; accountEpoch += 1
         notificationOpenTask?.cancel()
         notificationHostID = nil; notificationDestination = nil
+        accountIdentityID = nil
         accountSignedIn = false; discoveredHosts = []
         await clearEnrollment()
         notificationEpoch += 1; notificationsRegistered = false
@@ -480,6 +487,7 @@ final class AppModel {
     private func admitSignedInHosts(_ directory: [HubDirectoryHost], account: HubAccount, epoch: Int) async throws {
         guard let registry else { return }
         let accountID = try await account.authenticatedAccountID()
+        accountIdentityID = accountID
         let origin = await account.origin
         let key = try await identity.loadOrCreate()
         try await registry.synchronizeAccount(hubURL: origin, accountID: accountID, directory: directory)
