@@ -139,6 +139,18 @@ async fn actual_product_cas_is_required_and_activation_restores_provider_context
         .await
         .unwrap();
     assert_eq!(activated["state"], "active");
+    let exported_path = tmp.path().join("exported.json");
+    let exported = database
+        .export_session_transfer_import("transfer", exported_path.clone())
+        .await
+        .unwrap();
+    assert_eq!(exported["bundle_sha256"], hash);
+    assert_eq!(exported["state"], "active");
+    assert_eq!(std::fs::read(&exported_path).unwrap(), source.as_bytes());
+    assert!(database
+        .export_session_transfer_import("missing", tmp.path().join("missing.json"))
+        .await
+        .is_err());
     {
         let conn = rusqlite::Connection::open(&native).unwrap();
         let (manifest, boundary): (String, String) = conn
