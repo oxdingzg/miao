@@ -335,7 +335,14 @@ final class PairingUITests: XCTestCase {
         app.launchEnvironment.removeValue(forKey: "MIAO_UI_TEST_INVITATION")
         app.launch()
         openDrawer(app)
-        XCTAssertTrue(app.staticTexts["已连接"].waitForExistence(timeout: 30))
+        let restored = app.staticTexts["已连接"].waitForExistence(timeout: 30)
+        if !restored {
+            let states = ["正在连接…", "正在同步会话…", "授权需要重新核对", "请更新电脑和 App 的版本", "离线，回到前台后会重新连接", "正在断开连接…", "等待连接"]
+            let visibleStates = states.filter { app.staticTexts[$0].exists }.joined(separator: ",")
+            let toggle = app.buttons["sessionSidebar"].firstMatch
+            print("NativeAccountRestore status=\(toggle.value as? String ?? "unknown") states=\(visibleStates) login=\(app.buttons["登录中继"].exists) blocked=\(app.staticTexts["登录已失效，请重新登录中继"].exists)")
+        }
+        XCTAssertTrue(restored)
         app.buttons["Native phone rename"].tap()
         XCTAssertTrue(draft.waitForExistence(timeout: 10))
         XCTAssertEqual(draft.value as? String, "retained phone draft")

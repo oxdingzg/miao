@@ -215,13 +215,13 @@ final class AppModel {
 
     private func initialize() async {
         do {
+            let key = try await identity.loadOrCreate()
+            if registry == nil { registry = try HostRegistry(directory: directory, deviceKey: publicKey(key), allowLoopbackHTTP: AppTestConfiguration.allowLoopbackHTTP) }
+            if enrollmentStore == nil { enrollmentStore = try AccountEnrollmentStore(directory: directory, deviceKey: publicKey(key), allowLoopbackHTTP: AppTestConfiguration.allowLoopbackHTTP) }
             if !accountLoaded {
                 accountLoaded = true
                 await restoreAccount()
             }
-            let key = try await identity.loadOrCreate()
-            if registry == nil { registry = try HostRegistry(directory: directory, deviceKey: publicKey(key), allowLoopbackHTTP: AppTestConfiguration.allowLoopbackHTTP) }
-            if enrollmentStore == nil { enrollmentStore = try AccountEnrollmentStore(directory: directory, deviceKey: publicKey(key), allowLoopbackHTTP: AppTestConfiguration.allowLoopbackHTTP) }
             try await reload()
             if accountSignedIn { await refreshDirectory() }
             await restoreNotifications()
@@ -245,7 +245,11 @@ final class AppModel {
         hosts = visible
         attempts = snapshot.attempts
         for record in hosts where clients[record.id] == nil {
-            clients[record.id] = try HostClient(record: record, identity: identity, directory: directory.appendingPathComponent("checkpoints"), account: accountFor(record.host.hubURL))
+            let client = try HostClient(record: record, identity: identity, directory: directory.appendingPathComponent("checkpoints"), account: accountFor(record.host.hubURL))
+            clients[record.id] = client
+            if record.accountID != nil {
+                for (id, phase) in scenes { await client.scene(id, phase: phase) }
+            }
         }
     }
 

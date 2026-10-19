@@ -26,6 +26,7 @@ struct RemoteView: View {
             if sidebarVisible { sidebar }
         }
         .task {
+            model.scene(sceneID, phase: phase)
             await model.load()
             applyNotification()
             if let value = AppTestConfiguration.invitation {
@@ -132,6 +133,9 @@ struct RemoteView: View {
                     } label: {
                         Image(systemName: "line.3.horizontal")
                     }.accessibilityLabel("会话侧栏").accessibilityIdentifier("sessionSidebar")
+                        .accessibilityValue(model.accountSignedIn
+                            ? "已登录；电脑：\(model.hosts.count)；已连接：\(model.clients.values.filter { $0.ready }.count)"
+                            : "未登录")
                 }
             }
             .navigationTitle("miao")
