@@ -112,6 +112,10 @@ impl Auth {
 #[derive(Deserialize)]
 #[serde(tag = "type", rename_all = "snake_case", deny_unknown_fields)]
 enum CredentialSource {
+    Aws {
+        region: String,
+        profile: Option<String>,
+    },
     Environment {
         key: String,
         account: Option<String>,
@@ -170,6 +174,7 @@ pub async fn load(
             accounts.push((entry.id.clone(), account));
         }
         let source = match entry.credential {
+            CredentialSource::Aws { region, profile } => Source::Aws { region, profile },
             CredentialSource::Environment { key, account } => {
                 let secret = std::env::var(key)
                     .map_err(|_| "route credential environment variable is missing")?;
@@ -222,7 +227,7 @@ pub async fn load(
         {
             return Err("model route credentials must be outside workspace".into());
         }
-        source.load().await?;
+        source.validate().await?;
         let provider = crate::routing::build_with_auth(
             &entry.provider,
             entry.endpoint.as_deref(),
@@ -231,6 +236,10 @@ pub async fn load(
             entry.prompt_cache,
             entry.auth.as_ref(),
         )?;
+        if entry.provider == "amazon-bedrock" {
+            crate::bedrock::validate_credential_paths(provider.protected_resources(), workspace)
+                .await?;
+        }
         let provider = if entry.input_modalities.is_empty() {
             provider
         } else {
