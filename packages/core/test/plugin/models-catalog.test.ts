@@ -124,6 +124,77 @@ describe("ModelsCatalogPlugin", () => {
     }),
   )
 
+  it.effect("inherits the provider package when a model-level provider override omits npm", () =>
+    Effect.gen(function* () {
+      const integrations = yield* Integration.Service
+      const catalog = yield* Catalog.Service
+      const models = ModelsCatalog.Service.of({
+        get: () =>
+          Effect.succeed({
+            acme: {
+              id: "acme",
+              name: "Acme",
+              env: [],
+              npm: "@ai-sdk/openai-compatible",
+              api: "https://api.acme.test/v1",
+              models: {
+                "deepseek-flash": {
+                  id: "deepseek-flash",
+                  name: "DeepSeek Flash",
+                  family: "deepseek",
+                  release_date: "2026-01-01",
+                  attachment: false,
+                  reasoning: true,
+                  temperature: true,
+                  tool_call: true,
+                  cost: { input: 0.15, output: 0.6 },
+                  limit: { context: 128_000, input: 128_000, output: 32_000 },
+                  provider: { api: "https://alt.acme.test/openai/v1" },
+                },
+                "claude-sonnet": {
+                  id: "claude-sonnet",
+                  name: "Claude Sonnet",
+                  family: "claude",
+                  release_date: "2026-01-01",
+                  attachment: false,
+                  reasoning: true,
+                  temperature: true,
+                  tool_call: true,
+                  cost: { input: 3, output: 15 },
+                  limit: { context: 200_000, input: 200_000, output: 64_000 },
+                  provider: { npm: "@ai-sdk/anthropic", api: "https://alt.acme.test/anthropic/v1" },
+                },
+              },
+            },
+          } satisfies Record<string, ModelsCatalog.Provider>),
+        refresh: () => Effect.void,
+      })
+
+      yield* ModelsCatalogPlugin.effect(
+        host({
+          catalog: catalogHost(catalog),
+          integration: integrationHost(integrations),
+        }),
+      ).pipe(Effect.provideService(ModelsCatalog.Service, models))
+
+      const providerID = ProviderV2.ID.make("acme")
+      const inherited = yield* catalog.model.get(providerID, ModelV2.ID.make("deepseek-flash"))
+      expect(inherited?.api).toMatchObject({
+        id: "deepseek-flash",
+        type: "aisdk",
+        package: "@ai-sdk/openai-compatible",
+        url: "https://alt.acme.test/openai/v1",
+      })
+      const explicit = yield* catalog.model.get(providerID, ModelV2.ID.make("claude-sonnet"))
+      expect(explicit?.api).toMatchObject({
+        id: "claude-sonnet",
+        type: "aisdk",
+        package: "@ai-sdk/anthropic",
+        url: "https://alt.acme.test/anthropic/v1",
+      })
+    }),
+  )
+
   it.effect("registers key methods for providers with environment variables", () =>
     Effect.acquireUseRelease(
       Effect.sync(() => {
