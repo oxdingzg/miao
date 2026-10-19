@@ -81,5 +81,17 @@ async fn unrelated_or_future_database_is_not_adopted() {
     let conn = rusqlite::Connection::open(&future).unwrap();
     conn.execute_batch("PRAGMA application_id=1296646469; PRAGMA user_version=999; CREATE TABLE engine_session(id TEXT)").unwrap();
     drop(conn);
-    assert!(matches!(Store::open(&future).await, Err(Error::Invalid(_))));
+    match Store::open(&future).await {
+        Err(Error::Invalid(message)) => {
+            assert!(message.contains("newer miao-engine"), "{message}");
+            assert!(message.contains("999"), "{message}");
+            assert!(
+                message.contains(&miao_engine::store::SCHEMA_VERSION.to_string()),
+                "{message}"
+            );
+            assert!(message.contains("reinstall"), "{message}");
+        }
+        Err(_) => panic!("expected an invalid-schema refusal"),
+        Ok(_) => panic!("expected a schema downgrade refusal"),
+    }
 }

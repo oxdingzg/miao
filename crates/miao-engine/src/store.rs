@@ -151,7 +151,9 @@ impl Store {
                 }
                 let version: u32 = conn.query_row("PRAGMA user_version", [], |r| r.get(0))?;
                 if version > SCHEMA_VERSION {
-                    return Err(Error::Invalid("unsupported database schema version".into()));
+                    return Err(Error::Invalid(format!(
+                        "database schema {version} was written by a newer miao-engine (this binary supports {SCHEMA_VERSION}); reinstall the newer release or point this Session at a separate storage path"
+                    )));
                 }
 
                 conn.execute_batch(&format!("PRAGMA application_id={APPLICATION_ID}; PRAGMA user_version={SCHEMA_VERSION}; PRAGMA journal_mode=WAL; PRAGMA synchronous=FULL; PRAGMA foreign_keys=ON;

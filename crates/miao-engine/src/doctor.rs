@@ -32,7 +32,9 @@ fn inspect(path: &Path) -> Result<Value, Error> {
         return Err(Error::Invalid("not a miao-engine database".into()));
     }
     if schema > SCHEMA_VERSION {
-        return Err(Error::Invalid("unsupported database schema version".into()));
+        return Err(Error::Invalid(format!(
+            "database schema {schema} was written by a newer miao-engine (this binary supports {SCHEMA_VERSION}); reinstall the newer release"
+        )));
     }
     let integrity: String = tx.query_row("PRAGMA quick_check(1)", [], |row| row.get(0))?;
     let count = |table: &str| -> Result<u64, Error> {
