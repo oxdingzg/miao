@@ -251,6 +251,20 @@ async fn migration_abort_is_pre_cutover_only_and_exported_sources_remain_fenced(
 use std::sync::Arc;
 
 #[tokio::test]
+async fn shutdown_joins_the_heartbeat_before_releasing_the_last_store_handle() {
+    let dir = tempfile::tempdir().unwrap();
+    let workspace = dir.path().join("workspace");
+    std::fs::create_dir_all(&workspace).unwrap();
+    for _ in 0..20 {
+        let database = store(dir.path()).await;
+        let runtime = runtime(&database, &workspace).await;
+        runtime.shutdown().await;
+        drop(runtime);
+        database.close().await.unwrap();
+    }
+}
+
+#[tokio::test]
 async fn migration_refuses_pending_inputs_and_upgrades_original_retry_identity() {
     let dir = tempfile::tempdir().unwrap();
     let database = store(dir.path()).await;
