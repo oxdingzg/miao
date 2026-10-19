@@ -161,6 +161,7 @@ async fn interrupted_preparation_is_failed_without_replaying_external_effects() 
             .unwrap();
         std::fs::create_dir_all(dir.path().join("workspace")).unwrap();
         std::fs::write(dir.path().join("workspace/marker"), "already-executed").unwrap();
+        store.close().await.unwrap();
     }
     let (runtime, store, _) = fixture(dir.path()).await;
     runtime.resume("s").await.unwrap();
@@ -173,6 +174,9 @@ async fn interrupted_preparation_is_failed_without_replaying_external_effects() 
     assert!(!events.iter().any(|event| event.kind == "shell.started"));
     assert!(events.iter().any(|event| event.kind == "command.failed"
         && event.data.to_string().contains("It was not replayed")));
+    runtime.shutdown().await;
+    drop(runtime);
+    store.close().await.unwrap();
 }
 #[tokio::test]
 async fn command_is_a_promotion_barrier_before_later_steers() {
