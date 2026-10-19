@@ -1,0 +1,602 @@
+{
+  "sample": {
+    "task": "multi-file",
+    "engine": "rust",
+    "repetition": 2,
+    "suiteHash": "bd905b4f81f0a9412b614631a36337723067574848c5f05b50ead1cf48675091",
+    "taskHash": "a5041ea521bf1671656245fae3d7fab12d071b4b5b82cf29607998143aadc602",
+    "profile": {
+      "model": "deepseek-v4.1-flash",
+      "modelParametersHash": "ef3d96a9ec0464401ae599f38c478bab21fa051e068e9d158e5c186628e7a393",
+      "agentManifestHash": "2dbdecca09d38a807edd88d10f18f4febcb6aa5dcbdc2c1bb17f06446b689562",
+      "permissionHash": "d42fc16528687eb95ab02f646f83d9fa332046a89dbd8ab793bb698ed6616fed",
+      "toolSurfaceHash": "fb2ab566dec79420e179a024d88e1903ebbc1b7a9f23fe7b0aefb45a9d0dcb28"
+    },
+    "revision": "fa001fbff8b188361bf5848cc31358bba7e7d7bb",
+    "artifactHash": "112661ffb2246481ff916e8aff9839dc956071bd54f6e615919e51f6ffecea6e",
+    "receiptHash": "5241b0023e4bb24c76caee679c3352d761534dd56f1c673f96725c494368601d",
+    "outcome": "passed",
+    "elapsedMs": 30745,
+    "attempts": [
+      {
+        "inputTokens": 4862,
+        "outputTokens": 79,
+        "cost": null
+      },
+      {
+        "inputTokens": 5086,
+        "outputTokens": 95,
+        "cost": null
+      },
+      {
+        "inputTokens": 5328,
+        "outputTokens": 103,
+        "cost": null
+      },
+      {
+        "inputTokens": 5723,
+        "outputTokens": 156,
+        "cost": null
+      },
+      {
+        "inputTokens": 5976,
+        "outputTokens": 99,
+        "cost": null
+      },
+      {
+        "inputTokens": 6385,
+        "outputTokens": 412,
+        "cost": null
+      },
+      {
+        "inputTokens": 6942,
+        "outputTokens": 281,
+        "cost": null
+      },
+      {
+        "inputTokens": 7459,
+        "outputTokens": 373,
+        "cost": null
+      },
+      {
+        "inputTokens": 7903,
+        "outputTokens": 153,
+        "cost": null
+      },
+      {
+        "inputTokens": 8304,
+        "outputTokens": 428,
+        "cost": null
+      }
+    ]
+  },
+  "rejection": null,
+  "evidence": {
+    "engine": "rust",
+    "revision": "fa001fbff8b188361bf5848cc31358bba7e7d7bb",
+    "task": "multi-file",
+    "repetition": 2,
+    "terminal": "completed",
+    "error": null,
+    "receipts": [],
+    "attempts": [
+      {
+        "inputTokens": 4862,
+        "outputTokens": 79,
+        "cacheReadTokens": 4736,
+        "cacheWriteTokens": null,
+        "reasoningTokens": 0,
+        "cost": null
+      },
+      {
+        "inputTokens": 5086,
+        "outputTokens": 95,
+        "cacheReadTokens": 4992,
+        "cacheWriteTokens": null,
+        "reasoningTokens": 0,
+        "cost": null
+      },
+      {
+        "inputTokens": 5328,
+        "outputTokens": 103,
+        "cacheReadTokens": 5120,
+        "cacheWriteTokens": null,
+        "reasoningTokens": 0,
+        "cost": null
+      },
+      {
+        "inputTokens": 5723,
+        "outputTokens": 156,
+        "cacheReadTokens": 5248,
+        "cacheWriteTokens": null,
+        "reasoningTokens": 77,
+        "cost": null
+      },
+      {
+        "inputTokens": 5976,
+        "outputTokens": 99,
+        "cacheReadTokens": 5632,
+        "cacheWriteTokens": null,
+        "reasoningTokens": 38,
+        "cost": null
+      },
+      {
+        "inputTokens": 6385,
+        "outputTokens": 412,
+        "cacheReadTokens": 5888,
+        "cacheWriteTokens": null,
+        "reasoningTokens": 80,
+        "cost": null
+      },
+      {
+        "inputTokens": 6942,
+        "outputTokens": 281,
+        "cacheReadTokens": 6272,
+        "cacheWriteTokens": null,
+        "reasoningTokens": 0,
+        "cost": null
+      },
+      {
+        "inputTokens": 7459,
+        "outputTokens": 373,
+        "cacheReadTokens": 6912,
+        "cacheWriteTokens": null,
+        "reasoningTokens": 99,
+        "cost": null
+      },
+      {
+        "inputTokens": 7903,
+        "outputTokens": 153,
+        "cacheReadTokens": 7424,
+        "cacheWriteTokens": null,
+        "reasoningTokens": 24,
+        "cost": null
+      },
+      {
+        "inputTokens": 8304,
+        "outputTokens": 428,
+        "cacheReadTokens": 7808,
+        "cacheWriteTokens": null,
+        "reasoningTokens": 0,
+        "cost": null
+      }
+    ],
+    "phases": [
+      {
+        "phase": "input.admitted",
+        "atMs": 1792422705745,
+        "clock": "recorded"
+      },
+      {
+        "phase": "input.promoted",
+        "atMs": 1792422705746,
+        "clock": "recorded"
+      },
+      {
+        "phase": "run.started",
+        "atMs": 1792422705746,
+        "clock": "recorded"
+      },
+      {
+        "phase": "provider.request",
+        "atMs": 1792422705749,
+        "clock": "recorded"
+      },
+      {
+        "phase": "provider.request.result",
+        "atMs": 1792422707869,
+        "clock": "recorded"
+      },
+      {
+        "phase": "tool.dispatched",
+        "atMs": 1792422707973,
+        "clock": "recorded"
+      },
+      {
+        "phase": "tool.dispatched",
+        "atMs": 1792422707973,
+        "clock": "recorded"
+      },
+      {
+        "phase": "tool.completed",
+        "atMs": 1792422707974,
+        "clock": "recorded"
+      },
+      {
+        "phase": "tool.completed",
+        "atMs": 1792422707974,
+        "clock": "recorded"
+      },
+      {
+        "phase": "provider.request",
+        "atMs": 1792422707976,
+        "clock": "recorded"
+      },
+      {
+        "phase": "provider.request.result",
+        "atMs": 1792422709876,
+        "clock": "recorded"
+      },
+      {
+        "phase": "tool.dispatched",
+        "atMs": 1792422710087,
+        "clock": "recorded"
+      },
+      {
+        "phase": "tool.dispatched",
+        "atMs": 1792422710088,
+        "clock": "recorded"
+      },
+      {
+        "phase": "tool.dispatched",
+        "atMs": 1792422710088,
+        "clock": "recorded"
+      },
+      {
+        "phase": "tool.completed",
+        "atMs": 1792422710089,
+        "clock": "recorded"
+      },
+      {
+        "phase": "tool.completed",
+        "atMs": 1792422710090,
+        "clock": "recorded"
+      },
+      {
+        "phase": "tool.completed",
+        "atMs": 1792422710090,
+        "clock": "recorded"
+      },
+      {
+        "phase": "provider.request",
+        "atMs": 1792422710092,
+        "clock": "recorded"
+      },
+      {
+        "phase": "provider.request.result",
+        "atMs": 1792422711771,
+        "clock": "recorded"
+      },
+      {
+        "phase": "tool.dispatched",
+        "atMs": 1792422712166,
+        "clock": "recorded"
+      },
+      {
+        "phase": "tool.dispatched",
+        "atMs": 1792422712166,
+        "clock": "recorded"
+      },
+      {
+        "phase": "tool.dispatched",
+        "atMs": 1792422712166,
+        "clock": "recorded"
+      },
+      {
+        "phase": "tool.completed",
+        "atMs": 1792422712167,
+        "clock": "recorded"
+      },
+      {
+        "phase": "tool.completed",
+        "atMs": 1792422712168,
+        "clock": "recorded"
+      },
+      {
+        "phase": "tool.completed",
+        "atMs": 1792422712168,
+        "clock": "recorded"
+      },
+      {
+        "phase": "provider.request",
+        "atMs": 1792422712170,
+        "clock": "recorded"
+      },
+      {
+        "phase": "provider.request.result",
+        "atMs": 1792422713368,
+        "clock": "recorded"
+      },
+      {
+        "phase": "tool.dispatched",
+        "atMs": 1792422713980,
+        "clock": "recorded"
+      },
+      {
+        "phase": "tool.completed",
+        "atMs": 1792422714196,
+        "clock": "recorded"
+      },
+      {
+        "phase": "provider.request",
+        "atMs": 1792422714198,
+        "clock": "recorded"
+      },
+      {
+        "phase": "provider.request.result",
+        "atMs": 1792422715643,
+        "clock": "recorded"
+      },
+      {
+        "phase": "tool.dispatched",
+        "atMs": 1792422716174,
+        "clock": "recorded"
+      },
+      {
+        "phase": "tool.completed",
+        "atMs": 1792422716391,
+        "clock": "recorded"
+      },
+      {
+        "phase": "provider.request",
+        "atMs": 1792422716395,
+        "clock": "recorded"
+      },
+      {
+        "phase": "provider.request.result",
+        "atMs": 1792422719734,
+        "clock": "recorded"
+      },
+      {
+        "phase": "tool.dispatched",
+        "atMs": 1792422720930,
+        "clock": "recorded"
+      },
+      {
+        "phase": "tool.completed",
+        "atMs": 1792422720938,
+        "clock": "recorded"
+      },
+      {
+        "phase": "tool.dispatched",
+        "atMs": 1792422720938,
+        "clock": "recorded"
+      },
+      {
+        "phase": "tool.completed",
+        "atMs": 1792422720945,
+        "clock": "recorded"
+      },
+      {
+        "phase": "provider.request",
+        "atMs": 1792422720948,
+        "clock": "recorded"
+      },
+      {
+        "phase": "provider.request.result",
+        "atMs": 1792422726359,
+        "clock": "recorded"
+      },
+      {
+        "phase": "tool.dispatched",
+        "atMs": 1792422727189,
+        "clock": "recorded"
+      },
+      {
+        "phase": "tool.completed",
+        "atMs": 1792422727432,
+        "clock": "recorded"
+      },
+      {
+        "phase": "tool.dispatched",
+        "atMs": 1792422727433,
+        "clock": "recorded"
+      },
+      {
+        "phase": "tool.completed",
+        "atMs": 1792422727649,
+        "clock": "recorded"
+      },
+      {
+        "phase": "provider.request",
+        "atMs": 1792422727652,
+        "clock": "recorded"
+      },
+      {
+        "phase": "provider.request.result",
+        "atMs": 1792422729643,
+        "clock": "recorded"
+      },
+      {
+        "phase": "tool.dispatched",
+        "atMs": 1792422730856,
+        "clock": "recorded"
+      },
+      {
+        "phase": "tool.completed",
+        "atMs": 1792422731103,
+        "clock": "recorded"
+      },
+      {
+        "phase": "provider.request",
+        "atMs": 1792422731107,
+        "clock": "recorded"
+      },
+      {
+        "phase": "provider.request.result",
+        "atMs": 1792422732586,
+        "clock": "recorded"
+      },
+      {
+        "phase": "tool.dispatched",
+        "atMs": 1792422733025,
+        "clock": "recorded"
+      },
+      {
+        "phase": "tool.completed",
+        "atMs": 1792422733242,
+        "clock": "recorded"
+      },
+      {
+        "phase": "provider.request",
+        "atMs": 1792422733245,
+        "clock": "recorded"
+      },
+      {
+        "phase": "provider.request.result",
+        "atMs": 1792422734462,
+        "clock": "recorded"
+      },
+      {
+        "phase": "run.usage",
+        "atMs": 1792422736417,
+        "clock": "recorded"
+      },
+      {
+        "phase": "run.finished",
+        "atMs": 1792422736417,
+        "clock": "recorded"
+      },
+      {
+        "phase": "stop",
+        "atMs": 1792422736417,
+        "clock": "recorded"
+      },
+      {
+        "phase": "first-output",
+        "atMs": 1792422707870,
+        "clock": "observed"
+      },
+      {
+        "phase": "verified",
+        "atMs": 1792422736475,
+        "clock": "observed"
+      }
+    ],
+    "profile": {
+      "model": "deepseek-v4.1-flash",
+      "modelParametersHash": "ef3d96a9ec0464401ae599f38c478bab21fa051e068e9d158e5c186628e7a393",
+      "agentManifestHash": "2dbdecca09d38a807edd88d10f18f4febcb6aa5dcbdc2c1bb17f06446b689562",
+      "permissionHash": "d42fc16528687eb95ab02f646f83d9fa332046a89dbd8ab793bb698ed6616fed",
+      "toolSurfaceHash": "fb2ab566dec79420e179a024d88e1903ebbc1b7a9f23fe7b0aefb45a9d0dcb28"
+    },
+    "profileReceipts": 10,
+    "loops": {
+      "continuations": [],
+      "stopped": []
+    },
+    "toolCalls": 16,
+    "parallel": {
+      "batches": 3,
+      "batchedReads": 8,
+      "batchWallMs": 2
+    },
+    "context": {
+      "compaction": {},
+      "reasons": [],
+      "recallCalls": 0
+    },
+    "providerAttempts": [
+      {
+        "attempt": 0,
+        "protocol": "openai-chat",
+        "status": 200,
+        "outcome": "headers_received",
+        "detail": null
+      },
+      {
+        "attempt": 0,
+        "protocol": "openai-chat",
+        "status": 200,
+        "outcome": "headers_received",
+        "detail": null
+      },
+      {
+        "attempt": 0,
+        "protocol": "openai-chat",
+        "status": 200,
+        "outcome": "headers_received",
+        "detail": null
+      },
+      {
+        "attempt": 0,
+        "protocol": "openai-chat",
+        "status": 200,
+        "outcome": "headers_received",
+        "detail": null
+      },
+      {
+        "attempt": 0,
+        "protocol": "openai-chat",
+        "status": 200,
+        "outcome": "headers_received",
+        "detail": null
+      },
+      {
+        "attempt": 0,
+        "protocol": "openai-chat",
+        "status": 200,
+        "outcome": "headers_received",
+        "detail": null
+      },
+      {
+        "attempt": 0,
+        "protocol": "openai-chat",
+        "status": 200,
+        "outcome": "headers_received",
+        "detail": null
+      },
+      {
+        "attempt": 0,
+        "protocol": "openai-chat",
+        "status": 200,
+        "outcome": "headers_received",
+        "detail": null
+      },
+      {
+        "attempt": 0,
+        "protocol": "openai-chat",
+        "status": 200,
+        "outcome": "headers_received",
+        "detail": null
+      },
+      {
+        "attempt": 0,
+        "protocol": "openai-chat",
+        "status": 200,
+        "outcome": "headers_received",
+        "detail": null
+      }
+    ],
+    "textHash": "44ede998c81dd755ec96fe9601290b20344fb27af47da8b9e400413e0307d197",
+    "binarySha256": "b2c1d67f465561ad7bed58ab28ebe03658b8042e16b0bb3f75a41d65329d14fd",
+    "startedAtMs": 1792422705730,
+    "admissionMs": 1792422705745,
+    "elapsedMs": 30745
+  },
+  "assessment": {
+    "suiteHash": "bd905b4f81f0a9412b614631a36337723067574848c5f05b50ead1cf48675091",
+    "taskHash": "a5041ea521bf1671656245fae3d7fab12d071b4b5b82cf29607998143aadc602",
+    "artifactPass": true,
+    "unexpected": [],
+    "immutable": [
+      {
+        "file": "AGENTS.md",
+        "unchanged": true
+      },
+      {
+        "file": "package.json",
+        "unchanged": true
+      },
+      {
+        "file": "test/oracle.test.ts",
+        "unchanged": true
+      }
+    ],
+    "expected": [],
+    "check": {
+      "command": [
+        "bun",
+        "test",
+        "test/oracle.test.ts"
+      ],
+      "exit": 0,
+      "stdoutHash": "d6684989b8dd63b37d2f1954270826fbe1bd89a8debd12bcacf03ed1c6140ef6",
+      "stderrHash": "0fbf980aec5964f040ab40aaeba90a3ad371f5cf32b7c6133365452e13edb571"
+    },
+    "executionVerdict": "unverified",
+    "requiredReceipts": [],
+    "answerContains": []
+  },
+  "answer": "I'll start by exploring the workspace to understand the project structure.\nBoth bugs are clear. Let me check the test runner available and understand the expected semantics.\nBun is available. Let me confirm the baseline failure before changing anything.\nBaseline confirmed failing. Now I'll fix both source files — keeping the exported signatures identical.\nNow let me verify the existing test and check the edge cases involved.\nTest passes. My edge-case script failed only due to module resolution from /tmp — let me rerun it with absolute imports.\nAll edge cases pass. Let me confirm the final state of the sources and that protected files are untouched.\nBoth defects are repaired and verified.\n\n## What was wrong\n\n| File | Buggy code | Defect |\n|---|---|---|\n| `src/config.ts` | `return Boolean(value)` | Coerced *any* truthy value into \"enabled\" — `1`, `'false'`, `[]` and `{}` all enabled the feature |\n| `src/display.ts` | `value ? 'ON' : 'ON'` | Both branches returned `'ON'`, so disabled features never showed `OFF` |\n\n## Changes\n\n```ts\n// src/config.ts\nexport function enabled(value: unknown) { return value === true }\n\n// src/display.ts\nexport function display(value: boolean) { return value ? 'ON' : 'OFF' }\n```\n\n- **Strict parsing:** `enabled` now uses the identity comparison `value === true`, so only the literal boolean `true` enables the feature. Everything else — including the string `'true'`, `1`, `new Boolean(true)`, `NaN`, `null`, `undefined`, and objects/arrays — yields `false`. Returning a real boolean also keeps the return type consistent with the unchanged signature.\n- **Correct formatting:** the false branch now returns `'OFF'`.\n- **APIs preserved:** both export names and parameter types (`unknown`, `boolean`) are untouched, so no call sites break.\n\n## Verification\n\n- **Existing test** (`test/oracle.test.ts`) went from `1 fail` on the baseline to `1 pass / 6 expect() calls`.\n- An extra throwaway check (in `/tmp`, since removed) confirmed all twelve edge cases map correctly, including the tricky truthy-but-not-`true` inputs (`'true'`, `1`, `[]`, boxed `Boolean`).\n- **Protected files unmodified** — `AGENTS.md`, `package.json`, and `test/oracle.test.ts` hash identically to their originals; no configuration or test-runner changes were made, and only the two `src` files were edited."
+}

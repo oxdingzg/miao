@@ -1,0 +1,278 @@
+{
+  "sample": {
+    "task": "rename-symbol",
+    "engine": "typescript",
+    "repetition": 1,
+    "suiteHash": "bd905b4f81f0a9412b614631a36337723067574848c5f05b50ead1cf48675091",
+    "taskHash": "244db465af9f2320fb9297399084c4c2de91754c7ef63ea7c5ac984145c0fdc0",
+    "profile": {
+      "model": "deepseek-v4.1-flash",
+      "modelParametersHash": "484eb477541e8f7d80c89f816e6b90daf45a94bb163a3a5f724d7cec287b326d",
+      "agentManifestHash": "06527d85fd4c13ddda5a9da87af7c0bce04bb0a05adcad730ce754b651644eb1",
+      "permissionHash": "f2e8c95fc3f8d532311ecbee72e3e9067370e3f5b404648dcc57b25a08794d7f",
+      "toolSurfaceHash": "04c769ae52448d5fe45ea690050120cee624771222b1291088dc6d832c888106"
+    },
+    "revision": "fa001fbff8b188361bf5848cc31358bba7e7d7bb",
+    "artifactHash": "435c2e6b5d82d18050ad65a8e5f003a79b6dd52037e4d402fd610c6549bb07ab",
+    "receiptHash": "b16e6b1aecc934a16212388c2ad28e33cf3b4ac61297ca87f699e83ef757cf62",
+    "outcome": "passed",
+    "elapsedMs": 18441,
+    "attempts": [
+      {
+        "inputTokens": 14038,
+        "outputTokens": 118,
+        "cost": null
+      },
+      {
+        "inputTokens": 14483,
+        "outputTokens": 156,
+        "cost": null
+      },
+      {
+        "inputTokens": 15147,
+        "outputTokens": 318,
+        "cost": null
+      },
+      {
+        "inputTokens": 15631,
+        "outputTokens": 65,
+        "cost": null
+      },
+      {
+        "inputTokens": 15764,
+        "outputTokens": 62,
+        "cost": null
+      },
+      {
+        "inputTokens": 15851,
+        "outputTokens": 92,
+        "cost": null
+      }
+    ]
+  },
+  "rejection": null,
+  "evidence": {
+    "engine": "typescript",
+    "revision": "fa001fbff8b188361bf5848cc31358bba7e7d7bb",
+    "task": "rename-symbol",
+    "repetition": 1,
+    "terminal": "completed",
+    "error": null,
+    "receipts": [],
+    "attempts": [
+      {
+        "inputTokens": 14038,
+        "outputTokens": 118,
+        "cacheReadTokens": 0,
+        "cacheWriteTokens": null,
+        "reasoningTokens": 0,
+        "cost": null
+      },
+      {
+        "inputTokens": 14483,
+        "outputTokens": 156,
+        "cacheReadTokens": 13952,
+        "cacheWriteTokens": null,
+        "reasoningTokens": 0,
+        "cost": null
+      },
+      {
+        "inputTokens": 15147,
+        "outputTokens": 318,
+        "cacheReadTokens": 14464,
+        "cacheWriteTokens": null,
+        "reasoningTokens": 61,
+        "cost": null
+      },
+      {
+        "inputTokens": 15631,
+        "outputTokens": 65,
+        "cacheReadTokens": 15104,
+        "cacheWriteTokens": null,
+        "reasoningTokens": 15,
+        "cost": null
+      },
+      {
+        "inputTokens": 15764,
+        "outputTokens": 62,
+        "cacheReadTokens": 15616,
+        "cacheWriteTokens": null,
+        "reasoningTokens": 0,
+        "cost": null
+      },
+      {
+        "inputTokens": 15851,
+        "outputTokens": 92,
+        "cacheReadTokens": 15744,
+        "cacheWriteTokens": null,
+        "reasoningTokens": 0,
+        "cost": null
+      }
+    ],
+    "phases": [
+      {
+        "phase": "step-start",
+        "atMs": 1792422360417,
+        "clock": "observed"
+      },
+      {
+        "phase": "first-output",
+        "atMs": 1792422360736,
+        "clock": "observed"
+      },
+      {
+        "phase": "tool-part",
+        "atMs": 1792422360920,
+        "clock": "observed"
+      },
+      {
+        "phase": "tool-part",
+        "atMs": 1792422360953,
+        "clock": "observed"
+      },
+      {
+        "phase": "step-start",
+        "atMs": 1792422363159,
+        "clock": "observed"
+      },
+      {
+        "phase": "tool-part",
+        "atMs": 1792422363378,
+        "clock": "observed"
+      },
+      {
+        "phase": "tool-part",
+        "atMs": 1792422363422,
+        "clock": "observed"
+      },
+      {
+        "phase": "tool-part",
+        "atMs": 1792422363434,
+        "clock": "observed"
+      },
+      {
+        "phase": "tool-part",
+        "atMs": 1792422363464,
+        "clock": "observed"
+      },
+      {
+        "phase": "tool-part",
+        "atMs": 1792422363491,
+        "clock": "observed"
+      },
+      {
+        "phase": "step-start",
+        "atMs": 1792422364884,
+        "clock": "observed"
+      },
+      {
+        "phase": "first-output",
+        "atMs": 1792422366023,
+        "clock": "observed"
+      },
+      {
+        "phase": "tool-part",
+        "atMs": 1792422366097,
+        "clock": "observed"
+      },
+      {
+        "phase": "tool-part",
+        "atMs": 1792422366140,
+        "clock": "observed"
+      },
+      {
+        "phase": "step-start",
+        "atMs": 1792422368434,
+        "clock": "observed"
+      },
+      {
+        "phase": "tool-part",
+        "atMs": 1792422369124,
+        "clock": "observed"
+      },
+      {
+        "phase": "step-start",
+        "atMs": 1792422371903,
+        "clock": "observed"
+      },
+      {
+        "phase": "tool-part",
+        "atMs": 1792422372128,
+        "clock": "observed"
+      },
+      {
+        "phase": "step-start",
+        "atMs": 1792422374161,
+        "clock": "observed"
+      },
+      {
+        "phase": "first-output",
+        "atMs": 1792422374530,
+        "clock": "observed"
+      },
+      {
+        "phase": "exit",
+        "atMs": 1792422374619,
+        "clock": "observed"
+      },
+      {
+        "phase": "verified",
+        "atMs": 1792422374661,
+        "clock": "observed"
+      }
+    ],
+    "profile": {
+      "model": "deepseek-v4.1-flash",
+      "modelParametersHash": "484eb477541e8f7d80c89f816e6b90daf45a94bb163a3a5f724d7cec287b326d",
+      "agentManifestHash": "06527d85fd4c13ddda5a9da87af7c0bce04bb0a05adcad730ce754b651644eb1",
+      "permissionHash": "f2e8c95fc3f8d532311ecbee72e3e9067370e3f5b404648dcc57b25a08794d7f",
+      "toolSurfaceHash": "04c769ae52448d5fe45ea690050120cee624771222b1291088dc6d832c888106"
+    },
+    "profileReceipts": 6,
+    "loops": {
+      "continuations": [],
+      "stopped": []
+    },
+    "toolCalls": 11,
+    "textHash": "8e3929dd5d2bc046509b8df163e44270213649071a33fdb6cb75b9d0e7a4ee3b",
+    "binarySha256": null,
+    "startedAtMs": 1792422356220,
+    "admissionMs": null,
+    "elapsedMs": 18441
+  },
+  "assessment": {
+    "suiteHash": "bd905b4f81f0a9412b614631a36337723067574848c5f05b50ead1cf48675091",
+    "taskHash": "244db465af9f2320fb9297399084c4c2de91754c7ef63ea7c5ac984145c0fdc0",
+    "artifactPass": true,
+    "unexpected": [],
+    "immutable": [
+      {
+        "file": "AGENTS.md",
+        "unchanged": true
+      },
+      {
+        "file": "package.json",
+        "unchanged": true
+      },
+      {
+        "file": "test/oracle.test.ts",
+        "unchanged": true
+      }
+    ],
+    "expected": [],
+    "check": {
+      "command": [
+        "bash",
+        "-lc",
+        "bun test test/oracle.test.ts && grep -q 'sumEntries' src/core.ts && ! grep -rq 'computeTotal' src && echo RENAME_SYMBOL_OK"
+      ],
+      "exit": 0,
+      "stdoutHash": "19a31fc79d133078f30a44d52a6e61484b9a45e763850ad37d752ce423ab682a",
+      "stderrHash": "a1d64aa82a3309c0b98a142eed89612b63416bc73ab93333acdc7ab5375f7c57"
+    },
+    "executionVerdict": "unverified",
+    "requiredReceipts": [],
+    "answerContains": []
+  },
+  "answer": "I'll start by exploring the workspace structure and finding all references to `computeTotal`.\nThe test imports `sumEntries` from `src/index.ts`, so the rename must also be re-exported there.\nDone. Test passes (`1 pass, 0 fail`), and no `computeTotal` references remain.\n\nChanged:\n- `src/core.ts:1` — renamed the exported function to `sumEntries` (same reduce logic).\n- `src/index.ts` — imports `sumEntries`, re-exports it for the test, and `total` still wraps it with identical behavior.\n- `test/oracle.test.ts` untouched, as requested."
+}

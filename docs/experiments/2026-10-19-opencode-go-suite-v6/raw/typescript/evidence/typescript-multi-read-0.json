@@ -1,0 +1,162 @@
+{
+  "sample": {
+    "task": "multi-read",
+    "engine": "typescript",
+    "repetition": 0,
+    "suiteHash": "bd905b4f81f0a9412b614631a36337723067574848c5f05b50ead1cf48675091",
+    "taskHash": "0d7d997929618a514b0f84f56b810cb5280f5b1ac1bca88065d107d1cb7b8147",
+    "profile": {
+      "model": "deepseek-v4.1-flash",
+      "modelParametersHash": "f40d2c0d36f3f2df053d8c58c3cc3cfcf8cc9664f04fec14429f3ce4e16cc2f7",
+      "agentManifestHash": "8100c66920c8ca95b0a01f27f0d8770730689a92fb4ccfc0d5b591403d647839",
+      "permissionHash": "549e72a6db371830f4e8e18cee2be2d577d078c21b7ff03b05edee9a821b6c37",
+      "toolSurfaceHash": "04c769ae52448d5fe45ea690050120cee624771222b1291088dc6d832c888106"
+    },
+    "revision": "fa001fbff8b188361bf5848cc31358bba7e7d7bb",
+    "artifactHash": "586a1fde7e44ffb98847844587b9df8f432114691ef834b8916734a0becc9f63",
+    "receiptHash": "5c331e5f6227940b9e6a2ad1eddb9d06e629b8bc50b9348df3e2faf23bedbc9e",
+    "outcome": "passed",
+    "elapsedMs": 7410,
+    "attempts": [
+      {
+        "inputTokens": 14021,
+        "outputTokens": 107,
+        "cost": null
+      },
+      {
+        "inputTokens": 14348,
+        "outputTokens": 40,
+        "cost": null
+      }
+    ]
+  },
+  "rejection": null,
+  "evidence": {
+    "engine": "typescript",
+    "revision": "fa001fbff8b188361bf5848cc31358bba7e7d7bb",
+    "task": "multi-read",
+    "repetition": 0,
+    "terminal": "completed",
+    "error": null,
+    "receipts": [],
+    "attempts": [
+      {
+        "inputTokens": 14021,
+        "outputTokens": 107,
+        "cacheReadTokens": 0,
+        "cacheWriteTokens": null,
+        "reasoningTokens": 7,
+        "cost": null
+      },
+      {
+        "inputTokens": 14348,
+        "outputTokens": 40,
+        "cacheReadTokens": 13952,
+        "cacheWriteTokens": null,
+        "reasoningTokens": 0,
+        "cost": null
+      }
+    ],
+    "phases": [
+      {
+        "phase": "step-start",
+        "atMs": 1792421601461,
+        "clock": "observed"
+      },
+      {
+        "phase": "tool-part",
+        "atMs": 1792421601784,
+        "clock": "observed"
+      },
+      {
+        "phase": "tool-part",
+        "atMs": 1792421601807,
+        "clock": "observed"
+      },
+      {
+        "phase": "tool-part",
+        "atMs": 1792421601834,
+        "clock": "observed"
+      },
+      {
+        "phase": "step-start",
+        "atMs": 1792421603841,
+        "clock": "observed"
+      },
+      {
+        "phase": "first-output",
+        "atMs": 1792421604020,
+        "clock": "observed"
+      },
+      {
+        "phase": "exit",
+        "atMs": 1792421604063,
+        "clock": "observed"
+      },
+      {
+        "phase": "verified",
+        "atMs": 1792421604066,
+        "clock": "observed"
+      }
+    ],
+    "profile": {
+      "model": "deepseek-v4.1-flash",
+      "modelParametersHash": "f40d2c0d36f3f2df053d8c58c3cc3cfcf8cc9664f04fec14429f3ce4e16cc2f7",
+      "agentManifestHash": "8100c66920c8ca95b0a01f27f0d8770730689a92fb4ccfc0d5b591403d647839",
+      "permissionHash": "549e72a6db371830f4e8e18cee2be2d577d078c21b7ff03b05edee9a821b6c37",
+      "toolSurfaceHash": "04c769ae52448d5fe45ea690050120cee624771222b1291088dc6d832c888106"
+    },
+    "profileReceipts": 2,
+    "loops": {
+      "continuations": [],
+      "stopped": []
+    },
+    "toolCalls": 3,
+    "textHash": "dbc7c10de27bc7e10a3310ef4ac28bc7bb65ebae401f5a0465fe7aaf3ad389ac",
+    "binarySha256": null,
+    "startedAtMs": 1792421596656,
+    "admissionMs": null,
+    "elapsedMs": 7410
+  },
+  "assessment": {
+    "suiteHash": "bd905b4f81f0a9412b614631a36337723067574848c5f05b50ead1cf48675091",
+    "taskHash": "0d7d997929618a514b0f84f56b810cb5280f5b1ac1bca88065d107d1cb7b8147",
+    "artifactPass": true,
+    "unexpected": [],
+    "immutable": [
+      {
+        "file": "AGENTS.md",
+        "unchanged": true
+      },
+      {
+        "file": "package.json",
+        "unchanged": true
+      },
+      {
+        "file": "src/alpha.ts",
+        "unchanged": true
+      },
+      {
+        "file": "src/beta.ts",
+        "unchanged": true
+      },
+      {
+        "file": "src/gamma.ts",
+        "unchanged": true
+      }
+    ],
+    "expected": [],
+    "check": null,
+    "executionVerdict": "unverified",
+    "requiredReceipts": [],
+    "answerContains": [
+      "alpha",
+      "11",
+      "beta",
+      "22",
+      "gamma",
+      "33"
+    ]
+  },
+  "answer": "- `alpha = 11`（src/alpha.ts）\n- `beta = 22`（src/beta.ts）\n- `gamma = 33`（src/gamma.ts）"
+}

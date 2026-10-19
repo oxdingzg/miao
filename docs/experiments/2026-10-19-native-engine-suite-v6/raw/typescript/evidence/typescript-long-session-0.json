@@ -7,95 +7,100 @@
     "taskHash": "acc85904b2dcd251e4f30fbe7b74f29d6ae3d4266a73c7319c966169a74baa82",
     "profile": {
       "model": "deepseek-v4-flash",
-      "modelParametersHash": "cc31a3494f5b5bf5b63ed841049797adadfd1b14df17471716bbf76418084491",
-      "agentManifestHash": "716a153bb84f614bc1ad86df098e9aa58a595e3ef58fcc1313bce7ce50b57b30",
-      "permissionHash": "c7978187d98bb903713b8d4cef4caf5315a937db5da5f3af8f48cc3fd0d36b4c",
+      "modelParametersHash": "43820a20db5754e7f9c41b6470c9fbcd1c264a49c74497784c4c4089bf981cbb",
+      "agentManifestHash": "4537a18a606ac35735e978d7e6de298567c2b89823537916ccb840fd0d497b2f",
+      "permissionHash": "6af765bc3b991e0e9f44920106da32a4e3d1a284c1d20abc7d862167c8a54648",
       "toolSurfaceHash": "04c769ae52448d5fe45ea690050120cee624771222b1291088dc6d832c888106"
     },
-    "revision": "83f7c4f935295946d46d1e802cb81ea382f0893c",
-    "artifactHash": "bc96f52c39ed399b58cf6fc060510b48f4472cbf96134b9d7adeac3fb752213b",
-    "receiptHash": "1eb6ae170963efca1be2e30db8a2512d92fef69b8f85db99f93904112cc87263",
+    "revision": "df0419ba27c9f63a9565636719cb398f440c3780",
+    "artifactHash": "eef4a60cfcb5c24b9022757282d7759e8756e392a13efb6e172480b5760b58b8",
+    "receiptHash": "8a00ab993b65629e84c64197571a71bda4d0438b9a1fb4991974b9dee8faae67",
     "outcome": "passed",
-    "elapsedMs": 35003,
+    "elapsedMs": 43353,
     "attempts": [
       {
-        "inputTokens": 13990,
-        "outputTokens": 74,
+        "inputTokens": 13991,
+        "outputTokens": 78,
         "cost": null
       },
       {
-        "inputTokens": 14085,
-        "outputTokens": 68,
+        "inputTokens": 14188,
+        "outputTokens": 79,
         "cost": null
       },
       {
-        "inputTokens": 14173,
+        "inputTokens": 14456,
+        "outputTokens": 62,
+        "cost": null
+      },
+      {
+        "inputTokens": 14538,
         "outputTokens": 18,
         "cost": null
       },
       {
-        "inputTokens": 14217,
-        "outputTokens": 76,
-        "cost": null
-      },
-      {
-        "inputTokens": 14313,
-        "outputTokens": 35,
-        "cost": null
-      },
-      {
-        "inputTokens": 14382,
+        "inputTokens": 14582,
         "outputTokens": 77,
         "cost": null
       },
       {
-        "inputTokens": 14623,
-        "outputTokens": 67,
+        "inputTokens": 14679,
+        "outputTokens": 18,
         "cost": null
       },
       {
-        "inputTokens": 14772,
-        "outputTokens": 121,
+        "inputTokens": 14731,
+        "outputTokens": 81,
         "cost": null
       },
       {
-        "inputTokens": 15320,
-        "outputTokens": 465,
+        "inputTokens": 14840,
+        "outputTokens": 226,
         "cost": null
       },
       {
-        "inputTokens": 16047,
-        "outputTokens": 276,
+        "inputTokens": 15091,
+        "outputTokens": 415,
         "cost": null
       },
       {
-        "inputTokens": 16373,
-        "outputTokens": 115,
+        "inputTokens": 15596,
+        "outputTokens": 200,
         "cost": null
       },
       {
-        "inputTokens": 16509,
-        "outputTokens": 44,
+        "inputTokens": 16029,
+        "outputTokens": 1098,
         "cost": null
       },
       {
-        "inputTokens": 16671,
-        "outputTokens": 55,
+        "inputTokens": 17162,
+        "outputTokens": 294,
         "cost": null
       },
       {
-        "inputTokens": 16749,
-        "outputTokens": 66,
+        "inputTokens": 17477,
+        "outputTokens": 78,
         "cost": null
       },
       {
-        "inputTokens": 16933,
-        "outputTokens": 8,
+        "inputTokens": 17677,
+        "outputTokens": 38,
         "cost": null
       },
       {
-        "inputTokens": 16959,
-        "outputTokens": 32,
+        "inputTokens": 17738,
+        "outputTokens": 131,
+        "cost": null
+      },
+      {
+        "inputTokens": 17992,
+        "outputTokens": 30,
+        "cost": null
+      },
+      {
+        "inputTokens": 18040,
+        "outputTokens": 79,
         "cost": null
       }
     ]
@@ -103,7 +108,7 @@
   "rejection": null,
   "evidence": {
     "engine": "typescript",
-    "revision": "83f7c4f935295946d46d1e802cb81ea382f0893c",
+    "revision": "df0419ba27c9f63a9565636719cb398f440c3780",
     "task": "long-session",
     "repetition": 0,
     "terminal": "completed",
@@ -111,129 +116,137 @@
     "receipts": [],
     "attempts": [
       {
-        "inputTokens": 13990,
-        "outputTokens": 74,
+        "inputTokens": 13991,
+        "outputTokens": 78,
         "cacheReadTokens": 1792,
         "cacheWriteTokens": null,
-        "reasoningTokens": 20,
+        "reasoningTokens": 29,
         "cost": null
       },
       {
-        "inputTokens": 14085,
-        "outputTokens": 68,
-        "cacheReadTokens": 13824,
-        "cacheWriteTokens": null,
-        "reasoningTokens": 6,
-        "cost": null
-      },
-      {
-        "inputTokens": 14173,
-        "outputTokens": 18,
+        "inputTokens": 14188,
+        "outputTokens": 79,
         "cacheReadTokens": 13952,
         "cacheWriteTokens": null,
-        "reasoningTokens": 0,
+        "reasoningTokens": 12,
         "cost": null
       },
       {
-        "inputTokens": 14217,
-        "outputTokens": 76,
-        "cacheReadTokens": 14080,
-        "cacheWriteTokens": null,
-        "reasoningTokens": 0,
-        "cost": null
-      },
-      {
-        "inputTokens": 14313,
-        "outputTokens": 35,
-        "cacheReadTokens": 14080,
-        "cacheWriteTokens": null,
-        "reasoningTokens": 27,
-        "cost": null
-      },
-      {
-        "inputTokens": 14382,
-        "outputTokens": 77,
+        "inputTokens": 14456,
+        "outputTokens": 62,
         "cacheReadTokens": 14208,
         "cacheWriteTokens": null,
-        "reasoningTokens": 14,
+        "reasoningTokens": 0,
         "cost": null
       },
       {
-        "inputTokens": 14623,
-        "outputTokens": 67,
+        "inputTokens": 14538,
+        "outputTokens": 18,
         "cacheReadTokens": 14336,
         "cacheWriteTokens": null,
         "reasoningTokens": 0,
         "cost": null
       },
       {
-        "inputTokens": 14772,
-        "outputTokens": 121,
+        "inputTokens": 14582,
+        "outputTokens": 77,
+        "cacheReadTokens": 14336,
+        "cacheWriteTokens": null,
+        "reasoningTokens": 0,
+        "cost": null
+      },
+      {
+        "inputTokens": 14679,
+        "outputTokens": 18,
+        "cacheReadTokens": 14464,
+        "cacheWriteTokens": null,
+        "reasoningTokens": 0,
+        "cost": null
+      },
+      {
+        "inputTokens": 14731,
+        "outputTokens": 81,
         "cacheReadTokens": 14592,
         "cacheWriteTokens": null,
-        "reasoningTokens": 30,
+        "reasoningTokens": 34,
         "cost": null
       },
       {
-        "inputTokens": 15320,
-        "outputTokens": 465,
+        "inputTokens": 14840,
+        "outputTokens": 226,
+        "cacheReadTokens": 14592,
+        "cacheWriteTokens": null,
+        "reasoningTokens": 165,
+        "cost": null
+      },
+      {
+        "inputTokens": 15091,
+        "outputTokens": 415,
         "cacheReadTokens": 14848,
         "cacheWriteTokens": null,
-        "reasoningTokens": 387,
+        "reasoningTokens": 340,
         "cost": null
       },
       {
-        "inputTokens": 16047,
-        "outputTokens": 276,
+        "inputTokens": 15596,
+        "outputTokens": 200,
+        "cacheReadTokens": 15360,
+        "cacheWriteTokens": null,
+        "reasoningTokens": 139,
+        "cost": null
+      },
+      {
+        "inputTokens": 16029,
+        "outputTokens": 1098,
         "cacheReadTokens": 15744,
         "cacheWriteTokens": null,
-        "reasoningTokens": 195,
+        "reasoningTokens": 1028,
         "cost": null
       },
       {
-        "inputTokens": 16373,
-        "outputTokens": 115,
-        "cacheReadTokens": 16128,
+        "inputTokens": 17162,
+        "outputTokens": 294,
+        "cacheReadTokens": 17024,
+        "cacheWriteTokens": null,
+        "reasoningTokens": 180,
+        "cost": null
+      },
+      {
+        "inputTokens": 17477,
+        "outputTokens": 78,
+        "cacheReadTokens": 17280,
         "cacheWriteTokens": null,
         "reasoningTokens": 0,
         "cost": null
       },
       {
-        "inputTokens": 16509,
-        "outputTokens": 44,
-        "cacheReadTokens": 16256,
+        "inputTokens": 17677,
+        "outputTokens": 38,
+        "cacheReadTokens": 17536,
         "cacheWriteTokens": null,
         "reasoningTokens": 0,
         "cost": null
       },
       {
-        "inputTokens": 16671,
-        "outputTokens": 55,
-        "cacheReadTokens": 16512,
+        "inputTokens": 17738,
+        "outputTokens": 131,
+        "cacheReadTokens": 17536,
         "cacheWriteTokens": null,
-        "reasoningTokens": 10,
+        "reasoningTokens": 53,
         "cost": null
       },
       {
-        "inputTokens": 16749,
-        "outputTokens": 66,
-        "cacheReadTokens": 16512,
-        "cacheWriteTokens": null,
-        "reasoningTokens": 22,
-        "cost": null
-      },
-      {
-        "inputTokens": 16933,
-        "outputTokens": 8,
-        "cacheReadTokens": 16768,
+        "inputTokens": 17992,
+        "outputTokens": 30,
+        "cacheReadTokens": 17792,
         "cacheWriteTokens": null,
         "reasoningTokens": 0,
         "cost": null
       },
       {
-        "inputTokens": 16959,
-        "outputTokens": 32,
-        "cacheReadTokens": 16768,
+        "inputTokens": 18040,
+        "outputTokens": 79,
+        "cacheReadTokens": 17792,
         "cacheWriteTokens": null,
         "reasoningTokens": 0,
         "cost": null
@@ -242,193 +255,208 @@
     "phases": [
       {
         "phase": "step-start",
-        "atMs": 1792418199932,
+        "atMs": 1792426871122,
         "clock": "observed"
       },
       {
         "phase": "tool-part",
-        "atMs": 1792418200328,
+        "atMs": 1792426871525,
         "clock": "observed"
       },
       {
         "phase": "step-start",
-        "atMs": 1792418200897,
+        "atMs": 1792426872350,
         "clock": "observed"
       },
       {
         "phase": "tool-part",
-        "atMs": 1792418201209,
+        "atMs": 1792426872694,
+        "clock": "observed"
+      },
+      {
+        "phase": "tool-part",
+        "atMs": 1792426872729,
         "clock": "observed"
       },
       {
         "phase": "step-start",
-        "atMs": 1792418202106,
+        "atMs": 1792426873631,
+        "clock": "observed"
+      },
+      {
+        "phase": "tool-part",
+        "atMs": 1792426873833,
+        "clock": "observed"
+      },
+      {
+        "phase": "step-start",
+        "atMs": 1792426874570,
         "clock": "observed"
       },
       {
         "phase": "first-output",
-        "atMs": 1792418202174,
+        "atMs": 1792426874647,
         "clock": "observed"
       },
       {
         "phase": "step-start",
-        "atMs": 1792418205059,
+        "atMs": 1792426878054,
         "clock": "observed"
       },
       {
         "phase": "tool-part",
-        "atMs": 1792418205261,
+        "atMs": 1792426878254,
         "clock": "observed"
       },
       {
         "phase": "step-start",
-        "atMs": 1792418205831,
+        "atMs": 1792426879087,
         "clock": "observed"
       },
       {
         "phase": "first-output",
-        "atMs": 1792418206059,
+        "atMs": 1792426879166,
         "clock": "observed"
       },
       {
         "phase": "step-start",
-        "atMs": 1792418208596,
+        "atMs": 1792426882234,
         "clock": "observed"
       },
       {
         "phase": "tool-part",
-        "atMs": 1792418209001,
+        "atMs": 1792426882691,
         "clock": "observed"
       },
       {
         "phase": "step-start",
-        "atMs": 1792418209639,
+        "atMs": 1792426883216,
         "clock": "observed"
       },
       {
         "phase": "tool-part",
-        "atMs": 1792418209858,
+        "atMs": 1792426884281,
         "clock": "observed"
       },
       {
         "phase": "step-start",
-        "atMs": 1792418210265,
+        "atMs": 1792426884933,
         "clock": "observed"
       },
       {
         "phase": "tool-part",
-        "atMs": 1792418210889,
+        "atMs": 1792426887023,
         "clock": "observed"
       },
       {
         "phase": "step-start",
-        "atMs": 1792418211399,
+        "atMs": 1792426888008,
         "clock": "observed"
       },
       {
         "phase": "tool-part",
-        "atMs": 1792418213653,
+        "atMs": 1792426888989,
         "clock": "observed"
       },
       {
         "phase": "step-start",
-        "atMs": 1792418214149,
+        "atMs": 1792426889673,
         "clock": "observed"
       },
       {
         "phase": "tool-part",
-        "atMs": 1792418215362,
+        "atMs": 1792426895926,
         "clock": "observed"
       },
       {
         "phase": "step-start",
-        "atMs": 1792418216809,
+        "atMs": 1792426896415,
         "clock": "observed"
       },
       {
         "phase": "tool-part",
-        "atMs": 1792418217185,
+        "atMs": 1792426897518,
         "clock": "observed"
       },
       {
         "phase": "step-start",
-        "atMs": 1792418218024,
+        "atMs": 1792426898338,
         "clock": "observed"
       },
       {
         "phase": "tool-part",
-        "atMs": 1792418218247,
+        "atMs": 1792426899757,
         "clock": "observed"
       },
       {
         "phase": "step-start",
-        "atMs": 1792418218998,
+        "atMs": 1792426900508,
         "clock": "observed"
       },
       {
         "phase": "first-output",
-        "atMs": 1792418219339,
+        "atMs": 1792426900695,
         "clock": "observed"
       },
       {
         "phase": "step-start",
-        "atMs": 1792418227192,
+        "atMs": 1792426904438,
         "clock": "observed"
       },
       {
         "phase": "tool-part",
-        "atMs": 1792418227645,
+        "atMs": 1792426906071,
         "clock": "observed"
       },
       {
         "phase": "step-start",
-        "atMs": 1792418228532,
+        "atMs": 1792426907132,
         "clock": "observed"
       },
       {
         "phase": "first-output",
-        "atMs": 1792418228581,
+        "atMs": 1792426907279,
         "clock": "observed"
       },
       {
         "phase": "step-start",
-        "atMs": 1792418231412,
+        "atMs": 1792426910764,
         "clock": "observed"
       },
       {
         "phase": "first-output",
-        "atMs": 1792418231513,
+        "atMs": 1792426911061,
         "clock": "observed"
       },
       {
         "phase": "exit",
-        "atMs": 1792418231554,
+        "atMs": 1792426911134,
         "clock": "observed"
       },
       {
         "phase": "verified",
-        "atMs": 1792418231581,
+        "atMs": 1792426911183,
         "clock": "observed"
       }
     ],
     "profile": {
       "model": "deepseek-v4-flash",
-      "modelParametersHash": "cc31a3494f5b5bf5b63ed841049797adadfd1b14df17471716bbf76418084491",
-      "agentManifestHash": "716a153bb84f614bc1ad86df098e9aa58a595e3ef58fcc1313bce7ce50b57b30",
-      "permissionHash": "c7978187d98bb903713b8d4cef4caf5315a937db5da5f3af8f48cc3fd0d36b4c",
+      "modelParametersHash": "43820a20db5754e7f9c41b6470c9fbcd1c264a49c74497784c4c4089bf981cbb",
+      "agentManifestHash": "4537a18a606ac35735e978d7e6de298567c2b89823537916ccb840fd0d497b2f",
+      "permissionHash": "6af765bc3b991e0e9f44920106da32a4e3d1a284c1d20abc7d862167c8a54648",
       "toolSurfaceHash": "04c769ae52448d5fe45ea690050120cee624771222b1291088dc6d832c888106"
     },
-    "profileReceipts": 16,
+    "profileReceipts": 17,
     "loops": {
       "continuations": [],
       "stopped": []
     },
-    "toolCalls": 11,
-    "textHash": "0d8ac4216c80e84414b5632e013661ad78f0ec95c6cb7fcfee3316f13ca709e0",
+    "toolCalls": 13,
+    "textHash": "726806f1dfb26cb378659f7bced9f42f0e1ce04bc94d419b63e2fe6031bf9265",
     "binarySha256": null,
-    "startedAtMs": 1792418196578,
+    "startedAtMs": 1792426867830,
     "admissionMs": null,
-    "elapsedMs": 35003
+    "elapsedMs": 43353
   },
   "assessment": {
     "suiteHash": "bd905b4f81f0a9412b614631a36337723067574848c5f05b50ead1cf48675091",
@@ -454,7 +482,7 @@
       ],
       "exit": 0,
       "stdoutHash": "c384cdaa55dad157820800a4aaa48c4963ea5500be5bd17037485dc40c6e23b8",
-      "stderrHash": "e5b9fff8621d8eaab45702c889da5419e9c78913f12e2f8479de3bb01d1c126a"
+      "stderrHash": "213451a4558db0786e49c330dc491d4f9c1b1a98aff72e1f2a830c65fa33e958"
     },
     "executionVerdict": "unverified",
     "requiredReceipts": [],
@@ -462,5 +490,5 @@
       "LONG_SESSION_OK"
     ]
   },
-  "answer": "Created `src/unit.ts` with `export const unit = 21;`.\nCreated `src/double.ts`.\nCreated `test/long.test.ts` and ran it: passes, printing `LONG_SESSION_OK`. Also changed `src/double.ts` import to `./unit.ts` so Node ESM resolves it.\nTest passes; no repairs needed.\nCreated `src/unit.ts`, `src/double.ts`, and `test/long.test.ts`. Exact marker: `LONG_SESSION_OK`"
+  "answer": "Created `src/unit.ts` with `export const unit = 21;`.\nCreated `src/double.ts` importing `unit` and exporting `double()`.\nCreated `test/long.test.ts` and ran it via `npx tsx --test test/long.test.ts`: 1 passed, printing `LONG_SESSION_OK`.\nTest already passes, so no repair was needed. Re-ran: 1 passed, `LONG_SESSION_OK`, exit 0.\nCreated:\n- `src/unit.ts` — `export const unit = 21;`\n- `src/double.ts` — imports `unit` from `./unit`, exports `double()` returning `unit * 2`\n- `test/long.test.ts` — asserts `double()` equals 42, prints marker on pass\n\nMarker: `LONG_SESSION_OK`"
 }

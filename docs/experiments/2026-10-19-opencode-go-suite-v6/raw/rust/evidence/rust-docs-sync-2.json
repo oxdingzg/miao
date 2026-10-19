@@ -1,0 +1,521 @@
+{
+  "sample": {
+    "task": "docs-sync",
+    "engine": "rust",
+    "repetition": 2,
+    "suiteHash": "bd905b4f81f0a9412b614631a36337723067574848c5f05b50ead1cf48675091",
+    "taskHash": "81770a3ba16cad0c85823ad75587b559a670da480642d3491f6d5b8814394fee",
+    "profile": {
+      "model": "deepseek-v4.1-flash",
+      "modelParametersHash": "ef3d96a9ec0464401ae599f38c478bab21fa051e068e9d158e5c186628e7a393",
+      "agentManifestHash": "2dbdecca09d38a807edd88d10f18f4febcb6aa5dcbdc2c1bb17f06446b689562",
+      "permissionHash": "cab464ddb78963253d90993d9920286bfb5ca3e26a8ddb64b68ddec5c9532cff",
+      "toolSurfaceHash": "fb2ab566dec79420e179a024d88e1903ebbc1b7a9f23fe7b0aefb45a9d0dcb28"
+    },
+    "revision": "fa001fbff8b188361bf5848cc31358bba7e7d7bb",
+    "artifactHash": "f45c980517c6640ed715435e1fda1711f7f4db2b182c8823162edbf622d06300",
+    "receiptHash": "a26764f408610055e2fef2edcec4cdf11b144e2ae34b78dfe82a441d8e09d3ba",
+    "outcome": "passed",
+    "elapsedMs": 56124,
+    "attempts": [
+      {
+        "inputTokens": 4870,
+        "outputTokens": 53,
+        "cost": null
+      },
+      {
+        "inputTokens": 4974,
+        "outputTokens": 165,
+        "cost": null
+      },
+      {
+        "inputTokens": 5179,
+        "outputTokens": 211,
+        "cost": null
+      },
+      {
+        "inputTokens": 13334,
+        "outputTokens": 581,
+        "cost": null
+      },
+      {
+        "inputTokens": 14266,
+        "outputTokens": 356,
+        "cost": null
+      },
+      {
+        "inputTokens": 14702,
+        "outputTokens": 302,
+        "cost": null
+      },
+      {
+        "inputTokens": 15194,
+        "outputTokens": 273,
+        "cost": null
+      },
+      {
+        "inputTokens": 15642,
+        "outputTokens": 287,
+        "cost": null
+      },
+      {
+        "inputTokens": 16039,
+        "outputTokens": 430,
+        "cost": null
+      }
+    ]
+  },
+  "rejection": null,
+  "evidence": {
+    "engine": "rust",
+    "revision": "fa001fbff8b188361bf5848cc31358bba7e7d7bb",
+    "task": "docs-sync",
+    "repetition": 2,
+    "terminal": "completed",
+    "error": null,
+    "receipts": [
+      "tool.error"
+    ],
+    "attempts": [
+      {
+        "inputTokens": 4870,
+        "outputTokens": 53,
+        "cacheReadTokens": 4736,
+        "cacheWriteTokens": null,
+        "reasoningTokens": 0,
+        "cost": null
+      },
+      {
+        "inputTokens": 4974,
+        "outputTokens": 165,
+        "cacheReadTokens": 0,
+        "cacheWriteTokens": null,
+        "reasoningTokens": 12,
+        "cost": null
+      },
+      {
+        "inputTokens": 5179,
+        "outputTokens": 211,
+        "cacheReadTokens": 4864,
+        "cacheWriteTokens": null,
+        "reasoningTokens": 59,
+        "cost": null
+      },
+      {
+        "inputTokens": 13334,
+        "outputTokens": 581,
+        "cacheReadTokens": 4736,
+        "cacheWriteTokens": null,
+        "reasoningTokens": 426,
+        "cost": null
+      },
+      {
+        "inputTokens": 14266,
+        "outputTokens": 356,
+        "cacheReadTokens": 13312,
+        "cacheWriteTokens": null,
+        "reasoningTokens": 185,
+        "cost": null
+      },
+      {
+        "inputTokens": 14702,
+        "outputTokens": 302,
+        "cacheReadTokens": 14208,
+        "cacheWriteTokens": null,
+        "reasoningTokens": 102,
+        "cost": null
+      },
+      {
+        "inputTokens": 15194,
+        "outputTokens": 273,
+        "cacheReadTokens": 14592,
+        "cacheWriteTokens": null,
+        "reasoningTokens": 153,
+        "cost": null
+      },
+      {
+        "inputTokens": 15642,
+        "outputTokens": 287,
+        "cacheReadTokens": 15104,
+        "cacheWriteTokens": null,
+        "reasoningTokens": 188,
+        "cost": null
+      },
+      {
+        "inputTokens": 16039,
+        "outputTokens": 430,
+        "cacheReadTokens": 15616,
+        "cacheWriteTokens": null,
+        "reasoningTokens": 80,
+        "cost": null
+      }
+    ],
+    "phases": [
+      {
+        "phase": "input.admitted",
+        "atMs": 1792423811652,
+        "clock": "recorded"
+      },
+      {
+        "phase": "input.promoted",
+        "atMs": 1792423811652,
+        "clock": "recorded"
+      },
+      {
+        "phase": "run.started",
+        "atMs": 1792423811652,
+        "clock": "recorded"
+      },
+      {
+        "phase": "provider.request",
+        "atMs": 1792423811654,
+        "clock": "recorded"
+      },
+      {
+        "phase": "provider.request.result",
+        "atMs": 1792423831979,
+        "clock": "recorded"
+      },
+      {
+        "phase": "tool.dispatched",
+        "atMs": 1792423832828,
+        "clock": "recorded"
+      },
+      {
+        "phase": "tool.completed",
+        "atMs": 1792423832828,
+        "clock": "recorded"
+      },
+      {
+        "phase": "provider.request",
+        "atMs": 1792423832831,
+        "clock": "recorded"
+      },
+      {
+        "phase": "provider.request.result",
+        "atMs": 1792423833980,
+        "clock": "recorded"
+      },
+      {
+        "phase": "tool.completed",
+        "atMs": 1792423835191,
+        "clock": "recorded"
+      },
+      {
+        "phase": "tool.completed",
+        "atMs": 1792423835192,
+        "clock": "recorded"
+      },
+      {
+        "phase": "provider.request",
+        "atMs": 1792423835194,
+        "clock": "recorded"
+      },
+      {
+        "phase": "provider.request.result",
+        "atMs": 1792423836219,
+        "clock": "recorded"
+      },
+      {
+        "phase": "tool.dispatched",
+        "atMs": 1792423837451,
+        "clock": "recorded"
+      },
+      {
+        "phase": "tool.dispatched",
+        "atMs": 1792423837451,
+        "clock": "recorded"
+      },
+      {
+        "phase": "tool.completed",
+        "atMs": 1792423837453,
+        "clock": "recorded"
+      },
+      {
+        "phase": "tool.completed",
+        "atMs": 1792423837453,
+        "clock": "recorded"
+      },
+      {
+        "phase": "provider.request",
+        "atMs": 1792423837457,
+        "clock": "recorded"
+      },
+      {
+        "phase": "provider.request.result",
+        "atMs": 1792423840571,
+        "clock": "recorded"
+      },
+      {
+        "phase": "tool.dispatched",
+        "atMs": 1792423843003,
+        "clock": "recorded"
+      },
+      {
+        "phase": "tool.dispatched",
+        "atMs": 1792423843004,
+        "clock": "recorded"
+      },
+      {
+        "phase": "tool.completed",
+        "atMs": 1792423843006,
+        "clock": "recorded"
+      },
+      {
+        "phase": "tool.completed",
+        "atMs": 1792423843006,
+        "clock": "recorded"
+      },
+      {
+        "phase": "provider.request",
+        "atMs": 1792423843010,
+        "clock": "recorded"
+      },
+      {
+        "phase": "provider.request.result",
+        "atMs": 1792423846829,
+        "clock": "recorded"
+      },
+      {
+        "phase": "tool.dispatched",
+        "atMs": 1792423848467,
+        "clock": "recorded"
+      },
+      {
+        "phase": "tool.completed",
+        "atMs": 1792423848478,
+        "clock": "recorded"
+      },
+      {
+        "phase": "provider.request",
+        "atMs": 1792423848481,
+        "clock": "recorded"
+      },
+      {
+        "phase": "provider.request.result",
+        "atMs": 1792423851072,
+        "clock": "recorded"
+      },
+      {
+        "phase": "tool.dispatched",
+        "atMs": 1792423852236,
+        "clock": "recorded"
+      },
+      {
+        "phase": "tool.completed",
+        "atMs": 1792423852477,
+        "clock": "recorded"
+      },
+      {
+        "phase": "tool.dispatched",
+        "atMs": 1792423852478,
+        "clock": "recorded"
+      },
+      {
+        "phase": "tool.completed",
+        "atMs": 1792423852479,
+        "clock": "recorded"
+      },
+      {
+        "phase": "provider.request",
+        "atMs": 1792423852482,
+        "clock": "recorded"
+      },
+      {
+        "phase": "provider.request.result",
+        "atMs": 1792423855482,
+        "clock": "recorded"
+      },
+      {
+        "phase": "tool.dispatched",
+        "atMs": 1792423856566,
+        "clock": "recorded"
+      },
+      {
+        "phase": "tool.completed",
+        "atMs": 1792423856782,
+        "clock": "recorded"
+      },
+      {
+        "phase": "provider.request",
+        "atMs": 1792423856785,
+        "clock": "recorded"
+      },
+      {
+        "phase": "provider.request.result",
+        "atMs": 1792423862090,
+        "clock": "recorded"
+      },
+      {
+        "phase": "tool.dispatched",
+        "atMs": 1792423863333,
+        "clock": "recorded"
+      },
+      {
+        "phase": "tool.completed",
+        "atMs": 1792423863336,
+        "clock": "recorded"
+      },
+      {
+        "phase": "tool.completed",
+        "atMs": 1792423863337,
+        "clock": "recorded"
+      },
+      {
+        "phase": "provider.request",
+        "atMs": 1792423863343,
+        "clock": "recorded"
+      },
+      {
+        "phase": "provider.request.result",
+        "atMs": 1792423865618,
+        "clock": "recorded"
+      },
+      {
+        "phase": "run.usage",
+        "atMs": 1792423867712,
+        "clock": "recorded"
+      },
+      {
+        "phase": "run.finished",
+        "atMs": 1792423867712,
+        "clock": "recorded"
+      },
+      {
+        "phase": "stop",
+        "atMs": 1792423867712,
+        "clock": "recorded"
+      },
+      {
+        "phase": "first-output",
+        "atMs": 1792423831980,
+        "clock": "observed"
+      },
+      {
+        "phase": "verified",
+        "atMs": 1792423867760,
+        "clock": "observed"
+      }
+    ],
+    "profile": {
+      "model": "deepseek-v4.1-flash",
+      "modelParametersHash": "ef3d96a9ec0464401ae599f38c478bab21fa051e068e9d158e5c186628e7a393",
+      "agentManifestHash": "2dbdecca09d38a807edd88d10f18f4febcb6aa5dcbdc2c1bb17f06446b689562",
+      "permissionHash": "cab464ddb78963253d90993d9920286bfb5ca3e26a8ddb64b68ddec5c9532cff",
+      "toolSurfaceHash": "fb2ab566dec79420e179a024d88e1903ebbc1b7a9f23fe7b0aefb45a9d0dcb28"
+    },
+    "profileReceipts": 9,
+    "loops": {
+      "continuations": [],
+      "stopped": []
+    },
+    "toolCalls": 13,
+    "parallel": {
+      "batches": 2,
+      "batchedReads": 4,
+      "batchWallMs": 101
+    },
+    "context": {
+      "compaction": {},
+      "reasons": [],
+      "recallCalls": 0
+    },
+    "providerAttempts": [
+      {
+        "attempt": 0,
+        "protocol": "openai-chat",
+        "status": 200,
+        "outcome": "headers_received",
+        "detail": null
+      },
+      {
+        "attempt": 0,
+        "protocol": "openai-chat",
+        "status": 200,
+        "outcome": "headers_received",
+        "detail": null
+      },
+      {
+        "attempt": 0,
+        "protocol": "openai-chat",
+        "status": 200,
+        "outcome": "headers_received",
+        "detail": null
+      },
+      {
+        "attempt": 0,
+        "protocol": "openai-chat",
+        "status": 200,
+        "outcome": "headers_received",
+        "detail": null
+      },
+      {
+        "attempt": 0,
+        "protocol": "openai-chat",
+        "status": 200,
+        "outcome": "headers_received",
+        "detail": null
+      },
+      {
+        "attempt": 0,
+        "protocol": "openai-chat",
+        "status": 200,
+        "outcome": "headers_received",
+        "detail": null
+      },
+      {
+        "attempt": 0,
+        "protocol": "openai-chat",
+        "status": 200,
+        "outcome": "headers_received",
+        "detail": null
+      },
+      {
+        "attempt": 0,
+        "protocol": "openai-chat",
+        "status": 200,
+        "outcome": "headers_received",
+        "detail": null
+      },
+      {
+        "attempt": 0,
+        "protocol": "openai-chat",
+        "status": 200,
+        "outcome": "headers_received",
+        "detail": null
+      }
+    ],
+    "textHash": "fdd3d965c5275d3e1a64988cb17ba6bb49399f80b01f2b830be8195440c4ab92",
+    "binarySha256": "b2c1d67f465561ad7bed58ab28ebe03658b8042e16b0bb3f75a41d65329d14fd",
+    "startedAtMs": 1792423811636,
+    "admissionMs": 1792423811652,
+    "elapsedMs": 56124
+  },
+  "assessment": {
+    "suiteHash": "bd905b4f81f0a9412b614631a36337723067574848c5f05b50ead1cf48675091",
+    "taskHash": "81770a3ba16cad0c85823ad75587b559a670da480642d3491f6d5b8814394fee",
+    "artifactPass": true,
+    "unexpected": [],
+    "immutable": [
+      {
+        "file": "AGENTS.md",
+        "unchanged": true
+      },
+      {
+        "file": "package.json",
+        "unchanged": true
+      }
+    ],
+    "expected": [
+      {
+        "file": "README.md",
+        "matches": true
+      }
+    ],
+    "check": null,
+    "executionVerdict": "unverified",
+    "requiredReceipts": [],
+    "answerContains": []
+  },
+  "answer": "I'll start by reading the README to find the exact installation command.\nThe README is large (100 KB). Let me locate the exact occurrence(s) before editing.\n`grep` searches under a directory, so I'll use the workspace root with a glob filter.\nExactly one occurrence, in the `## Installation` section. Applying a minimal edit.\nByte count went from 100,438 → 100,443 (+5), exactly the length delta of the replacement. Let me verify nothing else changed.\nNot a git repo, so I verified via byte math + line count. Let me confirm against the project's oracle test that guards this doc.\nNo test runner is configured (`package.json` has no scripts, and `test/oracle.test.ts` doesn't exist), so there was nothing to run — and AGENTS.md forbids adding config.\n\n## Summary\n\n**File changed:** `README.md` — only file touched.\n\n**The change (line 2805, in the `## Installation` section):**\n\n```diff\n-Run `miao install` to place the binary on your PATH.\n+Run `miao setup --fast` to place the binary on your PATH.\n```\n\n**Verification that every other byte is identical:**\n\n| Check | Result |\n|---|---|\n| Occurrences of the command | Exactly 1 (case-insensitive regex `miao\\s+install` also matched only this line) |\n| File size | 100,438 → 100,443 bytes = **+5**, exactly `\"setup --fast\"` (17) − `\"install\"` (12) |\n| Line count | 3,286 → 3,286 (unchanged) |\n| Line endings | 0 CR bytes before and after (no CRLF conversion) |\n| Encoding/BOM, trailing newline | Preserved (edit applied as an in-place exact-match substitution) |\n| Other files | Untouched — no other write operations performed |\n\nThe rest of the document (Sections 1–699, the generated fixture paragraphs, the appendices, and the \"installation command\" phrasing in those paragraphs) is unchanged. Note that the ~3,200 generated paragraphs intentionally retain the words *\"so only the installation command changes\"* — that's a description of the fixture, not a second invocation, so I left them alone."
+}

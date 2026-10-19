@@ -1,0 +1,15 @@
+[
+  {
+    "id": "opencode-go/deepseek-v4.1-flash",
+    "provider": "openai-chat",
+    "model": "deepseek-v4.1-flash",
+    "endpoint": "https://opencode.ai/inference/go/openai/v1/chat/completions",
+    "credential": { "type": "environment", "key": "OPENCODE_API_KEY" },
+    "auth": {
+      "headers": {
+        "User-Agent": "miao/0.2.16",
+        "x-opencode-session": "$session"
+      }
+    }
+  }
+]

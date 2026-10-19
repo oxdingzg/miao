@@ -1,0 +1,192 @@
+{
+  "sample": {
+    "task": "rename-symbol",
+    "engine": "typescript",
+    "repetition": 2,
+    "suiteHash": "bd905b4f81f0a9412b614631a36337723067574848c5f05b50ead1cf48675091",
+    "taskHash": "244db465af9f2320fb9297399084c4c2de91754c7ef63ea7c5ac984145c0fdc0",
+    "profile": {
+      "model": "deepseek-v4.1-flash",
+      "modelParametersHash": "57ed44363aad16b24c9e42f6458a2298d9e0db36c72b87b1386e96a92fd9a842",
+      "agentManifestHash": "36a44f525f0289c6a2e28d0c6133412b7b3b735cc56beba865fb997d79243d0a",
+      "permissionHash": "ac2ce1d44a9ae208944dca35d25bb1d084c3b96cb45814482c155ff28908ce58",
+      "toolSurfaceHash": "04c769ae52448d5fe45ea690050120cee624771222b1291088dc6d832c888106"
+    },
+    "revision": "fa001fbff8b188361bf5848cc31358bba7e7d7bb",
+    "artifactHash": "ac2ce54004ad6eaa8a5c03cea628e948aa10fcd55423a15c1736dc23bfb6e6ea",
+    "receiptHash": "49cd591dfa24b380a1e0775860dc9509036002466845de09a410b4869195f515",
+    "outcome": "passed",
+    "elapsedMs": 11262,
+    "attempts": [
+      {
+        "inputTokens": 14038,
+        "outputTokens": 73,
+        "cost": null
+      },
+      {
+        "inputTokens": 14304,
+        "outputTokens": 53,
+        "cost": null
+      },
+      {
+        "inputTokens": 14538,
+        "outputTokens": 172,
+        "cost": null
+      },
+      {
+        "inputTokens": 14773,
+        "outputTokens": 63,
+        "cost": null
+      }
+    ]
+  },
+  "rejection": null,
+  "evidence": {
+    "engine": "typescript",
+    "revision": "fa001fbff8b188361bf5848cc31358bba7e7d7bb",
+    "task": "rename-symbol",
+    "repetition": 2,
+    "terminal": "completed",
+    "error": null,
+    "receipts": [],
+    "attempts": [
+      {
+        "inputTokens": 14038,
+        "outputTokens": 73,
+        "cacheReadTokens": 0,
+        "cacheWriteTokens": null,
+        "reasoningTokens": 6,
+        "cost": null
+      },
+      {
+        "inputTokens": 14304,
+        "outputTokens": 53,
+        "cacheReadTokens": 13952,
+        "cacheWriteTokens": null,
+        "reasoningTokens": 0,
+        "cost": null
+      },
+      {
+        "inputTokens": 14538,
+        "outputTokens": 172,
+        "cacheReadTokens": 14208,
+        "cacheWriteTokens": null,
+        "reasoningTokens": 57,
+        "cost": null
+      },
+      {
+        "inputTokens": 14773,
+        "outputTokens": 63,
+        "cacheReadTokens": 14464,
+        "cacheWriteTokens": null,
+        "reasoningTokens": 0,
+        "cost": null
+      }
+    ],
+    "phases": [
+      {
+        "phase": "step-start",
+        "atMs": 1792422379825,
+        "clock": "observed"
+      },
+      {
+        "phase": "tool-part",
+        "atMs": 1792422380354,
+        "clock": "observed"
+      },
+      {
+        "phase": "step-start",
+        "atMs": 1792422382112,
+        "clock": "observed"
+      },
+      {
+        "phase": "tool-part",
+        "atMs": 1792422382405,
+        "clock": "observed"
+      },
+      {
+        "phase": "step-start",
+        "atMs": 1792422383682,
+        "clock": "observed"
+      },
+      {
+        "phase": "tool-part",
+        "atMs": 1792422384483,
+        "clock": "observed"
+      },
+      {
+        "phase": "step-start",
+        "atMs": 1792422386187,
+        "clock": "observed"
+      },
+      {
+        "phase": "first-output",
+        "atMs": 1792422386335,
+        "clock": "observed"
+      },
+      {
+        "phase": "exit",
+        "atMs": 1792422386409,
+        "clock": "observed"
+      },
+      {
+        "phase": "verified",
+        "atMs": 1792422386447,
+        "clock": "observed"
+      }
+    ],
+    "profile": {
+      "model": "deepseek-v4.1-flash",
+      "modelParametersHash": "57ed44363aad16b24c9e42f6458a2298d9e0db36c72b87b1386e96a92fd9a842",
+      "agentManifestHash": "36a44f525f0289c6a2e28d0c6133412b7b3b735cc56beba865fb997d79243d0a",
+      "permissionHash": "ac2ce1d44a9ae208944dca35d25bb1d084c3b96cb45814482c155ff28908ce58",
+      "toolSurfaceHash": "04c769ae52448d5fe45ea690050120cee624771222b1291088dc6d832c888106"
+    },
+    "profileReceipts": 4,
+    "loops": {
+      "continuations": [],
+      "stopped": []
+    },
+    "toolCalls": 3,
+    "textHash": "89a5f62f558113f46ec36fe1b834436f5e3b3b953ee07ce7725fb1ec00b23088",
+    "binarySha256": null,
+    "startedAtMs": 1792422375185,
+    "admissionMs": null,
+    "elapsedMs": 11262
+  },
+  "assessment": {
+    "suiteHash": "bd905b4f81f0a9412b614631a36337723067574848c5f05b50ead1cf48675091",
+    "taskHash": "244db465af9f2320fb9297399084c4c2de91754c7ef63ea7c5ac984145c0fdc0",
+    "artifactPass": true,
+    "unexpected": [],
+    "immutable": [
+      {
+        "file": "AGENTS.md",
+        "unchanged": true
+      },
+      {
+        "file": "package.json",
+        "unchanged": true
+      },
+      {
+        "file": "test/oracle.test.ts",
+        "unchanged": true
+      }
+    ],
+    "expected": [],
+    "check": {
+      "command": [
+        "bash",
+        "-lc",
+        "bun test test/oracle.test.ts && grep -q 'sumEntries' src/core.ts && ! grep -rq 'computeTotal' src && echo RENAME_SYMBOL_OK"
+      ],
+      "exit": 0,
+      "stdoutHash": "19a31fc79d133078f30a44d52a6e61484b9a45e763850ad37d752ce423ab682a",
+      "stderrHash": "bcbc5ba71e98b7f2e3a6f949a46a1b944fea2d7b5ef1094d5d1c38f65375cd49"
+    },
+    "executionVerdict": "unverified",
+    "requiredReceipts": [],
+    "answerContains": []
+  },
+  "answer": "Renamed `computeTotal` → `sumEntries` in `src/core.ts`, and `src/index.ts` now re-exports `sumEntries` while `total` still delegates to it. Test untouched.\n\n```\nbun test: 1 pass, 0 fail (2 expect() calls)\n```"
+}

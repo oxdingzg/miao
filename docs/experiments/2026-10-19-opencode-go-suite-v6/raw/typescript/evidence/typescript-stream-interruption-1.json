@@ -1,0 +1,126 @@
+{
+  "sample": {
+    "task": "stream-interruption",
+    "engine": "typescript",
+    "repetition": 1,
+    "suiteHash": "bd905b4f81f0a9412b614631a36337723067574848c5f05b50ead1cf48675091",
+    "taskHash": "4f00bf344635036fd5d16a5b348e948e9ed126d43854e1280b1286d48d53284c",
+    "profile": {
+      "model": "deepseek-v4.1-flash",
+      "modelParametersHash": "0734c7732666c86f2945722f92d7743f35b76ea471374c8e7ba57acb29ccdaa5",
+      "agentManifestHash": "927585ad544fa6b656e6f760415785df15b8b7eda022d3ac57dc099a6432737e",
+      "permissionHash": "210496d5aacbaf697a5b03d82d8e3ac1d12e712c36ad21c852579dd49e8a5f30",
+      "toolSurfaceHash": "04c769ae52448d5fe45ea690050120cee624771222b1291088dc6d832c888106"
+    },
+    "revision": "fa001fbff8b188361bf5848cc31358bba7e7d7bb",
+    "artifactHash": "4db87f5a57332a70b4f7eb7147fba9d1badbe824dd172edd45ff30a1ba872b10",
+    "receiptHash": "2e8df18e6b4eb58cc20d60d87263b300fc097f0e7de525af2c34a86870c6a9a0",
+    "outcome": "failed",
+    "elapsedMs": 4771,
+    "attempts": [
+      {
+        "inputTokens": 14019,
+        "outputTokens": 94,
+        "cost": null
+      }
+    ]
+  },
+  "rejection": null,
+  "evidence": {
+    "engine": "typescript",
+    "revision": "fa001fbff8b188361bf5848cc31358bba7e7d7bb",
+    "task": "stream-interruption",
+    "repetition": 1,
+    "terminal": "interrupted",
+    "error": "exit 130",
+    "receipts": [],
+    "attempts": [
+      {
+        "inputTokens": 14019,
+        "outputTokens": 94,
+        "cacheReadTokens": 0,
+        "cacheWriteTokens": null,
+        "reasoningTokens": 8,
+        "cost": null
+      }
+    ],
+    "phases": [
+      {
+        "phase": "step-start",
+        "atMs": 1792421938269,
+        "clock": "observed"
+      },
+      {
+        "phase": "tool-part",
+        "atMs": 1792421938840,
+        "clock": "observed"
+      },
+      {
+        "phase": "tool-part",
+        "atMs": 1792421938927,
+        "clock": "observed"
+      },
+      {
+        "phase": "exit",
+        "atMs": 1792421938967,
+        "clock": "observed"
+      },
+      {
+        "phase": "verified",
+        "atMs": 1792421938972,
+        "clock": "observed"
+      }
+    ],
+    "profile": {
+      "model": "deepseek-v4.1-flash",
+      "modelParametersHash": "0734c7732666c86f2945722f92d7743f35b76ea471374c8e7ba57acb29ccdaa5",
+      "agentManifestHash": "927585ad544fa6b656e6f760415785df15b8b7eda022d3ac57dc099a6432737e",
+      "permissionHash": "210496d5aacbaf697a5b03d82d8e3ac1d12e712c36ad21c852579dd49e8a5f30",
+      "toolSurfaceHash": "04c769ae52448d5fe45ea690050120cee624771222b1291088dc6d832c888106"
+    },
+    "profileReceipts": 1,
+    "loops": {
+      "continuations": [],
+      "stopped": []
+    },
+    "toolCalls": 2,
+    "textHash": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "binarySha256": null,
+    "startedAtMs": 1792421934201,
+    "admissionMs": null,
+    "elapsedMs": 4771
+  },
+  "assessment": {
+    "suiteHash": "bd905b4f81f0a9412b614631a36337723067574848c5f05b50ead1cf48675091",
+    "taskHash": "4f00bf344635036fd5d16a5b348e948e9ed126d43854e1280b1286d48d53284c",
+    "artifactPass": false,
+    "unexpected": [],
+    "immutable": [
+      {
+        "file": "AGENTS.md",
+        "unchanged": true
+      },
+      {
+        "file": "package.json",
+        "unchanged": true
+      },
+      {
+        "file": "action.ts",
+        "unchanged": true
+      }
+    ],
+    "expected": [
+      {
+        "file": "audit.log",
+        "matches": false
+      }
+    ],
+    "check": null,
+    "executionVerdict": "unverified",
+    "requiredReceipts": [
+      "provider.interrupted"
+    ],
+    "answerContains": []
+  },
+  "answer": ""
+}
