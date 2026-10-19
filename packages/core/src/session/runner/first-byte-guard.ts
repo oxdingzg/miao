@@ -21,7 +21,7 @@ export function wrap<E, R>(stream: Stream.Stream<LLMEvent, E, R>, options?: { ti
                 module: "SessionFirstByteGuard",
                 method: "stream",
                 reason: new TransportReason({
-                  message: `provider produced no stream event within ${timeoutMs}ms`,
+                  message: `provider produced no stream event within ${timeoutMs}ms (set MIAO_LLM_FIRST_BYTE_TIMEOUT_MS to adjust, 0 disables)`,
                   kind: "Timeout",
                 }),
               }),

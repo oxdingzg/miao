@@ -7973,7 +7973,8 @@ describe("SessionRunnerLLM", () => {
           sessionID,
           attempt: 1,
           error: {
-            message: "SessionFirstByteGuard.stream: provider produced no stream event within 100ms",
+            message:
+              "SessionFirstByteGuard.stream: provider produced no stream event within 100ms (set MIAO_LLM_FIRST_BYTE_TIMEOUT_MS to adjust, 0 disables)",
             isRetryable: true,
           },
         },
