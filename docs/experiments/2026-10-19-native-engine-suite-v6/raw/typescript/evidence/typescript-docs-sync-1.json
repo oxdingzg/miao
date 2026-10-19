@@ -1,0 +1,263 @@
+{
+  "sample": {
+    "task": "docs-sync",
+    "engine": "typescript",
+    "repetition": 1,
+    "suiteHash": "bd905b4f81f0a9412b614631a36337723067574848c5f05b50ead1cf48675091",
+    "taskHash": "81770a3ba16cad0c85823ad75587b559a670da480642d3491f6d5b8814394fee",
+    "profile": {
+      "model": "deepseek-v4-flash",
+      "modelParametersHash": "6210824da732b8f2ab1a308259c73c897d58a1a2318dd6214840c614a98fdc57",
+      "agentManifestHash": "1052cbf917a7410934dc44c583a1b86e49024d795e1defaf4927c5fb403126f6",
+      "permissionHash": "7f7957a7bd6124f540fcac646e0063a68e695880289454315660693c15038371",
+      "toolSurfaceHash": "04c769ae52448d5fe45ea690050120cee624771222b1291088dc6d832c888106"
+    },
+    "revision": "83f7c4f935295946d46d1e802cb81ea382f0893c",
+    "artifactHash": "f45c980517c6640ed715435e1fda1711f7f4db2b182c8823162edbf622d06300",
+    "receiptHash": "54a6d9bd6f1dfb8d3fec0a135d2efa5b6bb7d5ddaa42740e1a9b7817bd2700f1",
+    "outcome": "passed",
+    "elapsedMs": 10814,
+    "attempts": [
+      {
+        "inputTokens": 14014,
+        "outputTokens": 38,
+        "cost": null
+      },
+      {
+        "inputTokens": 23934,
+        "outputTokens": 120,
+        "cost": null
+      },
+      {
+        "inputTokens": 24275,
+        "outputTokens": 100,
+        "cost": null
+      },
+      {
+        "inputTokens": 24579,
+        "outputTokens": 122,
+        "cost": null
+      },
+      {
+        "inputTokens": 24797,
+        "outputTokens": 98,
+        "cost": null
+      },
+      {
+        "inputTokens": 24957,
+        "outputTokens": 89,
+        "cost": null
+      },
+      {
+        "inputTokens": 25199,
+        "outputTokens": 137,
+        "cost": null
+      }
+    ]
+  },
+  "rejection": null,
+  "evidence": {
+    "engine": "typescript",
+    "revision": "83f7c4f935295946d46d1e802cb81ea382f0893c",
+    "task": "docs-sync",
+    "repetition": 1,
+    "terminal": "completed",
+    "error": null,
+    "receipts": [],
+    "attempts": [
+      {
+        "inputTokens": 14014,
+        "outputTokens": 38,
+        "cacheReadTokens": 1792,
+        "cacheWriteTokens": null,
+        "reasoningTokens": 0,
+        "cost": null
+      },
+      {
+        "inputTokens": 23934,
+        "outputTokens": 120,
+        "cacheReadTokens": 13952,
+        "cacheWriteTokens": null,
+        "reasoningTokens": 19,
+        "cost": null
+      },
+      {
+        "inputTokens": 24275,
+        "outputTokens": 100,
+        "cacheReadTokens": 23936,
+        "cacheWriteTokens": null,
+        "reasoningTokens": 0,
+        "cost": null
+      },
+      {
+        "inputTokens": 24579,
+        "outputTokens": 122,
+        "cacheReadTokens": 24320,
+        "cacheWriteTokens": null,
+        "reasoningTokens": 63,
+        "cost": null
+      },
+      {
+        "inputTokens": 24797,
+        "outputTokens": 98,
+        "cacheReadTokens": 24576,
+        "cacheWriteTokens": null,
+        "reasoningTokens": 0,
+        "cost": null
+      },
+      {
+        "inputTokens": 24957,
+        "outputTokens": 89,
+        "cacheReadTokens": 24704,
+        "cacheWriteTokens": null,
+        "reasoningTokens": 0,
+        "cost": null
+      },
+      {
+        "inputTokens": 25199,
+        "outputTokens": 137,
+        "cacheReadTokens": 24960,
+        "cacheWriteTokens": null,
+        "reasoningTokens": 92,
+        "cost": null
+      }
+    ],
+    "phases": [
+      {
+        "phase": "step-start",
+        "atMs": 1792418504545,
+        "clock": "observed"
+      },
+      {
+        "phase": "tool-part",
+        "atMs": 1792418504737,
+        "clock": "observed"
+      },
+      {
+        "phase": "step-start",
+        "atMs": 1792418505277,
+        "clock": "observed"
+      },
+      {
+        "phase": "tool-part",
+        "atMs": 1792418505790,
+        "clock": "observed"
+      },
+      {
+        "phase": "tool-part",
+        "atMs": 1792418505831,
+        "clock": "observed"
+      },
+      {
+        "phase": "step-start",
+        "atMs": 1792418506639,
+        "clock": "observed"
+      },
+      {
+        "phase": "tool-part",
+        "atMs": 1792418506923,
+        "clock": "observed"
+      },
+      {
+        "phase": "tool-part",
+        "atMs": 1792418506952,
+        "clock": "observed"
+      },
+      {
+        "phase": "step-start",
+        "atMs": 1792418507514,
+        "clock": "observed"
+      },
+      {
+        "phase": "tool-part",
+        "atMs": 1792418508080,
+        "clock": "observed"
+      },
+      {
+        "phase": "step-start",
+        "atMs": 1792418509148,
+        "clock": "observed"
+      },
+      {
+        "phase": "tool-part",
+        "atMs": 1792418509364,
+        "clock": "observed"
+      },
+      {
+        "phase": "step-start",
+        "atMs": 1792418510082,
+        "clock": "observed"
+      },
+      {
+        "phase": "tool-part",
+        "atMs": 1792418510395,
+        "clock": "observed"
+      },
+      {
+        "phase": "step-start",
+        "atMs": 1792418511237,
+        "clock": "observed"
+      },
+      {
+        "phase": "first-output",
+        "atMs": 1792418511919,
+        "clock": "observed"
+      },
+      {
+        "phase": "exit",
+        "atMs": 1792418512010,
+        "clock": "observed"
+      },
+      {
+        "phase": "verified",
+        "atMs": 1792418512014,
+        "clock": "observed"
+      }
+    ],
+    "profile": {
+      "model": "deepseek-v4-flash",
+      "modelParametersHash": "6210824da732b8f2ab1a308259c73c897d58a1a2318dd6214840c614a98fdc57",
+      "agentManifestHash": "1052cbf917a7410934dc44c583a1b86e49024d795e1defaf4927c5fb403126f6",
+      "permissionHash": "7f7957a7bd6124f540fcac646e0063a68e695880289454315660693c15038371",
+      "toolSurfaceHash": "04c769ae52448d5fe45ea690050120cee624771222b1291088dc6d832c888106"
+    },
+    "profileReceipts": 7,
+    "loops": {
+      "continuations": [],
+      "stopped": []
+    },
+    "toolCalls": 8,
+    "textHash": "0731fb498262e9fec9a0eaff86b0a95dd70813711db60c4f98c10ae2bfd0d135",
+    "binarySha256": null,
+    "startedAtMs": 1792418501200,
+    "admissionMs": null,
+    "elapsedMs": 10814
+  },
+  "assessment": {
+    "suiteHash": "bd905b4f81f0a9412b614631a36337723067574848c5f05b50ead1cf48675091",
+    "taskHash": "81770a3ba16cad0c85823ad75587b559a670da480642d3491f6d5b8814394fee",
+    "artifactPass": true,
+    "unexpected": [],
+    "immutable": [
+      {
+        "file": "AGENTS.md",
+        "unchanged": true
+      },
+      {
+        "file": "package.json",
+        "unchanged": true
+      }
+    ],
+    "expected": [
+      {
+        "file": "README.md",
+        "matches": true
+      }
+    ],
+    "check": null,
+    "executionVerdict": "unverified",
+    "requiredReceipts": [],
+    "answerContains": []
+  },
+  "answer": "Changed the installation line in README.md (line 2805) from `miao install` to `miao setup --fast`. Diff confirms that single line is the only change; all other bytes are unchanged."
+}

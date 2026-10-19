@@ -27,6 +27,8 @@ rust:
   --provider NAME           provider protocol (e.g. subscription-responses)
   --policy FILE             policy override (default: protected/** deny contract)
   --endpoint URL            provider base URL override
+  --model-routes-config FILE  trusted host route manifest, for providers whose headers the engine must carry
+  --model-route ID          route id to select before each input (required with a route manifest)
   --edit-recovery on|off    stale-edit recovery ablation (default: on)
   --lsp-diagnostics on|off  LSP warm-up and post-edit diagnostics ablation (default: on)
   --verify-command CMD      completion check the engine must pass before a run finishes
@@ -60,6 +62,8 @@ interface Options {
   provider?: string
   policy?: string
   endpoint?: string
+  modelRoutesConfigFile?: string
+  modelRouteID?: string
   editRecovery?: boolean
   lspDiagnostics?: boolean
   lspConfigFile?: string
@@ -109,6 +113,8 @@ for (const task of options.tasks) {
             provider: options.provider,
             policyFile: options.policy,
             endpoint: options.endpoint,
+            modelRoutesConfigFile: options.modelRoutesConfigFile,
+            modelRouteID: options.modelRouteID,
             editRecovery: options.editRecovery,
             lspDiagnostics: options.lspDiagnostics,
             lspConfigFile: options.lspConfigFile,
@@ -230,6 +236,8 @@ function readOptions(args: string[]): Options {
     provider: values.get("provider"),
     policy: values.get("policy"),
     endpoint: values.get("endpoint"),
+    modelRoutesConfigFile: values.get("model-routes-config"),
+    modelRouteID: values.get("model-route"),
     driftFile: values.get("drift-file"),
     editRecovery: values.get("edit-recovery") === undefined ? undefined : values.get("edit-recovery") !== "off",
     lspDiagnostics: values.get("lsp-diagnostics") === undefined ? undefined : values.get("lsp-diagnostics") !== "off",

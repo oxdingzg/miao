@@ -1,0 +1,512 @@
+{
+  "sample": {
+    "task": "long-session",
+    "engine": "typescript",
+    "repetition": 1,
+    "suiteHash": "bd905b4f81f0a9412b614631a36337723067574848c5f05b50ead1cf48675091",
+    "taskHash": "acc85904b2dcd251e4f30fbe7b74f29d6ae3d4266a73c7319c966169a74baa82",
+    "profile": {
+      "model": "deepseek-v4-flash",
+      "modelParametersHash": "727ff2e1ee1e20ca89f3f3f4f7e035ef01fdd336ecc2e32ccf2b87813102a8bb",
+      "agentManifestHash": "bf3a31162c903e7d3a8854fd19633156e20a8a9305b247395d64ec0a99ab8d3d",
+      "permissionHash": "28e80a5118e931d398ff25fd88d73a540c8e0501d6e64dccaab71318ff208a3e",
+      "toolSurfaceHash": "04c769ae52448d5fe45ea690050120cee624771222b1291088dc6d832c888106"
+    },
+    "revision": "83f7c4f935295946d46d1e802cb81ea382f0893c",
+    "artifactHash": "e9ff285d1d0a72e89be756401e591e292f7b5c153a01670d953e994b851d5339",
+    "receiptHash": "69c66fb2792e186b0347962f3aafb735f08e910abbfe97c04624c581c2999013",
+    "outcome": "passed",
+    "elapsedMs": 41050,
+    "attempts": [
+      {
+        "inputTokens": 13990,
+        "outputTokens": 71,
+        "cost": null
+      },
+      {
+        "inputTokens": 14180,
+        "outputTokens": 42,
+        "cost": null
+      },
+      {
+        "inputTokens": 14290,
+        "outputTokens": 68,
+        "cost": null
+      },
+      {
+        "inputTokens": 14379,
+        "outputTokens": 87,
+        "cost": null
+      },
+      {
+        "inputTokens": 14486,
+        "outputTokens": 41,
+        "cost": null
+      },
+      {
+        "inputTokens": 14552,
+        "outputTokens": 15,
+        "cost": null
+      },
+      {
+        "inputTokens": 14593,
+        "outputTokens": 79,
+        "cost": null
+      },
+      {
+        "inputTokens": 14692,
+        "outputTokens": 25,
+        "cost": null
+      },
+      {
+        "inputTokens": 14751,
+        "outputTokens": 147,
+        "cost": null
+      },
+      {
+        "inputTokens": 14929,
+        "outputTokens": 545,
+        "cost": null
+      },
+      {
+        "inputTokens": 15698,
+        "outputTokens": 423,
+        "cost": null
+      },
+      {
+        "inputTokens": 16209,
+        "outputTokens": 245,
+        "cost": null
+      },
+      {
+        "inputTokens": 16542,
+        "outputTokens": 1130,
+        "cost": null
+      },
+      {
+        "inputTokens": 17722,
+        "outputTokens": 143,
+        "cost": null
+      },
+      {
+        "inputTokens": 17886,
+        "outputTokens": 44,
+        "cost": null
+      },
+      {
+        "inputTokens": 18048,
+        "outputTokens": 98,
+        "cost": null
+      },
+      {
+        "inputTokens": 18169,
+        "outputTokens": 72,
+        "cost": null
+      },
+      {
+        "inputTokens": 18259,
+        "outputTokens": 90,
+        "cost": null
+      }
+    ]
+  },
+  "rejection": null,
+  "evidence": {
+    "engine": "typescript",
+    "revision": "83f7c4f935295946d46d1e802cb81ea382f0893c",
+    "task": "long-session",
+    "repetition": 1,
+    "terminal": "completed",
+    "error": null,
+    "receipts": [],
+    "attempts": [
+      {
+        "inputTokens": 13990,
+        "outputTokens": 71,
+        "cacheReadTokens": 1792,
+        "cacheWriteTokens": null,
+        "reasoningTokens": 22,
+        "cost": null
+      },
+      {
+        "inputTokens": 14180,
+        "outputTokens": 42,
+        "cacheReadTokens": 13952,
+        "cacheWriteTokens": null,
+        "reasoningTokens": 0,
+        "cost": null
+      },
+      {
+        "inputTokens": 14290,
+        "outputTokens": 68,
+        "cacheReadTokens": 14080,
+        "cacheWriteTokens": null,
+        "reasoningTokens": 11,
+        "cost": null
+      },
+      {
+        "inputTokens": 14379,
+        "outputTokens": 87,
+        "cacheReadTokens": 14208,
+        "cacheWriteTokens": null,
+        "reasoningTokens": 25,
+        "cost": null
+      },
+      {
+        "inputTokens": 14486,
+        "outputTokens": 41,
+        "cacheReadTokens": 14336,
+        "cacheWriteTokens": null,
+        "reasoningTokens": 0,
+        "cost": null
+      },
+      {
+        "inputTokens": 14552,
+        "outputTokens": 15,
+        "cacheReadTokens": 14336,
+        "cacheWriteTokens": null,
+        "reasoningTokens": 0,
+        "cost": null
+      },
+      {
+        "inputTokens": 14593,
+        "outputTokens": 79,
+        "cacheReadTokens": 14336,
+        "cacheWriteTokens": null,
+        "reasoningTokens": 3,
+        "cost": null
+      },
+      {
+        "inputTokens": 14692,
+        "outputTokens": 25,
+        "cacheReadTokens": 14464,
+        "cacheWriteTokens": null,
+        "reasoningTokens": 0,
+        "cost": null
+      },
+      {
+        "inputTokens": 14751,
+        "outputTokens": 147,
+        "cacheReadTokens": 14592,
+        "cacheWriteTokens": null,
+        "reasoningTokens": 104,
+        "cost": null
+      },
+      {
+        "inputTokens": 14929,
+        "outputTokens": 545,
+        "cacheReadTokens": 14720,
+        "cacheWriteTokens": null,
+        "reasoningTokens": 468,
+        "cost": null
+      },
+      {
+        "inputTokens": 15698,
+        "outputTokens": 423,
+        "cacheReadTokens": 15360,
+        "cacheWriteTokens": null,
+        "reasoningTokens": 352,
+        "cost": null
+      },
+      {
+        "inputTokens": 16209,
+        "outputTokens": 245,
+        "cacheReadTokens": 16000,
+        "cacheWriteTokens": null,
+        "reasoningTokens": 159,
+        "cost": null
+      },
+      {
+        "inputTokens": 16542,
+        "outputTokens": 1130,
+        "cacheReadTokens": 16384,
+        "cacheWriteTokens": null,
+        "reasoningTokens": 1049,
+        "cost": null
+      },
+      {
+        "inputTokens": 17722,
+        "outputTokens": 143,
+        "cacheReadTokens": 17536,
+        "cacheWriteTokens": null,
+        "reasoningTokens": 28,
+        "cost": null
+      },
+      {
+        "inputTokens": 17886,
+        "outputTokens": 44,
+        "cacheReadTokens": 17664,
+        "cacheWriteTokens": null,
+        "reasoningTokens": 0,
+        "cost": null
+      },
+      {
+        "inputTokens": 18048,
+        "outputTokens": 98,
+        "cacheReadTokens": 17792,
+        "cacheWriteTokens": null,
+        "reasoningTokens": 21,
+        "cost": null
+      },
+      {
+        "inputTokens": 18169,
+        "outputTokens": 72,
+        "cacheReadTokens": 17920,
+        "cacheWriteTokens": null,
+        "reasoningTokens": 51,
+        "cost": null
+      },
+      {
+        "inputTokens": 18259,
+        "outputTokens": 90,
+        "cacheReadTokens": 18048,
+        "cacheWriteTokens": null,
+        "reasoningTokens": 0,
+        "cost": null
+      }
+    ],
+    "phases": [
+      {
+        "phase": "step-start",
+        "atMs": 1792418235124,
+        "clock": "observed"
+      },
+      {
+        "phase": "tool-part",
+        "atMs": 1792418235464,
+        "clock": "observed"
+      },
+      {
+        "phase": "step-start",
+        "atMs": 1792418236411,
+        "clock": "observed"
+      },
+      {
+        "phase": "tool-part",
+        "atMs": 1792418236511,
+        "clock": "observed"
+      },
+      {
+        "phase": "step-start",
+        "atMs": 1792418237505,
+        "clock": "observed"
+      },
+      {
+        "phase": "tool-part",
+        "atMs": 1792418237794,
+        "clock": "observed"
+      },
+      {
+        "phase": "step-start",
+        "atMs": 1792418238495,
+        "clock": "observed"
+      },
+      {
+        "phase": "tool-part",
+        "atMs": 1792418238842,
+        "clock": "observed"
+      },
+      {
+        "phase": "step-start",
+        "atMs": 1792418239848,
+        "clock": "observed"
+      },
+      {
+        "phase": "tool-part",
+        "atMs": 1792418239986,
+        "clock": "observed"
+      },
+      {
+        "phase": "step-start",
+        "atMs": 1792418240600,
+        "clock": "observed"
+      },
+      {
+        "phase": "first-output",
+        "atMs": 1792418240684,
+        "clock": "observed"
+      },
+      {
+        "phase": "step-start",
+        "atMs": 1792418243457,
+        "clock": "observed"
+      },
+      {
+        "phase": "tool-part",
+        "atMs": 1792418243779,
+        "clock": "observed"
+      },
+      {
+        "phase": "step-start",
+        "atMs": 1792418244566,
+        "clock": "observed"
+      },
+      {
+        "phase": "first-output",
+        "atMs": 1792418244680,
+        "clock": "observed"
+      },
+      {
+        "phase": "step-start",
+        "atMs": 1792418247135,
+        "clock": "observed"
+      },
+      {
+        "phase": "tool-part",
+        "atMs": 1792418247972,
+        "clock": "observed"
+      },
+      {
+        "phase": "step-start",
+        "atMs": 1792418248756,
+        "clock": "observed"
+      },
+      {
+        "phase": "tool-part",
+        "atMs": 1792418251677,
+        "clock": "observed"
+      },
+      {
+        "phase": "step-start",
+        "atMs": 1792418252767,
+        "clock": "observed"
+      },
+      {
+        "phase": "tool-part",
+        "atMs": 1792418254488,
+        "clock": "observed"
+      },
+      {
+        "phase": "step-start",
+        "atMs": 1792418255194,
+        "clock": "observed"
+      },
+      {
+        "phase": "tool-part",
+        "atMs": 1792418256294,
+        "clock": "observed"
+      },
+      {
+        "phase": "step-start",
+        "atMs": 1792418256946,
+        "clock": "observed"
+      },
+      {
+        "phase": "tool-part",
+        "atMs": 1792418262758,
+        "clock": "observed"
+      },
+      {
+        "phase": "step-start",
+        "atMs": 1792418263499,
+        "clock": "observed"
+      },
+      {
+        "phase": "tool-part",
+        "atMs": 1792418264190,
+        "clock": "observed"
+      },
+      {
+        "phase": "step-start",
+        "atMs": 1792418265107,
+        "clock": "observed"
+      },
+      {
+        "phase": "tool-part",
+        "atMs": 1792418265413,
+        "clock": "observed"
+      },
+      {
+        "phase": "step-start",
+        "atMs": 1792418266071,
+        "clock": "observed"
+      },
+      {
+        "phase": "first-output",
+        "atMs": 1792418266562,
+        "clock": "observed"
+      },
+      {
+        "phase": "step-start",
+        "atMs": 1792418269496,
+        "clock": "observed"
+      },
+      {
+        "phase": "first-output",
+        "atMs": 1792418269955,
+        "clock": "observed"
+      },
+      {
+        "phase": "step-start",
+        "atMs": 1792418272771,
+        "clock": "observed"
+      },
+      {
+        "phase": "first-output",
+        "atMs": 1792418273093,
+        "clock": "observed"
+      },
+      {
+        "phase": "exit",
+        "atMs": 1792418273136,
+        "clock": "observed"
+      },
+      {
+        "phase": "verified",
+        "atMs": 1792418273169,
+        "clock": "observed"
+      }
+    ],
+    "profile": {
+      "model": "deepseek-v4-flash",
+      "modelParametersHash": "727ff2e1ee1e20ca89f3f3f4f7e035ef01fdd336ecc2e32ccf2b87813102a8bb",
+      "agentManifestHash": "bf3a31162c903e7d3a8854fd19633156e20a8a9305b247395d64ec0a99ab8d3d",
+      "permissionHash": "28e80a5118e931d398ff25fd88d73a540c8e0501d6e64dccaab71318ff208a3e",
+      "toolSurfaceHash": "04c769ae52448d5fe45ea690050120cee624771222b1291088dc6d832c888106"
+    },
+    "profileReceipts": 18,
+    "loops": {
+      "continuations": [],
+      "stopped": []
+    },
+    "toolCalls": 13,
+    "textHash": "d78b1950fa2bb8e162f3cf26bf8477994fd6484ea3510668645056e63686f3fe",
+    "binarySha256": null,
+    "startedAtMs": 1792418232119,
+    "admissionMs": null,
+    "elapsedMs": 41050
+  },
+  "assessment": {
+    "suiteHash": "bd905b4f81f0a9412b614631a36337723067574848c5f05b50ead1cf48675091",
+    "taskHash": "acc85904b2dcd251e4f30fbe7b74f29d6ae3d4266a73c7319c966169a74baa82",
+    "artifactPass": true,
+    "unexpected": [],
+    "immutable": [
+      {
+        "file": "AGENTS.md",
+        "unchanged": true
+      },
+      {
+        "file": "package.json",
+        "unchanged": true
+      }
+    ],
+    "expected": [],
+    "check": {
+      "command": [
+        "bun",
+        "test",
+        "test/long.test.ts"
+      ],
+      "exit": 0,
+      "stdoutHash": "c384cdaa55dad157820800a4aaa48c4963ea5500be5bd17037485dc40c6e23b8",
+      "stderrHash": "2a51ac921f0cff5efbbd3a4c57363eb2811ff3457b9884375222cac3e32121eb"
+    },
+    "executionVerdict": "unverified",
+    "requiredReceipts": [],
+    "answerContains": [
+      "LONG_SESSION_OK"
+    ]
+  },
+  "answer": "Created `src/unit.ts` exporting `unit = 21`.\nCreated `src/double.ts` — imports `unit` and exports `double()` returning `unit * 2`.\nCreated `test/long.test.ts` and it passes:\n\n```\n# LONG_SESSION_OK\nok 1 - double() returns 42\n# pass 1\n# fail 0\n```\n\nNote: `src/double.ts`'s import was changed to `'./unit.ts'` so Node's ESM resolver can load it without extra tooling/config.\nTest already passes (`LONG_SESSION_OK`, 1/1), so no repair needed.\nCreated:\n- `src/unit.ts` — exports `unit = 21`\n- `src/double.ts` — imports `unit`, exports `double()` returning `unit * 2` (import path adjusted to `'./unit.ts'` for Node ESM resolution)\n- `test/long.test.ts` — asserts `double() === 42`, prints marker on pass\n\nMarker: `LONG_SESSION_OK`"
+}

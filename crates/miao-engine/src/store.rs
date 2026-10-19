@@ -21,9 +21,9 @@ use std::{
 use tokio::sync::{mpsc, oneshot, watch};
 
 pub(crate) const APPLICATION_ID: u32 = 0x4d494145;
-// Older readers treat command prompts as ordinary text and cannot honor captured
-// authority or the once-only preparation ledger, even though no table is added.
-pub const SCHEMA_VERSION: u32 = 17;
+// Older readers do not understand inactive semantic imports and could execute
+// a destination before its host has switched the authoritative placement.
+pub const SCHEMA_VERSION: u32 = 20;
 
 type Work = Box<dyn FnOnce(&mut Connection) + Send>;
 
@@ -251,6 +251,39 @@ impl Store {
                         )?;
                     }
                 }
+                if version < 18 {
+                    // Schema 17 overwrote the request watermark with the stage
+                    // event's sequence. The original request is in that event.
+                    conn.execute_batch("UPDATE engine_migration SET source_high_seq=COALESCE(
+                        (SELECT json_extract(data,'$.source_high_seq') FROM engine_event
+                         WHERE session_id=engine_migration.session_id AND kind='migration.staged'
+                         AND json_extract(data,'$.migration_id')=engine_migration.id ORDER BY seq LIMIT 1),
+                        source_high_seq);")?;
+                }
+                // Older native writers do not honor migration freezes at the
+                // durable-event boundary. Keep this fence in SQLite as well.
+                conn.execute_batch("CREATE TRIGGER IF NOT EXISTS engine_migration_event_fence
+                    BEFORE INSERT ON engine_event
+                    WHEN NEW.kind NOT IN ('migration.staged','migration.cutover','migration.completed','migration.aborted')
+                    AND EXISTS(SELECT 1 FROM engine_migration WHERE session_id=NEW.session_id
+                        AND (state IN ('staged','cutover') OR (state='completed' AND direction='rust_to_ts')))
+                    BEGIN SELECT RAISE(ABORT,'Session is frozen for migration'); END;")?;
+                conn.execute_batch("CREATE TABLE IF NOT EXISTS engine_transfer_import(
+                    id TEXT PRIMARY KEY, session_id TEXT UNIQUE NOT NULL REFERENCES engine_session(id),
+                    bundle_sha256 TEXT NOT NULL, bundle TEXT NOT NULL, state TEXT NOT NULL,
+                    created_ms INTEGER NOT NULL);
+                    CREATE TABLE IF NOT EXISTS engine_transfer_preparation(
+                    import_id TEXT PRIMARY KEY REFERENCES engine_transfer_import(id),data TEXT NOT NULL);
+                    CREATE TABLE IF NOT EXISTS engine_transfer_snapshot(
+                    import_id TEXT NOT NULL REFERENCES engine_transfer_import(id),snapshot_id TEXT NOT NULL,
+                    boundary_message_id TEXT,manifest TEXT NOT NULL,PRIMARY KEY(import_id,snapshot_id));
+                    CREATE TABLE IF NOT EXISTS engine_transfer_message(
+                    import_id TEXT NOT NULL REFERENCES engine_transfer_import(id),source_message_id TEXT NOT NULL,seq INTEGER NOT NULL,
+                    PRIMARY KEY(import_id,seq));
+                    CREATE TRIGGER IF NOT EXISTS engine_transfer_import_event_fence
+                    BEFORE INSERT ON engine_event
+                    WHEN EXISTS(SELECT 1 FROM engine_transfer_import WHERE session_id=NEW.session_id AND state!='active')
+                    BEGIN SELECT RAISE(ABORT,'Imported Session has no execution authority'); END;")?;
                 // The schema is current; serving is shared from here on.
                 fs2::FileExt::unlock(&migration)?;
                 drop(migration);
@@ -630,6 +663,9 @@ impl Store {
             // Approvals and jobs reference tools; tools and approvals reference
             // runs. Those three go before the run rows they point at.
             for statement in [
+                "DELETE FROM engine_transfer_message WHERE import_id IN (SELECT id FROM engine_transfer_import WHERE session_id=?1)",
+                "DELETE FROM engine_transfer_snapshot WHERE import_id IN (SELECT id FROM engine_transfer_import WHERE session_id=?1)",                "DELETE FROM engine_transfer_preparation WHERE import_id IN (SELECT id FROM engine_transfer_import WHERE session_id=?1)",
+                "DELETE FROM engine_transfer_import WHERE session_id=?1",
                 "DELETE FROM engine_approval WHERE session_id=?1",
                 "DELETE FROM engine_job WHERE session_id=?1",
                 "DELETE FROM engine_tool WHERE run_id IN (SELECT id FROM engine_run WHERE session_id=?1)",
@@ -965,7 +1001,7 @@ command: None,
             let tx=conn.transaction()?;
             let cursor:u64=tx.query_row("SELECT next_seq FROM engine_session WHERE id=?1",[&session],|r|r.get(0)).optional()?.ok_or_else(||Error::Invalid("Session does not exist".into()))?;
             let location:Option<String>=tx.query_row("SELECT root FROM engine_location WHERE session_id=?1",[&session],|r|r.get(0)).optional()?;
-            let messages=projected(&tx,&session,cursor)?;
+            let messages=projected(&tx,&session,cursor,true)?;
             // Context readers need the cut and summary from the same transaction
             // as the visible messages. A second selected-history read could race
             // a compaction/revert and produce a mixed-generation transcript.
@@ -1003,7 +1039,8 @@ command: None,
             )?;
             let staged_revert:Option<(i64,i64)>=tx.query_row("SELECT boundary_seq,snapshot_id FROM engine_staged_revert WHERE session_id=?1",[&session],|r|Ok((r.get(0)?,r.get(1)?))).optional()?;
             let staged_revert=staged_revert.map(|(boundary_seq,snapshot_id)|json!({"boundary_seq":boundary_seq,"snapshot_id":snapshot_id}));
-            let snapshot=json!({"session_id":session,"parent_session_id":parent,"cursor":cursor,"location":location,"mode":mode,"title":title,"created_at_ms":created_at_ms,"updated_at_ms":updated_at_ms,"archived_at_ms":archived_at_ms,"messages":messages,"selection":selection,"pending":pending,"active_run":active,"approvals":approvals,"context":context,"state":state,"questions":questions,"wakeups":wakeups,"crons":crons,"model_selection":model_selection,"account_selection":account_selection,"agent":agent,"staged_revert":staged_revert});
+            let transfer_import:Option<String>=tx.query_row("SELECT id FROM engine_transfer_import WHERE session_id=?1",[&session],|row|row.get(0)).optional()?;
+            let snapshot=json!({"transfer_import":transfer_import,"session_id":session,"parent_session_id":parent,"cursor":cursor,"location":location,"mode":mode,"title":title,"created_at_ms":created_at_ms,"updated_at_ms":updated_at_ms,"archived_at_ms":archived_at_ms,"messages":messages,"selection":selection,"pending":pending,"active_run":active,"approvals":approvals,"context":context,"state":state,"questions":questions,"wakeups":wakeups,"crons":crons,"model_selection":model_selection,"account_selection":account_selection,"agent":agent,"staged_revert":staged_revert});
             if serde_json::to_vec(&snapshot)?.len()>4*1024*1024{return Err(Error::Invalid("snapshot exceeds limit; use events pagination".into()));}
             tx.commit()?;Ok(snapshot)
         }).await
@@ -1084,7 +1121,7 @@ command: None,
             let seq=match message_seq {Some(seq)=>seq,None=>tx.query_row("SELECT COALESCE(MAX(seq),0) FROM engine_message WHERE session_id=?1",[&parent],|r|r.get(0))?};
             if seq!=0&&!tx.query_row("SELECT EXISTS(SELECT 1 FROM engine_message WHERE session_id=?1 AND seq=?2) OR EXISTS(SELECT 1 FROM engine_event WHERE session_id=?1 AND seq=?2 AND kind IN ('command.completed','command.failed'))",params![parent,seq],|r|r.get::<_,bool>(0))? {return Err(Error::Invalid("fork cursor must be a committed message or settled command boundary".into()));}
             let source_watermark=if message_seq.is_none(){tx.query_row("SELECT next_seq FROM engine_session WHERE id=?1",[&parent],|r|r.get::<_,u64>(0))?}else{seq};
-            let messages=projected(&tx,&parent,seq)?;
+            let messages=projected(&tx,&parent,seq,false)?;
             closed_prefix(&messages)?;
             // A fork must not escape the parent's read-only collaboration mode.
             let mode:String=tx.query_row("SELECT mode FROM engine_session WHERE id=?1",[&parent],|row|row.get(0))?;
@@ -2546,9 +2583,11 @@ pub(crate) fn projected(
     tx: &Transaction<'_>,
     session: &str,
     cursor: u64,
+    skip_transferred: bool,
 ) -> Result<Vec<Value>, Error> {
-    let mut stmt=tx.prepare("SELECT seq,role,content,checkpoint,recorded_at_ms FROM engine_message WHERE session_id=?1 AND seq<=?2 AND reverted=0 ORDER BY seq LIMIT 1001")?;
-    let mut rows = stmt.query(params![session, cursor])?;
+    let mut stmt=tx.prepare("SELECT m.seq,m.role,m.content,m.checkpoint,m.recorded_at_ms FROM engine_message m WHERE m.session_id=?1 AND m.seq<=?2 AND m.reverted=0
+        AND (?3=0 OR NOT EXISTS(SELECT 1 FROM engine_transfer_message t JOIN engine_transfer_import i ON i.id=t.import_id WHERE i.session_id=m.session_id AND t.seq=m.seq)) ORDER BY m.seq LIMIT 1001")?;
+    let mut rows = stmt.query(params![session, cursor, skip_transferred])?;
     let mut messages = Vec::new();
     let mut bytes = 0;
     while let Some(row) = rows.next()? {
@@ -2988,10 +3027,7 @@ impl Store {
     fn valid_transition(from: &str, to: &str) -> bool {
         matches!(
             (from, to),
-            ("staged", "cutover")
-                | ("cutover", "completed")
-                | ("staged", "aborted")
-                | ("cutover", "aborted")
+            ("staged", "cutover") | ("cutover", "completed") | ("staged", "aborted")
         )
     }
 
@@ -3028,8 +3064,7 @@ impl Store {
             }
             let now = now_ms();
             if let Some(existing) = Self::migration_row(&tx, &id)? {
-                // Exact retry adopts the recorded transition; the watermark is
-                // the staged fact, not re-asserted against the advanced source.
+                // The request watermark stays immutable across all transitions.
                 if existing.session_id == session
                     && existing.direction == direction
                     && existing.bundle_sha256 == bundle_sha256
@@ -3054,26 +3089,29 @@ impl Store {
             if active {
                 return Err(Error::Conflict);
             }
+            let busy: bool = tx.query_row(
+                "SELECT EXISTS(SELECT 1 FROM engine_run WHERE session_id=?1 AND state='running')
+                 OR EXISTS(SELECT 1 FROM engine_input WHERE session_id=?1 AND state='pending')
+                 OR EXISTS(SELECT 1 FROM engine_approval WHERE session_id=?1 AND state='pending')",
+                [&session], |row| row.get(0),
+            )?;
+            if busy {
+                return Err(Error::Conflict);
+            }
             tx.execute(
                 "INSERT INTO engine_migration(id,session_id,direction,state,bundle_sha256,source_high_seq,created_ms,updated_ms)
                  VALUES(?1,?2,?3,'staged',?4,?5,?6,?6)",
                 params![id, session, direction, bundle_sha256, source_high_seq, now],
             )?;
-            // The frozen watermark includes this transition's own staged
-            // event, so only source-side writes can advance past it.
-            let event = append(&tx, &session, "migration.staged", json!({
+            // The stage is exactly one event after the immutable source watermark.
+            append(&tx, &session, "migration.staged", json!({
                 "migration_id": id,
                 "direction": direction,
                 "bundle_sha256": bundle_sha256,
                 "source_high_seq": source_high_seq,
             }))?;
-            let frozen = event.seq;
-            tx.execute(
-                "UPDATE engine_migration SET source_high_seq=?1 WHERE id=?2",
-                params![frozen, id],
-            )?;
             tx.commit()?;
-            Ok(Self::migration_owned(&id, &session, &direction, &bundle_sha256, frozen, now, now))
+            Ok(Self::migration_owned(&id, &session, &direction, &bundle_sha256, source_high_seq, now, now))
         })
         .await
     }
@@ -3095,7 +3133,12 @@ impl Store {
                 [&migration.session_id],
                 |r| r.get(0),
             )?;
-            if high != migration.source_high_seq {
+            if high
+                != migration
+                    .source_high_seq
+                    .checked_add(1)
+                    .ok_or(Error::Conflict)?
+            {
                 return Err(Error::Conflict);
             }
             Self::migration_set_state(&tx, &id, "cutover", &mut migration)?;
@@ -3128,7 +3171,9 @@ impl Store {
         let session = session.to_owned();
         self.call(move |conn| {
             Ok(conn.query_row(
-                "SELECT EXISTS(SELECT 1 FROM engine_migration WHERE session_id=?1 AND state IN ('staged','cutover'))",
+                "SELECT EXISTS(SELECT 1 FROM engine_migration WHERE session_id=?1 AND
+                    (state IN ('staged','cutover') OR (state='completed' AND direction='rust_to_ts')))
+                 OR EXISTS(SELECT 1 FROM engine_transfer_import WHERE session_id=?1 AND state!='active')",
                 [&session],
                 |r| r.get(0),
             )?)

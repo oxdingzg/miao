@@ -1,0 +1,215 @@
+{
+  "sample": {
+    "task": "create-module",
+    "engine": "typescript",
+    "repetition": 1,
+    "suiteHash": "bd905b4f81f0a9412b614631a36337723067574848c5f05b50ead1cf48675091",
+    "taskHash": "4d67f12a4d53767d5219ff7c2739a21fb22df729363f19d7b0d03a12e6ed5049",
+    "profile": {
+      "model": "deepseek-v4-flash",
+      "modelParametersHash": "99b6027aa517e7254afb8fdaecab52047b51315aed5eb340139eaec7e7c896d0",
+      "agentManifestHash": "1ca4c165615b2ad8c8badc2c5b4c9484b841f9f87190edb8ca2ef4a7240e50d9",
+      "permissionHash": "4b7911d08271674b3566d6f16449cf82612f32bda7bc2b5445b989c6ebd183d0",
+      "toolSurfaceHash": "04c769ae52448d5fe45ea690050120cee624771222b1291088dc6d832c888106"
+    },
+    "revision": "83f7c4f935295946d46d1e802cb81ea382f0893c",
+    "artifactHash": "f1b11d3f87177485427162547c23cff0e0847f40c09994da68e8f19cdb727ad3",
+    "receiptHash": "2442b90bb15a36b7f1acc500c4d099fabe0e19992713a0832ddc7a8f44f3dbef",
+    "outcome": "passed",
+    "elapsedMs": 6651,
+    "attempts": [
+      {
+        "inputTokens": 14022,
+        "outputTokens": 70,
+        "cost": null
+      },
+      {
+        "inputTokens": 14251,
+        "outputTokens": 47,
+        "cost": null
+      },
+      {
+        "inputTokens": 14451,
+        "outputTokens": 125,
+        "cost": null
+      },
+      {
+        "inputTokens": 14596,
+        "outputTokens": 49,
+        "cost": null
+      },
+      {
+        "inputTokens": 14712,
+        "outputTokens": 44,
+        "cost": null
+      }
+    ]
+  },
+  "rejection": null,
+  "evidence": {
+    "engine": "typescript",
+    "revision": "83f7c4f935295946d46d1e802cb81ea382f0893c",
+    "task": "create-module",
+    "repetition": 1,
+    "terminal": "completed",
+    "error": null,
+    "receipts": [],
+    "attempts": [
+      {
+        "inputTokens": 14022,
+        "outputTokens": 70,
+        "cacheReadTokens": 1792,
+        "cacheWriteTokens": null,
+        "reasoningTokens": 7,
+        "cost": null
+      },
+      {
+        "inputTokens": 14251,
+        "outputTokens": 47,
+        "cacheReadTokens": 14080,
+        "cacheWriteTokens": null,
+        "reasoningTokens": 0,
+        "cost": null
+      },
+      {
+        "inputTokens": 14451,
+        "outputTokens": 125,
+        "cacheReadTokens": 14208,
+        "cacheWriteTokens": null,
+        "reasoningTokens": 0,
+        "cost": null
+      },
+      {
+        "inputTokens": 14596,
+        "outputTokens": 49,
+        "cacheReadTokens": 14336,
+        "cacheWriteTokens": null,
+        "reasoningTokens": 0,
+        "cost": null
+      },
+      {
+        "inputTokens": 14712,
+        "outputTokens": 44,
+        "cacheReadTokens": 14464,
+        "cacheWriteTokens": null,
+        "reasoningTokens": 0,
+        "cost": null
+      }
+    ],
+    "phases": [
+      {
+        "phase": "step-start",
+        "atMs": 1792418478197,
+        "clock": "observed"
+      },
+      {
+        "phase": "tool-part",
+        "atMs": 1792418478586,
+        "clock": "observed"
+      },
+      {
+        "phase": "step-start",
+        "atMs": 1792418479388,
+        "clock": "observed"
+      },
+      {
+        "phase": "tool-part",
+        "atMs": 1792418479516,
+        "clock": "observed"
+      },
+      {
+        "phase": "step-start",
+        "atMs": 1792418480062,
+        "clock": "observed"
+      },
+      {
+        "phase": "tool-part",
+        "atMs": 1792418480371,
+        "clock": "observed"
+      },
+      {
+        "phase": "step-start",
+        "atMs": 1792418481106,
+        "clock": "observed"
+      },
+      {
+        "phase": "tool-part",
+        "atMs": 1792418481262,
+        "clock": "observed"
+      },
+      {
+        "phase": "step-start",
+        "atMs": 1792418481885,
+        "clock": "observed"
+      },
+      {
+        "phase": "first-output",
+        "atMs": 1792418482074,
+        "clock": "observed"
+      },
+      {
+        "phase": "exit",
+        "atMs": 1792418482130,
+        "clock": "observed"
+      },
+      {
+        "phase": "verified",
+        "atMs": 1792418482151,
+        "clock": "observed"
+      }
+    ],
+    "profile": {
+      "model": "deepseek-v4-flash",
+      "modelParametersHash": "99b6027aa517e7254afb8fdaecab52047b51315aed5eb340139eaec7e7c896d0",
+      "agentManifestHash": "1ca4c165615b2ad8c8badc2c5b4c9484b841f9f87190edb8ca2ef4a7240e50d9",
+      "permissionHash": "4b7911d08271674b3566d6f16449cf82612f32bda7bc2b5445b989c6ebd183d0",
+      "toolSurfaceHash": "04c769ae52448d5fe45ea690050120cee624771222b1291088dc6d832c888106"
+    },
+    "profileReceipts": 5,
+    "loops": {
+      "continuations": [],
+      "stopped": []
+    },
+    "toolCalls": 4,
+    "textHash": "d7a3c91aa11edfe178dc516fa5a66c9990be6cd3e0e373a3cd9c184cbe1d2c95",
+    "binarySha256": null,
+    "startedAtMs": 1792418475500,
+    "admissionMs": null,
+    "elapsedMs": 6651
+  },
+  "assessment": {
+    "suiteHash": "bd905b4f81f0a9412b614631a36337723067574848c5f05b50ead1cf48675091",
+    "taskHash": "4d67f12a4d53767d5219ff7c2739a21fb22df729363f19d7b0d03a12e6ed5049",
+    "artifactPass": true,
+    "unexpected": [],
+    "immutable": [
+      {
+        "file": "AGENTS.md",
+        "unchanged": true
+      },
+      {
+        "file": "package.json",
+        "unchanged": true
+      },
+      {
+        "file": "test/oracle.test.ts",
+        "unchanged": true
+      }
+    ],
+    "expected": [],
+    "check": {
+      "command": [
+        "bun",
+        "test",
+        "test/oracle.test.ts"
+      ],
+      "exit": 0,
+      "stdoutHash": "d6684989b8dd63b37d2f1954270826fbe1bd89a8debd12bcacf03ed1c6140ef6",
+      "stderrHash": "3d5ecb183da92e44bdd5563af57e44359640e2d09985548029a7b69960841ba2"
+    },
+    "executionVerdict": "unverified",
+    "requiredReceipts": [],
+    "answerContains": []
+  },
+  "answer": "新增 `src/report.ts:1`，实现 `summarize`；空列表时 `mean` 为 0。测试通过：1 pass, 0 fail，测试文件未改动。"
+}

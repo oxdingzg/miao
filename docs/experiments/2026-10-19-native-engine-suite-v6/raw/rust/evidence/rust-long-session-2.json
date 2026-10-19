@@ -1,0 +1,2710 @@
+{
+  "sample": {
+    "task": "long-session",
+    "engine": "rust",
+    "repetition": 2,
+    "suiteHash": "bd905b4f81f0a9412b614631a36337723067574848c5f05b50ead1cf48675091",
+    "taskHash": "acc85904b2dcd251e4f30fbe7b74f29d6ae3d4266a73c7319c966169a74baa82",
+    "profile": {
+      "model": "deepseek-v4-flash",
+      "modelParametersHash": "ef3d96a9ec0464401ae599f38c478bab21fa051e068e9d158e5c186628e7a393",
+      "agentManifestHash": "2dbdecca09d38a807edd88d10f18f4febcb6aa5dcbdc2c1bb17f06446b689562",
+      "permissionHash": "b6ba8f2e45162a99c6c1dba5d472470026023d7b38e0e3f7d178392677f78473",
+      "toolSurfaceHash": "fb2ab566dec79420e179a024d88e1903ebbc1b7a9f23fe7b0aefb45a9d0dcb28"
+    },
+    "revision": "83f7c4f935295946d46d1e802cb81ea382f0893c",
+    "artifactHash": "2af16a8af0ddd70e0681751beaf78a07156b587d01b35e6dfbdfcced79b3b694",
+    "receiptHash": "a89c2157999cd777dc768122bc8cc13a9497366074bc9d42ae83357ccecfc4ab",
+    "outcome": "passed",
+    "elapsedMs": 28305,
+    "attempts": [
+      {
+        "inputTokens": 4846,
+        "outputTokens": 22,
+        "cost": null
+      },
+      {
+        "inputTokens": 4910,
+        "outputTokens": 92,
+        "cost": null
+      },
+      {
+        "inputTokens": 5035,
+        "outputTokens": 53,
+        "cost": null
+      },
+      {
+        "inputTokens": 5154,
+        "outputTokens": 82,
+        "cost": null
+      },
+      {
+        "inputTokens": 5307,
+        "outputTokens": 37,
+        "cost": null
+      },
+      {
+        "inputTokens": 4846,
+        "outputTokens": 22,
+        "cost": null
+      },
+      {
+        "inputTokens": 4910,
+        "outputTokens": 92,
+        "cost": null
+      },
+      {
+        "inputTokens": 5035,
+        "outputTokens": 53,
+        "cost": null
+      },
+      {
+        "inputTokens": 5154,
+        "outputTokens": 82,
+        "cost": null
+      },
+      {
+        "inputTokens": 5307,
+        "outputTokens": 37,
+        "cost": null
+      },
+      {
+        "inputTokens": 5369,
+        "outputTokens": 216,
+        "cost": null
+      },
+      {
+        "inputTokens": 5662,
+        "outputTokens": 48,
+        "cost": null
+      },
+      {
+        "inputTokens": 4846,
+        "outputTokens": 22,
+        "cost": null
+      },
+      {
+        "inputTokens": 4910,
+        "outputTokens": 92,
+        "cost": null
+      },
+      {
+        "inputTokens": 5035,
+        "outputTokens": 53,
+        "cost": null
+      },
+      {
+        "inputTokens": 5154,
+        "outputTokens": 82,
+        "cost": null
+      },
+      {
+        "inputTokens": 5307,
+        "outputTokens": 37,
+        "cost": null
+      },
+      {
+        "inputTokens": 5369,
+        "outputTokens": 216,
+        "cost": null
+      },
+      {
+        "inputTokens": 5662,
+        "outputTokens": 48,
+        "cost": null
+      },
+      {
+        "inputTokens": 5743,
+        "outputTokens": 117,
+        "cost": null
+      },
+      {
+        "inputTokens": 6026,
+        "outputTokens": 94,
+        "cost": null
+      },
+      {
+        "inputTokens": 6324,
+        "outputTokens": 501,
+        "cost": null
+      },
+      {
+        "inputTokens": 7127,
+        "outputTokens": 654,
+        "cost": null
+      },
+      {
+        "inputTokens": 7814,
+        "outputTokens": 40,
+        "cost": null
+      },
+      {
+        "inputTokens": 7920,
+        "outputTokens": 136,
+        "cost": null
+      },
+      {
+        "inputTokens": 8132,
+        "outputTokens": 143,
+        "cost": null
+      },
+      {
+        "inputTokens": 8652,
+        "outputTokens": 260,
+        "cost": null
+      },
+      {
+        "inputTokens": 9051,
+        "outputTokens": 235,
+        "cost": null
+      },
+      {
+        "inputTokens": 4846,
+        "outputTokens": 22,
+        "cost": null
+      },
+      {
+        "inputTokens": 4910,
+        "outputTokens": 92,
+        "cost": null
+      },
+      {
+        "inputTokens": 5035,
+        "outputTokens": 53,
+        "cost": null
+      },
+      {
+        "inputTokens": 5154,
+        "outputTokens": 82,
+        "cost": null
+      },
+      {
+        "inputTokens": 5307,
+        "outputTokens": 37,
+        "cost": null
+      },
+      {
+        "inputTokens": 5369,
+        "outputTokens": 216,
+        "cost": null
+      },
+      {
+        "inputTokens": 5662,
+        "outputTokens": 48,
+        "cost": null
+      },
+      {
+        "inputTokens": 5743,
+        "outputTokens": 117,
+        "cost": null
+      },
+      {
+        "inputTokens": 6026,
+        "outputTokens": 94,
+        "cost": null
+      },
+      {
+        "inputTokens": 6324,
+        "outputTokens": 501,
+        "cost": null
+      },
+      {
+        "inputTokens": 7127,
+        "outputTokens": 654,
+        "cost": null
+      },
+      {
+        "inputTokens": 7814,
+        "outputTokens": 40,
+        "cost": null
+      },
+      {
+        "inputTokens": 7920,
+        "outputTokens": 136,
+        "cost": null
+      },
+      {
+        "inputTokens": 8132,
+        "outputTokens": 143,
+        "cost": null
+      },
+      {
+        "inputTokens": 8652,
+        "outputTokens": 260,
+        "cost": null
+      },
+      {
+        "inputTokens": 9051,
+        "outputTokens": 235,
+        "cost": null
+      },
+      {
+        "inputTokens": 9309,
+        "outputTokens": 120,
+        "cost": null
+      },
+      {
+        "inputTokens": 9572,
+        "outputTokens": 83,
+        "cost": null
+      },
+      {
+        "inputTokens": 4846,
+        "outputTokens": 22,
+        "cost": null
+      },
+      {
+        "inputTokens": 4910,
+        "outputTokens": 92,
+        "cost": null
+      },
+      {
+        "inputTokens": 5035,
+        "outputTokens": 53,
+        "cost": null
+      },
+      {
+        "inputTokens": 5154,
+        "outputTokens": 82,
+        "cost": null
+      },
+      {
+        "inputTokens": 5307,
+        "outputTokens": 37,
+        "cost": null
+      },
+      {
+        "inputTokens": 5369,
+        "outputTokens": 216,
+        "cost": null
+      },
+      {
+        "inputTokens": 5662,
+        "outputTokens": 48,
+        "cost": null
+      },
+      {
+        "inputTokens": 5743,
+        "outputTokens": 117,
+        "cost": null
+      },
+      {
+        "inputTokens": 6026,
+        "outputTokens": 94,
+        "cost": null
+      },
+      {
+        "inputTokens": 6324,
+        "outputTokens": 501,
+        "cost": null
+      },
+      {
+        "inputTokens": 7127,
+        "outputTokens": 654,
+        "cost": null
+      },
+      {
+        "inputTokens": 7814,
+        "outputTokens": 40,
+        "cost": null
+      },
+      {
+        "inputTokens": 7920,
+        "outputTokens": 136,
+        "cost": null
+      },
+      {
+        "inputTokens": 8132,
+        "outputTokens": 143,
+        "cost": null
+      },
+      {
+        "inputTokens": 8652,
+        "outputTokens": 260,
+        "cost": null
+      },
+      {
+        "inputTokens": 9051,
+        "outputTokens": 235,
+        "cost": null
+      },
+      {
+        "inputTokens": 9309,
+        "outputTokens": 120,
+        "cost": null
+      },
+      {
+        "inputTokens": 9572,
+        "outputTokens": 83,
+        "cost": null
+      },
+      {
+        "inputTokens": 9672,
+        "outputTokens": 134,
+        "cost": null
+      }
+    ]
+  },
+  "rejection": null,
+  "evidence": {
+    "engine": "rust",
+    "revision": "83f7c4f935295946d46d1e802cb81ea382f0893c",
+    "task": "long-session",
+    "repetition": 2,
+    "terminal": "completed",
+    "error": null,
+    "receipts": [
+      "tool.error"
+    ],
+    "attempts": [
+      {
+        "inputTokens": 4846,
+        "outputTokens": 22,
+        "cacheReadTokens": 4608,
+        "cacheWriteTokens": null,
+        "reasoningTokens": 0,
+        "cost": null
+      },
+      {
+        "inputTokens": 4910,
+        "outputTokens": 92,
+        "cacheReadTokens": 4736,
+        "cacheWriteTokens": null,
+        "reasoningTokens": 10,
+        "cost": null
+      },
+      {
+        "inputTokens": 5035,
+        "outputTokens": 53,
+        "cacheReadTokens": 4864,
+        "cacheWriteTokens": null,
+        "reasoningTokens": 13,
+        "cost": null
+      },
+      {
+        "inputTokens": 5154,
+        "outputTokens": 82,
+        "cacheReadTokens": 4992,
+        "cacheWriteTokens": null,
+        "reasoningTokens": 0,
+        "cost": null
+      },
+      {
+        "inputTokens": 5307,
+        "outputTokens": 37,
+        "cacheReadTokens": 5120,
+        "cacheWriteTokens": null,
+        "reasoningTokens": 0,
+        "cost": null
+      },
+      {
+        "inputTokens": 4846,
+        "outputTokens": 22,
+        "cacheReadTokens": 4608,
+        "cacheWriteTokens": null,
+        "reasoningTokens": 0,
+        "cost": null
+      },
+      {
+        "inputTokens": 4910,
+        "outputTokens": 92,
+        "cacheReadTokens": 4736,
+        "cacheWriteTokens": null,
+        "reasoningTokens": 10,
+        "cost": null
+      },
+      {
+        "inputTokens": 5035,
+        "outputTokens": 53,
+        "cacheReadTokens": 4864,
+        "cacheWriteTokens": null,
+        "reasoningTokens": 13,
+        "cost": null
+      },
+      {
+        "inputTokens": 5154,
+        "outputTokens": 82,
+        "cacheReadTokens": 4992,
+        "cacheWriteTokens": null,
+        "reasoningTokens": 0,
+        "cost": null
+      },
+      {
+        "inputTokens": 5307,
+        "outputTokens": 37,
+        "cacheReadTokens": 5120,
+        "cacheWriteTokens": null,
+        "reasoningTokens": 0,
+        "cost": null
+      },
+      {
+        "inputTokens": 5369,
+        "outputTokens": 216,
+        "cacheReadTokens": 5120,
+        "cacheWriteTokens": null,
+        "reasoningTokens": 119,
+        "cost": null
+      },
+      {
+        "inputTokens": 5662,
+        "outputTokens": 48,
+        "cacheReadTokens": 5504,
+        "cacheWriteTokens": null,
+        "reasoningTokens": 0,
+        "cost": null
+      },
+      {
+        "inputTokens": 4846,
+        "outputTokens": 22,
+        "cacheReadTokens": 4608,
+        "cacheWriteTokens": null,
+        "reasoningTokens": 0,
+        "cost": null
+      },
+      {
+        "inputTokens": 4910,
+        "outputTokens": 92,
+        "cacheReadTokens": 4736,
+        "cacheWriteTokens": null,
+        "reasoningTokens": 10,
+        "cost": null
+      },
+      {
+        "inputTokens": 5035,
+        "outputTokens": 53,
+        "cacheReadTokens": 4864,
+        "cacheWriteTokens": null,
+        "reasoningTokens": 13,
+        "cost": null
+      },
+      {
+        "inputTokens": 5154,
+        "outputTokens": 82,
+        "cacheReadTokens": 4992,
+        "cacheWriteTokens": null,
+        "reasoningTokens": 0,
+        "cost": null
+      },
+      {
+        "inputTokens": 5307,
+        "outputTokens": 37,
+        "cacheReadTokens": 5120,
+        "cacheWriteTokens": null,
+        "reasoningTokens": 0,
+        "cost": null
+      },
+      {
+        "inputTokens": 5369,
+        "outputTokens": 216,
+        "cacheReadTokens": 5120,
+        "cacheWriteTokens": null,
+        "reasoningTokens": 119,
+        "cost": null
+      },
+      {
+        "inputTokens": 5662,
+        "outputTokens": 48,
+        "cacheReadTokens": 5504,
+        "cacheWriteTokens": null,
+        "reasoningTokens": 0,
+        "cost": null
+      },
+      {
+        "inputTokens": 5743,
+        "outputTokens": 117,
+        "cacheReadTokens": 5504,
+        "cacheWriteTokens": null,
+        "reasoningTokens": 48,
+        "cost": null
+      },
+      {
+        "inputTokens": 6026,
+        "outputTokens": 94,
+        "cacheReadTokens": 5760,
+        "cacheWriteTokens": null,
+        "reasoningTokens": 30,
+        "cost": null
+      },
+      {
+        "inputTokens": 6324,
+        "outputTokens": 501,
+        "cacheReadTokens": 6016,
+        "cacheWriteTokens": null,
+        "reasoningTokens": 430,
+        "cost": null
+      },
+      {
+        "inputTokens": 7127,
+        "outputTokens": 654,
+        "cacheReadTokens": 6784,
+        "cacheWriteTokens": null,
+        "reasoningTokens": 518,
+        "cost": null
+      },
+      {
+        "inputTokens": 7814,
+        "outputTokens": 40,
+        "cacheReadTokens": 7424,
+        "cacheWriteTokens": null,
+        "reasoningTokens": 0,
+        "cost": null
+      },
+      {
+        "inputTokens": 7920,
+        "outputTokens": 136,
+        "cacheReadTokens": 7680,
+        "cacheWriteTokens": null,
+        "reasoningTokens": 0,
+        "cost": null
+      },
+      {
+        "inputTokens": 8132,
+        "outputTokens": 143,
+        "cacheReadTokens": 7936,
+        "cacheWriteTokens": null,
+        "reasoningTokens": 16,
+        "cost": null
+      },
+      {
+        "inputTokens": 8652,
+        "outputTokens": 260,
+        "cacheReadTokens": 8192,
+        "cacheWriteTokens": null,
+        "reasoningTokens": 213,
+        "cost": null
+      },
+      {
+        "inputTokens": 9051,
+        "outputTokens": 235,
+        "cacheReadTokens": 8832,
+        "cacheWriteTokens": null,
+        "reasoningTokens": 48,
+        "cost": null
+      },
+      {
+        "inputTokens": 4846,
+        "outputTokens": 22,
+        "cacheReadTokens": 4608,
+        "cacheWriteTokens": null,
+        "reasoningTokens": 0,
+        "cost": null
+      },
+      {
+        "inputTokens": 4910,
+        "outputTokens": 92,
+        "cacheReadTokens": 4736,
+        "cacheWriteTokens": null,
+        "reasoningTokens": 10,
+        "cost": null
+      },
+      {
+        "inputTokens": 5035,
+        "outputTokens": 53,
+        "cacheReadTokens": 4864,
+        "cacheWriteTokens": null,
+        "reasoningTokens": 13,
+        "cost": null
+      },
+      {
+        "inputTokens": 5154,
+        "outputTokens": 82,
+        "cacheReadTokens": 4992,
+        "cacheWriteTokens": null,
+        "reasoningTokens": 0,
+        "cost": null
+      },
+      {
+        "inputTokens": 5307,
+        "outputTokens": 37,
+        "cacheReadTokens": 5120,
+        "cacheWriteTokens": null,
+        "reasoningTokens": 0,
+        "cost": null
+      },
+      {
+        "inputTokens": 5369,
+        "outputTokens": 216,
+        "cacheReadTokens": 5120,
+        "cacheWriteTokens": null,
+        "reasoningTokens": 119,
+        "cost": null
+      },
+      {
+        "inputTokens": 5662,
+        "outputTokens": 48,
+        "cacheReadTokens": 5504,
+        "cacheWriteTokens": null,
+        "reasoningTokens": 0,
+        "cost": null
+      },
+      {
+        "inputTokens": 5743,
+        "outputTokens": 117,
+        "cacheReadTokens": 5504,
+        "cacheWriteTokens": null,
+        "reasoningTokens": 48,
+        "cost": null
+      },
+      {
+        "inputTokens": 6026,
+        "outputTokens": 94,
+        "cacheReadTokens": 5760,
+        "cacheWriteTokens": null,
+        "reasoningTokens": 30,
+        "cost": null
+      },
+      {
+        "inputTokens": 6324,
+        "outputTokens": 501,
+        "cacheReadTokens": 6016,
+        "cacheWriteTokens": null,
+        "reasoningTokens": 430,
+        "cost": null
+      },
+      {
+        "inputTokens": 7127,
+        "outputTokens": 654,
+        "cacheReadTokens": 6784,
+        "cacheWriteTokens": null,
+        "reasoningTokens": 518,
+        "cost": null
+      },
+      {
+        "inputTokens": 7814,
+        "outputTokens": 40,
+        "cacheReadTokens": 7424,
+        "cacheWriteTokens": null,
+        "reasoningTokens": 0,
+        "cost": null
+      },
+      {
+        "inputTokens": 7920,
+        "outputTokens": 136,
+        "cacheReadTokens": 7680,
+        "cacheWriteTokens": null,
+        "reasoningTokens": 0,
+        "cost": null
+      },
+      {
+        "inputTokens": 8132,
+        "outputTokens": 143,
+        "cacheReadTokens": 7936,
+        "cacheWriteTokens": null,
+        "reasoningTokens": 16,
+        "cost": null
+      },
+      {
+        "inputTokens": 8652,
+        "outputTokens": 260,
+        "cacheReadTokens": 8192,
+        "cacheWriteTokens": null,
+        "reasoningTokens": 213,
+        "cost": null
+      },
+      {
+        "inputTokens": 9051,
+        "outputTokens": 235,
+        "cacheReadTokens": 8832,
+        "cacheWriteTokens": null,
+        "reasoningTokens": 48,
+        "cost": null
+      },
+      {
+        "inputTokens": 9309,
+        "outputTokens": 120,
+        "cacheReadTokens": 9088,
+        "cacheWriteTokens": null,
+        "reasoningTokens": 59,
+        "cost": null
+      },
+      {
+        "inputTokens": 9572,
+        "outputTokens": 83,
+        "cacheReadTokens": 9344,
+        "cacheWriteTokens": null,
+        "reasoningTokens": 0,
+        "cost": null
+      },
+      {
+        "inputTokens": 4846,
+        "outputTokens": 22,
+        "cacheReadTokens": 4608,
+        "cacheWriteTokens": null,
+        "reasoningTokens": 0,
+        "cost": null
+      },
+      {
+        "inputTokens": 4910,
+        "outputTokens": 92,
+        "cacheReadTokens": 4736,
+        "cacheWriteTokens": null,
+        "reasoningTokens": 10,
+        "cost": null
+      },
+      {
+        "inputTokens": 5035,
+        "outputTokens": 53,
+        "cacheReadTokens": 4864,
+        "cacheWriteTokens": null,
+        "reasoningTokens": 13,
+        "cost": null
+      },
+      {
+        "inputTokens": 5154,
+        "outputTokens": 82,
+        "cacheReadTokens": 4992,
+        "cacheWriteTokens": null,
+        "reasoningTokens": 0,
+        "cost": null
+      },
+      {
+        "inputTokens": 5307,
+        "outputTokens": 37,
+        "cacheReadTokens": 5120,
+        "cacheWriteTokens": null,
+        "reasoningTokens": 0,
+        "cost": null
+      },
+      {
+        "inputTokens": 5369,
+        "outputTokens": 216,
+        "cacheReadTokens": 5120,
+        "cacheWriteTokens": null,
+        "reasoningTokens": 119,
+        "cost": null
+      },
+      {
+        "inputTokens": 5662,
+        "outputTokens": 48,
+        "cacheReadTokens": 5504,
+        "cacheWriteTokens": null,
+        "reasoningTokens": 0,
+        "cost": null
+      },
+      {
+        "inputTokens": 5743,
+        "outputTokens": 117,
+        "cacheReadTokens": 5504,
+        "cacheWriteTokens": null,
+        "reasoningTokens": 48,
+        "cost": null
+      },
+      {
+        "inputTokens": 6026,
+        "outputTokens": 94,
+        "cacheReadTokens": 5760,
+        "cacheWriteTokens": null,
+        "reasoningTokens": 30,
+        "cost": null
+      },
+      {
+        "inputTokens": 6324,
+        "outputTokens": 501,
+        "cacheReadTokens": 6016,
+        "cacheWriteTokens": null,
+        "reasoningTokens": 430,
+        "cost": null
+      },
+      {
+        "inputTokens": 7127,
+        "outputTokens": 654,
+        "cacheReadTokens": 6784,
+        "cacheWriteTokens": null,
+        "reasoningTokens": 518,
+        "cost": null
+      },
+      {
+        "inputTokens": 7814,
+        "outputTokens": 40,
+        "cacheReadTokens": 7424,
+        "cacheWriteTokens": null,
+        "reasoningTokens": 0,
+        "cost": null
+      },
+      {
+        "inputTokens": 7920,
+        "outputTokens": 136,
+        "cacheReadTokens": 7680,
+        "cacheWriteTokens": null,
+        "reasoningTokens": 0,
+        "cost": null
+      },
+      {
+        "inputTokens": 8132,
+        "outputTokens": 143,
+        "cacheReadTokens": 7936,
+        "cacheWriteTokens": null,
+        "reasoningTokens": 16,
+        "cost": null
+      },
+      {
+        "inputTokens": 8652,
+        "outputTokens": 260,
+        "cacheReadTokens": 8192,
+        "cacheWriteTokens": null,
+        "reasoningTokens": 213,
+        "cost": null
+      },
+      {
+        "inputTokens": 9051,
+        "outputTokens": 235,
+        "cacheReadTokens": 8832,
+        "cacheWriteTokens": null,
+        "reasoningTokens": 48,
+        "cost": null
+      },
+      {
+        "inputTokens": 9309,
+        "outputTokens": 120,
+        "cacheReadTokens": 9088,
+        "cacheWriteTokens": null,
+        "reasoningTokens": 59,
+        "cost": null
+      },
+      {
+        "inputTokens": 9572,
+        "outputTokens": 83,
+        "cacheReadTokens": 9344,
+        "cacheWriteTokens": null,
+        "reasoningTokens": 0,
+        "cost": null
+      },
+      {
+        "inputTokens": 9672,
+        "outputTokens": 134,
+        "cacheReadTokens": 9472,
+        "cacheWriteTokens": null,
+        "reasoningTokens": 25,
+        "cost": null
+      }
+    ],
+    "phases": [
+      {
+        "phase": "input.admitted",
+        "atMs": 1792418868025,
+        "clock": "recorded"
+      },
+      {
+        "phase": "input.promoted",
+        "atMs": 1792418868025,
+        "clock": "recorded"
+      },
+      {
+        "phase": "run.started",
+        "atMs": 1792418868025,
+        "clock": "recorded"
+      },
+      {
+        "phase": "provider.request",
+        "atMs": 1792418868028,
+        "clock": "recorded"
+      },
+      {
+        "phase": "provider.request.result",
+        "atMs": 1792418868159,
+        "clock": "recorded"
+      },
+      {
+        "phase": "tool.dispatched",
+        "atMs": 1792418868710,
+        "clock": "recorded"
+      },
+      {
+        "phase": "tool.completed",
+        "atMs": 1792418868711,
+        "clock": "recorded"
+      },
+      {
+        "phase": "provider.request",
+        "atMs": 1792418868714,
+        "clock": "recorded"
+      },
+      {
+        "phase": "provider.request.result",
+        "atMs": 1792418868823,
+        "clock": "recorded"
+      },
+      {
+        "phase": "tool.completed",
+        "atMs": 1792418869738,
+        "clock": "recorded"
+      },
+      {
+        "phase": "provider.request",
+        "atMs": 1792418869741,
+        "clock": "recorded"
+      },
+      {
+        "phase": "provider.request.result",
+        "atMs": 1792418869892,
+        "clock": "recorded"
+      },
+      {
+        "phase": "tool.dispatched",
+        "atMs": 1792418870725,
+        "clock": "recorded"
+      },
+      {
+        "phase": "tool.completed",
+        "atMs": 1792418870941,
+        "clock": "recorded"
+      },
+      {
+        "phase": "provider.request",
+        "atMs": 1792418870943,
+        "clock": "recorded"
+      },
+      {
+        "phase": "provider.request.result",
+        "atMs": 1792418871043,
+        "clock": "recorded"
+      },
+      {
+        "phase": "tool.dispatched",
+        "atMs": 1792418871821,
+        "clock": "recorded"
+      },
+      {
+        "phase": "tool.completed",
+        "atMs": 1792418871837,
+        "clock": "recorded"
+      },
+      {
+        "phase": "provider.request",
+        "atMs": 1792418871839,
+        "clock": "recorded"
+      },
+      {
+        "phase": "provider.request.result",
+        "atMs": 1792418871932,
+        "clock": "recorded"
+      },
+      {
+        "phase": "run.usage",
+        "atMs": 1792418872737,
+        "clock": "recorded"
+      },
+      {
+        "phase": "run.finished",
+        "atMs": 1792418872737,
+        "clock": "recorded"
+      },
+      {
+        "phase": "stop",
+        "atMs": 1792418872737,
+        "clock": "recorded"
+      },
+      {
+        "phase": "input.admitted",
+        "atMs": 1792418868025,
+        "clock": "recorded"
+      },
+      {
+        "phase": "input.promoted",
+        "atMs": 1792418868025,
+        "clock": "recorded"
+      },
+      {
+        "phase": "run.started",
+        "atMs": 1792418868025,
+        "clock": "recorded"
+      },
+      {
+        "phase": "provider.request",
+        "atMs": 1792418868028,
+        "clock": "recorded"
+      },
+      {
+        "phase": "provider.request.result",
+        "atMs": 1792418868159,
+        "clock": "recorded"
+      },
+      {
+        "phase": "tool.dispatched",
+        "atMs": 1792418868710,
+        "clock": "recorded"
+      },
+      {
+        "phase": "tool.completed",
+        "atMs": 1792418868711,
+        "clock": "recorded"
+      },
+      {
+        "phase": "provider.request",
+        "atMs": 1792418868714,
+        "clock": "recorded"
+      },
+      {
+        "phase": "provider.request.result",
+        "atMs": 1792418868823,
+        "clock": "recorded"
+      },
+      {
+        "phase": "tool.completed",
+        "atMs": 1792418869738,
+        "clock": "recorded"
+      },
+      {
+        "phase": "provider.request",
+        "atMs": 1792418869741,
+        "clock": "recorded"
+      },
+      {
+        "phase": "provider.request.result",
+        "atMs": 1792418869892,
+        "clock": "recorded"
+      },
+      {
+        "phase": "tool.dispatched",
+        "atMs": 1792418870725,
+        "clock": "recorded"
+      },
+      {
+        "phase": "tool.completed",
+        "atMs": 1792418870941,
+        "clock": "recorded"
+      },
+      {
+        "phase": "provider.request",
+        "atMs": 1792418870943,
+        "clock": "recorded"
+      },
+      {
+        "phase": "provider.request.result",
+        "atMs": 1792418871043,
+        "clock": "recorded"
+      },
+      {
+        "phase": "tool.dispatched",
+        "atMs": 1792418871821,
+        "clock": "recorded"
+      },
+      {
+        "phase": "tool.completed",
+        "atMs": 1792418871837,
+        "clock": "recorded"
+      },
+      {
+        "phase": "provider.request",
+        "atMs": 1792418871839,
+        "clock": "recorded"
+      },
+      {
+        "phase": "provider.request.result",
+        "atMs": 1792418871932,
+        "clock": "recorded"
+      },
+      {
+        "phase": "run.usage",
+        "atMs": 1792418872737,
+        "clock": "recorded"
+      },
+      {
+        "phase": "run.finished",
+        "atMs": 1792418872737,
+        "clock": "recorded"
+      },
+      {
+        "phase": "stop",
+        "atMs": 1792418872737,
+        "clock": "recorded"
+      },
+      {
+        "phase": "input.admitted",
+        "atMs": 1792418872836,
+        "clock": "recorded"
+      },
+      {
+        "phase": "input.promoted",
+        "atMs": 1792418872837,
+        "clock": "recorded"
+      },
+      {
+        "phase": "run.started",
+        "atMs": 1792418872837,
+        "clock": "recorded"
+      },
+      {
+        "phase": "provider.request",
+        "atMs": 1792418872839,
+        "clock": "recorded"
+      },
+      {
+        "phase": "provider.request.result",
+        "atMs": 1792418872968,
+        "clock": "recorded"
+      },
+      {
+        "phase": "tool.dispatched",
+        "atMs": 1792418874406,
+        "clock": "recorded"
+      },
+      {
+        "phase": "tool.completed",
+        "atMs": 1792418874415,
+        "clock": "recorded"
+      },
+      {
+        "phase": "provider.request",
+        "atMs": 1792418874417,
+        "clock": "recorded"
+      },
+      {
+        "phase": "provider.request.result",
+        "atMs": 1792418874509,
+        "clock": "recorded"
+      },
+      {
+        "phase": "run.usage",
+        "atMs": 1792418875065,
+        "clock": "recorded"
+      },
+      {
+        "phase": "run.finished",
+        "atMs": 1792418875065,
+        "clock": "recorded"
+      },
+      {
+        "phase": "stop",
+        "atMs": 1792418875065,
+        "clock": "recorded"
+      },
+      {
+        "phase": "input.admitted",
+        "atMs": 1792418868025,
+        "clock": "recorded"
+      },
+      {
+        "phase": "input.promoted",
+        "atMs": 1792418868025,
+        "clock": "recorded"
+      },
+      {
+        "phase": "run.started",
+        "atMs": 1792418868025,
+        "clock": "recorded"
+      },
+      {
+        "phase": "provider.request",
+        "atMs": 1792418868028,
+        "clock": "recorded"
+      },
+      {
+        "phase": "provider.request.result",
+        "atMs": 1792418868159,
+        "clock": "recorded"
+      },
+      {
+        "phase": "tool.dispatched",
+        "atMs": 1792418868710,
+        "clock": "recorded"
+      },
+      {
+        "phase": "tool.completed",
+        "atMs": 1792418868711,
+        "clock": "recorded"
+      },
+      {
+        "phase": "provider.request",
+        "atMs": 1792418868714,
+        "clock": "recorded"
+      },
+      {
+        "phase": "provider.request.result",
+        "atMs": 1792418868823,
+        "clock": "recorded"
+      },
+      {
+        "phase": "tool.completed",
+        "atMs": 1792418869738,
+        "clock": "recorded"
+      },
+      {
+        "phase": "provider.request",
+        "atMs": 1792418869741,
+        "clock": "recorded"
+      },
+      {
+        "phase": "provider.request.result",
+        "atMs": 1792418869892,
+        "clock": "recorded"
+      },
+      {
+        "phase": "tool.dispatched",
+        "atMs": 1792418870725,
+        "clock": "recorded"
+      },
+      {
+        "phase": "tool.completed",
+        "atMs": 1792418870941,
+        "clock": "recorded"
+      },
+      {
+        "phase": "provider.request",
+        "atMs": 1792418870943,
+        "clock": "recorded"
+      },
+      {
+        "phase": "provider.request.result",
+        "atMs": 1792418871043,
+        "clock": "recorded"
+      },
+      {
+        "phase": "tool.dispatched",
+        "atMs": 1792418871821,
+        "clock": "recorded"
+      },
+      {
+        "phase": "tool.completed",
+        "atMs": 1792418871837,
+        "clock": "recorded"
+      },
+      {
+        "phase": "provider.request",
+        "atMs": 1792418871839,
+        "clock": "recorded"
+      },
+      {
+        "phase": "provider.request.result",
+        "atMs": 1792418871932,
+        "clock": "recorded"
+      },
+      {
+        "phase": "run.usage",
+        "atMs": 1792418872737,
+        "clock": "recorded"
+      },
+      {
+        "phase": "run.finished",
+        "atMs": 1792418872737,
+        "clock": "recorded"
+      },
+      {
+        "phase": "stop",
+        "atMs": 1792418872737,
+        "clock": "recorded"
+      },
+      {
+        "phase": "input.admitted",
+        "atMs": 1792418872836,
+        "clock": "recorded"
+      },
+      {
+        "phase": "input.promoted",
+        "atMs": 1792418872837,
+        "clock": "recorded"
+      },
+      {
+        "phase": "run.started",
+        "atMs": 1792418872837,
+        "clock": "recorded"
+      },
+      {
+        "phase": "provider.request",
+        "atMs": 1792418872839,
+        "clock": "recorded"
+      },
+      {
+        "phase": "provider.request.result",
+        "atMs": 1792418872968,
+        "clock": "recorded"
+      },
+      {
+        "phase": "tool.dispatched",
+        "atMs": 1792418874406,
+        "clock": "recorded"
+      },
+      {
+        "phase": "tool.completed",
+        "atMs": 1792418874415,
+        "clock": "recorded"
+      },
+      {
+        "phase": "provider.request",
+        "atMs": 1792418874417,
+        "clock": "recorded"
+      },
+      {
+        "phase": "provider.request.result",
+        "atMs": 1792418874509,
+        "clock": "recorded"
+      },
+      {
+        "phase": "run.usage",
+        "atMs": 1792418875065,
+        "clock": "recorded"
+      },
+      {
+        "phase": "run.finished",
+        "atMs": 1792418875065,
+        "clock": "recorded"
+      },
+      {
+        "phase": "stop",
+        "atMs": 1792418875065,
+        "clock": "recorded"
+      },
+      {
+        "phase": "input.admitted",
+        "atMs": 1792418875149,
+        "clock": "recorded"
+      },
+      {
+        "phase": "input.promoted",
+        "atMs": 1792418875149,
+        "clock": "recorded"
+      },
+      {
+        "phase": "run.started",
+        "atMs": 1792418875149,
+        "clock": "recorded"
+      },
+      {
+        "phase": "provider.request",
+        "atMs": 1792418875152,
+        "clock": "recorded"
+      },
+      {
+        "phase": "provider.request.result",
+        "atMs": 1792418875290,
+        "clock": "recorded"
+      },
+      {
+        "phase": "tool.dispatched",
+        "atMs": 1792418876146,
+        "clock": "recorded"
+      },
+      {
+        "phase": "tool.dispatched",
+        "atMs": 1792418876146,
+        "clock": "recorded"
+      },
+      {
+        "phase": "tool.completed",
+        "atMs": 1792418876147,
+        "clock": "recorded"
+      },
+      {
+        "phase": "tool.completed",
+        "atMs": 1792418876147,
+        "clock": "recorded"
+      },
+      {
+        "phase": "provider.request",
+        "atMs": 1792418876149,
+        "clock": "recorded"
+      },
+      {
+        "phase": "provider.request.result",
+        "atMs": 1792418876338,
+        "clock": "recorded"
+      },
+      {
+        "phase": "tool.dispatched",
+        "atMs": 1792418876987,
+        "clock": "recorded"
+      },
+      {
+        "phase": "tool.completed",
+        "atMs": 1792418877202,
+        "clock": "recorded"
+      },
+      {
+        "phase": "provider.request",
+        "atMs": 1792418877204,
+        "clock": "recorded"
+      },
+      {
+        "phase": "provider.request.result",
+        "atMs": 1792418877369,
+        "clock": "recorded"
+      },
+      {
+        "phase": "tool.dispatched",
+        "atMs": 1792418880227,
+        "clock": "recorded"
+      },
+      {
+        "phase": "tool.completed",
+        "atMs": 1792418881139,
+        "clock": "recorded"
+      },
+      {
+        "phase": "provider.request",
+        "atMs": 1792418881142,
+        "clock": "recorded"
+      },
+      {
+        "phase": "provider.request.result",
+        "atMs": 1792418881244,
+        "clock": "recorded"
+      },
+      {
+        "phase": "tool.completed",
+        "atMs": 1792418884230,
+        "clock": "recorded"
+      },
+      {
+        "phase": "provider.request",
+        "atMs": 1792418884232,
+        "clock": "recorded"
+      },
+      {
+        "phase": "provider.request.result",
+        "atMs": 1792418884349,
+        "clock": "recorded"
+      },
+      {
+        "phase": "tool.dispatched",
+        "atMs": 1792418885165,
+        "clock": "recorded"
+      },
+      {
+        "phase": "tool.completed",
+        "atMs": 1792418885354,
+        "clock": "recorded"
+      },
+      {
+        "phase": "provider.request",
+        "atMs": 1792418885358,
+        "clock": "recorded"
+      },
+      {
+        "phase": "provider.request.result",
+        "atMs": 1792418885789,
+        "clock": "recorded"
+      },
+      {
+        "phase": "tool.dispatched",
+        "atMs": 1792418886571,
+        "clock": "recorded"
+      },
+      {
+        "phase": "tool.completed",
+        "atMs": 1792418886586,
+        "clock": "recorded"
+      },
+      {
+        "phase": "provider.request",
+        "atMs": 1792418886588,
+        "clock": "recorded"
+      },
+      {
+        "phase": "provider.request.result",
+        "atMs": 1792418886700,
+        "clock": "recorded"
+      },
+      {
+        "phase": "tool.dispatched",
+        "atMs": 1792418887469,
+        "clock": "recorded"
+      },
+      {
+        "phase": "tool.completed",
+        "atMs": 1792418887762,
+        "clock": "recorded"
+      },
+      {
+        "phase": "tool.dispatched",
+        "atMs": 1792418887763,
+        "clock": "recorded"
+      },
+      {
+        "phase": "tool.completed",
+        "atMs": 1792418887977,
+        "clock": "recorded"
+      },
+      {
+        "phase": "provider.request",
+        "atMs": 1792418887980,
+        "clock": "recorded"
+      },
+      {
+        "phase": "provider.request.result",
+        "atMs": 1792418888155,
+        "clock": "recorded"
+      },
+      {
+        "phase": "tool.dispatched",
+        "atMs": 1792418890285,
+        "clock": "recorded"
+      },
+      {
+        "phase": "tool.completed",
+        "atMs": 1792418890501,
+        "clock": "recorded"
+      },
+      {
+        "phase": "provider.request",
+        "atMs": 1792418890503,
+        "clock": "recorded"
+      },
+      {
+        "phase": "provider.request.result",
+        "atMs": 1792418890592,
+        "clock": "recorded"
+      },
+      {
+        "phase": "run.usage",
+        "atMs": 1792418892090,
+        "clock": "recorded"
+      },
+      {
+        "phase": "run.finished",
+        "atMs": 1792418892090,
+        "clock": "recorded"
+      },
+      {
+        "phase": "stop",
+        "atMs": 1792418892090,
+        "clock": "recorded"
+      },
+      {
+        "phase": "input.admitted",
+        "atMs": 1792418868025,
+        "clock": "recorded"
+      },
+      {
+        "phase": "input.promoted",
+        "atMs": 1792418868025,
+        "clock": "recorded"
+      },
+      {
+        "phase": "run.started",
+        "atMs": 1792418868025,
+        "clock": "recorded"
+      },
+      {
+        "phase": "provider.request",
+        "atMs": 1792418868028,
+        "clock": "recorded"
+      },
+      {
+        "phase": "provider.request.result",
+        "atMs": 1792418868159,
+        "clock": "recorded"
+      },
+      {
+        "phase": "tool.dispatched",
+        "atMs": 1792418868710,
+        "clock": "recorded"
+      },
+      {
+        "phase": "tool.completed",
+        "atMs": 1792418868711,
+        "clock": "recorded"
+      },
+      {
+        "phase": "provider.request",
+        "atMs": 1792418868714,
+        "clock": "recorded"
+      },
+      {
+        "phase": "provider.request.result",
+        "atMs": 1792418868823,
+        "clock": "recorded"
+      },
+      {
+        "phase": "tool.completed",
+        "atMs": 1792418869738,
+        "clock": "recorded"
+      },
+      {
+        "phase": "provider.request",
+        "atMs": 1792418869741,
+        "clock": "recorded"
+      },
+      {
+        "phase": "provider.request.result",
+        "atMs": 1792418869892,
+        "clock": "recorded"
+      },
+      {
+        "phase": "tool.dispatched",
+        "atMs": 1792418870725,
+        "clock": "recorded"
+      },
+      {
+        "phase": "tool.completed",
+        "atMs": 1792418870941,
+        "clock": "recorded"
+      },
+      {
+        "phase": "provider.request",
+        "atMs": 1792418870943,
+        "clock": "recorded"
+      },
+      {
+        "phase": "provider.request.result",
+        "atMs": 1792418871043,
+        "clock": "recorded"
+      },
+      {
+        "phase": "tool.dispatched",
+        "atMs": 1792418871821,
+        "clock": "recorded"
+      },
+      {
+        "phase": "tool.completed",
+        "atMs": 1792418871837,
+        "clock": "recorded"
+      },
+      {
+        "phase": "provider.request",
+        "atMs": 1792418871839,
+        "clock": "recorded"
+      },
+      {
+        "phase": "provider.request.result",
+        "atMs": 1792418871932,
+        "clock": "recorded"
+      },
+      {
+        "phase": "run.usage",
+        "atMs": 1792418872737,
+        "clock": "recorded"
+      },
+      {
+        "phase": "run.finished",
+        "atMs": 1792418872737,
+        "clock": "recorded"
+      },
+      {
+        "phase": "stop",
+        "atMs": 1792418872737,
+        "clock": "recorded"
+      },
+      {
+        "phase": "input.admitted",
+        "atMs": 1792418872836,
+        "clock": "recorded"
+      },
+      {
+        "phase": "input.promoted",
+        "atMs": 1792418872837,
+        "clock": "recorded"
+      },
+      {
+        "phase": "run.started",
+        "atMs": 1792418872837,
+        "clock": "recorded"
+      },
+      {
+        "phase": "provider.request",
+        "atMs": 1792418872839,
+        "clock": "recorded"
+      },
+      {
+        "phase": "provider.request.result",
+        "atMs": 1792418872968,
+        "clock": "recorded"
+      },
+      {
+        "phase": "tool.dispatched",
+        "atMs": 1792418874406,
+        "clock": "recorded"
+      },
+      {
+        "phase": "tool.completed",
+        "atMs": 1792418874415,
+        "clock": "recorded"
+      },
+      {
+        "phase": "provider.request",
+        "atMs": 1792418874417,
+        "clock": "recorded"
+      },
+      {
+        "phase": "provider.request.result",
+        "atMs": 1792418874509,
+        "clock": "recorded"
+      },
+      {
+        "phase": "run.usage",
+        "atMs": 1792418875065,
+        "clock": "recorded"
+      },
+      {
+        "phase": "run.finished",
+        "atMs": 1792418875065,
+        "clock": "recorded"
+      },
+      {
+        "phase": "stop",
+        "atMs": 1792418875065,
+        "clock": "recorded"
+      },
+      {
+        "phase": "input.admitted",
+        "atMs": 1792418875149,
+        "clock": "recorded"
+      },
+      {
+        "phase": "input.promoted",
+        "atMs": 1792418875149,
+        "clock": "recorded"
+      },
+      {
+        "phase": "run.started",
+        "atMs": 1792418875149,
+        "clock": "recorded"
+      },
+      {
+        "phase": "provider.request",
+        "atMs": 1792418875152,
+        "clock": "recorded"
+      },
+      {
+        "phase": "provider.request.result",
+        "atMs": 1792418875290,
+        "clock": "recorded"
+      },
+      {
+        "phase": "tool.dispatched",
+        "atMs": 1792418876146,
+        "clock": "recorded"
+      },
+      {
+        "phase": "tool.dispatched",
+        "atMs": 1792418876146,
+        "clock": "recorded"
+      },
+      {
+        "phase": "tool.completed",
+        "atMs": 1792418876147,
+        "clock": "recorded"
+      },
+      {
+        "phase": "tool.completed",
+        "atMs": 1792418876147,
+        "clock": "recorded"
+      },
+      {
+        "phase": "provider.request",
+        "atMs": 1792418876149,
+        "clock": "recorded"
+      },
+      {
+        "phase": "provider.request.result",
+        "atMs": 1792418876338,
+        "clock": "recorded"
+      },
+      {
+        "phase": "tool.dispatched",
+        "atMs": 1792418876987,
+        "clock": "recorded"
+      },
+      {
+        "phase": "tool.completed",
+        "atMs": 1792418877202,
+        "clock": "recorded"
+      },
+      {
+        "phase": "provider.request",
+        "atMs": 1792418877204,
+        "clock": "recorded"
+      },
+      {
+        "phase": "provider.request.result",
+        "atMs": 1792418877369,
+        "clock": "recorded"
+      },
+      {
+        "phase": "tool.dispatched",
+        "atMs": 1792418880227,
+        "clock": "recorded"
+      },
+      {
+        "phase": "tool.completed",
+        "atMs": 1792418881139,
+        "clock": "recorded"
+      },
+      {
+        "phase": "provider.request",
+        "atMs": 1792418881142,
+        "clock": "recorded"
+      },
+      {
+        "phase": "provider.request.result",
+        "atMs": 1792418881244,
+        "clock": "recorded"
+      },
+      {
+        "phase": "tool.completed",
+        "atMs": 1792418884230,
+        "clock": "recorded"
+      },
+      {
+        "phase": "provider.request",
+        "atMs": 1792418884232,
+        "clock": "recorded"
+      },
+      {
+        "phase": "provider.request.result",
+        "atMs": 1792418884349,
+        "clock": "recorded"
+      },
+      {
+        "phase": "tool.dispatched",
+        "atMs": 1792418885165,
+        "clock": "recorded"
+      },
+      {
+        "phase": "tool.completed",
+        "atMs": 1792418885354,
+        "clock": "recorded"
+      },
+      {
+        "phase": "provider.request",
+        "atMs": 1792418885358,
+        "clock": "recorded"
+      },
+      {
+        "phase": "provider.request.result",
+        "atMs": 1792418885789,
+        "clock": "recorded"
+      },
+      {
+        "phase": "tool.dispatched",
+        "atMs": 1792418886571,
+        "clock": "recorded"
+      },
+      {
+        "phase": "tool.completed",
+        "atMs": 1792418886586,
+        "clock": "recorded"
+      },
+      {
+        "phase": "provider.request",
+        "atMs": 1792418886588,
+        "clock": "recorded"
+      },
+      {
+        "phase": "provider.request.result",
+        "atMs": 1792418886700,
+        "clock": "recorded"
+      },
+      {
+        "phase": "tool.dispatched",
+        "atMs": 1792418887469,
+        "clock": "recorded"
+      },
+      {
+        "phase": "tool.completed",
+        "atMs": 1792418887762,
+        "clock": "recorded"
+      },
+      {
+        "phase": "tool.dispatched",
+        "atMs": 1792418887763,
+        "clock": "recorded"
+      },
+      {
+        "phase": "tool.completed",
+        "atMs": 1792418887977,
+        "clock": "recorded"
+      },
+      {
+        "phase": "provider.request",
+        "atMs": 1792418887980,
+        "clock": "recorded"
+      },
+      {
+        "phase": "provider.request.result",
+        "atMs": 1792418888155,
+        "clock": "recorded"
+      },
+      {
+        "phase": "tool.dispatched",
+        "atMs": 1792418890285,
+        "clock": "recorded"
+      },
+      {
+        "phase": "tool.completed",
+        "atMs": 1792418890501,
+        "clock": "recorded"
+      },
+      {
+        "phase": "provider.request",
+        "atMs": 1792418890503,
+        "clock": "recorded"
+      },
+      {
+        "phase": "provider.request.result",
+        "atMs": 1792418890592,
+        "clock": "recorded"
+      },
+      {
+        "phase": "run.usage",
+        "atMs": 1792418892090,
+        "clock": "recorded"
+      },
+      {
+        "phase": "run.finished",
+        "atMs": 1792418892090,
+        "clock": "recorded"
+      },
+      {
+        "phase": "stop",
+        "atMs": 1792418892090,
+        "clock": "recorded"
+      },
+      {
+        "phase": "input.admitted",
+        "atMs": 1792418892168,
+        "clock": "recorded"
+      },
+      {
+        "phase": "input.promoted",
+        "atMs": 1792418892169,
+        "clock": "recorded"
+      },
+      {
+        "phase": "run.started",
+        "atMs": 1792418892169,
+        "clock": "recorded"
+      },
+      {
+        "phase": "provider.request",
+        "atMs": 1792418892174,
+        "clock": "recorded"
+      },
+      {
+        "phase": "provider.request.result",
+        "atMs": 1792418892388,
+        "clock": "recorded"
+      },
+      {
+        "phase": "tool.dispatched",
+        "atMs": 1792418893319,
+        "clock": "recorded"
+      },
+      {
+        "phase": "tool.completed",
+        "atMs": 1792418893562,
+        "clock": "recorded"
+      },
+      {
+        "phase": "provider.request",
+        "atMs": 1792418893566,
+        "clock": "recorded"
+      },
+      {
+        "phase": "provider.request.result",
+        "atMs": 1792418893843,
+        "clock": "recorded"
+      },
+      {
+        "phase": "run.usage",
+        "atMs": 1792418894867,
+        "clock": "recorded"
+      },
+      {
+        "phase": "run.finished",
+        "atMs": 1792418894867,
+        "clock": "recorded"
+      },
+      {
+        "phase": "stop",
+        "atMs": 1792418894867,
+        "clock": "recorded"
+      },
+      {
+        "phase": "input.admitted",
+        "atMs": 1792418868025,
+        "clock": "recorded"
+      },
+      {
+        "phase": "input.promoted",
+        "atMs": 1792418868025,
+        "clock": "recorded"
+      },
+      {
+        "phase": "run.started",
+        "atMs": 1792418868025,
+        "clock": "recorded"
+      },
+      {
+        "phase": "provider.request",
+        "atMs": 1792418868028,
+        "clock": "recorded"
+      },
+      {
+        "phase": "provider.request.result",
+        "atMs": 1792418868159,
+        "clock": "recorded"
+      },
+      {
+        "phase": "tool.dispatched",
+        "atMs": 1792418868710,
+        "clock": "recorded"
+      },
+      {
+        "phase": "tool.completed",
+        "atMs": 1792418868711,
+        "clock": "recorded"
+      },
+      {
+        "phase": "provider.request",
+        "atMs": 1792418868714,
+        "clock": "recorded"
+      },
+      {
+        "phase": "provider.request.result",
+        "atMs": 1792418868823,
+        "clock": "recorded"
+      },
+      {
+        "phase": "tool.completed",
+        "atMs": 1792418869738,
+        "clock": "recorded"
+      },
+      {
+        "phase": "provider.request",
+        "atMs": 1792418869741,
+        "clock": "recorded"
+      },
+      {
+        "phase": "provider.request.result",
+        "atMs": 1792418869892,
+        "clock": "recorded"
+      },
+      {
+        "phase": "tool.dispatched",
+        "atMs": 1792418870725,
+        "clock": "recorded"
+      },
+      {
+        "phase": "tool.completed",
+        "atMs": 1792418870941,
+        "clock": "recorded"
+      },
+      {
+        "phase": "provider.request",
+        "atMs": 1792418870943,
+        "clock": "recorded"
+      },
+      {
+        "phase": "provider.request.result",
+        "atMs": 1792418871043,
+        "clock": "recorded"
+      },
+      {
+        "phase": "tool.dispatched",
+        "atMs": 1792418871821,
+        "clock": "recorded"
+      },
+      {
+        "phase": "tool.completed",
+        "atMs": 1792418871837,
+        "clock": "recorded"
+      },
+      {
+        "phase": "provider.request",
+        "atMs": 1792418871839,
+        "clock": "recorded"
+      },
+      {
+        "phase": "provider.request.result",
+        "atMs": 1792418871932,
+        "clock": "recorded"
+      },
+      {
+        "phase": "run.usage",
+        "atMs": 1792418872737,
+        "clock": "recorded"
+      },
+      {
+        "phase": "run.finished",
+        "atMs": 1792418872737,
+        "clock": "recorded"
+      },
+      {
+        "phase": "stop",
+        "atMs": 1792418872737,
+        "clock": "recorded"
+      },
+      {
+        "phase": "input.admitted",
+        "atMs": 1792418872836,
+        "clock": "recorded"
+      },
+      {
+        "phase": "input.promoted",
+        "atMs": 1792418872837,
+        "clock": "recorded"
+      },
+      {
+        "phase": "run.started",
+        "atMs": 1792418872837,
+        "clock": "recorded"
+      },
+      {
+        "phase": "provider.request",
+        "atMs": 1792418872839,
+        "clock": "recorded"
+      },
+      {
+        "phase": "provider.request.result",
+        "atMs": 1792418872968,
+        "clock": "recorded"
+      },
+      {
+        "phase": "tool.dispatched",
+        "atMs": 1792418874406,
+        "clock": "recorded"
+      },
+      {
+        "phase": "tool.completed",
+        "atMs": 1792418874415,
+        "clock": "recorded"
+      },
+      {
+        "phase": "provider.request",
+        "atMs": 1792418874417,
+        "clock": "recorded"
+      },
+      {
+        "phase": "provider.request.result",
+        "atMs": 1792418874509,
+        "clock": "recorded"
+      },
+      {
+        "phase": "run.usage",
+        "atMs": 1792418875065,
+        "clock": "recorded"
+      },
+      {
+        "phase": "run.finished",
+        "atMs": 1792418875065,
+        "clock": "recorded"
+      },
+      {
+        "phase": "stop",
+        "atMs": 1792418875065,
+        "clock": "recorded"
+      },
+      {
+        "phase": "input.admitted",
+        "atMs": 1792418875149,
+        "clock": "recorded"
+      },
+      {
+        "phase": "input.promoted",
+        "atMs": 1792418875149,
+        "clock": "recorded"
+      },
+      {
+        "phase": "run.started",
+        "atMs": 1792418875149,
+        "clock": "recorded"
+      },
+      {
+        "phase": "provider.request",
+        "atMs": 1792418875152,
+        "clock": "recorded"
+      },
+      {
+        "phase": "provider.request.result",
+        "atMs": 1792418875290,
+        "clock": "recorded"
+      },
+      {
+        "phase": "tool.dispatched",
+        "atMs": 1792418876146,
+        "clock": "recorded"
+      },
+      {
+        "phase": "tool.dispatched",
+        "atMs": 1792418876146,
+        "clock": "recorded"
+      },
+      {
+        "phase": "tool.completed",
+        "atMs": 1792418876147,
+        "clock": "recorded"
+      },
+      {
+        "phase": "tool.completed",
+        "atMs": 1792418876147,
+        "clock": "recorded"
+      },
+      {
+        "phase": "provider.request",
+        "atMs": 1792418876149,
+        "clock": "recorded"
+      },
+      {
+        "phase": "provider.request.result",
+        "atMs": 1792418876338,
+        "clock": "recorded"
+      },
+      {
+        "phase": "tool.dispatched",
+        "atMs": 1792418876987,
+        "clock": "recorded"
+      },
+      {
+        "phase": "tool.completed",
+        "atMs": 1792418877202,
+        "clock": "recorded"
+      },
+      {
+        "phase": "provider.request",
+        "atMs": 1792418877204,
+        "clock": "recorded"
+      },
+      {
+        "phase": "provider.request.result",
+        "atMs": 1792418877369,
+        "clock": "recorded"
+      },
+      {
+        "phase": "tool.dispatched",
+        "atMs": 1792418880227,
+        "clock": "recorded"
+      },
+      {
+        "phase": "tool.completed",
+        "atMs": 1792418881139,
+        "clock": "recorded"
+      },
+      {
+        "phase": "provider.request",
+        "atMs": 1792418881142,
+        "clock": "recorded"
+      },
+      {
+        "phase": "provider.request.result",
+        "atMs": 1792418881244,
+        "clock": "recorded"
+      },
+      {
+        "phase": "tool.completed",
+        "atMs": 1792418884230,
+        "clock": "recorded"
+      },
+      {
+        "phase": "provider.request",
+        "atMs": 1792418884232,
+        "clock": "recorded"
+      },
+      {
+        "phase": "provider.request.result",
+        "atMs": 1792418884349,
+        "clock": "recorded"
+      },
+      {
+        "phase": "tool.dispatched",
+        "atMs": 1792418885165,
+        "clock": "recorded"
+      },
+      {
+        "phase": "tool.completed",
+        "atMs": 1792418885354,
+        "clock": "recorded"
+      },
+      {
+        "phase": "provider.request",
+        "atMs": 1792418885358,
+        "clock": "recorded"
+      },
+      {
+        "phase": "provider.request.result",
+        "atMs": 1792418885789,
+        "clock": "recorded"
+      },
+      {
+        "phase": "tool.dispatched",
+        "atMs": 1792418886571,
+        "clock": "recorded"
+      },
+      {
+        "phase": "tool.completed",
+        "atMs": 1792418886586,
+        "clock": "recorded"
+      },
+      {
+        "phase": "provider.request",
+        "atMs": 1792418886588,
+        "clock": "recorded"
+      },
+      {
+        "phase": "provider.request.result",
+        "atMs": 1792418886700,
+        "clock": "recorded"
+      },
+      {
+        "phase": "tool.dispatched",
+        "atMs": 1792418887469,
+        "clock": "recorded"
+      },
+      {
+        "phase": "tool.completed",
+        "atMs": 1792418887762,
+        "clock": "recorded"
+      },
+      {
+        "phase": "tool.dispatched",
+        "atMs": 1792418887763,
+        "clock": "recorded"
+      },
+      {
+        "phase": "tool.completed",
+        "atMs": 1792418887977,
+        "clock": "recorded"
+      },
+      {
+        "phase": "provider.request",
+        "atMs": 1792418887980,
+        "clock": "recorded"
+      },
+      {
+        "phase": "provider.request.result",
+        "atMs": 1792418888155,
+        "clock": "recorded"
+      },
+      {
+        "phase": "tool.dispatched",
+        "atMs": 1792418890285,
+        "clock": "recorded"
+      },
+      {
+        "phase": "tool.completed",
+        "atMs": 1792418890501,
+        "clock": "recorded"
+      },
+      {
+        "phase": "provider.request",
+        "atMs": 1792418890503,
+        "clock": "recorded"
+      },
+      {
+        "phase": "provider.request.result",
+        "atMs": 1792418890592,
+        "clock": "recorded"
+      },
+      {
+        "phase": "run.usage",
+        "atMs": 1792418892090,
+        "clock": "recorded"
+      },
+      {
+        "phase": "run.finished",
+        "atMs": 1792418892090,
+        "clock": "recorded"
+      },
+      {
+        "phase": "stop",
+        "atMs": 1792418892090,
+        "clock": "recorded"
+      },
+      {
+        "phase": "input.admitted",
+        "atMs": 1792418892168,
+        "clock": "recorded"
+      },
+      {
+        "phase": "input.promoted",
+        "atMs": 1792418892169,
+        "clock": "recorded"
+      },
+      {
+        "phase": "run.started",
+        "atMs": 1792418892169,
+        "clock": "recorded"
+      },
+      {
+        "phase": "provider.request",
+        "atMs": 1792418892174,
+        "clock": "recorded"
+      },
+      {
+        "phase": "provider.request.result",
+        "atMs": 1792418892388,
+        "clock": "recorded"
+      },
+      {
+        "phase": "tool.dispatched",
+        "atMs": 1792418893319,
+        "clock": "recorded"
+      },
+      {
+        "phase": "tool.completed",
+        "atMs": 1792418893562,
+        "clock": "recorded"
+      },
+      {
+        "phase": "provider.request",
+        "atMs": 1792418893566,
+        "clock": "recorded"
+      },
+      {
+        "phase": "provider.request.result",
+        "atMs": 1792418893843,
+        "clock": "recorded"
+      },
+      {
+        "phase": "run.usage",
+        "atMs": 1792418894867,
+        "clock": "recorded"
+      },
+      {
+        "phase": "run.finished",
+        "atMs": 1792418894867,
+        "clock": "recorded"
+      },
+      {
+        "phase": "stop",
+        "atMs": 1792418894867,
+        "clock": "recorded"
+      },
+      {
+        "phase": "input.admitted",
+        "atMs": 1792418894882,
+        "clock": "recorded"
+      },
+      {
+        "phase": "input.promoted",
+        "atMs": 1792418894883,
+        "clock": "recorded"
+      },
+      {
+        "phase": "run.started",
+        "atMs": 1792418894883,
+        "clock": "recorded"
+      },
+      {
+        "phase": "provider.request",
+        "atMs": 1792418894886,
+        "clock": "recorded"
+      },
+      {
+        "phase": "provider.request.result",
+        "atMs": 1792418895176,
+        "clock": "recorded"
+      },
+      {
+        "phase": "run.usage",
+        "atMs": 1792418896242,
+        "clock": "recorded"
+      },
+      {
+        "phase": "run.finished",
+        "atMs": 1792418896242,
+        "clock": "recorded"
+      },
+      {
+        "phase": "stop",
+        "atMs": 1792418896242,
+        "clock": "recorded"
+      },
+      {
+        "phase": "first-output",
+        "atMs": 1792418868163,
+        "clock": "observed"
+      },
+      {
+        "phase": "verified",
+        "atMs": 1792418896316,
+        "clock": "observed"
+      }
+    ],
+    "profile": {
+      "model": "deepseek-v4-flash",
+      "modelParametersHash": "ef3d96a9ec0464401ae599f38c478bab21fa051e068e9d158e5c186628e7a393",
+      "agentManifestHash": "2dbdecca09d38a807edd88d10f18f4febcb6aa5dcbdc2c1bb17f06446b689562",
+      "permissionHash": "b6ba8f2e45162a99c6c1dba5d472470026023d7b38e0e3f7d178392677f78473",
+      "toolSurfaceHash": "fb2ab566dec79420e179a024d88e1903ebbc1b7a9f23fe7b0aefb45a9d0dcb28"
+    },
+    "profileReceipts": 65,
+    "loops": {
+      "continuations": [],
+      "stopped": []
+    },
+    "toolCalls": 56,
+    "parallel": {
+      "batches": 3,
+      "batchedReads": 6,
+      "batchWallMs": 0
+    },
+    "context": {
+      "compaction": {},
+      "reasons": [],
+      "recallCalls": 0
+    },
+    "providerAttempts": [
+      {
+        "attempt": 0,
+        "protocol": "openai-chat",
+        "status": 200,
+        "outcome": "headers_received",
+        "detail": null
+      },
+      {
+        "attempt": 0,
+        "protocol": "openai-chat",
+        "status": 200,
+        "outcome": "headers_received",
+        "detail": null
+      },
+      {
+        "attempt": 0,
+        "protocol": "openai-chat",
+        "status": 200,
+        "outcome": "headers_received",
+        "detail": null
+      },
+      {
+        "attempt": 0,
+        "protocol": "openai-chat",
+        "status": 200,
+        "outcome": "headers_received",
+        "detail": null
+      },
+      {
+        "attempt": 0,
+        "protocol": "openai-chat",
+        "status": 200,
+        "outcome": "headers_received",
+        "detail": null
+      },
+      {
+        "attempt": 0,
+        "protocol": "openai-chat",
+        "status": 200,
+        "outcome": "headers_received",
+        "detail": null
+      },
+      {
+        "attempt": 0,
+        "protocol": "openai-chat",
+        "status": 200,
+        "outcome": "headers_received",
+        "detail": null
+      },
+      {
+        "attempt": 0,
+        "protocol": "openai-chat",
+        "status": 200,
+        "outcome": "headers_received",
+        "detail": null
+      },
+      {
+        "attempt": 0,
+        "protocol": "openai-chat",
+        "status": 200,
+        "outcome": "headers_received",
+        "detail": null
+      },
+      {
+        "attempt": 0,
+        "protocol": "openai-chat",
+        "status": 200,
+        "outcome": "headers_received",
+        "detail": null
+      },
+      {
+        "attempt": 0,
+        "protocol": "openai-chat",
+        "status": 200,
+        "outcome": "headers_received",
+        "detail": null
+      },
+      {
+        "attempt": 0,
+        "protocol": "openai-chat",
+        "status": 200,
+        "outcome": "headers_received",
+        "detail": null
+      },
+      {
+        "attempt": 0,
+        "protocol": "openai-chat",
+        "status": 200,
+        "outcome": "headers_received",
+        "detail": null
+      },
+      {
+        "attempt": 0,
+        "protocol": "openai-chat",
+        "status": 200,
+        "outcome": "headers_received",
+        "detail": null
+      },
+      {
+        "attempt": 0,
+        "protocol": "openai-chat",
+        "status": 200,
+        "outcome": "headers_received",
+        "detail": null
+      },
+      {
+        "attempt": 0,
+        "protocol": "openai-chat",
+        "status": 200,
+        "outcome": "headers_received",
+        "detail": null
+      },
+      {
+        "attempt": 0,
+        "protocol": "openai-chat",
+        "status": 200,
+        "outcome": "headers_received",
+        "detail": null
+      },
+      {
+        "attempt": 0,
+        "protocol": "openai-chat",
+        "status": 200,
+        "outcome": "headers_received",
+        "detail": null
+      },
+      {
+        "attempt": 0,
+        "protocol": "openai-chat",
+        "status": 200,
+        "outcome": "headers_received",
+        "detail": null
+      }
+    ],
+    "textHash": "ab8dc729721098d985a8c488069cccf7eb82aa8f9deb7fbfa638cbb85f8d21f2",
+    "binarySha256": "b2c1d67f465561ad7bed58ab28ebe03658b8042e16b0bb3f75a41d65329d14fd",
+    "startedAtMs": 1792418868011,
+    "admissionMs": 1792418868025,
+    "elapsedMs": 28305
+  },
+  "assessment": {
+    "suiteHash": "bd905b4f81f0a9412b614631a36337723067574848c5f05b50ead1cf48675091",
+    "taskHash": "acc85904b2dcd251e4f30fbe7b74f29d6ae3d4266a73c7319c966169a74baa82",
+    "artifactPass": true,
+    "unexpected": [],
+    "immutable": [
+      {
+        "file": "AGENTS.md",
+        "unchanged": true
+      },
+      {
+        "file": "package.json",
+        "unchanged": true
+      }
+    ],
+    "expected": [],
+    "check": {
+      "command": [
+        "bun",
+        "test",
+        "test/long.test.ts"
+      ],
+      "exit": 0,
+      "stdoutHash": "c384cdaa55dad157820800a4aaa48c4963ea5500be5bd17037485dc40c6e23b8",
+      "stderrHash": "3f66aae5b48b4cfe216fcd2c3207c834345e08dde24992cd67b50e4eeabe36c2"
+    },
+    "executionVerdict": "unverified",
+    "requiredReceipts": [],
+    "answerContains": [
+      "LONG_SESSION_OK"
+    ]
+  },
+  "answer": "Created `src/unit.ts` (plus the `src/` directory it needed) containing:\n\n```ts\nexport const unit = 21;\n```\n\nNothing else was modified.\nCreated `src/unit.ts` (plus the `src/` directory it needed) containing:\n\n```ts\nexport const unit = 21;\n```\n\nNothing else was modified.\nCreated `src/double.ts`:\n\n```ts\nimport { unit } from './unit';\n\nexport function double(): number {\n  return unit * 2;\n}\n```\n\n`double()` returns 42. No other files were touched.\nCreated `src/unit.ts` (plus the `src/` directory it needed) containing:\n\n```ts\nexport const unit = 21;\n```\n\nNothing else was modified.\nCreated `src/double.ts`:\n\n```ts\nimport { unit } from './unit';\n\nexport function double(): number {\n  return unit * 2;\n}\n```\n\n`double()` returns 42. No other files were touched.\nCreated `test/long.test.ts`:\n\n```ts\nimport assert from 'node:assert/strict';\nimport { test } from 'node:test';\nimport { double } from '../src/double';\n\ntest('double() equals 42', () => {\n  assert.equal(double(), 42);\n  console.log('LONG_SESSION_OK');\n});\n```\n\nRan it with Bun's built-in test runner (no runner was configured in `package.json`, and no config was added):\n\n```\ntest/long.test.ts:\nLONG_SESSION_OK\n(pass) double() equals 42 [0.09ms]\n\n 1 pass\n 0 fail\nRan 1 test across 1 file.\n```\n\nThe marker prints only after the assertion passes. Note: `node --test` fails on this project because Node's ESM resolver rejects the extensionless `'./unit'` import; Bun resolves it correctly.\nCreated `src/unit.ts` (plus the `src/` directory it needed) containing:\n\n```ts\nexport const unit = 21;\n```\n\nNothing else was modified.\nCreated `src/double.ts`:\n\n```ts\nimport { unit } from './unit';\n\nexport function double(): number {\n  return unit * 2;\n}\n```\n\n`double()` returns 42. No other files were touched.\nCreated `test/long.test.ts`:\n\n```ts\nimport assert from 'node:assert/strict';\nimport { test } from 'node:test';\nimport { double } from '../src/double';\n\ntest('double() equals 42', () => {\n  assert.equal(double(), 42);\n  console.log('LONG_SESSION_OK');\n});\n```\n\nRan it with Bun's built-in test runner (no runner was configured in `package.json`, and no config was added):\n\n```\ntest/long.test.ts:\nLONG_SESSION_OK\n(pass) double() equals 42 [0.09ms]\n\n 1 pass\n 0 fail\nRan 1 test across 1 file.\n```\n\nThe marker prints only after the assertion passes. Note: `node --test` fails on this project because Node's ESM resolver rejects the extensionless `'./unit'` import; Bun resolves it correctly.\nThe test still passes, so no repair was needed:\n\n```\ntest/long.test.ts:\nLONG_SESSION_OK\n(pass) double() equals 42 [0.09ms]\n\n 1 pass\n 0 fail\nRan 1 test across 1 file.\n```\n\nExit code 0. Source files (`src/unit.ts`, `src/double.ts`) and the test were left unchanged.\nCreated `src/unit.ts` (plus the `src/` directory it needed) containing:\n\n```ts\nexport const unit = 21;\n```\n\nNothing else was modified.\nCreated `src/double.ts`:\n\n```ts\nimport { unit } from './unit';\n\nexport function double(): number {\n  return unit * 2;\n}\n```\n\n`double()` returns 42. No other files were touched.\nCreated `test/long.test.ts`:\n\n```ts\nimport assert from 'node:assert/strict';\nimport { test } from 'node:test';\nimport { double } from '../src/double';\n\ntest('double() equals 42', () => {\n  assert.equal(double(), 42);\n  console.log('LONG_SESSION_OK');\n});\n```\n\nRan it with Bun's built-in test runner (no runner was configured in `package.json`, and no config was added):\n\n```\ntest/long.test.ts:\nLONG_SESSION_OK\n(pass) double() equals 42 [0.09ms]\n\n 1 pass\n 0 fail\nRan 1 test across 1 file.\n```\n\nThe marker prints only after the assertion passes. Note: `node --test` fails on this project because Node's ESM resolver rejects the extensionless `'./unit'` import; Bun resolves it correctly.\nThe test still passes, so no repair was needed:\n\n```\ntest/long.test.ts:\nLONG_SESSION_OK\n(pass) double() equals 42 [0.09ms]\n\n 1 pass\n 0 fail\nRan 1 test across 1 file.\n```\n\nExit code 0. Source files (`src/unit.ts`, `src/double.ts`) and the test were left unchanged.\n**Files created**\n\n- `src/unit.ts` — exports `unit = 21`.\n- `src/double.ts` — imports `unit` from `./unit` and exports `double()` returning `unit * 2` (42).\n- `test/long.test.ts` — asserts `double() === 42` and prints the marker only after the assertion passes. Run with `bun test`; 1 pass, 0 fail.\n\n**Exact printed marker**\n\n```\nLONG_SESSION_OK\n```"
+}

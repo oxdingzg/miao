@@ -13,7 +13,7 @@ export async function replayJournal(input: {
   limit?: number
   engineID: string
   location: Location.Ref
-  request: (method: string, params: { session_id: string; after?: number }) => Promise<unknown>
+  request: (method: string, params: { session_id: string; after?: number; cursor?: number }) => Promise<unknown>
 }) {
   const snapshot = await input.request("snapshot", { session_id: input.sessionID })
   if (

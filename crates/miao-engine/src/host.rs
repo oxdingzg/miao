@@ -271,6 +271,84 @@ impl Host {
                 .await
                 .map(|value| value.unwrap_or(Value::Null)),
             Command::Snapshot { session_id } => runtime.store().snapshot(&session_id).await,
+            Command::TransferValidate {
+                path,
+                bundle_sha256,
+                identity,
+                route_id,
+                agent,
+            } => {
+                let bundle = crate::transfer::read_bundle_file(path, &bundle_sha256).await?;
+                let preparation =
+                    crate::transfer_activation::prepare(&bundle, identity, route_id, agent)?;
+                runtime.validate_transfer_preparation(&preparation)?;
+                Ok(
+                    json!({"bundle_sha256":bundle_sha256,"identity":preparation.identity,"route_id":preparation.route_id,"message_count":preparation.messages.len()}),
+                )
+            }
+            Command::TransferStage {
+                import_id,
+                path,
+                bundle_sha256,
+                identity,
+                route_id,
+                agent,
+            } => {
+                let bundle = crate::transfer::read_bundle_file(path, &bundle_sha256).await?;
+                let preparation = crate::transfer_activation::prepare(
+                    &bundle,
+                    identity.clone(),
+                    route_id.clone(),
+                    agent.clone(),
+                )?;
+                runtime.validate_transfer_preparation(&preparation)?;
+                let staged = runtime
+                    .store()
+                    .stage_transfer_with_agent(
+                        &import_id,
+                        bundle,
+                        &bundle_sha256,
+                        identity,
+                        route_id,
+                        agent,
+                    )
+                    .await?;
+                Ok(
+                    json!({"id":staged.id,"session_id":staged.session_id,"bundle_sha256":staged.bundle_sha256,"state":staged.state}),
+                )
+            }
+            Command::TransferActivate {
+                import_id,
+                bundle_sha256,
+                product_database,
+            } => {
+                runtime
+                    .activate_transfer(&import_id, &bundle_sha256, &product_database)
+                    .await
+            }
+            Command::TransferAbort { import_id } => {
+                runtime
+                    .store()
+                    .abort_session_transfer_import(&import_id)
+                    .await?;
+                Ok(json!({"id":import_id,"state":"aborted"}))
+            }
+            Command::TransferTimeline { session_id, after } => {
+                runtime
+                    .store()
+                    .transfer_messages(&session_id, after, false, u64::MAX)
+                    .await
+            }
+            Command::TransferContext {
+                session_id,
+                after,
+                cursor,
+            } => {
+                runtime
+                    .store()
+                    .transfer_messages(&session_id, after, true, cursor.unwrap_or(u64::MAX))
+                    .await
+            }
             Command::Fork {
                 session_id,
                 target_session_id,

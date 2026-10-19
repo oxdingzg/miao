@@ -589,6 +589,7 @@ const snapshotCaptures: string[] = []
 const countingSnapshots = Layer.succeed(
   Snapshot.Service,
   Snapshot.Service.of({
+    exportFiles: () => Effect.fail(new Snapshot.Error({ operation: "export", message: "Fixture snapshots cannot be exported" })),
     capture: () =>
       Effect.sync(() => {
         const id = Snapshot.ID.make(`snap-${snapshotCaptures.length + 1}`)

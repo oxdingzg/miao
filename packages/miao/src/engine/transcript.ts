@@ -10,6 +10,7 @@ const Sequence = Schema.Finite.check(Schema.isInt(), Schema.isGreaterThanOrEqual
 const Snapshot = Schema.Struct({
   session_id: Schema.String,
   cursor: Sequence,
+  transfer_import: Schema.optional(Schema.NullOr(Schema.String)),
   active_run: Schema.optional(Schema.NullOr(Schema.String)),
   messages: Schema.Array(
     Schema.Struct({
@@ -99,7 +100,47 @@ export async function readTranscript(
       }),
     )
   }
-  return result
+  if (!snapshot.transfer_import) return result
+  const imported = await readTransferred(input, snapshot.transfer_import, snapshot.cursor)
+  const identities = new Set(imported.map((message) => message.id))
+  if (result.some((message) => identities.has(message.id)))
+    throw new Error("Transferred and native message IDs collide")
+  return input.selected && snapshot.selection ? [result[0], ...imported, ...result.slice(1)] : [...imported, ...result]
+}
+
+const TransferPage = Schema.Struct({
+  id: Schema.String,
+  bundle_sha256: Schema.String,
+  after: Sequence,
+  next: Schema.NullOr(Sequence),
+  messages: Schema.Array(SessionMessage.Message),
+})
+
+async function readTransferred(input: Parameters<typeof readTranscript>[0], id: string, cursor: number) {
+  const messages: SessionMessage.Message[] = []
+  const identities = new Set<string>()
+  const state = { after: 0, digest: "" }
+  while (true) {
+    const page = Schema.decodeUnknownSync(TransferPage)(
+      await input.request(input.selected ? "transfer_context" : "transfer_timeline", {
+        session_id: input.sessionID,
+        after: state.after,
+        ...(input.selected ? { cursor } : {}),
+      }),
+    )
+    if (page.id !== id || page.after !== state.after || (state.digest && page.bundle_sha256 !== state.digest))
+      throw new Error("Transferred timeline changed during pagination")
+    state.digest = page.bundle_sha256
+    for (const message of page.messages) {
+      if (identities.has(message.id)) throw new Error("Transferred timeline has duplicate canonical IDs")
+      identities.add(message.id)
+      messages.push(message)
+    }
+    if (page.next === null) return messages
+    if (page.next <= state.after || !page.messages.length)
+      throw new Error("Transferred timeline cursor did not advance")
+    state.after = page.next
+  }
 }
 
 function sequence(event: OpenCodeEvent): number {

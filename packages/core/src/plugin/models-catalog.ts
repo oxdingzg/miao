@@ -80,17 +80,23 @@ function applyModel(
   input: {
     readonly name?: string
     readonly cost?: ModelV2Info["cost"]
+    readonly providerNpm?: string
     readonly request?: NonNullable<NonNullable<ModelsCatalog.Model["experimental"]>["modes"]>[string]["provider"]
   } = {},
 ) {
   draft.name = input.name ?? model.name
   draft.family = model.family
-  draft.api = model.provider?.npm
+  // A model-level `provider` override names the endpoint a model is served at;
+  // an absent `npm` inherits the provider's package. Upstream resolves the
+  // package the same way (`model.provider.npm ?? provider.npm`), and dropping
+  // to `native` here left the model with no route at all.
+  const npm = model.provider?.npm ?? (model.provider === undefined ? undefined : input.providerNpm)
+  draft.api = npm
     ? {
         id: model.id,
         type: "aisdk",
-        package: model.provider.npm,
-        url: model.provider.api,
+        package: npm,
+        url: model.provider?.api,
       }
     : {
         id: model.id,
@@ -165,12 +171,15 @@ export const ModelsCatalogPlugin = define({
 
           for (const model of Object.values(item.models)) {
             const baseCost = cost(model.cost)
-            catalog.model.update(providerID, model.id, (draft) => applyModel(draft, model, { cost: baseCost }))
+            catalog.model.update(providerID, model.id, (draft) =>
+              applyModel(draft, model, { cost: baseCost, providerNpm: item.npm }),
+            )
             for (const [mode, options] of Object.entries(model.experimental?.modes ?? {})) {
               catalog.model.update(providerID, `${model.id}-${mode}`, (draft) =>
                 applyModel(draft, model, {
                   name: modeName(model, mode),
                   cost: mergeCost(baseCost, options.cost),
+                  providerNpm: item.npm,
                   request: options.provider,
                 }),
               )

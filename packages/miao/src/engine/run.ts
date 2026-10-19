@@ -18,6 +18,13 @@ export interface EngineRunOptions extends EngineOptions {
   inputId?: string
   approve?: "allow" | "deny"
   timeoutMs?: number
+  /**
+   * Host route binding to select before the prompt. A provider reachable only
+   * through a route manifest (`--model-routes-config`) is never the engine's
+   * default route, so the Session has to select it explicitly the way the
+   * product does; without this the run falls back to the primary provider.
+   */
+  modelRoute?: { route_id: string; protocol: string; model: string }
   onEvent?: (event: EngineEvent) => void
   onProgress?: (progress: EngineProgress) => void
   blackbox?: BlackboxTape.Recorder | BlackboxTape.Replay
@@ -142,6 +149,12 @@ export async function runEnginePrompt(options: EngineRunOptions): Promise<Engine
   if (options.onProgress) client.onProgress(options.onProgress)
 
   try {
+    if (options.modelRoute) {
+      // initialize is idempotent, so a follow-up input on an existing Session
+      // re-selects the same route instead of failing.
+      await client.request("initialize", { session_id: session, title: "baseline" })
+      await client.request("select_model", { session_id: session, binding: options.modelRoute })
+    }
     await client.subscribe(session, 0)
     const admission = BlackboxTape.json(
       await client.admit({ session_id: session, input_id: inputId, prompt: options.prompt }),

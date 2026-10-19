@@ -54,6 +54,7 @@ struct Inner {
     /// one: claiming advances the epoch and would fence the active drain.
     draining: std::sync::Mutex<std::collections::HashSet<String>>,
     stop: CancellationToken,
+    heartbeat: Mutex<Option<JoinHandle<()>>>,
     progress: broadcast::Sender<Value>,
     product: Arc<std::sync::RwLock<crate::product::State>>,
     context: Mutex<Option<ContextLimits>>,
@@ -173,6 +174,7 @@ impl Runtime {
                 started: Mutex::new(std::collections::HashSet::new()),
                 draining: std::sync::Mutex::new(std::collections::HashSet::new()),
                 stop: CancellationToken::new(),
+                heartbeat: Mutex::new(None),
                 progress,
                 product: Arc::new(std::sync::RwLock::new(crate::product::State::default())),
                 context: Mutex::new(None),
@@ -205,7 +207,7 @@ impl Runtime {
         // from dead ones before adopting their sessions.
         let heartbeat_inner = runtime.inner.clone();
         let heartbeat_stop = runtime.inner.stop.clone();
-        tokio::spawn(async move {
+        let heartbeat = tokio::spawn(async move {
             loop {
                 tokio::select! {
                     biased;
@@ -261,6 +263,7 @@ impl Runtime {
                 }
             }
         });
+        *runtime.inner.heartbeat.lock().await = Some(heartbeat);
         Ok(runtime)
     }
 
@@ -469,6 +472,65 @@ impl Runtime {
 
     pub fn store(&self) -> &Store {
         &self.inner.store
+    }
+
+    pub(crate) fn validate_transfer_preparation(
+        &self,
+        preparation: &crate::transfer_activation::Preparation,
+    ) -> Result<(), Error> {
+        if self.inner.stop.is_cancelled() {
+            return Err(Error::Closed);
+        }
+        if preparation.directory.canonicalize()?
+            != std::path::Path::new(self.inner.tools.location()).canonicalize()?
+        {
+            return Err(Error::Conflict);
+        }
+        let provider =
+            crate::session_model::select(&self.inner.provider, Some(&preparation.binding))?;
+        if provider.identity() != Some(preparation.identity.clone()) {
+            return Err(Error::Conflict);
+        }
+        if let Some(account) = &preparation.account {
+            let binding = crate::session_account::resolve(
+                &self.inner.provider,
+                Some(&preparation.binding),
+                account.credential_id.as_deref(),
+            )?;
+            if binding.as_ref() != Some(&preparation.binding) {
+                return Err(Error::Conflict);
+            }
+        }
+        crate::session_model::validate_history(
+            &preparation
+                .messages
+                .iter()
+                .map(|message| message.message.clone())
+                .collect::<Vec<_>>(),
+            Some(&preparation.binding),
+            provider.identity(),
+        )?;
+        Ok(())
+    }
+
+    pub async fn activate_transfer(
+        &self,
+        id: &str,
+        digest: &str,
+        product_database: &std::path::Path,
+    ) -> Result<Value, Error> {
+        let preparation = self
+            .inner
+            .store
+            .session_transfer_preparation(id)
+            .await?
+            .ok_or(Error::Conflict)?;
+        let preparation = serde_json::from_value(preparation)?;
+        self.validate_transfer_preparation(&preparation)?;
+        self.inner
+            .store
+            .activate_session_transfer(id, digest, product_database)
+            .await
     }
 
     /// Detaching the last UI must not kill useful background work.
@@ -910,6 +972,9 @@ impl Runtime {
 
     pub async fn shutdown(&self) {
         self.inner.stop.cancel();
+        if let Some(heartbeat) = self.inner.heartbeat.lock().await.take() {
+            let _ = heartbeat.await;
+        }
         self.inner.terminals.shutdown().await;
         let actors = std::mem::take(&mut *self.inner.actors.lock().await);
         for (_, actor) in actors {

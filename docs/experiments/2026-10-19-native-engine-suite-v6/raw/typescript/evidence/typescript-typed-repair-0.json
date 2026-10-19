@@ -1,0 +1,215 @@
+{
+  "sample": {
+    "task": "typed-repair",
+    "engine": "typescript",
+    "repetition": 0,
+    "suiteHash": "bd905b4f81f0a9412b614631a36337723067574848c5f05b50ead1cf48675091",
+    "taskHash": "6d7a5f740fead5293e5e5ffb8d80de678897f4422c739a10fa17ed3caffaaea2",
+    "profile": {
+      "model": "deepseek-v4-flash",
+      "modelParametersHash": "7b03d21d5e38e5bf7e8fe65557532f74d68cce5d7112a7640c04f7b553456b28",
+      "agentManifestHash": "8d6f5ed052b15191ea5bcaef133ee222ea2894324e9ce60c69db59b43d35dfd7",
+      "permissionHash": "b25aa00620f32dc69a2fe0f27a0bce97d27d301609a96e305d9a26852584df80",
+      "toolSurfaceHash": "04c769ae52448d5fe45ea690050120cee624771222b1291088dc6d832c888106"
+    },
+    "revision": "83f7c4f935295946d46d1e802cb81ea382f0893c",
+    "artifactHash": "828f1b7094592b41f254ea081791e50d5ef2eb5b9d99bb7d305ef9895aa30f15",
+    "receiptHash": "e2c1f4f16105f2e322e346b088c793f20b378b2a14a932c682d7b7571627b21b",
+    "outcome": "passed",
+    "elapsedMs": 8673,
+    "attempts": [
+      {
+        "inputTokens": 14014,
+        "outputTokens": 84,
+        "cost": null
+      },
+      {
+        "inputTokens": 14351,
+        "outputTokens": 51,
+        "cost": null
+      },
+      {
+        "inputTokens": 14509,
+        "outputTokens": 139,
+        "cost": null
+      },
+      {
+        "inputTokens": 14723,
+        "outputTokens": 85,
+        "cost": null
+      },
+      {
+        "inputTokens": 14882,
+        "outputTokens": 204,
+        "cost": null
+      }
+    ]
+  },
+  "rejection": null,
+  "evidence": {
+    "engine": "typescript",
+    "revision": "83f7c4f935295946d46d1e802cb81ea382f0893c",
+    "task": "typed-repair",
+    "repetition": 0,
+    "terminal": "completed",
+    "error": null,
+    "receipts": [],
+    "attempts": [
+      {
+        "inputTokens": 14014,
+        "outputTokens": 84,
+        "cacheReadTokens": 1792,
+        "cacheWriteTokens": null,
+        "reasoningTokens": 7,
+        "cost": null
+      },
+      {
+        "inputTokens": 14351,
+        "outputTokens": 51,
+        "cacheReadTokens": 14080,
+        "cacheWriteTokens": null,
+        "reasoningTokens": 0,
+        "cost": null
+      },
+      {
+        "inputTokens": 14509,
+        "outputTokens": 139,
+        "cacheReadTokens": 14336,
+        "cacheWriteTokens": null,
+        "reasoningTokens": 27,
+        "cost": null
+      },
+      {
+        "inputTokens": 14723,
+        "outputTokens": 85,
+        "cacheReadTokens": 14464,
+        "cacheWriteTokens": null,
+        "reasoningTokens": 0,
+        "cost": null
+      },
+      {
+        "inputTokens": 14882,
+        "outputTokens": 204,
+        "cacheReadTokens": 14720,
+        "cacheWriteTokens": null,
+        "reasoningTokens": 129,
+        "cost": null
+      }
+    ],
+    "phases": [
+      {
+        "phase": "step-start",
+        "atMs": 1792418385250,
+        "clock": "observed"
+      },
+      {
+        "phase": "tool-part",
+        "atMs": 1792418385607,
+        "clock": "observed"
+      },
+      {
+        "phase": "step-start",
+        "atMs": 1792418386163,
+        "clock": "observed"
+      },
+      {
+        "phase": "tool-part",
+        "atMs": 1792418386324,
+        "clock": "observed"
+      },
+      {
+        "phase": "step-start",
+        "atMs": 1792418386953,
+        "clock": "observed"
+      },
+      {
+        "phase": "tool-part",
+        "atMs": 1792418387313,
+        "clock": "observed"
+      },
+      {
+        "phase": "step-start",
+        "atMs": 1792418388294,
+        "clock": "observed"
+      },
+      {
+        "phase": "tool-part",
+        "atMs": 1792418389193,
+        "clock": "observed"
+      },
+      {
+        "phase": "step-start",
+        "atMs": 1792418389826,
+        "clock": "observed"
+      },
+      {
+        "phase": "first-output",
+        "atMs": 1792418390686,
+        "clock": "observed"
+      },
+      {
+        "phase": "exit",
+        "atMs": 1792418390776,
+        "clock": "observed"
+      },
+      {
+        "phase": "verified",
+        "atMs": 1792418390835,
+        "clock": "observed"
+      }
+    ],
+    "profile": {
+      "model": "deepseek-v4-flash",
+      "modelParametersHash": "7b03d21d5e38e5bf7e8fe65557532f74d68cce5d7112a7640c04f7b553456b28",
+      "agentManifestHash": "8d6f5ed052b15191ea5bcaef133ee222ea2894324e9ce60c69db59b43d35dfd7",
+      "permissionHash": "b25aa00620f32dc69a2fe0f27a0bce97d27d301609a96e305d9a26852584df80",
+      "toolSurfaceHash": "04c769ae52448d5fe45ea690050120cee624771222b1291088dc6d832c888106"
+    },
+    "profileReceipts": 5,
+    "loops": {
+      "continuations": [],
+      "stopped": []
+    },
+    "toolCalls": 4,
+    "textHash": "6c91e4d0535940a169ea1719a98f8ac9c897bd25f6a39d14095c380968b8c5fb",
+    "binarySha256": null,
+    "startedAtMs": 1792418382162,
+    "admissionMs": null,
+    "elapsedMs": 8673
+  },
+  "assessment": {
+    "suiteHash": "bd905b4f81f0a9412b614631a36337723067574848c5f05b50ead1cf48675091",
+    "taskHash": "6d7a5f740fead5293e5e5ffb8d80de678897f4422c739a10fa17ed3caffaaea2",
+    "artifactPass": true,
+    "unexpected": [],
+    "immutable": [
+      {
+        "file": "AGENTS.md",
+        "unchanged": true
+      },
+      {
+        "file": "package.json",
+        "unchanged": true
+      },
+      {
+        "file": "test/oracle.test.ts",
+        "unchanged": true
+      }
+    ],
+    "expected": [],
+    "check": {
+      "command": [
+        "bash",
+        "-lc",
+        "bun test test/oracle.test.ts && ! grep -q 'total: string' src/calc.ts && echo TYPED_REPAIR_OK"
+      ],
+      "exit": 0,
+      "stdoutHash": "efb93a940334384e8864956fb03b0b4baa725db808f1358cf83ce3a00cd53051",
+      "stderrHash": "bcbc5ba71e98b7f2e3a6f949a46a1b944fea2d7b5ef1094d5d1c38f65375cd49"
+    },
+    "executionVerdict": "unverified",
+    "requiredReceipts": [],
+    "answerContains": []
+  },
+  "answer": "Fixed `src/calc.ts:2` — `total` is now typed `number` instead of `string`, keeping the exported `average(values: number[]): number` signature unchanged.\n\nVerification:\n- `bun test`: 1 pass, 0 fail\n- `tsc --noEmit --strict src/calc.ts`: exit 0"
+}

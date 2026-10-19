@@ -110,6 +110,18 @@ export interface BaselineRustInput {
   policyFile?: string
   /** Provider base URL override; the subscription default applies otherwise. */
   endpoint?: string
+  /**
+   * Trusted host route manifest. A provider that requires its own headers (a
+   * gateway that routes by an opaque session key, for example) can only be
+   * measured through a route, since `--provider`/`--endpoint` carry no headers.
+   */
+  modelRoutesConfigFile?: string
+  /**
+   * Route id to select before each input. Required for a provider that exists
+   * only in the route manifest: the engine's default route is always the
+   * plain `--provider` one.
+   */
+  modelRouteID?: string
   /** Evaluation ablation control; `false` disables stale-edit recovery. */
   editRecovery?: boolean
   /** Evaluation ablation control; `false` disables LSP warm-up and post-edit diagnostics. */
@@ -219,6 +231,11 @@ export async function runBaselineRust(input: BaselineRustInput): Promise<Baselin
       credentialIntegration: input.credentialIntegration,
       policyFile: input.policyFile ?? (await writeBaselinePolicy(input.root)),
       endpoint: proxy?.endpoint ?? input.endpoint,
+      modelRoutesConfigFile: input.modelRoutesConfigFile,
+      modelRoute:
+        input.modelRouteID && input.provider
+          ? { route_id: input.modelRouteID, protocol: input.provider, model: input.model }
+          : undefined,
       editRecovery: input.editRecovery,
       // Every ablation the runner declares has to reach the engine, or both
       // arms of a measurement silently run the same configuration.
@@ -290,7 +307,8 @@ export async function runBaselineTs(input: BaselineTsInput): Promise<BaselineRun
   // without writing the product database.
   const data = path.join(input.root, "data")
   await mkdir(path.join(data, "miao"), { recursive: true })
-  if (input.credentialDatabase) await seedSharedCredentials(input.credentialDatabase, path.join(data, "miao", "miao.db"))
+  if (input.credentialDatabase)
+    await seedSharedCredentials(input.credentialDatabase, path.join(data, "miao", "miao.db"))
   const startedAtMs = Date.now()
   const parts: Array<Record<string, Schema.Json>> = []
   const drifts = new Map(Object.entries(input.drifts ?? {}))
@@ -300,9 +318,15 @@ export async function runBaselineTs(input: BaselineTsInput): Promise<BaselineRun
   let exit = 0
   let stderrText = ""
   const timeoutMs = input.timeoutMs ?? 300_000
+  // Every input runs its own process, and the recorder snapshots the Session
+  // from scratch, so one shared directory would leave only the last input's
+  // provider interactions. Each input records into its own directory and the
+  // interactions are merged below.
+  const bundles: Array<BlackboxTape.Bundle | undefined> = []
   // Each follow-up continues the same Session in the same workspace, so the
   // run accumulates history instead of starting over.
-  for (const prompt of [task.prompt, ...(task.followups ?? [])]) {
+  for (const [round, prompt] of [task.prompt, ...(task.followups ?? [])].entries()) {
+    const recording = path.join(blackbox, `${round}`)
     const args = [input.bun ?? "bun", input.entry, "run", prompt, "--format", "json", "-m", input.model]
     if (session) args.push("--session", session)
     const child = Bun.spawn(args, {
@@ -319,11 +343,10 @@ export async function runBaselineTs(input: BaselineTsInput): Promise<BaselineRun
         MIAO_CONFIG_CONTENT: tsConfig(),
         MIAO_CONFIG_DIR: path.join(input.root, "config"),
         MIAO_DISABLE_PROJECT_CONFIG: "1",
-        MIAO_BLACKBOX_RECORD: blackbox,
+        MIAO_BLACKBOX_RECORD: recording,
         NO_COLOR: "1",
       },
-    },
-  )
+    })
     const stdout = readJsonLines(child.stdout, (message) => {
       if (typeof message.sessionID === "string") session = message.sessionID
       if (message.type === "tool_use" || message.type === "text" || message.type === "step_start") parts.push(message)
@@ -355,15 +378,17 @@ export async function runBaselineTs(input: BaselineTsInput): Promise<BaselineRun
     clearTimeout(timer)
     await stdout
     stderrText = await stderr
+    bundles.push(
+      session
+        ? await BlackboxTape.load(path.join(recording, `${session}.json`)).catch(() => undefined)
+        : undefined,
+    )
     if (exit !== 0) break
   }
   const exitAtMs = Date.now()
   const assessment = await assessBaselineArtifacts(workspace, task.id)
   const verifiedAtMs = Date.now()
-  const bundle = session
-    ? await BlackboxTape.load(path.join(blackbox, `${session}.json`)).catch(() => undefined)
-    : undefined
-  const interactions = bundle?.interactions ?? []
+  const interactions = mergeInteractions(bundles)
   const terminal = interrupted && exit === 130 ? "interrupted" : exit === 0 ? "completed" : "failed"
   return finishBaselineRun({
     engine: "typescript",
@@ -443,9 +468,12 @@ function finishBaselineRun(input: FinishedBaselineRun): BaselineRun {
     profileReceipts: profile?.receipts ?? 0,
     loops: input.loops,
     toolCalls: input.toolCalls,
-    parallel: input.parallel,
-    context: input.context,
-    providerAttempts: input.providerAttempts,
+    // An observation the engine does not produce stays absent rather than
+    // present and undefined: the receipt hash canonicalizes this record as
+    // JSON, which has no undefined.
+    ...(input.parallel === undefined ? {} : { parallel: input.parallel }),
+    ...(input.context === undefined ? {} : { context: input.context }),
+    ...(input.providerAttempts === undefined ? {} : { providerAttempts: input.providerAttempts }),
     textHash: digest(input.answer),
     binarySha256: input.binarySha256 ?? null,
     startedAtMs: input.startedAtMs,
@@ -453,8 +481,7 @@ function finishBaselineRun(input: FinishedBaselineRun): BaselineRun {
     elapsedMs: input.verifiedAtMs - input.startedAtMs,
   }
   const rejection = rejectionReason(input, evidence)
-  if (rejection)
-    return { sample: null, rejection, evidence, assessment: input.assessment, answer: input.answer }
+  if (rejection) return { sample: null, rejection, evidence, assessment: input.assessment, answer: input.answer }
   const outcome = baselineOutcome(input, evidence)
   const sample: BaselineSample = {
     task: input.task,
@@ -580,10 +607,7 @@ function numberOrNull(value: unknown) {
 /// Automatic context management the run exercised: compaction reports by kind
 /// -- they arrive as progress, not as durable events, so counting events alone
 /// saw nothing -- and the recall calls that restore an archived output.
-function observedContextManagement(
-  events: EngineEvent[],
-  progress: Array<{ item: EngineProgress; atMs: number }>,
-) {
+function observedContextManagement(events: EngineEvent[], progress: Array<{ item: EngineProgress; atMs: number }>) {
   const compaction: Record<string, number> = {}
   const reasons: string[] = []
   for (const { item } of progress) {
@@ -652,14 +676,12 @@ function observedReadBatches(events: EngineEvent[], observed: Map<number, number
 function engineLoops(events: EngineEvent[]) {
   const reason = (event: EngineEvent) => {
     const data = BlackboxTape.json(event.data)
-    return BlackboxTape.isObject(data) && typeof data.reason === "string" ? data.reason : "unknown";
-  };
+    return BlackboxTape.isObject(data) && typeof data.reason === "string" ? data.reason : "unknown"
+  }
   return {
-    continuations: events
-      .filter((event) => event.kind === "loop.continuation")
-      .map(reason),
+    continuations: events.filter((event) => event.kind === "loop.continuation").map(reason),
     stopped: events.filter((event) => event.kind === "loop.stopped").map(reason),
-  };
+  }
 }
 
 function engineReceipts(events: EngineEvent[]) {
@@ -743,7 +765,10 @@ function enginePhases(
     .map((event) => ({
       phase: event.kind,
       atMs: event.recorded_at_ms ?? observed.get(event.seq) ?? Date.now(),
-      clock: event.recorded_at_ms === null || event.recorded_at_ms === undefined ? ("observed" as const) : ("recorded" as const),
+      clock:
+        event.recorded_at_ms === null || event.recorded_at_ms === undefined
+          ? ("observed" as const)
+          : ("recorded" as const),
     }))
   const firstDelta = progress.find((entry) => entry.item.kind === "provider.delta")
   const firstProviderError = progress.find((entry) => entry.item.kind === "runtime.error")
@@ -1030,11 +1055,24 @@ function tsPermissionDenied(parts: Array<Record<string, Schema.Json>>, stderr: s
     if (typeof value !== "string") return false
     return /permission denied|denied by|rejected by the user|denied/i.test(value)
   }
-  return parts.some((message) => {
-    const part = message.part
-    if (!BlackboxTape.isObject(part) || !BlackboxTape.isObject(part.state)) return false
-    return denied(part.state.error)
-  }) || denied(stderr)
+  return (
+    parts.some((message) => {
+      const part = message.part
+      if (!BlackboxTape.isObject(part) || !BlackboxTape.isObject(part.state)) return false
+      return denied(part.state.error)
+    }) || denied(stderr)
+  )
+}
+
+function mergeInteractions(bundles: Array<BlackboxTape.Bundle | undefined>) {
+  const ordinals = new Map<string, number>()
+  return bundles.flatMap((bundle) =>
+    (bundle?.interactions ?? []).map((interaction) => {
+      const ordinal = ordinals.get(interaction.lane) ?? 0
+      ordinals.set(interaction.lane, ordinal + 1)
+      return { ...interaction, ordinal }
+    }),
+  )
 }
 
 function interactionAttempt(interaction: BlackboxTape.Interaction): BaselineAttempt {
@@ -1100,11 +1138,7 @@ function tsProfile(interactions: ReadonlyArray<BlackboxTape.Interaction>) {
   return { profile: first, receipts: requests.length }
 }
 
-function tsPhases(
-  parts: Array<Record<string, Schema.Json>>,
-  exitAtMs: number,
-  verifiedAtMs: number,
-): BaselinePhase[] {
+function tsPhases(parts: Array<Record<string, Schema.Json>>, exitAtMs: number, verifiedAtMs: number): BaselinePhase[] {
   const observed = parts.flatMap((message) => {
     if (typeof message.timestamp !== "number") return []
     const part = message.part

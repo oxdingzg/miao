@@ -30,13 +30,138 @@ const visible = [
   { seq: 5, role: "assistant", identity: { anchor_seq: 3 } },
 ]
 
+test("transferred timeline keeps canonical IDs and selected context across native appends", async () => {
+  const imported = [
+    { id: "msg_original_system", type: "system", text: "original baseline", time: { created: 123 } },
+    {
+      id: "msg_original_user",
+      type: "user",
+      text: "original prompt",
+      time: { created: 456 },
+      metadata: { original: true },
+      files: [{ uri: `blob://${"a".repeat(64)}`, mime: "text/plain", name: "original.txt" }],
+    },
+  ]
+  const snapshot = { session_id: session, cursor: 6, messages: visible, selection: null, transfer_import: "transfer" }
+  const read = (selected: boolean) =>
+    readTranscript({
+      sessionID: session,
+      engineID: "store",
+      location,
+      selected,
+      request: async (method, params) => {
+        if (method === "transfer_timeline" || method === "transfer_context") {
+          const rows = method === "transfer_context" ? imported.slice(1) : imported
+          const after = params.after ?? 0
+          return {
+            id: "transfer",
+            bundle_sha256: "digest",
+            after,
+            next: after + 1 < rows.length ? after + 1 : null,
+            messages: rows.slice(after, after + 1),
+          }
+        }
+        return request(snapshot)(method, params)
+      },
+    })
+  const full = await read(false)
+  expect(full.map((message) => String(message.id))).toEqual([
+    "msg_original_system",
+    "msg_original_user",
+    "msg_client_prompt",
+    messageID(session, 3),
+  ])
+  expect(full[1]).toMatchObject({ metadata: { original: true }, files: imported[1].files })
+  expect((await read(true)).map((message) => String(message.id))).toEqual([
+    "msg_original_user",
+    "msg_client_prompt",
+    messageID(session, 3),
+  ])
+})
+
+test("native compaction cuts imported context while the full timeline remains readable", async () => {
+  const events = [
+    ...journal,
+    row(7, "history.compacted", { through_message_seq: 5, summary: "includes imported context" }),
+  ]
+  const result = await readTranscript({
+    sessionID: session,
+    engineID: "store",
+    location,
+    selected: true,
+    request: request(
+      {
+        session_id: session,
+        cursor: 7,
+        messages: visible,
+        transfer_import: "transfer",
+        selection: { through_seq: 5, seq: 7, summary: "includes imported context", recorded_at_ms: 1007 },
+      },
+      events,
+    ),
+  })
+  expect(result).toHaveLength(1)
+  expect(result[0]).toMatchObject({
+    type: "system",
+    text: "<history-summary>\nincludes imported context\n</history-summary>",
+  })
+})
+
+test("transferred pagination rejects a changed bundle instead of mixing generations", async () => {
+  await expect(
+    readTranscript({
+      sessionID: session,
+      engineID: "store",
+      location,
+      selected: false,
+      request: async (method, params) => {
+        if (method === "transfer_timeline")
+          return {
+            id: "transfer",
+            bundle_sha256: params.after ? "changed" : "original",
+            after: params.after ?? 0,
+            next: params.after ? null : 1,
+            messages: [
+              { id: params.after ? "msg_second" : "msg_first", type: "user", text: "source", time: { created: 123 } },
+            ],
+          }
+        return request({
+          session_id: session,
+          cursor: 6,
+          messages: visible,
+          selection: null,
+          transfer_import: "transfer",
+        })(method, params)
+      },
+    }),
+  ).rejects.toThrow("Transferred timeline changed")
+})
+
 function request(snapshot: object, events = journal) {
   return async (method: string, params: { after?: number }) => {
     if (method === "snapshot") return snapshot
+    if (method === "transfer_context") return { id: "transfer", bundle_sha256: "digest", after: params.after ?? 0, next: null, messages: [] }
     if (method === "events") return events.filter((event) => event.seq > (params.after ?? 0)).slice(0, 2)
     throw new Error(`unexpected native method ${method}`)
   }
 }
+
+test("a partial native cut retains the remaining imported context after its summary", async () => {
+  const snapshot = { session_id: session, cursor: 7, messages: visible, transfer_import: "transfer",
+    selection: { through_seq: 2, seq: 7, summary: "partial cut", recorded_at_ms: 1007 } }
+  const events = [...journal, row(7, "history.compacted", { through_message_seq: 2, summary: "partial cut" })]
+  const result = await readTranscript({ sessionID: session, engineID: "store", location, selected: true,
+    request: async (method, params) => {
+      if (method === "transfer_context") {
+        expect(params.cursor).toBe(7)
+        return { id: "transfer", bundle_sha256: "digest", after: 0, next: null,
+          messages: [{ id: "msg_remaining_import", type: "user", text: "remaining source", time: { created: 123 } }] }
+      }
+      return request(snapshot, events)(method, params)
+    },
+  })
+  expect(result.map((message) => String(message.id))).toEqual([messageID(session, 7), "msg_remaining_import", messageID(session, 3)])
+})
 
 test("native transcript keeps client IDs, assistant anchors and billed usage", async () => {
   const messages = await readTranscript({

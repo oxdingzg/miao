@@ -75,13 +75,17 @@ export const admit = Effect.fn("SessionInput.admit")(function* (
   if (existing !== undefined) return existing
   const timestamp = yield* DateTime.now
   return yield* events
-    .publish(SessionEvent.PromptAdmitted, {
-      messageID: input.id,
-      sessionID: input.sessionID,
-      timestamp,
-      prompt: input.prompt,
-      delivery: input.delivery,
-    })
+    .publish(
+      SessionEvent.PromptAdmitted,
+      {
+        messageID: input.id,
+        sessionID: input.sessionID,
+        timestamp,
+        prompt: input.prompt,
+        delivery: input.delivery,
+      },
+      { commit: () => SessionEnginePlacement.requireTypeScript(db, input.sessionID) },
+    )
     .pipe(
       Effect.flatMap((event) =>
         event.durable === undefined
@@ -242,11 +246,15 @@ export const cancel = Effect.fn("SessionInput.cancel")(function* (
   const existing = yield* find(db, input.id)
   if (existing === undefined || existing.sessionID !== input.sessionID || existing.promotedSeq !== undefined)
     return false
-  yield* events.publish(SessionEvent.PromptCancelled, {
-    sessionID: input.sessionID,
-    timestamp: yield* DateTime.now,
-    messageID: input.id,
-  })
+  yield* events.publish(
+    SessionEvent.PromptCancelled,
+    {
+      sessionID: input.sessionID,
+      timestamp: yield* DateTime.now,
+      messageID: input.id,
+    },
+    { commit: () => SessionEnginePlacement.requireTypeScript(db, input.sessionID) },
+  )
   return true
 })
 
@@ -301,13 +309,17 @@ const publish = Effect.fn("SessionInput.publish")(function* (
   for (const row of rows) {
     const id = SessionMessage.ID.make(row.id)
     yield* events
-      .publish(SessionEvent.Prompted, {
-        sessionID,
-        timestamp: DateTime.makeUnsafe(row.time_created),
-        messageID: id,
-        prompt: decodePrompt(row.prompt),
-        delivery: row.delivery,
-      })
+      .publish(
+        SessionEvent.Prompted,
+        {
+          sessionID,
+          timestamp: DateTime.makeUnsafe(row.time_created),
+          messageID: id,
+          prompt: decodePrompt(row.prompt),
+          delivery: row.delivery,
+        },
+        { commit: () => SessionEnginePlacement.requireTypeScript(db, sessionID) },
+      )
       .pipe(
         Effect.catchDefect((defect) =>
           defect instanceof LifecycleConflict

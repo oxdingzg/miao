@@ -1,9 +1,9 @@
 {
   "version": "7",
   "dialect": "sqlite",
-  "id": "adf6becd-91cb-4320-9661-a6a795d960b5",
+  "id": "39bf0b1c-dd50-4d16-9492-2f3d89377c66",
   "prevIds": [
-    "f5f77b80-1c50-4105-8e7e-a58486bb0e24"
+    "77190546-1391-44ea-a0b6-29755b509594"
   ],
   "ddl": [
     {
@@ -20,6 +20,10 @@
     },
     {
       "name": "session_engine_placement",
+      "entityType": "tables"
+    },
+    {
+      "name": "session_migration",
       "entityType": "tables"
     },
     {
@@ -349,6 +353,106 @@
       "name": "location",
       "entityType": "columns",
       "table": "session_engine_placement"
+    },
+    {
+      "type": "text",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "id",
+      "entityType": "columns",
+      "table": "session_migration"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "session_id",
+      "entityType": "columns",
+      "table": "session_migration"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "state",
+      "entityType": "columns",
+      "table": "session_migration"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "native_storage",
+      "entityType": "columns",
+      "table": "session_migration"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "location",
+      "entityType": "columns",
+      "table": "session_migration"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "bundle_sha256",
+      "entityType": "columns",
+      "table": "session_migration"
+    },
+    {
+      "type": "text",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "bundle",
+      "entityType": "columns",
+      "table": "session_migration"
+    },
+    {
+      "type": "integer",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "source_seq",
+      "entityType": "columns",
+      "table": "session_migration"
+    },
+    {
+      "type": "integer",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "created_at",
+      "entityType": "columns",
+      "table": "session_migration"
+    },
+    {
+      "type": "integer",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "updated_at",
+      "entityType": "columns",
+      "table": "session_migration"
     },
     {
       "type": "integer",
@@ -2533,6 +2637,15 @@
         "id"
       ],
       "nameExplicit": false,
+      "name": "session_migration_pk",
+      "table": "session_migration",
+      "entityType": "pks"
+    },
+    {
+      "columns": [
+        "id"
+      ],
+      "nameExplicit": false,
       "name": "account_state_pk",
       "table": "account_state",
       "entityType": "pks"
@@ -2694,6 +2807,34 @@
       "name": "remote_operation_session_idx",
       "entityType": "indexes",
       "table": "remote_operation"
+    },
+    {
+      "columns": [
+        {
+          "value": "session_id",
+          "isExpression": false
+        }
+      ],
+      "isUnique": true,
+      "where": "\"session_migration\".\"state\" NOT IN ('completed','aborted')",
+      "origin": "manual",
+      "name": "session_migration_active",
+      "entityType": "indexes",
+      "table": "session_migration"
+    },
+    {
+      "columns": [
+        {
+          "value": "session_id",
+          "isExpression": false
+        }
+      ],
+      "isUnique": false,
+      "where": null,
+      "origin": "manual",
+      "name": "session_migration_session",
+      "entityType": "indexes",
+      "table": "session_migration"
     },
     {
       "columns": [
@@ -3114,6 +3255,18 @@
       "name": "session_engine_placement_native",
       "entityType": "checks",
       "table": "session_engine_placement"
+    },
+    {
+      "value": "\"state\" IN ('frozen','prepared','switched','completed','aborted')",
+      "name": "session_migration_state",
+      "entityType": "checks",
+      "table": "session_migration"
+    },
+    {
+      "value": "\"source_seq\" >= -1",
+      "name": "session_migration_watermark",
+      "entityType": "checks",
+      "table": "session_migration"
     }
   ],
   "renames": []
