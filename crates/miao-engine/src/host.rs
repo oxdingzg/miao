@@ -285,6 +285,19 @@ impl Host {
                 checkpoint,
             } => runtime.store().revert(&session_id, &checkpoint).await,
             Command::Unrevert { session_id } => runtime.store().unrevert(&session_id).await,
+            Command::RevertStage {
+                session_id,
+                boundary_seq,
+            } => {
+                runtime
+                    .store()
+                    .revert_stage(&session_id, boundary_seq)
+                    .await
+            }
+            Command::RevertClear { session_id } => runtime.store().revert_clear(&session_id).await,
+            Command::RevertCommit { session_id } => {
+                runtime.store().revert_commit(&session_id).await
+            }
             Command::Events { session_id, after } => runtime
                 .store()
                 .events(&session_id, after, 100)

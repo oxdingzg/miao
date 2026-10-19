@@ -1212,6 +1212,32 @@ async fn record_promotions(
     Ok(())
 }
 
+/// Paths a successful mutating tool changed, in workspace-relative form.
+fn touched_paths(name: &str, input: &Value) -> Vec<String> {
+    match name {
+        "write_file" | "edit_file" => input["path"]
+            .as_str()
+            .map(|path| vec![path.to_owned()])
+            .unwrap_or_default(),
+        "apply_patch" => input["patch"]
+            .as_str()
+            .map(|patch| {
+                patch
+                    .lines()
+                    .filter_map(|line| {
+                        ["*** Add File: ", "*** Update File: ", "*** Delete File: "]
+                            .iter()
+                            .find_map(|prefix| line.strip_prefix(prefix))
+                    })
+                    .map(|path| path.trim().to_owned())
+                    .filter(|path| !path.is_empty())
+                    .collect()
+            })
+            .unwrap_or_default(),
+        _ => Vec::new(),
+    }
+}
+
 async fn execute(
     session: &str,
     run: &str,
@@ -1689,6 +1715,10 @@ command: None,
             )
             .await?
             .seq;
+        let _ = inner
+            .store
+            .capture_file_snapshot(session, assistant_boundary)
+            .await;
         let invalid_input = reply
             .content
             .as_array()
@@ -1794,6 +1824,7 @@ command: None,
                                     .mark_dispatched_fenced(session, run, id, lease)
                                     .await?;
                                 verification_scope.observe(&prepared);
+                                let touched = touched_paths(name, prepared.input());
                                 let prepared_external =
                                     prepared.access() == crate::permission::Access::External;
                                 let replayed = if let Some(replay) = &inner.tool_replay {
@@ -1997,6 +2028,14 @@ command: None,
                                                         .get("error")
                                                         .is_some_and(Value::is_string)),
                                         );
+                                        if !is_error {
+                                            for path in &touched {
+                                                inner
+                                                    .store
+                                                    .record_file_touch(session, path)
+                                                    .await?;
+                                            }
+                                        }
                                         (output, is_error)
                                     }
                                     Err(ToolError::Interrupted) => return Ok(()),

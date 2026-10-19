@@ -1,6 +1,6 @@
 # 0019. Session-owned file snapshots and three-phase revert
 
-Status: accepted (design), implementation pending
+Status: accepted (implemented; schema 16)
 
 ## Context
 

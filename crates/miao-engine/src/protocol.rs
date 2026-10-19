@@ -423,6 +423,16 @@ pub enum Command {
     Unrevert {
         session_id: String,
     },
+    RevertStage {
+        session_id: String,
+        boundary_seq: u64,
+    },
+    RevertClear {
+        session_id: String,
+    },
+    RevertCommit {
+        session_id: String,
+    },
     Events {
         session_id: String,
         #[serde(default)]

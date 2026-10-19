@@ -446,6 +446,30 @@ replayed. Exact retries do not rerun substitutions or child Sessions. Schema ver
 is a semantic reader guard: older engines would interpret an unprepared command as
 ordinary prompt text and ignore its authority and once-only preparation ledger.
 
+### Session file snapshots and three-phase revert
+
+Native mutating tools (`write_file`, `edit_file`, `apply_patch`) record their
+workspace-relative targets. At each settled assistant boundary the engine captures
+those paths into a content-addressed manifest and blob store beside the engine
+database, merging with the previous manifest so an untouched path still restores.
+A path deleted since the previous snapshot is recorded as absent. Capture skips
+files above 8 MiB and keeps the newest 20 snapshots per Session (plus any snapshot
+a staged revert references); blobs are pruned only when no kept manifest or staged
+pre-image references them. Snapshot records are retained, so a pruned snapshot
+reports `available: false`.
+
+`revert_stage {session_id,boundary_seq}` requires an idle Session and restores the
+newest snapshot at or before the boundary. It records `revert.staged` with the
+exact `restored`, `created` and `removed` file sets plus a pre-image of every path
+it changes. Staging another revert first reverses the previous staged restore;
+only one staged intent exists. `revert_clear` reverses that pre-image exactly and
+records `revert.cleared`; it refuses without a staged revert. `revert_commit`
+soft-reverts messages at or after the boundary (rows stay for audit and
+`unrevert`), drops later compactions, records `revert.committed`, and clears the
+staged intent. All phases refuse symlinks or paths that escape the Session's
+workspace. A restore whose blob is missing fails before any staged intent is
+recorded. The `snapshot` reply reports the staged revert when one exists.
+
 ### Injected context
 
 `{"type":"inject","session_id":"...","input_id":"optional-retry-key","text":"...","source":"skill:name"}` commits one `message.synthetic` history fact. The source is a bounded attribution label, not a command or credential. Injection creates no inbox row and does not start a provider turn. The host may request advisory `wake` afterwards; this drains eligible pending inbox work without forcing continuation. Unlike explicit `resume`, `wake` leaves an idle Session with no eligible input idle. An exact retry with the same Session and input identity reconciles; changed text/source conflicts. Forks preserve the synthetic record and original timestamp rather than promoting it as an operator prompt. Text is bounded to 1 MiB.

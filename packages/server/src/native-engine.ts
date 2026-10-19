@@ -39,6 +39,25 @@ export interface Interface {
     resume?: boolean
   }) => Effect.Effect<void, ConflictError>
 
+  readonly revertStage: (input: {
+    sessionID: SessionID
+    storage: AbsolutePath
+    location: Location.Ref
+    messageID: SessionMessage.ID
+  }) => Effect.Effect<void, ConflictError>
+
+  readonly revertClear: (input: {
+    sessionID: SessionID
+    storage: AbsolutePath
+    location: Location.Ref
+  }) => Effect.Effect<void, ConflictError>
+
+  readonly revertCommit: (input: {
+    sessionID: SessionID
+    storage: AbsolutePath
+    location: Location.Ref
+  }) => Effect.Effect<void, ConflictError>
+
   readonly inject: (input: {
     sessionID: SessionID
     storage: AbsolutePath
