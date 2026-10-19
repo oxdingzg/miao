@@ -294,8 +294,16 @@ final class PairingUITests: XCTestCase {
         let planText = app.staticTexts["plan"].exists
         print("NativeAgentChoice plan=\(hasPlan) button=\(planButton) staticText=\(planText) picker=\(agentPicker.exists) hittable=\(agentPicker.isHittable)")
         XCTAssertTrue(hasPlan, "The Agent picker must offer the real Runtime's plan agent")
+        expectation(for: NSPredicate { _, _ in plan.isHittable }, evaluatedWith: plan)
+        waitForExpectations(timeout: 10)
         plan.tap()
-        app.buttons["保存 Agent"].tap()
+        expectation(for: NSPredicate(format: "value == %@", "plan"), evaluatedWith: agentPicker)
+        waitForExpectations(timeout: 10)
+        let saveAgent = app.buttons["保存 Agent"]
+        XCTAssertTrue(saveAgent.waitForExistence(timeout: 10))
+        expectation(for: NSPredicate { _, _ in saveAgent.isHittable && saveAgent.isEnabled }, evaluatedWith: saveAgent)
+        waitForExpectations(timeout: 10)
+        saveAgent.tap()
         XCTAssertTrue(app.navigationBars["Native phone rename"].waitForExistence(timeout: 15))
         menu.tap()
         app.buttons["Agent / 模型"].tap()
@@ -312,7 +320,7 @@ final class PairingUITests: XCTestCase {
         expectation(for: NSPredicate { _, _ in reasoning.isHittable }, evaluatedWith: reasoning)
         waitForExpectations(timeout: 5)
         reasoning.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).tap()
-        expectation(for: NSPredicate(format: "label CONTAINS %@", "reasoning"), evaluatedWith: variantPicker)
+        expectation(for: NSPredicate(format: "value == %@", "reasoning"), evaluatedWith: variantPicker)
         waitForExpectations(timeout: 5)
         // The expanded registration disclosure pushes the save action off-screen.
         let saveModel = app.buttons["保存模型"]
