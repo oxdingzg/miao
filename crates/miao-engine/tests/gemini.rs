@@ -160,6 +160,8 @@ async fn real_http_runtime_preserves_parallel_native_parts_signatures_and_tool_r
     runtime
         .admit(
             Input {
+                agent_references: Default::default(),
+                command: None,
                 session_id: "s".into(),
                 input_id: "one".into(),
                 prompt: "read".into(),

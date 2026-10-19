@@ -285,6 +285,8 @@ async fn runtime_commits_the_http_fallback_identity_with_its_assistant() {
     runtime
         .admit(
             miao_engine::protocol::Input {
+                agent_references: Default::default(),
+                command: None,
                 session_id: "s".into(),
                 input_id: "one".into(),
                 prompt: "task".into(),

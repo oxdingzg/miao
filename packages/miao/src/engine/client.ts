@@ -1,3 +1,4 @@
+import type { NativeInput } from "./command-manifest"
 import { spawn } from "bun"
 import { EOL } from "os"
 import type { ConfigMCP } from "@miao/schema/config/mcp"
@@ -331,7 +332,7 @@ export class EngineClient {
   }
 
   admit(
-    input: { session_id: string; input_id: string; prompt: string; delivery?: "steer" | "queue" },
+    input: NativeInput,
     resume = true,
     attachments: readonly { mime: string; data: string; metadata?: Readonly<Record<string, unknown>> }[] = [],
   ) {

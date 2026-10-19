@@ -31,6 +31,8 @@ async fn recall_searches_raw_compacted_history_without_cross_session_or_opaque_d
     for session in ["s", "other"] {
         store
             .admit(Input {
+                agent_references: Default::default(),
+                command: None,
                 session_id: session.into(),
                 input_id: session.into(),
                 prompt: "original中文线索".into(),
@@ -90,6 +92,8 @@ async fn recall_literal_queries_have_stable_cursor_and_unicode_previews() {
     let store = Store::open(dir.path().join("engine.db")).await.unwrap();
     store
         .admit(Input {
+            agent_references: Default::default(),
+            command: None,
             session_id: "s".into(),
             input_id: "one".into(),
             prompt: "start".into(),
@@ -162,6 +166,8 @@ async fn bounded_scan_pages_can_be_empty_and_oversized_rows_do_not_stall_cursor(
     let store = Store::open(dir.path().join("engine.db")).await.unwrap();
     store
         .admit(Input {
+            agent_references: Default::default(),
+            command: None,
             session_id: "s".into(),
             input_id: "one".into(),
             prompt: "needle-old".into(),
@@ -212,6 +218,8 @@ async fn an_archived_tool_output_comes_back_by_handle_across_bounded_windows() {
     let store = Store::open(dir.path().join("engine.db")).await.unwrap();
     store
         .admit(Input {
+            agent_references: Default::default(),
+            command: None,
             session_id: "s".into(),
             input_id: "one".into(),
             prompt: "start".into(),

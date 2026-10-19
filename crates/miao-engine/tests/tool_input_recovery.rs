@@ -140,6 +140,8 @@ async fn real_wire_correction_preserves_completed_write_and_durable_error_withou
         runtime
             .admit(
                 Input {
+                    agent_references: Default::default(),
+                    command: None,
                     session_id: "s".into(),
                     input_id: "human".into(),
                     prompt: "write once then read".into(),
@@ -250,6 +252,8 @@ async fn changing_invalid_calls_cannot_bypass_the_two_correction_allowance() {
         runtime
             .admit(
                 Input {
+                    agent_references: Default::default(),
+                    command: None,
                     session_id: "s".into(),
                     input_id: "human".into(),
                     prompt: "read file".into(),
@@ -329,6 +333,8 @@ async fn provider_executed_and_unregistered_calls_are_never_corrected_or_dispatc
         runtime
             .admit(
                 Input {
+                    agent_references: Default::default(),
+                    command: None,
                     session_id: "s".into(),
                     input_id: "human".into(),
                     prompt: "read file".into(),

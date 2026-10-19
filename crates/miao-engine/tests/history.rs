@@ -7,6 +7,8 @@ use serde_json::json;
 async fn seed(store: &Store) -> u64 {
     store
         .admit(Input {
+            agent_references: Default::default(),
+            command: None,
             session_id: "s".into(),
             input_id: "one".into(),
             prompt: "old task".into(),

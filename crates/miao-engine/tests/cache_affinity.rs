@@ -80,6 +80,8 @@ async fn admit(runtime: &Runtime, session: &str, input: &str) {
     runtime
         .admit(
             Input {
+                agent_references: Default::default(),
+                command: None,
                 session_id: session.into(),
                 input_id: input.into(),
                 prompt: "read file".into(),

@@ -32,6 +32,8 @@ async fn reopen(path: &std::path::Path) -> Store {
 
 fn input(id: &str) -> Input {
     Input {
+        agent_references: Default::default(),
+        command: None,
         session_id: "s".into(),
         input_id: id.into(),
         prompt: format!("prompt {id}"),
@@ -108,6 +110,8 @@ async fn rewind_requires_an_idle_session() {
     runtime
         .admit(
             Input {
+                agent_references: Default::default(),
+                command: None,
                 session_id: "s".into(),
                 input_id: "one".into(),
                 prompt: "go".into(),

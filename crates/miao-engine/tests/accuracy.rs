@@ -144,6 +144,8 @@ async fn fix_scenario(denied: bool) {
     runtime
         .admit(
             Input {
+                agent_references: Default::default(),
+                command: None,
                 session_id: "fix".into(),
                 input_id: "one".into(),
                 prompt: "Fix the value while preserving unrelated text.".into(),
@@ -279,6 +281,8 @@ async fn seeded_admission_sequences_preserve_delivery_and_exact_retry() {
                         Delivery::Queue
                     };
                     let input = Input {
+                        agent_references: Default::default(),
+                        command: None,
                         session_id: "s".into(),
                         input_id: id.clone(),
                         prompt: id.clone(),

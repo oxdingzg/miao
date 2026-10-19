@@ -143,7 +143,7 @@ impl Store {
             let pending:bool=tx.query_row("SELECT EXISTS(SELECT 1 FROM engine_input WHERE session_id=?1 AND state='pending' AND id GLOB ?2)",params![session,format!("cron/{id}/*")],|row|row.get(0))?;
             if pending{append(&tx,&session,"cron.skipped",json!({"cron_id":id,"occurrence_ms":occurrence,"reason":"prior_input_pending"}))?;tx.commit()?;return Ok(None);}
             let input=Input::parse(original["input"].clone()).map_err(|_|Error::Invalid("invalid cron input".into()))?;
-            let prompt=Prompt{session_id:session.clone(),input_id:format!("cron/{id}/{occurrence}"),prompt:input.prompt,delivery:input.delivery};
+            let prompt=Prompt{agent_references:Default::default(),command:None,session_id:session.clone(),input_id:format!("cron/{id}/{occurrence}"),prompt:input.prompt,delivery:input.delivery};
             let location=original["location"].as_str().ok_or_else(||Error::Invalid("cron Location missing".into()))?;
             let admitted=admit_input(&tx,&prompt,Some(location),&[])?;
             append(&tx,&session,"cron.fired",json!({"cron_id":id,"occurrence_ms":occurrence,"input_id":admitted.input_id,"admitted_seq":admitted.admitted_seq}))?;

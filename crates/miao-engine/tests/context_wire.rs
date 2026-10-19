@@ -16,6 +16,8 @@ async fn seeded() -> (tempfile::TempDir, Store, u64, u64) {
     let store = Store::open(dir.path().join("engine.db")).await.unwrap();
     store
         .admit(Input {
+            agent_references: Default::default(),
+            command: None,
             session_id: "s".into(),
             input_id: "one".into(),
             prompt: "first question".into(),
@@ -26,6 +28,8 @@ async fn seeded() -> (tempfile::TempDir, Store, u64, u64) {
     store.promote("s", true).await.unwrap();
     store
         .admit(Input {
+            agent_references: Default::default(),
+            command: None,
             session_id: "s".into(),
             input_id: "two".into(),
             prompt: "second question".into(),

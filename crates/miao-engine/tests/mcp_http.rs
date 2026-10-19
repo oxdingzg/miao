@@ -436,6 +436,8 @@ async fn persistent_grants_survive_new_proxy_transport_and_miss_changed_registra
                     input_id: session.into(),
                     prompt: "call".into(),
                     delivery: Default::default(),
+                    command: None,
+                    agent_references: Default::default(),
                 },
                 true,
             )

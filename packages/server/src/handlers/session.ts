@@ -1,3 +1,4 @@
+import { CommandV2 } from "@miao/core/command"
 import path from "node:path"
 import { Image } from "@miao/core/image"
 import { Database } from "@miao/core/database/database"
@@ -376,6 +377,7 @@ export const SessionHandler = HttpApiBuilder.group(Api, "server.session", (handl
           // Composing the native transport does not migrate existing TS Sessions.
           // Only a resolved Rust placement selects native admission.
           if (Option.isSome(native) && placement) {
+            if (ctx.payload.prompt.agents?.length) yield* booted
             // Last point before the prompt becomes durable, and the only one that
             // holds the session Location's services, so image attachments are
             // shrunk to the configured budget here rather than stored at full size.
@@ -815,6 +817,26 @@ export const SessionHandler = HttpApiBuilder.group(Api, "server.session", (handl
       .handle(
         "session.command",
         Effect.fn(function* (ctx) {
+          const native = Option.getOrUndefined(yield* Effect.serviceOption(NativeEngine.Service))
+          const placement = Option.getOrUndefined(yield* Effect.serviceOption(NativeEngine.Placement))
+          if (native && placement) {
+            yield* booted
+            const commands = yield* CommandV2.Service
+            const definition = yield* commands.get(ctx.payload.command)
+            if (!definition)
+              return yield* new SessionNotFoundError({
+                sessionID: ctx.params.sessionID,
+                message: `Command not found: ${ctx.payload.command}`,
+              })
+            return yield* native.command({
+              sessionID: ctx.params.sessionID,
+              ...placement,
+              id: ctx.payload.id,
+              definition,
+              arguments: ctx.payload.arguments,
+              resume: ctx.payload.resume,
+            })
+          }
           yield* requireTypescriptOwner(ctx.params.sessionID, "session.command")
           // Plugins add commands such as /init and /review while a location boots; wait for them.
           yield* booted

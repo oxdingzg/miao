@@ -50,6 +50,8 @@ async fn exact_retry_repairs_pending_wake_but_never_replays_promoted_work() {
     .await
     .unwrap();
     let input = Input {
+        agent_references: Default::default(),
+        command: None,
         session_id: "s".into(),
         input_id: "one".into(),
         prompt: "hello".into(),

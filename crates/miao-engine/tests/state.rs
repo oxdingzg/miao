@@ -13,6 +13,8 @@ async fn setup(path: &std::path::Path) -> Store {
     let store = Store::open(path).await.unwrap();
     store
         .admit(Input {
+            agent_references: Default::default(),
+            command: None,
             session_id: "s".into(),
             input_id: "one".into(),
             prompt: "work".into(),
@@ -254,6 +256,8 @@ async fn dynamic_state_survives_compaction_and_reloads_without_changing_system_e
         runtime
             .admit(
                 Input {
+                    agent_references: Default::default(),
+                    command: None,
                     session_id: "s".into(),
                     input_id: "two".into(),
                     prompt: "continue".into(),
@@ -277,6 +281,8 @@ async fn dynamic_state_survives_compaction_and_reloads_without_changing_system_e
         runtime
             .admit(
                 Input {
+                    agent_references: Default::default(),
+                    command: None,
                     session_id: "s".into(),
                     input_id: "three".into(),
                     prompt: "continue again".into(),
@@ -459,6 +465,8 @@ async fn provider_receives_dependency_ready_context_without_unlocking_serial_wor
     runtime
         .admit(
             Input {
+                agent_references: Default::default(),
+                command: None,
                 session_id: "s".into(),
                 input_id: "two".into(),
                 prompt: "continue independent work".into(),

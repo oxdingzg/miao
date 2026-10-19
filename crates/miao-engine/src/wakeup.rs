@@ -99,7 +99,7 @@ impl Store {
             let data:Option<String>=tx.query_row("SELECT data FROM engine_event WHERE session_id=?1 AND kind='wakeup.scheduled' AND json_extract(data,'$.timer_id')=?2 ORDER BY seq DESC LIMIT 1",params![session,id],|row|row.get(0)).optional()?;
             let data:Value=serde_json::from_str(&data.ok_or_else(||Error::Invalid("wakeup not found in this Session".into()))?)?;
             let input=Input::parse(data["input"].clone()).map_err(|_|Error::Invalid("invalid wakeup input".into()))?;
-            let prompt=Prompt{session_id:session.clone(),input_id:format!("wakeup/{id}"),prompt:input.prompt,delivery:input.delivery};
+            let prompt=Prompt{agent_references:Default::default(),command:None,session_id:session.clone(),input_id:format!("wakeup/{id}"),prompt:input.prompt,delivery:input.delivery};
             let location=data["location"].as_str().ok_or_else(||Error::Invalid("timer Location missing".into()))?;
             let admitted=admit_input(&tx,&prompt,Some(location),&[])?;
             append(&tx,&session,"wakeup.resolved",json!({"timer_id":id,"state":"fired","input_id":admitted.input_id,"admitted_seq":admitted.admitted_seq}))?;tx.commit()?;Ok(Some(admitted))

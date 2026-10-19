@@ -89,6 +89,8 @@ async fn product_tool_reverse_dispatches_to_host_and_returns_result() {
     runtime
         .admit(
             Input {
+                agent_references: Default::default(),
+                command: None,
                 session_id: "s".into(),
                 input_id: "one".into(),
                 prompt: "bridge".into(),

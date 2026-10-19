@@ -52,6 +52,8 @@ async fn drain(runtime: &Runtime, store: &Store, id: &str, finished: usize) {
     runtime
         .admit(
             Input {
+                agent_references: Default::default(),
+                command: None,
                 session_id: "s".into(),
                 input_id: id.into(),
                 prompt: "Work on the task".into(),

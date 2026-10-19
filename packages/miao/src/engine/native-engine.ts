@@ -1,5 +1,7 @@
+import type { NativeCommand, NativeAgentReferences } from "./command-manifest"
+import type { AgentAttachment } from "@miao/schema/prompt"
 import { Event } from "@miao/schema/event"
-import { agentManifest, modelRoute } from "./product-agent"
+import { agentManifest, modelRoute, type Route } from "./product-agent"
 import { LocationServiceMap } from "@miao/core/location-service-map"
 import { SessionModelRoute } from "@miao/schema/session-model-route"
 import { Model } from "@miao/schema/model"
@@ -207,7 +209,19 @@ type Owners = Effect.Success<ReturnType<typeof makeEngineOwners>>
  */
 export const fromOwners = (
   owners: Owners,
-  preparePrompt?: (input: Parameters<NativeEngine.Interface["admit"]>[0]) => Effect.Effect<PromptInput.Prompt, unknown>,
+  preparation: {
+    prompt?: (input: Parameters<NativeEngine.Interface["admit"]>[0]) => Effect.Effect<PromptInput.Prompt, unknown>
+    command?: (
+      input: Parameters<NativeEngine.Interface["command"]>[0],
+      catalog: readonly Route[],
+      sessionAgent: string | undefined,
+    ) => Effect.Effect<{ text: string; command: NativeCommand; agentReferences: NativeAgentReferences }, unknown>
+    agents?: (
+      input: Parameters<NativeEngine.Interface["admit"]>[0],
+      mentions: readonly AgentAttachment[],
+      catalog: readonly Route[],
+    ) => Effect.Effect<NativeAgentReferences, unknown>
+  } = {},
 ): NativeEngine.Interface => {
   const connect = (input: { storage: string; location: Location.Ref; refreshContext?: boolean }) =>
     owners.get({
@@ -241,6 +255,35 @@ export const fromOwners = (
       ),
     )(await connection.client.request("model_catalog"))
   return {
+    command: (input) =>
+      Effect.gen(function* () {
+        if (!preparation.command)
+          return yield* Effect.fail(
+            new EngineError("command_capture_unavailable", "Native command capture is not configured"),
+          )
+        const connection = yield* connect({ ...input, refreshContext: true })
+        const snapshot = yield* Effect.tryPromise({
+          try: () => connection.client.request("snapshot", { session_id: input.sessionID }),
+          catch: (error) => error,
+        })
+        const sessionAgent = Schema.decodeUnknownSync(
+          Schema.Struct({ agent: Schema.optional(Schema.NullOr(Schema.Struct({ name: Schema.String }))) }),
+        )(snapshot).agent?.name
+        const catalog = yield* Effect.tryPromise({ try: () => routes(connection), catch: (error) => error })
+        const captured = yield* preparation.command(input, catalog, sessionAgent)
+        yield* Effect.tryPromise({
+          try: () =>
+            connection.session.promptProduct({
+              sessionID: input.sessionID,
+              id: input.id,
+              prompt: { text: captured.text, command: captured.command },
+              command: captured.command,
+              agentReferences: captured.agentReferences,
+              resume: input.resume,
+            }),
+          catch: (error) => error,
+        })
+      }).pipe(Effect.mapError((error) => refusal(input.sessionID, error))),
     shell: (input) =>
       read(input, async (connection) => {
         const callID = input.id ?? Event.ID.create()
@@ -351,26 +394,28 @@ export const fromOwners = (
         Effect.asVoid,
       ),
     admit: (input) =>
-      (preparePrompt ? preparePrompt(input) : Effect.succeed(input.prompt)).pipe(
-        Effect.flatMap((prompt) =>
-          connect({ ...input, refreshContext: true }).pipe(
-            Effect.flatMap((connection) =>
-              Effect.tryPromise({
-                try: () =>
-                  connection.session.promptProduct({
-                    sessionID: input.sessionID,
-                    prompt,
-                    id: input.id,
-                    delivery: input.delivery,
-                    resume: input.resume,
-                  }),
-                catch: (error) => refusal(input.sessionID, error),
-              }),
-            ),
-          ),
-        ),
-        Effect.mapError((error) => refusal(input.sessionID, error)),
-      ),
+      Effect.gen(function* () {
+        const prompt = yield* preparation.prompt ? preparation.prompt(input) : Effect.succeed(input.prompt)
+        const connection = yield* connect({ ...input, refreshContext: true })
+        const mentions = prompt.agents ?? []
+        if (mentions.length && !preparation.agents)
+          return yield* Effect.fail(
+            new EngineError("agent_capture_unavailable", "Native agent reference capture is not configured"),
+          )
+        const catalog = mentions.length ? yield* Effect.tryPromise(() => routes(connection)) : []
+        const agentReferences =
+          mentions.length && preparation.agents ? yield* preparation.agents(input, mentions, catalog) : undefined
+        return yield* Effect.tryPromise(() =>
+          connection.session.promptProduct({
+            sessionID: input.sessionID,
+            prompt,
+            id: input.id,
+            delivery: input.delivery,
+            resume: input.resume,
+            agentReferences,
+          }),
+        )
+      }).pipe(Effect.mapError((error) => refusal(input.sessionID, error))),
     snapshot: (input) =>
       read<Readonly<Record<string, unknown>>>(input, (connection) =>
         connection.client.request("snapshot", { session_id: input.sessionID }),
@@ -510,7 +555,20 @@ export const fromOwners = (
             after = next
           }
           boundary = engineMessageSequence(input.sessionID, input.messageID, events)
-          if (boundary === undefined || !snapshot.messages.some((message) => message.seq === boundary))
+          const settledCommand = events.find(
+            (event) =>
+              event.seq === boundary && (event.kind === "command.completed" || event.kind === "command.failed"),
+          )
+          const prepared = settledCommand
+            ? Schema.decodeUnknownOption(Schema.Struct({ message_seq: Schema.Number }))(settledCommand.data)
+            : Option.none()
+          if (
+            boundary === undefined ||
+            !snapshot.messages.some(
+              (message) =>
+                message.seq === boundary || (Option.isSome(prepared) && message.seq === prepared.value.message_seq),
+            )
+          )
             throw new EngineError("message_not_found", "No committed message for this public ID in the Session")
         }
         await connection.client.request("fork", {
@@ -607,12 +665,28 @@ const layer = Layer.effect(
         yield* Effect.ignore(owners.sweepTimers())
       }),
     ).pipe(Effect.forkScoped)
-    return fromOwners(owners, (input) =>
-      PromptMaterialization.prepare(input.prompt).pipe(
-        Effect.provideService(Blob.Service, blob),
-        Effect.provideService(FSUtil.Service, fs),
-      ),
-    )
+    return fromOwners(owners, {
+      prompt: (input) =>
+        PromptMaterialization.prepare(input.prompt).pipe(
+          Effect.provideService(Blob.Service, blob),
+          Effect.provideService(FSUtil.Service, fs),
+        ),
+      command: (input, catalog, sessionAgent) =>
+        Effect.gen(function* () {
+          const { ProductCommand } = yield* Effect.promise(() => import("./product-command"))
+          return yield* ProductCommand.capture({
+            definition: input.definition,
+            arguments: input.arguments,
+            catalog,
+            sessionAgent,
+          })
+        }).pipe(Effect.provide(locations.get(input.location))),
+      agents: (input, mentions, catalog) =>
+        Effect.gen(function* () {
+          const { ProductCommand } = yield* Effect.promise(() => import("./product-command"))
+          return yield* ProductCommand.references(mentions, catalog)
+        }).pipe(Effect.provide(locations.get(input.location))),
+    })
   }),
 )
 

@@ -99,6 +99,8 @@ async fn run(runtime: &Runtime, store: &Store, op: Value) -> Value {
     runtime
         .admit(
             Input {
+                agent_references: Default::default(),
+                command: None,
                 session_id: session.clone(),
                 input_id: uuid::Uuid::new_v4().to_string(),
                 prompt: op.to_string(),
