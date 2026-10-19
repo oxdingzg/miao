@@ -308,3 +308,20 @@ it.live("automatic routes fail explicitly when the Location context omits the gl
     ),
   ),
 )
+
+it.effect("automatic context limits mirror the product compaction defaults", () =>
+  Effect.sync(() => {
+    const model = { limit: { context: 200_000 } }
+    expect(ProductRoutes.contextLimitsFor(model, undefined)).toEqual({
+      window: 200_000,
+      ratio: 0.9,
+      headroom: 62_048,
+      perPass: 8,
+    })
+    expect(ProductRoutes.contextLimitsFor(model, { auto: false })).toBeUndefined()
+    expect(ProductRoutes.contextLimitsFor({ limit: { context: 0 } }, undefined)).toBeUndefined()
+    expect(
+      ProductRoutes.contextLimitsFor(model, { threshold: 0.75, buffer: 4_000 }),
+    ).toEqual({ window: 200_000, ratio: 0.75, headroom: 46_048, perPass: 8 })
+  }),
+)
