@@ -35,7 +35,15 @@ export function prepareMcpConfig(options: EngineOptions, inherited: Record<strin
           throw new Error(
             `Native MCP shared configuration requires oauth: false until OAuth routing is configured: ${name}`,
           )
-        return { name, url: server.url, headers: server.headers ?? {}, ...limits }
+        return {
+          name,
+          url: server.url,
+          headers: server.headers ?? {},
+          ...limits,
+          ...(options.mcpAuthorityRevisions?.[name] === undefined
+            ? {}
+            : { authority_revision: options.mcpAuthorityRevisions[name] }),
+        }
       }
       return {
         name,
