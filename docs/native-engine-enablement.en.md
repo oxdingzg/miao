@@ -60,47 +60,34 @@ Two structural risks move tokens and quality in an unpredictable direction:
 
 **Conclusion.** Functionally, a native Session can cover the main path without gaps in the core loop; quality is not below on the existing small samples, and §5 adds a per-task-class billed token and cost comparison. That is still not a product-level evaluation: small samples, one model, only programmatically gradable tasks, and one class (`stream-interruption`) that cannot be measured on the current route. A stronger claim still needs the roadmap's §7 dimensions — primary, child, and auxiliary models, retries, summarization, and failed attempts — across more task classes.
 
-## 5. Measured comparison (2026-10-19)
+## 5. Measured comparison (corrected 2026-10-20)
 
-The raw data, manifest, reproduction commands, and comparison tool live in [experiments/2026-10-19-native-engine-suite-v6](experiments/2026-10-19-native-engine-suite-v6/README.en.md): the frozen suite v6 (15 classes) run **3 times on both engines — 90 live model runs** — with both arms on the same `main` commit `83f7c4f9`, sequentially so provider capacity is never shared, on one model `deepseek-v4-flash` (TypeScript through the `deepseek/` provider, the native engine over the `openai-chat` protocol).
+The raw data, manifest, reproduction commands, and comparison tool live in [experiments/2026-10-19-native-engine-suite-v6](experiments/2026-10-19-native-engine-suite-v6/README.en.md): the frozen suite v6 (15 classes) run **3 times on both engines — 90 live model runs** — with both arms on `main` commit `83f7c4f9`, sequentially, on one model `deepseek-v4-flash`.
 
-Billing convention: `inputTokens` is the inclusive total, so billed input is `inputTokens − cacheReadTokens`. Rates are catalog list prices (input $0.15/M, output $0.60/M, cache read $0.003/M, cache write $0), and the amounts come from the product's own `SessionRunnerCost.ofTurn`, checked against a per-category manual sum.
+Billing convention: `inputTokens` is inclusive, so billed input is `inputTokens − cacheReadTokens`. Rates are catalog list prices (input $0.15/M, output $0.60/M, cache read $0.003/M, cache write $0), and the amounts come from the product's own `SessionRunnerCost.ofTurn`.
 
-| Engine | Passed      | Turns         | Billed input | Cached input | Hit rate | Output | Cost         | p50   | p95    |
-| ------ | ----------- | ------------- | ------------ | ------------ | -------- | ------ | ------------ | ----- | ------ |
-| TS     | 39/45 86.7% | 233 (5.18/r)  | 605,554      | 2,892,288    | 82.7%    | 22,890 | $0.11324     | 7.6 s | 34.9 s |
-| RS     | 42/45 93.3% | 500 (11.11/r) | 154,295      | 3,345,021    | 95.6%    | 92,838 | **$0.08888** | 9.0 s | 28.3 s |
+| Engine | Passed      | Turns        | Billed input | Cached input | Hit rate | Output | Cost         | p50   | p95    |
+| ------ | ----------- | ------------ | ------------ | ------------ | -------- | ------ | ------------ | ----- | ------ |
+| TS     | 39/45 86.7% | 231 (5.13/r) | 604,321      | 2,859,904    | 82.6%    | 23,375 | $0.11325     | 7.6 s | 37.8 s |
+| RS     | 41/45 91.1% | 334 (7.42/r) | 111,035      | 2,163,453    | 95.1%    | 62,040 | **$0.06037** | 9.0 s | 40.2 s |
 
-**Which is cheaper.** The native engine costs **21.5% less** (ratio 0.785), passes more runs, and trades a slightly slower p50 for a better p95. The money moves in opposite directions:
+**Which is cheaper**: the native engine costs **46.7% less** (ratio 0.533), passes slightly more runs, and is 1.4 s / 2.4 s slower at p50/p95. The money moves in opposite directions:
 
-| Billed category        | TS      | RS      | Difference   |
-| ---------------------- | ------- | ------- | ------------ |
-| Billed input × $0.15/M | $0.0908 | $0.0231 | **−$0.0677** |
-| Cache read × $0.003/M  | $0.0087 | $0.0100 | +$0.0014     |
-| Output × $0.60/M       | $0.0137 | $0.0557 | +$0.0420     |
+| Billed category        | TS      | RS      | Difference |
+| ---------------------- | ------- | ------- | ---------- |
+| Billed input × $0.15/M | $0.0906 | $0.0167 | −$0.0739   |
+| Cache read × $0.003/M  | $0.0086 | $0.0065 | −$0.0021   |
+| Output × $0.60/M       | $0.0140 | $0.0372 | +$0.0232   |
 
-The native input is cheaper (roughly 4.9k first-turn prompt against TS's 14k, hit rate 95.6% against 82.7%) and its output is more expensive (11.1 turns per run against 5.2, 93k output tokens against 23k). **Break-even: the verdict flips once output is priced at least 6.32× input**; this model is at 4.0×.
+14 of 15 classes are cheaper on the native engine (0.055–0.847); the exception is `long-session` at **1.27×** (native rep0 ended with a `tool.error`). **Excluding it: TS $0.10003 against RS $0.04356 — native is 56.5% cheaper. Break-even: the verdict flips only at 13.1× output-over-input pricing** (this model is at 4.0×).
 
-Per-class ratios (RS/TS):
+**A second model**: the gateway `opencode-go/deepseek-v4.1-flash` on the same suite gives ratio **0.527** (47.3% cheaper), **0.459** excluding `long-session`, and break-even **16.6×** ([record](experiments/2026-10-19-opencode-go-suite-v6/README.en.md)). Both rounds agree within 46.7%–47.3%.
 
-| Class               | Ratio | Class             | Ratio | Class         | Ratio    |
-| ------------------- | ----- | ----------------- | ----- | ------------- | -------- |
-| stream-interruption | 0.06  | permission-denial | 0.35  | create-module | 0.61     |
-| multi-read          | 0.12  | multi-line-edit   | 0.34  | typed-repair  | 0.61     |
-| tool-error          | 0.13  | small-edit        | 0.43  | multi-file    | 0.67     |
-| read-only           | 0.19  | test-repair       | 0.46  | docs-sync     | 0.85     |
-| rename-symbol       | 0.50  | large-file        | 0.47  | long-session  | **3.43** |
+**Correction (2026-10-20)**: the earlier collector accumulated replayed history for multi-input runs, overstating the native `long-session` cost by 3–4×; that produced the previously published 21.5%/31.0% and 6.32×/8.56×. The harness now deduplicates by committed sequence (#1142), `raw/` holds the corrected evidence, and the inflated samples are preserved under `correction/`. The numbers here are the corrected ones.
 
-14 of 15 classes are cheaper on the native engine (0.055–0.847); the exception is `long-session` (82 turns per run against TS's 17, at 3.43×). **Excluding that class: TS $0.10003 against RS $0.04356 — the native engine is 56.5% cheaper.**
+Two behavioral differences: `permission-denial` is 0/3 on TS (missing `permission.denied`) against 3/3 on RS; `stream-interruption` is 0/3 for both and not comparable on this route.
 
-**Repeat runs and a second model.** A second round of the same suite and model (n=3) gave ratio **0.881**, break-even **4.98×**, and **0.408** excluding `long-session`; a third round on the gateway model `opencode-go/deepseek-v4.1-flash` ([record](experiments/2026-10-19-opencode-go-suite-v6/README.en.md)) gave **0.690**, **8.56×**, and **0.459**. All three agree on direction: the native engine is cheaper overall (11.9%–31.0%) and 54%–59% cheaper once the long-session class is excluded, while the exact magnitude follows the model and task mix; the turns/output spread in `long-session` (2.2×–4.3×) is the main source. One round therefore establishes a direction, not a magnitude; a cost claim should run the same configuration at least twice and report every round.
-
-Two behavioral differences:
-
-- `permission-denial`: TS 0/3 (completes with only a `tool.error`, missing the `permission.denied` receipt the task requires), RS 3/3 (both receipts present).
-- `stream-interruption`: 0/3 for both arms, for a protocol reason rather than an engine one (the interruption proxy targets Responses/SSE, so on the `openai-chat` route TS is SIGINTed without a `provider.interrupted` receipt while RS receives provider HTTP 418). The class is not comparable on this route.
-
-Evidence boundary: one model (output/input = 4), n=3 per class, short programmatically gradable tasks, sequential runs on one machine, ~$0.20 for both arms combined; not a product-level or cross-model claim. These numbers hold because two harness defects were fixed first — the TypeScript leg dying in the receipt fingerprint on `undefined` observations, and multi-input runs keeping only the last input's provider interactions — and both fixes are merged.
+Evidence boundary: one model (output/input = 4), n=3 per class, short tasks, sequential runs on one machine, ~$0.17 for both arms; not a product-level or cross-model claim.
 
 ## 6. Minimum configuration to enable it today
 

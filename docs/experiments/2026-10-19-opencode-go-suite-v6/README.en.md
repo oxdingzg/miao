@@ -25,26 +25,20 @@ A re-run of the previous round on the same `main` commit and the same frozen sui
 
 See [`results.md`](results.md) / [`results.csv`](results.csv).
 
-| Engine     | Passed      | Turns         | Billed input | Cached input | Hit rate | Output | Cost         | p50    | p95    |
-| ---------- | ----------- | ------------- | ------------ | ------------ | -------- | ------ | ------------ | ------ | ------ |
-| TypeScript | 39/45 86.7% | 233 (5.18/r)  | 736,655      | 2,701,184    | 78.6%    | 23,948 | $0.13297     | 14.9 s | 61.1 s |
-| Native     | 41/45 91.1% | 487 (10.82/r) | 214,460      | 3,032,064    | 93.4%    | 84,199 | **$0.09178** | 17.1 s | 67.2 s |
+| Engine     | Passed      | Turns        | Billed input | Cached input | Hit rate | Output | Cost         | p50    | p95    |
+| ---------- | ----------- | ------------ | ------------ | ------------ | -------- | ------ | ------------ | ------ | ------ |
+| TypeScript | 39/45 86.7% | 239 (5.31/r) | 713,610      | 2,861,440    | 80.0%    | 28,043 | $0.13245     | 14.9 s | 47.3 s |
+| Native     | 41/45 91.1% | 329 (7.31/r) | 178,929      | 2,089,472    | 92.1%    | 61,220 | **$0.06984** | 17.1 s | 71.5 s |
 
-**Conclusion**: same direction as the previous round, with a wider gap. The native engine costs **31.0% less** (ratio 0.69) and passes slightly more runs (41/45 against 39/45), at a slightly slower p50/p95. Its input is cheaper (billed input 214k against 737k, hit rate 93.4% against 78.6%) and its output is more expensive (84k against 24k, at 10.8 turns per run against 5.2).
+**Conclusion (corrected 2026-10-20)**: the native engine costs **47.3% less** (ratio 0.527) and passes slightly more runs, at a 2.2 s slower p50 and 24.2 s slower p95. Its input is cheaper (billed input 179k against 714k, hit rate 92.1% against 80.0%) and its output is more expensive (61k against 28k, 7.3 turns per run against 5.3).
 
-Per-class ratios (native/TS):
+Per-class ratios are in `results.md`: 14 classes are cheaper on the native engine; `long-session` is **0.98×** (level with TypeScript) and `docs-sync` is 1.35× (the only class TypeScript wins). **Excluding `long-session`: TS $0.11518 against native $0.05286, so native is 54.1% cheaper.**
 
-| Class             | Ratio | Class         | Ratio | Class               | Ratio    |
-| ----------------- | ----- | ------------- | ----- | ------------------- | -------- |
-| multi-read        | 0.09  | typed-repair  | 0.45  | multi-file          | 0.65     |
-| tool-error        | 0.11  | rename-symbol | 0.45  | large-file          | 0.75     |
-| read-only         | 0.16  | test-repair   | 0.38  | docs-sync           | **1.35** |
-| permission-denial | 0.26  | create-module | 0.41  | long-session        | **2.19** |
-| multi-line-edit   | 0.32  | small-edit    | 0.33  | stream-interruption | 0.63     |
+**Break-even**: a verdict flip needs output priced at least **16.6×** input (this model is at 4.0×).
 
-13 classes are cheaper on the native engine; `long-session` (2.19×) and `docs-sync` (1.35×) are the exceptions — the latter is the first time in three rounds that a non-long-session class favors TypeScript. **Excluding `long-session`: TS $0.11518 against native $0.05286, so native is 54.1% cheaper.**
+### Correction (2026-10-20): multi-input runs were over-counted
 
-**Break-even**: on this observation the verdict flips once output is priced at least **8.56×** input (the model is at 4.0×).
+The earlier collector accumulated replayed history for every follow-up input, so `long-session` reported 227 attempts instead of 69 and the native class was overstated by about 2.3×, understating the overall advantage. The harness now deduplicates by committed sequence (#1142); `raw/` holds the corrected evidence and the inflated samples are preserved under `correction/`.
 
 ## Behavioral differences
 

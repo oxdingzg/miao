@@ -1,16 +1,16 @@
 | Engine | Passed | Turns | Billed input | Cached input | Hit rate | Output | Cost | p50 | p95 |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| TypeScript | 39/45 | 233 (5.18/run) | 605,554 | 2,892,288 | 82.7% | 22,890 | $0.11324 | 7.6 s | 34.9 s |
-| Rust | 42/45 | 500 (11.11/run) | 154,295 | 3,345,021 | 95.6% | 92,838 | $0.08888 | 9.0 s | 28.3 s |
+| TypeScript | 39/45 | 231 (5.13/run) | 604,321 | 2,859,904 | 82.6% | 23,375 | $0.11325 | 7.6 s | 37.8 s |
+| Rust | 41/45 | 334 (7.42/run) | 111,035 | 2,163,453 | 95.1% | 62,040 | $0.06037 | 9.0 s | 40.2 s |
 
-Rust/TypeScript cost ratio: **0.785**; break-even output/input rate ratio: **6.32** (output rate currently 4.0× input).
+Rust/TypeScript cost ratio: **0.533**; break-even output/input rate ratio: **13.12** (output rate currently 4.0× input).
 
 | Class | TS cost | Rust cost | Rust/TS |
 | --- | --- | --- | --- |
 | create-module | $0.00702 | $0.00428 | 0.61 |
 | docs-sync | $0.00953 | $0.00807 | 0.847 |
 | large-file | $0.00841 | $0.00398 | 0.473 |
-| long-session | $0.01321 | $0.04533 | 3.431 |
+| long-session | $0.01322 | $0.01681 | 1.272 |
 | multi-file | $0.00695 | $0.00463 | 0.666 |
 | multi-line-edit | $0.00719 | $0.00244 | 0.339 |
 | multi-read | $0.00601 | $0.00073 | 0.121 |

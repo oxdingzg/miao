@@ -9,503 +9,123 @@
       "model": "deepseek-v4-flash",
       "modelParametersHash": "ef3d96a9ec0464401ae599f38c478bab21fa051e068e9d158e5c186628e7a393",
       "agentManifestHash": "2dbdecca09d38a807edd88d10f18f4febcb6aa5dcbdc2c1bb17f06446b689562",
-      "permissionHash": "15b234586f006405b6e76d51b1e837028a3de0468743b5592625cf26fbd4079e",
+      "permissionHash": "deb2ccf00fc5e453869387ccbb7826c39f2cfe521fbf0bb75214e4e59bd28ec3",
       "toolSurfaceHash": "fb2ab566dec79420e179a024d88e1903ebbc1b7a9f23fe7b0aefb45a9d0dcb28"
     },
-    "revision": "83f7c4f935295946d46d1e802cb81ea382f0893c",
-    "artifactHash": "a195252c10feaa91b72578ec9e8a585bcefc55292295bdbe53ae4f43c4d74728",
-    "receiptHash": "3a555db28bdcd1196f2757629a156c221a62c0999a9bf211f5108d3d390e4ca7",
-    "outcome": "passed",
-    "elapsedMs": 56721,
+    "revision": "df0419ba27c9f63a9565636719cb398f440c3780",
+    "artifactHash": "6a29e675d219b8eb51f44838b896e42d015a966c1536681cb647a3057c20594e",
+    "receiptHash": "05f02252ccec69c42adb2e4440e5e9c07aba59a52b7856871f3e93b426a2a7e6",
+    "outcome": "failed",
+    "elapsedMs": 51628,
     "attempts": [
       {
         "inputTokens": 4846,
-        "outputTokens": 72,
+        "outputTokens": 79,
         "cost": null
       },
       {
-        "inputTokens": 4992,
-        "outputTokens": 116,
-        "cost": null
-      },
-      {
-        "inputTokens": 5274,
+        "inputTokens": 5052,
         "outputTokens": 125,
         "cost": null
       },
       {
-        "inputTokens": 5432,
-        "outputTokens": 75,
+        "inputTokens": 5258,
+        "outputTokens": 112,
         "cost": null
       },
       {
-        "inputTokens": 5573,
-        "outputTokens": 82,
+        "inputTokens": 5403,
+        "outputTokens": 70,
         "cost": null
       },
       {
-        "inputTokens": 5726,
+        "inputTokens": 5670,
+        "outputTokens": 160,
+        "cost": null
+      },
+      {
+        "inputTokens": 5901,
         "outputTokens": 41,
         "cost": null
       },
       {
-        "inputTokens": 5828,
-        "outputTokens": 62,
+        "inputTokens": 6003,
+        "outputTokens": 102,
         "cost": null
       },
       {
-        "inputTokens": 4846,
-        "outputTokens": 72,
+        "inputTokens": 6130,
+        "outputTokens": 131,
         "cost": null
       },
       {
-        "inputTokens": 4992,
-        "outputTokens": 116,
+        "inputTokens": 6292,
+        "outputTokens": 97,
         "cost": null
       },
       {
-        "inputTokens": 5274,
-        "outputTokens": 125,
+        "inputTokens": 6466,
+        "outputTokens": 158,
         "cost": null
       },
       {
-        "inputTokens": 5432,
-        "outputTokens": 75,
+        "inputTokens": 6733,
+        "outputTokens": 403,
         "cost": null
       },
       {
-        "inputTokens": 5573,
-        "outputTokens": 82,
+        "inputTokens": 7169,
+        "outputTokens": 1470,
         "cost": null
       },
       {
-        "inputTokens": 5726,
-        "outputTokens": 41,
+        "inputTokens": 8882,
+        "outputTokens": 2581,
         "cost": null
       },
       {
-        "inputTokens": 5828,
-        "outputTokens": 62,
+        "inputTokens": 11542,
+        "outputTokens": 860,
         "cost": null
       },
       {
-        "inputTokens": 5915,
-        "outputTokens": 146,
+        "inputTokens": 12435,
+        "outputTokens": 42,
         "cost": null
       },
       {
-        "inputTokens": 6138,
-        "outputTokens": 41,
+        "inputTokens": 12555,
+        "outputTokens": 351,
         "cost": null
       },
       {
-        "inputTokens": 6267,
-        "outputTokens": 47,
+        "inputTokens": 12981,
+        "outputTokens": 50,
         "cost": null
       },
       {
-        "inputTokens": 4846,
-        "outputTokens": 72,
+        "inputTokens": 13210,
+        "outputTokens": 224,
         "cost": null
       },
       {
-        "inputTokens": 4992,
-        "outputTokens": 116,
+        "inputTokens": 13617,
+        "outputTokens": 570,
         "cost": null
       },
       {
-        "inputTokens": 5274,
-        "outputTokens": 125,
+        "inputTokens": 14210,
+        "outputTokens": 303,
         "cost": null
       },
       {
-        "inputTokens": 5432,
-        "outputTokens": 75,
+        "inputTokens": 14735,
+        "outputTokens": 475,
         "cost": null
       },
       {
-        "inputTokens": 5573,
-        "outputTokens": 82,
-        "cost": null
-      },
-      {
-        "inputTokens": 5726,
-        "outputTokens": 41,
-        "cost": null
-      },
-      {
-        "inputTokens": 5828,
-        "outputTokens": 62,
-        "cost": null
-      },
-      {
-        "inputTokens": 5915,
-        "outputTokens": 146,
-        "cost": null
-      },
-      {
-        "inputTokens": 6138,
-        "outputTokens": 41,
-        "cost": null
-      },
-      {
-        "inputTokens": 6267,
-        "outputTokens": 47,
-        "cost": null
-      },
-      {
-        "inputTokens": 6347,
-        "outputTokens": 235,
-        "cost": null
-      },
-      {
-        "inputTokens": 6761,
-        "outputTokens": 1935,
-        "cost": null
-      },
-      {
-        "inputTokens": 8729,
-        "outputTokens": 44,
-        "cost": null
-      },
-      {
-        "inputTokens": 8857,
-        "outputTokens": 135,
-        "cost": null
-      },
-      {
-        "inputTokens": 9069,
-        "outputTokens": 62,
-        "cost": null
-      },
-      {
-        "inputTokens": 9672,
-        "outputTokens": 199,
-        "cost": null
-      },
-      {
-        "inputTokens": 9939,
-        "outputTokens": 284,
-        "cost": null
-      },
-      {
-        "inputTokens": 10643,
-        "outputTokens": 275,
-        "cost": null
-      },
-      {
-        "inputTokens": 11338,
-        "outputTokens": 284,
-        "cost": null
-      },
-      {
-        "inputTokens": 12159,
-        "outputTokens": 481,
-        "cost": null
-      },
-      {
-        "inputTokens": 12867,
-        "outputTokens": 457,
-        "cost": null
-      },
-      {
-        "inputTokens": 13581,
-        "outputTokens": 172,
-        "cost": null
-      },
-      {
-        "inputTokens": 13929,
-        "outputTokens": 465,
-        "cost": null
-      },
-      {
-        "inputTokens": 4846,
-        "outputTokens": 72,
-        "cost": null
-      },
-      {
-        "inputTokens": 4992,
-        "outputTokens": 116,
-        "cost": null
-      },
-      {
-        "inputTokens": 5274,
-        "outputTokens": 125,
-        "cost": null
-      },
-      {
-        "inputTokens": 5432,
-        "outputTokens": 75,
-        "cost": null
-      },
-      {
-        "inputTokens": 5573,
-        "outputTokens": 82,
-        "cost": null
-      },
-      {
-        "inputTokens": 5726,
-        "outputTokens": 41,
-        "cost": null
-      },
-      {
-        "inputTokens": 5828,
-        "outputTokens": 62,
-        "cost": null
-      },
-      {
-        "inputTokens": 5915,
-        "outputTokens": 146,
-        "cost": null
-      },
-      {
-        "inputTokens": 6138,
-        "outputTokens": 41,
-        "cost": null
-      },
-      {
-        "inputTokens": 6267,
-        "outputTokens": 47,
-        "cost": null
-      },
-      {
-        "inputTokens": 6347,
-        "outputTokens": 235,
-        "cost": null
-      },
-      {
-        "inputTokens": 6761,
-        "outputTokens": 1935,
-        "cost": null
-      },
-      {
-        "inputTokens": 8729,
-        "outputTokens": 44,
-        "cost": null
-      },
-      {
-        "inputTokens": 8857,
-        "outputTokens": 135,
-        "cost": null
-      },
-      {
-        "inputTokens": 9069,
-        "outputTokens": 62,
-        "cost": null
-      },
-      {
-        "inputTokens": 9672,
-        "outputTokens": 199,
-        "cost": null
-      },
-      {
-        "inputTokens": 9939,
-        "outputTokens": 284,
-        "cost": null
-      },
-      {
-        "inputTokens": 10643,
-        "outputTokens": 275,
-        "cost": null
-      },
-      {
-        "inputTokens": 11338,
-        "outputTokens": 284,
-        "cost": null
-      },
-      {
-        "inputTokens": 12159,
-        "outputTokens": 481,
-        "cost": null
-      },
-      {
-        "inputTokens": 12867,
-        "outputTokens": 457,
-        "cost": null
-      },
-      {
-        "inputTokens": 13581,
-        "outputTokens": 172,
-        "cost": null
-      },
-      {
-        "inputTokens": 13929,
-        "outputTokens": 465,
-        "cost": null
-      },
-      {
-        "inputTokens": 14417,
-        "outputTokens": 689,
-        "cost": null
-      },
-      {
-        "inputTokens": 15293,
-        "outputTokens": 136,
-        "cost": null
-      },
-      {
-        "inputTokens": 15646,
-        "outputTokens": 147,
-        "cost": null
-      },
-      {
-        "inputTokens": 15874,
-        "outputTokens": 65,
-        "cost": null
-      },
-      {
-        "inputTokens": 16115,
-        "outputTokens": 302,
-        "cost": null
-      },
-      {
-        "inputTokens": 4846,
-        "outputTokens": 72,
-        "cost": null
-      },
-      {
-        "inputTokens": 4992,
-        "outputTokens": 116,
-        "cost": null
-      },
-      {
-        "inputTokens": 5274,
-        "outputTokens": 125,
-        "cost": null
-      },
-      {
-        "inputTokens": 5432,
-        "outputTokens": 75,
-        "cost": null
-      },
-      {
-        "inputTokens": 5573,
-        "outputTokens": 82,
-        "cost": null
-      },
-      {
-        "inputTokens": 5726,
-        "outputTokens": 41,
-        "cost": null
-      },
-      {
-        "inputTokens": 5828,
-        "outputTokens": 62,
-        "cost": null
-      },
-      {
-        "inputTokens": 5915,
-        "outputTokens": 146,
-        "cost": null
-      },
-      {
-        "inputTokens": 6138,
-        "outputTokens": 41,
-        "cost": null
-      },
-      {
-        "inputTokens": 6267,
-        "outputTokens": 47,
-        "cost": null
-      },
-      {
-        "inputTokens": 6347,
-        "outputTokens": 235,
-        "cost": null
-      },
-      {
-        "inputTokens": 6761,
-        "outputTokens": 1935,
-        "cost": null
-      },
-      {
-        "inputTokens": 8729,
-        "outputTokens": 44,
-        "cost": null
-      },
-      {
-        "inputTokens": 8857,
-        "outputTokens": 135,
-        "cost": null
-      },
-      {
-        "inputTokens": 9069,
-        "outputTokens": 62,
-        "cost": null
-      },
-      {
-        "inputTokens": 9672,
-        "outputTokens": 199,
-        "cost": null
-      },
-      {
-        "inputTokens": 9939,
-        "outputTokens": 284,
-        "cost": null
-      },
-      {
-        "inputTokens": 10643,
-        "outputTokens": 275,
-        "cost": null
-      },
-      {
-        "inputTokens": 11338,
-        "outputTokens": 284,
-        "cost": null
-      },
-      {
-        "inputTokens": 12159,
-        "outputTokens": 481,
-        "cost": null
-      },
-      {
-        "inputTokens": 12867,
-        "outputTokens": 457,
-        "cost": null
-      },
-      {
-        "inputTokens": 13581,
-        "outputTokens": 172,
-        "cost": null
-      },
-      {
-        "inputTokens": 13929,
-        "outputTokens": 465,
-        "cost": null
-      },
-      {
-        "inputTokens": 14417,
-        "outputTokens": 689,
-        "cost": null
-      },
-      {
-        "inputTokens": 15293,
-        "outputTokens": 136,
-        "cost": null
-      },
-      {
-        "inputTokens": 15646,
-        "outputTokens": 147,
-        "cost": null
-      },
-      {
-        "inputTokens": 15874,
-        "outputTokens": 65,
-        "cost": null
-      },
-      {
-        "inputTokens": 16115,
-        "outputTokens": 302,
-        "cost": null
-      },
-      {
-        "inputTokens": 16434,
-        "outputTokens": 163,
-        "cost": null
-      },
-      {
-        "inputTokens": 16807,
-        "outputTokens": 254,
+        "inputTokens": 15227,
+        "outputTokens": 224,
         "cost": null
       }
     ]
@@ -513,7 +133,7 @@
   "rejection": null,
   "evidence": {
     "engine": "rust",
-    "revision": "83f7c4f935295946d46d1e802cb81ea382f0893c",
+    "revision": "df0419ba27c9f63a9565636719cb398f440c3780",
     "task": "long-session",
     "repetition": 0,
     "terminal": "completed",
@@ -524,3168 +144,730 @@
     "attempts": [
       {
         "inputTokens": 4846,
-        "outputTokens": 72,
+        "outputTokens": 79,
         "cacheReadTokens": 4608,
         "cacheWriteTokens": null,
         "reasoningTokens": 0,
         "cost": null
       },
       {
-        "inputTokens": 4992,
-        "outputTokens": 116,
-        "cacheReadTokens": 4736,
-        "cacheWriteTokens": null,
-        "reasoningTokens": 47,
-        "cost": null
-      },
-      {
-        "inputTokens": 5274,
+        "inputTokens": 5052,
         "outputTokens": 125,
         "cacheReadTokens": 4864,
         "cacheWriteTokens": null,
-        "reasoningTokens": 43,
+        "reasoningTokens": 86,
         "cost": null
       },
       {
-        "inputTokens": 5432,
-        "outputTokens": 75,
+        "inputTokens": 5258,
+        "outputTokens": 112,
+        "cacheReadTokens": 5120,
+        "cacheWriteTokens": null,
+        "reasoningTokens": 30,
+        "cost": null
+      },
+      {
+        "inputTokens": 5403,
+        "outputTokens": 70,
         "cacheReadTokens": 5248,
         "cacheWriteTokens": null,
-        "reasoningTokens": 15,
+        "reasoningTokens": 26,
         "cost": null
       },
       {
-        "inputTokens": 5573,
-        "outputTokens": 82,
+        "inputTokens": 5670,
+        "outputTokens": 160,
         "cacheReadTokens": 5376,
         "cacheWriteTokens": null,
-        "reasoningTokens": 0,
+        "reasoningTokens": 78,
         "cost": null
       },
       {
-        "inputTokens": 5726,
+        "inputTokens": 5901,
         "outputTokens": 41,
-        "cacheReadTokens": 5504,
-        "cacheWriteTokens": null,
-        "reasoningTokens": 0,
-        "cost": null
-      },
-      {
-        "inputTokens": 5828,
-        "outputTokens": 62,
-        "cacheReadTokens": 5632,
-        "cacheWriteTokens": null,
-        "reasoningTokens": 0,
-        "cost": null
-      },
-      {
-        "inputTokens": 4846,
-        "outputTokens": 72,
-        "cacheReadTokens": 4608,
-        "cacheWriteTokens": null,
-        "reasoningTokens": 0,
-        "cost": null
-      },
-      {
-        "inputTokens": 4992,
-        "outputTokens": 116,
-        "cacheReadTokens": 4736,
-        "cacheWriteTokens": null,
-        "reasoningTokens": 47,
-        "cost": null
-      },
-      {
-        "inputTokens": 5274,
-        "outputTokens": 125,
-        "cacheReadTokens": 4864,
-        "cacheWriteTokens": null,
-        "reasoningTokens": 43,
-        "cost": null
-      },
-      {
-        "inputTokens": 5432,
-        "outputTokens": 75,
-        "cacheReadTokens": 5248,
-        "cacheWriteTokens": null,
-        "reasoningTokens": 15,
-        "cost": null
-      },
-      {
-        "inputTokens": 5573,
-        "outputTokens": 82,
-        "cacheReadTokens": 5376,
-        "cacheWriteTokens": null,
-        "reasoningTokens": 0,
-        "cost": null
-      },
-      {
-        "inputTokens": 5726,
-        "outputTokens": 41,
-        "cacheReadTokens": 5504,
-        "cacheWriteTokens": null,
-        "reasoningTokens": 0,
-        "cost": null
-      },
-      {
-        "inputTokens": 5828,
-        "outputTokens": 62,
-        "cacheReadTokens": 5632,
-        "cacheWriteTokens": null,
-        "reasoningTokens": 0,
-        "cost": null
-      },
-      {
-        "inputTokens": 5915,
-        "outputTokens": 146,
         "cacheReadTokens": 5760,
         "cacheWriteTokens": null,
-        "reasoningTokens": 49,
-        "cost": null
-      },
-      {
-        "inputTokens": 6138,
-        "outputTokens": 41,
-        "cacheReadTokens": 5888,
-        "cacheWriteTokens": null,
         "reasoningTokens": 0,
         "cost": null
       },
       {
-        "inputTokens": 6267,
-        "outputTokens": 47,
-        "cacheReadTokens": 6016,
-        "cacheWriteTokens": null,
-        "reasoningTokens": 0,
-        "cost": null
-      },
-      {
-        "inputTokens": 4846,
-        "outputTokens": 72,
-        "cacheReadTokens": 4608,
-        "cacheWriteTokens": null,
-        "reasoningTokens": 0,
-        "cost": null
-      },
-      {
-        "inputTokens": 4992,
-        "outputTokens": 116,
-        "cacheReadTokens": 4736,
-        "cacheWriteTokens": null,
-        "reasoningTokens": 47,
-        "cost": null
-      },
-      {
-        "inputTokens": 5274,
-        "outputTokens": 125,
-        "cacheReadTokens": 4864,
-        "cacheWriteTokens": null,
-        "reasoningTokens": 43,
-        "cost": null
-      },
-      {
-        "inputTokens": 5432,
-        "outputTokens": 75,
-        "cacheReadTokens": 5248,
-        "cacheWriteTokens": null,
-        "reasoningTokens": 15,
-        "cost": null
-      },
-      {
-        "inputTokens": 5573,
-        "outputTokens": 82,
-        "cacheReadTokens": 5376,
-        "cacheWriteTokens": null,
-        "reasoningTokens": 0,
-        "cost": null
-      },
-      {
-        "inputTokens": 5726,
-        "outputTokens": 41,
-        "cacheReadTokens": 5504,
-        "cacheWriteTokens": null,
-        "reasoningTokens": 0,
-        "cost": null
-      },
-      {
-        "inputTokens": 5828,
-        "outputTokens": 62,
-        "cacheReadTokens": 5632,
-        "cacheWriteTokens": null,
-        "reasoningTokens": 0,
-        "cost": null
-      },
-      {
-        "inputTokens": 5915,
-        "outputTokens": 146,
+        "inputTokens": 6003,
+        "outputTokens": 102,
         "cacheReadTokens": 5760,
         "cacheWriteTokens": null,
-        "reasoningTokens": 49,
+        "reasoningTokens": 0,
         "cost": null
       },
       {
-        "inputTokens": 6138,
-        "outputTokens": 41,
+        "inputTokens": 6130,
+        "outputTokens": 131,
         "cacheReadTokens": 5888,
         "cacheWriteTokens": null,
-        "reasoningTokens": 0,
+        "reasoningTokens": 93,
         "cost": null
       },
       {
-        "inputTokens": 6267,
-        "outputTokens": 47,
-        "cacheReadTokens": 6016,
-        "cacheWriteTokens": null,
-        "reasoningTokens": 0,
-        "cost": null
-      },
-      {
-        "inputTokens": 6347,
-        "outputTokens": 235,
+        "inputTokens": 6292,
+        "outputTokens": 97,
         "cacheReadTokens": 6144,
         "cacheWriteTokens": null,
-        "reasoningTokens": 124,
+        "reasoningTokens": 0,
         "cost": null
       },
       {
-        "inputTokens": 6761,
-        "outputTokens": 1935,
+        "inputTokens": 6466,
+        "outputTokens": 158,
+        "cacheReadTokens": 6272,
+        "cacheWriteTokens": null,
+        "reasoningTokens": 110,
+        "cost": null
+      },
+      {
+        "inputTokens": 6733,
+        "outputTokens": 403,
         "cacheReadTokens": 6528,
         "cacheWriteTokens": null,
-        "reasoningTokens": 1800,
+        "reasoningTokens": 186,
         "cost": null
       },
       {
-        "inputTokens": 8729,
-        "outputTokens": 44,
+        "inputTokens": 7169,
+        "outputTokens": 1470,
+        "cacheReadTokens": 6912,
+        "cacheWriteTokens": null,
+        "reasoningTokens": 1304,
+        "cost": null
+      },
+      {
+        "inputTokens": 8882,
+        "outputTokens": 2581,
         "cacheReadTokens": 8576,
         "cacheWriteTokens": null,
-        "reasoningTokens": 0,
+        "reasoningTokens": 2298,
         "cost": null
       },
       {
-        "inputTokens": 8857,
-        "outputTokens": 135,
-        "cacheReadTokens": 8704,
+        "inputTokens": 11542,
+        "outputTokens": 860,
+        "cacheReadTokens": 11392,
+        "cacheWriteTokens": null,
+        "reasoningTokens": 484,
+        "cost": null
+      },
+      {
+        "inputTokens": 12435,
+        "outputTokens": 42,
+        "cacheReadTokens": 12288,
         "cacheWriteTokens": null,
         "reasoningTokens": 0,
         "cost": null
       },
       {
-        "inputTokens": 9069,
-        "outputTokens": 62,
-        "cacheReadTokens": 8832,
+        "inputTokens": 12555,
+        "outputTokens": 351,
+        "cacheReadTokens": 12416,
         "cacheWriteTokens": null,
-        "reasoningTokens": 10,
+        "reasoningTokens": 0,
         "cost": null
       },
       {
-        "inputTokens": 9672,
-        "outputTokens": 199,
-        "cacheReadTokens": 9088,
+        "inputTokens": 12981,
+        "outputTokens": 50,
+        "cacheReadTokens": 12800,
         "cacheWriteTokens": null,
-        "reasoningTokens": 81,
+        "reasoningTokens": 0,
         "cost": null
       },
       {
-        "inputTokens": 9939,
-        "outputTokens": 284,
-        "cacheReadTokens": 9728,
+        "inputTokens": 13210,
+        "outputTokens": 224,
+        "cacheReadTokens": 12928,
         "cacheWriteTokens": null,
-        "reasoningTokens": 187,
+        "reasoningTokens": 150,
         "cost": null
       },
       {
-        "inputTokens": 10643,
-        "outputTokens": 275,
-        "cacheReadTokens": 10112,
-        "cacheWriteTokens": null,
-        "reasoningTokens": 118,
-        "cost": null
-      },
-      {
-        "inputTokens": 11338,
-        "outputTokens": 284,
-        "cacheReadTokens": 10880,
-        "cacheWriteTokens": null,
-        "reasoningTokens": 214,
-        "cost": null
-      },
-      {
-        "inputTokens": 12159,
-        "outputTokens": 481,
-        "cacheReadTokens": 11520,
-        "cacheWriteTokens": null,
-        "reasoningTokens": 312,
-        "cost": null
-      },
-      {
-        "inputTokens": 12867,
-        "outputTokens": 457,
-        "cacheReadTokens": 12544,
-        "cacheWriteTokens": null,
-        "reasoningTokens": 379,
-        "cost": null
-      },
-      {
-        "inputTokens": 13581,
-        "outputTokens": 172,
+        "inputTokens": 13617,
+        "outputTokens": 570,
         "cacheReadTokens": 13312,
         "cacheWriteTokens": null,
-        "reasoningTokens": 43,
-        "cost": null
-      },
-      {
-        "inputTokens": 13929,
-        "outputTokens": 465,
-        "cacheReadTokens": 13696,
-        "cacheWriteTokens": null,
-        "reasoningTokens": 114,
-        "cost": null
-      },
-      {
-        "inputTokens": 4846,
-        "outputTokens": 72,
-        "cacheReadTokens": 4608,
-        "cacheWriteTokens": null,
         "reasoningTokens": 0,
         "cost": null
       },
       {
-        "inputTokens": 4992,
-        "outputTokens": 116,
-        "cacheReadTokens": 4736,
+        "inputTokens": 14210,
+        "outputTokens": 303,
+        "cacheReadTokens": 13952,
         "cacheWriteTokens": null,
-        "reasoningTokens": 47,
+        "reasoningTokens": 237,
         "cost": null
       },
       {
-        "inputTokens": 5274,
-        "outputTokens": 125,
-        "cacheReadTokens": 4864,
+        "inputTokens": 14735,
+        "outputTokens": 475,
+        "cacheReadTokens": 14464,
         "cacheWriteTokens": null,
-        "reasoningTokens": 43,
+        "reasoningTokens": 176,
         "cost": null
       },
       {
-        "inputTokens": 5432,
-        "outputTokens": 75,
-        "cacheReadTokens": 5248,
+        "inputTokens": 15227,
+        "outputTokens": 224,
+        "cacheReadTokens": 14976,
         "cacheWriteTokens": null,
-        "reasoningTokens": 15,
-        "cost": null
-      },
-      {
-        "inputTokens": 5573,
-        "outputTokens": 82,
-        "cacheReadTokens": 5376,
-        "cacheWriteTokens": null,
-        "reasoningTokens": 0,
-        "cost": null
-      },
-      {
-        "inputTokens": 5726,
-        "outputTokens": 41,
-        "cacheReadTokens": 5504,
-        "cacheWriteTokens": null,
-        "reasoningTokens": 0,
-        "cost": null
-      },
-      {
-        "inputTokens": 5828,
-        "outputTokens": 62,
-        "cacheReadTokens": 5632,
-        "cacheWriteTokens": null,
-        "reasoningTokens": 0,
-        "cost": null
-      },
-      {
-        "inputTokens": 5915,
-        "outputTokens": 146,
-        "cacheReadTokens": 5760,
-        "cacheWriteTokens": null,
-        "reasoningTokens": 49,
-        "cost": null
-      },
-      {
-        "inputTokens": 6138,
-        "outputTokens": 41,
-        "cacheReadTokens": 5888,
-        "cacheWriteTokens": null,
-        "reasoningTokens": 0,
-        "cost": null
-      },
-      {
-        "inputTokens": 6267,
-        "outputTokens": 47,
-        "cacheReadTokens": 6016,
-        "cacheWriteTokens": null,
-        "reasoningTokens": 0,
-        "cost": null
-      },
-      {
-        "inputTokens": 6347,
-        "outputTokens": 235,
-        "cacheReadTokens": 6144,
-        "cacheWriteTokens": null,
-        "reasoningTokens": 124,
-        "cost": null
-      },
-      {
-        "inputTokens": 6761,
-        "outputTokens": 1935,
-        "cacheReadTokens": 6528,
-        "cacheWriteTokens": null,
-        "reasoningTokens": 1800,
-        "cost": null
-      },
-      {
-        "inputTokens": 8729,
-        "outputTokens": 44,
-        "cacheReadTokens": 8576,
-        "cacheWriteTokens": null,
-        "reasoningTokens": 0,
-        "cost": null
-      },
-      {
-        "inputTokens": 8857,
-        "outputTokens": 135,
-        "cacheReadTokens": 8704,
-        "cacheWriteTokens": null,
-        "reasoningTokens": 0,
-        "cost": null
-      },
-      {
-        "inputTokens": 9069,
-        "outputTokens": 62,
-        "cacheReadTokens": 8832,
-        "cacheWriteTokens": null,
-        "reasoningTokens": 10,
-        "cost": null
-      },
-      {
-        "inputTokens": 9672,
-        "outputTokens": 199,
-        "cacheReadTokens": 9088,
-        "cacheWriteTokens": null,
-        "reasoningTokens": 81,
-        "cost": null
-      },
-      {
-        "inputTokens": 9939,
-        "outputTokens": 284,
-        "cacheReadTokens": 9728,
-        "cacheWriteTokens": null,
-        "reasoningTokens": 187,
-        "cost": null
-      },
-      {
-        "inputTokens": 10643,
-        "outputTokens": 275,
-        "cacheReadTokens": 10112,
-        "cacheWriteTokens": null,
-        "reasoningTokens": 118,
-        "cost": null
-      },
-      {
-        "inputTokens": 11338,
-        "outputTokens": 284,
-        "cacheReadTokens": 10880,
-        "cacheWriteTokens": null,
-        "reasoningTokens": 214,
-        "cost": null
-      },
-      {
-        "inputTokens": 12159,
-        "outputTokens": 481,
-        "cacheReadTokens": 11520,
-        "cacheWriteTokens": null,
-        "reasoningTokens": 312,
-        "cost": null
-      },
-      {
-        "inputTokens": 12867,
-        "outputTokens": 457,
-        "cacheReadTokens": 12544,
-        "cacheWriteTokens": null,
-        "reasoningTokens": 379,
-        "cost": null
-      },
-      {
-        "inputTokens": 13581,
-        "outputTokens": 172,
-        "cacheReadTokens": 13312,
-        "cacheWriteTokens": null,
-        "reasoningTokens": 43,
-        "cost": null
-      },
-      {
-        "inputTokens": 13929,
-        "outputTokens": 465,
-        "cacheReadTokens": 13696,
-        "cacheWriteTokens": null,
-        "reasoningTokens": 114,
-        "cost": null
-      },
-      {
-        "inputTokens": 14417,
-        "outputTokens": 689,
-        "cacheReadTokens": 14208,
-        "cacheWriteTokens": null,
-        "reasoningTokens": 608,
-        "cost": null
-      },
-      {
-        "inputTokens": 15293,
-        "outputTokens": 136,
-        "cacheReadTokens": 15104,
-        "cacheWriteTokens": null,
-        "reasoningTokens": 35,
-        "cost": null
-      },
-      {
-        "inputTokens": 15646,
-        "outputTokens": 147,
-        "cacheReadTokens": 15360,
-        "cacheWriteTokens": null,
-        "reasoningTokens": 0,
-        "cost": null
-      },
-      {
-        "inputTokens": 15874,
-        "outputTokens": 65,
-        "cacheReadTokens": 15616,
-        "cacheWriteTokens": null,
-        "reasoningTokens": 0,
-        "cost": null
-      },
-      {
-        "inputTokens": 16115,
-        "outputTokens": 302,
-        "cacheReadTokens": 15872,
-        "cacheWriteTokens": null,
-        "reasoningTokens": 62,
-        "cost": null
-      },
-      {
-        "inputTokens": 4846,
-        "outputTokens": 72,
-        "cacheReadTokens": 4608,
-        "cacheWriteTokens": null,
-        "reasoningTokens": 0,
-        "cost": null
-      },
-      {
-        "inputTokens": 4992,
-        "outputTokens": 116,
-        "cacheReadTokens": 4736,
-        "cacheWriteTokens": null,
-        "reasoningTokens": 47,
-        "cost": null
-      },
-      {
-        "inputTokens": 5274,
-        "outputTokens": 125,
-        "cacheReadTokens": 4864,
-        "cacheWriteTokens": null,
-        "reasoningTokens": 43,
-        "cost": null
-      },
-      {
-        "inputTokens": 5432,
-        "outputTokens": 75,
-        "cacheReadTokens": 5248,
-        "cacheWriteTokens": null,
-        "reasoningTokens": 15,
-        "cost": null
-      },
-      {
-        "inputTokens": 5573,
-        "outputTokens": 82,
-        "cacheReadTokens": 5376,
-        "cacheWriteTokens": null,
-        "reasoningTokens": 0,
-        "cost": null
-      },
-      {
-        "inputTokens": 5726,
-        "outputTokens": 41,
-        "cacheReadTokens": 5504,
-        "cacheWriteTokens": null,
-        "reasoningTokens": 0,
-        "cost": null
-      },
-      {
-        "inputTokens": 5828,
-        "outputTokens": 62,
-        "cacheReadTokens": 5632,
-        "cacheWriteTokens": null,
-        "reasoningTokens": 0,
-        "cost": null
-      },
-      {
-        "inputTokens": 5915,
-        "outputTokens": 146,
-        "cacheReadTokens": 5760,
-        "cacheWriteTokens": null,
-        "reasoningTokens": 49,
-        "cost": null
-      },
-      {
-        "inputTokens": 6138,
-        "outputTokens": 41,
-        "cacheReadTokens": 5888,
-        "cacheWriteTokens": null,
-        "reasoningTokens": 0,
-        "cost": null
-      },
-      {
-        "inputTokens": 6267,
-        "outputTokens": 47,
-        "cacheReadTokens": 6016,
-        "cacheWriteTokens": null,
-        "reasoningTokens": 0,
-        "cost": null
-      },
-      {
-        "inputTokens": 6347,
-        "outputTokens": 235,
-        "cacheReadTokens": 6144,
-        "cacheWriteTokens": null,
-        "reasoningTokens": 124,
-        "cost": null
-      },
-      {
-        "inputTokens": 6761,
-        "outputTokens": 1935,
-        "cacheReadTokens": 6528,
-        "cacheWriteTokens": null,
-        "reasoningTokens": 1800,
-        "cost": null
-      },
-      {
-        "inputTokens": 8729,
-        "outputTokens": 44,
-        "cacheReadTokens": 8576,
-        "cacheWriteTokens": null,
-        "reasoningTokens": 0,
-        "cost": null
-      },
-      {
-        "inputTokens": 8857,
-        "outputTokens": 135,
-        "cacheReadTokens": 8704,
-        "cacheWriteTokens": null,
-        "reasoningTokens": 0,
-        "cost": null
-      },
-      {
-        "inputTokens": 9069,
-        "outputTokens": 62,
-        "cacheReadTokens": 8832,
-        "cacheWriteTokens": null,
-        "reasoningTokens": 10,
-        "cost": null
-      },
-      {
-        "inputTokens": 9672,
-        "outputTokens": 199,
-        "cacheReadTokens": 9088,
-        "cacheWriteTokens": null,
-        "reasoningTokens": 81,
-        "cost": null
-      },
-      {
-        "inputTokens": 9939,
-        "outputTokens": 284,
-        "cacheReadTokens": 9728,
-        "cacheWriteTokens": null,
-        "reasoningTokens": 187,
-        "cost": null
-      },
-      {
-        "inputTokens": 10643,
-        "outputTokens": 275,
-        "cacheReadTokens": 10112,
-        "cacheWriteTokens": null,
-        "reasoningTokens": 118,
-        "cost": null
-      },
-      {
-        "inputTokens": 11338,
-        "outputTokens": 284,
-        "cacheReadTokens": 10880,
-        "cacheWriteTokens": null,
-        "reasoningTokens": 214,
-        "cost": null
-      },
-      {
-        "inputTokens": 12159,
-        "outputTokens": 481,
-        "cacheReadTokens": 11520,
-        "cacheWriteTokens": null,
-        "reasoningTokens": 312,
-        "cost": null
-      },
-      {
-        "inputTokens": 12867,
-        "outputTokens": 457,
-        "cacheReadTokens": 12544,
-        "cacheWriteTokens": null,
-        "reasoningTokens": 379,
-        "cost": null
-      },
-      {
-        "inputTokens": 13581,
-        "outputTokens": 172,
-        "cacheReadTokens": 13312,
-        "cacheWriteTokens": null,
-        "reasoningTokens": 43,
-        "cost": null
-      },
-      {
-        "inputTokens": 13929,
-        "outputTokens": 465,
-        "cacheReadTokens": 13696,
-        "cacheWriteTokens": null,
-        "reasoningTokens": 114,
-        "cost": null
-      },
-      {
-        "inputTokens": 14417,
-        "outputTokens": 689,
-        "cacheReadTokens": 14208,
-        "cacheWriteTokens": null,
-        "reasoningTokens": 608,
-        "cost": null
-      },
-      {
-        "inputTokens": 15293,
-        "outputTokens": 136,
-        "cacheReadTokens": 15104,
-        "cacheWriteTokens": null,
-        "reasoningTokens": 35,
-        "cost": null
-      },
-      {
-        "inputTokens": 15646,
-        "outputTokens": 147,
-        "cacheReadTokens": 15360,
-        "cacheWriteTokens": null,
-        "reasoningTokens": 0,
-        "cost": null
-      },
-      {
-        "inputTokens": 15874,
-        "outputTokens": 65,
-        "cacheReadTokens": 15616,
-        "cacheWriteTokens": null,
-        "reasoningTokens": 0,
-        "cost": null
-      },
-      {
-        "inputTokens": 16115,
-        "outputTokens": 302,
-        "cacheReadTokens": 15872,
-        "cacheWriteTokens": null,
-        "reasoningTokens": 62,
-        "cost": null
-      },
-      {
-        "inputTokens": 16434,
-        "outputTokens": 163,
-        "cacheReadTokens": 16256,
-        "cacheWriteTokens": null,
-        "reasoningTokens": 61,
-        "cost": null
-      },
-      {
-        "inputTokens": 16807,
-        "outputTokens": 254,
-        "cacheReadTokens": 16512,
-        "cacheWriteTokens": null,
-        "reasoningTokens": 0,
+        "reasoningTokens": 19,
         "cost": null
       }
     ],
     "phases": [
       {
         "phase": "input.admitted",
-        "atMs": 1792418766862,
+        "atMs": 1792426998101,
         "clock": "recorded"
       },
       {
         "phase": "input.promoted",
-        "atMs": 1792418766862,
+        "atMs": 1792426998102,
         "clock": "recorded"
       },
       {
         "phase": "run.started",
-        "atMs": 1792418766863,
+        "atMs": 1792426998102,
         "clock": "recorded"
       },
       {
         "phase": "provider.request",
-        "atMs": 1792418766865,
+        "atMs": 1792426998106,
         "clock": "recorded"
       },
       {
         "phase": "provider.request.result",
-        "atMs": 1792418767062,
+        "atMs": 1792426998253,
         "clock": "recorded"
       },
       {
         "phase": "tool.dispatched",
-        "atMs": 1792418767863,
+        "atMs": 1792426999034,
         "clock": "recorded"
       },
       {
         "phase": "tool.dispatched",
-        "atMs": 1792418767863,
+        "atMs": 1792426999034,
         "clock": "recorded"
       },
       {
         "phase": "tool.completed",
-        "atMs": 1792418767864,
+        "atMs": 1792426999035,
         "clock": "recorded"
       },
       {
         "phase": "tool.completed",
-        "atMs": 1792418767864,
+        "atMs": 1792426999036,
         "clock": "recorded"
       },
       {
         "phase": "provider.request",
-        "atMs": 1792418767866,
+        "atMs": 1792426999038,
         "clock": "recorded"
       },
       {
         "phase": "provider.request.result",
-        "atMs": 1792418767966,
+        "atMs": 1792426999135,
         "clock": "recorded"
       },
       {
         "phase": "tool.dispatched",
-        "atMs": 1792418768806,
+        "atMs": 1792427000088,
+        "clock": "recorded"
+      },
+      {
+        "phase": "tool.completed",
+        "atMs": 1792427000089,
+        "clock": "recorded"
+      },
+      {
+        "phase": "provider.request",
+        "atMs": 1792427000092,
+        "clock": "recorded"
+      },
+      {
+        "phase": "provider.request.result",
+        "atMs": 1792427000187,
+        "clock": "recorded"
+      },
+      {
+        "phase": "tool.completed",
+        "atMs": 1792427001260,
+        "clock": "recorded"
+      },
+      {
+        "phase": "provider.request",
+        "atMs": 1792427001262,
+        "clock": "recorded"
+      },
+      {
+        "phase": "provider.request.result",
+        "atMs": 1792427001358,
         "clock": "recorded"
       },
       {
         "phase": "tool.dispatched",
-        "atMs": 1792418768807,
+        "atMs": 1792427002000,
         "clock": "recorded"
       },
       {
         "phase": "tool.completed",
-        "atMs": 1792418768810,
-        "clock": "recorded"
-      },
-      {
-        "phase": "tool.completed",
-        "atMs": 1792418768811,
+        "atMs": 1792427002225,
         "clock": "recorded"
       },
       {
         "phase": "provider.request",
-        "atMs": 1792418768815,
+        "atMs": 1792427002228,
         "clock": "recorded"
       },
       {
         "phase": "provider.request.result",
-        "atMs": 1792418768936,
-        "clock": "recorded"
-      },
-      {
-        "phase": "tool.completed",
-        "atMs": 1792418769823,
-        "clock": "recorded"
-      },
-      {
-        "phase": "provider.request",
-        "atMs": 1792418769825,
-        "clock": "recorded"
-      },
-      {
-        "phase": "provider.request.result",
-        "atMs": 1792418769911,
+        "atMs": 1792427002355,
         "clock": "recorded"
       },
       {
         "phase": "tool.dispatched",
-        "atMs": 1792418770809,
+        "atMs": 1792427003354,
         "clock": "recorded"
       },
       {
         "phase": "tool.completed",
-        "atMs": 1792418770999,
+        "atMs": 1792427003361,
         "clock": "recorded"
       },
       {
         "phase": "provider.request",
-        "atMs": 1792418771001,
+        "atMs": 1792427003363,
         "clock": "recorded"
       },
       {
         "phase": "provider.request.result",
-        "atMs": 1792418772209,
+        "atMs": 1792427003533,
         "clock": "recorded"
       },
       {
         "phase": "tool.dispatched",
-        "atMs": 1792418772635,
+        "atMs": 1792427004231,
         "clock": "recorded"
       },
       {
         "phase": "tool.completed",
-        "atMs": 1792418772641,
+        "atMs": 1792427004232,
         "clock": "recorded"
       },
       {
         "phase": "provider.request",
-        "atMs": 1792418772643,
+        "atMs": 1792427004235,
         "clock": "recorded"
       },
       {
         "phase": "provider.request.result",
-        "atMs": 1792418772943,
-        "clock": "recorded"
-      },
-      {
-        "phase": "tool.dispatched",
-        "atMs": 1792418773458,
-        "clock": "recorded"
-      },
-      {
-        "phase": "tool.completed",
-        "atMs": 1792418773458,
-        "clock": "recorded"
-      },
-      {
-        "phase": "provider.request",
-        "atMs": 1792418773461,
-        "clock": "recorded"
-      },
-      {
-        "phase": "provider.request.result",
-        "atMs": 1792418773582,
+        "atMs": 1792427004412,
         "clock": "recorded"
       },
       {
         "phase": "run.usage",
-        "atMs": 1792418774396,
+        "atMs": 1792427005181,
         "clock": "recorded"
       },
       {
         "phase": "run.finished",
-        "atMs": 1792418774396,
+        "atMs": 1792427005181,
         "clock": "recorded"
       },
       {
         "phase": "stop",
-        "atMs": 1792418774396,
+        "atMs": 1792427005181,
         "clock": "recorded"
       },
       {
         "phase": "input.admitted",
-        "atMs": 1792418766862,
+        "atMs": 1792427005219,
         "clock": "recorded"
       },
       {
         "phase": "input.promoted",
-        "atMs": 1792418766862,
+        "atMs": 1792427005220,
         "clock": "recorded"
       },
       {
         "phase": "run.started",
-        "atMs": 1792418766863,
+        "atMs": 1792427005220,
         "clock": "recorded"
       },
       {
         "phase": "provider.request",
-        "atMs": 1792418766865,
+        "atMs": 1792427005223,
         "clock": "recorded"
       },
       {
         "phase": "provider.request.result",
-        "atMs": 1792418767062,
+        "atMs": 1792427005345,
         "clock": "recorded"
       },
       {
         "phase": "tool.dispatched",
-        "atMs": 1792418767863,
-        "clock": "recorded"
-      },
-      {
-        "phase": "tool.dispatched",
-        "atMs": 1792418767863,
+        "atMs": 1792427006600,
         "clock": "recorded"
       },
       {
         "phase": "tool.completed",
-        "atMs": 1792418767864,
-        "clock": "recorded"
-      },
-      {
-        "phase": "tool.completed",
-        "atMs": 1792418767864,
+        "atMs": 1792427006600,
         "clock": "recorded"
       },
       {
         "phase": "provider.request",
-        "atMs": 1792418767866,
+        "atMs": 1792427006603,
         "clock": "recorded"
       },
       {
         "phase": "provider.request.result",
-        "atMs": 1792418767966,
+        "atMs": 1792427006703,
         "clock": "recorded"
       },
       {
         "phase": "tool.dispatched",
-        "atMs": 1792418768806,
+        "atMs": 1792427007586,
+        "clock": "recorded"
+      },
+      {
+        "phase": "tool.completed",
+        "atMs": 1792427007593,
+        "clock": "recorded"
+      },
+      {
+        "phase": "provider.request",
+        "atMs": 1792427007595,
+        "clock": "recorded"
+      },
+      {
+        "phase": "provider.request.result",
+        "atMs": 1792427007682,
         "clock": "recorded"
       },
       {
         "phase": "tool.dispatched",
-        "atMs": 1792418768807,
+        "atMs": 1792427008950,
         "clock": "recorded"
       },
       {
         "phase": "tool.completed",
-        "atMs": 1792418768810,
-        "clock": "recorded"
-      },
-      {
-        "phase": "tool.completed",
-        "atMs": 1792418768811,
+        "atMs": 1792427009174,
         "clock": "recorded"
       },
       {
         "phase": "provider.request",
-        "atMs": 1792418768815,
+        "atMs": 1792427009176,
         "clock": "recorded"
       },
       {
         "phase": "provider.request.result",
-        "atMs": 1792418768936,
-        "clock": "recorded"
-      },
-      {
-        "phase": "tool.completed",
-        "atMs": 1792418769823,
-        "clock": "recorded"
-      },
-      {
-        "phase": "provider.request",
-        "atMs": 1792418769825,
-        "clock": "recorded"
-      },
-      {
-        "phase": "provider.request.result",
-        "atMs": 1792418769911,
-        "clock": "recorded"
-      },
-      {
-        "phase": "tool.dispatched",
-        "atMs": 1792418770809,
-        "clock": "recorded"
-      },
-      {
-        "phase": "tool.completed",
-        "atMs": 1792418770999,
-        "clock": "recorded"
-      },
-      {
-        "phase": "provider.request",
-        "atMs": 1792418771001,
-        "clock": "recorded"
-      },
-      {
-        "phase": "provider.request.result",
-        "atMs": 1792418772209,
-        "clock": "recorded"
-      },
-      {
-        "phase": "tool.dispatched",
-        "atMs": 1792418772635,
-        "clock": "recorded"
-      },
-      {
-        "phase": "tool.completed",
-        "atMs": 1792418772641,
-        "clock": "recorded"
-      },
-      {
-        "phase": "provider.request",
-        "atMs": 1792418772643,
-        "clock": "recorded"
-      },
-      {
-        "phase": "provider.request.result",
-        "atMs": 1792418772943,
-        "clock": "recorded"
-      },
-      {
-        "phase": "tool.dispatched",
-        "atMs": 1792418773458,
-        "clock": "recorded"
-      },
-      {
-        "phase": "tool.completed",
-        "atMs": 1792418773458,
-        "clock": "recorded"
-      },
-      {
-        "phase": "provider.request",
-        "atMs": 1792418773461,
-        "clock": "recorded"
-      },
-      {
-        "phase": "provider.request.result",
-        "atMs": 1792418773582,
+        "atMs": 1792427009480,
         "clock": "recorded"
       },
       {
         "phase": "run.usage",
-        "atMs": 1792418774396,
+        "atMs": 1792427011595,
         "clock": "recorded"
       },
       {
         "phase": "run.finished",
-        "atMs": 1792418774396,
+        "atMs": 1792427011595,
         "clock": "recorded"
       },
       {
         "phase": "stop",
-        "atMs": 1792418774396,
+        "atMs": 1792427011595,
         "clock": "recorded"
       },
       {
         "phase": "input.admitted",
-        "atMs": 1792418774479,
+        "atMs": 1792427011634,
         "clock": "recorded"
       },
       {
         "phase": "input.promoted",
-        "atMs": 1792418774479,
+        "atMs": 1792427011635,
         "clock": "recorded"
       },
       {
         "phase": "run.started",
-        "atMs": 1792418774479,
+        "atMs": 1792427011635,
         "clock": "recorded"
       },
       {
         "phase": "provider.request",
-        "atMs": 1792418774483,
+        "atMs": 1792427011638,
         "clock": "recorded"
       },
       {
         "phase": "provider.request.result",
-        "atMs": 1792418774647,
+        "atMs": 1792427011786,
         "clock": "recorded"
       },
       {
         "phase": "tool.dispatched",
-        "atMs": 1792418775711,
+        "atMs": 1792427019512,
         "clock": "recorded"
       },
       {
         "phase": "tool.completed",
-        "atMs": 1792418775718,
+        "atMs": 1792427019787,
         "clock": "recorded"
       },
       {
         "phase": "provider.request",
-        "atMs": 1792418775720,
+        "atMs": 1792427019790,
         "clock": "recorded"
       },
       {
         "phase": "provider.request.result",
-        "atMs": 1792418775826,
+        "atMs": 1792427019883,
         "clock": "recorded"
       },
       {
         "phase": "tool.dispatched",
-        "atMs": 1792418776531,
+        "atMs": 1792427032041,
         "clock": "recorded"
       },
       {
         "phase": "tool.completed",
-        "atMs": 1792418776531,
+        "atMs": 1792427032347,
         "clock": "recorded"
       },
       {
         "phase": "provider.request",
-        "atMs": 1792418776534,
+        "atMs": 1792427032350,
         "clock": "recorded"
       },
       {
         "phase": "provider.request.result",
-        "atMs": 1792418776629,
+        "atMs": 1792427032448,
+        "clock": "recorded"
+      },
+      {
+        "phase": "tool.completed",
+        "atMs": 1792427035671,
+        "clock": "recorded"
+      },
+      {
+        "phase": "provider.request",
+        "atMs": 1792427035674,
+        "clock": "recorded"
+      },
+      {
+        "phase": "provider.request.result",
+        "atMs": 1792427035778,
+        "clock": "recorded"
+      },
+      {
+        "phase": "tool.dispatched",
+        "atMs": 1792427036226,
+        "clock": "recorded"
+      },
+      {
+        "phase": "tool.completed",
+        "atMs": 1792427036450,
+        "clock": "recorded"
+      },
+      {
+        "phase": "provider.request",
+        "atMs": 1792427036453,
+        "clock": "recorded"
+      },
+      {
+        "phase": "provider.request.result",
+        "atMs": 1792427036553,
+        "clock": "recorded"
+      },
+      {
+        "phase": "tool.dispatched",
+        "atMs": 1792427037695,
+        "clock": "recorded"
+      },
+      {
+        "phase": "tool.completed",
+        "atMs": 1792427037712,
+        "clock": "recorded"
+      },
+      {
+        "phase": "provider.request",
+        "atMs": 1792427037722,
+        "clock": "recorded"
+      },
+      {
+        "phase": "provider.request.result",
+        "atMs": 1792427037816,
+        "clock": "recorded"
+      },
+      {
+        "phase": "tool.dispatched",
+        "atMs": 1792427038277,
+        "clock": "recorded"
+      },
+      {
+        "phase": "tool.completed",
+        "atMs": 1792427038583,
+        "clock": "recorded"
+      },
+      {
+        "phase": "provider.request",
+        "atMs": 1792427038586,
+        "clock": "recorded"
+      },
+      {
+        "phase": "provider.request.result",
+        "atMs": 1792427038703,
+        "clock": "recorded"
+      },
+      {
+        "phase": "tool.dispatched",
+        "atMs": 1792427040311,
+        "clock": "recorded"
+      },
+      {
+        "phase": "tool.completed",
+        "atMs": 1792427040561,
+        "clock": "recorded"
+      },
+      {
+        "phase": "provider.request",
+        "atMs": 1792427040565,
+        "clock": "recorded"
+      },
+      {
+        "phase": "provider.request.result",
+        "atMs": 1792427040666,
         "clock": "recorded"
       },
       {
         "phase": "run.usage",
-        "atMs": 1792418777379,
+        "atMs": 1792427043332,
         "clock": "recorded"
       },
       {
         "phase": "run.finished",
-        "atMs": 1792418777379,
+        "atMs": 1792427043332,
         "clock": "recorded"
       },
       {
         "phase": "stop",
-        "atMs": 1792418777379,
+        "atMs": 1792427043332,
         "clock": "recorded"
       },
       {
         "phase": "input.admitted",
-        "atMs": 1792418766862,
+        "atMs": 1792427043349,
         "clock": "recorded"
       },
       {
         "phase": "input.promoted",
-        "atMs": 1792418766862,
+        "atMs": 1792427043350,
         "clock": "recorded"
       },
       {
         "phase": "run.started",
-        "atMs": 1792418766863,
+        "atMs": 1792427043350,
         "clock": "recorded"
       },
       {
         "phase": "provider.request",
-        "atMs": 1792418766865,
+        "atMs": 1792427043354,
         "clock": "recorded"
       },
       {
         "phase": "provider.request.result",
-        "atMs": 1792418767062,
+        "atMs": 1792427043491,
         "clock": "recorded"
       },
       {
         "phase": "tool.dispatched",
-        "atMs": 1792418767863,
-        "clock": "recorded"
-      },
-      {
-        "phase": "tool.dispatched",
-        "atMs": 1792418767863,
+        "atMs": 1792427044969,
         "clock": "recorded"
       },
       {
         "phase": "tool.completed",
-        "atMs": 1792418767864,
-        "clock": "recorded"
-      },
-      {
-        "phase": "tool.completed",
-        "atMs": 1792418767864,
+        "atMs": 1792427045271,
         "clock": "recorded"
       },
       {
         "phase": "provider.request",
-        "atMs": 1792418767866,
+        "atMs": 1792427045275,
         "clock": "recorded"
       },
       {
         "phase": "provider.request.result",
-        "atMs": 1792418767966,
-        "clock": "recorded"
-      },
-      {
-        "phase": "tool.dispatched",
-        "atMs": 1792418768806,
-        "clock": "recorded"
-      },
-      {
-        "phase": "tool.dispatched",
-        "atMs": 1792418768807,
-        "clock": "recorded"
-      },
-      {
-        "phase": "tool.completed",
-        "atMs": 1792418768810,
-        "clock": "recorded"
-      },
-      {
-        "phase": "tool.completed",
-        "atMs": 1792418768811,
-        "clock": "recorded"
-      },
-      {
-        "phase": "provider.request",
-        "atMs": 1792418768815,
-        "clock": "recorded"
-      },
-      {
-        "phase": "provider.request.result",
-        "atMs": 1792418768936,
-        "clock": "recorded"
-      },
-      {
-        "phase": "tool.completed",
-        "atMs": 1792418769823,
-        "clock": "recorded"
-      },
-      {
-        "phase": "provider.request",
-        "atMs": 1792418769825,
-        "clock": "recorded"
-      },
-      {
-        "phase": "provider.request.result",
-        "atMs": 1792418769911,
-        "clock": "recorded"
-      },
-      {
-        "phase": "tool.dispatched",
-        "atMs": 1792418770809,
-        "clock": "recorded"
-      },
-      {
-        "phase": "tool.completed",
-        "atMs": 1792418770999,
-        "clock": "recorded"
-      },
-      {
-        "phase": "provider.request",
-        "atMs": 1792418771001,
-        "clock": "recorded"
-      },
-      {
-        "phase": "provider.request.result",
-        "atMs": 1792418772209,
-        "clock": "recorded"
-      },
-      {
-        "phase": "tool.dispatched",
-        "atMs": 1792418772635,
-        "clock": "recorded"
-      },
-      {
-        "phase": "tool.completed",
-        "atMs": 1792418772641,
-        "clock": "recorded"
-      },
-      {
-        "phase": "provider.request",
-        "atMs": 1792418772643,
-        "clock": "recorded"
-      },
-      {
-        "phase": "provider.request.result",
-        "atMs": 1792418772943,
-        "clock": "recorded"
-      },
-      {
-        "phase": "tool.dispatched",
-        "atMs": 1792418773458,
-        "clock": "recorded"
-      },
-      {
-        "phase": "tool.completed",
-        "atMs": 1792418773458,
-        "clock": "recorded"
-      },
-      {
-        "phase": "provider.request",
-        "atMs": 1792418773461,
-        "clock": "recorded"
-      },
-      {
-        "phase": "provider.request.result",
-        "atMs": 1792418773582,
+        "atMs": 1792427045378,
         "clock": "recorded"
       },
       {
         "phase": "run.usage",
-        "atMs": 1792418774396,
+        "atMs": 1792427047878,
         "clock": "recorded"
       },
       {
         "phase": "run.finished",
-        "atMs": 1792418774396,
+        "atMs": 1792427047878,
         "clock": "recorded"
       },
       {
         "phase": "stop",
-        "atMs": 1792418774396,
+        "atMs": 1792427047878,
         "clock": "recorded"
       },
       {
         "phase": "input.admitted",
-        "atMs": 1792418774479,
+        "atMs": 1792427047966,
         "clock": "recorded"
       },
       {
         "phase": "input.promoted",
-        "atMs": 1792418774479,
+        "atMs": 1792427047968,
         "clock": "recorded"
       },
       {
         "phase": "run.started",
-        "atMs": 1792418774479,
+        "atMs": 1792427047969,
         "clock": "recorded"
       },
       {
         "phase": "provider.request",
-        "atMs": 1792418774483,
+        "atMs": 1792427047973,
         "clock": "recorded"
       },
       {
         "phase": "provider.request.result",
-        "atMs": 1792418774647,
-        "clock": "recorded"
-      },
-      {
-        "phase": "tool.dispatched",
-        "atMs": 1792418775711,
-        "clock": "recorded"
-      },
-      {
-        "phase": "tool.completed",
-        "atMs": 1792418775718,
-        "clock": "recorded"
-      },
-      {
-        "phase": "provider.request",
-        "atMs": 1792418775720,
-        "clock": "recorded"
-      },
-      {
-        "phase": "provider.request.result",
-        "atMs": 1792418775826,
-        "clock": "recorded"
-      },
-      {
-        "phase": "tool.dispatched",
-        "atMs": 1792418776531,
-        "clock": "recorded"
-      },
-      {
-        "phase": "tool.completed",
-        "atMs": 1792418776531,
-        "clock": "recorded"
-      },
-      {
-        "phase": "provider.request",
-        "atMs": 1792418776534,
-        "clock": "recorded"
-      },
-      {
-        "phase": "provider.request.result",
-        "atMs": 1792418776629,
+        "atMs": 1792427048391,
         "clock": "recorded"
       },
       {
         "phase": "run.usage",
-        "atMs": 1792418777379,
+        "atMs": 1792427049609,
         "clock": "recorded"
       },
       {
         "phase": "run.finished",
-        "atMs": 1792418777379,
+        "atMs": 1792427049609,
         "clock": "recorded"
       },
       {
         "phase": "stop",
-        "atMs": 1792418777379,
-        "clock": "recorded"
-      },
-      {
-        "phase": "input.admitted",
-        "atMs": 1792418777391,
-        "clock": "recorded"
-      },
-      {
-        "phase": "input.promoted",
-        "atMs": 1792418777392,
-        "clock": "recorded"
-      },
-      {
-        "phase": "run.started",
-        "atMs": 1792418777392,
-        "clock": "recorded"
-      },
-      {
-        "phase": "provider.request",
-        "atMs": 1792418777396,
-        "clock": "recorded"
-      },
-      {
-        "phase": "provider.request.result",
-        "atMs": 1792418777543,
-        "clock": "recorded"
-      },
-      {
-        "phase": "tool.dispatched",
-        "atMs": 1792418779047,
-        "clock": "recorded"
-      },
-      {
-        "phase": "tool.completed",
-        "atMs": 1792418779414,
-        "clock": "recorded"
-      },
-      {
-        "phase": "tool.dispatched",
-        "atMs": 1792418779415,
-        "clock": "recorded"
-      },
-      {
-        "phase": "tool.completed",
-        "atMs": 1792418779416,
-        "clock": "recorded"
-      },
-      {
-        "phase": "provider.request",
-        "atMs": 1792418779432,
-        "clock": "recorded"
-      },
-      {
-        "phase": "provider.request.result",
-        "atMs": 1792418779586,
-        "clock": "recorded"
-      },
-      {
-        "phase": "tool.completed",
-        "atMs": 1792418788842,
-        "clock": "recorded"
-      },
-      {
-        "phase": "provider.request",
-        "atMs": 1792418788846,
-        "clock": "recorded"
-      },
-      {
-        "phase": "provider.request.result",
-        "atMs": 1792418788993,
-        "clock": "recorded"
-      },
-      {
-        "phase": "tool.dispatched",
-        "atMs": 1792418789542,
-        "clock": "recorded"
-      },
-      {
-        "phase": "tool.completed",
-        "atMs": 1792418789760,
-        "clock": "recorded"
-      },
-      {
-        "phase": "provider.request",
-        "atMs": 1792418789763,
-        "clock": "recorded"
-      },
-      {
-        "phase": "provider.request.result",
-        "atMs": 1792418789857,
-        "clock": "recorded"
-      },
-      {
-        "phase": "tool.dispatched",
-        "atMs": 1792418790711,
-        "clock": "recorded"
-      },
-      {
-        "phase": "tool.completed",
-        "atMs": 1792418790721,
-        "clock": "recorded"
-      },
-      {
-        "phase": "provider.request",
-        "atMs": 1792418790724,
-        "clock": "recorded"
-      },
-      {
-        "phase": "provider.request.result",
-        "atMs": 1792418791267,
-        "clock": "recorded"
-      },
-      {
-        "phase": "tool.dispatched",
-        "atMs": 1792418792087,
-        "clock": "recorded"
-      },
-      {
-        "phase": "tool.completed",
-        "atMs": 1792418792382,
-        "clock": "recorded"
-      },
-      {
-        "phase": "provider.request",
-        "atMs": 1792418792385,
-        "clock": "recorded"
-      },
-      {
-        "phase": "provider.request.result",
-        "atMs": 1792418792543,
-        "clock": "recorded"
-      },
-      {
-        "phase": "tool.dispatched",
-        "atMs": 1792418793652,
-        "clock": "recorded"
-      },
-      {
-        "phase": "tool.completed",
-        "atMs": 1792418793843,
-        "clock": "recorded"
-      },
-      {
-        "phase": "provider.request",
-        "atMs": 1792418793846,
-        "clock": "recorded"
-      },
-      {
-        "phase": "provider.request.result",
-        "atMs": 1792418793989,
-        "clock": "recorded"
-      },
-      {
-        "phase": "tool.dispatched",
-        "atMs": 1792418795579,
-        "clock": "recorded"
-      },
-      {
-        "phase": "tool.completed",
-        "atMs": 1792418795898,
-        "clock": "recorded"
-      },
-      {
-        "phase": "provider.request",
-        "atMs": 1792418795901,
-        "clock": "recorded"
-      },
-      {
-        "phase": "provider.request.result",
-        "atMs": 1792418796022,
-        "clock": "recorded"
-      },
-      {
-        "phase": "tool.dispatched",
-        "atMs": 1792418797672,
-        "clock": "recorded"
-      },
-      {
-        "phase": "tool.completed",
-        "atMs": 1792418797991,
-        "clock": "recorded"
-      },
-      {
-        "phase": "provider.request",
-        "atMs": 1792418797994,
-        "clock": "recorded"
-      },
-      {
-        "phase": "provider.request.result",
-        "atMs": 1792418798128,
-        "clock": "recorded"
-      },
-      {
-        "phase": "tool.dispatched",
-        "atMs": 1792418799927,
-        "clock": "recorded"
-      },
-      {
-        "phase": "tool.completed",
-        "atMs": 1792418800194,
-        "clock": "recorded"
-      },
-      {
-        "phase": "provider.request",
-        "atMs": 1792418800197,
-        "clock": "recorded"
-      },
-      {
-        "phase": "provider.request.result",
-        "atMs": 1792418800295,
-        "clock": "recorded"
-      },
-      {
-        "phase": "tool.dispatched",
-        "atMs": 1792418803119,
-        "clock": "recorded"
-      },
-      {
-        "phase": "tool.completed",
-        "atMs": 1792418803411,
-        "clock": "recorded"
-      },
-      {
-        "phase": "provider.request",
-        "atMs": 1792418803415,
-        "clock": "recorded"
-      },
-      {
-        "phase": "provider.request.result",
-        "atMs": 1792418803553,
-        "clock": "recorded"
-      },
-      {
-        "phase": "tool.dispatched",
-        "atMs": 1792418805875,
-        "clock": "recorded"
-      },
-      {
-        "phase": "tool.completed",
-        "atMs": 1792418806193,
-        "clock": "recorded"
-      },
-      {
-        "phase": "provider.request",
-        "atMs": 1792418806197,
-        "clock": "recorded"
-      },
-      {
-        "phase": "provider.request.result",
-        "atMs": 1792418806336,
-        "clock": "recorded"
-      },
-      {
-        "phase": "tool.dispatched",
-        "atMs": 1792418807478,
-        "clock": "recorded"
-      },
-      {
-        "phase": "tool.completed",
-        "atMs": 1792418807798,
-        "clock": "recorded"
-      },
-      {
-        "phase": "provider.request",
-        "atMs": 1792418807803,
-        "clock": "recorded"
-      },
-      {
-        "phase": "provider.request.result",
-        "atMs": 1792418807937,
-        "clock": "recorded"
-      },
-      {
-        "phase": "run.usage",
-        "atMs": 1792418810252,
-        "clock": "recorded"
-      },
-      {
-        "phase": "run.finished",
-        "atMs": 1792418810252,
-        "clock": "recorded"
-      },
-      {
-        "phase": "stop",
-        "atMs": 1792418810252,
-        "clock": "recorded"
-      },
-      {
-        "phase": "input.admitted",
-        "atMs": 1792418766862,
-        "clock": "recorded"
-      },
-      {
-        "phase": "input.promoted",
-        "atMs": 1792418766862,
-        "clock": "recorded"
-      },
-      {
-        "phase": "run.started",
-        "atMs": 1792418766863,
-        "clock": "recorded"
-      },
-      {
-        "phase": "provider.request",
-        "atMs": 1792418766865,
-        "clock": "recorded"
-      },
-      {
-        "phase": "provider.request.result",
-        "atMs": 1792418767062,
-        "clock": "recorded"
-      },
-      {
-        "phase": "tool.dispatched",
-        "atMs": 1792418767863,
-        "clock": "recorded"
-      },
-      {
-        "phase": "tool.dispatched",
-        "atMs": 1792418767863,
-        "clock": "recorded"
-      },
-      {
-        "phase": "tool.completed",
-        "atMs": 1792418767864,
-        "clock": "recorded"
-      },
-      {
-        "phase": "tool.completed",
-        "atMs": 1792418767864,
-        "clock": "recorded"
-      },
-      {
-        "phase": "provider.request",
-        "atMs": 1792418767866,
-        "clock": "recorded"
-      },
-      {
-        "phase": "provider.request.result",
-        "atMs": 1792418767966,
-        "clock": "recorded"
-      },
-      {
-        "phase": "tool.dispatched",
-        "atMs": 1792418768806,
-        "clock": "recorded"
-      },
-      {
-        "phase": "tool.dispatched",
-        "atMs": 1792418768807,
-        "clock": "recorded"
-      },
-      {
-        "phase": "tool.completed",
-        "atMs": 1792418768810,
-        "clock": "recorded"
-      },
-      {
-        "phase": "tool.completed",
-        "atMs": 1792418768811,
-        "clock": "recorded"
-      },
-      {
-        "phase": "provider.request",
-        "atMs": 1792418768815,
-        "clock": "recorded"
-      },
-      {
-        "phase": "provider.request.result",
-        "atMs": 1792418768936,
-        "clock": "recorded"
-      },
-      {
-        "phase": "tool.completed",
-        "atMs": 1792418769823,
-        "clock": "recorded"
-      },
-      {
-        "phase": "provider.request",
-        "atMs": 1792418769825,
-        "clock": "recorded"
-      },
-      {
-        "phase": "provider.request.result",
-        "atMs": 1792418769911,
-        "clock": "recorded"
-      },
-      {
-        "phase": "tool.dispatched",
-        "atMs": 1792418770809,
-        "clock": "recorded"
-      },
-      {
-        "phase": "tool.completed",
-        "atMs": 1792418770999,
-        "clock": "recorded"
-      },
-      {
-        "phase": "provider.request",
-        "atMs": 1792418771001,
-        "clock": "recorded"
-      },
-      {
-        "phase": "provider.request.result",
-        "atMs": 1792418772209,
-        "clock": "recorded"
-      },
-      {
-        "phase": "tool.dispatched",
-        "atMs": 1792418772635,
-        "clock": "recorded"
-      },
-      {
-        "phase": "tool.completed",
-        "atMs": 1792418772641,
-        "clock": "recorded"
-      },
-      {
-        "phase": "provider.request",
-        "atMs": 1792418772643,
-        "clock": "recorded"
-      },
-      {
-        "phase": "provider.request.result",
-        "atMs": 1792418772943,
-        "clock": "recorded"
-      },
-      {
-        "phase": "tool.dispatched",
-        "atMs": 1792418773458,
-        "clock": "recorded"
-      },
-      {
-        "phase": "tool.completed",
-        "atMs": 1792418773458,
-        "clock": "recorded"
-      },
-      {
-        "phase": "provider.request",
-        "atMs": 1792418773461,
-        "clock": "recorded"
-      },
-      {
-        "phase": "provider.request.result",
-        "atMs": 1792418773582,
-        "clock": "recorded"
-      },
-      {
-        "phase": "run.usage",
-        "atMs": 1792418774396,
-        "clock": "recorded"
-      },
-      {
-        "phase": "run.finished",
-        "atMs": 1792418774396,
-        "clock": "recorded"
-      },
-      {
-        "phase": "stop",
-        "atMs": 1792418774396,
-        "clock": "recorded"
-      },
-      {
-        "phase": "input.admitted",
-        "atMs": 1792418774479,
-        "clock": "recorded"
-      },
-      {
-        "phase": "input.promoted",
-        "atMs": 1792418774479,
-        "clock": "recorded"
-      },
-      {
-        "phase": "run.started",
-        "atMs": 1792418774479,
-        "clock": "recorded"
-      },
-      {
-        "phase": "provider.request",
-        "atMs": 1792418774483,
-        "clock": "recorded"
-      },
-      {
-        "phase": "provider.request.result",
-        "atMs": 1792418774647,
-        "clock": "recorded"
-      },
-      {
-        "phase": "tool.dispatched",
-        "atMs": 1792418775711,
-        "clock": "recorded"
-      },
-      {
-        "phase": "tool.completed",
-        "atMs": 1792418775718,
-        "clock": "recorded"
-      },
-      {
-        "phase": "provider.request",
-        "atMs": 1792418775720,
-        "clock": "recorded"
-      },
-      {
-        "phase": "provider.request.result",
-        "atMs": 1792418775826,
-        "clock": "recorded"
-      },
-      {
-        "phase": "tool.dispatched",
-        "atMs": 1792418776531,
-        "clock": "recorded"
-      },
-      {
-        "phase": "tool.completed",
-        "atMs": 1792418776531,
-        "clock": "recorded"
-      },
-      {
-        "phase": "provider.request",
-        "atMs": 1792418776534,
-        "clock": "recorded"
-      },
-      {
-        "phase": "provider.request.result",
-        "atMs": 1792418776629,
-        "clock": "recorded"
-      },
-      {
-        "phase": "run.usage",
-        "atMs": 1792418777379,
-        "clock": "recorded"
-      },
-      {
-        "phase": "run.finished",
-        "atMs": 1792418777379,
-        "clock": "recorded"
-      },
-      {
-        "phase": "stop",
-        "atMs": 1792418777379,
-        "clock": "recorded"
-      },
-      {
-        "phase": "input.admitted",
-        "atMs": 1792418777391,
-        "clock": "recorded"
-      },
-      {
-        "phase": "input.promoted",
-        "atMs": 1792418777392,
-        "clock": "recorded"
-      },
-      {
-        "phase": "run.started",
-        "atMs": 1792418777392,
-        "clock": "recorded"
-      },
-      {
-        "phase": "provider.request",
-        "atMs": 1792418777396,
-        "clock": "recorded"
-      },
-      {
-        "phase": "provider.request.result",
-        "atMs": 1792418777543,
-        "clock": "recorded"
-      },
-      {
-        "phase": "tool.dispatched",
-        "atMs": 1792418779047,
-        "clock": "recorded"
-      },
-      {
-        "phase": "tool.completed",
-        "atMs": 1792418779414,
-        "clock": "recorded"
-      },
-      {
-        "phase": "tool.dispatched",
-        "atMs": 1792418779415,
-        "clock": "recorded"
-      },
-      {
-        "phase": "tool.completed",
-        "atMs": 1792418779416,
-        "clock": "recorded"
-      },
-      {
-        "phase": "provider.request",
-        "atMs": 1792418779432,
-        "clock": "recorded"
-      },
-      {
-        "phase": "provider.request.result",
-        "atMs": 1792418779586,
-        "clock": "recorded"
-      },
-      {
-        "phase": "tool.completed",
-        "atMs": 1792418788842,
-        "clock": "recorded"
-      },
-      {
-        "phase": "provider.request",
-        "atMs": 1792418788846,
-        "clock": "recorded"
-      },
-      {
-        "phase": "provider.request.result",
-        "atMs": 1792418788993,
-        "clock": "recorded"
-      },
-      {
-        "phase": "tool.dispatched",
-        "atMs": 1792418789542,
-        "clock": "recorded"
-      },
-      {
-        "phase": "tool.completed",
-        "atMs": 1792418789760,
-        "clock": "recorded"
-      },
-      {
-        "phase": "provider.request",
-        "atMs": 1792418789763,
-        "clock": "recorded"
-      },
-      {
-        "phase": "provider.request.result",
-        "atMs": 1792418789857,
-        "clock": "recorded"
-      },
-      {
-        "phase": "tool.dispatched",
-        "atMs": 1792418790711,
-        "clock": "recorded"
-      },
-      {
-        "phase": "tool.completed",
-        "atMs": 1792418790721,
-        "clock": "recorded"
-      },
-      {
-        "phase": "provider.request",
-        "atMs": 1792418790724,
-        "clock": "recorded"
-      },
-      {
-        "phase": "provider.request.result",
-        "atMs": 1792418791267,
-        "clock": "recorded"
-      },
-      {
-        "phase": "tool.dispatched",
-        "atMs": 1792418792087,
-        "clock": "recorded"
-      },
-      {
-        "phase": "tool.completed",
-        "atMs": 1792418792382,
-        "clock": "recorded"
-      },
-      {
-        "phase": "provider.request",
-        "atMs": 1792418792385,
-        "clock": "recorded"
-      },
-      {
-        "phase": "provider.request.result",
-        "atMs": 1792418792543,
-        "clock": "recorded"
-      },
-      {
-        "phase": "tool.dispatched",
-        "atMs": 1792418793652,
-        "clock": "recorded"
-      },
-      {
-        "phase": "tool.completed",
-        "atMs": 1792418793843,
-        "clock": "recorded"
-      },
-      {
-        "phase": "provider.request",
-        "atMs": 1792418793846,
-        "clock": "recorded"
-      },
-      {
-        "phase": "provider.request.result",
-        "atMs": 1792418793989,
-        "clock": "recorded"
-      },
-      {
-        "phase": "tool.dispatched",
-        "atMs": 1792418795579,
-        "clock": "recorded"
-      },
-      {
-        "phase": "tool.completed",
-        "atMs": 1792418795898,
-        "clock": "recorded"
-      },
-      {
-        "phase": "provider.request",
-        "atMs": 1792418795901,
-        "clock": "recorded"
-      },
-      {
-        "phase": "provider.request.result",
-        "atMs": 1792418796022,
-        "clock": "recorded"
-      },
-      {
-        "phase": "tool.dispatched",
-        "atMs": 1792418797672,
-        "clock": "recorded"
-      },
-      {
-        "phase": "tool.completed",
-        "atMs": 1792418797991,
-        "clock": "recorded"
-      },
-      {
-        "phase": "provider.request",
-        "atMs": 1792418797994,
-        "clock": "recorded"
-      },
-      {
-        "phase": "provider.request.result",
-        "atMs": 1792418798128,
-        "clock": "recorded"
-      },
-      {
-        "phase": "tool.dispatched",
-        "atMs": 1792418799927,
-        "clock": "recorded"
-      },
-      {
-        "phase": "tool.completed",
-        "atMs": 1792418800194,
-        "clock": "recorded"
-      },
-      {
-        "phase": "provider.request",
-        "atMs": 1792418800197,
-        "clock": "recorded"
-      },
-      {
-        "phase": "provider.request.result",
-        "atMs": 1792418800295,
-        "clock": "recorded"
-      },
-      {
-        "phase": "tool.dispatched",
-        "atMs": 1792418803119,
-        "clock": "recorded"
-      },
-      {
-        "phase": "tool.completed",
-        "atMs": 1792418803411,
-        "clock": "recorded"
-      },
-      {
-        "phase": "provider.request",
-        "atMs": 1792418803415,
-        "clock": "recorded"
-      },
-      {
-        "phase": "provider.request.result",
-        "atMs": 1792418803553,
-        "clock": "recorded"
-      },
-      {
-        "phase": "tool.dispatched",
-        "atMs": 1792418805875,
-        "clock": "recorded"
-      },
-      {
-        "phase": "tool.completed",
-        "atMs": 1792418806193,
-        "clock": "recorded"
-      },
-      {
-        "phase": "provider.request",
-        "atMs": 1792418806197,
-        "clock": "recorded"
-      },
-      {
-        "phase": "provider.request.result",
-        "atMs": 1792418806336,
-        "clock": "recorded"
-      },
-      {
-        "phase": "tool.dispatched",
-        "atMs": 1792418807478,
-        "clock": "recorded"
-      },
-      {
-        "phase": "tool.completed",
-        "atMs": 1792418807798,
-        "clock": "recorded"
-      },
-      {
-        "phase": "provider.request",
-        "atMs": 1792418807803,
-        "clock": "recorded"
-      },
-      {
-        "phase": "provider.request.result",
-        "atMs": 1792418807937,
-        "clock": "recorded"
-      },
-      {
-        "phase": "run.usage",
-        "atMs": 1792418810252,
-        "clock": "recorded"
-      },
-      {
-        "phase": "run.finished",
-        "atMs": 1792418810252,
-        "clock": "recorded"
-      },
-      {
-        "phase": "stop",
-        "atMs": 1792418810252,
-        "clock": "recorded"
-      },
-      {
-        "phase": "input.admitted",
-        "atMs": 1792418810308,
-        "clock": "recorded"
-      },
-      {
-        "phase": "input.promoted",
-        "atMs": 1792418810308,
-        "clock": "recorded"
-      },
-      {
-        "phase": "run.started",
-        "atMs": 1792418810309,
-        "clock": "recorded"
-      },
-      {
-        "phase": "provider.request",
-        "atMs": 1792418810313,
-        "clock": "recorded"
-      },
-      {
-        "phase": "provider.request.result",
-        "atMs": 1792418810449,
-        "clock": "recorded"
-      },
-      {
-        "phase": "tool.dispatched",
-        "atMs": 1792418814138,
-        "clock": "recorded"
-      },
-      {
-        "phase": "tool.completed",
-        "atMs": 1792418814433,
-        "clock": "recorded"
-      },
-      {
-        "phase": "provider.request",
-        "atMs": 1792418814437,
-        "clock": "recorded"
-      },
-      {
-        "phase": "provider.request.result",
-        "atMs": 1792418814550,
-        "clock": "recorded"
-      },
-      {
-        "phase": "tool.dispatched",
-        "atMs": 1792418815402,
-        "clock": "recorded"
-      },
-      {
-        "phase": "tool.dispatched",
-        "atMs": 1792418815402,
-        "clock": "recorded"
-      },
-      {
-        "phase": "tool.completed",
-        "atMs": 1792418815403,
-        "clock": "recorded"
-      },
-      {
-        "phase": "tool.completed",
-        "atMs": 1792418815403,
-        "clock": "recorded"
-      },
-      {
-        "phase": "provider.request",
-        "atMs": 1792418815406,
-        "clock": "recorded"
-      },
-      {
-        "phase": "provider.request.result",
-        "atMs": 1792418815777,
-        "clock": "recorded"
-      },
-      {
-        "phase": "tool.dispatched",
-        "atMs": 1792418816687,
-        "clock": "recorded"
-      },
-      {
-        "phase": "tool.completed",
-        "atMs": 1792418816696,
-        "clock": "recorded"
-      },
-      {
-        "phase": "provider.request",
-        "atMs": 1792418816700,
-        "clock": "recorded"
-      },
-      {
-        "phase": "provider.request.result",
-        "atMs": 1792418816858,
-        "clock": "recorded"
-      },
-      {
-        "phase": "tool.dispatched",
-        "atMs": 1792418817681,
-        "clock": "recorded"
-      },
-      {
-        "phase": "tool.completed",
-        "atMs": 1792418817974,
-        "clock": "recorded"
-      },
-      {
-        "phase": "provider.request",
-        "atMs": 1792418817978,
-        "clock": "recorded"
-      },
-      {
-        "phase": "provider.request.result",
-        "atMs": 1792418818545,
-        "clock": "recorded"
-      },
-      {
-        "phase": "run.usage",
-        "atMs": 1792418820599,
-        "clock": "recorded"
-      },
-      {
-        "phase": "run.finished",
-        "atMs": 1792418820599,
-        "clock": "recorded"
-      },
-      {
-        "phase": "stop",
-        "atMs": 1792418820600,
-        "clock": "recorded"
-      },
-      {
-        "phase": "input.admitted",
-        "atMs": 1792418766862,
-        "clock": "recorded"
-      },
-      {
-        "phase": "input.promoted",
-        "atMs": 1792418766862,
-        "clock": "recorded"
-      },
-      {
-        "phase": "run.started",
-        "atMs": 1792418766863,
-        "clock": "recorded"
-      },
-      {
-        "phase": "provider.request",
-        "atMs": 1792418766865,
-        "clock": "recorded"
-      },
-      {
-        "phase": "provider.request.result",
-        "atMs": 1792418767062,
-        "clock": "recorded"
-      },
-      {
-        "phase": "tool.dispatched",
-        "atMs": 1792418767863,
-        "clock": "recorded"
-      },
-      {
-        "phase": "tool.dispatched",
-        "atMs": 1792418767863,
-        "clock": "recorded"
-      },
-      {
-        "phase": "tool.completed",
-        "atMs": 1792418767864,
-        "clock": "recorded"
-      },
-      {
-        "phase": "tool.completed",
-        "atMs": 1792418767864,
-        "clock": "recorded"
-      },
-      {
-        "phase": "provider.request",
-        "atMs": 1792418767866,
-        "clock": "recorded"
-      },
-      {
-        "phase": "provider.request.result",
-        "atMs": 1792418767966,
-        "clock": "recorded"
-      },
-      {
-        "phase": "tool.dispatched",
-        "atMs": 1792418768806,
-        "clock": "recorded"
-      },
-      {
-        "phase": "tool.dispatched",
-        "atMs": 1792418768807,
-        "clock": "recorded"
-      },
-      {
-        "phase": "tool.completed",
-        "atMs": 1792418768810,
-        "clock": "recorded"
-      },
-      {
-        "phase": "tool.completed",
-        "atMs": 1792418768811,
-        "clock": "recorded"
-      },
-      {
-        "phase": "provider.request",
-        "atMs": 1792418768815,
-        "clock": "recorded"
-      },
-      {
-        "phase": "provider.request.result",
-        "atMs": 1792418768936,
-        "clock": "recorded"
-      },
-      {
-        "phase": "tool.completed",
-        "atMs": 1792418769823,
-        "clock": "recorded"
-      },
-      {
-        "phase": "provider.request",
-        "atMs": 1792418769825,
-        "clock": "recorded"
-      },
-      {
-        "phase": "provider.request.result",
-        "atMs": 1792418769911,
-        "clock": "recorded"
-      },
-      {
-        "phase": "tool.dispatched",
-        "atMs": 1792418770809,
-        "clock": "recorded"
-      },
-      {
-        "phase": "tool.completed",
-        "atMs": 1792418770999,
-        "clock": "recorded"
-      },
-      {
-        "phase": "provider.request",
-        "atMs": 1792418771001,
-        "clock": "recorded"
-      },
-      {
-        "phase": "provider.request.result",
-        "atMs": 1792418772209,
-        "clock": "recorded"
-      },
-      {
-        "phase": "tool.dispatched",
-        "atMs": 1792418772635,
-        "clock": "recorded"
-      },
-      {
-        "phase": "tool.completed",
-        "atMs": 1792418772641,
-        "clock": "recorded"
-      },
-      {
-        "phase": "provider.request",
-        "atMs": 1792418772643,
-        "clock": "recorded"
-      },
-      {
-        "phase": "provider.request.result",
-        "atMs": 1792418772943,
-        "clock": "recorded"
-      },
-      {
-        "phase": "tool.dispatched",
-        "atMs": 1792418773458,
-        "clock": "recorded"
-      },
-      {
-        "phase": "tool.completed",
-        "atMs": 1792418773458,
-        "clock": "recorded"
-      },
-      {
-        "phase": "provider.request",
-        "atMs": 1792418773461,
-        "clock": "recorded"
-      },
-      {
-        "phase": "provider.request.result",
-        "atMs": 1792418773582,
-        "clock": "recorded"
-      },
-      {
-        "phase": "run.usage",
-        "atMs": 1792418774396,
-        "clock": "recorded"
-      },
-      {
-        "phase": "run.finished",
-        "atMs": 1792418774396,
-        "clock": "recorded"
-      },
-      {
-        "phase": "stop",
-        "atMs": 1792418774396,
-        "clock": "recorded"
-      },
-      {
-        "phase": "input.admitted",
-        "atMs": 1792418774479,
-        "clock": "recorded"
-      },
-      {
-        "phase": "input.promoted",
-        "atMs": 1792418774479,
-        "clock": "recorded"
-      },
-      {
-        "phase": "run.started",
-        "atMs": 1792418774479,
-        "clock": "recorded"
-      },
-      {
-        "phase": "provider.request",
-        "atMs": 1792418774483,
-        "clock": "recorded"
-      },
-      {
-        "phase": "provider.request.result",
-        "atMs": 1792418774647,
-        "clock": "recorded"
-      },
-      {
-        "phase": "tool.dispatched",
-        "atMs": 1792418775711,
-        "clock": "recorded"
-      },
-      {
-        "phase": "tool.completed",
-        "atMs": 1792418775718,
-        "clock": "recorded"
-      },
-      {
-        "phase": "provider.request",
-        "atMs": 1792418775720,
-        "clock": "recorded"
-      },
-      {
-        "phase": "provider.request.result",
-        "atMs": 1792418775826,
-        "clock": "recorded"
-      },
-      {
-        "phase": "tool.dispatched",
-        "atMs": 1792418776531,
-        "clock": "recorded"
-      },
-      {
-        "phase": "tool.completed",
-        "atMs": 1792418776531,
-        "clock": "recorded"
-      },
-      {
-        "phase": "provider.request",
-        "atMs": 1792418776534,
-        "clock": "recorded"
-      },
-      {
-        "phase": "provider.request.result",
-        "atMs": 1792418776629,
-        "clock": "recorded"
-      },
-      {
-        "phase": "run.usage",
-        "atMs": 1792418777379,
-        "clock": "recorded"
-      },
-      {
-        "phase": "run.finished",
-        "atMs": 1792418777379,
-        "clock": "recorded"
-      },
-      {
-        "phase": "stop",
-        "atMs": 1792418777379,
-        "clock": "recorded"
-      },
-      {
-        "phase": "input.admitted",
-        "atMs": 1792418777391,
-        "clock": "recorded"
-      },
-      {
-        "phase": "input.promoted",
-        "atMs": 1792418777392,
-        "clock": "recorded"
-      },
-      {
-        "phase": "run.started",
-        "atMs": 1792418777392,
-        "clock": "recorded"
-      },
-      {
-        "phase": "provider.request",
-        "atMs": 1792418777396,
-        "clock": "recorded"
-      },
-      {
-        "phase": "provider.request.result",
-        "atMs": 1792418777543,
-        "clock": "recorded"
-      },
-      {
-        "phase": "tool.dispatched",
-        "atMs": 1792418779047,
-        "clock": "recorded"
-      },
-      {
-        "phase": "tool.completed",
-        "atMs": 1792418779414,
-        "clock": "recorded"
-      },
-      {
-        "phase": "tool.dispatched",
-        "atMs": 1792418779415,
-        "clock": "recorded"
-      },
-      {
-        "phase": "tool.completed",
-        "atMs": 1792418779416,
-        "clock": "recorded"
-      },
-      {
-        "phase": "provider.request",
-        "atMs": 1792418779432,
-        "clock": "recorded"
-      },
-      {
-        "phase": "provider.request.result",
-        "atMs": 1792418779586,
-        "clock": "recorded"
-      },
-      {
-        "phase": "tool.completed",
-        "atMs": 1792418788842,
-        "clock": "recorded"
-      },
-      {
-        "phase": "provider.request",
-        "atMs": 1792418788846,
-        "clock": "recorded"
-      },
-      {
-        "phase": "provider.request.result",
-        "atMs": 1792418788993,
-        "clock": "recorded"
-      },
-      {
-        "phase": "tool.dispatched",
-        "atMs": 1792418789542,
-        "clock": "recorded"
-      },
-      {
-        "phase": "tool.completed",
-        "atMs": 1792418789760,
-        "clock": "recorded"
-      },
-      {
-        "phase": "provider.request",
-        "atMs": 1792418789763,
-        "clock": "recorded"
-      },
-      {
-        "phase": "provider.request.result",
-        "atMs": 1792418789857,
-        "clock": "recorded"
-      },
-      {
-        "phase": "tool.dispatched",
-        "atMs": 1792418790711,
-        "clock": "recorded"
-      },
-      {
-        "phase": "tool.completed",
-        "atMs": 1792418790721,
-        "clock": "recorded"
-      },
-      {
-        "phase": "provider.request",
-        "atMs": 1792418790724,
-        "clock": "recorded"
-      },
-      {
-        "phase": "provider.request.result",
-        "atMs": 1792418791267,
-        "clock": "recorded"
-      },
-      {
-        "phase": "tool.dispatched",
-        "atMs": 1792418792087,
-        "clock": "recorded"
-      },
-      {
-        "phase": "tool.completed",
-        "atMs": 1792418792382,
-        "clock": "recorded"
-      },
-      {
-        "phase": "provider.request",
-        "atMs": 1792418792385,
-        "clock": "recorded"
-      },
-      {
-        "phase": "provider.request.result",
-        "atMs": 1792418792543,
-        "clock": "recorded"
-      },
-      {
-        "phase": "tool.dispatched",
-        "atMs": 1792418793652,
-        "clock": "recorded"
-      },
-      {
-        "phase": "tool.completed",
-        "atMs": 1792418793843,
-        "clock": "recorded"
-      },
-      {
-        "phase": "provider.request",
-        "atMs": 1792418793846,
-        "clock": "recorded"
-      },
-      {
-        "phase": "provider.request.result",
-        "atMs": 1792418793989,
-        "clock": "recorded"
-      },
-      {
-        "phase": "tool.dispatched",
-        "atMs": 1792418795579,
-        "clock": "recorded"
-      },
-      {
-        "phase": "tool.completed",
-        "atMs": 1792418795898,
-        "clock": "recorded"
-      },
-      {
-        "phase": "provider.request",
-        "atMs": 1792418795901,
-        "clock": "recorded"
-      },
-      {
-        "phase": "provider.request.result",
-        "atMs": 1792418796022,
-        "clock": "recorded"
-      },
-      {
-        "phase": "tool.dispatched",
-        "atMs": 1792418797672,
-        "clock": "recorded"
-      },
-      {
-        "phase": "tool.completed",
-        "atMs": 1792418797991,
-        "clock": "recorded"
-      },
-      {
-        "phase": "provider.request",
-        "atMs": 1792418797994,
-        "clock": "recorded"
-      },
-      {
-        "phase": "provider.request.result",
-        "atMs": 1792418798128,
-        "clock": "recorded"
-      },
-      {
-        "phase": "tool.dispatched",
-        "atMs": 1792418799927,
-        "clock": "recorded"
-      },
-      {
-        "phase": "tool.completed",
-        "atMs": 1792418800194,
-        "clock": "recorded"
-      },
-      {
-        "phase": "provider.request",
-        "atMs": 1792418800197,
-        "clock": "recorded"
-      },
-      {
-        "phase": "provider.request.result",
-        "atMs": 1792418800295,
-        "clock": "recorded"
-      },
-      {
-        "phase": "tool.dispatched",
-        "atMs": 1792418803119,
-        "clock": "recorded"
-      },
-      {
-        "phase": "tool.completed",
-        "atMs": 1792418803411,
-        "clock": "recorded"
-      },
-      {
-        "phase": "provider.request",
-        "atMs": 1792418803415,
-        "clock": "recorded"
-      },
-      {
-        "phase": "provider.request.result",
-        "atMs": 1792418803553,
-        "clock": "recorded"
-      },
-      {
-        "phase": "tool.dispatched",
-        "atMs": 1792418805875,
-        "clock": "recorded"
-      },
-      {
-        "phase": "tool.completed",
-        "atMs": 1792418806193,
-        "clock": "recorded"
-      },
-      {
-        "phase": "provider.request",
-        "atMs": 1792418806197,
-        "clock": "recorded"
-      },
-      {
-        "phase": "provider.request.result",
-        "atMs": 1792418806336,
-        "clock": "recorded"
-      },
-      {
-        "phase": "tool.dispatched",
-        "atMs": 1792418807478,
-        "clock": "recorded"
-      },
-      {
-        "phase": "tool.completed",
-        "atMs": 1792418807798,
-        "clock": "recorded"
-      },
-      {
-        "phase": "provider.request",
-        "atMs": 1792418807803,
-        "clock": "recorded"
-      },
-      {
-        "phase": "provider.request.result",
-        "atMs": 1792418807937,
-        "clock": "recorded"
-      },
-      {
-        "phase": "run.usage",
-        "atMs": 1792418810252,
-        "clock": "recorded"
-      },
-      {
-        "phase": "run.finished",
-        "atMs": 1792418810252,
-        "clock": "recorded"
-      },
-      {
-        "phase": "stop",
-        "atMs": 1792418810252,
-        "clock": "recorded"
-      },
-      {
-        "phase": "input.admitted",
-        "atMs": 1792418810308,
-        "clock": "recorded"
-      },
-      {
-        "phase": "input.promoted",
-        "atMs": 1792418810308,
-        "clock": "recorded"
-      },
-      {
-        "phase": "run.started",
-        "atMs": 1792418810309,
-        "clock": "recorded"
-      },
-      {
-        "phase": "provider.request",
-        "atMs": 1792418810313,
-        "clock": "recorded"
-      },
-      {
-        "phase": "provider.request.result",
-        "atMs": 1792418810449,
-        "clock": "recorded"
-      },
-      {
-        "phase": "tool.dispatched",
-        "atMs": 1792418814138,
-        "clock": "recorded"
-      },
-      {
-        "phase": "tool.completed",
-        "atMs": 1792418814433,
-        "clock": "recorded"
-      },
-      {
-        "phase": "provider.request",
-        "atMs": 1792418814437,
-        "clock": "recorded"
-      },
-      {
-        "phase": "provider.request.result",
-        "atMs": 1792418814550,
-        "clock": "recorded"
-      },
-      {
-        "phase": "tool.dispatched",
-        "atMs": 1792418815402,
-        "clock": "recorded"
-      },
-      {
-        "phase": "tool.dispatched",
-        "atMs": 1792418815402,
-        "clock": "recorded"
-      },
-      {
-        "phase": "tool.completed",
-        "atMs": 1792418815403,
-        "clock": "recorded"
-      },
-      {
-        "phase": "tool.completed",
-        "atMs": 1792418815403,
-        "clock": "recorded"
-      },
-      {
-        "phase": "provider.request",
-        "atMs": 1792418815406,
-        "clock": "recorded"
-      },
-      {
-        "phase": "provider.request.result",
-        "atMs": 1792418815777,
-        "clock": "recorded"
-      },
-      {
-        "phase": "tool.dispatched",
-        "atMs": 1792418816687,
-        "clock": "recorded"
-      },
-      {
-        "phase": "tool.completed",
-        "atMs": 1792418816696,
-        "clock": "recorded"
-      },
-      {
-        "phase": "provider.request",
-        "atMs": 1792418816700,
-        "clock": "recorded"
-      },
-      {
-        "phase": "provider.request.result",
-        "atMs": 1792418816858,
-        "clock": "recorded"
-      },
-      {
-        "phase": "tool.dispatched",
-        "atMs": 1792418817681,
-        "clock": "recorded"
-      },
-      {
-        "phase": "tool.completed",
-        "atMs": 1792418817974,
-        "clock": "recorded"
-      },
-      {
-        "phase": "provider.request",
-        "atMs": 1792418817978,
-        "clock": "recorded"
-      },
-      {
-        "phase": "provider.request.result",
-        "atMs": 1792418818545,
-        "clock": "recorded"
-      },
-      {
-        "phase": "run.usage",
-        "atMs": 1792418820599,
-        "clock": "recorded"
-      },
-      {
-        "phase": "run.finished",
-        "atMs": 1792418820599,
-        "clock": "recorded"
-      },
-      {
-        "phase": "stop",
-        "atMs": 1792418820600,
-        "clock": "recorded"
-      },
-      {
-        "phase": "input.admitted",
-        "atMs": 1792418820626,
-        "clock": "recorded"
-      },
-      {
-        "phase": "input.promoted",
-        "atMs": 1792418820626,
-        "clock": "recorded"
-      },
-      {
-        "phase": "run.started",
-        "atMs": 1792418820627,
-        "clock": "recorded"
-      },
-      {
-        "phase": "provider.request",
-        "atMs": 1792418820633,
-        "clock": "recorded"
-      },
-      {
-        "phase": "provider.request.result",
-        "atMs": 1792418820785,
-        "clock": "recorded"
-      },
-      {
-        "phase": "tool.dispatched",
-        "atMs": 1792418821801,
-        "clock": "recorded"
-      },
-      {
-        "phase": "tool.completed",
-        "atMs": 1792418822145,
-        "clock": "recorded"
-      },
-      {
-        "phase": "provider.request",
-        "atMs": 1792418822150,
-        "clock": "recorded"
-      },
-      {
-        "phase": "provider.request.result",
-        "atMs": 1792418822657,
-        "clock": "recorded"
-      },
-      {
-        "phase": "run.usage",
-        "atMs": 1792418823448,
-        "clock": "recorded"
-      },
-      {
-        "phase": "run.finished",
-        "atMs": 1792418823448,
-        "clock": "recorded"
-      },
-      {
-        "phase": "stop",
-        "atMs": 1792418823449,
+        "atMs": 1792427049609,
         "clock": "recorded"
       },
       {
         "phase": "first-output",
-        "atMs": 1792418767063,
+        "atMs": 1792426998254,
         "clock": "observed"
       },
       {
         "phase": "verified",
-        "atMs": 1792418823570,
+        "atMs": 1792427049711,
         "clock": "observed"
       }
     ],
@@ -3693,19 +875,19 @@
       "model": "deepseek-v4-flash",
       "modelParametersHash": "ef3d96a9ec0464401ae599f38c478bab21fa051e068e9d158e5c186628e7a393",
       "agentManifestHash": "2dbdecca09d38a807edd88d10f18f4febcb6aa5dcbdc2c1bb17f06446b689562",
-      "permissionHash": "15b234586f006405b6e76d51b1e837028a3de0468743b5592625cf26fbd4079e",
+      "permissionHash": "deb2ccf00fc5e453869387ccbb7826c39f2cfe521fbf0bb75214e4e59bd28ec3",
       "toolSurfaceHash": "fb2ab566dec79420e179a024d88e1903ebbc1b7a9f23fe7b0aefb45a9d0dcb28"
     },
-    "profileReceipts": 98,
+    "profileReceipts": 22,
     "loops": {
       "continuations": [],
       "stopped": []
     },
-    "toolCalls": 98,
+    "toolCalls": 18,
     "parallel": {
-      "batches": 12,
-      "batchedReads": 24,
-      "batchWallMs": 208
+      "batches": 1,
+      "batchedReads": 2,
+      "batchWallMs": 0
     },
     "context": {
       "compaction": {},
@@ -3866,74 +1048,18 @@
         "status": 200,
         "outcome": "headers_received",
         "detail": null
-      },
-      {
-        "attempt": 0,
-        "protocol": "openai-chat",
-        "status": 200,
-        "outcome": "headers_received",
-        "detail": null
-      },
-      {
-        "attempt": 0,
-        "protocol": "openai-chat",
-        "status": 200,
-        "outcome": "headers_received",
-        "detail": null
-      },
-      {
-        "attempt": 0,
-        "protocol": "openai-chat",
-        "status": 200,
-        "outcome": "headers_received",
-        "detail": null
-      },
-      {
-        "attempt": 0,
-        "protocol": "openai-chat",
-        "status": 200,
-        "outcome": "headers_received",
-        "detail": null
-      },
-      {
-        "attempt": 0,
-        "protocol": "openai-chat",
-        "status": 200,
-        "outcome": "headers_received",
-        "detail": null
-      },
-      {
-        "attempt": 0,
-        "protocol": "openai-chat",
-        "status": 200,
-        "outcome": "headers_received",
-        "detail": null
-      },
-      {
-        "attempt": 0,
-        "protocol": "openai-chat",
-        "status": 200,
-        "outcome": "headers_received",
-        "detail": null
-      },
-      {
-        "attempt": 0,
-        "protocol": "openai-chat",
-        "status": 200,
-        "outcome": "headers_received",
-        "detail": null
       }
     ],
-    "textHash": "9cb36cec24de33ad032a0aa6e54e683e40cb8a4cef01356192f52f7eddc56e7a",
+    "textHash": "1269fbe86821364ac3ce27190aa85950e37300ef2eaeee6dc73150275f95e42b",
     "binarySha256": "b2c1d67f465561ad7bed58ab28ebe03658b8042e16b0bb3f75a41d65329d14fd",
-    "startedAtMs": 1792418766849,
-    "admissionMs": 1792418766862,
-    "elapsedMs": 56721
+    "startedAtMs": 1792426998083,
+    "admissionMs": 1792426998101,
+    "elapsedMs": 51628
   },
   "assessment": {
     "suiteHash": "bd905b4f81f0a9412b614631a36337723067574848c5f05b50ead1cf48675091",
     "taskHash": "acc85904b2dcd251e4f30fbe7b74f29d6ae3d4266a73c7319c966169a74baa82",
-    "artifactPass": true,
+    "artifactPass": false,
     "unexpected": [],
     "immutable": [
       {
@@ -3952,9 +1078,9 @@
         "test",
         "test/long.test.ts"
       ],
-      "exit": 0,
-      "stdoutHash": "c384cdaa55dad157820800a4aaa48c4963ea5500be5bd17037485dc40c6e23b8",
-      "stderrHash": "f540ed96a7a20a11ea9dff91fe91eb57c4783280ba4487b9542eefe31414138c"
+      "exit": 1,
+      "stdoutHash": "d6684989b8dd63b37d2f1954270826fbe1bd89a8debd12bcacf03ed1c6140ef6",
+      "stderrHash": "0bed92dbf8bb3e03fe492d9c481c76a868edfac41546b4ae8cec90b0caa75927"
     },
     "executionVerdict": "unverified",
     "requiredReceipts": [],
@@ -3962,5 +1088,5 @@
       "LONG_SESSION_OK"
     ]
   },
-  "answer": "I'll check the workspace structure first.\nParent directory doesn't exist yet; creating it, then writing the file.\nDone.\n\n- Created `src/unit.ts` containing `export const unit = 21;` (the `src/` directory didn't exist, so I created it).\n- No other files were created or modified — `AGENTS.md`, `package.json`, and the test setup are untouched.\nI'll check the workspace structure first.\nParent directory doesn't exist yet; creating it, then writing the file.\nDone.\n\n- Created `src/unit.ts` containing `export const unit = 21;` (the `src/` directory didn't exist, so I created it).\n- No other files were created or modified — `AGENTS.md`, `package.json`, and the test setup are untouched.\nCreated `src/double.ts`:\n\n```ts\nimport { unit } from './unit';\n\nexport function double(): number {\n  return unit * 2;\n}\n```\n\n`double()` returns `42`. Nothing else was changed.\nI'll check the workspace structure first.\nParent directory doesn't exist yet; creating it, then writing the file.\nDone.\n\n- Created `src/unit.ts` containing `export const unit = 21;` (the `src/` directory didn't exist, so I created it).\n- No other files were created or modified — `AGENTS.md`, `package.json`, and the test setup are untouched.\nCreated `src/double.ts`:\n\n```ts\nimport { unit } from './unit';\n\nexport function double(): number {\n  return unit * 2;\n}\n```\n\n`double()` returns `42`. Nothing else was changed.\nCreated `test/long.test.ts` and ran it — it passes.\n\n**File created** (`test/long.test.ts`, the only workspace change):\n```ts\nimport assert from 'node:assert/strict';\nimport test from 'node:test';\nimport { double } from '../src/double.ts';\n\ntest('double() equals 42', () => {\n  assert.equal(double(), 42);\n  console.log('LONG_SESSION_OK');\n});\n```\nThe marker is printed *after* the assertion, so it only appears when the test passes. I used Node's built-in runner (`node --test`) plus native TypeScript type-stripping — no config files, no new dependencies, `package.json` and `AGENTS.md` untouched.\n\n**Run result** (exit code 0):\n```\nTAP version 13\n# LONG_SESSION_OK\n# Subtest: double() equals 42\nok 1 - double() equals 42\n# pass 1\n# fail 0\n```\n\nOne caveat worth flagging: `src/double.ts` imports `'./unit'` without an extension (as you specified earlier), which Node's ESM resolver can't resolve at runtime — a plain `node --test test/long.test.ts` fails with `ERR_MODULE_NOT_FOUND` on `src/unit`. To keep your source files exactly as you asked, I ran the test with a throwaway resolve hook kept outside the workspace (`/tmp/register.mjs`), used only for this run. If you'd like `node --test` to work with no loader, I can change that import to `'./unit.ts'` — just say the word.\nI'll check the workspace structure first.\nParent directory doesn't exist yet; creating it, then writing the file.\nDone.\n\n- Created `src/unit.ts` containing `export const unit = 21;` (the `src/` directory didn't exist, so I created it).\n- No other files were created or modified — `AGENTS.md`, `package.json`, and the test setup are untouched.\nCreated `src/double.ts`:\n\n```ts\nimport { unit } from './unit';\n\nexport function double(): number {\n  return unit * 2;\n}\n```\n\n`double()` returns `42`. Nothing else was changed.\nCreated `test/long.test.ts` and ran it — it passes.\n\n**File created** (`test/long.test.ts`, the only workspace change):\n```ts\nimport assert from 'node:assert/strict';\nimport test from 'node:test';\nimport { double } from '../src/double.ts';\n\ntest('double() equals 42', () => {\n  assert.equal(double(), 42);\n  console.log('LONG_SESSION_OK');\n});\n```\nThe marker is printed *after* the assertion, so it only appears when the test passes. I used Node's built-in runner (`node --test`) plus native TypeScript type-stripping — no config files, no new dependencies, `package.json` and `AGENTS.md` untouched.\n\n**Run result** (exit code 0):\n```\nTAP version 13\n# LONG_SESSION_OK\n# Subtest: double() equals 42\nok 1 - double() equals 42\n# pass 1\n# fail 0\n```\n\nOne caveat worth flagging: `src/double.ts` imports `'./unit'` without an extension (as you specified earlier), which Node's ESM resolver can't resolve at runtime — a plain `node --test test/long.test.ts` fails with `ERR_MODULE_NOT_FOUND` on `src/unit`. To keep your source files exactly as you asked, I ran the test with a throwaway resolve hook kept outside the workspace (`/tmp/register.mjs`), used only for this run. If you'd like `node --test` to work with no loader, I can change that import to `'./unit.ts'` — just say the word.\nIt fails on a plain `node --test` run (module resolution in `src/`, not the test). Repairing the source only.\nThe test was failing under a plain run, so I repaired the **source** only and re-ran.\n\n**Failure**: `ERR_MODULE_NOT_FOUND` — `src/double.ts` imported `'./unit'` (extensionless), which Node's ESM resolver can't resolve; the test file was fine.\n\n**Source repair** (`src/double.ts`, the only change):\n```diff\n-import { unit } from './unit';\n+import { unit } from './unit.ts';\n```\n`test/long.test.ts` was not modified (its SHA-256 is unchanged: `1ccc0d9…`), and no config, runner, or dependencies were added.\n\n**Re-run** — plain `node --test test/long.test.ts`, exit code 0:\n```\nTAP version 13\n# LONG_SESSION_OK\n# Subtest: double() equals 42\nok 1 - double() equals 42\n# pass 1\n# fail 0\n```\n\nThe marker `LONG_SESSION_OK` prints exactly on the passing run, and the earlier `/tmp` resolve-hook workaround is no longer needed.\nI'll check the workspace structure first.\nParent directory doesn't exist yet; creating it, then writing the file.\nDone.\n\n- Created `src/unit.ts` containing `export const unit = 21;` (the `src/` directory didn't exist, so I created it).\n- No other files were created or modified — `AGENTS.md`, `package.json`, and the test setup are untouched.\nCreated `src/double.ts`:\n\n```ts\nimport { unit } from './unit';\n\nexport function double(): number {\n  return unit * 2;\n}\n```\n\n`double()` returns `42`. Nothing else was changed.\nCreated `test/long.test.ts` and ran it — it passes.\n\n**File created** (`test/long.test.ts`, the only workspace change):\n```ts\nimport assert from 'node:assert/strict';\nimport test from 'node:test';\nimport { double } from '../src/double.ts';\n\ntest('double() equals 42', () => {\n  assert.equal(double(), 42);\n  console.log('LONG_SESSION_OK');\n});\n```\nThe marker is printed *after* the assertion, so it only appears when the test passes. I used Node's built-in runner (`node --test`) plus native TypeScript type-stripping — no config files, no new dependencies, `package.json` and `AGENTS.md` untouched.\n\n**Run result** (exit code 0):\n```\nTAP version 13\n# LONG_SESSION_OK\n# Subtest: double() equals 42\nok 1 - double() equals 42\n# pass 1\n# fail 0\n```\n\nOne caveat worth flagging: `src/double.ts` imports `'./unit'` without an extension (as you specified earlier), which Node's ESM resolver can't resolve at runtime — a plain `node --test test/long.test.ts` fails with `ERR_MODULE_NOT_FOUND` on `src/unit`. To keep your source files exactly as you asked, I ran the test with a throwaway resolve hook kept outside the workspace (`/tmp/register.mjs`), used only for this run. If you'd like `node --test` to work with no loader, I can change that import to `'./unit.ts'` — just say the word.\nIt fails on a plain `node --test` run (module resolution in `src/`, not the test). Repairing the source only.\nThe test was failing under a plain run, so I repaired the **source** only and re-ran.\n\n**Failure**: `ERR_MODULE_NOT_FOUND` — `src/double.ts` imported `'./unit'` (extensionless), which Node's ESM resolver can't resolve; the test file was fine.\n\n**Source repair** (`src/double.ts`, the only change):\n```diff\n-import { unit } from './unit';\n+import { unit } from './unit.ts';\n```\n`test/long.test.ts` was not modified (its SHA-256 is unchanged: `1ccc0d9…`), and no config, runner, or dependencies were added.\n\n**Re-run** — plain `node --test test/long.test.ts`, exit code 0:\n```\nTAP version 13\n# LONG_SESSION_OK\n# Subtest: double() equals 42\nok 1 - double() equals 42\n# pass 1\n# fail 0\n```\n\nThe marker `LONG_SESSION_OK` prints exactly on the passing run, and the earlier `/tmp` resolve-hook workaround is no longer needed.\n**Files created** (workspace now contains `src/unit.ts`, `src/double.ts`, `test/long.test.ts`):\n\n1. **`src/unit.ts`** — new, 24 bytes\n   ```ts\n   export const unit = 21;\n   ```\n\n2. **`src/double.ts`** — new, then repaired once (import extension only)\n   ```ts\n   import { unit } from './unit.ts';\n\n   export function double(): number {\n     return unit * 2;\n   }\n   ```\n\n3. **`test/long.test.ts`** — new, never modified after creation\n   ```ts\n   import assert from 'node:assert/strict';\n   import test from 'node:test';\n   import { double } from '../src/double.ts';\n\n   test('double() equals 42', () => {\n     assert.equal(double(), 42);\n     console.log('LONG_SESSION_OK');\n   });\n   ```\n\nUntouched throughout: `AGENTS.md`, `package.json`, and no added config/deps. Current run passes (`ok 1`, exit 0) with the marker appearing exactly once.\n\nExact printed marker:\n\n**LONG_SESSION_OK**"
+  "answer": "I'll check the workspace layout first, then create the file.\nCreated `src/unit.ts`:\n\n```ts\nexport const unit = 21;\n```\n\nNotes:\n- The `src/` directory didn't exist yet, so I created it with `mkdir -p src` (no files affected).\n- Nothing else was touched: `AGENTS.md` and `package.json` are unchanged, and no config or test-runner files were added. (`test/oracle.test.ts` is not present in the workspace, so there was nothing to preserve there.)\nCreated `src/double.ts`:\n\n```ts\nimport { unit } from './unit';\n\nexport function double(): number {\n  return unit * 2;\n}\n```\n\nDetails:\n- Imports `unit` from `./unit` as requested and returns `unit * 2` (so `double()` → 42).\n- Only these two files now exist in `src/`; `AGENTS.md` and `package.json` are untouched, and no config was added.\n\nOne caveat worth flagging: this workspace has `\"type\": \"module\"` in `package.json` but no TS config/bundler, so plain `node src/double.ts` (Node's built-in type stripping) may fail to resolve the extensionless `'./unit'` specifier at runtime. If you plan to execute it directly with Node, you'd need either `'./unit.ts'` in the import or a resolver/bundler config — say the word and I'll adjust (I kept `'./unit'` exactly as specified).\nBefore writing the test, let me check what runtimes/tools are actually available here (no `node_modules`, no test runner in `package.json`).\nNode can't resolve the extensionless `'./unit'` at runtime (confirmed above), and there's no test runner installed. Let me check Node's built-in hook APIs so the test can load the module unmodified — no config, no build step, no new runner.\nHook works — `double()` returns 42 without touching `src/`. Now writing the test using Node's built-in runner:\nCreated `test/long.test.ts` and ran it — it passes and prints the marker.\n\n**Test output** (`node --test test/long.test.ts`, exit code 0):\n\n```\nTAP version 13\n# LONG_SESSION_OK\n# Subtest: double() returns unit * 2\nok 1 - double() returns unit * 2\n  ---\n  duration_ms: 2.89\n  type: 'test'\n  ...\n1..1\n# tests 1\n# pass 1\n# fail 0\n```\n\n**The file:**\n\n```ts\nimport assert from 'node:assert/strict';\nimport { existsSync } from 'node:fs';\nimport { registerHooks } from 'node:module';\nimport { test } from 'node:test';\n\n// src/double.ts imports the extensionless specifier './unit', which Node's ESM\n// resolver cannot resolve at runtime. Register a small resolve hook scoped to\n// this test that maps extensionless relative imports to their .ts file, so the\n// sources can be loaded unmodified (no build step, config, or new runner).\nregisterHooks({ ... resolve './x' -> './x.ts' ... });\n\ntest('double() returns unit * 2', async () => {\n  const { double } = await import('../src/double.ts');\n  assert.equal(double(), 42);\n  console.log('LONG_SESSION_OK');\n});\n```\n\n**Why the hook:** `package.json` declares `\"type\": \"module\"` but there's no TS config/bundler, so plain Node ESM fails on the extensionless `'./unit'` (`ERR_MODULE_NOT_FOUND`, which I verified first). Since I must not add configuration, replace the test runner, or alter your `src/` files, the test itself registers a Node built-in `registerHooks` resolve hook to map that specifier to `unit.ts`. This keeps `src/double.ts` exactly as you asked and uses only native Node APIs (`node:test`, `node:assert`, `node:module`).\n\n**Nothing else was touched:** the only files in the workspace are `AGENTS.md`, `package.json` (both byte-identical to before — hashes verified), `src/unit.ts`, `src/double.ts`, and the new `test/long.test.ts`. I created the `test/` directory for it; no `oracle.test.ts` existed to preserve.\n\nIf you'd rather avoid the hook, the alternative is changing `src/double.ts` to import `'./unit.ts'` (or `'./unit.js'` with a build step) — one line, and I'll adjust the test accordingly.\nTest passes — no repair needed, so I made no changes.\n\n**Re-run result** (`node --test test/long.test.ts`):\n\n```\nTAP version 13\n# LONG_SESSION_OK\n# Subtest: double() returns unit * 2\nok 1 - double() returns unit * 2\n1..1\n# tests 1\n# pass 1\n# fail 0\nexit=0\n```\n\nThe assertion holds: `src/unit.ts` exports `unit = 21`, and `src/double.ts` returns `unit * 2` = 42, which is exactly what the test checks. The marker `LONG_SESSION_OK` printed, and the marker only prints after the assertion succeeds, so its presence confirms a genuine pass.\n\nBecause the outcome was green, I touched nothing — no source edits and no test edits. Workspace state is unchanged from the previous turn: `AGENTS.md`, `package.json` (hashes unchanged), `src/unit.ts`, `src/double.ts`, `test/long.test.ts`.\n\nIf the test ever does fail, my repair path would be `src/` only (e.g., restore `unit` to 21 or fix the `double()` return), leaving `test/long.test.ts` untouched and the import specifier/reasoning intact — just say the word if you'd like me to demo that sensitivity check on a throwaway copy.\n## Files created\n\n| File | Contents |\n|---|---|\n| `src/unit.ts` | `export const unit = 21;` |\n| `src/double.ts` | `import { unit } from './unit';` plus `export function double(): number { return unit * 2; }` |\n| `test/long.test.ts` | `node:test` test asserting `double() === 42`, with a built-in `registerHooks` resolver (test-local, no config) so the extensionless `'./unit'` loads; prints the marker after the assertion succeeds |\n\nI also created the empty `src/` and `test/` directories that hold them. Nothing else was modified — `AGENTS.md` and `package.json` remain byte-identical (verified by SHA-256), and no config files or alternate test runners were added.\n\n## Marker\n\nThe exact printed marker, as it appeared in the passing run:\n\n```\nLONG_SESSION_OK\n```"
 }
