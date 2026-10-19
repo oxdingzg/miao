@@ -17,6 +17,7 @@ import { SessionMessage } from "./message"
 import { SessionStore } from "./store"
 import { SessionGoal } from "./goal"
 import { SystemContext } from "../system-context/index"
+import { SessionTransferSnapshots } from "./transfer-snapshots"
 import {
   SessionDelegationTable,
   SessionContextEpochTable,
@@ -64,6 +65,7 @@ export const Bundle = Schema.Struct({
     }),
   ),
   artifacts: Schema.Array(Schema.Struct({ hash: Schema.String, base64: Schema.String })),
+  snapshots: Schema.optional(Schema.Array(SessionTransferSnapshots.Manifest)),
 })
 export type Bundle = typeof Bundle.Type
 
@@ -291,7 +293,7 @@ export const prepare = Effect.fn("SessionTransferBundle.prepare")(function* (inp
       ].sort()
       if (hashes.some((hash) => !/^[a-f0-9]{64}$/.test(hash)))
         return yield* new Unsupported({ sessionID: input.sessionID, reason: "Malformed attachment content reference" })
-      const base = Bundle.make({ format: "miao.session.transfer.v1", ...captured, artifacts: [] })
+      const base = Bundle.make({ format: "miao.session.transfer.v1", ...captured, artifacts: [], snapshots: [] })
       const initial: { artifacts: Bundle["artifacts"]; bytes: number } = {
         artifacts: [],
         bytes: Buffer.byteLength(JSON.stringify(Schema.encodeSync(Bundle)(base))),
@@ -327,7 +329,13 @@ export const prepare = Effect.fn("SessionTransferBundle.prepare")(function* (inp
           ),
         Effect.succeed(initial),
       )
-      const bundle = Bundle.make({ ...base, artifacts: collected.artifacts })
+      const portable = yield* SessionTransferSnapshots.capture({
+        timeline: captured.timeline,
+        artifacts: collected.artifacts,
+        bytes: collected.bytes,
+        maximumBytes: MAX_BYTES,
+      }).pipe(Effect.mapError((cause) => new Unsupported({ sessionID: input.sessionID, reason: String(cause) })))
+      const bundle = Bundle.make({ ...base, ...portable })
       const serialized = JSON.stringify(Schema.encodeSync(Bundle)(bundle))
       if (Buffer.byteLength(serialized) > MAX_BYTES)
         return yield* new Unsupported({
