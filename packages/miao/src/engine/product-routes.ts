@@ -21,11 +21,39 @@ type Source =
 
 type Account = { source: Source; oauth: boolean; value?: Credential.Value; id?: string; isDefault: boolean }
 
+/**
+ * Automatic context management for the native engine, derived from the product
+ * compaction settings so a native Session behaves like a TypeScript one.
+ *
+ * The engine runs one process per Location, so its trigger is one window: the
+ * default model's. The headroom mirrors the TypeScript formula — the tool output
+ * pruning protects, the summary reserve, and the configured slack — and the
+ * ratio is the same threshold. `auto: false` keeps the trigger off, and an
+ * explicit `engine.context_limits` always wins.
+ */
+export const contextLimitsFor = (
+  model: { readonly limit: { readonly context: number } },
+  compaction:
+    | { readonly auto?: boolean; readonly threshold?: number; readonly buffer?: number }
+    | undefined,
+) => {
+  if (compaction?.auto === false) return undefined
+  const window = model.limit.context
+  if (!Number.isFinite(window) || window <= 0) return undefined
+  return {
+    window,
+    ratio: compaction?.threshold ?? 0.9,
+    headroom: 40_000 + 2_048 + (compaction?.buffer ?? 20_000),
+    perPass: 8,
+  }
+}
+
 /** Build exact host routes from the product catalog and active connections.
  * The manifest holds credential references only; refresh stays with its owner. */
 export const prepare = Effect.fn("Engine.productRoutes")(function* (
   location: Location.Ref,
   configuration: Omit<EngineOptions, "db" | "workspace">,
+  compaction?: { readonly auto?: boolean; readonly threshold?: number; readonly buffer?: number },
 ) {
   const options: Partial<EngineOptions> = {}
   if (
@@ -222,6 +250,10 @@ export const prepare = Effect.fn("Engine.productRoutes")(function* (
     )
   if (routes.length > 1024)
     return yield* Effect.fail(new EngineError("engine_routes_limit", "native product catalog exceeds 1024 routes"))
+  if (configuration.contextLimits === undefined) {
+    const limits = contextLimitsFor(defaultModel, compaction)
+    if (limits) options.contextLimits = limits
+  }
   const content = JSON.stringify(routes)
   if (Buffer.byteLength(content) > 1024 * 1024)
     return yield* Effect.fail(new EngineError("engine_routes_limit", "native product routes exceed 1 MiB"))

@@ -187,6 +187,24 @@ export const engineSettings = async (
   return mcpSettings ? { ...(settings ?? { binary: "", model: "" }), mcpSettings } : settings
 }
 
+/**
+ * The merged `compaction` section. A native Session takes its automatic context
+ * management from it, so `compaction.auto`/`threshold`/`buffer` have the same
+ * meaning on either engine instead of the native path silently staying off.
+ */
+export const compactionSettings = async (
+  globalConfig: string,
+): Promise<{ auto?: boolean; threshold?: number; buffer?: number } | undefined> => {
+  const documents: Config.Entry[] = []
+  for (const name of Config.fileNames) {
+    const file = path.join(globalConfig, name)
+    if (!(await Bun.file(file).exists())) continue
+    const info = Option.getOrUndefined(Config.decodeDocument(Config.parseJsonc(await Bun.file(file).text())))
+    if (info) documents.push(new Config.Document({ type: "document", info }))
+  }
+  return Option.getOrUndefined(Config.decodeDocument(Config.merge(documents)))?.compaction
+}
+
 /** Whether the composition root should build the native transport at all. */
 export const configured = (): boolean => nativeEngineOptions() !== undefined
 
@@ -656,6 +674,7 @@ const layer = Layer.effect(
     const blob = yield* Blob.Service
     const fs = yield* FSUtil.Service
     const settings = yield* Effect.promise(() => engineSettings(global.config))
+    const compaction = yield* Effect.promise(() => compactionSettings(global.config))
     const configuration = nativeEngineOptions(process.env, settings)
     if (!configuration) return yield* Effect.die("NativeEngine layer built without MIAO_ENGINE_BIN")
     if (process.env.MIAO_ENGINE_WORKER === "1") {
@@ -672,7 +691,7 @@ const layer = Layer.effect(
     const mcp = yield* ProductMcp.prepare(configuration).pipe(Effect.provideService(McpAuth.Service, mcpAuth))
     const owners = yield* makeEngineOwners({ ...configuration, ...mcp }, (location) =>
       Effect.gen(function* () {
-        const routes = yield* ProductRoutes.prepare(location, configuration).pipe(
+        const routes = yield* ProductRoutes.prepare(location, configuration, compaction).pipe(
           Effect.provideService(Credential.Service, credentials),
         )
         const effective = { ...configuration, ...routes, ...mcp }
