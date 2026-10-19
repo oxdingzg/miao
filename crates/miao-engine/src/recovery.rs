@@ -24,17 +24,18 @@ impl Store {
             let mut statement = conn.prepare(
                 "SELECT t.id,t.run_id,t.name,
                     (SELECT e.data FROM engine_event e WHERE e.session_id=r.session_id
-                     AND e.kind='tool.recovery.resolved' AND json_extract(e.data,'$.call_id')=t.id LIMIT 1)
+                     AND e.kind='tool.recovery.resolved' AND json_extract(e.data,'$.call_id')=t.id LIMIT 1),t.input
                  FROM engine_tool t JOIN engine_run r ON r.id=t.run_id
                  WHERE r.session_id=?1 AND t.state='unknown' AND t.id>?2 ORDER BY t.id LIMIT 101",
             )?;
             let rows = statement.query_map(params![session, after], |row| {
-                Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?, row.get::<_, String>(2)?, row.get::<_, Option<String>>(3)?))
+                Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?, row.get::<_, String>(2)?, row.get::<_, Option<String>>(3)?,row.get::<_,String>(4)?))
             })?;
             let mut calls = Vec::new();
             for row in rows {
-                let (id, run, name, resolution) = row?;
-                calls.push(json!({"call_id":id,"run_id":run,"tool":name,"outcome":"unknown",
+                let (id, run, name, resolution,input) = row?;
+                let input:Value=serde_json::from_str(&input)?;
+                calls.push(json!({"call_id":id,"run_id":run,"tool":name,"origin":if input["origin"]=="operator" {"operator"} else {"model"},"outcome":"unknown",
                     "resolution":resolution.map(|value| serde_json::from_str::<Value>(&value)).transpose()?}));
             }
             let more = calls.len() > 100;
@@ -89,6 +90,9 @@ impl Store {
                 params![call, session], |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
             ).optional()?;
             let (run, name, input) = original.ok_or_else(|| Error::Invalid("recovery requires an unknown tool outcome in this Session".into()))?;
+            if serde_json::from_str::<Value>(&input)?["origin"]=="operator" {
+                return Err(Error::Invalid("operator shell outcomes stay unknown; inspect their receipt and explicitly issue a new shell identity if another execution is necessary".into()));
+            }
             let instruction = match decision {
                 Decision::Abandon => "Abandon this operation. Do not retry it; continue only the remaining task when explicitly resumed.",
                 Decision::Retry => "The operator explicitly requests a retry. First inspect the current state: this operation may already have had effects. If still necessary, issue a NEW tool call under the current permission policy; never replay the old dispatch.",

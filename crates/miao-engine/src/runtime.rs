@@ -1,3 +1,4 @@
+mod shell;
 use crate::{
     approval::{now_ms, Approval, Response},
     context_trigger::{self, ContextLimits},
@@ -73,6 +74,7 @@ struct Background {
 }
 
 enum Command {
+    Shell(crate::session_shell::Invocation),
     Wake(bool),
     Cancel(oneshot::Sender<bool>),
     CancelIf(String, oneshot::Sender<Result<bool, Error>>),
@@ -566,6 +568,41 @@ impl Runtime {
         Ok(())
     }
 
+    pub async fn shell(
+        &self,
+        session: &str,
+        invocation: crate::session_shell::Invocation,
+    ) -> Result<Value, Error> {
+        if self.inner.stop.is_cancelled() {
+            return Err(Error::Closed);
+        }
+        if self.inner.store.location(session).await?.as_deref() != Some(self.inner.tools.location())
+        {
+            return Err(Error::Conflict);
+        }
+        let receipt = self
+            .inner
+            .store
+            .admit_shell(session, invocation.clone())
+            .await?;
+        if receipt["state"] == "pending" {
+            let commands = self.actor(session).await?;
+            commands
+                .send(Command::Shell(invocation))
+                .await
+                .map_err(|_| Error::Closed)?;
+        }
+        Ok(receipt)
+    }
+
+    pub async fn shell_status(&self, session: &str, call: &str) -> Result<Value, Error> {
+        if self.inner.store.location(session).await?.as_deref() != Some(self.inner.tools.location())
+        {
+            return Err(Error::Conflict);
+        }
+        self.inner.store.shell_status(session, call).await
+    }
+
     pub async fn wake_pending(&self, session: &str) -> Result<(), Error> {
         if self.inner.store.location(session).await?.as_deref() != Some(self.inner.tools.location())
         {
@@ -882,13 +919,41 @@ impl Runtime {
     }
 }
 
+async fn refuse_shell_queue(
+    inner: &Inner,
+    session: &str,
+    shells: &mut std::collections::VecDeque<crate::session_shell::Invocation>,
+) {
+    for invocation in std::mem::take(shells) {
+        if let Err(error) = inner
+            .store
+            .refuse_pending_shell(session, &invocation.call_id)
+            .await
+        {
+            let _=inner.progress.send(json!({"session_id":session,"kind":"runtime.error","code":error.code(),"message":error.to_string()}));
+        }
+    }
+}
+
 async fn coordinate(session: String, inner: Arc<Inner>, mut commands: mpsc::Receiver<Command>) {
     let mut tasks = JoinSet::new();
     let mut active: Option<CancellationToken> = None;
     let mut wake = None;
+    let mut shells = std::collections::VecDeque::<crate::session_shell::Invocation>::new();
+    let mut active_shell = None;
     loop {
         if active.is_none() {
-            if let Some(force) = wake.take() {
+            if let Some(invocation) = shells.pop_front() {
+                let cancel = inner.stop.child_token();
+                active = Some(cancel.clone());
+                active_shell = Some(invocation.call_id.clone());
+                tasks.spawn(shell::execute(
+                    session.clone(),
+                    inner.clone(),
+                    invocation,
+                    cancel,
+                ));
+            } else if let Some(force) = wake.take() {
                 let cancel = inner.stop.child_token();
                 active = Some(cancel.clone());
                 let (session, inner) = (session.clone(), inner.clone());
@@ -903,9 +968,13 @@ async fn coordinate(session: String, inner: Arc<Inner>, mut commands: mpsc::Rece
                 break;
             }
             command=commands.recv() => match command {
+                Some(Command::Shell(invocation)) => {
+                    if active_shell.as_deref()!=Some(&invocation.call_id) && !shells.iter().any(|item|item.call_id==invocation.call_id) {shells.push_back(invocation);}
+                },
                 Some(Command::Wake(force)) => wake=Some(wake.unwrap_or(false)||(force && active.is_none())),
                 Some(Command::Cancel(reply)) => {
                     wake=None;
+                    refuse_shell_queue(&inner,&session,&mut shells).await;
                     if let Some(cancel)=&active { cancel.cancel(); }
                     let _=reply.send(active.is_some());
                 }
@@ -915,6 +984,7 @@ async fn coordinate(session: String, inner: Arc<Inner>, mut commands: mpsc::Rece
                     let result = match inner.store.active_run(&session).await {
                         Ok(Some(run)) if run == expected && active.as_ref().is_some_and(|token| !token.is_cancelled()) => {
                             wake = None;
+                            refuse_shell_queue(&inner,&session,&mut shells).await;
                             if let Some(token) = &active { token.cancel(); }
                             Ok(true)
                         }
@@ -931,6 +1001,7 @@ async fn coordinate(session: String, inner: Arc<Inner>, mut commands: mpsc::Rece
             },
             result=tasks.join_next(), if active.is_some() => {
                 active=None;
+                active_shell=None;
                 match result {
                     Some(Ok(Ok(()))) => {},
                     Some(Ok(Err(error))) => { let _=inner.progress.send(json!({"session_id":session,"kind":"runtime.error","code":error.code(),"message":error.to_string()})); },

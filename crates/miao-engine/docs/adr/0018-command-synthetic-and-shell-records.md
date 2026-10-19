@@ -1,6 +1,6 @@
 # 0018. Command, synthetic and shell records
 
-Status: accepted; synthetic injection implemented, command references and shell records pending
+Status: accepted; synthetic injection and operator shell records implemented, command references pending
 
 ## Context
 

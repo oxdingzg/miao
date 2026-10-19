@@ -224,6 +224,18 @@ pub enum Command {
         #[serde(default)]
         attachments: Vec<Attachment>,
     },
+    Shell {
+        session_id: String,
+        #[serde(default)]
+        call_id: Option<String>,
+        command: String,
+        #[serde(default = "shell_timeout")]
+        timeout_ms: u64,
+    },
+    ShellStatus {
+        session_id: String,
+        call_id: String,
+    },
     Inject {
         session_id: String,
         #[serde(default)]
@@ -433,4 +445,8 @@ fn recall_limit() -> usize {
 
 fn yes() -> bool {
     true
+}
+
+fn shell_timeout() -> u64 {
+    120_000
 }
