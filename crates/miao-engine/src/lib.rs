@@ -54,6 +54,7 @@ mod snapshot;
 pub mod state;
 pub mod store;
 pub mod transfer;
+pub mod transfer_activation;
 pub mod transfer_history;
 
 /// Engine-host contract version. A product build requires at least the protocol

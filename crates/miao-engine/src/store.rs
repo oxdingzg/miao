@@ -23,7 +23,7 @@ use tokio::sync::{mpsc, oneshot, watch};
 pub(crate) const APPLICATION_ID: u32 = 0x4d494145;
 // Older readers do not understand inactive semantic imports and could execute
 // a destination before its host has switched the authoritative placement.
-pub const SCHEMA_VERSION: u32 = 19;
+pub const SCHEMA_VERSION: u32 = 20;
 
 type Work = Box<dyn FnOnce(&mut Connection) + Send>;
 
@@ -274,6 +274,9 @@ impl Store {
                     created_ms INTEGER NOT NULL);
                     CREATE TABLE IF NOT EXISTS engine_transfer_preparation(
                     import_id TEXT PRIMARY KEY REFERENCES engine_transfer_import(id),data TEXT NOT NULL);
+                    CREATE TABLE IF NOT EXISTS engine_transfer_message(
+                    import_id TEXT NOT NULL REFERENCES engine_transfer_import(id),source_message_id TEXT NOT NULL,seq INTEGER NOT NULL,
+                    PRIMARY KEY(import_id,seq));
                     CREATE TRIGGER IF NOT EXISTS engine_transfer_import_event_fence
                     BEFORE INSERT ON engine_event
                     WHEN EXISTS(SELECT 1 FROM engine_transfer_import WHERE session_id=NEW.session_id AND state!='active')
@@ -657,6 +660,9 @@ impl Store {
             // Approvals and jobs reference tools; tools and approvals reference
             // runs. Those three go before the run rows they point at.
             for statement in [
+                "DELETE FROM engine_transfer_message WHERE import_id IN (SELECT id FROM engine_transfer_import WHERE session_id=?1)",
+                "DELETE FROM engine_transfer_preparation WHERE import_id IN (SELECT id FROM engine_transfer_import WHERE session_id=?1)",
+                "DELETE FROM engine_transfer_import WHERE session_id=?1",
                 "DELETE FROM engine_approval WHERE session_id=?1",
                 "DELETE FROM engine_job WHERE session_id=?1",
                 "DELETE FROM engine_tool WHERE run_id IN (SELECT id FROM engine_run WHERE session_id=?1)",
@@ -992,7 +998,7 @@ command: None,
             let tx=conn.transaction()?;
             let cursor:u64=tx.query_row("SELECT next_seq FROM engine_session WHERE id=?1",[&session],|r|r.get(0)).optional()?.ok_or_else(||Error::Invalid("Session does not exist".into()))?;
             let location:Option<String>=tx.query_row("SELECT root FROM engine_location WHERE session_id=?1",[&session],|r|r.get(0)).optional()?;
-            let messages=projected(&tx,&session,cursor)?;
+            let messages=projected(&tx,&session,cursor,true)?;
             // Context readers need the cut and summary from the same transaction
             // as the visible messages. A second selected-history read could race
             // a compaction/revert and produce a mixed-generation transcript.
@@ -1112,7 +1118,7 @@ command: None,
             let seq=match message_seq {Some(seq)=>seq,None=>tx.query_row("SELECT COALESCE(MAX(seq),0) FROM engine_message WHERE session_id=?1",[&parent],|r|r.get(0))?};
             if seq!=0&&!tx.query_row("SELECT EXISTS(SELECT 1 FROM engine_message WHERE session_id=?1 AND seq=?2) OR EXISTS(SELECT 1 FROM engine_event WHERE session_id=?1 AND seq=?2 AND kind IN ('command.completed','command.failed'))",params![parent,seq],|r|r.get::<_,bool>(0))? {return Err(Error::Invalid("fork cursor must be a committed message or settled command boundary".into()));}
             let source_watermark=if message_seq.is_none(){tx.query_row("SELECT next_seq FROM engine_session WHERE id=?1",[&parent],|r|r.get::<_,u64>(0))?}else{seq};
-            let messages=projected(&tx,&parent,seq)?;
+            let messages=projected(&tx,&parent,seq,false)?;
             closed_prefix(&messages)?;
             // A fork must not escape the parent's read-only collaboration mode.
             let mode:String=tx.query_row("SELECT mode FROM engine_session WHERE id=?1",[&parent],|row|row.get(0))?;
@@ -2574,9 +2580,11 @@ pub(crate) fn projected(
     tx: &Transaction<'_>,
     session: &str,
     cursor: u64,
+    skip_transferred: bool,
 ) -> Result<Vec<Value>, Error> {
-    let mut stmt=tx.prepare("SELECT seq,role,content,checkpoint,recorded_at_ms FROM engine_message WHERE session_id=?1 AND seq<=?2 AND reverted=0 ORDER BY seq LIMIT 1001")?;
-    let mut rows = stmt.query(params![session, cursor])?;
+    let mut stmt=tx.prepare("SELECT m.seq,m.role,m.content,m.checkpoint,m.recorded_at_ms FROM engine_message m WHERE m.session_id=?1 AND m.seq<=?2 AND m.reverted=0
+        AND (?3=0 OR NOT EXISTS(SELECT 1 FROM engine_transfer_message t JOIN engine_transfer_import i ON i.id=t.import_id WHERE i.session_id=m.session_id AND t.seq=m.seq)) ORDER BY m.seq LIMIT 1001")?;
+    let mut rows = stmt.query(params![session, cursor, skip_transferred])?;
     let mut messages = Vec::new();
     let mut bytes = 0;
     while let Some(row) = rows.next()? {

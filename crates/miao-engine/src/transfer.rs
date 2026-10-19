@@ -61,6 +61,7 @@ impl Store {
         session: &str,
         after: usize,
         selected: bool,
+        cursor: u64,
     ) -> Result<Value, Error> {
         let session = session.to_owned();
         self.call(move |conn| {
@@ -72,11 +73,14 @@ impl Store {
             let (id,digest) = header.ok_or_else(|| Error::Invalid("Session has no semantic import".into()))?;
             let mut stmt = tx.prepare(
                 "SELECT t.key,t.value FROM engine_transfer_import i,json_each(i.bundle,'$.timeline') t
-                 WHERE i.session_id=?1 AND t.key>=?2 AND (?3=0 OR json_extract(t.value,'$.id') IN
-                    (SELECT value FROM json_each(i.bundle,'$.context_ids')))
+                 WHERE i.session_id=?1 AND t.key>=?2 AND (?3=0 OR (json_extract(t.value,'$.id') IN
+                    (SELECT value FROM json_each(i.bundle,'$.context_ids'))
+                    AND (NOT EXISTS(SELECT 1 FROM engine_compaction c WHERE c.session_id=i.session_id AND c.created_seq<=?4)
+                    OR EXISTS(SELECT 1 FROM engine_transfer_message m WHERE m.import_id=i.id AND m.source_message_id=json_extract(t.value,'$.id')
+                        AND m.seq>(SELECT c.through_seq FROM engine_compaction c WHERE c.session_id=i.session_id AND c.created_seq<=?4 ORDER BY c.created_seq DESC LIMIT 1)))))
                  ORDER BY t.key LIMIT 101"
             )?;
-            let rows = stmt.query_map(params![session,after,selected], |row| Ok((row.get::<_,usize>(0)?,row.get::<_,String>(1)?)))?;
+            let rows = stmt.query_map(params![session,after,selected,cursor.min(i64::MAX as u64)], |row| Ok((row.get::<_,usize>(0)?,row.get::<_,String>(1)?)))?;
             let mut messages = Vec::new();
             let mut bytes = 0;
             let mut next = None;
@@ -118,12 +122,25 @@ impl Store {
         identity: Identity,
         route_id: Option<String>,
     ) -> Result<StagedImport, Error> {
-        let messages = crate::transfer_history::prepare(&bundle, &identity, route_id.as_deref())?;
+        self.stage_transfer_with_agent(id, bundle, bundle_sha256, identity, route_id, None)
+            .await
+    }
+
+    pub async fn stage_transfer_with_agent(
+        &self,
+        id: &str,
+        bundle: String,
+        bundle_sha256: &str,
+        identity: Identity,
+        route_id: Option<String>,
+        agent: Option<crate::session_agent::AgentManifest>,
+    ) -> Result<StagedImport, Error> {
+        let preparation = crate::transfer_activation::prepare(&bundle, identity, route_id, agent)?;
         self.stage_transfer_impl(
             id,
             bundle,
             bundle_sha256,
-            Some(json!({"identity":identity,"route_id":route_id,"messages":messages})),
+            Some(serde_json::to_value(preparation)?),
         )
         .await
     }

@@ -100,13 +100,12 @@ export async function readTranscript(
       }),
     )
   }
-  if (!snapshot.transfer_import || (input.selected && snapshot.selection && snapshot.selection.through_seq >= 1))
-    return result
-  const imported = await readTransferred(input, snapshot.transfer_import)
+  if (!snapshot.transfer_import) return result
+  const imported = await readTransferred(input, snapshot.transfer_import, snapshot.cursor)
   const identities = new Set(imported.map((message) => message.id))
   if (result.some((message) => identities.has(message.id)))
     throw new Error("Transferred and native message IDs collide")
-  return [...imported, ...result]
+  return input.selected && snapshot.selection ? [result[0], ...imported, ...result.slice(1)] : [...imported, ...result]
 }
 
 const TransferPage = Schema.Struct({
@@ -117,7 +116,7 @@ const TransferPage = Schema.Struct({
   messages: Schema.Array(SessionMessage.Message),
 })
 
-async function readTransferred(input: Parameters<typeof readTranscript>[0], id: string) {
+async function readTransferred(input: Parameters<typeof readTranscript>[0], id: string, cursor: number) {
   const messages: SessionMessage.Message[] = []
   const identities = new Set<string>()
   const state = { after: 0, digest: "" }
@@ -126,6 +125,7 @@ async function readTransferred(input: Parameters<typeof readTranscript>[0], id: 
       await input.request(input.selected ? "transfer_context" : "transfer_timeline", {
         session_id: input.sessionID,
         after: state.after,
+        ...(input.selected ? { cursor } : {}),
       }),
     )
     if (page.id !== id || page.after !== state.after || (state.digest && page.bundle_sha256 !== state.digest))

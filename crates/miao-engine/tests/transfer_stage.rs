@@ -13,6 +13,9 @@ use std::{path::Path, sync::Arc};
 struct Never;
 #[async_trait::async_trait]
 impl Provider for Never {
+    fn identity(&self) -> Option<Identity> {
+        Some(identity())
+    }
     async fn stream(
         &self,
         _: ModelRequest,
@@ -78,6 +81,7 @@ async fn host_preflight_and_atomic_prepared_stage_use_small_file_control_frames(
         bundle_sha256: hash.clone(),
         identity: identity(),
         route_id: None,
+        agent: None,
     };
     let staged = host.dispatch(stage()).await.unwrap();
     assert_eq!(staged["state"], "staged");
@@ -103,7 +107,8 @@ async fn host_preflight_and_atomic_prepared_stage_use_small_file_control_frames(
                 model: "other".into(),
                 ..identity()
             },
-            route_id: None
+            route_id: None,
+            agent: None,
         })
         .await
         .is_err());
