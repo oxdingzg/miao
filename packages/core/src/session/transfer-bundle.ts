@@ -70,6 +70,9 @@ export const prepare = Effect.fn("SessionTransferBundle.prepare")(function* (inp
   id: string
   sessionID: SessionSchema.ID
   target: Extract<SessionEnginePlacement.Placement, { engine: "rust" }>
+  /** The target validates the exact payload while the source lease is held,
+   * before its durable freeze. No target execution authority is granted here. */
+  validate?: (input: { serialized: string; digest: string }) => Effect.Effect<void, Error>
 }) {
   const database = yield* Database.Service
   const store = yield* SessionStore.Service
@@ -90,6 +93,7 @@ export const prepare = Effect.fn("SessionTransferBundle.prepare")(function* (inp
             () => new Unsupported({ sessionID: input.sessionID, reason: "Stored semantic payload is invalid" }),
           ),
         )
+        if (input.validate) yield* input.validate({ serialized: existing.bundle, digest: existing.bundle_sha256 })
         const frozen = yield* SessionMigration.freeze(database.db, {
           ...input,
           bundle: existing.bundle,
@@ -304,6 +308,7 @@ export const prepare = Effect.fn("SessionTransferBundle.prepare")(function* (inp
           reason: "Semantic payload exceeds the transfer size limit",
         })
       const digest = Hash.sha256(serialized)
+      if (input.validate) yield* input.validate({ serialized, digest })
       const frozen = yield* SessionMigration.freeze(database.db, {
         ...input,
         bundle: serialized,
