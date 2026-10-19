@@ -46,11 +46,11 @@ The engine also carries mechanisms that were measured with ablations: same-turn 
 
 ## 4. Efficiency evidence today
 
-| Dimension       | What exists                                                                                                                                                                                               | Can "not below TS" be claimed?                                                                                                                                   |
-| --------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Task quality    | Two small-task sweeps with a real model: 6 classes × 8 → Rust 48/48, TypeScript 47/48; 3 classes × 3 → 9/9 for both                                                                                       | **No.** Small samples of short, programmatically gradable fixes; R4.1 (representative-task quality at least as good as the baseline) is still pending acceptance |
-| Latency         | Same sweeps: Rust p50 22 s / p95 27 s, TypeScript p50 26 s / p95 29 s; engine-only warm readiness p50 8.3 ms, cold start 642 ms, ready RSS 10 MiB                                                         | Only slightly lower on those small tasks; the engine-only numbers are not end-to-end                                                                             |
-| Tokens and cost | **No comparison exists**: the measurements document records no cost/context figures, and switch-plan's G5 (per-task-class billed token and cost reporting) is still blocked on a live-run budget decision | **No.** The engine's own roadmap states that the evidence is not yet sufficient to establish higher quality, fewer tokens, and shorter latency together          |
+| Dimension       | What exists                                                                                                                                                                                                                    | Can "not below TS" be claimed?                                                                                                                                   |
+| --------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Task quality    | Two small-task sweeps with a real model: 6 classes × 8 → Rust 48/48, TypeScript 47/48; 3 classes × 3 → 9/9 for both                                                                                                            | **No.** Small samples of short, programmatically gradable fixes; R4.1 (representative-task quality at least as good as the baseline) is still pending acceptance |
+| Latency         | Same sweeps: Rust p50 22 s / p95 27 s, TypeScript p50 26 s / p95 29 s; engine-only warm readiness p50 8.3 ms, cold start 642 ms, ready RSS 10 MiB                                                                              | Only slightly lower on those small tasks; the engine-only numbers are not end-to-end                                                                             |
+| Tokens and cost | See §5: 15 classes × 3 runs × both engines, with per-class billed input, cache, output, and cost. The measurements document itself records no cost/context figures, and switch-plan's G5 is still blocked on a budget decision | Partial: §5 gives a direction and a break-even point, but one model at n=3 is not enough to serve as R4.2 acceptance evidence                                    |
 
 Two structural risks move tokens and quality in an unpredictable direction:
 
@@ -58,9 +58,49 @@ Two structural risks move tokens and quality in an unpredictable direction:
 - **Compaction and pruning defaults differ.** TS enables automatic compaction by default; the native trigger needs an explicit `engine.context_limits`, so a long native Session can be both more expensive (context growth) and more likely to fail early.
 - The engine's own positive ablations (A2: −21% turns / −22% input tokens on the multi-line carrier; A7: −4% turns / −5% input tokens on the typed carrier) hold on their individual carriers; they were not verified on a representative task set and do not extrapolate into "cheaper on every task".
 
-**Conclusion.** Functionally, a native Session can cover the main path without gaps in the core loop. But "performance, tokens, and quality not below TS" cannot be promised today: quality is not below only on 9/18 small samples, no per-task-class token or cost comparison exists, and two defaults that matter for cost differ in ways that can move it in either direction. Closing that requires the reporting the roadmap's §7 defines — billed tokens and cost across primary, child, and auxiliary models, retries, summarization, and failed attempts (G5) — reported per task class.
+**Conclusion.** Functionally, a native Session can cover the main path without gaps in the core loop; quality is not below on the existing small samples, and §5 adds a per-task-class billed token and cost comparison. That is still not a product-level evaluation: small samples, one model, only programmatically gradable tasks, and one class (`stream-interruption`) that cannot be measured on the current route. A stronger claim still needs the roadmap's §7 dimensions — primary, child, and auxiliary models, retries, summarization, and failed attempts — across more task classes.
 
-## 5. Minimum configuration to enable it today
+## 5. Measured comparison (2026-10-19)
+
+Both engines ran the frozen suite (v6, 15 classes) **3 times each — 90 live model runs** — sequentially so provider contention stays out of the numbers, on the same model `deepseek-v4-flash` (TS: `--model deepseek/deepseek-v4-flash`; Rust: `--provider openai-chat --endpoint https://api.deepseek.com/chat/completions`). The runner is `packages/miao/src/engine/baseline-sweep-cli.ts`, and the numbers come from each run's evidence and sample.
+
+Billing convention: `inputTokens` is the inclusive total, so billed input is `inputTokens − cacheReadTokens`. Rates are catalog list prices (input $0.15/M, output $0.60/M, cache read $0.003/M, cache write $0), and the amounts use the product's own `SessionRunnerCost.ofTurn`, which matched a manual per-category sum exactly.
+
+| Engine | Passed      | Turns        | Billed input | Cached input | Hit rate | Output  | Cost        | p50    | p95    |
+| ------ | ----------- | ------------ | ------------ | ------------ | -------- | ------- | ----------- | ------ | ------ |
+| TS     | 39/45 86.7% | 246 (5.5/r)  | 621,657      | 3,157,376    | 83.5%    | 25,979  | **$0.1183** | 8.0 s  | 37.2 s |
+| Rust   | 42/45 93.3% | 500 (11.1/r) | 140,807      | 3,421,693    | 96.0%    | 121,389 | **$0.1042** | 10.0 s | 50.7 s |
+
+**Which is cheaper.** Rust costs **11.9% less** overall and passes more runs. The money moves in opposite directions:
+
+| Billed category        | TS      | Rust    | Difference   |
+| ---------------------- | ------- | ------- | ------------ |
+| Billed input × $0.15/M | $0.0932 | $0.0211 | **−$0.0721** |
+| Cache read × $0.003/M  | $0.0095 | $0.0103 | +$0.0008     |
+| Output × $0.60/M       | $0.0156 | $0.0728 | +$0.0572     |
+
+Rust's input is 4.4× cheaper (roughly 4.9k first-turn prompt against TS's 14k, with a 96% hit rate against 83.5%) and its output is 4.7× more expensive (243 output tokens per turn against 106, at twice the turns). Since output is priced 4× input while the tokens saved and spent are in a 5:1 ratio, the input side still wins. **Break-even: once output is priced at least 5.04× input, the verdict flips** (solved with cache read at input/50).
+
+Per task class ($ = Rust/TS):
+
+| Class           | Ratio | Class             | Ratio | Class               | Ratio    |
+| --------------- | ----- | ----------------- | ----- | ------------------- | -------- |
+| multi-read      | 0.11  | test-repair       | 0.50  | rename-symbol       | 0.57     |
+| tool-error      | 0.12  | create-module     | 0.55  | multi-file          | 0.57     |
+| read-only       | 0.21  | docs-sync         | 0.56  | typed-repair        | 0.58     |
+| multi-line-edit | 0.36  | large-file        | 0.39  | long-session        | **4.28** |
+| small-edit      | 0.44  | permission-denial | 0.43  | stream-interruption | 0.07     |
+
+Rust lands between 0.07× and 0.58× of TS in 14 classes. The exception is `long-session`: Rust takes 82 turns per run against TS's 17, costing **4.28×** as much and finishing in 53.8 s against 39.4 s. **Excluding that class: TS $0.1039 against Rust $0.0423 — Rust is 59% cheaper.** The overall 11.9% is what that one class leaves of the advantage.
+
+Two behavioral differences observed alongside:
+
+- `permission-denial`: TS 0/3 (the run continues and leaves only a `tool.error`, missing the `permission.denied` receipt the task requires), Rust 3/3 (both receipts present).
+- `stream-interruption`: 0/3 for both, for a protocol reason rather than an engine one: the interruption proxy is built for Responses/SSE, so on the `openai-chat` route TS is SIGINTed without a `provider.interrupted` receipt while Rust receives provider HTTP 418. The class is not comparable on this route.
+
+Evidence boundary: one model (deepseek-v4-flash, output/input = 4), n=3 per class, short programmatically gradable tasks, sequential runs on one machine, and tiny absolute amounts (~$0.22 for both arms combined), so the percentages are sensitive to the price table and the task mix. These numbers hold because two harness defects were fixed first — the TypeScript leg dying in the receipt fingerprint on `undefined` observations, and multi-input runs keeping only the last input's provider interactions — and both fixes are merged.
+
+## 6. Minimum configuration to enable it today
 
 1. Set `engine.context_limits` to match the TS automatic-compaction behavior; without it a long Session has no automatic compaction.
 2. Decide `engine.prompt_cache` and the Responses cache/WebSocket contracts, declaring only deployments that were actually verified.
