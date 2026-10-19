@@ -12,6 +12,36 @@ const realTest = realBinary ? test : test.skip
 const tmp = () => fs.mkdtemp(path.join(os.tmpdir(), "miao-engine-"))
 
 describe("engine host client", () => {
+  test("selects a route-backed model before admitting the prompt", async () => {
+    const root = await tmp()
+    try {
+      const log = path.join(root, "requests.log")
+      const result = await runEnginePrompt({
+        binary: fake,
+        db: path.join(root, "engine.db"),
+        workspace: root,
+        model: "deepseek-v4.1-flash",
+        provider: "openai-chat",
+        modelRoute: {
+          route_id: "opencode-go/deepseek-v4.1-flash",
+          protocol: "openai-chat",
+          model: "deepseek-v4.1-flash",
+        },
+        env: { ENGINE_FAKE_REQUESTS: log },
+        prompt: "hi",
+      })
+      expect(result.text).toBe("echo:hi")
+      // A route-backed provider is never the engine's default route, so the
+      // Session has to select it before the prompt is admitted.
+      const methods = (await fs.readFile(log, "utf8")).trim().split("\n")
+      expect(methods.indexOf("initialize")).toBeGreaterThanOrEqual(0)
+      expect(methods.indexOf("initialize")).toBeLessThan(methods.indexOf("select_model"))
+      expect(methods.indexOf("select_model")).toBeLessThan(methods.indexOf("admit"))
+    } finally {
+      await fs.rm(root, { recursive: true, force: true })
+    }
+  })
+
   test("drives one prompt: subscribe, admit, events, history", async () => {
     const root = await tmp()
     try {

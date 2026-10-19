@@ -2,7 +2,11 @@
 // A minimal stand-in for `miao-engine serve`. It speaks the same JSONL wire
 // (id/method/params requests, event/progress messages) so the host client can be
 // exercised without the Rust binary, which is not built in a plain checkout.
+import { appendFileSync } from "node:fs"
+
 const decoder = new TextDecoder()
+// Harness tests assert the request order by pointing this at a file.
+const requestLog = process.env.ENGINE_FAKE_REQUESTS
 const prompts = new Map<string, string>()
 let buffer = ""
 
@@ -35,6 +39,7 @@ function substitute(value: unknown, session: string, inputID: string): unknown {
 
 function handle(request: { id: number; method: string; params: Record<string, unknown> }) {
   const { id, method, params } = request
+  if (requestLog) appendFileSync(requestLog, method + "\n")
   if (method === "fixture_frames" && Array.isArray(params.frames)) {
     params.frames.forEach(send)
     send({ id, result: { accepted: true } })

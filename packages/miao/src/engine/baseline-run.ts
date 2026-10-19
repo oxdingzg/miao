@@ -110,6 +110,18 @@ export interface BaselineRustInput {
   policyFile?: string
   /** Provider base URL override; the subscription default applies otherwise. */
   endpoint?: string
+  /**
+   * Trusted host route manifest. A provider that requires its own headers (a
+   * gateway that routes by an opaque session key, for example) can only be
+   * measured through a route, since `--provider`/`--endpoint` carry no headers.
+   */
+  modelRoutesConfigFile?: string
+  /**
+   * Route id to select before each input. Required for a provider that exists
+   * only in the route manifest: the engine's default route is always the
+   * plain `--provider` one.
+   */
+  modelRouteID?: string
   /** Evaluation ablation control; `false` disables stale-edit recovery. */
   editRecovery?: boolean
   /** Evaluation ablation control; `false` disables LSP warm-up and post-edit diagnostics. */
@@ -219,6 +231,11 @@ export async function runBaselineRust(input: BaselineRustInput): Promise<Baselin
       credentialIntegration: input.credentialIntegration,
       policyFile: input.policyFile ?? (await writeBaselinePolicy(input.root)),
       endpoint: proxy?.endpoint ?? input.endpoint,
+      modelRoutesConfigFile: input.modelRoutesConfigFile,
+      modelRoute:
+        input.modelRouteID && input.provider
+          ? { route_id: input.modelRouteID, protocol: input.provider, model: input.model }
+          : undefined,
       editRecovery: input.editRecovery,
       // Every ablation the runner declares has to reach the engine, or both
       // arms of a measurement silently run the same configuration.
