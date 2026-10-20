@@ -9,6 +9,7 @@ import { AmbientContext } from "./ambient-context"
 import { ProductHooks } from "./product-hooks"
 import { ProductLsp } from "./product-lsp"
 import { ProductFormatter } from "./product-formatter"
+import { ProductPolicy } from "./product-policy"
 import { ProductRoutes } from "./product-routes"
 import { ProductMcp } from "./product-mcp"
 import { McpAuth } from "@miao/core/mcp/auth"
@@ -707,17 +708,24 @@ const layer = Layer.effect(
         const hooks = yield* ProductHooks.prepare(location, { ...effective, ...context.options })
         const lsp = yield* ProductLsp.prepare(location, effective)
         const formatter = yield* ProductFormatter.prepare(location, effective)
-        const productTools = yield* ProductTools.prepare(
-          configuration,
-          {
-            get: (input) =>
-              ownerRouter === undefined
-                ? Effect.fail(new EngineError("engine_owner_closed", "product tool router is not ready"))
-                : ownerRouter.get(input),
-          },
-        )
+        const policy = yield* ProductPolicy.prepare(effective)
+        const productTools = yield* ProductTools.prepare(configuration, {
+          get: (input) =>
+            ownerRouter === undefined
+              ? Effect.fail(new EngineError("engine_owner_closed", "product tool router is not ready"))
+              : ownerRouter.get(input),
+        })
         return {
-          options: { ...routes, ...mcp, ...context.options, ...hooks, ...lsp, ...formatter, ...productTools },
+          options: {
+            ...routes,
+            ...mcp,
+            ...context.options,
+            ...hooks,
+            ...lsp,
+            ...formatter,
+            ...policy,
+            ...productTools,
+          },
           refresh: context.refresh,
         }
       }).pipe(
