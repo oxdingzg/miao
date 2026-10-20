@@ -1,6 +1,6 @@
 //! Prepared authority and state for the native side of a product cutover.
 use crate::{
-    protocol::Error,
+    protocol::{Error, Message},
     provider::Identity,
     session_account::Selection,
     session_agent::AgentManifest,
@@ -14,6 +14,7 @@ use rusqlite::{params, OptionalExtension};
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use sha2::{Digest, Sha256};
+use std::collections::{HashMap, HashSet};
 use std::path::Path;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -176,6 +177,129 @@ pub fn prepare(
         .as_str()
         .ok_or_else(|| invalid("source directory"))?
         .into();
+    Ok(Preparation {
+        directory,
+        identity,
+        route_id,
+        binding,
+        agent,
+        account,
+        messages,
+        operations,
+        snapshots,
+    })
+}
+
+/// The native-move variant of [`prepare`]: the bundle timeline is verbatim
+/// engine message rows stamped by `export_session_move`, so every row becomes
+/// exactly one prepared message and snapshots and state pass through without
+/// product-shape translation. Integrity checks that staging re-runs anyway
+/// (duplicate identities, context membership) stay with staging.
+pub fn prepare_native(
+    serialized: &str,
+    identity: Identity,
+    route_id: Option<String>,
+    agent: Option<AgentManifest>,
+) -> Result<Preparation, Error> {
+    if serialized.len() > crate::transfer::MAX_BYTES {
+        return Err(invalid("bundle size limit"));
+    }
+    let source: Value = serde_json::from_str(serialized)?;
+    if source["format"] != "miao.session.transfer.v1" || source["source"]["engine"] != "rust" {
+        return Err(invalid("bundle format"));
+    }
+    let timeline = source["timeline"]
+        .as_array()
+        .ok_or_else(|| invalid("canonical timeline"))?;
+    let mut messages = Vec::new();
+    let mut seen = HashSet::new();
+    let mut order = HashMap::new();
+    for (index, entry) in timeline.iter().enumerate() {
+        let id = entry["id"]
+            .as_str()
+            .filter(|id| !id.is_empty())
+            .ok_or_else(|| invalid("message identity"))?;
+        if !seen.insert(id) {
+            return Err(invalid("duplicate message identity"));
+        }
+        order.insert(id.to_owned(), index);
+        messages.push(PreparedMessage {
+            source_message_id: id.to_owned(),
+            message: Message {
+                role: entry["role"]
+                    .as_str()
+                    .ok_or_else(|| invalid("message role"))?
+                    .to_owned(),
+                content: entry["content"].clone(),
+                checkpoint: entry["checkpoint"].as_str().map(str::to_owned),
+                recorded_at_ms: entry["recorded_at_ms"].as_u64(),
+            },
+        });
+    }
+    let mut snapshots = Vec::new();
+    for snapshot in source["snapshots"].as_array().unwrap_or(&Vec::new()) {
+        let id = snapshot["id"]
+            .as_str()
+            .ok_or_else(|| invalid("snapshot identity"))?;
+        let boundary = snapshot["boundary_message_id"].as_str();
+        let files = snapshot["files"]
+            .as_array()
+            .ok_or_else(|| invalid("snapshot files"))?
+            .clone();
+        snapshots.push(RetainedSnapshot {
+            id: id.to_owned(),
+            boundary_message_id: boundary.map(str::to_owned),
+            order_index: boundary.and_then(|id| order.get(id).copied()),
+            files,
+        });
+    }
+    let mut operations = Vec::new();
+    if !source["operational"]["goal"].is_null() {
+        let mutation = Mutation::parse("goal", source["operational"]["goal"].clone())
+            .map_err(|_| invalid("goal cannot be represented natively"))?;
+        operations.push(Operation {
+            kind: mutation.kind.into(),
+            value: mutation.value,
+        });
+    }
+    if let Some(rows) = source["operational"]["todos"].as_array() {
+        let todos = rows
+            .iter()
+            .map(|row| {
+                json!({"id":row["task_id"],"depends_on":row["depends_on"],"content":row["content"],"status":row["status"],"priority":row["priority"]})
+            })
+            .collect::<Vec<_>>();
+        let mutation = Mutation::parse("todowrite", json!({"todos": todos}))
+            .map_err(|_| invalid("todo graph cannot be represented natively"))?;
+        operations.push(Operation {
+            kind: mutation.kind.into(),
+            value: mutation.value,
+        });
+    }
+    let directory = source["session"]["location"]["directory"]
+        .as_str()
+        .ok_or_else(|| invalid("source directory"))?
+        .into();
+    let binding: Binding = if source["session"]["model"].is_null() {
+        // An unbound source adopts the destination binding the host supplies.
+        Binding {
+            protocol: identity.protocol.clone(),
+            model: identity.model.clone(),
+            route_id: route_id.clone(),
+            variant: None,
+        }
+    } else {
+        serde_json::from_value(source["session"]["model"].clone())
+            .map_err(|_| invalid("model binding"))?
+    };
+    let account: Option<Selection> = if source["session"]["account"].is_null() {
+        None
+    } else {
+        Some(
+            serde_json::from_value(source["session"]["account"].clone())
+                .map_err(|_| invalid("account selection"))?,
+        )
+    };
     Ok(Preparation {
         directory,
         identity,
