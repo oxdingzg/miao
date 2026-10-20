@@ -16,7 +16,7 @@ import {
 import { SessionGoal } from "../goal"
 import { SessionExecution } from "../execution"
 import { SessionEnginePlacement } from "../engine-placement"
-import { Cause, DateTime, Duration, Effect, FiberSet, Layer, Option, Semaphore, Stream, Schema } from "effect"
+import { Cause, DateTime, Duration, Effect, Fiber, FiberSet, Layer, Option, Semaphore, Stream, Schema } from "effect"
 import { and, asc, eq, sql } from "drizzle-orm"
 import { AgentV2 } from "../../agent"
 import { Config } from "../../config"
@@ -1540,6 +1540,23 @@ const layer = Layer.effect(
         Stream.runDrain,
       )
 
+    // What a stalled subagent had already finished, so the parent can decide
+    // how much of the task to redo instead of re-reading the child transcript.
+    const subagentProgress = (childID: SessionSchema.ID) =>
+      Effect.gen(function* () {
+        const context = yield* store.context(childID).pipe(Effect.orElseSucceed(() => []))
+        const calls = context.flatMap((message) =>
+          message.type === "assistant"
+            ? message.content.flatMap((item) =>
+                item.type !== "text" && item.type !== "reasoning" && item.state.status === "completed" ? [item] : [],
+              )
+            : [],
+        )
+        if (calls.length === 0) return ""
+        const last = calls.at(-1)?.name
+        return ` It had completed ${calls.length} tool call${calls.length === 1 ? "" : "s"} (last: ${last}) before stopping.`
+      })
+
     const runSubagent = Effect.fnUntraced(function* (
       parentSessionID: SessionSchema.ID,
       request: {
@@ -1637,14 +1654,31 @@ const layer = Layer.effect(
       // A failed drain is observed through the child's projected history
       // below, so `Effect.exit` keeps the race from ending on a drain failure
       // and losing the outcome that decides between the two branches.
+      // Halfway to the silence bound, one progress note keeps a silent-but-alive
+      // subagent distinguishable from a hung one. The race's losing side or the
+      // explicit interrupt below retires the note fiber.
+      const note = yield* Effect.sleep(Duration.millis(Duration.toMillis(SUBAGENT_SILENCE) / 2)).pipe(
+        Effect.andThen(
+          request.context?.progress?.({
+            content: [{
+              type: "text" as const,
+              text: `${request.description} has produced no output for ${SUBAGENT_SILENCE_MINUTES / 2} minutes; it is still running and will be interrupted at ${SUBAGENT_SILENCE_MINUTES} minutes of silence.`,
+            }],
+          }) ?? Effect.void,
+        ),
+        Effect.forkChild,
+      )
       const outcome = yield* Effect.race(
         runDrain!({ sessionID: child.id, force: true }).pipe(Effect.exit, Effect.as("drained" as const)),
         stalledSubagent(child.id).pipe(Effect.as("stalled" as const)),
       )
-      if (outcome === "stalled")
+      yield* Fiber.interrupt(note)
+      if (outcome === "stalled") {
+        const progress = yield* subagentProgress(child.id)
         return yield* new ToolFailure({
-          message: `Subagent produced no output for ${SUBAGENT_SILENCE_MINUTES} minutes and was interrupted. It may be stuck; retry it, or split the work into smaller tasks.`,
+          message: `Subagent produced no output for ${SUBAGENT_SILENCE_MINUTES} minutes and was interrupted.${progress} It may be stuck; retry it, or split the work into smaller tasks.`,
         })
+      }
       const context = yield* store.context(child.id)
       const assistant = context.findLast((message) => message.type === "assistant")
       if (assistant?.type === "assistant" && (assistant.error !== undefined || assistant.finish === "error"))
