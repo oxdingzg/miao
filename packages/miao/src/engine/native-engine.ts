@@ -32,8 +32,12 @@ import { EngineError, type EngineOptions, type EngineEvent } from "./client"
 import { discoveredEngine } from "./discovery"
 import { makeEngineOwners } from "./owners"
 import { NativeRecovery } from "./recovery"
+import { ProductTools } from "./product-tools"
 import { engineMessageSequence } from "./message-sequence"
 import { Permission } from "@miao/schema/permission"
+import { Database } from "@miao/core/database/database"
+import { SessionStore } from "@miao/core/session/store"
+import { SessionOwnership } from "@miao/core/session/ownership"
 import { Question } from "@miao/schema/question"
 import { translateApproval, translateQuestion } from "./bridge"
 
@@ -671,6 +675,9 @@ const layer = Layer.effect(
     const credentials = yield* Credential.Service
     const mcpAuth = yield* McpAuth.Service
     const locations = yield* LocationServiceMap.Service
+    const database = yield* Database.Service
+    const sessions = yield* SessionStore.Service
+    const ownershipService = yield* SessionOwnership.Service
     const blob = yield* Blob.Service
     const fs = yield* FSUtil.Service
     const settings = yield* Effect.promise(() => engineSettings(global.config))
@@ -689,6 +696,7 @@ const layer = Layer.effect(
       console.log("[worker-host] config written:", workerConfigFile)
     }
     const mcp = yield* ProductMcp.prepare(configuration).pipe(Effect.provideService(McpAuth.Service, mcpAuth))
+    let ownerRouter: Owners | undefined
     const owners = yield* makeEngineOwners({ ...configuration, ...mcp }, (location) =>
       Effect.gen(function* () {
         const routes = yield* ProductRoutes.prepare(location, configuration, compaction).pipe(
@@ -699,12 +707,24 @@ const layer = Layer.effect(
         const hooks = yield* ProductHooks.prepare(location, { ...effective, ...context.options })
         const lsp = yield* ProductLsp.prepare(location, effective)
         const formatter = yield* ProductFormatter.prepare(location, effective)
+        const productTools = yield* ProductTools.prepare(
+          configuration,
+          {
+            get: (input) =>
+              ownerRouter === undefined
+                ? Effect.fail(new EngineError("engine_owner_closed", "product tool router is not ready"))
+                : ownerRouter.get(input),
+          },
+        )
         return {
-          options: { ...routes, ...mcp, ...context.options, ...hooks, ...lsp, ...formatter },
+          options: { ...routes, ...mcp, ...context.options, ...hooks, ...lsp, ...formatter, ...productTools },
           refresh: context.refresh,
         }
       }).pipe(
         Effect.provide(locations.get(location)),
+        Effect.provideService(Database.Service, database),
+        Effect.provideService(SessionStore.Service, sessions),
+        Effect.provideService(SessionOwnership.Service, ownershipService),
         Effect.mapError((error) =>
           error instanceof EngineError
             ? error
@@ -712,6 +732,7 @@ const layer = Layer.effect(
         ),
       ),
     )
+    ownerRouter = owners
     // Supervisor tick: probe every live owner's timer sessions; a dead child
     // is transparently re-owned so its adopted timers re-arm and fire.
     yield* Effect.forever(
@@ -756,6 +777,9 @@ export const node = makeGlobalNode({
     LocationServiceMap.node,
     Blob.node,
     FSUtil.node,
+    Database.node,
+    SessionStore.node,
+    SessionOwnership.node,
   ],
 })
 

@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test"
-import { readTranscript } from "@/engine/transcript"
+import { readTranscript, readTranscriptEntries } from "@/engine/transcript"
 import { messageID } from "@/engine/identity"
 import { AbsolutePath } from "@miao/schema/schema"
 
@@ -181,6 +181,20 @@ test("native transcript keeps client IDs, assistant anchors and billed usage", a
   expect(assistant.content[0]).toMatchObject({ type: "text", text: "native answer" })
   expect(assistant.tokens?.input).toBe(30)
   expect(assistant.tokens?.output).toBe(5)
+})
+
+test("native transcript entries carry each message's durable sequence", async () => {
+  const entries = await readTranscriptEntries({
+    sessionID: session,
+    engineID: "store",
+    location,
+    selected: true,
+    request: request({ session_id: session, cursor: 6, messages: visible, selection: null }),
+  })
+  expect(entries.map((entry) => [String(entry.message.id), entry.seq])).toEqual([
+    ["msg_client_prompt", 2],
+    [messageID(session, 3), 5],
+  ])
 })
 
 test("the selected context applies the atomic cut without hiding raw timeline messages", async () => {

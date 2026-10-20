@@ -215,22 +215,14 @@ export const make = (input: Dependencies): Readonly<Record<string, AnyTool>> => 
 
   return {
     send_message: SendMessageTool.make((request, context) =>
-      runSendMessage(request, context).pipe(
-        Effect.mapError((error) =>
-          error instanceof ToolFailure ? error : new ToolFailure({ message: "Session messaging failed" }),
-        ),
-      ),
+      runSendMessage(request, context).pipe(Effect.mapError(asToolFailure)),
     ),
     list_sessions: Tool.withConcurrency(
       ListSessionsTool.make((request) => runListSessions(request)),
       "concurrent",
     ),
     read_session_context: ReadSessionContextTool.make((request, context) =>
-      runReadSessionContext(request, context).pipe(
-        Effect.mapError((error) =>
-          error instanceof ToolFailure ? error : new ToolFailure({ message: "Session read failed" }),
-        ),
-      ),
+      runReadSessionContext(request, context).pipe(Effect.mapError(asToolFailure)),
     ),
   }
 }
