@@ -49,7 +49,7 @@ test("agent switches replay with stable product event identities", () => {
   expect(outputs[0].data).toMatchObject({ sessionID: "ses_agent", agent: "reviewer", messageID: "msg_ses_agent_2" })
 })
 
-test("external directory classification stays with the product host", () => {
+test("external directory rules stay with the ordered manifest", () => {
   const agent = Schema.decodeUnknownSync(Agent.Info)({
     ...Agent.Info.empty(Agent.ID.make("build")),
     permissions: [
@@ -57,7 +57,7 @@ test("external directory classification stays with the product host", () => {
       { action: "external_directory", resource: "*", effect: "ask" },
     ],
   })
-  expect(agentManifest(agent, []).ordered_permissions.rules).toEqual([{ action: "*", resource: "*", effect: "allow" }])
+  expect(agentManifest(agent, []).ordered_permissions.rules).toEqual(agent.permissions)
 })
 
 test("unsupported auto-classifier mode is not silently downgraded", () => {
