@@ -332,6 +332,12 @@ impl Host {
                     .export_session_transfer_import(&import_id, path)
                     .await
             }
+            Command::TransferExportDelta { import_id, path } => {
+                runtime
+                    .store()
+                    .export_session_transfer_delta(&import_id, path)
+                    .await
+            }
             Command::TransferAbort { import_id } => {
                 runtime
                     .store()
