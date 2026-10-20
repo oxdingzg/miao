@@ -334,12 +334,13 @@ impl Host {
             }
             Command::TransferExportMove {
                 session_id,
+                product_database,
                 target_directory,
                 path,
             } => {
                 runtime
                     .store()
-                    .export_session_move(&session_id, &target_directory, path)
+                    .export_session_move(&session_id, &product_database, &target_directory, path)
                     .await
             }
             Command::TransferStageNative {

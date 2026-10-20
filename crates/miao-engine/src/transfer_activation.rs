@@ -347,14 +347,34 @@ impl Store {
             if state=="active" {return Ok(json!({"id":id,"session_id":session,"bundle_sha256":digest,"state":"active"}));}
             let prepared:String=tx.query_row("SELECT data FROM engine_transfer_preparation WHERE import_id=?1",[&id],|row|row.get(0)).optional()?.ok_or(Error::Conflict)?;
             let prepared:Preparation=serde_json::from_str(&prepared)?;
-            // Validate every stored field again before changing the durable gate.
-            let validated=prepare(&bundle,prepared.identity.clone(),prepared.route_id.clone(),prepared.agent.clone())?;
+            // Validate every stored field again before changing the durable
+            // gate. Native-move bundles re-validate through the verbatim-row
+            // parser; the product-shape translation never sees them.
+            let validated=if source["source"]["engine"]=="rust" {
+                prepare_native(&bundle,prepared.identity.clone(),prepared.route_id.clone(),prepared.agent.clone())?
+            } else {
+                prepare(&bundle,prepared.identity.clone(),prepared.route_id.clone(),prepared.agent.clone())?
+            };
             if serde_json::to_value(&validated)?!=serde_json::to_value(&prepared)? {return Err(Error::Conflict);}
             tx.execute("UPDATE engine_transfer_import SET state='active' WHERE id=?1 AND state='staged'",[&id])?;
+            let mut seq_by_source=std::collections::HashMap::<String,u64>::new();
             for message in prepared.messages {
                 let event=append(&tx,&session,"session.transfer.history",json!({"import_id":id,"source_message_id":message.source_message_id}))?;
                 tx.execute("INSERT INTO engine_message(session_id,seq,role,content,checkpoint,recorded_at_ms) VALUES(?1,?2,?3,?4,?5,?6)",params![session,event.seq,message.message.role,serde_json::to_string(&message.message.content)?,message.message.checkpoint,message.message.recorded_at_ms])?;
                 tx.execute("INSERT INTO engine_transfer_message(import_id,source_message_id,seq) VALUES(?1,?2,?3)",params![id,message.source_message_id,event.seq])?;
+                seq_by_source.insert(message.source_message_id,event.seq);
+            }
+            // Native-move compactions re-anchor onto the imported rows: the
+            // bundle carries through-message identities, activation remaps
+            // them to the fresh sequences. TS bundles have no such field and
+            // keep encoding summaries as timeline messages.
+            for compaction in source["compactions"].as_array().unwrap_or(&Vec::new()) {
+                let compaction_id=compaction["id"].as_str().ok_or_else(||invalid("compaction identity"))?;
+                let through_id=compaction["through_message_id"].as_str().ok_or_else(||invalid("compaction boundary"))?;
+                let through=*seq_by_source.get(through_id).ok_or(Error::Conflict)?;
+                let summary=compaction["summary"].as_str().ok_or_else(||invalid("compaction summary"))?;
+                let event=append(&tx,&session,"history.compacted",json!({"compaction_id":compaction_id,"through_message_seq":through,"summary":summary,"inherited":true}))?;
+                tx.execute("INSERT INTO engine_compaction VALUES(?1,?2,?3,?4,?5)",params![compaction_id,session,through,summary,event.seq])?;
             }
             crate::session_model::select_model_tx(&tx,&session,Some(&prepared.binding))?;
             if let Some(account)=prepared.account {append(&tx,&session,"session.account.selected",json!({"account":account,"binding":prepared.binding}))?;}
