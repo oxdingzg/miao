@@ -21,7 +21,6 @@ import { Project } from "@miao/core/project"
 import { NativeEngine } from "../native-engine"
 import { requireNativeOwner, requireTypescriptOwner } from "../native-command"
 import { SessionEnginePlacement } from "@miao/core/session/engine-placement"
-import { LocationServiceMap } from "@miao/core/location-services"
 import { nativeExecution, nativeTodos } from "../native-state"
 import { nativeSessionEvents } from "../native-events"
 import { SessionEvent } from "@miao/schema/session-event"
@@ -158,22 +157,6 @@ export const SessionHandler = HttpApiBuilder.group(Api, "server.session", (handl
             location,
             ...(nativeStorage ? { nativeStorage } : {}),
           })
-          // A native Session must start under the product agent whose resolved
-          // rules authorize its turns. Without this manifest the engine would
-          // fall back to its default Ask policy and ignore configured deny or
-          // allow rules until the operator switched agents.
-          if (native && nativeStorage) {
-            const locations = Option.getOrUndefined(yield* Effect.serviceOption(LocationServiceMap.Service))
-            if (locations) {
-              const agent = yield* Effect.gen(function* () {
-                const plugins = yield* PluginV2.Service
-                yield* Deferred.await(plugins.booted)
-                const agents = yield* AgentV2.Service
-                return yield* agents.resolve(ctx.payload.agent)
-              }).pipe(Effect.provide(locations.get(location)))
-              if (agent) yield* native.selectAgent({ sessionID: id, storage: nativeStorage, location, agent })
-            }
-          }
           const placement =
             binding?.engine === "rust" ? binding : nativeStorage ? { storage: nativeStorage, location } : undefined
           if (native && placement) {
@@ -395,6 +378,34 @@ export const SessionHandler = HttpApiBuilder.group(Api, "server.session", (handl
           // Only a resolved Rust placement selects native admission.
           if (Option.isSome(native) && placement) {
             if (ctx.payload.prompt.agents?.length) yield* booted
+            // Admission is the first point that holds the Session Location's
+            // services. Apply the product agent here (idempotently) so the
+            // engine never runs a prompt under its native-runtime fallback
+            // policy.
+            const info = yield* session
+              .get(ctx.params.sessionID)
+              .pipe(Effect.catchTag("Session.NotFoundError", () => Effect.succeed(undefined)))
+            const plugins = yield* PluginV2.Service
+            yield* Deferred.await(plugins.booted)
+            const agents = yield* AgentV2.Service
+            const snapshot = yield* native.value.snapshot({
+              sessionID: ctx.params.sessionID,
+              storage: placement.storage,
+              location: placement.location,
+            })
+            const selected = Schema.decodeUnknownOption(
+              Schema.Struct({ agent: Schema.optional(Schema.NullOr(Schema.Struct({ name: Schema.String }))) }),
+            )(snapshot)
+            const agent =
+              (yield* agents.resolve(selected._tag === "Some" ? selected.value.agent?.name : undefined)) ??
+              (yield* agents.resolve(info?.agent))
+            if (agent)
+              yield* native.value.selectAgent({
+                sessionID: ctx.params.sessionID,
+                storage: placement.storage,
+                location: placement.location,
+                agent,
+              })
             // Last point before the prompt becomes durable, and the only one that
             // holds the session Location's services, so image attachments are
             // shrunk to the configured budget here rather than stored at full size.

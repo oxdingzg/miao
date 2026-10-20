@@ -15,12 +15,15 @@ import { SessionSchema } from "@miao/core/session/schema"
 import { SessionStore } from "@miao/core/session/store"
 import { SessionTodo } from "@miao/core/session/todo"
 import { Tool } from "@miao/core/tool/tool"
+import { ToolPlugins } from "@miao/core/tool/plugins"
 import { PushNotificationTool } from "@miao/core/tool/push-notification"
+import { ToolRegistry } from "@miao/core/tool/registry"
 import { ToolFailure, type ToolCall } from "@miao/llm"
 import type { Location } from "@miao/schema/location"
 import { Effect, Option, Schema } from "effect"
 import { EngineError, type EngineOptions } from "./client"
 import type { EngineClient } from "./client"
+import { PluginTools } from "./plugin-tools"
 import type { EngineSession } from "./session"
 import { readTranscriptEntries } from "./transcript"
 
@@ -101,6 +104,9 @@ export const prepare = Effect.fn("Engine.productTools")(function* (
   // only an explicit cross-host wake is best-effort.
   const execution = Option.getOrUndefined(yield* Effect.serviceOption(SessionExecution.Service))
   const jobs = Option.getOrUndefined(yield* Effect.serviceOption(BackgroundJob.Service))
+  const registry = Option.getOrUndefined(yield* Effect.serviceOption(ToolRegistry.Service))
+  const plugins = Option.getOrUndefined(yield* Effect.serviceOption(ToolPlugins.Service))
+  const agents = Option.getOrUndefined(yield* Effect.serviceOption(AgentV2.Service))
   const product = PeerTools.makePeers({ db, events, store, ownership, todos, execution, jobs, wake: execution?.wake })
 
   const placement = (sessionID: SessionSchema.ID) => SessionEnginePlacement.find(db, sessionID)
@@ -128,7 +134,8 @@ export const prepare = Effect.fn("Engine.productTools")(function* (
               ? ("completed" as const)
               : ("unknown" as const),
           backgroundJobs: 0,
-          objective: goal?.objective ?? list.find((todo) => todo.status !== "completed" && todo.status !== "cancelled")?.content,
+          objective:
+            goal?.objective ?? list.find((todo) => todo.status !== "completed" && todo.status !== "cancelled")?.content,
           active: busy || unfinished,
           ...(snapshot.title === undefined ? {} : { title: snapshot.title }),
           ...(snapshot.updated_at_ms === undefined ? {} : { lastActivity: snapshot.updated_at_ms }),
@@ -203,6 +210,7 @@ export const prepare = Effect.fn("Engine.productTools")(function* (
         Effect.mapError(() => new ToolFailure({ message: "Unable to raise the notification" })),
       ),
     ),
+    ...(registry && plugins && agents ? PluginTools.make({ registry, plugins, agents, store }) : {}),
   })
 
   const manifest = make(SessionSchema.ID.make("ses_product_tools"))
