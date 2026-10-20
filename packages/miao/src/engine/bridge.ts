@@ -9,6 +9,8 @@ import { StatusInfo } from "@miao/schema/session-event"
 import { adoptSession, messageID } from "./identity"
 import type { EngineEvent, EngineProgress } from "./client"
 import { decodeAttachments } from "./prompt-attachments"
+import { SessionRunnerCost } from "@miao/core/session/runner/cost"
+import type { ModelV2 } from "@miao/core/model"
 
 /**
  * The product `session.next.status` payload for one status transition. Status is
@@ -296,6 +298,7 @@ export type StreamAnchor = {
 
 /** The billed usage one engine step reported, buffered until its assistant message commits. */
 export type BufferedUsage = {
+  model?: string
   tokens: { input: number; output: number; reasoning: number; cache: { read: number; write: number } }
 }
 
@@ -315,16 +318,19 @@ export function translateUsage(event: EngineEvent): { runID: string; step: numbe
   if (runID === undefined || step === undefined) return undefined
   const usage = "usage" in event.data ? event.data["usage"] : undefined
   if (typeof usage !== "object" || usage === null) return undefined
+  const input = readCount(usage, "inputTokens") ?? 0
+  const cacheRead = readCount(usage, "cacheReadInputTokens") ?? 0
   return {
     runID,
     step,
     usage: {
+      model: readNonEmptyString(event.data, "model"),
       tokens: {
-        input: readCount(usage, "inputTokens") ?? 0,
+        input,
         output: readCount(usage, "outputTokens") ?? 0,
         reasoning: readCount(usage, "reasoningTokens") ?? 0,
         cache: {
-          read: readCount(usage, "cacheReadInputTokens") ?? 0,
+          read: cacheRead,
           write: readCount(usage, "cacheWriteInputTokens") ?? 0,
         },
       },
@@ -345,14 +351,15 @@ export type SessionStepEnded = {
 
 /**
  * Map the committed assistant message to the product `session.next.step.ended`,
- * attaching the step's buffered usage and time-to-first-token. The engine
- * journals no pricing, so `cost` is 0 until the product's price table maps
- * native model identities (the B1 config-mapping slice).
+ * attaching the step's buffered usage and time-to-first-token. Cost prices the
+ * step's usage at the serving model's catalog rates, which the caller resolves
+ * from the model id the engine journals with the usage event.
  */
 export function translateStepEnded(
   event: EngineEvent,
   usage: BufferedUsage | undefined,
   ttft: number | undefined,
+  costs: ModelV2.Info["cost"] | undefined,
 ): SessionStepEnded | undefined {
   if (event.kind !== "message.committed") return undefined
   if (typeof event.data !== "object" || event.data === null) return undefined
@@ -362,14 +369,27 @@ export function translateStepEnded(
   const finish = typeof rawFinish === "string" && rawFinish ? rawFinish : "stop"
   const anchor = anchorSeq(event)
   const assistantMessageID = messageID(event.session_id, anchor ?? event.seq)
+  const tokens = usage?.tokens ?? { input: 0, output: 0, reasoning: 0, cache: { read: 0, write: 0 } }
   return {
     sessionID: adoptSession(event.session_id),
     timestamp: eventTimestamp(event),
     assistantMessageID,
     finish,
-    cost: 0,
-    tokens: usage?.tokens ?? { input: 0, output: 0, reasoning: 0, cache: { read: 0, write: 0 } },
-    ...(ttft !== undefined && Number.isSafeInteger(ttft) && ttft >= 0 ? { ttft } : {}),
+    // Billed input is inclusive, so the plain input tokens price only what the
+    // cache did not already serve. An unknown price stays 0, matching the
+    // runner's behavior for models without catalog rates.
+    cost: costs
+      ? SessionRunnerCost.ofTurn(costs, {
+          inputTokens: tokens.input,
+          outputTokens: tokens.output,
+          reasoningTokens: tokens.reasoning,
+          cacheReadInputTokens: tokens.cache.read,
+          cacheWriteInputTokens: tokens.cache.write,
+          nonCachedInputTokens: Math.max(0, tokens.input - tokens.cache.read),
+        })
+      : 0,
+    tokens,
+    ...(ttft !== undefined && Number.isSafeInteger(ttft) && ttft >= 0 ? { ttft: ttft } : {}),
   }
 }
 

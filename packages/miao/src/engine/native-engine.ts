@@ -699,7 +699,7 @@ const layer = Layer.effect(
     let ownerRouter: Owners | undefined
     const owners = yield* makeEngineOwners({ ...configuration, ...mcp }, (location) =>
       Effect.gen(function* () {
-        const routes = yield* ProductRoutes.prepare(location, configuration, compaction).pipe(
+        const { prices, ...routes } = yield* ProductRoutes.prepare(location, configuration, compaction).pipe(
           Effect.provideService(Credential.Service, credentials),
         )
         const effective = { ...configuration, ...routes, ...mcp }
@@ -719,6 +719,7 @@ const layer = Layer.effect(
         return {
           options: { ...routes, ...mcp, ...context.options, ...hooks, ...lsp, ...formatter, ...productTools },
           refresh: context.refresh,
+          pricing: prices && ((model: string) => prices[model]),
         }
       }).pipe(
         Effect.provide(locations.get(location)),

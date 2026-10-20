@@ -17,6 +17,7 @@ import {
 } from "@/engine/bridge"
 import { messageID } from "@/engine/identity"
 import type { EngineEvent } from "@/engine/client"
+import type { ModelV2 } from "@miao/core/model"
 
 const event = (kind: string): EngineEvent => ({ session_id: "ses_test", seq: 1, kind, data: {} })
 
@@ -319,20 +320,34 @@ test("settles a step on the committed assistant message", () => {
     commit,
     { tokens: { input: 30, output: 5, reasoning: 0, cache: { read: 12, write: 0 } } },
     95,
+    undefined,
   )
   expect(`${ended?.sessionID}`).toBe("ses_test")
   expect(ended?.assistantMessageID).toBe(messageID("ses_test", 7))
   expect(ended?.finish).toBe("tool-calls")
   expect(ended?.tokens).toEqual({ input: 30, output: 5, reasoning: 0, cache: { read: 12, write: 0 } })
   expect(ended?.ttft).toBe(95)
+  expect(ended?.cost).toBe(0)
+
+  // Catalog rates price the step: billed input excludes what the cache served,
+  // and reasoning tokens ride the output rate.
+  const rates = [{ input: 1, output: 3, cache: { read: 0.1, write: 0.2 } }] as ModelV2.Info["cost"]
+  const priced = translateStepEnded(
+    commit,
+    { tokens: { input: 30, output: 5, reasoning: 0, cache: { read: 12, write: 0 } } },
+    95,
+    rates,
+  )
+  expect(priced?.cost).toBeCloseTo((18 * 1 + 5 * 3 + 12 * 0.1) / 1_000_000, 12)
 
   // No buffered usage settles with zeroed tokens and no ttft claim.
-  const bare = translateStepEnded(commit, undefined, undefined)
+  const bare = translateStepEnded(commit, undefined, undefined, undefined)
   expect(bare?.tokens.input).toBe(0)
   expect(bare?.ttft).toBeUndefined()
+  expect(bare?.cost).toBe(0)
 
   // A user commit never settles a step.
   const userData: object = { role: "user", content: [] }
   const user: EngineEvent = { ...commit, data: userData }
-  expect(translateStepEnded(user, undefined, undefined)).toBeUndefined()
+  expect(translateStepEnded(user, undefined, undefined, undefined)).toBeUndefined()
 })

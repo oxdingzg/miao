@@ -3,6 +3,7 @@ import { ClientEvents } from "@miao/server/client-events"
 import { Effect, Scope, Semaphore } from "effect"
 import { EngineError, type EngineOptions } from "./client"
 import { connectEngine } from "./connection"
+import type { EnginePricing } from "./session"
 
 /** Native children belong to the server scope, never to an individual HTTP request. */
 export const makeEngineOwners = Effect.fn("Engine.owners")(function* (
@@ -11,6 +12,7 @@ export const makeEngineOwners = Effect.fn("Engine.owners")(function* (
     {
       options: Partial<EngineOptions>
       refresh: Effect.Effect<void, EngineError>
+      pricing?: EnginePricing
     },
     EngineError,
     Scope.Scope
@@ -26,6 +28,7 @@ export const makeEngineOwners = Effect.fn("Engine.owners")(function* (
       engineID: string
       location: Location.Ref
       refresh: Effect.Effect<void, EngineError>
+      pricing?: EnginePricing
       connection: Effect.Success<ReturnType<typeof connectEngine>>
     }
   >()
@@ -70,19 +73,23 @@ export const makeEngineOwners = Effect.fn("Engine.owners")(function* (
         const context = prepare
           ? yield* prepare(input.location).pipe(Effect.provideService(Scope.Scope, scope))
           : { options: {}, refresh: Effect.void }
-        const connection = yield* connectEngine({
-          ...configuration,
-          ...context.options,
-          db: input.storage,
-          workspace: input.location.directory,
-          engineID: input.engineID,
-          location: input.location,
-        }).pipe(Effect.provideService(Scope.Scope, scope), Effect.provideService(ClientEvents.Service, clients))
+        const connection = yield* connectEngine(
+          {
+            ...configuration,
+            ...context.options,
+            db: input.storage,
+            workspace: input.location.directory,
+            engineID: input.engineID,
+            location: input.location,
+          },
+          context.pricing,
+        ).pipe(Effect.provideService(Scope.Scope, scope), Effect.provideService(ClientEvents.Service, clients))
         owners.set(input.storage, {
           input,
           refresh: context.refresh,
           engineID: input.engineID,
           location: { ...input.location },
+          pricing: context.pricing,
           connection,
         })
         return connection
