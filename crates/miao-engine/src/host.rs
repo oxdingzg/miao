@@ -332,6 +332,45 @@ impl Host {
                     .export_session_transfer_import(&import_id, path)
                     .await
             }
+            Command::TransferExportMove {
+                session_id,
+                target_directory,
+                path,
+            } => {
+                runtime
+                    .store()
+                    .export_session_move(&session_id, &target_directory, path)
+                    .await
+            }
+            Command::TransferStageNative {
+                import_id,
+                path,
+                bundle_sha256,
+                identity,
+                route_id,
+                agent,
+            } => {
+                let bundle = crate::transfer::read_bundle_file(path, &bundle_sha256).await?;
+                let preparation = crate::transfer_activation::prepare_native(
+                    &bundle,
+                    identity.clone(),
+                    route_id.clone(),
+                    agent.clone(),
+                )?;
+                runtime.validate_transfer_preparation(&preparation)?;
+                let staged = runtime
+                    .store()
+                    .stage_transfer_with_preparation(
+                        &import_id,
+                        bundle,
+                        &bundle_sha256,
+                        preparation,
+                    )
+                    .await?;
+                Ok(
+                    json!({"id":staged.id,"session_id":staged.session_id,"bundle_sha256":staged.bundle_sha256,"state":staged.state}),
+                )
+            }
             Command::TransferExportDelta { import_id, path } => {
                 runtime
                     .store()

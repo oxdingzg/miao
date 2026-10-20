@@ -126,6 +126,25 @@ impl Store {
             .await
     }
 
+    /// Stage with an already-prepared native bundle: the rust-to-rust move
+    /// path builds its `Preparation` from verbatim engine rows, so it never
+    /// passes through the product-shape translation.
+    pub async fn stage_transfer_with_preparation(
+        &self,
+        id: &str,
+        bundle: String,
+        bundle_sha256: &str,
+        preparation: crate::transfer_activation::Preparation,
+    ) -> Result<StagedImport, Error> {
+        self.stage_transfer_impl(
+            id,
+            bundle,
+            bundle_sha256,
+            Some(serde_json::to_value(preparation)?),
+        )
+        .await
+    }
+
     pub async fn stage_transfer_with_agent(
         &self,
         id: &str,
@@ -162,7 +181,12 @@ impl Store {
             return Err(Error::Conflict);
         }
         let source: Value = serde_json::from_str(&bundle)?;
-        if source["format"] != "miao.session.transfer.v1" || source["source"]["engine"] != "ts" {
+        if source["format"] != "miao.session.transfer.v1"
+            || !matches!(
+                source["source"]["engine"].as_str(),
+                Some("ts") | Some("rust")
+            )
+        {
             return Err(Error::Invalid(
                 "unsupported semantic transfer format".into(),
             ));
@@ -410,6 +434,177 @@ impl Store {
         tokio::fs::write(&temporary, encoded).await?;
         tokio::fs::rename(&temporary, &path).await?;
         Ok(payload)
+    }
+
+    /// Serialize a live native Session for a same-engine move into a new
+    /// Location (the worktree bridge). The bundle keeps the transfer v1
+    /// envelope with `source.engine == "rust"` and a native timeline of
+    /// verbatim engine message rows, which the destination stages without
+    /// product-shape translation. The location stamped into the bundle is the
+    /// DESTINATION directory, so staging creates the identity at its new root
+    /// and the activation placement equality holds unchanged. The Session
+    /// must be drained: an active run is refused.
+    pub async fn export_session_move(
+        &self,
+        session: &str,
+        target_directory: &str,
+        path: std::path::PathBuf,
+    ) -> Result<Value, Error> {
+        if !path.is_absolute() {
+            return Err(Error::Invalid(
+                "transfer export path must be absolute".into(),
+            ));
+        }
+        if !std::path::Path::new(target_directory).is_absolute() {
+            return Err(Error::Invalid(
+                "transfer move target must be an absolute directory".into(),
+            ));
+        }
+        let session = session.to_owned();
+        let target = target_directory.to_owned();
+        let payload = self
+            .call(move |conn| {
+                if conn.query_row(
+                    "SELECT EXISTS(SELECT 1 FROM engine_run WHERE session_id=?1 AND state='running')",
+                    [&session],
+                    |row| row.get::<_, bool>(0),
+                )? {
+                    return Err(Error::Conflict);
+                }
+                let tx = write_tx(conn)?;
+                let row: Option<(String, Option<i64>, Option<i64>)> = tx.query_row(
+                    "SELECT title,created_at_ms,updated_at_ms FROM engine_session WHERE id=?1",
+                    [&session],
+                    |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
+                )
+                .optional()?;
+                // Lazily created rows carry NULL timestamps; the bundle needs
+                // concrete u64s, so an absent time falls back to the epoch.
+                let (title, created, updated) = match row {
+                    Some((title, created, updated)) => {
+                        (title, created.unwrap_or(0).max(0) as u64, updated.unwrap_or(0).max(0) as u64)
+                    }
+                    None => return Err(Error::Conflict),
+                };
+                let watermark_i64: i64 = tx.query_row(
+                    "SELECT COALESCE(MAX(seq),0) FROM engine_message WHERE session_id=?1",
+                    [&session],
+                    |row| row.get(0),
+                )?;
+                let watermark = watermark_i64.max(0) as u64;
+                let agent = crate::session_agent::selected_at(&tx, &session, watermark)?;
+                let binding = crate::session_model::selected_at(&tx, &session, watermark)?;
+                let account = crate::session_account::selected_at(&tx, &session, watermark)?;
+                let state = crate::state::projection(&tx, &session, watermark)?;
+                let mut timeline = Vec::new();
+                let mut ids = Vec::new();
+                {
+                    let mut stmt = tx.prepare(
+                        "SELECT seq,role,content,checkpoint,recorded_at_ms FROM engine_message WHERE session_id=?1 AND reverted=0 ORDER BY seq",
+                    )?;
+                    let rows = stmt.query_map(params![session], |row| {
+                        Ok((
+                            row.get::<_, i64>(0)?,
+                            row.get::<_, String>(1)?,
+                            row.get::<_, String>(2)?,
+                            row.get::<_, Option<String>>(3)?,
+                            row.get::<_, Option<i64>>(4)?,
+                        ))
+                    })?.collect::<Result<Vec<_>, _>>()?;
+                    for (seq, role, content, checkpoint, recorded) in rows {
+                        let id = format!("msg_{seq}");
+                        ids.push(id.clone());
+                        timeline.push(json!({
+                            "id":id,
+                            "role":role,
+                            "content":serde_json::from_str::<Value>(&content)?,
+                            "checkpoint":checkpoint,
+                            "recorded_at_ms":recorded,
+                        }));
+                    }
+                }
+                let mut snapshots = Vec::new();
+                {
+                    let mut stmt = tx.prepare(
+                        "SELECT id,boundary_seq,manifest FROM engine_file_snapshot WHERE session_id=?1 ORDER BY id",
+                    )?;
+                    let rows = stmt.query_map(params![session], |row| {
+                        Ok((
+                            row.get::<_, i64>(0)?,
+                            row.get::<_, i64>(1)?,
+                            row.get::<_, String>(2)?,
+                        ))
+                    })?.collect::<Result<Vec<_>, _>>()?;
+                    for (id, boundary, manifest) in rows {
+                        snapshots.push(json!({
+                            "id":format!("snap_{id}"),
+                            "boundary_message_id":format!("msg_{boundary}"),
+                            "files":serde_json::from_str::<Value>(&manifest)?,
+                        }));
+                    }
+                }
+                let mut compactions = Vec::new();
+                {
+                    let mut stmt = tx.prepare(
+                        "SELECT created_seq,through_seq,summary FROM engine_compaction WHERE session_id=?1 ORDER BY created_seq",
+                    )?;
+                    let rows = stmt.query_map(params![session], |row| {
+                        Ok((
+                            row.get::<_, i64>(0)?,
+                            row.get::<_, i64>(1)?,
+                            row.get::<_, String>(2)?,
+                        ))
+                    })?.collect::<Result<Vec<_>, _>>()?;
+                    for (created_seq, through, summary) in rows {
+                        compactions.push(json!({
+                            "id":format!("compaction_{created_seq}"),
+                            "through_message_id":format!("msg_{through}"),
+                            "summary":summary,
+                        }));
+                    }
+                }
+                let model = binding.map(serde_json::to_value).transpose()?;
+                let account_value = account.map(serde_json::to_value).transpose()?;
+                let agent_value = agent
+                    .map(|(item, _hash)| serde_json::to_value(item))
+                    .transpose()?;
+                let bundle_payload = json!({
+                    "format":"miao.session.transfer.v1",
+                    "source":{"engine":"rust","moved":true,"location":{"directory":target}},
+                    "session":{
+                        "id":session,
+                        "title":title,
+                        "time":{"created":created,"updated":updated},
+                        "location":{"directory":target},
+                        "model":model,
+                        "account":account_value,
+                        "agent":agent_value,
+                    },
+                    "timeline":timeline,
+                    "context_ids":ids,
+                    "operational":{"goal":state["goal"]["value"],"todos":state["todos"]["value"]},
+                    "snapshots":snapshots,
+                    "compactions":compactions,
+                });
+                tx.commit()?;
+                Ok(bundle_payload)
+            })
+            .await?;
+        let encoded = serde_json::to_vec(&payload)?;
+        if encoded.len() > MAX_BYTES {
+            return Err(Error::Invalid("transfer bundle size limit".into()));
+        }
+        let digest = format!("{:x}", Sha256::digest(&encoded));
+        let temporary = path.with_extension("tmp");
+        tokio::fs::write(&temporary, &encoded).await?;
+        tokio::fs::rename(&temporary, &path).await?;
+        Ok(json!({
+            "session_id": payload["session"]["id"],
+            "bundle_sha256": digest,
+            "path": path,
+            "bytes": encoded.len(),
+            "timeline": payload["timeline"].as_array().map(Vec::len).unwrap_or(0),
+        }))
     }
 
     /// Aborting an import keeps it inactive forever. It cannot turn the copied
