@@ -5,6 +5,7 @@ import { SecureChannel } from "./secure-channel"
 import { DeviceGrants } from "./grants"
 import { DeviceRoster } from "./device-roster"
 import { ControlPairing } from "./pairing"
+import { createHash } from "node:crypto"
 
 // The Agent runs under Bun. Keep its authenticated constructor explicit when
 // consumers also include DOM declarations, whose WebSocket lacks header options.
@@ -88,6 +89,8 @@ export type Options = {
   readonly allowLoopbackHTTP?: boolean
   /** Account identity from authenticated host setup; never populated by a device claim. */
   readonly accountID?: string
+  /** Local scope for authenticated account access; no device enrollment is required. */
+  readonly accountScope?: () => Promise<{ projectIDs: string[]; sessionIDs: string[] }>
   readonly pairing?: ReturnType<typeof ControlPairing.make>
 }
 const RosterClaim = Schema.Struct({
@@ -106,6 +109,7 @@ type Peer = {
   key?: string
   channel?: SecureChannel.Channel
   pairing?: string
+  accountGrant?: DeviceGrants.Grant
 }
 const required: Partial<Record<Method, DeviceGrants.Permission>> = {
   "session.create": "session.create",
@@ -212,6 +216,75 @@ export function connect(options: Options) {
       const bytes = Buffer.from(encoded, "base64url")
       if (bytes.length > 65536 || bytes.toString("base64url") !== encoded) return closePeer(id)
       const hello: unknown = JSON.parse(bytes.toString("utf8"))
+      if (typeof hello === "object" && hello !== null && "type" in hello && hello.type === "accountClaim") {
+        const claim = Schema.decodeUnknownSync(
+          Schema.Struct({
+            version: Schema.Literal(1),
+            type: Schema.Literal("accountClaim"),
+            accountID: DeviceRoster.AccountID,
+            hello: Schema.Unknown,
+          }),
+          { onExcessProperty: "error" },
+        )(hello)
+        // The account in a client frame is only a consistency check. Authority
+        // comes from the authenticated Hub's connected envelope, never the claim.
+        if (
+          !options.accountID ||
+          peer.accountID !== options.accountID ||
+          claim.accountID !== peer.accountID ||
+          !options.accountScope
+        )
+          return closePeer(id)
+        const key =
+          typeof claim.hello === "object" &&
+          claim.hello !== null &&
+          "signingKey" in claim.hello &&
+          typeof claim.hello.signingKey === "string"
+            ? claim.hello.signingKey
+            : undefined
+        if (!key) return closePeer(id)
+        const accepted = await SecureChannel.acceptClient(
+          options.grants.identity,
+          { hostID: options.grants.hostID, runtimeID: options.runtimeID },
+          id,
+          claim.hello,
+          key,
+        )
+        const scope = await options.accountScope()
+        if (peer.abort.signal.aborted || !scope.sessionIDs.length) return closePeer(id)
+        const now = Date.now()
+        const grant: DeviceGrants.Grant = {
+          id: createHash("sha256")
+            .update(JSON.stringify([options.accountID, options.grants.hostID, options.runtimeID, key]))
+            .digest("base64url"),
+          version: 1,
+          publicKey: key,
+          label: "Account device",
+          permissions: [
+            "read",
+            "prompt",
+            "permission.reply",
+            "question.reply",
+            "interrupt",
+            "session.create",
+            "session.rename",
+            "session.selection",
+          ],
+          ...scope,
+          createdAt: now,
+          expiresAt: now + 86400000,
+          revokedAt: null,
+        }
+        peer.key = key
+        peer.accountGrant = grant
+        peer.channel = accepted.channel
+        clearTimeout(peer.timer)
+        send(id, Buffer.from(JSON.stringify(accepted.hello)).toString("base64url"))
+        await reply(id, peer, { version: 1, type: "roster", status: "approved", grant }, () => {
+          if (peer.abort.signal.aborted || peer.accountID !== options.accountID) throw new RequestError("forbidden")
+        })
+        return
+      }
       if (typeof hello === "object" && hello !== null && "type" in hello && hello.type === "rosterClaim") {
         const claim = Schema.decodeUnknownSync(RosterClaim, { onExcessProperty: "error" })(hello)
         const trust = options.grants.accountTrust()
@@ -358,7 +431,8 @@ export function connect(options: Options) {
       context.authorize()
       await reply(id, peer, { version: 1, type: "result", requestID: request.requestID, data }, context.authorize)
     } catch (error) {
-      if (peer.abort.signal.aborted || !options.grants.active(peer.key!).length) return closePeer(id)
+      if (peer.abort.signal.aborted || (!peer.accountGrant && !options.grants.active(peer.key!).length))
+        return closePeer(id)
       await reply(id, peer, {
         version: 1,
         type: "error",
@@ -425,7 +499,12 @@ export function connect(options: Options) {
   }
   const expiry = setInterval(() => {
     peers.forEach((peer, id) => {
-      if (peer.key && !options.grants.active(peer.key).length) closePeer(id)
+      if (
+        peer.accountGrant
+          ? peer.accountGrant.expiresAt <= Date.now()
+          : peer.key && !options.grants.active(peer.key).length
+      )
+        closePeer(id)
     })
   }, 1000)
   start()
@@ -450,9 +529,14 @@ export function connect(options: Options) {
 }
 
 async function authorize(options: Options, peer: Peer, request: Request): Promise<Context> {
-  const grant = options.grants.get(request.grantID, peer.key!)
+  const grant =
+    peer.accountGrant && options.accountScope
+      ? { ...peer.accountGrant, ...(await options.accountScope()) }
+      : options.grants.get(request.grantID, peer.key!)
   if (
     !grant ||
+    grant.id !== request.grantID ||
+    grant.expiresAt <= Date.now() ||
     grant.version !== request.grantVersion ||
     request.hostID !== options.grants.hostID ||
     request.runtimeID !== options.runtimeID
@@ -471,10 +555,12 @@ async function authorize(options: Options, peer: Peer, request: Request): Promis
     if (request.projectID && request.projectID !== project) throw new RequestError("forbidden")
   }
   const check = () => {
-    const current = options.grants.get(grant.id, peer.key!)
+    const current = peer.accountGrant ?? options.grants.get(grant.id, peer.key!)
     if (
       peer.abort.signal.aborted ||
       !current ||
+      current.expiresAt <= Date.now() ||
+      (peer.accountGrant && peer.accountID !== options.accountID) ||
       current.version !== grant.version ||
       (request.sessionID && options.sessionEnabled && !options.sessionEnabled(request.sessionID))
     )

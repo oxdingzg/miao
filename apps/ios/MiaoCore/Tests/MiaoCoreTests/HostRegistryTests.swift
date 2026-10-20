@@ -3,6 +3,35 @@ import CryptoKit
 @testable import MiaoCore
 
 final class HostRegistryTests: XCTestCase {
+    func testSignedInHostNeedsNoPairingAttemptAndRetainsAccountAcrossRestart() async throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let key = P256.Signing.PrivateKey().publicKey.x963Representation.base64URL
+        let pin = P256.Signing.PrivateKey().publicKey.x963Representation.base64URL
+        let grant = try JSONDecoder().decode(DeviceGrant.self, from: JSONSerialization.data(withJSONObject: [
+            "id": "account-grant-000001", "version": 1, "publicKey": key, "label": "iPhone",
+            "permissions": ["read", "prompt", "session.create"], "projectIDs": ["project-one"], "sessionIDs": ["session-one"],
+            "createdAt": 1, "expiresAt": Int64(Date().addingTimeInterval(3600).timeIntervalSince1970 * 1000), "revokedAt": NSNull()
+        ]))
+        let host = ApprovedHost(label: "Computer", hubURL: URL(string: "https://relay.example.invalid")!,
+            target: RemoteTarget(hostID: "host-test-000001", runtimeID: "runtime-test-0001"),
+            publicKey: pin, grantID: grant.id, grantVersion: 1)
+        let registry = try HostRegistry(directory: directory, deviceKey: key)
+        try await registry.admitSignedIn(host: host, grant: grant, accountID: "account-owner-0001")
+        try await registry.admitSignedIn(host: host, grant: grant, accountID: "account-owner-0001")
+        let restarted = try HostRegistry(directory: directory, deviceKey: key)
+        let saved = try await restarted.snapshot()
+        XCTAssertEqual(saved.hosts.count, 1)
+        XCTAssertEqual(saved.hosts.first?.accountID, "account-owner-0001")
+        XCTAssertTrue(saved.attempts.isEmpty)
+        try await restarted.synchronizeAccount(hubURL: host.hubURL, accountID: "different-account", directory: [])
+        let retained = try await restarted.snapshot()
+        XCTAssertEqual(retained.hosts.count, 1)
+        try await restarted.synchronizeAccount(hubURL: host.hubURL, accountID: "account-owner-0001", directory: [])
+        let offline = try await restarted.snapshot()
+        XCTAssertEqual(offline.hosts.count, 1, "A transient directory outage must not reset navigation")
+    }
+
     func testTrustAnchorPrecedesApprovalAndOnlyPublicMetadataSurvivesRestart() async throws {
         let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         defer { try? FileManager.default.removeItem(at: directory) }

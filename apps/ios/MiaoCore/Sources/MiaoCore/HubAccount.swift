@@ -37,6 +37,7 @@ public actor HubAccount {
     private var pendingLogout: String?
     private var access: (value: String, until: Date)?
     private var generation: UInt64 = 0
+    private var verifiedAccount: (generation: UInt64, id: String)?
     private var relaySockets: [URLSessionWebSocketTask] = []
 
     public init(origin: URL, keychainService: String = "miao.remote.hub-account",
@@ -201,6 +202,7 @@ public actor HubAccount {
     /// Account identity comes from authenticated session metadata, not JWT claims or a device request.
     public func authenticatedAccountID() async throws -> String {
         let expected = generation
+        if login != nil, let verifiedAccount, verifiedAccount.generation == expected { return verifiedAccount.id }
         _ = try await bearer()
         guard generation == expected, let credential = login else { throw HubAccountError.superseded }
         let (data, _) = try await send("/api/auth/get-session", credential: credential)
@@ -210,6 +212,7 @@ public actor HubAccount {
               id.range(of: "^[A-Za-z0-9_-]{16,128}$", options: .regularExpression) != nil else {
             throw HubAccountError.authenticationRequired
         }
+        verifiedAccount = (expected, id)
         return id
     }
 

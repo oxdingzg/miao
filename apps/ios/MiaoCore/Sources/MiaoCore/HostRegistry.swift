@@ -4,8 +4,9 @@ import CryptoKit
 public struct AuthorizedHost: Codable, Sendable, Equatable, Identifiable {
     public let host: ApprovedHost
     public let grant: DeviceGrant
+    public let accountID: String?
     public var id: UUID { host.id }
-    public init(host: ApprovedHost, grant: DeviceGrant) { self.host = host; self.grant = grant }
+    public init(host: ApprovedHost, grant: DeviceGrant, accountID: String? = nil) { self.host = host; self.grant = grant; self.accountID = accountID }
     public var expired: Bool { grant.expiresAt <= Int64(Date().timeIntervalSince1970 * 1000) }
 }
 
@@ -77,6 +78,36 @@ public actor HostRegistry {
         try persist(next)
     }
 
+    /// Account access is authorized by the authenticated relay on each connection.
+    public func admitSignedIn(host: ApprovedHost, grant: DeviceGrant, accountID: String) throws {
+        try grant.validate(deviceKey: deviceKey)
+        guard !accountID.isEmpty, host.grantID == grant.id, host.grantVersion == grant.version else {
+            throw ClientStateError.scopeMismatch
+        }
+        var next = try load()
+        next.hosts.removeAll {
+            $0.host.hubURL == host.hubURL && ($0.host.target == host.target || ($0.accountID == nil && $0.host.target.hostID == host.target.hostID))
+        }
+        next.hosts.append(AuthorizedHost(host: host, grant: grant, accountID: accountID))
+        try persist(next)
+    }
+
+    public func synchronizeAccount(hubURL: URL, accountID: String, directory: [HubDirectoryHost]) throws {
+        var next = try load()
+        let before = next.hosts
+        next.hosts.removeAll { record in
+            guard record.accountID == accountID, record.host.hubURL == hubURL else { return false }
+            let known = directory.filter { $0.hostID == record.host.target.hostID }
+            if known.contains(where: { $0.revokedAt != nil }) { return true }
+            // Keep the view stable during a transient relay outage. Replace an
+            // old runtime only when the directory advertises a live replacement.
+            return known.contains(where: { $0.online }) && !known.contains(where: {
+                $0.runtimeID == record.host.target.runtimeID && $0.online
+            })
+        }
+        if next.hosts != before { try persist(next) }
+    }
+
     /// Computer names come from live directory metadata; a pairing URL only carries identifiers.
     public func rename(_ directory: [HubDirectoryHost], hubURL: URL) throws {
         var next = try load()
@@ -89,7 +120,7 @@ public actor HostRegistry {
             }), next.hosts[index].host.label != entry.name else { continue }
             var host = next.hosts[index].host
             host.label = entry.name
-            next.hosts[index] = AuthorizedHost(host: host, grant: next.hosts[index].grant)
+            next.hosts[index] = AuthorizedHost(host: host, grant: next.hosts[index].grant, accountID: next.hosts[index].accountID)
             changed = true
         }
         guard changed else { return }

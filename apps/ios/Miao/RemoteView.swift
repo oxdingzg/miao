@@ -26,6 +26,7 @@ struct RemoteView: View {
             if sidebarVisible { sidebar }
         }
         .task {
+            model.scene(sceneID, phase: phase)
             await model.load()
             applyNotification()
             if let value = AppTestConfiguration.invitation {
@@ -53,12 +54,23 @@ struct RemoteView: View {
         }
         .onChange(of: model.connectionEpoch) { _, _ in Task { await attach() } }
         .onChange(of: model.hosts.map(\.id)) { _, ids in
-            if hostID == nil { hostID = ids.first }
+            if hostID == nil || !ids.contains(hostID!) { hostID = ids.first; sessionID = nil }
         }
         .onChange(of: phase) { _, value in
             if value == .active { applyNotification() }
             model.scene(sceneID, phase: value)
             Task { if let attached { await model.clients[attached]?.scene(sceneID, phase: value) } }
+        }
+        .task(id: phase) {
+            guard phase == .active else { return }
+            while !Task.isCancelled {
+                await model.refreshDirectory()
+                for client in model.clients.values where client.record.accountID != nil {
+                    await client.scene(sceneID, phase: .active)
+                    if client.ready { await client.refreshLists() }
+                }
+                do { try await Task.sleep(for: .seconds(10)) } catch { return }
+            }
         }
         .onDisappear {
             model.removeScene(sceneID)
@@ -94,6 +106,9 @@ struct RemoteView: View {
             Group {
                 if let hostID, let client = model.clients[hostID] {
                     sessionContent(client)
+                        .onAppear {
+                            if sessionID == nil { sessionID = client.lists.values.flatMap({ $0 }).first?.id }
+                        }
                         .onChange(of: sessionCount(client)) { _, count in
                             if sessionID == nil, count > 0, let first = client.lists.values.flatMap({ $0 }).first {
                                 sessionID = first.id
@@ -118,6 +133,9 @@ struct RemoteView: View {
                     } label: {
                         Image(systemName: "line.3.horizontal")
                     }.accessibilityLabel("会话侧栏").accessibilityIdentifier("sessionSidebar")
+                        .accessibilityValue(model.accountSignedIn
+                            ? "已登录；电脑：\(model.hosts.count)；已连接：\(model.clients.values.filter { $0.ready }.count)；状态：\(model.error ?? model.accountError ?? "正常")"
+                            : "未登录")
                 }
             }
             .navigationTitle("miao")
@@ -177,8 +195,12 @@ struct RemoteView: View {
 
     @ViewBuilder private func sidebarContent(_ client: HostClient) -> some View {
         List {
-            Section { sidebarHeader(client) }
-            sessionSections(client)
+            ForEach(model.hosts) { record in
+                if let host = model.clients[record.id] {
+                    Section { sidebarHeader(host) }
+                    accountSessionSections(host)
+                }
+            }
             if !pendingOperations(client).isEmpty {
                 Section("待核对操作") {
                     ForEach(pendingOperations(client)) { operation in
@@ -214,6 +236,24 @@ struct RemoteView: View {
     @ViewBuilder private func sessionSections(_ client: HostClient) -> some View {
         ForEach(client.lists.keys.sorted(), id: \.self) { project in
             sessionSection(client, project: project)
+        }
+    }
+
+    @ViewBuilder private func accountSessionSections(_ client: HostClient) -> some View {
+        ForEach(client.lists.keys.sorted(), id: \.self) { project in
+            Section(projectName(project)) {
+                ForEach(client.lists[project] ?? []) { session in
+                    Button {
+                        hostID = client.record.id
+                        select(session)
+                    } label: {
+                        Label(session.title, systemImage: "bubble.left.and.text.bubble.right")
+                    }.buttonStyle(.plain)
+                }
+                if client.next[project] != nil {
+                    Button("更多会话") { Task { await client.refreshLists(more: project) } }.disabled(!client.ready)
+                }
+            }
         }
     }
 
@@ -295,6 +335,7 @@ struct RemoteView: View {
                     Label("连接电脑", systemImage: "qrcode.viewfinder").frame(maxWidth: .infinity, alignment: .leading)
                 }
                 if let error = model.error { Text(error).foregroundStyle(.red).font(.footnote) }
+                if let error = model.accountError { Text(error).foregroundStyle(.red).font(.footnote) }
             } header: { Text("我的电脑") } footer: {
                 Text("在电脑上打开 /remote-control 并登录同一账号，或扫描配对码。")
             }
@@ -777,7 +818,8 @@ private struct SessionSelectionView: View {
                         Picker("Agent", selection: $agent) {
                             Text("请选择").tag("")
                             ForEach(choices.agents, id: \.id) { Text($0.id).tag($0.id) }
-                        }.accessibilityIdentifier("agentChoice")
+                        }.pickerStyle(.navigationLink)
+                            .accessibilityIdentifier("agentChoice").accessibilityValue(agent)
                         Button("保存 Agent") {
                             let value = agent
                             busy = true
@@ -794,12 +836,13 @@ private struct SessionSelectionView: View {
                             ForEach(choices.models.indices, id: \.self) { index in
                                 Text(choices.models[index].providerID + " / " + choices.models[index].name).tag(index)
                             }
-                        }.accessibilityIdentifier("modelChoice")
+                        }.pickerStyle(.navigationLink).accessibilityIdentifier("modelChoice")
                         if let model {
                             Picker("变体", selection: $variant) {
                                 Text("默认").tag("")
                                 ForEach(model.variants, id: \.id) { Text($0.id).tag($0.id) }
-                            }.accessibilityIdentifier("variantChoice")
+                            }.pickerStyle(.navigationLink)
+                                .accessibilityIdentifier("variantChoice").accessibilityValue(variant.isEmpty ? "默认" : variant)
                         }
                         Button("保存模型") {
                             guard let model else { return }

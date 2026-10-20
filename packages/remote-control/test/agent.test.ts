@@ -118,6 +118,143 @@ function closed(ws: WebSocket) {
   return new Promise<CloseEvent>((resolve) => ws.addEventListener("close", resolve, { once: true }))
 }
 
+describe("account session access without pairing", () => {
+  test("a fresh signed-in device can read only published sessions and loses access when sharing stops", async () => {
+    const directory = await mkdtemp(path.join(os.tmpdir(), "miao-account-agent-"))
+    cleanup.push(() => rm(directory, { recursive: true, force: true }))
+    const grants = await DeviceGrants.load(path.join(directory, "devices.json"))
+    const runtimeID = crypto.randomUUID()
+    const accountID = "account_remote_owner_001"
+    const published = new Set(["session-one"])
+    const hub = ControlHub.listen({
+      port: 0,
+      access: {
+        fetch: async () => undefined,
+        host: async () => ({ accountID, valid: () => true }),
+        client: async (request) =>
+          request.headers.get("authorization") === "Bearer signed-in-owner"
+            ? { accountID, valid: () => true }
+            : { accountID: "account_other_owner_001", valid: () => true },
+      },
+    })
+    cleanup.push(() => hub.stop())
+    const base = `http://127.0.0.1:${hub.port}`
+    const agent = ControlAgent.connect({
+      hubURL: base,
+      hostToken: "test-host-credential-000000000000000000",
+      runtimeID,
+      grants,
+      accountID,
+      allowLoopbackHTTP: true,
+      accountScope: async () => ({ projectIDs: ["project-one"], sessionIDs: [...published] }),
+      sessionEnabled: (id) => published.has(id),
+      projectForSession: async () => "project-one",
+      methods: { "session.get": async () => ({ title: "shared session" }) },
+    })
+    cleanup.push(() => agent.stop())
+    const deadline = Date.now() + 2000
+    while (!agent.connected() && Date.now() < deadline) await Bun.sleep(5)
+    expect(agent.connected()).toBe(true)
+    const device = await SecureChannel.createIdentity()
+    expect(grants.active(device.publicKey)).toHaveLength(0)
+    expect(grants.accountTrust()).toBeUndefined()
+    const transport = await socketWithAccount(base, grants.hostID, "signed-in-owner")
+    const pending = await SecureChannel.startClient(device, { hostID: grants.hostID, runtimeID })
+    transport.ws.send(
+      Buffer.from(JSON.stringify({ version: 1, type: "accountClaim", accountID, hello: pending.hello })).toString(
+        "base64url",
+      ),
+    )
+    const accepted = await pending.finish(
+      JSON.parse(Buffer.from(await transport.receive(), "base64url").toString()),
+      grants.identity.publicKey,
+    )
+    const approval = JSON.parse(new TextDecoder().decode(await accepted.channel.open(await transport.receive())))
+    expect(approval.status).toBe("approved")
+    expect(approval.grant.permissions).toContain("session.create")
+    expect(grants.active(device.publicKey)).toHaveLength(0)
+    const request = async (sessionID: string) => {
+      transport.ws.send(
+        await accepted.channel.seal(
+          new TextEncoder().encode(
+            JSON.stringify({
+              version: 1,
+              requestID: crypto.randomUUID(),
+              hostID: grants.hostID,
+              runtimeID,
+              grantID: approval.grant.id,
+              grantVersion: approval.grant.version,
+              method: "session.get",
+              sessionID,
+              payload: {},
+            }),
+          ),
+        ),
+      )
+      return JSON.parse(new TextDecoder().decode(await accepted.channel.open(await transport.receive())))
+    }
+    expect(await request("session-one")).toMatchObject({ type: "result", data: { title: "shared session" } })
+    expect(await request("session-private")).toMatchObject({ type: "error", code: "forbidden" })
+    published.add("session-new")
+    expect(await request("session-new")).toMatchObject({ type: "result", data: { title: "shared session" } })
+    published.delete("session-one")
+    expect(await request("session-one")).toMatchObject({ type: "error", code: "forbidden" })
+
+    const forged = await socketWithAccount(base, grants.hostID, "signed-in-owner")
+    const forgedClosed = closed(forged.ws)
+    forged.ws.send(
+      Buffer.from(
+        JSON.stringify({ version: 1, type: "accountClaim", accountID: "account_another_0001", hello: pending.hello }),
+      ).toString("base64url"),
+    )
+    await forgedClosed
+    await expect(socketWithAccount(base, grants.hostID, "other-account")).rejects.toBeDefined()
+  })
+
+  test("a client-supplied account ID on a legacy relay is not authentication", async () => {
+    const f = await fixture({})
+    const device = await SecureChannel.createIdentity()
+    const transport = await socket(f.base, f.grants.hostID)
+    const done = closed(transport.ws)
+    const pending = await SecureChannel.startClient(device, { hostID: f.grants.hostID, runtimeID: f.runtimeID })
+    transport.ws.send(
+      Buffer.from(
+        JSON.stringify({
+          version: 1,
+          type: "accountClaim",
+          accountID: "account_roster_fixture_001",
+          hello: pending.hello,
+        }),
+      ).toString("base64url"),
+    )
+    await done
+    expect(f.grants.active(device.publicKey)).toHaveLength(0)
+  })
+})
+
+async function socketWithAccount(base: string, hostID: string, token: string) {
+  const ws = new WebSocket(`${base.replace("http:", "ws:")}/v1/client?hostID=${hostID}`, {
+    headers: { authorization: `Bearer ${token}` },
+  })
+  cleanup.push(() => ws.close())
+  const queue: string[] = []
+  const waiting: Array<(message: string) => void> = []
+  ws.addEventListener("message", (event) => {
+    const next = waiting.shift()
+    if (next) next(String(event.data))
+    else queue.push(String(event.data))
+  })
+  await new Promise<void>((resolve, reject) => {
+    ws.addEventListener("open", () => resolve(), { once: true })
+    ws.addEventListener("error", reject, { once: true })
+  })
+  return {
+    ws,
+    receive: () =>
+      queue.length ? Promise.resolve(queue.shift()!) : new Promise<string>((resolve) => waiting.push(resolve)),
+  }
+}
+
 describe("outbound authorized encrypted Agent", () => {
   test("local publication gates existing project grants and pending encrypted replies", async () => {
     const visible = new Set<string>()

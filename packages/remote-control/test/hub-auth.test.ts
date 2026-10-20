@@ -174,6 +174,6 @@ test("Authentication survives a database restart and rejects an expired persiste
     }
   } finally {
     firstDatabase.close()
-    await rm(directory, { recursive: true, force: true })
+    await rm(directory, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 })
   }
 })
