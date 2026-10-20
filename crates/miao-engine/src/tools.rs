@@ -13,7 +13,7 @@ use serde::Deserialize;
 use serde_json::{json, Value};
 use std::{
     path::{Path, PathBuf},
-    sync::Arc,
+    sync::{Arc, RwLock as StdRwLock},
 };
 use tokio::io::AsyncReadExt;
 use tokio::sync::RwLock;
@@ -130,7 +130,7 @@ pub struct Tools {
     process_enabled: bool,
     background_enabled: bool,
     delegation_enabled: bool,
-    product_tools: Vec<ToolDefinition>,
+    product_tools: Arc<StdRwLock<Vec<ToolDefinition>>>,
     wakeup_enabled: bool,
     cron_enabled: bool,
     process_network: bool,
@@ -197,7 +197,7 @@ impl Tools {
             edit_recovery: true,
             lsp_diagnostics: true,
             compact_disclosure: false,
-            product_tools: Vec::new(),
+            product_tools: Arc::new(StdRwLock::new(Vec::new())),
         })
     }
 
@@ -801,9 +801,11 @@ impl Tools {
         self
     }
 
-    pub fn with_product_tools(mut self, tools: Vec<ToolDefinition>) -> Self {
-        self.product_tools = tools;
-        self
+    /// Register host-provided tool definitions. The list is shared with the
+    /// runtime so a manifest loaded after `Tools` construction is advertised
+    /// and authorized by the same instance that dispatches it.
+    pub fn with_product_tools(&self, tools: Vec<ToolDefinition>) {
+        *self.product_tools.write().unwrap() = tools;
     }
 
     pub(crate) fn with_background(mut self, enabled: bool) -> Self {
@@ -847,7 +849,11 @@ impl Tools {
     }
 
     fn is_product(&self, name: &str) -> bool {
-        self.product_tools.iter().any(|tool| tool.name == name)
+        self.product_tools
+            .read()
+            .unwrap()
+            .iter()
+            .any(|tool| tool.name == name)
     }
 
     pub fn location(&self) -> &str {
@@ -1659,8 +1665,11 @@ impl Tools {
                 definitions.push(ToolDefinition{name:name.into(),description:if name=="job_status"{"Inspect this Session's job state and bounded terminal output.".into()}else{"Request cancellation of this Session's active background job.".into()},input_schema:json!({"type":"object","properties":{"job_id":{"type":"string"}},"required":["job_id"],"additionalProperties":false})});
             }
             definitions.push(ToolDefinition{name:"monitor".into(),description:"Run a shell command in the background and stream stdout lines as monitor.notice progress events. Optional regex pattern filters delivered lines (batched ~200ms, max 200 lines/8KiB each, 64 notices then suppressed). Default timeout 600000 ms, max 3600000 ms kills the command. Cancel with cancel_job.".into(),input_schema:json!({"type":"object","properties":{"command":{"type":"string","minLength":1},"description":{"type":"string","maxLength":256},"pattern":{"type":"string","maxLength":512},"timeout_ms":{"type":"integer","minimum":1,"maximum":3600000}},"required":["command"],"additionalProperties":false})});
-            definitions.extend(self.product_tools.iter().cloned());
         }
+        // Host-dispatched product tools do not need process or background
+        // authority; keep their definitions available whenever the bridge is
+        // attached.
+        definitions.extend(self.product_tools.read().unwrap().iter().cloned());
         if let Some(web) = &self.web {
             definitions.extend(web.definitions());
         }
