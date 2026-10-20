@@ -419,9 +419,12 @@ miao session
 manage sessions
 
 Commands:
-  miao session list                 list sessions
-  miao session delete <sessionID>   delete a session
-  miao session migrate <sessionID>  move a session from the TypeScript engine to the native engine
+  miao session list                      list sessions
+  miao session delete <sessionID>        delete a session
+  miao session migrate <sessionID>       move a session from the TypeScript engine to the native
+                                         engine
+  miao session migrate-back <sessionID>  move a session from the native engine back to the
+                                         TypeScript engine
 
 Options:
   -h, --help        show help                                                              [boolean]
