@@ -83,6 +83,13 @@ export interface EngineOptions {
   hooksConfigFile?: string
   /** Host-owned exact model routes; endpoint/credential bindings never come from a Session request. */
   modelRoutesConfigFile?: string
+  /** Host-owned product tool definitions the engine may reverse-dispatch. */
+  productToolsFile?: string
+  /**
+   * Execute a product tool the engine planned. The reply becomes the tool
+   * result, so a rejection must be thrown, never swallowed.
+   */
+  onProductTool?: (call: { sessionID: string; name: string; input: unknown; callID: string }) => Promise<unknown>
   /**
    * Explicit prefix-cache policy for the first model turn's stable prefix.
    * Absent leaves each provider's own caching behavior untouched.
@@ -204,6 +211,7 @@ export function engineArgs(options: EngineOptions): string[] {
   if (options.referencesConfigFile) args.push("--references-config", options.referencesConfigFile)
   if (options.hooksConfigFile) args.push("--hooks-config", options.hooksConfigFile)
   if (options.modelRoutesConfigFile) args.push("--model-routes-config", options.modelRoutesConfigFile)
+  if (options.productToolsFile) args.push("--product-tools", options.productToolsFile)
   if (options.promptCache !== undefined) args.push("--prompt-cache", options.promptCache ? "on" : "off")
   if (options.responsesCacheContract)
     args.push("--responses-cache-contract", JSON.stringify(options.responsesCacheContract))
@@ -268,6 +276,7 @@ export class EngineClient {
   private constructor(
     private readonly child: Bun.Subprocess<"pipe", "pipe", "pipe">,
     private readonly cleanup = () => {},
+    private readonly onProductTool?: EngineOptions["onProductTool"],
   ) {
     const stdout = this.readStdout().catch(() => {
       this.fail(new EngineError("engine_protocol", "miao-engine output stream failed"), true)
@@ -303,7 +312,7 @@ export class EngineClient {
         stderr: "pipe",
         env: engineEnvironment({ ...manifest?.environment, ...options.env }),
       })
-      return new EngineClient(child, manifest?.dispose)
+      return new EngineClient(child, manifest?.dispose, options.onProductTool)
     } catch (error) {
       manifest?.dispose()
       throw error
@@ -401,6 +410,7 @@ export class EngineClient {
   private dispatch(line: string) {
     const message = JSON.parse(line) as {
       id?: number
+      bridge_id?: number
       method?: string
       params?: unknown
       result?: unknown
@@ -424,6 +434,25 @@ export class EngineClient {
     // waiting forever, notably when a product starts an older engine binary.
     if (message.error) {
       this.fail(new EngineError(message.error.code ?? "engine_error", message.error.message ?? "miao-engine error"))
+      return
+    }
+    if (message.method === "product_tool") {
+      const bridgeID = message.bridge_id
+      const params = message.params as { session_id?: string; name?: string; input?: unknown } | undefined
+      const reply = (value: Record<string, unknown>) => this.child.stdin.write(JSON.stringify({ bridge_id: bridgeID, ...value }) + EOL)
+      if (typeof bridgeID !== "number" || !params?.name || !this.onProductTool) {
+        reply({ error: "product tool is not available on this host" })
+        return
+      }
+      void this.onProductTool({
+        sessionID: params.session_id ?? "",
+        name: params.name,
+        input: params.input,
+        callID: String(bridgeID),
+      }).then(
+        (result) => reply({ result }),
+        (error) => reply({ error: error instanceof Error ? error.message : String(error) }),
+      )
       return
     }
     if (message.method === "event") for (const handler of this.eventHandlers) handler(message.params as EngineEvent)

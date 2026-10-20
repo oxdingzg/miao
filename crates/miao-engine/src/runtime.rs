@@ -274,6 +274,7 @@ impl Runtime {
         tools: Vec<crate::protocol::ToolDefinition>,
         bridge: crate::product::Bridge,
     ) {
+        self.inner.tools.with_product_tools(tools.clone());
         let mut state = self.inner.product.write().unwrap();
         state.tools = tools;
         state.bridge = Some(bridge);
@@ -2050,7 +2051,7 @@ command: None,
                                         .clone();
                                     match bridge {
                                         Some(bridge) => {
-                                            bridge.call(name, input).await
+                                            bridge.call(session, name, input).await
                                         }
                                         None => Err(ToolError::Unsupported),
                                     }
