@@ -1,14 +1,16 @@
 import { describe, expect } from "bun:test"
 import { Deferred, Effect, Fiber, Stream } from "effect"
 import { LLMError, LLMEvent } from "@miao/llm"
+import { TransportKeepAlive } from "@miao/llm/route"
 import { SessionFirstByteGuard } from "@miao/core/session/runner/first-byte-guard"
 import { it } from "./lib/effect"
 
 const first = LLMEvent.textDelta({ id: "answer", text: "hello" })
 
 describe("SessionFirstByteGuard", () => {
-  it.live("times out and closes a source that never produces an event", () =>
+  it.live("times out, closes the source, and retires the connection pool", () =>
     Effect.gen(function* () {
+      TransportKeepAlive.clearStale()
       let closed = false
       const source = Stream.never.pipe(
         Stream.ensuring(
@@ -25,7 +27,9 @@ describe("SessionFirstByteGuard", () => {
       )
       expect(error.retryable).toBe(true)
       expect(closed).toBe(true)
-    }),
+      // The next attempt must not reuse the socket the silent one hung on.
+      expect(TransportKeepAlive.isStale()).toBe(true)
+    }).pipe(Effect.ensuring(Effect.sync(() => TransportKeepAlive.clearStale()))),
   )
 
   it.live("does not delay immediate completion by waiting for the watchdog duration", () =>

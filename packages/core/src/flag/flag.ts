@@ -13,6 +13,14 @@ function enabledByExperimental(key: string) {
   return process.env[key] === undefined ? truthy("MIAO_EXPERIMENTAL") : truthy(key)
 }
 
+/**
+ * How long a provider attempt may stay silent before the runner abandons it.
+ * Gateways fronting large prompts routinely need more than a minute to emit
+ * the first streamed event, so a short bound turns a slow-but-alive request
+ * into a failed turn.
+ */
+export const DEFAULT_LLM_FIRST_BYTE_TIMEOUT_MS = 120_000
+
 export const Flag = {
   OTEL_EXPORTER_OTLP_ENDPOINT: process.env["OTEL_EXPORTER_OTLP_ENDPOINT"],
   OTEL_EXPORTER_OTLP_HEADERS: process.env["OTEL_EXPORTER_OTLP_HEADERS"],
@@ -132,8 +140,8 @@ export const Flag = {
   // Zero explicitly disables the pre-event provider watchdog.
   get MIAO_LLM_FIRST_BYTE_TIMEOUT_MS() {
     const raw = process.env["MIAO_LLM_FIRST_BYTE_TIMEOUT_MS"]
-    if (raw === undefined || raw.trim() === "") return 60_000
+    if (raw === undefined || raw.trim() === "") return DEFAULT_LLM_FIRST_BYTE_TIMEOUT_MS
     const value = Number(raw)
-    return Number.isFinite(value) && value >= 0 ? value : 60_000
+    return Number.isFinite(value) && value >= 0 ? value : DEFAULT_LLM_FIRST_BYTE_TIMEOUT_MS
   },
 }
