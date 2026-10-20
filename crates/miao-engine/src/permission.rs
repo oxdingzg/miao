@@ -446,25 +446,21 @@ mod agent_policy_tests {
             ..Config::default()
         })
         .unwrap();
-        let agent: crate::session_agent::AgentManifest = serde_json::from_value(serde_json::json!({
-            "name": "build",
-            "ordered_permissions": {
-                "semantics": "ordered-wildcard-v1",
-                "rules": [{"action": "*", "resource": "*", "effect": "allow"}],
-                "bindings": {"glob": {"action": "glob", "resource": {"input": "pattern"}}}
-            }
-        }))
-        .unwrap();
+        let agent: crate::session_agent::AgentManifest =
+            serde_json::from_value(serde_json::json!({
+                "name": "build",
+                "ordered_permissions": {
+                    "semantics": "ordered-wildcard-v1",
+                    "rules": [{"action": "*", "resource": "*", "effect": "allow"}],
+                    "bindings": {"glob": {"action": "glob", "resource": {"input": "pattern"}}}
+                }
+            }))
+            .unwrap();
         let policy = base.for_agent(Some(&agent)).unwrap();
         let input = serde_json::json!({"pattern": "**/SKILL.md"});
         assert_eq!(
             policy
-                .assess_input(
-                    "glob",
-                    "@reference/host-skills",
-                    Access::Read,
-                    Some(&input)
-                )
+                .assess_input("glob", "@reference/host-skills", Access::Read, Some(&input))
                 .0,
             Decision::Allow
         );
