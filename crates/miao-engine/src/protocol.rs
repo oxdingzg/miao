@@ -451,6 +451,7 @@ pub enum Command {
     },
     TransferExportMove {
         session_id: String,
+        product_database: std::path::PathBuf,
         target_directory: String,
         path: std::path::PathBuf,
     },

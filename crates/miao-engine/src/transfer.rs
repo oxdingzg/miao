@@ -12,6 +12,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use sha2::{Digest, Sha256};
 use std::collections::HashSet;
+use std::path::Path;
 
 pub const MAX_BYTES: usize = 64 * 1024 * 1024;
 
@@ -442,14 +443,18 @@ impl Store {
     /// verbatim engine message rows, which the destination stages without
     /// product-shape translation. The location stamped into the bundle is the
     /// DESTINATION directory, so staging creates the identity at its new root
-    /// and the activation placement equality holds unchanged. The Session
-    /// must be drained: an active run is refused.
+    /// and the activation placement equality holds unchanged. Snapshot file
+    /// contents are inlined as artifacts so the destination store can restore
+    /// reverts without the source blob directory. The Session must be
+    /// drained: an active run is refused.
     pub async fn export_session_move(
         &self,
         session: &str,
+        product_storage: &Path,
         target_directory: &str,
         path: std::path::PathBuf,
     ) -> Result<Value, Error> {
+        use base64::Engine as _;
         if !path.is_absolute() {
             return Err(Error::Invalid(
                 "transfer export path must be absolute".into(),
@@ -462,6 +467,8 @@ impl Store {
         }
         let session = session.to_owned();
         let target = target_directory.to_owned();
+        let product_storage = product_storage.to_owned();
+        let blob_dir = crate::snapshot::blob_dir(self.path(), &session);
         let payload = self
             .call(move |conn| {
                 if conn.query_row(
@@ -524,6 +531,7 @@ impl Store {
                     }
                 }
                 let mut snapshots = Vec::new();
+                let mut artifacts = std::collections::HashMap::<String, String>::new();
                 {
                     let mut stmt = tx.prepare(
                         "SELECT id,boundary_seq,manifest FROM engine_file_snapshot WHERE session_id=?1 ORDER BY id",
@@ -536,10 +544,26 @@ impl Store {
                         ))
                     })?.collect::<Result<Vec<_>, _>>()?;
                     for (id, boundary, manifest) in rows {
+                        let files: Value = serde_json::from_str(&manifest)?;
+                        if let Some(entries) = files.as_array() {
+                            for file in entries {
+                                if let Some(hash) = file["hash"].as_str() {
+                                    if hash.is_empty() || artifacts.contains_key(hash) {
+                                        continue;
+                                    }
+                                    let bytes = std::fs::read(blob_dir.join(hash))
+                                        .map_err(|_| Error::Conflict)?;
+                                    artifacts.insert(
+                                        hash.to_owned(),
+                                        base64::engine::general_purpose::STANDARD.encode(&bytes),
+                                    );
+                                }
+                            }
+                        }
                         snapshots.push(json!({
                             "id":format!("snap_{id}"),
                             "boundary_message_id":format!("msg_{boundary}"),
-                            "files":serde_json::from_str::<Value>(&manifest)?,
+                            "files":files,
                         }));
                     }
                 }
@@ -570,7 +594,7 @@ impl Store {
                     .transpose()?;
                 let bundle_payload = json!({
                     "format":"miao.session.transfer.v1",
-                    "source":{"engine":"rust","moved":true,"location":{"directory":target}},
+                    "source":{"engine":"rust","storage":product_storage,"moved":true,"location":{"directory":target}},
                     "session":{
                         "id":session,
                         "title":title,
@@ -584,6 +608,7 @@ impl Store {
                     "context_ids":ids,
                     "operational":{"goal":state["goal"]["value"],"todos":state["todos"]["value"]},
                     "snapshots":snapshots,
+                    "artifacts":artifacts.into_iter().map(|(hash,base64)|json!({"hash":hash,"base64":base64})).collect::<Vec<_>>(),
                     "compactions":compactions,
                 });
                 tx.commit()?;

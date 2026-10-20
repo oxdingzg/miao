@@ -15,6 +15,13 @@ use tokio_util::sync::CancellationToken;
 struct Responder;
 #[async_trait]
 impl Provider for Responder {
+    fn identity(&self) -> Option<Identity> {
+        Some(Identity {
+            protocol: "openai-chat".into(),
+            model: "m".into(),
+        })
+    }
+
     async fn stream(
         &self,
         _: ModelRequest,
@@ -88,11 +95,42 @@ async fn move_export_stages_into_a_fresh_location() {
     wait_finished(&store, "s").await;
     runtime.shutdown().await;
 
+    // A source compaction must survive the move with a remapped boundary;
+    // point it at the second message.
+    {
+        let source_db = rusqlite::Connection::open(dir.path().join("engine.db")).unwrap();
+        source_db
+            .execute(
+                "INSERT INTO engine_compaction(id,session_id,through_seq,summary,created_seq) VALUES('compaction_1','s',2,'earlier context',3)",
+                [],
+            )
+            .unwrap();
+    }
+
+    // The product authority fixture: the same database the host coordinates
+    // through, with the migration/placement rows a move writes before
+    // activation.
+    let product_db = dir.path().join("product.db");
+    {
+        let product = rusqlite::Connection::open(&product_db).unwrap();
+        product
+            .execute_batch(
+                "CREATE TABLE session_migration(id TEXT, session_id TEXT, state TEXT, native_storage TEXT, location TEXT, bundle_sha256 TEXT);
+                 CREATE TABLE session_engine_placement(session_id TEXT, engine TEXT, native_storage TEXT, location TEXT);",
+            )
+            .unwrap();
+    }
+
     let destination_dir = dir.path().join("worktree");
     std::fs::create_dir(&destination_dir).unwrap();
     let bundle_path = dir.path().join("move.json");
     let summary = store
-        .export_session_move("s", destination_dir.to_str().unwrap(), bundle_path.clone())
+        .export_session_move(
+            "s",
+            &product_db,
+            destination_dir.to_str().unwrap(),
+            bundle_path.clone(),
+        )
         .await
         .unwrap();
     assert_eq!(summary["session_id"], "s");
@@ -141,4 +179,63 @@ async fn move_export_stages_into_a_fresh_location() {
         destination.location("s").await.unwrap().as_deref(),
         Some(destination_dir.to_str().unwrap())
     );
+
+    // The host rewrites the product authority to the destination, then the
+    // destination owner activates: history replays and the compaction
+    // re-anchors past the freshly assigned import sequences.
+    let destination_db = dir.path().join("destination.db");
+    let location_json = json!({"directory": destination_dir.to_str().unwrap()}).to_string();
+    {
+        let product = rusqlite::Connection::open(&product_db).unwrap();
+        product
+            .execute(
+                "INSERT INTO session_migration VALUES('move-1','s','switched',?1,?2,?3)",
+                rusqlite::params![destination_db.to_str().unwrap(), location_json, digest],
+            )
+            .unwrap();
+        product
+            .execute(
+                "INSERT INTO session_engine_placement VALUES('s','rust',?1,?2)",
+                rusqlite::params![destination_db.to_str().unwrap(), location_json],
+            )
+            .unwrap();
+    }
+    let destination_runtime = Runtime::with_policy(
+        destination.clone(),
+        Arc::new(Responder),
+        Tools::new(&destination_dir).await.unwrap(),
+        policy(),
+    )
+    .await
+    .unwrap();
+    let activated = destination_runtime
+        .activate_transfer("move-1", &digest, &product_db)
+        .await
+        .unwrap();
+    assert_eq!(activated["state"], "active");
+    let history = destination.history("s").await.unwrap();
+    assert!(serde_json::to_string(&history)
+        .unwrap()
+        .contains("moved history"));
+    let events = destination.events("s", 0, 1000).await.unwrap();
+    // The imported second message's durable event carries the fresh sequence
+    // the compaction boundary must land on: equal values prove the remap.
+    let imported_second = events
+        .iter()
+        .find(|event| {
+            event.kind == "session.transfer.history" && event.data["source_message_id"] == "msg_2"
+        })
+        .expect("second message imported")
+        .seq;
+    let compacted = events
+        .iter()
+        .find(|event| event.kind == "history.compacted")
+        .expect("compaction restored");
+    assert_eq!(
+        compacted.data["through_message_seq"].as_u64(),
+        Some(imported_second),
+        "compaction boundary must remap onto the imported row: {:?}",
+        compacted.data
+    );
+    destination_runtime.shutdown().await;
 }
