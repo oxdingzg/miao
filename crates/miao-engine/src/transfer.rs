@@ -318,6 +318,100 @@ impl Store {
         }))
     }
 
+    /// Export the native-era messages (anything after the retained import's
+    /// highest restored sequence) as a reverse delta: TS canonical messages
+    /// with stable synthesized identities. Only plain text conversations can
+    /// be represented today; tool calls, media and opaque reasoning must be
+    /// explicit refusals rather than silently dropped turns.
+    pub async fn export_session_transfer_delta(
+        &self,
+        id: &str,
+        path: std::path::PathBuf,
+    ) -> Result<Value, Error> {
+        if !path.is_absolute() {
+            return Err(Error::Invalid(
+                "transfer export path must be absolute".into(),
+            ));
+        }
+        let id = id.to_owned();
+        let key = id.clone();
+        let payload = self
+            .call(move |conn| {
+                let row: Option<(String, String, String, String)> = conn
+                    .query_row(
+                        "SELECT session_id,bundle_sha256,bundle,state FROM engine_transfer_import WHERE id=?1",
+                        [&key],
+                        |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?)),
+                    )
+                    .optional()?;
+                let (session, digest, bundle, state) = row.ok_or(Error::Conflict)?;
+                // The delta is only trustworthy when the retained payload it
+                // derives from still matches its recorded digest.
+                if state != "active" || format!("{:x}", Sha256::digest(bundle.as_bytes())) != digest {
+                    return Err(Error::Conflict);
+                }
+                let baseline: i64 = conn.query_row(
+                    "SELECT COALESCE(MAX(seq),0) FROM engine_transfer_message WHERE import_id=?1",
+                    [&key],
+                    |row| row.get(0),
+                )?;
+                let mut stmt = conn.prepare(
+                    "SELECT seq,role,content,recorded_at_ms FROM engine_message
+                     WHERE session_id=?1 AND seq>?2 AND reverted=0 ORDER BY seq",
+                )?;
+                let rows = stmt
+                    .query_map(params![session, baseline], |row| {
+                        Ok((
+                            row.get::<_, i64>(0)?,
+                            row.get::<_, String>(1)?,
+                            row.get::<_, String>(2)?,
+                            row.get::<_, Option<i64>>(3)?,
+                        ))
+                    })?
+                    .collect::<Result<Vec<_>, _>>()?;
+                let mut timeline = Vec::new();
+                for (seq, role, content, recorded) in rows {
+                    let parts: Vec<Value> = serde_json::from_str(&content)?;
+                    let id = format!("msg_native_{seq}");
+                    let time = json!({"created": recorded.unwrap_or(0)});
+                    let mut texts = Vec::new();
+                    for part in &parts {
+                        let kind = part["type"].as_str().unwrap_or_default();
+                        if kind == "text" {
+                            texts.push(part["text"].as_str().unwrap_or_default().to_owned());
+                        } else {
+                            return Err(Error::Invalid(format!(
+                                "native message {seq} carries unsupported part {kind}; the reverse delta cannot represent it yet"
+                            )));
+                        }
+                    }
+                    let text = texts.join("\n\n");
+                    let message = if role == "user" {
+                        json!({"id":id,"type":"user","text":text,"time":time})
+                    } else if role == "assistant" {
+                        json!({"id":id,"type":"assistant","model":{"id":"transferred","providerID":"transferred"},
+                            "content":[{"type":"text","text":text}],"time":{"created":recorded.unwrap_or(0),"completed":recorded.unwrap_or(0)}})
+                    } else {
+                        return Err(Error::Invalid(format!("native message {seq} has unsupported role {role}")));
+                    };
+                    timeline.push(message);
+                }
+                Ok(json!({
+                    "id": id,
+                    "session_id": session,
+                    "bundle_sha256": digest,
+                    "baseline_seq": baseline,
+                    "timeline": timeline,
+                }))
+            })
+            .await?;
+        let encoded = serde_json::to_vec(&payload)?;
+        let temporary = path.with_extension("tmp");
+        tokio::fs::write(&temporary, encoded).await?;
+        tokio::fs::rename(&temporary, &path).await?;
+        Ok(payload)
+    }
+
     /// Aborting an import keeps it inactive forever. It cannot turn the copied
     /// Session into an ordinary native Session or reuse a stale transfer token.
     pub async fn abort_session_transfer_import(&self, id: &str) -> Result<(), Error> {

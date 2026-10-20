@@ -449,6 +449,10 @@ pub enum Command {
         import_id: String,
         path: std::path::PathBuf,
     },
+    TransferExportDelta {
+        import_id: String,
+        path: std::path::PathBuf,
+    },
     TransferAbort {
         import_id: String,
     },

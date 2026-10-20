@@ -361,6 +361,57 @@ async fn actual_product_cas_is_required_and_activation_restores_provider_context
     })
     .await
     .unwrap();
+    {
+        let conn = rusqlite::Connection::open(&native).unwrap();
+        conn.execute(
+            "INSERT INTO engine_message(session_id,seq,role,content,checkpoint,recorded_at_ms) VALUES('s',900,'user','[{\"type\":\"text\",\"text\":\"native turn\"}]',NULL,900)",
+            [],
+        )
+        .unwrap();
+        conn.execute(
+            "INSERT INTO engine_message(session_id,seq,role,content,checkpoint,recorded_at_ms) VALUES('s',901,'assistant','[{\"type\":\"text\",\"text\":\"native reply\"}]',NULL,901)",
+            [],
+        )
+        .unwrap();
+    }
+    let delta_path = tmp.path().join("delta.json");
+    let delta = database
+        .export_session_transfer_delta("transfer", delta_path.clone())
+        .await
+        .unwrap();
+    let baseline: i64 = {
+        let conn = rusqlite::Connection::open(&native).unwrap();
+        conn.query_row(
+            "SELECT COALESCE(MAX(seq),0) FROM engine_transfer_message",
+            [],
+            |row| row.get(0),
+        )
+        .unwrap()
+    };
+    assert_eq!(delta["baseline_seq"], json!(baseline));
+    let timeline = delta["timeline"].as_array().unwrap();
+    // Everything the native engine produced after the imported baseline is
+    // part of the delta, including the earlier fixture runs.
+    let expected: i64 = {
+        let conn = rusqlite::Connection::open(&native).unwrap();
+        conn.query_row(
+            "SELECT COUNT(*) FROM engine_message WHERE session_id='s' AND seq>?1 AND reverted=0",
+            [baseline],
+            |row| row.get(0),
+        )
+        .unwrap()
+    };
+    assert_eq!(timeline.len() as i64, expected);
+    assert_eq!(timeline[timeline.len() - 2]["id"], "msg_native_900");
+    assert_eq!(timeline[timeline.len() - 2]["text"], "native turn");
+    assert_eq!(
+        timeline[timeline.len() - 1]["content"][0]["text"],
+        "native reply"
+    );
+    assert_eq!(
+        std::fs::read(&delta_path).unwrap(),
+        serde_json::to_vec(&delta).unwrap()
+    );
     runtime.shutdown().await;
     drop(runtime);
     database.close().await.unwrap();
