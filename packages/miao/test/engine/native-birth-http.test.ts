@@ -11,6 +11,8 @@ if (binary)
     const directory = path.join(tmp.path, "project")
     await Bun.$`mkdir -p ${directory}`.quiet()
     const routesFile = path.join(tmp.path, "routes.json")
+    const policy = path.join(tmp.path, "policy.json")
+    await Bun.write(policy, JSON.stringify({ mode: "read_only" }))
     await Bun.write(
       routesFile,
       JSON.stringify([
@@ -34,6 +36,7 @@ if (binary)
         MIAO_ENGINE_MODEL: "fixture",
         MIAO_ENGINE_MODEL_ROUTES_CONFIG: routesFile,
         MIAO_ENGINE_STORAGE: path.join(tmp.path, "engines"),
+        MIAO_ENGINE_POLICY: policy,
         OPENAI_API_KEY: "fixture-only",
         MIAO_PURE: "1",
         MIAO_SERVER_PASSWORD: "fixture-password",

@@ -449,6 +449,21 @@ pub enum Command {
         import_id: String,
         path: std::path::PathBuf,
     },
+    TransferExportMove {
+        session_id: String,
+        target_directory: String,
+        path: std::path::PathBuf,
+    },
+    TransferStageNative {
+        import_id: String,
+        path: std::path::PathBuf,
+        bundle_sha256: String,
+        identity: crate::provider::Identity,
+        #[serde(default)]
+        route_id: Option<String>,
+        #[serde(default)]
+        agent: Option<crate::session_agent::AgentManifest>,
+    },
     TransferExportDelta {
         import_id: String,
         path: std::path::PathBuf,

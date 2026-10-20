@@ -64,11 +64,11 @@ export const prepare = Effect.fn("Engine.productRoutes")(function* (
     configuration.credentialID ||
     configuration.credentialIntegration
   )
-    return options
+    return { ...options, prices: undefined }
   const catalog = Option.getOrUndefined(yield* Effect.serviceOption(Catalog.Service))
   const integrations = Option.getOrUndefined(yield* Effect.serviceOption(Integration.Service))
   const credentials = Option.getOrUndefined(yield* Effect.serviceOption(Credential.Service))
-  if (!catalog || !integrations) return options
+  if (!catalog || !integrations) return { ...options, prices: undefined }
   if (!credentials)
     return yield* Effect.fail(
       new EngineError(
@@ -84,6 +84,11 @@ export const prepare = Effect.fn("Engine.productRoutes")(function* (
     return yield* Effect.fail(new EngineError("engine_routes_location", "product model Location does not match owner"))
   const models = (yield* catalog.model.available()).filter(
     (model) => model.capabilities.tools && model.capabilities.output.includes("text"),
+  )
+  // The engine journals the serving model's api id with each usage event; this
+  // index prices those ids at the catalog's tiered rates.
+  const prices: Record<string, ModelV2.Info["cost"]> = Object.fromEntries(
+    models.map((model) => [model.api.id, model.cost]),
   )
   const selected = configuration.model
     ? models.filter(
@@ -305,7 +310,7 @@ export const prepare = Effect.fn("Engine.productRoutes")(function* (
       }
     }
   }
-  return options
+  return { ...options, prices }
 })
 
 function profile(model: ModelV2.Info, account: Account, integration: string) {

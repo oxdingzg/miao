@@ -108,11 +108,17 @@ async fn run_usage_aggregates_provider_attempts() {
         aggregate.data["usage"]["input_tokens_details"]["cached_tokens"],
         5
     );
-    // The per-step usage events remain for auditability.
-    assert_eq!(
-        events.iter().filter(|event| event.kind == "usage").count(),
-        2
-    );
+    // The per-step usage events remain for auditability, and each names the
+    // serving model — unbound here, so the field is present but null.
+    let usage_events: Vec<_> = events
+        .iter()
+        .filter(|event| event.kind == "usage")
+        .collect();
+    assert_eq!(usage_events.len(), 2);
+    for event in usage_events {
+        assert!(event.data.get("model").is_some());
+        assert!(event.data["model"].is_null());
+    }
 }
 
 /// Emits already-normalized usage with an audit-only raw payload.

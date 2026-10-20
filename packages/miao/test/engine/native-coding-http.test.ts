@@ -11,7 +11,7 @@ for (const writable of [false, true]) {
       const directory = path.join(tmp.path, "project")
       await Bun.$`mkdir -p ${directory}`.quiet()
       const policyFile = path.join(tmp.path, "policy.json")
-      await Bun.write(policyFile, JSON.stringify({ mode: "workspace" }))
+      await Bun.write(policyFile, JSON.stringify({ mode: writable ? "workspace" : "read_only" }))
       let calls = 0
       const provider = Bun.serve({
         hostname: "127.0.0.1",
@@ -55,7 +55,7 @@ for (const writable of [false, true]) {
           MIAO_ENGINE_PROVIDER: "openai-chat",
           MIAO_ENGINE_MODEL: "fixture",
           MIAO_ENGINE_ENDPOINT: new URL("chat/completions", provider.url).toString(),
-          MIAO_ENGINE_POLICY: writable ? policyFile : "",
+          MIAO_ENGINE_POLICY: policyFile,
           MIAO_ENGINE_STORAGE: path.join(tmp.path, "engines"),
           OPENAI_API_KEY: "fixture-only",
           MIAO_PURE: "1",
@@ -69,6 +69,7 @@ for (const writable of [false, true]) {
           XDG_CACHE_HOME: path.join(tmp.path, "cache"),
           MIAO_CONFIG_CONTENT: JSON.stringify({
             model: "fixture/fixture",
+            ...(writable ? { permissions: [{ action: "edit", resource: "*", effect: "ask" }] } : {}),
             providers: {
               fixture: {
                 name: "Fixture",

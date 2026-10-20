@@ -1672,7 +1672,7 @@ async fn execute(
                         .record(
                             session,
                             "usage",
-                            json!({"run_id":run,"step":step,"usage":partial.usage,"partial":true,"cache":crate::usage::cache_lineage(&partial.usage),"context_message_seq":inner.store.max_message_seq(session).await?}),
+                            json!({"run_id":run,"step":step,"usage":partial.usage,"partial":true,"model":binding.as_ref().map(|binding|binding.model.as_str()),"cache":crate::usage::cache_lineage(&partial.usage),"context_message_seq":inner.store.max_message_seq(session).await?}),
                         )
                         .await?;
                     if partial
@@ -1759,7 +1759,7 @@ command: None,
             .record(
                 session,
                 "usage",
-                json!({"run_id":run,"step":step,"usage":reply.usage,"cache":crate::usage::cache_lineage(&reply.usage),"context_message_seq":inner.store.max_message_seq(session).await?}),
+                json!({"run_id":run,"step":step,"usage":reply.usage,"model":binding.as_ref().map(|binding|binding.model.as_str()),"cache":crate::usage::cache_lineage(&reply.usage),"context_message_seq":inner.store.max_message_seq(session).await?}),
             )
             .await?;
         // The billed turn's settle wall-clock rides the timing side table, so

@@ -166,7 +166,14 @@ async fn discover_skills(
             }
             Err(error) => return Err(error),
         };
-        let decision = policy.evaluate(prepared.name(), prepared.resource(), prepared.access());
+        let decision = policy
+            .assess_input(
+                prepared.name(),
+                prepared.resource(),
+                prepared.access(),
+                Some(prepared.input()),
+            )
+            .0;
         if decision != Decision::Allow {
             sources.push(json!({"type":"skill_directory","path":directory.path,"status":"skipped","reason":if decision==Decision::Ask{"policy_ask"}else{"policy_deny"}}));
             continue;
@@ -187,7 +194,14 @@ async fn discover_skills(
                 Err(ToolError::OutsideWorkspace | ToolError::ProtectedResource) => continue,
                 Err(error) => return Err(error),
             };
-            if policy.evaluate(prepared.name(), prepared.resource(), prepared.access())
+            if policy
+                .assess_input(
+                    prepared.name(),
+                    prepared.resource(),
+                    prepared.access(),
+                    Some(prepared.input()),
+                )
+                .0
                 != Decision::Allow
             {
                 continue;

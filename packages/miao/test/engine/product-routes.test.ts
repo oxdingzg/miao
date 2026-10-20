@@ -273,7 +273,7 @@ it.live("explicit operator routes retain precedence without consulting product s
         model: "operator",
         modelRoutesConfigFile: "/operator/routes.json",
       }),
-    ).toEqual({})
+    ).toEqual({ prices: undefined })
     expect(
       yield* ProductRoutes.prepare(location, {
         binary: "fixture",
@@ -281,7 +281,7 @@ it.live("explicit operator routes retain precedence without consulting product s
         provider: "openai-chat",
         credentialDatabase: "/operator/credentials.db",
       }),
-    ).toEqual({})
+    ).toEqual({ prices: undefined })
   }).pipe(
     Effect.provideService(Location.Service, {
       ...location,

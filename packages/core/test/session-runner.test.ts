@@ -8537,6 +8537,31 @@ describe("SessionRunnerLLM", () => {
     }),
   )
 
+  it.effect("names the context counts when a 400 rejects an oversized request", () =>
+    Effect.gen(function* () {
+      yield* setup
+      currentModel = compactModel
+      const session = yield* SessionV2.Service
+      streamFailure = new LLMError({
+        module: "RequestExecutor", method: "execute",
+        reason: new InvalidRequestReason({
+          message: "invalid parameter",
+          http: new HttpContext({
+            request: new HttpRequestDetails({ method: "POST", url: "https://api.example/v1/chat/completions", headers: {} }),
+            response: new HttpResponseDetails({ status: 400, headers: {} }),
+          }),
+        }),
+      })
+      yield* session.prompt({ sessionID, prompt: Prompt.make({ text: `probe ${"x".repeat(40_000)}` }), resume: false })
+      yield* session.resume(sessionID).pipe(Effect.flip)
+      const last = (yield* session.context(sessionID)).at(-1)
+      expect(last).toMatchObject({ type: "assistant" })
+      expect((last as { readonly error?: { readonly message?: string } }).error?.message).toContain(
+        "input tokens against this model's 4k-token context window",
+      )
+    }),
+  )
+
   it.effect("announces an unavailable model when catalog resolution actually retries", () =>
     Effect.gen(function* () {
       yield* setup
