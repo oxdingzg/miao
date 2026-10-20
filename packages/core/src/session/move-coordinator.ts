@@ -67,7 +67,6 @@ export const moveRust = Effect.fn("SessionMoveCoordinator.moveRust")(function* (
   target: Native
   bundleFile: AbsolutePath
   productDatabase: AbsolutePath
-  identity: { protocol: string; model: string }
   routeID?: string
   agent?: Record<string, unknown>
   engine: MoveEngine
@@ -80,6 +79,7 @@ export const moveRust = Effect.fn("SessionMoveCoordinator.moveRust")(function* (
     bundleFile: input.bundleFile,
   })
   if (receipt.session_id && receipt.session_id !== input.sessionID) return yield* fail()
+  if (!receipt.binding) return yield* fail()
   const bundleSHA256 = receipt.bundle_sha256
 
   // The fence: the product authority names the destination from here on.
@@ -95,9 +95,7 @@ export const moveRust = Effect.fn("SessionMoveCoordinator.moveRust")(function* (
   })
   if (fenced.state === "completed") return yield* fail()
 
-  const binding = receipt.binding
-    ? { protocol: receipt.binding.protocol, model: receipt.binding.model }
-    : input.identity
+  const binding = { protocol: receipt.binding.protocol, model: receipt.binding.model }
   const routeID = receipt.route_id ?? input.routeID
   const staged = yield* input.engine.stageNative({
     importID: input.id,
