@@ -44,14 +44,19 @@ impl Bridge {
     }
 
     /// Send a product-tool call and wait for the host's result.
-    pub async fn call(&self, name: &str, input: Value) -> Result<Value, crate::tools::ToolError> {
+    pub async fn call(
+        &self,
+        session: &str,
+        name: &str,
+        input: Value,
+    ) -> Result<Value, crate::tools::ToolError> {
         let id = self.next.fetch_add(1, Ordering::SeqCst);
         let (reply, reply_rx) = oneshot::channel();
         self.pending.lock().unwrap().insert(id, reply);
         let request = serde_json::json!({
             "bridge_id": id,
             "method": "product_tool",
-            "params": {"name": name, "input": input},
+            "params": {"session_id": session, "name": name, "input": input},
         });
         if self.tx.send(request).await.is_err() {
             self.pending.lock().unwrap().remove(&id);

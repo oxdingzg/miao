@@ -108,6 +108,7 @@ async fn product_tool_reverse_dispatches_to_host_and_returns_result() {
         .expect("bridge request");
     let bridge_id = request["bridge_id"].as_u64().expect("bridge id");
     assert_eq!(request["method"], "product_tool");
+    assert_eq!(request["params"]["session_id"], "s");
     assert_eq!(request["params"]["name"], "send_message");
     assert_eq!(
         request["params"]["input"]["text"],
