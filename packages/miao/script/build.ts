@@ -233,9 +233,9 @@ for (const item of targets) {
   if (item.os === "darwin" && process.platform === "darwin") {
     const identity = await developerIdIdentity()
     if (identity) {
-      await $`codesign --force --options runtime --timestamp --entitlements ${entitlements} --sign ${identity} dist/${name}/bin/miao`
+      await codesign(["--force", "--options", "runtime", "--timestamp", "--entitlements", entitlements, "--sign", identity, `dist/${name}/bin/miao`])
     } else {
-      await $`codesign --force --sign - dist/${name}/bin/miao`
+      await codesign(["--force", "--sign", "-", `dist/${name}/bin/miao`])
     }
   }
 
@@ -310,9 +310,9 @@ async function buildEngineArchive(): Promise<string[]> {
     if (process.platform === "darwin") {
       const identity = await developerIdIdentity()
       if (identity) {
-        await $`codesign --force --options runtime --timestamp --sign ${identity} ${bin}`
+        await codesign(["--force", "--options", "runtime", "--timestamp", "--sign", identity, bin])
       } else {
-        await $`codesign --force --sign - ${bin}`
+        await codesign(["--force", "--sign", "-", bin])
       }
     }
     const name = `miao-engine-${os}-${arch}`
@@ -384,6 +384,31 @@ if (Script.release) {
 export { binaries }
 
 // Function declarations hoist: the build loop above runs during module evaluation.
+// codesign's `--timestamp` call to Apple's timestamp authority occasionally
+// stalls forever on hosted macOS runners. Each attempt is bounded and retried,
+// and `--force` makes a retry replace whatever partial signature was written.
+const CODESIGN_TIMEOUT_MS = 60_000
+const CODESIGN_ATTEMPTS = 5
+
+async function codesign(args: string[]) {
+  let lastError = "timed out"
+  for (let attempt = 1; attempt <= CODESIGN_ATTEMPTS; attempt++) {
+    console.log(`codesign ${args.at(-1)} (attempt ${attempt}/${CODESIGN_ATTEMPTS})`)
+    const proc = Bun.spawn(["codesign", ...args], { stdout: "inherit", stderr: "pipe" })
+    const stderr = new Response(proc.stderr).text()
+    const timer = setTimeout(() => proc.kill(), CODESIGN_TIMEOUT_MS)
+    const exitCode = await proc.exited
+    clearTimeout(timer)
+    if (exitCode === 0) {
+      await stderr
+      return
+    }
+    lastError = (await stderr).trim() || `exit ${exitCode}`
+    console.warn(`codesign attempt ${attempt}/${CODESIGN_ATTEMPTS} failed: ${lastError}`)
+  }
+  throw new Error(`codesign failed after ${CODESIGN_ATTEMPTS} attempts: ${lastError}`)
+}
+
 async function developerIdIdentity() {
   const fromEnv = process.env.MIAO_CODESIGN_IDENTITY?.trim()
   if (fromEnv) return fromEnv
