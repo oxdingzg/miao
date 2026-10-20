@@ -18,6 +18,29 @@ import type { SessionStore } from "./store"
 export const invocationID = (sessionID: SessionSchema.ID, messageID: SessionMessage.ID, callID: string) =>
   `task_${Hash.sha256(JSON.stringify([sessionID, messageID, callID]))}`
 
+/**
+ * What a failed delegation's child had already finished, so the parent's
+ * recovery can decide how much of the task to redo instead of re-reading the
+ * child transcript first. Best effort: an unreadable transcript simply
+ * contributes no progress.
+ */
+const childProgress = Effect.fn("SessionDelegation.childProgress")(function* (
+  db: Database.Interface["db"],
+  childID: SessionSchema.ID,
+) {
+  const entries = yield* SessionHistory.all(db, childID).pipe(Effect.orElseSucceed(() => []))
+  const calls = entries.flatMap((entry) =>
+    entry.message.type === "assistant"
+      ? entry.message.content.flatMap((part) =>
+          part.type !== "text" && part.type !== "reasoning" && part.state.status === "completed" ? [part] : [],
+        )
+      : [],
+  )
+  if (calls.length === 0) return ""
+  const last = calls.at(-1)?.name
+  return ` It had completed ${calls.length} tool call${calls.length === 1 ? "" : "s"} (last: ${last}) before stopping.`
+})
+
 export type Request = {
   id: string
   sessionID: SessionSchema.ID
@@ -96,11 +119,28 @@ export const make = (input: {
           }),
         )
         if (!launched) return
+        const silence = input.silence ?? Duration.minutes(15)
+        // Halfway to the silence limit, leave the parent one progress note that
+        // names the deadline, so a silent-but-alive subagent is distinguishable
+        // from a hung one while it still runs. The race below interrupts this
+        // fiber when the child finishes first.
+        fork(
+          Effect.gen(function* () {
+            yield* Effect.sleep(Duration.millis(Duration.toMillis(silence) / 2))
+            yield* input.events.publish(SessionEvent.DelegationReported, {
+              sessionID: task.session_id,
+              id: task.id,
+              childSessionID: task.child_session_id,
+              text: `${task.description} has produced no events for ${Math.round(Duration.toMillis(silence) / 120_000)} minutes; it is still running and will be interrupted at the silence limit.`,
+              timestamp: yield* DateTime.now,
+            })
+          }),
+        )
         const outcome = yield* Effect.raceFirst(
           input.wait(task.child_session_id).pipe(Effect.as("idle" as const)),
           input.events.all().pipe(
             Stream.filter((event) => event.durable?.aggregateID === task.child_session_id),
-            Stream.timeout(input.silence ?? Duration.minutes(15)),
+            Stream.timeout(silence),
             Stream.runDrain,
             Effect.as("stalled" as const),
           ),
@@ -108,10 +148,11 @@ export const make = (input: {
         if (outcome === "stalled") {
           const owned = observed.get(task.id)
           if (owned) yield* input.interruptIf(owned.sessionID, owned.execution)
+          const progress = yield* childProgress(input.db, task.child_session_id)
           return yield* finish(
             task,
             "failed",
-            "Subagent produced no events within its silence limit. Inspect its child Session before retrying.",
+            `Subagent produced no events within its silence limit.${progress} Inspect its child Session before retrying.`,
           )
         }
         const child = yield* input.store.get(task.child_session_id)
@@ -127,12 +168,14 @@ export const make = (input: {
           assistant.error ||
           assistant.finish === "error" ||
           assistant.finish === "tool-calls"
-        )
+        ) {
+          const progress = yield* childProgress(input.db, child.id)
           return yield* finish(
             task,
             "failed",
-            "Subagent did not return a completed report. Inspect its child Session; earlier tool effects may have completed.",
+            `Subagent did not return a completed report.${progress} Inspect its child Session; earlier tool effects may have completed.`,
           )
+        }
         const text = assistant.content.flatMap((part) => (part.type === "text" ? [part.text] : [])).join("\n")
         return yield* finish(
           task,

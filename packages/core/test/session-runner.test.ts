@@ -4492,6 +4492,90 @@ describe("SessionRunnerLLM", () => {
     }),
   )
 
+  it.effect("notifies a silent background subagent midway and fails it at the silence limit", () =>
+    Effect.gen(function* () {
+      yield* setup
+      const session = yield* SessionV2.Service
+      const db = (yield* Database.Service).db
+      const agents = yield* AgentV2.Service
+      yield* agents.transform((editor) => {
+        editor.update(AgentV2.ID.make("build"), (agent) => {
+          agent.mode = "primary"
+        })
+        // The read-only subagent defaults to the background, so the task tool
+        // returns immediately and the delegation watcher owns the silence.
+        editor.update(AgentV2.ID.make("reader"), (agent) => {
+          agent.mode = "subagent"
+          agent.permissions = [
+            { action: "*", resource: "*", effect: "deny" },
+            { action: "read", resource: "*", effect: "allow" },
+          ]
+        })
+      })
+      const childGate = yield* Deferred.make<void>()
+      const childStarted = yield* Deferred.make<void>()
+      let parentTurns = 0
+      const textTurn = (text: string) =>
+        Stream.fromIterable([
+          LLMEvent.stepStart({ index: 0 }),
+          LLMEvent.textStart({ id: "text" }),
+          LLMEvent.textDelta({ id: "text", text }),
+          LLMEvent.textEnd({ id: "text" }),
+          LLMEvent.stepFinish({ index: 0, reason: "stop" }),
+          LLMEvent.finish({ reason: "stop" }),
+        ])
+      responseFor = (request) => {
+        if (JSON.stringify(request.messages.filter((m) => m.role === "user")).includes("SILENT CHILD PROMPT"))
+          return Stream.concat(
+            // One event, then silence: an empty stream would trip the child's
+            // own first-byte guard before the delegation silence could.
+            Stream.make(LLMEvent.stepStart({ index: 0 })),
+            Stream.fromEffect(
+              Deferred.succeed(childStarted, undefined).pipe(Effect.andThen(Deferred.await(childGate))),
+            ).pipe(Stream.drain),
+          )
+        parentTurns += 1
+        if (parentTurns === 1)
+          return Stream.fromIterable([
+            LLMEvent.stepStart({ index: 0 }),
+            LLMEvent.toolCall({
+              id: "silent-call",
+              name: "task",
+              input: { description: "slow child", prompt: "SILENT CHILD PROMPT", subagent_type: "reader" },
+            }),
+            LLMEvent.stepFinish({ index: 0, reason: "tool-calls" }),
+            LLMEvent.finish({ reason: "tool-calls" }),
+          ])
+        return textTurn("Parent continued independently")
+      }
+      yield* session.prompt({ sessionID, prompt: Prompt.make({ text: "Delegate silently" }), resume: false })
+      yield* session.resume(sessionID)
+      yield* Deferred.await(childStarted)
+      const tasks = yield* SessionDelegationStore.list(db, sessionID)
+      expect(tasks).toHaveLength(1)
+
+      // Halfway to the silence limit the parent holds one progress note.
+      yield* TestClock.adjust("8 minutes")
+      let noted = (yield* SessionDelegationStore.progressCount(db, sessionID, tasks[0].id)) > 0
+      for (let attempt = 0; attempt < 100 && !noted; attempt++) {
+        yield* Effect.yieldNow
+        noted = (yield* SessionDelegationStore.progressCount(db, sessionID, tasks[0].id)) > 0
+      }
+      expect(noted).toBe(true)
+
+      yield* TestClock.adjust("8 minutes")
+      let failed = (yield* SessionDelegationStore.get(db, sessionID, tasks[0].id))?.status === "failed"
+      for (let attempt = 0; attempt < 100 && !failed; attempt++) {
+        yield* Effect.yieldNow
+        failed = (yield* SessionDelegationStore.get(db, sessionID, tasks[0].id))?.status === "failed"
+      }
+      expect(failed).toBe(true)
+      expect((yield* SessionDelegationStore.get(db, sessionID, tasks[0].id))?.result).toContain("silence limit")
+      yield* Deferred.succeed(childGate, undefined)
+      responseFor = undefined
+    }),
+  )
+
   it.effect("runs a workflow script that awaits two subagents in order", () =>
     Effect.gen(function* () {
       yield* setup
