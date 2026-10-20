@@ -11,6 +11,16 @@ at `docs/releases/vX.Y.Z.md` and `docs/releases/vX.Y.Z.zh.md`; both are required
 
 ## [Unreleased]
 
+## [0.2.19] - 2026-10-20
+
+### Added
+- **engine**: apply product authority to native sessions (#1159) (`84f3ce4e52`)
+- **core**: report subagent progress during silence and carry it in failure reports (#1165) (`5b8490c121`)
+
+### Fixed
+- **core**: name the context counts when a provider rejects an oversized request (#1164) (`098f6cdd9d`)
+- **miao**: treat plain exit and quit as exit commands in the run TUI (#1160) (`6131fd2fca`)
+
 ## [0.2.18] - 2026-10-20
 
 ### Added
