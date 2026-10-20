@@ -115,6 +115,25 @@ describe("run runtime queue", () => {
     expect(calls).toBe(0)
   })
 
+  test("treats plain exit and quit as close commands", async () => {
+    for (const text of ["exit", "quit", "  EXIT "]) {
+      const ui = footer()
+      let calls = 0
+
+      const task = runPromptQueue({
+        footer: ui.api,
+        run: async () => {
+          calls += 1
+        },
+      })
+
+      ui.submit(text)
+      await task
+
+      expect(calls).toBe(0)
+    }
+  })
+
   test("treats /clear as a local session command", async () => {
     const ui = footer()
     const seen: string[] = []
