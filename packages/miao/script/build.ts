@@ -387,16 +387,15 @@ export { binaries }
 // codesign's `--timestamp` call to Apple's timestamp authority occasionally
 // stalls forever on hosted macOS runners. Each attempt is bounded and retried,
 // and `--force` makes a retry replace whatever partial signature was written.
-const CODESIGN_TIMEOUT_MS = 60_000
-const CODESIGN_ATTEMPTS = 5
-
 async function codesign(args: string[]) {
+  const timeoutMs = 60_000
+  const attempts = 5
   let lastError = "timed out"
-  for (let attempt = 1; attempt <= CODESIGN_ATTEMPTS; attempt++) {
-    console.log(`codesign ${args.at(-1)} (attempt ${attempt}/${CODESIGN_ATTEMPTS})`)
+  for (let attempt = 1; attempt <= attempts; attempt++) {
+    console.log(`codesign ${args.at(-1)} (attempt ${attempt}/${attempts})`)
     const proc = Bun.spawn(["codesign", ...args], { stdout: "inherit", stderr: "pipe" })
     const stderr = new Response(proc.stderr).text()
-    const timer = setTimeout(() => proc.kill(), CODESIGN_TIMEOUT_MS)
+    const timer = setTimeout(() => proc.kill(), timeoutMs)
     const exitCode = await proc.exited
     clearTimeout(timer)
     if (exitCode === 0) {
@@ -404,9 +403,9 @@ async function codesign(args: string[]) {
       return
     }
     lastError = (await stderr).trim() || `exit ${exitCode}`
-    console.warn(`codesign attempt ${attempt}/${CODESIGN_ATTEMPTS} failed: ${lastError}`)
+    console.warn(`codesign attempt ${attempt}/${attempts} failed: ${lastError}`)
   }
-  throw new Error(`codesign failed after ${CODESIGN_ATTEMPTS} attempts: ${lastError}`)
+  throw new Error(`codesign failed after ${attempts} attempts: ${lastError}`)
 }
 
 async function developerIdIdentity() {
