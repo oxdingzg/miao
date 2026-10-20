@@ -12,6 +12,22 @@ at `docs/releases/vX.Y.Z.md` and `docs/releases/vX.Y.Z.zh.md`; both are required
 ## [Unreleased]
 
 ## [0.2.17] - 2026-10-19
+- **core**: add reverse session migration authority and delta import (#1145, #1146, #1150)
+- **engine**: export retained imports and native-era deltas for reverse migration (#1144, #1148)
+- **core**: persist semantic session transfer bundles with target validation (#1111, #1117)
+- **engine**: fence migration writers through cutover and restart (#1112)
+- **engine**: persist inactive semantic session imports (#1113)
+- **engine**: read transferred canonical session history (#1114)
+- **engine**: prepare semantic transfer provider history (#1115)
+- **engine**: validate and stage prepared transfers through host (#1116)
+- **engine**: activate prepared transfers against the product authority (#1123)
+- **core**: preserve context epoch provenance in transfer bundles (#1119)
+- **core**: export portable immutable snapshot files (#1120, #1121)
+- **core**: atomically switch prepared session placement (#1118)
+- **core**: coordinate durable session engine migration (#1135)
+- **miao**: add session migration commands (#1143, #1151)
+- **core**: route gateway-only providers through compatible chat (#1141)
+- **engine**: join timer heartbeat during runtime shutdown (#1112)
 
 ### Added
 - **engine**: add explicit session migration authority (#1106) (`d855c5b2e0`)
