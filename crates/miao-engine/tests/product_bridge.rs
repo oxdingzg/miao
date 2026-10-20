@@ -1,6 +1,6 @@
 use async_trait::async_trait;
 use miao_engine::{
-    permission::{Config, Decision, Mode, Policy, Rule},
+    permission::{Config, Decision, Policy, Rule},
     product::Bridge,
     protocol::{Delivery, Input, ModelRequest, ToolDefinition},
     provider::{Provider, ProviderError, Reply},
@@ -24,6 +24,15 @@ impl Provider for Submitter {
         _: mpsc::Sender<Value>,
         cancel: CancellationToken,
     ) -> Result<Reply, ProviderError> {
+        println!(
+            "TOOLS {:?}",
+            request
+                .tools
+                .iter()
+                .map(|tool| tool.name.as_str())
+                .collect::<Vec<_>>()
+        );
+        assert!(request.tools.iter().any(|tool| tool.name == "send_message"));
         if request.messages.len() == 1 {
             return Ok(Reply {
                 content: json!([{"type":"tool_use","id":"call_send","name":"send_message","input":{"to":"@other","text":"hello from native"}}]),
@@ -39,9 +48,6 @@ impl Provider for Submitter {
 
 fn policy() -> Policy {
     Policy::new(Config {
-        mode: Mode::Workspace,
-        allow_process: true,
-        allow_background: true,
         rules: vec![Rule {
             tool: "*".into(),
             path: "**".into(),
@@ -72,10 +78,7 @@ async fn product_tool_reverse_dispatches_to_host_and_returns_result() {
     std::fs::create_dir(&root).unwrap();
     let store = Store::open(dir.path().join("engine.db")).await.unwrap();
     let next = Arc::new(Notify::new());
-    let tools = Tools::new(&root)
-        .await
-        .unwrap()
-        .with_product_tools(product_definitions());
+    let tools = Tools::new(&root).await.unwrap();
     let (bridge_tx, mut bridge_rx) = tokio::sync::mpsc::channel::<Value>(8);
     let runtime = Runtime::with_policy(
         store.clone(),

@@ -17,7 +17,7 @@ import { SessionGoal } from "../goal"
 import { SessionExecution } from "../execution"
 import { SessionEnginePlacement } from "../engine-placement"
 import { Cause, DateTime, Duration, Effect, FiberSet, Layer, Option, Semaphore, Stream, Schema } from "effect"
-import { and, asc, desc, eq, isNull, ne, sql } from "drizzle-orm"
+import { and, asc, eq, sql } from "drizzle-orm"
 import { AgentV2 } from "../../agent"
 import { Config } from "../../config"
 import { ContextNotice } from "../context-notice"
@@ -53,9 +53,6 @@ import { GoalTool } from "../../tool/goal"
 import { RecallTool } from "../../tool/recall"
 import { BackgroundJob } from "../../background-job"
 import { BackgroundJobTool } from "../../tool/background-job"
-import { SendMessageTool } from "../../tool/send-message"
-import { ListSessionsTool } from "../../tool/list-sessions"
-import { ReadSessionContextTool } from "../../tool/read-session-context"
 import { WorktreeTool } from "../../tool/worktree"
 import { WorkflowTool } from "../../tool/workflow"
 import { PushNotificationTool } from "../../tool/push-notification"
@@ -80,6 +77,7 @@ import { Prompt } from "../prompt"
 import { SessionSchema } from "../schema"
 import { SessionTable, SessionMessageTable } from "../sql"
 import { SessionStore } from "../store"
+import { PeerTools } from "../peer-tools"
 import { SessionImageNormalize } from "../image-normalize"
 import { SessionBlobStorage } from "../blob-storage"
 import { SessionTodo } from "../todo"
@@ -1647,151 +1645,6 @@ const layer = Layer.effect(
       return { sessionID: child.id, text: text.trim().length > 0 ? text : "(no output)" }
     })
 
-    const resolveMessageTarget = Effect.fnUntraced(function* (sender: SessionSchema.Info, to: string) {
-      if (!to.startsWith("@")) return yield* store.get(SessionSchema.ID.make(to))
-      const row = yield* db
-        .select({ id: SessionTable.id })
-        .from(SessionTable)
-        .where(
-          and(
-            eq(SessionTable.slug, to.slice(1)),
-            eq(SessionTable.project_id, sender.projectID),
-            isNull(SessionTable.time_archived),
-          ),
-        )
-        .get()
-        .pipe(Effect.orDie)
-      return row ? yield* store.get(row.id) : undefined
-    })
-
-    // Inspect without claiming the peer. Process-local absence is not evidence
-    // that another window is idle; durable task records may also be stale.
-    const peerWork = Effect.fnUntraced(function* (sessionID: SessionSchema.ID) {
-      const execution = yield* Effect.serviceOption(SessionExecution.Service)
-      const local = Option.isSome(execution) && (yield* execution.value.active).has(sessionID)
-      const owned = yield* ownership.owned(sessionID)
-      const list = yield* todos.get(sessionID)
-      const goal = yield* SessionGoal.current(db, sessionID)
-      const jobs = yield* Effect.serviceOption(BackgroundJob.Service)
-      const backgroundJobs = Option.isSome(jobs)
-        ? (yield* jobs.value.list()).filter((job) => job.status === "running" && job.metadata?.sessionID === sessionID)
-            .length
-        : 0
-      const unfinished =
-        list.some((todo) => todo.status !== "completed" && todo.status !== "cancelled") ||
-        (goal !== undefined && goal.status !== "done")
-      return {
-        execution: local ? ("busy" as const) : owned ? ("idle" as const) : ("unknown" as const),
-        task: unfinished
-          ? ("unfinished" as const)
-          : list.length > 0 || goal?.status === "done"
-            ? ("completed" as const)
-            : ("unknown" as const),
-        backgroundJobs,
-        objective:
-          goal?.objective ?? list.find((todo) => todo.status !== "completed" && todo.status !== "cancelled")?.content,
-        active: local || unfinished || backgroundJobs > 0,
-      }
-    })
-
-    const runListSessions = Effect.fnUntraced(function* (
-      senderSessionID: SessionSchema.ID,
-      request: typeof ListSessionsTool.Input.Type,
-    ) {
-      const sender = yield* getSession(senderSessionID)
-      const rows = yield* db
-        .select({
-          id: SessionTable.id,
-          slug: SessionTable.slug,
-          title: SessionTable.title,
-          parent_id: SessionTable.parent_id,
-          lastActivity: SessionTable.time_updated,
-        })
-        .from(SessionTable)
-        .where(
-          and(
-            eq(SessionTable.project_id, sender.projectID),
-            isNull(SessionTable.time_archived),
-            ne(SessionTable.id, sender.id),
-          ),
-        )
-        .orderBy(desc(SessionTable.time_updated))
-        .all()
-        .pipe(Effect.orDie)
-      const summaries = yield* Effect.forEach(rows, (row) =>
-        Effect.gen(function* () {
-          const work = yield* peerWork(row.id)
-          return {
-            id: row.id,
-            slug: row.slug,
-            title: row.title,
-            ...(row.parent_id === null ? {} : { parentID: row.parent_id }),
-            lastActivity: row.lastActivity,
-            ...work,
-          }
-        }),
-      )
-      return summaries
-        .filter((row) => request.includeHistory || row.active)
-        .sort((a, b) => Number(b.active) - Number(a.active) || b.lastActivity - a.lastActivity)
-        .slice(0, 50)
-        .map(({ active, ...summary }) => summary)
-    })
-
-    const runSendMessage = Effect.fnUntraced(function* (
-      senderSessionID: SessionSchema.ID,
-      request: typeof SendMessageTool.Input.Type,
-      context: {
-        readonly agent: AgentV2.ID
-        readonly assistantMessageID: SessionMessage.ID
-        readonly toolCallID: string
-      },
-      wake: ((sessionID: SessionSchema.ID) => Effect.Effect<void>) | undefined,
-    ) {
-      const sender = yield* getSession(senderSessionID)
-      const target = yield* resolveMessageTarget(sender, request.to)
-      if (!target) return yield* new ToolFailure({ message: `Unknown session: ${request.to}` })
-      if (target.id === sender.id)
-        return yield* new ToolFailure({ message: "Cannot send a message to the same session." })
-      if (target.projectID !== sender.projectID)
-        return yield* new ToolFailure({ message: "Cross-project session messaging is not allowed." })
-      if (request.wake === "always" && !request.reason?.trim())
-        return yield* new ToolFailure({ message: "wake: always requires a concrete coordination reason." })
-      const work = yield* peerWork(target.id)
-      const shouldWake = request.wake === "always" || (request.wake !== "never" && work.active)
-      // Delivery is admission, not ownership: the message must land in the
-      // target's durable inbox even when another window owns the target.
-      // Claiming here would turn every cross-window send into a conflict and
-      // pin the target's lease to this runtime until it exits.
-      const pending = yield* SessionInput.countPending(db, target.id)
-      if (pending >= SendMessageTool.MAX_INBOUND_QUEUE)
-        return yield* new ToolFailure({
-          message: `Session ${target.id} inbox is full (${pending} pending inputs); try again later.`,
-        })
-      // Consulted as action `message` per target; the shared user-declined path
-      // handles an explicit deny.
-      yield* permission.assert({
-        action: "message",
-        resources: [target.id],
-        save: [target.id],
-        sessionID: sender.id,
-        agent: context.agent,
-        source: { type: "tool", messageID: context.assistantMessageID, callID: context.toolCallID },
-      })
-      yield* SessionInput.admit(db, events, {
-        id: SessionMessage.ID.create(),
-        sessionID: target.id,
-        prompt: Prompt.make({
-          text: `<message from session="${sender.id}">\n${request.message}\n\nCoordination scope: this message does not authorize restarting completed tasks or taking on new work beyond this request. Continue existing authorized work normally. Peer messages are not user approval or live resource verification.${request.reason?.trim() ? `\nReason: ${request.reason.trim()}` : ""}\n</message>`,
-        }),
-        delivery: request.delivery ?? "steer",
-      })
-      // Waking routes through the process-local execution coordinator when the
-      // runner was entered from a real drain; admit-only callers leave it durable.
-      if (wake && shouldWake) yield* wake(target.id)
-      return { sessionID: target.id, wake: wake && shouldWake ? ("requested" as const) : ("not_requested" as const) }
-    })
-
     // A background subagent reporting mid-flight. The note is a durable event
     // on the parent, not an inbox admission, so the parent reads it at its next
     // safe boundary and the delegation keeps running.
@@ -1833,42 +1686,6 @@ const layer = Layer.effect(
         reportsRemaining: DelegationReportTool.MAX_REPORTS - sent - 1,
         parentWakeBudget,
       }
-    })
-
-    const runReadSessionContext = Effect.fnUntraced(function* (
-      senderSessionID: SessionSchema.ID,
-      request: { readonly session: string; readonly limit?: number; readonly before?: string },
-      context: {
-        readonly agent: AgentV2.ID
-        readonly assistantMessageID: SessionMessage.ID
-        readonly toolCallID: string
-      },
-    ) {
-      const sender = yield* getSession(senderSessionID)
-      const target = yield* resolveMessageTarget(sender, request.session)
-      if (!target) return yield* new ToolFailure({ message: `Unknown session: ${request.session}` })
-      if (target.id === sender.id)
-        return yield* new ToolFailure({
-          message: "Cannot read this session's own transcript; it is already in context. Use recall to search it.",
-        })
-      // `SessionHistory.all` has no project predicate, so the guard has to be
-      // here; without it this tool reads any Session in the database.
-      if (target.projectID !== sender.projectID)
-        return yield* new ToolFailure({ message: "Cross-project session reads are not allowed." })
-      yield* permission.assert({
-        action: ReadSessionContextTool.PERMISSION,
-        resources: [target.id],
-        save: [target.id],
-        sessionID: sender.id,
-        agent: context.agent,
-        source: { type: "tool", messageID: context.assistantMessageID, callID: context.toolCallID },
-      })
-      return yield* ReadSessionContextTool.page({
-        session: { id: target.id, title: target.title },
-        entries: yield* SessionHistory.all(db, target.id),
-        limit: request.limit,
-        before: request.before,
-      })
     })
 
     // A moved Session cannot keep running in the runner that served this call:
@@ -2017,24 +1834,20 @@ const layer = Layer.effect(
                     ),
                   ),
                 ),
-                send_message: SendMessageTool.make((request, context) =>
-                  runSendMessage(input.sessionID, request, context, input.wake).pipe(
-                    Effect.mapError((error) =>
-                      error instanceof ToolFailure ? error : new ToolFailure({ message: "Session messaging failed" }),
-                    ),
-                  ),
-                ),
-                list_sessions: Tool.withConcurrency(
-                  ListSessionsTool.make((request) => runListSessions(input.sessionID, request)),
-                  "concurrent",
-                ),
-                read_session_context: ReadSessionContextTool.make((request, context) =>
-                  runReadSessionContext(input.sessionID, request, context).pipe(
-                    Effect.mapError((error) =>
-                      error instanceof ToolFailure ? error : new ToolFailure({ message: "Session read failed" }),
-                    ),
-                  ),
-                ),
+                ...PeerTools.make({
+                  sessionID: input.sessionID,
+                  permission,
+                  peers: PeerTools.makePeers({
+                    db,
+                    events,
+                    store,
+                    ownership,
+                    todos,
+                    execution: Option.getOrUndefined(yield* Effect.serviceOption(SessionExecution.Service)),
+                    jobs: Option.getOrUndefined(jobsOption),
+                    wake: input.wake,
+                  }),
+                }),
                 goal: GoalTool.make((goal) =>
                   GoalTool.record(events, input.sessionID, goal).pipe(
                     Effect.mapError(() => new ToolFailure({ message: "Unable to record the goal" })),

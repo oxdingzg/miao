@@ -89,7 +89,7 @@ export interface EngineOptions {
    * Execute a product tool the engine planned. The reply becomes the tool
    * result, so a rejection must be thrown, never swallowed.
    */
-  onProductTool?: (call: { sessionID: string; name: string; input: unknown }) => Promise<unknown>
+  onProductTool?: (call: { sessionID: string; name: string; input: unknown; callID: string }) => Promise<unknown>
   /**
    * Explicit prefix-cache policy for the first model turn's stable prefix.
    * Absent leaves each provider's own caching behavior untouched.
@@ -448,6 +448,7 @@ export class EngineClient {
         sessionID: params.session_id ?? "",
         name: params.name,
         input: params.input,
+        callID: String(bridgeID),
       }).then(
         (result) => reply({ result }),
         (error) => reply({ error: error instanceof Error ? error.message : String(error) }),

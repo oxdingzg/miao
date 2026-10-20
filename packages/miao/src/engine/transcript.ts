@@ -40,6 +40,20 @@ const decodeMessage = Schema.decodeUnknownSync(Schema.fromJsonString(SessionMess
 export async function readTranscript(
   input: Omit<Parameters<typeof replayJournal>[0], "after" | "limit"> & { selected: boolean },
 ) {
+  return (await readTranscriptWithSeq(input)).messages
+}
+
+/** The same transcript paired with each message's durable sequence. */
+export async function readTranscriptEntries(
+  input: Omit<Parameters<typeof replayJournal>[0], "after" | "limit"> & { selected: boolean },
+) {
+  const { messages, seqs } = await readTranscriptWithSeq(input)
+  return messages.map((message, index) => ({ seq: seqs.get(message.id) ?? index + 1, message }))
+}
+
+async function readTranscriptWithSeq(
+  input: Omit<Parameters<typeof replayJournal>[0], "after" | "limit"> & { selected: boolean },
+) {
   const raw = await input.request("snapshot", { session_id: input.sessionID })
   const snapshot = decodeSnapshot(raw)
   if (snapshot.session_id !== input.sessionID) throw new Error("Native transcript Session mismatch")
@@ -56,19 +70,29 @@ export async function readTranscript(
       .map((row) => row.seq),
   )
   const ids = new Set<string>()
+  const seqs = new Map<string, number>()
   for (const row of snapshot.messages) {
-    if (row.role === "assistant" && active.has(row.seq))
-      ids.add(messageID(input.sessionID, row.identity?.anchor_seq ?? row.seq))
+    if (row.role === "assistant" && active.has(row.seq)) {
+      const id = messageID(input.sessionID, row.identity?.anchor_seq ?? row.seq)
+      ids.add(id)
+      seqs.set(id, row.seq)
+    }
   }
   const shells = new Map<string, { id: SessionMessage.ID; runID: unknown }>()
   const reducer = SessionTranscript.create()
   let messages: SessionTranscript.Reduction["messages"] = []
   for (const event of page.events) {
-    if (event.type === "session.next.shell.started")
-      shells.set(event.data.callID, { id: event.data.messageID, runID: event.data.metadata?.runID })
+    if (event.type === "session.next.shell.started") {
+      const id = event.data.messageID
+      shells.set(event.data.callID, { id, runID: event.data.metadata?.runID })
+      seqs.set(id, sequence(event))
+    }
     if (event.type === "session.next.shell.ended") {
       const shell = shells.get(event.data.callID)
-      if (shell && active.has(sequence(event))) ids.add(shell.id)
+      if (shell && active.has(sequence(event))) {
+        ids.add(shell.id)
+        if (!seqs.has(shell.id)) seqs.set(shell.id, sequence(event))
+      }
       shells.delete(event.data.callID)
     }
     if (
@@ -77,19 +101,27 @@ export async function readTranscript(
     )
       ids.add(event.data.messageID)
     const reduced = project(reducer, messages, event)
-    if (reduced) messages = reduced.messages
+    if (reduced) {
+      messages = reduced.messages
+      for (const id of reduced.touched) if (!seqs.has(id)) seqs.set(id, sequence(event))
+    }
   }
   for (const shell of shells.values())
-    if (typeof shell.runID === "string" && shell.runID === snapshot.active_run) ids.add(shell.id)
+    if (typeof shell.runID === "string" && shell.runID === snapshot.active_run) {
+      ids.add(shell.id)
+      if (!seqs.has(shell.id)) seqs.set(shell.id, snapshot.cursor)
+    }
   const result = messages
     .filter((message) => ids.has(message.id))
     .map((message) => decodeMessage(JSON.stringify(message)))
   if (input.selected && snapshot.selection) {
     // The engine does not record an automatic/manual reason on its legacy
     // compaction event. Render an honest summary, not a fabricated reason.
+    const id = messageID(input.sessionID, snapshot.selection.seq)
+    seqs.set(id, snapshot.selection.seq)
     result.unshift(
       SessionMessage.System.make({
-        id: messageID(input.sessionID, snapshot.selection.seq),
+        id,
         type: "system",
         time: {
           created:
@@ -100,12 +132,18 @@ export async function readTranscript(
       }),
     )
   }
-  if (!snapshot.transfer_import) return result
+  if (!snapshot.transfer_import) return { messages: result, seqs }
   const imported = await readTransferred(input, snapshot.transfer_import, snapshot.cursor)
   const identities = new Set(imported.map((message) => message.id))
   if (result.some((message) => identities.has(message.id)))
     throw new Error("Transferred and native message IDs collide")
-  return input.selected && snapshot.selection ? [result[0], ...imported, ...result.slice(1)] : [...imported, ...result]
+  // Transferred bundles do not carry the native sequence, so keep their page
+  // order as a stable stand-in for display and cursor arithmetic.
+  for (const [index, message] of imported.entries()) if (!seqs.has(message.id)) seqs.set(message.id, index + 1)
+  return {
+    messages: input.selected && snapshot.selection ? [result[0], ...imported, ...result.slice(1)] : [...imported, ...result],
+    seqs,
+  }
 }
 
 const TransferPage = Schema.Struct({
