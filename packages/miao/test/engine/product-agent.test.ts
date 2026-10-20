@@ -49,6 +49,17 @@ test("agent switches replay with stable product event identities", () => {
   expect(outputs[0].data).toMatchObject({ sessionID: "ses_agent", agent: "reviewer", messageID: "msg_ses_agent_2" })
 })
 
+test("external directory classification stays with the product host", () => {
+  const agent = Schema.decodeUnknownSync(Agent.Info)({
+    ...Agent.Info.empty(Agent.ID.make("build")),
+    permissions: [
+      { action: "*", resource: "*", effect: "allow" },
+      { action: "external_directory", resource: "*", effect: "ask" },
+    ],
+  })
+  expect(agentManifest(agent, []).ordered_permissions.rules).toEqual([{ action: "*", resource: "*", effect: "allow" }])
+})
+
 test("unsupported auto-classifier mode is not silently downgraded", () => {
   const agent = Schema.decodeUnknownSync(Agent.Info)({
     ...Agent.Info.empty(Agent.ID.make("auto-agent")),

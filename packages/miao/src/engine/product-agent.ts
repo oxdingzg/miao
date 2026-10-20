@@ -66,13 +66,18 @@ export function agentManifest(agent: Agent.Info, catalog: readonly Route[]) {
       "unsupported_agent_permission_mode",
       "Native agents require explicit permission rules; automatic host classification is not available",
     )
+  // The engine already confines external reads to product-authorized reference
+  // roots. Forwarding the product's generic external_directory Ask rule would
+  // stop the engine from enumerating its own authorized skill directories, so
+  // that host-only classification stays in the product.
+  const permissions = agent.permissions.filter((rule) => rule.action !== "external_directory")
   return {
     name: agent.id,
     semantics: "product-agent-ordered-v1",
     ...(agent.system === undefined ? {} : { instructions: agent.system }),
     ordered_permissions: {
       semantics: "ordered-wildcard-v1",
-      rules: agent.permissions,
+      rules: permissions,
       bindings,
     },
     ...(agent.model === undefined ? {} : { model: modelRoute(agent.model, catalog) }),

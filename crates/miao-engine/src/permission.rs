@@ -438,4 +438,41 @@ mod agent_policy_tests {
         );
         assert_eq!(base.revision(), base.for_agent(None).unwrap().revision());
     }
+
+    #[test]
+    fn context_enumeration_resolves_ordered_input_bindings() {
+        let base = Policy::new(Config {
+            mode: Mode::Workspace,
+            ..Config::default()
+        })
+        .unwrap();
+        let agent: crate::session_agent::AgentManifest = serde_json::from_value(serde_json::json!({
+            "name": "build",
+            "ordered_permissions": {
+                "semantics": "ordered-wildcard-v1",
+                "rules": [{"action": "*", "resource": "*", "effect": "allow"}],
+                "bindings": {"glob": {"action": "glob", "resource": {"input": "pattern"}}}
+            }
+        }))
+        .unwrap();
+        let policy = base.for_agent(Some(&agent)).unwrap();
+        let input = serde_json::json!({"pattern": "**/SKILL.md"});
+        assert_eq!(
+            policy
+                .assess_input(
+                    "glob",
+                    "@reference/host-skills",
+                    Access::Read,
+                    Some(&input)
+                )
+                .0,
+            Decision::Allow
+        );
+        assert_eq!(
+            policy
+                .assess_input("glob", "@reference/host-skills", Access::Read, None)
+                .0,
+            Decision::Ask
+        );
+    }
 }

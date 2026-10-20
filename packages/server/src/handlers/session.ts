@@ -163,14 +163,16 @@ export const SessionHandler = HttpApiBuilder.group(Api, "server.session", (handl
           // fall back to its default Ask policy and ignore configured deny or
           // allow rules until the operator switched agents.
           if (native && nativeStorage) {
-            const locations = yield* LocationServiceMap.Service
-            const agent = yield* Effect.gen(function* () {
-              const plugins = yield* PluginV2.Service
-              yield* Deferred.await(plugins.booted)
-              const agents = yield* AgentV2.Service
-              return yield* agents.resolve(ctx.payload.agent)
-            }).pipe(Effect.provide(locations.get(location)))
-            if (agent) yield* native.selectAgent({ sessionID: id, storage: nativeStorage, location, agent })
+            const locations = Option.getOrUndefined(yield* Effect.serviceOption(LocationServiceMap.Service))
+            if (locations) {
+              const agent = yield* Effect.gen(function* () {
+                const plugins = yield* PluginV2.Service
+                yield* Deferred.await(plugins.booted)
+                const agents = yield* AgentV2.Service
+                return yield* agents.resolve(ctx.payload.agent)
+              }).pipe(Effect.provide(locations.get(location)))
+              if (agent) yield* native.selectAgent({ sessionID: id, storage: nativeStorage, location, agent })
+            }
           }
           const placement =
             binding?.engine === "rust" ? binding : nativeStorage ? { storage: nativeStorage, location } : undefined
