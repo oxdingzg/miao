@@ -11,6 +11,16 @@ at `docs/releases/vX.Y.Z.md` and `docs/releases/vX.Y.Z.zh.md`; both are required
 
 ## [Unreleased]
 
+## [0.2.18] - 2026-10-20
+
+### Added
+- **remote**: same-account iOS Session access without pairing codes, QR scanning, or first-device enrollment (#1124).
+- **tui**: `/remote-control` toggles only the current Session; closing one shared Session leaves others available (#1124).
+
+### Fixed
+- **ios**: discover shared Sessions across account computers, restore account connections after a cold launch, and retain navigation during transient relay identity failures (#1124).
+- **ios**: use explicit navigation-list Agent/model pickers and refresh shared Sessions while foregrounded (#1124).
+
 ## [0.2.17] - 2026-10-19
 - **core**: add reverse session migration authority and delta import (#1145, #1146, #1150)
 - **engine**: export retained imports and native-era deltas for reverse migration (#1144, #1148)
