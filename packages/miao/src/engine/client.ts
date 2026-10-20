@@ -393,12 +393,13 @@ export class EngineClient {
   async close() {
     if (this.closed) return
     this.closed = true
+    // Ending stdin asks the engine to exit, and a daemon with attached
+    // product-tool clients legitimately keeps serving afterwards — waiting
+    // for child exit here hung every interactive teardown. Detach instead:
+    // the engine exits on its own once its last client is gone.
     this.child.stdin.end()
-    try {
-      await this.child.exited
-    } finally {
-      this.cleanup()
-    }
+    this.child.exited.catch(() => {})
+    this.cleanup()
   }
 
   private fail(error: Error, terminal = false) {

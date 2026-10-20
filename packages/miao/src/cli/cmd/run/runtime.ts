@@ -722,6 +722,13 @@ async function runInteractiveRuntime(input: RunRuntimeInput, deps: RunRuntimeDep
       await state.stream?.then((item) => item.handle.close()).catch(() => {})
     }
   } finally {
+    // Teardown is expected to complete quickly; a leaked handle (an engine
+    // daemon still serving other clients, an update poller) must never hold
+    // the terminal hostage. The unref'd timer only fires when normal exit
+    // stalls, and an unref'd timer cannot keep the loop alive by itself.
+    const failSafe = setTimeout(() => process.exit(0), 5_000)
+    failSafe.unref?.()
+
     const title = await resolveExitTitle(ctx, input, state)
 
     await shell.close({
