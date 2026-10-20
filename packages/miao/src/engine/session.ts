@@ -7,6 +7,7 @@ import type { PromptInput } from "@miao/schema/prompt-input"
 import { SessionInput } from "@miao/schema/session-input"
 import { SessionMessage } from "@miao/schema/session-message"
 import { SessionID } from "@miao/schema/session-id"
+import type { ModelV2 } from "@miao/core/model"
 import { EngineError, type EngineEvent, type EngineProgress, type EngineTransport } from "./client"
 import { adoptSession, messageID } from "./identity"
 import { decodeAttachments, encodeAttachments, type NativeAttachment } from "./prompt-attachments"
@@ -42,6 +43,9 @@ export type EngineSessionEvent = {
 }
 export type EnginePublish = (event: EngineSessionEvent) => void
 
+/** Resolves the catalog rates for the model id an engine usage event names. */
+export type EnginePricing = (model: string) => ModelV2.Info["cost"] | undefined
+
 /**
  * The per-Session translation state: the status/tool/prompt bridges plus the
  * settled-event cursor. Live delivery and journal replay share it, so replaying
@@ -56,9 +60,11 @@ export class EngineTranslator {
   #anchors = new Map<string, StreamAnchor>()
   #usage = new Map<string, { runID: string; step: number; usage: BufferedUsage }>()
   #ttft = new Map<string, number>()
+  #pricing: EnginePricing | undefined
 
-  constructor(publish: EnginePublish) {
+  constructor(publish: EnginePublish, pricing?: EnginePricing) {
     this.#publish = publish
+    this.#pricing = pricing
   }
 
   dispatch(event: EngineEvent): void {
@@ -340,7 +346,8 @@ export class EngineTranslator {
     for (const call of translateTools(event)) publish({ type: "session.next.tool.called", data: call })
     const usage = this.#usage.get(event.session_id)
     const ttft = this.#ttft.get(event.session_id)
-    const ended = translateStepEnded(event, usage?.usage, ttft)
+    const costs = usage?.usage.model ? this.#pricing?.(usage.usage.model) : undefined
+    const ended = translateStepEnded(event, usage?.usage, ttft, costs)
     if (ended) {
       publish({ type: "session.next.step.ended", data: ended })
       this.#usage.delete(event.session_id)
@@ -409,9 +416,9 @@ export class EngineSession {
   #translator: EngineTranslator
   #subscriptions = new Map<string, { mode: "live" | "restored"; ready: Promise<unknown> }>()
 
-  constructor(client: EngineTransport, publish: EnginePublish) {
+  constructor(client: EngineTransport, publish: EnginePublish, pricing?: EnginePricing) {
     this.#client = client
-    this.#translator = new EngineTranslator(publish)
+    this.#translator = new EngineTranslator(publish, pricing)
     client.onEvent((event) => this.#translator.dispatch(event))
     client.onProgress((progress) => this.#translator.progress(progress))
   }
