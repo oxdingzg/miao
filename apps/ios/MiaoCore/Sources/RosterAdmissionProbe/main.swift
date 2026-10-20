@@ -11,7 +11,8 @@ import MiaoCore
     static func main() async throws {
         guard CommandLine.arguments.count == 2 else { throw HubAccountError.malformed }
         let fixture = try JSONDecoder().decode(Fixture.self, from: Data(contentsOf: URL(fileURLWithPath: CommandLine.arguments[1])))
-        let account = try HubAccount(origin: fixture.origin, keychainService: "miao.roster.probe." + UUID().uuidString, allowLoopbackHTTP: true)
+        let keychainService = "miao.roster.probe." + UUID().uuidString
+        let account = try HubAccount(origin: fixture.origin, keychainService: keychainService, allowLoopbackHTTP: true)
         let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         defer { try? FileManager.default.removeItem(at: directory) }
         do {
@@ -19,7 +20,37 @@ import MiaoCore
             try await account.signIn(email: fixture.email, password: fixture.password)
             stage("authenticated-profile")
             let accountID = try await account.authenticatedAccountID()
+            // Foreground directory refresh must not exhaust the Hub's auth rate
+            // limit by repeatedly looking up the same authenticated identity.
+            for _ in 0..<40 {
+                guard try await account.authenticatedAccountID() == accountID else { throw HubAccountError.malformed }
+            }
             let key = P256.Signing.PrivateKey()
+            stage("account-access-without-enrollment")
+            guard let directTarget = try await account.hosts().first(where: { $0.online }) else { throw HubAccountError.malformed }
+            let directRegistry = try HostRegistry(directory: directory.appendingPathComponent("signed-in"),
+                deviceKey: key.publicKey.x963Representation.base64EncodedString().replacingOccurrences(of: "+", with: "-").replacingOccurrences(of: "/", with: "_").replacingOccurrences(of: "=", with: ""), allowLoopbackHTTP: true)
+            let directID = UUID()
+            for _ in 0..<2 {
+                let direct = try await HubConnection.autoAdmit(account: account, discovered: directTarget, identity: key,
+                    accountAccess: true, existingID: directID,
+                    persist: { host, grant in try await directRegistry.admitSignedIn(host: host, grant: grant, accountID: accountID) },
+                    reconcile: { _ in })
+                let value = try await direct.connection.request(.sessionGet, sessionID: "session-one")
+                guard value["title"]?.string == "Native admitted session" else { throw HubAccountError.malformed }
+                await direct.connection.close()
+            }
+            let directHosts = try await directRegistry.hosts()
+            guard directHosts.count == 1, directHosts[0].id == directID else { throw HubAccountError.malformed }
+            stage("account-keychain-cold-restore")
+            let restoredAccount = try HubAccount(origin: fixture.origin, keychainService: keychainService, allowLoopbackHTTP: true)
+            guard try await restoredAccount.restore(), try await restoredAccount.authenticatedAccountID() == accountID else { throw HubAccountError.malformed }
+            let cold = try await HubConnection.autoAdmit(account: restoredAccount, discovered: directTarget, identity: key,
+                accountAccess: true, existingID: directID, persist: { _, _ in }, reconcile: { _ in })
+            let coldValue = try await cold.connection.request(.sessionGet, sessionID: "session-one")
+            guard coldValue["title"]?.string == "Native admitted session" else { throw HubAccountError.malformed }
+            await cold.connection.close()
+            await restoredAccount.close()
             let deviceKey = key.publicKey.x963Representation.base64EncodedString().replacingOccurrences(of: "+", with: "-").replacingOccurrences(of: "/", with: "_").replacingOccurrences(of: "=", with: "")
             let enrollment = AccountEnrollment(identity: key)
             let request = try await enrollment.begin(hubURL: fixture.origin.absoluteString, accountID: accountID, label: "Native probe", allowLoopbackHTTP: true)
@@ -57,6 +88,8 @@ import MiaoCore
             guard hosts.count == 1 else { throw HubAccountError.malformed }
             stage("logout")
             try await account.signOut()
+            do { _ = try await account.authenticatedAccountID(); throw HubAccountError.malformed }
+            catch HubAccountError.authenticationRequired {}
             do { _ = try await account.roster(); throw HubAccountError.malformed }
             catch HubAccountError.authenticationRequired {}
             await account.close()

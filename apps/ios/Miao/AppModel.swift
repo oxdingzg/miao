@@ -213,15 +213,21 @@ final class AppModel {
         loadTask = nil
     }
 
+    /// Last verified signed-in account identity. `authenticatedAccountID()`
+    /// performs a network round trip, so visibility must not depend on it
+    /// succeeding on every reload; a transient failure would otherwise hide
+    /// every account host while the UI still reports 已登录.
+    private var accountIdentityID: String?
+
     private func initialize() async {
         do {
+            let key = try await identity.loadOrCreate()
+            if registry == nil { registry = try HostRegistry(directory: directory, deviceKey: publicKey(key), allowLoopbackHTTP: AppTestConfiguration.allowLoopbackHTTP) }
+            if enrollmentStore == nil { enrollmentStore = try AccountEnrollmentStore(directory: directory, deviceKey: publicKey(key), allowLoopbackHTTP: AppTestConfiguration.allowLoopbackHTTP) }
             if !accountLoaded {
                 accountLoaded = true
                 await restoreAccount()
             }
-            let key = try await identity.loadOrCreate()
-            if registry == nil { registry = try HostRegistry(directory: directory, deviceKey: publicKey(key), allowLoopbackHTTP: AppTestConfiguration.allowLoopbackHTTP) }
-            if enrollmentStore == nil { enrollmentStore = try AccountEnrollmentStore(directory: directory, deviceKey: publicKey(key), allowLoopbackHTTP: AppTestConfiguration.allowLoopbackHTTP) }
             try await reload()
             if accountSignedIn { await refreshDirectory() }
             await restoreNotifications()
@@ -233,14 +239,23 @@ final class AppModel {
         reloadEpoch += 1
         let generation = reloadEpoch
         let snapshot = try await registry.snapshot()
+        let signedInAccount = accountSignedIn ? accountIdentityID : nil
+        let visible = snapshot.hosts.filter { $0.accountID == signedInAccount && $0.accountID != nil }
+            + snapshot.hosts.filter { $0.accountID == nil }
         guard generation == reloadEpoch else { return }
         for (id, client) in clients {
-            if !snapshot.hosts.contains(where: { $0 == client.record }) { await client.close(); clients[id] = nil }
+            if !visible.contains(where: {
+                $0 == client.record || ($0.accountID != nil && $0.accountID == client.record.accountID && $0.host == client.record.host)
+            }) { await client.close(); clients[id] = nil }
         }
-        hosts = snapshot.hosts
+        hosts = visible
         attempts = snapshot.attempts
         for record in hosts where clients[record.id] == nil {
-            clients[record.id] = try HostClient(record: record, identity: identity, directory: directory.appendingPathComponent("checkpoints"), account: accountFor(record.host.hubURL))
+            let client = try HostClient(record: record, identity: identity, directory: directory.appendingPathComponent("checkpoints"), account: accountFor(record.host.hubURL))
+            clients[record.id] = client
+            if record.accountID != nil {
+                for (id, phase) in scenes { await client.scene(id, phase: phase) }
+            }
         }
     }
 
@@ -254,7 +269,7 @@ final class AppModel {
         do {
             let directory = try await account.hosts()
             guard epoch == accountEpoch, accountSignedIn else { throw HubAccountError.superseded }
-            try await admitAccountHosts(directory, account: account, epoch: epoch, allowAuto: true)
+            try await admitSignedInHosts(directory, account: account, epoch: epoch)
             guard epoch == accountEpoch, accountSignedIn else { return }
             await refreshDirectory()
         } catch { if epoch == accountEpoch { accountError = accountMessage(error) } }
@@ -327,6 +342,7 @@ final class AppModel {
             let resolved = raw.isEmpty ? defaultAccountURL : raw
             guard let url = URL(string: resolved) else { throw HubAccountError.invalidEndpoint }
             let next = try HubAccount(origin: url, keychainService: accountService, allowLoopbackHTTP: AppTestConfiguration.allowLoopbackHTTP)
+            accountIdentityID = nil
             accountSignedIn = false; discoveredHosts = []
             await clearEnrollment()
             let pendingPair = pairTask
@@ -368,6 +384,7 @@ final class AppModel {
             let raw = (accountURL.isEmpty ? defaultAccountURL : accountURL).trimmingCharacters(in: .whitespacesAndNewlines)
             guard let url = URL(string: raw) else { throw HubAccountError.invalidEndpoint }
             let next = try HubAccount(origin: url, keychainService: accountService, allowLoopbackHTTP: AppTestConfiguration.allowLoopbackHTTP)
+            accountIdentityID = nil
             accountSignedIn = false; discoveredHosts = []
             await clearEnrollment()
             let pendingPair = pairTask
@@ -420,6 +437,7 @@ final class AppModel {
         accountBusy = true; accountEpoch += 1
         notificationOpenTask?.cancel()
         notificationHostID = nil; notificationDestination = nil
+        accountIdentityID = nil
         accountSignedIn = false; discoveredHosts = []
         await clearEnrollment()
         notificationEpoch += 1; notificationsRegistered = false
@@ -438,8 +456,13 @@ final class AppModel {
         accountBusy = false
     }
 
+    private var directoryRefreshing = false
     func refreshDirectory() async {
+        guard !directoryRefreshing else { return }
         guard accountSignedIn, let account else { return }
+        directoryRefreshing = true
+        defer { directoryRefreshing = false }
+        accountError = nil
         let generation = accountEpoch
         do {
             let hosts = try await account.hosts()
@@ -449,21 +472,45 @@ final class AppModel {
                 try? await registry.rename(hosts, hubURL: origin)
                 try await reload()
             }
-            if try await enrollmentStore?.account(hubURL: (await account.origin).absoluteString,
-                accountID: try await account.authenticatedAccountID()) != nil {
-                try await admitAccountHosts(hosts, account: account, epoch: generation)
-                guard generation == accountEpoch, accountSignedIn else { return }
-            }
-            discoveredHosts = hosts; accountError = nil
+            try await admitSignedInHosts(hosts, account: account, epoch: generation)
+            guard generation == accountEpoch, accountSignedIn else { return }
+            discoveredHosts = hosts
         } catch {
             guard generation == accountEpoch else { return }
             accountError = accountMessage(error)
             if error as? HubAccountError == .authenticationRequired {
+                accountIdentityID = nil
                 accountSignedIn = false; discoveredHosts = []
                 for client in clients.values { await client.close() }
                 connectionEpoch += 1
             }
         }
+    }
+
+    private func admitSignedInHosts(_ directory: [HubDirectoryHost], account: HubAccount, epoch: Int) async throws {
+        guard let registry else { return }
+        let accountID = try await account.authenticatedAccountID()
+        accountIdentityID = accountID
+        let origin = await account.origin
+        let key = try await identity.loadOrCreate()
+        try await registry.synchronizeAccount(hubURL: origin, accountID: accountID, directory: directory)
+        for host in directory where host.online && host.revokedAt == nil {
+            guard epoch == accountEpoch, accountSignedIn else { throw HubAccountError.superseded }
+            let existing = hosts.first { $0.host.hubURL == origin && $0.host.target.hostID == host.hostID && $0.host.target.runtimeID == host.runtimeID }
+            if let existing, existing.accountID == accountID, !existing.expired { continue }
+            // One unavailable computer must not hide the other account computers.
+            do {
+                let admitted = try await HubConnection.autoAdmit(account: account, discovered: host, identity: key,
+                    accountAccess: true, existingID: existing?.id,
+                    persist: { record, grant in try await registry.admitSignedIn(host: record, grant: grant, accountID: accountID) },
+                    reconcile: { _ in throw RemoteRPCError.disconnected })
+                await admitted.connection.close()
+            } catch {
+                guard epoch == accountEpoch, accountSignedIn else { throw HubAccountError.superseded }
+                accountError = accountMessage(error)
+            }
+        }
+        try await reload()
     }
 
     private func clearEnrollment() async {
@@ -621,6 +668,8 @@ final class AppModel {
         case HubAccountError.invalidCredentials, HubAccountError.rejected(401), HubAccountError.rejected(403): return "登录未成功，请核对邮箱、密码和中继地址"
         case HubAccountError.rejected(404): return "这个中继不支持此功能，请更新 App 或核对中继地址"
         case HubAccountError.storage: return "设备凭证暂时不可用，请解锁后重试"
+        case RemoteConnectionError.authorizationBlocked: return "账号远控接入被拒绝，请确认电脑与中继支持账号接入，且两端登录的是同一账号"
+        case RemoteConnectionError.protocolIncompatible: return "请更新电脑和 App 后重试账号远控"
         default: return "暂时无法连接中继，请检查网络后重试"
         }
     }
@@ -630,12 +679,18 @@ final class AppModel {
 
     func scene(_ id: UUID, phase: ScenePhase) {
         scenes[id] = phase
+        for client in clients.values where client.record.accountID != nil {
+            Task { await client.scene(id, phase: phase) }
+        }
         if phase == .active, !notificationsBusy { Task { await restoreNotifications() } }
         if scenes.values.allSatisfy({ $0 == .background }) { cancelPairing() }
     }
 
     func removeScene(_ id: UUID) {
         scenes.removeValue(forKey: id)
+        for client in clients.values where client.record.accountID != nil {
+            Task { await client.removeScene(id) }
+        }
         if scenes.values.allSatisfy({ $0 == .background }) { cancelPairing() }
     }
 
@@ -668,7 +723,7 @@ struct NotificationDestination: Identifiable {
 
 @MainActor @Observable
 final class HostClient {
-    let record: AuthorizedHost
+    var record: AuthorizedHost
     let identity: DeviceIdentity
     let scope: AuthorizationScope
     let store: CheckpointStore
@@ -725,6 +780,24 @@ final class HostClient {
     }
 
     private func connect() async throws -> HubConnection {
+        if let accountID = record.accountID, let account {
+            guard !closed, try await account.authenticatedAccountID() == accountID,
+                  let discovered = try await account.hosts().first(where: {
+                      $0.hostID == record.host.target.hostID && $0.runtimeID == record.host.target.runtimeID && $0.online && $0.revokedAt == nil
+                  }) else { throw RemoteConnectionError.authorizationBlocked }
+            let admitted = try await HubConnection.autoAdmit(account: account, discovered: discovered, identity: identity.loadOrCreate(),
+                accountAccess: true, existingID: record.id, persist: { _, _ in },
+                reconcile: { [weak self] connection in
+                    guard let self else { throw RemoteRPCError.disconnected }
+                    try await self.synchronize(connection)
+                })
+            guard !closed else { await admitted.connection.close(); throw RemoteRPCError.disconnected }
+            record = AuthorizedHost(host: admitted.host, grant: admitted.grant, accountID: accountID)
+            connection = admitted.connection
+            do { try await synchronize(admitted.connection) }
+            catch { await admitted.connection.close(); throw error }
+            return admitted.connection
+        }
         guard !record.expired, !closed, account != nil || AppTestConfiguration.allowLegacyTransport else {
             throw RemoteConnectionError.authorizationBlocked
         }
@@ -761,8 +834,12 @@ final class HostClient {
         self.projects = data
         print("MIAO-DBG sync projects=", data.count, "grantProjects=", record.grant.projectIDs,
             "grantSessions=", record.grant.sessionIDs.count, "expired=", record.expired)
-        if record.grant.sessionIDs.count > 0 { try await loadList(nil, connection: connection) }
-        for project in record.grant.projectIDs { try await loadList(project, connection: connection) }
+        if record.accountID != nil {
+            try await loadList(nil, connection: connection)
+        } else {
+            if record.grant.sessionIDs.count > 0 { try await loadList(nil, connection: connection) }
+            for project in record.grant.projectIDs { try await loadList(project, connection: connection) }
+        }
         print("MIAO-DBG lists=", lists.map { "\($0.key)=\($0.value.count)" }.sorted().joined(separator: ","))
     }
 
@@ -806,8 +883,12 @@ final class HostClient {
         guard ready, let connection else { return }
         do {
             if let more { try await loadList(more.isEmpty ? nil : more, connection: connection, more: true); return }
-            if record.grant.sessionIDs.count > 0 { try await loadList(nil, connection: connection) }
-            for project in record.grant.projectIDs { try await loadList(project, connection: connection) }
+            if record.accountID != nil {
+                try await loadList(nil, connection: connection)
+            } else {
+                if record.grant.sessionIDs.count > 0 { try await loadList(nil, connection: connection) }
+                for project in record.grant.projectIDs { try await loadList(project, connection: connection) }
+            }
         } catch { self.error = userMessage(error) }
     }
 

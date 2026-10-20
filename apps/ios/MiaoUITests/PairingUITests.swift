@@ -105,7 +105,7 @@ final class PairingUITests: XCTestCase {
               !path.hasPrefix("$(") else { throw XCTSkip("Live Runtime fixture is supplied by check-app.ts") }
         struct Account: Decodable { let origin: String; let email: String; let password: String }
         struct Enrollment: Decodable { let approveURL: URL; let approvalToken: String; let rootKey: String }
-        struct Fixture: Decodable { let runID: String; let invitation: String; let title: String; let account: Account?; let finishURL: String; let enrollment: Enrollment? }
+        struct Fixture: Decodable { let runID: String; let invitation: String; let title: String; let account: Account?; let finishURL: String; let enrollment: Enrollment?; let accountAccess: Bool? }
         let fixture = try JSONDecoder().decode(Fixture.self, from: Data(contentsOf: URL(fileURLWithPath: path)))
         stage("launch")
         let app = XCUIApplication()
@@ -116,7 +116,7 @@ final class PairingUITests: XCTestCase {
         app.launch()
         if let account = fixture.account {
             stage("account")
-            if fixture.enrollment != nil {
+            if fixture.enrollment != nil || fixture.accountAccess == true {
                 let toggles = app.buttons.matching(identifier: "sessionSidebar")
                 XCTAssertTrue(toggles.firstMatch.waitForExistence(timeout: 15))
                 XCTAssertEqual(toggles.count, 1, "The empty screen exposes the sidebar toggle")
@@ -133,7 +133,12 @@ final class PairingUITests: XCTestCase {
             // A successful sign-in closes the account sheet on its own, and the
             // invitation this run launched with pulls pairing up in its place —
             // nothing taps 关闭 to get out of the sign-in flow.
-            if let enrollment = fixture.enrollment {
+            if fixture.accountAccess == true {
+                XCTAssertTrue(fixture.invitation.isEmpty, "Same-account access must start without any pairing invitation")
+                XCTAssertNil(fixture.enrollment, "Same-account access must not bootstrap a roster signing device")
+                // Sign-in dismisses the account sheet. The directory and encrypted
+                // account handshake must discover the published Session on their own.
+            } else if let enrollment = fixture.enrollment {
                 stage("pairing")
                 openDrawer(app)
                 // Sign-in dismisses the account sheet on its own, so reopening it
@@ -222,7 +227,7 @@ final class PairingUITests: XCTestCase {
 
             }
         }
-        if fixture.enrollment == nil {
+        if fixture.enrollment == nil && fixture.accountAccess != true {
             XCTAssertTrue(app.buttons["开始配对"].waitForExistence(timeout: 15))
             XCTAssertTrue(app.buttons["开始配对"].isEnabled)
             stage("pairing")
@@ -283,8 +288,22 @@ final class PairingUITests: XCTestCase {
         let agentPicker = app.descendants(matching: .any).matching(identifier: "agentChoice").firstMatch
         XCTAssertTrue(agentPicker.waitForExistence(timeout: 15))
         agentPicker.tap()
-        app.buttons["plan"].tap()
-        app.buttons["保存 Agent"].tap()
+        let plan = app.descendants(matching: .any).matching(identifier: "plan").firstMatch
+        let hasPlan = plan.waitForExistence(timeout: 10)
+        let planButton = app.buttons["plan"].exists
+        let planText = app.staticTexts["plan"].exists
+        print("NativeAgentChoice plan=\(hasPlan) button=\(planButton) staticText=\(planText) picker=\(agentPicker.exists) hittable=\(agentPicker.isHittable)")
+        XCTAssertTrue(hasPlan, "The Agent picker must offer the real Runtime's plan agent")
+        expectation(for: NSPredicate { _, _ in plan.isHittable }, evaluatedWith: plan)
+        waitForExpectations(timeout: 10)
+        plan.tap()
+        expectation(for: NSPredicate(format: "value == %@", "plan"), evaluatedWith: agentPicker)
+        waitForExpectations(timeout: 10)
+        let saveAgent = app.buttons["保存 Agent"]
+        XCTAssertTrue(saveAgent.waitForExistence(timeout: 10))
+        expectation(for: NSPredicate { _, _ in saveAgent.isHittable && saveAgent.isEnabled }, evaluatedWith: saveAgent)
+        waitForExpectations(timeout: 10)
+        saveAgent.tap()
         XCTAssertTrue(app.navigationBars["Native phone rename"].waitForExistence(timeout: 15))
         menu.tap()
         app.buttons["Agent / 模型"].tap()
@@ -292,16 +311,18 @@ final class PairingUITests: XCTestCase {
         let modelPicker = app.descendants(matching: .any).matching(identifier: "modelChoice").firstMatch
         XCTAssertTrue(modelPicker.waitForExistence(timeout: 15))
         modelPicker.tap()
-        app.buttons["fixture / Remote selection fixture"].tap()
+        let selectedModel = app.descendants(matching: .any).matching(identifier: "fixture / Remote selection fixture").firstMatch
+        XCTAssertTrue(selectedModel.waitForExistence(timeout: 10))
+        selectedModel.tap()
         let variantPicker = app.descendants(matching: .any).matching(identifier: "variantChoice").firstMatch
         XCTAssertTrue(variantPicker.waitForExistence(timeout: 10))
         variantPicker.tap()
-        let reasoning = app.buttons["reasoning"]
+        let reasoning = app.descendants(matching: .any).matching(identifier: "reasoning").firstMatch
         XCTAssertTrue(reasoning.waitForExistence(timeout: 5))
         expectation(for: NSPredicate { _, _ in reasoning.isHittable }, evaluatedWith: reasoning)
         waitForExpectations(timeout: 5)
         reasoning.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).tap()
-        expectation(for: NSPredicate(format: "label CONTAINS %@", "reasoning"), evaluatedWith: variantPicker)
+        expectation(for: NSPredicate(format: "value == %@", "reasoning"), evaluatedWith: variantPicker)
         waitForExpectations(timeout: 5)
         // The expanded registration disclosure pushes the save action off-screen.
         let saveModel = app.buttons["保存模型"]
@@ -314,7 +335,14 @@ final class PairingUITests: XCTestCase {
         app.launchEnvironment.removeValue(forKey: "MIAO_UI_TEST_INVITATION")
         app.launch()
         openDrawer(app)
-        XCTAssertTrue(app.staticTexts["已连接"].waitForExistence(timeout: 30))
+        let restored = app.staticTexts["已连接"].waitForExistence(timeout: 30)
+        if !restored {
+            let states = ["正在连接…", "正在同步会话…", "授权需要重新核对", "请更新电脑和 App 的版本", "离线，回到前台后会重新连接", "正在断开连接…", "等待连接", "账号远控接入被拒绝，请确认电脑与中继支持账号接入，且两端登录的是同一账号", "请更新电脑和 App 后重试账号远控", "暂时无法连接中继，请检查网络后重试", "中继登录未恢复，请重新登录"]
+            let visibleStates = states.filter { app.staticTexts[$0].exists }.joined(separator: ",")
+            let toggle = app.buttons["sessionSidebar"].firstMatch
+            print("NativeAccountRestore status=\(toggle.value as? String ?? "unknown") states=\(visibleStates) login=\(app.buttons["登录中继"].exists) blocked=\(app.staticTexts["登录已失效，请重新登录中继"].exists)")
+        }
+        XCTAssertTrue(restored)
         app.buttons["Native phone rename"].tap()
         XCTAssertTrue(draft.waitForExistence(timeout: 10))
         XCTAssertEqual(draft.value as? String, "retained phone draft")

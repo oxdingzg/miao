@@ -206,6 +206,7 @@ extension HubConnection {
     /// Owner opt-in: same-account devices claim admission with the directory key pinned
     /// on first use; the computer signs the roster locally and returns an encrypted grant.
     public static func autoAdmit(account: HubAccount, discovered: HubDirectoryHost, identity: P256.Signing.PrivateKey,
+                                 accountAccess: Bool = false, existingID: UUID? = nil,
                                  persist: @escaping @Sendable (ApprovedHost, DeviceGrant) async throws -> Void,
                                  reconcile: @escaping Reconcile) async throws -> PairedConnection {
         let context = try await account.enrollmentContext()
@@ -226,7 +227,7 @@ extension HubConnection {
         do {
             return try await withTaskCancellationHandler {
                 let handshake = try ClientHandshake(identity: identity, target: target)
-                let claim = RosterClaim(version: 1, type: "rosterClaim", accountID: context.accountID, hello: handshake.hello, roster: nil)
+                let claim = RosterClaim(version: 1, type: accountAccess ? "accountClaim" : "rosterClaim", accountID: context.accountID, hello: handshake.hello, roster: nil)
                 try await socket.send(.string(try JSONEncoder().encode(claim).base64URL))
                 let message = try await socket.receive()
                 guard case .string(let value) = message, value.utf8.count <= 8192 else { throw RemoteRPCError.malformed }
@@ -243,7 +244,7 @@ extension HubConnection {
                     guard approval.version == 1, approval.type == "roster", approval.status == "approved" else { throw RemoteRPCError.malformed }
                     try approval.grant.validate(deviceKey: deviceKey)
                     try await account.requireGeneration(context.generation)
-                    let host = ApprovedHost(label: discovered.name, hubURL: origin, target: target,
+                    let host = ApprovedHost(id: existingID ?? UUID(), label: discovered.name, hubURL: origin, target: target,
                         publicKey: discovered.publicKey, grantID: approval.grant.id, grantVersion: approval.grant.version)
                     try await persist(host, approval.grant)
                     try Task.checkCancellation()
