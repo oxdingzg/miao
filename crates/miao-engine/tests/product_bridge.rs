@@ -9,8 +9,8 @@ use miao_engine::{
     tools::Tools,
 };
 use serde_json::{json, Value};
-use std::sync::Arc;
 use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::Arc;
 use tokio::sync::{mpsc, Notify};
 use tokio_util::sync::CancellationToken;
 
@@ -186,7 +186,9 @@ async fn product_tool_moved_reply_ends_the_run_cleanly() {
     let (bridge_tx, mut bridge_rx) = tokio::sync::mpsc::channel::<Value>(8);
     let runtime = Runtime::with_policy(
         store.clone(),
-        Arc::new(Mover { turns: turns.clone() }),
+        Arc::new(Mover {
+            turns: turns.clone(),
+        }),
         tools,
         policy(),
     )
@@ -244,8 +246,15 @@ async fn product_tool_moved_reply_ends_the_run_cleanly() {
     }
     runtime.shutdown().await;
 
-    assert_eq!(turns.load(Ordering::SeqCst), 1, "a moved reply must end the run without another provider turn");
+    assert_eq!(
+        turns.load(Ordering::SeqCst),
+        1,
+        "a moved reply must end the run without another provider turn"
+    );
     let history = store.history("s").await.unwrap();
     let rendered = serde_json::to_string(&history).unwrap();
-    assert!(rendered.contains(r#"\"moved\":true"#), "moved tool result must settle durably: {rendered}");
+    assert!(
+        rendered.contains(r#"\"moved\":true"#),
+        "moved tool result must settle durably: {rendered}"
+    );
 }
