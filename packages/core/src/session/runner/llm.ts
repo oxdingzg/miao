@@ -95,6 +95,7 @@ import { SessionToolDispatch } from "../tool-dispatch"
 import { toLLMMessages } from "./to-llm-message"
 import { inlineTextFiles, materializeBlobRefs } from "./materialize-files"
 import { MAX_STEPS_PROMPT } from "./max-steps"
+import { Token } from "../../util/token"
 import { SessionRunnerMetrics } from "./metrics"
 import { SessionRunnerModelIo } from "./model-io"
 import { SessionBlackbox } from "../blackbox"
@@ -1216,6 +1217,18 @@ const layer = Layer.effect(
           const llmFailure = failure instanceof LLMError ? failure : undefined
           const invalidToolInput = llmFailure?.reason._tag === "InvalidProviderOutput"
             && llmFailure.reason.toolInput?.canCorrect ? llmFailure.reason.toolInput : undefined
+          // A rejection our own numbers explain: the estimated request exceeds
+          // the selected model's declared context. Name both counts so the next
+          // step (compact, or switch to a wider model) is obvious instead of a
+          // bare 400 that reads like a defect elsewhere in the request.
+          const oversizeHint = () => {
+            if (llmFailure?.reason._tag !== "InvalidRequest") return ""
+            const window = model.route.defaults.limits?.context ?? 0
+            if (window <= 0) return ""
+            const tokens = Token.measureValue({ system: request.system, messages: request.messages, tools: request.tools })
+            if (tokens <= window) return ""
+            return ` The request carried about ${Math.round(tokens / 1000)}k input tokens against this model's ${Math.round(window / 1000)}k-token context window; compact the session or switch to a model with a larger context.`
+          }
           if (llmFailure && !publisher.hasProviderError()) {
             yield* withPublication(publisher.failUnsettledTools("Provider did not return a tool result", true))
             if (llmFailure.module === "SessionToolInputGuard")
@@ -1225,7 +1238,7 @@ const layer = Layer.effect(
             const detail = retryDetail(llmFailure)
             yield* withPublication(publisher.failAssistant(detail.statusCode === undefined
               ? llmFailure.reason.message
-              : `API Error: ${detail.statusCode} · ${llmFailure.reason.message}`))
+              : `API Error: ${detail.statusCode} · ${llmFailure.reason.message}${oversizeHint()}`))
           }
           if (stream._tag === "Failure" && Cause.hasInterrupts(stream.cause)) yield* FiberSet.clear(toolFibers)
           const settled = yield* restore(awaitToolFibers(toolFibers)).pipe(Effect.exit)
