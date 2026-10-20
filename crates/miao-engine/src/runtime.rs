@@ -1329,6 +1329,9 @@ async fn execute(
     // Consecutive failed completion checks for the configured verification.
     let mut verification_failures = 0;
     let mut repeats = HashMap::<String, u32>::new();
+    // A moved product-tool reply ends the run at its boundary; set only by
+    // the bridge arm, checked after each provider turn's tool batch.
+    let mut moved = false;
     let mut verification_scope = crate::verification::Scope::default();
     let mut internal_inputs = HashSet::new();
     let mut goal_iterations = 0;
@@ -2050,9 +2053,15 @@ command: None,
                                         .bridge
                                         .clone();
                                     match bridge {
-                                        Some(bridge) => {
-                                            bridge.call(session, name, input).await
-                                        }
+                                        Some(bridge) => match bridge.call(session, name, input).await {
+                                            Ok(output) => {
+                                                if output.get("moved").is_some_and(|value| value.as_bool() == Some(true)) {
+                                                    moved = true;
+                                                }
+                                                Ok(output)
+                                            }
+                                            Err(error) => Err(error),
+                                        },
                                         None => Err(ToolError::Unsupported),
                                     }
                                 }
@@ -2165,6 +2174,12 @@ command: None,
                     ));
                 }
             }
+        }
+        // A moved product-tool reply (the worktree bridge) means the Session's
+        // identity now belongs to another owner process: settle this run
+        // cleanly instead of taking another provider turn from a stale root.
+        if moved {
+            return Ok(());
         }
         if invalid_input && input_corrections <= 2 {
             inner
