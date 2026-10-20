@@ -21,8 +21,11 @@ import { Blob } from "@miao/core/blob"
 import { EventV2 } from "@miao/core/event"
 import { SessionStore } from "@miao/core/session/store"
 import { SessionMigrationCoordinator } from "@miao/core/session/migration-coordinator"
+import { SessionMigrationReverseCoordinator } from "@miao/core/session/migration-reverse-coordinator"
 import { Snapshot } from "@miao/core/snapshot"
 import { AbsolutePath } from "@miao/core/schema"
+import { Model } from "@miao/schema/model"
+import { Provider } from "@miao/schema/provider"
 import { LayerNode } from "@miao/core/effect/layer-node"
 import { EngineClient } from "@/engine/client"
 import { nativeEngineOptions } from "@/engine/native-engine"
@@ -59,7 +62,7 @@ export const SessionCommand = cmd({
   command: "session",
   describe: "manage sessions",
   builder: (yargs: Argv) =>
-    yargs.command(SessionListCommand).command(SessionDeleteCommand).command(SessionMigrateCommand).demandCommand(),
+    yargs.command(SessionListCommand).command(SessionDeleteCommand).command(SessionMigrateCommand).command(SessionMigrateBackCommand).demandCommand(),
   async handler() {},
 })
 
@@ -186,6 +189,120 @@ export const SessionMigrateCommand = effectCmd({
       }
     }).pipe(
       Effect.catch((error) => fail(`Migration failed: ${error instanceof Error ? error.message : String(error)}`)),
+      Effect.provide(
+        AppNodeBuilder.build(
+          LayerNode.group([
+            SessionV2.node,
+            Database.node,
+            EventV2.node,
+            SessionStore.node,
+            Blob.node,
+            Snapshot.node,
+            SessionExecution.node,
+          ]),
+          [[SessionExecution.node, SessionExecution.noopLayer]],
+        ),
+      ),
+      Effect.scoped,
+    )
+  }),
+})
+
+export const SessionMigrateBackCommand = effectCmd({
+  command: "migrate-back <sessionID>",
+  describe: "move a session from the native engine back to the TypeScript engine",
+  builder: (yargs) =>
+    yargs
+      .positional("sessionID", {
+        describe: "session ID to migrate back",
+        type: "string",
+        demandOption: true,
+      })
+      .option("native-db", {
+        describe: "native engine database holding the active import",
+        type: "string",
+        demandOption: true,
+      })
+      .option("import-id", {
+        describe: "durable import id used by the forward migration (defaults to native-<session>)",
+        type: "string",
+      })
+      .option("agent", {
+        describe: "agent name for replayed native turns (defaults to build)",
+        type: "string",
+      })
+      .option("model", {
+        describe: "model id for replayed native turns (defaults to the Session model)",
+        type: "string",
+      })
+      .option("route", {
+        describe: "native engine route binding",
+        type: "string",
+      }),
+  handler: Effect.fn("Cli.session.migrateBack")(function* (args) {
+    const sessionID = SessionV2.ID.make(args.sessionID)
+    const options = nativeEngineOptions(process.env)
+    if (!options) return yield* fail("Native engine binary not found; set MIAO_ENGINE_BIN or install a compatible engine")
+    const nativeDatabase = path.resolve(args.nativeDb)
+    yield* Effect.gen(function* () {
+      const database = yield* Database.Service
+      const store = yield* SessionStore.Service
+      const session = yield* store.get(sessionID)
+      if (!session) return yield* fail(`Session not found: ${args.sessionID}`)
+      const model = args.model ?? session.model?.id
+      if (!model) return yield* fail("Pass --model: the Session records no model to bind")
+      const importID = args.importId ?? `native-${sessionID}`
+      const deltaFile = AbsolutePath.make(path.join(path.dirname(nativeDatabase), "migrations", `${importID}.delta.json`))
+      const client = EngineClient.start({
+        ...options,
+        model,
+        db: nativeDatabase,
+        workspace: session.location.directory,
+      })
+      try {
+        const completed = yield* SessionMigrationReverseCoordinator.toTypeScript({
+          database: database.db,
+          id: importID,
+          sessionID,
+          native: {
+            engine: "rust",
+            storage: AbsolutePath.make(nativeDatabase),
+            location: { directory: AbsolutePath.make(session.location.directory) },
+          },
+          bundleFile: deltaFile,
+          agent: args.agent ?? "build",
+          model: { id: Model.ID.make(model), providerID: Provider.ID.make(options.provider ?? "unknown") },
+          engine: {
+            exportDelta: (input) =>
+              Effect.tryPromise({
+                try: () => client.request("transfer_export_delta", { import_id: input.importID, path: input.path }),
+                catch: (cause) => (cause instanceof Error ? cause : new Error(String(cause))),
+              }).pipe(
+                Effect.map((value) => {
+                  const receipt = value as Record<string, unknown>
+                  return {
+                    id: String(receipt.id),
+                    session_id: String(receipt.session_id),
+                    bundle_sha256: String(receipt.bundle_sha256),
+                    baseline_seq: Number(receipt.baseline_seq),
+                    timeline: (receipt.timeline as unknown[]) ?? [],
+                  }
+                }),
+              ),
+          },
+        })
+        UI.println(
+          UI.Style.TEXT_SUCCESS_BOLD +
+            `Session ${sessionID} migrated back (${completed.state}) to the TypeScript engine` +
+            UI.Style.TEXT_NORMAL,
+        )
+      } finally {
+        client.close()
+      }
+    }).pipe(
+      Effect.catch((error) =>
+        fail(`Migration back failed: ${error instanceof Error ? error.message : String(error)}`),
+      ),
       Effect.provide(
         AppNodeBuilder.build(
           LayerNode.group([
