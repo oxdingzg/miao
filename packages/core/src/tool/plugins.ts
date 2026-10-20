@@ -55,6 +55,8 @@ export interface Interface {
     readonly definition: Hook<DefinitionEvent>
   }
   readonly has: (name: "before" | "after" | "definition") => boolean
+  /** Names of tools currently offered by plugin providers. */
+  readonly names: () => ReadonlyArray<string>
   /** Runs before hooks in registration order. A throwing or failing hook rejects the call. */
   readonly runBefore: (event: BeforeEvent) => Effect.Effect<BeforeEvent, ToolFailure>
   /** Runs after hooks in registration order. A throwing or failing hook turns the result into a tool error. */
@@ -145,6 +147,7 @@ const layer = Layer.effect(
         definition: register("definition"),
       },
       has: (name) => hooks[name].length > 0,
+      names: () => Array.from(new Set([...provided].flatMap((entry) => Object.keys(entry.tools)))),
       runBefore: (event) =>
         Effect.forEach([...hooks.before], (callback) => invoke(callback, event).pipe(reject("tool.execute.before")), {
           discard: true,

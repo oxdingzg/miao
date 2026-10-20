@@ -9,12 +9,14 @@ async function exercise(permissions: unknown, target: string) {
   const directory = path.join(tmp.path, "project")
   await Bun.$`mkdir -p ${directory}`.quiet()
   let calls = 0
+  let toolNames: string[] = []
   const provider = Bun.serve({
     hostname: "127.0.0.1",
     port: 0,
     async fetch(request) {
       calls++
       const body = await request.json()
+      toolNames = body.tools?.map((tool: { function?: { name?: string } }) => tool.function?.name) ?? []
       const first = !body.messages.some((message: { role: string }) => message.role === "tool")
       const delta = first
         ? {
@@ -124,6 +126,7 @@ async function exercise(permissions: unknown, target: string) {
     expect(history).toContain("completed-native-product-policy-turn")
     return {
       calls,
+      toolNames,
       written: await Bun.file(path.join(directory, target)).exists(),
       history,
     }
@@ -140,6 +143,8 @@ test.skipIf(!binary)(
   "an automatically discovered engine gets the product agent authority without an explicit policy",
   async () => {
     const result = await exercise(undefined, "native-default.txt")
+    expect(result.toolNames).toContain("plugin_tools")
+    expect(result.toolNames).toContain("plugin_tool")
     expect(result.written).toBe(true)
     expect(result.calls).toBe(2)
     expect(result.history).toContain("native-default.txt")
