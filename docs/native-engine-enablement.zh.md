@@ -21,10 +21,11 @@
 ## 2. 开启后启用的能力
 
 - **Session core 全在 RS**：durable admission、exact retry、steer/queue、resume、fork、revert/unrevert、compaction、recovery、取消级联（进程组清理）、`tool.started`/`tool.progress` 增量进度。
+- **产品 agent 从创建即生效**：新原生会话会把产品解析后的 agent manifest（instructions、ordered permissions、steps/model）写入引擎，模型/权限/工具面与 TS 会话按同一 agent 运行。
 - **工具面**：引擎自带目录（`read_file`/`read_image`/`list_files`/`glob`/`grep`/`write_file`/`edit_file`/`apply_patch`/`bash`、`start_job`/`job_status`/`cancel_job`、`task`、`todowrite`、`goal`、`question`、`recall`、`session_state`、`schedule_wakeup`/cron、`lsp_*`、`monitor`、webfetch/websearch、knowledge、skill、session 终端），工具名到产品渲染 id 的映射见 `crates/miao-engine/docs/facade-mapping.md`。
 - **扩展面**：MCP（stdio/HTTP、resources/prompts、OAuth、`list_changed` 刷新、`tool_search` 发现）、生命周期 hooks、ADR-12 worker（`.miao/tool`、`.opencode/tool`、`MIAO_CONFIG_DIR` 下的自定义工具文件）、会话级终端（Unix）、LSP（由产品配置自动生成 manifest）。
 - **模型与路由**：host manifest 生成的路由（Anthropic、OpenAI Chat/Responses、订阅 Responses、Gemini、Bedrock SigV4 或 bearer、Copilot 风格、Azure/Vertex 等声明式路由）、会话级模型绑定与变体、purpose role、prompt cache 与 Responses cache/WebSocket 契约。
-- **上下文**：ambient context（instructions/skills/references 映射为 host manifest）、自动压缩与工具输出裁剪（**需要 `engine.context_limits`**，见 §3）、recall、context epoch。
+- **上下文**：ambient context（instructions/skills/references 映射为 host manifest）、自动压缩与工具输出裁剪（产品生成路由时自动派生 `context_limits`；显式路由需单独配置，见 §3）、recall、context epoch。
 - **观测**：per-run usage 聚合、per-turn 计费 cache 谱系（read/write/nonCached/hitRatio）与 TTFT（写入 `engine_timing` 侧表，不进可重放 payload）。
 - **协议面**：stdio、loopback HTTP（含 SSE）、ACP stdio adapter。
 
@@ -34,9 +35,9 @@
 
 | 缺口             | 现状                                                                                                                                                                                                                                                                                                                                                                 | 证据                                                                                                         |
 | ---------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------ |
-| 产品级工具       | `send_message`、`list_sessions`、`read_session_context`、delegation `report`、`workflow`、worktree、`push_notification` 由 TS runner 注册（`packages/core/src/session/runner/llm.ts`）。引擎侧反向桥已写入（`crates/miao-engine/src/product.rs`、`tools.rs`、`--product-tools`），但 TS 宿主不写该清单、也不应答 `product_tool` 请求，因此原生会话目前拿不到这批工具 | `54357739c0`（#1027，标注 draft）                                                                            |
+| 产品级工具       | 引擎侧反向桥与 TS 宿主清单/应答均已接通（`crates/miao-engine/src/product.rs`、`tools.rs`、`packages/miao/src/engine/product-tools.ts`、`#1153`）；原生会话可以拿到 `send_message`、`list_sessions`、`read_session_context`、`push_notification`。delegation `report`、`workflow`、worktree 等仍由 TS runner 注册，尚未全部进入产品工具桥 | `#1153`、`packages/miao/test/engine/native-product-tools-http.test.ts` |
 | 插件面收窄       | 原生会话只覆盖自定义工具文件、hooks manifest、MCP；插件 `tool.definition`/`before`/`after` 钩子不生效，插件自带的非标准 AI SDK provider 不会映射成路由                                                                                                                                                                                                               | `crates/miao-engine/docs/product-acceptance-matrix.md`（G6）、`packages/miao/src/engine/product-routes.ts`   |
-| 自动压缩默认不同 | TS 侧 `auto: true`、阈值 0.9；RS 的自动触发由 `engine.context_limits` 决定，**不配置就是关**，长会话更容易撞窗口                                                                                                                                                                                                                                                     | `packages/core/src/session/compaction.ts`、`packages/schema/src/config.ts`、`crates/miao-engine/src/main.rs` |
+| 自动压缩默认不同 | 产品生成路由时会从 `compaction` 配置派生 `context_limits`（默认 `auto: true`、阈值 0.9），原生会话因此默认自动压缩；显式 provider/endpoint/credential 路由仍需单独配置 `engine.context_limits`。引擎自身不配置时仍保持关闭 | `packages/miao/src/engine/product-routes.ts`、`packages/core/src/session/compaction.ts`、`packages/schema/src/config.ts`、`crates/miao-engine/src/main.rs` |
 | 计费与展示       | 原生会话的 pricing 仍按 0 处理到价格解析落地；完整 cache/TTFT 展示矩阵与 per-model usage 汇总未闭环                                                                                                                                                                                                                                                                  | `crates/miao-engine/docs/product-acceptance-matrix.md`                                                       |
 | Windows          | 终端工具已广告且有 CI 覆盖（Pseudoconsole 启动/输入/resize/退出/会话隔离、嵌套 cwd 与写限制）；AppContainer 无法与 ConPTY 结合时回退到非受限控制台，并在 `sandbox_profile` 报 `windows_unconfined`；升级/回滚验收未完成                                                                                                                                              | `crates/miao-engine/tests/terminal.rs`（`#[cfg(windows)]`）、`crates/miao-engine/src/terminal.rs`            |
 | 凭据所有权       | 引擎只读凭据库，TS broker（或独立 credential daemon）是唯一刷新写者；过期时引擎以明确错误失败，不会自己刷新                                                                                                                                                                                                                                                          | `crates/miao-engine/docs/facade-mapping.md`（ADR-09）                                                        |
@@ -55,7 +56,7 @@
 两类结构性风险会直接影响 token 与效果，方向无法先验假设：
 
 - **提示与工具 schema 字节不同**。facade 只映射工具名，输入 schema 与描述是引擎自己的，因此系统提示与工具目录的字节和 TS 不同；文档记录的一次措辞改写带来 **+35–44% 计费 input**（#829，已回退）。这既影响计费，也会改变模型行为，说明“措辞等价”不能默认为真。
-- **压缩/裁剪默认不同**。TS 默认开启自动压缩，RS 需要显式 `engine.context_limits`，否则长会话可能既更贵（上下文膨胀）也更早失败。
+- **压缩/裁剪默认不同**。产品生成路由时会自动派生 `context_limits`；显式 provider/endpoint/credential 路由仍需要单独配置，否则长会话可能既更贵（上下文膨胀）也更早失败。
 - 引擎内部的正面消融（A2 多行编辑载体 −21% turns / −22% input tokens；A7 类型载体 −4% turns / −5% input tokens）只在各自 carrier 上成立，未在代表性任务集上验证，也不能直接外推成全任务更省。
 
 **结论**：功能上可以把主链路做到不缺；质量在现有的小样本上不低于，且已按任务类别补了一轮计费 token/成本对比（见 §5）。但这不是产品级评测：样本小、单一模型、只有目标可程序化判定的任务，`stream-interruption` 一类在当前路由下测不了。要更强结论仍需路线图 §7 的维度（主/子/辅助模型 + 重试 + 摘要 + 失败尝试）与更多任务类别。
@@ -91,9 +92,9 @@
 
 ## 6. 现在开启的最小建议
 
-1. 设 `engine.context_limits`，对齐 TS 的自动压缩行为（否则长会话没有自动压缩）。
+1. 确认自动压缩：产品生成路由时已自动派生 `context_limits`；使用显式路由时手动设置，否则长会话没有自动压缩。
 2. 决定 `engine.prompt_cache` 与 Responses cache/WebSocket 契约，只声明已验证的部署能力。
 3. 保持 `engine.tool_disclosure: full`；`compact` 是 opt-in，且文档明确不保证总成本更低。
 4. 确认凭据仍由产品 broker 刷新；引擎只读取。
-5. 接受产品级工具暂缺，或先把产品工具反向桥的宿主侧接通。
+5. 验证产品工具桥覆盖当前工作流；delegation `report`、`workflow`、worktree 等尚未进入桥的工具仍需保留在 TS 侧或补齐。
 6. 用 `miao-engine --capabilities` 与 `miao-engine doctor` 固定所用二进制版本；原生会话的存储独立于 TS 存储，回滚按“重装上一版本”处理。

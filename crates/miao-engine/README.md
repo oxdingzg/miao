@@ -957,15 +957,25 @@ path when the product starts children for different Locations. For example:
 ```
 
 This enables workspace mutation subject to the engine's existing approval rules;
-it does not automatically approve writes or enable process execution. With no
-policy configured, the engine keeps its read-only default. A write approval is
-answered through the product's native permission endpoint and remains bound to
-the original Session, input hash and policy revision.
+it does not automatically approve writes or enable process execution.
+
+When `MIAO_ENGINE_POLICY` is absent, the product generates a capability policy
+in a mode-0600 file outside the workspace and removes it with the engine owner
+scope. The generated policy opens workspace writes, process execution,
+background jobs, subagents, MCP, web, wakeup and cron; it contains no allow/ask
+decisions. The Session's resolved product agent manifest supplies the ordered
+allow/ask/deny rules, exactly as it does for a TypeScript Session. An explicit
+operator policy still wins, including a read-only policy that closes every
+capability family. A write approval is answered through the product's native
+permission endpoint and remains bound to the original Session, input hash and
+policy revision.
 
 `packages/miao/test/engine/native-coding-http.test.ts` exercises the production
 CLI and HTTP API: create, submit a prompt, await and approve a native write once,
-observe the final history, and verify the file. Its unconfigured-policy case
-verifies that the same request does not write a file.
+observe the final history, and verify the file. Its read-only case uses an
+explicit policy and verifies that the same request does not write a file;
+`native-product-policy-http.test.ts` verifies the generated policy and the
+initial product-agent manifest.
 
 ## Completion verification receipts
 

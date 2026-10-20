@@ -21,6 +21,7 @@ import { Project } from "@miao/core/project"
 import { NativeEngine } from "../native-engine"
 import { requireNativeOwner, requireTypescriptOwner } from "../native-command"
 import { SessionEnginePlacement } from "@miao/core/session/engine-placement"
+import { LocationServiceMap } from "@miao/core/location-services"
 import { nativeExecution, nativeTodos } from "../native-state"
 import { nativeSessionEvents } from "../native-events"
 import { SessionEvent } from "@miao/schema/session-event"
@@ -157,6 +158,22 @@ export const SessionHandler = HttpApiBuilder.group(Api, "server.session", (handl
             location,
             ...(nativeStorage ? { nativeStorage } : {}),
           })
+          // A native Session must start under the product agent whose resolved
+          // rules authorize its turns. Without this manifest the engine would
+          // fall back to its default Ask policy and ignore configured deny or
+          // allow rules until the operator switched agents.
+          if (native && nativeStorage) {
+            const locations = Option.getOrUndefined(yield* Effect.serviceOption(LocationServiceMap.Service))
+            if (locations) {
+              const agent = yield* Effect.gen(function* () {
+                const plugins = yield* PluginV2.Service
+                yield* Deferred.await(plugins.booted)
+                const agents = yield* AgentV2.Service
+                return yield* agents.resolve(ctx.payload.agent)
+              }).pipe(Effect.provide(locations.get(location)))
+              if (agent) yield* native.selectAgent({ sessionID: id, storage: nativeStorage, location, agent })
+            }
+          }
           const placement =
             binding?.engine === "rust" ? binding : nativeStorage ? { storage: nativeStorage, location } : undefined
           if (native && placement) {
