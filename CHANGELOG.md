@@ -11,6 +11,16 @@ at `docs/releases/vX.Y.Z.md` and `docs/releases/vX.Y.Z.zh.md`; both are required
 
 ## [Unreleased]
 
+## [0.2.20] - 2026-10-20
+
+### Added
+- **engine**: bridge plugin tools into native sessions (#1172) (`bba0eab555`)
+- **engine**: export and stage native move bundles (#1170) (`f32dfb7d2f`)
+
+### Fixed
+- **miao**: stop engine-client close from hanging interactive exit (#1173) (`bfe80dde6c`)
+- **engine**: apply the product agent before native admission (#1171) (`d2bfb917ce`)
+
 ## [0.2.19] - 2026-10-20
 
 ### Added
