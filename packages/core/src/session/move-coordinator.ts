@@ -3,6 +3,7 @@ import { Effect, Schema } from "effect"
 import { AbsolutePath } from "../schema"
 import type { SessionID } from "@miao/schema/session-id"
 import { Database } from "../database/database"
+import { Location } from "../location"
 import { SessionEnginePlacement } from "./engine-placement"
 import { SessionEnginePlacementTable } from "./engine-placement.sql"
 import { SessionMigration } from "./migration"
@@ -10,7 +11,13 @@ import { SessionMigrationTable } from "./migration.sql"
 
 type Db = Database.Interface["db"]
 
-type Native = Extract<SessionEnginePlacement.Placement, { engine: "rust" }>
+/** The placement shape the move needs: plain storage (the engine speaks
+ * strings) and the product Location.Ref the placement column stores. */
+type Native = {
+  engine: "rust"
+  storage: string
+  location: Location.Ref
+}
 
 /** The engine control-channel operations a rust→rust move needs. The product
  * tool bridge host implements this on top of the same Requester the
@@ -67,7 +74,6 @@ export const moveRust = Effect.fn("SessionMoveCoordinator.moveRust")(function* (
   target: Native
   bundleFile: AbsolutePath
   productDatabase: AbsolutePath
-  identity: { protocol: string; model: string }
   routeID?: string
   agent?: Record<string, unknown>
   engine: MoveEngine
@@ -80,6 +86,7 @@ export const moveRust = Effect.fn("SessionMoveCoordinator.moveRust")(function* (
     bundleFile: input.bundleFile,
   })
   if (receipt.session_id && receipt.session_id !== input.sessionID) return yield* fail()
+  if (!receipt.binding) return yield* fail()
   const bundleSHA256 = receipt.bundle_sha256
 
   // The fence: the product authority names the destination from here on.
@@ -95,9 +102,7 @@ export const moveRust = Effect.fn("SessionMoveCoordinator.moveRust")(function* (
   })
   if (fenced.state === "completed") return yield* fail()
 
-  const binding = receipt.binding
-    ? { protocol: receipt.binding.protocol, model: receipt.binding.model }
-    : input.identity
+  const binding = { protocol: receipt.binding.protocol, model: receipt.binding.model }
   const routeID = receipt.route_id ?? input.routeID
   const staged = yield* input.engine.stageNative({
     importID: input.id,
