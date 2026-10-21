@@ -11,6 +11,15 @@ at `docs/releases/vX.Y.Z.md` and `docs/releases/vX.Y.Z.zh.md`; both are required
 
 ## [Unreleased]
 
+## [0.2.22] - 2026-10-21
+
+### Fixed
+- **server**: keep the session list serving every healthy Session when a native Location's directory has vanished (#1190).
+- **app**: settle native session transcripts on drain failure and commit-only steps, so a stop failure shows its error and no draft stays streaming (#1186).
+
+### Added
+- **engine**: route manifest v2 publishes each model's declared context and output capacity, and the summarize role skips a bound model that cannot hold the request (#1185).
+
 ## [0.2.21] - 2026-10-21
 
 ### Fixed
