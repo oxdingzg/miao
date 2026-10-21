@@ -14,6 +14,7 @@ at `docs/releases/vX.Y.Z.md` and `docs/releases/vX.Y.Z.zh.md`; both are required
 ## [0.2.23] - 2026-10-21
 
 ### Fixed
+- **install**: the Windows rollback path is accepted end to end: per-version archive extraction with retry against antivirus locks (#1204).
 - **engine**: a stale reference path no longer crashes the engine with `InvalidInput`, so CLI continuation works with worktrees whose references were deleted (#1202).
 - **engine**: explicit engine routes (provider/endpoint) now bind their primary model, fixing "Model is not in the native host route catalog" for server-owned native Sessions (#1206).
 
