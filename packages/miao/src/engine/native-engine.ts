@@ -93,6 +93,7 @@ export const nativeEngineOptions = (
   }
   if (environment.MIAO_ENGINE_PROVIDER) merged.provider = environment.MIAO_ENGINE_PROVIDER
   if (environment.MIAO_ENGINE_ENDPOINT) merged.endpoint = environment.MIAO_ENGINE_ENDPOINT
+  if (environment.MIAO_ENGINE_MODEL_ROUTES) merged.modelRoutesConfigFile = path.resolve(environment.MIAO_ENGINE_MODEL_ROUTES)
   if (environment.MIAO_ENGINE_FORMATTER_CONFIG)
     merged.formatterConfigFile = path.resolve(environment.MIAO_ENGINE_FORMATTER_CONFIG)
   if (environment.MIAO_ENGINE_FALLBACK_MODEL) merged.fallbackModel = environment.MIAO_ENGINE_FALLBACK_MODEL
