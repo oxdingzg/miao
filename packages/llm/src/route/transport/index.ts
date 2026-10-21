@@ -6,6 +6,7 @@ import type { Interface as RequestExecutorInterface } from "../executor"
 import type { Interface as WebSocketExecutorInterface } from "./websocket"
 import type { Interface as WebSocketPoolInterface } from "./websocket-pool"
 import type { LLMError, LLMRequest } from "../../schema"
+import type { StreamActivity } from "../activity"
 
 export interface TransportRuntime {
   readonly http: RequestExecutorInterface
@@ -13,6 +14,8 @@ export interface TransportRuntime {
   readonly webSocketPool?: WebSocketPoolInterface
   /** Provider wire archive, absent unless the host records one. */
   readonly archive?: ProviderWireArchiveInterface
+  /** Per-attempt wire activity for the caller's stream watchdogs. */
+  readonly activity?: StreamActivity
 }
 
 export interface Transport<Body, Prepared, Frame> {

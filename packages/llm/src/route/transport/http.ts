@@ -8,6 +8,7 @@ import * as ProviderShared from "../../protocols/shared"
 import { LLMError, mergeJsonRecords, TransportReason, type LLMRequest } from "../../schema"
 import { causeDetail } from "../executor"
 import { ProviderWireArchive } from "../archive"
+import { requestBodyText } from "../http-capture"
 
 export type JsonRequestInput<Body> = TransportPrepareInput<Body>
 
@@ -135,6 +136,7 @@ export const httpJson = <Body, Frame>(input: HttpJsonInput<Body, Frame>): HttpJs
         const framed = (response: HttpClientResponse.HttpClientResponse) =>
           prepared.framing.frame(
             response.stream.pipe(
+              Stream.tap((bytes) => Effect.sync(() => runtime.activity?.bytes(bytes.byteLength))),
               Stream.mapError(
                 (error) =>
                   new LLMError({
@@ -148,6 +150,8 @@ export const httpJson = <Body, Frame>(input: HttpJsonInput<Body, Frame>): HttpJs
               ),
             ),
           )
+        const bodySize = requestBodyText(prepared.request)
+        if (bodySize !== undefined) runtime.activity?.requestBytes(Buffer.byteLength(bodySize))
         // Every HTTP attempt the executor makes inside this call is tagged with
         // the exchange opened here, so its request, response, and error lines
         // join the frames below into one readable record.
@@ -155,6 +159,7 @@ export const httpJson = <Body, Frame>(input: HttpJsonInput<Body, Frame>): HttpJs
         const response = yield* runtime.http
           .execute(prepared.request)
           .pipe(Effect.provideService(ProviderWireArchive.CurrentExchange, exchange))
+        runtime.activity?.headers()
         if (runtime.archive === undefined) return framed(response)
         const archive = runtime.archive
         return framed(response).pipe(
