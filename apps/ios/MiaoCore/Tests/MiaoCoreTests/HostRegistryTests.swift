@@ -30,6 +30,25 @@ final class HostRegistryTests: XCTestCase {
         try await restarted.synchronizeAccount(hubURL: host.hubURL, accountID: "account-owner-0001", directory: [])
         let offline = try await restarted.snapshot()
         XCTAssertEqual(offline.hosts.count, 1, "A transient directory outage must not reset navigation")
+        try await restarted.forget(host.id)
+        let afterRemoval = try HostRegistry(directory: directory, deviceKey: key)
+        let hidden = try await afterRemoval.isAccountHostHidden(hubURL: host.hubURL, accountID: "account-owner-0001", hostID: host.target.hostID)
+        XCTAssertTrue(hidden, "Removal must survive an app restart and directory polling")
+        let otherAccountHidden = try await afterRemoval.isAccountHostHidden(hubURL: host.hubURL, accountID: "another-account", hostID: host.target.hostID)
+        XCTAssertFalse(otherAccountHidden)
+        let newRuntime = ApprovedHost(label: host.label, hubURL: host.hubURL,
+            target: RemoteTarget(hostID: host.target.hostID, runtimeID: "runtime-restarted"),
+            publicKey: host.publicKey, grantID: grant.id, grantVersion: grant.version)
+        try await afterRemoval.admitSignedIn(host: newRuntime, grant: grant, accountID: "account-owner-0001")
+        let stillRemoved = try await afterRemoval.snapshot()
+        XCTAssertTrue(stillRemoved.hosts.isEmpty, "A concurrent/next auto-admission must not undo removal")
+        try await afterRemoval.restoreAccountHosts(hubURL: host.hubURL, accountID: "another-account")
+        let stillHidden = try await afterRemoval.isAccountHostHidden(hubURL: host.hubURL, accountID: "account-owner-0001", hostID: host.target.hostID)
+        XCTAssertTrue(stillHidden)
+        try await afterRemoval.restoreAccountHosts(hubURL: host.hubURL, accountID: "account-owner-0001")
+        try await afterRemoval.admitSignedIn(host: newRuntime, grant: grant, accountID: "account-owner-0001")
+        let restored = try await afterRemoval.snapshot()
+        XCTAssertEqual(restored.hosts.count, 1, "Explicitly connecting account computers restores locally removed entries")
     }
 
     func testTrustAnchorPrecedesApprovalAndOnlyPublicMetadataSurvivesRestart() async throws {

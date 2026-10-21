@@ -371,6 +371,22 @@ final class PairingUITests: XCTestCase {
         app.swipeUp()
         XCTAssertTrue(app.staticTexts["Native live partial completed"].waitForExistence(timeout: 30))
         XCTAssertEqual(app.staticTexts.matching(NSPredicate(format: "label == %@", "Native live partial completed")).count, 1)
+        stage("remove-host")
+        openDrawer(app)
+        let remove = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@", "removeHost-")).firstMatch
+        XCTAssertTrue(remove.waitForExistence(timeout: 5))
+        remove.tap()
+        XCTAssertTrue(app.buttons["取消"].waitForExistence(timeout: 5))
+        app.buttons["取消"].tap()
+        XCTAssertTrue(remove.exists, "Cancelling must keep the selected computer")
+        remove.tap()
+        app.buttons["移除"].tap()
+        expectation(for: NSPredicate { _, _ in !remove.exists }, evaluatedWith: app)
+        waitForExpectations(timeout: 15)
+        app.terminate()
+        app.launch()
+        XCTAssertTrue(app.buttons["连接电脑"].firstMatch.waitForExistence(timeout: 15))
+        XCTAssertFalse(app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@", "removeHost-")).firstMatch.exists)
         stage("done")
     }
 

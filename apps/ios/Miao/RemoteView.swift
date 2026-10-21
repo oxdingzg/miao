@@ -18,6 +18,7 @@ struct RemoteView: View {
     @State private var sessionID: String?
     @State private var creating = false
     @State private var forgetConfirmation = false
+    @State private var hostToForget: AuthorizedHost?
 
     var body: some View {
         ZStack {
@@ -89,16 +90,20 @@ struct RemoteView: View {
         .sheet(isPresented: $creating) {
             if let hostID, let client = model.clients[hostID] { CreateSessionView(client: client) }
         }
-        .confirmationDialog("从这台设备移除电脑？", isPresented: $forgetConfirmation, titleVisibility: .visible) {
+        .confirmationDialog("从这台设备移除电脑？", isPresented: $forgetConfirmation, titleVisibility: .visible, presenting: hostToForget) { record in
             Button("移除", role: .destructive) {
-                withAnimation(.easeInOut(duration: 0.25)) { sidebarVisible = false }
-                if let hostID {
-                    Task { await model.forget(hostID) }
-                    self.hostID = nil
-                    sessionID = nil
+                Task {
+                    await model.forget(record.id)
+                    if hostID == record.id, !model.hosts.contains(where: { $0.id == record.id }) {
+                        hostID = model.hosts.first?.id
+                        sessionID = nil
+                    }
                 }
             }
-        } message: { Text("本机缓存将被删除，电脑上的任务继续运行。要撤销授权，请在电脑的设备接入界面操作。") }
+            Button("取消", role: .cancel) {}
+        } message: { record in
+            Text("将从本机移除「\(record.host.label)」及其缓存，电脑上的任务继续运行。账号电脑不会自动重新添加，可在中继账号中点击「连接我的电脑」恢复。要撤销授权，请在电脑的设备接入界面操作。")
+        }
     }
 
     @ViewBuilder private var mainContent: some View {
@@ -195,6 +200,15 @@ struct RemoteView: View {
 
     @ViewBuilder private func sidebarContent(_ client: HostClient) -> some View {
         List {
+            Section {
+                HStack {
+                    Text("电脑与会话").font(.headline)
+                    Spacer()
+                    Button { withAnimation(.easeInOut(duration: 0.25)) { sidebarVisible = false } } label: {
+                        Image(systemName: "xmark")
+                    }.accessibilityLabel("关闭侧栏").buttonStyle(.plain)
+                }
+            }
             ForEach(model.hosts) { record in
                 if let host = model.clients[record.id] {
                     Section { sidebarHeader(host) }
@@ -224,9 +238,13 @@ struct RemoteView: View {
         HStack {
             Text(client.record.host.label).font(.headline)
             Spacer()
-            Button { withAnimation(.easeInOut(duration: 0.25)) { sidebarVisible = false } } label: {
+            Button {
+                hostToForget = client.record
+                forgetConfirmation = true
+            } label: {
                 Image(systemName: "xmark")
-            }.accessibilityLabel("关闭侧栏").buttonStyle(.plain)
+            }.accessibilityLabel("移除电脑：\(client.record.host.label)")
+                .accessibilityIdentifier("removeHost-\(client.record.id.uuidString)").buttonStyle(.plain)
         }
         Label(client.connectionDescription, systemImage: client.ready ? "checkmark.circle.fill" : "network")
             .font(.footnote).foregroundStyle(client.ready ? Color.green : Color.secondary)
@@ -303,7 +321,7 @@ struct RemoteView: View {
         Button { pairing = true } label: {
             Label("连接电脑", systemImage: "qrcode.viewfinder").frame(maxWidth: .infinity, alignment: .leading)
         }
-        Button(role: .destructive) { forgetConfirmation = true } label: {
+        Button(role: .destructive) { hostToForget = client.record; forgetConfirmation = true } label: {
             Label("从这台设备移除", systemImage: "trash").frame(maxWidth: .infinity, alignment: .leading)
         }
     }
