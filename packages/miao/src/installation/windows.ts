@@ -79,7 +79,19 @@ try {
   $archive = Join-Path $stage 'release.zip'
   $client.DownloadFile(('https://github.com/oxdingzg/miao/releases/download/v' + $version + '/' + $asset), $archive)
   $phase = 'extract'
-  Expand-Archive -LiteralPath $archive -DestinationPath $stage
+  # Antivirus also scans freshly written archives, which can make
+  # Expand-Archive read a partially locked file; retry with the same backoff
+  # as the replace section, clearing the partial extraction between attempts.
+  foreach ($attempt in 1..8) {
+    try {
+      Expand-Archive -LiteralPath $archive -DestinationPath $stage -Force
+      break
+    } catch {
+      if ($attempt -ge 8) { throw }
+      Get-ChildItem -LiteralPath $stage -Exclude release.zip | Remove-Item -Recurse -Force -ErrorAction SilentlyContinue
+      Start-Sleep -Milliseconds (300 * $attempt)
+    }
+  }
   $candidates = @(Get-ChildItem -LiteralPath $stage -Filter miao.exe -Recurse -File)
   if ($candidates.Count -ne 1) { throw 'Release must contain exactly one miao.exe' }
   $candidate = $candidates[0].FullName
