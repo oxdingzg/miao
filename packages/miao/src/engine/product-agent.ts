@@ -11,12 +11,22 @@ export type Route = {
 }
 
 export function modelRoute(model: Model.Ref, catalog: readonly Route[]) {
-  const route = catalog.find((entry) => {
-    if (model.providerID !== SessionModelRoute.ProviderID && model.providerID !== SessionModelRoute.DefaultProviderID)
-      return entry.route_id === `${model.providerID}/${model.id}`
-    const reference = SessionModelRoute.reference(entry.route_id)
-    return reference.providerID === model.providerID && reference.id === model.id
-  })
+  // An explicit engine route (provider/endpoint/model) exposes one engine-owned
+  // primary entry with no route id. Binding it by identity is required: without
+  // this fallback every server-owned native Session fails admission with
+  // "unknown_model_route", while the same configuration works on the CLI path.
+  const primary = () =>
+    catalog.find(
+      (entry) =>
+        entry.route_id === null && (entry.model === `${model.providerID}/${model.id}` || entry.model === model.id),
+    )
+  const route =
+    catalog.find((entry) => {
+      if (model.providerID !== SessionModelRoute.ProviderID && model.providerID !== SessionModelRoute.DefaultProviderID)
+        return entry.route_id === `${model.providerID}/${model.id}`
+      const reference = SessionModelRoute.reference(entry.route_id)
+      return reference.providerID === model.providerID && reference.id === model.id
+    }) ?? primary()
   if (!route) throw new EngineError("unknown_model_route", "Model is not in the native host route catalog")
   if (model.variant !== undefined && !route.variants?.includes(model.variant))
     throw new EngineError("unknown_model_variant", "Variant is not in the native host route catalog")
