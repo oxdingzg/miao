@@ -18,6 +18,8 @@ pub enum Error {
     Integration,
     #[error("credential is expired; its owning broker must refresh it")]
     Expired,
+    #[error("credential {id} ({integration}) is expired; its owning broker must refresh it")]
+    ExpiredCredential { id: String, integration: String },
     #[error("credential refresh was rejected by the provider; re-login required")]
     RefreshRejected,
     #[error("credential source IO failed")]
@@ -168,9 +170,9 @@ impl Source {
             return load_daemon(socket, id, integration).await;
         }
         let source = self.clone();
-        let (credential, owner) = tokio::task::spawn_blocking(move || {
+        let (credential, owner, identity) = tokio::task::spawn_blocking(move || {
             let loaded = match source {
-                Self::Static(credential) => (credential, None),
+                Self::Static(credential) => (credential, None, None),
                 Self::Daemon { .. } | Self::Aws { .. } => return Err(Error::Invalid),
                 Self::Database {
                     path,
@@ -199,8 +201,8 @@ impl Source {
                     let owner = value["metadata"]["miaoCredentialSocket"]
                         .as_str()
                         .filter(|name| !name.is_empty())
-                        .map(|name| (PathBuf::from(name), id, integration));
-                    (parsed, owner)
+                        .map(|name| (PathBuf::from(name), id.clone(), integration.clone()));
+                    (parsed, owner, Some((id.clone(), integration.clone())))
                 }
                 Self::Legacy { path, integration } => {
                     let values = legacy(&path)?;
@@ -210,6 +212,7 @@ impl Source {
                             &integration,
                         )?,
                         None,
+                        Some((integration.clone(), integration.clone())),
                     )
                 }
             };
@@ -226,7 +229,13 @@ impl Source {
                 return Err(Error::Invalid);
             }
         }
-        credential.validate()?;
+        credential.validate().map_err(|error| match error {
+            Error::Expired => match identity {
+                Some((id, integration)) => Error::ExpiredCredential { id, integration },
+                None => Error::Expired,
+            },
+            error => error,
+        })?;
         Ok(credential)
     }
 }
@@ -242,7 +251,13 @@ async fn load_daemon(socket: &Path, id: &str, integration: &str) -> Result<Crede
             _ => Error::Io,
         })?;
     let value = parse_bound(&credential, integration)?;
-    value.validate()?;
+    value.validate().map_err(|error| match error {
+        Error::Expired => Error::ExpiredCredential {
+            id: id.to_owned(),
+            integration: integration.to_owned(),
+        },
+        error => error,
+    })?;
     Ok(value)
 }
 
