@@ -16,6 +16,8 @@ const it = testEffect(
   AppNodeBuilder.build(ToolPlugins.node, [[ToolOutputStore.node, outputStore]]),
 )
 
+const configuration = { binary: "miao-engine", model: "test-model" } as const
+
 const store = {
   get: () => Effect.succeed({ agent: AgentV2.ID.make("build") }),
 } as unknown as SessionStore.Interface
@@ -38,7 +40,7 @@ describe("PluginHooks", () => {
           event.args = { text: "rewritten" }
         })
         .pipe(Scope.provide(scope))
-      const options = yield* PluginHooks.prepare({}, { store })
+      const options = yield* PluginHooks.prepare(configuration, { store })
       expect(options.pluginHooksFile).toBeString()
       const marker = yield* Effect.promise(() => Bun.file(options.pluginHooksFile!).json())
       expect(marker).toEqual({ before: true, after: false })
@@ -58,7 +60,7 @@ describe("PluginHooks", () => {
           event.output = `${event.output}+after`
         })
         .pipe(Scope.provide(scope))
-      const options = yield* PluginHooks.prepare({}, { store })
+      const options = yield* PluginHooks.prepare(configuration, { store })
       const replaced = yield* Effect.promise(() =>
         options.onHookTool!(call("after", { args: { text: "x" }, output: { text: "raw" } })),
       )
@@ -77,7 +79,7 @@ describe("PluginHooks", () => {
       yield* plugins.hook
         .before(() => Effect.fail("audit said no"))
         .pipe(Scope.provide(scope))
-      const options = yield* PluginHooks.prepare({}, { store })
+      const options = yield* PluginHooks.prepare(configuration, { store })
       const verdict = yield* Effect.promise(() =>
         options.onHookTool!(call("before", { args: { text: "x" } })),
       )
@@ -89,7 +91,7 @@ describe("PluginHooks", () => {
 
   it.effect("prepares nothing when no plugin registered a hook", () =>
     Effect.gen(function* () {
-      const options = yield* PluginHooks.prepare({}, { store })
+      const options = yield* PluginHooks.prepare(configuration, { store })
       expect(options.pluginHooksFile).toBeUndefined()
       expect(options.onHookTool).toBeUndefined()
     }),
