@@ -114,11 +114,13 @@ export interface EngineOptions {
    */
   onHookTool?: (call: {
     sessionID: string
-    kind: "before" | "after"
+    kind: "before" | "after" | "definition"
     tool: string
     callID: string
     args?: unknown
     output?: unknown
+    /** The tool definition under review, for the `definition` family. */
+    definition?: unknown
   }) => Promise<unknown>
   /**
    * Explicit prefix-cache policy for the first model turn's stable prefix.
@@ -516,7 +518,15 @@ export class EngineClient {
     if (message.method === "hook_tool") {
       const bridgeID = message.bridge_id
       const params = message.params as
-        | { session_id?: string; kind?: string; tool?: string; call_id?: string; args?: unknown; output?: unknown }
+        | {
+            session_id?: string
+            kind?: string
+            tool?: string
+            call_id?: string
+            args?: unknown
+            output?: unknown
+            definition?: unknown
+          }
         | undefined
       const reply = (value: Record<string, unknown>) =>
         this.child.stdin.write(JSON.stringify({ bridge_id: bridgeID, ...value }) + EOL)
@@ -526,11 +536,12 @@ export class EngineClient {
       }
       void this.onHookTool({
         sessionID: params.session_id ?? "",
-        kind: params.kind === "after" ? "after" : "before",
+        kind: params.kind === "after" ? "after" : params.kind === "definition" ? "definition" : "before",
         tool: params.tool ?? "",
         callID: params.call_id ?? "",
         args: params.args,
         output: params.output,
+        definition: params.definition,
       }).then(
         (result) => reply({ result }),
         (error) => reply({ error: error instanceof Error ? error.message : String(error) }),

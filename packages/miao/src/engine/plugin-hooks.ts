@@ -23,8 +23,12 @@ export const prepare = Effect.fn("Engine.pluginHooks")(function* (
   if (configuration.pluginHooksFile) return options
   const plugins = Option.getOrUndefined(yield* Effect.serviceOption(ToolPlugins.Service))
   if (!plugins) return options
-  const marker = { before: plugins.has("before"), after: plugins.has("after") }
-  if (!marker.before && !marker.after) return options
+  const marker = {
+    before: plugins.has("before"),
+    after: plugins.has("after"),
+    definition: plugins.has("definition"),
+  }
+  if (!marker.before && !marker.after && !marker.definition) return options
   const directory = yield* Effect.acquireRelease(
     Effect.tryPromise({
       try: () => mkdtemp(path.join(os.tmpdir(), "miao-native-plugin-hooks-")),
@@ -44,6 +48,20 @@ export const prepare = Effect.fn("Engine.pluginHooks")(function* (
         const sessionID = SessionSchema.ID.make(call.sessionID)
         const session = yield* input.store.get(sessionID)
         const agent = session?.agent ?? AgentV2.defaultID
+        if (call.kind === "definition") {
+          // The definition family mutates the event in place and never fails:
+          // a broken hook is logged and skipped, the tool stays advertised.
+          const raw = (call.definition ?? {}) as { description?: unknown; input_schema?: unknown }
+          const event = {
+            tool: call.tool,
+            description: typeof raw.description === "string" ? raw.description : "",
+            parameters: raw.input_schema ?? {},
+          }
+          yield* plugins.runDefinition(event).pipe(Effect.exit)
+          return {
+            definition: { name: call.tool, description: event.description, input_schema: event.parameters },
+          }
+        }
         if (call.kind === "before") {
           const event = { tool: call.tool, sessionID, callID: call.callID, agent, args: call.args }
           const exit = yield* plugins.runBefore(event).pipe(Effect.exit)
