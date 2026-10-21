@@ -141,6 +141,7 @@ async fn daemon_source_loads_and_rotates_inside_the_margin() {
     };
     assert!(matches!(
         source.load().await,
-        Err(miao_engine::credential::Error::Expired)
+        Err(miao_engine::credential::Error::ExpiredCredential { id, integration })
+        if id == "cred_expired" && integration == "openai"
     ));
 }
