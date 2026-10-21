@@ -436,9 +436,16 @@ install_engine() {
     tmp_dir="${TMPDIR:-/tmp}/miao_engine_install_$$"
     mkdir -p "$tmp_dir"
     if ! curl -f -sS -L -o "$tmp_dir/$file" "$url"; then
-        print_message info "${MUTED}No native engine archive in this release; miao runs TypeScript sessions.${NC}"
-        rm -rf "$tmp_dir"
-        return 0
+        # A release can ship without an engine archive (an older pipeline, a
+        # failed platform build). The newest release that carries one is still
+        # worth bundling: the --capabilities probe below refuses an engine the
+        # product cannot talk to, so a mismatch degrades to TypeScript sessions
+        # exactly like a missing archive.
+        if ! curl -f -sS -L -o "$tmp_dir/$file" "https://github.com/oxdingzg/miao/releases/latest/download/${file}"; then
+            print_message info "${MUTED}No native engine archive in this release; miao runs TypeScript sessions.${NC}"
+            rm -rf "$tmp_dir"
+            return 0
+        fi
     fi
     if [ "$os" = "linux" ]; then
         tar -xzf "$tmp_dir/$file" -C "$tmp_dir"
