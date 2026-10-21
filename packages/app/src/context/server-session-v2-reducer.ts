@@ -186,41 +186,43 @@ export function createV2SessionReducer() {
         )
       }
       case "session.next.step.ended":
-        return updateAssistant(source, event.data.assistantMessageID, sessionID, (item) => ({
-          ...item,
-          finish: wire(event.data.finish),
-          cost: event.data.cost,
-          tokens: event.data.tokens,
-          snapshot:
-            event.data.snapshot || event.data.files
-              ? { ...item.snapshot, end: event.data.snapshot, files: wire(event.data.files) }
-              : item.snapshot,
-          time: { ...item.time, completed: event.data.timestamp },
-        }))
+        return updateAssistant(
+          ensureAssistant(source, event.data.assistantMessageID, event.data.timestamp),
+          event.data.assistantMessageID,
+          sessionID,
+          (item) => ({
+            ...item,
+            finish: wire(event.data.finish),
+            cost: event.data.cost,
+            tokens: event.data.tokens,
+            snapshot:
+              event.data.snapshot || event.data.files
+                ? { ...item.snapshot, end: event.data.snapshot, files: wire(event.data.files) }
+                : item.snapshot,
+            time: { ...item.time, completed: event.data.timestamp },
+          }),
+        )
       case "session.next.step.failed":
         return updateAssistant(source, event.data.assistantMessageID, sessionID, (item) => ({
           ...item,
           finish: "error",
           error: event.data.error,
           time: { ...item.time, completed: event.data.timestamp },
-          // An interrupted turn never settles its in-flight tools; leave them
-          // pending and the timeline shows a spinner forever.
-          content: item.content.map((content) => {
-            if (content.type !== "tool" || content.state.status !== "pending") return content
-            const parsed: unknown = JSON.parse(content.state.input || "{}")
-            return {
-              ...content,
-              state: {
-                status: "error",
-                input: record(parsed) ? parsed : {},
-                structured: {},
-                content: [],
-                error: { type: "unknown", message: "Interrupted" },
-                time: { created: content.time.created, ran: content.time.created, completed: event.data.timestamp },
-              },
-            }
-          }),
+          content: settleInterruptedTools(item.content, event.data.timestamp),
         }))
+      // A native drain that dies outside a provider step (`stop_failure`) publishes
+      // no `step.failed`, so the streamed draft it leaves behind must settle here.
+      case "session.next.failed": {
+        const current = source.findLast((item): item is Assistant => item.type === "assistant" && !item.time.completed)
+        if (!current) return
+        return updateAssistant(source, current.id, sessionID, (item) => ({
+          ...item,
+          finish: "error",
+          error: event.data.error,
+          time: { ...item.time, completed: event.data.timestamp },
+          content: settleInterruptedTools(item.content, event.data.timestamp),
+        }))
+      }
       case "session.next.text.started":
         return updateAssistant(
           ensureAssistant(source, event.data.assistantMessageID, event.data.timestamp),
@@ -384,19 +386,31 @@ export function createV2SessionReducer() {
             tool.state.status === "pending" ? { ...tool, state: { ...tool.state, input: event.data.text } } : tool,
         )
       case "session.next.tool.called":
-        return updateTool(source, event.data.assistantMessageID, event.data.callID, sessionID, (tool) => ({
-          ...tool,
-          provider: wire(event.data.provider),
-          // A re-run keeps the settled metadata: the edit renderer reads the
-          // diff from `structured` while the tool is running again.
-          state: {
-            status: "running",
-            input: wire(event.data.input),
-            structured: ("structured" in tool.state ? tool.state.structured : {}) ?? {},
-            content: [],
-          },
-          time: { ...tool.time, ran: event.data.timestamp },
-        }))
+        return updateTool(
+          ensureTool(
+            ensureAssistant(source, event.data.assistantMessageID, event.data.timestamp),
+            event.data.assistantMessageID,
+            event.data.callID,
+            event.data.tool,
+            event.data.timestamp,
+          ),
+          event.data.assistantMessageID,
+          event.data.callID,
+          sessionID,
+          (tool) => ({
+            ...tool,
+            provider: wire(event.data.provider),
+            // A re-run keeps the settled metadata: the edit renderer reads the
+            // diff from `structured` while the tool is running again.
+            state: {
+              status: "running",
+              input: wire(event.data.input),
+              structured: ("structured" in tool.state ? tool.state.structured : {}) ?? {},
+              content: [],
+            },
+            time: { ...tool.time, ran: event.data.timestamp },
+          }),
+        )
       case "session.next.tool.progress":
         return updateTool(source, event.data.assistantMessageID, event.data.callID, sessionID, (tool) =>
           tool.state.status === "running"
@@ -548,7 +562,9 @@ function position(list: (string | undefined)[], id: string) {
 
 // A native stream's parts can arrive before any committed assistant exists
 // (`step.started` requires product identities the engine does not know), so
-// streaming cases seed the placeholder they render into.
+// streaming and commit cases seed the placeholder they render into. The commit
+// cases cannot rely on `assistant.identity`: malformed evidence is dropped by
+// the bridge, and a tool-only commit would otherwise lose its calls.
 function ensureAssistant(
   source: readonly SessionMessageInfo[],
   id: string,
@@ -568,10 +584,53 @@ function ensureAssistant(
   ]
 }
 
+// A commit-only native tool call arrives with no streamed start, so the pending
+// placeholder `tool.called` updates has to be minted here. The payload carries
+// the product tool id, which is the name the renderers match.
+function ensureTool(
+  source: readonly SessionMessageInfo[],
+  id: string,
+  callID: string,
+  name: string,
+  timestamp: number,
+): readonly SessionMessageInfo[] {
+  return update(source, id, (item) => {
+    if (item.type !== "assistant") return item
+    if (item.content.some((content) => content.type === "tool" && content.id === callID)) return item
+    return {
+      ...item,
+      content: [
+        ...item.content,
+        { type: "tool", id: callID, name, state: { status: "pending", input: "" }, time: { created: timestamp } },
+      ],
+    }
+  })
+}
+
 // The event contract widens values it cannot type and marks collections readonly, while the
 // projected message keeps the narrower mutable JSON form. This is where the two shapes meet.
 function wire<T>(input: unknown): T {
   return input as T
+}
+
+// An interrupted turn never settles its in-flight tools; leave them pending and
+// the timeline shows a spinner forever.
+function settleInterruptedTools(content: Assistant["content"], timestamp: number): Assistant["content"] {
+  return content.map((item) => {
+    if (item.type !== "tool" || item.state.status !== "pending") return item
+    const parsed: unknown = JSON.parse(item.state.input || "{}")
+    return {
+      ...item,
+      state: {
+        status: "error",
+        input: record(parsed) ? parsed : {},
+        structured: {},
+        content: [],
+        error: { type: "unknown", message: "Interrupted" },
+        time: { created: item.time.created, ran: item.time.created, completed: timestamp },
+      },
+    }
+  })
 }
 
 function update(

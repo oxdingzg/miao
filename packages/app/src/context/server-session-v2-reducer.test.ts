@@ -599,3 +599,215 @@ describe("native assistant initialization", () => {
     expect(ended.messages[0]).toMatchObject({ type: "compaction", summary: "summary", reason: "manual" })
   })
 })
+
+describe("native drain failure", () => {
+  test("settles the streamed draft and its pending tools when the drain fails", () => {
+    const reducer = createV2SessionReducer()
+    let messages: SessionMessageInfo[] = []
+    const apply = (input: object) => {
+      const result = reducer.reduce(messages, event(input))
+      if (result) messages = result.messages
+      return result
+    }
+
+    apply({
+      ...base,
+      id: "evt_delta",
+      type: "session.next.text.delta",
+      data: { ...stamp, assistantMessageID: "msg_native", textID: "text_5_0", delta: "partial" },
+    })
+    apply({
+      ...base,
+      id: "evt_tool_start",
+      type: "session.next.tool.input.started",
+      data: { ...stamp, assistantMessageID: "msg_native", callID: "call_1", name: "bash" },
+    })
+    const failed = apply({
+      ...base,
+      id: "evt_failed",
+      type: "session.next.failed",
+      data: {
+        ...stamp,
+        error: { type: "unknown", message: "engine drain failed" },
+        name: "EngineRunFailed",
+      },
+    })!
+    expect(failed.touched).toEqual(["msg_native"])
+    expect(messages[0]).toMatchObject({
+      id: "msg_native",
+      type: "assistant",
+      finish: "error",
+      error: { type: "unknown", message: "engine drain failed" },
+      time: { created: 1, completed: 1 },
+      content: [
+        { type: "text", text: "partial" },
+        {
+          type: "tool",
+          id: "call_1",
+          state: {
+            status: "error",
+            input: {},
+            error: { type: "unknown", message: "Interrupted" },
+            time: { created: 1, ran: 1, completed: 1 },
+          },
+        },
+      ],
+    })
+
+    // The drain is over; a duplicate failure has nothing left to settle.
+    expect(
+      reducer.reduce(messages, event({
+        ...base,
+        id: "evt_failed_2",
+        type: "session.next.failed",
+        data: { ...stamp, error: { type: "unknown", message: "again" }, name: "EngineRunFailed" },
+      })),
+    ).toBeUndefined()
+  })
+
+  test("reduces to nothing when no assistant is unsettled", () => {
+    const reducer = createV2SessionReducer()
+    expect(
+      reducer.reduce([], event({
+        ...base,
+        id: "evt_failed",
+        type: "session.next.failed",
+        data: { ...stamp, error: { type: "unknown", message: "engine drain failed" } },
+      })),
+    ).toBeUndefined()
+    const settled = [
+      {
+        id: "msg_done",
+        type: "assistant" as const,
+        agent: null,
+        model: null,
+        time: { created: 1, completed: 2 },
+        content: [],
+      },
+    ]
+    const result = reducer.reduce(settled, event({
+      ...base,
+      id: "evt_failed",
+      type: "session.next.failed",
+      data: { ...stamp, error: { type: "unknown", message: "engine drain failed" } },
+    }))
+    expect(result).toBeUndefined()
+  })
+
+  test("failed settles the newest unsettled assistant, not settled history", () => {
+    const reducer = createV2SessionReducer()
+    const source = [
+      {
+        id: "msg_old",
+        type: "assistant" as const,
+        agent: null,
+        model: null,
+        time: { created: 1, completed: 2 },
+        content: [],
+      },
+    ]
+    const streamed = reducer.reduce(
+      source,
+      event({
+        ...base,
+        id: "evt_delta",
+        type: "session.next.text.delta",
+        data: { ...stamp, assistantMessageID: "msg_new", textID: "text_9_0", delta: "draft" },
+      }),
+    )!
+    const failed = reducer.reduce(streamed.messages, event({
+      ...base,
+      id: "evt_failed",
+      type: "session.next.failed",
+      data: { ...stamp, timestamp: 3, error: { type: "unknown", message: "boom" } },
+    }))!
+    expect(failed.touched).toEqual(["msg_new"])
+    expect(failed.messages[0]).toMatchObject({ id: "msg_old", time: { created: 1, completed: 2 } })
+    expect(failed.messages[1]).toMatchObject({ id: "msg_new", finish: "error", time: { completed: 3 } })
+  })
+})
+
+describe("native commit projection without identity evidence", () => {
+  test("a tool-only commit seeds the assistant and completes through tool.success", () => {
+    const reducer = createV2SessionReducer()
+    let messages: SessionMessageInfo[] = []
+    const apply = (input: object) => {
+      const result = reducer.reduce(messages, event(input))
+      if (result) messages = result.messages
+      return result
+    }
+
+    const called = apply({
+      ...base,
+      id: "evt_called",
+      type: "session.next.tool.called",
+      data: {
+        ...stamp,
+        assistantMessageID: "msg_native",
+        callID: "call_1",
+        tool: "bash",
+        input: { command: "echo hi" },
+        provider: { executed: false },
+      },
+    })!
+    expect(called.touched).toEqual(["msg_native"])
+    expect(messages[0]).toMatchObject({
+      id: "msg_native",
+      type: "assistant",
+      agent: null,
+      model: null,
+      content: [
+        {
+          type: "tool",
+          id: "call_1",
+          state: { status: "running", input: { command: "echo hi" } },
+        },
+      ],
+    })
+
+    const success = apply({
+      ...base,
+      id: "evt_success",
+      type: "session.next.tool.success",
+      data: {
+        ...stamp,
+        assistantMessageID: "msg_native",
+        callID: "call_1",
+        structured: {},
+        content: [{ type: "text", text: "hi" }],
+        provider: { executed: false },
+      },
+    })!
+    expect(success.touched).toEqual(["msg_native"])
+    expect(messages[0]).toMatchObject({
+      content: [{ type: "tool", id: "call_1", state: { status: "completed", content: [{ text: "hi" }] } }],
+    })
+  })
+
+  test("step.ended settles a commit that streamed nothing", () => {
+    const reducer = createV2SessionReducer()
+    const ended = reducer.reduce([], event({
+      ...base,
+      id: "evt_ended",
+      type: "session.next.step.ended",
+      data: {
+        ...stamp,
+        assistantMessageID: "msg_native",
+        finish: "stop",
+        cost: 0.01,
+        tokens: { input: 10, output: 5, reasoning: 0, cache: { read: 0, write: 0 } },
+      },
+    }))!
+    expect(ended.touched).toEqual(["msg_native"])
+    expect(ended.messages[0]).toMatchObject({
+      id: "msg_native",
+      type: "assistant",
+      agent: null,
+      model: null,
+      finish: "stop",
+      cost: 0.01,
+      tokens: { input: 10, output: 5 },
+      time: { created: 1, completed: 1 },
+    })
+  })
+})
