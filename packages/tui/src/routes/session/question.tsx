@@ -1,3 +1,4 @@
+import { Markdown } from "../../component/markdown"
 import { createStore } from "solid-js/store"
 import { createMemo, createSignal, For, onCleanup, onMount, Show } from "solid-js"
 import { useRenderer } from "@opentui/solid"
@@ -512,7 +513,7 @@ export function QuestionPrompt(props: {
                   borderColor={theme.border}
                   paddingLeft={2}
                 >
-                  <markdown
+                  <Markdown
                     syntaxStyle={syntax()}
                     streaming={false}
                     internalBlockMode="top-level"

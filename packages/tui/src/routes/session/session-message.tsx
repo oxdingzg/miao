@@ -1,3 +1,4 @@
+import { Markdown } from "../../component/markdown"
 import { createMemo, Show } from "solid-js"
 import { useTheme } from "../../context/theme"
 
@@ -56,7 +57,7 @@ export function SessionMessageContent(props: {
           <text fg={theme.theme.textMuted}>{origin()}</text>
         </box>
         <Show when={props.body.trim()} fallback={<text fg={theme.theme.textMuted}>(empty message)</text>}>
-          <markdown
+          <Markdown
             syntaxStyle={theme.syntax()}
             streaming={false}
             internalBlockMode="top-level"
