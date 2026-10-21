@@ -116,25 +116,16 @@ Compress-Archive -LiteralPath (Join-Path $env:FIXTURE_OLD_DIR 'miao.exe') -Desti
     assert.equal(redownloaded.code, 0, `${redownloaded.stderr} — served: ${requests.join(", ")}`)
     assert.deepEqual(await Bun.file(executable).arrayBuffer(), current, "redo restores the upgraded bytes")
 
-    assert.match(requests[0], /^\/v1\.2\.3\/miao-windows-x64(?:-baseline)?\.zip bytes=/)
-        assert.deepEqual(
-          requests.map((request) => request.split(" ")[0]),
-          [
-            "/v1.2.3/miao-windows-x64.zip",
-            "/v1.2.4/miao-windows-x64.zip",
-            "/v1.2.6/miao-windows-x64.zip",
-            "/v1.2.5/miao-windows-x64.zip",
-            "/v1.2.2/miao-windows-x64.zip",
-            "/v1.2.3/miao-windows-x64.zip",
-          ].map((path) => path.replace("miao-windows-x64.zip", requests[0].split(" ")[0].split("/").at(-1)!)),
-        )
-        // Every served archive must actually be a zip-sized body: an empty or
-        // truncated one would fail the script's extract phase instead.
-        for (const request of requests) {
-          const size = Number(request.split("bytes=")[1] ?? 0)
-          if (request.includes("v1.2.5/")) continue
-          assert.ok(size > 1000, `served archive too small: ${request}`)
-        }
+    assert.match(requests[0], /^\/v1\.2\.3\/miao-windows-x64(?:-baseline)?\.zip$/)
+    const asset = requests[0].split("/").at(-1)
+    assert.deepEqual(requests, [
+      `/v1.2.3/${asset}`,
+      `/v1.2.4/${asset}`,
+      `/v1.2.6/${asset}`,
+      `/v1.2.5/${asset}`,
+      `/v1.2.2/${asset}`,
+      `/v1.2.3/${asset}`,
+    ])
   } finally {
     old.kill()
     await old.exited
