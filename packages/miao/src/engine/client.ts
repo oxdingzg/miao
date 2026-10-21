@@ -91,7 +91,22 @@ export interface EngineOptions {
    * Execute a product tool the engine planned. The reply becomes the tool
    * result, so a rejection must be thrown, never swallowed.
    */
-  onProductTool?: (call: { sessionID: string; name: string; input: unknown; callID: string }) => Promise<unknown>
+  onProductTool?: (call: {
+    sessionID: string
+    name: string
+    input: unknown
+    callID: string
+    /** Bridge routing key; the cancel notice carries it back. */
+    bridgeID: number
+    /** The calling assistant message's durable seq, when the engine reports it. */
+    messageSeq?: number
+  }) => Promise<unknown>
+  /**
+   * A run settled while this bridge call was still pending (cancel, failure,
+   * or clean end). The executor must stop children and release the call; the
+   * engine has already dropped the pending reply slot.
+   */
+  onProductToolCancel?: (call: { sessionID: string; bridgeID: number }) => void
   /**
    * Answer a reverse-dispatched plugin tool hook. The reply is the verdict:
    * `{ deny }` blocks, `{ args }` transforms the before input, `{ output }`
@@ -294,6 +309,7 @@ export class EngineClient {
     private readonly cleanup = () => {},
     private readonly onProductTool?: EngineOptions["onProductTool"],
     private readonly onHookTool?: EngineOptions["onHookTool"],
+    private readonly onProductToolCancel?: EngineOptions["onProductToolCancel"],
   ) {
     const stdout = this.readStdout().catch(() => {
       this.fail(new EngineError("engine_protocol", "miao-engine output stream failed"), true)
@@ -329,7 +345,13 @@ export class EngineClient {
         stderr: "pipe",
         env: engineEnvironment({ ...manifest?.environment, ...options.env }),
       })
-      return new EngineClient(child, manifest?.dispose, options.onProductTool, options.onHookTool)
+      return new EngineClient(
+        child,
+        manifest?.dispose,
+        options.onProductTool,
+        options.onHookTool,
+        options.onProductToolCancel,
+      )
     } catch (error) {
       manifest?.dispose()
       throw error
@@ -338,6 +360,11 @@ export class EngineClient {
 
   onEvent(handler: (event: EngineEvent) => void) {
     this.eventHandlers.push(handler)
+  }
+
+  offEvent(handler: (event: EngineEvent) => void) {
+    const index = this.eventHandlers.indexOf(handler)
+    if (index >= 0) this.eventHandlers.splice(index, 1)
   }
 
   onProgress(handler: (progress: EngineProgress) => void) {
@@ -456,7 +483,9 @@ export class EngineClient {
     }
     if (message.method === "product_tool") {
       const bridgeID = message.bridge_id
-      const params = message.params as { session_id?: string; name?: string; input?: unknown } | undefined
+      const params = message.params as
+        | { session_id?: string; name?: string; input?: unknown; call_id?: unknown; message_seq?: unknown }
+        | undefined
       const reply = (value: Record<string, unknown>) => this.child.stdin.write(JSON.stringify({ bridge_id: bridgeID, ...value }) + EOL)
       if (typeof bridgeID !== "number" || !params?.name || !this.onProductTool) {
         reply({ error: "product tool is not available on this host" })
@@ -466,11 +495,22 @@ export class EngineClient {
         sessionID: params.session_id ?? "",
         name: params.name,
         input: params.input,
-        callID: String(bridgeID),
+        // Newer engines name the real provider call; older ones only have the
+        // bridge routing key, which stays a stable fallback identity.
+        callID: typeof params.call_id === "string" && params.call_id.length > 0 ? params.call_id : String(bridgeID),
+        bridgeID,
+        ...(typeof params.message_seq === "number" ? { messageSeq: params.message_seq } : {}),
       }).then(
         (result) => reply({ result }),
         (error) => reply({ error: error instanceof Error ? error.message : String(error) }),
       )
+      return
+    }
+    if (message.method === "product_tool.cancel") {
+      const bridgeID = message.bridge_id
+      const params = message.params as { session_id?: string } | undefined
+      if (typeof bridgeID === "number")
+        this.onProductToolCancel?.({ sessionID: params?.session_id ?? "", bridgeID })
       return
     }
     if (message.method === "hook_tool") {
