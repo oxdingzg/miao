@@ -29,6 +29,7 @@ import {
   translateQuestionResolved,
   translateRetried,
   translateRunFailure,
+  translateExpiredCredential,
   translateStepEnded,
   translateTools,
   translateUsage,
@@ -45,6 +46,14 @@ export type EnginePublish = (event: EngineSessionEvent) => void
 
 /** Resolves the catalog rates for the model id an engine usage event names. */
 export type EnginePricing = (model: string) => ModelV2.Info["cost"] | undefined
+
+/** Refreshes an expired credential through its owning broker (ADR-09); true
+ * when the refresh succeeded and the Session may retry the failed turn. */
+export type CredentialExpiredTrigger = (input: {
+  sessionID: string
+  id: string
+  integration: string
+}) => Promise<boolean>
 
 /**
  * The per-Session translation state: the status/tool/prompt bridges plus the
@@ -414,12 +423,29 @@ export class EngineTranslator {
 export class EngineSession {
   #client: EngineTransport
   #translator: EngineTranslator
+  #onCredentialExpired: CredentialExpiredTrigger | undefined
   #subscriptions = new Map<string, { mode: "live" | "restored"; ready: Promise<unknown> }>()
 
-  constructor(client: EngineTransport, publish: EnginePublish, pricing?: EnginePricing) {
+  constructor(
+    client: EngineTransport,
+    publish: EnginePublish,
+    pricing?: EnginePricing,
+    onCredentialExpired?: CredentialExpiredTrigger,
+  ) {
     this.#client = client
     this.#translator = new EngineTranslator(publish, pricing)
-    client.onEvent((event) => this.#translator.dispatch(event))
+    this.#onCredentialExpired = onCredentialExpired
+    client.onEvent((event) => {
+      this.#translator.dispatch(event)
+      // Live events only: a replayed failure must never re-trigger a refresh.
+      const expired = translateExpiredCredential(event)
+      const trigger = this.#onCredentialExpired
+      if (expired && trigger) {
+        void trigger({ sessionID: event.session_id, id: expired.id, integration: expired.integration }).catch(
+          () => undefined,
+        )
+      }
+    })
     client.onProgress((progress) => this.#translator.progress(progress))
   }
 
