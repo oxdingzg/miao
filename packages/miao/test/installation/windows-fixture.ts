@@ -40,6 +40,8 @@ Compress-Archive -LiteralPath $env:FIXTURE_OLD_COPY -DestinationPath $env:FIXTUR
     },
   )
   assert.equal(await fixture.exited, 0, await new Response(fixture.stderr).text())
+  assert.ok((await Bun.file(archive).size) > 1000, "the new archive is not a usable zip")
+  assert.ok((await Bun.file(archiveOld).size) > 1000, "the old archive is not a usable zip")
   const requests: string[] = []
   const server = Bun.serve({
     hostname: "127.0.0.1",
@@ -71,7 +73,8 @@ Compress-Archive -LiteralPath $env:FIXTURE_OLD_COPY -DestinationPath $env:FIXTUR
   const old = Bun.spawn([executable, "--hold"], { stdout: "pipe" })
   await old.stdout.getReader().read()
   try {
-    assert.deepEqual(await upgrade("1.2.3"), { code: 0, stderr: "" })
+    const first = await upgrade("1.2.3")
+    assert.deepEqual(first, { code: 0, stderr: "" }, `served: ${requests.join(", ")}`)
     assert.equal(
       (await readdir(installation)).some((name) => name.startsWith(".miao-upgrade-")),
       false,
@@ -104,12 +107,12 @@ Compress-Archive -LiteralPath $env:FIXTURE_OLD_COPY -DestinationPath $env:FIXTUR
     // script targets the old release, the swap keeps the running process
     // alive, and the backup stack gains the upgraded bytes for a redo.
     const rollback = await upgrade("1.2.2")
-    assert.equal(rollback.code, 0, rollback.stderr)
+    assert.equal(rollback.code, 0, `${rollback.stderr} — served: ${requests.join(", ")}`)
     assert.equal(await Bun.file(executable).arrayBuffer(), original, "rollback restores the previous bytes")
     assert.equal(old.exitCode, null, "the original process must survive the rollback swap")
     assert.equal((await readdir(installation)).filter((name) => name.startsWith(`${filename}.bak-`)).length, 2)
     const redownloaded = await upgrade("1.2.3")
-    assert.equal(redownloaded.code, 0, redownloaded.stderr)
+    assert.equal(redownloaded.code, 0, `${redownloaded.stderr} — served: ${requests.join(", ")}`)
     assert.deepEqual(await Bun.file(executable).arrayBuffer(), current, "redo restores the upgraded bytes")
 
     assert.match(requests[0], /^\/v1\.2\.3\/miao-windows-x64(?:-baseline)?\.zip bytes=/)
