@@ -2755,6 +2755,22 @@ impl Store {
                 }
                 values
             };
+            // Per-turn TTFT keyed like `turn_ms`, so the detail rows can carry
+            // the latency next to each model's usage.
+            let ttft_by_turn: std::collections::HashMap<(String, String), u64> = {
+                let mut stmt = conn.prepare(
+                    "SELECT run_id,step,ttft_ms FROM engine_timing WHERE session_id=?1 AND ttft_ms > 0",
+                )?;
+                let mut rows = stmt.query(params![session])?;
+                let mut values = std::collections::HashMap::new();
+                while let Some(row) = rows.next()? {
+                    values.insert(
+                        (row.get::<_, String>(0)?, row.get::<_, u64>(1)?.to_string()),
+                        row.get::<_, u64>(2)?,
+                    );
+                }
+                values
+            };
             let mut identity: std::collections::HashMap<(String, String), (String, String)> =
                 std::collections::HashMap::new();
             let mut per_identity: std::collections::HashMap<(String, String), u64> =
@@ -2875,6 +2891,9 @@ impl Store {
                             }
                             if let Some(value) = turn_ms.get(&key) {
                                 detail["turnMs"] = json!(value);
+                            }
+                            if let Some(value) = ttft_by_turn.get(&key) {
+                                detail["ttftMs"] = json!(value);
                             }
                             provider_detail.push(detail.clone());
                             if data["partial"] != true { turn_detail.push(detail); }

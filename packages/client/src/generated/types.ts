@@ -580,6 +580,7 @@ export type SessionsListOutput = {
           readonly reasoning: number
           readonly cache: { readonly read: number; readonly write: number }
         }
+        readonly ttftMs?: number
         readonly lastTurnAt: number
       }>
     }
@@ -683,6 +684,7 @@ export type SessionsCreateOutput = {
           readonly reasoning: number
           readonly cache: { readonly read: number; readonly write: number }
         }
+        readonly ttftMs?: number
         readonly lastTurnAt: number
       }>
     }
@@ -762,6 +764,7 @@ export type SessionsGetOutput = {
           readonly reasoning: number
           readonly cache: { readonly read: number; readonly write: number }
         }
+        readonly ttftMs?: number
         readonly lastTurnAt: number
       }>
     }
@@ -1362,6 +1365,7 @@ export type SessionsForkOutput = {
           readonly reasoning: number
           readonly cache: { readonly read: number; readonly write: number }
         }
+        readonly ttftMs?: number
         readonly lastTurnAt: number
       }>
     }
@@ -1588,6 +1592,7 @@ export type SessionsChildrenOutput = {
           readonly reasoning: number
           readonly cache: { readonly read: number; readonly write: number }
         }
+        readonly ttftMs?: number
         readonly lastTurnAt: number
       }>
     }
@@ -1679,6 +1684,7 @@ export type SessionsHistoryOutput = {
                   readonly reasoning: number
                   readonly cache: { readonly read: number; readonly write: number }
                 }
+                readonly ttftMs?: number
                 readonly lastTurnAt: number
               }>
             }
@@ -2401,6 +2407,7 @@ export type SessionsEventsOutput =
                 readonly reasoning: number
                 readonly cache: { readonly read: number; readonly write: number }
               }
+              readonly ttftMs?: number
               readonly lastTurnAt: number
             }>
           }
@@ -4398,6 +4405,7 @@ export type EventsDurableOutput =
                 readonly reasoning: number
                 readonly cache: { readonly read: number; readonly write: number }
               }
+              readonly ttftMs?: number
               readonly lastTurnAt: number
             }>
           }
@@ -4497,6 +4505,7 @@ export type EventsDurableOutput =
                 readonly reasoning: number
                 readonly cache: { readonly read: number; readonly write: number }
               }
+              readonly ttftMs?: number
               readonly lastTurnAt: number
             }>
           }
@@ -4596,6 +4605,7 @@ export type EventsDurableOutput =
                 readonly reasoning: number
                 readonly cache: { readonly read: number; readonly write: number }
               }
+              readonly ttftMs?: number
               readonly lastTurnAt: number
             }>
           }
@@ -5309,6 +5319,7 @@ export type EventsDurableOutput =
                 readonly reasoning: number
                 readonly cache: { readonly read: number; readonly write: number }
               }
+              readonly ttftMs?: number
               readonly lastTurnAt: number
             }>
           }
@@ -5395,6 +5406,7 @@ export type EventsDurableOutput =
                 readonly reasoning: number
                 readonly cache: { readonly read: number; readonly write: number }
               }
+              readonly ttftMs?: number
               readonly lastTurnAt: number
             }>
           }

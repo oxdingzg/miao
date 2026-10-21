@@ -161,6 +161,7 @@ export function nativeSessionUsage(input: {
       turns: number
       cost: number
       tokens: { input: number; output: number; reasoning: number; cache: { read: number; write: number } }
+      ttft: { sum: number; turns: number }
       lastTurnMs: number
     }
   >()
@@ -195,6 +196,7 @@ export function nativeSessionUsage(input: {
       turns: 0,
       cost: 0,
       tokens: { input: 0, output: 0, reasoning: 0, cache: { read: 0, write: 0 } },
+      ttft: { sum: 0, turns: 0 },
       lastTurnMs: 0,
     }
     group.turns += 1
@@ -204,6 +206,11 @@ export function nativeSessionUsage(input: {
     group.tokens.reasoning += count(billed.reasoningTokens)
     group.tokens.cache.read += count(billed.cacheReadInputTokens)
     group.tokens.cache.write += count(billed.cacheWriteInputTokens)
+    const ttftMs = number(entry["ttftMs"])
+    if (ttftMs !== undefined && ttftMs > 0) {
+      group.ttft.sum += ttftMs
+      group.ttft.turns += 1
+    }
     group.lastTurnMs = Math.max(group.lastTurnMs, turnMs)
     groups.set(key, group)
   }
@@ -245,6 +252,9 @@ export function nativeSessionUsage(input: {
         turns: group.turns,
         cost: group.cost,
         tokens: group.tokens,
+        ...(group.ttft.turns > 0
+          ? { ttftMs: Math.round(group.ttft.sum / group.ttft.turns) }
+          : {}),
         lastTurnAt: DateTime.makeUnsafe(group.lastTurnMs),
       }))
       .toSorted((left, right) => DateTime.toEpochMillis(right.lastTurnAt) - DateTime.toEpochMillis(left.lastTurnAt)),
