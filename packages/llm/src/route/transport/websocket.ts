@@ -259,6 +259,7 @@ export const json = <Body, Message>(input: JsonInput<Body, Message>): JsonTransp
       )
     }
     const decoder = new TextDecoder()
+    runtime.activity?.requestBytes(Buffer.byteLength(prepared.message))
     return Stream.unwrap(
       Effect.gen(function* () {
         const connection = yield* Effect.acquireRelease(
@@ -266,7 +267,15 @@ export const json = <Body, Message>(input: JsonInput<Body, Message>): JsonTransp
           (connection) => connection.close,
         )
         yield* connection.sendText(prepared.message)
-        return connection.messages.pipe(Stream.map((message) => messageText(message, decoder)))
+        runtime.activity?.headers()
+        return connection.messages.pipe(
+          Stream.tap((message) =>
+            Effect.sync(() =>
+              runtime.activity?.bytes(typeof message === "string" ? Buffer.byteLength(message) : message.byteLength),
+            ),
+          ),
+          Stream.map((message) => messageText(message, decoder)),
+        )
       }),
     )
   },

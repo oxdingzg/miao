@@ -11,6 +11,21 @@ at `docs/releases/vX.Y.Z.md` and `docs/releases/vX.Y.Z.zh.md`; both are required
 
 ## [Unreleased]
 
+## [0.2.23] - 2026-10-21
+
+### Fixed
+- **engine**: a stale reference path no longer crashes the engine with `InvalidInput`, so CLI continuation works with worktrees whose references were deleted (#1202).
+- **engine**: explicit engine routes (provider/endpoint) now bind their primary model, fixing "Model is not in the native host route catalog" for server-owned native Sessions (#1206).
+
+### Added
+- **engine**: `engine.storage` in the global config places new Sessions on the native engine; `miao doctor` reports the binary, protocol and storage state (#1201).
+- **engine**: plugin `tool.definition` hooks reverse-dispatch to the host, and plugin providers without an AI SDK package map onto openai-chat routes (#1198, #1199).
+- **engine**: automatic compaction derives `context_limits` for explicit routes too (#1195); delegation reports progress from native sessions (#1194); product-tool dispatch names the calling tool call and cancels pending calls on settle (#1192).
+- **tui**: per-model sidebar rows show mean time-to-first-token (#1200, #1203).
+- **install**: the installer falls back to the newest engine archive when a release lacks one (#1196).
+- **core**: provider stream watchdogs are separated by phase (#1210).
+- **script**: engine cost benchmark harness and pilot report (#1207).
+
 ## [0.2.22] - 2026-10-21
 
 ### Fixed

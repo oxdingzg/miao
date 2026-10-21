@@ -1,5 +1,6 @@
 import { describe, expect } from "bun:test"
 import { Deferred, Effect, Fiber, Stream } from "effect"
+import * as TestClock from "effect/testing/TestClock"
 import { LLMError, LLMEvent } from "@miao/llm"
 import { TransportKeepAlive } from "@miao/llm/route"
 import { SessionFirstByteGuard } from "@miao/core/session/runner/first-byte-guard"
@@ -8,6 +9,23 @@ import { it } from "./lib/effect"
 const first = LLMEvent.textDelta({ id: "answer", text: "hello" })
 
 describe("SessionFirstByteGuard", () => {
+  it.effect("fires under the test clock even when the stream subscribes late", () =>
+    Effect.gen(function* () {
+      const attempt = SessionFirstByteGuard.start()
+      const fiber = yield* SessionFirstByteGuard.wrap(Stream.never, {
+        attempt,
+        firstByteTimeoutMs: 100,
+        streamIdleTimeoutMs: 500,
+        eventIdleTimeoutMs: 500,
+      }).pipe(Stream.runDrain, Effect.flip, Effect.forkChild)
+      yield* TestClock.adjust("1 second")
+      const error = yield* Fiber.join(fiber).pipe(Effect.timeout("5 seconds"))
+      expect(error.reason.message).toBe(
+        "provider sent no response headers within 100ms (set MIAO_LLM_FIRST_BYTE_TIMEOUT_MS to adjust, 0 disables)",
+      )
+    }),
+  )
+
   it.live("times out, closes the source, and retires the connection pool", () =>
     Effect.gen(function* () {
       TransportKeepAlive.clearStale()
@@ -84,5 +102,103 @@ describe("SessionFirstByteGuard", () => {
         expect(closed).toBe(true)
       }),
     ),
+  )
+
+  it.live("times out while waiting for response headers", () =>
+    Effect.gen(function* () {
+      TransportKeepAlive.clearStale()
+      const attempt = SessionFirstByteGuard.start()
+      const error = yield* SessionFirstByteGuard.wrap(Stream.never, {
+        attempt,
+        firstByteTimeoutMs: 20,
+        streamIdleTimeoutMs: 0,
+        eventIdleTimeoutMs: 0,
+      }).pipe(Stream.runDrain, Effect.flip)
+      expect(error.reason._tag).toBe("Transport")
+      expect(error.reason.message).toBe(
+        "provider sent no response headers within 20ms (set MIAO_LLM_FIRST_BYTE_TIMEOUT_MS to adjust, 0 disables)",
+      )
+      expect(error.retryable).toBe(true)
+      expect(TransportKeepAlive.isStale()).toBe(true)
+    }).pipe(Effect.ensuring(Effect.sync(() => TransportKeepAlive.clearStale()))),
+  )
+
+  it.live("waits past the old deadline for a slow first event after headers arrive", () =>
+    Effect.gen(function* () {
+      const attempt = SessionFirstByteGuard.start()
+      const source = Stream.fromEffect(Effect.sleep("40 millis").pipe(Effect.as(first))).pipe(
+        Stream.onStart(Effect.sync(() => attempt.activity.headers())),
+      )
+      expect(
+        yield* SessionFirstByteGuard.wrap(source, {
+          attempt,
+          firstByteTimeoutMs: 20,
+          streamIdleTimeoutMs: 500,
+          eventIdleTimeoutMs: 500,
+        }).pipe(Stream.runCollect),
+      ).toEqual([first])
+    }),
+  )
+
+  it.live("keep-alive bytes do not hide a stalled event stream", () =>
+    Effect.gen(function* () {
+      const attempt = SessionFirstByteGuard.start()
+      const ticker = yield* Effect.gen(function* () {
+        while (true) {
+          attempt.activity.bytes(1)
+          yield* Effect.sleep("10 millis")
+        }
+      }).pipe(Effect.forkChild)
+      const error = yield* SessionFirstByteGuard.wrap(Stream.never, {
+        attempt,
+        firstByteTimeoutMs: 20,
+        streamIdleTimeoutMs: 20,
+        eventIdleTimeoutMs: 50,
+      }).pipe(Stream.runDrain, Effect.flip)
+      yield* Fiber.interrupt(ticker)
+      expect(error.reason.message).toBe(
+        "provider produced no stream event for 50ms (set MIAO_LLM_EVENT_IDLE_TIMEOUT_MS to adjust, 0 disables)",
+      )
+    }),
+  )
+
+  it.live("widens the header deadline by the encoded request size", () =>
+    Effect.gen(function* () {
+      const attempt = SessionFirstByteGuard.start()
+      const source = Stream.fromEffect(Effect.sleep("40 millis").pipe(Effect.as(first))).pipe(
+        Stream.onStart(Effect.sync(() => attempt.activity.requestBytes(64 * 1024))),
+      )
+      expect(
+        yield* SessionFirstByteGuard.wrap(source, {
+          attempt,
+          firstByteTimeoutMs: 20,
+          streamIdleTimeoutMs: 0,
+          eventIdleTimeoutMs: 0,
+        }).pipe(Stream.runCollect),
+      ).toEqual([first])
+    }),
+  )
+
+  it.live("resets the phase when the same attempt is subscribed again", () =>
+    Effect.gen(function* () {
+      const attempt = SessionFirstByteGuard.start()
+      yield* SessionFirstByteGuard.wrap(Stream.never, {
+        attempt,
+        firstByteTimeoutMs: 20,
+        streamIdleTimeoutMs: 0,
+        eventIdleTimeoutMs: 0,
+      }).pipe(Stream.runDrain, Effect.flip)
+      const source = Stream.fromEffect(Effect.sleep("10 millis").pipe(Effect.as(first))).pipe(
+        Stream.onStart(Effect.sync(() => attempt.activity.headers())),
+      )
+      expect(
+        yield* SessionFirstByteGuard.wrap(source, {
+          attempt,
+          firstByteTimeoutMs: 500,
+          streamIdleTimeoutMs: 500,
+          eventIdleTimeoutMs: 500,
+        }).pipe(Stream.runCollect),
+      ).toEqual([first])
+    }),
   )
 })

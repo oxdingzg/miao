@@ -33,3 +33,14 @@ bun test test/engine/install.test.ts
 对 build host 编译的实际二进制，可在临时 HOME 下运行同一 `script/install-engine.sh --binary ...`；记录安装前后、previous 与回退后文件的 SHA-256，确保恢复的是 A 的字节，不只比较版本字符串。
 
 这完成的是 engine 本地预览回退证据。默认切换前仍需真实产品投影/审批/恢复与发布通道回退验收。
+
+## 跨版本数据降级演练（2026-10-21）
+
+在隔离临时 HOME 中用两份真实 macOS engine 二进制演练"新版本 store 被旧版本打开"：
+
+- 写入方：`miao-engine 0.2.22`（protocol 2 / routes schema 2），通过产品 serve 完成一次完整原生回合，store 落在 `MIAO_ENGINE_STORAGE`。
+- 尝试方：`miao-engine 0.2.15`，带完整参数（`--db` 指向同一 store、`--model/--provider/--endpoint`）直接 `serve`。
+- 结果：`Error: Invalid("unsupported database schema version")`，进程以非零退出；store 的 SHA-256 在尝试前后完全一致，旧引擎没有写入任何字节。
+- 恢复：0.2.22 立即在同一 store 上继续第二个回合，历史两条都可见（`turn 1`、`turn 2`）。
+
+结论：跨版本**降级**被 schema guard 明确拒绝而不是静默兼容或损坏数据；产品文档中的回滚路径（重装上一版本 + TS 侧数据不动）对 native store 的保护成立。旧版本要读取新 store 仍不可能——这不是回滚目标，回滚以"重装旧版本、保留 TS 存储并放弃 native 存储"为准。

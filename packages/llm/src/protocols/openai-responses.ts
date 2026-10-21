@@ -1,4 +1,4 @@
-import { Effect, Schema } from "effect"
+import { Effect, Schema, Stream } from "effect"
 import { Route } from "../route/client"
 import { Auth } from "../route/auth"
 import { Endpoint } from "../route/endpoint"
@@ -1074,7 +1074,19 @@ export const pooledTransport: Transport<OpenAIResponsesBody, HttpTransport.HttpP
   frames: (prepared, request, runtime) => {
     const fallback = httpTransport.frames(prepared, request, runtime)
     if (!isPooled(prepared) || !prepared.socket || !runtime.webSocketPool) return fallback
-    return runtime.webSocketPool.stream(prepared.socket, fallback)
+    runtime.activity?.requestBytes(Buffer.byteLength(prepared.socket.message))
+    let received = false
+    return runtime.webSocketPool.stream(prepared.socket, fallback).pipe(
+      Stream.tap((text) =>
+        Effect.sync(() => {
+          if (!received) {
+            received = true
+            runtime.activity?.headers()
+          }
+          runtime.activity?.bytes(Buffer.byteLength(text))
+        }),
+      ),
+    )
   },
 }
 
