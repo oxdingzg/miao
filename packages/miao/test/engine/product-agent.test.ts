@@ -2,7 +2,7 @@ import { Schema } from "effect"
 import { Model } from "@miao/schema/model"
 import { expect, test } from "bun:test"
 import { Agent } from "@miao/schema/agent"
-import { agentManifest } from "../../src/engine/product-agent"
+import { agentManifest, modelRoute } from "../../src/engine/product-agent"
 import { EngineTranslator, type EngineSessionEvent } from "../../src/engine/session"
 
 test("agent manifests preserve ordered exceptions, generation settings and model variants", () => {
@@ -66,4 +66,22 @@ test("unsupported auto-classifier mode is not silently downgraded", () => {
     permission_mode: "auto",
   })
   expect(() => agentManifest(agent, [])).toThrow("automatic host classification is not available")
+})
+
+test("an explicit engine route binds its primary model by identity", () => {
+  // An explicit provider/endpoint engine reports one primary route with no id.
+  const catalog = [{ route_id: null, protocol: "openai-chat", model: "fixture/fixture" }] as const
+  const model = Schema.decodeUnknownSync(Model.Ref)({ providerID: "fixture", id: "fixture" })
+  expect(modelRoute(model, catalog)).toEqual({
+    route_id: null,
+    protocol: "openai-chat",
+    model: "fixture/fixture",
+  })
+  // The engine can report the provider's api model id without the provider name.
+  expect(modelRoute(model, [{ route_id: null, protocol: "openai-chat", model: "fixture" }])).toMatchObject({
+    route_id: null,
+    model: "fixture",
+  })
+  const other = Schema.decodeUnknownSync(Model.Ref)({ providerID: "fixture", id: "other" })
+  expect(() => modelRoute(other, catalog)).toThrow()
 })
