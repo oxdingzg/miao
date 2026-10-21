@@ -283,13 +283,15 @@ export const prepare = Effect.fn("Engine.productTools")(function* (
         })
       })
     const remind = (text: string) =>
-      peers.admit({
-        id: SessionMessage.ID.create(),
-        sessionID,
-        prompt: Prompt.make({ text: `<system-reminder>${text}</system-reminder>` }),
-        delivery: "steer",
-        resume: true,
-      })
+      peers
+        .admit({
+          id: SessionMessage.ID.create(),
+          sessionID,
+          prompt: Prompt.make({ text: `<system-reminder>${text}</system-reminder>` }),
+          delivery: "steer",
+          resume: true,
+        })
+        .pipe(Effect.catch(() => Effect.void))
     return {
       enter_worktree: Tool.make({
         description:
@@ -340,7 +342,9 @@ export const prepare = Effect.fn("Engine.productTools")(function* (
       exit_worktree: Tool.make({
         description:
           "Move this Session back into its project's primary checkout, optionally removing the worktree it occupies.",
-        input: Schema.Struct({ action: Schema.Literal("keep", "remove") }),
+        input: Schema.Struct({
+          action: Schema.Union([Schema.Literal("keep"), Schema.Literal("remove")]),
+        }),
         output: Schema.Struct({
           moved: Schema.Literal(true),
           directory: Schema.String,

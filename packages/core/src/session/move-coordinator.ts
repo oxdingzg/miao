@@ -3,6 +3,7 @@ import { Effect, Schema } from "effect"
 import { AbsolutePath } from "../schema"
 import type { SessionID } from "@miao/schema/session-id"
 import { Database } from "../database/database"
+import { Location } from "../location"
 import { SessionEnginePlacement } from "./engine-placement"
 import { SessionEnginePlacementTable } from "./engine-placement.sql"
 import { SessionMigration } from "./migration"
@@ -10,7 +11,13 @@ import { SessionMigrationTable } from "./migration.sql"
 
 type Db = Database.Interface["db"]
 
-type Native = Extract<SessionEnginePlacement.Placement, { engine: "rust" }>
+/** The placement shape the move needs: plain storage (the engine speaks
+ * strings) and the product Location.Ref the placement column stores. */
+type Native = {
+  engine: "rust"
+  storage: string
+  location: Location.Ref
+}
 
 /** The engine control-channel operations a rust→rust move needs. The product
  * tool bridge host implements this on top of the same Requester the
