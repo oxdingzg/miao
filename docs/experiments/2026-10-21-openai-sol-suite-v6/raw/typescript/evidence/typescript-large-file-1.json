@@ -1,0 +1,299 @@
+{
+  "sample": {
+    "task": "large-file",
+    "engine": "typescript",
+    "repetition": 1,
+    "suiteHash": "bd905b4f81f0a9412b614631a36337723067574848c5f05b50ead1cf48675091",
+    "taskHash": "55a120909957198a82e321a13a4b2f7b66c2439b3d040e8722add9575c37d311",
+    "profile": {
+      "model": "gpt-6.1-sol",
+      "modelParametersHash": "923ad27d033aef376e431d134a576317b3ecda4be6a71805a9b3a8832d70a04d",
+      "agentManifestHash": "bb3eea7778d1439040133d62bbba25b31d2fb0c9e553773e1533b7e4540425f6",
+      "permissionHash": "ba708cb0a7227d7280ff219bd1cc850ad870ed88058c59d9fa173694bbf73fa2",
+      "toolSurfaceHash": "04c769ae52448d5fe45ea690050120cee624771222b1291088dc6d832c888106"
+    },
+    "revision": "fa6bac5cce43b6110bee5d96ce3657d8567c3a3f",
+    "artifactHash": "fbdc6b8df04b5dc3aaf582297e58797326583f37a639313928a7da942b44ae72",
+    "receiptHash": "5376905642ad90e727c75189cc7605e43fdc9fbfc6e80da487f9049358fa4e18",
+    "outcome": "passed",
+    "elapsedMs": 25361,
+    "attempts": [
+      {
+        "inputTokens": 9917,
+        "outputTokens": 38,
+        "cost": null
+      },
+      {
+        "inputTokens": 10023,
+        "outputTokens": 29,
+        "cost": null
+      },
+      {
+        "inputTokens": 10234,
+        "outputTokens": 21,
+        "cost": null
+      },
+      {
+        "inputTokens": 10312,
+        "outputTokens": 82,
+        "cost": null
+      },
+      {
+        "inputTokens": 10534,
+        "outputTokens": 29,
+        "cost": null
+      },
+      {
+        "inputTokens": 10686,
+        "outputTokens": 93,
+        "cost": null
+      },
+      {
+        "inputTokens": 10846,
+        "outputTokens": 19,
+        "cost": null
+      },
+      {
+        "inputTokens": 10927,
+        "outputTokens": 66,
+        "cost": null
+      }
+    ]
+  },
+  "rejection": null,
+  "evidence": {
+    "engine": "typescript",
+    "revision": "fa6bac5cce43b6110bee5d96ce3657d8567c3a3f",
+    "task": "large-file",
+    "repetition": 1,
+    "terminal": "completed",
+    "error": null,
+    "receipts": [],
+    "attempts": [
+      {
+        "inputTokens": 9917,
+        "outputTokens": 38,
+        "cacheReadTokens": 0,
+        "cacheWriteTokens": 0,
+        "reasoningTokens": 0,
+        "cost": null
+      },
+      {
+        "inputTokens": 10023,
+        "outputTokens": 29,
+        "cacheReadTokens": 9728,
+        "cacheWriteTokens": 0,
+        "reasoningTokens": 0,
+        "cost": null
+      },
+      {
+        "inputTokens": 10234,
+        "outputTokens": 21,
+        "cacheReadTokens": 9856,
+        "cacheWriteTokens": 0,
+        "reasoningTokens": 0,
+        "cost": null
+      },
+      {
+        "inputTokens": 10312,
+        "outputTokens": 82,
+        "cacheReadTokens": 10112,
+        "cacheWriteTokens": 0,
+        "reasoningTokens": 0,
+        "cost": null
+      },
+      {
+        "inputTokens": 10534,
+        "outputTokens": 29,
+        "cacheReadTokens": 10112,
+        "cacheWriteTokens": 0,
+        "reasoningTokens": 0,
+        "cost": null
+      },
+      {
+        "inputTokens": 10686,
+        "outputTokens": 93,
+        "cacheReadTokens": 10368,
+        "cacheWriteTokens": 0,
+        "reasoningTokens": 0,
+        "cost": null
+      },
+      {
+        "inputTokens": 10846,
+        "outputTokens": 19,
+        "cacheReadTokens": 10496,
+        "cacheWriteTokens": 0,
+        "reasoningTokens": 0,
+        "cost": null
+      },
+      {
+        "inputTokens": 10927,
+        "outputTokens": 66,
+        "cacheReadTokens": 10752,
+        "cacheWriteTokens": 0,
+        "reasoningTokens": 0,
+        "cost": null
+      }
+    ],
+    "phases": [
+      {
+        "phase": "step-start",
+        "atMs": 1792541404697,
+        "clock": "observed"
+      },
+      {
+        "phase": "tool-part",
+        "atMs": 1792541405184,
+        "clock": "observed"
+      },
+      {
+        "phase": "step-start",
+        "atMs": 1792541408832,
+        "clock": "observed"
+      },
+      {
+        "phase": "tool-part",
+        "atMs": 1792541409083,
+        "clock": "observed"
+      },
+      {
+        "phase": "step-start",
+        "atMs": 1792541411675,
+        "clock": "observed"
+      },
+      {
+        "phase": "tool-part",
+        "atMs": 1792541411848,
+        "clock": "observed"
+      },
+      {
+        "phase": "step-start",
+        "atMs": 1792541414606,
+        "clock": "observed"
+      },
+      {
+        "phase": "tool-part",
+        "atMs": 1792541414777,
+        "clock": "observed"
+      },
+      {
+        "phase": "tool-part",
+        "atMs": 1792541414807,
+        "clock": "observed"
+      },
+      {
+        "phase": "tool-part",
+        "atMs": 1792541414863,
+        "clock": "observed"
+      },
+      {
+        "phase": "step-start",
+        "atMs": 1792541416615,
+        "clock": "observed"
+      },
+      {
+        "phase": "tool-part",
+        "atMs": 1792541416854,
+        "clock": "observed"
+      },
+      {
+        "phase": "step-start",
+        "atMs": 1792541418575,
+        "clock": "observed"
+      },
+      {
+        "phase": "tool-part",
+        "atMs": 1792541419920,
+        "clock": "observed"
+      },
+      {
+        "phase": "first-output",
+        "atMs": 1792541419977,
+        "clock": "observed"
+      },
+      {
+        "phase": "step-start",
+        "atMs": 1792541422268,
+        "clock": "observed"
+      },
+      {
+        "phase": "tool-part",
+        "atMs": 1792541422683,
+        "clock": "observed"
+      },
+      {
+        "phase": "step-start",
+        "atMs": 1792541424113,
+        "clock": "observed"
+      },
+      {
+        "phase": "first-output",
+        "atMs": 1792541424997,
+        "clock": "observed"
+      },
+      {
+        "phase": "exit",
+        "atMs": 1792541425100,
+        "clock": "observed"
+      },
+      {
+        "phase": "verified",
+        "atMs": 1792541425154,
+        "clock": "observed"
+      }
+    ],
+    "profile": {
+      "model": "gpt-6.1-sol",
+      "modelParametersHash": "923ad27d033aef376e431d134a576317b3ecda4be6a71805a9b3a8832d70a04d",
+      "agentManifestHash": "bb3eea7778d1439040133d62bbba25b31d2fb0c9e553773e1533b7e4540425f6",
+      "permissionHash": "ba708cb0a7227d7280ff219bd1cc850ad870ed88058c59d9fa173694bbf73fa2",
+      "toolSurfaceHash": "04c769ae52448d5fe45ea690050120cee624771222b1291088dc6d832c888106"
+    },
+    "profileReceipts": 8,
+    "loops": {
+      "continuations": [],
+      "stopped": []
+    },
+    "toolCalls": 9,
+    "textHash": "4167d01339ea6edfb45935d91d0365bb4c84350574292977c5d44f6d81a48e4f",
+    "binarySha256": null,
+    "startedAtMs": 1792541399793,
+    "admissionMs": null,
+    "elapsedMs": 25361
+  },
+  "assessment": {
+    "suiteHash": "bd905b4f81f0a9412b614631a36337723067574848c5f05b50ead1cf48675091",
+    "taskHash": "55a120909957198a82e321a13a4b2f7b66c2439b3d040e8722add9575c37d311",
+    "artifactPass": true,
+    "unexpected": [],
+    "immutable": [
+      {
+        "file": "AGENTS.md",
+        "unchanged": true
+      },
+      {
+        "file": "package.json",
+        "unchanged": true
+      },
+      {
+        "file": "test/oracle.test.ts",
+        "unchanged": true
+      }
+    ],
+    "expected": [],
+    "check": {
+      "command": [
+        "bash",
+        "-lc",
+        "bun test test/oracle.test.ts && grep -qF 'return table[key]' src/registry.ts && echo LARGE_FILE_OK"
+      ],
+      "exit": 0,
+      "stdoutHash": "1566dcf2dad36d50b3660d6968b7b95d762bb3f787034a1a1377fa79a8c342d6",
+      "stderrHash": "2d5e45c9f8bbb3f762437a2622a8179cc38c57b7ce8217e7140a598e03cc9ac4"
+    },
+    "executionVerdict": "unverified",
+    "requiredReceipts": [],
+    "answerContains": []
+  },
+  "answer": "The lookup at `src/registry.ts:1602` uses `table[key + 1]`, causing the off-by-one error. I’ll change only that expression to `table[key]` and run the existing Bun test.\nFixed `src/registry.ts:1602` by changing only the lookup expression from `table[key + 1]` to `table[key]`. Every other export remains intact.\n\nValidation: `bun test` exited with code 0 — **1 passed, 0 failed, 3 assertions**."
+}

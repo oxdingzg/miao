@@ -1,0 +1,230 @@
+{
+  "sample": {
+    "task": "multi-line-edit",
+    "engine": "typescript",
+    "repetition": 2,
+    "suiteHash": "bd905b4f81f0a9412b614631a36337723067574848c5f05b50ead1cf48675091",
+    "taskHash": "9da008a0099a635cb45ea80ebda993c5f627a4e16e8ad28efa7b09d82a6068a2",
+    "profile": {
+      "model": "glm-5.3-flash",
+      "modelParametersHash": "8e95a72245d8f3e50cd5735267ad53678df0b3910338cbfdbb90033c7c284300",
+      "agentManifestHash": "847440b369248202bd8fb570190f02384e68635a972f72fcc2e2eb8334f1acef",
+      "permissionHash": "66ec3ce2d38901a70b414e1f15064ec13df41b91f317fec17fabfb975f0e7674",
+      "toolSurfaceHash": "04c769ae52448d5fe45ea690050120cee624771222b1291088dc6d832c888106"
+    },
+    "revision": "fa6bac5cce43b6110bee5d96ce3657d8567c3a3f",
+    "artifactHash": "5a39bf82d64b8a9579a0bc48863c2e2a548f9ac611a2ffd6c480c2a6ed39c8f5",
+    "receiptHash": "1f99018060a43ef011b60a0758166f92b7a07a5f534da3211741d333c2ba5d39",
+    "outcome": "passed",
+    "elapsedMs": 13732,
+    "attempts": [
+      {
+        "inputTokens": 13618,
+        "outputTokens": 62,
+        "cost": null
+      },
+      {
+        "inputTokens": 13842,
+        "outputTokens": 15,
+        "cost": null
+      },
+      {
+        "inputTokens": 13988,
+        "outputTokens": 121,
+        "cost": null
+      },
+      {
+        "inputTokens": 14146,
+        "outputTokens": 38,
+        "cost": null
+      },
+      {
+        "inputTokens": 14241,
+        "outputTokens": 54,
+        "cost": null
+      }
+    ]
+  },
+  "rejection": null,
+  "evidence": {
+    "engine": "typescript",
+    "revision": "fa6bac5cce43b6110bee5d96ce3657d8567c3a3f",
+    "task": "multi-line-edit",
+    "repetition": 2,
+    "terminal": "completed",
+    "error": null,
+    "receipts": [],
+    "attempts": [
+      {
+        "inputTokens": 13618,
+        "outputTokens": 62,
+        "cacheReadTokens": 11456,
+        "cacheWriteTokens": null,
+        "reasoningTokens": 16,
+        "cost": null
+      },
+      {
+        "inputTokens": 13842,
+        "outputTokens": 15,
+        "cacheReadTokens": 13568,
+        "cacheWriteTokens": null,
+        "reasoningTokens": 0,
+        "cost": null
+      },
+      {
+        "inputTokens": 13988,
+        "outputTokens": 121,
+        "cacheReadTokens": 13824,
+        "cacheWriteTokens": null,
+        "reasoningTokens": 64,
+        "cost": null
+      },
+      {
+        "inputTokens": 14146,
+        "outputTokens": 38,
+        "cacheReadTokens": 13952,
+        "cacheWriteTokens": null,
+        "reasoningTokens": 0,
+        "cost": null
+      },
+      {
+        "inputTokens": 14241,
+        "outputTokens": 54,
+        "cacheReadTokens": 14144,
+        "cacheWriteTokens": null,
+        "reasoningTokens": 0,
+        "cost": null
+      }
+    ],
+    "phases": [
+      {
+        "phase": "step-start",
+        "atMs": 1792541596104,
+        "clock": "observed"
+      },
+      {
+        "phase": "first-output",
+        "atMs": 1792541597046,
+        "clock": "observed"
+      },
+      {
+        "phase": "tool-part",
+        "atMs": 1792541597130,
+        "clock": "observed"
+      },
+      {
+        "phase": "tool-part",
+        "atMs": 1792541597163,
+        "clock": "observed"
+      },
+      {
+        "phase": "step-start",
+        "atMs": 1792541598189,
+        "clock": "observed"
+      },
+      {
+        "phase": "tool-part",
+        "atMs": 1792541598246,
+        "clock": "observed"
+      },
+      {
+        "phase": "step-start",
+        "atMs": 1792541599187,
+        "clock": "observed"
+      },
+      {
+        "phase": "first-output",
+        "atMs": 1792541600710,
+        "clock": "observed"
+      },
+      {
+        "phase": "tool-part",
+        "atMs": 1792541600774,
+        "clock": "observed"
+      },
+      {
+        "phase": "step-start",
+        "atMs": 1792541601985,
+        "clock": "observed"
+      },
+      {
+        "phase": "tool-part",
+        "atMs": 1792541602161,
+        "clock": "observed"
+      },
+      {
+        "phase": "step-start",
+        "atMs": 1792541606039,
+        "clock": "observed"
+      },
+      {
+        "phase": "first-output",
+        "atMs": 1792541606634,
+        "clock": "observed"
+      },
+      {
+        "phase": "exit",
+        "atMs": 1792541606714,
+        "clock": "observed"
+      },
+      {
+        "phase": "verified",
+        "atMs": 1792541606732,
+        "clock": "observed"
+      }
+    ],
+    "profile": {
+      "model": "glm-5.3-flash",
+      "modelParametersHash": "8e95a72245d8f3e50cd5735267ad53678df0b3910338cbfdbb90033c7c284300",
+      "agentManifestHash": "847440b369248202bd8fb570190f02384e68635a972f72fcc2e2eb8334f1acef",
+      "permissionHash": "66ec3ce2d38901a70b414e1f15064ec13df41b91f317fec17fabfb975f0e7674",
+      "toolSurfaceHash": "04c769ae52448d5fe45ea690050120cee624771222b1291088dc6d832c888106"
+    },
+    "profileReceipts": 5,
+    "loops": {
+      "continuations": [],
+      "stopped": []
+    },
+    "toolCalls": 5,
+    "textHash": "13fd824e86084cb7dcd2e2fa608aab8cc867752c77a63c775e9fda1183f80cb8",
+    "binarySha256": null,
+    "startedAtMs": 1792541593000,
+    "admissionMs": null,
+    "elapsedMs": 13732
+  },
+  "assessment": {
+    "suiteHash": "bd905b4f81f0a9412b614631a36337723067574848c5f05b50ead1cf48675091",
+    "taskHash": "9da008a0099a635cb45ea80ebda993c5f627a4e16e8ad28efa7b09d82a6068a2",
+    "artifactPass": true,
+    "unexpected": [],
+    "immutable": [
+      {
+        "file": "AGENTS.md",
+        "unchanged": true
+      },
+      {
+        "file": "package.json",
+        "unchanged": true
+      },
+      {
+        "file": "test/oracle.test.ts",
+        "unchanged": true
+      }
+    ],
+    "expected": [],
+    "check": {
+      "command": [
+        "bun",
+        "test",
+        "test/oracle.test.ts"
+      ],
+      "exit": 0,
+      "stdoutHash": "d6684989b8dd63b37d2f1954270826fbe1bd89a8debd12bcacf03ed1c6140ef6",
+      "stderrHash": "c16589c7aa744407ea449491cf85398b8325b2787e88d2d782fbd66ea76b0b31"
+    },
+    "executionVerdict": "unverified",
+    "requiredReceipts": [],
+    "answerContains": []
+  },
+  "answer": "我先读取 src/ledger.ts 和相关测试，弄清现状再修。\nBug 在 `sum -= entry.amount`(src/ledger.ts:8),应为加法。修复：\n修复完成：src/ledger.ts:8 中 `sum -= entry.amount` 改为 `sum += entry.amount`,导出形状(`Entry`、`total`)和测试未动。`bun test` 1 pass / 0 fail。"
+}

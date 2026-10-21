@@ -1,0 +1,233 @@
+{
+  "sample": {
+    "task": "read-only",
+    "engine": "typescript",
+    "repetition": 0,
+    "suiteHash": "bd905b4f81f0a9412b614631a36337723067574848c5f05b50ead1cf48675091",
+    "taskHash": "99609eafd6e7256a96d31d1a93f377283455859087a19e39a86887127c47f3a4",
+    "profile": {
+      "model": "gpt-6.1-sol",
+      "modelParametersHash": "3901afe8ec91f2b19b2373e627ba67577d52e95974019f22044e1c3c0172cb7a",
+      "agentManifestHash": "fe2aded22dac2012e42a3c53566fac28d09d68fefd5849996e3dde96fb291cf1",
+      "permissionHash": "716f0e5d56bc3ac4afc8ade9855d9276759a6eff388762b38e495084e97238cb",
+      "toolSurfaceHash": "04c769ae52448d5fe45ea690050120cee624771222b1291088dc6d832c888106"
+    },
+    "revision": "fa6bac5cce43b6110bee5d96ce3657d8567c3a3f",
+    "artifactHash": "1cf2a42baae11727ea2f82138beaf289f244a74bdb3488318abcfab660724792",
+    "receiptHash": "b472834848fabb6ea4382ed02ae35f788392276679829132b38ec3c3a251d5f8",
+    "outcome": "passed",
+    "elapsedMs": 15429,
+    "attempts": [
+      {
+        "inputTokens": 9879,
+        "outputTokens": 22,
+        "cost": null
+      },
+      {
+        "inputTokens": 9915,
+        "outputTokens": 21,
+        "cost": null
+      },
+      {
+        "inputTokens": 9984,
+        "outputTokens": 19,
+        "cost": null
+      },
+      {
+        "inputTokens": 10097,
+        "outputTokens": 21,
+        "cost": null
+      },
+      {
+        "inputTokens": 10147,
+        "outputTokens": 19,
+        "cost": null
+      },
+      {
+        "inputTokens": 10242,
+        "outputTokens": 39,
+        "cost": null
+      }
+    ]
+  },
+  "rejection": null,
+  "evidence": {
+    "engine": "typescript",
+    "revision": "fa6bac5cce43b6110bee5d96ce3657d8567c3a3f",
+    "task": "read-only",
+    "repetition": 0,
+    "terminal": "completed",
+    "error": null,
+    "receipts": [],
+    "attempts": [
+      {
+        "inputTokens": 9879,
+        "outputTokens": 22,
+        "cacheReadTokens": 0,
+        "cacheWriteTokens": 0,
+        "reasoningTokens": 0,
+        "cost": null
+      },
+      {
+        "inputTokens": 9915,
+        "outputTokens": 21,
+        "cacheReadTokens": 9728,
+        "cacheWriteTokens": 0,
+        "reasoningTokens": 0,
+        "cost": null
+      },
+      {
+        "inputTokens": 9984,
+        "outputTokens": 19,
+        "cacheReadTokens": 9728,
+        "cacheWriteTokens": 0,
+        "reasoningTokens": 0,
+        "cost": null
+      },
+      {
+        "inputTokens": 10097,
+        "outputTokens": 21,
+        "cacheReadTokens": 9856,
+        "cacheWriteTokens": 0,
+        "reasoningTokens": 0,
+        "cost": null
+      },
+      {
+        "inputTokens": 10147,
+        "outputTokens": 19,
+        "cacheReadTokens": 9984,
+        "cacheWriteTokens": 0,
+        "reasoningTokens": 0,
+        "cost": null
+      },
+      {
+        "inputTokens": 10242,
+        "outputTokens": 39,
+        "cacheReadTokens": 0,
+        "cacheWriteTokens": 0,
+        "reasoningTokens": 0,
+        "cost": null
+      }
+    ],
+    "phases": [
+      {
+        "phase": "step-start",
+        "atMs": 1792540654897,
+        "clock": "observed"
+      },
+      {
+        "phase": "tool-part",
+        "atMs": 1792540655075,
+        "clock": "observed"
+      },
+      {
+        "phase": "step-start",
+        "atMs": 1792540656968,
+        "clock": "observed"
+      },
+      {
+        "phase": "tool-part",
+        "atMs": 1792540657303,
+        "clock": "observed"
+      },
+      {
+        "phase": "step-start",
+        "atMs": 1792540659154,
+        "clock": "observed"
+      },
+      {
+        "phase": "tool-part",
+        "atMs": 1792540659298,
+        "clock": "observed"
+      },
+      {
+        "phase": "step-start",
+        "atMs": 1792540661226,
+        "clock": "observed"
+      },
+      {
+        "phase": "tool-part",
+        "atMs": 1792540661476,
+        "clock": "observed"
+      },
+      {
+        "phase": "step-start",
+        "atMs": 1792540663757,
+        "clock": "observed"
+      },
+      {
+        "phase": "tool-part",
+        "atMs": 1792540664016,
+        "clock": "observed"
+      },
+      {
+        "phase": "step-start",
+        "atMs": 1792540665289,
+        "clock": "observed"
+      },
+      {
+        "phase": "first-output",
+        "atMs": 1792540665849,
+        "clock": "observed"
+      },
+      {
+        "phase": "exit",
+        "atMs": 1792540665922,
+        "clock": "observed"
+      },
+      {
+        "phase": "verified",
+        "atMs": 1792540665925,
+        "clock": "observed"
+      }
+    ],
+    "profile": {
+      "model": "gpt-6.1-sol",
+      "modelParametersHash": "3901afe8ec91f2b19b2373e627ba67577d52e95974019f22044e1c3c0172cb7a",
+      "agentManifestHash": "fe2aded22dac2012e42a3c53566fac28d09d68fefd5849996e3dde96fb291cf1",
+      "permissionHash": "716f0e5d56bc3ac4afc8ade9855d9276759a6eff388762b38e495084e97238cb",
+      "toolSurfaceHash": "04c769ae52448d5fe45ea690050120cee624771222b1291088dc6d832c888106"
+    },
+    "profileReceipts": 6,
+    "loops": {
+      "continuations": [],
+      "stopped": []
+    },
+    "toolCalls": 5,
+    "textHash": "f45cecbf7ca7f6a01652d243186d6f4a2c834bc52296117d2f182916e47316ea",
+    "binarySha256": null,
+    "startedAtMs": 1792540650496,
+    "admissionMs": null,
+    "elapsedMs": 15429
+  },
+  "assessment": {
+    "suiteHash": "bd905b4f81f0a9412b614631a36337723067574848c5f05b50ead1cf48675091",
+    "taskHash": "99609eafd6e7256a96d31d1a93f377283455859087a19e39a86887127c47f3a4",
+    "artifactPass": true,
+    "unexpected": [],
+    "immutable": [
+      {
+        "file": "AGENTS.md",
+        "unchanged": true
+      },
+      {
+        "file": "package.json",
+        "unchanged": true
+      },
+      {
+        "file": "src/catalog.ts",
+        "unchanged": true
+      }
+    ],
+    "expected": [],
+    "check": null,
+    "executionVerdict": "unverified",
+    "requiredReceipts": [],
+    "answerContains": [
+      "src/catalog.ts",
+      "configureRelay",
+      "7"
+    ]
+  },
+  "answer": "The exported function **`configureRelay()`** in **`src/catalog.ts:1`** configures relay capacity to **`7`**.\n\nNo files were modified."
+}

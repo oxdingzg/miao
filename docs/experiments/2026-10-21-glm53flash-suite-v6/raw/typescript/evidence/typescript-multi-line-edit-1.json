@@ -1,0 +1,220 @@
+{
+  "sample": {
+    "task": "multi-line-edit",
+    "engine": "typescript",
+    "repetition": 1,
+    "suiteHash": "bd905b4f81f0a9412b614631a36337723067574848c5f05b50ead1cf48675091",
+    "taskHash": "9da008a0099a635cb45ea80ebda993c5f627a4e16e8ad28efa7b09d82a6068a2",
+    "profile": {
+      "model": "glm-5.3-flash",
+      "modelParametersHash": "84e7a8ad2cfd8857578fbe9b0c0b4b6d30b5e1eb7864c31a6fd10afed5ecefbb",
+      "agentManifestHash": "0cb62ac843f6b1ecb2ba6c0892449b0e457120eb455eee78a6e57889621c06d3",
+      "permissionHash": "11392e42586d6c49bd2a1d024564af58ee9f04cce5297ceacb648695929a0496",
+      "toolSurfaceHash": "04c769ae52448d5fe45ea690050120cee624771222b1291088dc6d832c888106"
+    },
+    "revision": "fa6bac5cce43b6110bee5d96ce3657d8567c3a3f",
+    "artifactHash": "5a39bf82d64b8a9579a0bc48863c2e2a548f9ac611a2ffd6c480c2a6ed39c8f5",
+    "receiptHash": "1c84922412ea4b7dc0edccf06d2acfe74d0129a8de2301b939f10d9c1752f7ca",
+    "outcome": "passed",
+    "elapsedMs": 26455,
+    "attempts": [
+      {
+        "inputTokens": 13618,
+        "outputTokens": 34,
+        "cost": null
+      },
+      {
+        "inputTokens": 13789,
+        "outputTokens": 15,
+        "cost": null
+      },
+      {
+        "inputTokens": 13935,
+        "outputTokens": 36,
+        "cost": null
+      },
+      {
+        "inputTokens": 14008,
+        "outputTokens": 17,
+        "cost": null
+      },
+      {
+        "inputTokens": 14082,
+        "outputTokens": 69,
+        "cost": null
+      }
+    ]
+  },
+  "rejection": null,
+  "evidence": {
+    "engine": "typescript",
+    "revision": "fa6bac5cce43b6110bee5d96ce3657d8567c3a3f",
+    "task": "multi-line-edit",
+    "repetition": 1,
+    "terminal": "completed",
+    "error": null,
+    "receipts": [],
+    "attempts": [
+      {
+        "inputTokens": 13618,
+        "outputTokens": 34,
+        "cacheReadTokens": 11456,
+        "cacheWriteTokens": null,
+        "reasoningTokens": 8,
+        "cost": null
+      },
+      {
+        "inputTokens": 13789,
+        "outputTokens": 15,
+        "cacheReadTokens": 13568,
+        "cacheWriteTokens": null,
+        "reasoningTokens": 0,
+        "cost": null
+      },
+      {
+        "inputTokens": 13935,
+        "outputTokens": 36,
+        "cacheReadTokens": 13760,
+        "cacheWriteTokens": null,
+        "reasoningTokens": 0,
+        "cost": null
+      },
+      {
+        "inputTokens": 14008,
+        "outputTokens": 17,
+        "cacheReadTokens": 13888,
+        "cacheWriteTokens": null,
+        "reasoningTokens": 0,
+        "cost": null
+      },
+      {
+        "inputTokens": 14082,
+        "outputTokens": 69,
+        "cacheReadTokens": 13952,
+        "cacheWriteTokens": null,
+        "reasoningTokens": 0,
+        "cost": null
+      }
+    ],
+    "phases": [
+      {
+        "phase": "step-start",
+        "atMs": 1792541572596,
+        "clock": "observed"
+      },
+      {
+        "phase": "tool-part",
+        "atMs": 1792541573457,
+        "clock": "observed"
+      },
+      {
+        "phase": "tool-part",
+        "atMs": 1792541573492,
+        "clock": "observed"
+      },
+      {
+        "phase": "step-start",
+        "atMs": 1792541577730,
+        "clock": "observed"
+      },
+      {
+        "phase": "tool-part",
+        "atMs": 1792541577798,
+        "clock": "observed"
+      },
+      {
+        "phase": "step-start",
+        "atMs": 1792541582132,
+        "clock": "observed"
+      },
+      {
+        "phase": "tool-part",
+        "atMs": 1792541582275,
+        "clock": "observed"
+      },
+      {
+        "phase": "step-start",
+        "atMs": 1792541586640,
+        "clock": "observed"
+      },
+      {
+        "phase": "tool-part",
+        "atMs": 1792541586870,
+        "clock": "observed"
+      },
+      {
+        "phase": "step-start",
+        "atMs": 1792541590961,
+        "clock": "observed"
+      },
+      {
+        "phase": "first-output",
+        "atMs": 1792541592379,
+        "clock": "observed"
+      },
+      {
+        "phase": "exit",
+        "atMs": 1792541592464,
+        "clock": "observed"
+      },
+      {
+        "phase": "verified",
+        "atMs": 1792541592481,
+        "clock": "observed"
+      }
+    ],
+    "profile": {
+      "model": "glm-5.3-flash",
+      "modelParametersHash": "84e7a8ad2cfd8857578fbe9b0c0b4b6d30b5e1eb7864c31a6fd10afed5ecefbb",
+      "agentManifestHash": "0cb62ac843f6b1ecb2ba6c0892449b0e457120eb455eee78a6e57889621c06d3",
+      "permissionHash": "11392e42586d6c49bd2a1d024564af58ee9f04cce5297ceacb648695929a0496",
+      "toolSurfaceHash": "04c769ae52448d5fe45ea690050120cee624771222b1291088dc6d832c888106"
+    },
+    "profileReceipts": 5,
+    "loops": {
+      "continuations": [],
+      "stopped": []
+    },
+    "toolCalls": 5,
+    "textHash": "634e58015996d31c1e9e1ee8cceab32536e61de942de259f904e08f44389f0ad",
+    "binarySha256": null,
+    "startedAtMs": 1792541566026,
+    "admissionMs": null,
+    "elapsedMs": 26455
+  },
+  "assessment": {
+    "suiteHash": "bd905b4f81f0a9412b614631a36337723067574848c5f05b50ead1cf48675091",
+    "taskHash": "9da008a0099a635cb45ea80ebda993c5f627a4e16e8ad28efa7b09d82a6068a2",
+    "artifactPass": true,
+    "unexpected": [],
+    "immutable": [
+      {
+        "file": "AGENTS.md",
+        "unchanged": true
+      },
+      {
+        "file": "package.json",
+        "unchanged": true
+      },
+      {
+        "file": "test/oracle.test.ts",
+        "unchanged": true
+      }
+    ],
+    "expected": [],
+    "check": {
+      "command": [
+        "bun",
+        "test",
+        "test/oracle.test.ts"
+      ],
+      "exit": 0,
+      "stdoutHash": "d6684989b8dd63b37d2f1954270826fbe1bd89a8debd12bcacf03ed1c6140ef6",
+      "stderrHash": "c16589c7aa744407ea449491cf85398b8325b2787e88d2d782fbd66ea76b0b31"
+    },
+    "executionVerdict": "unverified",
+    "requiredReceipts": [],
+    "answerContains": []
+  },
+  "answer": "Fixed: `sum -= entry.amount` → `sum += entry.amount` in src/ledger.ts:9 (was subtracting instead of adding). Exported shape and test untouched; `bun test` passes 1/1 (3 assertions: 4+6=10, empty=0, -3 stays -3)."
+}

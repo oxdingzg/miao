@@ -89,7 +89,7 @@ async fn product_tool_reverse_dispatches_to_host_and_returns_result() {
     )
     .await
     .unwrap();
-    runtime.with_product_tools(product_definitions(), Bridge::new(bridge_tx));
+    runtime.with_product_tools(product_definitions(), Bridge::new(bridge_tx), None);
     runtime
         .admit(
             Input {
@@ -206,6 +206,7 @@ async fn product_tool_moved_reply_ends_the_run_cleanly() {
             }),
         }],
         Bridge::new(bridge_tx),
+        None,
     );
     runtime
         .admit(

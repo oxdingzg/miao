@@ -65,7 +65,8 @@ async fn oauth_expiry_and_legacy_schema_have_explicit_boundaries() {
         }
         .load()
         .await,
-        Err(Error::Expired)
+        Err(Error::ExpiredCredential { id, integration })
+        if id == "openai" && integration == "openai"
     ));
     assert_eq!(
         Source::Legacy {

@@ -7,6 +7,7 @@ import { SessionModelRoute } from "@miao/schema/session-model-route"
 import { Model } from "@miao/schema/model"
 import { AmbientContext } from "./ambient-context"
 import { ProductHooks } from "./product-hooks"
+import { PluginHooks } from "./plugin-hooks"
 import { ProductLsp } from "./product-lsp"
 import { ProductFormatter } from "./product-formatter"
 import { ProductPolicy } from "./product-policy"
@@ -100,6 +101,7 @@ export const nativeEngineOptions = (
   }
   if (environment.MIAO_ENGINE_PROVIDER) merged.provider = environment.MIAO_ENGINE_PROVIDER
   if (environment.MIAO_ENGINE_ENDPOINT) merged.endpoint = environment.MIAO_ENGINE_ENDPOINT
+  if (environment.MIAO_ENGINE_MODEL_ROUTES) merged.modelRoutesConfigFile = path.resolve(environment.MIAO_ENGINE_MODEL_ROUTES)
   if (environment.MIAO_ENGINE_FORMATTER_CONFIG)
     merged.formatterConfigFile = path.resolve(environment.MIAO_ENGINE_FORMATTER_CONFIG)
   if (environment.MIAO_ENGINE_FALLBACK_MODEL) merged.fallbackModel = environment.MIAO_ENGINE_FALLBACK_MODEL
@@ -724,6 +726,7 @@ const layer = Layer.effect(
               ? Effect.fail(new EngineError("engine_owner_closed", "product tool router is not ready"))
               : ownerRouter.get(input),
         })
+        const pluginHooks = yield* PluginHooks.prepare({ ...configuration, ...productTools }, { store: sessions })
         return {
           options: {
             ...routes,
@@ -734,6 +737,7 @@ const layer = Layer.effect(
             ...formatter,
             ...policy,
             ...productTools,
+            ...pluginHooks,
           },
           refresh: context.refresh,
           pricing: prices && ((model: string) => prices[model]),

@@ -1,0 +1,2357 @@
+[
+ {
+  "task": "read-only",
+  "engine": "rust",
+  "repetition": 0,
+  "suiteHash": "bd905b4f81f0a9412b614631a36337723067574848c5f05b50ead1cf48675091",
+  "taskHash": "99609eafd6e7256a96d31d1a93f377283455859087a19e39a86887127c47f3a4",
+  "profile": {
+   "model": "gpt-6.1-sol",
+   "modelParametersHash": "af2a0e81b8dd40040ac094f9b6b6ee752a0eb59671dab31f4c1a904612b21dbb",
+   "agentManifestHash": "d5a431d4720737723a14e80a712d0609b566e754627498e4ecdf359ac3e6c54a",
+   "permissionHash": "b519f2b00451bbdbcaeffd5a6b9c25e774d126047d1339763cfb3f4ec4e7a92f",
+   "toolSurfaceHash": "2530782d33adb0178572e1c86aa2f13d5e000bb7ecc5cf393d72052dcc6800e5"
+  },
+  "revision": "fa6bac5cce43b6110bee5d96ce3657d8567c3a3f",
+  "artifactHash": "1cf2a42baae11727ea2f82138beaf289f244a74bdb3488318abcfab660724792",
+  "receiptHash": "056e327e2414d8a78e1ac855a67d27fbfea7eaad86061ac83a36e9e6dd4b9ee5",
+  "outcome": "passed",
+  "elapsedMs": 13530,
+  "attempts": [
+   {
+    "inputTokens": 3045,
+    "outputTokens": 22,
+    "cost": null
+   },
+   {
+    "inputTokens": 3115,
+    "outputTokens": 40,
+    "cost": null
+   },
+   {
+    "inputTokens": 3176,
+    "outputTokens": 22,
+    "cost": null
+   },
+   {
+    "inputTokens": 3228,
+    "outputTokens": 29,
+    "cost": null
+   },
+   {
+    "inputTokens": 3346,
+    "outputTokens": 36,
+    "cost": null
+   }
+  ]
+ },
+ {
+  "task": "read-only",
+  "engine": "rust",
+  "repetition": 1,
+  "suiteHash": "bd905b4f81f0a9412b614631a36337723067574848c5f05b50ead1cf48675091",
+  "taskHash": "99609eafd6e7256a96d31d1a93f377283455859087a19e39a86887127c47f3a4",
+  "profile": {
+   "model": "gpt-6.1-sol",
+   "modelParametersHash": "4f7033e02d3cd926eda5764a4154698abaf021f402c24b4cc1cb2e00011062dc",
+   "agentManifestHash": "d5a431d4720737723a14e80a712d0609b566e754627498e4ecdf359ac3e6c54a",
+   "permissionHash": "3c432f0ff5f332de17f20c0b472166b98bb0eb9e750783a7550ed85d9ff3235a",
+   "toolSurfaceHash": "2530782d33adb0178572e1c86aa2f13d5e000bb7ecc5cf393d72052dcc6800e5"
+  },
+  "revision": "fa6bac5cce43b6110bee5d96ce3657d8567c3a3f",
+  "artifactHash": "1cf2a42baae11727ea2f82138beaf289f244a74bdb3488318abcfab660724792",
+  "receiptHash": "fd8c2152403e7032d7277aa6730bea293ff967d8d27444cbfcb1d84731809e3f",
+  "outcome": "passed",
+  "elapsedMs": 13637,
+  "attempts": [
+   {
+    "inputTokens": 3045,
+    "outputTokens": 22,
+    "cost": null
+   },
+   {
+    "inputTokens": 3115,
+    "outputTokens": 40,
+    "cost": null
+   },
+   {
+    "inputTokens": 3176,
+    "outputTokens": 22,
+    "cost": null
+   },
+   {
+    "inputTokens": 3228,
+    "outputTokens": 29,
+    "cost": null
+   },
+   {
+    "inputTokens": 3346,
+    "outputTokens": 37,
+    "cost": null
+   }
+  ]
+ },
+ {
+  "task": "read-only",
+  "engine": "rust",
+  "repetition": 2,
+  "suiteHash": "bd905b4f81f0a9412b614631a36337723067574848c5f05b50ead1cf48675091",
+  "taskHash": "99609eafd6e7256a96d31d1a93f377283455859087a19e39a86887127c47f3a4",
+  "profile": {
+   "model": "gpt-6.1-sol",
+   "modelParametersHash": "04064390a1b3b64e5d65fb12777b455ca9d2d9ba0a404c9085f21daeae01a3cf",
+   "agentManifestHash": "d5a431d4720737723a14e80a712d0609b566e754627498e4ecdf359ac3e6c54a",
+   "permissionHash": "59e7a3e56364aa45d72a86c5554a682fa255055eedccc1ff2b39869bc1715bff",
+   "toolSurfaceHash": "2530782d33adb0178572e1c86aa2f13d5e000bb7ecc5cf393d72052dcc6800e5"
+  },
+  "revision": "fa6bac5cce43b6110bee5d96ce3657d8567c3a3f",
+  "artifactHash": "1cf2a42baae11727ea2f82138beaf289f244a74bdb3488318abcfab660724792",
+  "receiptHash": "c69ed9ea11cd7b0999de7b7e1286bcede10820de0a71039a43bc8341590f4b0c",
+  "outcome": "passed",
+  "elapsedMs": 12730,
+  "attempts": [
+   {
+    "inputTokens": 3045,
+    "outputTokens": 22,
+    "cost": null
+   },
+   {
+    "inputTokens": 3115,
+    "outputTokens": 40,
+    "cost": null
+   },
+   {
+    "inputTokens": 3176,
+    "outputTokens": 22,
+    "cost": null
+   },
+   {
+    "inputTokens": 3228,
+    "outputTokens": 29,
+    "cost": null
+   },
+   {
+    "inputTokens": 3346,
+    "outputTokens": 37,
+    "cost": null
+   }
+  ]
+ },
+ {
+  "task": "multi-read",
+  "engine": "rust",
+  "repetition": 0,
+  "suiteHash": "bd905b4f81f0a9412b614631a36337723067574848c5f05b50ead1cf48675091",
+  "taskHash": "0d7d997929618a514b0f84f56b810cb5280f5b1ac1bca88065d107d1cb7b8147",
+  "profile": {
+   "model": "gpt-6.1-sol",
+   "modelParametersHash": "5bb3a744ff05e751a54eacce2f91bada0e71f68643646ad5f02c9b009b360411",
+   "agentManifestHash": "d5a431d4720737723a14e80a712d0609b566e754627498e4ecdf359ac3e6c54a",
+   "permissionHash": "9fc49570d34627040dfff5a91f7e47dbfd5d7b3b98f202c00c69451a7010c6c3",
+   "toolSurfaceHash": "2530782d33adb0178572e1c86aa2f13d5e000bb7ecc5cf393d72052dcc6800e5"
+  },
+  "revision": "fa6bac5cce43b6110bee5d96ce3657d8567c3a3f",
+  "artifactHash": "586a1fde7e44ffb98847844587b9df8f432114691ef834b8916734a0becc9f63",
+  "receiptHash": "4d4132db302cf64f6a92e4292e6b3552ab8c495b80b7fb8956fd0fd65134d51c",
+  "outcome": "passed",
+  "elapsedMs": 4326,
+  "attempts": [
+   {
+    "inputTokens": 3057,
+    "outputTokens": 98,
+    "cost": null
+   },
+   {
+    "inputTokens": 3385,
+    "outputTokens": 28,
+    "cost": null
+   }
+  ]
+ },
+ {
+  "task": "multi-read",
+  "engine": "rust",
+  "repetition": 1,
+  "suiteHash": "bd905b4f81f0a9412b614631a36337723067574848c5f05b50ead1cf48675091",
+  "taskHash": "0d7d997929618a514b0f84f56b810cb5280f5b1ac1bca88065d107d1cb7b8147",
+  "profile": {
+   "model": "gpt-6.1-sol",
+   "modelParametersHash": "550c14158413e766794ed4c98dd50656a6d7ba02b7fe4d47c6d851cd115fe6e6",
+   "agentManifestHash": "d5a431d4720737723a14e80a712d0609b566e754627498e4ecdf359ac3e6c54a",
+   "permissionHash": "d58c3ed682b7a9cf5fba79ab73fafc8d9e5cabff359aef2858a6561b8dbcce90",
+   "toolSurfaceHash": "2530782d33adb0178572e1c86aa2f13d5e000bb7ecc5cf393d72052dcc6800e5"
+  },
+  "revision": "fa6bac5cce43b6110bee5d96ce3657d8567c3a3f",
+  "artifactHash": "586a1fde7e44ffb98847844587b9df8f432114691ef834b8916734a0becc9f63",
+  "receiptHash": "368ce211667d1e709aaeeb3ed6b523999181de8eb40423d75cb743671043a2b5",
+  "outcome": "passed",
+  "elapsedMs": 6536,
+  "attempts": [
+   {
+    "inputTokens": 3057,
+    "outputTokens": 98,
+    "cost": null
+   },
+   {
+    "inputTokens": 3385,
+    "outputTokens": 28,
+    "cost": null
+   }
+  ]
+ },
+ {
+  "task": "multi-read",
+  "engine": "rust",
+  "repetition": 2,
+  "suiteHash": "bd905b4f81f0a9412b614631a36337723067574848c5f05b50ead1cf48675091",
+  "taskHash": "0d7d997929618a514b0f84f56b810cb5280f5b1ac1bca88065d107d1cb7b8147",
+  "profile": {
+   "model": "gpt-6.1-sol",
+   "modelParametersHash": "214964cc5c2b8b9c040d39b1baf30c09fb3618d9f749c3ef1795415a979169c9",
+   "agentManifestHash": "d5a431d4720737723a14e80a712d0609b566e754627498e4ecdf359ac3e6c54a",
+   "permissionHash": "6c1596c9a8b60ac66abddf87c017cafe239c78936a16602b10c626ae9f498b53",
+   "toolSurfaceHash": "2530782d33adb0178572e1c86aa2f13d5e000bb7ecc5cf393d72052dcc6800e5"
+  },
+  "revision": "fa6bac5cce43b6110bee5d96ce3657d8567c3a3f",
+  "artifactHash": "586a1fde7e44ffb98847844587b9df8f432114691ef834b8916734a0becc9f63",
+  "receiptHash": "feb5e77f1d8074826476c1a8925b16c75357090df6bc3a3ec863c212c17668a7",
+  "outcome": "passed",
+  "elapsedMs": 6131,
+  "attempts": [
+   {
+    "inputTokens": 3057,
+    "outputTokens": 98,
+    "cost": null
+   },
+   {
+    "inputTokens": 3385,
+    "outputTokens": 33,
+    "cost": null
+   }
+  ]
+ },
+ {
+  "task": "small-edit",
+  "engine": "rust",
+  "repetition": 0,
+  "suiteHash": "bd905b4f81f0a9412b614631a36337723067574848c5f05b50ead1cf48675091",
+  "taskHash": "e10bb9be226c895f65c7f6adcc7491a949cd7ba8f1ef6b66480934207de9c0c4",
+  "profile": {
+   "model": "gpt-6.1-sol",
+   "modelParametersHash": "88b152948e6b877ef78f4424eb68527d43dc6df0942d6f58da5397c9cc918180",
+   "agentManifestHash": "d5a431d4720737723a14e80a712d0609b566e754627498e4ecdf359ac3e6c54a",
+   "permissionHash": "9e3e191a86d14911ab4b2d2314c8503a18638b81f10cef5c04818257853c7603",
+   "toolSurfaceHash": "2530782d33adb0178572e1c86aa2f13d5e000bb7ecc5cf393d72052dcc6800e5"
+  },
+  "revision": "fa6bac5cce43b6110bee5d96ce3657d8567c3a3f",
+  "artifactHash": "aa7ce5b07fbb0193ccf821c09c6801fbf5ae2a2bee8acffcd2e5582d45c9c486",
+  "receiptHash": "8e1acae811cb75fc885e2e4b6a86a04648962dbaa848bd27880d9a74a93d3213",
+  "outcome": "passed",
+  "elapsedMs": 22148,
+  "attempts": [
+   {
+    "inputTokens": 3043,
+    "outputTokens": 28,
+    "cost": null
+   },
+   {
+    "inputTokens": 3155,
+    "outputTokens": 27,
+    "cost": null
+   },
+   {
+    "inputTokens": 3272,
+    "outputTokens": 30,
+    "cost": null
+   },
+   {
+    "inputTokens": 3456,
+    "outputTokens": 81,
+    "cost": null
+   },
+   {
+    "inputTokens": 3558,
+    "outputTokens": 86,
+    "cost": null
+   },
+   {
+    "inputTokens": 3720,
+    "outputTokens": 35,
+    "cost": null
+   },
+   {
+    "inputTokens": 3884,
+    "outputTokens": 69,
+    "cost": null
+   }
+  ]
+ },
+ {
+  "task": "small-edit",
+  "engine": "rust",
+  "repetition": 1,
+  "suiteHash": "bd905b4f81f0a9412b614631a36337723067574848c5f05b50ead1cf48675091",
+  "taskHash": "e10bb9be226c895f65c7f6adcc7491a949cd7ba8f1ef6b66480934207de9c0c4",
+  "profile": {
+   "model": "gpt-6.1-sol",
+   "modelParametersHash": "bc5e7343be6af0e1194b9d206ecac900b44427a4a16c0e749cc65d8790edfaa3",
+   "agentManifestHash": "d5a431d4720737723a14e80a712d0609b566e754627498e4ecdf359ac3e6c54a",
+   "permissionHash": "5aa1dc8a0b3077ce88ea65ed251cebaf838bd62453bb0d8e1a420b4eeebfbc91",
+   "toolSurfaceHash": "2530782d33adb0178572e1c86aa2f13d5e000bb7ecc5cf393d72052dcc6800e5"
+  },
+  "revision": "fa6bac5cce43b6110bee5d96ce3657d8567c3a3f",
+  "artifactHash": "fa425a5bd71af3cc7fea8bfb0db2b31c3dcf25299bcf345c4766de4db79c7020",
+  "receiptHash": "cccb3607022bbe4d355e9c407f4fa06e3c9ca2808ec77c803623d29958070119",
+  "outcome": "passed",
+  "elapsedMs": 18660,
+  "attempts": [
+   {
+    "inputTokens": 3043,
+    "outputTokens": 28,
+    "cost": null
+   },
+   {
+    "inputTokens": 3155,
+    "outputTokens": 93,
+    "cost": null
+   },
+   {
+    "inputTokens": 3591,
+    "outputTokens": 81,
+    "cost": null
+   },
+   {
+    "inputTokens": 3693,
+    "outputTokens": 75,
+    "cost": null
+   },
+   {
+    "inputTokens": 3844,
+    "outputTokens": 41,
+    "cost": null
+   },
+   {
+    "inputTokens": 4014,
+    "outputTokens": 73,
+    "cost": null
+   }
+  ]
+ },
+ {
+  "task": "small-edit",
+  "engine": "rust",
+  "repetition": 2,
+  "suiteHash": "bd905b4f81f0a9412b614631a36337723067574848c5f05b50ead1cf48675091",
+  "taskHash": "e10bb9be226c895f65c7f6adcc7491a949cd7ba8f1ef6b66480934207de9c0c4",
+  "profile": {
+   "model": "gpt-6.1-sol",
+   "modelParametersHash": "02140f1f64eb307a37cf734a804c1a21e76d8f680a5d631c8bb97bdd9bab83b2",
+   "agentManifestHash": "d5a431d4720737723a14e80a712d0609b566e754627498e4ecdf359ac3e6c54a",
+   "permissionHash": "684e4b8948f4330fcd4ba26d0c07c845274c1ef5a25edbce15750910260ede31",
+   "toolSurfaceHash": "2530782d33adb0178572e1c86aa2f13d5e000bb7ecc5cf393d72052dcc6800e5"
+  },
+  "revision": "fa6bac5cce43b6110bee5d96ce3657d8567c3a3f",
+  "artifactHash": "cf6d8bc02670075c95fe34307af5401211042d9e56c46e661970bef17db45e9e",
+  "receiptHash": "52393f42a81dae2cd6282ffe933535d1ef21b974919eb762dd128b259d11ceb4",
+  "outcome": "passed",
+  "elapsedMs": 20057,
+  "attempts": [
+   {
+    "inputTokens": 3043,
+    "outputTokens": 28,
+    "cost": null
+   },
+   {
+    "inputTokens": 3155,
+    "outputTokens": 27,
+    "cost": null
+   },
+   {
+    "inputTokens": 3272,
+    "outputTokens": 22,
+    "cost": null
+   },
+   {
+    "inputTokens": 3350,
+    "outputTokens": 30,
+    "cost": null
+   },
+   {
+    "inputTokens": 3534,
+    "outputTokens": 81,
+    "cost": null
+   },
+   {
+    "inputTokens": 3636,
+    "outputTokens": 87,
+    "cost": null
+   },
+   {
+    "inputTokens": 3805,
+    "outputTokens": 35,
+    "cost": null
+   },
+   {
+    "inputTokens": 3969,
+    "outputTokens": 53,
+    "cost": null
+   }
+  ]
+ },
+ {
+  "task": "multi-file",
+  "engine": "rust",
+  "repetition": 0,
+  "suiteHash": "bd905b4f81f0a9412b614631a36337723067574848c5f05b50ead1cf48675091",
+  "taskHash": "a5041ea521bf1671656245fae3d7fab12d071b4b5b82cf29607998143aadc602",
+  "profile": {
+   "model": "gpt-6.1-sol",
+   "modelParametersHash": "a4699aa99baf2bc7245441645a1d5cbb48b8fdb6b705042cb088c90fa0d86cb5",
+   "agentManifestHash": "d5a431d4720737723a14e80a712d0609b566e754627498e4ecdf359ac3e6c54a",
+   "permissionHash": "51473f6ad792de0543f2c7b2fd4c734a9a560cbfb16df3b187da4d14c829dd89",
+   "toolSurfaceHash": "2530782d33adb0178572e1c86aa2f13d5e000bb7ecc5cf393d72052dcc6800e5"
+  },
+  "revision": "fa6bac5cce43b6110bee5d96ce3657d8567c3a3f",
+  "artifactHash": "9c36a05cc0b1256ca0d8c4aaf47e12e1dae089d0cb8830c02600abcfd7139c9a",
+  "receiptHash": "7836a4c65dc6062d39988c84be1bb525cc11525abc79b8a6fd08400134429042",
+  "outcome": "passed",
+  "elapsedMs": 32270,
+  "attempts": [
+   {
+    "inputTokens": 3053,
+    "outputTokens": 22,
+    "cost": null
+   },
+   {
+    "inputTokens": 3131,
+    "outputTokens": 111,
+    "cost": null
+   },
+   {
+    "inputTokens": 3623,
+    "outputTokens": 68,
+    "cost": null
+   },
+   {
+    "inputTokens": 3874,
+    "outputTokens": 241,
+    "cost": null
+   },
+   {
+    "inputTokens": 4155,
+    "outputTokens": 90,
+    "cost": null
+   },
+   {
+    "inputTokens": 4318,
+    "outputTokens": 89,
+    "cost": null
+   },
+   {
+    "inputTokens": 4478,
+    "outputTokens": 35,
+    "cost": null
+   },
+   {
+    "inputTokens": 4643,
+    "outputTokens": 71,
+    "cost": null
+   }
+  ]
+ },
+ {
+  "task": "multi-file",
+  "engine": "rust",
+  "repetition": 1,
+  "suiteHash": "bd905b4f81f0a9412b614631a36337723067574848c5f05b50ead1cf48675091",
+  "taskHash": "a5041ea521bf1671656245fae3d7fab12d071b4b5b82cf29607998143aadc602",
+  "profile": {
+   "model": "gpt-6.1-sol",
+   "modelParametersHash": "c8072f8a034d54a3bdb7c6acbb98f2b7c149ac625165a6bfa207ff7be8fef9cb",
+   "agentManifestHash": "d5a431d4720737723a14e80a712d0609b566e754627498e4ecdf359ac3e6c54a",
+   "permissionHash": "0059544cbc3b78841a152f11099b2483663cbcfabfdcc7e0cf2c26822bff7dc2",
+   "toolSurfaceHash": "2530782d33adb0178572e1c86aa2f13d5e000bb7ecc5cf393d72052dcc6800e5"
+  },
+  "revision": "fa6bac5cce43b6110bee5d96ce3657d8567c3a3f",
+  "artifactHash": "07582989f8d259d4b5ee1111d7b2c8dd1637c4b062d002f136085c5efed74cc8",
+  "receiptHash": "f2bac12bc51cde9836d89b6043ac2bb93a32814dd1aba4b1e4e3006625813851",
+  "outcome": "passed",
+  "elapsedMs": 24087,
+  "attempts": [
+   {
+    "inputTokens": 3053,
+    "outputTokens": 22,
+    "cost": null
+   },
+   {
+    "inputTokens": 3131,
+    "outputTokens": 111,
+    "cost": null
+   },
+   {
+    "inputTokens": 3623,
+    "outputTokens": 68,
+    "cost": null
+   },
+   {
+    "inputTokens": 3874,
+    "outputTokens": 205,
+    "cost": null
+   },
+   {
+    "inputTokens": 4119,
+    "outputTokens": 201,
+    "cost": null
+   },
+   {
+    "inputTokens": 4462,
+    "outputTokens": 35,
+    "cost": null
+   },
+   {
+    "inputTokens": 4627,
+    "outputTokens": 77,
+    "cost": null
+   }
+  ]
+ },
+ {
+  "task": "multi-file",
+  "engine": "rust",
+  "repetition": 2,
+  "suiteHash": "bd905b4f81f0a9412b614631a36337723067574848c5f05b50ead1cf48675091",
+  "taskHash": "a5041ea521bf1671656245fae3d7fab12d071b4b5b82cf29607998143aadc602",
+  "profile": {
+   "model": "gpt-6.1-sol",
+   "modelParametersHash": "797645293606b8eba3d46704adce54ff9488bbd1b4296d63f598322ccf522546",
+   "agentManifestHash": "d5a431d4720737723a14e80a712d0609b566e754627498e4ecdf359ac3e6c54a",
+   "permissionHash": "d323a0b2d857053f64c75bba07e9c88f7c30b65a4f1c4c7820bb02c4791fc90a",
+   "toolSurfaceHash": "2530782d33adb0178572e1c86aa2f13d5e000bb7ecc5cf393d72052dcc6800e5"
+  },
+  "revision": "fa6bac5cce43b6110bee5d96ce3657d8567c3a3f",
+  "artifactHash": "b55af7dc8e3968764e7b3f0b3f3cdea8103c5ede22391376ed90d1507acf32a0",
+  "receiptHash": "0d156c6b1ea211ad78c4759842f24cdb57a0454bd01d914b5612b2ed28f247b6",
+  "outcome": "passed",
+  "elapsedMs": 18053,
+  "attempts": [
+   {
+    "inputTokens": 3053,
+    "outputTokens": 22,
+    "cost": null
+   },
+   {
+    "inputTokens": 3131,
+    "outputTokens": 111,
+    "cost": null
+   },
+   {
+    "inputTokens": 3623,
+    "outputTokens": 68,
+    "cost": null
+   },
+   {
+    "inputTokens": 3874,
+    "outputTokens": 181,
+    "cost": null
+   },
+   {
+    "inputTokens": 4199,
+    "outputTokens": 35,
+    "cost": null
+   },
+   {
+    "inputTokens": 4364,
+    "outputTokens": 69,
+    "cost": null
+   }
+  ]
+ },
+ {
+  "task": "test-repair",
+  "engine": "rust",
+  "repetition": 0,
+  "suiteHash": "bd905b4f81f0a9412b614631a36337723067574848c5f05b50ead1cf48675091",
+  "taskHash": "9012e1117d9ccfbc967186426bc4800a8d6c15344e5ed9fb9d2b8d4dbda1568d",
+  "profile": {
+   "model": "gpt-6.1-sol",
+   "modelParametersHash": "5db27d9c0449188e300b82b5b7a482734f2f216c300d34256dd8149377cd548b",
+   "agentManifestHash": "d5a431d4720737723a14e80a712d0609b566e754627498e4ecdf359ac3e6c54a",
+   "permissionHash": "bc16fa69478d0fae10340cfe7b06d8e4b1efb3e3a4c14f78ef2b0c3add112735",
+   "toolSurfaceHash": "2530782d33adb0178572e1c86aa2f13d5e000bb7ecc5cf393d72052dcc6800e5"
+  },
+  "revision": "fa6bac5cce43b6110bee5d96ce3657d8567c3a3f",
+  "artifactHash": "35e287a1e3e2b793f6dd5e15030a2a2b62462bbdde669bd37b1aea03ff45b725",
+  "receiptHash": "4f2d59f44501bf951911f07ab741207109ae8ab3bd245ba96e0df09f7305ca65",
+  "outcome": "passed",
+  "elapsedMs": 42659,
+  "attempts": [
+   {
+    "inputTokens": 3053,
+    "outputTokens": 29,
+    "cost": null
+   },
+   {
+    "inputTokens": 3169,
+    "outputTokens": 27,
+    "cost": null
+   },
+   {
+    "inputTokens": 3286,
+    "outputTokens": 22,
+    "cost": null
+   },
+   {
+    "inputTokens": 3364,
+    "outputTokens": 30,
+    "cost": null
+   },
+   {
+    "inputTokens": 3538,
+    "outputTokens": 35,
+    "cost": null
+   },
+   {
+    "inputTokens": 3872,
+    "outputTokens": 137,
+    "cost": null
+   },
+   {
+    "inputTokens": 4081,
+    "outputTokens": 35,
+    "cost": null
+   },
+   {
+    "inputTokens": 4245,
+    "outputTokens": 60,
+    "cost": null
+   }
+  ]
+ },
+ {
+  "task": "test-repair",
+  "engine": "rust",
+  "repetition": 1,
+  "suiteHash": "bd905b4f81f0a9412b614631a36337723067574848c5f05b50ead1cf48675091",
+  "taskHash": "9012e1117d9ccfbc967186426bc4800a8d6c15344e5ed9fb9d2b8d4dbda1568d",
+  "profile": {
+   "model": "gpt-6.1-sol",
+   "modelParametersHash": "88ad4327c1dcfa5fd2544274b6a7f7ba9a3003618f4180bd735df4908e5d4cd0",
+   "agentManifestHash": "d5a431d4720737723a14e80a712d0609b566e754627498e4ecdf359ac3e6c54a",
+   "permissionHash": "eead5fb741e98650847c087ca8ec77e614f13969509017f70292798feefee481",
+   "toolSurfaceHash": "2530782d33adb0178572e1c86aa2f13d5e000bb7ecc5cf393d72052dcc6800e5"
+  },
+  "revision": "fa6bac5cce43b6110bee5d96ce3657d8567c3a3f",
+  "artifactHash": "6dd793f113b2bb9113d8dc669a65c30dfbe318149d38ddf0a16d712edfdf804a",
+  "receiptHash": "94e903dbe47b54143cc9be2a11ad7f1a6b2fbab3f2acee9d875622a2b510b877",
+  "outcome": "passed",
+  "elapsedMs": 21448,
+  "attempts": [
+   {
+    "inputTokens": 3053,
+    "outputTokens": 22,
+    "cost": null
+   },
+   {
+    "inputTokens": 3131,
+    "outputTokens": 118,
+    "cost": null
+   },
+   {
+    "inputTokens": 3667,
+    "outputTokens": 35,
+    "cost": null
+   },
+   {
+    "inputTokens": 4001,
+    "outputTokens": 164,
+    "cost": null
+   },
+   {
+    "inputTokens": 4186,
+    "outputTokens": 98,
+    "cost": null
+   },
+   {
+    "inputTokens": 4356,
+    "outputTokens": 35,
+    "cost": null
+   },
+   {
+    "inputTokens": 4520,
+    "outputTokens": 83,
+    "cost": null
+   }
+  ]
+ },
+ {
+  "task": "test-repair",
+  "engine": "rust",
+  "repetition": 2,
+  "suiteHash": "bd905b4f81f0a9412b614631a36337723067574848c5f05b50ead1cf48675091",
+  "taskHash": "9012e1117d9ccfbc967186426bc4800a8d6c15344e5ed9fb9d2b8d4dbda1568d",
+  "profile": {
+   "model": "gpt-6.1-sol",
+   "modelParametersHash": "2c936dfafb34102b140a907f2bf68c8d6fe63196ae1974cb368cb39fa2c2528c",
+   "agentManifestHash": "d5a431d4720737723a14e80a712d0609b566e754627498e4ecdf359ac3e6c54a",
+   "permissionHash": "ca80f88954313d2de4af07b3850b8ba83b0ba4a313d66aaa38e339e4c28e1b60",
+   "toolSurfaceHash": "2530782d33adb0178572e1c86aa2f13d5e000bb7ecc5cf393d72052dcc6800e5"
+  },
+  "revision": "fa6bac5cce43b6110bee5d96ce3657d8567c3a3f",
+  "artifactHash": "6d9c5c0c5f3084f1deb4dc5863f084c09a7dd7086b63830be1c31516cbebdd12",
+  "receiptHash": "7b76a0db89b9292bf4d9811738f8e68dd5a8430e38c0436d21bef99cfe37dde5",
+  "outcome": "passed",
+  "elapsedMs": 21364,
+  "attempts": [
+   {
+    "inputTokens": 3053,
+    "outputTokens": 22,
+    "cost": null
+   },
+   {
+    "inputTokens": 3131,
+    "outputTokens": 92,
+    "cost": null
+   },
+   {
+    "inputTokens": 3499,
+    "outputTokens": 30,
+    "cost": null
+   },
+   {
+    "inputTokens": 3673,
+    "outputTokens": 35,
+    "cost": null
+   },
+   {
+    "inputTokens": 4007,
+    "outputTokens": 136,
+    "cost": null
+   },
+   {
+    "inputTokens": 4215,
+    "outputTokens": 35,
+    "cost": null
+   },
+   {
+    "inputTokens": 4379,
+    "outputTokens": 72,
+    "cost": null
+   }
+  ]
+ },
+ {
+  "task": "permission-denial",
+  "engine": "rust",
+  "repetition": 0,
+  "suiteHash": "bd905b4f81f0a9412b614631a36337723067574848c5f05b50ead1cf48675091",
+  "taskHash": "2df87ba94201f509a47096567db29920b8fef2a0408210de17f45c093e386f8d",
+  "profile": {
+   "model": "gpt-6.1-sol",
+   "modelParametersHash": "ad3e08a2d55c6ba0b328ba0485afc4b5f7549ecda11cdfa2e0ad5beb86553e7b",
+   "agentManifestHash": "d5a431d4720737723a14e80a712d0609b566e754627498e4ecdf359ac3e6c54a",
+   "permissionHash": "eebe1a36f19dd0cd12bbe187a20e0b5ea5a610acc86d83c986e2568a0340b73c",
+   "toolSurfaceHash": "2530782d33adb0178572e1c86aa2f13d5e000bb7ecc5cf393d72052dcc6800e5"
+  },
+  "revision": "fa6bac5cce43b6110bee5d96ce3657d8567c3a3f",
+  "artifactHash": "5cfbe26fca26011b869b31ce2bab64e2d5ffa09abcb93ab976b9dcbb792ef496",
+  "receiptHash": "367a6fdfa4462751e6028351482bdf9fcf6addf7ff5b9da8e2d1d942107715db",
+  "outcome": "passed",
+  "elapsedMs": 5231,
+  "attempts": [
+   {
+    "inputTokens": 3051,
+    "outputTokens": 29,
+    "cost": null
+   },
+   {
+    "inputTokens": 3100,
+    "outputTokens": 58,
+    "cost": null
+   }
+  ]
+ },
+ {
+  "task": "permission-denial",
+  "engine": "rust",
+  "repetition": 1,
+  "suiteHash": "bd905b4f81f0a9412b614631a36337723067574848c5f05b50ead1cf48675091",
+  "taskHash": "2df87ba94201f509a47096567db29920b8fef2a0408210de17f45c093e386f8d",
+  "profile": {
+   "model": "gpt-6.1-sol",
+   "modelParametersHash": "bc5c0ac6f03e4efdeefd92f619aaae41c69b11ff001591d7c861b7f71989b905",
+   "agentManifestHash": "d5a431d4720737723a14e80a712d0609b566e754627498e4ecdf359ac3e6c54a",
+   "permissionHash": "b81b37f7002771649f358027be1789c6901348121bd175df6e6bd32776bbc4d0",
+   "toolSurfaceHash": "2530782d33adb0178572e1c86aa2f13d5e000bb7ecc5cf393d72052dcc6800e5"
+  },
+  "revision": "fa6bac5cce43b6110bee5d96ce3657d8567c3a3f",
+  "artifactHash": "5cfbe26fca26011b869b31ce2bab64e2d5ffa09abcb93ab976b9dcbb792ef496",
+  "receiptHash": "c4fb0f86efeffc906c7d996285d3a61c516fa09f6c77cc23d42fa47edd8a4e0f",
+  "outcome": "passed",
+  "elapsedMs": 5023,
+  "attempts": [
+   {
+    "inputTokens": 3051,
+    "outputTokens": 30,
+    "cost": null
+   },
+   {
+    "inputTokens": 3101,
+    "outputTokens": 61,
+    "cost": null
+   }
+  ]
+ },
+ {
+  "task": "permission-denial",
+  "engine": "rust",
+  "repetition": 2,
+  "suiteHash": "bd905b4f81f0a9412b614631a36337723067574848c5f05b50ead1cf48675091",
+  "taskHash": "2df87ba94201f509a47096567db29920b8fef2a0408210de17f45c093e386f8d",
+  "profile": {
+   "model": "gpt-6.1-sol",
+   "modelParametersHash": "c719b20428adf84193bd5d99b5c2885d3b57d5bd8d4bc0c5ec13cac32e7ce447",
+   "agentManifestHash": "d5a431d4720737723a14e80a712d0609b566e754627498e4ecdf359ac3e6c54a",
+   "permissionHash": "ff343ec21037866da5a363292d1061356053df09147e930cdc01bbd33f25cd66",
+   "toolSurfaceHash": "2530782d33adb0178572e1c86aa2f13d5e000bb7ecc5cf393d72052dcc6800e5"
+  },
+  "revision": "fa6bac5cce43b6110bee5d96ce3657d8567c3a3f",
+  "artifactHash": "5cfbe26fca26011b869b31ce2bab64e2d5ffa09abcb93ab976b9dcbb792ef496",
+  "receiptHash": "2dffbe25101da0cb3a4b76ed157e3ef5db3f323d712d93314ffdac47024d684e",
+  "outcome": "passed",
+  "elapsedMs": 4722,
+  "attempts": [
+   {
+    "inputTokens": 3051,
+    "outputTokens": 29,
+    "cost": null
+   },
+   {
+    "inputTokens": 3100,
+    "outputTokens": 32,
+    "cost": null
+   }
+  ]
+ },
+ {
+  "task": "tool-error",
+  "engine": "rust",
+  "repetition": 0,
+  "suiteHash": "bd905b4f81f0a9412b614631a36337723067574848c5f05b50ead1cf48675091",
+  "taskHash": "d805c342f165a7193bf45347ebba54a0e1c0d75e9baffd9c5979d07f5b0fb09e",
+  "profile": {
+   "model": "gpt-6.1-sol",
+   "modelParametersHash": "0d30d4d4bb32e45c93b41cf363459d187d9c1ee856d4aa745d9bddbf518f84f5",
+   "agentManifestHash": "d5a431d4720737723a14e80a712d0609b566e754627498e4ecdf359ac3e6c54a",
+   "permissionHash": "b124bcbee2585bdd5aeea06d3ccb92cc7fa89fc8a0d24e794069f7b0101a0504",
+   "toolSurfaceHash": "2530782d33adb0178572e1c86aa2f13d5e000bb7ecc5cf393d72052dcc6800e5"
+  },
+  "revision": "fa6bac5cce43b6110bee5d96ce3657d8567c3a3f",
+  "artifactHash": "42a0929bd2c953adb3b7ae60782aeb2d7a5a7101e999baa01b6d9c9d85b7e5ad",
+  "receiptHash": "39aabee022017f6f7fa53065b07314e036e8919e25cc33bd2635747a9e9eb005",
+  "outcome": "passed",
+  "elapsedMs": 7199,
+  "attempts": [
+   {
+    "inputTokens": 3054,
+    "outputTokens": 27,
+    "cost": null
+   },
+   {
+    "inputTokens": 3114,
+    "outputTokens": 27,
+    "cost": null
+   },
+   {
+    "inputTokens": 3223,
+    "outputTokens": 9,
+    "cost": null
+   }
+  ]
+ },
+ {
+  "task": "tool-error",
+  "engine": "rust",
+  "repetition": 1,
+  "suiteHash": "bd905b4f81f0a9412b614631a36337723067574848c5f05b50ead1cf48675091",
+  "taskHash": "d805c342f165a7193bf45347ebba54a0e1c0d75e9baffd9c5979d07f5b0fb09e",
+  "profile": {
+   "model": "gpt-6.1-sol",
+   "modelParametersHash": "db432bd85b84420b86309ab6e8c00c9ab49506ef12355d833dd0d5b31c65baf4",
+   "agentManifestHash": "d5a431d4720737723a14e80a712d0609b566e754627498e4ecdf359ac3e6c54a",
+   "permissionHash": "05635876a9be78933bee568c3f0ae156dad32c16e05b7bf9d43f5944317c0c04",
+   "toolSurfaceHash": "2530782d33adb0178572e1c86aa2f13d5e000bb7ecc5cf393d72052dcc6800e5"
+  },
+  "revision": "fa6bac5cce43b6110bee5d96ce3657d8567c3a3f",
+  "artifactHash": "42a0929bd2c953adb3b7ae60782aeb2d7a5a7101e999baa01b6d9c9d85b7e5ad",
+  "receiptHash": "d361d1ef4932fbc852befee70dbca5fe76cc218eddf054c28f1370d6ad343698",
+  "outcome": "passed",
+  "elapsedMs": 6333,
+  "attempts": [
+   {
+    "inputTokens": 3054,
+    "outputTokens": 27,
+    "cost": null
+   },
+   {
+    "inputTokens": 3114,
+    "outputTokens": 27,
+    "cost": null
+   },
+   {
+    "inputTokens": 3223,
+    "outputTokens": 9,
+    "cost": null
+   }
+  ]
+ },
+ {
+  "task": "tool-error",
+  "engine": "rust",
+  "repetition": 2,
+  "suiteHash": "bd905b4f81f0a9412b614631a36337723067574848c5f05b50ead1cf48675091",
+  "taskHash": "d805c342f165a7193bf45347ebba54a0e1c0d75e9baffd9c5979d07f5b0fb09e",
+  "profile": {
+   "model": "gpt-6.1-sol",
+   "modelParametersHash": "0ee114b11caae0bf660e8019b1ae3f7e53c7838cddd6cb132b8353c1301fc704",
+   "agentManifestHash": "d5a431d4720737723a14e80a712d0609b566e754627498e4ecdf359ac3e6c54a",
+   "permissionHash": "de445f1d56b02931d175c15bcad116fe63652732167128366db32618f894855c",
+   "toolSurfaceHash": "2530782d33adb0178572e1c86aa2f13d5e000bb7ecc5cf393d72052dcc6800e5"
+  },
+  "revision": "fa6bac5cce43b6110bee5d96ce3657d8567c3a3f",
+  "artifactHash": "42a0929bd2c953adb3b7ae60782aeb2d7a5a7101e999baa01b6d9c9d85b7e5ad",
+  "receiptHash": "31e28dcdfc3b121ce41b949d6a52ae1aa21695f0ee641e592746d4930e5e5b58",
+  "outcome": "passed",
+  "elapsedMs": 5639,
+  "attempts": [
+   {
+    "inputTokens": 3054,
+    "outputTokens": 27,
+    "cost": null
+   },
+   {
+    "inputTokens": 3114,
+    "outputTokens": 27,
+    "cost": null
+   },
+   {
+    "inputTokens": 3223,
+    "outputTokens": 9,
+    "cost": null
+   }
+  ]
+ },
+ {
+  "task": "stream-interruption",
+  "engine": "rust",
+  "repetition": 0,
+  "suiteHash": "bd905b4f81f0a9412b614631a36337723067574848c5f05b50ead1cf48675091",
+  "taskHash": "4f00bf344635036fd5d16a5b348e948e9ed126d43854e1280b1286d48d53284c",
+  "profile": {
+   "model": "gpt-6.1-sol",
+   "modelParametersHash": "7b646a14bddae5ac301804534bd68b73525ce3c690e6eb40fabe1dd2f69ac713",
+   "agentManifestHash": "d5a431d4720737723a14e80a712d0609b566e754627498e4ecdf359ac3e6c54a",
+   "permissionHash": "a60419fa0284ea72dba019c437498a3bb066be69866962d0c21d7bf4e710d137",
+   "toolSurfaceHash": "2530782d33adb0178572e1c86aa2f13d5e000bb7ecc5cf393d72052dcc6800e5"
+  },
+  "revision": "fa6bac5cce43b6110bee5d96ce3657d8567c3a3f",
+  "artifactHash": "2b4e04ae507e25e4b1036dff0509a0cb4fc4f014bfde0083fccd539fa1e60df2",
+  "receiptHash": "c4d3ad94cb29c178d22c61dc9331016d044ad2588bb14795db355e84e229077a",
+  "outcome": "passed",
+  "elapsedMs": 9532,
+  "attempts": [
+   {
+    "inputTokens": 3055,
+    "outputTokens": 36,
+    "cost": null
+   },
+   {
+    "inputTokens": 3204,
+    "outputTokens": 28,
+    "cost": null
+   },
+   {
+    "inputTokens": 3303,
+    "outputTokens": 52,
+    "cost": null
+   }
+  ]
+ },
+ {
+  "task": "stream-interruption",
+  "engine": "rust",
+  "repetition": 1,
+  "suiteHash": "bd905b4f81f0a9412b614631a36337723067574848c5f05b50ead1cf48675091",
+  "taskHash": "4f00bf344635036fd5d16a5b348e948e9ed126d43854e1280b1286d48d53284c",
+  "profile": {
+   "model": "gpt-6.1-sol",
+   "modelParametersHash": "7f564b7faad4f02d711b788e213f34365d5cc0eb64846136f14b1345861dfd72",
+   "agentManifestHash": "d5a431d4720737723a14e80a712d0609b566e754627498e4ecdf359ac3e6c54a",
+   "permissionHash": "d06671d0d7ec2a2eb68150b79054617e6904748c42ef8c7ca580b9bc94baaa8a",
+   "toolSurfaceHash": "2530782d33adb0178572e1c86aa2f13d5e000bb7ecc5cf393d72052dcc6800e5"
+  },
+  "revision": "fa6bac5cce43b6110bee5d96ce3657d8567c3a3f",
+  "artifactHash": "2b4e04ae507e25e4b1036dff0509a0cb4fc4f014bfde0083fccd539fa1e60df2",
+  "receiptHash": "a3c8f6343b37568777cec3de2d1879c0ad951ab3af4d4113ef3a80f9dc716b6a",
+  "outcome": "passed",
+  "elapsedMs": 10223,
+  "attempts": [
+   {
+    "inputTokens": 3055,
+    "outputTokens": 36,
+    "cost": null
+   },
+   {
+    "inputTokens": 3204,
+    "outputTokens": 28,
+    "cost": null
+   },
+   {
+    "inputTokens": 3303,
+    "outputTokens": 46,
+    "cost": null
+   }
+  ]
+ },
+ {
+  "task": "stream-interruption",
+  "engine": "rust",
+  "repetition": 2,
+  "suiteHash": "bd905b4f81f0a9412b614631a36337723067574848c5f05b50ead1cf48675091",
+  "taskHash": "4f00bf344635036fd5d16a5b348e948e9ed126d43854e1280b1286d48d53284c",
+  "profile": {
+   "model": "gpt-6.1-sol",
+   "modelParametersHash": "594cbfb55ab0c5f1a8d3b2f093c13d99b8dfcfc6234ac25ec016ad4aaf30a631",
+   "agentManifestHash": "d5a431d4720737723a14e80a712d0609b566e754627498e4ecdf359ac3e6c54a",
+   "permissionHash": "66335054a2d0c03795222b2c60466fb0e22d805db745b53971a2dd54e8671695",
+   "toolSurfaceHash": "2530782d33adb0178572e1c86aa2f13d5e000bb7ecc5cf393d72052dcc6800e5"
+  },
+  "revision": "fa6bac5cce43b6110bee5d96ce3657d8567c3a3f",
+  "artifactHash": "2b4e04ae507e25e4b1036dff0509a0cb4fc4f014bfde0083fccd539fa1e60df2",
+  "receiptHash": "7717339a3932d861d941fef1e38e8e7315087799c0967279c2c5f20eb1189ce2",
+  "outcome": "passed",
+  "elapsedMs": 8923,
+  "attempts": [
+   {
+    "inputTokens": 3055,
+    "outputTokens": 36,
+    "cost": null
+   },
+   {
+    "inputTokens": 3204,
+    "outputTokens": 28,
+    "cost": null
+   },
+   {
+    "inputTokens": 3303,
+    "outputTokens": 51,
+    "cost": null
+   }
+  ]
+ },
+ {
+  "task": "long-session",
+  "engine": "rust",
+  "repetition": 0,
+  "suiteHash": "bd905b4f81f0a9412b614631a36337723067574848c5f05b50ead1cf48675091",
+  "taskHash": "acc85904b2dcd251e4f30fbe7b74f29d6ae3d4266a73c7319c966169a74baa82",
+  "profile": {
+   "model": "gpt-6.1-sol",
+   "modelParametersHash": "97b748aef3657657dfa8725167a348037a3cfa6b5ed63a4842ce236925e4ee47",
+   "agentManifestHash": "d5a431d4720737723a14e80a712d0609b566e754627498e4ecdf359ac3e6c54a",
+   "permissionHash": "fb258a2268a3f5e0783dd783f37064484e81b44696ee90522326d3e67c66e132",
+   "toolSurfaceHash": "2530782d33adb0178572e1c86aa2f13d5e000bb7ecc5cf393d72052dcc6800e5"
+  },
+  "revision": "fa6bac5cce43b6110bee5d96ce3657d8567c3a3f",
+  "artifactHash": "e9ff285d1d0a72e89be756401e591e292f7b5c153a01670d953e994b851d5339",
+  "receiptHash": "4fd6bff5a6c5a967aebcbcf682d41a3a8cdb8983ae92a5969b8726f48ebc9869",
+  "outcome": "passed",
+  "elapsedMs": 39741,
+  "attempts": [
+   {
+    "inputTokens": 3038,
+    "outputTokens": 37,
+    "cost": null
+   },
+   {
+    "inputTokens": 3108,
+    "outputTokens": 22,
+    "cost": null
+   },
+   {
+    "inputTokens": 3170,
+    "outputTokens": 35,
+    "cost": null
+   },
+   {
+    "inputTokens": 3264,
+    "outputTokens": 37,
+    "cost": null
+   },
+   {
+    "inputTokens": 3370,
+    "outputTokens": 29,
+    "cost": null
+   },
+   {
+    "inputTokens": 3426,
+    "outputTokens": 57,
+    "cost": null
+   },
+   {
+    "inputTokens": 3560,
+    "outputTokens": 44,
+    "cost": null
+   },
+   {
+    "inputTokens": 3638,
+    "outputTokens": 27,
+    "cost": null
+   },
+   {
+    "inputTokens": 3755,
+    "outputTokens": 36,
+    "cost": null
+   },
+   {
+    "inputTokens": 3856,
+    "outputTokens": 85,
+    "cost": null
+   },
+   {
+    "inputTokens": 4000,
+    "outputTokens": 117,
+    "cost": null
+   },
+   {
+    "inputTokens": 4176,
+    "outputTokens": 101,
+    "cost": null
+   },
+   {
+    "inputTokens": 4353,
+    "outputTokens": 100,
+    "cost": null
+   },
+   {
+    "inputTokens": 4614,
+    "outputTokens": 76,
+    "cost": null
+   },
+   {
+    "inputTokens": 4715,
+    "outputTokens": 100,
+    "cost": null
+   },
+   {
+    "inputTokens": 4977,
+    "outputTokens": 36,
+    "cost": null
+   },
+   {
+    "inputTokens": 5033,
+    "outputTokens": 87,
+    "cost": null
+   }
+  ]
+ },
+ {
+  "task": "long-session",
+  "engine": "rust",
+  "repetition": 1,
+  "suiteHash": "bd905b4f81f0a9412b614631a36337723067574848c5f05b50ead1cf48675091",
+  "taskHash": "acc85904b2dcd251e4f30fbe7b74f29d6ae3d4266a73c7319c966169a74baa82",
+  "profile": {
+   "model": "gpt-6.1-sol",
+   "modelParametersHash": "1dacc55073e8f63c9371897bd5cafa09574ead6195d1bfd1d98782a9bb12ea51",
+   "agentManifestHash": "d5a431d4720737723a14e80a712d0609b566e754627498e4ecdf359ac3e6c54a",
+   "permissionHash": "fcc035211b6e9219ca7160abcaf391dcfe549bfc9d9282514a1768a1c52db9f2",
+   "toolSurfaceHash": "2530782d33adb0178572e1c86aa2f13d5e000bb7ecc5cf393d72052dcc6800e5"
+  },
+  "revision": "fa6bac5cce43b6110bee5d96ce3657d8567c3a3f",
+  "artifactHash": "263e02178d01c4b07cb29ab8c234e95007adb404a4e66ad9f1088fa80769d3e6",
+  "receiptHash": "310ff3f6e1693c5d063e1102f9e88a0ddbc7b651761e6fef7eb1cc61f2f01813",
+  "outcome": "passed",
+  "elapsedMs": 53157,
+  "attempts": [
+   {
+    "inputTokens": 3038,
+    "outputTokens": 37,
+    "cost": null
+   },
+   {
+    "inputTokens": 3108,
+    "outputTokens": 22,
+    "cost": null
+   },
+   {
+    "inputTokens": 3170,
+    "outputTokens": 38,
+    "cost": null
+   },
+   {
+    "inputTokens": 3267,
+    "outputTokens": 37,
+    "cost": null
+   },
+   {
+    "inputTokens": 3373,
+    "outputTokens": 28,
+    "cost": null
+   },
+   {
+    "inputTokens": 3428,
+    "outputTokens": 57,
+    "cost": null
+   },
+   {
+    "inputTokens": 3562,
+    "outputTokens": 37,
+    "cost": null
+   },
+   {
+    "inputTokens": 3633,
+    "outputTokens": 27,
+    "cost": null
+   },
+   {
+    "inputTokens": 3750,
+    "outputTokens": 36,
+    "cost": null
+   },
+   {
+    "inputTokens": 3851,
+    "outputTokens": 183,
+    "cost": null
+   },
+   {
+    "inputTokens": 4093,
+    "outputTokens": 52,
+    "cost": null
+   },
+   {
+    "inputTokens": 4204,
+    "outputTokens": 74,
+    "cost": null
+   },
+   {
+    "inputTokens": 4355,
+    "outputTokens": 130,
+    "cost": null
+   },
+   {
+    "inputTokens": 4547,
+    "outputTokens": 73,
+    "cost": null
+   },
+   {
+    "inputTokens": 4645,
+    "outputTokens": 130,
+    "cost": null
+   },
+   {
+    "inputTokens": 4837,
+    "outputTokens": 29,
+    "cost": null
+   },
+   {
+    "inputTokens": 4886,
+    "outputTokens": 94,
+    "cost": null
+   }
+  ]
+ },
+ {
+  "task": "long-session",
+  "engine": "rust",
+  "repetition": 2,
+  "suiteHash": "bd905b4f81f0a9412b614631a36337723067574848c5f05b50ead1cf48675091",
+  "taskHash": "acc85904b2dcd251e4f30fbe7b74f29d6ae3d4266a73c7319c966169a74baa82",
+  "profile": {
+   "model": "gpt-6.1-sol",
+   "modelParametersHash": "8a6ebacf8467760265a6b02ff2de126a692632a2cd49317535b75e17b4a99882",
+   "agentManifestHash": "d5a431d4720737723a14e80a712d0609b566e754627498e4ecdf359ac3e6c54a",
+   "permissionHash": "eb3fe3be149af7ba2c859040bf759e44f55b0439693b73ecab6dcc55a62d1880",
+   "toolSurfaceHash": "2530782d33adb0178572e1c86aa2f13d5e000bb7ecc5cf393d72052dcc6800e5"
+  },
+  "revision": "fa6bac5cce43b6110bee5d96ce3657d8567c3a3f",
+  "artifactHash": "c7ed60a8b391ae86b21eaaf598a6227565d691477326eeb3f94a9b4609546478",
+  "receiptHash": "583a79776cbfef707c1b224b98189d638c28dc7b744028f95ea83fccbde893af",
+  "outcome": "passed",
+  "elapsedMs": 45536,
+  "attempts": [
+   {
+    "inputTokens": 3038,
+    "outputTokens": 37,
+    "cost": null
+   },
+   {
+    "inputTokens": 3108,
+    "outputTokens": 22,
+    "cost": null
+   },
+   {
+    "inputTokens": 3170,
+    "outputTokens": 35,
+    "cost": null
+   },
+   {
+    "inputTokens": 3264,
+    "outputTokens": 37,
+    "cost": null
+   },
+   {
+    "inputTokens": 3370,
+    "outputTokens": 29,
+    "cost": null
+   },
+   {
+    "inputTokens": 3426,
+    "outputTokens": 57,
+    "cost": null
+   },
+   {
+    "inputTokens": 3560,
+    "outputTokens": 44,
+    "cost": null
+   },
+   {
+    "inputTokens": 3638,
+    "outputTokens": 27,
+    "cost": null
+   },
+   {
+    "inputTokens": 3755,
+    "outputTokens": 63,
+    "cost": null
+   },
+   {
+    "inputTokens": 3894,
+    "outputTokens": 35,
+    "cost": null
+   },
+   {
+    "inputTokens": 3988,
+    "outputTokens": 73,
+    "cost": null
+   },
+   {
+    "inputTokens": 4141,
+    "outputTokens": 39,
+    "cost": null
+   },
+   {
+    "inputTokens": 4242,
+    "outputTokens": 57,
+    "cost": null
+   },
+   {
+    "inputTokens": 4324,
+    "outputTokens": 39,
+    "cost": null
+   },
+   {
+    "inputTokens": 4425,
+    "outputTokens": 43,
+    "cost": null
+   },
+   {
+    "inputTokens": 4488,
+    "outputTokens": 87,
+    "cost": null
+   }
+  ]
+ },
+ {
+  "task": "multi-line-edit",
+  "engine": "rust",
+  "repetition": 0,
+  "suiteHash": "bd905b4f81f0a9412b614631a36337723067574848c5f05b50ead1cf48675091",
+  "taskHash": "9da008a0099a635cb45ea80ebda993c5f627a4e16e8ad28efa7b09d82a6068a2",
+  "profile": {
+   "model": "gpt-6.1-sol",
+   "modelParametersHash": "7567650cb26498c8329cb024bb5f318ffdd2d49456e959d4eeb0587da53390eb",
+   "agentManifestHash": "d5a431d4720737723a14e80a712d0609b566e754627498e4ecdf359ac3e6c54a",
+   "permissionHash": "fcd06e58a1dc8282e4fb2926d4209c2a6861d94c5306d0e5868a3027f472543f",
+   "toolSurfaceHash": "2530782d33adb0178572e1c86aa2f13d5e000bb7ecc5cf393d72052dcc6800e5"
+  },
+  "revision": "fa6bac5cce43b6110bee5d96ce3657d8567c3a3f",
+  "artifactHash": "b90cfd01d5fe28003a5ca719e181df07e0a8a137c97870bcf2e16dfcc490aa1c",
+  "receiptHash": "37aa6df81ef82cf632d140c66d9426960a381d22d82e22e5baa8ad531bbb43d7",
+  "outcome": "passed",
+  "elapsedMs": 13847,
+  "attempts": [
+   {
+    "inputTokens": 3055,
+    "outputTokens": 29,
+    "cost": null
+   },
+   {
+    "inputTokens": 3215,
+    "outputTokens": 69,
+    "cost": null
+   },
+   {
+    "inputTokens": 3520,
+    "outputTokens": 94,
+    "cost": null
+   },
+   {
+    "inputTokens": 3635,
+    "outputTokens": 79,
+    "cost": null
+   },
+   {
+    "inputTokens": 3794,
+    "outputTokens": 41,
+    "cost": null
+   },
+   {
+    "inputTokens": 3962,
+    "outputTokens": 77,
+    "cost": null
+   }
+  ]
+ },
+ {
+  "task": "multi-line-edit",
+  "engine": "rust",
+  "repetition": 1,
+  "suiteHash": "bd905b4f81f0a9412b614631a36337723067574848c5f05b50ead1cf48675091",
+  "taskHash": "9da008a0099a635cb45ea80ebda993c5f627a4e16e8ad28efa7b09d82a6068a2",
+  "profile": {
+   "model": "gpt-6.1-sol",
+   "modelParametersHash": "813a86c323a67ea6b7b721c9dc6a3d4c2c36322b67bb06723ed3325bf4465565",
+   "agentManifestHash": "d5a431d4720737723a14e80a712d0609b566e754627498e4ecdf359ac3e6c54a",
+   "permissionHash": "0990d2309fbeb608de73c026a396e95639ef6d6f6cddd0f408ada66cbbc5fb61",
+   "toolSurfaceHash": "2530782d33adb0178572e1c86aa2f13d5e000bb7ecc5cf393d72052dcc6800e5"
+  },
+  "revision": "fa6bac5cce43b6110bee5d96ce3657d8567c3a3f",
+  "artifactHash": "2ad04538602881f79053442d13eca615e8e647f90f3e50838ccf1f19f2f1076a",
+  "receiptHash": "ce3ec28dcd82e08a95572d653e7da56e008c4baad980c9a82ec97d59f84069c2",
+  "outcome": "passed",
+  "elapsedMs": 14747,
+  "attempts": [
+   {
+    "inputTokens": 3055,
+    "outputTokens": 30,
+    "cost": null
+   },
+   {
+    "inputTokens": 3216,
+    "outputTokens": 96,
+    "cost": null
+   },
+   {
+    "inputTokens": 3649,
+    "outputTokens": 94,
+    "cost": null
+   },
+   {
+    "inputTokens": 3764,
+    "outputTokens": 123,
+    "cost": null
+   },
+   {
+    "inputTokens": 3962,
+    "outputTokens": 41,
+    "cost": null
+   },
+   {
+    "inputTokens": 4130,
+    "outputTokens": 86,
+    "cost": null
+   }
+  ]
+ },
+ {
+  "task": "multi-line-edit",
+  "engine": "rust",
+  "repetition": 2,
+  "suiteHash": "bd905b4f81f0a9412b614631a36337723067574848c5f05b50ead1cf48675091",
+  "taskHash": "9da008a0099a635cb45ea80ebda993c5f627a4e16e8ad28efa7b09d82a6068a2",
+  "profile": {
+   "model": "gpt-6.1-sol",
+   "modelParametersHash": "92cef0c91f5480da38c58b17edef7f30c1218f33a66cff9995fbd752bf7d4828",
+   "agentManifestHash": "d5a431d4720737723a14e80a712d0609b566e754627498e4ecdf359ac3e6c54a",
+   "permissionHash": "97c9d1633e37b729b1a610708927e67876cf60c6cb3c8590812b37b073e1726e",
+   "toolSurfaceHash": "2530782d33adb0178572e1c86aa2f13d5e000bb7ecc5cf393d72052dcc6800e5"
+  },
+  "revision": "fa6bac5cce43b6110bee5d96ce3657d8567c3a3f",
+  "artifactHash": "4fab435a84f0d1f3f669a24c629e8c3b55c9ebb822fbd6582c345eac97c62a7b",
+  "receiptHash": "6d8cc4ec5cf18437861b3ec95435193aa17d4152ead5428d5bd70cae15794163",
+  "outcome": "passed",
+  "elapsedMs": 18546,
+  "attempts": [
+   {
+    "inputTokens": 3055,
+    "outputTokens": 29,
+    "cost": null
+   },
+   {
+    "inputTokens": 3215,
+    "outputTokens": 27,
+    "cost": null
+   },
+   {
+    "inputTokens": 3332,
+    "outputTokens": 30,
+    "cost": null
+   },
+   {
+    "inputTokens": 3510,
+    "outputTokens": 92,
+    "cost": null
+   },
+   {
+    "inputTokens": 3623,
+    "outputTokens": 50,
+    "cost": null
+   },
+   {
+    "inputTokens": 3753,
+    "outputTokens": 35,
+    "cost": null
+   },
+   {
+    "inputTokens": 3915,
+    "outputTokens": 73,
+    "cost": null
+   }
+  ]
+ },
+ {
+  "task": "typed-repair",
+  "engine": "rust",
+  "repetition": 0,
+  "suiteHash": "bd905b4f81f0a9412b614631a36337723067574848c5f05b50ead1cf48675091",
+  "taskHash": "6d7a5f740fead5293e5e5ffb8d80de678897f4422c739a10fa17ed3caffaaea2",
+  "profile": {
+   "model": "gpt-6.1-sol",
+   "modelParametersHash": "0ef5018c9afe21c07df4c198b90f6f14d9d2e13e6c57eefe3c8faa8808ed7998",
+   "agentManifestHash": "d5a431d4720737723a14e80a712d0609b566e754627498e4ecdf359ac3e6c54a",
+   "permissionHash": "89191b24fda008cfbef5118ced71bea94887784883507b34e4be379ad0fc19fe",
+   "toolSurfaceHash": "2530782d33adb0178572e1c86aa2f13d5e000bb7ecc5cf393d72052dcc6800e5"
+  },
+  "revision": "fa6bac5cce43b6110bee5d96ce3657d8567c3a3f",
+  "artifactHash": "94c1b31a6f6f19c7d7d22dbaeb171ed46a73cff48dccf052ea1086468f557afc",
+  "receiptHash": "1478d49dec7cae4ce1ae529e08657e6f4ef576c46211eb78afd9814a47461fbd",
+  "outcome": "passed",
+  "elapsedMs": 23777,
+  "attempts": [
+   {
+    "inputTokens": 3061,
+    "outputTokens": 29,
+    "cost": null
+   },
+   {
+    "inputTokens": 3218,
+    "outputTokens": 69,
+    "cost": null
+   },
+   {
+    "inputTokens": 3504,
+    "outputTokens": 132,
+    "cost": null
+   },
+   {
+    "inputTokens": 3657,
+    "outputTokens": 200,
+    "cost": null
+   },
+   {
+    "inputTokens": 3878,
+    "outputTokens": 118,
+    "cost": null
+   },
+   {
+    "inputTokens": 4071,
+    "outputTokens": 35,
+    "cost": null
+   },
+   {
+    "inputTokens": 4234,
+    "outputTokens": 60,
+    "cost": null
+   }
+  ]
+ },
+ {
+  "task": "typed-repair",
+  "engine": "rust",
+  "repetition": 1,
+  "suiteHash": "bd905b4f81f0a9412b614631a36337723067574848c5f05b50ead1cf48675091",
+  "taskHash": "6d7a5f740fead5293e5e5ffb8d80de678897f4422c739a10fa17ed3caffaaea2",
+  "profile": {
+   "model": "gpt-6.1-sol",
+   "modelParametersHash": "0431e541ac9cceea791f9b887823a226805f64d4532239fd200f6023e705fe03",
+   "agentManifestHash": "d5a431d4720737723a14e80a712d0609b566e754627498e4ecdf359ac3e6c54a",
+   "permissionHash": "db89524171f3cc93fb7a34ee25b85f18d830f07f0d1a27ef1edc7dccc0cc4f82",
+   "toolSurfaceHash": "2530782d33adb0178572e1c86aa2f13d5e000bb7ecc5cf393d72052dcc6800e5"
+  },
+  "revision": "fa6bac5cce43b6110bee5d96ce3657d8567c3a3f",
+  "artifactHash": "ad6ee1aae577dca61a7d440d394f57e251e802e5cadb4d4656af961a21fb253f",
+  "receiptHash": "054092a5a0b0feff66c31fcce6795058972ab7b4de43cd942962c9b15c284840",
+  "outcome": "passed",
+  "elapsedMs": 21276,
+  "attempts": [
+   {
+    "inputTokens": 3061,
+    "outputTokens": 29,
+    "cost": null
+   },
+   {
+    "inputTokens": 3218,
+    "outputTokens": 69,
+    "cost": null
+   },
+   {
+    "inputTokens": 3504,
+    "outputTokens": 78,
+    "cost": null
+   },
+   {
+    "inputTokens": 3603,
+    "outputTokens": 214,
+    "cost": null
+   },
+   {
+    "inputTokens": 3838,
+    "outputTokens": 130,
+    "cost": null
+   },
+   {
+    "inputTokens": 4043,
+    "outputTokens": 35,
+    "cost": null
+   },
+   {
+    "inputTokens": 4206,
+    "outputTokens": 66,
+    "cost": null
+   }
+  ]
+ },
+ {
+  "task": "typed-repair",
+  "engine": "rust",
+  "repetition": 2,
+  "suiteHash": "bd905b4f81f0a9412b614631a36337723067574848c5f05b50ead1cf48675091",
+  "taskHash": "6d7a5f740fead5293e5e5ffb8d80de678897f4422c739a10fa17ed3caffaaea2",
+  "profile": {
+   "model": "gpt-6.1-sol",
+   "modelParametersHash": "21b138910e15ba05be3bca507c1cd82c5c7e8459f22d10e3a557b0472af9eeab",
+   "agentManifestHash": "d5a431d4720737723a14e80a712d0609b566e754627498e4ecdf359ac3e6c54a",
+   "permissionHash": "51b54b3d54fe61c3353a1371821cc377a54a96ac234ae66a94c5d994bfcd23a9",
+   "toolSurfaceHash": "2530782d33adb0178572e1c86aa2f13d5e000bb7ecc5cf393d72052dcc6800e5"
+  },
+  "revision": "fa6bac5cce43b6110bee5d96ce3657d8567c3a3f",
+  "artifactHash": "dbda0b8b18709246ef0b661715fdba939a949170fcdfa2cc5fa974cbd151ca1c",
+  "receiptHash": "e713b8ad76f480e94894f3e7ba56a70a7e54a4904ccf0201bc9856ade850ecce",
+  "outcome": "passed",
+  "elapsedMs": 22207,
+  "attempts": [
+   {
+    "inputTokens": 3061,
+    "outputTokens": 29,
+    "cost": null
+   },
+   {
+    "inputTokens": 3218,
+    "outputTokens": 69,
+    "cost": null
+   },
+   {
+    "inputTokens": 3504,
+    "outputTokens": 132,
+    "cost": null
+   },
+   {
+    "inputTokens": 3657,
+    "outputTokens": 188,
+    "cost": null
+   },
+   {
+    "inputTokens": 3866,
+    "outputTokens": 118,
+    "cost": null
+   },
+   {
+    "inputTokens": 4059,
+    "outputTokens": 35,
+    "cost": null
+   },
+   {
+    "inputTokens": 4222,
+    "outputTokens": 60,
+    "cost": null
+   }
+  ]
+ },
+ {
+  "task": "large-file",
+  "engine": "rust",
+  "repetition": 0,
+  "suiteHash": "bd905b4f81f0a9412b614631a36337723067574848c5f05b50ead1cf48675091",
+  "taskHash": "55a120909957198a82e321a13a4b2f7b66c2439b3d040e8722add9575c37d311",
+  "profile": {
+   "model": "gpt-6.1-sol",
+   "modelParametersHash": "7e09adc88f7b69f5179edc9b35aa2c0cb0faacb8e69be63696ee4339ca1fe8dc",
+   "agentManifestHash": "d5a431d4720737723a14e80a712d0609b566e754627498e4ecdf359ac3e6c54a",
+   "permissionHash": "4e8c08cc6680ae7a9aceefba9b8cf1c0d58707e0f30d55335819f72fb6239fe0",
+   "toolSurfaceHash": "2530782d33adb0178572e1c86aa2f13d5e000bb7ecc5cf393d72052dcc6800e5"
+  },
+  "revision": "fa6bac5cce43b6110bee5d96ce3657d8567c3a3f",
+  "artifactHash": "4836617dcf6903cb058987c39fe95ca58f856eaafee233203f8904400ac793be",
+  "receiptHash": "1cfa88e4e3b403beb30125313e713cc00127fd3eb0c0e4f87e292163a7f21537",
+  "outcome": "passed",
+  "elapsedMs": 25669,
+  "attempts": [
+   {
+    "inputTokens": 3083,
+    "outputTokens": 45,
+    "cost": null
+   },
+   {
+    "inputTokens": 3160,
+    "outputTokens": 29,
+    "cost": null
+   },
+   {
+    "inputTokens": 4212,
+    "outputTokens": 69,
+    "cost": null
+   },
+   {
+    "inputTokens": 5343,
+    "outputTokens": 86,
+    "cost": null
+   },
+   {
+    "inputTokens": 5450,
+    "outputTokens": 154,
+    "cost": null
+   },
+   {
+    "inputTokens": 5625,
+    "outputTokens": 89,
+    "cost": null
+   },
+   {
+    "inputTokens": 5794,
+    "outputTokens": 30,
+    "cost": null
+   },
+   {
+    "inputTokens": 5982,
+    "outputTokens": 35,
+    "cost": null
+   },
+   {
+    "inputTokens": 6146,
+    "outputTokens": 79,
+    "cost": null
+   }
+  ]
+ },
+ {
+  "task": "large-file",
+  "engine": "rust",
+  "repetition": 1,
+  "suiteHash": "bd905b4f81f0a9412b614631a36337723067574848c5f05b50ead1cf48675091",
+  "taskHash": "55a120909957198a82e321a13a4b2f7b66c2439b3d040e8722add9575c37d311",
+  "profile": {
+   "model": "gpt-6.1-sol",
+   "modelParametersHash": "1cc346dd2f6eb044f17602e8fd4f5e17c212390de88278970331fc51c432743a",
+   "agentManifestHash": "d5a431d4720737723a14e80a712d0609b566e754627498e4ecdf359ac3e6c54a",
+   "permissionHash": "2fc4d84761e99aff09eb9834ca9362cfa842ba1ce7e3adc8923b5894e1eef183",
+   "toolSurfaceHash": "2530782d33adb0178572e1c86aa2f13d5e000bb7ecc5cf393d72052dcc6800e5"
+  },
+  "revision": "fa6bac5cce43b6110bee5d96ce3657d8567c3a3f",
+  "artifactHash": "94eed1f8bb85cf28d249f25b2fff8fae068b777966e99381c68833a72c8286b5",
+  "receiptHash": "f27d6ef86aaf8acb33c8a356f028d00a4fdd372b4872fee39ecbe52e3f971a6a",
+  "outcome": "passed",
+  "elapsedMs": 19684,
+  "attempts": [
+   {
+    "inputTokens": 3083,
+    "outputTokens": 47,
+    "cost": null
+   },
+   {
+    "inputTokens": 3241,
+    "outputTokens": 69,
+    "cost": null
+   },
+   {
+    "inputTokens": 3598,
+    "outputTokens": 64,
+    "cost": null
+   },
+   {
+    "inputTokens": 3874,
+    "outputTokens": 86,
+    "cost": null
+   },
+   {
+    "inputTokens": 3981,
+    "outputTokens": 93,
+    "cost": null
+   },
+   {
+    "inputTokens": 4154,
+    "outputTokens": 35,
+    "cost": null
+   },
+   {
+    "inputTokens": 4318,
+    "outputTokens": 85,
+    "cost": null
+   }
+  ]
+ },
+ {
+  "task": "large-file",
+  "engine": "rust",
+  "repetition": 2,
+  "suiteHash": "bd905b4f81f0a9412b614631a36337723067574848c5f05b50ead1cf48675091",
+  "taskHash": "55a120909957198a82e321a13a4b2f7b66c2439b3d040e8722add9575c37d311",
+  "profile": {
+   "model": "gpt-6.1-sol",
+   "modelParametersHash": "fa05d0e23f23029e4e2e4f7c94ec857878ba544d321154c18b5681eedc32743b",
+   "agentManifestHash": "d5a431d4720737723a14e80a712d0609b566e754627498e4ecdf359ac3e6c54a",
+   "permissionHash": "792d6520da8a20a1413647d4543ced69c844d50b9dd330734a1bdbaa3df719ff",
+   "toolSurfaceHash": "2530782d33adb0178572e1c86aa2f13d5e000bb7ecc5cf393d72052dcc6800e5"
+  },
+  "revision": "fa6bac5cce43b6110bee5d96ce3657d8567c3a3f",
+  "artifactHash": "a7fd536126cebb175edc7ee93835f08e53896c83cb2a140ce65ac4d29f41ed78",
+  "receiptHash": "4e7931e6ad8f40bf35e4d77fdc71389e056558a37a2a3fdc618640d889b2394b",
+  "outcome": "passed",
+  "elapsedMs": 28429,
+  "attempts": [
+   {
+    "inputTokens": 3083,
+    "outputTokens": 43,
+    "cost": null
+   },
+   {
+    "inputTokens": 3158,
+    "outputTokens": 22,
+    "cost": null
+   },
+   {
+    "inputTokens": 3236,
+    "outputTokens": 29,
+    "cost": null
+   },
+   {
+    "inputTokens": 4288,
+    "outputTokens": 93,
+    "cost": null
+   },
+   {
+    "inputTokens": 5328,
+    "outputTokens": 86,
+    "cost": null
+   },
+   {
+    "inputTokens": 5435,
+    "outputTokens": 122,
+    "cost": null
+   },
+   {
+    "inputTokens": 5637,
+    "outputTokens": 30,
+    "cost": null
+   },
+   {
+    "inputTokens": 5825,
+    "outputTokens": 35,
+    "cost": null
+   },
+   {
+    "inputTokens": 5989,
+    "outputTokens": 64,
+    "cost": null
+   }
+  ]
+ },
+ {
+  "task": "rename-symbol",
+  "engine": "rust",
+  "repetition": 0,
+  "suiteHash": "bd905b4f81f0a9412b614631a36337723067574848c5f05b50ead1cf48675091",
+  "taskHash": "244db465af9f2320fb9297399084c4c2de91754c7ef63ea7c5ac984145c0fdc0",
+  "profile": {
+   "model": "gpt-6.1-sol",
+   "modelParametersHash": "1c155213fb4c346975ccff55c5c2249ac9c66e38bb20b8b8ccd8f4c90a1f7831",
+   "agentManifestHash": "d5a431d4720737723a14e80a712d0609b566e754627498e4ecdf359ac3e6c54a",
+   "permissionHash": "c8471609a839fc7405c1d30d41ecd1b11f9c24c39da273c50c256dca78ce126f",
+   "toolSurfaceHash": "2530782d33adb0178572e1c86aa2f13d5e000bb7ecc5cf393d72052dcc6800e5"
+  },
+  "revision": "fa6bac5cce43b6110bee5d96ce3657d8567c3a3f",
+  "artifactHash": "1cd783445787d664f7234011e83f00e0c0acb91381b9bfd07be4e8a5bd5b9b68",
+  "receiptHash": "60017c19c7116851e9f63bea93c4adabf4b9466ed3713902db55786e656746e7",
+  "outcome": "passed",
+  "elapsedMs": 26701,
+  "attempts": [
+   {
+    "inputTokens": 3072,
+    "outputTokens": 22,
+    "cost": null
+   },
+   {
+    "inputTokens": 3150,
+    "outputTokens": 44,
+    "cost": null
+   },
+   {
+    "inputTokens": 3215,
+    "outputTokens": 22,
+    "cost": null
+   },
+   {
+    "inputTokens": 3276,
+    "outputTokens": 117,
+    "cost": null
+   },
+   {
+    "inputTokens": 3818,
+    "outputTokens": 28,
+    "cost": null
+   },
+   {
+    "inputTokens": 3949,
+    "outputTokens": 92,
+    "cost": null
+   },
+   {
+    "inputTokens": 4118,
+    "outputTokens": 99,
+    "cost": null
+   },
+   {
+    "inputTokens": 4286,
+    "outputTokens": 35,
+    "cost": null
+   },
+   {
+    "inputTokens": 4448,
+    "outputTokens": 97,
+    "cost": null
+   }
+  ]
+ },
+ {
+  "task": "rename-symbol",
+  "engine": "rust",
+  "repetition": 1,
+  "suiteHash": "bd905b4f81f0a9412b614631a36337723067574848c5f05b50ead1cf48675091",
+  "taskHash": "244db465af9f2320fb9297399084c4c2de91754c7ef63ea7c5ac984145c0fdc0",
+  "profile": {
+   "model": "gpt-6.1-sol",
+   "modelParametersHash": "e69b1def053157e103d12634d93b8d560c73250f251bbbc061311fe43bd508c3",
+   "agentManifestHash": "d5a431d4720737723a14e80a712d0609b566e754627498e4ecdf359ac3e6c54a",
+   "permissionHash": "224870edd3d55428ba1cc944817edf49f512f235385fe5c4ef1f47b90c894506",
+   "toolSurfaceHash": "2530782d33adb0178572e1c86aa2f13d5e000bb7ecc5cf393d72052dcc6800e5"
+  },
+  "revision": "fa6bac5cce43b6110bee5d96ce3657d8567c3a3f",
+  "artifactHash": "435c2e6b5d82d18050ad65a8e5f003a79b6dd52037e4d402fd610c6549bb07ab",
+  "receiptHash": "dc75027af47e5f50b570f1af9215cf33bfabfba273c3b2df8f6874454fa392b8",
+  "outcome": "passed",
+  "elapsedMs": 21878,
+  "attempts": [
+   {
+    "inputTokens": 3072,
+    "outputTokens": 22,
+    "cost": null
+   },
+   {
+    "inputTokens": 3150,
+    "outputTokens": 44,
+    "cost": null
+   },
+   {
+    "inputTokens": 3215,
+    "outputTokens": 22,
+    "cost": null
+   },
+   {
+    "inputTokens": 3276,
+    "outputTokens": 141,
+    "cost": null
+   },
+   {
+    "inputTokens": 3943,
+    "outputTokens": 203,
+    "cost": null
+   },
+   {
+    "inputTokens": 4290,
+    "outputTokens": 35,
+    "cost": null
+   },
+   {
+    "inputTokens": 4452,
+    "outputTokens": 92,
+    "cost": null
+   }
+  ]
+ },
+ {
+  "task": "rename-symbol",
+  "engine": "rust",
+  "repetition": 2,
+  "suiteHash": "bd905b4f81f0a9412b614631a36337723067574848c5f05b50ead1cf48675091",
+  "taskHash": "244db465af9f2320fb9297399084c4c2de91754c7ef63ea7c5ac984145c0fdc0",
+  "profile": {
+   "model": "gpt-6.1-sol",
+   "modelParametersHash": "0a958f7fe7ba4734e4316a1a80c3c52c640b5fa9f46b2cfd0354155f15e0029f",
+   "agentManifestHash": "d5a431d4720737723a14e80a712d0609b566e754627498e4ecdf359ac3e6c54a",
+   "permissionHash": "c2d345f1268fb39d308cbdd9644fd52f6e954eac44c5f96e11b53556fb118f9e",
+   "toolSurfaceHash": "2530782d33adb0178572e1c86aa2f13d5e000bb7ecc5cf393d72052dcc6800e5"
+  },
+  "revision": "fa6bac5cce43b6110bee5d96ce3657d8567c3a3f",
+  "artifactHash": "66894eb13708f99a6e9e1796d8f42e31f8934335edf5cf76197500bc28a587d2",
+  "receiptHash": "c76f4457050be6a29be2e1967b2343ae7ea24689761379c4aa79e8b52a392a50",
+  "outcome": "passed",
+  "elapsedMs": 23114,
+  "attempts": [
+   {
+    "inputTokens": 3072,
+    "outputTokens": 22,
+    "cost": null
+   },
+   {
+    "inputTokens": 3150,
+    "outputTokens": 44,
+    "cost": null
+   },
+   {
+    "inputTokens": 3215,
+    "outputTokens": 22,
+    "cost": null
+   },
+   {
+    "inputTokens": 3276,
+    "outputTokens": 141,
+    "cost": null
+   },
+   {
+    "inputTokens": 3943,
+    "outputTokens": 207,
+    "cost": null
+   },
+   {
+    "inputTokens": 4294,
+    "outputTokens": 35,
+    "cost": null
+   },
+   {
+    "inputTokens": 4456,
+    "outputTokens": 80,
+    "cost": null
+   }
+  ]
+ },
+ {
+  "task": "create-module",
+  "engine": "rust",
+  "repetition": 0,
+  "suiteHash": "bd905b4f81f0a9412b614631a36337723067574848c5f05b50ead1cf48675091",
+  "taskHash": "4d67f12a4d53767d5219ff7c2739a21fb22df729363f19d7b0d03a12e6ed5049",
+  "profile": {
+   "model": "gpt-6.1-sol",
+   "modelParametersHash": "e63a6fc9b060554ded0b258106d3293223d616ef68af17a7365c0134372f8ca1",
+   "agentManifestHash": "d5a431d4720737723a14e80a712d0609b566e754627498e4ecdf359ac3e6c54a",
+   "permissionHash": "44dd727e81097ddd28013d84a74016dfebf932c7418de212dbf6f51a314abfa9",
+   "toolSurfaceHash": "2530782d33adb0178572e1c86aa2f13d5e000bb7ecc5cf393d72052dcc6800e5"
+  },
+  "revision": "fa6bac5cce43b6110bee5d96ce3657d8567c3a3f",
+  "artifactHash": "f1b11d3f87177485427162547c23cff0e0847f40c09994da68e8f19cdb727ad3",
+  "receiptHash": "652db9254a5dbb086bd4939b3afbec02c59b3d3366177c397e60aa8c16b320ee",
+  "outcome": "passed",
+  "elapsedMs": 17780,
+  "attempts": [
+   {
+    "inputTokens": 3069,
+    "outputTokens": 22,
+    "cost": null
+   },
+   {
+    "inputTokens": 3139,
+    "outputTokens": 93,
+    "cost": null
+   },
+   {
+    "inputTokens": 3583,
+    "outputTokens": 110,
+    "cost": null
+   },
+   {
+    "inputTokens": 3726,
+    "outputTokens": 38,
+    "cost": null
+   },
+   {
+    "inputTokens": 3823,
+    "outputTokens": 110,
+    "cost": null
+   },
+   {
+    "inputTokens": 4007,
+    "outputTokens": 35,
+    "cost": null
+   },
+   {
+    "inputTokens": 4170,
+    "outputTokens": 74,
+    "cost": null
+   }
+  ]
+ },
+ {
+  "task": "create-module",
+  "engine": "rust",
+  "repetition": 1,
+  "suiteHash": "bd905b4f81f0a9412b614631a36337723067574848c5f05b50ead1cf48675091",
+  "taskHash": "4d67f12a4d53767d5219ff7c2739a21fb22df729363f19d7b0d03a12e6ed5049",
+  "profile": {
+   "model": "gpt-6.1-sol",
+   "modelParametersHash": "c420fd05477c2fd21fff47fa62f50580bc7a15d14b8e9f65abe957136c2a1c07",
+   "agentManifestHash": "d5a431d4720737723a14e80a712d0609b566e754627498e4ecdf359ac3e6c54a",
+   "permissionHash": "f826941656c47b566f31c766e4f0ee8ca988f38f58861c738bde89c9c68c245f",
+   "toolSurfaceHash": "2530782d33adb0178572e1c86aa2f13d5e000bb7ecc5cf393d72052dcc6800e5"
+  },
+  "revision": "fa6bac5cce43b6110bee5d96ce3657d8567c3a3f",
+  "artifactHash": "85cb8d670a32c78b340f980b6555c692245499f6306e8da7dffaba20d691405f",
+  "receiptHash": "2e057c623ff442932ab34d6165ce53fe9e8f88ab270bcf5b8d233e53371814f7",
+  "outcome": "passed",
+  "elapsedMs": 19841,
+  "attempts": [
+   {
+    "inputTokens": 3069,
+    "outputTokens": 22,
+    "cost": null
+   },
+   {
+    "inputTokens": 3139,
+    "outputTokens": 93,
+    "cost": null
+   },
+   {
+    "inputTokens": 3583,
+    "outputTokens": 105,
+    "cost": null
+   },
+   {
+    "inputTokens": 3721,
+    "outputTokens": 38,
+    "cost": null
+   },
+   {
+    "inputTokens": 3818,
+    "outputTokens": 105,
+    "cost": null
+   },
+   {
+    "inputTokens": 3997,
+    "outputTokens": 35,
+    "cost": null
+   },
+   {
+    "inputTokens": 4160,
+    "outputTokens": 74,
+    "cost": null
+   }
+  ]
+ },
+ {
+  "task": "create-module",
+  "engine": "rust",
+  "repetition": 2,
+  "suiteHash": "bd905b4f81f0a9412b614631a36337723067574848c5f05b50ead1cf48675091",
+  "taskHash": "4d67f12a4d53767d5219ff7c2739a21fb22df729363f19d7b0d03a12e6ed5049",
+  "profile": {
+   "model": "gpt-6.1-sol",
+   "modelParametersHash": "b586a9e3acce04aceb85e9534085067ba119982ca41c05c3323f3d5750a63c28",
+   "agentManifestHash": "d5a431d4720737723a14e80a712d0609b566e754627498e4ecdf359ac3e6c54a",
+   "permissionHash": "ff3387e62834152182791e7814583cb5276652b8b80e76c09a46b182dfad72b5",
+   "toolSurfaceHash": "2530782d33adb0178572e1c86aa2f13d5e000bb7ecc5cf393d72052dcc6800e5"
+  },
+  "revision": "fa6bac5cce43b6110bee5d96ce3657d8567c3a3f",
+  "artifactHash": "85cb8d670a32c78b340f980b6555c692245499f6306e8da7dffaba20d691405f",
+  "receiptHash": "9f72ceddadf03ab8ee19c8cbcd62aafc07332357a74609981fd2fb87e6ed6850",
+  "outcome": "passed",
+  "elapsedMs": 19736,
+  "attempts": [
+   {
+    "inputTokens": 3069,
+    "outputTokens": 22,
+    "cost": null
+   },
+   {
+    "inputTokens": 3139,
+    "outputTokens": 93,
+    "cost": null
+   },
+   {
+    "inputTokens": 3583,
+    "outputTokens": 105,
+    "cost": null
+   },
+   {
+    "inputTokens": 3721,
+    "outputTokens": 38,
+    "cost": null
+   },
+   {
+    "inputTokens": 3818,
+    "outputTokens": 105,
+    "cost": null
+   },
+   {
+    "inputTokens": 3997,
+    "outputTokens": 35,
+    "cost": null
+   },
+   {
+    "inputTokens": 4160,
+    "outputTokens": 87,
+    "cost": null
+   }
+  ]
+ },
+ {
+  "task": "docs-sync",
+  "engine": "rust",
+  "repetition": 0,
+  "suiteHash": "bd905b4f81f0a9412b614631a36337723067574848c5f05b50ead1cf48675091",
+  "taskHash": "81770a3ba16cad0c85823ad75587b559a670da480642d3491f6d5b8814394fee",
+  "profile": {
+   "model": "gpt-6.1-sol",
+   "modelParametersHash": "ad4b30204d3c1c848988c51549ff8d96af6e80d6aa5b6bd810450ce8dc98511c",
+   "agentManifestHash": "d5a431d4720737723a14e80a712d0609b566e754627498e4ecdf359ac3e6c54a",
+   "permissionHash": "4f298e7792b3d3a8397c4ed0c7e32c57af3d2282d276552d7a3c871070148cea",
+   "toolSurfaceHash": "2530782d33adb0178572e1c86aa2f13d5e000bb7ecc5cf393d72052dcc6800e5"
+  },
+  "revision": "fa6bac5cce43b6110bee5d96ce3657d8567c3a3f",
+  "artifactHash": "f45c980517c6640ed715435e1fda1711f7f4db2b182c8823162edbf622d06300",
+  "receiptHash": "6080922fb72997ba7bccc0b61053ca5fbb31ca8eca3e074f6709b205149a0b4f",
+  "outcome": "passed",
+  "elapsedMs": 15373,
+  "attempts": [
+   {
+    "inputTokens": 3062,
+    "outputTokens": 28,
+    "cost": null
+   },
+   {
+    "inputTokens": 9655,
+    "outputTokens": 88,
+    "cost": null
+   },
+   {
+    "inputTokens": 9764,
+    "outputTokens": 243,
+    "cost": null
+   },
+   {
+    "inputTokens": 10079,
+    "outputTokens": 36,
+    "cost": null
+   }
+  ]
+ },
+ {
+  "task": "docs-sync",
+  "engine": "rust",
+  "repetition": 1,
+  "suiteHash": "bd905b4f81f0a9412b614631a36337723067574848c5f05b50ead1cf48675091",
+  "taskHash": "81770a3ba16cad0c85823ad75587b559a670da480642d3491f6d5b8814394fee",
+  "profile": {
+   "model": "gpt-6.1-sol",
+   "modelParametersHash": "ae1409a53c1d2d25081e78abeae60df1841b04cc7524904d535f1ccf6ecba161",
+   "agentManifestHash": "d5a431d4720737723a14e80a712d0609b566e754627498e4ecdf359ac3e6c54a",
+   "permissionHash": "a72193e8336fa6dbe160eb2cd51fb96e1d0d252a85f07b2b22ea12e1a68d2127",
+   "toolSurfaceHash": "2530782d33adb0178572e1c86aa2f13d5e000bb7ecc5cf393d72052dcc6800e5"
+  },
+  "revision": "fa6bac5cce43b6110bee5d96ce3657d8567c3a3f",
+  "artifactHash": "f45c980517c6640ed715435e1fda1711f7f4db2b182c8823162edbf622d06300",
+  "receiptHash": "122df56c6c8de7cdf44f4aaa03067a65b4af012b5caa275139a414e369f727fb",
+  "outcome": "passed",
+  "elapsedMs": 17981,
+  "attempts": [
+   {
+    "inputTokens": 3062,
+    "outputTokens": 28,
+    "cost": null
+   },
+   {
+    "inputTokens": 9655,
+    "outputTokens": 88,
+    "cost": null
+   },
+   {
+    "inputTokens": 9764,
+    "outputTokens": 129,
+    "cost": null
+   },
+   {
+    "inputTokens": 9914,
+    "outputTokens": 212,
+    "cost": null
+   },
+   {
+    "inputTokens": 10197,
+    "outputTokens": 36,
+    "cost": null
+   }
+  ]
+ },
+ {
+  "task": "docs-sync",
+  "engine": "rust",
+  "repetition": 2,
+  "suiteHash": "bd905b4f81f0a9412b614631a36337723067574848c5f05b50ead1cf48675091",
+  "taskHash": "81770a3ba16cad0c85823ad75587b559a670da480642d3491f6d5b8814394fee",
+  "profile": {
+   "model": "gpt-6.1-sol",
+   "modelParametersHash": "910843072ab28167d4a7303e8db3cb8dd7ea4675db0a842d3aae3b8c0999e917",
+   "agentManifestHash": "d5a431d4720737723a14e80a712d0609b566e754627498e4ecdf359ac3e6c54a",
+   "permissionHash": "e9d70fc8e55fb7df1878c67f0b4e9858290f951e2101e6578c2c2bf5db815181",
+   "toolSurfaceHash": "2530782d33adb0178572e1c86aa2f13d5e000bb7ecc5cf393d72052dcc6800e5"
+  },
+  "revision": "fa6bac5cce43b6110bee5d96ce3657d8567c3a3f",
+  "artifactHash": "f45c980517c6640ed715435e1fda1711f7f4db2b182c8823162edbf622d06300",
+  "receiptHash": "9fa61118cf8c193340078da936340bf33fe9c9b11c0e8a24dcac76304506f0b9",
+  "outcome": "passed",
+  "elapsedMs": 17969,
+  "attempts": [
+   {
+    "inputTokens": 3062,
+    "outputTokens": 28,
+    "cost": null
+   },
+   {
+    "inputTokens": 9655,
+    "outputTokens": 88,
+    "cost": null
+   },
+   {
+    "inputTokens": 9764,
+    "outputTokens": 142,
+    "cost": null
+   },
+   {
+    "inputTokens": 9927,
+    "outputTokens": 203,
+    "cost": null
+   },
+   {
+    "inputTokens": 10199,
+    "outputTokens": 36,
+    "cost": null
+   }
+  ]
+ }
+]

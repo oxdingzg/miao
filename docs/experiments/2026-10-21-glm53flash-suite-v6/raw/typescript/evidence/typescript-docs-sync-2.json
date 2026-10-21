@@ -1,0 +1,212 @@
+{
+  "sample": {
+    "task": "docs-sync",
+    "engine": "typescript",
+    "repetition": 2,
+    "suiteHash": "bd905b4f81f0a9412b614631a36337723067574848c5f05b50ead1cf48675091",
+    "taskHash": "81770a3ba16cad0c85823ad75587b559a670da480642d3491f6d5b8814394fee",
+    "profile": {
+      "model": "glm-5.3-flash",
+      "modelParametersHash": "191a8e8f2303b0cc98dbca1882224fe2efba59f4d21bf6ead4aff5f0c729e557",
+      "agentManifestHash": "7cbbc56a187c24ffdc06a3759077e3a16f1ca4a93f4483a531d28c8551ac8a4d",
+      "permissionHash": "1c66aaa1388736181401cee2f9ffb4e2b30af19be89e4777947ac5a0ca522c08",
+      "toolSurfaceHash": "04c769ae52448d5fe45ea690050120cee624771222b1291088dc6d832c888106"
+    },
+    "revision": "fa6bac5cce43b6110bee5d96ce3657d8567c3a3f",
+    "artifactHash": "f45c980517c6640ed715435e1fda1711f7f4db2b182c8823162edbf622d06300",
+    "receiptHash": "35942ca896beca024a14f41fb6b3bde1da0f8c6129dbe71cf02da217cbc7cd77",
+    "outcome": "passed",
+    "elapsedMs": 16102,
+    "attempts": [
+      {
+        "inputTokens": 13624,
+        "outputTokens": 100,
+        "cost": null
+      },
+      {
+        "inputTokens": 13800,
+        "outputTokens": 201,
+        "cost": null
+      },
+      {
+        "inputTokens": 14032,
+        "outputTokens": 104,
+        "cost": null
+      },
+      {
+        "inputTokens": 14189,
+        "outputTokens": 40,
+        "cost": null
+      },
+      {
+        "inputTokens": 14282,
+        "outputTokens": 135,
+        "cost": null
+      }
+    ]
+  },
+  "rejection": null,
+  "evidence": {
+    "engine": "typescript",
+    "revision": "fa6bac5cce43b6110bee5d96ce3657d8567c3a3f",
+    "task": "docs-sync",
+    "repetition": 2,
+    "terminal": "completed",
+    "error": null,
+    "receipts": [],
+    "attempts": [
+      {
+        "inputTokens": 13624,
+        "outputTokens": 100,
+        "cacheReadTokens": 11456,
+        "cacheWriteTokens": null,
+        "reasoningTokens": 60,
+        "cost": null
+      },
+      {
+        "inputTokens": 13800,
+        "outputTokens": 201,
+        "cacheReadTokens": 13568,
+        "cacheWriteTokens": null,
+        "reasoningTokens": 162,
+        "cost": null
+      },
+      {
+        "inputTokens": 14032,
+        "outputTokens": 104,
+        "cacheReadTokens": 13760,
+        "cacheWriteTokens": null,
+        "reasoningTokens": 34,
+        "cost": null
+      },
+      {
+        "inputTokens": 14189,
+        "outputTokens": 40,
+        "cacheReadTokens": 14016,
+        "cacheWriteTokens": null,
+        "reasoningTokens": 0,
+        "cost": null
+      },
+      {
+        "inputTokens": 14282,
+        "outputTokens": 135,
+        "cacheReadTokens": 14144,
+        "cacheWriteTokens": null,
+        "reasoningTokens": 38,
+        "cost": null
+      }
+    ],
+    "phases": [
+      {
+        "phase": "step-start",
+        "atMs": 1792542233568,
+        "clock": "observed"
+      },
+      {
+        "phase": "tool-part",
+        "atMs": 1792542235002,
+        "clock": "observed"
+      },
+      {
+        "phase": "step-start",
+        "atMs": 1792542235906,
+        "clock": "observed"
+      },
+      {
+        "phase": "tool-part",
+        "atMs": 1792542238965,
+        "clock": "observed"
+      },
+      {
+        "phase": "step-start",
+        "atMs": 1792542240105,
+        "clock": "observed"
+      },
+      {
+        "phase": "first-output",
+        "atMs": 1792542241470,
+        "clock": "observed"
+      },
+      {
+        "phase": "tool-part",
+        "atMs": 1792542241548,
+        "clock": "observed"
+      },
+      {
+        "phase": "step-start",
+        "atMs": 1792542242996,
+        "clock": "observed"
+      },
+      {
+        "phase": "tool-part",
+        "atMs": 1792542243176,
+        "clock": "observed"
+      },
+      {
+        "phase": "step-start",
+        "atMs": 1792542244156,
+        "clock": "observed"
+      },
+      {
+        "phase": "first-output",
+        "atMs": 1792542246333,
+        "clock": "observed"
+      },
+      {
+        "phase": "exit",
+        "atMs": 1792542246427,
+        "clock": "observed"
+      },
+      {
+        "phase": "verified",
+        "atMs": 1792542246434,
+        "clock": "observed"
+      }
+    ],
+    "profile": {
+      "model": "glm-5.3-flash",
+      "modelParametersHash": "191a8e8f2303b0cc98dbca1882224fe2efba59f4d21bf6ead4aff5f0c729e557",
+      "agentManifestHash": "7cbbc56a187c24ffdc06a3759077e3a16f1ca4a93f4483a531d28c8551ac8a4d",
+      "permissionHash": "1c66aaa1388736181401cee2f9ffb4e2b30af19be89e4777947ac5a0ca522c08",
+      "toolSurfaceHash": "04c769ae52448d5fe45ea690050120cee624771222b1291088dc6d832c888106"
+    },
+    "profileReceipts": 5,
+    "loops": {
+      "continuations": [],
+      "stopped": []
+    },
+    "toolCalls": 4,
+    "textHash": "069830a609c71e09bfc1ce681090dfc5f89e23ac71b6c5e5db606303c48bb9a7",
+    "binarySha256": null,
+    "startedAtMs": 1792542230332,
+    "admissionMs": null,
+    "elapsedMs": 16102
+  },
+  "assessment": {
+    "suiteHash": "bd905b4f81f0a9412b614631a36337723067574848c5f05b50ead1cf48675091",
+    "taskHash": "81770a3ba16cad0c85823ad75587b559a670da480642d3491f6d5b8814394fee",
+    "artifactPass": true,
+    "unexpected": [],
+    "immutable": [
+      {
+        "file": "AGENTS.md",
+        "unchanged": true
+      },
+      {
+        "file": "package.json",
+        "unchanged": true
+      }
+    ],
+    "expected": [
+      {
+        "file": "README.md",
+        "matches": true
+      }
+    ],
+    "check": null,
+    "executionVerdict": "unverified",
+    "requiredReceipts": [],
+    "answerContains": []
+  },
+  "answer": "One occurrence found on line 2805. Making the byte-exact substitution:\nDone. Summary:\n\n- **Changed**: README.md line 2805 — the single occurrence of `` `miao install` `` is now `` `miao setup --fast` ``.\n- **Verified**: `miao install` count is now 0; nothing else in the file was altered (only that one substring replaced); no other files touched.\n- File size grew by 4 bytes (the added `--fast ` text), as expected from the substitution."
+}

@@ -46,3 +46,5 @@ docs/experiments/
 | ---------- | ----------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------- |
 | 2026-10-19 | [2026-10-19-native-engine-suite-v6](2026-10-19-native-engine-suite-v6/README.zh.md) | TypeScript vs 原生引擎：15 类任务 × 3 次，输入/缓存/输出/费用与盈亏平衡                                 |
 | 2026-10-19 | [2026-10-19-opencode-go-suite-v6](2026-10-19-opencode-go-suite-v6/README.zh.md)     | 同上，换网关模型 `opencode-go/deepseek-v4.1-flash`（需要 route 与会话头）：原生便宜 31%，去掉长会话 54% |
+| 2026-10-21 | [2026-10-21-glm53flash-suite-v6](2026-10-21-glm53flash-suite-v6/README.zh.md)       | 同上，换 `zhipuai-coding-plan/glm-5.3-flash`（bigmodel 网关，openai-chat）：原生便宜 45%（去长会话 55%）；p95 更慢、输出更长（RS 42/45 vs TS 38/45）                              |
+| 2026-10-21 | [2026-10-21-openai-sol-suite-v6](2026-10-21-openai-sol-suite-v6/README.zh.md)       | 同上，换订阅模型 `openai/gpt-6.1-sol`（subscription-responses）：原生便宜 41%、p95 快 30%；RS 45/45 全过（stream-interruption 首次可比并通过）                                          |

@@ -1,0 +1,12 @@
+{
+ "model": "zhipuai-coding-plan/glm-5.3-flash (canonical zhipuai/glm-5.3-flash)",
+ "provider": "Zhipu AI Coding Plan gateway (OpenAI-compatible chat completions)",
+ "endpoint": "https://open.bigmodel.cn/api/coding/paas/v4/chat/completions",
+ "rates_per_million_tokens": {
+  "input": 0.15,
+  "output": 0.5,
+  "cache_read": 0.03,
+  "cache_write": 0
+ },
+ "source": "reference list price for canonical zhipuai/glm-5.3-flash (catalog lane input 0.15 / output 0.5 / cache_read 0.03, bundled models.json, 2026-10-21; the same rates this model carried in the operator config before). The coding-plan subscription itself lists the model at cost 0 (plan-included), so absolute amounts are a list-price reference only; the same rates apply to both arms, so ratios are unaffected."
+}

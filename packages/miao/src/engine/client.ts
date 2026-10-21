@@ -85,11 +85,26 @@ export interface EngineOptions {
   modelRoutesConfigFile?: string
   /** Host-owned product tool definitions the engine may reverse-dispatch. */
   productToolsFile?: string
+  /** Plugin hook families the host resolves; a marker, never the callbacks. */
+  pluginHooksFile?: string
   /**
    * Execute a product tool the engine planned. The reply becomes the tool
    * result, so a rejection must be thrown, never swallowed.
    */
   onProductTool?: (call: { sessionID: string; name: string; input: unknown; callID: string }) => Promise<unknown>
+  /**
+   * Answer a reverse-dispatched plugin tool hook. The reply is the verdict:
+   * `{ deny }` blocks, `{ args }` transforms the before input, `{ output }`
+   * replaces the after result; a rejection fails the call closed.
+   */
+  onHookTool?: (call: {
+    sessionID: string
+    kind: "before" | "after"
+    tool: string
+    callID: string
+    args?: unknown
+    output?: unknown
+  }) => Promise<unknown>
   /**
    * Explicit prefix-cache policy for the first model turn's stable prefix.
    * Absent leaves each provider's own caching behavior untouched.
@@ -212,6 +227,7 @@ export function engineArgs(options: EngineOptions): string[] {
   if (options.hooksConfigFile) args.push("--hooks-config", options.hooksConfigFile)
   if (options.modelRoutesConfigFile) args.push("--model-routes-config", options.modelRoutesConfigFile)
   if (options.productToolsFile) args.push("--product-tools", options.productToolsFile)
+  if (options.pluginHooksFile) args.push("--plugin-hooks", options.pluginHooksFile)
   if (options.promptCache !== undefined) args.push("--prompt-cache", options.promptCache ? "on" : "off")
   if (options.responsesCacheContract)
     args.push("--responses-cache-contract", JSON.stringify(options.responsesCacheContract))
@@ -277,6 +293,7 @@ export class EngineClient {
     private readonly child: Bun.Subprocess<"pipe", "pipe", "pipe">,
     private readonly cleanup = () => {},
     private readonly onProductTool?: EngineOptions["onProductTool"],
+    private readonly onHookTool?: EngineOptions["onHookTool"],
   ) {
     const stdout = this.readStdout().catch(() => {
       this.fail(new EngineError("engine_protocol", "miao-engine output stream failed"), true)
@@ -312,7 +329,7 @@ export class EngineClient {
         stderr: "pipe",
         env: engineEnvironment({ ...manifest?.environment, ...options.env }),
       })
-      return new EngineClient(child, manifest?.dispose, options.onProductTool)
+      return new EngineClient(child, manifest?.dispose, options.onProductTool, options.onHookTool)
     } catch (error) {
       manifest?.dispose()
       throw error
@@ -450,6 +467,30 @@ export class EngineClient {
         name: params.name,
         input: params.input,
         callID: String(bridgeID),
+      }).then(
+        (result) => reply({ result }),
+        (error) => reply({ error: error instanceof Error ? error.message : String(error) }),
+      )
+      return
+    }
+    if (message.method === "hook_tool") {
+      const bridgeID = message.bridge_id
+      const params = message.params as
+        | { session_id?: string; kind?: string; tool?: string; call_id?: string; args?: unknown; output?: unknown }
+        | undefined
+      const reply = (value: Record<string, unknown>) =>
+        this.child.stdin.write(JSON.stringify({ bridge_id: bridgeID, ...value }) + EOL)
+      if (typeof bridgeID !== "number" || !params?.kind || !this.onHookTool) {
+        reply({ error: "tool hooks are not available on this host" })
+        return
+      }
+      void this.onHookTool({
+        sessionID: params.session_id ?? "",
+        kind: params.kind === "after" ? "after" : "before",
+        tool: params.tool ?? "",
+        callID: params.call_id ?? "",
+        args: params.args,
+        output: params.output,
       }).then(
         (result) => reply({ result }),
         (error) => reply({ error: error instanceof Error ? error.message : String(error) }),
