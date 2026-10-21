@@ -1,4 +1,5 @@
 export { Route, LLMClient } from "./client"
+export type { StreamActivity } from "./activity"
 export type {
   Route as RouteShape,
   RouteModelInput,

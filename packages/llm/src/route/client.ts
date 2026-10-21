@@ -5,6 +5,7 @@ import { Auth, type Auth as AuthDef } from "./auth"
 import { Endpoint, type EndpointPatch } from "./endpoint"
 import { RequestExecutor } from "./executor"
 import { ProviderWireArchive } from "./archive"
+import type { StreamActivity } from "./activity"
 import type { Framing } from "./framing"
 import { HttpTransport } from "./transport"
 import type { Transport, TransportRuntime } from "./transport"
@@ -175,7 +176,12 @@ export interface Interface {
 }
 
 export interface StreamMethod {
-  (request: LLMRequest): Stream.Stream<LLMEvent, LLMError>
+  (request: LLMRequest, options?: StreamOptions): Stream.Stream<LLMEvent, LLMError>
+}
+
+export interface StreamOptions {
+  /** Wire activity for the caller's stream watchdogs. */
+  readonly activity?: StreamActivity
 }
 
 export interface CountMethod {
@@ -510,11 +516,12 @@ const prepareWith = Effect.fn("LLMClient.prepare")(function* (request: LLMReques
   })
 })
 
-const streamRequestWith = (runtime: TransportRuntime) => (request: LLMRequest) =>
+const streamRequestWith = (runtime: TransportRuntime) => (request: LLMRequest, options?: StreamOptions) =>
   Stream.unwrap(
     Effect.gen(function* () {
       const compiled = yield* compile(request)
-      return compiled.route.streamPrepared(compiled.prepared, compiled.request, runtime)
+      const attempt = options?.activity === undefined ? runtime : { ...runtime, activity: options.activity }
+      return compiled.route.streamPrepared(compiled.prepared, compiled.request, attempt)
     }),
   )
 
@@ -552,10 +559,10 @@ export function count(request: LLMRequest): Effect.Effect<number | undefined> {
   }) as Effect.Effect<number | undefined>
 }
 
-export function stream(request: LLMRequest): Stream.Stream<LLMEvent, LLMError> {
+export function stream(request: LLMRequest, options?: StreamOptions): Stream.Stream<LLMEvent, LLMError> {
   return Stream.unwrap(
     Effect.gen(function* () {
-      return (yield* Service).stream(request)
+      return (yield* Service).stream(request, options)
     }),
   ) as Stream.Stream<LLMEvent, LLMError>
 }
@@ -566,10 +573,10 @@ export function generate(request: LLMRequest): Effect.Effect<LLMResponse, LLMErr
   }) as Effect.Effect<LLMResponse, LLMError>
 }
 
-export const streamRequest = (request: LLMRequest) =>
+export const streamRequest = (request: LLMRequest, options?: StreamOptions) =>
   Stream.unwrap(
     Effect.gen(function* () {
-      return (yield* Service).stream(request)
+      return (yield* Service).stream(request, options)
     }),
   )
 

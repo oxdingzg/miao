@@ -1,4 +1,5 @@
 export { LLMClient } from "./route/client"
+export type { StreamActivity } from "./route/activity"
 export { Auth } from "./route/auth"
 export { Provider } from "./provider"
 export { isContextOverflow, isContextOverflowFailure } from "./provider-error"

@@ -955,13 +955,21 @@ const layer = Layer.effect(
               : null,
           }
         : undefined
+      // A subagent drain's silence is owned by the 15-minute subagent boundary,
+      // so it keeps the single-deadline guard that the first event cancels
+      // instead of the layered idle watchdogs.
+      const liveness = session.parentID === undefined ? SessionFirstByteGuard.start() : undefined
       const providerSource = blackbox
-        ? SessionBlackbox.stream(session.id, request, () => llm.stream(request), execution)
-        : llm.stream(request)
+        ? SessionBlackbox.stream(
+            session.id,
+            request,
+            () => llm.stream(request, liveness ? { activity: liveness.activity } : undefined),
+            execution,
+          )
+        : llm.stream(request, liveness ? { activity: liveness.activity } : undefined)
       const forkCacheProbe = SessionCacheProbe.current.consume(session.id, request)
       if (forkCacheProbe) yield* Effect.logInfo("session.fork.cache-probe", { sessionID: session.id, ...forkCacheProbe })
-      const providerStream = providerSource.pipe(
-        SessionFirstByteGuard.wrap,
+      const providerStream = SessionFirstByteGuard.wrap(providerSource, liveness ? { attempt: liveness } : undefined).pipe(
         SessionToolInputGuard.wrap,
         SessionOutputGuard.wrap,
         Stream.runForEach((event) =>

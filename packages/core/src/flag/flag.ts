@@ -14,12 +14,24 @@ function enabledByExperimental(key: string) {
 }
 
 /**
- * How long a provider attempt may stay silent before the runner abandons it.
- * Gateways fronting large prompts routinely need more than a minute to emit
- * the first streamed event, so a short bound turns a slow-but-alive request
- * into a failed turn.
+ * How long a provider attempt may wait for response headers. Gateways fronting
+ * large prompts routinely need more than a minute before they answer, so the
+ * runner widens this by one second per 32 KiB of encoded request body.
  */
-export const DEFAULT_LLM_FIRST_BYTE_TIMEOUT_MS = 120_000
+export const DEFAULT_LLM_FIRST_BYTE_TIMEOUT_MS = 180_000
+
+/** How long an established response may go without any wire byte. */
+export const DEFAULT_LLM_STREAM_IDLE_TIMEOUT_MS = 180_000
+
+/** How long an established response may go without a canonical stream event. */
+export const DEFAULT_LLM_EVENT_IDLE_TIMEOUT_MS = 300_000
+
+const milliseconds = (key: string, fallback: number) => {
+  const raw = process.env[key]
+  if (raw === undefined || raw.trim() === "") return fallback
+  const value = Number(raw)
+  return Number.isFinite(value) && value >= 0 ? value : fallback
+}
 
 export const Flag = {
   OTEL_EXPORTER_OTLP_ENDPOINT: process.env["OTEL_EXPORTER_OTLP_ENDPOINT"],
@@ -137,11 +149,14 @@ export const Flag = {
   get MIAO_LLM_WIRE_ARCHIVE() {
     return process.env["MIAO_LLM_WIRE_ARCHIVE"]
   },
-  // Zero explicitly disables the pre-event provider watchdog.
+  // Zero disables the corresponding phase of the provider watchdog.
   get MIAO_LLM_FIRST_BYTE_TIMEOUT_MS() {
-    const raw = process.env["MIAO_LLM_FIRST_BYTE_TIMEOUT_MS"]
-    if (raw === undefined || raw.trim() === "") return DEFAULT_LLM_FIRST_BYTE_TIMEOUT_MS
-    const value = Number(raw)
-    return Number.isFinite(value) && value >= 0 ? value : DEFAULT_LLM_FIRST_BYTE_TIMEOUT_MS
+    return milliseconds("MIAO_LLM_FIRST_BYTE_TIMEOUT_MS", DEFAULT_LLM_FIRST_BYTE_TIMEOUT_MS)
+  },
+  get MIAO_LLM_STREAM_IDLE_TIMEOUT_MS() {
+    return milliseconds("MIAO_LLM_STREAM_IDLE_TIMEOUT_MS", DEFAULT_LLM_STREAM_IDLE_TIMEOUT_MS)
+  },
+  get MIAO_LLM_EVENT_IDLE_TIMEOUT_MS() {
+    return milliseconds("MIAO_LLM_EVENT_IDLE_TIMEOUT_MS", DEFAULT_LLM_EVENT_IDLE_TIMEOUT_MS)
   },
 }
