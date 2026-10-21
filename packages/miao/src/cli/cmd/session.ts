@@ -6,6 +6,7 @@ import { SessionV2 } from "@miao/core/session"
 import { SessionExecution } from "@miao/core/session/execution"
 import { SessionTable } from "@miao/core/session/sql"
 import { Database } from "@miao/core/database/database"
+import { Location } from "@miao/core/location"
 import { AppNodeBuilder } from "@miao/core/effect/app-node-builder"
 import { projectContext } from "../project-context"
 import { and, desc, eq, isNull } from "drizzle-orm"
@@ -143,7 +144,7 @@ export const SessionMigrateCommand = effectCmd({
     if (!options)
       return yield* fail("Native engine binary not found; set MIAO_ENGINE_BIN or install a compatible engine")
     const nativeDatabase = path.resolve(args.nativeDb)
-    yield* Effect.gen(function* () {
+    const located = yield* Effect.gen(function* () {
       const database = yield* Database.Service
       const store = yield* SessionStore.Service
       const session = yield* store.get(sessionID)
@@ -151,6 +152,20 @@ export const SessionMigrateCommand = effectCmd({
       const model = args.model ?? session.model?.id
       if (!model) return yield* fail("Pass --model: the source Session records no model to bind")
       const workspace = AbsolutePath.make(args.workspace ? path.resolve(args.workspace) : session.location.directory)
+      return { database, session, model, workspace }
+    }).pipe(
+      Effect.catch((error) => fail(error instanceof Error ? error.message : String(error))),
+      Effect.provide(
+        AppNodeBuilder.build(
+          LayerNode.group([Database.node, SessionStore.node]),
+          [[SessionExecution.node, SessionExecution.noopLayer]],
+        ),
+      ),
+      Effect.scoped,
+    )
+    const { database, session, model, workspace } = located
+    const importID = args.importId ?? `native-${sessionID}`
+    yield* Effect.gen(function* () {
       const client = EngineClient.start({
         ...options,
         model,
@@ -158,7 +173,6 @@ export const SessionMigrateCommand = effectCmd({
         workspace,
       })
       try {
-        const importID = args.importId ?? `native-${sessionID}`
         const completed = yield* SessionMigrationCoordinator.toNative({
           database: database.db,
           id: importID,
@@ -188,7 +202,13 @@ export const SessionMigrateCommand = effectCmd({
         client.close()
       }
     }).pipe(
-      Effect.catch((error) => fail(`Migration failed: ${error instanceof Error ? error.message : String(error)}`)),
+      Effect.catch((error) =>
+        fail(
+          `Migration failed: ${
+            error instanceof Error ? `${error.message}\n${error.stack ?? ""}` : JSON.stringify(error, null, 1)
+          }`,
+        ),
+      ),
       Effect.provide(
         AppNodeBuilder.build(
           LayerNode.group([
@@ -200,7 +220,10 @@ export const SessionMigrateCommand = effectCmd({
             Snapshot.node,
             SessionExecution.node,
           ]),
-          [[SessionExecution.node, SessionExecution.noopLayer]],
+          [
+            [SessionExecution.node, SessionExecution.noopLayer],
+            [Location.node, Location.boundNode(session.location)],
+          ],
         ),
       ),
       Effect.scoped,
@@ -244,15 +267,28 @@ export const SessionMigrateBackCommand = effectCmd({
     const options = nativeEngineOptions(process.env)
     if (!options) return yield* fail("Native engine binary not found; set MIAO_ENGINE_BIN or install a compatible engine")
     const nativeDatabase = path.resolve(args.nativeDb)
-    yield* Effect.gen(function* () {
+    const located = yield* Effect.gen(function* () {
       const database = yield* Database.Service
       const store = yield* SessionStore.Service
       const session = yield* store.get(sessionID)
       if (!session) return yield* fail(`Session not found: ${args.sessionID}`)
       const model = args.model ?? session.model?.id
       if (!model) return yield* fail("Pass --model: the Session records no model to bind")
-      const importID = args.importId ?? `native-${sessionID}`
-      const deltaFile = AbsolutePath.make(path.join(path.dirname(nativeDatabase), "migrations", `${importID}.delta.json`))
+      return { database, session, model }
+    }).pipe(
+      Effect.catch((error) => fail(error instanceof Error ? error.message : String(error))),
+      Effect.provide(
+        AppNodeBuilder.build(
+          LayerNode.group([Database.node, SessionStore.node]),
+          [[SessionExecution.node, SessionExecution.noopLayer]],
+        ),
+      ),
+      Effect.scoped,
+    )
+    const { database, session, model } = located
+    const importID = args.importId ?? `native-${sessionID}`
+    const deltaFile = AbsolutePath.make(path.join(path.dirname(nativeDatabase), "migrations", `${importID}.delta.json`))
+    yield* Effect.gen(function* () {
       const client = EngineClient.start({
         ...options,
         model,
@@ -314,7 +350,10 @@ export const SessionMigrateBackCommand = effectCmd({
             Snapshot.node,
             SessionExecution.node,
           ]),
-          [[SessionExecution.node, SessionExecution.noopLayer]],
+          [
+            [SessionExecution.node, SessionExecution.noopLayer],
+            [Location.node, Location.boundNode(session.location)],
+          ],
         ),
       ),
       Effect.scoped,
