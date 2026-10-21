@@ -61,6 +61,13 @@ runs:
       run: python3 -m pip install setuptools || pip install setuptools || true
       shell: bash
 
+    # Grammar install scripts spawn node-gyp directly; npm no longer puts its
+    # bundled copy on PATH on current Node 24 runner images.
+    - name: Install native addon build tool
+      if: ${{ !contains(inputs.install-flags, '--ignore-scripts') }}
+      run: npm install --global node-gyp@11.5.0
+      shell: bash
+
     - name: Install dependencies
       run: bun install ${{ inputs.install-flags }}
       shell: bash
