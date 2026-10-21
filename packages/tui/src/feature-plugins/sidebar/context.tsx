@@ -170,18 +170,32 @@ function View(props: { api: TuiPluginApi; session_id: string }) {
   // what that model did.
   const usage = createMemo(() => session()?.usage)
   const byModel = createMemo(() => {
-    const rows = new Map<string, { providerID: string; id: string; turns: number; cost: number; tokens: number }>()
+    const rows = new Map<
+      string,
+      { providerID: string; id: string; turns: number; cost: number; tokens: number; ttft: { sum: number; turns: number } }
+    >()
     for (const item of assistants()) {
       if (item.model === null) continue
       const key = `${item.model.providerID}\u0000${item.model.id}`
       const row =
-        rows.get(key) ?? { providerID: item.model.providerID, id: item.model.id, turns: 0, cost: 0, tokens: 0 }
+        rows.get(key) ?? {
+          providerID: item.model.providerID,
+          id: item.model.id,
+          turns: 0,
+          cost: 0,
+          tokens: 0,
+          ttft: { sum: 0, turns: 0 },
+        }
       row.turns += 1
       row.cost += item.cost ?? 0
       const tokens = item.tokens
       if (tokens)
         row.tokens +=
           tokens.input + tokens.output + tokens.reasoning + tokens.cache.read + tokens.cache.write
+      if (item.ttft !== undefined && item.ttft > 0) {
+        row.ttft.sum += item.ttft
+        row.ttft.turns += 1
+      }
       rows.set(key, row)
     }
     return [...rows.values()].toSorted((a, b) => b.cost - a.cost || b.turns - a.turns)
@@ -255,6 +269,7 @@ function View(props: { api: TuiPluginApi; session_id: string }) {
           {(row) => (
             <text fg={theme().textMuted}>
               {row.id} {row.turns}t {priced(row) ? money(row.cost, row) : "—"}
+              {row.ttft.turns > 0 ? ` · ${Math.round(row.ttft.sum / row.ttft.turns)}ms ttft` : ""}
             </text>
           )}
         </For>
