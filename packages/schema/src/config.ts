@@ -100,6 +100,10 @@ export class Engine extends Schema.Class<Engine>("Config.Engine")({
     description:
       "Native engine LSP host configuration file; relative paths resolve against the global config directory",
   }),
+  storage: Schema.String.pipe(Schema.optional).annotate({
+    description:
+      "Directory for the native engine's per-location databases; relative paths resolve against the global config directory. Setting it places new Sessions on the native engine",
+  }),
   context_limits: Schema.Struct({
     window: Schema.Finite,
     ratio: Schema.Finite,

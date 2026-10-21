@@ -20,6 +20,13 @@ import type { PromptInput } from "@miao/schema/prompt-input"
 import type { AbsolutePath } from "@miao/core/schema"
 
 export interface Interface {
+  /**
+   * Root of the product-side native databases, resolved from the global
+   * `engine.storage` key or `MIAO_ENGINE_STORAGE`. Absent keeps new Sessions
+   * TypeScript-owned.
+   */
+  readonly storageRoot?: string
+
   readonly command: (input: {
     sessionID: SessionID
     storage: AbsolutePath

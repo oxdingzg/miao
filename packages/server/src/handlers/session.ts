@@ -133,7 +133,7 @@ export const SessionHandler = HttpApiBuilder.group(Api, "server.session", (handl
           // composed; the placement catalog then routes every surface for that
           // identity. Everything else stays TypeScript-owned.
           const native = Option.getOrUndefined(yield* Effect.serviceOption(NativeEngine.Service))
-          const root = process.env.MIAO_ENGINE_STORAGE
+          const root = native?.storageRoot ?? process.env.MIAO_ENGINE_STORAGE
           const nativeStorage =
             native && root && !binding
               ? AbsolutePath.make(
