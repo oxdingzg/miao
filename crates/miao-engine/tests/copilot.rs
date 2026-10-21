@@ -40,7 +40,7 @@ async fn copilot_three_wires_load_device_token_and_derive_turn_headers() {
             Arc::new(OpenAIChat::new(endpoint.clone(), "owner".into(), "model".into()).unwrap());
         let workspace = root.path().join("workspace");
         std::fs::create_dir_all(&workspace).unwrap();
-        let catalog = load(&manifest, &workspace, owner).await.unwrap();
+        let catalog = load(&manifest, &workspace, owner).await.unwrap().0;
         let selected = catalog.for_route("github-copilot/model").unwrap();
         for role in ["user", "assistant"] {
             let (progress, _receive) = mpsc::channel(16);

@@ -219,6 +219,16 @@ export const prepare = Effect.fn("Engine.productRoutes")(function* (
           model: model.api.id,
           primary: account.isDefault && model.providerID === defaultModel.providerID && model.id === defaultModel.id,
           ...(model.capabilities.input.length ? { input_modalities: model.capabilities.input } : {}),
+          ...(Number.isFinite(model.limit?.context) && model.limit.context > 0
+            ? {
+                limit: {
+                  context: model.limit.context,
+                  ...(Number.isFinite(model.limit.output) && model.limit.output > 0
+                    ? { output: model.limit.output }
+                    : {}),
+                },
+              }
+            : {}),
           ...(model.request.variant === undefined ? {} : { default_variant: model.request.variant }),
           request: { body: model.request.body },
           variants: model.variants.map((variant) => ({

@@ -65,7 +65,7 @@ async fn configured_default_and_explicit_variants_preserve_fallback_authority_an
         OpenAIChat::new(endpoint, "fallback-key".into(), "fallback-model".into()).unwrap(),
     );
     let fallback = Arc::new(Fallback::new(primary, secondary).unwrap());
-    let catalog = load(&manifest, &workspace, fallback).await.unwrap();
+    let catalog = load(&manifest, &workspace, fallback).await.unwrap().0;
     for selected in [
         Arc::clone(&catalog),
         catalog.for_route_variant(None, "high").unwrap(),

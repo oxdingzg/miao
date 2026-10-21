@@ -16,7 +16,7 @@ export const REQUIRED_PROTOCOL = 2
  * version than this build writes is refused before startup, because its loader
  * would reject the manifest with an opaque parse error.
  */
-export const REQUIRED_ROUTES_SCHEMA = 1
+export const REQUIRED_ROUTES_SCHEMA = 2
 
 export type Capabilities = {
   name: string

@@ -59,6 +59,7 @@ struct Inner {
     product: Arc<std::sync::RwLock<crate::product::State>>,
     context: Mutex<Option<ContextLimits>>,
     roles: Mutex<crate::roles::Bindings>,
+    route_limits: Mutex<crate::model_routes::RouteLimits>,
     /// Task-specific verification command run before a run may finish.
     verification: Mutex<Option<String>>,
     breaker: Mutex<context_trigger::Breaker>,
@@ -179,6 +180,7 @@ impl Runtime {
                 product: Arc::new(std::sync::RwLock::new(crate::product::State::default())),
                 context: Mutex::new(None),
                 roles: Mutex::new(crate::roles::Bindings::default()),
+                route_limits: Mutex::new(crate::model_routes::RouteLimits::default()),
                 verification: Mutex::new(None),
                 breaker: Mutex::new(crate::context_trigger::Breaker::new(3)),
             }),
@@ -322,6 +324,12 @@ impl Runtime {
     /// rejects — run on the primary model.
     pub async fn set_role_bindings(&self, roles: crate::roles::Bindings) {
         *self.inner.roles.lock().await = roles;
+    }
+
+    /// Per-model capacity from the host route manifest, consulted before a
+    /// role-bound request is attempted.
+    pub async fn set_route_limits(&self, limits: crate::model_routes::RouteLimits) {
+        *self.inner.route_limits.lock().await = limits;
     }
 
     /// An explicit operator `compact` is the automatic trigger's breaker reset:
@@ -2269,6 +2277,14 @@ command: None,
             let bindings = inner.roles.lock().await.clone();
             let (role_provider, resolution) =
                 crate::roles::resolve(&primary, bindings.binding("summarize"));
+            // A binding whose model cannot hold the retention slice is checked
+            // against the host-declared capacity before the doomed request.
+            let role_capacity = match &resolution {
+                crate::roles::Resolution::Bound { model } => {
+                    inner.route_limits.lock().await.context_limit_for(model)
+                }
+                _ => None,
+            };
             if resolution != crate::roles::Resolution::Primary {
                 let _ = inner
                     .store
@@ -2309,6 +2325,7 @@ command: None,
                         &stop,
                         &body,
                         escalate,
+                        role_capacity,
                     )
                     .await
                 }

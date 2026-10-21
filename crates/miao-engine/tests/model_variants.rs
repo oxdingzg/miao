@@ -83,7 +83,7 @@ async fn manifest_variants_reach_the_wire_and_survive_reopen_and_fork() {
     );
     let catalog = model_routes::load(&manifest, &workspace, primary)
         .await
-        .unwrap();
+        .unwrap().0;
     let public = serde_json::to_value(catalog.model_catalog()).unwrap();
     assert_eq!(public[0]["variants"], json!(["high", "low"]));
     assert_eq!(public[1]["variants"], json!(["high", "low"]));
