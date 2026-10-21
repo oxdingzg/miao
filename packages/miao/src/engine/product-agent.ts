@@ -24,7 +24,6 @@ export function modelRoute(model: Model.Ref, catalog: readonly Route[]) {
     catalog.find((entry) => {
       if (model.providerID !== SessionModelRoute.ProviderID && model.providerID !== SessionModelRoute.DefaultProviderID)
         return entry.route_id === `${model.providerID}/${model.id}`
-      if (entry.route_id === null) return false
       const reference = SessionModelRoute.reference(entry.route_id)
       return reference.providerID === model.providerID && reference.id === model.id
     }) ?? primary()
