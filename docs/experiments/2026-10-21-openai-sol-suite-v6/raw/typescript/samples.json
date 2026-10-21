@@ -1,0 +1,2237 @@
+[
+ {
+  "task": "read-only",
+  "engine": "typescript",
+  "repetition": 0,
+  "suiteHash": "bd905b4f81f0a9412b614631a36337723067574848c5f05b50ead1cf48675091",
+  "taskHash": "99609eafd6e7256a96d31d1a93f377283455859087a19e39a86887127c47f3a4",
+  "profile": {
+   "model": "gpt-6.1-sol",
+   "modelParametersHash": "3901afe8ec91f2b19b2373e627ba67577d52e95974019f22044e1c3c0172cb7a",
+   "agentManifestHash": "fe2aded22dac2012e42a3c53566fac28d09d68fefd5849996e3dde96fb291cf1",
+   "permissionHash": "716f0e5d56bc3ac4afc8ade9855d9276759a6eff388762b38e495084e97238cb",
+   "toolSurfaceHash": "04c769ae52448d5fe45ea690050120cee624771222b1291088dc6d832c888106"
+  },
+  "revision": "fa6bac5cce43b6110bee5d96ce3657d8567c3a3f",
+  "artifactHash": "1cf2a42baae11727ea2f82138beaf289f244a74bdb3488318abcfab660724792",
+  "receiptHash": "b472834848fabb6ea4382ed02ae35f788392276679829132b38ec3c3a251d5f8",
+  "outcome": "passed",
+  "elapsedMs": 15429,
+  "attempts": [
+   {
+    "inputTokens": 9879,
+    "outputTokens": 22,
+    "cost": null
+   },
+   {
+    "inputTokens": 9915,
+    "outputTokens": 21,
+    "cost": null
+   },
+   {
+    "inputTokens": 9984,
+    "outputTokens": 19,
+    "cost": null
+   },
+   {
+    "inputTokens": 10097,
+    "outputTokens": 21,
+    "cost": null
+   },
+   {
+    "inputTokens": 10147,
+    "outputTokens": 19,
+    "cost": null
+   },
+   {
+    "inputTokens": 10242,
+    "outputTokens": 39,
+    "cost": null
+   }
+  ]
+ },
+ {
+  "task": "read-only",
+  "engine": "typescript",
+  "repetition": 1,
+  "suiteHash": "bd905b4f81f0a9412b614631a36337723067574848c5f05b50ead1cf48675091",
+  "taskHash": "99609eafd6e7256a96d31d1a93f377283455859087a19e39a86887127c47f3a4",
+  "profile": {
+   "model": "gpt-6.1-sol",
+   "modelParametersHash": "96ba4d89747b0a80c407216cf3e2b33818fdec55e17bebc3dce97c1b390156a6",
+   "agentManifestHash": "deb99f00218989779f70c89567ba59e618b41300f7b5eba4b848eb83193e8744",
+   "permissionHash": "7f3b5ee12cc0d4f174b6df3fe0e7ba933bef7b6ed09cb0c63d9a8d488159e620",
+   "toolSurfaceHash": "04c769ae52448d5fe45ea690050120cee624771222b1291088dc6d832c888106"
+  },
+  "revision": "fa6bac5cce43b6110bee5d96ce3657d8567c3a3f",
+  "artifactHash": "1cf2a42baae11727ea2f82138beaf289f244a74bdb3488318abcfab660724792",
+  "receiptHash": "900d7c6b8acdf1a10e75e4c53a3efefc92ed8367d74c44dede21d7db6303f603",
+  "outcome": "passed",
+  "elapsedMs": 14755,
+  "attempts": [
+   {
+    "inputTokens": 9879,
+    "outputTokens": 22,
+    "cost": null
+   },
+   {
+    "inputTokens": 9915,
+    "outputTokens": 21,
+    "cost": null
+   },
+   {
+    "inputTokens": 9984,
+    "outputTokens": 19,
+    "cost": null
+   },
+   {
+    "inputTokens": 10097,
+    "outputTokens": 26,
+    "cost": null
+   },
+   {
+    "inputTokens": 10157,
+    "outputTokens": 19,
+    "cost": null
+   },
+   {
+    "inputTokens": 10252,
+    "outputTokens": 36,
+    "cost": null
+   }
+  ]
+ },
+ {
+  "task": "read-only",
+  "engine": "typescript",
+  "repetition": 2,
+  "suiteHash": "bd905b4f81f0a9412b614631a36337723067574848c5f05b50ead1cf48675091",
+  "taskHash": "99609eafd6e7256a96d31d1a93f377283455859087a19e39a86887127c47f3a4",
+  "profile": {
+   "model": "gpt-6.1-sol",
+   "modelParametersHash": "af54f6332060378a78747076725a3697540f8e93f1dfc17cb91ec2546819ee0f",
+   "agentManifestHash": "9a1a41e922796b2fac7d860bf9773bef523e3b8286f3803d3848dddb763760a6",
+   "permissionHash": "8f245f0cadc4090c7c9d57f2e50982f631a8fd8062b5a8b1778a6b656ffb199f",
+   "toolSurfaceHash": "04c769ae52448d5fe45ea690050120cee624771222b1291088dc6d832c888106"
+  },
+  "revision": "fa6bac5cce43b6110bee5d96ce3657d8567c3a3f",
+  "artifactHash": "1cf2a42baae11727ea2f82138beaf289f244a74bdb3488318abcfab660724792",
+  "receiptHash": "99da4437ff1275ef6c034fd7d9bc1834a1d5f9065c9e6850648ec43db45889a3",
+  "outcome": "passed",
+  "elapsedMs": 12314,
+  "attempts": [
+   {
+    "inputTokens": 9879,
+    "outputTokens": 21,
+    "cost": null
+   },
+   {
+    "inputTokens": 9948,
+    "outputTokens": 73,
+    "cost": null
+   },
+   {
+    "inputTokens": 10247,
+    "outputTokens": 19,
+    "cost": null
+   },
+   {
+    "inputTokens": 10342,
+    "outputTokens": 38,
+    "cost": null
+   }
+  ]
+ },
+ {
+  "task": "multi-read",
+  "engine": "typescript",
+  "repetition": 0,
+  "suiteHash": "bd905b4f81f0a9412b614631a36337723067574848c5f05b50ead1cf48675091",
+  "taskHash": "0d7d997929618a514b0f84f56b810cb5280f5b1ac1bca88065d107d1cb7b8147",
+  "profile": {
+   "model": "gpt-6.1-sol",
+   "modelParametersHash": "fd88f57067ae30c012a6fd43ca8fac6ae9340d6468d4c1504e871fce288a6b85",
+   "agentManifestHash": "c0eaf7c0317f9681c3ded197d44171c463798c532f0690bf5fc90b73c4b0032c",
+   "permissionHash": "36ff842198091a677ec2746848f30ee3b7aea51e3faad41394ab709470d5e847",
+   "toolSurfaceHash": "04c769ae52448d5fe45ea690050120cee624771222b1291088dc6d832c888106"
+  },
+  "revision": "fa6bac5cce43b6110bee5d96ce3657d8567c3a3f",
+  "artifactHash": "586a1fde7e44ffb98847844587b9df8f432114691ef834b8916734a0becc9f63",
+  "receiptHash": "0cda51b1e4c29dfffc5402b32bd4fff054d729353619abe6edaaa5e692e3f09b",
+  "outcome": "passed",
+  "elapsedMs": 7703,
+  "attempts": [
+   {
+    "inputTokens": 9892,
+    "outputTokens": 68,
+    "cost": null
+   },
+   {
+    "inputTokens": 10166,
+    "outputTokens": 51,
+    "cost": null
+   }
+  ]
+ },
+ {
+  "task": "multi-read",
+  "engine": "typescript",
+  "repetition": 1,
+  "suiteHash": "bd905b4f81f0a9412b614631a36337723067574848c5f05b50ead1cf48675091",
+  "taskHash": "0d7d997929618a514b0f84f56b810cb5280f5b1ac1bca88065d107d1cb7b8147",
+  "profile": {
+   "model": "gpt-6.1-sol",
+   "modelParametersHash": "1b5dac15f04ba3be910a2a5c402bf43c27c514a18e6515ad2a914c19136ef1a3",
+   "agentManifestHash": "4352371b9242507805d1eff2d4c9cd9b751df0846eaac880813c796830a0b6af",
+   "permissionHash": "04b3e7246904be4d8da83b21bf0a2d1f7556c19be91cb2ed35c2f36387cd0885",
+   "toolSurfaceHash": "04c769ae52448d5fe45ea690050120cee624771222b1291088dc6d832c888106"
+  },
+  "revision": "fa6bac5cce43b6110bee5d96ce3657d8567c3a3f",
+  "artifactHash": "586a1fde7e44ffb98847844587b9df8f432114691ef834b8916734a0becc9f63",
+  "receiptHash": "c5fbedd5c172fd82f32ba5ef928a7bb24fd854ea631471594ae615d70e1a5616",
+  "outcome": "passed",
+  "elapsedMs": 7872,
+  "attempts": [
+   {
+    "inputTokens": 9892,
+    "outputTokens": 68,
+    "cost": null
+   },
+   {
+    "inputTokens": 10166,
+    "outputTokens": 46,
+    "cost": null
+   }
+  ]
+ },
+ {
+  "task": "multi-read",
+  "engine": "typescript",
+  "repetition": 2,
+  "suiteHash": "bd905b4f81f0a9412b614631a36337723067574848c5f05b50ead1cf48675091",
+  "taskHash": "0d7d997929618a514b0f84f56b810cb5280f5b1ac1bca88065d107d1cb7b8147",
+  "profile": {
+   "model": "gpt-6.1-sol",
+   "modelParametersHash": "2ed34bf05cf8d13b054db07739e46194ed83f000de1a7d03c6dcc7b778fc1258",
+   "agentManifestHash": "d41dd9750cb0a29482fa3c0f5e2375db55f7b089a0a1d0bcac222bbe5d7f0c18",
+   "permissionHash": "41191b91bce875c254ea94e5a288e4ed22ac331b706a7c245691ce8d29c07353",
+   "toolSurfaceHash": "04c769ae52448d5fe45ea690050120cee624771222b1291088dc6d832c888106"
+  },
+  "revision": "fa6bac5cce43b6110bee5d96ce3657d8567c3a3f",
+  "artifactHash": "586a1fde7e44ffb98847844587b9df8f432114691ef834b8916734a0becc9f63",
+  "receiptHash": "21059ba51e7c7fab17790dba4540c85a8df4997c868de09a708e4d39577d8b62",
+  "outcome": "passed",
+  "elapsedMs": 7862,
+  "attempts": [
+   {
+    "inputTokens": 9892,
+    "outputTokens": 68,
+    "cost": null
+   },
+   {
+    "inputTokens": 10166,
+    "outputTokens": 51,
+    "cost": null
+   }
+  ]
+ },
+ {
+  "task": "small-edit",
+  "engine": "typescript",
+  "repetition": 0,
+  "suiteHash": "bd905b4f81f0a9412b614631a36337723067574848c5f05b50ead1cf48675091",
+  "taskHash": "e10bb9be226c895f65c7f6adcc7491a949cd7ba8f1ef6b66480934207de9c0c4",
+  "profile": {
+   "model": "gpt-6.1-sol",
+   "modelParametersHash": "a0f014756cafb5868aff999d51443833a4e190cefae42fe14faa1b7bbd7269f7",
+   "agentManifestHash": "6039fdc7a8de75b4bd921d6f39f2979db698dfa387646a97fb277de51eb2b376",
+   "permissionHash": "40827768f6ce7bda93f1e77a9c6b1d2b993b417ba438f075f8bbab3408257de5",
+   "toolSurfaceHash": "04c769ae52448d5fe45ea690050120cee624771222b1291088dc6d832c888106"
+  },
+  "revision": "fa6bac5cce43b6110bee5d96ce3657d8567c3a3f",
+  "artifactHash": "bae968ef3954dbf7ec3021703d8c5aaa72710ea825359cbf69e6509169a11557",
+  "receiptHash": "461cecab96e99a5099bf8392f925a152d5357e3c883479eff506eb5d8e5836e1",
+  "outcome": "passed",
+  "elapsedMs": 20959,
+  "attempts": [
+   {
+    "inputTokens": 9877,
+    "outputTokens": 17,
+    "cost": null
+   },
+   {
+    "inputTokens": 9951,
+    "outputTokens": 77,
+    "cost": null
+   },
+   {
+    "inputTokens": 10301,
+    "outputTokens": 21,
+    "cost": null
+   },
+   {
+    "inputTokens": 10472,
+    "outputTokens": 101,
+    "cost": null
+   },
+   {
+    "inputTokens": 10636,
+    "outputTokens": 24,
+    "cost": null
+   },
+   {
+    "inputTokens": 10722,
+    "outputTokens": 63,
+    "cost": null
+   }
+  ]
+ },
+ {
+  "task": "small-edit",
+  "engine": "typescript",
+  "repetition": 1,
+  "suiteHash": "bd905b4f81f0a9412b614631a36337723067574848c5f05b50ead1cf48675091",
+  "taskHash": "e10bb9be226c895f65c7f6adcc7491a949cd7ba8f1ef6b66480934207de9c0c4",
+  "profile": {
+   "model": "gpt-6.1-sol",
+   "modelParametersHash": "31000ba5611643db42316c90c7b3cbefc8163cb02ff60dfa68490d27c8db316a",
+   "agentManifestHash": "de60a2d3978080d66637fe1036eaafd3cd45069844b6c1705dbf5cb14b13c722",
+   "permissionHash": "508aefc42108781437e999e37bbb73bc012ced4a3e2f0ade35ddc4a1cdbf5542",
+   "toolSurfaceHash": "04c769ae52448d5fe45ea690050120cee624771222b1291088dc6d832c888106"
+  },
+  "revision": "fa6bac5cce43b6110bee5d96ce3657d8567c3a3f",
+  "artifactHash": "cbd9d8e251eee7346dbf8b214c9d376c157f041032281fe09d58bdd63285a7c2",
+  "receiptHash": "9adc9c9736ab7bad7974ba32c1fb9c8ca58303a21b4bc0333f7a3140174ebd97",
+  "outcome": "passed",
+  "elapsedMs": 18416,
+  "attempts": [
+   {
+    "inputTokens": 9877,
+    "outputTokens": 17,
+    "cost": null
+   },
+   {
+    "inputTokens": 9951,
+    "outputTokens": 77,
+    "cost": null
+   },
+   {
+    "inputTokens": 10301,
+    "outputTokens": 21,
+    "cost": null
+   },
+   {
+    "inputTokens": 10472,
+    "outputTokens": 73,
+    "cost": null
+   },
+   {
+    "inputTokens": 10608,
+    "outputTokens": 24,
+    "cost": null
+   },
+   {
+    "inputTokens": 10694,
+    "outputTokens": 69,
+    "cost": null
+   }
+  ]
+ },
+ {
+  "task": "small-edit",
+  "engine": "typescript",
+  "repetition": 2,
+  "suiteHash": "bd905b4f81f0a9412b614631a36337723067574848c5f05b50ead1cf48675091",
+  "taskHash": "e10bb9be226c895f65c7f6adcc7491a949cd7ba8f1ef6b66480934207de9c0c4",
+  "profile": {
+   "model": "gpt-6.1-sol",
+   "modelParametersHash": "49f7fb6520a440b82b5d6d6f129b2f3dbb7225e66dc46c24136e5a7d7832c886",
+   "agentManifestHash": "a51e2df9519c12139fccc7c987b4491697f51bc4fc2e196b29bdf795896db12b",
+   "permissionHash": "666d79d0f874bd46903991eb96667e7edc9b027fc9094d3f4aaa459f005ff0bf",
+   "toolSurfaceHash": "04c769ae52448d5fe45ea690050120cee624771222b1291088dc6d832c888106"
+  },
+  "revision": "fa6bac5cce43b6110bee5d96ce3657d8567c3a3f",
+  "artifactHash": "cf6d8bc02670075c95fe34307af5401211042d9e56c46e661970bef17db45e9e",
+  "receiptHash": "2dfc76c41f923462c06627171eae4868e4f95eb8a0e386f1e880d42f50c38eb6",
+  "outcome": "passed",
+  "elapsedMs": 49760,
+  "attempts": [
+   {
+    "inputTokens": 9877,
+    "outputTokens": 17,
+    "cost": null
+   },
+   {
+    "inputTokens": 9951,
+    "outputTokens": 94,
+    "cost": null
+   },
+   {
+    "inputTokens": 10351,
+    "outputTokens": 21,
+    "cost": null
+   },
+   {
+    "inputTokens": 10522,
+    "outputTokens": 103,
+    "cost": null
+   },
+   {
+    "inputTokens": 10688,
+    "outputTokens": 24,
+    "cost": null
+   },
+   {
+    "inputTokens": 10774,
+    "outputTokens": 66,
+    "cost": null
+   }
+  ]
+ },
+ {
+  "task": "multi-file",
+  "engine": "typescript",
+  "repetition": 0,
+  "suiteHash": "bd905b4f81f0a9412b614631a36337723067574848c5f05b50ead1cf48675091",
+  "taskHash": "a5041ea521bf1671656245fae3d7fab12d071b4b5b82cf29607998143aadc602",
+  "profile": {
+   "model": "gpt-6.1-sol",
+   "modelParametersHash": "88a3b98cbf3898aba00fe889d57e780e863f6e3cff8b2618a4433e4aea40bfac",
+   "agentManifestHash": "1fedc698a1041e0cdec748f4e513e2ec3d587890fcaed3023f17ad7ccae4f78b",
+   "permissionHash": "13f6ab38069461da01abb94d7a8018cab46a09d95b281a9895e865e248337430",
+   "toolSurfaceHash": "04c769ae52448d5fe45ea690050120cee624771222b1291088dc6d832c888106"
+  },
+  "revision": "fa6bac5cce43b6110bee5d96ce3657d8567c3a3f",
+  "artifactHash": "97f0a4a89920d1beced94f0c34a5f47a88c15e54d8823a12e343f9019a0d1d54",
+  "receiptHash": "eab1bfc338d890312f089c0122df8e3770408da7f9ab93401416f34045daa262",
+  "outcome": "passed",
+  "elapsedMs": 19529,
+  "attempts": [
+   {
+    "inputTokens": 9888,
+    "outputTokens": 17,
+    "cost": null
+   },
+   {
+    "inputTokens": 9962,
+    "outputTokens": 85,
+    "cost": null
+   },
+   {
+    "inputTokens": 10311,
+    "outputTokens": 67,
+    "cost": null
+   },
+   {
+    "inputTokens": 10681,
+    "outputTokens": 176,
+    "cost": null
+   },
+   {
+    "inputTokens": 10882,
+    "outputTokens": 24,
+    "cost": null
+   },
+   {
+    "inputTokens": 10968,
+    "outputTokens": 82,
+    "cost": null
+   }
+  ]
+ },
+ {
+  "task": "multi-file",
+  "engine": "typescript",
+  "repetition": 1,
+  "suiteHash": "bd905b4f81f0a9412b614631a36337723067574848c5f05b50ead1cf48675091",
+  "taskHash": "a5041ea521bf1671656245fae3d7fab12d071b4b5b82cf29607998143aadc602",
+  "profile": {
+   "model": "gpt-6.1-sol",
+   "modelParametersHash": "de6377df8aea6879c44d15f1d229c8d9c52009216d0dddd7482d2e587e5da374",
+   "agentManifestHash": "b4004543167adf58733139e0f12deb378aaa0bb316be8e16c290a117513accd2",
+   "permissionHash": "ffd1abb11ac22b6db0a47325ac8f1a490b8aa589b5cc5065c807a03653338e0e",
+   "toolSurfaceHash": "04c769ae52448d5fe45ea690050120cee624771222b1291088dc6d832c888106"
+  },
+  "revision": "fa6bac5cce43b6110bee5d96ce3657d8567c3a3f",
+  "artifactHash": "fecd0e773ee019216bf3e3ad74fed85e8804ce24403509fa4ef243aea878805c",
+  "receiptHash": "87c1f4b33d421ea1fc99a1cef5c260697ad40a1f823dc9e0142d7b9c1a3a5aaf",
+  "outcome": "passed",
+  "elapsedMs": 23000,
+  "attempts": [
+   {
+    "inputTokens": 9888,
+    "outputTokens": 17,
+    "cost": null
+   },
+   {
+    "inputTokens": 9962,
+    "outputTokens": 85,
+    "cost": null
+   },
+   {
+    "inputTokens": 10311,
+    "outputTokens": 67,
+    "cost": null
+   },
+   {
+    "inputTokens": 10681,
+    "outputTokens": 169,
+    "cost": null
+   },
+   {
+    "inputTokens": 10875,
+    "outputTokens": 24,
+    "cost": null
+   },
+   {
+    "inputTokens": 10961,
+    "outputTokens": 82,
+    "cost": null
+   }
+  ]
+ },
+ {
+  "task": "multi-file",
+  "engine": "typescript",
+  "repetition": 2,
+  "suiteHash": "bd905b4f81f0a9412b614631a36337723067574848c5f05b50ead1cf48675091",
+  "taskHash": "a5041ea521bf1671656245fae3d7fab12d071b4b5b82cf29607998143aadc602",
+  "profile": {
+   "model": "gpt-6.1-sol",
+   "modelParametersHash": "4321877fa0cac65b14d403dcab3d199c815b70f408655588b06fd19df20b50c9",
+   "agentManifestHash": "c41279ff88874d6eacd06cb89a3be8bd890429da8f83f9b3989a49cb2feece48",
+   "permissionHash": "b2c759819e9affdfc17bcae82dab7160cfcf1e758a2ab9301859e53f6bbbf01c",
+   "toolSurfaceHash": "04c769ae52448d5fe45ea690050120cee624771222b1291088dc6d832c888106"
+  },
+  "revision": "fa6bac5cce43b6110bee5d96ce3657d8567c3a3f",
+  "artifactHash": "135a232364be08eedde78ee827a169f7b0a2cea0b2fa77de74207e5b2bd9aa76",
+  "receiptHash": "a4a593868e78ef1cdc69e375e0bc28805f672b7aaf2251f51872603a3c85ae6d",
+  "outcome": "passed",
+  "elapsedMs": 24594,
+  "attempts": [
+   {
+    "inputTokens": 9888,
+    "outputTokens": 17,
+    "cost": null
+   },
+   {
+    "inputTokens": 9962,
+    "outputTokens": 75,
+    "cost": null
+   },
+   {
+    "inputTokens": 10271,
+    "outputTokens": 67,
+    "cost": null
+   },
+   {
+    "inputTokens": 10641,
+    "outputTokens": 176,
+    "cost": null
+   },
+   {
+    "inputTokens": 10842,
+    "outputTokens": 19,
+    "cost": null
+   },
+   {
+    "inputTokens": 10923,
+    "outputTokens": 78,
+    "cost": null
+   }
+  ]
+ },
+ {
+  "task": "test-repair",
+  "engine": "typescript",
+  "repetition": 0,
+  "suiteHash": "bd905b4f81f0a9412b614631a36337723067574848c5f05b50ead1cf48675091",
+  "taskHash": "9012e1117d9ccfbc967186426bc4800a8d6c15344e5ed9fb9d2b8d4dbda1568d",
+  "profile": {
+   "model": "gpt-6.1-sol",
+   "modelParametersHash": "0066ac8c5e7a36def28eb9dd745a6dbbcaf3d6699e90cca6c2747c48983ff19d",
+   "agentManifestHash": "7922346d627215a799a2c659125a9bccac0fca7fc9deb930472d470811142175",
+   "permissionHash": "609e78d291f3a842df94c9169e39aeef777aa292d0ba1b01b00bfe3d6b8bfe7d",
+   "toolSurfaceHash": "04c769ae52448d5fe45ea690050120cee624771222b1291088dc6d832c888106"
+  },
+  "revision": "fa6bac5cce43b6110bee5d96ce3657d8567c3a3f",
+  "artifactHash": "4fab435a84f0d1f3f669a24c629e8c3b55c9ebb822fbd6582c345eac97c62a7b",
+  "receiptHash": "ad789467e8999dcb7ce3ce61ce516dffd40c01b8a895b9fc59f97c7908704c95",
+  "outcome": "passed",
+  "elapsedMs": 28944,
+  "attempts": [
+   {
+    "inputTokens": 9888,
+    "outputTokens": 17,
+    "cost": null
+   },
+   {
+    "inputTokens": 9962,
+    "outputTokens": 78,
+    "cost": null
+   },
+   {
+    "inputTokens": 10314,
+    "outputTokens": 21,
+    "cost": null
+   },
+   {
+    "inputTokens": 10474,
+    "outputTokens": 19,
+    "cost": null
+   },
+   {
+    "inputTokens": 10724,
+    "outputTokens": 113,
+    "cost": null
+   },
+   {
+    "inputTokens": 10910,
+    "outputTokens": 19,
+    "cost": null
+   },
+   {
+    "inputTokens": 10991,
+    "outputTokens": 68,
+    "cost": null
+   }
+  ]
+ },
+ {
+  "task": "test-repair",
+  "engine": "typescript",
+  "repetition": 1,
+  "suiteHash": "bd905b4f81f0a9412b614631a36337723067574848c5f05b50ead1cf48675091",
+  "taskHash": "9012e1117d9ccfbc967186426bc4800a8d6c15344e5ed9fb9d2b8d4dbda1568d",
+  "profile": {
+   "model": "gpt-6.1-sol",
+   "modelParametersHash": "690fe88c1de5f5ef01c563b39e938cbdc37fb56a3703a7d9e3db89d6f9cfc33b",
+   "agentManifestHash": "6ec5ac97b44116cb9b6eae1019e4a1550fa76430ba04d6f406cdc0bf469e6858",
+   "permissionHash": "3940c8afcaaa023269cff593fdc197679c83f0fd41785c00f4dae93d7b71c670",
+   "toolSurfaceHash": "04c769ae52448d5fe45ea690050120cee624771222b1291088dc6d832c888106"
+  },
+  "revision": "fa6bac5cce43b6110bee5d96ce3657d8567c3a3f",
+  "artifactHash": "8e7f5b05c70bc2ee5b7ef5b2895ad350b95c87894fe141748985630607d91d3d",
+  "receiptHash": "5ae1a9972ca30709f64d5f5f0942394f85849a486f6570a9b8f7963186f08105",
+  "outcome": "passed",
+  "elapsedMs": 19639,
+  "attempts": [
+   {
+    "inputTokens": 9888,
+    "outputTokens": 17,
+    "cost": null
+   },
+   {
+    "inputTokens": 9962,
+    "outputTokens": 78,
+    "cost": null
+   },
+   {
+    "inputTokens": 10314,
+    "outputTokens": 21,
+    "cost": null
+   },
+   {
+    "inputTokens": 10474,
+    "outputTokens": 19,
+    "cost": null
+   },
+   {
+    "inputTokens": 10724,
+    "outputTokens": 111,
+    "cost": null
+   },
+   {
+    "inputTokens": 10905,
+    "outputTokens": 19,
+    "cost": null
+   },
+   {
+    "inputTokens": 10986,
+    "outputTokens": 67,
+    "cost": null
+   }
+  ]
+ },
+ {
+  "task": "test-repair",
+  "engine": "typescript",
+  "repetition": 2,
+  "suiteHash": "bd905b4f81f0a9412b614631a36337723067574848c5f05b50ead1cf48675091",
+  "taskHash": "9012e1117d9ccfbc967186426bc4800a8d6c15344e5ed9fb9d2b8d4dbda1568d",
+  "profile": {
+   "model": "gpt-6.1-sol",
+   "modelParametersHash": "71445e3f704a1da6773e75db5c08050faf71ac5ed94281b969ea9265cb625baa",
+   "agentManifestHash": "f50b3b886841a036993498fc814372462eacb46dbdbab0f1b654de4ab91495cf",
+   "permissionHash": "5f6a56cebdaeb5049b87e35aaadc8f1690e8dcb80a996cf4a69ba1031bde0d25",
+   "toolSurfaceHash": "04c769ae52448d5fe45ea690050120cee624771222b1291088dc6d832c888106"
+  },
+  "revision": "fa6bac5cce43b6110bee5d96ce3657d8567c3a3f",
+  "artifactHash": "2ad04538602881f79053442d13eca615e8e647f90f3e50838ccf1f19f2f1076a",
+  "receiptHash": "63f052bf2b27e2f87b49f166490c36f4b0fcb16c685047855a56cd7afc6f832a",
+  "outcome": "passed",
+  "elapsedMs": 20586,
+  "attempts": [
+   {
+    "inputTokens": 9888,
+    "outputTokens": 17,
+    "cost": null
+   },
+   {
+    "inputTokens": 9962,
+    "outputTokens": 78,
+    "cost": null
+   },
+   {
+    "inputTokens": 10314,
+    "outputTokens": 21,
+    "cost": null
+   },
+   {
+    "inputTokens": 10474,
+    "outputTokens": 19,
+    "cost": null
+   },
+   {
+    "inputTokens": 10724,
+    "outputTokens": 112,
+    "cost": null
+   },
+   {
+    "inputTokens": 10909,
+    "outputTokens": 19,
+    "cost": null
+   },
+   {
+    "inputTokens": 10990,
+    "outputTokens": 74,
+    "cost": null
+   }
+  ]
+ },
+ {
+  "task": "permission-denial",
+  "engine": "typescript",
+  "repetition": 0,
+  "suiteHash": "bd905b4f81f0a9412b614631a36337723067574848c5f05b50ead1cf48675091",
+  "taskHash": "2df87ba94201f509a47096567db29920b8fef2a0408210de17f45c093e386f8d",
+  "profile": {
+   "model": "gpt-6.1-sol",
+   "modelParametersHash": "246fc3b5cd3b66a8afed5ce53398c45a5f967afe3ce48efa82675e04c266636b",
+   "agentManifestHash": "577c88466aaa970fbeb84a284089ff80a1c4f3aece78fbea974390b763df64b4",
+   "permissionHash": "1f94a4908d65aab923e967cdd0307a494c3307922e9c12d1527d9086975cff79",
+   "toolSurfaceHash": "04c769ae52448d5fe45ea690050120cee624771222b1291088dc6d832c888106"
+  },
+  "revision": "fa6bac5cce43b6110bee5d96ce3657d8567c3a3f",
+  "artifactHash": "5cfbe26fca26011b869b31ce2bab64e2d5ffa09abcb93ab976b9dcbb792ef496",
+  "receiptHash": "618d979473b4c033cba61a70066d13e41f24eaa665b5dd2fcaaed50b79af41b9",
+  "outcome": "failed",
+  "elapsedMs": 9712,
+  "attempts": [
+   {
+    "inputTokens": 9887,
+    "outputTokens": 20,
+    "cost": null
+   },
+   {
+    "inputTokens": 9942,
+    "outputTokens": 40,
+    "cost": null
+   },
+   {
+    "inputTokens": 10017,
+    "outputTokens": 55,
+    "cost": null
+   }
+  ]
+ },
+ {
+  "task": "permission-denial",
+  "engine": "typescript",
+  "repetition": 1,
+  "suiteHash": "bd905b4f81f0a9412b614631a36337723067574848c5f05b50ead1cf48675091",
+  "taskHash": "2df87ba94201f509a47096567db29920b8fef2a0408210de17f45c093e386f8d",
+  "profile": {
+   "model": "gpt-6.1-sol",
+   "modelParametersHash": "0fbf6dedb8235334ca36c6e0ecca7f465a03ae0a46c085ec0f35e21ed43727a9",
+   "agentManifestHash": "39c6279a357f288fa998db7445262c0355b4813f4499d06c6310ff42684da0f7",
+   "permissionHash": "ccabb3bf1bf71cd3ca42ae3433a3cd4b893f67158601bc5d5b328b0c5b417200",
+   "toolSurfaceHash": "04c769ae52448d5fe45ea690050120cee624771222b1291088dc6d832c888106"
+  },
+  "revision": "fa6bac5cce43b6110bee5d96ce3657d8567c3a3f",
+  "artifactHash": "5cfbe26fca26011b869b31ce2bab64e2d5ffa09abcb93ab976b9dcbb792ef496",
+  "receiptHash": "b4c98d97301f12bcdc74af5b910eb754a942954cf3db6788bed1484a1d34abe1",
+  "outcome": "failed",
+  "elapsedMs": 9977,
+  "attempts": [
+   {
+    "inputTokens": 9887,
+    "outputTokens": 20,
+    "cost": null
+   },
+   {
+    "inputTokens": 9942,
+    "outputTokens": 24,
+    "cost": null
+   },
+   {
+    "inputTokens": 10001,
+    "outputTokens": 72,
+    "cost": null
+   }
+  ]
+ },
+ {
+  "task": "permission-denial",
+  "engine": "typescript",
+  "repetition": 2,
+  "suiteHash": "bd905b4f81f0a9412b614631a36337723067574848c5f05b50ead1cf48675091",
+  "taskHash": "2df87ba94201f509a47096567db29920b8fef2a0408210de17f45c093e386f8d",
+  "profile": {
+   "model": "gpt-6.1-sol",
+   "modelParametersHash": "960ab7229d5fee7768da8f67fe568d896fec6ebee65da9f6983f49d4032f82a1",
+   "agentManifestHash": "8d658ec74625f18a7544c41d3860234d4f9295c5733ee71157d5331590a0098a",
+   "permissionHash": "9744b43de9b1fae77f992476133402c2c366084ce931440c50f59f09ace858af",
+   "toolSurfaceHash": "04c769ae52448d5fe45ea690050120cee624771222b1291088dc6d832c888106"
+  },
+  "revision": "fa6bac5cce43b6110bee5d96ce3657d8567c3a3f",
+  "artifactHash": "5cfbe26fca26011b869b31ce2bab64e2d5ffa09abcb93ab976b9dcbb792ef496",
+  "receiptHash": "8409f1f726d39abcf2ef4605ac7acbe5a550cc1a5d695a126f66be38c04c664e",
+  "outcome": "failed",
+  "elapsedMs": 12412,
+  "attempts": [
+   {
+    "inputTokens": 9887,
+    "outputTokens": 20,
+    "cost": null
+   },
+   {
+    "inputTokens": 9942,
+    "outputTokens": 39,
+    "cost": null
+   },
+   {
+    "inputTokens": 10016,
+    "outputTokens": 66,
+    "cost": null
+   }
+  ]
+ },
+ {
+  "task": "tool-error",
+  "engine": "typescript",
+  "repetition": 0,
+  "suiteHash": "bd905b4f81f0a9412b614631a36337723067574848c5f05b50ead1cf48675091",
+  "taskHash": "d805c342f165a7193bf45347ebba54a0e1c0d75e9baffd9c5979d07f5b0fb09e",
+  "profile": {
+   "model": "gpt-6.1-sol",
+   "modelParametersHash": "5df670a72b2b11093e0b7f0f7af04a1e149319466d1bb9ef8278fb6bba481be9",
+   "agentManifestHash": "9d1d9f231499c4d983a8683434f01b448f0f021da133e55814a5b2fc70234025",
+   "permissionHash": "5ddc4c6eada5b16ae6fc86d437f02becfb1eacd88e9206e740e427214fa26086",
+   "toolSurfaceHash": "04c769ae52448d5fe45ea690050120cee624771222b1291088dc6d832c888106"
+  },
+  "revision": "fa6bac5cce43b6110bee5d96ce3657d8567c3a3f",
+  "artifactHash": "42a0929bd2c953adb3b7ae60782aeb2d7a5a7101e999baa01b6d9c9d85b7e5ad",
+  "receiptHash": "a044397c1225bcc1aa49193490a7e320a6a7623d37421f9a3ab82500e6ed8c6c",
+  "outcome": "passed",
+  "elapsedMs": 10047,
+  "attempts": [
+   {
+    "inputTokens": 9888,
+    "outputTokens": 18,
+    "cost": null
+   },
+   {
+    "inputTokens": 9939,
+    "outputTokens": 18,
+    "cost": null
+   },
+   {
+    "inputTokens": 10022,
+    "outputTokens": 9,
+    "cost": null
+   }
+  ]
+ },
+ {
+  "task": "tool-error",
+  "engine": "typescript",
+  "repetition": 1,
+  "suiteHash": "bd905b4f81f0a9412b614631a36337723067574848c5f05b50ead1cf48675091",
+  "taskHash": "d805c342f165a7193bf45347ebba54a0e1c0d75e9baffd9c5979d07f5b0fb09e",
+  "profile": {
+   "model": "gpt-6.1-sol",
+   "modelParametersHash": "3e0247b49c3567f4e68945550111580daa709f7560d89e7a7a7b51a3d52f3b9b",
+   "agentManifestHash": "9200fe0f15b210454a32ef898f06aede2c1f9ac45f35d4fa432058442e33d4e0",
+   "permissionHash": "44df135340aa7055fb9942e970913460f76037186f8a7a9c2dbfcd1ab1707900",
+   "toolSurfaceHash": "04c769ae52448d5fe45ea690050120cee624771222b1291088dc6d832c888106"
+  },
+  "revision": "fa6bac5cce43b6110bee5d96ce3657d8567c3a3f",
+  "artifactHash": "42a0929bd2c953adb3b7ae60782aeb2d7a5a7101e999baa01b6d9c9d85b7e5ad",
+  "receiptHash": "2302ec07b51ebf31de6f3b431ee1e47c480883ace431f162b691f669593fe48f",
+  "outcome": "passed",
+  "elapsedMs": 10772,
+  "attempts": [
+   {
+    "inputTokens": 9888,
+    "outputTokens": 18,
+    "cost": null
+   },
+   {
+    "inputTokens": 9939,
+    "outputTokens": 18,
+    "cost": null
+   },
+   {
+    "inputTokens": 10022,
+    "outputTokens": 9,
+    "cost": null
+   }
+  ]
+ },
+ {
+  "task": "tool-error",
+  "engine": "typescript",
+  "repetition": 2,
+  "suiteHash": "bd905b4f81f0a9412b614631a36337723067574848c5f05b50ead1cf48675091",
+  "taskHash": "d805c342f165a7193bf45347ebba54a0e1c0d75e9baffd9c5979d07f5b0fb09e",
+  "profile": {
+   "model": "gpt-6.1-sol",
+   "modelParametersHash": "6713e8a1c413a26f2396a9dda2dfc6c1b99c8679bea639eb9760837a0c958d88",
+   "agentManifestHash": "fd16e3c6416b2dd694a02be9c96018a5ed33106dda4351ff6b4e6c947379204a",
+   "permissionHash": "892cfa2671016f288be3a11416815e6072b003bc0e34708d72b6e05d83e61471",
+   "toolSurfaceHash": "04c769ae52448d5fe45ea690050120cee624771222b1291088dc6d832c888106"
+  },
+  "revision": "fa6bac5cce43b6110bee5d96ce3657d8567c3a3f",
+  "artifactHash": "42a0929bd2c953adb3b7ae60782aeb2d7a5a7101e999baa01b6d9c9d85b7e5ad",
+  "receiptHash": "4e7bc00515911b08952495b89adf59c8b5cf03768475362826c0c09ca18d6013",
+  "outcome": "passed",
+  "elapsedMs": 9761,
+  "attempts": [
+   {
+    "inputTokens": 9888,
+    "outputTokens": 18,
+    "cost": null
+   },
+   {
+    "inputTokens": 9939,
+    "outputTokens": 18,
+    "cost": null
+   },
+   {
+    "inputTokens": 10022,
+    "outputTokens": 9,
+    "cost": null
+   }
+  ]
+ },
+ {
+  "task": "stream-interruption",
+  "engine": "typescript",
+  "repetition": 0,
+  "suiteHash": "bd905b4f81f0a9412b614631a36337723067574848c5f05b50ead1cf48675091",
+  "taskHash": "4f00bf344635036fd5d16a5b348e948e9ed126d43854e1280b1286d48d53284c",
+  "profile": {
+   "model": "gpt-6.1-sol",
+   "modelParametersHash": "f6f3b74b69addf9b9f619b02ac8a2a8748c930a8d5087748f12124f85ed0b56f",
+   "agentManifestHash": "e6c9ba26ab7ba544452482abe5457b75d28a6b662409e59ec47900bce8fc2658",
+   "permissionHash": "c66b783a5e9ae4624e58fad21ad7d921ceb548b15c77009d09322f1d5fac1c7a",
+   "toolSurfaceHash": "04c769ae52448d5fe45ea690050120cee624771222b1291088dc6d832c888106"
+  },
+  "revision": "fa6bac5cce43b6110bee5d96ce3657d8567c3a3f",
+  "artifactHash": "2b4e04ae507e25e4b1036dff0509a0cb4fc4f014bfde0083fccd539fa1e60df2",
+  "receiptHash": "3d02f071c5867a8e1d5eada4be985adb93b62eabbbd24e937d185af8e87693d1",
+  "outcome": "failed",
+  "elapsedMs": 5905,
+  "attempts": [
+   {
+    "inputTokens": 9890,
+    "outputTokens": 20,
+    "cost": null
+   }
+  ]
+ },
+ {
+  "task": "stream-interruption",
+  "engine": "typescript",
+  "repetition": 1,
+  "suiteHash": "bd905b4f81f0a9412b614631a36337723067574848c5f05b50ead1cf48675091",
+  "taskHash": "4f00bf344635036fd5d16a5b348e948e9ed126d43854e1280b1286d48d53284c",
+  "profile": {
+   "model": "gpt-6.1-sol",
+   "modelParametersHash": "eca2c49b7f6821a96b641c7e0a708ef604a93139d20032b6254659ae89f90451",
+   "agentManifestHash": "d5afe34e676fbd431971cfcee8a747bbaf48dd49a7cbaff05591cfff9bb4fa0f",
+   "permissionHash": "cdb1abba8f20cefb02a4d3bc2c22a975bd3665396b2aaa59ede808ff83a24b62",
+   "toolSurfaceHash": "04c769ae52448d5fe45ea690050120cee624771222b1291088dc6d832c888106"
+  },
+  "revision": "fa6bac5cce43b6110bee5d96ce3657d8567c3a3f",
+  "artifactHash": "2b4e04ae507e25e4b1036dff0509a0cb4fc4f014bfde0083fccd539fa1e60df2",
+  "receiptHash": "17923b99996c238b33942e1792b042465bf1f655754a16d6225fba47be263ef7",
+  "outcome": "failed",
+  "elapsedMs": 6013,
+  "attempts": [
+   {
+    "inputTokens": 9890,
+    "outputTokens": 20,
+    "cost": null
+   }
+  ]
+ },
+ {
+  "task": "stream-interruption",
+  "engine": "typescript",
+  "repetition": 2,
+  "suiteHash": "bd905b4f81f0a9412b614631a36337723067574848c5f05b50ead1cf48675091",
+  "taskHash": "4f00bf344635036fd5d16a5b348e948e9ed126d43854e1280b1286d48d53284c",
+  "profile": {
+   "model": "gpt-6.1-sol",
+   "modelParametersHash": "23af286d278671b0966ee1bfb4c66361e5d440efb9aeafca6c6e1107e43b2650",
+   "agentManifestHash": "2fb9ebb3e88630cafe62276c01fc2c969374c95613446ed3b7db6b4f5ab3c9df",
+   "permissionHash": "4c848e5d501878165bbb7212b1e7fadf1251bf81eb1d672998847909cecc7c25",
+   "toolSurfaceHash": "04c769ae52448d5fe45ea690050120cee624771222b1291088dc6d832c888106"
+  },
+  "revision": "fa6bac5cce43b6110bee5d96ce3657d8567c3a3f",
+  "artifactHash": "2b4e04ae507e25e4b1036dff0509a0cb4fc4f014bfde0083fccd539fa1e60df2",
+  "receiptHash": "600f1bca5723857fd46f22d0b2a0b9e974bcfed1323d0e01866e3db6b12db6f1",
+  "outcome": "failed",
+  "elapsedMs": 7463,
+  "attempts": [
+   {
+    "inputTokens": 9890,
+    "outputTokens": 20,
+    "cost": null
+   }
+  ]
+ },
+ {
+  "task": "long-session",
+  "engine": "typescript",
+  "repetition": 0,
+  "suiteHash": "bd905b4f81f0a9412b614631a36337723067574848c5f05b50ead1cf48675091",
+  "taskHash": "acc85904b2dcd251e4f30fbe7b74f29d6ae3d4266a73c7319c966169a74baa82",
+  "profile": {
+   "model": "gpt-6.1-sol",
+   "modelParametersHash": "41600a1e2bdb47f9b9436e59b182a552e3c7da5ea06d5c31d5570d30c5011204",
+   "agentManifestHash": "7f576d6ab0fb0f03f7e142ea7016ce76567b761f5301759825fc667957f80a3d",
+   "permissionHash": "05198fbafa88c09cf54342c7e5769da00044b47b188b0a4d81d59d5895e664ab",
+   "toolSurfaceHash": "04c769ae52448d5fe45ea690050120cee624771222b1291088dc6d832c888106"
+  },
+  "revision": "fa6bac5cce43b6110bee5d96ce3657d8567c3a3f",
+  "artifactHash": "31b6d8fbed9682c8e0f1a23cba58e37518fbbb32e88a96e54f56455fb113bb5b",
+  "receiptHash": "85d6a49123ededc4b26d5e1e1a43e9ba0bad7069016c53325790ce2b5844b12e",
+  "outcome": "passed",
+  "elapsedMs": 70676,
+  "attempts": [
+   {
+    "inputTokens": 9872,
+    "outputTokens": 30,
+    "cost": null
+   },
+   {
+    "inputTokens": 9919,
+    "outputTokens": 29,
+    "cost": null
+   },
+   {
+    "inputTokens": 9976,
+    "outputTokens": 19,
+    "cost": null
+   },
+   {
+    "inputTokens": 10064,
+    "outputTokens": 50,
+    "cost": null
+   },
+   {
+    "inputTokens": 10132,
+    "outputTokens": 37,
+    "cost": null
+   },
+   {
+    "inputTokens": 10204,
+    "outputTokens": 17,
+    "cost": null
+   },
+   {
+    "inputTokens": 10269,
+    "outputTokens": 65,
+    "cost": null
+   },
+   {
+    "inputTokens": 10589,
+    "outputTokens": 20,
+    "cost": null
+   },
+   {
+    "inputTokens": 10633,
+    "outputTokens": 63,
+    "cost": null
+   },
+   {
+    "inputTokens": 10741,
+    "outputTokens": 278,
+    "cost": null
+   },
+   {
+    "inputTokens": 11038,
+    "outputTokens": 125,
+    "cost": null
+   },
+   {
+    "inputTokens": 11184,
+    "outputTokens": 47,
+    "cost": null
+   },
+   {
+    "inputTokens": 11256,
+    "outputTokens": 125,
+    "cost": null
+   },
+   {
+    "inputTokens": 11402,
+    "outputTokens": 34,
+    "cost": null
+   },
+   {
+    "inputTokens": 11457,
+    "outputTokens": 84,
+    "cost": null
+   }
+  ]
+ },
+ {
+  "task": "long-session",
+  "engine": "typescript",
+  "repetition": 1,
+  "suiteHash": "bd905b4f81f0a9412b614631a36337723067574848c5f05b50ead1cf48675091",
+  "taskHash": "acc85904b2dcd251e4f30fbe7b74f29d6ae3d4266a73c7319c966169a74baa82",
+  "profile": {
+   "model": "gpt-6.1-sol",
+   "modelParametersHash": "6e0b552fcb70c5b73992f5ec5af6405644bc165001ecb43b895ccf37e8436fb3",
+   "agentManifestHash": "b5cf2c3f767583be501b6db15770d811a8c62d2cb7a05baf09712bdc89631787",
+   "permissionHash": "408b4ee8854c1bbc320b7854e99ed3588e7b4e2c422fa31a281e33216a5f6728",
+   "toolSurfaceHash": "04c769ae52448d5fe45ea690050120cee624771222b1291088dc6d832c888106"
+  },
+  "revision": "fa6bac5cce43b6110bee5d96ce3657d8567c3a3f",
+  "artifactHash": "28ddc2be82c8d67ed8439cd14f228d4bd235720ea0f3b44e7bca0c85cd2720cd",
+  "receiptHash": "6b9b024756b6d5be0d6588ad9c0a11f636d45103ee69be6c532ad87186410fd6",
+  "outcome": "passed",
+  "elapsedMs": 66131,
+  "attempts": [
+   {
+    "inputTokens": 9872,
+    "outputTokens": 17,
+    "cost": null
+   },
+   {
+    "inputTokens": 9921,
+    "outputTokens": 21,
+    "cost": null
+   },
+   {
+    "inputTokens": 9981,
+    "outputTokens": 19,
+    "cost": null
+   },
+   {
+    "inputTokens": 10094,
+    "outputTokens": 30,
+    "cost": null
+   },
+   {
+    "inputTokens": 10141,
+    "outputTokens": 19,
+    "cost": null
+   },
+   {
+    "inputTokens": 10229,
+    "outputTokens": 30,
+    "cost": null
+   },
+   {
+    "inputTokens": 10287,
+    "outputTokens": 19,
+    "cost": null
+   },
+   {
+    "inputTokens": 10375,
+    "outputTokens": 50,
+    "cost": null
+   },
+   {
+    "inputTokens": 10443,
+    "outputTokens": 20,
+    "cost": null
+   },
+   {
+    "inputTokens": 10552,
+    "outputTokens": 37,
+    "cost": null
+   },
+   {
+    "inputTokens": 10624,
+    "outputTokens": 18,
+    "cost": null
+   },
+   {
+    "inputTokens": 10718,
+    "outputTokens": 20,
+    "cost": null
+   },
+   {
+    "inputTokens": 10762,
+    "outputTokens": 67,
+    "cost": null
+   },
+   {
+    "inputTokens": 10848,
+    "outputTokens": 33,
+    "cost": null
+   },
+   {
+    "inputTokens": 11173,
+    "outputTokens": 31,
+    "cost": null
+   },
+   {
+    "inputTokens": 11223,
+    "outputTokens": 243,
+    "cost": null
+   },
+   {
+    "inputTokens": 11487,
+    "outputTokens": 59,
+    "cost": null
+   },
+   {
+    "inputTokens": 11571,
+    "outputTokens": 184,
+    "cost": null
+   },
+   {
+    "inputTokens": 11776,
+    "outputTokens": 37,
+    "cost": null
+   },
+   {
+    "inputTokens": 11834,
+    "outputTokens": 83,
+    "cost": null
+   }
+  ]
+ },
+ {
+  "task": "long-session",
+  "engine": "typescript",
+  "repetition": 2,
+  "suiteHash": "bd905b4f81f0a9412b614631a36337723067574848c5f05b50ead1cf48675091",
+  "taskHash": "acc85904b2dcd251e4f30fbe7b74f29d6ae3d4266a73c7319c966169a74baa82",
+  "profile": {
+   "model": "gpt-6.1-sol",
+   "modelParametersHash": "e24caa8aea4f88a2b3de412d020cf0fd5da0f2a342fec9ab1cc385403fac0013",
+   "agentManifestHash": "3eb46e4e8b8aa876ce171d585d01ed632888fbbbe71208a2dead448e3931f43a",
+   "permissionHash": "21d2c0ea62a1628f2aae107f99661e32d300325606bd2ae7226a071e29c67ffc",
+   "toolSurfaceHash": "04c769ae52448d5fe45ea690050120cee624771222b1291088dc6d832c888106"
+  },
+  "revision": "fa6bac5cce43b6110bee5d96ce3657d8567c3a3f",
+  "artifactHash": "60f9c6c93733b6834092e91e66d2d3d13f0c88ee9ccf67891dec28612c3c5a7b",
+  "receiptHash": "89a19c8c2238eae0f56b49c1cc10af477e998760778870fa00eb8c1a1aff563b",
+  "outcome": "passed",
+  "elapsedMs": 60596,
+  "attempts": [
+   {
+    "inputTokens": 9872,
+    "outputTokens": 30,
+    "cost": null
+   },
+   {
+    "inputTokens": 9919,
+    "outputTokens": 29,
+    "cost": null
+   },
+   {
+    "inputTokens": 9976,
+    "outputTokens": 19,
+    "cost": null
+   },
+   {
+    "inputTokens": 10064,
+    "outputTokens": 50,
+    "cost": null
+   },
+   {
+    "inputTokens": 10132,
+    "outputTokens": 37,
+    "cost": null
+   },
+   {
+    "inputTokens": 10204,
+    "outputTokens": 17,
+    "cost": null
+   },
+   {
+    "inputTokens": 10269,
+    "outputTokens": 65,
+    "cost": null
+   },
+   {
+    "inputTokens": 10589,
+    "outputTokens": 20,
+    "cost": null
+   },
+   {
+    "inputTokens": 10633,
+    "outputTokens": 67,
+    "cost": null
+   },
+   {
+    "inputTokens": 10719,
+    "outputTokens": 58,
+    "cost": null
+   },
+   {
+    "inputTokens": 10796,
+    "outputTokens": 182,
+    "cost": null
+   },
+   {
+    "inputTokens": 10999,
+    "outputTokens": 65,
+    "cost": null
+   },
+   {
+    "inputTokens": 11089,
+    "outputTokens": 110,
+    "cost": null
+   },
+   {
+    "inputTokens": 11220,
+    "outputTokens": 36,
+    "cost": null
+   },
+   {
+    "inputTokens": 11277,
+    "outputTokens": 85,
+    "cost": null
+   }
+  ]
+ },
+ {
+  "task": "multi-line-edit",
+  "engine": "typescript",
+  "repetition": 0,
+  "suiteHash": "bd905b4f81f0a9412b614631a36337723067574848c5f05b50ead1cf48675091",
+  "taskHash": "9da008a0099a635cb45ea80ebda993c5f627a4e16e8ad28efa7b09d82a6068a2",
+  "profile": {
+   "model": "gpt-6.1-sol",
+   "modelParametersHash": "185e43d11ba56c86cb9758e700c64381f5c5f9cbd52f68a8ec13c58fdf8ad4d1",
+   "agentManifestHash": "f472dbbe752ec9c4fbe4c40e42d18ed3c5123fa389f5b980938e894b133f95a9",
+   "permissionHash": "c7c192516d07afbbcff043e8df9716d0f1bb2dcec88c83b82dac58370f721c4c",
+   "toolSurfaceHash": "04c769ae52448d5fe45ea690050120cee624771222b1291088dc6d832c888106"
+  },
+  "revision": "fa6bac5cce43b6110bee5d96ce3657d8567c3a3f",
+  "artifactHash": "2ad04538602881f79053442d13eca615e8e647f90f3e50838ccf1f19f2f1076a",
+  "receiptHash": "018ab9fd5d3a91395f061a7fea751338c3390851c8f73ac4288d55df1891298e",
+  "outcome": "passed",
+  "elapsedMs": 18779,
+  "attempts": [
+   {
+    "inputTokens": 9891,
+    "outputTokens": 17,
+    "cost": null
+   },
+   {
+    "inputTokens": 9965,
+    "outputTokens": 78,
+    "cost": null
+   },
+   {
+    "inputTokens": 10360,
+    "outputTokens": 21,
+    "cost": null
+   },
+   {
+    "inputTokens": 10525,
+    "outputTokens": 74,
+    "cost": null
+   },
+   {
+    "inputTokens": 10642,
+    "outputTokens": 19,
+    "cost": null
+   },
+   {
+    "inputTokens": 10723,
+    "outputTokens": 81,
+    "cost": null
+   }
+  ]
+ },
+ {
+  "task": "multi-line-edit",
+  "engine": "typescript",
+  "repetition": 1,
+  "suiteHash": "bd905b4f81f0a9412b614631a36337723067574848c5f05b50ead1cf48675091",
+  "taskHash": "9da008a0099a635cb45ea80ebda993c5f627a4e16e8ad28efa7b09d82a6068a2",
+  "profile": {
+   "model": "gpt-6.1-sol",
+   "modelParametersHash": "52a7b71920024803c29329f5f1d643e6e115797af7e39fb7db523b0e74a938f2",
+   "agentManifestHash": "a4e0ab0c03dbc093ae55c7b3596d91d4252609bbb8607b5f45dff873ed9fabe9",
+   "permissionHash": "6fd98f53442acb2de46adbcd8136c5aaab16555f51b531283e3486bd3567997f",
+   "toolSurfaceHash": "04c769ae52448d5fe45ea690050120cee624771222b1291088dc6d832c888106"
+  },
+  "revision": "fa6bac5cce43b6110bee5d96ce3657d8567c3a3f",
+  "artifactHash": "2ad04538602881f79053442d13eca615e8e647f90f3e50838ccf1f19f2f1076a",
+  "receiptHash": "ada8bf5c800e64c9cec5bdbc31f2273dfd118f4cdd938345d5863160f121d236",
+  "outcome": "passed",
+  "elapsedMs": 19706,
+  "attempts": [
+   {
+    "inputTokens": 9891,
+    "outputTokens": 20,
+    "cost": null
+   },
+   {
+    "inputTokens": 10030,
+    "outputTokens": 17,
+    "cost": null
+   },
+   {
+    "inputTokens": 10104,
+    "outputTokens": 62,
+    "cost": null
+   },
+   {
+    "inputTokens": 10366,
+    "outputTokens": 21,
+    "cost": null
+   },
+   {
+    "inputTokens": 10531,
+    "outputTokens": 75,
+    "cost": null
+   },
+   {
+    "inputTokens": 10649,
+    "outputTokens": 24,
+    "cost": null
+   },
+   {
+    "inputTokens": 10735,
+    "outputTokens": 83,
+    "cost": null
+   }
+  ]
+ },
+ {
+  "task": "multi-line-edit",
+  "engine": "typescript",
+  "repetition": 2,
+  "suiteHash": "bd905b4f81f0a9412b614631a36337723067574848c5f05b50ead1cf48675091",
+  "taskHash": "9da008a0099a635cb45ea80ebda993c5f627a4e16e8ad28efa7b09d82a6068a2",
+  "profile": {
+   "model": "gpt-6.1-sol",
+   "modelParametersHash": "c20ded6a3e8575ccdfd6de3520dbe8adc8982fdb357702fc7198685e8b56b5be",
+   "agentManifestHash": "824187e0170efc27239a7594cf10c1a3accfca2d873e483be189e9302b392922",
+   "permissionHash": "066a2c609f6924dc2e22d3f05d6821010a4b8fd9a683f77e0ad1a0f37fa95f0d",
+   "toolSurfaceHash": "04c769ae52448d5fe45ea690050120cee624771222b1291088dc6d832c888106"
+  },
+  "revision": "fa6bac5cce43b6110bee5d96ce3657d8567c3a3f",
+  "artifactHash": "90fb1f96574339ad7d694a2fc446bfd93b70797fd0de76397bb7077e6b8635ab",
+  "receiptHash": "d42dd5a4bf915bac751fb5a332f99ec8b2c30757b8209818709aa7e8e8e1971e",
+  "outcome": "passed",
+  "elapsedMs": 17701,
+  "attempts": [
+   {
+    "inputTokens": 9891,
+    "outputTokens": 20,
+    "cost": null
+   },
+   {
+    "inputTokens": 10030,
+    "outputTokens": 21,
+    "cost": null
+   },
+   {
+    "inputTokens": 10108,
+    "outputTokens": 62,
+    "cost": null
+   },
+   {
+    "inputTokens": 10370,
+    "outputTokens": 21,
+    "cost": null
+   },
+   {
+    "inputTokens": 10535,
+    "outputTokens": 75,
+    "cost": null
+   },
+   {
+    "inputTokens": 10653,
+    "outputTokens": 19,
+    "cost": null
+   },
+   {
+    "inputTokens": 10734,
+    "outputTokens": 77,
+    "cost": null
+   }
+  ]
+ },
+ {
+  "task": "typed-repair",
+  "engine": "typescript",
+  "repetition": 0,
+  "suiteHash": "bd905b4f81f0a9412b614631a36337723067574848c5f05b50ead1cf48675091",
+  "taskHash": "6d7a5f740fead5293e5e5ffb8d80de678897f4422c739a10fa17ed3caffaaea2",
+  "profile": {
+   "model": "gpt-6.1-sol",
+   "modelParametersHash": "72272351b435cf6568855a5adfc64c75fba397601bd25c75bd3bdd707d7ff94f",
+   "agentManifestHash": "14bda0cf3aeee619650eec35bf46c5da8689c4f287159363a4db84ee9dd677be",
+   "permissionHash": "3f6b21256164571889e142b05b8b74153c7d84cd9c3f87d40d78993bc7143608",
+   "toolSurfaceHash": "04c769ae52448d5fe45ea690050120cee624771222b1291088dc6d832c888106"
+  },
+  "revision": "fa6bac5cce43b6110bee5d96ce3657d8567c3a3f",
+  "artifactHash": "1209940fe569a926d27d345fc2b7b2b715353d8ce9faa89ccd48caf0fc6f2ac7",
+  "receiptHash": "2391c046e49eb7fab0881102faa3f6f7f5c38c7732da0fe73c7352d0de76c112",
+  "outcome": "passed",
+  "elapsedMs": 21923,
+  "attempts": [
+   {
+    "inputTokens": 9897,
+    "outputTokens": 17,
+    "cost": null
+   },
+   {
+    "inputTokens": 9971,
+    "outputTokens": 78,
+    "cost": null
+   },
+   {
+    "inputTokens": 10367,
+    "outputTokens": 21,
+    "cost": null
+   },
+   {
+    "inputTokens": 10513,
+    "outputTokens": 158,
+    "cost": null
+   },
+   {
+    "inputTokens": 10762,
+    "outputTokens": 59,
+    "cost": null
+   },
+   {
+    "inputTokens": 10900,
+    "outputTokens": 91,
+    "cost": null
+   }
+  ]
+ },
+ {
+  "task": "typed-repair",
+  "engine": "typescript",
+  "repetition": 1,
+  "suiteHash": "bd905b4f81f0a9412b614631a36337723067574848c5f05b50ead1cf48675091",
+  "taskHash": "6d7a5f740fead5293e5e5ffb8d80de678897f4422c739a10fa17ed3caffaaea2",
+  "profile": {
+   "model": "gpt-6.1-sol",
+   "modelParametersHash": "e125915694539f25c305a7e828cd1bb88d574776673cc298c1e21e329271db93",
+   "agentManifestHash": "4bd8ad67ec240afbf22143e57dc0903f573528a4734d88d1bf45df74522f21f6",
+   "permissionHash": "a126a5986b2a7cee14f94e49f6a252492548f1b585430010763aa1f9355cd498",
+   "toolSurfaceHash": "04c769ae52448d5fe45ea690050120cee624771222b1291088dc6d832c888106"
+  },
+  "revision": "fa6bac5cce43b6110bee5d96ce3657d8567c3a3f",
+  "artifactHash": "36b70cdb499235c25f270b4d31bfdbcd779b7848623079d1cd5e087b66f1207a",
+  "receiptHash": "9fb11e2356d03ddfc75bb5e35aa423007f425ca2fcb3d75215d7b43dc00010b7",
+  "outcome": "passed",
+  "elapsedMs": 26785,
+  "attempts": [
+   {
+    "inputTokens": 9897,
+    "outputTokens": 17,
+    "cost": null
+   },
+   {
+    "inputTokens": 9971,
+    "outputTokens": 78,
+    "cost": null
+   },
+   {
+    "inputTokens": 10367,
+    "outputTokens": 21,
+    "cost": null
+   },
+   {
+    "inputTokens": 10513,
+    "outputTokens": 156,
+    "cost": null
+   },
+   {
+    "inputTokens": 10760,
+    "outputTokens": 67,
+    "cost": null
+   },
+   {
+    "inputTokens": 10906,
+    "outputTokens": 100,
+    "cost": null
+   }
+  ]
+ },
+ {
+  "task": "typed-repair",
+  "engine": "typescript",
+  "repetition": 2,
+  "suiteHash": "bd905b4f81f0a9412b614631a36337723067574848c5f05b50ead1cf48675091",
+  "taskHash": "6d7a5f740fead5293e5e5ffb8d80de678897f4422c739a10fa17ed3caffaaea2",
+  "profile": {
+   "model": "gpt-6.1-sol",
+   "modelParametersHash": "cb967f7191d2777249c733da14ddf857172a16972881c47e3d87361e83afba2c",
+   "agentManifestHash": "56d590ae92802484f7e329556f1cc633821e35c703e522757f4dee8322a1f23f",
+   "permissionHash": "8152ac7f7d56012d875354df0374b984557e9c9c0d0996022e94c665236a7ed7",
+   "toolSurfaceHash": "04c769ae52448d5fe45ea690050120cee624771222b1291088dc6d832c888106"
+  },
+  "revision": "fa6bac5cce43b6110bee5d96ce3657d8567c3a3f",
+  "artifactHash": "195852a9f4cb294b3937281d8a816bd942d8e8963c936a06aebea693f526d5f0",
+  "receiptHash": "40fa71cdd8bf16a1791f52fa517267a8099e57d9ffe0866c93dc5caf7c162065",
+  "outcome": "passed",
+  "elapsedMs": 28848,
+  "attempts": [
+   {
+    "inputTokens": 9897,
+    "outputTokens": 20,
+    "cost": null
+   },
+   {
+    "inputTokens": 10037,
+    "outputTokens": 17,
+    "cost": null
+   },
+   {
+    "inputTokens": 10111,
+    "outputTokens": 62,
+    "cost": null
+   },
+   {
+    "inputTokens": 10373,
+    "outputTokens": 21,
+    "cost": null
+   },
+   {
+    "inputTokens": 10519,
+    "outputTokens": 165,
+    "cost": null
+   },
+   {
+    "inputTokens": 10775,
+    "outputTokens": 59,
+    "cost": null
+   },
+   {
+    "inputTokens": 10913,
+    "outputTokens": 96,
+    "cost": null
+   }
+  ]
+ },
+ {
+  "task": "large-file",
+  "engine": "typescript",
+  "repetition": 0,
+  "suiteHash": "bd905b4f81f0a9412b614631a36337723067574848c5f05b50ead1cf48675091",
+  "taskHash": "55a120909957198a82e321a13a4b2f7b66c2439b3d040e8722add9575c37d311",
+  "profile": {
+   "model": "gpt-6.1-sol",
+   "modelParametersHash": "688bc4592fcd972418fc2d1bb52612162a440eac8bfcd4ee70a9a23a9a216775",
+   "agentManifestHash": "77dea41a2bac2a5ece2acda2512b05834fff93f9aa23529ccb1904daef5b5a5d",
+   "permissionHash": "2d5dcd9a98be89cbad56e832326f4af47a2b22d0317fe45995925a493740c223",
+   "toolSurfaceHash": "04c769ae52448d5fe45ea690050120cee624771222b1291088dc6d832c888106"
+  },
+  "revision": "fa6bac5cce43b6110bee5d96ce3657d8567c3a3f",
+  "artifactHash": "16f337afaac030ffdd4ca05532c5545373bbb70859dded0abf11586e5474c583",
+  "receiptHash": "1753bfb9b61aaed68750b26de5750b1582db906016986e1ea5c14d2ccbaa5b2b",
+  "outcome": "passed",
+  "elapsedMs": 26811,
+  "attempts": [
+   {
+    "inputTokens": 9917,
+    "outputTokens": 31,
+    "cost": null
+   },
+   {
+    "inputTokens": 10016,
+    "outputTokens": 29,
+    "cost": null
+   },
+   {
+    "inputTokens": 10245,
+    "outputTokens": 26,
+    "cost": null
+   },
+   {
+    "inputTokens": 10321,
+    "outputTokens": 21,
+    "cost": null
+   },
+   {
+    "inputTokens": 10399,
+    "outputTokens": 27,
+    "cost": null
+   },
+   {
+    "inputTokens": 10490,
+    "outputTokens": 29,
+    "cost": null
+   },
+   {
+    "inputTokens": 10642,
+    "outputTokens": 86,
+    "cost": null
+   },
+   {
+    "inputTokens": 10795,
+    "outputTokens": 24,
+    "cost": null
+   },
+   {
+    "inputTokens": 10881,
+    "outputTokens": 66,
+    "cost": null
+   }
+  ]
+ },
+ {
+  "task": "large-file",
+  "engine": "typescript",
+  "repetition": 1,
+  "suiteHash": "bd905b4f81f0a9412b614631a36337723067574848c5f05b50ead1cf48675091",
+  "taskHash": "55a120909957198a82e321a13a4b2f7b66c2439b3d040e8722add9575c37d311",
+  "profile": {
+   "model": "gpt-6.1-sol",
+   "modelParametersHash": "923ad27d033aef376e431d134a576317b3ecda4be6a71805a9b3a8832d70a04d",
+   "agentManifestHash": "bb3eea7778d1439040133d62bbba25b31d2fb0c9e553773e1533b7e4540425f6",
+   "permissionHash": "ba708cb0a7227d7280ff219bd1cc850ad870ed88058c59d9fa173694bbf73fa2",
+   "toolSurfaceHash": "04c769ae52448d5fe45ea690050120cee624771222b1291088dc6d832c888106"
+  },
+  "revision": "fa6bac5cce43b6110bee5d96ce3657d8567c3a3f",
+  "artifactHash": "fbdc6b8df04b5dc3aaf582297e58797326583f37a639313928a7da942b44ae72",
+  "receiptHash": "5376905642ad90e727c75189cc7605e43fdc9fbfc6e80da487f9049358fa4e18",
+  "outcome": "passed",
+  "elapsedMs": 25361,
+  "attempts": [
+   {
+    "inputTokens": 9917,
+    "outputTokens": 38,
+    "cost": null
+   },
+   {
+    "inputTokens": 10023,
+    "outputTokens": 29,
+    "cost": null
+   },
+   {
+    "inputTokens": 10234,
+    "outputTokens": 21,
+    "cost": null
+   },
+   {
+    "inputTokens": 10312,
+    "outputTokens": 82,
+    "cost": null
+   },
+   {
+    "inputTokens": 10534,
+    "outputTokens": 29,
+    "cost": null
+   },
+   {
+    "inputTokens": 10686,
+    "outputTokens": 93,
+    "cost": null
+   },
+   {
+    "inputTokens": 10846,
+    "outputTokens": 19,
+    "cost": null
+   },
+   {
+    "inputTokens": 10927,
+    "outputTokens": 66,
+    "cost": null
+   }
+  ]
+ },
+ {
+  "task": "large-file",
+  "engine": "typescript",
+  "repetition": 2,
+  "suiteHash": "bd905b4f81f0a9412b614631a36337723067574848c5f05b50ead1cf48675091",
+  "taskHash": "55a120909957198a82e321a13a4b2f7b66c2439b3d040e8722add9575c37d311",
+  "profile": {
+   "model": "gpt-6.1-sol",
+   "modelParametersHash": "0ee9af9860504ffabcb8e75e532e9a23000bc7f506f30d437f282f1a7ffb2c8d",
+   "agentManifestHash": "3f81a483dae7986b3c325f616c38b39b8109bc89cb679d6b014f47fcf2f30a57",
+   "permissionHash": "e91492e0c5725ee48100d89580bbaf2e3b651a229846a8035c862cb811619abd",
+   "toolSurfaceHash": "04c769ae52448d5fe45ea690050120cee624771222b1291088dc6d832c888106"
+  },
+  "revision": "fa6bac5cce43b6110bee5d96ce3657d8567c3a3f",
+  "artifactHash": "da57d05178aed54f7fd4d846814317d8143afa5a08a2fb2f9f7221cac2f06507",
+  "receiptHash": "2374f76c7e78e985c6331940be07ed0245b294d4faa42661311534d880e7ff88",
+  "outcome": "passed",
+  "elapsedMs": 22694,
+  "attempts": [
+   {
+    "inputTokens": 9917,
+    "outputTokens": 39,
+    "cost": null
+   },
+   {
+    "inputTokens": 10024,
+    "outputTokens": 88,
+    "cost": null
+   },
+   {
+    "inputTokens": 10411,
+    "outputTokens": 64,
+    "cost": null
+   },
+   {
+    "inputTokens": 10594,
+    "outputTokens": 83,
+    "cost": null
+   },
+   {
+    "inputTokens": 10800,
+    "outputTokens": 65,
+    "cost": null
+   },
+   {
+    "inputTokens": 10932,
+    "outputTokens": 24,
+    "cost": null
+   },
+   {
+    "inputTokens": 11018,
+    "outputTokens": 75,
+    "cost": null
+   }
+  ]
+ },
+ {
+  "task": "rename-symbol",
+  "engine": "typescript",
+  "repetition": 0,
+  "suiteHash": "bd905b4f81f0a9412b614631a36337723067574848c5f05b50ead1cf48675091",
+  "taskHash": "244db465af9f2320fb9297399084c4c2de91754c7ef63ea7c5ac984145c0fdc0",
+  "profile": {
+   "model": "gpt-6.1-sol",
+   "modelParametersHash": "a7bdb0095bc626e9db7b153009a289695c2a354887c80d523fb003a131a67724",
+   "agentManifestHash": "b54a50220491e3fed68c8a9104c8300078ce7deb15b0495a059d5b31d3c65475",
+   "permissionHash": "00481c0464d978ecfa1e2b8636039359494acf4885812def1ef73925fca7f6e6",
+   "toolSurfaceHash": "04c769ae52448d5fe45ea690050120cee624771222b1291088dc6d832c888106"
+  },
+  "revision": "fa6bac5cce43b6110bee5d96ce3657d8567c3a3f",
+  "artifactHash": "63da0f73b631cb8f45aadcb8ad088ba9ed6ee04dbde6d025e6a9f578238334ca",
+  "receiptHash": "e05efdf00693e6a190a170fae73d4c117f22a6869082cd9564ac32bbc82247c8",
+  "outcome": "passed",
+  "elapsedMs": 25656,
+  "attempts": [
+   {
+    "inputTokens": 9907,
+    "outputTokens": 17,
+    "cost": null
+   },
+   {
+    "inputTokens": 9981,
+    "outputTokens": 75,
+    "cost": null
+   },
+   {
+    "inputTokens": 10290,
+    "outputTokens": 67,
+    "cost": null
+   },
+   {
+    "inputTokens": 10660,
+    "outputTokens": 224,
+    "cost": null
+   },
+   {
+    "inputTokens": 10909,
+    "outputTokens": 62,
+    "cost": null
+   },
+   {
+    "inputTokens": 11264,
+    "outputTokens": 107,
+    "cost": null
+   }
+  ]
+ },
+ {
+  "task": "rename-symbol",
+  "engine": "typescript",
+  "repetition": 1,
+  "suiteHash": "bd905b4f81f0a9412b614631a36337723067574848c5f05b50ead1cf48675091",
+  "taskHash": "244db465af9f2320fb9297399084c4c2de91754c7ef63ea7c5ac984145c0fdc0",
+  "profile": {
+   "model": "gpt-6.1-sol",
+   "modelParametersHash": "55079b52174e7593c4ffd977057e874a973266aba7c6948d239df6b832f7964d",
+   "agentManifestHash": "bdca58a230c62ee2da6afa95caa25c5354d2e238aa29a241105395172af9539b",
+   "permissionHash": "36bb38dbb5c4a95939b2308be5deaf6f78f63f19748a29d2aaa1265bd5c731a7",
+   "toolSurfaceHash": "04c769ae52448d5fe45ea690050120cee624771222b1291088dc6d832c888106"
+  },
+  "revision": "fa6bac5cce43b6110bee5d96ce3657d8567c3a3f",
+  "artifactHash": "3a2c6cfc208caa72854fb25e7e8cc1d94de6525488ce9b269e9f8c63fba6468d",
+  "receiptHash": "9315e379a7c8bd8355aee4f2692a76a8682f75fefa03a6db56e1f89a576f4eac",
+  "outcome": "passed",
+  "elapsedMs": 22955,
+  "attempts": [
+   {
+    "inputTokens": 9907,
+    "outputTokens": 17,
+    "cost": null
+   },
+   {
+    "inputTokens": 9981,
+    "outputTokens": 86,
+    "cost": null
+   },
+   {
+    "inputTokens": 10396,
+    "outputTokens": 67,
+    "cost": null
+   },
+   {
+    "inputTokens": 10766,
+    "outputTokens": 225,
+    "cost": null
+   },
+   {
+    "inputTokens": 11016,
+    "outputTokens": 62,
+    "cost": null
+   },
+   {
+    "inputTokens": 11375,
+    "outputTokens": 100,
+    "cost": null
+   }
+  ]
+ },
+ {
+  "task": "rename-symbol",
+  "engine": "typescript",
+  "repetition": 2,
+  "suiteHash": "bd905b4f81f0a9412b614631a36337723067574848c5f05b50ead1cf48675091",
+  "taskHash": "244db465af9f2320fb9297399084c4c2de91754c7ef63ea7c5ac984145c0fdc0",
+  "profile": {
+   "model": "gpt-6.1-sol",
+   "modelParametersHash": "deab6afba5863a4dff50d6d6e4417c80b6f5139082309f5d48f1de027714cb8c",
+   "agentManifestHash": "fbd128dfc77cdc8378f05af90c31a03cf04247ebddbc6621b7f0438f7709eb5e",
+   "permissionHash": "9bdf83312a1c67ea676891c66967329246361ef56b9aa6a19a45f11764a4b76c",
+   "toolSurfaceHash": "04c769ae52448d5fe45ea690050120cee624771222b1291088dc6d832c888106"
+  },
+  "revision": "fa6bac5cce43b6110bee5d96ce3657d8567c3a3f",
+  "artifactHash": "435c2e6b5d82d18050ad65a8e5f003a79b6dd52037e4d402fd610c6549bb07ab",
+  "receiptHash": "85746af9f495c60926d2af5deceaa1cc50640c978dde9a408ad49b1e03d3f156",
+  "outcome": "passed",
+  "elapsedMs": 23066,
+  "attempts": [
+   {
+    "inputTokens": 9907,
+    "outputTokens": 17,
+    "cost": null
+   },
+   {
+    "inputTokens": 9981,
+    "outputTokens": 81,
+    "cost": null
+   },
+   {
+    "inputTokens": 10453,
+    "outputTokens": 101,
+    "cost": null
+   },
+   {
+    "inputTokens": 10888,
+    "outputTokens": 221,
+    "cost": null
+   },
+   {
+    "inputTokens": 11134,
+    "outputTokens": 66,
+    "cost": null
+   },
+   {
+    "inputTokens": 11493,
+    "outputTokens": 105,
+    "cost": null
+   }
+  ]
+ },
+ {
+  "task": "create-module",
+  "engine": "typescript",
+  "repetition": 0,
+  "suiteHash": "bd905b4f81f0a9412b614631a36337723067574848c5f05b50ead1cf48675091",
+  "taskHash": "4d67f12a4d53767d5219ff7c2739a21fb22df729363f19d7b0d03a12e6ed5049",
+  "profile": {
+   "model": "gpt-6.1-sol",
+   "modelParametersHash": "fcf4a6dfbe5adabca5eb9b955a634d6f8948459584d4dd35d3ee062d84a457eb",
+   "agentManifestHash": "f5d8e7dfc4ca295493744ff398617c29613d7a5eaa6b38ab7ce0778b43c2e1a3",
+   "permissionHash": "b56ee56619c7c636ad3d6a2e2efaad7fbafeca69f719c5e2b6ccba33d1b0e3fd",
+   "toolSurfaceHash": "04c769ae52448d5fe45ea690050120cee624771222b1291088dc6d832c888106"
+  },
+  "revision": "fa6bac5cce43b6110bee5d96ce3657d8567c3a3f",
+  "artifactHash": "f1b11d3f87177485427162547c23cff0e0847f40c09994da68e8f19cdb727ad3",
+  "receiptHash": "4f9dbb2115586fc3cb18a19d74d20b60dab2ef1f0d630667ab53a11f1fa1bf02",
+  "outcome": "passed",
+  "elapsedMs": 18347,
+  "attempts": [
+   {
+    "inputTokens": 9903,
+    "outputTokens": 17,
+    "cost": null
+   },
+   {
+    "inputTokens": 9968,
+    "outputTokens": 62,
+    "cost": null
+   },
+   {
+    "inputTokens": 10226,
+    "outputTokens": 21,
+    "cost": null
+   },
+   {
+    "inputTokens": 10397,
+    "outputTokens": 100,
+    "cost": null
+   },
+   {
+    "inputTokens": 10514,
+    "outputTokens": 19,
+    "cost": null
+   },
+   {
+    "inputTokens": 10595,
+    "outputTokens": 69,
+    "cost": null
+   }
+  ]
+ },
+ {
+  "task": "create-module",
+  "engine": "typescript",
+  "repetition": 1,
+  "suiteHash": "bd905b4f81f0a9412b614631a36337723067574848c5f05b50ead1cf48675091",
+  "taskHash": "4d67f12a4d53767d5219ff7c2739a21fb22df729363f19d7b0d03a12e6ed5049",
+  "profile": {
+   "model": "gpt-6.1-sol",
+   "modelParametersHash": "b54af231cb1d53111217c7f18672d7bf11808635f6422487986d249dd945face",
+   "agentManifestHash": "8606140beadd26181ff9172ef0fe63ae68753db02bbbf2d1ddcabb14284dd60d",
+   "permissionHash": "7a9ffdb6826f844c4dd6de287edbe2fec06493a99fba447fdcf82ab745a27552",
+   "toolSurfaceHash": "04c769ae52448d5fe45ea690050120cee624771222b1291088dc6d832c888106"
+  },
+  "revision": "fa6bac5cce43b6110bee5d96ce3657d8567c3a3f",
+  "artifactHash": "8372b0ea4b531e284378b7e4478c1aa09496cbb019ed56607cdbeffeb27265f4",
+  "receiptHash": "daee4d44f3ef7a1f4abe32d78d249c44cf10d5e0b85042b188db287a024bc880",
+  "outcome": "passed",
+  "elapsedMs": 18661,
+  "attempts": [
+   {
+    "inputTokens": 9903,
+    "outputTokens": 17,
+    "cost": null
+   },
+   {
+    "inputTokens": 9968,
+    "outputTokens": 62,
+    "cost": null
+   },
+   {
+    "inputTokens": 10226,
+    "outputTokens": 21,
+    "cost": null
+   },
+   {
+    "inputTokens": 10397,
+    "outputTokens": 118,
+    "cost": null
+   },
+   {
+    "inputTokens": 10535,
+    "outputTokens": 19,
+    "cost": null
+   },
+   {
+    "inputTokens": 10616,
+    "outputTokens": 68,
+    "cost": null
+   }
+  ]
+ },
+ {
+  "task": "create-module",
+  "engine": "typescript",
+  "repetition": 2,
+  "suiteHash": "bd905b4f81f0a9412b614631a36337723067574848c5f05b50ead1cf48675091",
+  "taskHash": "4d67f12a4d53767d5219ff7c2739a21fb22df729363f19d7b0d03a12e6ed5049",
+  "profile": {
+   "model": "gpt-6.1-sol",
+   "modelParametersHash": "3fd0824e6f7c16f03f6c7c3c8712e3cdba734212b46586c2a99d708019e950d2",
+   "agentManifestHash": "7733168c49ac4311930b9d73a3e908e04945b60ef462cabfbe17d97f47138bb7",
+   "permissionHash": "275df8de5914646131f3feb544aee72af18f386d8366a4b6383f99ce142c8b64",
+   "toolSurfaceHash": "04c769ae52448d5fe45ea690050120cee624771222b1291088dc6d832c888106"
+  },
+  "revision": "fa6bac5cce43b6110bee5d96ce3657d8567c3a3f",
+  "artifactHash": "85cb8d670a32c78b340f980b6555c692245499f6306e8da7dffaba20d691405f",
+  "receiptHash": "3dba685cfab621b7ff5571c0cabfe5aef105aafa5d70619953e0589c7f3a73b3",
+  "outcome": "passed",
+  "elapsedMs": 19188,
+  "attempts": [
+   {
+    "inputTokens": 9903,
+    "outputTokens": 17,
+    "cost": null
+   },
+   {
+    "inputTokens": 9968,
+    "outputTokens": 62,
+    "cost": null
+   },
+   {
+    "inputTokens": 10226,
+    "outputTokens": 21,
+    "cost": null
+   },
+   {
+    "inputTokens": 10397,
+    "outputTokens": 118,
+    "cost": null
+   },
+   {
+    "inputTokens": 10535,
+    "outputTokens": 19,
+    "cost": null
+   },
+   {
+    "inputTokens": 10616,
+    "outputTokens": 85,
+    "cost": null
+   }
+  ]
+ },
+ {
+  "task": "docs-sync",
+  "engine": "typescript",
+  "repetition": 0,
+  "suiteHash": "bd905b4f81f0a9412b614631a36337723067574848c5f05b50ead1cf48675091",
+  "taskHash": "81770a3ba16cad0c85823ad75587b559a670da480642d3491f6d5b8814394fee",
+  "profile": {
+   "model": "gpt-6.1-sol",
+   "modelParametersHash": "f8a7937646ee1d8933b58c4404465e11921288114f8bc71696ffb276d5a2490b",
+   "agentManifestHash": "17466177f29b1dbf1892f6eac8e009f606aba4869d33b00beeda91279a208a1e",
+   "permissionHash": "3500818614021abfb141c3ea1da99562b0bab90009c4cbd351e544ea8094b664",
+   "toolSurfaceHash": "04c769ae52448d5fe45ea690050120cee624771222b1291088dc6d832c888106"
+  },
+  "revision": "fa6bac5cce43b6110bee5d96ce3657d8567c3a3f",
+  "artifactHash": "f45c980517c6640ed715435e1fda1711f7f4db2b182c8823162edbf622d06300",
+  "receiptHash": "5a4f70b1871b8d7ee32679c4d323203bd2199b3b83daf38fbf2aa7e6c674528b",
+  "outcome": "passed",
+  "elapsedMs": 11547,
+  "attempts": [
+   {
+    "inputTokens": 9896,
+    "outputTokens": 18,
+    "cost": null
+   },
+   {
+    "inputTokens": 19789,
+    "outputTokens": 181,
+    "cost": null
+   },
+   {
+    "inputTokens": 20014,
+    "outputTokens": 37,
+    "cost": null
+   }
+  ]
+ },
+ {
+  "task": "docs-sync",
+  "engine": "typescript",
+  "repetition": 1,
+  "suiteHash": "bd905b4f81f0a9412b614631a36337723067574848c5f05b50ead1cf48675091",
+  "taskHash": "81770a3ba16cad0c85823ad75587b559a670da480642d3491f6d5b8814394fee",
+  "profile": {
+   "model": "gpt-6.1-sol",
+   "modelParametersHash": "c0a96b26728d4f06b514fb881945f90146c541b2561e5324f7206c7d84a28824",
+   "agentManifestHash": "86ddfeb7c66a98384f10f3affcd8944c08f44613c2140488b9f2680a434f79db",
+   "permissionHash": "6f6f7c4bcc13e5cd5668b602658728c60079eb004fe83227deb8c981ef8c0708",
+   "toolSurfaceHash": "04c769ae52448d5fe45ea690050120cee624771222b1291088dc6d832c888106"
+  },
+  "revision": "fa6bac5cce43b6110bee5d96ce3657d8567c3a3f",
+  "artifactHash": "f45c980517c6640ed715435e1fda1711f7f4db2b182c8823162edbf622d06300",
+  "receiptHash": "08d076cd6c3e338ef6f9c70578618579050107ed710f8fb6960c5f261d9f1681",
+  "outcome": "passed",
+  "elapsedMs": 14584,
+  "attempts": [
+   {
+    "inputTokens": 9896,
+    "outputTokens": 18,
+    "cost": null
+   },
+   {
+    "inputTokens": 19789,
+    "outputTokens": 203,
+    "cost": null
+   },
+   {
+    "inputTokens": 20038,
+    "outputTokens": 36,
+    "cost": null
+   }
+  ]
+ },
+ {
+  "task": "docs-sync",
+  "engine": "typescript",
+  "repetition": 2,
+  "suiteHash": "bd905b4f81f0a9412b614631a36337723067574848c5f05b50ead1cf48675091",
+  "taskHash": "81770a3ba16cad0c85823ad75587b559a670da480642d3491f6d5b8814394fee",
+  "profile": {
+   "model": "gpt-6.1-sol",
+   "modelParametersHash": "3ebce5fccaad043d31f47b09d7dfe67475e0989a9e7b4fdd4b037dc1a712289d",
+   "agentManifestHash": "dd73830a5ef7fe83520a8d50ac914f61e501121b9c12bfd26ecdf8bae5e24d8d",
+   "permissionHash": "fd5c154d3f3e9bf3ac3b7b23a6eb456bb5ea6aa61415bdaf222bad06efce1808",
+   "toolSurfaceHash": "04c769ae52448d5fe45ea690050120cee624771222b1291088dc6d832c888106"
+  },
+  "revision": "fa6bac5cce43b6110bee5d96ce3657d8567c3a3f",
+  "artifactHash": "f45c980517c6640ed715435e1fda1711f7f4db2b182c8823162edbf622d06300",
+  "receiptHash": "1776d1d395069d28205e7f34f0143cbb9b8e74e4599de4a28164c07f9e0a017c",
+  "outcome": "passed",
+  "elapsedMs": 12051,
+  "attempts": [
+   {
+    "inputTokens": 9896,
+    "outputTokens": 18,
+    "cost": null
+   },
+   {
+    "inputTokens": 19790,
+    "outputTokens": 186,
+    "cost": null
+   },
+   {
+    "inputTokens": 20016,
+    "outputTokens": 37,
+    "cost": null
+   }
+  ]
+ }
+]

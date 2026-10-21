@@ -1,0 +1,230 @@
+{
+  "sample": {
+    "task": "typed-repair",
+    "engine": "typescript",
+    "repetition": 2,
+    "suiteHash": "bd905b4f81f0a9412b614631a36337723067574848c5f05b50ead1cf48675091",
+    "taskHash": "6d7a5f740fead5293e5e5ffb8d80de678897f4422c739a10fa17ed3caffaaea2",
+    "profile": {
+      "model": "glm-5.3-flash",
+      "modelParametersHash": "43738fdbb9ba7d012691ce9d55c81398742a68a47fac4d01e2cb1b278e49ea32",
+      "agentManifestHash": "ef1556a5af47bdd330af8b0716d90e3beaeb3ec7ecf42996faadcd69aab558a5",
+      "permissionHash": "1e086753ce04df6e8ca69871d05e9137418ebb1ec9b92fb419261757e342dc04",
+      "toolSurfaceHash": "04c769ae52448d5fe45ea690050120cee624771222b1291088dc6d832c888106"
+    },
+    "revision": "fa6bac5cce43b6110bee5d96ce3657d8567c3a3f",
+    "artifactHash": "195852a9f4cb294b3937281d8a816bd942d8e8963c936a06aebea693f526d5f0",
+    "receiptHash": "365a36a301e895a88781aaf9248b8956fd6a954594c48a380dcdafd4c207e071",
+    "outcome": "passed",
+    "elapsedMs": 31764,
+    "attempts": [
+      {
+        "inputTokens": 13625,
+        "outputTokens": 32,
+        "cost": null
+      },
+      {
+        "inputTokens": 13873,
+        "outputTokens": 25,
+        "cost": null
+      },
+      {
+        "inputTokens": 14081,
+        "outputTokens": 155,
+        "cost": null
+      },
+      {
+        "inputTokens": 14303,
+        "outputTokens": 49,
+        "cost": null
+      },
+      {
+        "inputTokens": 14419,
+        "outputTokens": 52,
+        "cost": null
+      }
+    ]
+  },
+  "rejection": null,
+  "evidence": {
+    "engine": "typescript",
+    "revision": "fa6bac5cce43b6110bee5d96ce3657d8567c3a3f",
+    "task": "typed-repair",
+    "repetition": 2,
+    "terminal": "completed",
+    "error": null,
+    "receipts": [],
+    "attempts": [
+      {
+        "inputTokens": 13625,
+        "outputTokens": 32,
+        "cacheReadTokens": 0,
+        "cacheWriteTokens": null,
+        "reasoningTokens": 8,
+        "cost": null
+      },
+      {
+        "inputTokens": 13873,
+        "outputTokens": 25,
+        "cacheReadTokens": 11456,
+        "cacheWriteTokens": null,
+        "reasoningTokens": 0,
+        "cost": null
+      },
+      {
+        "inputTokens": 14081,
+        "outputTokens": 155,
+        "cacheReadTokens": 13824,
+        "cacheWriteTokens": null,
+        "reasoningTokens": 61,
+        "cost": null
+      },
+      {
+        "inputTokens": 14303,
+        "outputTokens": 49,
+        "cacheReadTokens": 14080,
+        "cacheWriteTokens": null,
+        "reasoningTokens": 0,
+        "cost": null
+      },
+      {
+        "inputTokens": 14419,
+        "outputTokens": 52,
+        "cacheReadTokens": 14272,
+        "cacheWriteTokens": null,
+        "reasoningTokens": 0,
+        "cost": null
+      }
+    ],
+    "phases": [
+      {
+        "phase": "step-start",
+        "atMs": 1792541682690,
+        "clock": "observed"
+      },
+      {
+        "phase": "tool-part",
+        "atMs": 1792541684198,
+        "clock": "observed"
+      },
+      {
+        "phase": "tool-part",
+        "atMs": 1792541684312,
+        "clock": "observed"
+      },
+      {
+        "phase": "step-start",
+        "atMs": 1792541688560,
+        "clock": "observed"
+      },
+      {
+        "phase": "tool-part",
+        "atMs": 1792541689004,
+        "clock": "observed"
+      },
+      {
+        "phase": "tool-part",
+        "atMs": 1792541689245,
+        "clock": "observed"
+      },
+      {
+        "phase": "step-start",
+        "atMs": 1792541693466,
+        "clock": "observed"
+      },
+      {
+        "phase": "first-output",
+        "atMs": 1792541697412,
+        "clock": "observed"
+      },
+      {
+        "phase": "tool-part",
+        "atMs": 1792541697675,
+        "clock": "observed"
+      },
+      {
+        "phase": "step-start",
+        "atMs": 1792541700046,
+        "clock": "observed"
+      },
+      {
+        "phase": "tool-part",
+        "atMs": 1792541701726,
+        "clock": "observed"
+      },
+      {
+        "phase": "step-start",
+        "atMs": 1792541705665,
+        "clock": "observed"
+      },
+      {
+        "phase": "first-output",
+        "atMs": 1792541706447,
+        "clock": "observed"
+      },
+      {
+        "phase": "exit",
+        "atMs": 1792541706558,
+        "clock": "observed"
+      },
+      {
+        "phase": "verified",
+        "atMs": 1792541706609,
+        "clock": "observed"
+      }
+    ],
+    "profile": {
+      "model": "glm-5.3-flash",
+      "modelParametersHash": "43738fdbb9ba7d012691ce9d55c81398742a68a47fac4d01e2cb1b278e49ea32",
+      "agentManifestHash": "ef1556a5af47bdd330af8b0716d90e3beaeb3ec7ecf42996faadcd69aab558a5",
+      "permissionHash": "1e086753ce04df6e8ca69871d05e9137418ebb1ec9b92fb419261757e342dc04",
+      "toolSurfaceHash": "04c769ae52448d5fe45ea690050120cee624771222b1291088dc6d832c888106"
+    },
+    "profileReceipts": 5,
+    "loops": {
+      "continuations": [],
+      "stopped": []
+    },
+    "toolCalls": 6,
+    "textHash": "1877602efe61570c04042f6d1a3ccff0907e6c83b1e72a01e52e9099529499a3",
+    "binarySha256": null,
+    "startedAtMs": 1792541674845,
+    "admissionMs": null,
+    "elapsedMs": 31764
+  },
+  "assessment": {
+    "suiteHash": "bd905b4f81f0a9412b614631a36337723067574848c5f05b50ead1cf48675091",
+    "taskHash": "6d7a5f740fead5293e5e5ffb8d80de678897f4422c739a10fa17ed3caffaaea2",
+    "artifactPass": true,
+    "unexpected": [],
+    "immutable": [
+      {
+        "file": "AGENTS.md",
+        "unchanged": true
+      },
+      {
+        "file": "package.json",
+        "unchanged": true
+      },
+      {
+        "file": "test/oracle.test.ts",
+        "unchanged": true
+      }
+    ],
+    "expected": [],
+    "check": {
+      "command": [
+        "bash",
+        "-lc",
+        "bun test test/oracle.test.ts && ! grep -q 'total: string' src/calc.ts && echo TYPED_REPAIR_OK"
+      ],
+      "exit": 0,
+      "stdoutHash": "efb93a940334384e8864956fb03b0b4baa725db808f1358cf83ce3a00cd53051",
+      "stderrHash": "02de04182ab54bb69d6034f945ec7ad70421a14a6cb20af7d210269c9a213969"
+    },
+    "executionVerdict": "unverified",
+    "requiredReceipts": [],
+    "answerContains": []
+  },
+  "answer": "The bug: `total` is annotated as `string` while `reduce` accumulates a number. Fixing the annotation:\nFixed: `total` annotation `string` → `number` in src/calc.ts:2. Exported signature unchanged; `bun test` passes (1/1) and `tsc --noEmit --strict` is clean."
+}

@@ -1,0 +1,273 @@
+{
+  "sample": {
+    "task": "rename-symbol",
+    "engine": "typescript",
+    "repetition": 1,
+    "suiteHash": "bd905b4f81f0a9412b614631a36337723067574848c5f05b50ead1cf48675091",
+    "taskHash": "244db465af9f2320fb9297399084c4c2de91754c7ef63ea7c5ac984145c0fdc0",
+    "profile": {
+      "model": "gpt-6.1-sol",
+      "modelParametersHash": "55079b52174e7593c4ffd977057e874a973266aba7c6948d239df6b832f7964d",
+      "agentManifestHash": "bdca58a230c62ee2da6afa95caa25c5354d2e238aa29a241105395172af9539b",
+      "permissionHash": "36bb38dbb5c4a95939b2308be5deaf6f78f63f19748a29d2aaa1265bd5c731a7",
+      "toolSurfaceHash": "04c769ae52448d5fe45ea690050120cee624771222b1291088dc6d832c888106"
+    },
+    "revision": "fa6bac5cce43b6110bee5d96ce3657d8567c3a3f",
+    "artifactHash": "3a2c6cfc208caa72854fb25e7e8cc1d94de6525488ce9b269e9f8c63fba6468d",
+    "receiptHash": "9315e379a7c8bd8355aee4f2692a76a8682f75fefa03a6db56e1f89a576f4eac",
+    "outcome": "passed",
+    "elapsedMs": 22955,
+    "attempts": [
+      {
+        "inputTokens": 9907,
+        "outputTokens": 17,
+        "cost": null
+      },
+      {
+        "inputTokens": 9981,
+        "outputTokens": 86,
+        "cost": null
+      },
+      {
+        "inputTokens": 10396,
+        "outputTokens": 67,
+        "cost": null
+      },
+      {
+        "inputTokens": 10766,
+        "outputTokens": 225,
+        "cost": null
+      },
+      {
+        "inputTokens": 11016,
+        "outputTokens": 62,
+        "cost": null
+      },
+      {
+        "inputTokens": 11375,
+        "outputTokens": 100,
+        "cost": null
+      }
+    ]
+  },
+  "rejection": null,
+  "evidence": {
+    "engine": "typescript",
+    "revision": "fa6bac5cce43b6110bee5d96ce3657d8567c3a3f",
+    "task": "rename-symbol",
+    "repetition": 1,
+    "terminal": "completed",
+    "error": null,
+    "receipts": [],
+    "attempts": [
+      {
+        "inputTokens": 9907,
+        "outputTokens": 17,
+        "cacheReadTokens": 0,
+        "cacheWriteTokens": 0,
+        "reasoningTokens": 0,
+        "cost": null
+      },
+      {
+        "inputTokens": 9981,
+        "outputTokens": 86,
+        "cacheReadTokens": 9728,
+        "cacheWriteTokens": 0,
+        "reasoningTokens": 0,
+        "cost": null
+      },
+      {
+        "inputTokens": 10396,
+        "outputTokens": 67,
+        "cacheReadTokens": 9856,
+        "cacheWriteTokens": 0,
+        "reasoningTokens": 0,
+        "cost": null
+      },
+      {
+        "inputTokens": 10766,
+        "outputTokens": 225,
+        "cacheReadTokens": 0,
+        "cacheWriteTokens": 0,
+        "reasoningTokens": 0,
+        "cost": null
+      },
+      {
+        "inputTokens": 11016,
+        "outputTokens": 62,
+        "cacheReadTokens": 10240,
+        "cacheWriteTokens": 0,
+        "reasoningTokens": 0,
+        "cost": null
+      },
+      {
+        "inputTokens": 11375,
+        "outputTokens": 100,
+        "cacheReadTokens": 10880,
+        "cacheWriteTokens": 0,
+        "reasoningTokens": 0,
+        "cost": null
+      }
+    ],
+    "phases": [
+      {
+        "phase": "step-start",
+        "atMs": 1792541479970,
+        "clock": "observed"
+      },
+      {
+        "phase": "tool-part",
+        "atMs": 1792541480087,
+        "clock": "observed"
+      },
+      {
+        "phase": "step-start",
+        "atMs": 1792541483250,
+        "clock": "observed"
+      },
+      {
+        "phase": "tool-part",
+        "atMs": 1792541483340,
+        "clock": "observed"
+      },
+      {
+        "phase": "tool-part",
+        "atMs": 1792541483406,
+        "clock": "observed"
+      },
+      {
+        "phase": "tool-part",
+        "atMs": 1792541483439,
+        "clock": "observed"
+      },
+      {
+        "phase": "tool-part",
+        "atMs": 1792541483460,
+        "clock": "observed"
+      },
+      {
+        "phase": "step-start",
+        "atMs": 1792541486058,
+        "clock": "observed"
+      },
+      {
+        "phase": "tool-part",
+        "atMs": 1792541486171,
+        "clock": "observed"
+      },
+      {
+        "phase": "tool-part",
+        "atMs": 1792541486202,
+        "clock": "observed"
+      },
+      {
+        "phase": "tool-part",
+        "atMs": 1792541486238,
+        "clock": "observed"
+      },
+      {
+        "phase": "step-start",
+        "atMs": 1792541488303,
+        "clock": "observed"
+      },
+      {
+        "phase": "first-output",
+        "atMs": 1792541491304,
+        "clock": "observed"
+      },
+      {
+        "phase": "tool-part",
+        "atMs": 1792541491357,
+        "clock": "observed"
+      },
+      {
+        "phase": "step-start",
+        "atMs": 1792541494270,
+        "clock": "observed"
+      },
+      {
+        "phase": "tool-part",
+        "atMs": 1792541494506,
+        "clock": "observed"
+      },
+      {
+        "phase": "tool-part",
+        "atMs": 1792541494531,
+        "clock": "observed"
+      },
+      {
+        "phase": "step-start",
+        "atMs": 1792541496282,
+        "clock": "observed"
+      },
+      {
+        "phase": "first-output",
+        "atMs": 1792541497893,
+        "clock": "observed"
+      },
+      {
+        "phase": "exit",
+        "atMs": 1792541497989,
+        "clock": "observed"
+      },
+      {
+        "phase": "verified",
+        "atMs": 1792541498044,
+        "clock": "observed"
+      }
+    ],
+    "profile": {
+      "model": "gpt-6.1-sol",
+      "modelParametersHash": "55079b52174e7593c4ffd977057e874a973266aba7c6948d239df6b832f7964d",
+      "agentManifestHash": "bdca58a230c62ee2da6afa95caa25c5354d2e238aa29a241105395172af9539b",
+      "permissionHash": "36bb38dbb5c4a95939b2308be5deaf6f78f63f19748a29d2aaa1265bd5c731a7",
+      "toolSurfaceHash": "04c769ae52448d5fe45ea690050120cee624771222b1291088dc6d832c888106"
+    },
+    "profileReceipts": 6,
+    "loops": {
+      "continuations": [],
+      "stopped": []
+    },
+    "toolCalls": 11,
+    "textHash": "56a071f94f782e704b43e840cfd3e84f1b1ec30585c9615671157b3d5697ed0c",
+    "binarySha256": null,
+    "startedAtMs": 1792541475089,
+    "admissionMs": null,
+    "elapsedMs": 22955
+  },
+  "assessment": {
+    "suiteHash": "bd905b4f81f0a9412b614631a36337723067574848c5f05b50ead1cf48675091",
+    "taskHash": "244db465af9f2320fb9297399084c4c2de91754c7ef63ea7c5ac984145c0fdc0",
+    "artifactPass": true,
+    "unexpected": [],
+    "immutable": [
+      {
+        "file": "AGENTS.md",
+        "unchanged": true
+      },
+      {
+        "file": "package.json",
+        "unchanged": true
+      },
+      {
+        "file": "test/oracle.test.ts",
+        "unchanged": true
+      }
+    ],
+    "expected": [],
+    "check": {
+      "command": [
+        "bash",
+        "-lc",
+        "bun test test/oracle.test.ts && grep -q 'sumEntries' src/core.ts && ! grep -rq 'computeTotal' src && echo RENAME_SYMBOL_OK"
+      ],
+      "exit": 0,
+      "stdoutHash": "19a31fc79d133078f30a44d52a6e61484b9a45e763850ad37d752ce423ab682a",
+      "stderrHash": "4027944166b380d1d686165328962e1f7312eca88add9b1763ee0305bc472ecc"
+    },
+    "executionVerdict": "unverified",
+    "requiredReceipts": [],
+    "answerContains": []
+  },
+  "answer": "The test imports `sumEntries` from `src/index.ts`, but the helper is currently named `computeTotal` and isn’t re-exported there. I’ll rename it, add the re-export, and keep `total` delegating to the same helper.\n\n\nImplemented the rename:\n- `src/core.ts`: renamed the exported helper `computeTotal` to `sumEntries`.\n- `src/index.ts`: updated the import and wrapper call, and re-exported `sumEntries`.\n- Preserved `total`’s behavior and left `test/oracle.test.ts` unchanged.\n\nVerified no `computeTotal` references remain.\n\nRan `bun test`: **1 passed, 0 failed**, with 2 assertions; exit code 0."
+}

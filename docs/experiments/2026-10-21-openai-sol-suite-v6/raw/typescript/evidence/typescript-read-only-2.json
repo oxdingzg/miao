@@ -1,0 +1,197 @@
+{
+  "sample": {
+    "task": "read-only",
+    "engine": "typescript",
+    "repetition": 2,
+    "suiteHash": "bd905b4f81f0a9412b614631a36337723067574848c5f05b50ead1cf48675091",
+    "taskHash": "99609eafd6e7256a96d31d1a93f377283455859087a19e39a86887127c47f3a4",
+    "profile": {
+      "model": "gpt-6.1-sol",
+      "modelParametersHash": "af54f6332060378a78747076725a3697540f8e93f1dfc17cb91ec2546819ee0f",
+      "agentManifestHash": "9a1a41e922796b2fac7d860bf9773bef523e3b8286f3803d3848dddb763760a6",
+      "permissionHash": "8f245f0cadc4090c7c9d57f2e50982f631a8fd8062b5a8b1778a6b656ffb199f",
+      "toolSurfaceHash": "04c769ae52448d5fe45ea690050120cee624771222b1291088dc6d832c888106"
+    },
+    "revision": "fa6bac5cce43b6110bee5d96ce3657d8567c3a3f",
+    "artifactHash": "1cf2a42baae11727ea2f82138beaf289f244a74bdb3488318abcfab660724792",
+    "receiptHash": "99da4437ff1275ef6c034fd7d9bc1834a1d5f9065c9e6850648ec43db45889a3",
+    "outcome": "passed",
+    "elapsedMs": 12314,
+    "attempts": [
+      {
+        "inputTokens": 9879,
+        "outputTokens": 21,
+        "cost": null
+      },
+      {
+        "inputTokens": 9948,
+        "outputTokens": 73,
+        "cost": null
+      },
+      {
+        "inputTokens": 10247,
+        "outputTokens": 19,
+        "cost": null
+      },
+      {
+        "inputTokens": 10342,
+        "outputTokens": 38,
+        "cost": null
+      }
+    ]
+  },
+  "rejection": null,
+  "evidence": {
+    "engine": "typescript",
+    "revision": "fa6bac5cce43b6110bee5d96ce3657d8567c3a3f",
+    "task": "read-only",
+    "repetition": 2,
+    "terminal": "completed",
+    "error": null,
+    "receipts": [],
+    "attempts": [
+      {
+        "inputTokens": 9879,
+        "outputTokens": 21,
+        "cacheReadTokens": 0,
+        "cacheWriteTokens": 0,
+        "reasoningTokens": 0,
+        "cost": null
+      },
+      {
+        "inputTokens": 9948,
+        "outputTokens": 73,
+        "cacheReadTokens": 9728,
+        "cacheWriteTokens": 0,
+        "reasoningTokens": 0,
+        "cost": null
+      },
+      {
+        "inputTokens": 10247,
+        "outputTokens": 19,
+        "cacheReadTokens": 9856,
+        "cacheWriteTokens": 0,
+        "reasoningTokens": 0,
+        "cost": null
+      },
+      {
+        "inputTokens": 10342,
+        "outputTokens": 38,
+        "cacheReadTokens": 10112,
+        "cacheWriteTokens": 0,
+        "reasoningTokens": 0,
+        "cost": null
+      }
+    ],
+    "phases": [
+      {
+        "phase": "step-start",
+        "atMs": 1792540685917,
+        "clock": "observed"
+      },
+      {
+        "phase": "tool-part",
+        "atMs": 1792540686275,
+        "clock": "observed"
+      },
+      {
+        "phase": "step-start",
+        "atMs": 1792540689262,
+        "clock": "observed"
+      },
+      {
+        "phase": "tool-part",
+        "atMs": 1792540689612,
+        "clock": "observed"
+      },
+      {
+        "phase": "tool-part",
+        "atMs": 1792540689648,
+        "clock": "observed"
+      },
+      {
+        "phase": "tool-part",
+        "atMs": 1792540689761,
+        "clock": "observed"
+      },
+      {
+        "phase": "step-start",
+        "atMs": 1792540691487,
+        "clock": "observed"
+      },
+      {
+        "phase": "tool-part",
+        "atMs": 1792540691659,
+        "clock": "observed"
+      },
+      {
+        "phase": "step-start",
+        "atMs": 1792540693485,
+        "clock": "observed"
+      },
+      {
+        "phase": "first-output",
+        "atMs": 1792540693983,
+        "clock": "observed"
+      },
+      {
+        "phase": "exit",
+        "atMs": 1792540694039,
+        "clock": "observed"
+      },
+      {
+        "phase": "verified",
+        "atMs": 1792540694042,
+        "clock": "observed"
+      }
+    ],
+    "profile": {
+      "model": "gpt-6.1-sol",
+      "modelParametersHash": "af54f6332060378a78747076725a3697540f8e93f1dfc17cb91ec2546819ee0f",
+      "agentManifestHash": "9a1a41e922796b2fac7d860bf9773bef523e3b8286f3803d3848dddb763760a6",
+      "permissionHash": "8f245f0cadc4090c7c9d57f2e50982f631a8fd8062b5a8b1778a6b656ffb199f",
+      "toolSurfaceHash": "04c769ae52448d5fe45ea690050120cee624771222b1291088dc6d832c888106"
+    },
+    "profileReceipts": 4,
+    "loops": {
+      "continuations": [],
+      "stopped": []
+    },
+    "toolCalls": 5,
+    "textHash": "de8d93a9518cf5ecde539823a534d8df49c5389983ea47ba27772c8e1b8303c6",
+    "binarySha256": null,
+    "startedAtMs": 1792540681728,
+    "admissionMs": null,
+    "elapsedMs": 12314
+  },
+  "assessment": {
+    "suiteHash": "bd905b4f81f0a9412b614631a36337723067574848c5f05b50ead1cf48675091",
+    "taskHash": "99609eafd6e7256a96d31d1a93f377283455859087a19e39a86887127c47f3a4",
+    "artifactPass": true,
+    "unexpected": [],
+    "immutable": [
+      {
+        "file": "AGENTS.md",
+        "unchanged": true
+      },
+      {
+        "file": "package.json",
+        "unchanged": true
+      },
+      {
+        "file": "src/catalog.ts",
+        "unchanged": true
+      }
+    ],
+    "expected": [],
+    "check": null,
+    "executionVerdict": "unverified",
+    "requiredReceipts": [],
+    "answerContains": [
+      "src/catalog.ts",
+      "configureRelay",
+      "7"
+    ]
+  },
+  "answer": "- **Source file:** `src/catalog.ts:1`\n- **Exported function:** `configureRelay`\n- **Capacity:** `7`\n\nNo files were modified."
+}

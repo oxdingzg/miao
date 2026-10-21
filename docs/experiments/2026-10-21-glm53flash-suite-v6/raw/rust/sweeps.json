@@ -1,0 +1,62 @@
+[
+ {
+  "engine": "rust",
+  "model": "glm-5.3-flash",
+  "revision": "fa6bac5cce43b6110bee5d96ce3657d8567c3a3f",
+  "binarySha256": "558e1b764ac07f7cf2ea4b68d2b8a80268bf05bc34a477f92350c87e96d542bd",
+  "tasks": [
+   "read-only",
+   "multi-read",
+   "small-edit",
+   "multi-file",
+   "test-repair"
+  ],
+  "repetitions": 3,
+  "suiteHash": "bd905b4f81f0a9412b614631a36337723067574848c5f05b50ead1cf48675091",
+  "startedAtMs": 1792542316687,
+  "finishedAtMs": 1792542765139,
+  "samples": 15,
+  "rejected": 0,
+  "chunk": "rs-1"
+ },
+ {
+  "engine": "rust",
+  "model": "glm-5.3-flash",
+  "revision": "fa6bac5cce43b6110bee5d96ce3657d8567c3a3f",
+  "binarySha256": "558e1b764ac07f7cf2ea4b68d2b8a80268bf05bc34a477f92350c87e96d542bd",
+  "tasks": [
+   "permission-denial",
+   "tool-error",
+   "stream-interruption",
+   "long-session",
+   "multi-line-edit"
+  ],
+  "repetitions": 3,
+  "suiteHash": "bd905b4f81f0a9412b614631a36337723067574848c5f05b50ead1cf48675091",
+  "startedAtMs": 1792542765657,
+  "finishedAtMs": 1792543755023,
+  "samples": 15,
+  "rejected": 0,
+  "chunk": "rs-2"
+ },
+ {
+  "engine": "rust",
+  "model": "glm-5.3-flash",
+  "revision": "fa6bac5cce43b6110bee5d96ce3657d8567c3a3f",
+  "binarySha256": "558e1b764ac07f7cf2ea4b68d2b8a80268bf05bc34a477f92350c87e96d542bd",
+  "tasks": [
+   "typed-repair",
+   "large-file",
+   "rename-symbol",
+   "create-module",
+   "docs-sync"
+  ],
+  "repetitions": 3,
+  "suiteHash": "bd905b4f81f0a9412b614631a36337723067574848c5f05b50ead1cf48675091",
+  "startedAtMs": 1792543755603,
+  "finishedAtMs": 1792544375622,
+  "samples": 15,
+  "rejected": 0,
+  "chunk": "rs-3"
+ }
+]

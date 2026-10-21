@@ -1,0 +1,166 @@
+{
+  "sample": {
+    "task": "tool-error",
+    "engine": "typescript",
+    "repetition": 1,
+    "suiteHash": "bd905b4f81f0a9412b614631a36337723067574848c5f05b50ead1cf48675091",
+    "taskHash": "d805c342f165a7193bf45347ebba54a0e1c0d75e9baffd9c5979d07f5b0fb09e",
+    "profile": {
+      "model": "gpt-6.1-sol",
+      "modelParametersHash": "3e0247b49c3567f4e68945550111580daa709f7560d89e7a7a7b51a3d52f3b9b",
+      "agentManifestHash": "9200fe0f15b210454a32ef898f06aede2c1f9ac45f35d4fa432058442e33d4e0",
+      "permissionHash": "44df135340aa7055fb9942e970913460f76037186f8a7a9c2dbfcd1ab1707900",
+      "toolSurfaceHash": "04c769ae52448d5fe45ea690050120cee624771222b1291088dc6d832c888106"
+    },
+    "revision": "fa6bac5cce43b6110bee5d96ce3657d8567c3a3f",
+    "artifactHash": "42a0929bd2c953adb3b7ae60782aeb2d7a5a7101e999baa01b6d9c9d85b7e5ad",
+    "receiptHash": "2302ec07b51ebf31de6f3b431ee1e47c480883ace431f162b691f669593fe48f",
+    "outcome": "passed",
+    "elapsedMs": 10772,
+    "attempts": [
+      {
+        "inputTokens": 9888,
+        "outputTokens": 18,
+        "cost": null
+      },
+      {
+        "inputTokens": 9939,
+        "outputTokens": 18,
+        "cost": null
+      },
+      {
+        "inputTokens": 10022,
+        "outputTokens": 9,
+        "cost": null
+      }
+    ]
+  },
+  "rejection": null,
+  "evidence": {
+    "engine": "typescript",
+    "revision": "fa6bac5cce43b6110bee5d96ce3657d8567c3a3f",
+    "task": "tool-error",
+    "repetition": 1,
+    "terminal": "completed",
+    "error": null,
+    "receipts": [
+      "tool.error"
+    ],
+    "attempts": [
+      {
+        "inputTokens": 9888,
+        "outputTokens": 18,
+        "cacheReadTokens": 6656,
+        "cacheWriteTokens": 0,
+        "reasoningTokens": 0,
+        "cost": null
+      },
+      {
+        "inputTokens": 9939,
+        "outputTokens": 18,
+        "cacheReadTokens": 9728,
+        "cacheWriteTokens": 0,
+        "reasoningTokens": 0,
+        "cost": null
+      },
+      {
+        "inputTokens": 10022,
+        "outputTokens": 9,
+        "cacheReadTokens": 9856,
+        "cacheWriteTokens": 0,
+        "reasoningTokens": 0,
+        "cost": null
+      }
+    ],
+    "phases": [
+      {
+        "phase": "step-start",
+        "atMs": 1792540999706,
+        "clock": "observed"
+      },
+      {
+        "phase": "tool-part",
+        "atMs": 1792540999894,
+        "clock": "observed"
+      },
+      {
+        "phase": "step-start",
+        "atMs": 1792541001809,
+        "clock": "observed"
+      },
+      {
+        "phase": "tool-part",
+        "atMs": 1792541002075,
+        "clock": "observed"
+      },
+      {
+        "phase": "step-start",
+        "atMs": 1792541004600,
+        "clock": "observed"
+      },
+      {
+        "phase": "first-output",
+        "atMs": 1792541004699,
+        "clock": "observed"
+      },
+      {
+        "phase": "exit",
+        "atMs": 1792541004765,
+        "clock": "observed"
+      },
+      {
+        "phase": "verified",
+        "atMs": 1792541004769,
+        "clock": "observed"
+      }
+    ],
+    "profile": {
+      "model": "gpt-6.1-sol",
+      "modelParametersHash": "3e0247b49c3567f4e68945550111580daa709f7560d89e7a7a7b51a3d52f3b9b",
+      "agentManifestHash": "9200fe0f15b210454a32ef898f06aede2c1f9ac45f35d4fa432058442e33d4e0",
+      "permissionHash": "44df135340aa7055fb9942e970913460f76037186f8a7a9c2dbfcd1ab1707900",
+      "toolSurfaceHash": "04c769ae52448d5fe45ea690050120cee624771222b1291088dc6d832c888106"
+    },
+    "profileReceipts": 3,
+    "loops": {
+      "continuations": [],
+      "stopped": []
+    },
+    "toolCalls": 2,
+    "textHash": "06e9aba69f9cf8492a8a385821a013489ffa02665e7bd007963f4edf1b412735",
+    "binarySha256": null,
+    "startedAtMs": 1792540993997,
+    "admissionMs": null,
+    "elapsedMs": 10772
+  },
+  "assessment": {
+    "suiteHash": "bd905b4f81f0a9412b614631a36337723067574848c5f05b50ead1cf48675091",
+    "taskHash": "d805c342f165a7193bf45347ebba54a0e1c0d75e9baffd9c5979d07f5b0fb09e",
+    "artifactPass": true,
+    "unexpected": [],
+    "immutable": [
+      {
+        "file": "AGENTS.md",
+        "unchanged": true
+      },
+      {
+        "file": "package.json",
+        "unchanged": true
+      },
+      {
+        "file": "alternate.txt",
+        "unchanged": true
+      }
+    ],
+    "expected": [],
+    "check": null,
+    "executionVerdict": "unverified",
+    "requiredReceipts": [
+      "tool.error"
+    ],
+    "answerContains": [
+      "RECOVERY_TOKEN_83"
+    ]
+  },
+  "answer": "RECOVERY_TOKEN_83"
+}

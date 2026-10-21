@@ -1,0 +1,233 @@
+{
+  "sample": {
+    "task": "read-only",
+    "engine": "typescript",
+    "repetition": 1,
+    "suiteHash": "bd905b4f81f0a9412b614631a36337723067574848c5f05b50ead1cf48675091",
+    "taskHash": "99609eafd6e7256a96d31d1a93f377283455859087a19e39a86887127c47f3a4",
+    "profile": {
+      "model": "gpt-6.1-sol",
+      "modelParametersHash": "96ba4d89747b0a80c407216cf3e2b33818fdec55e17bebc3dce97c1b390156a6",
+      "agentManifestHash": "deb99f00218989779f70c89567ba59e618b41300f7b5eba4b848eb83193e8744",
+      "permissionHash": "7f3b5ee12cc0d4f174b6df3fe0e7ba933bef7b6ed09cb0c63d9a8d488159e620",
+      "toolSurfaceHash": "04c769ae52448d5fe45ea690050120cee624771222b1291088dc6d832c888106"
+    },
+    "revision": "fa6bac5cce43b6110bee5d96ce3657d8567c3a3f",
+    "artifactHash": "1cf2a42baae11727ea2f82138beaf289f244a74bdb3488318abcfab660724792",
+    "receiptHash": "900d7c6b8acdf1a10e75e4c53a3efefc92ed8367d74c44dede21d7db6303f603",
+    "outcome": "passed",
+    "elapsedMs": 14755,
+    "attempts": [
+      {
+        "inputTokens": 9879,
+        "outputTokens": 22,
+        "cost": null
+      },
+      {
+        "inputTokens": 9915,
+        "outputTokens": 21,
+        "cost": null
+      },
+      {
+        "inputTokens": 9984,
+        "outputTokens": 19,
+        "cost": null
+      },
+      {
+        "inputTokens": 10097,
+        "outputTokens": 26,
+        "cost": null
+      },
+      {
+        "inputTokens": 10157,
+        "outputTokens": 19,
+        "cost": null
+      },
+      {
+        "inputTokens": 10252,
+        "outputTokens": 36,
+        "cost": null
+      }
+    ]
+  },
+  "rejection": null,
+  "evidence": {
+    "engine": "typescript",
+    "revision": "fa6bac5cce43b6110bee5d96ce3657d8567c3a3f",
+    "task": "read-only",
+    "repetition": 1,
+    "terminal": "completed",
+    "error": null,
+    "receipts": [],
+    "attempts": [
+      {
+        "inputTokens": 9879,
+        "outputTokens": 22,
+        "cacheReadTokens": 0,
+        "cacheWriteTokens": 0,
+        "reasoningTokens": 0,
+        "cost": null
+      },
+      {
+        "inputTokens": 9915,
+        "outputTokens": 21,
+        "cacheReadTokens": 9728,
+        "cacheWriteTokens": 0,
+        "reasoningTokens": 0,
+        "cost": null
+      },
+      {
+        "inputTokens": 9984,
+        "outputTokens": 19,
+        "cacheReadTokens": 9728,
+        "cacheWriteTokens": 0,
+        "reasoningTokens": 0,
+        "cost": null
+      },
+      {
+        "inputTokens": 10097,
+        "outputTokens": 26,
+        "cacheReadTokens": 9856,
+        "cacheWriteTokens": 0,
+        "reasoningTokens": 0,
+        "cost": null
+      },
+      {
+        "inputTokens": 10157,
+        "outputTokens": 19,
+        "cacheReadTokens": 9984,
+        "cacheWriteTokens": 0,
+        "reasoningTokens": 0,
+        "cost": null
+      },
+      {
+        "inputTokens": 10252,
+        "outputTokens": 36,
+        "cacheReadTokens": 9984,
+        "cacheWriteTokens": 0,
+        "reasoningTokens": 0,
+        "cost": null
+      }
+    ],
+    "phases": [
+      {
+        "phase": "step-start",
+        "atMs": 1792540670320,
+        "clock": "observed"
+      },
+      {
+        "phase": "tool-part",
+        "atMs": 1792540670487,
+        "clock": "observed"
+      },
+      {
+        "phase": "step-start",
+        "atMs": 1792540672371,
+        "clock": "observed"
+      },
+      {
+        "phase": "tool-part",
+        "atMs": 1792540672544,
+        "clock": "observed"
+      },
+      {
+        "phase": "step-start",
+        "atMs": 1792540674721,
+        "clock": "observed"
+      },
+      {
+        "phase": "tool-part",
+        "atMs": 1792540674910,
+        "clock": "observed"
+      },
+      {
+        "phase": "step-start",
+        "atMs": 1792540677289,
+        "clock": "observed"
+      },
+      {
+        "phase": "tool-part",
+        "atMs": 1792540677544,
+        "clock": "observed"
+      },
+      {
+        "phase": "step-start",
+        "atMs": 1792540679179,
+        "clock": "observed"
+      },
+      {
+        "phase": "tool-part",
+        "atMs": 1792540679270,
+        "clock": "observed"
+      },
+      {
+        "phase": "step-start",
+        "atMs": 1792540680617,
+        "clock": "observed"
+      },
+      {
+        "phase": "first-output",
+        "atMs": 1792540681108,
+        "clock": "observed"
+      },
+      {
+        "phase": "exit",
+        "atMs": 1792540681194,
+        "clock": "observed"
+      },
+      {
+        "phase": "verified",
+        "atMs": 1792540681201,
+        "clock": "observed"
+      }
+    ],
+    "profile": {
+      "model": "gpt-6.1-sol",
+      "modelParametersHash": "96ba4d89747b0a80c407216cf3e2b33818fdec55e17bebc3dce97c1b390156a6",
+      "agentManifestHash": "deb99f00218989779f70c89567ba59e618b41300f7b5eba4b848eb83193e8744",
+      "permissionHash": "7f3b5ee12cc0d4f174b6df3fe0e7ba933bef7b6ed09cb0c63d9a8d488159e620",
+      "toolSurfaceHash": "04c769ae52448d5fe45ea690050120cee624771222b1291088dc6d832c888106"
+    },
+    "profileReceipts": 6,
+    "loops": {
+      "continuations": [],
+      "stopped": []
+    },
+    "toolCalls": 5,
+    "textHash": "2501cc3affdafef7ee9603d0b5e76b6ff8c800c5c7b275dd5804e7533c2a5fb2",
+    "binarySha256": null,
+    "startedAtMs": 1792540666446,
+    "admissionMs": null,
+    "elapsedMs": 14755
+  },
+  "assessment": {
+    "suiteHash": "bd905b4f81f0a9412b614631a36337723067574848c5f05b50ead1cf48675091",
+    "taskHash": "99609eafd6e7256a96d31d1a93f377283455859087a19e39a86887127c47f3a4",
+    "artifactPass": true,
+    "unexpected": [],
+    "immutable": [
+      {
+        "file": "AGENTS.md",
+        "unchanged": true
+      },
+      {
+        "file": "package.json",
+        "unchanged": true
+      },
+      {
+        "file": "src/catalog.ts",
+        "unchanged": true
+      }
+    ],
+    "expected": [],
+    "check": null,
+    "executionVerdict": "unverified",
+    "requiredReceipts": [],
+    "answerContains": [
+      "src/catalog.ts",
+      "configureRelay",
+      "7"
+    ]
+  },
+  "answer": "- **Source file:** `src/catalog.ts`\n- **Exported function:** `configureRelay`\n- **Capacity:** `7`\n\nNo files were modified."
+}
