@@ -93,5 +93,14 @@ final class HostRegistryTests: XCTestCase {
         try await restarted.forget(host.id)
         let removed = try await restarted.snapshot()
         XCTAssertTrue(removed.hosts.isEmpty)
+        let hiddenAfterLogin = try await restarted.isAccountHostHidden(hubURL: host.hubURL, accountID: "signed-in-later", hostID: host.target.hostID)
+        XCTAssertTrue(hiddenAfterLogin, "Removing an old invitation while logged out must survive later login")
+        try await restarted.admitAuto(host: host, grant: grant)
+        let notReadmitted = try await restarted.snapshot()
+        XCTAssertTrue(notReadmitted.hosts.isEmpty)
+        try await restarted.begin(invitation)
+        try await restarted.approve(host: host, grant: grant, pairingID: invitation.pairingID)
+        let explicitlyRestored = try await restarted.isAccountHostHidden(hubURL: host.hubURL, accountID: "signed-in-later", hostID: host.target.hostID)
+        XCTAssertFalse(explicitlyRestored, "Explicit QR pairing restores the locally removed computer")
     }
 }
