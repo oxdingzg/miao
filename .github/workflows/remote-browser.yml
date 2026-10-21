@@ -9,7 +9,8 @@ permissions:
   contents: read
 jobs:
   browser:
-    runs-on: ubuntu-latest
+    # Playwright 1.59 does not support the Ubuntu 26.04 image behind latest.
+    runs-on: ubuntu-24.04
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
