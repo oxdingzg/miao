@@ -269,6 +269,9 @@ final class AppModel {
         do {
             let directory = try await account.hosts()
             guard epoch == accountEpoch, accountSignedIn else { throw HubAccountError.superseded }
+            let accountID = try await account.authenticatedAccountID()
+            let origin = await account.origin
+            try await registry.restoreAccountHosts(hubURL: origin, accountID: accountID)
             try await admitSignedInHosts(directory, account: account, epoch: epoch)
             guard epoch == accountEpoch, accountSignedIn else { return }
             await refreshDirectory()
@@ -495,6 +498,7 @@ final class AppModel {
         let key = try await identity.loadOrCreate()
         try await registry.synchronizeAccount(hubURL: origin, accountID: accountID, directory: directory)
         for host in directory where host.online && host.revokedAt == nil {
+            if try await registry.isAccountHostHidden(hubURL: origin, accountID: accountID, hostID: host.hostID) { continue }
             guard epoch == accountEpoch, accountSignedIn else { throw HubAccountError.superseded }
             let existing = hosts.first { $0.host.hubURL == origin && $0.host.target.hostID == host.hostID && $0.host.target.runtimeID == host.runtimeID }
             if let existing, existing.accountID == accountID, !existing.expired { continue }
@@ -696,9 +700,14 @@ final class AppModel {
 
     func forget(_ id: UUID) async {
         do {
-            await clients[id]?.close()
-            try await clients[id]?.store.clear()
-            try await registry?.forget(id)
+            let client = clients[id]
+            let accountID: String?
+            if let account, await account.origin == client?.record.host.hubURL {
+                accountID = try? await account.authenticatedAccountID()
+            } else { accountID = nil }
+            try await registry?.forget(id, accountID: accountID)
+            await client?.close()
+            try await client?.store.clear()
             clients[id] = nil
             try await reload()
         } catch { self.error = userMessage(error) }
