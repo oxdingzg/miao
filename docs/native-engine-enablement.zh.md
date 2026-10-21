@@ -13,7 +13,7 @@
 | 开关                     | 作用                                                                                                                                                                                                                      | 入口                                                                          |
 | ------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------- |
 | 引擎可发现               | 组装 native transport，`/api` 才能把会话路由到引擎。显式 `MIAO_ENGINE_BIN` 优先，否则按安装目录自动发现；`--capabilities` 必须报 `protocol >= 2`，显式指定的旧引擎直接启动失败，自动发现的旧引擎被忽略（TS 会话照常运行） | `packages/miao/src/engine/discovery.ts`、`packages/miao/src/server/server.ts` |
-| `MIAO_ENGINE_STORAGE`    | 新会话才落成 `engine: "rust"` 并分配引擎存储；没有它，即使 transport 已组装，新会话仍由 TS 创建                                                                                                                           | `packages/server/src/handlers/session.ts`                                     |
+| `engine.storage` / `MIAO_ENGINE_STORAGE` | 新会话才落成 `engine: "rust"` 并分配引擎存储。`engine.storage` 是全局配置键，环境变量优先；两者都没有时，即使 transport 已组装，新会话仍由 TS 创建                                                                          | `packages/schema/src/config.ts`、`packages/server/src/handlers/session.ts`    |
 | 可选 `engine.*` 全局配置 | 模型/endpoint、role、prompt cache、Responses 契约、MCP/LSP/hooks 配置路径、`context_limits` 等；环境变量逐键覆盖配置                                                                                                      | `packages/schema/src/config.ts`、`packages/miao/src/engine/native-engine.ts`  |
 
 绑定是 **per-Session 且不可变**的：placement 目录是路由唯一权威，跨引擎/跨存储/跨 Location 的接管被拒绝，老 TS 会话继续由 TS 拥有（`packages/core/src/session/engine-placement.ts`、`projector.ts`、`routing.ts`）。已有会话想换引擎只能走**离线迁移**（冻结、transfer bundle、导入后接管），没有 live 热切（`packages/core/src/session/migration.ts`、`transfer-bundle.ts`）。
@@ -92,6 +92,7 @@
 
 ## 6. 现在开启的最小建议
 
+0. 让新会话落在引擎上：在全局配置加入 `{ "engine": { "storage": "~/.local/share/miao/engines" } }`（`MIAO_ENGINE_STORAGE` 优先），再运行 `miao doctor` 确认发现到的二进制、协议和存储。已有会话保留原 placement。
 1. 确认自动压缩：产品生成路由时已自动派生 `context_limits`；使用显式路由时手动设置，否则长会话没有自动压缩。
 2. 决定 `engine.prompt_cache` 与 Responses cache/WebSocket 契约，只声明已验证的部署能力。
 3. 保持 `engine.tool_disclosure: full`；`compact` 是 opt-in，且文档明确不保证总成本更低。

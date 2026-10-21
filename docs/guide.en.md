@@ -106,12 +106,19 @@ overrides the path. Main fields:
 | `skills` / `commands` / `instructions` / `references` / `plugins` | skills, commands, instructions, references, plugins                                                                |
 | `watcher` / `attachments` / `tool_output` / `snapshots`           | watcher, attachments, tool-output thresholds, snapshots                                                            |
 | `providers`                                                       | custom providers/models (including native-currency `cost`)                                                         |
+| `engine`                                                          | native engine settings (global config only): `storage` places new Sessions on Rust; see [enabling the native engine](native-engine-enablement.en.md) |
 | `experimental`                                                    | experimental flags (e.g. Code Mode)                                                                                |
 
 **Native currency**: set `providers.<id>.models.<m>.cost` in the provider's own currency (for
 example DeepSeek in CNY) to estimate costs using the declared currency; `/currency` in the TUI switches the
 display currency (defaults to USD, with a static conversion for providers without a declared
 currency).
+
+**Native engine (opt-in)**: set `engine.storage` in the global config to place new Sessions on the
+Rust engine; `MIAO_ENGINE_STORAGE` overrides it. The release installs `miao-engine` next to the CLI,
+so no binary path is needed; existing Sessions keep their recorded engine. `miao doctor` reports the
+binary version, protocol and whether placement is on. Storage is separate from the TypeScript store,
+and `miao session migrate` moves an existing Session offline.
 
 ## 5. Daily use
 

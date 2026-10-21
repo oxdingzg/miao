@@ -7,6 +7,8 @@ import { Global } from "@miao/core/global"
 import { Effect } from "effect"
 import { sql } from "drizzle-orm"
 import { effectCmd } from "../effect-cmd"
+import { engineSettings, engineStorageRoot } from "@/engine/native-engine"
+import { resolveEngine } from "@/engine/discovery"
 import { cmd } from "./cmd"
 
 /**
@@ -84,7 +86,11 @@ interface Sample {
 const number = (value: unknown) => (typeof value === "number" && Number.isFinite(value) ? value : undefined)
 
 /** Reads one named `DiagnosticMetrics` reader's field out of a sample. */
-function metric<T>(sample: Sample, name: string, read: (value: Record<string, unknown>) => T | undefined): T | undefined {
+function metric<T>(
+  sample: Sample,
+  name: string,
+  read: (value: Record<string, unknown>) => T | undefined,
+): T | undefined {
   const value = sample.runtime?.find((entry) => entry.name === name)?.value
   if (typeof value !== "object" || value === null) return undefined
   return read(value as Record<string, unknown>)
@@ -238,7 +244,7 @@ function cpuFraction(samples: Sample[]) {
   const last = samples.at(-1)!
   const wall = last.t - first.t
   if (wall <= 0) return 0
-  const used = (last.cpuUser! + last.cpuSystem!) - (first.cpuUser! + first.cpuSystem!)
+  const used = last.cpuUser! + last.cpuSystem! - (first.cpuUser! + first.cpuSystem!)
   return used / 1000 / wall
 }
 
@@ -284,7 +290,9 @@ function analyze(samples: Sample[], pid: number): Finding[] {
       pid,
       message:
         `${pct(cpu)} of one core over the window` +
-        (growing ? " (database is growing, so this may be real work)" : " with no database growth — possible idle spin"),
+        (growing
+          ? " (database is growing, so this may be real work)"
+          : " with no database growth — possible idle spin"),
     })
   }
 
@@ -363,6 +371,27 @@ const SnapshotCommand = effectCmd({
         `  (${pct(1 - os.freemem() / os.totalmem())})`,
     )
 
+    console.log("\nnative engine:")
+    const engineConfiguration = yield* Effect.tryPromise({
+      try: () => engineSettings(Global.Path.config),
+      catch: () => undefined,
+    }).pipe(Effect.orElseSucceed(() => undefined))
+    const storage = engineStorageRoot(process.env, engineConfiguration)
+    console.log(
+      storage
+        ? `  storage:     ${storage}  (new Sessions place natively)`
+        : "  storage:     off  (set engine.storage in the global config or MIAO_ENGINE_STORAGE)",
+    )
+    const engine = yield* Effect.sync(() => resolveEngine()).pipe(Effect.orElseSucceed(() => undefined))
+    if (!engine) {
+      console.log("  binary:      not found  (TypeScript Sessions only)")
+      if (storage) console.log("  warning:     storage is on but no compatible engine binary was found")
+    } else {
+      console.log(
+        `  binary:      ${engine.binary}  protocol ${engine.capabilities.protocol}  schema ${engine.capabilities.schema}  version ${engine.capabilities.version}`,
+      )
+    }
+
     const db = yield* Database.Service
     const pragma = (name: string) => db.db.get<Record<string, unknown>>(sql.raw(`PRAGMA ${name}`)).pipe(Effect.orDie)
     const pageSize = Number((yield* pragma("page_size"))?.page_size ?? 0)
@@ -374,9 +403,11 @@ const SnapshotCommand = effectCmd({
     console.log(`  size:        ${mb(pageSize * pageCount)}   free: ${mb(pageSize * freelist)}`)
 
     const events = yield* db.db
-      .all<{ type: string; n: number; bytes: number }>(
-        sql`SELECT type, COUNT(*) AS n, SUM(LENGTH(data)) AS bytes FROM event GROUP BY type ORDER BY bytes DESC LIMIT 10`,
-      )
+      .all<{
+        type: string
+        n: number
+        bytes: number
+      }>(sql`SELECT type, COUNT(*) AS n, SUM(LENGTH(data)) AS bytes FROM event GROUP BY type ORDER BY bytes DESC LIMIT 10`)
       .pipe(Effect.orElseSucceed(() => [] as { type: string; n: number; bytes: number }[]))
     if (events.length > 0) {
       console.log("  event types:")
@@ -446,10 +477,7 @@ const ReportCommand = cmd({
         console.log(`\npid ${report.pid}${report.alive ? "" : " (exited)"} — ${report.samples} samples`)
         const line = (label: string, value: string) => console.log(`  ${label.padEnd(14)}${value}`)
         if (report.rss) {
-          line(
-            "rss",
-            `${mb(report.rss.first)} → ${mb(report.rss.last)}  (${mb(report.rss.slopePerMinute)}/min)`,
-          )
+          line("rss", `${mb(report.rss.first)} → ${mb(report.rss.last)}  (${mb(report.rss.slopePerMinute)}/min)`)
         }
         if (report.cpuFraction !== undefined) line("cpu", `${pct(report.cpuFraction)} of one core`)
         if (report.fds) line("fds", `${report.fds.first} → ${report.fds.last}`)

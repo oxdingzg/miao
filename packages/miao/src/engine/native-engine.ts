@@ -102,7 +102,8 @@ export const nativeEngineOptions = (
   }
   if (environment.MIAO_ENGINE_PROVIDER) merged.provider = environment.MIAO_ENGINE_PROVIDER
   if (environment.MIAO_ENGINE_ENDPOINT) merged.endpoint = environment.MIAO_ENGINE_ENDPOINT
-  if (environment.MIAO_ENGINE_MODEL_ROUTES) merged.modelRoutesConfigFile = path.resolve(environment.MIAO_ENGINE_MODEL_ROUTES)
+  if (environment.MIAO_ENGINE_MODEL_ROUTES)
+    merged.modelRoutesConfigFile = path.resolve(environment.MIAO_ENGINE_MODEL_ROUTES)
   if (environment.MIAO_ENGINE_FORMATTER_CONFIG)
     merged.formatterConfigFile = path.resolve(environment.MIAO_ENGINE_FORMATTER_CONFIG)
   if (environment.MIAO_ENGINE_FALLBACK_MODEL) merged.fallbackModel = environment.MIAO_ENGINE_FALLBACK_MODEL
@@ -170,10 +171,13 @@ export const nativeEngineOptions = (
  * process serving every Location, so project documents do not configure it.
  * Files later in {@link fileNames} win, matching the Config service merge.
  */
-export const engineSettings = async (
-  globalConfig: string,
-): Promise<Omit<EngineOptions, "db" | "workspace"> | undefined> => {
-  let settings: Omit<EngineOptions, "db" | "workspace"> | undefined = undefined
+export type EngineSettings = Omit<EngineOptions, "db" | "workspace"> & {
+  /** Root of the product-side native databases; presence opts new Sessions in. */
+  storage?: string
+}
+
+export const engineSettings = async (globalConfig: string): Promise<EngineSettings | undefined> => {
+  let settings: EngineSettings | undefined = undefined
   const documents: Config.Entry[] = []
   for (const name of Config.fileNames) {
     const file = path.join(globalConfig, name)
@@ -196,6 +200,7 @@ export const engineSettings = async (
       verifyCommand: engine.verify_command,
       mcpConfigFile: engine.mcp_config ? path.resolve(globalConfig, engine.mcp_config) : undefined,
       lspConfigFile: engine.lsp_config ? path.resolve(globalConfig, engine.lsp_config) : undefined,
+      storage: engine.storage ? path.resolve(globalConfig, engine.storage) : undefined,
       contextLimits: engine.context_limits,
     }
   }
@@ -219,6 +224,19 @@ export const compactionSettings = async (
     if (info) documents.push(new Config.Document({ type: "document", info }))
   }
   return Option.getOrUndefined(Config.decodeDocument(Config.merge(documents)))?.compaction
+}
+
+/**
+ * Root of the product-side native databases. An explicit environment variable
+ * wins over the global `engine.storage` key, mirroring every other engine
+ * setting; an absent root keeps new Sessions TypeScript-owned.
+ */
+export const engineStorageRoot = (
+  environment: Record<string, string | undefined> = process.env,
+  settings?: { storage?: string },
+): string | undefined => {
+  const root = environment.MIAO_ENGINE_STORAGE ?? settings?.storage
+  return root ? path.resolve(root) : undefined
 }
 
 /** Whether the composition root should build the native transport at all. */
@@ -256,6 +274,7 @@ export const fromOwners = (
       catalog: readonly Route[],
     ) => Effect.Effect<NativeAgentReferences, unknown>
   } = {},
+  storageRoot?: string,
 ): NativeEngine.Interface => {
   const connect = (input: { storage: string; location: Location.Ref; refreshContext?: boolean }) =>
     owners.get({
@@ -289,6 +308,7 @@ export const fromOwners = (
       ),
     )(await connection.client.request("model_catalog"))
   return {
+    storageRoot,
     command: (input) =>
       Effect.gen(function* () {
         if (!preparation.command)
@@ -797,28 +817,32 @@ const layer = Layer.effect(
         yield* Effect.ignore(owners.sweepTimers())
       }),
     ).pipe(Effect.forkScoped)
-    return fromOwners(owners, {
-      prompt: (input) =>
-        PromptMaterialization.prepare(input.prompt).pipe(
-          Effect.provideService(Blob.Service, blob),
-          Effect.provideService(FSUtil.Service, fs),
-        ),
-      command: (input, catalog, sessionAgent) =>
-        Effect.gen(function* () {
-          const { ProductCommand } = yield* Effect.promise(() => import("./product-command"))
-          return yield* ProductCommand.capture({
-            definition: input.definition,
-            arguments: input.arguments,
-            catalog,
-            sessionAgent,
-          })
-        }).pipe(Effect.provide(locations.get(input.location))),
-      agents: (input, mentions, catalog) =>
-        Effect.gen(function* () {
-          const { ProductCommand } = yield* Effect.promise(() => import("./product-command"))
-          return yield* ProductCommand.references(mentions, catalog)
-        }).pipe(Effect.provide(locations.get(input.location))),
-    })
+    return fromOwners(
+      owners,
+      {
+        prompt: (input) =>
+          PromptMaterialization.prepare(input.prompt).pipe(
+            Effect.provideService(Blob.Service, blob),
+            Effect.provideService(FSUtil.Service, fs),
+          ),
+        command: (input, catalog, sessionAgent) =>
+          Effect.gen(function* () {
+            const { ProductCommand } = yield* Effect.promise(() => import("./product-command"))
+            return yield* ProductCommand.capture({
+              definition: input.definition,
+              arguments: input.arguments,
+              catalog,
+              sessionAgent,
+            })
+          }).pipe(Effect.provide(locations.get(input.location))),
+        agents: (input, mentions, catalog) =>
+          Effect.gen(function* () {
+            const { ProductCommand } = yield* Effect.promise(() => import("./product-command"))
+            return yield* ProductCommand.references(mentions, catalog)
+          }).pipe(Effect.provide(locations.get(input.location))),
+      },
+      engineStorageRoot(process.env, settings),
+    )
   }),
 )
 

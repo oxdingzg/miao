@@ -2,7 +2,7 @@ import { expect, test } from "bun:test"
 import { mkdtempSync, writeFileSync, rmSync } from "node:fs"
 import path from "node:path"
 import { tmpdir } from "node:os"
-import { engineSettings, nativeEngineOptions } from "@/engine/native-engine"
+import { engineSettings, engineStorageRoot, nativeEngineOptions } from "@/engine/native-engine"
 import { engineArgs } from "@/engine/client"
 
 test("reads the engine section from the global config; later files win whole", async () => {
@@ -196,4 +196,15 @@ test("global MCP documents merge without requiring an engine section", async () 
   } finally {
     rmSync(dir, { recursive: true, force: true })
   }
+})
+
+test("reads engine.storage relative to the global config and lets the environment win", async () => {
+  const dir = mkdtempSync("/tmp/engine-config-")
+  writeFileSync(`${dir}/miao.json`, JSON.stringify({ engine: { storage: "./engines" } }))
+  const settings = await engineSettings(dir)
+  expect(settings?.storage).toBe(path.join(dir, "engines"))
+  expect(engineStorageRoot({}, settings)).toBe(path.join(dir, "engines"))
+  expect(engineStorageRoot({ MIAO_ENGINE_STORAGE: "/elsewhere" }, settings)).toBe("/elsewhere")
+  expect(engineStorageRoot({}, undefined)).toBeUndefined()
+  expect(engineStorageRoot({}, {})).toBeUndefined()
 })
