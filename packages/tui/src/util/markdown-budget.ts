@@ -6,19 +6,25 @@ const LIMIT = 12_000
 export function markdownCost(content: string) {
   let cost = 32
   let fence: string | undefined
-  for (const line of content.split("\n")) {
-    const marker = line.match(/^ {0,3}(`{3,}|~{3,})/)?.[1]
+  for (const line of content.split(/\r\n?|\n/)) {
+    const match = line.match(/^ {0,3}(`{3,}|~{3,})(.*)$/)
+    const marker = match?.[1]
     if (marker) {
-      if (!fence) {
+      if (!fence && !(marker[0] === "`" && match![2].includes("`"))) {
         fence = marker
         cost += 32
-      } else if (marker[0] === fence[0] && marker.length >= fence.length) fence = undefined
-      continue
+        continue
+      }
+      if (fence && marker[0] === fence[0] && marker.length >= fence.length && !match![2].trim()) {
+        fence = undefined
+        continue
+      }
     }
     if (fence || !line.trim()) continue
     // Deliberately overestimate: cells/list rows can each own multiple text
     // renderables, while ordinary prose and fenced code coalesce cheaply.
-    cost += 16 + (line.match(/(?<!\\)\|/g)?.length ?? 0) * 16
+    cost += 16 + (line.match(/[>|]/g)?.length ?? 0) * 16
+    cost += (line.match(/(?:[-*+]|\d+[.)])\s/g)?.length ?? 0) * 32
   }
   return cost
 }

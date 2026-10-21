@@ -24,3 +24,14 @@ test("dense tables/lists cost handles but long fenced code and prose do not", ()
   expect(markdownCost("```ts\n" + "a | b\n".repeat(10000) + "```\n")).toBeLessThan(100)
   expect(markdownCost("~~~\n```\n" + "a | b\n".repeat(10000) + "~~~\n")).toBeLessThan(100)
 })
+
+test("the conservative bound counts CR-only lines, nested markers and escaped table separators", () => {
+  expect(markdownCost("- item\r".repeat(1000))).toBeGreaterThan(12000)
+  expect(markdownCost("\\|a\\|b\\|\n".repeat(1000))).toBeGreaterThan(12000)
+  expect(markdownCost("- ".repeat(1000) + "nested")).toBeGreaterThan(12000)
+  expect(markdownCost(">".repeat(1000) + "nested")).toBeGreaterThan(12000)
+})
+
+test("an invalid backtick info string cannot hide a costly table from the budget", () => {
+  expect(markdownCost("```invalid`info\n" + "|a|b|\n".repeat(1000))).toBeGreaterThan(12000)
+})
