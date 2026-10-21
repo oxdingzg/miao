@@ -48,6 +48,22 @@ export const contextLimitsFor = (
   }
 }
 
+/** Resolve the served model for the compaction trigger on an explicit route.
+ * Best effort: without the configured model in the catalog (provider plugins
+ * not booted, worker or test contexts) the engine default stands. */
+const explicitModel = (catalog: Catalog.Interface, model: string | undefined) =>
+  Effect.gen(function* () {
+    const capable = (yield* catalog.model.available()).filter(
+      (candidate) => candidate.capabilities.tools && candidate.capabilities.output.includes("text"),
+    )
+    const selected = model
+      ? capable.filter(
+          (candidate) => `${candidate.providerID}/${candidate.id}` === model || candidate.api.id === model,
+        )
+      : [yield* catalog.model.default()]
+    return selected.length === 1 ? selected[0] : undefined
+  })
+
 /** Build exact host routes from the product catalog and active connections.
  * The manifest holds credential references only; refresh stays with its owner. */
 export const prepare = Effect.fn("Engine.productRoutes")(function* (
@@ -56,6 +72,17 @@ export const prepare = Effect.fn("Engine.productRoutes")(function* (
   compaction?: { readonly auto?: boolean; readonly threshold?: number; readonly buffer?: number },
 ) {
   const options: Partial<EngineOptions> = {}
+  // Explicit routes skip the generated manifest, but automatic compaction must
+  // still track the served model: derive the trigger from its window unless
+  // the operator configured engine.context_limits. The product-generated path
+  // re-derives below after the plugins boot, which also covers provider-plugin
+  // models this best-effort pass cannot see yet.
+  if (configuration.contextLimits === undefined) {
+    const catalog = Option.getOrUndefined(yield* Effect.serviceOption(Catalog.Service))
+    const model = catalog ? yield* explicitModel(catalog, configuration.model) : undefined
+    const derived = model ? contextLimitsFor(model, compaction) : undefined
+    if (derived) options.contextLimits = derived
+  }
   if (
     configuration.modelRoutesConfigFile ||
     configuration.provider ||
@@ -265,7 +292,7 @@ export const prepare = Effect.fn("Engine.productRoutes")(function* (
     )
   if (routes.length > 1024)
     return yield* Effect.fail(new EngineError("engine_routes_limit", "native product catalog exceeds 1024 routes"))
-  if (configuration.contextLimits === undefined) {
+  if (options.contextLimits === undefined) {
     const limits = contextLimitsFor(defaultModel, compaction)
     if (limits) options.contextLimits = limits
   }
@@ -327,6 +354,16 @@ function profile(model: ModelV2.Info, account: Account, integration: string) {
   const oauth = account.oauth
   if (model.providerID === "commandcode")
     return { provider: "openai-chat", endpoint: "https://api.commandcode.ai/provider/v1/chat/completions" }
+  if (model.api.type === "native") {
+    // Plugin catalogs without an AI SDK package (models.dev entries with no
+    // `npm`) serve an OpenAI-compatible HTTP API at the declared base URL.
+    // Map the endpoint onto the engine's openai-chat transport; credentials
+    // ride the same account resolution as any other integration.
+    const base = model.api.url?.replace(/\/$/, "")
+    if (!base) return undefined
+    const endpoint = base.endsWith("/chat/completions") ? base : `${base}/chat/completions`
+    return { provider: "openai-chat", endpoint }
+  }
   if (model.api.type !== "aisdk") return undefined
   if (model.api.package === "@ai-sdk/amazon-bedrock") {
     const url =
