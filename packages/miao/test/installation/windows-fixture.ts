@@ -109,7 +109,7 @@ Compress-Archive -LiteralPath (Join-Path $env:FIXTURE_OLD_DIR 'miao.exe') -Desti
     // alive, and the backup stack gains the upgraded bytes for a redo.
     const rollback = await upgrade("1.2.2")
     assert.equal(rollback.code, 0, `${rollback.stderr} — served: ${requests.join(", ")}`)
-    assert.equal(await Bun.file(executable).arrayBuffer(), original, "rollback restores the previous bytes")
+    assert.deepEqual(await Bun.file(executable).arrayBuffer(), original, "rollback restores the previous bytes")
     assert.equal(old.exitCode, null, "the original process must survive the rollback swap")
     assert.equal((await readdir(installation)).filter((name) => name.startsWith(`${filename}.bak-`)).length, 2)
     const redownloaded = await upgrade("1.2.3")
