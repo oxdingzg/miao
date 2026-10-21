@@ -88,7 +88,7 @@ try {
       break
     } catch {
       if ($attempt -ge 8) { throw }
-      Get-ChildItem -LiteralPath $stage -Exclude release.zip | Remove-Item -Recurse -Force -ErrorAction SilentlyContinue
+      Get-ChildItem -LiteralPath $stage | Where-Object { $_.Name -ne 'release.zip' } | Remove-Item -Recurse -Force -ErrorAction SilentlyContinue
       Start-Sleep -Milliseconds (300 * $attempt)
     }
   }
