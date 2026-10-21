@@ -21,6 +21,8 @@ pub struct Marker {
     pub before: bool,
     #[serde(default)]
     pub after: bool,
+    #[serde(default)]
+    pub definition: bool,
 }
 
 impl Marker {
@@ -28,6 +30,7 @@ impl Marker {
         match kind {
             "before" => self.before,
             "after" => self.after,
+            "definition" => self.definition,
             _ => false,
         }
     }

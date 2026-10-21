@@ -72,10 +72,17 @@ async fn workspace(work: &str) -> (tempfile::TempDir, Store, Runtime, mpsc::Rece
         "before" => Some(Marker {
             before: true,
             after: false,
+            definition: false,
         }),
         "both" => Some(Marker {
             before: true,
             after: true,
+            definition: false,
+        }),
+        "definition" => Some(Marker {
+            before: false,
+            after: false,
+            definition: true,
         }),
         _ => None,
     };
@@ -193,5 +200,79 @@ async fn unmarked_tools_never_dispatch() {
     let (_dir, store, runtime, mut bridge_rx) = workspace("none").await;
     history_contains(&store, "alpha").await;
     assert!(bridge_rx.try_recv().is_err());
+    runtime.shutdown().await;
+}
+
+/// A `definition` marker routes the assembled tool surface through the host:
+/// a deny verdict drops the tool, a transformed definition replaces it, and
+/// each verdict is journaled.
+#[tokio::test]
+async fn plugin_definition_hooks_review_the_tool_surface() {
+    let (_dir, store, runtime, mut bridge_rx) = workspace("definition").await;
+
+    // The harness already admitted the prompt: every surfaced tool is reviewed before the provider turn: the first
+    // dispatch is denied, the second transformed, the rest pass through.
+    let mut denied: Option<String> = None;
+    let mut transformed: Option<String> = None;
+    loop {
+        let request =
+            match tokio::time::timeout(std::time::Duration::from_millis(500), bridge_rx.recv())
+                .await
+            {
+                Ok(Some(request)) => request,
+                _ => break,
+            };
+        let bridge_id = request["bridge_id"].as_u64().expect("bridge id");
+        let params = request["params"].clone();
+        if params["kind"] != "definition" {
+            assert!(runtime.deliver_product_reply(bridge_id, json!({"result": {}})));
+            continue;
+        }
+        assert!(params["definition"].is_object());
+        if denied.is_none() {
+            denied = Some(params["tool"].as_str().unwrap().to_owned());
+            assert!(runtime.deliver_product_reply(
+                bridge_id,
+                json!({"result": {"deny": "not allowed for this session"}})
+            ));
+            continue;
+        }
+        if transformed.is_none() {
+            let reviewed = format!("{}_reviewed", params["tool"].as_str().unwrap());
+            transformed = Some(reviewed.clone());
+            assert!(runtime.deliver_product_reply(
+                bridge_id,
+                json!({"result": {"definition": {
+                    "name": reviewed,
+                    "description": "reviewed",
+                    "input_schema": {"type": "object", "properties": {}}
+                }}})
+            ));
+            continue;
+        }
+        assert!(runtime.deliver_product_reply(bridge_id, json!({"result": {}})));
+    }
+
+    let denied_tool = denied.expect("at least one definition dispatch");
+    // Verdicts land in the event journal, not the message history.
+    let deadline = tokio::time::Instant::now() + std::time::Duration::from_secs(10);
+    loop {
+        let events = store.events("s", 0, 1000).await.unwrap();
+        let definition = events.iter().find(|event| {
+            event.kind == "hook_tool.completed"
+                && event.data["kind"] == "definition"
+                && event.data["outcome"] == "denied"
+                && event.data["tool"] == json!(denied_tool)
+        });
+        if let Some(event) = definition {
+            assert_eq!(event.data["reason"], "not allowed for this session");
+            break;
+        }
+        assert!(
+            tokio::time::Instant::now() < deadline,
+            "definition verdict never journaled: {events:?}"
+        );
+        tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+    }
     runtime.shutdown().await;
 }

@@ -22,7 +22,7 @@ const store = {
   get: () => Effect.succeed({ agent: AgentV2.ID.make("build") }),
 } as unknown as SessionStore.Interface
 
-const call = (kind: "before" | "after", extra: Record<string, unknown> = {}) => ({
+const call = (kind: "before" | "after" | "definition", extra: Record<string, unknown> = {}) => ({
   sessionID: "ses_plugin_hooks",
   kind,
   tool: "echo",
@@ -43,11 +43,34 @@ describe("PluginHooks", () => {
       const options = yield* PluginHooks.prepare(configuration, { store })
       expect(options.pluginHooksFile).toBeString()
       const marker = yield* Effect.promise(() => Bun.file(options.pluginHooksFile!).json())
-      expect(marker).toEqual({ before: true, after: false })
+      expect(marker).toEqual({ before: true, after: false, definition: false })
       const verdict = yield* Effect.promise(() =>
         options.onHookTool!(call("before", { args: { text: "original" } })),
       )
       expect(verdict).toEqual({ args: { text: "rewritten" } })
+    }),
+  )
+
+  it.effect("answers a definition review and passes an untouched tool through", () =>
+    Effect.gen(function* () {
+      const plugins = yield* ToolPlugins.Service
+      const scope = yield* Scope.make()
+      yield* plugins.hook
+        .definition((event) => {
+          event.description = "reviewed by the plugin"
+        })
+        .pipe(Scope.provide(scope))
+      const options = yield* PluginHooks.prepare(configuration, { store })
+      const verdict = yield* Effect.promise(() =>
+        options.onHookTool!(
+          call("definition", {
+            definition: { name: "read_file", description: "original", input_schema: {} },
+          }),
+        ),
+      )
+      expect(verdict).toEqual({
+        definition: { name: "echo", description: "reviewed by the plugin", input_schema: {} },
+      })
     }),
   )
 

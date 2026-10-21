@@ -1555,6 +1555,10 @@ async fn execute(
                 tool.input_schema["properties"]["agent"] = json!({"type":"string","enum":named.iter().map(|agent|&agent.name).collect::<Vec<_>>()});
             }
         }
+        // The plugin `tool.definition` family reviews the assembled surface
+        // before it reaches the model, the same reverse dispatch the
+        // before/after families use around calls.
+        let tools = dispatch_plugin_definitions(inner, session, run, tools).await?;
         let request = ModelRequest {
             system,
             messages: history,
@@ -3089,6 +3093,67 @@ impl HookTool<'_> {
             .await
             .map(|_| ())
     }
+}
+
+/// Reverse-dispatch the plugin `tool.definition` family over the assembled
+/// agent surface. A `deny` verdict drops the tool; a `definition` verdict
+/// replaces it. A failed dispatch keeps the tool, matching the TypeScript
+/// runner's rule that one failing plugin cannot break a provider turn.
+async fn dispatch_plugin_definitions(
+    inner: &Inner,
+    session: &str,
+    run: &str,
+    tools: Vec<crate::protocol::ToolDefinition>,
+) -> Result<Vec<crate::protocol::ToolDefinition>, Error> {
+    if !plugin_marked(inner, "definition") {
+        return Ok(tools);
+    }
+    let bridge = inner.product.read().unwrap().bridge.clone();
+    let Some(bridge) = bridge else {
+        return Ok(tools);
+    };
+    let mut surfaced = Vec::with_capacity(tools.len());
+    for tool in tools {
+        let started = std::time::Instant::now();
+        let hook = HookTool {
+            inner,
+            session,
+            run,
+            call: "",
+            kind: "definition",
+            tool: &tool.name,
+        };
+        let payload = serde_json::to_value(&tool)
+            .map(|value| json!({"definition": value}))
+            .unwrap_or_else(|_| json!({}));
+        match bridge
+            .call_hook(session, "definition", &tool.name, "", payload)
+            .await
+        {
+            Ok(reply) => {
+                if let Some(reason) = reply.get("deny").and_then(Value::as_str) {
+                    hook.record("denied", Some(reason), started).await?;
+                    continue;
+                }
+                hook.record("completed", None, started).await?;
+                let mut reviewed = tool;
+                if let Some(transformed) = reply.get("definition") {
+                    if let Ok(parsed) = serde_json::from_value::<crate::protocol::ToolDefinition>(
+                        transformed.clone(),
+                    ) {
+                        reviewed = parsed;
+                    }
+                }
+                surfaced.push(reviewed);
+            }
+            Err(error) => {
+                hook.record("failed", Some(&error.to_string()), started)
+                    .await?;
+                surfaced.push(tool);
+            }
+        }
+    }
+    Ok(surfaced)
 }
 
 /// Reverse-dispatch the plugin `tool.execute.before` family. `None` allows the
