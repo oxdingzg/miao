@@ -855,6 +855,7 @@ private struct SessionSelectionView: View {
                                 Text(choices.models[index].providerID + " / " + choices.models[index].name).tag(index)
                             }
                         }.pickerStyle(.navigationLink).accessibilityIdentifier("modelChoice")
+                            .accessibilityValue(model.map { $0.providerID + " / " + $0.name } ?? "请选择")
                         if let model {
                             Picker("变体", selection: $variant) {
                                 Text("默认").tag("")
