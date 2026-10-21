@@ -570,6 +570,20 @@ export type SessionRunFailure = {
  * Without it a client only ever sees the run start, so a failed native drain
  * would leave the session busy and show no error.
  */
+/** The engine's structured expired-credential failure, parsed from the run
+ * failure message (`credential <id> (<integration>) is expired; …`). The
+ * identity lets the owning broker refresh without re-resolving the binding. */
+export function translateExpiredCredential(event: EngineEvent): { id: string; integration: string } | undefined {
+  if (event.kind !== "stop_failure") return undefined
+  const data = event.data
+  if (typeof data !== "object" || data === null) return undefined
+  const message = readNonEmptyString(data, "message")
+  if (message === undefined) return undefined
+  const match = /^credential (.+?) \((.+?)\) is expired/.exec(message)
+  if (!match) return undefined
+  return { id: match[1], integration: match[2] }
+}
+
 export function translateRunFailure(event: EngineEvent): SessionRunFailure | undefined {
   if (event.kind !== "stop_failure") return undefined
   if (!hasRecordedTime(event)) return undefined

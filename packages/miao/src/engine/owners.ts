@@ -3,7 +3,7 @@ import { ClientEvents } from "@miao/server/client-events"
 import { Effect, Scope, Semaphore } from "effect"
 import { EngineError, type EngineOptions } from "./client"
 import { connectEngine } from "./connection"
-import type { EnginePricing } from "./session"
+import type { CredentialExpiredTrigger, EnginePricing } from "./session"
 
 /** Native children belong to the server scope, never to an individual HTTP request. */
 export const makeEngineOwners = Effect.fn("Engine.owners")(function* (
@@ -13,6 +13,7 @@ export const makeEngineOwners = Effect.fn("Engine.owners")(function* (
       options: Partial<EngineOptions>
       refresh: Effect.Effect<void, EngineError>
       pricing?: EnginePricing
+      onCredentialExpired?: CredentialExpiredTrigger
     },
     EngineError,
     Scope.Scope
@@ -29,6 +30,7 @@ export const makeEngineOwners = Effect.fn("Engine.owners")(function* (
       location: Location.Ref
       refresh: Effect.Effect<void, EngineError>
       pricing?: EnginePricing
+      onCredentialExpired?: CredentialExpiredTrigger
       connection: Effect.Success<ReturnType<typeof connectEngine>>
     }
   >()
@@ -83,6 +85,7 @@ export const makeEngineOwners = Effect.fn("Engine.owners")(function* (
             location: input.location,
           },
           context.pricing,
+          context.onCredentialExpired,
         ).pipe(Effect.provideService(Scope.Scope, scope), Effect.provideService(ClientEvents.Service, clients))
         owners.set(input.storage, {
           input,
@@ -90,6 +93,7 @@ export const makeEngineOwners = Effect.fn("Engine.owners")(function* (
           engineID: input.engineID,
           location: { ...input.location },
           pricing: context.pricing,
+          onCredentialExpired: context.onCredentialExpired,
           connection,
         })
         return connection
