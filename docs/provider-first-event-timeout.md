@@ -37,7 +37,9 @@ retained, and interruption does not trigger retry.
 
 The runner creates one activity tracker per provider turn and resets its phase
 on every subscription, so a retried attempt is judged on its own connection
-rather than inheriting the first attempt's progress or silence.
+rather than inheriting the first attempt's progress or silence. The native
+engine applies the same three phases and environment variables to its own
+provider streams.
 
 `packages/core/test/session-first-byte-guard.test.ts` covers each phase, the
 request-size allowance, retry re-subscription, connection-pool retirement,

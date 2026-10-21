@@ -230,8 +230,10 @@ pub(crate) async fn try_stream<P: Parser>(
         ));
     }
     let (deadline, attempt) = crate::provider::transport_attempt()?;
-    let first_event = crate::first_event::FirstEventDeadline::default();
-    let request_deadline = first_event.0.map_or(deadline, |first| deadline.min(first));
+    let watchdogs = crate::first_event::Watchdogs::at(wire.len());
+    let request_deadline = watchdogs
+        .header_deadline()
+        .map_or(deadline, |header| deadline.min(header));
     let connect_deadline =
         request_deadline.min(tokio::time::Instant::now() + Duration::from_secs(15));
     let reused = slot.socket.is_some();
@@ -351,7 +353,7 @@ pub(crate) async fn try_stream<P: Parser>(
         .body(reqwest::Body::wrap_stream(stream))
         .map_err(|_| ProviderError::Transport)?;
     let mut response = reqwest::Response::from(response);
-    response.extensions_mut().insert(first_event);
+    response.extensions_mut().insert(watchdogs);
     let result = read_stream(response, progress.clone(), cancel.clone(), parser).await;
     let capture = capture.lock().unwrap();
     let _=progress.try_send(json!({"kind":"transport.websocket","reused":reused,"delta":delta,"json_sent_bytes":wire.len(),"json_received_bytes":capture.received}));
