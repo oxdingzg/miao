@@ -1272,6 +1272,13 @@ async fn drain(
             json!({"run_id":run,"reason":reason,"message":message}),
         )
         .await?;
+    // A settled run must not leave the host executing product-tool calls for a
+    // parent that is gone: cancel, failure, and clean end each notify every
+    // call still pending on the bridge.
+    let bridge = inner.product.read().unwrap().bridge.clone();
+    if let Some(bridge) = bridge {
+        bridge.cancel_session(&session).await;
+    }
     result
 }
 
@@ -2077,15 +2084,32 @@ command: None,
                                         .bridge
                                         .clone();
                                     match bridge {
-                                        Some(bridge) => match bridge.call(session, name, input).await {
-                                            Ok(output) => {
-                                                if output.get("moved").is_some_and(|value| value.as_bool() == Some(true)) {
-                                                    moved = true;
+                                        Some(bridge) => {
+                                            // The host names a real permission source from
+                                            // the calling assistant message and tool call; a
+                                            // cancelled run must not leave it executing for a
+                                            // parent that is gone.
+                                            let context = crate::product::CallContext {
+                                                message_seq: assistant_boundary,
+                                                call_id: id.to_owned(),
+                                            };
+                                            tokio::select! {
+                                                biased;
+                                                _ = cancel.cancelled() => {
+                                                    bridge.cancel_session(session).await;
+                                                    Err(ToolError::Interrupted)
                                                 }
-                                                Ok(output)
+                                                outcome = bridge.call(session, name, input, context) => match outcome {
+                                                    Ok(output) => {
+                                                        if output.get("moved").is_some_and(|value| value.as_bool() == Some(true)) {
+                                                            moved = true;
+                                                        }
+                                                        Ok(output)
+                                                    }
+                                                    Err(error) => Err(error),
+                                                },
                                             }
-                                            Err(error) => Err(error),
-                                        },
+                                        }
                                         None => Err(ToolError::Unsupported),
                                     }
                                 }

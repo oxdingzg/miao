@@ -33,6 +33,22 @@ impl Marker {
     }
 }
 
+/// The calling tool-call identity a product-tool dispatch carries, so the host
+/// can name a real permission source (`message_seq` + `call_id`) instead of a
+/// standing-policy guess. `message_seq` is the assistant message's durable seq;
+/// the host derives its product message id from it.
+#[derive(Clone, Debug)]
+pub struct CallContext {
+    pub message_seq: u64,
+    pub call_id: String,
+}
+
+pub(crate) struct Pending {
+    session: String,
+    method: String,
+    reply: oneshot::Sender<Value>,
+}
+
 /// Host-provided product tool set plus the reverse bridge. Held behind an
 /// `Arc<RwLock<…>>` so a shared runtime handle can register it at startup.
 #[derive(Default)]
@@ -50,7 +66,7 @@ impl State {
 #[derive(Clone)]
 pub struct Bridge {
     tx: mpsc::Sender<Value>,
-    pending: Arc<Mutex<HashMap<u64, oneshot::Sender<Value>>>>,
+    pending: Arc<Mutex<HashMap<u64, Pending>>>,
     next: Arc<AtomicU64>,
 }
 
@@ -63,7 +79,7 @@ impl Bridge {
         }
     }
 
-    pub(crate) fn pending(&self) -> &Mutex<HashMap<u64, oneshot::Sender<Value>>> {
+    pub(crate) fn pending(&self) -> &Mutex<HashMap<u64, Pending>> {
         &self.pending
     }
 
@@ -73,10 +89,18 @@ impl Bridge {
         session: &str,
         name: &str,
         input: Value,
+        context: CallContext,
     ) -> Result<Value, crate::tools::ToolError> {
         self.settle(
+            session,
             "product_tool",
-            json!({"session_id": session, "name": name, "input": input}),
+            json!({
+                "session_id": session,
+                "name": name,
+                "input": input,
+                "message_seq": context.message_seq,
+                "call_id": context.call_id,
+            }),
             "product bridge",
             "product tool",
         )
@@ -100,12 +124,13 @@ impl Bridge {
                 object.insert(key.clone(), value.clone());
             }
         }
-        self.settle("hook_tool", params, "hook bridge", "tool hook")
+        self.settle(session, "hook_tool", params, "hook bridge", "tool hook")
             .await
     }
 
     async fn settle(
         &self,
+        session: &str,
         method: &str,
         params: Value,
         closed: &str,
@@ -113,7 +138,14 @@ impl Bridge {
     ) -> Result<Value, crate::tools::ToolError> {
         let id = self.next.fetch_add(1, Ordering::SeqCst);
         let (reply, reply_rx) = oneshot::channel();
-        self.pending.lock().unwrap().insert(id, reply);
+        self.pending.lock().unwrap().insert(
+            id,
+            Pending {
+                session: session.to_owned(),
+                method: method.to_owned(),
+                reply,
+            },
+        );
         let request = serde_json::json!({"bridge_id": id, "method": method, "params": params});
         if self.tx.send(request).await.is_err() {
             self.pending.lock().unwrap().remove(&id);
@@ -136,12 +168,44 @@ impl Bridge {
         }
         Ok(response.get("result").cloned().unwrap_or(Value::Null))
     }
+
+    /// Cancel every pending product-tool bridge call for one Session. Each
+    /// removed call gets a `product_tool.cancel` notice so a host executor can
+    /// stop its children instead of waiting on a parent that is gone; the
+    /// dropped senders fail every awaiting call, hook dispatches included.
+    pub async fn cancel_session(&self, session: &str) -> Vec<u64> {
+        let product_ids: Vec<u64> = {
+            let mut pending = self.pending.lock().unwrap();
+            let mut product_ids = Vec::new();
+            pending.retain(|id, call| {
+                if call.session != session {
+                    return true;
+                }
+                if call.method == "product_tool" {
+                    product_ids.push(*id);
+                }
+                false
+            });
+            product_ids
+        };
+        for id in &product_ids {
+            let notice = serde_json::json!({
+                "bridge_id": id,
+                "method": "product_tool.cancel",
+                "params": {"session_id": session, "bridge_id": id},
+            });
+            if self.tx.send(notice).await.is_err() {
+                break;
+            }
+        }
+        product_ids
+    }
 }
 
 /// Deliver a host reply to the pending call, if any. Unknown ids are dropped
 /// (the host restarted its bookkeeping); never fabricate a result.
-pub fn deliver(
-    pending: &Mutex<HashMap<u64, oneshot::Sender<Value>>>,
+pub(crate) fn deliver(
+    pending: &Mutex<HashMap<u64, Pending>>,
     bridge_id: u64,
     value: Value,
 ) -> bool {
@@ -149,5 +213,5 @@ pub fn deliver(
         .lock()
         .unwrap()
         .remove(&bridge_id)
-        .is_some_and(|sender| sender.send(value).is_ok())
+        .is_some_and(|call| call.reply.send(value).is_ok())
 }

@@ -118,6 +118,10 @@ async fn product_tool_reverse_dispatches_to_host_and_returns_result() {
         request["params"]["input"]["text"],
         json!("hello from native")
     );
+    // The dispatch names the calling tool call so the host can assert a real
+    // permission source.
+    assert_eq!(request["params"]["call_id"], "call_send");
+    assert!(request["params"]["message_seq"].as_u64().unwrap() > 0);
 
     // The host replies; the runtime routes it back and the turn continues.
     assert!(runtime.deliver_product_reply(
@@ -258,4 +262,88 @@ async fn product_tool_moved_reply_ends_the_run_cleanly() {
         rendered.contains(r#"\"moved\":true"#),
         "moved tool result must settle durably: {rendered}"
     );
+}
+
+/// Cancelling a run while a product-tool call is pending notifies the host:
+/// the engine emits `product_tool.cancel` for the pending bridge id, the call
+/// fails as interrupted, and the run settles without a silent orphan.
+#[tokio::test]
+async fn product_tool_cancel_notifies_the_host_when_the_run_is_cancelled() {
+    struct Parked;
+    #[async_trait]
+    impl Provider for Parked {
+        async fn stream(
+            &self,
+            _: ModelRequest,
+            _: mpsc::Sender<Value>,
+            _: CancellationToken,
+        ) -> Result<Reply, ProviderError> {
+            Ok(Reply {
+                content: json!([{"type":"tool_use","id":"call_park","name":"send_message","input":{"to":"@other","text":"parked"}}]),
+                usage: json!({}),
+                needs_tools: true,
+            })
+        }
+    }
+
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path().join("workspace");
+    std::fs::create_dir(&root).unwrap();
+    let store = Store::open(dir.path().join("engine.db")).await.unwrap();
+    let tools = Tools::new(&root).await.unwrap();
+    let (bridge_tx, mut bridge_rx) = tokio::sync::mpsc::channel::<Value>(8);
+    let runtime = Runtime::with_policy(store.clone(), Arc::new(Parked), tools, policy())
+        .await
+        .unwrap();
+    runtime.with_product_tools(product_definitions(), Bridge::new(bridge_tx), None);
+    runtime
+        .admit(
+            Input {
+                agent_references: Default::default(),
+                command: None,
+                session_id: "s".into(),
+                input_id: "one".into(),
+                prompt: "cancel me".into(),
+                delivery: Delivery::Steer,
+            },
+            true,
+        )
+        .await
+        .unwrap();
+
+    let request = tokio::time::timeout(std::time::Duration::from_secs(5), bridge_rx.recv())
+        .await
+        .unwrap()
+        .expect("bridge request");
+    let bridge_id = request["bridge_id"].as_u64().expect("bridge id");
+
+    runtime.cancel("s").await.unwrap();
+
+    let notice = tokio::time::timeout(std::time::Duration::from_secs(5), bridge_rx.recv())
+        .await
+        .unwrap()
+        .expect("cancel notice");
+    assert_eq!(notice["method"], "product_tool.cancel");
+    assert_eq!(notice["bridge_id"], json!(bridge_id));
+    assert_eq!(notice["params"]["session_id"], "s");
+
+    // The cancelled call leaves no durable result and the run settles as
+    // interrupted; a late host reply for the removed id is dropped.
+    let deadline = tokio::time::Instant::now() + std::time::Duration::from_secs(10);
+    loop {
+        let events = store.events("s", 0, 1000).await.unwrap();
+        if events
+            .iter()
+            .any(|event| event.kind == "stop" && event.data["reason"] == "interrupted")
+        {
+            break;
+        }
+        assert!(
+            tokio::time::Instant::now() < deadline,
+            "cancelled run never settled: {events:?}"
+        );
+        tokio::time::sleep(std::time::Duration::from_millis(25)).await;
+    }
+    assert!(!runtime.deliver_product_reply(bridge_id, json!({"result": {"delivered": true}})));
+    runtime.shutdown().await;
 }
