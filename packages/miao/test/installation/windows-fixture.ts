@@ -49,7 +49,7 @@ Compress-Archive -LiteralPath $env:FIXTURE_OLD_COPY -DestinationPath $env:FIXTUR
     fetch(request) {
       requests.push(new URL(request.url).pathname)
       if (request.url.includes("v1.2.6/")) return new Response("missing", { status: 404 })
-      if (request.url.includes("v1.2.2/")) return Bun.file(archiveOld)
+      if (request.url.includes("v1.2.2/")) return new Response(Bun.file(archiveOld))
       return new Response(request.url.includes("v1.2.5/") ? "invalid zip" : Bun.file(archive))
     },
   })
