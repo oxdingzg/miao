@@ -629,6 +629,9 @@ impl Store {
             "path": path,
             "bytes": encoded.len(),
             "timeline": payload["timeline"].as_array().map(Vec::len).unwrap_or(0),
+            "binding": payload["session"]["model"],
+            "route_id": payload["session"]["model"]["route_id"],
+            "agent": payload["session"]["agent"],
         }))
     }
 
