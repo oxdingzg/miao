@@ -215,10 +215,13 @@ async fn plugin_definition_hooks_review_the_tool_surface() {
     let mut denied: Option<String> = None;
     let mut transformed: Option<String> = None;
     loop {
-        let request = match tokio::time::timeout(std::time::Duration::from_millis(500), bridge_rx.recv()).await {
-            Ok(Some(request)) => request,
-            _ => break,
-        };
+        let request =
+            match tokio::time::timeout(std::time::Duration::from_millis(500), bridge_rx.recv())
+                .await
+            {
+                Ok(Some(request)) => request,
+                _ => break,
+            };
         let bridge_id = request["bridge_id"].as_u64().expect("bridge id");
         let params = request["params"].clone();
         if params["kind"] != "definition" {

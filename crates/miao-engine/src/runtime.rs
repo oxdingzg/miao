@@ -3126,7 +3126,10 @@ async fn dispatch_plugin_definitions(
         let payload = serde_json::to_value(&tool)
             .map(|value| json!({"definition": value}))
             .unwrap_or_else(|_| json!({}));
-        match bridge.call_hook(session, "definition", &tool.name, "", payload).await {
+        match bridge
+            .call_hook(session, "definition", &tool.name, "", payload)
+            .await
+        {
             Ok(reply) => {
                 if let Some(reason) = reply.get("deny").and_then(Value::as_str) {
                     hook.record("denied", Some(reason), started).await?;
@@ -3135,16 +3138,17 @@ async fn dispatch_plugin_definitions(
                 hook.record("completed", None, started).await?;
                 let mut reviewed = tool;
                 if let Some(transformed) = reply.get("definition") {
-                    if let Ok(parsed) =
-                        serde_json::from_value::<crate::protocol::ToolDefinition>(transformed.clone())
-                    {
+                    if let Ok(parsed) = serde_json::from_value::<crate::protocol::ToolDefinition>(
+                        transformed.clone(),
+                    ) {
                         reviewed = parsed;
                     }
                 }
                 surfaced.push(reviewed);
             }
             Err(error) => {
-                hook.record("failed", Some(&error.to_string()), started).await?;
+                hook.record("failed", Some(&error.to_string()), started)
+                    .await?;
                 surfaced.push(tool);
             }
         }
