@@ -160,6 +160,7 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
             "--lsp-diagnostics",
             "--context-limits",
             "--hooks-config",
+            "--plugin-hooks",
             "--context-config",
             "--workspace-instructions",
             "--skills-config",
@@ -519,6 +520,24 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
             .map_err(|_| "invalid hooks host config")?;
         tools = tools.with_protected_resource(&path).with_hooks(hooks)?;
     }
+    let mut plugin_hooks = None;
+    if let Some(path) = options.get("--plugin-hooks") {
+        if !options.contains_key("--product-tools") {
+            return Err("plugin hooks require the product tool bridge".into());
+        }
+        let path = tokio::fs::canonicalize(path).await?;
+        if path.starts_with(std::path::Path::new(tools.location())) {
+            return Err("Plugin hooks host config must be outside model-writable workspace".into());
+        }
+        let bytes = tokio::fs::read(&path).await?;
+        if bytes.len() > 65536 {
+            return Err("Plugin hooks config exceeds 64 KiB".into());
+        }
+        plugin_hooks = Some(
+            serde_json::from_slice::<miao_engine::product::Marker>(&bytes)
+                .map_err(|_| "invalid plugin hooks host config")?,
+        );
+    }
     if let Some(path) = options.get("--mcp-config") {
         if !policy.mcp_enabled() {
             return Err("MCP config requires explicit workspace allow_mcp authority".into());
@@ -668,11 +687,15 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
         result?;
         return Ok(());
     }
-    serve(runtime, options.remove("--product-tools")).await?;
+    serve(runtime, options.remove("--product-tools"), plugin_hooks).await?;
     Ok(())
 }
 
-async fn serve(runtime: Runtime, product_tools: Option<String>) -> io::Result<()> {
+async fn serve(
+    runtime: Runtime,
+    product_tools: Option<String>,
+    plugin_hooks: Option<miao_engine::product::Marker>,
+) -> io::Result<()> {
     let (output, mut outgoing) = mpsc::channel::<Value>(128);
     if let Some(path) = product_tools {
         let file = tokio::fs::read_to_string(&path)
@@ -681,7 +704,11 @@ async fn serve(runtime: Runtime, product_tools: Option<String>) -> io::Result<()
         let manifest: Value = serde_json::from_str(&file).map_err(io::Error::other)?;
         let tools: Vec<miao_engine::protocol::ToolDefinition> =
             serde_json::from_value(manifest["tools"].clone()).map_err(io::Error::other)?;
-        runtime.with_product_tools(tools, miao_engine::product::Bridge::new(output.clone()));
+        runtime.with_product_tools(
+            tools,
+            miao_engine::product::Bridge::new(output.clone()),
+            plugin_hooks,
+        );
     }
     let writer = tokio::spawn(async move {
         let mut stdout = tokio::io::stdout();
