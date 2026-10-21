@@ -412,15 +412,17 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
             Some("off") => false,
             Some(_) => return Err("--lsp-diagnostics must be on or off".into()),
         });
+    let mut route_limits = miao_engine::model_routes::RouteLimits::default();
     let provider = if let Some(path) = options.get("--model-routes-config") {
         let path = tokio::fs::canonicalize(path).await?;
-        let provider = miao_engine::model_routes::load(
+        let (provider, route_limits_new) = miao_engine::model_routes::load(
             &path,
             std::path::Path::new(tools.location()),
             provider,
         )
         .await?;
         tools = tools.with_protected_resource(&path);
+        route_limits = route_limits_new;
         provider
     } else {
         provider
@@ -620,6 +622,7 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
     if let Some(limits) = context_limits {
         runtime.set_context_limits(Some(limits)).await;
     }
+    runtime.set_route_limits(route_limits).await;
     let roles = miao_engine::roles::Bindings {
         summarize: options.get("--role-summarize").cloned(),
         retrieve: options.get("--role-retrieve").cloned(),

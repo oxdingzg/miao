@@ -12,7 +12,18 @@ use tokio::io::AsyncReadExt;
 /// Version of the host route manifest this engine accepts. It moves when a
 /// route field is added or its meaning changes, so a product can refuse a
 /// manifest the engine cannot read instead of failing at startup.
-pub const SCHEMA: u32 = 1;
+pub const SCHEMA: u32 = 2;
+
+/// Declared context/output capacity for a route's model, published by the
+/// host so role bindings can be capacity-checked before a doomed request.
+#[derive(Debug, Clone, Copy, PartialEq, serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct Limit {
+    #[serde(default)]
+    pub context: Option<u64>,
+    #[serde(default)]
+    pub output: Option<u64>,
+}
 
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -38,6 +49,8 @@ struct Route {
     default_variant: Option<String>,
     #[serde(default)]
     account: Option<crate::model_catalog::Account>,
+    #[serde(default)]
+    limit: Option<Limit>,
 }
 
 #[derive(Deserialize)]
@@ -143,11 +156,24 @@ enum CredentialSource {
 
 /// The caller protects the canonical manifest path alongside all provider
 /// credential paths. Reject workspace-owned configuration before reading it.
+/// Per-model capacity declared by the host manifest, consulted before a
+/// role-bound request is attempted.
+#[derive(Debug, Clone, Default)]
+pub struct RouteLimits {
+    limits: std::collections::BTreeMap<String, Limit>,
+}
+
+impl RouteLimits {
+    pub fn context_limit_for(&self, model: &str) -> Option<u64> {
+        self.limits.get(model).and_then(|limit| limit.context)
+    }
+}
+
 pub async fn load(
     path: &Path,
     workspace: &Path,
     mut primary: Arc<dyn Provider>,
-) -> Result<Arc<dyn Provider>, Box<dyn std::error::Error>> {
+) -> Result<(Arc<dyn Provider>, RouteLimits), Box<dyn std::error::Error>> {
     if path.starts_with(workspace) {
         return Err("Model routes host config must be outside model-writable workspace".into());
     }
@@ -165,6 +191,7 @@ pub async fn load(
     if entries.len() > crate::model_catalog::MAX_ROUTES {
         return Err("model route catalog exceeds 1024 entries".into());
     }
+    let mut limits = std::collections::BTreeMap::new();
     let mut routes = Vec::new();
     let mut variants = Vec::new();
     let mut primary_variants = Vec::new();
@@ -172,6 +199,9 @@ pub async fn load(
     let mut accounts = Vec::new();
     let mut primary_account_route = None;
     for entry in entries {
+        if let Some(limit) = entry.limit {
+            limits.insert(entry.model.clone(), limit);
+        }
         if let Some(account) = entry.account {
             if entry.primary {
                 primary_account_route = Some(entry.id.clone());
@@ -313,9 +343,10 @@ pub async fn load(
         }
         routes.push((entry.id, default_provider));
     }
-    Ok(Arc::new(
+    let provider = Arc::new(
         Catalog::new(primary, routes)?
             .with_variants(variants, primary_variants)?
             .with_accounts(accounts, primary_account_route)?,
-    ))
+    );
+    Ok((provider, RouteLimits { limits }))
 }

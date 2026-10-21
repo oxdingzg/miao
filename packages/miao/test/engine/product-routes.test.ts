@@ -107,6 +107,7 @@ it.live("product routes bind active accounts without persisting secrets and keep
           for (let i = 0; i < 100; i++) {
             draft.model.update(ProviderV2.ID.make("commandcode"), ModelV2.ID.make(`model-${i}`), (model) => {
               model.api.id = ModelV2.ID.make(`remote-${i}`)
+              model.limit = { context: 128_000, output: 8_192 }
               model.capabilities.tools = true
               model.capabilities.input = ["text", "image", "pdf"]
               model.capabilities.output = ["text"]
@@ -216,6 +217,7 @@ it.live("product routes bind active accounts without persisting secrets and keep
           id: Credential.ID.make("cred_command"),
         })
         expect(routes.find((route: { id: string }) => route.id === "commandcode/model-0")).toMatchObject({
+          limit: { context: 128_000, output: 8_192 },
           primary: true,
           input_modalities: ["text", "image", "pdf"],
           default_variant: "high",

@@ -95,7 +95,7 @@ async fn owner_default_inherits_manifest_auth_without_replacing_transport_identi
             json!({"headers":{"X-Host-Identity":"declared"}}),
         );
         let original = provider.identity();
-        let catalog = load(&file, &workspace, provider).await.unwrap();
+        let catalog = load(&file, &workspace, provider).await.unwrap().0;
         assert_eq!(catalog.identity(), original);
         for (selected, path, key, identity) in [
             (Arc::clone(&catalog), "/owner", "owner-key", "declared"),
@@ -202,7 +202,8 @@ async fn default_auth_style_and_encoded_query_leave_fallback_endpoint_credential
         Arc::new(Fallback::new(primary, secondary).unwrap()),
     )
     .await
-    .unwrap();
+    .unwrap()
+    .0;
     let (progress, _receive) = mpsc::channel(16);
     assert!(matches!(
         catalog
@@ -261,7 +262,7 @@ async fn count_requests_keep_the_same_host_route_headers() {
             &endpoint,
             json!({"headers":{"x-host-identity":"count"}}),
         );
-        let catalog = load(&file, &workspace, provider).await.unwrap();
+        let catalog = load(&file, &workspace, provider).await.unwrap().0;
         assert!(matches!(
             catalog.count_tokens(&request()).await,
             CountTokens::Counted(17)

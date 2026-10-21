@@ -56,13 +56,14 @@ test.skipIf(process.platform === "win32")(
 )
 
 test("an engine whose route manifest schema is too old is refused", () => {
-  const older = { ...engine(2), routesSchema: 0 }
+  const older = { ...engine(2), routesSchema: 1 }
   expect(() =>
     resolveEngine({ environment: { MIAO_ENGINE_BIN: "/old" }, probe: () => older, exists: () => true }),
   ).toThrow("route schema")
   expect(resolveEngine({ environment: {}, probe: () => older, exists: () => true })).toBeUndefined()
+  // Schema 2 is what this build's capacity-aware role routing needs.
   expect(
-    resolveEngine({ environment: {}, probe: () => ({ ...engine(2), routesSchema: 1 }), exists: () => true })?.binary,
+    resolveEngine({ environment: {}, probe: () => ({ ...engine(2), routesSchema: 2 }), exists: () => true })?.binary,
   ).toContain("miao-engine")
   // An engine that predates the field is still used; its loader decides.
   expect(resolveEngine({ environment: {}, probe: () => engine(2), exists: () => true })?.binary).toContain("miao-engine")

@@ -253,7 +253,8 @@ async fn host_route_modalities_apply_to_the_owner_default_and_explicit_route() {
         Arc::new(OpenAIChat::new(endpoint, "fixture-key".into(), "model".into()).unwrap());
     let catalog = miao_engine::model_routes::load(&manifest, &workspace, provider)
         .await
-        .unwrap();
+        .unwrap()
+        .0;
     for selected in [
         Arc::clone(&catalog),
         catalog.for_route("account/text-only").unwrap(),

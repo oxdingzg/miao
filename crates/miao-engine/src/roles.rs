@@ -207,7 +207,23 @@ pub async fn summarize_with_escalation(
     stop: &tokio_util::sync::CancellationToken,
     body: &str,
     escalate: bool,
+    capacity: Option<u64>,
 ) -> Result<String, String> {
+    // A slice the bound model cannot hold is skipped outright: the provider
+    // would answer 400 and the escalation retry would burn a full request
+    // window learning what the host manifest already knew.
+    let body_tokens = crate::context_trigger::estimate_tokens(body.chars().count());
+    if matches!(capacity, Some(limit) if body_tokens.saturating_add(2_048) >= limit) {
+        let _ = settlement
+            .store
+            .record(
+                settlement.session,
+                "role.provider.skipped",
+                json!({"run_id":settlement.run,"role":"summarize","reason":"capacity","body_tokens":body_tokens,"limit":capacity}),
+            )
+            .await;
+        return summarize_with(primary, stop, body, Some(settlement)).await;
+    }
     match summarize_with(role_provider, stop, body, Some(settlement)).await {
         Ok(text) => Ok(text),
         Err(first) if escalate => {
@@ -366,6 +382,7 @@ mod tests {
             &stop,
             "condense this",
             true,
+            None,
         )
         .await
         .unwrap();
@@ -413,6 +430,7 @@ mod tests {
             &stop,
             "condense this",
             false,
+            None,
         )
         .await
         .unwrap_err();
