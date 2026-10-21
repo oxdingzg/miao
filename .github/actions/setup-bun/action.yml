@@ -65,7 +65,7 @@ runs:
     # bundled copy on PATH on current Node 24 runner images.
     - name: Install native addon build tool
       if: ${{ !contains(inputs.install-flags, '--ignore-scripts') }}
-      run: npm install --global node-gyp@11.5.0
+      run: npm install --global node-gyp@13.1.0
       shell: bash
 
     - name: Install dependencies
