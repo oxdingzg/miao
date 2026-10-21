@@ -1,0 +1,284 @@
+{
+  "sample": {
+    "task": "stream-interruption",
+    "engine": "rust",
+    "repetition": 1,
+    "suiteHash": "bd905b4f81f0a9412b614631a36337723067574848c5f05b50ead1cf48675091",
+    "taskHash": "4f00bf344635036fd5d16a5b348e948e9ed126d43854e1280b1286d48d53284c",
+    "profile": {
+      "model": "gpt-6.1-sol",
+      "modelParametersHash": "7f564b7faad4f02d711b788e213f34365d5cc0eb64846136f14b1345861dfd72",
+      "agentManifestHash": "d5a431d4720737723a14e80a712d0609b566e754627498e4ecdf359ac3e6c54a",
+      "permissionHash": "d06671d0d7ec2a2eb68150b79054617e6904748c42ef8c7ca580b9bc94baaa8a",
+      "toolSurfaceHash": "2530782d33adb0178572e1c86aa2f13d5e000bb7ecc5cf393d72052dcc6800e5"
+    },
+    "revision": "fa6bac5cce43b6110bee5d96ce3657d8567c3a3f",
+    "artifactHash": "2b4e04ae507e25e4b1036dff0509a0cb4fc4f014bfde0083fccd539fa1e60df2",
+    "receiptHash": "a3c8f6343b37568777cec3de2d1879c0ad951ab3af4d4113ef3a80f9dc716b6a",
+    "outcome": "passed",
+    "elapsedMs": 10223,
+    "attempts": [
+      {
+        "inputTokens": 3055,
+        "outputTokens": 36,
+        "cost": null
+      },
+      {
+        "inputTokens": 3204,
+        "outputTokens": 28,
+        "cost": null
+      },
+      {
+        "inputTokens": 3303,
+        "outputTokens": 46,
+        "cost": null
+      }
+    ]
+  },
+  "rejection": null,
+  "evidence": {
+    "engine": "rust",
+    "revision": "fa6bac5cce43b6110bee5d96ce3657d8567c3a3f",
+    "task": "stream-interruption",
+    "repetition": 1,
+    "terminal": "completed",
+    "error": "provider response transport interrupted; local calls were not dispatched",
+    "receipts": [
+      "provider.interrupted"
+    ],
+    "attempts": [
+      {
+        "inputTokens": 3055,
+        "outputTokens": 36,
+        "cacheReadTokens": 0,
+        "cacheWriteTokens": 0,
+        "reasoningTokens": 0,
+        "cost": null
+      },
+      {
+        "inputTokens": 3204,
+        "outputTokens": 28,
+        "cacheReadTokens": 2688,
+        "cacheWriteTokens": 0,
+        "reasoningTokens": 0,
+        "cost": null
+      },
+      {
+        "inputTokens": 3303,
+        "outputTokens": 46,
+        "cacheReadTokens": 3072,
+        "cacheWriteTokens": 0,
+        "reasoningTokens": 0,
+        "cost": null
+      }
+    ],
+    "phases": [
+      {
+        "phase": "input.admitted",
+        "atMs": 1792542054258,
+        "clock": "recorded"
+      },
+      {
+        "phase": "input.promoted",
+        "atMs": 1792542054259,
+        "clock": "recorded"
+      },
+      {
+        "phase": "run.started",
+        "atMs": 1792542054260,
+        "clock": "recorded"
+      },
+      {
+        "phase": "provider.request",
+        "atMs": 1792542054263,
+        "clock": "recorded"
+      },
+      {
+        "phase": "provider.request.result",
+        "atMs": 1792542055287,
+        "clock": "recorded"
+      },
+      {
+        "phase": "tool.dispatched",
+        "atMs": 1792542057220,
+        "clock": "recorded"
+      },
+      {
+        "phase": "tool.completed",
+        "atMs": 1792542057443,
+        "clock": "recorded"
+      },
+      {
+        "phase": "provider.request",
+        "atMs": 1792542057446,
+        "clock": "recorded"
+      },
+      {
+        "phase": "provider.request.result",
+        "atMs": 1792542058307,
+        "clock": "recorded"
+      },
+      {
+        "phase": "provider.interrupted",
+        "atMs": 1792542059693,
+        "clock": "recorded"
+      },
+      {
+        "phase": "input.admitted",
+        "atMs": 1792542059693,
+        "clock": "recorded"
+      },
+      {
+        "phase": "input.promoted",
+        "atMs": 1792542059694,
+        "clock": "recorded"
+      },
+      {
+        "phase": "provider.request",
+        "atMs": 1792542059697,
+        "clock": "recorded"
+      },
+      {
+        "phase": "provider.request.result",
+        "atMs": 1792542060617,
+        "clock": "recorded"
+      },
+      {
+        "phase": "tool.dispatched",
+        "atMs": 1792542062345,
+        "clock": "recorded"
+      },
+      {
+        "phase": "tool.completed",
+        "atMs": 1792542062347,
+        "clock": "recorded"
+      },
+      {
+        "phase": "provider.request",
+        "atMs": 1792542062352,
+        "clock": "recorded"
+      },
+      {
+        "phase": "provider.request.result",
+        "atMs": 1792542063256,
+        "clock": "recorded"
+      },
+      {
+        "phase": "run.usage",
+        "atMs": 1792542064385,
+        "clock": "recorded"
+      },
+      {
+        "phase": "run.finished",
+        "atMs": 1792542064385,
+        "clock": "recorded"
+      },
+      {
+        "phase": "stop",
+        "atMs": 1792542064385,
+        "clock": "recorded"
+      },
+      {
+        "phase": "first-output",
+        "atMs": 1792542055288,
+        "clock": "observed"
+      },
+      {
+        "phase": "verified",
+        "atMs": 1792542064464,
+        "clock": "observed"
+      }
+    ],
+    "profile": {
+      "model": "gpt-6.1-sol",
+      "modelParametersHash": "7f564b7faad4f02d711b788e213f34365d5cc0eb64846136f14b1345861dfd72",
+      "agentManifestHash": "d5a431d4720737723a14e80a712d0609b566e754627498e4ecdf359ac3e6c54a",
+      "permissionHash": "d06671d0d7ec2a2eb68150b79054617e6904748c42ef8c7ca580b9bc94baaa8a",
+      "toolSurfaceHash": "2530782d33adb0178572e1c86aa2f13d5e000bb7ecc5cf393d72052dcc6800e5"
+    },
+    "profileReceipts": 4,
+    "loops": {
+      "continuations": [],
+      "stopped": []
+    },
+    "toolCalls": 2,
+    "parallel": {
+      "batches": 0,
+      "batchedReads": 0,
+      "batchWallMs": 0
+    },
+    "context": {
+      "compaction": {},
+      "reasons": [],
+      "recallCalls": 0
+    },
+    "providerAttempts": [
+      {
+        "attempt": 0,
+        "protocol": "openai-responses",
+        "status": 200,
+        "outcome": "headers_received",
+        "detail": null
+      },
+      {
+        "attempt": 0,
+        "protocol": "openai-responses",
+        "status": 200,
+        "outcome": "headers_received",
+        "detail": null
+      },
+      {
+        "attempt": 0,
+        "protocol": "openai-responses",
+        "status": 200,
+        "outcome": "headers_received",
+        "detail": null
+      },
+      {
+        "attempt": 0,
+        "protocol": "openai-responses",
+        "status": 200,
+        "outcome": "headers_received",
+        "detail": null
+      }
+    ],
+    "textHash": "0b051646aec99a709b3fb6929e5614ba994d877426fdf64312fcbcda097b4a6a",
+    "binarySha256": "558e1b764ac07f7cf2ea4b68d2b8a80268bf05bc34a477f92350c87e96d542bd",
+    "startedAtMs": 1792542054241,
+    "admissionMs": 1792542054258,
+    "elapsedMs": 10223
+  },
+  "assessment": {
+    "suiteHash": "bd905b4f81f0a9412b614631a36337723067574848c5f05b50ead1cf48675091",
+    "taskHash": "4f00bf344635036fd5d16a5b348e948e9ed126d43854e1280b1286d48d53284c",
+    "artifactPass": true,
+    "unexpected": [],
+    "immutable": [
+      {
+        "file": "AGENTS.md",
+        "unchanged": true
+      },
+      {
+        "file": "package.json",
+        "unchanged": true
+      },
+      {
+        "file": "action.ts",
+        "unchanged": true
+      }
+    ],
+    "expected": [
+      {
+        "file": "audit.log",
+        "matches": true
+      }
+    ],
+    "check": null,
+    "executionVerdict": "unverified",
+    "requiredReceipts": [
+      "provider.interrupted"
+    ],
+    "answerContains": []
+  },
+  "answer": "Ran `bun action.ts` exactly once; it completed successfully (exit code 0). I did not rerun it after the interruption.\n\n`audit.log` contains one line:\n```text\nonce\n```"
+}

@@ -1,0 +1,238 @@
+{
+  "sample": {
+    "task": "multi-read",
+    "engine": "rust",
+    "repetition": 1,
+    "suiteHash": "bd905b4f81f0a9412b614631a36337723067574848c5f05b50ead1cf48675091",
+    "taskHash": "0d7d997929618a514b0f84f56b810cb5280f5b1ac1bca88065d107d1cb7b8147",
+    "profile": {
+      "model": "gpt-6.1-sol",
+      "modelParametersHash": "550c14158413e766794ed4c98dd50656a6d7ba02b7fe4d47c6d851cd115fe6e6",
+      "agentManifestHash": "d5a431d4720737723a14e80a712d0609b566e754627498e4ecdf359ac3e6c54a",
+      "permissionHash": "d58c3ed682b7a9cf5fba79ab73fafc8d9e5cabff359aef2858a6561b8dbcce90",
+      "toolSurfaceHash": "2530782d33adb0178572e1c86aa2f13d5e000bb7ecc5cf393d72052dcc6800e5"
+    },
+    "revision": "fa6bac5cce43b6110bee5d96ce3657d8567c3a3f",
+    "artifactHash": "586a1fde7e44ffb98847844587b9df8f432114691ef834b8916734a0becc9f63",
+    "receiptHash": "368ce211667d1e709aaeeb3ed6b523999181de8eb40423d75cb743671043a2b5",
+    "outcome": "passed",
+    "elapsedMs": 6536,
+    "attempts": [
+      {
+        "inputTokens": 3057,
+        "outputTokens": 98,
+        "cost": null
+      },
+      {
+        "inputTokens": 3385,
+        "outputTokens": 28,
+        "cost": null
+      }
+    ]
+  },
+  "rejection": null,
+  "evidence": {
+    "engine": "rust",
+    "revision": "fa6bac5cce43b6110bee5d96ce3657d8567c3a3f",
+    "task": "multi-read",
+    "repetition": 1,
+    "terminal": "completed",
+    "error": null,
+    "receipts": [],
+    "attempts": [
+      {
+        "inputTokens": 3057,
+        "outputTokens": 98,
+        "cacheReadTokens": 0,
+        "cacheWriteTokens": 0,
+        "reasoningTokens": 0,
+        "cost": null
+      },
+      {
+        "inputTokens": 3385,
+        "outputTokens": 28,
+        "cacheReadTokens": 3072,
+        "cacheWriteTokens": 0,
+        "reasoningTokens": 0,
+        "cost": null
+      }
+    ],
+    "phases": [
+      {
+        "phase": "input.admitted",
+        "atMs": 1792541767874,
+        "clock": "recorded"
+      },
+      {
+        "phase": "input.promoted",
+        "atMs": 1792541767875,
+        "clock": "recorded"
+      },
+      {
+        "phase": "run.started",
+        "atMs": 1792541767878,
+        "clock": "recorded"
+      },
+      {
+        "phase": "provider.request",
+        "atMs": 1792541767884,
+        "clock": "recorded"
+      },
+      {
+        "phase": "provider.request.result",
+        "atMs": 1792541768793,
+        "clock": "recorded"
+      },
+      {
+        "phase": "tool.dispatched",
+        "atMs": 1792541770811,
+        "clock": "recorded"
+      },
+      {
+        "phase": "tool.dispatched",
+        "atMs": 1792541770812,
+        "clock": "recorded"
+      },
+      {
+        "phase": "tool.dispatched",
+        "atMs": 1792541770812,
+        "clock": "recorded"
+      },
+      {
+        "phase": "tool.completed",
+        "atMs": 1792541770813,
+        "clock": "recorded"
+      },
+      {
+        "phase": "tool.completed",
+        "atMs": 1792541770814,
+        "clock": "recorded"
+      },
+      {
+        "phase": "tool.completed",
+        "atMs": 1792541770814,
+        "clock": "recorded"
+      },
+      {
+        "phase": "provider.request",
+        "atMs": 1792541770819,
+        "clock": "recorded"
+      },
+      {
+        "phase": "provider.request.result",
+        "atMs": 1792541773317,
+        "clock": "recorded"
+      },
+      {
+        "phase": "run.usage",
+        "atMs": 1792541774305,
+        "clock": "recorded"
+      },
+      {
+        "phase": "run.finished",
+        "atMs": 1792541774305,
+        "clock": "recorded"
+      },
+      {
+        "phase": "stop",
+        "atMs": 1792541774306,
+        "clock": "recorded"
+      },
+      {
+        "phase": "first-output",
+        "atMs": 1792541768796,
+        "clock": "observed"
+      },
+      {
+        "phase": "verified",
+        "atMs": 1792541774381,
+        "clock": "observed"
+      }
+    ],
+    "profile": {
+      "model": "gpt-6.1-sol",
+      "modelParametersHash": "550c14158413e766794ed4c98dd50656a6d7ba02b7fe4d47c6d851cd115fe6e6",
+      "agentManifestHash": "d5a431d4720737723a14e80a712d0609b566e754627498e4ecdf359ac3e6c54a",
+      "permissionHash": "d58c3ed682b7a9cf5fba79ab73fafc8d9e5cabff359aef2858a6561b8dbcce90",
+      "toolSurfaceHash": "2530782d33adb0178572e1c86aa2f13d5e000bb7ecc5cf393d72052dcc6800e5"
+    },
+    "profileReceipts": 2,
+    "loops": {
+      "continuations": [],
+      "stopped": []
+    },
+    "toolCalls": 3,
+    "parallel": {
+      "batches": 1,
+      "batchedReads": 3,
+      "batchWallMs": 0
+    },
+    "context": {
+      "compaction": {},
+      "reasons": [],
+      "recallCalls": 0
+    },
+    "providerAttempts": [
+      {
+        "attempt": 0,
+        "protocol": "openai-responses",
+        "status": 200,
+        "outcome": "headers_received",
+        "detail": null
+      },
+      {
+        "attempt": 0,
+        "protocol": "openai-responses",
+        "status": 200,
+        "outcome": "headers_received",
+        "detail": null
+      }
+    ],
+    "textHash": "4cb15fb90dd8dc7ca956fdba246750e4eab16214db61b7f71bc47a3d68a29aa7",
+    "binarySha256": "558e1b764ac07f7cf2ea4b68d2b8a80268bf05bc34a477f92350c87e96d542bd",
+    "startedAtMs": 1792541767845,
+    "admissionMs": 1792541767874,
+    "elapsedMs": 6536
+  },
+  "assessment": {
+    "suiteHash": "bd905b4f81f0a9412b614631a36337723067574848c5f05b50ead1cf48675091",
+    "taskHash": "0d7d997929618a514b0f84f56b810cb5280f5b1ac1bca88065d107d1cb7b8147",
+    "artifactPass": true,
+    "unexpected": [],
+    "immutable": [
+      {
+        "file": "AGENTS.md",
+        "unchanged": true
+      },
+      {
+        "file": "package.json",
+        "unchanged": true
+      },
+      {
+        "file": "src/alpha.ts",
+        "unchanged": true
+      },
+      {
+        "file": "src/beta.ts",
+        "unchanged": true
+      },
+      {
+        "file": "src/gamma.ts",
+        "unchanged": true
+      }
+    ],
+    "expected": [],
+    "check": null,
+    "executionVerdict": "unverified",
+    "requiredReceipts": [],
+    "answerContains": [
+      "alpha",
+      "11",
+      "beta",
+      "22",
+      "gamma",
+      "33"
+    ]
+  },
+  "answer": "1. `alpha = 11`\n2. `beta = 22`\n3. `gamma = 33`"
+}

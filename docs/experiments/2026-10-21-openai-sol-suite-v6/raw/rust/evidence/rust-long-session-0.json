@@ -1,0 +1,887 @@
+{
+  "sample": {
+    "task": "long-session",
+    "engine": "rust",
+    "repetition": 0,
+    "suiteHash": "bd905b4f81f0a9412b614631a36337723067574848c5f05b50ead1cf48675091",
+    "taskHash": "acc85904b2dcd251e4f30fbe7b74f29d6ae3d4266a73c7319c966169a74baa82",
+    "profile": {
+      "model": "gpt-6.1-sol",
+      "modelParametersHash": "97b748aef3657657dfa8725167a348037a3cfa6b5ed63a4842ce236925e4ee47",
+      "agentManifestHash": "d5a431d4720737723a14e80a712d0609b566e754627498e4ecdf359ac3e6c54a",
+      "permissionHash": "fb258a2268a3f5e0783dd783f37064484e81b44696ee90522326d3e67c66e132",
+      "toolSurfaceHash": "2530782d33adb0178572e1c86aa2f13d5e000bb7ecc5cf393d72052dcc6800e5"
+    },
+    "revision": "fa6bac5cce43b6110bee5d96ce3657d8567c3a3f",
+    "artifactHash": "e9ff285d1d0a72e89be756401e591e292f7b5c153a01670d953e994b851d5339",
+    "receiptHash": "4fd6bff5a6c5a967aebcbcf682d41a3a8cdb8983ae92a5969b8726f48ebc9869",
+    "outcome": "passed",
+    "elapsedMs": 39741,
+    "attempts": [
+      {
+        "inputTokens": 3038,
+        "outputTokens": 37,
+        "cost": null
+      },
+      {
+        "inputTokens": 3108,
+        "outputTokens": 22,
+        "cost": null
+      },
+      {
+        "inputTokens": 3170,
+        "outputTokens": 35,
+        "cost": null
+      },
+      {
+        "inputTokens": 3264,
+        "outputTokens": 37,
+        "cost": null
+      },
+      {
+        "inputTokens": 3370,
+        "outputTokens": 29,
+        "cost": null
+      },
+      {
+        "inputTokens": 3426,
+        "outputTokens": 57,
+        "cost": null
+      },
+      {
+        "inputTokens": 3560,
+        "outputTokens": 44,
+        "cost": null
+      },
+      {
+        "inputTokens": 3638,
+        "outputTokens": 27,
+        "cost": null
+      },
+      {
+        "inputTokens": 3755,
+        "outputTokens": 36,
+        "cost": null
+      },
+      {
+        "inputTokens": 3856,
+        "outputTokens": 85,
+        "cost": null
+      },
+      {
+        "inputTokens": 4000,
+        "outputTokens": 117,
+        "cost": null
+      },
+      {
+        "inputTokens": 4176,
+        "outputTokens": 101,
+        "cost": null
+      },
+      {
+        "inputTokens": 4353,
+        "outputTokens": 100,
+        "cost": null
+      },
+      {
+        "inputTokens": 4614,
+        "outputTokens": 76,
+        "cost": null
+      },
+      {
+        "inputTokens": 4715,
+        "outputTokens": 100,
+        "cost": null
+      },
+      {
+        "inputTokens": 4977,
+        "outputTokens": 36,
+        "cost": null
+      },
+      {
+        "inputTokens": 5033,
+        "outputTokens": 87,
+        "cost": null
+      }
+    ]
+  },
+  "rejection": null,
+  "evidence": {
+    "engine": "rust",
+    "revision": "fa6bac5cce43b6110bee5d96ce3657d8567c3a3f",
+    "task": "long-session",
+    "repetition": 0,
+    "terminal": "completed",
+    "error": null,
+    "receipts": [
+      "tool.error"
+    ],
+    "attempts": [
+      {
+        "inputTokens": 3038,
+        "outputTokens": 37,
+        "cacheReadTokens": 0,
+        "cacheWriteTokens": 0,
+        "reasoningTokens": 0,
+        "cost": null
+      },
+      {
+        "inputTokens": 3108,
+        "outputTokens": 22,
+        "cacheReadTokens": 2944,
+        "cacheWriteTokens": 0,
+        "reasoningTokens": 0,
+        "cost": null
+      },
+      {
+        "inputTokens": 3170,
+        "outputTokens": 35,
+        "cacheReadTokens": 2944,
+        "cacheWriteTokens": 0,
+        "reasoningTokens": 0,
+        "cost": null
+      },
+      {
+        "inputTokens": 3264,
+        "outputTokens": 37,
+        "cacheReadTokens": 3072,
+        "cacheWriteTokens": 0,
+        "reasoningTokens": 0,
+        "cost": null
+      },
+      {
+        "inputTokens": 3370,
+        "outputTokens": 29,
+        "cacheReadTokens": 3072,
+        "cacheWriteTokens": 0,
+        "reasoningTokens": 0,
+        "cost": null
+      },
+      {
+        "inputTokens": 3426,
+        "outputTokens": 57,
+        "cacheReadTokens": 3200,
+        "cacheWriteTokens": 0,
+        "reasoningTokens": 0,
+        "cost": null
+      },
+      {
+        "inputTokens": 3560,
+        "outputTokens": 44,
+        "cacheReadTokens": 3328,
+        "cacheWriteTokens": 0,
+        "reasoningTokens": 0,
+        "cost": null
+      },
+      {
+        "inputTokens": 3638,
+        "outputTokens": 27,
+        "cacheReadTokens": 3456,
+        "cacheWriteTokens": 0,
+        "reasoningTokens": 0,
+        "cost": null
+      },
+      {
+        "inputTokens": 3755,
+        "outputTokens": 36,
+        "cacheReadTokens": 3456,
+        "cacheWriteTokens": 0,
+        "reasoningTokens": 0,
+        "cost": null
+      },
+      {
+        "inputTokens": 3856,
+        "outputTokens": 85,
+        "cacheReadTokens": 3584,
+        "cacheWriteTokens": 0,
+        "reasoningTokens": 27,
+        "cost": null
+      },
+      {
+        "inputTokens": 4000,
+        "outputTokens": 117,
+        "cacheReadTokens": 0,
+        "cacheWriteTokens": 0,
+        "reasoningTokens": 77,
+        "cost": null
+      },
+      {
+        "inputTokens": 4176,
+        "outputTokens": 101,
+        "cacheReadTokens": 3840,
+        "cacheWriteTokens": 0,
+        "reasoningTokens": 0,
+        "cost": null
+      },
+      {
+        "inputTokens": 4353,
+        "outputTokens": 100,
+        "cacheReadTokens": 3712,
+        "cacheWriteTokens": 0,
+        "reasoningTokens": 0,
+        "cost": null
+      },
+      {
+        "inputTokens": 4614,
+        "outputTokens": 76,
+        "cacheReadTokens": 4224,
+        "cacheWriteTokens": 0,
+        "reasoningTokens": 0,
+        "cost": null
+      },
+      {
+        "inputTokens": 4715,
+        "outputTokens": 100,
+        "cacheReadTokens": 4480,
+        "cacheWriteTokens": 0,
+        "reasoningTokens": 0,
+        "cost": null
+      },
+      {
+        "inputTokens": 4977,
+        "outputTokens": 36,
+        "cacheReadTokens": 4608,
+        "cacheWriteTokens": 0,
+        "reasoningTokens": 0,
+        "cost": null
+      },
+      {
+        "inputTokens": 5033,
+        "outputTokens": 87,
+        "cacheReadTokens": 4864,
+        "cacheWriteTokens": 0,
+        "reasoningTokens": 0,
+        "cost": null
+      }
+    ],
+    "phases": [
+      {
+        "phase": "input.admitted",
+        "atMs": 1792542074452,
+        "clock": "recorded"
+      },
+      {
+        "phase": "input.promoted",
+        "atMs": 1792542074453,
+        "clock": "recorded"
+      },
+      {
+        "phase": "run.started",
+        "atMs": 1792542074454,
+        "clock": "recorded"
+      },
+      {
+        "phase": "provider.request",
+        "atMs": 1792542074461,
+        "clock": "recorded"
+      },
+      {
+        "phase": "provider.request.result",
+        "atMs": 1792542075572,
+        "clock": "recorded"
+      },
+      {
+        "phase": "tool.completed",
+        "atMs": 1792542076436,
+        "clock": "recorded"
+      },
+      {
+        "phase": "provider.request",
+        "atMs": 1792542076442,
+        "clock": "recorded"
+      },
+      {
+        "phase": "provider.request.result",
+        "atMs": 1792542077589,
+        "clock": "recorded"
+      },
+      {
+        "phase": "tool.dispatched",
+        "atMs": 1792542078491,
+        "clock": "recorded"
+      },
+      {
+        "phase": "tool.completed",
+        "atMs": 1792542078492,
+        "clock": "recorded"
+      },
+      {
+        "phase": "provider.request",
+        "atMs": 1792542078495,
+        "clock": "recorded"
+      },
+      {
+        "phase": "provider.request.result",
+        "atMs": 1792542079364,
+        "clock": "recorded"
+      },
+      {
+        "phase": "tool.dispatched",
+        "atMs": 1792542080435,
+        "clock": "recorded"
+      },
+      {
+        "phase": "tool.completed",
+        "atMs": 1792542080636,
+        "clock": "recorded"
+      },
+      {
+        "phase": "provider.request",
+        "atMs": 1792542080643,
+        "clock": "recorded"
+      },
+      {
+        "phase": "provider.request.result",
+        "atMs": 1792542081387,
+        "clock": "recorded"
+      },
+      {
+        "phase": "tool.dispatched",
+        "atMs": 1792542082223,
+        "clock": "recorded"
+      },
+      {
+        "phase": "tool.completed",
+        "atMs": 1792542082230,
+        "clock": "recorded"
+      },
+      {
+        "phase": "provider.request",
+        "atMs": 1792542082233,
+        "clock": "recorded"
+      },
+      {
+        "phase": "provider.request.result",
+        "atMs": 1792542083048,
+        "clock": "recorded"
+      },
+      {
+        "phase": "run.usage",
+        "atMs": 1792542083942,
+        "clock": "recorded"
+      },
+      {
+        "phase": "run.finished",
+        "atMs": 1792542083942,
+        "clock": "recorded"
+      },
+      {
+        "phase": "stop",
+        "atMs": 1792542083942,
+        "clock": "recorded"
+      },
+      {
+        "phase": "input.admitted",
+        "atMs": 1792542083965,
+        "clock": "recorded"
+      },
+      {
+        "phase": "input.promoted",
+        "atMs": 1792542083966,
+        "clock": "recorded"
+      },
+      {
+        "phase": "run.started",
+        "atMs": 1792542083966,
+        "clock": "recorded"
+      },
+      {
+        "phase": "provider.request",
+        "atMs": 1792542083972,
+        "clock": "recorded"
+      },
+      {
+        "phase": "provider.request.result",
+        "atMs": 1792542085097,
+        "clock": "recorded"
+      },
+      {
+        "phase": "tool.dispatched",
+        "atMs": 1792542086226,
+        "clock": "recorded"
+      },
+      {
+        "phase": "tool.completed",
+        "atMs": 1792542086235,
+        "clock": "recorded"
+      },
+      {
+        "phase": "provider.request",
+        "atMs": 1792542086239,
+        "clock": "recorded"
+      },
+      {
+        "phase": "provider.request.result",
+        "atMs": 1792542087113,
+        "clock": "recorded"
+      },
+      {
+        "phase": "run.usage",
+        "atMs": 1792542088046,
+        "clock": "recorded"
+      },
+      {
+        "phase": "run.finished",
+        "atMs": 1792542088046,
+        "clock": "recorded"
+      },
+      {
+        "phase": "stop",
+        "atMs": 1792542088046,
+        "clock": "recorded"
+      },
+      {
+        "phase": "input.admitted",
+        "atMs": 1792542088076,
+        "clock": "recorded"
+      },
+      {
+        "phase": "input.promoted",
+        "atMs": 1792542088077,
+        "clock": "recorded"
+      },
+      {
+        "phase": "run.started",
+        "atMs": 1792542088077,
+        "clock": "recorded"
+      },
+      {
+        "phase": "provider.request",
+        "atMs": 1792542088081,
+        "clock": "recorded"
+      },
+      {
+        "phase": "provider.request.result",
+        "atMs": 1792542088943,
+        "clock": "recorded"
+      },
+      {
+        "phase": "tool.dispatched",
+        "atMs": 1792542089752,
+        "clock": "recorded"
+      },
+      {
+        "phase": "tool.completed",
+        "atMs": 1792542089752,
+        "clock": "recorded"
+      },
+      {
+        "phase": "provider.request",
+        "atMs": 1792542089758,
+        "clock": "recorded"
+      },
+      {
+        "phase": "provider.request.result",
+        "atMs": 1792542090565,
+        "clock": "recorded"
+      },
+      {
+        "phase": "tool.dispatched",
+        "atMs": 1792542091651,
+        "clock": "recorded"
+      },
+      {
+        "phase": "tool.completed",
+        "atMs": 1792542091874,
+        "clock": "recorded"
+      },
+      {
+        "phase": "provider.request",
+        "atMs": 1792542091879,
+        "clock": "recorded"
+      },
+      {
+        "phase": "provider.request.result",
+        "atMs": 1792542093433,
+        "clock": "recorded"
+      },
+      {
+        "phase": "tool.dispatched",
+        "atMs": 1792542095688,
+        "clock": "recorded"
+      },
+      {
+        "phase": "tool.completed",
+        "atMs": 1792542095946,
+        "clock": "recorded"
+      },
+      {
+        "phase": "provider.request",
+        "atMs": 1792542095953,
+        "clock": "recorded"
+      },
+      {
+        "phase": "provider.request.result",
+        "atMs": 1792542096924,
+        "clock": "recorded"
+      },
+      {
+        "phase": "tool.dispatched",
+        "atMs": 1792542099030,
+        "clock": "recorded"
+      },
+      {
+        "phase": "tool.completed",
+        "atMs": 1792542099235,
+        "clock": "recorded"
+      },
+      {
+        "phase": "provider.request",
+        "atMs": 1792542099239,
+        "clock": "recorded"
+      },
+      {
+        "phase": "provider.request.result",
+        "atMs": 1792542100124,
+        "clock": "recorded"
+      },
+      {
+        "phase": "tool.dispatched",
+        "atMs": 1792542101576,
+        "clock": "recorded"
+      },
+      {
+        "phase": "tool.completed",
+        "atMs": 1792542101596,
+        "clock": "recorded"
+      },
+      {
+        "phase": "provider.request",
+        "atMs": 1792542101600,
+        "clock": "recorded"
+      },
+      {
+        "phase": "provider.request.result",
+        "atMs": 1792542102495,
+        "clock": "recorded"
+      },
+      {
+        "phase": "tool.dispatched",
+        "atMs": 1792542103970,
+        "clock": "recorded"
+      },
+      {
+        "phase": "tool.completed",
+        "atMs": 1792542104299,
+        "clock": "recorded"
+      },
+      {
+        "phase": "provider.request",
+        "atMs": 1792542104303,
+        "clock": "recorded"
+      },
+      {
+        "phase": "provider.request.result",
+        "atMs": 1792542105234,
+        "clock": "recorded"
+      },
+      {
+        "phase": "run.usage",
+        "atMs": 1792542106566,
+        "clock": "recorded"
+      },
+      {
+        "phase": "run.finished",
+        "atMs": 1792542106566,
+        "clock": "recorded"
+      },
+      {
+        "phase": "stop",
+        "atMs": 1792542106566,
+        "clock": "recorded"
+      },
+      {
+        "phase": "input.admitted",
+        "atMs": 1792542106599,
+        "clock": "recorded"
+      },
+      {
+        "phase": "input.promoted",
+        "atMs": 1792542106599,
+        "clock": "recorded"
+      },
+      {
+        "phase": "run.started",
+        "atMs": 1792542106600,
+        "clock": "recorded"
+      },
+      {
+        "phase": "provider.request",
+        "atMs": 1792542106604,
+        "clock": "recorded"
+      },
+      {
+        "phase": "provider.request.result",
+        "atMs": 1792542107537,
+        "clock": "recorded"
+      },
+      {
+        "phase": "tool.dispatched",
+        "atMs": 1792542108942,
+        "clock": "recorded"
+      },
+      {
+        "phase": "tool.completed",
+        "atMs": 1792542109270,
+        "clock": "recorded"
+      },
+      {
+        "phase": "provider.request",
+        "atMs": 1792542109275,
+        "clock": "recorded"
+      },
+      {
+        "phase": "provider.request.result",
+        "atMs": 1792542110327,
+        "clock": "recorded"
+      },
+      {
+        "phase": "run.usage",
+        "atMs": 1792542111239,
+        "clock": "recorded"
+      },
+      {
+        "phase": "run.finished",
+        "atMs": 1792542111239,
+        "clock": "recorded"
+      },
+      {
+        "phase": "stop",
+        "atMs": 1792542111239,
+        "clock": "recorded"
+      },
+      {
+        "phase": "input.admitted",
+        "atMs": 1792542111313,
+        "clock": "recorded"
+      },
+      {
+        "phase": "input.promoted",
+        "atMs": 1792542111314,
+        "clock": "recorded"
+      },
+      {
+        "phase": "run.started",
+        "atMs": 1792542111314,
+        "clock": "recorded"
+      },
+      {
+        "phase": "provider.request",
+        "atMs": 1792542111320,
+        "clock": "recorded"
+      },
+      {
+        "phase": "provider.request.result",
+        "atMs": 1792542112290,
+        "clock": "recorded"
+      },
+      {
+        "phase": "run.usage",
+        "atMs": 1792542114021,
+        "clock": "recorded"
+      },
+      {
+        "phase": "run.finished",
+        "atMs": 1792542114021,
+        "clock": "recorded"
+      },
+      {
+        "phase": "stop",
+        "atMs": 1792542114022,
+        "clock": "recorded"
+      },
+      {
+        "phase": "first-output",
+        "atMs": 1792542075574,
+        "clock": "observed"
+      },
+      {
+        "phase": "verified",
+        "atMs": 1792542114151,
+        "clock": "observed"
+      }
+    ],
+    "profile": {
+      "model": "gpt-6.1-sol",
+      "modelParametersHash": "97b748aef3657657dfa8725167a348037a3cfa6b5ed63a4842ce236925e4ee47",
+      "agentManifestHash": "d5a431d4720737723a14e80a712d0609b566e754627498e4ecdf359ac3e6c54a",
+      "permissionHash": "fb258a2268a3f5e0783dd783f37064484e81b44696ee90522326d3e67c66e132",
+      "toolSurfaceHash": "2530782d33adb0178572e1c86aa2f13d5e000bb7ecc5cf393d72052dcc6800e5"
+    },
+    "profileReceipts": 17,
+    "loops": {
+      "continuations": [],
+      "stopped": []
+    },
+    "toolCalls": 12,
+    "parallel": {
+      "batches": 0,
+      "batchedReads": 0,
+      "batchWallMs": 0
+    },
+    "context": {
+      "compaction": {},
+      "reasons": [],
+      "recallCalls": 0
+    },
+    "providerAttempts": [
+      {
+        "attempt": 0,
+        "protocol": "openai-responses",
+        "status": 200,
+        "outcome": "headers_received",
+        "detail": null
+      },
+      {
+        "attempt": 0,
+        "protocol": "openai-responses",
+        "status": 200,
+        "outcome": "headers_received",
+        "detail": null
+      },
+      {
+        "attempt": 0,
+        "protocol": "openai-responses",
+        "status": 200,
+        "outcome": "headers_received",
+        "detail": null
+      },
+      {
+        "attempt": 0,
+        "protocol": "openai-responses",
+        "status": 200,
+        "outcome": "headers_received",
+        "detail": null
+      },
+      {
+        "attempt": 0,
+        "protocol": "openai-responses",
+        "status": 200,
+        "outcome": "headers_received",
+        "detail": null
+      },
+      {
+        "attempt": 0,
+        "protocol": "openai-responses",
+        "status": 200,
+        "outcome": "headers_received",
+        "detail": null
+      },
+      {
+        "attempt": 0,
+        "protocol": "openai-responses",
+        "status": 200,
+        "outcome": "headers_received",
+        "detail": null
+      },
+      {
+        "attempt": 0,
+        "protocol": "openai-responses",
+        "status": 200,
+        "outcome": "headers_received",
+        "detail": null
+      },
+      {
+        "attempt": 0,
+        "protocol": "openai-responses",
+        "status": 200,
+        "outcome": "headers_received",
+        "detail": null
+      },
+      {
+        "attempt": 0,
+        "protocol": "openai-responses",
+        "status": 200,
+        "outcome": "headers_received",
+        "detail": null
+      },
+      {
+        "attempt": 0,
+        "protocol": "openai-responses",
+        "status": 200,
+        "outcome": "headers_received",
+        "detail": null
+      },
+      {
+        "attempt": 0,
+        "protocol": "openai-responses",
+        "status": 200,
+        "outcome": "headers_received",
+        "detail": null
+      },
+      {
+        "attempt": 0,
+        "protocol": "openai-responses",
+        "status": 200,
+        "outcome": "headers_received",
+        "detail": null
+      },
+      {
+        "attempt": 0,
+        "protocol": "openai-responses",
+        "status": 200,
+        "outcome": "headers_received",
+        "detail": null
+      },
+      {
+        "attempt": 0,
+        "protocol": "openai-responses",
+        "status": 200,
+        "outcome": "headers_received",
+        "detail": null
+      },
+      {
+        "attempt": 0,
+        "protocol": "openai-responses",
+        "status": 200,
+        "outcome": "headers_received",
+        "detail": null
+      },
+      {
+        "attempt": 0,
+        "protocol": "openai-responses",
+        "status": 200,
+        "outcome": "headers_received",
+        "detail": null
+      }
+    ],
+    "textHash": "24c1eaa5bc83f131ac45ae5f1751c2a747520be6b461bf27639ca1c9aeb42cfe",
+    "binarySha256": "558e1b764ac07f7cf2ea4b68d2b8a80268bf05bc34a477f92350c87e96d542bd",
+    "startedAtMs": 1792542074410,
+    "admissionMs": 1792542074452,
+    "elapsedMs": 39741
+  },
+  "assessment": {
+    "suiteHash": "bd905b4f81f0a9412b614631a36337723067574848c5f05b50ead1cf48675091",
+    "taskHash": "acc85904b2dcd251e4f30fbe7b74f29d6ae3d4266a73c7319c966169a74baa82",
+    "artifactPass": true,
+    "unexpected": [],
+    "immutable": [
+      {
+        "file": "AGENTS.md",
+        "unchanged": true
+      },
+      {
+        "file": "package.json",
+        "unchanged": true
+      }
+    ],
+    "expected": [],
+    "check": {
+      "command": [
+        "bun",
+        "test",
+        "test/long.test.ts"
+      ],
+      "exit": 0,
+      "stdoutHash": "c384cdaa55dad157820800a4aaa48c4963ea5500be5bd17037485dc40c6e23b8",
+      "stderrHash": "2a51ac921f0cff5efbbd3a4c57363eb2811ff3457b9884375222cac3e32121eb"
+    },
+    "executionVerdict": "unverified",
+    "requiredReceipts": [],
+    "answerContains": [
+      "LONG_SESSION_OK"
+    ]
+  },
+  "answer": "Created `src/unit.ts`:\n\n```ts\nexport const unit = 21;\n```\n\nNo other files were changed.\nCreated `src/double.ts`:\n\n```ts\nimport { unit } from './unit';\n\nexport function double() {\n  return unit * 2;\n}\n```\n\nNo other files were changed.\nCreated `test/long.test.ts` to assert `double()` equals `42` and print `LONG_SESSION_OK` after the assertion passes.\n\nRan it successfully: **1 test passed, 0 failed**, and the marker was printed. Used an inline Node resolution hook for the extensionless `./unit` import; no configuration or existing files were changed.\nReran the test: **1 passed, 0 failed**, with `LONG_SESSION_OK` printed. No repairs were needed, and no files were changed.\nCreated:\n- `src/unit.ts` — exports `unit = 21`.\n- `src/double.ts` — imports `unit` and exports `double()`, returning `unit * 2`.\n- `test/long.test.ts` — asserts `double()` equals `42` and prints the marker after the assertion passes.\n\nThe test passed. Exact printed marker:\n\n```text\nLONG_SESSION_OK\n```"
+}

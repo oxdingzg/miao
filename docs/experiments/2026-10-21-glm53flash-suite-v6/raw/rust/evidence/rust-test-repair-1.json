@@ -1,0 +1,452 @@
+{
+  "sample": {
+    "task": "test-repair",
+    "engine": "rust",
+    "repetition": 1,
+    "suiteHash": "bd905b4f81f0a9412b614631a36337723067574848c5f05b50ead1cf48675091",
+    "taskHash": "9012e1117d9ccfbc967186426bc4800a8d6c15344e5ed9fb9d2b8d4dbda1568d",
+    "profile": {
+      "model": "glm-5.3-flash",
+      "modelParametersHash": "ef3d96a9ec0464401ae599f38c478bab21fa051e068e9d158e5c186628e7a393",
+      "agentManifestHash": "2dbdecca09d38a807edd88d10f18f4febcb6aa5dcbdc2c1bb17f06446b689562",
+      "permissionHash": "583f7ea2cae7781bfbe397b1a92274a350e9286462f890d7b0c5e521e4e9577d",
+      "toolSurfaceHash": "030e8aa88e47e3b80f22cf56ad2e1e846fccae4fe269a40ae2b9762eb58f0478"
+    },
+    "revision": "fa6bac5cce43b6110bee5d96ce3657d8567c3a3f",
+    "artifactHash": "b90cfd01d5fe28003a5ca719e181df07e0a8a137c97870bcf2e16dfcc490aa1c",
+    "receiptHash": "b606473e2b8ff93c172b1c786a2a28480a2307a828e132379ea8a585a4e5e6e6",
+    "outcome": "passed",
+    "elapsedMs": 43445,
+    "attempts": [
+      {
+        "inputTokens": 4590,
+        "outputTokens": 30,
+        "cost": null
+      },
+      {
+        "inputTokens": 4706,
+        "outputTokens": 40,
+        "cost": null
+      },
+      {
+        "inputTokens": 5012,
+        "outputTokens": 223,
+        "cost": null
+      },
+      {
+        "inputTokens": 5522,
+        "outputTokens": 224,
+        "cost": null
+      },
+      {
+        "inputTokens": 5822,
+        "outputTokens": 35,
+        "cost": null
+      },
+      {
+        "inputTokens": 5981,
+        "outputTokens": 159,
+        "cost": null
+      },
+      {
+        "inputTokens": 6410,
+        "outputTokens": 347,
+        "cost": null
+      }
+    ]
+  },
+  "rejection": null,
+  "evidence": {
+    "engine": "rust",
+    "revision": "fa6bac5cce43b6110bee5d96ce3657d8567c3a3f",
+    "task": "test-repair",
+    "repetition": 1,
+    "terminal": "completed",
+    "error": null,
+    "receipts": [],
+    "attempts": [
+      {
+        "inputTokens": 4590,
+        "outputTokens": 30,
+        "cacheReadTokens": 4544,
+        "cacheWriteTokens": null,
+        "reasoningTokens": 13,
+        "cost": null
+      },
+      {
+        "inputTokens": 4706,
+        "outputTokens": 40,
+        "cacheReadTokens": 4544,
+        "cacheWriteTokens": null,
+        "reasoningTokens": 0,
+        "cost": null
+      },
+      {
+        "inputTokens": 5012,
+        "outputTokens": 223,
+        "cacheReadTokens": 4672,
+        "cacheWriteTokens": null,
+        "reasoningTokens": 178,
+        "cost": null
+      },
+      {
+        "inputTokens": 5522,
+        "outputTokens": 224,
+        "cacheReadTokens": 4992,
+        "cacheWriteTokens": null,
+        "reasoningTokens": 60,
+        "cost": null
+      },
+      {
+        "inputTokens": 5822,
+        "outputTokens": 35,
+        "cacheReadTokens": 5504,
+        "cacheWriteTokens": null,
+        "reasoningTokens": 0,
+        "cost": null
+      },
+      {
+        "inputTokens": 5981,
+        "outputTokens": 159,
+        "cacheReadTokens": 5760,
+        "cacheWriteTokens": null,
+        "reasoningTokens": 33,
+        "cost": null
+      },
+      {
+        "inputTokens": 6410,
+        "outputTokens": 347,
+        "cacheReadTokens": 5952,
+        "cacheWriteTokens": null,
+        "reasoningTokens": 81,
+        "cost": null
+      }
+    ],
+    "phases": [
+      {
+        "phase": "input.admitted",
+        "atMs": 1792542682759,
+        "clock": "recorded"
+      },
+      {
+        "phase": "input.promoted",
+        "atMs": 1792542682760,
+        "clock": "recorded"
+      },
+      {
+        "phase": "run.started",
+        "atMs": 1792542682760,
+        "clock": "recorded"
+      },
+      {
+        "phase": "provider.request",
+        "atMs": 1792542682763,
+        "clock": "recorded"
+      },
+      {
+        "phase": "provider.request.result",
+        "atMs": 1792542686656,
+        "clock": "recorded"
+      },
+      {
+        "phase": "tool.dispatched",
+        "atMs": 1792542687630,
+        "clock": "recorded"
+      },
+      {
+        "phase": "tool.dispatched",
+        "atMs": 1792542687630,
+        "clock": "recorded"
+      },
+      {
+        "phase": "tool.completed",
+        "atMs": 1792542687631,
+        "clock": "recorded"
+      },
+      {
+        "phase": "tool.completed",
+        "atMs": 1792542687631,
+        "clock": "recorded"
+      },
+      {
+        "phase": "provider.request",
+        "atMs": 1792542687633,
+        "clock": "recorded"
+      },
+      {
+        "phase": "provider.request.result",
+        "atMs": 1792542689353,
+        "clock": "recorded"
+      },
+      {
+        "phase": "tool.dispatched",
+        "atMs": 1792542689605,
+        "clock": "recorded"
+      },
+      {
+        "phase": "tool.dispatched",
+        "atMs": 1792542689605,
+        "clock": "recorded"
+      },
+      {
+        "phase": "tool.dispatched",
+        "atMs": 1792542689606,
+        "clock": "recorded"
+      },
+      {
+        "phase": "tool.completed",
+        "atMs": 1792542689607,
+        "clock": "recorded"
+      },
+      {
+        "phase": "tool.completed",
+        "atMs": 1792542689607,
+        "clock": "recorded"
+      },
+      {
+        "phase": "tool.completed",
+        "atMs": 1792542689607,
+        "clock": "recorded"
+      },
+      {
+        "phase": "provider.request",
+        "atMs": 1792542689610,
+        "clock": "recorded"
+      },
+      {
+        "phase": "provider.request.result",
+        "atMs": 1792542694440,
+        "clock": "recorded"
+      },
+      {
+        "phase": "tool.dispatched",
+        "atMs": 1792542697715,
+        "clock": "recorded"
+      },
+      {
+        "phase": "tool.completed",
+        "atMs": 1792542697931,
+        "clock": "recorded"
+      },
+      {
+        "phase": "provider.request",
+        "atMs": 1792542697934,
+        "clock": "recorded"
+      },
+      {
+        "phase": "provider.request.result",
+        "atMs": 1792542701599,
+        "clock": "recorded"
+      },
+      {
+        "phase": "tool.dispatched",
+        "atMs": 1792542705307,
+        "clock": "recorded"
+      },
+      {
+        "phase": "tool.completed",
+        "atMs": 1792542705316,
+        "clock": "recorded"
+      },
+      {
+        "phase": "provider.request",
+        "atMs": 1792542705322,
+        "clock": "recorded"
+      },
+      {
+        "phase": "provider.request.result",
+        "atMs": 1792542709325,
+        "clock": "recorded"
+      },
+      {
+        "phase": "tool.dispatched",
+        "atMs": 1792542710008,
+        "clock": "recorded"
+      },
+      {
+        "phase": "tool.completed",
+        "atMs": 1792542710224,
+        "clock": "recorded"
+      },
+      {
+        "phase": "provider.request",
+        "atMs": 1792542710226,
+        "clock": "recorded"
+      },
+      {
+        "phase": "provider.request.result",
+        "atMs": 1792542714084,
+        "clock": "recorded"
+      },
+      {
+        "phase": "tool.dispatched",
+        "atMs": 1792542717883,
+        "clock": "recorded"
+      },
+      {
+        "phase": "tool.completed",
+        "atMs": 1792542718098,
+        "clock": "recorded"
+      },
+      {
+        "phase": "tool.dispatched",
+        "atMs": 1792542718099,
+        "clock": "recorded"
+      },
+      {
+        "phase": "tool.completed",
+        "atMs": 1792542718288,
+        "clock": "recorded"
+      },
+      {
+        "phase": "provider.request",
+        "atMs": 1792542718291,
+        "clock": "recorded"
+      },
+      {
+        "phase": "provider.request.result",
+        "atMs": 1792542719086,
+        "clock": "recorded"
+      },
+      {
+        "phase": "run.usage",
+        "atMs": 1792542726075,
+        "clock": "recorded"
+      },
+      {
+        "phase": "run.finished",
+        "atMs": 1792542726075,
+        "clock": "recorded"
+      },
+      {
+        "phase": "stop",
+        "atMs": 1792542726075,
+        "clock": "recorded"
+      },
+      {
+        "phase": "first-output",
+        "atMs": 1792542686657,
+        "clock": "observed"
+      },
+      {
+        "phase": "verified",
+        "atMs": 1792542726187,
+        "clock": "observed"
+      }
+    ],
+    "profile": {
+      "model": "glm-5.3-flash",
+      "modelParametersHash": "ef3d96a9ec0464401ae599f38c478bab21fa051e068e9d158e5c186628e7a393",
+      "agentManifestHash": "2dbdecca09d38a807edd88d10f18f4febcb6aa5dcbdc2c1bb17f06446b689562",
+      "permissionHash": "583f7ea2cae7781bfbe397b1a92274a350e9286462f890d7b0c5e521e4e9577d",
+      "toolSurfaceHash": "030e8aa88e47e3b80f22cf56ad2e1e846fccae4fe269a40ae2b9762eb58f0478"
+    },
+    "profileReceipts": 7,
+    "loops": {
+      "continuations": [],
+      "stopped": []
+    },
+    "toolCalls": 10,
+    "parallel": {
+      "batches": 2,
+      "batchedReads": 5,
+      "batchWallMs": 2
+    },
+    "context": {
+      "compaction": {},
+      "reasons": [],
+      "recallCalls": 0
+    },
+    "providerAttempts": [
+      {
+        "attempt": 0,
+        "protocol": "openai-chat",
+        "status": 200,
+        "outcome": "headers_received",
+        "detail": null
+      },
+      {
+        "attempt": 0,
+        "protocol": "openai-chat",
+        "status": 200,
+        "outcome": "headers_received",
+        "detail": null
+      },
+      {
+        "attempt": 0,
+        "protocol": "openai-chat",
+        "status": 200,
+        "outcome": "headers_received",
+        "detail": null
+      },
+      {
+        "attempt": 0,
+        "protocol": "openai-chat",
+        "status": 200,
+        "outcome": "headers_received",
+        "detail": null
+      },
+      {
+        "attempt": 0,
+        "protocol": "openai-chat",
+        "status": 200,
+        "outcome": "headers_received",
+        "detail": null
+      },
+      {
+        "attempt": 0,
+        "protocol": "openai-chat",
+        "status": 200,
+        "outcome": "headers_received",
+        "detail": null
+      },
+      {
+        "attempt": 0,
+        "protocol": "openai-chat",
+        "status": 200,
+        "outcome": "headers_received",
+        "detail": null
+      }
+    ],
+    "textHash": "ae46ff042d5f28939c6a4318ec8791efab88a33c02e4d94a4f79a22fec76b92b",
+    "binarySha256": "558e1b764ac07f7cf2ea4b68d2b8a80268bf05bc34a477f92350c87e96d542bd",
+    "startedAtMs": 1792542682742,
+    "admissionMs": 1792542682759,
+    "elapsedMs": 43445
+  },
+  "assessment": {
+    "suiteHash": "bd905b4f81f0a9412b614631a36337723067574848c5f05b50ead1cf48675091",
+    "taskHash": "9012e1117d9ccfbc967186426bc4800a8d6c15344e5ed9fb9d2b8d4dbda1568d",
+    "artifactPass": true,
+    "unexpected": [],
+    "immutable": [
+      {
+        "file": "AGENTS.md",
+        "unchanged": true
+      },
+      {
+        "file": "package.json",
+        "unchanged": true
+      },
+      {
+        "file": "test/oracle.test.ts",
+        "unchanged": true
+      }
+    ],
+    "expected": [],
+    "check": {
+      "command": [
+        "bun",
+        "test",
+        "test/oracle.test.ts"
+      ],
+      "exit": 0,
+      "stdoutHash": "d6684989b8dd63b37d2f1954270826fbe1bd89a8debd12bcacf03ed1c6140ef6",
+      "stderrHash": "e628ccf93247660d6489fb4139a88c074b064f6a82ee817e684668634ba83c90"
+    },
+    "executionVerdict": "unverified",
+    "requiredReceipts": [],
+    "answerContains": []
+  },
+  "answer": "The test uses `bun:test`, so let me run the existing test first to capture the baseline failure.\nBaseline confirmed: `tokens('')` returns `['']` and whitespace isn't trimmed. Now I'll repair `src/tokens.ts`, keeping the same signature and leaving the test untouched.\nNow verify the repair by re-running the test suite:\nThe test passes. Let me also sanity-check edge cases beyond the oracle test and confirm the test file is untouched:\nRepair complete and verified.\n\n**What was wrong:** `src/tokens.ts` did a bare `value.split(',')`, so `tokens('')` returned `['']` and tokens with surrounding whitespace like `' a '` were kept verbatim.\n\n**The fix** (signature `tokens(value: string)` preserved):\n```ts\nexport function tokens(value: string) { return value.split(',').map((token) => token.trim()).filter((token) => token.length > 0) }\n```\nEach comma-separated token is trimmed, then empty tokens are filtered out.\n\n**Verification:**\n- Baseline run failed as expected (`0 pass / 1 fail`, with `tokens('')` → `[\"\"]`).\n- After the fix: `bun test` → **1 pass, 0 fail** (3 expect calls).\n- Extra edge checks: `'  x  ,\\t y\\t ,  ,,,'` → `[\"x\",\"y\"]`, `'a,,b'` → `[\"a\",\"b\"]`, `'single'` → `[\"single\"]`, `''` → `[]`.\n- `test/oracle.test.ts` (sha256 `5726a23d…`), `package.json`, and `AGENTS.md` are byte-for-byte unchanged."
+}

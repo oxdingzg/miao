@@ -1,0 +1,121 @@
+{
+  "sample": {
+    "task": "stream-interruption",
+    "engine": "typescript",
+    "repetition": 1,
+    "suiteHash": "bd905b4f81f0a9412b614631a36337723067574848c5f05b50ead1cf48675091",
+    "taskHash": "4f00bf344635036fd5d16a5b348e948e9ed126d43854e1280b1286d48d53284c",
+    "profile": {
+      "model": "glm-5.3-flash",
+      "modelParametersHash": "7ca881b23eb98ab956a801fb7883aee8a361ee54cb140f1c0e581754d959cd21",
+      "agentManifestHash": "197fbaf321518b1028f78e16f0f7899b9e2e88e00af2b24cd65f150b652d0819",
+      "permissionHash": "c931e71367f117f44b3b11aa5495b6b4d58a08d5042820d6c721f8c9c643ac1b",
+      "toolSurfaceHash": "04c769ae52448d5fe45ea690050120cee624771222b1291088dc6d832c888106"
+    },
+    "revision": "fa6bac5cce43b6110bee5d96ce3657d8567c3a3f",
+    "artifactHash": "4db87f5a57332a70b4f7eb7147fba9d1badbe824dd172edd45ff30a1ba872b10",
+    "receiptHash": "2eadd420a29bc1d5d49d627d822bbb2ea5ae6ff59e3edcf5aba2a63514a610a5",
+    "outcome": "failed",
+    "elapsedMs": 7810,
+    "attempts": [
+      {
+        "inputTokens": 13620,
+        "outputTokens": 86,
+        "cost": null
+      }
+    ]
+  },
+  "rejection": null,
+  "evidence": {
+    "engine": "typescript",
+    "revision": "fa6bac5cce43b6110bee5d96ce3657d8567c3a3f",
+    "task": "stream-interruption",
+    "repetition": 1,
+    "terminal": "interrupted",
+    "error": "exit 130",
+    "receipts": [],
+    "attempts": [
+      {
+        "inputTokens": 13620,
+        "outputTokens": 86,
+        "cacheReadTokens": 11456,
+        "cacheWriteTokens": null,
+        "reasoningTokens": 64,
+        "cost": null
+      }
+    ],
+    "phases": [
+      {
+        "phase": "step-start",
+        "atMs": 1792541082022,
+        "clock": "observed"
+      },
+      {
+        "phase": "tool-part",
+        "atMs": 1792541083316,
+        "clock": "observed"
+      },
+      {
+        "phase": "exit",
+        "atMs": 1792541083344,
+        "clock": "observed"
+      },
+      {
+        "phase": "verified",
+        "atMs": 1792541083347,
+        "clock": "observed"
+      }
+    ],
+    "profile": {
+      "model": "glm-5.3-flash",
+      "modelParametersHash": "7ca881b23eb98ab956a801fb7883aee8a361ee54cb140f1c0e581754d959cd21",
+      "agentManifestHash": "197fbaf321518b1028f78e16f0f7899b9e2e88e00af2b24cd65f150b652d0819",
+      "permissionHash": "c931e71367f117f44b3b11aa5495b6b4d58a08d5042820d6c721f8c9c643ac1b",
+      "toolSurfaceHash": "04c769ae52448d5fe45ea690050120cee624771222b1291088dc6d832c888106"
+    },
+    "profileReceipts": 1,
+    "loops": {
+      "continuations": [],
+      "stopped": []
+    },
+    "toolCalls": 1,
+    "textHash": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "binarySha256": null,
+    "startedAtMs": 1792541075537,
+    "admissionMs": null,
+    "elapsedMs": 7810
+  },
+  "assessment": {
+    "suiteHash": "bd905b4f81f0a9412b614631a36337723067574848c5f05b50ead1cf48675091",
+    "taskHash": "4f00bf344635036fd5d16a5b348e948e9ed126d43854e1280b1286d48d53284c",
+    "artifactPass": false,
+    "unexpected": [],
+    "immutable": [
+      {
+        "file": "AGENTS.md",
+        "unchanged": true
+      },
+      {
+        "file": "package.json",
+        "unchanged": true
+      },
+      {
+        "file": "action.ts",
+        "unchanged": true
+      }
+    ],
+    "expected": [
+      {
+        "file": "audit.log",
+        "matches": false
+      }
+    ],
+    "check": null,
+    "executionVerdict": "unverified",
+    "requiredReceipts": [
+      "provider.interrupted"
+    ],
+    "answerContains": []
+  },
+  "answer": ""
+}

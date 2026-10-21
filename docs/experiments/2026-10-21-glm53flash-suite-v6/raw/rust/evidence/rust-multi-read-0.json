@@ -1,0 +1,238 @@
+{
+  "sample": {
+    "task": "multi-read",
+    "engine": "rust",
+    "repetition": 0,
+    "suiteHash": "bd905b4f81f0a9412b614631a36337723067574848c5f05b50ead1cf48675091",
+    "taskHash": "0d7d997929618a514b0f84f56b810cb5280f5b1ac1bca88065d107d1cb7b8147",
+    "profile": {
+      "model": "glm-5.3-flash",
+      "modelParametersHash": "ef3d96a9ec0464401ae599f38c478bab21fa051e068e9d158e5c186628e7a393",
+      "agentManifestHash": "2dbdecca09d38a807edd88d10f18f4febcb6aa5dcbdc2c1bb17f06446b689562",
+      "permissionHash": "3c3f9e515e0065bfe6b99a27fc9e065c16b9dd1e3716458df7b413eb1b483df0",
+      "toolSurfaceHash": "030e8aa88e47e3b80f22cf56ad2e1e846fccae4fe269a40ae2b9762eb58f0478"
+    },
+    "revision": "fa6bac5cce43b6110bee5d96ce3657d8567c3a3f",
+    "artifactHash": "586a1fde7e44ffb98847844587b9df8f432114691ef834b8916734a0becc9f63",
+    "receiptHash": "afc65535dfc46daaf3040515accc9b2d2b361180b6ceeca70798b48025e30d92",
+    "outcome": "passed",
+    "elapsedMs": 11143,
+    "attempts": [
+      {
+        "inputTokens": 4594,
+        "outputTokens": 94,
+        "cost": null
+      },
+      {
+        "inputTokens": 4865,
+        "outputTokens": 121,
+        "cost": null
+      }
+    ]
+  },
+  "rejection": null,
+  "evidence": {
+    "engine": "rust",
+    "revision": "fa6bac5cce43b6110bee5d96ce3657d8567c3a3f",
+    "task": "multi-read",
+    "repetition": 0,
+    "terminal": "completed",
+    "error": null,
+    "receipts": [],
+    "attempts": [
+      {
+        "inputTokens": 4594,
+        "outputTokens": 94,
+        "cacheReadTokens": 4544,
+        "cacheWriteTokens": null,
+        "reasoningTokens": 53,
+        "cost": null
+      },
+      {
+        "inputTokens": 4865,
+        "outputTokens": 121,
+        "cacheReadTokens": 4544,
+        "cacheWriteTokens": null,
+        "reasoningTokens": 34,
+        "cost": null
+      }
+    ],
+    "phases": [
+      {
+        "phase": "input.admitted",
+        "atMs": 1792542362918,
+        "clock": "recorded"
+      },
+      {
+        "phase": "input.promoted",
+        "atMs": 1792542362941,
+        "clock": "recorded"
+      },
+      {
+        "phase": "run.started",
+        "atMs": 1792542362978,
+        "clock": "recorded"
+      },
+      {
+        "phase": "provider.request",
+        "atMs": 1792542363023,
+        "clock": "recorded"
+      },
+      {
+        "phase": "provider.request.result",
+        "atMs": 1792542366936,
+        "clock": "recorded"
+      },
+      {
+        "phase": "tool.dispatched",
+        "atMs": 1792542368195,
+        "clock": "recorded"
+      },
+      {
+        "phase": "tool.dispatched",
+        "atMs": 1792542368195,
+        "clock": "recorded"
+      },
+      {
+        "phase": "tool.dispatched",
+        "atMs": 1792542368195,
+        "clock": "recorded"
+      },
+      {
+        "phase": "tool.completed",
+        "atMs": 1792542368195,
+        "clock": "recorded"
+      },
+      {
+        "phase": "tool.completed",
+        "atMs": 1792542368196,
+        "clock": "recorded"
+      },
+      {
+        "phase": "tool.completed",
+        "atMs": 1792542368196,
+        "clock": "recorded"
+      },
+      {
+        "phase": "provider.request",
+        "atMs": 1792542368199,
+        "clock": "recorded"
+      },
+      {
+        "phase": "provider.request.result",
+        "atMs": 1792542372009,
+        "clock": "recorded"
+      },
+      {
+        "phase": "run.usage",
+        "atMs": 1792542373915,
+        "clock": "recorded"
+      },
+      {
+        "phase": "run.finished",
+        "atMs": 1792542373915,
+        "clock": "recorded"
+      },
+      {
+        "phase": "stop",
+        "atMs": 1792542373916,
+        "clock": "recorded"
+      },
+      {
+        "phase": "first-output",
+        "atMs": 1792542366937,
+        "clock": "observed"
+      },
+      {
+        "phase": "verified",
+        "atMs": 1792542373922,
+        "clock": "observed"
+      }
+    ],
+    "profile": {
+      "model": "glm-5.3-flash",
+      "modelParametersHash": "ef3d96a9ec0464401ae599f38c478bab21fa051e068e9d158e5c186628e7a393",
+      "agentManifestHash": "2dbdecca09d38a807edd88d10f18f4febcb6aa5dcbdc2c1bb17f06446b689562",
+      "permissionHash": "3c3f9e515e0065bfe6b99a27fc9e065c16b9dd1e3716458df7b413eb1b483df0",
+      "toolSurfaceHash": "030e8aa88e47e3b80f22cf56ad2e1e846fccae4fe269a40ae2b9762eb58f0478"
+    },
+    "profileReceipts": 2,
+    "loops": {
+      "continuations": [],
+      "stopped": []
+    },
+    "toolCalls": 3,
+    "parallel": {
+      "batches": 1,
+      "batchedReads": 3,
+      "batchWallMs": 0
+    },
+    "context": {
+      "compaction": {},
+      "reasons": [],
+      "recallCalls": 0
+    },
+    "providerAttempts": [
+      {
+        "attempt": 0,
+        "protocol": "openai-chat",
+        "status": 200,
+        "outcome": "headers_received",
+        "detail": null
+      },
+      {
+        "attempt": 0,
+        "protocol": "openai-chat",
+        "status": 200,
+        "outcome": "headers_received",
+        "detail": null
+      }
+    ],
+    "textHash": "effb34899c21e8e54699283d14d20dfddab6697b8aeb31a234fd96e408cd50ba",
+    "binarySha256": "558e1b764ac07f7cf2ea4b68d2b8a80268bf05bc34a477f92350c87e96d542bd",
+    "startedAtMs": 1792542362779,
+    "admissionMs": 1792542362918,
+    "elapsedMs": 11143
+  },
+  "assessment": {
+    "suiteHash": "bd905b4f81f0a9412b614631a36337723067574848c5f05b50ead1cf48675091",
+    "taskHash": "0d7d997929618a514b0f84f56b810cb5280f5b1ac1bca88065d107d1cb7b8147",
+    "artifactPass": true,
+    "unexpected": [],
+    "immutable": [
+      {
+        "file": "AGENTS.md",
+        "unchanged": true
+      },
+      {
+        "file": "package.json",
+        "unchanged": true
+      },
+      {
+        "file": "src/alpha.ts",
+        "unchanged": true
+      },
+      {
+        "file": "src/beta.ts",
+        "unchanged": true
+      },
+      {
+        "file": "src/gamma.ts",
+        "unchanged": true
+      }
+    ],
+    "expected": [],
+    "check": null,
+    "executionVerdict": "unverified",
+    "requiredReceipts": [],
+    "answerContains": [
+      "alpha",
+      "11",
+      "beta",
+      "22",
+      "gamma",
+      "33"
+    ]
+  },
+  "answer": "All three files were read as they are, and no files were modified. The exported constants, in order:\n\n| File | Constant name | Value |\n|------|---------------|-------|\n| `src/alpha.ts` | `alpha` | `11` |\n| `src/beta.ts` | `beta` | `22` |\n| `src/gamma.ts` | `gamma` | `33` |"
+}

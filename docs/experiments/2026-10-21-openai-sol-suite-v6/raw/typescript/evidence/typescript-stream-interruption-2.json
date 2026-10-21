@@ -1,0 +1,121 @@
+{
+  "sample": {
+    "task": "stream-interruption",
+    "engine": "typescript",
+    "repetition": 2,
+    "suiteHash": "bd905b4f81f0a9412b614631a36337723067574848c5f05b50ead1cf48675091",
+    "taskHash": "4f00bf344635036fd5d16a5b348e948e9ed126d43854e1280b1286d48d53284c",
+    "profile": {
+      "model": "gpt-6.1-sol",
+      "modelParametersHash": "23af286d278671b0966ee1bfb4c66361e5d440efb9aeafca6c6e1107e43b2650",
+      "agentManifestHash": "2fb9ebb3e88630cafe62276c01fc2c969374c95613446ed3b7db6b4f5ab3c9df",
+      "permissionHash": "4c848e5d501878165bbb7212b1e7fadf1251bf81eb1d672998847909cecc7c25",
+      "toolSurfaceHash": "04c769ae52448d5fe45ea690050120cee624771222b1291088dc6d832c888106"
+    },
+    "revision": "fa6bac5cce43b6110bee5d96ce3657d8567c3a3f",
+    "artifactHash": "2b4e04ae507e25e4b1036dff0509a0cb4fc4f014bfde0083fccd539fa1e60df2",
+    "receiptHash": "600f1bca5723857fd46f22d0b2a0b9e974bcfed1323d0e01866e3db6b12db6f1",
+    "outcome": "failed",
+    "elapsedMs": 7463,
+    "attempts": [
+      {
+        "inputTokens": 9890,
+        "outputTokens": 20,
+        "cost": null
+      }
+    ]
+  },
+  "rejection": null,
+  "evidence": {
+    "engine": "typescript",
+    "revision": "fa6bac5cce43b6110bee5d96ce3657d8567c3a3f",
+    "task": "stream-interruption",
+    "repetition": 2,
+    "terminal": "interrupted",
+    "error": "exit 130",
+    "receipts": [],
+    "attempts": [
+      {
+        "inputTokens": 9890,
+        "outputTokens": 20,
+        "cacheReadTokens": 6656,
+        "cacheWriteTokens": 0,
+        "reasoningTokens": 0,
+        "cost": null
+      }
+    ],
+    "phases": [
+      {
+        "phase": "step-start",
+        "atMs": 1792541035328,
+        "clock": "observed"
+      },
+      {
+        "phase": "tool-part",
+        "atMs": 1792541035950,
+        "clock": "observed"
+      },
+      {
+        "phase": "exit",
+        "atMs": 1792541036009,
+        "clock": "observed"
+      },
+      {
+        "phase": "verified",
+        "atMs": 1792541036013,
+        "clock": "observed"
+      }
+    ],
+    "profile": {
+      "model": "gpt-6.1-sol",
+      "modelParametersHash": "23af286d278671b0966ee1bfb4c66361e5d440efb9aeafca6c6e1107e43b2650",
+      "agentManifestHash": "2fb9ebb3e88630cafe62276c01fc2c969374c95613446ed3b7db6b4f5ab3c9df",
+      "permissionHash": "4c848e5d501878165bbb7212b1e7fadf1251bf81eb1d672998847909cecc7c25",
+      "toolSurfaceHash": "04c769ae52448d5fe45ea690050120cee624771222b1291088dc6d832c888106"
+    },
+    "profileReceipts": 1,
+    "loops": {
+      "continuations": [],
+      "stopped": []
+    },
+    "toolCalls": 1,
+    "textHash": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "binarySha256": null,
+    "startedAtMs": 1792541028550,
+    "admissionMs": null,
+    "elapsedMs": 7463
+  },
+  "assessment": {
+    "suiteHash": "bd905b4f81f0a9412b614631a36337723067574848c5f05b50ead1cf48675091",
+    "taskHash": "4f00bf344635036fd5d16a5b348e948e9ed126d43854e1280b1286d48d53284c",
+    "artifactPass": true,
+    "unexpected": [],
+    "immutable": [
+      {
+        "file": "AGENTS.md",
+        "unchanged": true
+      },
+      {
+        "file": "package.json",
+        "unchanged": true
+      },
+      {
+        "file": "action.ts",
+        "unchanged": true
+      }
+    ],
+    "expected": [
+      {
+        "file": "audit.log",
+        "matches": true
+      }
+    ],
+    "check": null,
+    "executionVerdict": "unverified",
+    "requiredReceipts": [
+      "provider.interrupted"
+    ],
+    "answerContains": []
+  },
+  "answer": ""
+}

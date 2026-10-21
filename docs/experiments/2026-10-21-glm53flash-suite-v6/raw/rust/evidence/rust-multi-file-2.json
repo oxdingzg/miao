@@ -1,0 +1,412 @@
+{
+  "sample": {
+    "task": "multi-file",
+    "engine": "rust",
+    "repetition": 2,
+    "suiteHash": "bd905b4f81f0a9412b614631a36337723067574848c5f05b50ead1cf48675091",
+    "taskHash": "a5041ea521bf1671656245fae3d7fab12d071b4b5b82cf29607998143aadc602",
+    "profile": {
+      "model": "glm-5.3-flash",
+      "modelParametersHash": "ef3d96a9ec0464401ae599f38c478bab21fa051e068e9d158e5c186628e7a393",
+      "agentManifestHash": "2dbdecca09d38a807edd88d10f18f4febcb6aa5dcbdc2c1bb17f06446b689562",
+      "permissionHash": "d1ceade73d587aecda5f790accb6e5bfdd056e0342aa8f6fa74f453f1e28e10a",
+      "toolSurfaceHash": "030e8aa88e47e3b80f22cf56ad2e1e846fccae4fe269a40ae2b9762eb58f0478"
+    },
+    "revision": "fa6bac5cce43b6110bee5d96ce3657d8567c3a3f",
+    "artifactHash": "112661ffb2246481ff916e8aff9839dc956071bd54f6e615919e51f6ffecea6e",
+    "receiptHash": "7add528f84fc7800649ed9d7e20fc35f8a96d7a0216217162451acf53522c0a6",
+    "outcome": "passed",
+    "elapsedMs": 32797,
+    "attempts": [
+      {
+        "inputTokens": 4590,
+        "outputTokens": 25,
+        "cost": null
+      },
+      {
+        "inputTokens": 4663,
+        "outputTokens": 23,
+        "cost": null
+      },
+      {
+        "inputTokens": 4815,
+        "outputTokens": 40,
+        "cost": null
+      },
+      {
+        "inputTokens": 5135,
+        "outputTokens": 449,
+        "cost": null
+      },
+      {
+        "inputTokens": 5726,
+        "outputTokens": 28,
+        "cost": null
+      },
+      {
+        "inputTokens": 5880,
+        "outputTokens": 247,
+        "cost": null
+      }
+    ]
+  },
+  "rejection": null,
+  "evidence": {
+    "engine": "rust",
+    "revision": "fa6bac5cce43b6110bee5d96ce3657d8567c3a3f",
+    "task": "multi-file",
+    "repetition": 2,
+    "terminal": "completed",
+    "error": null,
+    "receipts": [],
+    "attempts": [
+      {
+        "inputTokens": 4590,
+        "outputTokens": 25,
+        "cacheReadTokens": 4544,
+        "cacheWriteTokens": null,
+        "reasoningTokens": 13,
+        "cost": null
+      },
+      {
+        "inputTokens": 4663,
+        "outputTokens": 23,
+        "cacheReadTokens": 4608,
+        "cacheWriteTokens": null,
+        "reasoningTokens": 0,
+        "cost": null
+      },
+      {
+        "inputTokens": 4815,
+        "outputTokens": 40,
+        "cacheReadTokens": 4608,
+        "cacheWriteTokens": null,
+        "reasoningTokens": 0,
+        "cost": null
+      },
+      {
+        "inputTokens": 5135,
+        "outputTokens": 449,
+        "cacheReadTokens": 4800,
+        "cacheWriteTokens": null,
+        "reasoningTokens": 194,
+        "cost": null
+      },
+      {
+        "inputTokens": 5726,
+        "outputTokens": 28,
+        "cacheReadTokens": 5120,
+        "cacheWriteTokens": null,
+        "reasoningTokens": 0,
+        "cost": null
+      },
+      {
+        "inputTokens": 5880,
+        "outputTokens": 247,
+        "cacheReadTokens": 5696,
+        "cacheWriteTokens": null,
+        "reasoningTokens": 39,
+        "cost": null
+      }
+    ],
+    "phases": [
+      {
+        "phase": "input.admitted",
+        "atMs": 1792542569538,
+        "clock": "recorded"
+      },
+      {
+        "phase": "input.promoted",
+        "atMs": 1792542569542,
+        "clock": "recorded"
+      },
+      {
+        "phase": "run.started",
+        "atMs": 1792542569545,
+        "clock": "recorded"
+      },
+      {
+        "phase": "provider.request",
+        "atMs": 1792542569565,
+        "clock": "recorded"
+      },
+      {
+        "phase": "provider.request.result",
+        "atMs": 1792542570344,
+        "clock": "recorded"
+      },
+      {
+        "phase": "tool.dispatched",
+        "atMs": 1792542570664,
+        "clock": "recorded"
+      },
+      {
+        "phase": "tool.completed",
+        "atMs": 1792542570667,
+        "clock": "recorded"
+      },
+      {
+        "phase": "provider.request",
+        "atMs": 1792542570688,
+        "clock": "recorded"
+      },
+      {
+        "phase": "provider.request.result",
+        "atMs": 1792542571648,
+        "clock": "recorded"
+      },
+      {
+        "phase": "tool.dispatched",
+        "atMs": 1792542571790,
+        "clock": "recorded"
+      },
+      {
+        "phase": "tool.dispatched",
+        "atMs": 1792542571792,
+        "clock": "recorded"
+      },
+      {
+        "phase": "tool.completed",
+        "atMs": 1792542571801,
+        "clock": "recorded"
+      },
+      {
+        "phase": "tool.completed",
+        "atMs": 1792542571804,
+        "clock": "recorded"
+      },
+      {
+        "phase": "provider.request",
+        "atMs": 1792542571832,
+        "clock": "recorded"
+      },
+      {
+        "phase": "provider.request.result",
+        "atMs": 1792542575700,
+        "clock": "recorded"
+      },
+      {
+        "phase": "tool.dispatched",
+        "atMs": 1792542576012,
+        "clock": "recorded"
+      },
+      {
+        "phase": "tool.dispatched",
+        "atMs": 1792542576014,
+        "clock": "recorded"
+      },
+      {
+        "phase": "tool.dispatched",
+        "atMs": 1792542576016,
+        "clock": "recorded"
+      },
+      {
+        "phase": "tool.completed",
+        "atMs": 1792542576022,
+        "clock": "recorded"
+      },
+      {
+        "phase": "tool.completed",
+        "atMs": 1792542576024,
+        "clock": "recorded"
+      },
+      {
+        "phase": "tool.completed",
+        "atMs": 1792542576026,
+        "clock": "recorded"
+      },
+      {
+        "phase": "provider.request",
+        "atMs": 1792542576047,
+        "clock": "recorded"
+      },
+      {
+        "phase": "provider.request.result",
+        "atMs": 1792542579866,
+        "clock": "recorded"
+      },
+      {
+        "phase": "tool.dispatched",
+        "atMs": 1792542588059,
+        "clock": "recorded"
+      },
+      {
+        "phase": "tool.completed",
+        "atMs": 1792542588072,
+        "clock": "recorded"
+      },
+      {
+        "phase": "tool.dispatched",
+        "atMs": 1792542588074,
+        "clock": "recorded"
+      },
+      {
+        "phase": "tool.completed",
+        "atMs": 1792542588084,
+        "clock": "recorded"
+      },
+      {
+        "phase": "provider.request",
+        "atMs": 1792542588088,
+        "clock": "recorded"
+      },
+      {
+        "phase": "provider.request.result",
+        "atMs": 1792542591943,
+        "clock": "recorded"
+      },
+      {
+        "phase": "tool.dispatched",
+        "atMs": 1792542592326,
+        "clock": "recorded"
+      },
+      {
+        "phase": "tool.completed",
+        "atMs": 1792542592542,
+        "clock": "recorded"
+      },
+      {
+        "phase": "provider.request",
+        "atMs": 1792542592545,
+        "clock": "recorded"
+      },
+      {
+        "phase": "provider.request.result",
+        "atMs": 1792542596303,
+        "clock": "recorded"
+      },
+      {
+        "phase": "run.usage",
+        "atMs": 1792542602158,
+        "clock": "recorded"
+      },
+      {
+        "phase": "run.finished",
+        "atMs": 1792542602158,
+        "clock": "recorded"
+      },
+      {
+        "phase": "stop",
+        "atMs": 1792542602159,
+        "clock": "recorded"
+      },
+      {
+        "phase": "first-output",
+        "atMs": 1792542570371,
+        "clock": "observed"
+      },
+      {
+        "phase": "verified",
+        "atMs": 1792542602267,
+        "clock": "observed"
+      }
+    ],
+    "profile": {
+      "model": "glm-5.3-flash",
+      "modelParametersHash": "ef3d96a9ec0464401ae599f38c478bab21fa051e068e9d158e5c186628e7a393",
+      "agentManifestHash": "2dbdecca09d38a807edd88d10f18f4febcb6aa5dcbdc2c1bb17f06446b689562",
+      "permissionHash": "d1ceade73d587aecda5f790accb6e5bfdd056e0342aa8f6fa74f453f1e28e10a",
+      "toolSurfaceHash": "030e8aa88e47e3b80f22cf56ad2e1e846fccae4fe269a40ae2b9762eb58f0478"
+    },
+    "profileReceipts": 6,
+    "loops": {
+      "continuations": [],
+      "stopped": []
+    },
+    "toolCalls": 9,
+    "parallel": {
+      "batches": 2,
+      "batchedReads": 5,
+      "batchWallMs": 33
+    },
+    "context": {
+      "compaction": {},
+      "reasons": [],
+      "recallCalls": 0
+    },
+    "providerAttempts": [
+      {
+        "attempt": 0,
+        "protocol": "openai-chat",
+        "status": 200,
+        "outcome": "headers_received",
+        "detail": null
+      },
+      {
+        "attempt": 0,
+        "protocol": "openai-chat",
+        "status": 200,
+        "outcome": "headers_received",
+        "detail": null
+      },
+      {
+        "attempt": 0,
+        "protocol": "openai-chat",
+        "status": 200,
+        "outcome": "headers_received",
+        "detail": null
+      },
+      {
+        "attempt": 0,
+        "protocol": "openai-chat",
+        "status": 200,
+        "outcome": "headers_received",
+        "detail": null
+      },
+      {
+        "attempt": 0,
+        "protocol": "openai-chat",
+        "status": 200,
+        "outcome": "headers_received",
+        "detail": null
+      },
+      {
+        "attempt": 0,
+        "protocol": "openai-chat",
+        "status": 200,
+        "outcome": "headers_received",
+        "detail": null
+      }
+    ],
+    "textHash": "2b59b1e68975c472c2505b1e994ed547786bdc70aae07ada424852d7df7f3e47",
+    "binarySha256": "558e1b764ac07f7cf2ea4b68d2b8a80268bf05bc34a477f92350c87e96d542bd",
+    "startedAtMs": 1792542569470,
+    "admissionMs": 1792542569538,
+    "elapsedMs": 32797
+  },
+  "assessment": {
+    "suiteHash": "bd905b4f81f0a9412b614631a36337723067574848c5f05b50ead1cf48675091",
+    "taskHash": "a5041ea521bf1671656245fae3d7fab12d071b4b5b82cf29607998143aadc602",
+    "artifactPass": true,
+    "unexpected": [],
+    "immutable": [
+      {
+        "file": "AGENTS.md",
+        "unchanged": true
+      },
+      {
+        "file": "package.json",
+        "unchanged": true
+      },
+      {
+        "file": "test/oracle.test.ts",
+        "unchanged": true
+      }
+    ],
+    "expected": [],
+    "check": {
+      "command": [
+        "bun",
+        "test",
+        "test/oracle.test.ts"
+      ],
+      "exit": 0,
+      "stdoutHash": "d6684989b8dd63b37d2f1954270826fbe1bd89a8debd12bcacf03ed1c6140ef6",
+      "stderrHash": "0fbf980aec5964f040ab40aaeba90a3ad371f5cf32b7c6133365452e13edb571"
+    },
+    "executionVerdict": "unverified",
+    "requiredReceipts": [],
+    "answerContains": []
+  },
+  "answer": "The bugs are clear: `enabled` treats any truthy value as enabled, and `display` returns `'ON'` for both branches. Applying minimal fixes that preserve the APIs:\nNow verifying with the existing test runner:\nBoth bugs are fixed and the existing test passes (1 pass, 0 fail, 6 assertions).\n\n**Changes:**\n\n1. **`src/config.ts`** — `enabled(value)` now returns `value === true` instead of `Boolean(value)`, so only the literal `true` enables the feature. Previously `'false'`, `1`, and other truthy values incorrectly enabled it; now only `true` does.\n\n2. **`src/display.ts`** — `display(value)` returns `'OFF'` for the falsy branch instead of the duplicated `'ON'`.\n\n**Verification:** `bun test` runs `test/oracle.test.ts` unchanged — all disabled values (`false`, `'false'`, `1`, `null`, `undefined`) display `OFF`, and `true` displays `ON`. APIs (`enabled(value: unknown)`, `display(value: boolean)`) and all protected files (`AGENTS.md`, `package.json`, `test/oracle.test.ts`) are untouched."
+}

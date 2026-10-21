@@ -1,0 +1,462 @@
+{
+  "sample": {
+    "task": "large-file",
+    "engine": "rust",
+    "repetition": 2,
+    "suiteHash": "bd905b4f81f0a9412b614631a36337723067574848c5f05b50ead1cf48675091",
+    "taskHash": "55a120909957198a82e321a13a4b2f7b66c2439b3d040e8722add9575c37d311",
+    "profile": {
+      "model": "glm-5.3-flash",
+      "modelParametersHash": "ef3d96a9ec0464401ae599f38c478bab21fa051e068e9d158e5c186628e7a393",
+      "agentManifestHash": "2dbdecca09d38a807edd88d10f18f4febcb6aa5dcbdc2c1bb17f06446b689562",
+      "permissionHash": "09050ec0e16ba7502203769137d60bd4fd700359197848211f21295d1635da04",
+      "toolSurfaceHash": "030e8aa88e47e3b80f22cf56ad2e1e846fccae4fe269a40ae2b9762eb58f0478"
+    },
+    "revision": "fa6bac5cce43b6110bee5d96ce3657d8567c3a3f",
+    "artifactHash": "94eed1f8bb85cf28d249f25b2fff8fae068b777966e99381c68833a72c8286b5",
+    "receiptHash": "b13c32a19185af9d0087488c8dbb6961904a6d6f86cbd29dc2a94244b71add8a",
+    "outcome": "passed",
+    "elapsedMs": 56470,
+    "attempts": [
+      {
+        "inputTokens": 4620,
+        "outputTokens": 140,
+        "cost": null
+      },
+      {
+        "inputTokens": 4845,
+        "outputTokens": 319,
+        "cost": null
+      },
+      {
+        "inputTokens": 5601,
+        "outputTokens": 487,
+        "cost": null
+      },
+      {
+        "inputTokens": 6161,
+        "outputTokens": 44,
+        "cost": null
+      },
+      {
+        "inputTokens": 6275,
+        "outputTokens": 80,
+        "cost": null
+      },
+      {
+        "inputTokens": 6509,
+        "outputTokens": 57,
+        "cost": null
+      },
+      {
+        "inputTokens": 6691,
+        "outputTokens": 63,
+        "cost": null
+      },
+      {
+        "inputTokens": 6863,
+        "outputTokens": 316,
+        "cost": null
+      }
+    ]
+  },
+  "rejection": null,
+  "evidence": {
+    "engine": "rust",
+    "revision": "fa6bac5cce43b6110bee5d96ce3657d8567c3a3f",
+    "task": "large-file",
+    "repetition": 2,
+    "terminal": "completed",
+    "error": null,
+    "receipts": [],
+    "attempts": [
+      {
+        "inputTokens": 4620,
+        "outputTokens": 140,
+        "cacheReadTokens": 4608,
+        "cacheWriteTokens": null,
+        "reasoningTokens": 108,
+        "cost": null
+      },
+      {
+        "inputTokens": 4845,
+        "outputTokens": 319,
+        "cacheReadTokens": 4608,
+        "cacheWriteTokens": null,
+        "reasoningTokens": 236,
+        "cost": null
+      },
+      {
+        "inputTokens": 5601,
+        "outputTokens": 487,
+        "cacheReadTokens": 4800,
+        "cacheWriteTokens": null,
+        "reasoningTokens": 321,
+        "cost": null
+      },
+      {
+        "inputTokens": 6161,
+        "outputTokens": 44,
+        "cacheReadTokens": 5568,
+        "cacheWriteTokens": null,
+        "reasoningTokens": 16,
+        "cost": null
+      },
+      {
+        "inputTokens": 6275,
+        "outputTokens": 80,
+        "cacheReadTokens": 6144,
+        "cacheWriteTokens": null,
+        "reasoningTokens": 58,
+        "cost": null
+      },
+      {
+        "inputTokens": 6509,
+        "outputTokens": 57,
+        "cacheReadTokens": 6272,
+        "cacheWriteTokens": null,
+        "reasoningTokens": 28,
+        "cost": null
+      },
+      {
+        "inputTokens": 6691,
+        "outputTokens": 63,
+        "cacheReadTokens": 6464,
+        "cacheWriteTokens": null,
+        "reasoningTokens": 35,
+        "cost": null
+      },
+      {
+        "inputTokens": 6863,
+        "outputTokens": 316,
+        "cacheReadTokens": 6656,
+        "cacheWriteTokens": null,
+        "reasoningTokens": 0,
+        "cost": null
+      }
+    ],
+    "phases": [
+      {
+        "phase": "input.admitted",
+        "atMs": 1792543949548,
+        "clock": "recorded"
+      },
+      {
+        "phase": "input.promoted",
+        "atMs": 1792543949548,
+        "clock": "recorded"
+      },
+      {
+        "phase": "run.started",
+        "atMs": 1792543949549,
+        "clock": "recorded"
+      },
+      {
+        "phase": "provider.request",
+        "atMs": 1792543949552,
+        "clock": "recorded"
+      },
+      {
+        "phase": "provider.request.result",
+        "atMs": 1792543954596,
+        "clock": "recorded"
+      },
+      {
+        "phase": "tool.dispatched",
+        "atMs": 1792543957193,
+        "clock": "recorded"
+      },
+      {
+        "phase": "tool.completed",
+        "atMs": 1792543957408,
+        "clock": "recorded"
+      },
+      {
+        "phase": "provider.request",
+        "atMs": 1792543957411,
+        "clock": "recorded"
+      },
+      {
+        "phase": "provider.request.result",
+        "atMs": 1792543963840,
+        "clock": "recorded"
+      },
+      {
+        "phase": "tool.dispatched",
+        "atMs": 1792543970433,
+        "clock": "recorded"
+      },
+      {
+        "phase": "tool.completed",
+        "atMs": 1792543970434,
+        "clock": "recorded"
+      },
+      {
+        "phase": "tool.dispatched",
+        "atMs": 1792543970435,
+        "clock": "recorded"
+      },
+      {
+        "phase": "tool.completed",
+        "atMs": 1792543970624,
+        "clock": "recorded"
+      },
+      {
+        "phase": "provider.request",
+        "atMs": 1792543970626,
+        "clock": "recorded"
+      },
+      {
+        "phase": "provider.request.result",
+        "atMs": 1792543971560,
+        "clock": "recorded"
+      },
+      {
+        "phase": "tool.dispatched",
+        "atMs": 1792543980370,
+        "clock": "recorded"
+      },
+      {
+        "phase": "tool.completed",
+        "atMs": 1792543980383,
+        "clock": "recorded"
+      },
+      {
+        "phase": "provider.request",
+        "atMs": 1792543980388,
+        "clock": "recorded"
+      },
+      {
+        "phase": "provider.request.result",
+        "atMs": 1792543981397,
+        "clock": "recorded"
+      },
+      {
+        "phase": "tool.dispatched",
+        "atMs": 1792543982117,
+        "clock": "recorded"
+      },
+      {
+        "phase": "tool.completed",
+        "atMs": 1792543982307,
+        "clock": "recorded"
+      },
+      {
+        "phase": "provider.request",
+        "atMs": 1792543982309,
+        "clock": "recorded"
+      },
+      {
+        "phase": "provider.request.result",
+        "atMs": 1792543983468,
+        "clock": "recorded"
+      },
+      {
+        "phase": "tool.dispatched",
+        "atMs": 1792543985227,
+        "clock": "recorded"
+      },
+      {
+        "phase": "tool.completed",
+        "atMs": 1792543985228,
+        "clock": "recorded"
+      },
+      {
+        "phase": "provider.request",
+        "atMs": 1792543985230,
+        "clock": "recorded"
+      },
+      {
+        "phase": "provider.request.result",
+        "atMs": 1792543988978,
+        "clock": "recorded"
+      },
+      {
+        "phase": "tool.dispatched",
+        "atMs": 1792543990113,
+        "clock": "recorded"
+      },
+      {
+        "phase": "tool.completed",
+        "atMs": 1792543990357,
+        "clock": "recorded"
+      },
+      {
+        "phase": "provider.request",
+        "atMs": 1792543990361,
+        "clock": "recorded"
+      },
+      {
+        "phase": "provider.request.result",
+        "atMs": 1792543993876,
+        "clock": "recorded"
+      },
+      {
+        "phase": "tool.dispatched",
+        "atMs": 1792543995459,
+        "clock": "recorded"
+      },
+      {
+        "phase": "tool.completed",
+        "atMs": 1792543995461,
+        "clock": "recorded"
+      },
+      {
+        "phase": "provider.request",
+        "atMs": 1792543995463,
+        "clock": "recorded"
+      },
+      {
+        "phase": "provider.request.result",
+        "atMs": 1792544000226,
+        "clock": "recorded"
+      },
+      {
+        "phase": "run.usage",
+        "atMs": 1792544005895,
+        "clock": "recorded"
+      },
+      {
+        "phase": "run.finished",
+        "atMs": 1792544005895,
+        "clock": "recorded"
+      },
+      {
+        "phase": "stop",
+        "atMs": 1792544005895,
+        "clock": "recorded"
+      },
+      {
+        "phase": "first-output",
+        "atMs": 1792543954596,
+        "clock": "observed"
+      },
+      {
+        "phase": "verified",
+        "atMs": 1792544006001,
+        "clock": "observed"
+      }
+    ],
+    "profile": {
+      "model": "glm-5.3-flash",
+      "modelParametersHash": "ef3d96a9ec0464401ae599f38c478bab21fa051e068e9d158e5c186628e7a393",
+      "agentManifestHash": "2dbdecca09d38a807edd88d10f18f4febcb6aa5dcbdc2c1bb17f06446b689562",
+      "permissionHash": "09050ec0e16ba7502203769137d60bd4fd700359197848211f21295d1635da04",
+      "toolSurfaceHash": "030e8aa88e47e3b80f22cf56ad2e1e846fccae4fe269a40ae2b9762eb58f0478"
+    },
+    "profileReceipts": 8,
+    "loops": {
+      "continuations": [],
+      "stopped": []
+    },
+    "toolCalls": 8,
+    "parallel": {
+      "batches": 0,
+      "batchedReads": 0,
+      "batchWallMs": 0
+    },
+    "context": {
+      "compaction": {},
+      "reasons": [],
+      "recallCalls": 0
+    },
+    "providerAttempts": [
+      {
+        "attempt": 0,
+        "protocol": "openai-chat",
+        "status": 200,
+        "outcome": "headers_received",
+        "detail": null
+      },
+      {
+        "attempt": 0,
+        "protocol": "openai-chat",
+        "status": 200,
+        "outcome": "headers_received",
+        "detail": null
+      },
+      {
+        "attempt": 0,
+        "protocol": "openai-chat",
+        "status": 200,
+        "outcome": "headers_received",
+        "detail": null
+      },
+      {
+        "attempt": 0,
+        "protocol": "openai-chat",
+        "status": 200,
+        "outcome": "headers_received",
+        "detail": null
+      },
+      {
+        "attempt": 0,
+        "protocol": "openai-chat",
+        "status": 200,
+        "outcome": "headers_received",
+        "detail": null
+      },
+      {
+        "attempt": 0,
+        "protocol": "openai-chat",
+        "status": 200,
+        "outcome": "headers_received",
+        "detail": null
+      },
+      {
+        "attempt": 0,
+        "protocol": "openai-chat",
+        "status": 200,
+        "outcome": "headers_received",
+        "detail": null
+      },
+      {
+        "attempt": 0,
+        "protocol": "openai-chat",
+        "status": 200,
+        "outcome": "headers_received",
+        "detail": null
+      }
+    ],
+    "textHash": "0de9a11d915189ca3c0c2f0210f378c1ac2c7d6ce208552b169733510509b2b8",
+    "binarySha256": "558e1b764ac07f7cf2ea4b68d2b8a80268bf05bc34a477f92350c87e96d542bd",
+    "startedAtMs": 1792543949531,
+    "admissionMs": 1792543949548,
+    "elapsedMs": 56470
+  },
+  "assessment": {
+    "suiteHash": "bd905b4f81f0a9412b614631a36337723067574848c5f05b50ead1cf48675091",
+    "taskHash": "55a120909957198a82e321a13a4b2f7b66c2439b3d040e8722add9575c37d311",
+    "artifactPass": true,
+    "unexpected": [],
+    "immutable": [
+      {
+        "file": "AGENTS.md",
+        "unchanged": true
+      },
+      {
+        "file": "package.json",
+        "unchanged": true
+      },
+      {
+        "file": "test/oracle.test.ts",
+        "unchanged": true
+      }
+    ],
+    "expected": [],
+    "check": {
+      "command": [
+        "bash",
+        "-lc",
+        "bun test test/oracle.test.ts && grep -qF 'return table[key]' src/registry.ts && echo LARGE_FILE_OK"
+      ],
+      "exit": 0,
+      "stdoutHash": "1566dcf2dad36d50b3660d6968b7b95d762bb3f787034a1a1377fa79a8c342d6",
+      "stderrHash": "6397ca4ce44950a0018ceaa0afa56690e47a700d70f561764e44a8ba76145d5d"
+    },
+    "executionVerdict": "unverified",
+    "requiredReceipts": [],
+    "answerContains": []
+  },
+  "answer": "The grep shows `shift` at the very end (line 1602 of 1602). Let me inspect that region with a line-window read, plus the test expectations.\nFound it: line 1602 returns `table[key + 1]` while the test expects `shift([10,20,30], 0) === 10`. Now I'll fix only that lookup expression using the fingerprint from my read.\nFix applied. Now let me check the test runner and run the tests.\nTests use `bun:test`. Running the test suite now.\nFixed and verified. Summary:\n\n**The bug** — `src/registry.ts` (line 1602, the file's final line) contained an off-by-one lookup:\n```ts\nexport function shift(table: number[], key: number) { return table[key + 1] }\n```\nSo `shift([10, 20, 30], 0)` returned `20` instead of `10`, and `shift([10, 20, 30], 2)` returned `undefined`.\n\n**The fix** — a single expression edit, applied via a fingerprint-checked conditional replacement:\n```ts\nexport function shift(table: number[], key: number) { return table[key] }\n```\n\n**Scope check** — I inspected the file with line-window reads (`grep` located `shift` at line 1602, then `read_file` with `offset: 1590, limit: 13` gave the context and SHA fingerprint). Only that one lookup expression changed; all 1599 `handler*` exports and everything else are untouched, and the test file/package.json were not modified.\n\n**Test result** — `bun test test/oracle.test.ts`:\n```\n(pass) lookup at the key\n 1 pass, 0 fail, 3 expect() calls\n```\nAll assertions pass: `shift([10,20,30], 0) === 10`, `shift([10,20,30], 2) === 30`, and `handler7(1) === 8`."
+}

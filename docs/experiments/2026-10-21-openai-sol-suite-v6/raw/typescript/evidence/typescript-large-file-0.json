@@ -1,0 +1,312 @@
+{
+  "sample": {
+    "task": "large-file",
+    "engine": "typescript",
+    "repetition": 0,
+    "suiteHash": "bd905b4f81f0a9412b614631a36337723067574848c5f05b50ead1cf48675091",
+    "taskHash": "55a120909957198a82e321a13a4b2f7b66c2439b3d040e8722add9575c37d311",
+    "profile": {
+      "model": "gpt-6.1-sol",
+      "modelParametersHash": "688bc4592fcd972418fc2d1bb52612162a440eac8bfcd4ee70a9a23a9a216775",
+      "agentManifestHash": "77dea41a2bac2a5ece2acda2512b05834fff93f9aa23529ccb1904daef5b5a5d",
+      "permissionHash": "2d5dcd9a98be89cbad56e832326f4af47a2b22d0317fe45995925a493740c223",
+      "toolSurfaceHash": "04c769ae52448d5fe45ea690050120cee624771222b1291088dc6d832c888106"
+    },
+    "revision": "fa6bac5cce43b6110bee5d96ce3657d8567c3a3f",
+    "artifactHash": "16f337afaac030ffdd4ca05532c5545373bbb70859dded0abf11586e5474c583",
+    "receiptHash": "1753bfb9b61aaed68750b26de5750b1582db906016986e1ea5c14d2ccbaa5b2b",
+    "outcome": "passed",
+    "elapsedMs": 26811,
+    "attempts": [
+      {
+        "inputTokens": 9917,
+        "outputTokens": 31,
+        "cost": null
+      },
+      {
+        "inputTokens": 10016,
+        "outputTokens": 29,
+        "cost": null
+      },
+      {
+        "inputTokens": 10245,
+        "outputTokens": 26,
+        "cost": null
+      },
+      {
+        "inputTokens": 10321,
+        "outputTokens": 21,
+        "cost": null
+      },
+      {
+        "inputTokens": 10399,
+        "outputTokens": 27,
+        "cost": null
+      },
+      {
+        "inputTokens": 10490,
+        "outputTokens": 29,
+        "cost": null
+      },
+      {
+        "inputTokens": 10642,
+        "outputTokens": 86,
+        "cost": null
+      },
+      {
+        "inputTokens": 10795,
+        "outputTokens": 24,
+        "cost": null
+      },
+      {
+        "inputTokens": 10881,
+        "outputTokens": 66,
+        "cost": null
+      }
+    ]
+  },
+  "rejection": null,
+  "evidence": {
+    "engine": "typescript",
+    "revision": "fa6bac5cce43b6110bee5d96ce3657d8567c3a3f",
+    "task": "large-file",
+    "repetition": 0,
+    "terminal": "completed",
+    "error": null,
+    "receipts": [],
+    "attempts": [
+      {
+        "inputTokens": 9917,
+        "outputTokens": 31,
+        "cacheReadTokens": 0,
+        "cacheWriteTokens": 0,
+        "reasoningTokens": 0,
+        "cost": null
+      },
+      {
+        "inputTokens": 10016,
+        "outputTokens": 29,
+        "cacheReadTokens": 9728,
+        "cacheWriteTokens": 0,
+        "reasoningTokens": 0,
+        "cost": null
+      },
+      {
+        "inputTokens": 10245,
+        "outputTokens": 26,
+        "cacheReadTokens": 9856,
+        "cacheWriteTokens": 0,
+        "reasoningTokens": 0,
+        "cost": null
+      },
+      {
+        "inputTokens": 10321,
+        "outputTokens": 21,
+        "cacheReadTokens": 10112,
+        "cacheWriteTokens": 0,
+        "reasoningTokens": 0,
+        "cost": null
+      },
+      {
+        "inputTokens": 10399,
+        "outputTokens": 27,
+        "cacheReadTokens": 10240,
+        "cacheWriteTokens": 0,
+        "reasoningTokens": 0,
+        "cost": null
+      },
+      {
+        "inputTokens": 10490,
+        "outputTokens": 29,
+        "cacheReadTokens": 10240,
+        "cacheWriteTokens": 0,
+        "reasoningTokens": 0,
+        "cost": null
+      },
+      {
+        "inputTokens": 10642,
+        "outputTokens": 86,
+        "cacheReadTokens": 10368,
+        "cacheWriteTokens": 0,
+        "reasoningTokens": 0,
+        "cost": null
+      },
+      {
+        "inputTokens": 10795,
+        "outputTokens": 24,
+        "cacheReadTokens": 10496,
+        "cacheWriteTokens": 0,
+        "reasoningTokens": 0,
+        "cost": null
+      },
+      {
+        "inputTokens": 10881,
+        "outputTokens": 66,
+        "cacheReadTokens": 10624,
+        "cacheWriteTokens": 0,
+        "reasoningTokens": 0,
+        "cost": null
+      }
+    ],
+    "phases": [
+      {
+        "phase": "step-start",
+        "atMs": 1792541377537,
+        "clock": "observed"
+      },
+      {
+        "phase": "tool-part",
+        "atMs": 1792541378034,
+        "clock": "observed"
+      },
+      {
+        "phase": "step-start",
+        "atMs": 1792541379853,
+        "clock": "observed"
+      },
+      {
+        "phase": "tool-part",
+        "atMs": 1792541380326,
+        "clock": "observed"
+      },
+      {
+        "phase": "step-start",
+        "atMs": 1792541382340,
+        "clock": "observed"
+      },
+      {
+        "phase": "tool-part",
+        "atMs": 1792541382734,
+        "clock": "observed"
+      },
+      {
+        "phase": "step-start",
+        "atMs": 1792541385022,
+        "clock": "observed"
+      },
+      {
+        "phase": "tool-part",
+        "atMs": 1792541385200,
+        "clock": "observed"
+      },
+      {
+        "phase": "step-start",
+        "atMs": 1792541388098,
+        "clock": "observed"
+      },
+      {
+        "phase": "tool-part",
+        "atMs": 1792541388393,
+        "clock": "observed"
+      },
+      {
+        "phase": "step-start",
+        "atMs": 1792541389899,
+        "clock": "observed"
+      },
+      {
+        "phase": "tool-part",
+        "atMs": 1792541390297,
+        "clock": "observed"
+      },
+      {
+        "phase": "step-start",
+        "atMs": 1792541392591,
+        "clock": "observed"
+      },
+      {
+        "phase": "first-output",
+        "atMs": 1792541393960,
+        "clock": "observed"
+      },
+      {
+        "phase": "tool-part",
+        "atMs": 1792541394118,
+        "clock": "observed"
+      },
+      {
+        "phase": "step-start",
+        "atMs": 1792541395842,
+        "clock": "observed"
+      },
+      {
+        "phase": "tool-part",
+        "atMs": 1792541396343,
+        "clock": "observed"
+      },
+      {
+        "phase": "step-start",
+        "atMs": 1792541397782,
+        "clock": "observed"
+      },
+      {
+        "phase": "first-output",
+        "atMs": 1792541399045,
+        "clock": "observed"
+      },
+      {
+        "phase": "exit",
+        "atMs": 1792541399195,
+        "clock": "observed"
+      },
+      {
+        "phase": "verified",
+        "atMs": 1792541399258,
+        "clock": "observed"
+      }
+    ],
+    "profile": {
+      "model": "gpt-6.1-sol",
+      "modelParametersHash": "688bc4592fcd972418fc2d1bb52612162a440eac8bfcd4ee70a9a23a9a216775",
+      "agentManifestHash": "77dea41a2bac2a5ece2acda2512b05834fff93f9aa23529ccb1904daef5b5a5d",
+      "permissionHash": "2d5dcd9a98be89cbad56e832326f4af47a2b22d0317fe45995925a493740c223",
+      "toolSurfaceHash": "04c769ae52448d5fe45ea690050120cee624771222b1291088dc6d832c888106"
+    },
+    "profileReceipts": 9,
+    "loops": {
+      "continuations": [],
+      "stopped": []
+    },
+    "toolCalls": 8,
+    "textHash": "712063b8cb85bd5289adf4739494e3bf51e16ceae54b696c4d586048e65b128f",
+    "binarySha256": null,
+    "startedAtMs": 1792541372447,
+    "admissionMs": null,
+    "elapsedMs": 26811
+  },
+  "assessment": {
+    "suiteHash": "bd905b4f81f0a9412b614631a36337723067574848c5f05b50ead1cf48675091",
+    "taskHash": "55a120909957198a82e321a13a4b2f7b66c2439b3d040e8722add9575c37d311",
+    "artifactPass": true,
+    "unexpected": [],
+    "immutable": [
+      {
+        "file": "AGENTS.md",
+        "unchanged": true
+      },
+      {
+        "file": "package.json",
+        "unchanged": true
+      },
+      {
+        "file": "test/oracle.test.ts",
+        "unchanged": true
+      }
+    ],
+    "expected": [],
+    "check": {
+      "command": [
+        "bash",
+        "-lc",
+        "bun test test/oracle.test.ts && grep -qF 'return table[key]' src/registry.ts && echo LARGE_FILE_OK"
+      ],
+      "exit": 0,
+      "stdoutHash": "1566dcf2dad36d50b3660d6968b7b95d762bb3f787034a1a1377fa79a8c342d6",
+      "stderrHash": "638b8057491bc36d79c72038ab35f11e18758448a91cbff24f080ba16735bbdb"
+    },
+    "executionVerdict": "unverified",
+    "requiredReceipts": [],
+    "answerContains": []
+  },
+  "answer": "The bug is at line 1602: `shift` uses `table[key + 1]`. I’ll change only that expression to `table[key]` and run the existing Bun test.\nFixed `src/registry.ts:1602` by changing only the lookup expression from `table[key + 1]` to `table[key]`. Every other export remains intact.\n\nVerification: `bun test` exited with code 0 — **1 pass, 0 fail**, with 3 assertions."
+}

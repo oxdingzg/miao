@@ -1,0 +1,187 @@
+{
+  "sample": {
+    "task": "stream-interruption",
+    "engine": "typescript",
+    "repetition": 2,
+    "suiteHash": "bd905b4f81f0a9412b614631a36337723067574848c5f05b50ead1cf48675091",
+    "taskHash": "4f00bf344635036fd5d16a5b348e948e9ed126d43854e1280b1286d48d53284c",
+    "profile": {
+      "model": "glm-5.3-flash",
+      "modelParametersHash": "b3c05fd9f124537497f31009eda82ec5e6d32a17748aad202e756c805121ee28",
+      "agentManifestHash": "a4f50e910c9b21c49de353ad68abf2b31b68fa70f5ced8f5104d77267f0a8c0f",
+      "permissionHash": "2cd7500c0fd795ae64708c777865cbcbfa1fb90de61206da00689b716e7d012b",
+      "toolSurfaceHash": "04c769ae52448d5fe45ea690050120cee624771222b1291088dc6d832c888106"
+    },
+    "revision": "fa6bac5cce43b6110bee5d96ce3657d8567c3a3f",
+    "artifactHash": "2b4e04ae507e25e4b1036dff0509a0cb4fc4f014bfde0083fccd539fa1e60df2",
+    "receiptHash": "b8286d52b8c8ba66326f90daea381c53523ce5ef8bdf7e8e314b54b43d9ffe04",
+    "outcome": "failed",
+    "elapsedMs": 8965,
+    "attempts": [
+      {
+        "inputTokens": 13620,
+        "outputTokens": 95,
+        "cost": null
+      },
+      {
+        "inputTokens": 13934,
+        "outputTokens": 45,
+        "cost": null
+      },
+      {
+        "inputTokens": 14215,
+        "outputTokens": 87,
+        "cost": null
+      }
+    ]
+  },
+  "rejection": null,
+  "evidence": {
+    "engine": "typescript",
+    "revision": "fa6bac5cce43b6110bee5d96ce3657d8567c3a3f",
+    "task": "stream-interruption",
+    "repetition": 2,
+    "terminal": "interrupted",
+    "error": "exit 130",
+    "receipts": [],
+    "attempts": [
+      {
+        "inputTokens": 13620,
+        "outputTokens": 95,
+        "cacheReadTokens": 11456,
+        "cacheWriteTokens": null,
+        "reasoningTokens": 72,
+        "cost": null
+      },
+      {
+        "inputTokens": 13934,
+        "outputTokens": 45,
+        "cacheReadTokens": 13568,
+        "cacheWriteTokens": null,
+        "reasoningTokens": 12,
+        "cost": null
+      },
+      {
+        "inputTokens": 14215,
+        "outputTokens": 87,
+        "cacheReadTokens": 13888,
+        "cacheWriteTokens": null,
+        "reasoningTokens": 49,
+        "cost": null
+      }
+    ],
+    "phases": [
+      {
+        "phase": "step-start",
+        "atMs": 1792541087137,
+        "clock": "observed"
+      },
+      {
+        "phase": "tool-part",
+        "atMs": 1792541088546,
+        "clock": "observed"
+      },
+      {
+        "phase": "tool-part",
+        "atMs": 1792541088560,
+        "clock": "observed"
+      },
+      {
+        "phase": "step-start",
+        "atMs": 1792541089508,
+        "clock": "observed"
+      },
+      {
+        "phase": "tool-part",
+        "atMs": 1792541090178,
+        "clock": "observed"
+      },
+      {
+        "phase": "tool-part",
+        "atMs": 1792541090206,
+        "clock": "observed"
+      },
+      {
+        "phase": "tool-part",
+        "atMs": 1792541090224,
+        "clock": "observed"
+      },
+      {
+        "phase": "step-start",
+        "atMs": 1792541091073,
+        "clock": "observed"
+      },
+      {
+        "phase": "first-output",
+        "atMs": 1792541092444,
+        "clock": "observed"
+      },
+      {
+        "phase": "tool-part",
+        "atMs": 1792541092767,
+        "clock": "observed"
+      },
+      {
+        "phase": "exit",
+        "atMs": 1792541092823,
+        "clock": "observed"
+      },
+      {
+        "phase": "verified",
+        "atMs": 1792541092831,
+        "clock": "observed"
+      }
+    ],
+    "profile": {
+      "model": "glm-5.3-flash",
+      "modelParametersHash": "b3c05fd9f124537497f31009eda82ec5e6d32a17748aad202e756c805121ee28",
+      "agentManifestHash": "a4f50e910c9b21c49de353ad68abf2b31b68fa70f5ced8f5104d77267f0a8c0f",
+      "permissionHash": "2cd7500c0fd795ae64708c777865cbcbfa1fb90de61206da00689b716e7d012b",
+      "toolSurfaceHash": "04c769ae52448d5fe45ea690050120cee624771222b1291088dc6d832c888106"
+    },
+    "profileReceipts": 3,
+    "loops": {
+      "continuations": [],
+      "stopped": []
+    },
+    "toolCalls": 6,
+    "textHash": "77368998aaf2d138ebf542e5577c6c37973cd31d99d0c7530ebba554911ce259",
+    "binarySha256": null,
+    "startedAtMs": 1792541083866,
+    "admissionMs": null,
+    "elapsedMs": 8965
+  },
+  "assessment": {
+    "suiteHash": "bd905b4f81f0a9412b614631a36337723067574848c5f05b50ead1cf48675091",
+    "taskHash": "4f00bf344635036fd5d16a5b348e948e9ed126d43854e1280b1286d48d53284c",
+    "artifactPass": true,
+    "unexpected": [],
+    "immutable": [
+      {
+        "file": "AGENTS.md",
+        "unchanged": true
+      },
+      {
+        "file": "package.json",
+        "unchanged": true
+      },
+      {
+        "file": "action.ts",
+        "unchanged": true
+      }
+    ],
+    "expected": [
+      {
+        "file": "audit.log",
+        "matches": true
+      }
+    ],
+    "check": null,
+    "executionVerdict": "unverified",
+    "requiredReceipts": [
+      "provider.interrupted"
+    ],
+    "answerContains": []
+  },
+  "answer": "action.ts 只是向 audit.log 追加一行 `once`。现在按要求执行一次。"
+}
