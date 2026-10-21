@@ -145,12 +145,14 @@ The app's network calls are migrated and the identity `server-compat` shim is go
 `src/utils/session.ts` and `src/utils/session-message.ts` are current V2→view-model normalizers, not
 legacy adapters, and stay. Remaining are genuine V1-shaped leftovers:
 - [x] Replace `src/context/global-sync/utils.ts` agent/provider/model adapters (V2-only; the V1 rename map is gone).
-- [ ] Replace legacy `Session`, `Message`, `Part`, `PermissionRequest`, `QuestionRequest`,
-      `Project`, `FileNode`, `FileDiffInfo`, `Event` types across app state and rendering.
-      Permissions are done (#338). The transcript is the remaining half: app state is a hybrid
-      (`SessionMessageInfo` skeleton + V1 `Message` / `Part` content lookups fed by the synthetic
-      events in `server-session.ts`); retype it onto V2 `SessionMessage` with parts inline.
-      Consumers: `server-session.ts` (synthetic-event pipeline),
+- [x] Replace legacy `Session`, `Message`, `Part`, `PermissionRequest`, `QuestionRequest`,
+      `Project`, `FileNode`, `FileDiffInfo`, `Event` types across app state and rendering —
+      done for the transcript (the last half): `data.part`/`normalizeSessionMessages` and the
+      V1 `message.*`/`message.part.*` event branches are retired; `@miao/session-ui/content`
+      is the only content projection (acceptance grep empty; app typecheck + 672 unit tests,
+      session-ui content tests, and the `session-timeline`/`session-request-docks` e2e specs
+      pass). Visual-parity screenshot review remains the only manual residual.
+      Permissions are done (#338). Consumers: `server-session.ts`,
       `global-sync/{event-reducer,session-cache,session-trim}.ts`,
       `pages/session/timeline/{model,rows}.tsx`, `message-timeline.tsx`, `components/dialog-fork.tsx`,
       `components/prompt-input.tsx`, `components/session/session-context-tab.tsx`,

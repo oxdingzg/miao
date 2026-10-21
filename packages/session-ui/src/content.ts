@@ -1,8 +1,8 @@
-// The last bridge of the V2-native transcript cutover (specs/v2/app-timeline-v2.md,
-// stage 2): project V2 SessionMessage records into the V1 `Part` shapes that
-// @miao/session-ui renders, contained inside the timeline model. The store-level
-// projection this complements (`data.part` + normalizeSessionMessages) is
-// retired in stage 3, leaving this module as the only content projection.
+// The only content projection for the app timeline (specs/v2/app-timeline-v2.md,
+// stages 2-3, landed): project V2 SessionMessage records into the V1 `Part`
+// shapes that @miao/session-ui renders. The store-level projection it replaced
+// (`data.part` + normalizeSessionMessages) is retired; nothing else derives
+// timeline content.
 import type { FilePart } from "@miao/schema/view-models"
 import type { Part, ToolPart } from "@miao/schema/render-part"
 import type { MessagesListOutput } from "@miao/client"
