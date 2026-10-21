@@ -22,7 +22,7 @@ const store = {
   get: () => Effect.succeed({ agent: AgentV2.ID.make("build") }),
 } as unknown as SessionStore.Interface
 
-const call = (kind: "before" | "after", extra: Record<string, unknown> = {}) => ({
+const call = (kind: "before" | "after" | "definition", extra: Record<string, unknown> = {}) => ({
   sessionID: "ses_plugin_hooks",
   kind,
   tool: "echo",
