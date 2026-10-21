@@ -4,6 +4,7 @@ import path from "node:path"
 import { AgentV2 } from "@miao/core/agent"
 import { BackgroundJob } from "@miao/core/background-job"
 import { Database } from "@miao/core/database/database"
+import { SessionDelegationStore } from "@miao/core/session/delegation-store"
 import { EventV2 } from "@miao/core/event"
 import { PermissionV2 } from "@miao/core/permission"
 import { ProjectV2 } from "@miao/core/project"
@@ -12,6 +13,7 @@ import { SessionMoveCoordinator } from "@miao/core/session/move-coordinator"
 import { PeerTools } from "@miao/core/session/peer-tools"
 import { SessionEnginePlacement } from "@miao/core/session/engine-placement"
 import { SessionExecution } from "@miao/core/session/execution"
+import { SessionEvent } from "@miao/core/session/event"
 import { SessionMessage } from "@miao/core/session/message"
 import { Prompt } from "@miao/core/session/prompt"
 import { SessionOwnership } from "@miao/core/session/ownership"
@@ -19,6 +21,7 @@ import { SessionCreate } from "@miao/core/session-create"
 import { SessionSchema } from "@miao/core/session/schema"
 import { SessionStore } from "@miao/core/session/store"
 import { SessionTodo } from "@miao/core/session/todo"
+import { DelegationReportTool } from "@miao/core/tool/delegation-report"
 import { Tool } from "@miao/core/tool/tool"
 import { WorkflowTool } from "@miao/core/tool/workflow"
 import { ToolPlugins } from "@miao/core/tool/plugins"
@@ -27,7 +30,7 @@ import { ToolRegistry } from "@miao/core/tool/registry"
 import { ToolFailure, type ToolCall } from "@miao/llm"
 import type { Location } from "@miao/schema/location"
 import { AbsolutePath } from "@miao/core/schema"
-import { Effect, Option, Schema } from "effect"
+import { DateTime, Effect, Option, Schema } from "effect"
 import { EngineError, type EngineOptions } from "./client"
 import type { EngineClient, EngineEvent } from "./client"
 import { messageID } from "./identity"
@@ -521,9 +524,61 @@ export const prepare = Effect.fn("Engine.productTools")(function* (
     )
   }
 
+  // A background child running on the engine reports progress through the same
+  // delegation store the TypeScript runner uses: identical budgets, receipts,
+  // and wake semantics, so a TS parent cannot tell which runtime served the
+  // child.
+  const reportProgress = (sessionID: SessionSchema.ID, request: { readonly text: string }) =>
+    Effect.gen(function* () {
+      const task = yield* SessionDelegationStore.runningForChild(db, sessionID)
+      if (!task)
+        return yield* new ToolFailure({
+          message: "report is only available while a background delegation owns this Session.",
+        })
+      const sent = yield* SessionDelegationStore.progressCount(db, task.session_id, task.id)
+      if (sent >= DelegationReportTool.MAX_REPORTS)
+        return yield* new ToolFailure({
+          message: `This background task has already sent ${sent} progress reports. Finish the task and return its result instead.`,
+        })
+      const bytes = Buffer.from(request.text)
+      const text =
+        bytes.length <= DelegationReportTool.MAX_REPORT_BYTES
+          ? request.text
+          : `${new TextDecoder().decode(bytes.subarray(0, DelegationReportTool.MAX_REPORT_BYTES), { stream: true })}\n[Progress note truncated.]`
+      // Counted before this note lands, so the receipt is the backlog the
+      // parent already had rather than a number that depends on projection
+      // timing. The allowance is read the same way, so a child learns that its
+      // note cannot be promoted now instead of sending notes nobody reads.
+      const parentUnread = yield* SessionDelegationStore.pendingCount(db, task.session_id)
+      const parentWakeBudget = yield* SessionDelegationStore.wakeAllowance(db, task.session_id)
+      yield* events.publish(SessionEvent.DelegationReported, {
+        sessionID: task.session_id,
+        id: task.id,
+        childSessionID: sessionID,
+        timestamp: yield* DateTime.now,
+        text,
+      })
+      // The same wake a delegation result uses: a draining parent promotes it
+      // at the next safe boundary, an idle one starts a drain that does.
+      if (execution) yield* execution.wake(task.session_id)
+      return {
+        queued: true,
+        parentUnread,
+        reportsRemaining: DelegationReportTool.MAX_REPORTS - sent - 1,
+        parentWakeBudget,
+      }
+    })
+
   const make = (sessionID: SessionSchema.ID): Readonly<Record<string, Tool.AnyTool>> => ({
     ...PeerTools.make({ sessionID, permission, peers }),
     ...makeWorktreeTools(sessionID),
+    report: DelegationReportTool.make((request) =>
+      reportProgress(sessionID, request).pipe(
+        Effect.mapError((error) =>
+          error instanceof ToolFailure ? error : new ToolFailure({ message: "Unable to report progress" }),
+        ),
+      ),
+    ),
     push_notification: PushNotificationTool.make((request) =>
       PushNotificationTool.publish(events, sessionID, request).pipe(
         Effect.mapError(() => new ToolFailure({ message: "Unable to raise the notification" })),
