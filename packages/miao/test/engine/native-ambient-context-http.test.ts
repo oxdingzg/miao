@@ -107,6 +107,7 @@ test.skipIf(!binary)(
           skills: [skillDirectory],
           references: {
             fixture: { path: reference, description: "Automatic reference metadata" },
+            missing: { path: path.join(tmp.path, "missing-reference"), description: "Missing reference metadata" },
             hiddenFixture: { path: sibling, hidden: true },
           },
           formatter: false,
@@ -163,6 +164,9 @@ test.skipIf(!binary)(
       expect(requests[0]).toContain("automatic-fixture")
       expect(requests[0]?.match(/WORKSPACE_INSTRUCTION_EXACTLY_ONCE/g)).toHaveLength(1)
       expect(requests[0]).toContain("Automatic reference metadata")
+      // A declared but absent reference must not reach the child as a grant:
+      // the engine rejects an unknown grant path and would exit before serving.
+      expect(requests[0]).not.toContain("Missing reference metadata")
       expect(requests[0]).not.toContain("SKILL_BODY_ONLY_ON_DEMAND")
       expect(requests[0]).not.toContain("DENIED_INSTRUCTION_MUST_STAY_HIDDEN")
       expect(requests[0]).not.toContain("DENIED_SKILL_METADATA")

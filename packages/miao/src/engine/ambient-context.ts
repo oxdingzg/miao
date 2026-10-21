@@ -1,3 +1,4 @@
+import { existsSync } from "node:fs"
 import { mkdtemp, rename, rm } from "node:fs/promises"
 import os from "node:os"
 import path from "node:path"
@@ -91,8 +92,12 @@ export const prepare = Effect.fn("Engine.ambientContext")(function* (
   // Authority and manifest identities are fixed for a child's lifetime. Refresh
   // only updates already registered remote bodies; it cannot add filesystem grants.
   const grants = [
+    // A reference can name a repository that was never cloned or a path that
+    // was deleted after it was declared. The engine refuses an unknown grant
+    // path, which would take the whole Session down; a missing grant is simply
+    // not usable, so leave it out instead of failing the child.
     ...declared
-      .filter((item) => !item.hidden)
+      .filter((item) => !item.hidden && existsSync(item.path))
       .map((item) => ({ path: item.path, description: (item.description?.trim() || item.name).slice(0, 64) })),
     ...files
       .filter((file) => !contained(location.directory, sourcePath(file)))
