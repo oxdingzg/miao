@@ -1,3 +1,4 @@
+import { Markdown } from "../../component/markdown"
 import {
   batch,
   createContext,
@@ -1870,7 +1871,7 @@ function TextPart(props: { last: boolean; part: TranscriptTextPart; message: Tra
       >
         <text fg={theme.textMuted}>● </text>
         <box flexGrow={1} minWidth={0}>
-          <markdown
+          <Markdown
             syntaxStyle={syntax()}
             streaming={props.message.time.completed === undefined}
             // Keep incremental blocks while streaming, then coalesce finished

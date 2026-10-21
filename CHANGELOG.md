@@ -11,6 +11,18 @@ at `docs/releases/vX.Y.Z.md` and `docs/releases/vX.Y.Z.zh.md`; both are required
 
 ## [Unreleased]
 
+## [0.2.21] - 2026-10-21
+
+### Fixed
+- **tui**: bound rich Markdown native resources and exit cleanly after native text-buffer allocation failures (#1188).
+- **ios**: remove the selected computer from each card's × and retain local removal across refresh, restart and sign-in (#1187).
+- **cli**: make session migration runnable end to end (#1184).
+
+### Added
+- **engine**: refresh expired credentials through the owning broker with normalized error identity (#1182, #1183).
+- **engine**: activate native move bundles and wire worktree bridge tools through the coordinator and product transport (#1175, #1177, #1178).
+- **engine**: dispatch plugin tool hooks to the host (#1180).
+
 ## [0.2.20] - 2026-10-20
 
 ### Added

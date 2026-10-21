@@ -20,11 +20,17 @@ public struct PairingAttempt: Codable, Sendable, Equatable, Identifiable {
 }
 
 public actor HostRegistry {
+    private struct HiddenAccountHost: Codable, Equatable {
+        let hubURL: URL
+        let accountID: String?
+        let hostID: String
+    }
     private struct State: Codable {
         let version: Int
         let deviceKey: String
         var hosts: [AuthorizedHost]
         var attempts: [PairingAttempt]
+        var hiddenAccountHosts: [HiddenAccountHost]?
     }
     private let file: URL
     private let deviceKey: String
@@ -64,6 +70,7 @@ public actor HostRegistry {
         next.hosts.removeAll { $0.host.target.hostID == host.target.hostID && $0.grant.id == grant.id }
         next.hosts.append(AuthorizedHost(host: host, grant: grant))
         next.attempts.removeAll { $0.id == pairingID }
+        next.hiddenAccountHosts?.removeAll { $0.hubURL == host.hubURL && $0.hostID == host.target.hostID }
         try persist(next)
     }
 
@@ -73,6 +80,7 @@ public actor HostRegistry {
         guard host.grantID == grant.id, host.grantVersion == grant.version,
               !host.label.isEmpty, host.label.utf16.count <= 128 else { throw ClientStateError.scopeMismatch }
         var next = try load()
+        guard !(next.hiddenAccountHosts ?? []).contains(where: { $0.hubURL == host.hubURL && $0.hostID == host.target.hostID }) else { return }
         next.hosts.removeAll { $0.host.hubURL == host.hubURL && $0.host.target.hostID == host.target.hostID && $0.grant.id == grant.id }
         next.hosts.append(AuthorizedHost(host: host, grant: grant))
         try persist(next)
@@ -85,6 +93,7 @@ public actor HostRegistry {
             throw ClientStateError.scopeMismatch
         }
         var next = try load()
+        guard !isHidden(next, hubURL: host.hubURL, accountID: accountID, hostID: host.target.hostID) else { return }
         next.hosts.removeAll {
             $0.host.hubURL == host.hubURL && ($0.host.target == host.target || ($0.accountID == nil && $0.host.target.hostID == host.target.hostID))
         }
@@ -141,9 +150,26 @@ public actor HostRegistry {
         try persist(next)
     }
 
-    public func forget(_ id: UUID) throws {
+    public func forget(_ id: UUID, accountID: String? = nil) throws {
         var next = try load()
+        if let record = next.hosts.first(where: { $0.id == id }) {
+            let hidden = HiddenAccountHost(hubURL: record.host.hubURL, accountID: accountID ?? record.accountID, hostID: record.host.target.hostID)
+            var values = next.hiddenAccountHosts ?? []
+            if !values.contains(hidden) { values.append(hidden) }
+            next.hiddenAccountHosts = values
+        }
         next.hosts.removeAll { $0.id == id }
+        try persist(next)
+    }
+
+    public func isAccountHostHidden(hubURL: URL, accountID: String, hostID: String) throws -> Bool {
+        isHidden(try load(), hubURL: hubURL, accountID: accountID, hostID: hostID)
+    }
+
+    /// An explicit connect action may restore computers the user removed locally.
+    public func restoreAccountHosts(hubURL: URL, accountID: String) throws {
+        var next = try load()
+        next.hiddenAccountHosts?.removeAll { $0.hubURL == hubURL && ($0.accountID == nil || $0.accountID == accountID) }
         try persist(next)
     }
 
@@ -151,6 +177,12 @@ public actor HostRegistry {
         var next = try load()
         next.attempts.removeAll { $0.id == id }
         try persist(next)
+    }
+
+    private func isHidden(_ state: State, hubURL: URL, accountID: String, hostID: String) -> Bool {
+        (state.hiddenAccountHosts ?? []).contains {
+            $0.hubURL == hubURL && $0.hostID == hostID && ($0.accountID == nil || $0.accountID == accountID)
+        }
     }
 
     private func load() throws -> State {
