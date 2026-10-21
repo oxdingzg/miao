@@ -1,7 +1,8 @@
 import path from "path"
 import { DiagnosticFiles } from "@miao/core/diagnostic-files"
 import { Global } from "@miao/core/global"
-import { catchError, createMemo, createSignal, type JSX } from "solid-js"
+import { isNativeResourceError } from "../util/native-resource-error"
+import { catchError, createMemo, createSignal, untrack, type JSX } from "solid-js"
 
 /** What the crash screen needs to describe a failure. */
 export type CrashReport = {
@@ -25,17 +26,20 @@ const Recorded = 16
 
 export function ErrorBoundary(props: {
   fallback: (report: CrashReport, reset: () => void) => JSX.Element
+  onNativeResourceError?: (report: CrashReport) => void
   children: JSX.Element
 }): JSX.Element {
   const collected: Error[] = []
   let count = 0
   let settled = false
+  let nativeFailureReported = false
   const [report, setReport] = createSignal<CrashReport>()
   const snapshot = (): CrashReport => ({ error: collected[0], following: collected.slice(1), count })
   const reset = () => {
     collected.length = 0
     count = 0
     settled = false
+    nativeFailureReported = false
     setReport(undefined)
   }
   const record = (value: unknown) => {
@@ -59,7 +63,16 @@ export function ErrorBoundary(props: {
   // oxlint-disable-next-line typescript-eslint/no-unsafe-type-assertion -- a memo accessor is a valid component return for the reconciler
   return createMemo(() => {
     const current = report()
-    if (current) return props.fallback(current, reset)
+    if (current) {
+      if (props.onNativeResourceError && isNativeResourceError(current.error)) {
+        if (!nativeFailureReported) {
+          nativeFailureReported = true
+          untrack(() => props.onNativeResourceError!(current))
+        }
+        return undefined
+      }
+      return props.fallback(current, reset)
+    }
     return catchError(() => props.children, record)
   }) as unknown as JSX.Element
 }

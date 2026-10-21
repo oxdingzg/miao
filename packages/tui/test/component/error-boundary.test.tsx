@@ -77,3 +77,36 @@ test("reset drops the recorded error and renders the children again", async () =
     app.renderer.destroy()
   }
 })
+
+test("native allocation failures use an allocation-free handler instead of another rich error screen", async () => {
+  let handled = 0
+  let fallback = 0
+  const app = await testRender(
+    () => (
+      <ErrorBoundary
+        onNativeResourceError={(report) => {
+          handled++
+          expect(report.error.message).toBe("Failed to create TextBufferView")
+        }}
+        fallback={() => {
+          fallback++
+          return <text>must not allocate this</text>
+        }}
+      >
+        {(() => {
+          throw new Error("Failed to create TextBufferView")
+        })()}
+      </ErrorBoundary>
+    ),
+    { width: 60, height: 4 },
+  )
+  try {
+    await app.renderOnce()
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    await app.renderOnce()
+    expect(handled).toBe(1)
+    expect(fallback).toBe(0)
+  } finally {
+    app.renderer.destroy()
+  }
+})

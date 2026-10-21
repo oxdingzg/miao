@@ -212,6 +212,7 @@ function errorMessage(error: unknown) {
 export const run = Effect.fn("Tui.run")(function* (input: TuiInput) {
   const global = yield* Global.Service
   const exit = { epilogue: undefined as string | undefined, reason: undefined as unknown }
+  let resumeSessionID = input.args.sessionID
   const result = yield* Effect.scoped(
     Effect.gen(function* () {
       // Enable ANSI/VT on legacy Windows consoles before the renderer writes.
@@ -309,6 +310,16 @@ export const run = Effect.fn("Tui.run")(function* (input: TuiInput) {
             >
               <EpilogueProvider set={(value) => (exit.epilogue = value)}>
                 <ErrorBoundary
+                  onNativeResourceError={(report) => {
+                    // A rich error screen uses the same exhausted native pool.
+                    // Leave the renderer before printing diagnostics to the terminal.
+                    queueMicrotask(() => {
+                      exit.reason = report.error
+                      const command = input.resumeCommand ?? "miao"
+                      exit.epilogue = `The terminal UI exhausted its native object capacity. Your conversation is saved.\nReopen with: ${command}${resumeSessionID ? ` -s ${resumeSessionID}` : ""}\nDiagnostic log: ${global.log}/tui.log`
+                      destroyRenderer(renderer)
+                    })
+                  }}
                   fallback={(report, reset) => <ErrorComponent report={report} reset={reset} mode={mode} />}
                 >
                   <TuiPathsProvider
@@ -380,7 +391,11 @@ export const run = Effect.fn("Tui.run")(function* (input: TuiInput) {
                                                                       <LocationProvider>
                                                                         <App
                                                                           onSnapshot={input.onSnapshot}
-                                                                          onSessionChange={input.onSessionChange}
+                                                                          onSessionChange={(session) => {
+                                                                            if (session?.sessionID)
+                                                                              resumeSessionID = session.sessionID
+                                                                            input.onSessionChange?.(session)
+                                                                          }}
                                                                           pluginHost={input.pluginHost}
                                                                           runtimeNotice={input.runtimeNotice}
                                                                           resumeCommand={input.resumeCommand}
