@@ -138,7 +138,7 @@ try {
   # Avoid exposing credentials embedded in proxy URLs or arbitrary child output.
   $cause = $_.Exception
   while ($cause.InnerException) { $cause = $cause.InnerException }
-  $detail = '(' + $cause.GetType().Name + ', HRESULT=' + ('0x{0:X8}' -f $cause.HResult) + ')'
+  $detail = '(' + $cause.GetType().Name + ', HRESULT=' + ('0x{0:X8}' -f $cause.HResult) + ') ' + $cause.Message
   if ($replaced) {
     # The new build is already in place, so a later step only failed to tidy up.
     # Report it as installed rather than a failure that leaves the user thinking
