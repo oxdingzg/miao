@@ -16,25 +16,33 @@ export async function verifyWindowsUpgrade(filename = "miao.exe") {
   const launcher = filename === "miao-bin.exe" ? path.join(installation, "miao.exe") : undefined
   if (launcher) await Bun.write(launcher, "installer launcher")
   const archive = path.join(directory, "release.zip")
+  const archiveOld = path.join(directory, "release-old.zip")
   const fixture = await Bun.spawn(
     windowsCommand(String.raw`
 $ErrorActionPreference = 'Stop'
 Add-Type -TypeDefinition 'public class Program { public static void Main(string[] args) { if (args.Length > 0 && args[0] == "--build-id") { System.Console.WriteLine("11111111-1111-1111-1111-111111111111"); return; } System.Console.WriteLine("1.2.2"); if (args.Length > 0 && args[0] != "--version") System.Threading.Thread.Sleep(60000); } }' -OutputAssembly $env:FIXTURE_OLD -OutputType ConsoleApplication
 Add-Type -TypeDefinition 'public class Candidate { public static void Main(string[] args) { System.Console.WriteLine(args.Length > 0 && args[0] == "--build-id" ? "22222222-2222-2222-2222-222222222222" : "1.2.3"); } }' -OutputAssembly $env:FIXTURE_NEW -OutputType ConsoleApplication
+New-Item -ItemType Directory -Force -Path $env:FIXTURE_OLD_DIR | Out-Null
+Copy-Item -LiteralPath $env:FIXTURE_OLD -Destination (Join-Path $env:FIXTURE_OLD_DIR 'miao.exe')
 Compress-Archive -LiteralPath $env:FIXTURE_NEW -DestinationPath $env:FIXTURE_ZIP
+Compress-Archive -LiteralPath (Join-Path $env:FIXTURE_OLD_DIR 'miao.exe') -DestinationPath $env:FIXTURE_OLD_ZIP
 `),
     {
       env: {
         ...process.env,
         FIXTURE_OLD: executable,
+        FIXTURE_OLD_DIR: path.join(directory, "old"),
         FIXTURE_NEW: path.join(directory, "miao.exe"),
         FIXTURE_ZIP: archive,
+        FIXTURE_OLD_ZIP: path.join(directory, "release-old.zip"),
       },
       stdout: "pipe",
       stderr: "pipe",
     },
   )
   assert.equal(await fixture.exited, 0, await new Response(fixture.stderr).text())
+  assert.ok((await Bun.file(archive).size) > 1000, "the new archive is not a usable zip")
+  assert.ok((await Bun.file(archiveOld).size) > 1000, "the old archive is not a usable zip")
   const requests: string[] = []
   const server = Bun.serve({
     hostname: "127.0.0.1",
@@ -42,6 +50,7 @@ Compress-Archive -LiteralPath $env:FIXTURE_NEW -DestinationPath $env:FIXTURE_ZIP
     fetch(request) {
       requests.push(new URL(request.url).pathname)
       if (request.url.includes("v1.2.6/")) return new Response("missing", { status: 404 })
+      if (request.url.includes("v1.2.2/")) return new Response(Bun.file(archiveOld))
       return new Response(request.url.includes("v1.2.5/") ? "invalid zip" : Bun.file(archive))
     },
   })
@@ -61,10 +70,12 @@ Compress-Archive -LiteralPath $env:FIXTURE_NEW -DestinationPath $env:FIXTURE_ZIP
     })
     return { code: await child.exited, stderr: await new Response(child.stderr).text() }
   }
+  const original = await Bun.file(executable).arrayBuffer()
   const old = Bun.spawn([executable, "--hold"], { stdout: "pipe" })
   await old.stdout.getReader().read()
   try {
-    assert.deepEqual(await upgrade("1.2.3"), { code: 0, stderr: "" })
+    const first = await upgrade("1.2.3")
+    assert.deepEqual(first, { code: 0, stderr: "" }, `served: ${requests.join(", ")}`)
     assert.equal(
       (await readdir(installation)).some((name) => name.startsWith(".miao-upgrade-")),
       false,
@@ -93,9 +104,28 @@ Compress-Archive -LiteralPath $env:FIXTURE_NEW -DestinationPath $env:FIXTURE_ZIP
     assert.match(corrupt.stderr, /failed during extract/)
     assert.deepEqual(await Bun.file(executable).arrayBuffer(), current)
     assert.equal((await readdir(installation)).filter((name) => name.startsWith(".miao-upgrade-")).length, 0)
+    // Rollback is the documented reinstall of the previous version: the same
+    // script targets the old release, the swap keeps the running process
+    // alive, and the backup stack gains the upgraded bytes for a redo.
+    const rollback = await upgrade("1.2.2")
+    assert.equal(rollback.code, 0, `${rollback.stderr} — served: ${requests.join(", ")}`)
+    assert.deepEqual(await Bun.file(executable).arrayBuffer(), original, "rollback restores the previous bytes")
+    assert.equal(old.exitCode, null, "the original process must survive the rollback swap")
+    assert.equal((await readdir(installation)).filter((name) => name.startsWith(`${filename}.bak-`)).length, 2)
+    const redownloaded = await upgrade("1.2.3")
+    assert.equal(redownloaded.code, 0, `${redownloaded.stderr} — served: ${requests.join(", ")}`)
+    assert.deepEqual(await Bun.file(executable).arrayBuffer(), current, "redo restores the upgraded bytes")
+
     assert.match(requests[0], /^\/v1\.2\.3\/miao-windows-x64(?:-baseline)?\.zip$/)
     const asset = requests[0].split("/").at(-1)
-    assert.deepEqual(requests, [`/v1.2.3/${asset}`, `/v1.2.4/${asset}`, `/v1.2.6/${asset}`, `/v1.2.5/${asset}`])
+    assert.deepEqual(requests, [
+      `/v1.2.3/${asset}`,
+      `/v1.2.4/${asset}`,
+      `/v1.2.6/${asset}`,
+      `/v1.2.5/${asset}`,
+      `/v1.2.2/${asset}`,
+      `/v1.2.3/${asset}`,
+    ])
   } finally {
     old.kill()
     await old.exited

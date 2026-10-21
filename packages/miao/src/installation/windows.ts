@@ -79,7 +79,19 @@ try {
   $archive = Join-Path $stage 'release.zip'
   $client.DownloadFile(('https://github.com/oxdingzg/miao/releases/download/v' + $version + '/' + $asset), $archive)
   $phase = 'extract'
-  Expand-Archive -LiteralPath $archive -DestinationPath $stage
+  # Antivirus also scans freshly written archives, which can make
+  # Expand-Archive read a partially locked file; retry with the same backoff
+  # as the replace section, clearing the partial extraction between attempts.
+  foreach ($attempt in 1..8) {
+    try {
+      Expand-Archive -LiteralPath $archive -DestinationPath $stage -Force
+      break
+    } catch {
+      if ($attempt -ge 8) { throw }
+      Get-ChildItem -LiteralPath $stage | Where-Object { $_.Name -ne 'release.zip' } | Remove-Item -Recurse -Force -ErrorAction SilentlyContinue
+      Start-Sleep -Milliseconds (300 * $attempt)
+    }
+  }
   $candidates = @(Get-ChildItem -LiteralPath $stage -Filter miao.exe -Recurse -File)
   if ($candidates.Count -ne 1) { throw 'Release must contain exactly one miao.exe' }
   $candidate = $candidates[0].FullName
@@ -126,7 +138,7 @@ try {
   # Avoid exposing credentials embedded in proxy URLs or arbitrary child output.
   $cause = $_.Exception
   while ($cause.InnerException) { $cause = $cause.InnerException }
-  $detail = '(' + $cause.GetType().Name + ', HRESULT=' + ('0x{0:X8}' -f $cause.HResult) + ')'
+  $detail = '(' + $cause.GetType().Name + ', HRESULT=' + ('0x{0:X8}' -f $cause.HResult) + ') ' + $cause.Message
   if ($replaced) {
     # The new build is already in place, so a later step only failed to tidy up.
     # Report it as installed rather than a failure that leaves the user thinking
