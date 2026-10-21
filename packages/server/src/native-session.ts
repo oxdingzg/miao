@@ -8,7 +8,7 @@ import { SessionInfo } from "@miao/schema/session-info"
 import { SessionID } from "@miao/schema/session-id"
 import { ModelV2 } from "@miao/core/model"
 import { SessionRunnerCost } from "@miao/core/session/runner/cost"
-import { DateTime, Effect, Option, Schema } from "effect"
+import { Cause, DateTime, Effect, Option, Schema } from "effect"
 import { Database } from "@miao/core/database/database"
 import { SessionEnginePlacement } from "@miao/core/session/engine-placement"
 import { NativeEngine } from "./native-engine"
@@ -326,7 +326,7 @@ export function mergeListingPage(input: {
  * merged page continues seamlessly across sources in both directions.
  */
 export const mergeNativeSessions = Effect.fn("NativeSession.mergeSessions")(function* (input: {
-  native: NativeEngine.Interface
+  native: Pick<NativeEngine.Interface, "snapshot" | "usage">
   db: Database.Interface["db"]
   sessions: readonly SessionInfo.Info[]
   limit: number
@@ -351,20 +351,39 @@ export const mergeNativeSessions = Effect.fn("NativeSession.mergeSessions")(func
   }
   const entries: SessionInfo.Info[] = []
   for (const group of groups.values()) {
-    const project = (yield* input.projects.resolve(group.location.directory)).id
-    if (input.project && project !== input.project) continue
-    for (const raw of group.sessions) {
-      const sessionID = Schema.decodeUnknownSync(SessionID)(raw)
-      const snapshot = yield* input.native.snapshot({ sessionID, storage: group.storage, location: group.location })
-      const usage = input.models
-        ? nativeSessionUsage({
-            report: yield* input.native.usage({ sessionID, storage: group.storage, location: group.location }),
-            models: input.models,
-            snapshot,
-          })
-        : undefined
-      entries.push(nativeSessionInfo({ sessionID, projectID: project, location: group.location, snapshot, usage }))
-    }
+    // One Location can outlive its directory: a worktree removed out-of-band, or
+    // an engine storage adopted from a temp workspace. Opening that Location dies
+    // in `realPath`, and one dead path must not fail the whole page — the catalog
+    // and every healthy native Location still have Sessions the user needs to
+    // see. Skip only the unreadable group, and leave a trace for the operator.
+    const groupEntries = yield* Effect.gen(function* () {
+      const project = (yield* input.projects.resolve(group.location.directory)).id
+      if (input.project && project !== input.project) return []
+      const entries: SessionInfo.Info[] = []
+      for (const raw of group.sessions) {
+        const sessionID = Schema.decodeUnknownSync(SessionID)(raw)
+        const snapshot = yield* input.native.snapshot({ sessionID, storage: group.storage, location: group.location })
+        const usage = input.models
+          ? nativeSessionUsage({
+              report: yield* input.native.usage({ sessionID, storage: group.storage, location: group.location }),
+              models: input.models,
+              snapshot,
+            })
+          : undefined
+        entries.push(nativeSessionInfo({ sessionID, projectID: project, location: group.location, snapshot, usage }))
+      }
+      return entries
+    }).pipe(
+      Effect.catchCause((cause) =>
+        Cause.hasInterrupts(cause)
+          ? Effect.failCause(cause)
+          : Effect.logWarning("skipping native Sessions whose Location could not be read", {
+              directory: group.location.directory,
+              cause,
+            }).pipe(Effect.as([] as SessionInfo.Info[])),
+      ),
+    )
+    entries.push(...groupEntries)
   }
   const selected = selectNativeSessions({
     sessions: entries,
