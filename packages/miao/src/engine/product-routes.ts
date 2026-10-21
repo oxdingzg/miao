@@ -354,6 +354,16 @@ function profile(model: ModelV2.Info, account: Account, integration: string) {
   const oauth = account.oauth
   if (model.providerID === "commandcode")
     return { provider: "openai-chat", endpoint: "https://api.commandcode.ai/provider/v1/chat/completions" }
+  if (model.api.type === "native") {
+    // Plugin catalogs without an AI SDK package (models.dev entries with no
+    // `npm`) serve an OpenAI-compatible HTTP API at the declared base URL.
+    // Map the endpoint onto the engine's openai-chat transport; credentials
+    // ride the same account resolution as any other integration.
+    const base = model.api.url?.replace(/\/$/, "")
+    if (!base) return undefined
+    const endpoint = base.endsWith("/chat/completions") ? base : `${base}/chat/completions`
+    return { provider: "openai-chat", endpoint }
+  }
   if (model.api.type !== "aisdk") return undefined
   if (model.api.package === "@ai-sdk/amazon-bedrock") {
     const url =
