@@ -19,6 +19,9 @@ import { Blob } from "@miao/core/blob"
 import { FSUtil } from "@miao/core/fs-util"
 import type { PromptInput } from "@miao/schema/prompt-input"
 import { Credential } from "@miao/core/credential"
+import { CredentialDaemon } from "@miao/core/credential/daemon"
+import { CredentialTable } from "@miao/core/credential/sql"
+import { eq } from "drizzle-orm"
 import os from "node:os"
 import path from "node:path"
 import { Config } from "@miao/core/config"
@@ -38,6 +41,11 @@ import { ProductTools } from "./product-tools"
 import { engineMessageSequence } from "./message-sequence"
 import { Permission } from "@miao/schema/permission"
 import { Database } from "@miao/core/database/database"
+import { EventV2 } from "@miao/core/event"
+import { SessionInput } from "@miao/core/session/input"
+import { SessionMessage } from "@miao/core/session/message"
+import { Prompt } from "@miao/core/session/prompt"
+import { SessionSchema } from "@miao/core/session/schema"
 import { SessionStore } from "@miao/core/session/store"
 import { SessionOwnership } from "@miao/core/session/ownership"
 import { Question } from "@miao/schema/question"
@@ -679,6 +687,7 @@ const layer = Layer.effect(
     const mcpAuth = yield* McpAuth.Service
     const locations = yield* LocationServiceMap.Service
     const database = yield* Database.Service
+    const events = yield* EventV2.Service
     const sessions = yield* SessionStore.Service
     const ownershipService = yield* SessionOwnership.Service
     const blob = yield* Blob.Service
@@ -732,6 +741,35 @@ const layer = Layer.effect(
           },
           refresh: context.refresh,
           pricing: prices && ((model: string) => prices[model]),
+          onCredentialExpired: (input: { sessionID: string; id: string; integration: string }) =>
+            Effect.runPromise(
+              Effect.gen(function* () {
+                // ADR-09: daemon-owned rows refresh on read and the daemon
+                // stays the sole writer; rows without an owner marker keep
+                // their error.
+                const row = yield* database.db
+                  .select({ value: CredentialTable.value })
+                  .from(CredentialTable)
+                  .where(eq(CredentialTable.id, Credential.ID.make(input.id)))
+                  .get()
+                  .pipe(Effect.orDie)
+                const socket = row?.value ? CredentialDaemon.socket(row.value) : undefined
+                if (!socket) return false
+                yield* Effect.tryPromise({
+                  try: () => CredentialDaemon.get(socket, input.id, input.integration),
+                  catch: (cause) => new Error(String(cause)),
+                })
+                yield* SessionInput.admit(database.db, events, {
+                  id: SessionMessage.ID.create(),
+                  sessionID: SessionSchema.ID.make(input.sessionID),
+                  prompt: Prompt.make({
+                    text: `<system-reminder>Credential ${input.id} (${input.integration}) was refreshed by its owning broker; continue with the fresh token.</system-reminder>`,
+                  }),
+                  delivery: "steer",
+                })
+                return true
+              }),
+            ),
         }
       }).pipe(
         Effect.provide(locations.get(location)),
@@ -791,6 +829,7 @@ export const node = makeGlobalNode({
     Blob.node,
     FSUtil.node,
     Database.node,
+    EventV2.node,
     SessionStore.node,
     SessionOwnership.node,
   ],

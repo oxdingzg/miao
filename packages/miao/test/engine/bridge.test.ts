@@ -16,6 +16,7 @@ import {
   translateUsage,
 } from "@/engine/bridge"
 import { messageID } from "@/engine/identity"
+import { translateExpiredCredential } from "@/engine/bridge"
 import type { EngineEvent } from "@/engine/client"
 import type { ModelV2 } from "@miao/core/model"
 
@@ -350,4 +351,23 @@ test("settles a step on the committed assistant message", () => {
   const userData: object = { role: "user", content: [] }
   const user: EngineEvent = { ...commit, data: userData }
   expect(translateStepEnded(user, undefined, undefined, undefined)).toBeUndefined()
+})
+
+test("translateExpiredCredential parses the structured expired failure", () => {
+  const make = (message: string | undefined): EngineEvent => ({
+    kind: "stop_failure",
+    seq: 1,
+    session_id: "ses_test",
+    recorded_at_ms: 1,
+    ...(message === undefined ? {} : { data: { reason: "error", message } } as object),
+  }) as unknown as EngineEvent
+
+  const identity = translateExpiredCredential(
+    make("credential cred_1 (openai) is expired; its owning broker must refresh it"),
+  )
+  expect(identity).toEqual({ id: "cred_1", integration: "openai" })
+
+  // An unrelated failure carries no credential identity.
+  expect(translateExpiredCredential(make("provider connection refused"))).toBeUndefined()
+  expect(translateExpiredCredential(make(undefined))).toBeUndefined()
 })
