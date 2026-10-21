@@ -59,6 +59,8 @@ export const Usage = Schema.Struct({
           write: Schema.Finite,
         }),
       }),
+      /** Mean time to first streamed token across this model's turns, when the engine timed them. */
+      ttftMs: Schema.Finite.pipe(optional),
       lastTurnAt: DateTimeUtcFromMillis,
     }),
   ),
