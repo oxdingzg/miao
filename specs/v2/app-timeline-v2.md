@@ -1,5 +1,13 @@
 # App Timeline: V2-native transcript (staged cutover)
 
+> **Status (2026-10-22): landed.** Stages 1-3 are on `main`: the acceptance grep
+> (`normalizeSessionMessages` / `data.part[`) is empty, the V1 `message.*` /
+> `message.part.*` event branches are retired, `@miao/session-ui/content` is the
+> only content projection, and the app unit/typecheck suites plus the
+> `session-timeline` and `session-request-docks` e2e specs pass. The visual-parity
+> screenshot review is the only open item. Stage 4 (plugin/SDK V1 aliases) stays
+> with `specs/v2/v1-retirement.md` phase 4.
+
 ## Goal
 
 Retire the app's V1-shaped message/part projection (`utils/session-message.ts` —
@@ -24,7 +32,7 @@ step ships green and the daily `miao` command never regresses.
 - The timeline model (`pages/session/timeline/model.ts`) reads `data.message[id]`
   (V1 `Message[]`) and walks the V2 skeleton
   (`constructSessionMessageRows(messages: SessionMessageInfo[], getMessage,
-  getMessageParts, …)`) to build rows; part content is rendered by
+getMessageParts, …)`) to build rows; part content is rendered by
   `@miao/session-ui/message-part` (2806 lines over V1 `Part` shapes).
 - A V2 read of an un-migrated session is empty unless backfilled
   (`miao db backfill`), so the timeline must keep handling backfilled legacy
@@ -172,6 +180,7 @@ and deletes `replaceMessages`/`replaceParts`/`reconcileFetched`
 (parts)/`deleteMessageParts`/`mergeOptimisticPage`/`SKIP_PARTS` with
 it. Sequence the optimistic-flow rewrite FIRST inside the same change:
 the send path is the one behavior the e2e suites cannot mock around.
+
 - Store-surgery order once those land: delete `data.part` writes and
   readers → merge `session_message` into `data.message`
   (`SessionMessageInfo[]`) → delete `normalizeSessionMessages` and the
