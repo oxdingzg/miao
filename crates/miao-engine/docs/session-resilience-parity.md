@@ -156,14 +156,22 @@ non-retention of unfinished arguments, no local dispatch, clean-EOF separation,
 and the unsafe cases above. These are declared recovery boundaries, not alpha
 renaming rules or proof of common-history/actual-client parity.
 
-## Native first-event deadline
+## Native stream watchdogs
 
-`MIAO_LLM_FIRST_BYTE_TIMEOUT_MS` shares the 60-second default and explicit zero
-disable setting of the TypeScript first-event contract. The native deadline starts
-at HTTP dispatch and travels with the response into the SSE reader, so receiving
-headers alone does not release it. The first valid semantic event cancels the
-deadline; protocol pings and empty Chat heartbeat choices do not. Existing idle,
-argument-generation, and network budgets remain independent.
+`MIAO_LLM_FIRST_BYTE_TIMEOUT_MS`, `MIAO_LLM_STREAM_IDLE_TIMEOUT_MS`, and
+`MIAO_LLM_EVENT_IDLE_TIMEOUT_MS` share the TypeScript stream watchdog contract:
+response headers are bounded 180 seconds past dispatch, widened one second per
+32 KiB of encoded request body (capped at 30 minutes); body bytes are bounded
+180 seconds apart, with protocol keep-alives counting as bytes; and a canonical
+event must arrive within 300 seconds of dispatch, a phase keep-alives cannot
+extend. Setting `MIAO_LLM_FIRST_BYTE_TIMEOUT_MS=0` still disables the whole
+watchdog. The watchdog starts at HTTP dispatch and travels with the response
+into the SSE reader, so receiving headers alone does not release it. The first
+valid semantic event cancels the event phase; protocol pings and empty Chat
+heartbeat choices do not. Existing idle, argument-generation, and network
+budgets remain independent. Byte silence before any semantic event fails as a
+retryable transport error, so a dead connection is replayed; after the first
+event a stalled stream stays terminal.
 
 The Session drain shares the HTTP attempt budget across outer stream retries.
 This prevents three inner HTTP attempts from being multiplied by three outer

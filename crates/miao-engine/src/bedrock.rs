@@ -294,11 +294,12 @@ impl Provider for Bedrock {
         }
         let headers = Arc::new(headers);
         let mut output = None;
-        let mut first_event = None;
+        let mut watchdogs = crate::first_event::Watchdogs::default();
         for attempt in 0..crate::provider::transport_retry_limit() {
             let (deadline, _) = crate::provider::transport_attempt()?;
-            let first = crate::first_event::FirstEventDeadline::default()
-                .0
+            watchdogs = crate::first_event::Watchdogs::at(0);
+            let first = watchdogs
+                .header_deadline()
                 .unwrap_or(deadline)
                 .min(deadline);
             let operation = sdk
@@ -327,7 +328,6 @@ impl Provider for Bedrock {
             match result {
                 Ok(response) => {
                     output = Some(response);
-                    first_event = Some(first);
                     break;
                 }
                 Err(error)
@@ -341,23 +341,35 @@ impl Provider for Bedrock {
         }
         let mut output = output.ok_or(ProviderError::Transport)?;
         let mut state = crate::bedrock_stream::State::default();
+        let mut event = watchdogs.event;
+        let byte_idle = watchdogs.byte_idle;
         loop {
-            let idle = tokio::time::Instant::now() + Duration::from_secs(120);
-            let deadline = state
+            let now = tokio::time::Instant::now();
+            let idle = (byte_idle > Duration::ZERO).then(|| now + byte_idle);
+            let mut deadline = state
                 .deadline()
-                .unwrap_or(idle)
-                .min(first_event.unwrap_or(idle))
-                .min(idle);
-            let event = tokio::select! {_=cancel.cancelled()=>return Err(ProviderError::Interrupted),result=tokio::time::timeout_at(deadline,output.stream.recv())=>match result {Ok(Ok(event))=>event,Ok(Err(_))=>return Err(ProviderError::ResponseTransport),Err(_)=>{if state.deadline().is_some_and(|limit|limit<=tokio::time::Instant::now()){return Err(state.timeout());}return Err(ProviderError::ResponseTransport);}}};
-            let Some(event) = event else {
+                .unwrap_or(now + Duration::from_secs(120))
+                .min(event.unwrap_or(now + Duration::from_secs(120)));
+            if let Some(idle) = idle {
+                deadline = deadline.min(idle);
+            }
+            let received = tokio::select! {_=cancel.cancelled()=>return Err(ProviderError::Interrupted),result=tokio::time::timeout_at(deadline,output.stream.recv())=>match result {Ok(Ok(event))=>event,Ok(Err(_))=>return Err(ProviderError::ResponseTransport),Err(_)=>{if state.deadline().is_some_and(|limit|limit<=tokio::time::Instant::now()){return Err(state.timeout());}return Err(ProviderError::ResponseTransport);}}};
+            let Some(received) = received else {
                 return state.finish();
             };
-            let notices = state.event(event, &self.model)?;
+            let notices = state.event(received, &self.model)?;
             if !notices.is_empty() {
-                first_event = None;
+                event = None;
             }
             for notice in notices {
-                tokio::select! {_=cancel.cancelled()=>return Err(ProviderError::Interrupted),result=tokio::time::timeout_at(state.deadline().unwrap_or(idle).min(idle),progress.send(json!({"kind":"delta","delta":notice})))=>{result.map_err(|_|ProviderError::Transport)?.map_err(|_|ProviderError::Interrupted)?;}}
+                let send_deadline = state
+                    .deadline()
+                    .map(|limit| match idle {
+                        Some(idle) => limit.min(idle),
+                        None => limit,
+                    })
+                    .unwrap_or(now + Duration::from_secs(120));
+                tokio::select! {_=cancel.cancelled()=>return Err(ProviderError::Interrupted),result=tokio::time::timeout_at(send_deadline,progress.send(json!({"kind":"delta","delta":notice})))=>{result.map_err(|_|ProviderError::Transport)?.map_err(|_|ProviderError::Interrupted)?;}}
             }
         }
     }

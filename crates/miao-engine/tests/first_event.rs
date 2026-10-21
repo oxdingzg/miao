@@ -156,6 +156,18 @@ async fn actual_native_process_bounds_headers_silence_and_pings_without_refillin
                 "MIAO_LLM_FIRST_BYTE_TIMEOUT_MS",
                 if mode == 3 { "1000" } else { "100" },
             )
+            // The layered phases keep modes 0-2 fast: header, byte, and event
+            // silence each get the same tight budget the single deadline used
+            // to cover. Mode 3 relies on its first event releasing the event
+            // phase; its byte phase keeps the 180s default.
+            .env(
+                "MIAO_LLM_STREAM_IDLE_TIMEOUT_MS",
+                if mode == 3 { "180000" } else { "100" },
+            )
+            .env(
+                "MIAO_LLM_EVENT_IDLE_TIMEOUT_MS",
+                if mode == 3 { "300000" } else { "100" },
+            )
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
             .stderr(Stdio::null())

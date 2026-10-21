@@ -852,12 +852,18 @@ pub(crate) async fn request_with_retry(
             .ok_or_else(|| ProviderError::Stream("request cannot be replayed".into()))?;
         let request_seq =
             crate::runtime_profile::record(protocol, &request, scope.budget.used()).await?;
-        let first_event = crate::first_event::FirstEventDeadline::default();
-        let request_deadline = first_event.0.map_or(deadline, |first| deadline.min(first));
+        let request_bytes = request
+            .body()
+            .and_then(|body| body.as_bytes())
+            .map_or(0, <[u8]>::len);
+        let watchdogs = crate::first_event::Watchdogs::at(request_bytes);
+        let request_deadline = watchdogs
+            .header_deadline()
+            .map_or(deadline, |header| deadline.min(header));
         let response = tokio::select! {
             _=cancel.cancelled()=>Err(ProviderError::Interrupted),
             result=tokio::time::timeout_at(request_deadline,client.execute(request))=>match result {
-                Ok(Ok(mut response))=>{ response.extensions_mut().insert(first_event); Ok(response) },
+                Ok(Ok(mut response))=>{ response.extensions_mut().insert(watchdogs); Ok(response) },
                 _=>Err(ProviderError::Transport),
             },
         };
@@ -1237,12 +1243,13 @@ async fn read_stream_with_budget<P: Parser>(
     mut parser: P,
     mut input_budget: crate::tool_input::ToolInputBudget,
 ) -> Result<Reply, ProviderError> {
-    let mut first_event = response
+    let watchdogs = response
         .extensions()
-        .get::<crate::first_event::FirstEventDeadline>()
+        .get::<crate::first_event::Watchdogs>()
         .copied()
-        .unwrap_or_default()
-        .0;
+        .unwrap_or_default();
+    let mut event = watchdogs.event;
+    let byte_idle = watchdogs.byte_idle;
     let mut bytes = response.bytes_stream();
     let mut decoder = SseDecoder::default();
     let mut total = 0;
@@ -1250,13 +1257,32 @@ async fn read_stream_with_budget<P: Parser>(
         let deadline = input_budget
             .deadline()
             .unwrap_or_else(|| tokio::time::Instant::now() + Duration::from_secs(120));
-        let first_deadline =
-            first_event.unwrap_or_else(|| tokio::time::Instant::now() + Duration::from_secs(60));
+        // select! evaluates every branch expression even when its `if`
+        // precondition disables it, so this fallback must never panic.
+        let event_deadline =
+            event.unwrap_or_else(|| tokio::time::Instant::now() + Duration::from_secs(3600));
         let chunk = tokio::select! {
             _=cancel.cancelled()=>return Err(ProviderError::Interrupted),
-            _=tokio::time::sleep_until(first_deadline), if first_event.is_some()=>return Err(ProviderError::Transport),
+            _=tokio::time::sleep_until(event_deadline), if event.is_some()=>return Err(ProviderError::Transport),
             _=tokio::time::sleep_until(deadline), if input_budget.deadline().is_some()=>return Err(input_budget.timeout_error()),
-            result=tokio::time::timeout(Duration::from_secs(120),bytes.next())=>result.map_err(|_|ProviderError::Stream("provider idle timeout".into()))?,
+            result=async {
+                let chunk = match byte_idle.is_zero() {
+                    true => bytes.next().await,
+                    false => tokio::time::timeout(byte_idle, bytes.next())
+                        .await
+                        .map_err(|_| match event.is_some() {
+                            // Silence before any semantic event is the same
+                            // retryable failure the old single deadline produced;
+                            // after one, a stalled stream stays terminal.
+                            true => ProviderError::Transport,
+                            false => ProviderError::Stream(format!(
+                                "provider sent no response bytes for {}ms (set MIAO_LLM_STREAM_IDLE_TIMEOUT_MS to adjust, 0 disables)",
+                                byte_idle.as_millis(),
+                            )),
+                        })?,
+                };
+                Ok::<_, ProviderError>(chunk)
+            }=>result?,
         };
         let Some(chunk) = chunk else {
             return parser.finish();
@@ -1276,7 +1302,7 @@ async fn read_stream_with_budget<P: Parser>(
                 Frame::Done => true,
                 Frame::Json(event) => crate::first_event::semantic_event(event),
             } {
-                first_event = None;
+                event = None;
             }
             // Publish a normalized delta alongside the raw frame. The engine's
             // own first-event and retry logic reads `raw` through `semantic_event`,
