@@ -1,0 +1,376 @@
+{
+  "sample": {
+    "task": "docs-sync",
+    "engine": "rust",
+    "repetition": 0,
+    "suiteHash": "bd905b4f81f0a9412b614631a36337723067574848c5f05b50ead1cf48675091",
+    "taskHash": "81770a3ba16cad0c85823ad75587b559a670da480642d3491f6d5b8814394fee",
+    "profile": {
+      "model": "glm-5.3-flash",
+      "modelParametersHash": "ef3d96a9ec0464401ae599f38c478bab21fa051e068e9d158e5c186628e7a393",
+      "agentManifestHash": "2dbdecca09d38a807edd88d10f18f4febcb6aa5dcbdc2c1bb17f06446b689562",
+      "permissionHash": "a4ea9163d4e2cf5ecce2c4307e7fd2ae768f0aa79189691c218b81dd3b191d3a",
+      "toolSurfaceHash": "030e8aa88e47e3b80f22cf56ad2e1e846fccae4fe269a40ae2b9762eb58f0478"
+    },
+    "revision": "fa6bac5cce43b6110bee5d96ce3657d8567c3a3f",
+    "artifactHash": "f45c980517c6640ed715435e1fda1711f7f4db2b182c8823162edbf622d06300",
+    "receiptHash": "71ce8b101c40ff0eb66dc6bb006c661f2075ee78c93a3fa3b10cc9e94a304587",
+    "outcome": "passed",
+    "elapsedMs": 38022,
+    "attempts": [
+      {
+        "inputTokens": 4599,
+        "outputTokens": 59,
+        "cost": null
+      },
+      {
+        "inputTokens": 4702,
+        "outputTokens": 65,
+        "cost": null
+      },
+      {
+        "inputTokens": 4872,
+        "outputTokens": 215,
+        "cost": null
+      },
+      {
+        "inputTokens": 5310,
+        "outputTokens": 307,
+        "cost": null
+      },
+      {
+        "inputTokens": 5697,
+        "outputTokens": 81,
+        "cost": null
+      },
+      {
+        "inputTokens": 5913,
+        "outputTokens": 395,
+        "cost": null
+      }
+    ]
+  },
+  "rejection": null,
+  "evidence": {
+    "engine": "rust",
+    "revision": "fa6bac5cce43b6110bee5d96ce3657d8567c3a3f",
+    "task": "docs-sync",
+    "repetition": 0,
+    "terminal": "completed",
+    "error": null,
+    "receipts": [
+      "tool.error"
+    ],
+    "attempts": [
+      {
+        "inputTokens": 4599,
+        "outputTokens": 59,
+        "cacheReadTokens": 0,
+        "cacheWriteTokens": null,
+        "reasoningTokens": 46,
+        "cost": null
+      },
+      {
+        "inputTokens": 4702,
+        "outputTokens": 65,
+        "cacheReadTokens": 4544,
+        "cacheWriteTokens": null,
+        "reasoningTokens": 32,
+        "cost": null
+      },
+      {
+        "inputTokens": 4872,
+        "outputTokens": 215,
+        "cacheReadTokens": 4672,
+        "cacheWriteTokens": null,
+        "reasoningTokens": 165,
+        "cost": null
+      },
+      {
+        "inputTokens": 5310,
+        "outputTokens": 307,
+        "cacheReadTokens": 4864,
+        "cacheWriteTokens": null,
+        "reasoningTokens": 168,
+        "cost": null
+      },
+      {
+        "inputTokens": 5697,
+        "outputTokens": 81,
+        "cacheReadTokens": 5248,
+        "cacheWriteTokens": null,
+        "reasoningTokens": 27,
+        "cost": null
+      },
+      {
+        "inputTokens": 5913,
+        "outputTokens": 395,
+        "cacheReadTokens": 5696,
+        "cacheWriteTokens": null,
+        "reasoningTokens": 117,
+        "cost": null
+      }
+    ],
+    "phases": [
+      {
+        "phase": "input.admitted",
+        "atMs": 1792544262646,
+        "clock": "recorded"
+      },
+      {
+        "phase": "input.promoted",
+        "atMs": 1792544262647,
+        "clock": "recorded"
+      },
+      {
+        "phase": "run.started",
+        "atMs": 1792544262647,
+        "clock": "recorded"
+      },
+      {
+        "phase": "provider.request",
+        "atMs": 1792544262649,
+        "clock": "recorded"
+      },
+      {
+        "phase": "provider.request.result",
+        "atMs": 1792544263767,
+        "clock": "recorded"
+      },
+      {
+        "phase": "tool.dispatched",
+        "atMs": 1792544264581,
+        "clock": "recorded"
+      },
+      {
+        "phase": "tool.completed",
+        "atMs": 1792544264582,
+        "clock": "recorded"
+      },
+      {
+        "phase": "provider.request",
+        "atMs": 1792544264584,
+        "clock": "recorded"
+      },
+      {
+        "phase": "provider.request.result",
+        "atMs": 1792544267184,
+        "clock": "recorded"
+      },
+      {
+        "phase": "tool.dispatched",
+        "atMs": 1792544268402,
+        "clock": "recorded"
+      },
+      {
+        "phase": "tool.completed",
+        "atMs": 1792544268403,
+        "clock": "recorded"
+      },
+      {
+        "phase": "provider.request",
+        "atMs": 1792544268406,
+        "clock": "recorded"
+      },
+      {
+        "phase": "provider.request.result",
+        "atMs": 1792544272317,
+        "clock": "recorded"
+      },
+      {
+        "phase": "tool.dispatched",
+        "atMs": 1792544276031,
+        "clock": "recorded"
+      },
+      {
+        "phase": "tool.completed",
+        "atMs": 1792544276032,
+        "clock": "recorded"
+      },
+      {
+        "phase": "provider.request",
+        "atMs": 1792544276035,
+        "clock": "recorded"
+      },
+      {
+        "phase": "provider.request.result",
+        "atMs": 1792544279819,
+        "clock": "recorded"
+      },
+      {
+        "phase": "tool.dispatched",
+        "atMs": 1792544285000,
+        "clock": "recorded"
+      },
+      {
+        "phase": "tool.completed",
+        "atMs": 1792544285026,
+        "clock": "recorded"
+      },
+      {
+        "phase": "provider.request",
+        "atMs": 1792544285030,
+        "clock": "recorded"
+      },
+      {
+        "phase": "provider.request.result",
+        "atMs": 1792544286198,
+        "clock": "recorded"
+      },
+      {
+        "phase": "tool.dispatched",
+        "atMs": 1792544287741,
+        "clock": "recorded"
+      },
+      {
+        "phase": "tool.dispatched",
+        "atMs": 1792544287741,
+        "clock": "recorded"
+      },
+      {
+        "phase": "tool.completed",
+        "atMs": 1792544287742,
+        "clock": "recorded"
+      },
+      {
+        "phase": "tool.completed",
+        "atMs": 1792544287743,
+        "clock": "recorded"
+      },
+      {
+        "phase": "provider.request",
+        "atMs": 1792544287745,
+        "clock": "recorded"
+      },
+      {
+        "phase": "provider.request.result",
+        "atMs": 1792544292125,
+        "clock": "recorded"
+      },
+      {
+        "phase": "run.usage",
+        "atMs": 1792544300591,
+        "clock": "recorded"
+      },
+      {
+        "phase": "run.finished",
+        "atMs": 1792544300591,
+        "clock": "recorded"
+      },
+      {
+        "phase": "stop",
+        "atMs": 1792544300591,
+        "clock": "recorded"
+      },
+      {
+        "phase": "first-output",
+        "atMs": 1792544263768,
+        "clock": "observed"
+      },
+      {
+        "phase": "verified",
+        "atMs": 1792544300653,
+        "clock": "observed"
+      }
+    ],
+    "profile": {
+      "model": "glm-5.3-flash",
+      "modelParametersHash": "ef3d96a9ec0464401ae599f38c478bab21fa051e068e9d158e5c186628e7a393",
+      "agentManifestHash": "2dbdecca09d38a807edd88d10f18f4febcb6aa5dcbdc2c1bb17f06446b689562",
+      "permissionHash": "a4ea9163d4e2cf5ecce2c4307e7fd2ae768f0aa79189691c218b81dd3b191d3a",
+      "toolSurfaceHash": "030e8aa88e47e3b80f22cf56ad2e1e846fccae4fe269a40ae2b9762eb58f0478"
+    },
+    "profileReceipts": 6,
+    "loops": {
+      "continuations": [],
+      "stopped": []
+    },
+    "toolCalls": 6,
+    "parallel": {
+      "batches": 1,
+      "batchedReads": 2,
+      "batchWallMs": 0
+    },
+    "context": {
+      "compaction": {},
+      "reasons": [],
+      "recallCalls": 0
+    },
+    "providerAttempts": [
+      {
+        "attempt": 0,
+        "protocol": "openai-chat",
+        "status": 200,
+        "outcome": "headers_received",
+        "detail": null
+      },
+      {
+        "attempt": 0,
+        "protocol": "openai-chat",
+        "status": 200,
+        "outcome": "headers_received",
+        "detail": null
+      },
+      {
+        "attempt": 0,
+        "protocol": "openai-chat",
+        "status": 200,
+        "outcome": "headers_received",
+        "detail": null
+      },
+      {
+        "attempt": 0,
+        "protocol": "openai-chat",
+        "status": 200,
+        "outcome": "headers_received",
+        "detail": null
+      },
+      {
+        "attempt": 0,
+        "protocol": "openai-chat",
+        "status": 200,
+        "outcome": "headers_received",
+        "detail": null
+      },
+      {
+        "attempt": 0,
+        "protocol": "openai-chat",
+        "status": 200,
+        "outcome": "headers_received",
+        "detail": null
+      }
+    ],
+    "textHash": "81820594eb848bec8b577ddf0b6b58279934b590d1bf2ddb02b1fb0634a85c62",
+    "binarySha256": "558e1b764ac07f7cf2ea4b68d2b8a80268bf05bc34a477f92350c87e96d542bd",
+    "startedAtMs": 1792544262631,
+    "admissionMs": 1792544262646,
+    "elapsedMs": 38022
+  },
+  "assessment": {
+    "suiteHash": "bd905b4f81f0a9412b614631a36337723067574848c5f05b50ead1cf48675091",
+    "taskHash": "81770a3ba16cad0c85823ad75587b559a670da480642d3491f6d5b8814394fee",
+    "artifactPass": true,
+    "unexpected": [],
+    "immutable": [
+      {
+        "file": "AGENTS.md",
+        "unchanged": true
+      },
+      {
+        "file": "package.json",
+        "unchanged": true
+      }
+    ],
+    "expected": [
+      {
+        "file": "README.md",
+        "matches": true
+      }
+    ],
+    "check": null,
+    "executionVerdict": "unverified",
+    "requiredReceipts": [],
+    "answerContains": []
+  },
+  "answer": "The file is large, so let me locate the exact occurrences first.\nFound one occurrence at line 2805. Let me view the surrounding context to confirm it's the installation command.\nThat's the installation section. Now I'll make a minimal, exact replacement of just the command, using the file's SHA-256 fingerprint to guarantee nothing else shifts.\nThe edit applied. Let me verify the change and confirm no other occurrences remain.\nDone. Verification confirms the change is exactly as requested:\n\n**Summary of the change**\n\n- **File:** `README.md` (only file touched)\n- **Line 2805, in the `## Installation` section:**\n  - Before: ``Run `miao install` to place the binary on your PATH.``\n  - After: ``Run `miao setup --fast` to place the binary on your PATH.``\n- **Byte-level integrity:** The edit was a single exact-text replacement guarded by the file's prior SHA-256 fingerprint (`3f634860…ef69f69`), so nothing else could shift. The file grew from 100,438 to 100,443 bytes — precisely the 5-byte difference between `install` (7 chars) and `setup --fast` (12 chars) — confirming all other bytes are identical.\n- **Post-check:** A workspace-wide grep shows zero remaining occurrences of `miao install` and exactly one occurrence of `miao setup --fast` (line 2805 of README.md).\n- New file hash: `1eb2e1806d955b672a3560e6e25475ed2aa4e2d8132cf0dd5f9611a1b70121c7`."
+}

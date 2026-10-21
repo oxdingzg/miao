@@ -1,0 +1,12 @@
+{
+ "model": "openai/gpt-6.1-sol",
+ "provider": "OpenAI subscription (Responses, chatgpt.com backend)",
+ "endpoint": "https://chatgpt.com/backend-api/codex/responses",
+ "rates_per_million_tokens": {
+  "input": 2,
+  "output": 10,
+  "cache_read": 0.1,
+  "cache_write": 2.5
+ },
+ "source": "catalog list prices (bundled models.json, 2026-10-21, first tier context <= 272k). The subscription plan is not per-token billed, so amounts are a list-price reference only; the same rates apply to both arms, so ratios are unaffected."
+}

@@ -1,0 +1,268 @@
+{
+  "sample": {
+    "task": "multi-file",
+    "engine": "typescript",
+    "repetition": 2,
+    "suiteHash": "bd905b4f81f0a9412b614631a36337723067574848c5f05b50ead1cf48675091",
+    "taskHash": "a5041ea521bf1671656245fae3d7fab12d071b4b5b82cf29607998143aadc602",
+    "profile": {
+      "model": "gpt-6.1-sol",
+      "modelParametersHash": "4321877fa0cac65b14d403dcab3d199c815b70f408655588b06fd19df20b50c9",
+      "agentManifestHash": "c41279ff88874d6eacd06cb89a3be8bd890429da8f83f9b3989a49cb2feece48",
+      "permissionHash": "b2c759819e9affdfc17bcae82dab7160cfcf1e758a2ab9301859e53f6bbbf01c",
+      "toolSurfaceHash": "04c769ae52448d5fe45ea690050120cee624771222b1291088dc6d832c888106"
+    },
+    "revision": "fa6bac5cce43b6110bee5d96ce3657d8567c3a3f",
+    "artifactHash": "135a232364be08eedde78ee827a169f7b0a2cea0b2fa77de74207e5b2bd9aa76",
+    "receiptHash": "a4a593868e78ef1cdc69e375e0bc28805f672b7aaf2251f51872603a3c85ae6d",
+    "outcome": "passed",
+    "elapsedMs": 24594,
+    "attempts": [
+      {
+        "inputTokens": 9888,
+        "outputTokens": 17,
+        "cost": null
+      },
+      {
+        "inputTokens": 9962,
+        "outputTokens": 75,
+        "cost": null
+      },
+      {
+        "inputTokens": 10271,
+        "outputTokens": 67,
+        "cost": null
+      },
+      {
+        "inputTokens": 10641,
+        "outputTokens": 176,
+        "cost": null
+      },
+      {
+        "inputTokens": 10842,
+        "outputTokens": 19,
+        "cost": null
+      },
+      {
+        "inputTokens": 10923,
+        "outputTokens": 78,
+        "cost": null
+      }
+    ]
+  },
+  "rejection": null,
+  "evidence": {
+    "engine": "typescript",
+    "revision": "fa6bac5cce43b6110bee5d96ce3657d8567c3a3f",
+    "task": "multi-file",
+    "repetition": 2,
+    "terminal": "completed",
+    "error": null,
+    "receipts": [],
+    "attempts": [
+      {
+        "inputTokens": 9888,
+        "outputTokens": 17,
+        "cacheReadTokens": 0,
+        "cacheWriteTokens": 0,
+        "reasoningTokens": 0,
+        "cost": null
+      },
+      {
+        "inputTokens": 9962,
+        "outputTokens": 75,
+        "cacheReadTokens": 9728,
+        "cacheWriteTokens": 0,
+        "reasoningTokens": 0,
+        "cost": null
+      },
+      {
+        "inputTokens": 10271,
+        "outputTokens": 67,
+        "cacheReadTokens": 9856,
+        "cacheWriteTokens": 0,
+        "reasoningTokens": 0,
+        "cost": null
+      },
+      {
+        "inputTokens": 10641,
+        "outputTokens": 176,
+        "cacheReadTokens": 10112,
+        "cacheWriteTokens": 0,
+        "reasoningTokens": 0,
+        "cost": null
+      },
+      {
+        "inputTokens": 10842,
+        "outputTokens": 19,
+        "cacheReadTokens": 10496,
+        "cacheWriteTokens": 0,
+        "reasoningTokens": 0,
+        "cost": null
+      },
+      {
+        "inputTokens": 10923,
+        "outputTokens": 78,
+        "cacheReadTokens": 10752,
+        "cacheWriteTokens": 0,
+        "reasoningTokens": 0,
+        "cost": null
+      }
+    ],
+    "phases": [
+      {
+        "phase": "step-start",
+        "atMs": 1792540858365,
+        "clock": "observed"
+      },
+      {
+        "phase": "tool-part",
+        "atMs": 1792540858452,
+        "clock": "observed"
+      },
+      {
+        "phase": "step-start",
+        "atMs": 1792540861138,
+        "clock": "observed"
+      },
+      {
+        "phase": "tool-part",
+        "atMs": 1792540861369,
+        "clock": "observed"
+      },
+      {
+        "phase": "tool-part",
+        "atMs": 1792540861611,
+        "clock": "observed"
+      },
+      {
+        "phase": "tool-part",
+        "atMs": 1792540861666,
+        "clock": "observed"
+      },
+      {
+        "phase": "tool-part",
+        "atMs": 1792540861707,
+        "clock": "observed"
+      },
+      {
+        "phase": "step-start",
+        "atMs": 1792540864008,
+        "clock": "observed"
+      },
+      {
+        "phase": "tool-part",
+        "atMs": 1792540864146,
+        "clock": "observed"
+      },
+      {
+        "phase": "tool-part",
+        "atMs": 1792540864188,
+        "clock": "observed"
+      },
+      {
+        "phase": "tool-part",
+        "atMs": 1792540864235,
+        "clock": "observed"
+      },
+      {
+        "phase": "step-start",
+        "atMs": 1792540866275,
+        "clock": "observed"
+      },
+      {
+        "phase": "first-output",
+        "atMs": 1792540869019,
+        "clock": "observed"
+      },
+      {
+        "phase": "tool-part",
+        "atMs": 1792540869206,
+        "clock": "observed"
+      },
+      {
+        "phase": "step-start",
+        "atMs": 1792540871697,
+        "clock": "observed"
+      },
+      {
+        "phase": "tool-part",
+        "atMs": 1792540872374,
+        "clock": "observed"
+      },
+      {
+        "phase": "step-start",
+        "atMs": 1792540874216,
+        "clock": "observed"
+      },
+      {
+        "phase": "first-output",
+        "atMs": 1792540877624,
+        "clock": "observed"
+      },
+      {
+        "phase": "exit",
+        "atMs": 1792540878444,
+        "clock": "observed"
+      },
+      {
+        "phase": "verified",
+        "atMs": 1792540878546,
+        "clock": "observed"
+      }
+    ],
+    "profile": {
+      "model": "gpt-6.1-sol",
+      "modelParametersHash": "4321877fa0cac65b14d403dcab3d199c815b70f408655588b06fd19df20b50c9",
+      "agentManifestHash": "c41279ff88874d6eacd06cb89a3be8bd890429da8f83f9b3989a49cb2feece48",
+      "permissionHash": "b2c759819e9affdfc17bcae82dab7160cfcf1e758a2ab9301859e53f6bbbf01c",
+      "toolSurfaceHash": "04c769ae52448d5fe45ea690050120cee624771222b1291088dc6d832c888106"
+    },
+    "profileReceipts": 6,
+    "loops": {
+      "continuations": [],
+      "stopped": []
+    },
+    "toolCalls": 10,
+    "textHash": "b8d6e06c025f79f1f8c601e46e89fd4579a43f92ef72a8916a78009688330f1e",
+    "binarySha256": null,
+    "startedAtMs": 1792540853952,
+    "admissionMs": null,
+    "elapsedMs": 24594
+  },
+  "assessment": {
+    "suiteHash": "bd905b4f81f0a9412b614631a36337723067574848c5f05b50ead1cf48675091",
+    "taskHash": "a5041ea521bf1671656245fae3d7fab12d071b4b5b82cf29607998143aadc602",
+    "artifactPass": true,
+    "unexpected": [],
+    "immutable": [
+      {
+        "file": "AGENTS.md",
+        "unchanged": true
+      },
+      {
+        "file": "package.json",
+        "unchanged": true
+      },
+      {
+        "file": "test/oracle.test.ts",
+        "unchanged": true
+      }
+    ],
+    "expected": [],
+    "check": {
+      "command": [
+        "bun",
+        "test",
+        "test/oracle.test.ts"
+      ],
+      "exit": 0,
+      "stdoutHash": "d6684989b8dd63b37d2f1954270826fbe1bd89a8debd12bcacf03ed1c6140ef6",
+      "stderrHash": "2367d24ccfec4401ab7a14d5cd6fa10518da74ac8639f3e72ed012059abdb1ca"
+    },
+    "executionVerdict": "unverified",
+    "requiredReceipts": [],
+    "answerContains": []
+  },
+  "answer": "The parser currently accepts any truthy value, and the display returns `ON` for both states. I’ll change these to a strict `true` comparison and an `OFF` disabled state, preserving the APIs and existing test, then run `bun test`.\nFixed both issues while preserving APIs and tests:\n\n- `src/config.ts`: only the literal boolean `true` enables the feature, using `value === true`.\n- `src/display.ts`: disabled features now display `OFF`; enabled features display `ON`.\n\nVerified with `bun test`: **1 passed, 0 failed, 6 assertions**, exit code `0`."
+}

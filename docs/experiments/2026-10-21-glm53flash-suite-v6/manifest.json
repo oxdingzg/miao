@@ -1,0 +1,80 @@
+{
+ "arms": {
+  "typescript": {
+   "model": "zhipuai-coding-plan/glm-5.3-flash",
+   "revision": "fa6bac5cce43b6110bee5d96ce3657d8567c3a3f",
+   "binarySha256": null,
+   "suiteHash": "bd905b4f81f0a9412b614631a36337723067574848c5f05b50ead1cf48675091",
+   "tasks": [
+    "read-only",
+    "multi-read",
+    "small-edit",
+    "multi-file",
+    "test-repair",
+    "permission-denial",
+    "tool-error",
+    "stream-interruption",
+    "long-session",
+    "multi-line-edit",
+    "typed-repair",
+    "large-file",
+    "rename-symbol",
+    "create-module",
+    "docs-sync"
+   ],
+   "repetitions": 3,
+   "runs": 45,
+   "rejected": 0,
+   "chunks": [
+    "ts-1",
+    "ts-2",
+    "ts-3"
+   ],
+   "commands": [
+    "bun run src/engine/baseline-sweep-cli.ts --engine typescript --out <out> --tasks read-only,multi-read,small-edit,multi-file,test-repair --repetitions 3 --pause-ms 500 --model zhipuai-coding-plan/glm-5.3-flash --entry packages/miao/src/index.ts --credential-db <cred.db> --revision fa6bac5cce43b6110bee5d96ce3657d8567c3a3f",
+    "bun run src/engine/baseline-sweep-cli.ts --engine typescript --out <out> --tasks permission-denial,tool-error,stream-interruption,long-session,multi-line-edit --repetitions 3 --pause-ms 500 --model zhipuai-coding-plan/glm-5.3-flash --entry packages/miao/src/index.ts --credential-db <cred.db> --revision fa6bac5cce43b6110bee5d96ce3657d8567c3a3f",
+    "bun run src/engine/baseline-sweep-cli.ts --engine typescript --out <out> --tasks typed-repair,large-file,rename-symbol,create-module,docs-sync --repetitions 3 --pause-ms 500 --model zhipuai-coding-plan/glm-5.3-flash --entry packages/miao/src/index.ts --credential-db <cred.db> --revision fa6bac5cce43b6110bee5d96ce3657d8567c3a3f"
+   ],
+   "startedAtMs": 1792540650465,
+   "finishedAtMs": 1792542246434
+  },
+  "rust": {
+   "model": "glm-5.3-flash",
+   "revision": "fa6bac5cce43b6110bee5d96ce3657d8567c3a3f",
+   "binarySha256": "558e1b764ac07f7cf2ea4b68d2b8a80268bf05bc34a477f92350c87e96d542bd",
+   "suiteHash": "bd905b4f81f0a9412b614631a36337723067574848c5f05b50ead1cf48675091",
+   "tasks": [
+    "read-only",
+    "multi-read",
+    "small-edit",
+    "multi-file",
+    "test-repair",
+    "permission-denial",
+    "tool-error",
+    "stream-interruption",
+    "long-session",
+    "multi-line-edit",
+    "typed-repair",
+    "large-file",
+    "rename-symbol",
+    "create-module",
+    "docs-sync"
+   ],
+   "repetitions": 3,
+   "runs": 45,
+   "rejected": 0,
+   "chunks": [
+    "rs-1",
+    "rs-2",
+    "rs-3"
+   ],
+   "commands": [
+    "bun run src/engine/baseline-sweep-cli.ts --engine rust --out <out> --tasks read-only,multi-read,small-edit,multi-file,test-repair --repetitions 3 --pause-ms 500 --model glm-5.3-flash --binary <miao-engine> --provider openai-chat --endpoint https://open.bigmodel.cn/api/coding/paas/v4/chat/completions --env-file <env.json> --revision fa6bac5cce43b6110bee5d96ce3657d8567c3a3f",
+    "bun run src/engine/baseline-sweep-cli.ts --engine rust --out <out> --tasks permission-denial,tool-error,stream-interruption,long-session,multi-line-edit --repetitions 3 --pause-ms 500 --model glm-5.3-flash --binary <miao-engine> --provider openai-chat --endpoint https://open.bigmodel.cn/api/coding/paas/v4/chat/completions --env-file <env.json> --revision fa6bac5cce43b6110bee5d96ce3657d8567c3a3f",
+    "bun run src/engine/baseline-sweep-cli.ts --engine rust --out <out> --tasks typed-repair,large-file,rename-symbol,create-module,docs-sync --repetitions 3 --pause-ms 500 --model glm-5.3-flash --binary <miao-engine> --provider openai-chat --endpoint https://open.bigmodel.cn/api/coding/paas/v4/chat/completions --env-file <env.json> --revision fa6bac5cce43b6110bee5d96ce3657d8567c3a3f"
+   ],
+   "startedAtMs": 1792542316687,
+   "finishedAtMs": 1792544375622
+  }
+ }
+}

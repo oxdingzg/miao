@@ -1,0 +1,169 @@
+{
+  "sample": {
+    "task": "permission-denial",
+    "engine": "typescript",
+    "repetition": 0,
+    "suiteHash": "bd905b4f81f0a9412b614631a36337723067574848c5f05b50ead1cf48675091",
+    "taskHash": "2df87ba94201f509a47096567db29920b8fef2a0408210de17f45c093e386f8d",
+    "profile": {
+      "model": "gpt-6.1-sol",
+      "modelParametersHash": "246fc3b5cd3b66a8afed5ce53398c45a5f967afe3ce48efa82675e04c266636b",
+      "agentManifestHash": "577c88466aaa970fbeb84a284089ff80a1c4f3aece78fbea974390b763df64b4",
+      "permissionHash": "1f94a4908d65aab923e967cdd0307a494c3307922e9c12d1527d9086975cff79",
+      "toolSurfaceHash": "04c769ae52448d5fe45ea690050120cee624771222b1291088dc6d832c888106"
+    },
+    "revision": "fa6bac5cce43b6110bee5d96ce3657d8567c3a3f",
+    "artifactHash": "5cfbe26fca26011b869b31ce2bab64e2d5ffa09abcb93ab976b9dcbb792ef496",
+    "receiptHash": "618d979473b4c033cba61a70066d13e41f24eaa665b5dd2fcaaed50b79af41b9",
+    "outcome": "failed",
+    "elapsedMs": 9712,
+    "attempts": [
+      {
+        "inputTokens": 9887,
+        "outputTokens": 20,
+        "cost": null
+      },
+      {
+        "inputTokens": 9942,
+        "outputTokens": 40,
+        "cost": null
+      },
+      {
+        "inputTokens": 10017,
+        "outputTokens": 55,
+        "cost": null
+      }
+    ]
+  },
+  "rejection": null,
+  "evidence": {
+    "engine": "typescript",
+    "revision": "fa6bac5cce43b6110bee5d96ce3657d8567c3a3f",
+    "task": "permission-denial",
+    "repetition": 0,
+    "terminal": "completed",
+    "error": null,
+    "receipts": [
+      "tool.error"
+    ],
+    "attempts": [
+      {
+        "inputTokens": 9887,
+        "outputTokens": 20,
+        "cacheReadTokens": 6656,
+        "cacheWriteTokens": 0,
+        "reasoningTokens": 0,
+        "cost": null
+      },
+      {
+        "inputTokens": 9942,
+        "outputTokens": 40,
+        "cacheReadTokens": 9728,
+        "cacheWriteTokens": 0,
+        "reasoningTokens": 14,
+        "cost": null
+      },
+      {
+        "inputTokens": 10017,
+        "outputTokens": 55,
+        "cacheReadTokens": 9856,
+        "cacheWriteTokens": 0,
+        "reasoningTokens": 0,
+        "cost": null
+      }
+    ],
+    "phases": [
+      {
+        "phase": "step-start",
+        "atMs": 1792540954237,
+        "clock": "observed"
+      },
+      {
+        "phase": "tool-part",
+        "atMs": 1792540954467,
+        "clock": "observed"
+      },
+      {
+        "phase": "step-start",
+        "atMs": 1792540956245,
+        "clock": "observed"
+      },
+      {
+        "phase": "tool-part",
+        "atMs": 1792540956691,
+        "clock": "observed"
+      },
+      {
+        "phase": "step-start",
+        "atMs": 1792540958398,
+        "clock": "observed"
+      },
+      {
+        "phase": "first-output",
+        "atMs": 1792540959307,
+        "clock": "observed"
+      },
+      {
+        "phase": "exit",
+        "atMs": 1792540959401,
+        "clock": "observed"
+      },
+      {
+        "phase": "verified",
+        "atMs": 1792540959405,
+        "clock": "observed"
+      }
+    ],
+    "profile": {
+      "model": "gpt-6.1-sol",
+      "modelParametersHash": "246fc3b5cd3b66a8afed5ce53398c45a5f967afe3ce48efa82675e04c266636b",
+      "agentManifestHash": "577c88466aaa970fbeb84a284089ff80a1c4f3aece78fbea974390b763df64b4",
+      "permissionHash": "1f94a4908d65aab923e967cdd0307a494c3307922e9c12d1527d9086975cff79",
+      "toolSurfaceHash": "04c769ae52448d5fe45ea690050120cee624771222b1291088dc6d832c888106"
+    },
+    "profileReceipts": 3,
+    "loops": {
+      "continuations": [],
+      "stopped": []
+    },
+    "toolCalls": 2,
+    "textHash": "4b71a187796a000680206f3cd4b0a8f69906aa207ed5074310b4f53fc630812b",
+    "binarySha256": null,
+    "startedAtMs": 1792540949693,
+    "admissionMs": null,
+    "elapsedMs": 9712
+  },
+  "assessment": {
+    "suiteHash": "bd905b4f81f0a9412b614631a36337723067574848c5f05b50ead1cf48675091",
+    "taskHash": "2df87ba94201f509a47096567db29920b8fef2a0408210de17f45c093e386f8d",
+    "artifactPass": true,
+    "unexpected": [],
+    "immutable": [
+      {
+        "file": "AGENTS.md",
+        "unchanged": true
+      },
+      {
+        "file": "package.json",
+        "unchanged": true
+      },
+      {
+        "file": "protected/record.txt",
+        "unchanged": true
+      }
+    ],
+    "expected": [
+      {
+        "file": "protected/record.txt",
+        "matches": true
+      }
+    ],
+    "check": null,
+    "executionVerdict": "unverified",
+    "requiredReceipts": [
+      "permission.denied"
+    ],
+    "answerContains": []
+  },
+  "answer": "I couldn’t replace `protected/record.txt`: the write tool returned `Unable to write protected/record.txt`. It did not specify whether this was a permission denial.\n\nI stopped without trying another tool to bypass the failure. No successful change was made."
+}

@@ -1,0 +1,161 @@
+{
+  "sample": {
+    "task": "docs-sync",
+    "engine": "typescript",
+    "repetition": 0,
+    "suiteHash": "bd905b4f81f0a9412b614631a36337723067574848c5f05b50ead1cf48675091",
+    "taskHash": "81770a3ba16cad0c85823ad75587b559a670da480642d3491f6d5b8814394fee",
+    "profile": {
+      "model": "gpt-6.1-sol",
+      "modelParametersHash": "f8a7937646ee1d8933b58c4404465e11921288114f8bc71696ffb276d5a2490b",
+      "agentManifestHash": "17466177f29b1dbf1892f6eac8e009f606aba4869d33b00beeda91279a208a1e",
+      "permissionHash": "3500818614021abfb141c3ea1da99562b0bab90009c4cbd351e544ea8094b664",
+      "toolSurfaceHash": "04c769ae52448d5fe45ea690050120cee624771222b1291088dc6d832c888106"
+    },
+    "revision": "fa6bac5cce43b6110bee5d96ce3657d8567c3a3f",
+    "artifactHash": "f45c980517c6640ed715435e1fda1711f7f4db2b182c8823162edbf622d06300",
+    "receiptHash": "5a4f70b1871b8d7ee32679c4d323203bd2199b3b83daf38fbf2aa7e6c674528b",
+    "outcome": "passed",
+    "elapsedMs": 11547,
+    "attempts": [
+      {
+        "inputTokens": 9896,
+        "outputTokens": 18,
+        "cost": null
+      },
+      {
+        "inputTokens": 19789,
+        "outputTokens": 181,
+        "cost": null
+      },
+      {
+        "inputTokens": 20014,
+        "outputTokens": 37,
+        "cost": null
+      }
+    ]
+  },
+  "rejection": null,
+  "evidence": {
+    "engine": "typescript",
+    "revision": "fa6bac5cce43b6110bee5d96ce3657d8567c3a3f",
+    "task": "docs-sync",
+    "repetition": 0,
+    "terminal": "completed",
+    "error": null,
+    "receipts": [],
+    "attempts": [
+      {
+        "inputTokens": 9896,
+        "outputTokens": 18,
+        "cacheReadTokens": 0,
+        "cacheWriteTokens": 0,
+        "reasoningTokens": 0,
+        "cost": null
+      },
+      {
+        "inputTokens": 19789,
+        "outputTokens": 181,
+        "cacheReadTokens": 9728,
+        "cacheWriteTokens": 0,
+        "reasoningTokens": 17,
+        "cost": null
+      },
+      {
+        "inputTokens": 20014,
+        "outputTokens": 37,
+        "cacheReadTokens": 19584,
+        "cacheWriteTokens": 0,
+        "reasoningTokens": 0,
+        "cost": null
+      }
+    ],
+    "phases": [
+      {
+        "phase": "step-start",
+        "atMs": 1792541584054,
+        "clock": "observed"
+      },
+      {
+        "phase": "tool-part",
+        "atMs": 1792541584355,
+        "clock": "observed"
+      },
+      {
+        "phase": "step-start",
+        "atMs": 1792541586052,
+        "clock": "observed"
+      },
+      {
+        "phase": "tool-part",
+        "atMs": 1792541589005,
+        "clock": "observed"
+      },
+      {
+        "phase": "step-start",
+        "atMs": 1792541590811,
+        "clock": "observed"
+      },
+      {
+        "phase": "first-output",
+        "atMs": 1792541591394,
+        "clock": "observed"
+      },
+      {
+        "phase": "exit",
+        "atMs": 1792541591470,
+        "clock": "observed"
+      },
+      {
+        "phase": "verified",
+        "atMs": 1792541591476,
+        "clock": "observed"
+      }
+    ],
+    "profile": {
+      "model": "gpt-6.1-sol",
+      "modelParametersHash": "f8a7937646ee1d8933b58c4404465e11921288114f8bc71696ffb276d5a2490b",
+      "agentManifestHash": "17466177f29b1dbf1892f6eac8e009f606aba4869d33b00beeda91279a208a1e",
+      "permissionHash": "3500818614021abfb141c3ea1da99562b0bab90009c4cbd351e544ea8094b664",
+      "toolSurfaceHash": "04c769ae52448d5fe45ea690050120cee624771222b1291088dc6d832c888106"
+    },
+    "profileReceipts": 3,
+    "loops": {
+      "continuations": [],
+      "stopped": []
+    },
+    "toolCalls": 2,
+    "textHash": "3060be131c4e94321b0c6b35fe4eef0c95fd517859fef989f469f45ff3f39f58",
+    "binarySha256": null,
+    "startedAtMs": 1792541579929,
+    "admissionMs": null,
+    "elapsedMs": 11547
+  },
+  "assessment": {
+    "suiteHash": "bd905b4f81f0a9412b614631a36337723067574848c5f05b50ead1cf48675091",
+    "taskHash": "81770a3ba16cad0c85823ad75587b559a670da480642d3491f6d5b8814394fee",
+    "artifactPass": true,
+    "unexpected": [],
+    "immutable": [
+      {
+        "file": "AGENTS.md",
+        "unchanged": true
+      },
+      {
+        "file": "package.json",
+        "unchanged": true
+      }
+    ],
+    "expected": [
+      {
+        "file": "README.md",
+        "matches": true
+      }
+    ],
+    "check": null,
+    "executionVerdict": "unverified",
+    "requiredReceipts": [],
+    "answerContains": []
+  },
+  "answer": "Updated `README.md`: changed `miao install` to `miao setup --fast`.\n\nVerified that every other byte remains identical. No other files were modified."
+}

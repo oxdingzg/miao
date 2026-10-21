@@ -1,0 +1,62 @@
+[
+ {
+  "engine": "typescript",
+  "model": "openai/gpt-6.1-sol",
+  "revision": "fa6bac5cce43b6110bee5d96ce3657d8567c3a3f",
+  "binarySha256": null,
+  "tasks": [
+   "read-only",
+   "multi-read",
+   "small-edit",
+   "multi-file",
+   "test-repair"
+  ],
+  "repetitions": 3,
+  "suiteHash": "bd905b4f81f0a9412b614631a36337723067574848c5f05b50ead1cf48675091",
+  "startedAtMs": 1792540650496,
+  "finishedAtMs": 1792540949388,
+  "samples": 15,
+  "rejected": 0,
+  "chunk": "ts-1"
+ },
+ {
+  "engine": "typescript",
+  "model": "openai/gpt-6.1-sol",
+  "revision": "fa6bac5cce43b6110bee5d96ce3657d8567c3a3f",
+  "binarySha256": null,
+  "tasks": [
+   "permission-denial",
+   "tool-error",
+   "stream-interruption",
+   "long-session",
+   "multi-line-edit"
+  ],
+  "repetitions": 3,
+  "suiteHash": "bd905b4f81f0a9412b614631a36337723067574848c5f05b50ead1cf48675091",
+  "startedAtMs": 1792540949693,
+  "finishedAtMs": 1792541292803,
+  "samples": 15,
+  "rejected": 0,
+  "chunk": "ts-2"
+ },
+ {
+  "engine": "typescript",
+  "model": "openai/gpt-6.1-sol",
+  "revision": "fa6bac5cce43b6110bee5d96ce3657d8567c3a3f",
+  "binarySha256": null,
+  "tasks": [
+   "typed-repair",
+   "large-file",
+   "rename-symbol",
+   "create-module",
+   "docs-sync"
+  ],
+  "repetitions": 3,
+  "suiteHash": "bd905b4f81f0a9412b614631a36337723067574848c5f05b50ead1cf48675091",
+  "startedAtMs": 1792541293304,
+  "finishedAtMs": 1792541619155,
+  "samples": 15,
+  "rejected": 0,
+  "chunk": "ts-3"
+ }
+]

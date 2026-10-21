@@ -1,0 +1,220 @@
+{
+  "sample": {
+    "task": "test-repair",
+    "engine": "typescript",
+    "repetition": 2,
+    "suiteHash": "bd905b4f81f0a9412b614631a36337723067574848c5f05b50ead1cf48675091",
+    "taskHash": "9012e1117d9ccfbc967186426bc4800a8d6c15344e5ed9fb9d2b8d4dbda1568d",
+    "profile": {
+      "model": "glm-5.3-flash",
+      "modelParametersHash": "1d6a517801448e3670a8625498cbde2d1877335bddcf99b8f6c3b438441605a9",
+      "agentManifestHash": "170465fdd79a9b0c94582fb70bfa9309e2117553bed3f4cea5d468b0028bebf6",
+      "permissionHash": "03806c5c3fa07940f790cdecdc526ba4711571029b331186712c1b0176e2297d",
+      "toolSurfaceHash": "04c769ae52448d5fe45ea690050120cee624771222b1291088dc6d832c888106"
+    },
+    "revision": "fa6bac5cce43b6110bee5d96ce3657d8567c3a3f",
+    "artifactHash": "90fb1f96574339ad7d694a2fc446bfd93b70797fd0de76397bb7077e6b8635ab",
+    "receiptHash": "6094d8cbf094ec975ce4a72173792144621004aa16b81bb9d74f84f4fcb474f1",
+    "outcome": "passed",
+    "elapsedMs": 11808,
+    "attempts": [
+      {
+        "inputTokens": 13616,
+        "outputTokens": 38,
+        "cost": null
+      },
+      {
+        "inputTokens": 13822,
+        "outputTokens": 31,
+        "cost": null
+      },
+      {
+        "inputTokens": 13995,
+        "outputTokens": 104,
+        "cost": null
+      },
+      {
+        "inputTokens": 14165,
+        "outputTokens": 12,
+        "cost": null
+      },
+      {
+        "inputTokens": 14234,
+        "outputTokens": 48,
+        "cost": null
+      }
+    ]
+  },
+  "rejection": null,
+  "evidence": {
+    "engine": "typescript",
+    "revision": "fa6bac5cce43b6110bee5d96ce3657d8567c3a3f",
+    "task": "test-repair",
+    "repetition": 2,
+    "terminal": "completed",
+    "error": null,
+    "receipts": [],
+    "attempts": [
+      {
+        "inputTokens": 13616,
+        "outputTokens": 38,
+        "cacheReadTokens": 11456,
+        "cacheWriteTokens": null,
+        "reasoningTokens": 17,
+        "cost": null
+      },
+      {
+        "inputTokens": 13822,
+        "outputTokens": 31,
+        "cacheReadTokens": 13568,
+        "cacheWriteTokens": null,
+        "reasoningTokens": 0,
+        "cost": null
+      },
+      {
+        "inputTokens": 13995,
+        "outputTokens": 104,
+        "cacheReadTokens": 13760,
+        "cacheWriteTokens": null,
+        "reasoningTokens": 21,
+        "cost": null
+      },
+      {
+        "inputTokens": 14165,
+        "outputTokens": 12,
+        "cacheReadTokens": 13952,
+        "cacheWriteTokens": null,
+        "reasoningTokens": 0,
+        "cost": null
+      },
+      {
+        "inputTokens": 14234,
+        "outputTokens": 48,
+        "cacheReadTokens": 14144,
+        "cacheWriteTokens": null,
+        "reasoningTokens": 0,
+        "cost": null
+      }
+    ],
+    "phases": [
+      {
+        "phase": "step-start",
+        "atMs": 1792540937632,
+        "clock": "observed"
+      },
+      {
+        "phase": "tool-part",
+        "atMs": 1792540938417,
+        "clock": "observed"
+      },
+      {
+        "phase": "step-start",
+        "atMs": 1792540939758,
+        "clock": "observed"
+      },
+      {
+        "phase": "tool-part",
+        "atMs": 1792540939897,
+        "clock": "observed"
+      },
+      {
+        "phase": "step-start",
+        "atMs": 1792540941617,
+        "clock": "observed"
+      },
+      {
+        "phase": "first-output",
+        "atMs": 1792540942991,
+        "clock": "observed"
+      },
+      {
+        "phase": "tool-part",
+        "atMs": 1792540943144,
+        "clock": "observed"
+      },
+      {
+        "phase": "step-start",
+        "atMs": 1792540944132,
+        "clock": "observed"
+      },
+      {
+        "phase": "tool-part",
+        "atMs": 1792540944243,
+        "clock": "observed"
+      },
+      {
+        "phase": "step-start",
+        "atMs": 1792540945450,
+        "clock": "observed"
+      },
+      {
+        "phase": "first-output",
+        "atMs": 1792540946023,
+        "clock": "observed"
+      },
+      {
+        "phase": "exit",
+        "atMs": 1792540946105,
+        "clock": "observed"
+      },
+      {
+        "phase": "verified",
+        "atMs": 1792540946131,
+        "clock": "observed"
+      }
+    ],
+    "profile": {
+      "model": "glm-5.3-flash",
+      "modelParametersHash": "1d6a517801448e3670a8625498cbde2d1877335bddcf99b8f6c3b438441605a9",
+      "agentManifestHash": "170465fdd79a9b0c94582fb70bfa9309e2117553bed3f4cea5d468b0028bebf6",
+      "permissionHash": "03806c5c3fa07940f790cdecdc526ba4711571029b331186712c1b0176e2297d",
+      "toolSurfaceHash": "04c769ae52448d5fe45ea690050120cee624771222b1291088dc6d832c888106"
+    },
+    "profileReceipts": 5,
+    "loops": {
+      "continuations": [],
+      "stopped": []
+    },
+    "toolCalls": 4,
+    "textHash": "ab18ee94608f4d7ea9f5f68d3c8fcc1e877845f3c5f515bb7112ffd91506e7f1",
+    "binarySha256": null,
+    "startedAtMs": 1792540934323,
+    "admissionMs": null,
+    "elapsedMs": 11808
+  },
+  "assessment": {
+    "suiteHash": "bd905b4f81f0a9412b614631a36337723067574848c5f05b50ead1cf48675091",
+    "taskHash": "9012e1117d9ccfbc967186426bc4800a8d6c15344e5ed9fb9d2b8d4dbda1568d",
+    "artifactPass": true,
+    "unexpected": [],
+    "immutable": [
+      {
+        "file": "AGENTS.md",
+        "unchanged": true
+      },
+      {
+        "file": "package.json",
+        "unchanged": true
+      },
+      {
+        "file": "test/oracle.test.ts",
+        "unchanged": true
+      }
+    ],
+    "expected": [],
+    "check": {
+      "command": [
+        "bun",
+        "test",
+        "test/oracle.test.ts"
+      ],
+      "exit": 0,
+      "stdoutHash": "d6684989b8dd63b37d2f1954270826fbe1bd89a8debd12bcacf03ed1c6140ef6",
+      "stderrHash": "bf39dc36e1fecef5502b28a85e7e53eb629a5dc763c4918199a8cd0bee18e19c"
+    },
+    "executionVerdict": "unverified",
+    "requiredReceipts": [],
+    "answerContains": []
+  },
+  "answer": "修复 `src/tokens.ts`,然后运行 bun 测试进行验证。\n测试通过(1 pass, 0 fail)。`src/tokens.ts` 修复为 `split(',').map(t => t.trim()).filter(t => t.length > 0)`,测试与函数签名未改动。"
+}
