@@ -22,15 +22,16 @@ export async function verifyWindowsUpgrade(filename = "miao.exe") {
 $ErrorActionPreference = 'Stop'
 Add-Type -TypeDefinition 'public class Program { public static void Main(string[] args) { if (args.Length > 0 && args[0] == "--build-id") { System.Console.WriteLine("11111111-1111-1111-1111-111111111111"); return; } System.Console.WriteLine("1.2.2"); if (args.Length > 0 && args[0] != "--version") System.Threading.Thread.Sleep(60000); } }' -OutputAssembly $env:FIXTURE_OLD -OutputType ConsoleApplication
 Add-Type -TypeDefinition 'public class Candidate { public static void Main(string[] args) { System.Console.WriteLine(args.Length > 0 && args[0] == "--build-id" ? "22222222-2222-2222-2222-222222222222" : "1.2.3"); } }' -OutputAssembly $env:FIXTURE_NEW -OutputType ConsoleApplication
-Copy-Item -LiteralPath $env:FIXTURE_OLD -Destination $env:FIXTURE_OLD_COPY
+New-Item -ItemType Directory -Force -Path $env:FIXTURE_OLD_DIR | Out-Null
+Copy-Item -LiteralPath $env:FIXTURE_OLD -Destination (Join-Path $env:FIXTURE_OLD_DIR 'miao.exe')
 Compress-Archive -LiteralPath $env:FIXTURE_NEW -DestinationPath $env:FIXTURE_ZIP
-Compress-Archive -LiteralPath $env:FIXTURE_OLD_COPY -DestinationPath $env:FIXTURE_OLD_ZIP
+Compress-Archive -LiteralPath (Join-Path $env:FIXTURE_OLD_DIR 'miao.exe') -DestinationPath $env:FIXTURE_OLD_ZIP
 `),
     {
       env: {
         ...process.env,
         FIXTURE_OLD: executable,
-        FIXTURE_OLD_COPY: path.join(directory, "miao-old-copy.exe"),
+        FIXTURE_OLD_DIR: path.join(directory, "old"),
         FIXTURE_NEW: path.join(directory, "miao.exe"),
         FIXTURE_ZIP: archive,
         FIXTURE_OLD_ZIP: path.join(directory, "release-old.zip"),
