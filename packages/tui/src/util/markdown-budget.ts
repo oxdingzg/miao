@@ -10,12 +10,12 @@ export function markdownCost(content: string) {
     const match = line.match(/^ {0,3}(`{3,}|~{3,})(.*)$/)
     const marker = match?.[1]
     if (marker) {
-      if (!fence && !(marker[0] === "`" && match![2].includes("`"))) {
+      if (!fence && !(marker[0] === "`" && match[2].includes("`"))) {
         fence = marker
         cost += 32
         continue
       }
-      if (fence && marker[0] === fence[0] && marker.length >= fence.length && !match![2].trim()) {
+      if (fence && marker[0] === fence[0] && marker.length >= fence.length && !match[2].trim()) {
         fence = undefined
         continue
       }
