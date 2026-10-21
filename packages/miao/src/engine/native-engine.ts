@@ -3,6 +3,7 @@ import type { AgentAttachment } from "@miao/schema/prompt"
 import { Event } from "@miao/schema/event"
 import { agentManifest, modelRoute, type Route } from "./product-agent"
 import { LocationServiceMap } from "@miao/core/location-service-map"
+import { SessionCreate } from "@miao/core/session-create"
 import { SessionModelRoute } from "@miao/schema/session-model-route"
 import { Model } from "@miao/schema/model"
 import { AmbientContext } from "./ambient-context"
@@ -690,6 +691,10 @@ const layer = Layer.effect(
     const events = yield* EventV2.Service
     const sessions = yield* SessionStore.Service
     const ownershipService = yield* SessionOwnership.Service
+    // Workflow subagents create first-class product Sessions from the
+    // product-tool bridge; present only when the composition provides the
+    // product session-creation service.
+    const creation = Option.getOrUndefined(yield* Effect.serviceOption(SessionCreate.Service))
     const blob = yield* Blob.Service
     const fs = yield* FSUtil.Service
     const settings = yield* Effect.promise(() => engineSettings(global.config))
@@ -720,7 +725,7 @@ const layer = Layer.effect(
         const lsp = yield* ProductLsp.prepare(location, effective)
         const formatter = yield* ProductFormatter.prepare(location, effective)
         const policy = yield* ProductPolicy.prepare(effective)
-        const productTools = yield* ProductTools.prepare(configuration, {
+        const productTools = yield* ProductTools.prepare(configuration, creation, {
           get: (input) =>
             ownerRouter === undefined
               ? Effect.fail(new EngineError("engine_owner_closed", "product tool router is not ready"))

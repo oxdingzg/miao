@@ -15,10 +15,12 @@ import { SessionExecution } from "@miao/core/session/execution"
 import { SessionMessage } from "@miao/core/session/message"
 import { Prompt } from "@miao/core/session/prompt"
 import { SessionOwnership } from "@miao/core/session/ownership"
+import { SessionCreate } from "@miao/core/session-create"
 import { SessionSchema } from "@miao/core/session/schema"
 import { SessionStore } from "@miao/core/session/store"
 import { SessionTodo } from "@miao/core/session/todo"
 import { Tool } from "@miao/core/tool/tool"
+import { WorkflowTool } from "@miao/core/tool/workflow"
 import { ToolPlugins } from "@miao/core/tool/plugins"
 import { PushNotificationTool } from "@miao/core/tool/push-notification"
 import { ToolRegistry } from "@miao/core/tool/registry"
@@ -27,7 +29,8 @@ import type { Location } from "@miao/schema/location"
 import { AbsolutePath } from "@miao/core/schema"
 import { Effect, Option, Schema } from "effect"
 import { EngineError, type EngineOptions } from "./client"
-import type { EngineClient } from "./client"
+import type { EngineClient, EngineEvent } from "./client"
+import { messageID } from "./identity"
 import { moveEngine } from "./transfer"
 import { PluginTools } from "./plugin-tools"
 import type { EngineSession } from "./session"
@@ -44,8 +47,8 @@ import { readTranscriptEntries } from "./transcript"
  */
 
 export interface Owner {
-  readonly client: Pick<EngineClient, "request">
-  readonly session: Pick<EngineSession, "promptProduct">
+  readonly client: Pick<EngineClient, "request" | "cancel" | "onEvent" | "offEvent">
+  readonly session: Pick<EngineSession, "promptProduct" | "watch">
 }
 
 export interface Router {
@@ -95,6 +98,7 @@ const nativeOwner = (router: Router, placement: { storage: string; location: Loc
 
 export const prepare = Effect.fn("Engine.productTools")(function* (
   configuration: Omit<EngineOptions, "db" | "workspace">,
+  creation: SessionCreate.Interface | undefined,
   router: Router,
 ) {
   const options: Partial<EngineOptions> = {}
@@ -395,6 +399,128 @@ export const prepare = Effect.fn("Engine.productTools")(function* (
     }
   }
 
+  // One in-flight workflow script per settle: the engine's cancel notice names
+  // the bridge call, so the host maps it back to the tool call, cancels every
+  // child that script has already spawned, and stops the whole run.
+  const workflowRuns = new Map<
+    string,
+    { owner: Owner; children: Set<string>; hooks: Set<() => void> }
+  >()
+  const bridgeCalls = new Map<number, string>()
+
+  const makeWorkflow = (sessionID: SessionSchema.ID): Tool.AnyTool => {
+    if (!agents || !creation)
+      return WorkflowTool.make(() => Effect.fail(new ToolFailure({ message: "Workflow is not available on this host." })))
+    const select = agents.select
+    const create = creation.create
+    return WorkflowTool.make((input, context) =>
+      Effect
+        .gen(function* () {
+        const parent = yield* store.get(sessionID)
+        if (!parent) return yield* new ToolFailure({ message: "The calling Session no longer exists." })
+        if (parent.parentID !== undefined)
+          return yield* new ToolFailure({ message: "Subagents cannot spawn further subagents." })
+        const found = yield* placement(sessionID)
+        if (found?.engine !== "rust")
+          return yield* new ToolFailure({ message: "Workflow subagents require a native engine placement." })
+        const selection = yield* select(input.agent ?? "general")
+        if (!selection.info) return yield* new ToolFailure({ message: `Unknown agent type: ${input.agent}` })
+        const owner = yield* router.get({
+          storage: found.storage,
+          engineID: found.storage,
+          location: found.location,
+        }).pipe(Effect.mapError(() => new ToolFailure({ message: "The engine owner is not available." })))
+        const child = SessionSchema.ID.create()
+        yield* Effect
+          .tryPromise({
+            try: () => owner.client.request("initialize", { session_id: child, title: input.description }),
+            catch: (error) => new ToolFailure({ message: `Could not create the subagent Session: ${String(error)}` }),
+          })
+          .pipe(
+            Effect.andThen(() =>
+              create({
+                id: child,
+                parentID: sessionID,
+                agent: selection.id,
+                location: parent.location,
+                nativeStorage: AbsolutePath.make(found.storage),
+              }),
+            ),
+            Effect.mapError(() => new ToolFailure({ message: "Could not record the subagent Session." })),
+          )
+        yield* permission
+          .assert({
+            action: "task",
+            resources: [selection.id],
+            save: [selection.id],
+            sessionID,
+            agent: context.agent,
+            source: { type: "tool", messageID: context.assistantMessageID, callID: context.toolCallID },
+          })
+          .pipe(
+            Effect.mapError(
+              () => new ToolFailure({ message: `Spawning the ${selection.id} subagent was not permitted.` }),
+            ),
+          )
+        const run = workflowRuns.get(context.toolCallID) ?? {
+          owner,
+          children: new Set<string>(),
+          hooks: new Set<() => void>(),
+        }
+        workflowRuns.set(context.toolCallID, run)
+        run.children.add(child)
+        yield* Effect.tryPromise(async () => {
+          await owner.session.watch(child)
+          const finished = new Promise<void>((resolve, reject) => {
+            const handler = (event: EngineEvent) => {
+              if (event.session_id !== child) return
+              if (event.kind === "run.finished" || event.kind === "stop" || event.kind === "stop_failure") {
+                owner.client.offEvent(handler)
+                resolve()
+              }
+            }
+            owner.client.onEvent(handler)
+            if (run)
+              run.hooks.add(() => {
+                owner.client.offEvent(handler)
+                reject(new Error("The workflow was cancelled."))
+              })
+          })
+          await owner.session.promptProduct({
+            sessionID: child,
+            prompt: { text: input.prompt },
+            delivery: "steer",
+          })
+          await finished
+        }).pipe(
+          Effect.mapError(
+            (error) =>
+              new ToolFailure({
+                message: error instanceof Error ? error.message : "The subagent run could not be observed.",
+              }),
+          ),
+        )
+        const messages = yield* Effect.tryPromise({
+          try: () =>
+            readTranscriptEntries({
+              sessionID: child,
+              engineID: found.storage,
+              location: found.location,
+              selected: true,
+              request: (method, params) => owner.client.request(method, params),
+            }),
+          catch: () => new ToolFailure({ message: "Could not read the subagent transcript." }),
+        })
+        const assistant = [...messages].reverse().find((entry) => entry.message.type === "assistant")
+        const text =
+          assistant?.message.type === "assistant"
+            ? assistant.message.content.flatMap((part) => (part.type === "text" ? [part.text] : [])).join("\n").trim()
+            : ""
+        return { sessionID: child, text: text.length > 0 ? text : "(no output)" }
+        })
+    )
+  }
+
   const make = (sessionID: SessionSchema.ID): Readonly<Record<string, Tool.AnyTool>> => ({
     ...PeerTools.make({ sessionID, permission, peers }),
     ...makeWorktreeTools(sessionID),
@@ -404,6 +530,7 @@ export const prepare = Effect.fn("Engine.productTools")(function* (
       ),
     ),
     ...(registry && plugins && agents ? PluginTools.make({ registry, plugins, agents, store }) : {}),
+    ...(creation && agents ? { workflow: makeWorkflow(sessionID) } : {}),
   })
 
   const manifest = make(SessionSchema.ID.make("ses_product_tools"))
@@ -427,31 +554,71 @@ export const prepare = Effect.fn("Engine.productTools")(function* (
   options.productToolsFile = file
   options.onProductTool = async (call) => {
     const sessionID = SessionSchema.ID.make(call.sessionID)
-    return Effect.runPromise(
+    bridgeCalls.set(call.bridgeID, call.callID)
+    try {
+      const output = await Effect.runPromise(
+        Effect.gen(function* () {
+          const session = yield* store.get(sessionID)
+          const tool = make(sessionID)[call.name]
+          if (!tool) return yield* new ToolFailure({ message: `Unknown product tool: ${call.name}` })
+          const toolCall: ToolCall = {
+            type: "tool-call",
+            id: call.callID,
+            name: call.name,
+            input: call.input,
+          }
+          const output = yield* Tool.settle(tool, toolCall, {
+            sessionID,
+            agent: session?.agent ?? AgentV2.defaultID,
+            // The calling assistant message, when the engine names it; a
+            // synthetic id keeps older engines working.
+            assistantMessageID:
+              call.messageSeq !== undefined
+                ? messageID(call.sessionID, call.messageSeq)
+                : SessionMessage.ID.create(),
+            toolCallID: call.callID,
+          })
+          const text = output.content.flatMap((part) => (part.type === "text" ? [part.text] : [])).join("\n")
+          // A worktree move ends the drain in the old location: the structured
+          // marker travels to the engine, which settles the run at this tool.
+          const structured = asRecord(output.structured)
+          if (structured?.["moved"] === true) return structured
+          return text.length > 0 ? text : output.structured
+        }),
+      )
+      return output
+    } finally {
+      bridgeCalls.delete(call.bridgeID)
+      workflowRuns.delete(call.callID)
+    }
+  }
+  options.onProductToolCancel = (notice) => {
+    // The engine dropped the pending reply slot, so only the spawned children
+    // and the script's waiters need releasing here.
+    void Effect.runPromise(
       Effect.gen(function* () {
-        const session = yield* store.get(sessionID)
-        const tool = make(sessionID)[call.name]
-        if (!tool) return yield* new ToolFailure({ message: `Unknown product tool: ${call.name}` })
-        const toolCall: ToolCall = {
-          type: "tool-call",
-          id: call.callID,
-          name: call.name,
-          input: call.input,
-        }
-        const output = yield* Tool.settle(tool, toolCall, {
-          sessionID,
-          agent: session?.agent ?? AgentV2.defaultID,
-          assistantMessageID: SessionMessage.ID.create(),
-          toolCallID: call.callID,
+        const found = yield* SessionEnginePlacement.find(db, SessionSchema.ID.make(notice.sessionID))
+        if (!found || found.engine !== "rust") return
+        const owner = yield* router.get({
+          storage: found.storage,
+          engineID: found.storage,
+          location: found.location,
         })
-        const text = output.content.flatMap((part) => (part.type === "text" ? [part.text] : [])).join("\n")
-        // A worktree move ends the drain in the old location: the structured
-        // marker travels to the engine, which settles the run at this tool.
-        const structured = asRecord(output.structured)
-        if (structured?.["moved"] === true) return structured
-        return text.length > 0 ? text : output.structured
+        const callID = bridgeCalls.get(notice.bridgeID)
+        const run = callID ? workflowRuns.get(callID) : undefined
+        if (!run) return
+        for (const hook of run.hooks) hook()
+        for (const child of run.children) {
+          const cancelled = yield* Effect.exit(
+            Effect.tryPromise({
+              try: () => owner.client.cancel(child),
+              catch: () => new Error("cancel failed"),
+            }),
+          )
+          void cancelled
+        }
       }),
-    )
+    ).catch(() => {})
   }
   return options
 })
