@@ -104,6 +104,9 @@ Options:
   -c, --continue     continue the last session                                             [boolean]
   -s, --session      session id to continue                                                 [string]
       --fork         fork the session before continuing (requires --continue or --session) [boolean]
+      --engine       engine placement for this run: native opts new sessions into the rust engine
+                     (default storage under the data directory); ts forces the TypeScript engine
+                                                                           [choices: "native", "ts"]
   -m, --model        model to use in the format of provider/model                           [string]
       --agent        agent to use                                                           [string]
       --format       format: default (formatted) or json (raw JSON events)
@@ -269,6 +272,9 @@ Options:
       --mdns-domain  custom domain name for mDNS service (default: miao.local)
                                                                     [string] [default: "miao.local"]
       --cors         additional domains to allow for CORS                      [array] [default: []]
+      --engine       engine placement for sessions served here: native opts new sessions into the
+                     rust engine (default storage under the data directory); ts forces the
+                     TypeScript engine                                     [choices: "native", "ts"]
 "
 `;
 
