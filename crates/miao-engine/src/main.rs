@@ -197,6 +197,14 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
         .get("--provider")
         .map(String::as_str)
         .unwrap_or("anthropic");
+    // A `provider/model` --model value names the provider for host-side
+    // routing; when the provider is given explicitly (the acp mode always
+    // does), the transport wants the bare model id, mirroring serve-mode
+    // route resolution.
+    let model: String = match model.split_once('/') {
+        Some((prefix, bare)) if prefix == provider_name => bare.to_owned(),
+        _ => model.to_owned(),
+    };
     if ![
         "anthropic",
         "openai-chat",
