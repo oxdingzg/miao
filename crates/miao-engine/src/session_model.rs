@@ -354,5 +354,4 @@ mod tests {
         .unwrap_err();
         assert!(error.to_string().contains("identity does not match"));
     }
-
 }
