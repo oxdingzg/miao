@@ -235,7 +235,12 @@ export const engineStorageRoot = (
   environment: Record<string, string | undefined> = process.env,
   settings?: { storage?: string },
 ): string | undefined => {
-  const root = environment.MIAO_ENGINE_STORAGE ?? settings?.storage
+  // An explicit empty value is the `--engine ts` opt-out: it must beat a
+  // configured `engine.storage` rather than resolving to the working directory.
+  const root =
+    environment.MIAO_ENGINE_STORAGE !== undefined
+      ? environment.MIAO_ENGINE_STORAGE || undefined
+      : settings?.storage
   return root ? path.resolve(root) : undefined
 }
 
@@ -255,7 +260,7 @@ export const applyEngineOptIn = (
     environment.MIAO_ENGINE_STORAGE = path.join(dataDir, "engines")
     return
   }
-  if (engine === "ts") delete environment.MIAO_ENGINE_STORAGE
+  if (engine === "ts") environment.MIAO_ENGINE_STORAGE = ""
 }
 
 /** Whether the composition root should build the native transport at all. */
