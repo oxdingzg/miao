@@ -60,7 +60,7 @@ pub(crate) fn select(
             // any binding that would change protocol or model. A named route
             // keeps the strict lookup, and any other variant name stays an
             // error: only "default" is provably the primary form.
-            None if binding.route_id.is_none() && variant == "default" => Arc::clone(&primary),
+            None if binding.route_id.is_none() && variant == "default" => Arc::clone(primary),
             None => {
                 return Err(Error::Invalid(
                     "model variant is not registered by the host".into(),
@@ -252,7 +252,6 @@ mod tests {
     use super::*;
     use crate::provider::{ProviderError, Reply};
     use async_trait::async_trait;
-    use serde_json::json;
     use std::sync::Arc;
     use tokio::sync::mpsc;
     use tokio_util::sync::CancellationToken;
