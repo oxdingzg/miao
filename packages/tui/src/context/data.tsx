@@ -154,36 +154,38 @@ export const { use: useData, provider: DataProvider } = createSimpleContext({
         const location = { directory: metadata.directory, workspaceID: metadata.workspace }
         switch (event.type) {
           case "catalog.updated":
-            void Promise.all([result.location.model.refresh(location), result.location.provider.refresh(location)])
-              .catch((error) => console.error("catalog refresh failed", error))
+            void sdk.background("catalog refresh failed", () =>
+              Promise.all([result.location.model.refresh(location), result.location.provider.refresh(location)]),
+            )
             break
           case "reference.updated":
-            void result.location.reference.refresh().catch((error) => console.error("reference refresh failed", error))
+            void sdk.background("reference refresh failed", () => result.location.reference.refresh())
             break
           case "integration.updated":
-            void Promise.all([
-              result.location.integration.refresh(location),
-              result.location.model.refresh(location),
-              result.location.provider.refresh(location),
-            ]).catch((error) => console.error("integration refresh failed", error))
+            void sdk.background("integration refresh failed", () =>
+              Promise.all([
+                result.location.integration.refresh(location),
+                result.location.model.refresh(location),
+                result.location.provider.refresh(location),
+              ]),
+            )
             break
         }
       })
       onCleanup(unsub)
 
-      void Promise.allSettled([
-        result.location.refresh(),
-        result.location.agent.refresh(),
-        result.location.integration.refresh(),
-        result.location.model.refresh(),
-        result.location.provider.refresh(),
-        result.location.reference.refresh(),
-        result.location.command.refresh(),
-        result.location.skill.refresh(),
-      ]).then((settled) => {
-        for (const failure of settled.filter((item) => item.status === "rejected"))
-          console.error("Failed to refresh default location data", failure.reason)
-      })
+      void Promise.all(
+        [
+          () => result.location.refresh(),
+          () => result.location.agent.refresh(),
+          () => result.location.integration.refresh(),
+          () => result.location.model.refresh(),
+          () => result.location.provider.refresh(),
+          () => result.location.reference.refresh(),
+          () => result.location.command.refresh(),
+          () => result.location.skill.refresh(),
+        ].map((refresh) => sdk.background("Failed to refresh default location data", refresh)),
+      )
     })
 
     return result
