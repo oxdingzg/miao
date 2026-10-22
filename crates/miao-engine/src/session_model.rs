@@ -61,7 +61,11 @@ pub(crate) fn select(
             // keeps the strict lookup, and any other variant name stays an
             // error: only "default" is provably the primary form.
             None if binding.route_id.is_none() && variant == "default" => Arc::clone(&primary),
-            None => return Err(Error::Invalid("model variant is not registered by the host".into())),
+            None => {
+                return Err(Error::Invalid(
+                    "model variant is not registered by the host".into(),
+                ))
+            }
         };
         if selected.identity()
             != Some(Identity {
@@ -321,7 +325,9 @@ mod tests {
         .map(|_| ())
         .map(|_| ())
         .unwrap_err();
-        assert!(error.to_string().contains("model variant is not registered"));
+        assert!(error
+            .to_string()
+            .contains("model variant is not registered"));
     }
 
     #[test]
@@ -332,12 +338,19 @@ mod tests {
         });
         let error = select(
             &(Arc::clone(&primary) as Arc<dyn Provider>),
-            Some(&binding("openai-chat", "fixture", Some("default"), Some("account/route"))),
+            Some(&binding(
+                "openai-chat",
+                "fixture",
+                Some("default"),
+                Some("account/route"),
+            )),
         )
         .map(|_| ())
         .map(|_| ())
         .unwrap_err();
-        assert!(error.to_string().contains("model variant is not registered"));
+        assert!(error
+            .to_string()
+            .contains("model variant is not registered"));
     }
 
     #[test]
