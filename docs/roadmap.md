@@ -108,16 +108,13 @@ inline with `[RS: …]`.
 
 ## Next up (ordered)
 
-1. **§9.1** Ship the engine binary by default: bundle with the release flow and
-   auto-discover an installed `miao-engine`, so native sessions work without a
-   manual `MIAO_ENGINE_BIN`.
-2. **§6** Live acceptance: Gemini/Anthropic real accounts (blocked on
+1. **§6** Live acceptance: Gemini/Anthropic real accounts (blocked on
    credentials), released-binary upgrade path.
-3. **§1.2** App transcript retype onto V2 types (its own cutover, per the
+2. **§1.2** App transcript retype onto V2 types (its own cutover, per the
    staged note below).
-4. **§2.4** Crash-recovery idempotency on the RS primitives (tool replay +
+3. **§2.4** Crash-recovery idempotency on the RS primitives (tool replay +
    outcome-unknown).
-5. Then the remaining TS-side and operational items in section order (§1.3
+4. Then the remaining TS-side and operational items in section order (§1.3
    confirmation, §2.5 body caps, §2.7 CIMD ordering, §2.8 monitor sandboxing,
    §3 hot reload, §4 storage ops, §5 report, §7 docs, §8 push/APNs).
 
@@ -667,15 +664,18 @@ the default path. For what placing a Session on the native engine does and does
 not provide, and the current state of its efficiency evidence, see
 [Enabling the native engine](native-engine-enablement.en.md).
 
-1. **Engine binary by default** — discovery landed. The release ships
+1. **Engine binary by default** — landed. The release ships
    per-platform `miao-engine` archives next to the CLI, the installer places one
    at `~/.miao/bin/miao-engine`, and the product discovers it without
    `MIAO_ENGINE_BIN`. Placement requires protocol 2: `miao-engine
    --capabilities` reports `{protocol, schema, version}`, an explicit
    `MIAO_ENGINE_BIN` that is older fails startup with a clear error, and a
    discovered engine that is older is ignored so the product keeps running
-   TypeScript Sessions. Remaining: bundle the archive inside the CLI install
-   where a release has no engine asset at all.
+   TypeScript Sessions. A release without an engine asset falls back to the
+   newest release that carries one on both the POSIX and Windows installers,
+   so a missing asset degrades to TypeScript Sessions instead of failing the
+   install. Embedding the archive inside the CLI installer itself is not
+   required.
 2. **Product-tool reverse bridge** — landed (#1027). Native sessions register
    host-supplied product tools and reverse-dispatch execution to the server
    over the engine's stdio bridge; replies settle as durable tool results.
