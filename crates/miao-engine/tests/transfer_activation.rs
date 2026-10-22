@@ -540,7 +540,9 @@ async fn a_session_born_native_exports_its_whole_timeline_without_a_transfer_imp
     // input's digest so the receipt's 64-hex contract still holds.
     let empty = format!("{:x}", Sha256::digest([]));
     assert_eq!(delta["bundle_sha256"], json!(empty));
-    assert!(delta["delta_sha256"].as_str().is_some_and(|d| d.len() == 64));
+    assert!(delta["delta_sha256"]
+        .as_str()
+        .is_some_and(|d| d.len() == 64));
     // The file holds the payload without the self-referential digest; the
     // returned receipt carries it so the reverse migration can verify bytes.
     let on_disk = std::fs::read(&delta_path).unwrap();
