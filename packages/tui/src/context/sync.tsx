@@ -1153,6 +1153,7 @@ export const {
     }
 
     async function bootstrap(input: { fatal?: boolean } = {}) {
+      if (sdk.signal.aborted) return
       const fatal = input.fatal ?? true
       const workspace = project.workspace.current()
       // A loaded catalog may be stale after a reconnect or workspace switch;
@@ -1161,6 +1162,9 @@ export const {
       providerCatalog = undefined
       const projectPromise = project.sync()
       const sessionListPromise = projectPromise.then(() => listSessions())
+      // This read starts before bootstrap reaches its background phase. Observe
+      // rejection immediately even if disposal or a blocking read skips that phase.
+      void sessionListPromise.catch(() => {})
 
       // blocking - include session.list when continuing a session
       const providersPromise = sdk.api.config.providers({ location: { workspace } }, {})
