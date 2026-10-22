@@ -53,6 +53,7 @@ const TOP_LEVEL = [
   "upgrade",
   "uninstall",
   "serve",
+  "remote",
   "web",
   "models",
   "stats",
@@ -76,6 +77,9 @@ const SUBCOMMANDS = [
   ["providers", "list"],
   ["providers", "login"],
   ["providers", "logout"],
+  ["remote", "login"],
+  ["remote", "status"],
+  ["remote", "logout"],
   ["agent", "create"],
   ["agent", "list"],
   ["session", "list"],
@@ -107,7 +111,6 @@ describe("miao CLI help-text snapshots", () => {
         expect(topLevel.stderr).not.toContain("--thinking")
         expect(topLevel.stderr).not.toContain("--variant")
         expect(topLevel.stderr).not.toContain("--demo")
-        expect(topLevel.stderr).not.toMatch(/miao remote(?:\s|$)/)
 
         const argvs: Array<readonly string[]> = [...TOP_LEVEL.map((c) => [c] as const), ...SUBCOMMANDS]
 

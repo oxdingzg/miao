@@ -272,6 +272,29 @@ Options:
 "
 `;
 
+exports[`miao CLI help-text snapshots every documented command emits stable help text: miao remote --help 1`] = `
+"  /\\/\\  
+ ( o.o ) 
+  > ^ <
+
+miao remote
+
+manage remote access and the Hub account for this machine
+
+Commands:
+  miao remote login [url]  sign in to a Hub account and attach this machine to it
+  miao remote status       show Remote Control and Hub account status
+  miao remote logout       disable Remote Control for this machine
+
+Options:
+  -h, --help        show help                                                              [boolean]
+  -v, --version     show version number                                                    [boolean]
+      --print-logs  print logs to stderr                                                   [boolean]
+      --log-level   log level                   [string] [choices: "DEBUG", "INFO", "WARN", "ERROR"]
+      --pure        run without external plugins                                           [boolean]
+"
+`;
+
 exports[`miao CLI help-text snapshots every documented command emits stable help text: miao web --help 1`] = `
 "  /\\/\\  
  ( o.o ) 
@@ -657,6 +680,67 @@ log out from a configured provider
 
 Positionals:
   provider  provider id or name to log out from                                             [string]
+
+Options:
+  -h, --help        show help                                                              [boolean]
+  -v, --version     show version number                                                    [boolean]
+      --print-logs  print logs to stderr                                                   [boolean]
+      --log-level   log level                   [string] [choices: "DEBUG", "INFO", "WARN", "ERROR"]
+      --pure        run without external plugins                                           [boolean]
+"
+`;
+
+exports[`miao CLI help-text snapshots every documented command emits stable help text: miao remote login --help 1`] = `
+"  /\\/\\  
+ ( o.o ) 
+  > ^ <
+
+miao remote login [url]
+
+sign in to a Hub account and attach this machine to it
+
+Positionals:
+  url  Hub URL, for example https://hub.example.com                                         [string]
+
+Options:
+  -h, --help        show help                                                              [boolean]
+  -v, --version     show version number                                                    [boolean]
+      --print-logs  print logs to stderr                                                   [boolean]
+      --log-level   log level                   [string] [choices: "DEBUG", "INFO", "WARN", "ERROR"]
+      --pure        run without external plugins                                           [boolean]
+      --email       account email for password sign-in                                      [string]
+      --password    account password for password sign-in                                   [string]
+      --name        label for this machine in the Hub device directory                      [string]
+      --provider    sign in with this OAuth provider instead of a password                  [string]
+"
+`;
+
+exports[`miao CLI help-text snapshots every documented command emits stable help text: miao remote status --help 1`] = `
+"  /\\/\\  
+ ( o.o ) 
+  > ^ <
+
+miao remote status
+
+show Remote Control and Hub account status
+
+Options:
+  -h, --help        show help                                                              [boolean]
+  -v, --version     show version number                                                    [boolean]
+      --print-logs  print logs to stderr                                                   [boolean]
+      --log-level   log level                   [string] [choices: "DEBUG", "INFO", "WARN", "ERROR"]
+      --pure        run without external plugins                                           [boolean]
+"
+`;
+
+exports[`miao CLI help-text snapshots every documented command emits stable help text: miao remote logout --help 1`] = `
+"  /\\/\\  
+ ( o.o ) 
+  > ^ <
+
+miao remote logout
+
+disable Remote Control for this machine
 
 Options:
   -h, --help        show help                                                              [boolean]
