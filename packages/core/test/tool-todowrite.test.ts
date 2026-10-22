@@ -123,3 +123,19 @@ describe("TodoWriteTool", () => {
     }),
   )
 })
+
+describe("TodoWriteTool text normalisation", () => {
+  it.effect("returns and persists task text without carriage returns", () =>
+    Effect.gen(function* () {
+      yield* setup
+      const registry = yield* ToolRegistry.Service
+      const service = yield* SessionTodo.Service
+      const clean = { content: "P2-3 migrate-back：PR #1219", status: "in_progress", priority: "high" }
+
+      expect(
+        yield* settleTool(registry, call([{ ...clean, content: "P2\r-3\r migrate\r-back\r：PR\r #1219" }])),
+      ).toMatchObject({ output: { structured: { todos: [clean] } } })
+      expect(yield* service.get(sessionID)).toEqual([clean])
+    }),
+  )
+})

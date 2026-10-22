@@ -4,6 +4,7 @@ import { ToolFailure } from "@miao/llm"
 import { Effect, Layer, Schema } from "effect"
 import { makeLocationNode } from "../effect/app-node"
 import { PermissionV2 } from "../permission"
+import { normalize } from "@miao/schema/session-todo"
 import { SessionTodo } from "../session/todo"
 import { ToolRegistry } from "./registry"
 import { Tool } from "./tool"
@@ -25,7 +26,7 @@ export const toModelOutput = (output: Output) => JSON.stringify(output.todos, nu
 const layer = Layer.effectDiscard(
   Effect.gen(function* () {
     const tools = yield* Tools.Service
-    const todos = yield* SessionTodo.Service
+    const service = yield* SessionTodo.Service
     const permission = yield* PermissionV2.Service
 
     yield* tools
@@ -39,7 +40,11 @@ const layer = Layer.effectDiscard(
             toModelOutput: ({ output }) => [{ type: "text", text: toModelOutput(output) }],
             execute: (input, context) =>
               Effect.gen(function* () {
-                const invalid = SessionTodo.validate(input.todos)
+                // Normalise before validating and returning: the stored tool
+                // input feeds every transcript renderer, and a stray carriage
+                // return there rewinds the cursor and shreds the layout.
+                const todos = normalize(input.todos)
+                const invalid = SessionTodo.validate(todos)
                 if (invalid !== undefined) return yield* new ToolFailure({ message: invalid })
                 yield* permission.assert({
                   action: name,
@@ -49,8 +54,8 @@ const layer = Layer.effectDiscard(
                   agent: context.agent,
                   source: { type: "tool", messageID: context.assistantMessageID, callID: context.toolCallID },
                 })
-                yield* todos.update({ sessionID: context.sessionID, todos: input.todos })
-                return { todos: input.todos }
+                yield* service.update({ sessionID: context.sessionID, todos })
+                return { todos }
               }).pipe(Effect.mapError(() => new ToolFailure({ message: "Unable to update todos" }))),
           }),
           "concurrent",

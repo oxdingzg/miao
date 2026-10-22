@@ -110,11 +110,12 @@ const layer = Layer.effect(
       readonly sessionID: SessionSchema.ID
       readonly todos: ReadonlyArray<Info>
     }) {
-      const invalid = validate(input.todos)
+      const todos = SessionTodo.normalize(input.todos)
+      const invalid = validate(todos)
       if (invalid !== undefined) return yield* Effect.die(new Error(invalid))
       yield* ownership.claim(input.sessionID)
       const current = yield* get(input.sessionID)
-      if (sameTodos(current, input.todos)) {
+      if (sameTodos(current, todos)) {
         // An unchanged list is still a sync: refresh the staleness anchor so a
         // confirmed-accurate list quiets the reconciliation nudge without a
         // full rewrite or a duplicate event.
@@ -130,11 +131,11 @@ const layer = Layer.effect(
         .transaction((tx) =>
           Effect.gen(function* () {
             yield* tx.delete(TodoTable).where(eq(TodoTable.session_id, input.sessionID)).run()
-            if (input.todos.length === 0) return
+            if (todos.length === 0) return
             yield* tx
               .insert(TodoTable)
               .values(
-                input.todos.map((todo, position) => ({
+                todos.map((todo, position) => ({
                   session_id: input.sessionID,
                   task_id: todo.id ?? null,
                   depends_on: todo.depends_on ?? null,
@@ -148,7 +149,7 @@ const layer = Layer.effect(
           }),
         )
         .pipe(Effect.orDie)
-      yield* events.publish(Event.Updated, input)
+      yield* events.publish(Event.Updated, { ...input, todos })
     })
 
     const get = Effect.fn("SessionTodo.get")(function* (sessionID: SessionSchema.ID) {
@@ -159,13 +160,15 @@ const layer = Layer.effect(
         .orderBy(asc(TodoTable.position))
         .all()
         .pipe(Effect.orDie)
-      return rows.map((row) => ({
-        ...(row.task_id === null ? {} : { id: row.task_id }),
-        ...(row.depends_on === null ? {} : { depends_on: row.depends_on }),
-        content: row.content,
-        status: row.status,
-        priority: row.priority,
-      }))
+      return SessionTodo.normalize(
+        rows.map((row) => ({
+          ...(row.task_id === null ? {} : { id: row.task_id }),
+          ...(row.depends_on === null ? {} : { depends_on: row.depends_on }),
+          content: row.content,
+          status: row.status,
+          priority: row.priority,
+        })),
+      )
     })
 
     const observe = Effect.fn("SessionTodo.observe")(function* (sessionID: SessionSchema.ID) {
