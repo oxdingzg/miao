@@ -11,6 +11,19 @@ at `docs/releases/vX.Y.Z.md` and `docs/releases/vX.Y.Z.zh.md`; both are required
 
 ## [Unreleased]
 
+## [0.2.24] - 2026-10-22
+
+### Fixed
+- **miao**: a failed headless turn is reported with a non-zero exit instead of silently succeeding (#1228).
+- **miao**: headless runs terminate their engine child, so every `miao run` no longer leaks a serve process (#1223).
+- **tui**: todo text is normalised, so stray carriage returns no longer shred the todo panel into one word per line (#1226).
+- **engine**: migrate-back completes against a real engine — the delta receipt verifies the exact bytes written, a completed forward audit row turns in place, and a transferred Session's projected variant binds the primary route (#1219).
+- **engine**: a provider-prefixed model is accepted in ACP, and provider run failures are surfaced instead of swallowed (#1225).
+
+### Added
+- **cli**: `miao remote` signs in to a Hub account from the terminal (#1222).
+- **engine**: the prompt cache defaults to on (#1216), and native stream watchdogs are layered by phase so slow phases no longer trip the whole request (#1213).
+
 ## [0.2.23] - 2026-10-21
 
 ### Fixed
