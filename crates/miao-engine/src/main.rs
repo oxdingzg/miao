@@ -317,9 +317,12 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
     {
         return Err("custom Gemini endpoint requires an explicit fallback-endpoint".into());
     }
+    // Prompt caching is a pure win for the transports that consume the flag
+    // (Anthropic and Bedrock charge 0.1x for cache reads), so it defaults on;
+    // `--prompt-cache off` opts out explicitly.
     let prompt_cache = match options.get("--prompt-cache").map(String::as_str) {
-        None | Some("off") => false,
-        Some("on") => true,
+        None | Some("on") => true,
+        Some("off") => false,
         Some(_) => return Err("--prompt-cache must be on or off".into()),
     };
     let cache_contract = options
