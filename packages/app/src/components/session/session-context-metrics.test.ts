@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test"
 import type { Message } from "@miao/schema/view-models"
-import { getSessionContext, getSessionContextFromRecords } from "./session-context-metrics"
+import { getSessionContext, getSessionContextFromRecords, getUsageModelRows } from "./session-context-metrics"
 
 const assistant = (
   id: string,
@@ -119,4 +119,38 @@ test("native unknown model and clock do not borrow catalog metadata", () => {
   expect(ctx?.modelLabel).toBe("—")
   expect(ctx?.model).toBeUndefined()
   expect(ctx?.usage).toBeNull()
+})
+
+describe("getUsageModelRows", () => {
+  const usage = {
+    turns: 3,
+    tools: { calls: 4, failures: 0 },
+    models: [
+      {
+        providerID: "plan",
+        id: "cheap",
+        turns: 1,
+        cost: 0.25,
+        tokens: { input: 10, output: 1, reasoning: 0, cache: { read: 2, write: 0 } },
+        lastTurnAt: 1,
+      },
+      {
+        providerID: "plan",
+        id: "pricier",
+        turns: 2,
+        cost: 5,
+        tokens: { input: 20, output: 2, reasoning: 0, cache: { read: 4, write: 1 } },
+        ttftMs: 120,
+        lastTurnAt: 2,
+      },
+    ],
+  }
+
+  test("orders the lifetime rows by cost, then turns", () => {
+    expect(getUsageModelRows(usage).map((model) => model.id)).toEqual(["pricier", "cheap"])
+  })
+
+  test("omits the panel when there is no lifetime usage yet", () => {
+    expect(getUsageModelRows(undefined)).toEqual([])
+  })
 })

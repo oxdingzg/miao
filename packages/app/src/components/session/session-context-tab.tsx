@@ -19,7 +19,7 @@ import { useLanguage } from "@/context/language"
 import { useProviders } from "@/hooks/use-providers"
 import { useSDK } from "@/context/sdk"
 import { useSessionLayout } from "@/pages/session/session-layout"
-import { getSessionContextFromRecords } from "./session-context-metrics"
+import { getSessionContextFromRecords, getUsageModelRows } from "./session-context-metrics"
 import { contentParts } from "@miao/session-ui/content"
 import { estimateSessionContextBreakdown, type SessionContextBreakdownKey } from "./session-context-breakdown"
 import { createSessionContextFormatter } from "./session-context-format"
@@ -146,6 +146,7 @@ export function SessionContextTab() {
 
   const ctx = createMemo(() => getSessionContextFromRecords(messages(), [...providers.all().values()]))
   const formatter = createMemo(() => createSessionContextFormatter(language.intl()))
+  const usageModels = createMemo(() => getUsageModelRows(info()?.usage))
 
   const cost = createMemo(() => {
     return usd().format(info()?.cost ?? 0)
@@ -320,6 +321,40 @@ export function SessionContextTab() {
             {(stat) => <Stat label={language.t(stat.label as Parameters<typeof language.t>[0])} value={stat.value()} />}
           </For>
         </div>
+
+        <Show when={usageModels().length > 0}>
+          <div class="flex flex-col gap-2">
+            <div class="text-12-regular text-text-weak">{language.t("context.stats.usage")}</div>
+            <div class="overflow-x-auto">
+              <div class="grid min-w-[34rem] grid-cols-[minmax(0,1fr)_auto_auto_auto_auto] gap-x-4 gap-y-1 text-11-regular">
+                <div class="text-text-weak">{language.t("context.stats.model")}</div>
+                <div class="text-right text-text-weak">{language.t("context.stats.inputTokens")}</div>
+                <div class="text-right text-text-weak">{language.t("context.stats.outputTokens")}</div>
+                <div class="text-right text-text-weak">{language.t("context.stats.cacheTokens")}</div>
+                <div class="text-right text-text-weak">{language.t("context.stats.totalCost")}</div>
+                <For each={usageModels()}>
+                  {(model) => (
+                    <div class="contents">
+                      <div class="min-w-0">
+                        <div class="truncate text-text-strong">{model.id}</div>
+                        <div class="text-text-weaker">
+                          {model.providerID} · {model.turns}×
+                          {model.ttftMs === undefined ? "" : ` · ${Math.round(model.ttftMs)}ms ttft`}
+                        </div>
+                      </div>
+                      <div class="text-right text-text-base">{formatter().number(model.tokens.input)}</div>
+                      <div class="text-right text-text-base">{formatter().number(model.tokens.output)}</div>
+                      <div class="text-right text-text-base">
+                        {formatter().number(model.tokens.cache.read)} / {formatter().number(model.tokens.cache.write)}
+                      </div>
+                      <div class="text-right text-text-base">{usd().format(model.cost)}</div>
+                    </div>
+                  )}
+                </For>
+              </div>
+            </div>
+          </div>
+        </Show>
 
         <Show when={breakdown().length > 0}>
           <div class="flex flex-col gap-2">
