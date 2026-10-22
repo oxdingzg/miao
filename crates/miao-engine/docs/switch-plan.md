@@ -32,11 +32,13 @@ Sessions intact throughout.
 2. **Distributed.** The release channel ships the engine binary per platform
    with checksum manifests, and `install-engine.sh --release` installs it with
    one-step rollback (#854). The product still defaults to the TS core.
-3. **Opt-in by configuration.** A global `engine.storage` key (or the
-   environment variable) opts NEW Sessions into native placement; existing
-   Sessions keep their recorded placement. Legacy TS remains the fallback
-   without it. A dedicated `--engine native` flag is not implemented; the
-   storage key is the switch.
+3. **Opt-in by flag or configuration.** `--engine native` on `run`/`serve`
+   opts new Sessions into native placement for that invocation, using a
+   default store under the data directory; `--engine ts` clears the
+   environment override (#1234). A global `engine.storage` key (or
+   `MIAO_ENGINE_STORAGE`) also opts new Sessions in. Existing Sessions keep
+   their recorded placement, and legacy TS remains the fallback without any
+   opt-in.
 4. **Default for new Sessions.** New Sessions place natively; an escape
    hatch (`--engine legacy`) keeps the TS path reachable. Native-owned
    Sessions never double-write; TS-owned Sessions never route to the engine.
