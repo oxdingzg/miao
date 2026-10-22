@@ -62,7 +62,7 @@ jobs:
           # One macOS job builds darwin-arm64 and darwin-x64: the Intel pool
           # takes ten times as long as this sibling and never finished inside a
           # release budget.
-          - host: macos-26 # darwin-arm64, darwin-x64
+          - host: macos-15 # darwin-arm64, darwin-x64
           - host: ubuntu-latest # linux-x64
           - host: ubuntu-24.04-arm # linux-arm64
           - host: windows-2025 # windows-x64
@@ -90,6 +90,9 @@ jobs:
       - name: Cache Rust
         uses: Swatinem/rust-cache@v2
         with:
+          # Bust caches that saved failed ring build-script outputs from runs
+          # before the musl tools step existed.
+          prefix-key: v2-musl-cli
           workspaces: |
             crates/miao-native
             crates/miao-sandbox
