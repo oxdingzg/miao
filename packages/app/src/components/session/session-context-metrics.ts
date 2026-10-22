@@ -93,3 +93,21 @@ export function getSessionContextFromRecords(records: SessionMessageInfo[] = [],
     providers,
   )
 }
+
+type UsageModel = {
+  readonly providerID: string
+  readonly id: string
+  readonly turns: number
+  readonly cost: number
+  readonly tokens: {
+    readonly input: number
+    readonly output: number
+    readonly cache: { readonly read: number; readonly write: number }
+  }
+  readonly ttftMs?: number
+}
+
+/** Lifetime usage rows, most expensive first, for the per-model panel. */
+export function getUsageModelRows(usage: { readonly models?: readonly UsageModel[] } | undefined) {
+  return (usage?.models ?? []).toSorted((a, b) => b.cost - a.cost || b.turns - a.turns)
+}
