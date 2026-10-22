@@ -63,7 +63,12 @@ export const SessionCommand = cmd({
   command: "session",
   describe: "manage sessions",
   builder: (yargs: Argv) =>
-    yargs.command(SessionListCommand).command(SessionDeleteCommand).command(SessionMigrateCommand).command(SessionMigrateBackCommand).demandCommand(),
+    yargs
+      .command(SessionListCommand)
+      .command(SessionDeleteCommand)
+      .command(SessionMigrateCommand)
+      .command(SessionMigrateBackCommand)
+      .demandCommand(),
   async handler() {},
 })
 
@@ -156,10 +161,9 @@ export const SessionMigrateCommand = effectCmd({
     }).pipe(
       Effect.catch((error) => fail(error instanceof Error ? error.message : String(error))),
       Effect.provide(
-        AppNodeBuilder.build(
-          LayerNode.group([Database.node, SessionStore.node]),
-          [[SessionExecution.node, SessionExecution.noopLayer]],
-        ),
+        AppNodeBuilder.build(LayerNode.group([Database.node, SessionStore.node]), [
+          [SessionExecution.node, SessionExecution.noopLayer],
+        ]),
       ),
       Effect.scoped,
     )
@@ -265,7 +269,8 @@ export const SessionMigrateBackCommand = effectCmd({
   handler: Effect.fn("Cli.session.migrateBack")(function* (args) {
     const sessionID = SessionV2.ID.make(args.sessionID)
     const options = nativeEngineOptions(process.env)
-    if (!options) return yield* fail("Native engine binary not found; set MIAO_ENGINE_BIN or install a compatible engine")
+    if (!options)
+      return yield* fail("Native engine binary not found; set MIAO_ENGINE_BIN or install a compatible engine")
     const nativeDatabase = path.resolve(args.nativeDb)
     const located = yield* Effect.gen(function* () {
       const database = yield* Database.Service
@@ -278,10 +283,9 @@ export const SessionMigrateBackCommand = effectCmd({
     }).pipe(
       Effect.catch((error) => fail(error instanceof Error ? error.message : String(error))),
       Effect.provide(
-        AppNodeBuilder.build(
-          LayerNode.group([Database.node, SessionStore.node]),
-          [[SessionExecution.node, SessionExecution.noopLayer]],
-        ),
+        AppNodeBuilder.build(LayerNode.group([Database.node, SessionStore.node]), [
+          [SessionExecution.node, SessionExecution.noopLayer],
+        ]),
       ),
       Effect.scoped,
     )
@@ -311,7 +315,12 @@ export const SessionMigrateBackCommand = effectCmd({
           engine: {
             exportDelta: (input) =>
               Effect.tryPromise({
-                try: () => client.request("transfer_export_delta", { import_id: input.importID, path: input.path }),
+                try: () =>
+                  client.request("transfer_export_delta", {
+                    import_id: input.importID,
+                    session_id: input.sessionID,
+                    path: input.path,
+                  }),
                 catch: (cause) => (cause instanceof Error ? cause : new Error(String(cause))),
               }).pipe(
                 Effect.map((value) => {
@@ -337,9 +346,7 @@ export const SessionMigrateBackCommand = effectCmd({
         client.close()
       }
     }).pipe(
-      Effect.catch((error) =>
-        fail(`Migration back failed: ${error instanceof Error ? error.message : String(error)}`),
-      ),
+      Effect.catch((error) => fail(`Migration back failed: ${error instanceof Error ? error.message : String(error)}`)),
       Effect.provide(
         AppNodeBuilder.build(
           LayerNode.group([
