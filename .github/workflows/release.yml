@@ -96,6 +96,14 @@ jobs:
         working-directory: packages/miao
         run: bun test test/installation/windows-upgrade.test.ts
 
+      - name: Install musl tools
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y musl-tools
+
+      - name: Add the Linux musl engine target
+        if: runner.os == 'Linux'
+        run: rustup target add ${{ matrix.host == 'ubuntu-24.04-arm' && 'aarch64-unknown-linux-musl' || 'x86_64-unknown-linux-musl' }}
+
       - name: Set up macOS signing and notarization
         if: runner.os == 'macOS'
         env:

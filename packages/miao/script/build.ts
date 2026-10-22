@@ -284,6 +284,16 @@ for (const item of targets) {
 async function buildEngineArchive(): Promise<string[]> {
   const os = ({ darwin: "darwin", linux: "linux", win32: "windows" } as Record<string, string | undefined>)[process.platform]
   if (!os) return []
+  // Ship a static Linux engine. The CLI archive can rely on the runner's glibc
+  // because it is a Bun executable, but a native engine linked against a newer
+  // runner glibc refuses to start on the LTS distributions many users run.
+  // musl also makes one archive work across glibc versions and distributions.
+  const linuxTarget =
+    process.platform === "linux"
+      ? process.arch === "arm64"
+        ? "aarch64-unknown-linux-musl"
+        : "x86_64-unknown-linux-musl"
+      : undefined
   // The darwin build produces both architectures on one runner, so the archive
   // set does not wait on the Intel pool, whose jobs have taken ten times as long
   // as their arm64 siblings and never finished inside their budget. Every other
@@ -293,16 +303,26 @@ async function buildEngineArchive(): Promise<string[]> {
         { target: "aarch64-apple-darwin" as string | undefined, arch: "arm64" },
         { target: "x86_64-apple-darwin" as string | undefined, arch: "x64" },
       ]
-    : [{ target: undefined as string | undefined, arch: process.arch === "arm64" ? "arm64" : "x64" }]
+    : [{ target: linuxTarget as string | undefined, arch: process.arch === "arm64" ? "arm64" : "x64" }]
   const crate = path.resolve(dir, "../../crates/miao-engine")
   const archives: string[] = []
   for (const { target, arch } of wanted) {
-    await $`cargo build --locked --release --bin miao-engine ${target ? ["--target", target] : []}`.cwd(crate)
+    const musl = target === linuxTarget
+    const muslEnv =
+      musl && target
+        ? {
+            [`CC_${target.replaceAll("-", "_")}`]: "musl-gcc",
+            [`CARGO_TARGET_${target.toUpperCase().replaceAll("-", "_")}_LINKER`]: "musl-gcc",
+          }
+        : {}
+    await $`cargo build --locked --release --bin miao-engine ${target ? ["--target", target] : []}`
+      .cwd(crate)
+      .env(muslEnv)
     const suffix = process.platform === "win32" ? ".exe" : ""
     const bin = path.join(crate, "target", ...(target ? [target] : []), "release", `miao-engine${suffix}`)
     // A cross-built binary cannot run here, so only the host target asserts its
     // version; the same crate produced both.
-    if (!target) {
+    if (!target || musl) {
       const version = (await $`${bin} --version`.text()).trim()
       if (version !== `miao-engine ${Script.version}`)
         throw new Error(`engine version mismatch: ${version}; expected miao-engine ${Script.version}`)
