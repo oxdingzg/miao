@@ -7,7 +7,8 @@ installer and data drills in
 local deterministic fixtures; no paid calls are made.
 
 The v0.2.24 release carries the 0.2.23 engine archives, so the asset version
-reported by `--version` is `miao-engine 0.2.23`.
+reported by `--version` is `miao-engine 0.2.23` on macOS and Linux. The
+Windows x64 archive reports `miao-engine 0.2.24`.
 
 ## macOS arm64
 
@@ -63,12 +64,30 @@ Built from the fix commit on Ubuntu 24.04 x64 with
 This validates the build change, not a published archive: the next release must
 repeat the drill against its own Linux asset to close the distribution gate.
 
+## Windows x64
+
+The published 0.2.22 and 0.2.24 Windows x64 executables ran the same drill
+through a Python 3.12 embeddable distribution on Windows 10 (build 22621).
+
+| Stage | Result |
+| --- | --- |
+| Compatibility (0.2.22 → 0.2.24 → 0.2.22) | PASS: SQLite integrity, unchanged journal prefixes, history retained, no duplicate output, three provider calls |
+| Workspace write control | PASS, exit 0 |
+| Outside-write denial | PASS, exit 1; sentinel unchanged |
+| Compaction | PASS, two checkpoints, six provider calls |
+| Overall | `ENGINE_ARTIFACT_DRILL=PASS` |
+
+This repeats the 0.2.13 drill that failed its positive write control (#919) and
+closes the post-release Windows confinement repetition.
+
+| Executable | SHA-256 |
+| --- | --- |
+| Published 0.2.22 Windows x64 | `5ddc9eecb64009b8be7a15399408ad2d0673ec561c3654e5fce4c6298d6ccca6` |
+| Published 0.2.24 Windows x64 | `357d9f0e5fc9c79f99bf7e8ec62ea203ead7015010686168ab17f9cef15971ac` |
+
 ## Still open
 
 - Repetition against the next published Linux engine archive (blocked on the
   release that carries #1235).
-- Windows published-binary confinement drill for a release newer than 0.2.13;
-  the 0.2.13 failure was fixed by #919, and the current build host has no Python
-  runtime for the drill.
 - Native Intel macOS hardware, network/PTY isolation, and schema compatibility
   outside the exercised version pair.
