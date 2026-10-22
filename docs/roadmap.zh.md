@@ -53,12 +53,10 @@
 
 1. **§9.1** 引擎二进制默认就位：接入发布流并自动发现已安装的 `miao-engine`，
    使原生会话无需手动 `MIAO_ENGINE_BIN`。
-2. **§9.3** 落地声明式 provider manifest 文档；声明 Bedrock/Copilot 原生不支持
-   （或仅网关）。
-3. **§6** 实时验收：Gemini/Anthropic 实账号（缺凭据受阻）、发布二进制升级路径。
-4. **§1.2** app transcript 迁移到 V2 类型（按下文分阶段说明独立切换）。
-5. **§2.4** 基于 RS 原语的崩溃恢复幂等（tool replay + outcome-unknown）。
-6. 其余 TS 侧与运维项按节顺序推进（§1.3 确认、§2.5 body 上限、§2.7 CIMD 排序、
+2. **§6** 实时验收：Gemini/Anthropic 实账号（缺凭据受阻）、发布二进制升级路径。
+3. **§1.2** app transcript 迁移到 V2 类型（按下文分阶段说明独立切换）。
+4. **§2.4** 基于 RS 原语的崩溃恢复幂等（tool replay + outcome-unknown）。
+5. 其余 TS 侧与运维项按节顺序推进（§1.3 确认、§2.5 body 上限、§2.7 CIMD 排序、
    §2.8 monitor 沙箱化、§3 热重载、§4 存储运维、§5 报告、§7 文档、§8 push/APNs）。
 
 ---
@@ -410,9 +408,10 @@ TypeScript 参考语料固定 last-match 例外及 Bash AST 命令提取语义�
    完全没有引擎资产的发布中把压缩包内置进 CLI 安装。
 2. **产品工具反向桥** — 已落地（#1027）。原生会话注册宿主提供的产品工具，
    经引擎 stdio 桥反向调度到服务端执行；回复作为持久工具结果结算。
-3. **声明式 provider manifest 文档** — 开放。任何 base-url provider 或网关
-   已是路由 manifest 配置（#1026），但支持面尚无文档；在引擎具备相应凭据
-   流程前，声明 Bedrock SigV4 与 Copilot 设备流为产品侧（TS 或仅网关）。
+3. **声明式 provider manifest 文档** — 已落地。支持的 transport 表面、清单
+   schema、凭证引用、auth 风格与明确只留在 TypeScript 的情形，见
+   [原生引擎的供应商路由](native-provider-routes.zh.md)。Bedrock SigV4 与
+   Copilot 设备流是原生 transport，不是仅产品侧。
 4. **实时验收** — 开放，缺 Gemini/Anthropic 凭据受阻：在已发布二进制上以
    默认放置引擎的方式运行真实日常会话。
 

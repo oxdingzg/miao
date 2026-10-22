@@ -111,15 +111,13 @@ inline with `[RS: …]`.
 1. **§9.1** Ship the engine binary by default: bundle with the release flow and
    auto-discover an installed `miao-engine`, so native sessions work without a
    manual `MIAO_ENGINE_BIN`.
-2. **§9.3** Land the declarative provider manifest docs; declare
-   Bedrock/Copilot unsupported natively (or gateway-only).
-3. **§6** Live acceptance: Gemini/Anthropic real accounts (blocked on
+2. **§6** Live acceptance: Gemini/Anthropic real accounts (blocked on
    credentials), released-binary upgrade path.
-4. **§1.2** App transcript retype onto V2 types (its own cutover, per the
+3. **§1.2** App transcript retype onto V2 types (its own cutover, per the
    staged note below).
-5. **§2.4** Crash-recovery idempotency on the RS primitives (tool replay +
+4. **§2.4** Crash-recovery idempotency on the RS primitives (tool replay +
    outcome-unknown).
-6. Then the remaining TS-side and operational items in section order (§1.3
+5. Then the remaining TS-side and operational items in section order (§1.3
    confirmation, §2.5 body caps, §2.7 CIMD ordering, §2.8 monitor sandboxing,
    §3 hot reload, §4 storage ops, §5 report, §7 docs, §8 push/APNs).
 
@@ -681,11 +679,11 @@ not provide, and the current state of its efficiency evidence, see
 2. **Product-tool reverse bridge** — landed (#1027). Native sessions register
    host-supplied product tools and reverse-dispatch execution to the server
    over the engine's stdio bridge; replies settle as durable tool results.
-3. **Declarative provider manifest docs** — open. Any base-url provider or
-   gateway is route-manifest configuration (#1026), but the supported surface
-   is undocumented; declare Bedrock SigV4 and the Copilot device flow as
-   product-side (TS or gateway-only) until the engine grows those credential
-   flows.
+3. **Declarative provider manifest docs** — landed. The supported transport
+   surface, manifest schema, credential references, auth styles and deliberate
+   TypeScript-only cases are documented in
+   [Native engine provider routes](native-provider-routes.en.md). Bedrock SigV4
+   and the Copilot device flow are native transports, not product-side-only.
 4. **Live acceptance** — open, blocked on Gemini/Anthropic credentials: run
    real daily sessions on a released binary with the engine placed by default.
 
