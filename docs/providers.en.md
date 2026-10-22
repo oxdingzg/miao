@@ -101,6 +101,16 @@ and native-currency cost.
 `$schema`. After editing, run `miao models` to confirm what the provider now
 reports.
 
+## Native engine routes
+
+Sessions placed on the native engine reach these same providers through a
+trusted host route manifest. The mapping from a catalog provider to a native
+transport, the manifest fields, credential references, and the providers that
+deliberately stay on TypeScript are documented in
+[Native engine provider routes](native-provider-routes.en.md). You still
+configure and authenticate providers here; the manifest is generated, not
+edited.
+
 ## Cost and currency
 
 Each provider turn records usage, time to first token, cache-hit data and an
