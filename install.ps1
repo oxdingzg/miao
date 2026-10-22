@@ -116,14 +116,28 @@ function Install-MiaoEngine {
       $asset = 'miao-engine-windows-x64.zip'
       $url = "https://github.com/oxdingzg/miao/releases/download/v$Version/$asset"
       $archive = Join-Path $stage $asset
+      $fallback = $false
       try {
         Invoke-WebRequest -UseBasicParsing -Uri $url -OutFile $archive -TimeoutSec 300
       } catch {
         if ($_.Exception.Response -and [int]$_.Exception.Response.StatusCode -eq 404) {
-          Write-Host 'This release has no native engine archive; keeping TypeScript sessions.' -ForegroundColor DarkGray
-          return
-        }
-        throw
+          # A release can ship without an engine archive (an older pipeline, a
+          # failed platform build). Bundle the newest archive that exists; the
+          # protocol probe below still refuses an engine this product cannot
+          # talk to, so a mismatch degrades to TypeScript sessions exactly like
+          # a missing archive.
+          $fallback = $true
+          $url = "https://github.com/oxdingzg/miao/releases/latest/download/$asset"
+          try {
+            Invoke-WebRequest -UseBasicParsing -Uri $url -OutFile $archive -TimeoutSec 300
+          } catch {
+            if ($_.Exception.Response -and [int]$_.Exception.Response.StatusCode -eq 404) {
+              Write-Host 'This release has no native engine archive; keeping TypeScript sessions.' -ForegroundColor DarkGray
+              return
+            }
+            throw
+          }
+        } else { throw }
       }
       $manifest = Join-Path $stage ($asset + '.sha256')
       Invoke-WebRequest -UseBasicParsing -Uri ($url + '.sha256') -OutFile $manifest -TimeoutSec 60
@@ -143,7 +157,7 @@ function Install-MiaoEngine {
       Write-Host 'This release engine predates the required protocol; keeping TypeScript sessions.' -ForegroundColor DarkGray
       return
     }
-    if ($capabilities.version -ne $Version) { throw "Engine version does not match miao $Version." }
+    if (-not $fallback -and $capabilities.version -ne $Version) { throw "Engine version does not match miao $Version." }
     if ((Test-Path -LiteralPath $destination) -and (Get-FileHash -LiteralPath $candidate).Hash -eq (Get-FileHash -LiteralPath $destination).Hash) {
       return
     }
