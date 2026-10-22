@@ -11,6 +11,20 @@ at `docs/releases/vX.Y.Z.md` and `docs/releases/vX.Y.Z.zh.md`; both are required
 
 ## [Unreleased]
 
+## [0.2.25] - 2026-10-22
+
+### Fixed
+- **miao**: `--engine ts` overrides a configured storage for a single command (#1240).
+- **install**: the engine archive fallback now works on Windows too (#1238).
+- **release**: the Linux engine ships against musl (#1235).
+
+### Added
+- **engine**: `migrate-back` supports sessions that were born native — the whole timeline exports as the reverse delta without a forward migration (#1242).
+- **engine**: native sessions replay committed reasoning blocks and the compaction lifecycle to every client (#1239).
+- **app**: lifetime usage per model in the context panel (#1237).
+- **cli**: `--engine native|ts` opts a single command into or out of the rust engine (#1234).
+- **docs**: G1 placement acceptance test plus G2/G3 (Zed) acceptance evidence recorded (#1229, #1243).
+
 ## [0.2.24] - 2026-10-22
 
 ### Fixed
