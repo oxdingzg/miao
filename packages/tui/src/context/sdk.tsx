@@ -3,6 +3,7 @@ import type { Event, V2Event } from "@miao/schema/event-view"
 import type { OpenCodeEvent } from "@miao/client"
 import { createSimpleContext } from "./helper"
 import { batch, onCleanup, onMount } from "solid-js"
+import { backgroundTasks } from "../util/background"
 
 // The GlobalBus envelope the TUI dispatches: an event with the directory and workspace it belongs to.
 // The in-process bus also carries `sync` copies of durable events, which the TUI skips.
@@ -37,6 +38,7 @@ export const { use: useSDK, provider: SDKProvider } = createSimpleContext({
       fetch: Object.assign(
         (input: Parameters<typeof fetch>[0], init?: Parameters<typeof fetch>[1]) => {
           const request = new Request(input, init)
+          abort.signal.throwIfAborted()
           return (props.fetch ?? fetch)(
             new Request(request, { signal: AbortSignal.any([abort.signal, request.signal]) }),
           )
@@ -138,6 +140,8 @@ export const { use: useSDK, provider: SDKProvider } = createSimpleContext({
     })
 
     return {
+      signal: abort.signal,
+      background: backgroundTasks(abort.signal),
       get api() {
         return api
       },

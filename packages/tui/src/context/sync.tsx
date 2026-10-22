@@ -1210,56 +1210,55 @@ export const {
           })
         })
         .then(() => {
+          if (sdk.signal.aborted) return
           if (store.status !== "complete") setStore("status", "partial")
           // non-blocking
-          void Promise.all([
-            ...(args.continue
-              ? []
-              : [sessionListPromise.then((sessions) => setStore("session", reconcile(sessions as Session[])))]),
-            // The palette only shows names and descriptions; executing a command
-            // resolves its template on the server.
-            sdk.api.commands
-              .list({ location: { workspace } })
-              .then((x) => setStore("command", reconcile((x.data ?? []).map(toCommand)))),
-            sdk.api.lsp
-              .status({ location: { workspace } })
-              .then((x) => setStore("lsp", reconcile(toLspStatus(x.data ?? [])))),
-            sdk.api.mcp
-              .status({ location: { workspace } })
-              .then((x) => setStore("mcp", reconcile(toMcpStatus(x.data ?? {})))),
-            sdk.api.mcp
-              .resources({ location: { workspace } }, {})
-              .then((x) => setStore("mcp_resource", reconcile(x.data ?? {}))),
-            sdk.api.formatters
-              .status({ location: { workspace } })
-              .then((x) => setStore("formatter", reconcile(mutableResponse(x.data)))),
-            sdk.api.sessions
-              .active()
-              .then((x) => ({
-                data: Object.fromEntries(Object.keys(x).map((id) => [id, { type: "busy" as const }])),
-              }))
-              .then((x) => {
-                setStore("session_status", reconcile(x.data ?? {}))
-              }),
-            sdk.api.integrations
-              .list({ location: { workspace } })
-              .then((x) => setStore("provider_auth", reconcile(toProviderAuth(mutableResponse(x.data))))),
-            ...(reloadProviderCatalog
-              ? [
-                  loadProviderCatalog().catch((error) =>
-                    console.error("provider catalog refresh failed", { error: errorMessage(error) }),
-                  ),
-                ]
-              : []),
-            sdk.api.vcs.get({ location: { workspace } }, {}).then((x) => setStore("vcs", reconcile(x.data))),
-            project.workspace.sync(),
-          ])
-            .then(() => {
+          void sdk.background("background refresh failed", () =>
+            Promise.all([
+              ...(args.continue
+                ? []
+                : [sessionListPromise.then((sessions) => setStore("session", reconcile(sessions as Session[])))]),
+              // The palette only shows names and descriptions; executing a command
+              // resolves its template on the server.
+              sdk.api.commands
+                .list({ location: { workspace } })
+                .then((x) => setStore("command", reconcile((x.data ?? []).map(toCommand)))),
+              sdk.api.lsp
+                .status({ location: { workspace } })
+                .then((x) => setStore("lsp", reconcile(toLspStatus(x.data ?? [])))),
+              sdk.api.mcp
+                .status({ location: { workspace } })
+                .then((x) => setStore("mcp", reconcile(toMcpStatus(x.data ?? {})))),
+              sdk.api.mcp
+                .resources({ location: { workspace } }, {})
+                .then((x) => setStore("mcp_resource", reconcile(x.data ?? {}))),
+              sdk.api.formatters
+                .status({ location: { workspace } })
+                .then((x) => setStore("formatter", reconcile(mutableResponse(x.data)))),
+              sdk.api.sessions
+                .active()
+                .then((x) => ({
+                  data: Object.fromEntries(Object.keys(x).map((id) => [id, { type: "busy" as const }])),
+                }))
+                .then((x) => {
+                  setStore("session_status", reconcile(x.data ?? {}))
+                }),
+              sdk.api.integrations
+                .list({ location: { workspace } })
+                .then((x) => setStore("provider_auth", reconcile(toProviderAuth(mutableResponse(x.data))))),
+              ...(reloadProviderCatalog
+                ? [sdk.background("provider catalog refresh failed", loadProviderCatalog)]
+                : []),
+              sdk.api.vcs.get({ location: { workspace } }, {}).then((x) => setStore("vcs", reconcile(x.data))),
+              project.workspace.sync(),
+            ]).then(() => {
+              if (sdk.signal.aborted) return
               setStore("status", "complete")
-            })
-            .catch((error) => console.error("background refresh failed", { error: errorMessage(error) }))
+            }),
+          )
         })
         .catch(async (e) => {
+          if (sdk.signal.aborted) return
           console.error("tui bootstrap failed", {
             error: e instanceof Error ? e.message : String(e),
             name: e instanceof Error ? e.name : undefined,
