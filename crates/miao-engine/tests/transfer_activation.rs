@@ -408,9 +408,16 @@ async fn actual_product_cas_is_required_and_activation_restores_provider_context
         timeline[timeline.len() - 1]["content"][0]["text"],
         "native reply"
     );
+    // The file holds the payload without the self-referential delta digest;
+    // the receipt carries it so the reverse migration can verify the bytes.
+    let mut payload = delta.clone();
+    if let Some(obj) = payload.as_object_mut() {
+        let digest = obj.remove("delta_sha256").expect("delta_sha256 in receipt");
+        assert!(digest.as_str().is_some_and(|d| d.len() == 64));
+    }
     assert_eq!(
         std::fs::read(&delta_path).unwrap(),
-        serde_json::to_vec(&delta).unwrap()
+        serde_json::to_vec(&payload).unwrap()
     );
     runtime.shutdown().await;
     drop(runtime);

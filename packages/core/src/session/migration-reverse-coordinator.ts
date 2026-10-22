@@ -25,7 +25,10 @@ export class Unsupported extends Schema.TaggedErrorClass<Unsupported>()(
 export type DeltaReceipt = {
   id: string
   session_id: string
+  /** Digest of the retained forward bundle (the reverse delta's baseline). */
   bundle_sha256: string
+  /** Digest of the delta file itself; the coordinator verifies the exact bytes it reads. */
+  delta_sha256: string
   baseline_seq: number
   timeline: unknown[]
 }
@@ -51,18 +54,23 @@ export const toTypeScript = Effect.fn("SessionMigrationReverseCoordinator.toType
 }) {
   const conflict = () => new SessionMigrationReverse.Conflict({ sessionID: input.sessionID })
   let current = yield* SessionMigration.find(input.database, input.id)
-  if (current && current.direction !== "rust_to_ts") return yield* conflict()
+  // A completed forward transfer keeps an audit row under the shared id; it is
+  // finished work, so the reverse flow starts fresh and `prepare` turns that
+  // row in place. An in-flight forward record is a real conflict.
+  if (current && current.direction !== "rust_to_ts" && current.state !== "completed") return yield* conflict()
+  if (current?.state === "completed") current = undefined
   if (!current) {
     const receipt = yield* input.engine.exportDelta({ importID: input.id, path: input.bundleFile })
     if (
       receipt.id !== input.id ||
       receipt.session_id !== input.sessionID ||
       !/^[a-f0-9]{64}$/.test(receipt.bundle_sha256) ||
+      !/^[a-f0-9]{64}$/.test(receipt.delta_sha256) ||
       !Array.isArray(receipt.timeline)
     )
       return yield* conflict()
     const delta = yield* Effect.promise(() => Bun.file(input.bundleFile).text())
-    if (Hash.sha256(delta) !== receipt.bundle_sha256) return yield* conflict()
+    if (Hash.sha256(delta) !== receipt.delta_sha256) return yield* conflict()
     current = yield* SessionMigrationReverse.prepare(input.database, {
       id: input.id,
       sessionID: input.sessionID,
@@ -73,7 +81,9 @@ export const toTypeScript = Effect.fn("SessionMigrationReverseCoordinator.toType
     })
   }
   if (!current.bundle) return yield* conflict()
+  if (process.env.MIAO_CLI_DEBUG) console.error("[reverse] state:", current?.state, "dir:", current?.direction)
   if (current.state === "prepared") {
+    if (process.env.MIAO_CLI_DEBUG) console.error("[reverse] importing delta")
     const raw = Schema.decodeUnknownSync(Schema.Struct({ timeline: Schema.Array(Schema.Unknown) }))(
       JSON.parse(current.bundle),
     )
@@ -86,6 +96,7 @@ export const toTypeScript = Effect.fn("SessionMigrationReverseCoordinator.toType
       model: input.model,
       delta: { timeline: parsed.timeline as never[] },
     })
+    if (process.env.MIAO_CLI_DEBUG) console.error("[reverse] delta imported")
     current = yield* SessionMigrationReverse.switchToTypeScript(input.database, {
       id: input.id,
       sessionID: input.sessionID,

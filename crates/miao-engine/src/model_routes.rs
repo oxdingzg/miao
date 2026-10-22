@@ -187,7 +187,7 @@ pub async fn load(
         return Err("Model routes config exceeds 1 MiB".into());
     }
     let entries = serde_json::from_slice::<Vec<Route>>(&bytes)
-        .map_err(|_| "invalid Model routes host config")?;
+        .map_err(|error| format!("invalid Model routes host config: {error}"))?;
     if entries.len() > crate::model_catalog::MAX_ROUTES {
         return Err("model route catalog exceeds 1024 entries".into());
     }
