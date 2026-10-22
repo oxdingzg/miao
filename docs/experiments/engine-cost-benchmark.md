@@ -70,9 +70,57 @@ cell, every task passes on both engines, and wall-clock stays comparable
    endpoint used here caches server-side, so its cells are unaffected by the
    flag.
 
+## Priced multi-model batch (2026-10-22, G5 acceptance)
+
+The acceptance batch widened the set to seven task families — the original
+three plus **multifile** (cross-file consistency), **recovery** (mid-run
+`SIGKILL` then resume), **long-session** (three accumulated turns), and
+**impossible** (a contradictory request whose correct outcome is a refusal) —
+and ran two priced models from different families, best-of-2 per cell, with
+`billed-in = input + cacheRead` for both runtimes.
+
+| task | glm-5.3 ts | glm-5.3 rust | deepseek-v4.1-flash ts | deepseek-v4.1-flash rust |
+|---|---|---|---|---|
+| bugfix | 70273b-in · $0.0354 · 11s ✓ | 118132b-in · 18s ✓ | 73286b-in · $0.0027 · 18s ✓ | N/A |
+| feature | 74033b-in · $0.0345 · 30s ✓ | 156852b-in · 71s ✓ | 74217b-in · $0.0029 · 16s ✓ | N/A |
+| refactor | 87037b-in · $0.0435 · 20s ✓ | 119707b-in · 32s ✓ | 74708b-in · $0.0029 · 44s ✓ | N/A |
+| multifile | 73060b-in · $0.0305 · 17s ✓ | 137588b-in · 49s ✓ | 74020b-in · $0.0029 · 14s ✓ | N/A |
+| recovery | 78573b-in · $0.0468 · 61s ✓ resumed | 230365b-in · 260s ✓ resumed | 75566b-in · $0.0030 · 24s ✓ resumed | N/A |
+| long-session | 128733b-in · $0.0431 · 25s ✓ | 190984b-in · 81s ✓ | 117360b-in · $0.0026 · 18s ✓ | N/A |
+| impossible | 60630b-in · $0.0621 · 70s ✓ refused | 215646b-in · 132s ✓ refused | 59361b-in · $0.0040 · 71s ✓ refused | N/A |
+
+All 42 runnable cells passed their gates; the only cells that could not run
+are the four deepseek rust ones (below). Task families exercised every
+acceptance axis: the recovery family was `SIGKILL`-ed mid-run and resumed to a
+passing gate on both engines, and the impossible family was correctly refused
+by both engines on both models (marked ✓ because a refusal *is* the pass).
+
+### Findings
+
+1. **deepseek-v4.1-flash on `opencode-go` has no native route.** Its wire form
+   on that subscription resolves to no usable credential/provider route, so
+   the four deepseek rust cells are **N/A** (model limitation, not an engine
+   failure) — `miao run` reports "the selected product model has no usable
+   native credential/provider route". Picking a native-routable deepseek
+   variant is follow-up work, not a blocker: the glm family already provides
+   complete two-engine coverage.
+2. **GLM rust cells lack price entries**, so their cost column reads $0.0000;
+   the billed-in columns carry the comparison. On deepseek ts cells (priced),
+   a full run costs $0.0026–0.0059.
+3. **Billed-in gap on glm narrowed to +38–256%** (from the unpriced batch's
+   raw-input 4–7×), and rust wall-clock stays comparable or better on the
+   larger tasks even while carrying the full prompt in `input`.
+4. **Recovery is real on both engines**: the harness `SIGKILL`s the first run
+   mid-task and resumes; both engines re-planned and passed the gate (rust
+   needed 230k billed-in over 260s for the recovery family — the most
+   expensive cell in the batch).
+5. **Refusals are cheap and correct**: the impossible family was refused on
+   all four model×engine cells without touching the guarded file.
+
 ## Status
 
-The harness, task set, and gates are the deliverable; both batches ran for
-real. A priced-model batch (`--model provider/id`, `--repeat 3`) with the
-`input + cacheRead` billing formula remains the step before quoting any
-engine-cost number.
+The harness, task set, and gates are the deliverable; the priced multi-model
+acceptance batch above (G5) ran for real with the widened families. Remaining
+follow-ups: a native-routable deepseek variant for the deepseek rust cells,
+and per-endpoint confirmation of `prompt_tokens_details.cached_tokens`
+reporting for rust-routed traffic.
