@@ -3,7 +3,7 @@
 Companion to the roadmap's B6 and R4. R4's five acceptance conditions stay the
 authority; this document turns them into ordered gates with an evidence owner
 for each, and defines the switch and retirement sequence with rollback at
-every step. Status markers are as of 2026-10-15.
+every step. Status markers are as of 2026-10-22.
 
 The [product acceptance matrix](product-acceptance-matrix.md) separates
 implementation tests from real-client and published-artifact evidence for
@@ -13,27 +13,30 @@ G3/G4/G6. Use its open rows before declaring any of these gates closed.
 
 | # | Gate (maps to R4) | Evidence owner | Status |
 | --- | --- | --- | --- |
-| G1 | Singular ownership: one placement authority per Session, no double writes (R4.4) | `session_engine_placement` catalog; exact retry adopts the binding; cross-engine/storage/Location takeover rejected | Mechanism landed; needs one product-level acceptance run |
-| G2 | Product event chain carries the native step: text, tools, prompts, approvals, step settlement with usage, retries (R4.3) | bridge mappings + `session.next.*` events (#850, #848) | Landed for the event vocabulary; TUI consumption of `step.ended` still to verify |
-| G3 | Real-client acceptance on the native engine: cancellation, recovery, approvals, slow clients, reconnection (R4.3) | ACP tests over the real binary (#852), native restore/journal tests, blackbox replay | Partial: extend the ACP client matrix (TUI worker + external ACP client) and run the full matrix |
-| G4 | Platform confinement and formal distribution: upgrade/rollback passes on every supported platform (R4.4/5) | Release channel ships the engine (#854) with sha256 manifests; `install-engine.sh --release` rollback; published 0.2.11 engine archives verified on all platforms ([0.2.11 report](artifact-acceptance-0.2.11.md)) | Partial: actual upgrade/rollback pass per platform, plus confinement checks per platform; published Windows binaries pass the PS7 upgrade/rollback drill ([0.2.13 report](artifact-acceptance-0.2.13.md)); data downgrade and distributed-binary confinement remain open |
-| G5 | Efficiency evidence on a representative task set (R4.1/2): quality ≥ baseline, token/cost/latency reported by task class | Evaluation carrier + harness; per-delegation evidence (#847), per-step usage (#842), read-batch windows (#846) | Mechanism landed; **blocked on the live-run budget decision** — the wider task set and multi-read carrier still need selecting |
-| G6 | User-required capabilities on native: plugins/workflows, MCP, LSP at product parity (R4.3) | Engine MCP/LSP foundations; B3 remainder | Partial: task-demand prioritization per the roadmap |
+| G1 | Singular ownership: one placement authority per Session, no double writes (R4.4) | `session_engine_placement` catalog; exact retry adopts the binding; cross-engine/storage/Location takeover rejected | Closed: product-level placement acceptance through `/api` (#1229) |
+| G2 | Product event chain carries the native step: text, tools, prompts, approvals, step settlement with usage, retries (R4.3) | bridge mappings + `session.next.*` events (#850, #848) | Closed: TUI consumes the native step chain, including `session.next.step.ended` settling the streamed message (`packages/tui/src/context/sync.tsx`, `packages/tui/test/session-v2.test.ts`) |
+| G3 | Real-client acceptance on the native engine: cancellation, recovery, approvals, slow clients, reconnection (R4.3) | ACP tests over the real binary (#852), native restore/journal tests, blackbox replay | Partial: TUI and a third-party ACP editor (Zed) prompt/load/replay are verified; approval, cancellation and multi-editor coverage in a third-party UI remain |
+| G4 | Platform confinement and formal distribution: upgrade/rollback passes on every supported platform (R4.4/5) | Release channel ships the engine (#854) with sha256 manifests; `install-engine.sh --release` rollback; published 0.2.11 engine archives verified on all platforms ([0.2.11 report](artifact-acceptance-0.2.11.md)) | Partial: macOS and Windows published binaries pass the full drill ([0.2.23 report](artifact-acceptance-0.2.23.md)); the 0.2.23 Linux asset links against a newer glibc and needs the #1235 musl build in the next release; native Intel macOS remains open |
+| G5 | Efficiency evidence on a representative task set (R4.1/2): quality ≥ baseline, token/cost/latency reported by task class | Evaluation carrier + harness; per-delegation evidence (#847), per-step usage (#842), read-batch windows (#846) | Partial+: seven task families × two priced model families × both engines ran ([cost benchmark](../../docs/experiments/engine-cost-benchmark.md)); a native-routable deepseek variant and GLM rust prices remain |
+| G6 | User-required capabilities on native: plugins/workflows, MCP, LSP at product parity (R4.3) | Engine MCP/LSP foundations; B3 remainder | Partial: plugin tools/hooks, worktree, workflow, delegation report and per-model TUI rows are covered; the app's per-model usage panel remains |
 
 ## Switch sequence
 
 Every step is independently reversible; the placement catalog keeps TS-owned
 Sessions intact throughout.
 
-1. **Opt-in (today).** The engine composes only when `MIAO_ENGINE_BIN` is
-   configured; native-owned Sessions keep the explicit refusal otherwise.
+1. **Opt-in (today).** An installed, protocol-compatible engine is discovered
+   automatically (or named with `MIAO_ENGINE_BIN`), but new Sessions stay
+   TypeScript-owned until the operator sets `engine.storage` or
+   `MIAO_ENGINE_STORAGE`.
 2. **Distributed.** The release channel ships the engine binary per platform
    with checksum manifests, and `install-engine.sh --release` installs it with
    one-step rollback (#854). The product still defaults to the TS core.
-3. **Opt-in by flag.** `miao --engine native` (or the global config's engine
-   section present) opts NEW Sessions into native placement; existing Sessions
-   keep their recorded placement. Legacy TS remains the fallback for
-   unflagged Sessions.
+3. **Opt-in by configuration.** A global `engine.storage` key (or the
+   environment variable) opts NEW Sessions into native placement; existing
+   Sessions keep their recorded placement. Legacy TS remains the fallback
+   without it. A dedicated `--engine native` flag is not implemented; the
+   storage key is the switch.
 4. **Default for new Sessions.** New Sessions place natively; an escape
    hatch (`--engine legacy`) keeps the TS path reachable. Native-owned
    Sessions never double-write; TS-owned Sessions never route to the engine.
