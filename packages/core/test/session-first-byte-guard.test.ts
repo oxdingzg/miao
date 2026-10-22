@@ -143,6 +143,11 @@ describe("SessionFirstByteGuard", () => {
   it.live("keep-alive bytes do not hide a stalled event stream", () =>
     Effect.gen(function* () {
       const attempt = SessionFirstByteGuard.start()
+      // Enter the stream phase synchronously and disable the stream deadline:
+      // on a loaded CI runner the first ticker tick can otherwise land past the
+      // first-byte window, and the test would assert the wrong phase's error.
+      // The only deadline left is the event-idle one under test.
+      attempt.activity.bytes(1)
       const ticker = yield* Effect.gen(function* () {
         while (true) {
           attempt.activity.bytes(1)
@@ -152,7 +157,7 @@ describe("SessionFirstByteGuard", () => {
       const error = yield* SessionFirstByteGuard.wrap(Stream.never, {
         attempt,
         firstByteTimeoutMs: 20,
-        streamIdleTimeoutMs: 20,
+        streamIdleTimeoutMs: 0,
         eventIdleTimeoutMs: 50,
       }).pipe(Stream.runDrain, Effect.flip)
       yield* Fiber.interrupt(ticker)
