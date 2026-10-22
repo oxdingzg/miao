@@ -11,8 +11,22 @@ import { SessionEnginePlacement } from "./engine-placement"
 
 export class BusyError extends Error {
   override readonly name = "SessionOwnership.BusyError"
-  constructor(readonly sessionID: string) {
-    super("This session is owned by another miao window. Close that window before continuing here.")
+  constructor(
+    readonly sessionID: string,
+    readonly owner?: RuntimeOwnership.OwnerInfo,
+  ) {
+    super(
+      [
+        "This session is owned by another miao window.",
+        ...(owner
+          ? [
+              `Last recorded owner: PID ${owner.pid} on ${owner.hostname} (started ${owner.startedAt}).`,
+              `Window startup directory: ${owner.directory}`,
+            ]
+          : ["Owner details are unavailable (the other window may be running an older version)."]),
+        "An idle session stays owned until its miao window exits. Switch to that window to continue, or exit it with /exit and retry from prompt history here.",
+      ].join("\n"),
+    )
   }
 }
 
@@ -60,7 +74,7 @@ export const make = (storage: string, db?: Database.Interface["db"]) =>
                       return RuntimeOwnership.acquireShared(
                         path.join(`${canonical}.sessions`, createHash("sha256").update(sessionID).digest("hex")),
                       ).catch((error: unknown) => {
-                        if (error instanceof RuntimeOwnership.BusyError) throw new BusyError(sessionID)
+                        if (error instanceof RuntimeOwnership.BusyError) throw new BusyError(sessionID, error.owner)
                         throw error
                       })
                     })
@@ -84,7 +98,8 @@ export const exclusive = Effect.fn("SessionOwnership.exclusive")(function* (
         RuntimeOwnership.acquire(
           path.join(`${canonical}.sessions`, createHash("sha256").update(sessionID).digest("hex")),
         ),
-      catch: (error: unknown) => (error instanceof RuntimeOwnership.BusyError ? new BusyError(sessionID) : error),
+      catch: (error: unknown) =>
+        error instanceof RuntimeOwnership.BusyError ? new BusyError(sessionID, error.owner) : error,
     }),
     (owner) => Effect.sync(() => owner.release()),
   )
