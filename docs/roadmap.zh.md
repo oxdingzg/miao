@@ -51,12 +51,10 @@
 
 ## 下一步（Next up，按序）
 
-1. **§9.1** 引擎二进制默认就位：接入发布流并自动发现已安装的 `miao-engine`，
-   使原生会话无需手动 `MIAO_ENGINE_BIN`。
-2. **§6** 实时验收：Gemini/Anthropic 实账号（缺凭据受阻）、发布二进制升级路径。
-3. **§1.2** app transcript 迁移到 V2 类型（按下文分阶段说明独立切换）。
-4. **§2.4** 基于 RS 原语的崩溃恢复幂等（tool replay + outcome-unknown）。
-5. 其余 TS 侧与运维项按节顺序推进（§1.3 确认、§2.5 body 上限、§2.7 CIMD 排序、
+1. **§6** 实时验收：Gemini/Anthropic 实账号（缺凭据受阻）、发布二进制升级路径。
+2. **§1.2** app transcript 迁移到 V2 类型（按下文分阶段说明独立切换）。
+3. **§2.4** 基于 RS 原语的崩溃恢复幂等（tool replay + outcome-unknown）。
+4. 其余 TS 侧与运维项按节顺序推进（§1.3 确认、§2.5 body 上限、§2.7 CIMD 排序、
    §2.8 monitor 沙箱化、§3 热重载、§4 存储运维、§5 报告、§7 文档、§8 push/APNs）。
 
 ---
@@ -400,12 +398,13 @@ TypeScript 参考语料固定 last-match 例外及 Bash AST 命令提取语义�
 原生引擎后具体启用了什么、缺什么，以及效率证据的现状，见
 [开启原生引擎](native-engine-enablement.zh.md)。
 
-1. **引擎二进制默认就位** — 自动发现已落地。发布流分发各平台
+1. **引擎二进制默认就位** — 已落地。发布流分发各平台
    `miao-engine` 压缩包，安装器将其放到 `~/.miao/bin/miao-engine`，产品无需
    `MIAO_ENGINE_BIN` 即可发现。放置要求 protocol 2：`miao-engine
    --capabilities` 报告 `{protocol, schema, version}`；显式指定的旧引擎会以明确
-   错误终止启动，自动发现的旧引擎被忽略（产品继续运行 TS 会话）。剩余工作是在
-   完全没有引擎资产的发布中把压缩包内置进 CLI 安装。
+   错误终止启动，自动发现的旧引擎被忽略（产品继续运行 TS 会话）。若某个发布没有
+   引擎资产，POSIX 与 Windows 安装器都会回退到最新一个带引擎的发布，因此缺失资产
+   只会降级为 TS 会话，不会让安装失败。不需要把压缩包内置进 CLI 安装器本身。
 2. **产品工具反向桥** — 已落地（#1027）。原生会话注册宿主提供的产品工具，
    经引擎 stdio 桥反向调度到服务端执行；回复作为持久工具结果结算。
 3. **声明式 provider manifest 文档** — 已落地。支持的 transport 表面、清单
