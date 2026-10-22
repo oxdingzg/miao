@@ -146,6 +146,17 @@ export async function runHeadless(input: HeadlessInput): Promise<string | undefi
         await rejectQuestion(event.properties)
         continue
       }
+      // A failed turn (unknown model binding, provider rejection, ...) settles
+      // without any assistant message, so mirror() alone would end the run
+      // silently: nothing on stdout and exit code 0.
+      if (event.type === "session.next.failed") {
+        if (field(event.properties, "sessionID") !== sessionID) continue
+        const failure = field(event.properties, "error") ?? field(event.properties, "issue")
+        const message = errorText(failure) || "the provider turn failed"
+        errors.push(message)
+        report(message, failure)
+        continue
+      }
       if (!event.type.startsWith("session.next.") || isV2StreamFragmentEvent(event.type)) continue
       if (field(event.properties, "sessionID") !== sessionID) continue
       await mirror()
