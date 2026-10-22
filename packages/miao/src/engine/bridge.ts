@@ -617,6 +617,72 @@ export type SessionTextEnded = {
  * `text.delta` fragments are live-only), so a replayed commit reproduces the
  * same full-value events. Non-text blocks (tool_use, reasoning) are later slices.
  */
+/** The product `session.next.reasoning.ended` payload for one committed
+ * assistant reasoning block. Replay parity with the live reasoning deltas:
+ * without it a replayed or projected native history drops reasoning entirely. */
+export type SessionReasoningEnded = {
+  sessionID: SessionID
+  timestamp: DateTime.Utc
+  assistantMessageID: SessionMessage.ID
+  reasoningID: string
+  text: string
+}
+
+/** Maps committed assistant reasoning blocks to the product
+ * `session.next.reasoning.ended` events, mirroring `translateMessage`'s
+ * anchoring so a replayed reasoning id matches the live delta stream. */
+export function translateReasoning(event: EngineEvent): SessionReasoningEnded[] {
+  if (event.kind !== "message.committed") return []
+  if (typeof event.data !== "object" || event.data === null) return []
+  if (!("role" in event.data) || event.data.role !== "assistant") return []
+  if (!("content" in event.data)) return []
+  const content = event.data.content
+  if (!Array.isArray(content)) return []
+  const blocks: unknown[] = content
+  const sessionID = adoptSession(event.session_id)
+  const anchor = anchorSeq(event)
+  const assistantMessageID = messageID(event.session_id, anchor ?? event.seq)
+  return blocks
+    .flatMap((block, index) => {
+      if (typeof block !== "object" || block === null) return []
+      if (!("type" in block) || block.type !== "reasoning") return []
+      if (!("text" in block) || typeof block.text !== "string") return []
+      return [{ index, text: block.text }]
+    })
+    .map((block, ordinal) => ({
+      sessionID,
+      timestamp: eventTimestamp(event),
+      assistantMessageID,
+      reasoningID: `reasoning_${anchor ?? event.seq}_${anchor === undefined ? block.index : ordinal}`,
+      text: block.text,
+    }))
+}
+
+/** Maps the journal's compaction lifecycle events to the product
+ * `session.next.compaction.started`/`ended` pair, so native compaction is
+ * visible in every client instead of silently rewriting context. */
+export function translateCompaction(event: EngineEvent):
+  | { type: "session.next.compaction.started"; data: { status: string } }
+  | {
+      type: "session.next.compaction.ended"
+      data: { messageID: SessionMessage.ID; reason: string }
+    }
+  | undefined {
+  if (event.kind !== "pre_compact" && event.kind !== "post_compact") return undefined
+  if (!hasRecordedTime(event)) return undefined
+  const data = event.data
+  if (typeof data !== "object" || data === null) return undefined
+  const compactionID = readNonEmptyString(data, "compaction_id")
+  if (compactionID === undefined) return undefined
+  if (event.kind === "pre_compact") {
+    return { type: "session.next.compaction.started", data: { status: "compacting context" } }
+  }
+  return {
+    type: "session.next.compaction.ended",
+    data: { messageID: SessionMessage.ID.make(`compaction_${compactionID}`), reason: "auto" },
+  }
+}
+
 export function translateMessage(event: EngineEvent): SessionTextEnded[] {
   if (event.kind !== "message.committed") return []
   if (typeof event.data !== "object" || event.data === null) return []
