@@ -267,6 +267,30 @@ async fn prompt(conn: &Arc<Conn>, id: Value, params: Value) {
     loop {
         emit_history(conn, &session, &mut seen, &mut calls).await;
         if finished.is_some() {
+            // The engine journals `run.finished` before `stop_failure`; give
+            // the cause a bounded chance to land so the error can name it.
+            if failure.is_none()
+                && !matches!(
+                    finished.as_deref(),
+                    Some("completed" | "interrupted" | "cancelled")
+                )
+            {
+                for _ in 0..20 {
+                    let Ok(events) = conn.runtime.store().events(&session, cursor, 64).await else {
+                        break;
+                    };
+                    for event in &events {
+                        cursor = event.seq;
+                        if event.kind == "stop_failure" {
+                            failure = event.data["message"].as_str().map(str::to_owned);
+                        }
+                    }
+                    if failure.is_some() || events.is_empty() {
+                        break;
+                    }
+                    tokio::time::sleep(Duration::from_millis(10)).await;
+                }
+            }
             break;
         }
         if let Ok(events) = conn.runtime.store().events(&session, cursor, 64).await {
