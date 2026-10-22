@@ -22,6 +22,37 @@ export const Info = Schema.Struct({
 }).annotate({ identifier: "Todo" })
 export interface Info extends Schema.Schema.Type<typeof Info> {}
 
+/** Control characters that rewind or corrupt a terminal cursor. */
+const CONTROL = /[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f]/g
+
+/**
+ * Normalise task text for storage and display: CRLF becomes LF, a bare CR is
+ * dropped (observed wedged next to hyphens and punctuation in model output,
+ * where it only exists to rewind a terminal cursor), other control characters
+ * are dropped, and horizontal runs collapse. Without this a stray CR shreds
+ * every renderer's layout into one word per line.
+ */
+export function normalizeText(value: string) {
+  return value
+    .replace(/\r\n/g, "\n")
+    .replace(/\r/g, "")
+    .replace(CONTROL, "")
+    .split("\n")
+    .map((line) => line.replace(/[ \t]+/g, " ").trim())
+    .join("\n")
+    .trim()
+}
+
+/** Apply {@link normalizeText} across a todo list. */
+export function normalize(todos: ReadonlyArray<Info>): Info[] {
+  return todos.map((todo) => ({
+    ...todo,
+    ...(todo.id === undefined ? {} : { id: normalizeText(todo.id) }),
+    content: normalizeText(todo.content),
+    ...(todo.depends_on === undefined ? {} : { depends_on: todo.depends_on.map(normalizeText) }),
+  }))
+}
+
 /** A cancelled prerequisite is not complete. Shared by scheduling and UI projection. */
 export function runnable<T extends Pick<Info, "id" | "status" | "depends_on">>(todos: ReadonlyArray<T>) {
   const byID = new Map(todos.flatMap((todo) => (todo.id === undefined ? [] : [[todo.id, todo] as const])))

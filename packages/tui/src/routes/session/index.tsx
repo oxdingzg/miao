@@ -39,6 +39,7 @@ import { toolOutputText } from "../../context/session-v2"
 import { promptInfoFromUserMessage, toolInput, toolMetadata } from "../../context/session-v2-write"
 
 import type { Provider, SessionStatus } from "@miao/schema/view-models"
+import { SessionTodo } from "@miao/schema/session-todo"
 import { useLocal } from "../../context/local"
 import { Locale } from "../../util/locale"
 import { systemReminderLine } from "../../util/transcript"
@@ -3117,8 +3118,12 @@ export function parseTodos(value: unknown) {
     const content = stringValue(todo?.content)
     const id = stringValue(todo?.id)
     const dependencies = todo?.depends_on
-    const depends_on = Array.isArray(dependencies) ? dependencies.filter((item): item is string => typeof item === "string") : undefined
-    return status && content ? [{ status, content, ...(id ? { id } : {}), ...(depends_on ? { depends_on } : {}) }] : []
+    const depends_on = Array.isArray(dependencies)
+      ? dependencies.filter((item): item is string => typeof item === "string").map(SessionTodo.normalizeText)
+      : undefined
+    const text = content ? SessionTodo.normalizeText(content) : undefined
+    const task = id ? SessionTodo.normalizeText(id) : undefined
+    return status && text ? [{ status, content: text, ...(task ? { id: task } : {}), ...(depends_on ? { depends_on } : {}) }] : []
   })
 }
 

@@ -259,3 +259,49 @@ describe("SessionTodo", () => {
     }),
   )
 })
+
+describe("SessionTodo text normalisation", () => {
+  // A model emitted stray carriage returns that stood in for spaces; terminals
+  // honour CR by rewinding to column 0, which shredded the todo panel into one
+  // word per line. Normalise at the state boundary so every client is safe and
+  // already-stored rows heal on read.
+  const raw = "migrate\r-drill"
+  const messy = "P2\r-3\r migrate\r-back\r：PR\r \r#1219\r（clippy\r/rustfmt\r 已清）"
+  const clean = "P2-3 migrate-back：PR #1219（clippy/rustfmt 已清）"
+
+  it.effect("normalises carriage returns on write and on read", () =>
+    Effect.gen(function* () {
+      yield* setup
+      const todos = yield* SessionTodo.Service
+
+      yield* todos.update({
+        sessionID,
+        todos: [{ id: raw, content: messy, status: "in_progress", priority: "high" }],
+      })
+      expect(yield* todos.get(sessionID)).toEqual([
+        { id: "migrate-drill", content: clean, status: "in_progress", priority: "high" },
+      ])
+
+      // A row written before normalisation existed still renders cleanly.
+      const { db } = yield* Database.Service
+      yield* db
+        .insert(TodoTable)
+        .values({
+          session_id: sessionID,
+          task_id: "legacy",
+          content: messy,
+          status: "pending",
+          priority: "low",
+          position: 9,
+        })
+        .run()
+        .pipe(Effect.orDie)
+      expect((yield* todos.get(sessionID)).at(-1)).toEqual({
+        id: "legacy",
+        content: clean,
+        status: "pending",
+        priority: "low",
+      })
+    }),
+  )
+})
