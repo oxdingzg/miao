@@ -17,6 +17,13 @@ import { prepareMcpConfig } from "./mcp-config"
  */
 
 export interface EngineOptions {
+  /**
+   * Headless callers that own the whole process lifetime (for example
+   * `miao run`) set this so close() terminates the engine child instead of
+   * detaching it. Interactive hosts keep the daemon alive on purpose.
+   */
+  ephemeral?: boolean
+
   binary: string
   db: string
   workspace: string
@@ -312,6 +319,7 @@ export class EngineClient {
     private readonly onProductTool?: EngineOptions["onProductTool"],
     private readonly onHookTool?: EngineOptions["onHookTool"],
     private readonly onProductToolCancel?: EngineOptions["onProductToolCancel"],
+    private readonly ephemeral: boolean = false,
   ) {
     const stdout = this.readStdout().catch(() => {
       this.fail(new EngineError("engine_protocol", "miao-engine output stream failed"), true)
@@ -353,6 +361,7 @@ export class EngineClient {
         options.onProductTool,
         options.onHookTool,
         options.onProductToolCancel,
+        options.ephemeral ?? false,
       )
     } catch (error) {
       manifest?.dispose()
@@ -442,7 +451,15 @@ export class EngineClient {
     // Ending stdin asks the engine to exit, and a daemon with attached
     // product-tool clients legitimately keeps serving afterwards — waiting
     // for child exit here hung every interactive teardown. Detach instead:
-    // the engine exits on its own once its last client is gone.
+    // the engine exits on its own once its last client is gone. A headless
+    // caller owns the whole process lifetime, so its engine child must not
+    // outlive the run — every detached instance becomes an orphan.
+    if (this.ephemeral) {
+      this.child.kill()
+      this.child.exited.catch(() => {})
+      this.cleanup()
+      return
+    }
     this.child.stdin.end()
     this.child.exited.catch(() => {})
     this.cleanup()

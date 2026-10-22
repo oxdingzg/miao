@@ -46,7 +46,9 @@ export async function runEnginePrompt(options: EngineRunOptions): Promise<Engine
     throw new EngineError("tool_replay_required", "Engine replay requires an explicit native tool tape")
   const session = options.session ?? `ses_${randomUUID()}`
   const inputId = options.inputId ?? `in_${randomUUID()}`
-  const client = EngineClient.start(options)
+  // A headless run owns the process lifetime; leaving the engine child
+  // running after the CLI exits leaked one orphan serve process per run.
+  const client = EngineClient.start({ ...options, ephemeral: true })
   const events: EngineEvent[] = []
   const recordings: Promise<void>[] = []
   const trace = new EngineTrace()
