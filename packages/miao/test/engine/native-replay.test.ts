@@ -73,7 +73,7 @@ test("compaction lifecycle projects as started/ended with a stable message id", 
   expect(started).toEqual({ type: "session.next.compaction.started", data: { status: "compacting context" } })
   const ended = translateCompaction(postCompact)
   if (!ended || ended.type !== "session.next.compaction.ended") throw new Error("wrong projection")
-  expect(String(ended.data.messageID)).toBe("compaction_cmp_1")
+  expect(String(ended.data.messageID)).toBe("msg_compaction_cmp_1")
   expect(ended.data.reason).toBe("auto")
 })
 

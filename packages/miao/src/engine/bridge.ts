@@ -679,7 +679,7 @@ export function translateCompaction(event: EngineEvent):
   }
   return {
     type: "session.next.compaction.ended",
-    data: { messageID: SessionMessage.ID.make(`compaction_${compactionID}`), reason: "auto" },
+    data: { messageID: SessionMessage.ID.make(`msg_compaction_${compactionID}`), reason: "auto" },
   }
 }
 
