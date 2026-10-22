@@ -317,7 +317,10 @@ async function buildEngineArchive(): Promise<string[]> {
         : {}
     await $`cargo build --locked --release --bin miao-engine ${target ? ["--target", target] : []}`
       .cwd(crate)
-      .env(muslEnv)
+      // Bun's .env() replaces the whole environment for the command: passing
+      // only the musl overrides stripped PATH, so every cc/linker spawn failed
+      // with "not found". Merge over the inherited environment instead.
+      .env({ ...process.env, ...muslEnv })
     const suffix = process.platform === "win32" ? ".exe" : ""
     const bin = path.join(crate, "target", ...(target ? [target] : []), "release", `miao-engine${suffix}`)
     // A cross-built binary cannot run here, so only the host target asserts its
