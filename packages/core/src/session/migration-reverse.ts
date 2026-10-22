@@ -65,6 +65,30 @@ export const prepare = Effect.fn("SessionMigrationReverse.prepare")(function* (
         yield* requiresNative(db, input)
         const existing = yield* SessionMigration.find(db, input.id)
         if (existing) {
+          // A completed forward transfer keeps its audit row under the shared
+          // id. That row is finished work, not an in-flight transfer: turn it
+          // in place into the reverse direction so the same primary key can
+          // carry both legs, instead of failing on the shared id.
+          if (existing.direction === "ts_to_rust") {
+            if (existing.state !== "completed" || existing.session_id !== input.sessionID)
+              return yield* new Conflict({ sessionID: input.sessionID })
+            yield* db
+              .update(SessionMigrationTable)
+              .set({
+                state: "prepared",
+                direction: "rust_to_ts",
+                native_storage: input.native.storage,
+                location: input.native.location,
+                bundle_sha256: input.bundleSHA256,
+                bundle: input.bundle,
+                source_seq: input.sourceSeq,
+                updated_at: now,
+              })
+              .where(eq(SessionMigrationTable.id, input.id))
+              .run()
+              .pipe(Effect.orDie)
+            return (yield* SessionMigration.find(db, input.id))!
+          }
           if (
             existing.direction !== "rust_to_ts" ||
             existing.session_id !== input.sessionID ||

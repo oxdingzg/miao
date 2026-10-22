@@ -181,6 +181,10 @@ async function buildCli(selection: "all" | "default" | readonly string[]) {
         cli.showHelp(show)
       }
       if (err) throw err
+      // A validation failure without a wrapped error is user-fixable input
+      // (missing option, bad value). Exiting silently here made commands like
+      // `session migrate` impossible to drive without reading the source.
+      if (msg) process.stderr.write(`${msg}${EOL}`)
       process.exit(1)
     })
     .strict()

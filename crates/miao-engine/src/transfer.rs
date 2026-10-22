@@ -331,6 +331,11 @@ impl Store {
             .await?;
         let (session, digest, bundle) = export;
         let temporary = path.with_extension("tmp");
+        // The reverse-migration path writes into a directory beside the native
+        // database that nothing else creates.
+        if let Some(parent) = path.parent() {
+            tokio::fs::create_dir_all(parent).await?;
+        }
         tokio::fs::write(&temporary, bundle.as_bytes()).await?;
         tokio::fs::rename(&temporary, &path).await?;
         Ok(json!({
@@ -431,10 +436,19 @@ impl Store {
             })
             .await?;
         let encoded = serde_json::to_vec(&payload)?;
+        // The receipt carries the delta file's own digest: the reverse
+        // migration verifies the exact bytes it reads back, which the forward
+        // bundle's digest could never prove.
+        let delta_sha256 = format!("{:x}", Sha256::digest(encoded.as_slice()));
         let temporary = path.with_extension("tmp");
-        tokio::fs::write(&temporary, encoded).await?;
+        if let Some(parent) = path.parent() {
+            tokio::fs::create_dir_all(parent).await?;
+        }
+        tokio::fs::write(&temporary, encoded.as_slice()).await?;
         tokio::fs::rename(&temporary, &path).await?;
-        Ok(payload)
+        let mut receipt = payload;
+        receipt["delta_sha256"] = json!(delta_sha256);
+        Ok(receipt)
     }
 
     /// Serialize a live native Session for a same-engine move into a new

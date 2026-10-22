@@ -320,6 +320,7 @@ export const SessionMigrateBackCommand = effectCmd({
                     id: String(receipt.id),
                     session_id: String(receipt.session_id),
                     bundle_sha256: String(receipt.bundle_sha256),
+                    delta_sha256: String(receipt.delta_sha256 ?? ""),
                     baseline_seq: Number(receipt.baseline_seq),
                     timeline: (receipt.timeline as unknown[]) ?? [],
                   }

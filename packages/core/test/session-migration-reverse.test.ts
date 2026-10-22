@@ -11,6 +11,7 @@ import { SessionExecution } from "../src/session/execution"
 import { SessionEnginePlacement } from "../src/session/engine-placement"
 import { SessionEnginePlacementTable } from "../src/session/engine-placement.sql"
 import { SessionMigration } from "../src/session/migration"
+import { SessionMigrationTable } from "../src/session/migration.sql"
 import { SessionMigrationReverse } from "../src/session/migration-reverse"
 import { AbsolutePath } from "../src/schema"
 import { SessionEvent } from "../src/session/event"
@@ -172,12 +173,16 @@ test("the reverse coordinator exports the delta, replays it and completes", asyn
   await Bun.write(bundleFile, bundle)
   const digest = createHash("sha256").update(bundle).digest("hex")
   await Bun.write(bundleFile, JSON.stringify({ ...JSON.parse(bundle), bundle_sha256: digest }))
+  const fileDigest = createHash("sha256")
+    .update(await Bun.file(bundleFile).text())
+    .digest("hex")
   const engine = {
     exportDelta: (input: { importID: string; path: AbsolutePath }) =>
       Effect.succeed({
         id: input.importID,
         session_id: sessionID,
-        bundle_sha256: digest,
+        bundle_sha256: "b".repeat(64),
+        delta_sha256: fileDigest,
         baseline_seq: 2,
         timeline: deltaTimeline as unknown[],
       }),
@@ -223,6 +228,89 @@ test("the reverse coordinator exports the delta, replays it and completes", asyn
       expect((yield* SessionEnginePlacement.requireTypeScript(database.db, sessionID).pipe(Effect.exit))._tag).toBe(
         "Success",
       )
+    }),
+  )
+})
+
+test("a completed forward audit row turns in place for the reverse direction", async () => {
+  await using tmp = await tmpdir()
+  const storage = path.join(tmp.path, "product.db")
+  const sessionID = SessionV2.ID.create()
+  await run(
+    storage,
+    Effect.gen(function* () {
+      const sessions = yield* SessionV2.Service
+      const database = yield* Database.Service
+      yield* sessions.create({ id: sessionID, location: native(tmp.path).location })
+      yield* database.db.run(
+        sql`UPDATE session_engine_placement SET engine='rust', native_storage=${native(tmp.path).storage}, location=${JSON.stringify(native(tmp.path).location)} WHERE session_id=${sessionID}`,
+      )
+      // The forward migration's finished audit row under the shared id.
+      yield* database.db.run(
+        sql`INSERT INTO session_migration (id,session_id,state,direction,native_storage,location,bundle_sha256,bundle,source_seq,created_at,updated_at)
+            VALUES ('shared', ${sessionID}, 'completed', 'ts_to_rust', ${native(tmp.path).storage}, ${JSON.stringify(native(tmp.path).location)}, ${"b".repeat(64)}, '{}', 1, 1, 1)`,
+      )
+    }),
+  )
+  const deltaTimeline = [
+    {
+      id: SessionMessage.ID.make("msg_native_900"),
+      type: "user",
+      text: "native turn",
+      time: { created: 1700000001000 },
+    },
+  ] as unknown as SessionMessage.Message[]
+  const bundle = JSON.stringify({
+    id: "shared",
+    session_id: sessionID,
+    bundle_sha256: "pending",
+    baseline_seq: 3,
+    timeline: deltaTimeline,
+  })
+  const bundleFile = AbsolutePath.make(path.join(tmp.path, "delta.json"))
+  await Bun.write(bundleFile, bundle)
+  const digest = createHash("sha256").update(bundle).digest("hex")
+  await Bun.write(bundleFile, JSON.stringify({ ...JSON.parse(bundle), bundle_sha256: digest }))
+  // The delta receipt carries the digest of the exact file bytes the engine
+  // wrote, which the second write (with the receipt field) changes.
+  const fileDigest = createHash("sha256")
+    .update(await Bun.file(bundleFile).text())
+    .digest("hex")
+  const engine = {
+    exportDelta: (input: { importID: string; path: AbsolutePath }) =>
+      Effect.succeed({
+        id: input.importID,
+        session_id: sessionID,
+        bundle_sha256: "c".repeat(64),
+        delta_sha256: fileDigest,
+        baseline_seq: 3,
+        timeline: deltaTimeline as unknown[],
+      }),
+  }
+  await run(
+    storage,
+    Effect.gen(function* () {
+      const database = yield* Database.Service
+      const completed = yield* SessionMigrationReverseCoordinator.toTypeScript({
+        database: database.db,
+        id: "shared",
+        sessionID,
+        native: native(tmp.path),
+        bundleFile,
+        agent: "build",
+        model: { id: ModelV2.ID.make("fixture"), providerID: ProviderV2.ID.make("openai") },
+        engine,
+      })
+      expect(completed.state).toBe("completed")
+      expect(completed.direction).toBe("rust_to_ts")
+      expect((yield* SessionEnginePlacement.find(database.db, sessionID))?.engine).toBe("ts")
+      // The shared primary key still holds exactly one audit row.
+      const rows = yield* database.db
+        .select({ id: SessionMigrationTable.id })
+        .from(SessionMigrationTable)
+        .all()
+        .pipe(Effect.orDie)
+      expect(rows).toHaveLength(1)
     }),
   )
 })

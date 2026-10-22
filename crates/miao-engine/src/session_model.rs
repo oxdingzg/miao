@@ -51,9 +51,18 @@ pub(crate) fn select(
     };
     binding.validate()?;
     if let Some(variant) = &binding.variant {
-        let selected = primary
-            .for_route_variant(binding.route_id.as_deref(), variant)
-            .ok_or_else(|| Error::Invalid("model variant is not registered by the host".into()))?;
+        let selected = match primary.for_route_variant(binding.route_id.as_deref(), variant) {
+            Some(selected) => selected,
+            // Transfer bundles carry the product's projected variant name
+            // ("default") even for an explicit single-form provider route,
+            // which registers no variants. That name is exactly the primary
+            // form, so fall back to it; the identity check below still rejects
+            // any binding that would change protocol or model. A named route
+            // keeps the strict lookup, and any other variant name stays an
+            // error: only "default" is provably the primary form.
+            None if binding.route_id.is_none() && variant == "default" => Arc::clone(&primary),
+            None => return Err(Error::Invalid("model variant is not registered by the host".into())),
+        };
         if selected.identity()
             != Some(Identity {
                 protocol: binding.protocol.clone(),
@@ -232,4 +241,118 @@ pub(crate) fn select_model_tx(
         json!({"binding":binding}),
     )?;
     Ok(json!({"binding":binding,"changed":true}))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::provider::{ProviderError, Reply};
+    use async_trait::async_trait;
+    use serde_json::json;
+    use std::sync::Arc;
+    use tokio::sync::mpsc;
+    use tokio_util::sync::CancellationToken;
+
+    /// An explicit single-form provider route: one identity, no registered
+    /// variants, and no named routes.
+    struct Single {
+        protocol: &'static str,
+        model: &'static str,
+    }
+
+    #[async_trait]
+    impl Provider for Single {
+        fn identity(&self) -> Option<Identity> {
+            Some(Identity {
+                protocol: self.protocol.into(),
+                model: self.model.into(),
+            })
+        }
+
+        async fn stream(
+            &self,
+            _: crate::protocol::ModelRequest,
+            _: mpsc::Sender<Value>,
+            _: CancellationToken,
+        ) -> Result<Reply, ProviderError> {
+            unreachable!("select never streams")
+        }
+    }
+
+    fn binding(protocol: &str, model: &str, variant: Option<&str>, route: Option<&str>) -> Binding {
+        Binding {
+            route_id: route.map(str::to_owned),
+            variant: variant.map(str::to_owned),
+            protocol: protocol.into(),
+            model: model.into(),
+        }
+    }
+
+    #[test]
+    fn a_projected_default_variant_names_the_single_form_of_the_primary() {
+        let primary = Arc::new(Single {
+            protocol: "openai-chat",
+            model: "fixture",
+        });
+        let selected = select(
+            &(Arc::clone(&primary) as Arc<dyn Provider>),
+            Some(&binding("openai-chat", "fixture", Some("default"), None)),
+        )
+        .unwrap();
+        assert_eq!(
+            selected.identity(),
+            Some(Identity {
+                protocol: "openai-chat".into(),
+                model: "fixture".into(),
+            })
+        );
+    }
+
+    #[test]
+    fn an_unknown_variant_still_fails_on_the_primary_route() {
+        let primary = Arc::new(Single {
+            protocol: "openai-chat",
+            model: "fixture",
+        });
+        let error = select(
+            &(Arc::clone(&primary) as Arc<dyn Provider>),
+            Some(&binding("openai-chat", "fixture", Some("high"), None)),
+        )
+        .map(|_| ())
+        .map(|_| ())
+        .unwrap_err();
+        assert!(error.to_string().contains("model variant is not registered"));
+    }
+
+    #[test]
+    fn a_variant_missing_from_a_named_route_stays_strict() {
+        let primary = Arc::new(Single {
+            protocol: "openai-chat",
+            model: "fixture",
+        });
+        let error = select(
+            &(Arc::clone(&primary) as Arc<dyn Provider>),
+            Some(&binding("openai-chat", "fixture", Some("default"), Some("account/route"))),
+        )
+        .map(|_| ())
+        .map(|_| ())
+        .unwrap_err();
+        assert!(error.to_string().contains("model variant is not registered"));
+    }
+
+    #[test]
+    fn a_default_variant_cannot_change_the_bound_model() {
+        let primary = Arc::new(Single {
+            protocol: "openai-chat",
+            model: "fixture",
+        });
+        let error = select(
+            &(Arc::clone(&primary) as Arc<dyn Provider>),
+            Some(&binding("openai-chat", "other", Some("default"), None)),
+        )
+        .map(|_| ())
+        .unwrap_err();
+        assert!(error.to_string().contains("identity does not match"));
+    }
+
 }
