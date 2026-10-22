@@ -376,7 +376,7 @@ async fn actual_product_cas_is_required_and_activation_restores_provider_context
     }
     let delta_path = tmp.path().join("delta.json");
     let delta = database
-        .export_session_transfer_delta("transfer", delta_path.clone())
+        .export_session_transfer_delta("transfer", None, delta_path.clone())
         .await
         .unwrap();
     let baseline: i64 = {
@@ -499,4 +499,68 @@ async fn activation_failure_rolls_back_the_gate_and_every_provider_row() {
     assert!(database.migration_active("s").await.unwrap());
     assert_eq!(database.latest_seq("s").await.unwrap(), 1);
     database.close().await.unwrap();
+}
+
+#[tokio::test]
+async fn a_session_born_native_exports_its_whole_timeline_without_a_transfer_import() {
+    let tmp = tempfile::tempdir().unwrap();
+    let native = tmp.path().join("native.db");
+    let database = Store::open(&native).await.unwrap();
+    {
+        let conn = rusqlite::Connection::open(&native).unwrap();
+        conn.execute(
+            "INSERT INTO engine_session(id,next_seq,mode) VALUES('ses_native',3,'build')",
+            [],
+        )
+        .unwrap();
+        conn.execute(
+            "INSERT INTO engine_message(session_id,seq,role,content,checkpoint,recorded_at_ms) VALUES('ses_native',1,'user','[{\"type\":\"text\",\"text\":\"native prompt\"}]',NULL,100)",
+            [],
+        )
+        .unwrap();
+        conn.execute(
+            "INSERT INTO engine_message(session_id,seq,role,content,checkpoint,recorded_at_ms) VALUES('ses_native',2,'assistant','[{\"type\":\"text\",\"text\":\"native reply\"}]',NULL,200)",
+            [],
+        )
+        .unwrap();
+    }
+    let delta_path = tmp.path().join("native-back.delta.json");
+    let delta = database
+        .export_session_transfer_delta("native-ses_native", Some("ses_native"), delta_path.clone())
+        .await
+        .unwrap();
+    assert_eq!(delta["baseline_seq"], json!(0));
+    assert_eq!(delta["session_id"], json!("ses_native"));
+    let timeline = delta["timeline"].as_array().unwrap();
+    assert_eq!(timeline.len(), 2);
+    assert_eq!(timeline[0]["type"], json!("user"));
+    assert_eq!(timeline[0]["text"], json!("native prompt"));
+    assert_eq!(timeline[1]["type"], json!("assistant"));
+    // No forward bundle backs this delta: the receipt records the empty
+    // input's digest so the receipt's 64-hex contract still holds.
+    let empty = format!("{:x}", Sha256::digest([]));
+    assert_eq!(delta["bundle_sha256"], json!(empty));
+    assert!(delta["delta_sha256"].as_str().is_some_and(|d| d.len() == 64));
+    // The file holds the payload without the self-referential digest; the
+    // returned receipt carries it so the reverse migration can verify bytes.
+    let on_disk = std::fs::read(&delta_path).unwrap();
+    let file = serde_json::from_slice::<Value>(&on_disk).unwrap();
+    assert!(file["delta_sha256"].is_null());
+    assert_eq!(
+        format!("{:x}", Sha256::digest(on_disk.as_slice())),
+        delta["delta_sha256"].as_str().unwrap()
+    );
+}
+
+#[tokio::test]
+async fn a_delta_export_for_an_unknown_session_still_conflicts() {
+    let tmp = tempfile::tempdir().unwrap();
+    let native = tmp.path().join("native.db");
+    let database = Store::open(&native).await.unwrap();
+    let delta_path = tmp.path().join("nope.delta.json");
+    let error = database
+        .export_session_transfer_delta("native-ses_unknown", Some("ses_unknown"), delta_path)
+        .await
+        .unwrap_err();
+    assert!(error.to_string().contains("input id conflicts"));
 }

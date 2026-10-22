@@ -356,6 +356,7 @@ impl Store {
     pub async fn export_session_transfer_delta(
         &self,
         id: &str,
+        session_id: Option<&str>,
         path: std::path::PathBuf,
     ) -> Result<Value, Error> {
         if !path.is_absolute() {
@@ -365,6 +366,7 @@ impl Store {
         }
         let id = id.to_owned();
         let key = id.clone();
+        let requested_session = session_id.map(str::to_owned);
         let payload = self
             .call(move |conn| {
                 let row: Option<(String, String, String, String)> = conn
@@ -374,17 +376,38 @@ impl Store {
                         |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?)),
                     )
                     .optional()?;
-                let (session, digest, bundle, state) = row.ok_or(Error::Conflict)?;
-                // The delta is only trustworthy when the retained payload it
-                // derives from still matches its recorded digest.
-                if state != "active" || format!("{:x}", Sha256::digest(bundle.as_bytes())) != digest {
-                    return Err(Error::Conflict);
-                }
-                let baseline: i64 = conn.query_row(
-                    "SELECT COALESCE(MAX(seq),0) FROM engine_transfer_message WHERE import_id=?1",
-                    [&key],
-                    |row| row.get(0),
-                )?;
+                // Sessions born natively never had a transfer import: the whole
+                // timeline is the delta and there is no forward bundle to
+                // re-verify. Only require the session to be engine-owned.
+                let (session, digest, baseline) = match row {
+                    Some((session, digest, bundle, state)) => {
+                        // The delta is only trustworthy when the retained payload it
+                        // derives from still matches its recorded digest.
+                        if state != "active"
+                            || format!("{:x}", Sha256::digest(bundle.as_bytes())) != digest
+                        {
+                            return Err(Error::Conflict);
+                        }
+                        let baseline: i64 = conn.query_row(
+                            "SELECT COALESCE(MAX(seq),0) FROM engine_transfer_message WHERE import_id=?1",
+                            [&key],
+                            |row| row.get(0),
+                        )?;
+                        (session, Some(digest), baseline)
+                    }
+                    None => {
+                        let session = requested_session.ok_or(Error::Conflict)?;
+                        let owned: bool = conn.query_row(
+                            "SELECT EXISTS(SELECT 1 FROM engine_session WHERE id=?1)",
+                            [&session],
+                            |row| row.get(0),
+                        )?;
+                        if !owned {
+                            return Err(Error::Conflict);
+                        }
+                        (session, None, 0)
+                    }
+                };
                 let mut stmt = conn.prepare(
                     "SELECT seq,role,content,recorded_at_ms FROM engine_message
                      WHERE session_id=?1 AND seq>?2 AND reverted=0 ORDER BY seq",
@@ -426,10 +449,15 @@ impl Store {
                     };
                     timeline.push(message);
                 }
+                // A native-born fallback has no forward bundle; the empty
+                // string's digest keeps the receipt's 64-hex contract while
+                // proving nothing was re-verified.
+                let bundle_sha256 =
+                    digest.unwrap_or_else(|| format!("{:x}", Sha256::digest([])));
                 Ok(json!({
                     "id": id,
                     "session_id": session,
-                    "bundle_sha256": digest,
+                    "bundle_sha256": bundle_sha256,
                     "baseline_seq": baseline,
                     "timeline": timeline,
                 }))

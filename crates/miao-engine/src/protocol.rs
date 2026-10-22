@@ -467,6 +467,8 @@ pub enum Command {
     },
     TransferExportDelta {
         import_id: String,
+        #[serde(default)]
+        session_id: Option<String>,
         path: std::path::PathBuf,
     },
     TransferAbort {

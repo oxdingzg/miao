@@ -35,7 +35,7 @@ export type DeltaReceipt = {
 
 /** Native source operations the reverse coordinator needs. */
 export interface Engine {
-  exportDelta(input: { importID: string; path: AbsolutePath }): Effect.Effect<DeltaReceipt, Error>
+  exportDelta(input: { importID: string; sessionID?: string; path: AbsolutePath }): Effect.Effect<DeltaReceipt, Error>
 }
 
 /** Move authority from the native engine back to the TypeScript catalog:
@@ -60,7 +60,11 @@ export const toTypeScript = Effect.fn("SessionMigrationReverseCoordinator.toType
   if (current && current.direction !== "rust_to_ts" && current.state !== "completed") return yield* conflict()
   if (current?.state === "completed") current = undefined
   if (!current) {
-    const receipt = yield* input.engine.exportDelta({ importID: input.id, path: input.bundleFile })
+    const receipt = yield* input.engine.exportDelta({
+      importID: input.id,
+      sessionID: input.sessionID,
+      path: input.bundleFile,
+    })
     if (
       receipt.id !== input.id ||
       receipt.session_id !== input.sessionID ||

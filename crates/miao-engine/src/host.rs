@@ -372,10 +372,14 @@ impl Host {
                     json!({"id":staged.id,"session_id":staged.session_id,"bundle_sha256":staged.bundle_sha256,"state":staged.state}),
                 )
             }
-            Command::TransferExportDelta { import_id, path } => {
+            Command::TransferExportDelta {
+                import_id,
+                session_id,
+                path,
+            } => {
                 runtime
                     .store()
-                    .export_session_transfer_delta(&import_id, path)
+                    .export_session_transfer_delta(&import_id, session_id.as_deref(), path)
                     .await
             }
             Command::TransferAbort { import_id } => {
