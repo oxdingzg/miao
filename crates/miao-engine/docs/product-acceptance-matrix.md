@@ -79,9 +79,9 @@ without asking. Only the live stream is missing.
 
 | Behavior | Existing automated evidence | Product acceptance still required |
 | --- | --- | --- |
-| Prompt and streamed answer | `tests/acp.rs`; product `native-coding-http.test.ts` | Daily TUI verified 2026-10-16 (live stream and rendered tool part); an external ACP client still required |
-| Approval and denial | ACP request_permission scenario; product approval/reply tests; independent ACP SDK allow/reject (#912) | Pending approval, grant and rejection verified in the TUI 2026-10-16; third-party editor UI still required |
-| Cancellation | `tests/acp_client_matrix.rs`: incomplete HTTP response, cancelled prompt reply, successful continuation (#861); independent ACP SDK cancel/continue (#912) | TUI cancel verified 2026-10-16 (no replacement provider request, Session recovers); third-party editor UI still required |
+| Prompt and streamed answer | `tests/acp.rs`; product `native-coding-http.test.ts` | Daily TUI verified 2026-10-16 (live stream and rendered tool part); third-party editor verified 2026-10-22 with Zed 1.20.2 over real billed traffic, thread replay and diagnosable failures ([report](zed-acp-acceptance-2026-10-22.md)) |
+| Approval and denial | ACP request_permission scenario; product approval/reply tests; independent ACP SDK allow/reject (#912) | Pending approval, grant and rejection verified in the TUI 2026-10-16; the same flow in a third-party editor is not yet exercised (Zed prompt/load was) |
+| Cancellation | `tests/acp_client_matrix.rs`: incomplete HTTP response, cancelled prompt reply, successful continuation (#861); independent ACP SDK cancel/continue (#912) | TUI cancel verified 2026-10-16 (no replacement provider request, Session recovers); the same flow in a third-party editor is not yet exercised (Zed prompt/load was) |
 | Provider failure | ACP HTTP 400 followed by a successful new prompt; failure is a JSON-RPC error, not end_turn (#861) | Visible error and usable next prompt in actual clients |
 | Process restart/resume | ACP process replacement on the same DB: prior context retained, prior answer not streamed twice (#861) | Client reconnect without duplicate messages or cross-engine takeover |
 | Slow client | HTTP SSE/cursor and restore coverage | Bound the real client's backlog, disconnect it and resume from its cursor |
