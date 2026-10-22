@@ -205,6 +205,7 @@ test("reads engine.storage relative to the global config and lets the environmen
   expect(settings?.storage).toBe(path.join(dir, "engines"))
   expect(engineStorageRoot({}, settings)).toBe(path.join(dir, "engines"))
   expect(engineStorageRoot({ MIAO_ENGINE_STORAGE: "/elsewhere" }, settings)).toBe("/elsewhere")
+  expect(engineStorageRoot({ MIAO_ENGINE_STORAGE: "" }, settings)).toBeUndefined()
   expect(engineStorageRoot({}, undefined)).toBeUndefined()
   expect(engineStorageRoot({}, {})).toBeUndefined()
 })
