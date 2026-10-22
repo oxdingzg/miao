@@ -239,6 +239,25 @@ export const engineStorageRoot = (
   return root ? path.resolve(root) : undefined
 }
 
+/**
+ * Switch-plan step 3's explicit opt-in: `--engine native` turns native
+ * placement on for this invocation even when `engine.storage` was never
+ * configured, defaulting the store beside the product database. A `ts` value
+ * clears the override so a configured `engine.storage` can be opted out of on
+ * a single command.
+ */
+export const applyEngineOptIn = (
+  engine: string | undefined,
+  dataDir: string,
+  environment: Record<string, string | undefined> = process.env,
+): void => {
+  if (engine === "native" && environment.MIAO_ENGINE_STORAGE === undefined) {
+    environment.MIAO_ENGINE_STORAGE = path.join(dataDir, "engines")
+    return
+  }
+  if (engine === "ts") delete environment.MIAO_ENGINE_STORAGE
+}
+
 /** Whether the composition root should build the native transport at all. */
 export const configured = (): boolean => nativeEngineOptions() !== undefined
 

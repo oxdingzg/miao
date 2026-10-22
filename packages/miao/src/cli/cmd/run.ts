@@ -1,4 +1,6 @@
 import { CliError } from "../effect-cmd"
+import { applyEngineOptIn } from "@/engine/native-engine"
+import { Global } from "@miao/core/global"
 import { FSUtil } from "@miao/core/fs-util"
 // CLI entry point for `miao run` and `miao --mini`.
 //
@@ -147,6 +149,11 @@ export const RunCommand = cmd({
         describe: "fork the session before continuing (requires --continue or --session)",
         type: "boolean",
       })
+      .option("engine", {
+        choices: ["native", "ts"] as const,
+        describe:
+          "engine placement for this run: native opts new sessions into the rust engine (default storage under the data directory); ts forces the TypeScript engine",
+      })
       .option("model", {
         type: "string",
         alias: ["m"],
@@ -246,6 +253,7 @@ export const RunCommand = cmd({
         describe: "enable direct interactive demo slash commands; pass one as the message to run it immediately",
       }),
   handler: async (args) => {
+    applyEngineOptIn(args.engine, Global.Path.data)
     const local = !args.attach
     const { RuntimeFlags } = await import("@/effect/runtime-flags")
     const { ServerAuth } = await import("@/server/auth")
@@ -688,6 +696,7 @@ export async function runMini(input: MiniCommandInput) {
     dir: input.directory,
     port: undefined,
     variant: undefined,
+    engine: undefined,
     thinking: undefined,
     mini: true,
     interactive: false,
