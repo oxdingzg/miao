@@ -263,6 +263,7 @@ async fn prompt(conn: &Arc<Conn>, id: Value, params: Value) {
     let mut calls = HashSet::new();
     let mut planned: HashMap<String, String> = HashMap::new();
     let mut finished = None;
+    let mut failure: Option<String> = None;
     loop {
         emit_history(conn, &session, &mut seen, &mut calls).await;
         if finished.is_some() {
@@ -331,6 +332,9 @@ async fn prompt(conn: &Arc<Conn>, id: Value, params: Value) {
                         finished =
                             Some(event.data["reason"].as_str().unwrap_or("failed").to_owned());
                     }
+                    "stop_failure" => {
+                        failure = event.data["message"].as_str().map(str::to_owned);
+                    }
                     _ => {}
                 }
             }
@@ -345,8 +349,15 @@ async fn prompt(conn: &Arc<Conn>, id: Value, params: Value) {
             conn.reply(id, json!({ "stopReason": "cancelled" })).await;
         }
         _ => {
-            conn.fail(id, INTERNAL_ERROR, "session execution failed")
-                .await
+            // Surface the run's own failure message: a bare "session
+            // execution failed" hides everything a user needs to fix the
+            // route, model, or credential.
+            conn.fail(
+                id,
+                INTERNAL_ERROR,
+                failure.as_deref().unwrap_or("session execution failed"),
+            )
+            .await
         }
     }
 }
