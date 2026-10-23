@@ -1,0 +1,17 @@
+name: runner-probe
+on:
+  workflow_dispatch:
+jobs:
+  probe:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - label: macos-15-intel
+            os: macos-15-intel
+          - label: macos-26-intel
+            os: macos-26-intel
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 5
+    steps:
+      - run: uname -m && sw_vers -productVersion && python3 --version
