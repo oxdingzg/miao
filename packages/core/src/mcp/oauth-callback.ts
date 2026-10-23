@@ -13,6 +13,8 @@ interface PendingAuth {
   resolve: (code: string) => void
   reject: (error: Error) => void
   timeout: ReturnType<typeof setTimeout>
+  /** RFC 9207: when discovery pinned the issuer, a contradicting `iss` fails the flow. */
+  expectedIss?: string
 }
 
 let server: ReturnType<typeof createServer> | undefined
@@ -52,6 +54,7 @@ function handleRequest(req: import("http").IncomingMessage, res: import("http").
   const state = url.searchParams.get("state")
   const error = url.searchParams.get("error")
   const errorDescription = url.searchParams.get("error_description")
+  const iss = url.searchParams.get("iss")
 
   // Enforce state parameter presence
   if (!state) {
@@ -92,6 +95,22 @@ function handleRequest(req: import("http").IncomingMessage, res: import("http").
 
   const pending = pendingAuths.get(state)!
 
+  // RFC 9207 issuer identification: a well-formed authorization response names
+  // its issuer. When discovery pinned one, a mismatch fails before the code is
+  // ever exchanged. An absent `iss` stays acceptable — the parameter is
+  // optional for authorization servers.
+  if (pending.expectedIss && iss && iss !== pending.expectedIss) {
+    const errorMsg = `OAuth issuer mismatch: authorization server reported "${iss}", expected "${pending.expectedIss}"`
+    clearTimeout(pending.timeout)
+    pendingAuths.delete(state)
+    cleanupStateIndex(state)
+    pending.reject(new Error(errorMsg))
+    res.writeHead(400, { "Content-Type": "text/html; charset=utf-8" })
+    res.end(OauthCallbackPage.error(errorMsg, { provider: "MCP" }))
+    stopIfIdle()
+    return
+  }
+
   clearTimeout(pending.timeout)
   pendingAuths.delete(state)
   cleanupStateIndex(state)
@@ -130,7 +149,7 @@ export async function ensureRunning(redirectUri?: string): Promise<void> {
   })
 }
 
-export function waitForCallback(oauthState: string, mcpName?: string): Promise<string> {
+export function waitForCallback(oauthState: string, mcpName?: string, expectedIss?: string): Promise<string> {
   if (mcpName) mcpNameToState.set(mcpName, oauthState)
   return new Promise((resolve, reject) => {
     const timeout = setTimeout(() => {
@@ -142,7 +161,7 @@ export function waitForCallback(oauthState: string, mcpName?: string): Promise<s
       }
     }, CALLBACK_TIMEOUT_MS)
 
-    pendingAuths.set(oauthState, { resolve, reject, timeout })
+    pendingAuths.set(oauthState, { resolve, reject, timeout, expectedIss })
   })
 }
 

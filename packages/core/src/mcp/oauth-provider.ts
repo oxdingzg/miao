@@ -18,6 +18,8 @@ export interface McpOAuthConfig {
   scope?: string
   callbackPort?: number
   redirectUri?: string
+  /** CIMD: an HTTPS client metadata document the AS may adopt as the client_id (SEP-991). */
+  clientMetadataUrl?: string
 }
 
 export interface McpOAuthCallbacks {
@@ -39,6 +41,13 @@ export class McpOAuthProvider implements OAuthClientProvider {
     }
     const port = this.config.callbackPort ?? OAUTH_CALLBACK_PORT
     return `http://127.0.0.1:${port}${OAUTH_CALLBACK_PATH}`
+  }
+
+  // Read by the SDK's auth() flow: when the authorization server advertises
+  // `client_id_metadata_document_supported`, this URL becomes the client_id
+  // instead of dynamic registration.
+  get clientMetadataUrl(): string | undefined {
+    return this.config.clientMetadataUrl
   }
 
   get clientMetadata(): OAuthClientMetadata {
