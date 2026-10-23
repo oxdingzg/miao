@@ -210,6 +210,19 @@ impl OpenAIChat {
         if without_tools {
             body["tool_choice"] = json!("none");
         }
+        // Dev diagnostic (opt-in): dump the exact outgoing request so
+        // prefix-cache divergence can be located byte-for-byte. Appends one
+        // JSON line per provider call; off unless the env var is set.
+        if let Ok(path) = std::env::var("MIAO_ENGINE_REQUEST_DUMP") {
+            use std::io::Write as _;
+            if let Ok(mut file) = std::fs::OpenOptions::new()
+                .create(true)
+                .append(true)
+                .open(&path)
+            {
+                let _ = writeln!(file, "{}", body);
+            }
+        }
         let mut url = reqwest::Url::parse(&self.endpoint).map_err(|_| ProviderError::Transport)?;
         if let Some(query) = self.query.as_deref() {
             url.set_query(Some(query));
