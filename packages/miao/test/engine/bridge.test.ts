@@ -19,6 +19,8 @@ import { messageID } from "@/engine/identity"
 import { translateExpiredCredential } from "@/engine/bridge"
 import type { EngineEvent } from "@/engine/client"
 import type { ModelV2 } from "@miao/core/model"
+import { Model } from "@miao/schema/model"
+import { Provider } from "@miao/schema/provider"
 
 const event = (kind: string): EngineEvent => ({ session_id: "ses_test", seq: 1, kind, data: {} })
 
@@ -322,6 +324,7 @@ test("settles a step on the committed assistant message", () => {
     { tokens: { input: 30, output: 5, reasoning: 0, cache: { read: 12, write: 0 } } },
     95,
     undefined,
+    undefined,
   )
   expect(`${ended?.sessionID}`).toBe("ses_test")
   expect(ended?.assistantMessageID).toBe(messageID("ses_test", 7))
@@ -338,11 +341,12 @@ test("settles a step on the committed assistant message", () => {
     { tokens: { input: 30, output: 5, reasoning: 0, cache: { read: 12, write: 0 } } },
     95,
     rates,
+    { providerID: Provider.ID.make("p"), id: Model.ID.make("m") },
   )
   expect(priced?.cost).toBeCloseTo((18 * 1 + 5 * 3 + 12 * 0.1) / 1_000_000, 12)
 
   // No buffered usage settles with zeroed tokens and no ttft claim.
-  const bare = translateStepEnded(commit, undefined, undefined, undefined)
+  const bare = translateStepEnded(commit, undefined, undefined, undefined, undefined)
   expect(bare?.tokens.input).toBe(0)
   expect(bare?.ttft).toBeUndefined()
   expect(bare?.cost).toBe(0)
@@ -350,7 +354,7 @@ test("settles a step on the committed assistant message", () => {
   // A user commit never settles a step.
   const userData: object = { role: "user", content: [] }
   const user: EngineEvent = { ...commit, data: userData }
-  expect(translateStepEnded(user, undefined, undefined, undefined)).toBeUndefined()
+  expect(translateStepEnded(user, undefined, undefined, undefined, undefined)).toBeUndefined()
 })
 
 test("translateExpiredCredential parses the structured expired failure", () => {

@@ -1,0 +1,187 @@
+{
+  "sample": {
+    "task": "stream-interruption",
+    "engine": "typescript",
+    "repetition": 0,
+    "suiteHash": "bd905b4f81f0a9412b614631a36337723067574848c5f05b50ead1cf48675091",
+    "taskHash": "4f00bf344635036fd5d16a5b348e948e9ed126d43854e1280b1286d48d53284c",
+    "profile": {
+      "model": "glm-5.3-flash",
+      "modelParametersHash": "64b75891657ccfedd1c1bb3ad6ec9f15a96d8bcd6146908498c4cad99a39ca85",
+      "agentManifestHash": "a6ff342f5fe813590bb10b4e87b38b51ab116d8a72eb6314c28867cf10f73c33",
+      "permissionHash": "6fc8fec42879a1239adbefb57c889a1782bb44f062d7c63a532168e4503f3657",
+      "toolSurfaceHash": "569f7e5c50f8c856ebeb33ec6bb521a33e3021be589edf23bc8b33f0348ad9cc"
+    },
+    "revision": "ed524903ae8dec701eba0e880390986ac98e0975",
+    "artifactHash": "2b4e04ae507e25e4b1036dff0509a0cb4fc4f014bfde0083fccd539fa1e60df2",
+    "receiptHash": "d8e9a208ff91fad5555f691ce4290535059b2ba4c7b82eddf3badf40e772201c",
+    "outcome": "failed",
+    "elapsedMs": 12175,
+    "attempts": [
+      {
+        "inputTokens": 13598,
+        "outputTokens": 79,
+        "cost": null
+      },
+      {
+        "inputTokens": 13878,
+        "outputTokens": 33,
+        "cost": null
+      },
+      {
+        "inputTokens": 14129,
+        "outputTokens": 80,
+        "cost": null
+      }
+    ]
+  },
+  "rejection": null,
+  "evidence": {
+    "engine": "typescript",
+    "revision": "ed524903ae8dec701eba0e880390986ac98e0975",
+    "task": "stream-interruption",
+    "repetition": 0,
+    "terminal": "interrupted",
+    "error": "exit 130",
+    "receipts": [],
+    "attempts": [
+      {
+        "inputTokens": 13598,
+        "outputTokens": 79,
+        "cacheReadTokens": 11392,
+        "cacheWriteTokens": null,
+        "reasoningTokens": 57,
+        "cost": null
+      },
+      {
+        "inputTokens": 13878,
+        "outputTokens": 33,
+        "cacheReadTokens": 13568,
+        "cacheWriteTokens": null,
+        "reasoningTokens": 0,
+        "cost": null
+      },
+      {
+        "inputTokens": 14129,
+        "outputTokens": 80,
+        "cacheReadTokens": 13824,
+        "cacheWriteTokens": null,
+        "reasoningTokens": 37,
+        "cost": null
+      }
+    ],
+    "phases": [
+      {
+        "phase": "step-start",
+        "atMs": 1792769606315,
+        "clock": "observed"
+      },
+      {
+        "phase": "tool-part",
+        "atMs": 1792769607756,
+        "clock": "observed"
+      },
+      {
+        "phase": "tool-part",
+        "atMs": 1792769607770,
+        "clock": "observed"
+      },
+      {
+        "phase": "step-start",
+        "atMs": 1792769611869,
+        "clock": "observed"
+      },
+      {
+        "phase": "tool-part",
+        "atMs": 1792769612160,
+        "clock": "observed"
+      },
+      {
+        "phase": "tool-part",
+        "atMs": 1792769612181,
+        "clock": "observed"
+      },
+      {
+        "phase": "tool-part",
+        "atMs": 1792769612200,
+        "clock": "observed"
+      },
+      {
+        "phase": "step-start",
+        "atMs": 1792769613337,
+        "clock": "observed"
+      },
+      {
+        "phase": "first-output",
+        "atMs": 1792769614876,
+        "clock": "observed"
+      },
+      {
+        "phase": "tool-part",
+        "atMs": 1792769614967,
+        "clock": "observed"
+      },
+      {
+        "phase": "exit",
+        "atMs": 1792769615004,
+        "clock": "observed"
+      },
+      {
+        "phase": "verified",
+        "atMs": 1792769615007,
+        "clock": "observed"
+      }
+    ],
+    "profile": {
+      "model": "glm-5.3-flash",
+      "modelParametersHash": "64b75891657ccfedd1c1bb3ad6ec9f15a96d8bcd6146908498c4cad99a39ca85",
+      "agentManifestHash": "a6ff342f5fe813590bb10b4e87b38b51ab116d8a72eb6314c28867cf10f73c33",
+      "permissionHash": "6fc8fec42879a1239adbefb57c889a1782bb44f062d7c63a532168e4503f3657",
+      "toolSurfaceHash": "569f7e5c50f8c856ebeb33ec6bb521a33e3021be589edf23bc8b33f0348ad9cc"
+    },
+    "profileReceipts": 3,
+    "loops": {
+      "continuations": [],
+      "stopped": []
+    },
+    "toolCalls": 6,
+    "textHash": "9f0d66829e5272885d00c4d294f99447defac597cbc04372a1f3470395860f85",
+    "binarySha256": null,
+    "startedAtMs": 1792769602832,
+    "admissionMs": null,
+    "elapsedMs": 12175
+  },
+  "assessment": {
+    "suiteHash": "bd905b4f81f0a9412b614631a36337723067574848c5f05b50ead1cf48675091",
+    "taskHash": "4f00bf344635036fd5d16a5b348e948e9ed126d43854e1280b1286d48d53284c",
+    "artifactPass": true,
+    "unexpected": [],
+    "immutable": [
+      {
+        "file": "AGENTS.md",
+        "unchanged": true
+      },
+      {
+        "file": "package.json",
+        "unchanged": true
+      },
+      {
+        "file": "action.ts",
+        "unchanged": true
+      }
+    ],
+    "expected": [
+      {
+        "file": "audit.log",
+        "matches": true
+      }
+    ],
+    "check": null,
+    "executionVerdict": "unverified",
+    "requiredReceipts": [
+      "provider.interrupted"
+    ],
+    "answerContains": []
+  },
+  "answer": "Files read: `action.ts` appends `once\\n` to `audit.log`. Running it exactly once now."
+}
