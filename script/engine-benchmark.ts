@@ -18,6 +18,7 @@
  *   bun script/engine-benchmark.ts --binary miao-dev [--models a/b,c/d]
  *       [--tasks bugfix,feature] [--engines ts,rust] [--repeat 1]
  *       [--storage ~/.local/share/miao/bench-storage] [--out report.md]
+ *       [--data docs/experiments/<round>/]
  *
  * Billing: provider cache hits make raw `input` incomparable across engines,
  * so every figure reports `billed-in = input + cacheRead` for BOTH runtimes
@@ -457,6 +458,7 @@ const models = parse
 const repeat = parse.number("--repeat", 1)
 const storage = parse.string("--storage") ?? path.join(os.tmpdir(), "miao-bench-storage")
 const out = parse.string("--out")
+const data = parse.string("--data")
 const engines = parse
   .list("--engines", ["ts", "rust"])
   .filter((engine): engine is "ts" | "rust" => engine === "ts" || engine === "rust")
@@ -473,6 +475,10 @@ type Attempt = {
   engine: "ts" | "rust"
   attempt: number
   ok: boolean
+  turns: number
+  input: number
+  cacheRead: number
+  output: number
   billedIn: number
   cost: number
   seconds: number
@@ -482,6 +488,89 @@ type Attempt = {
 
 const attempts: Attempt[] = []
 const best = new Map<string, Cell>()
+
+const percentile = (values: number[], p: number) => {
+  if (values.length === 0) return 0
+  const sorted = [...values].sort((a, b) => a - b)
+  return sorted[Math.min(sorted.length - 1, Math.floor((p / 100) * sorted.length))]!
+}
+
+// Machine-readable package for docs/experiments/, written after every attempt
+// so an interrupted run still leaves totals and evidence on disk. Totals use
+// the suite convention's CSV schema plus the model column a multi-model batch
+// needs; samples/evidence carry the full token split behind every cell.
+const persist = async () => {
+  if (!data) return
+  const aggregate = (rows: Attempt[]) => ({
+    runs: rows.length,
+    passed: rows.filter((row) => row.ok).length,
+    attempts: rows.reduce((sum, row) => sum + row.turns, 0),
+    billed_input: rows.reduce((sum, row) => sum + row.input, 0),
+    cached_input: rows.reduce((sum, row) => sum + row.cacheRead, 0),
+    output: rows.reduce((sum, row) => sum + row.output, 0),
+    cost: Number(rows.reduce((sum, row) => sum + row.cost, 0).toFixed(5)),
+    p50_ms: Math.round(
+      percentile(
+        rows.map((row) => row.seconds * 1000),
+        50,
+      ),
+    ),
+    p95_ms: Math.round(
+      percentile(
+        rows.map((row) => row.seconds * 1000),
+        95,
+      ),
+    ),
+  })
+  const csv = ["model,scope,engine,task,runs,passed,attempts,billed_input,cached_input,output,cost,p50_ms,p95_ms"]
+  for (const model of activeModels) {
+    for (const engine of engines) {
+      const cells = attempts.filter((row) => row.model === model && row.engine === engine)
+      const dir = path.join(data, "raw", model.replace(/\//g, "-"), engine)
+      await mkdir(path.join(dir, "evidence"), { recursive: true })
+      await Bun.write(
+        path.join(dir, "samples.json"),
+        JSON.stringify(
+          cells.map((row) => ({
+            model,
+            task: row.task,
+            engine,
+            repetition: row.attempt,
+            elapsedMs: Math.round(row.seconds * 1000),
+            attempts: row.turns,
+            outcome: row.ok ? "pass" : "fail",
+            billed_input: row.input + row.cacheRead,
+            uncached_input: row.input,
+            cached_input: row.cacheRead,
+            output: row.output,
+            cost: Number(row.cost.toFixed(5)),
+            ...(row.verifyError === undefined ? {} : { verifyError: row.verifyError }),
+          })),
+          null,
+          2,
+        ) + "\n",
+      )
+      for (const row of cells)
+        await Bun.write(
+          path.join(dir, "evidence", `${row.task}-a${row.attempt}.json`),
+          JSON.stringify(row, null, 2) + "\n",
+        )
+      const line = (scope: string, scopeID: string, rows: Attempt[]) =>
+        [model, scope, engine, scopeID, ...Object.values(aggregate(rows))].join(",")
+      csv.push(line("total", `*`, cells))
+      for (const task of tasks)
+        csv.push(
+          line(
+            "task",
+            task.id,
+            cells.filter((row) => row.task === task.id),
+          ),
+        )
+    }
+  }
+  await Bun.write(path.join(data, "results.csv"), csv.join("\n") + "\n")
+}
+
 for (const model of activeModels) {
   for (const task of tasks) {
     for (const engine of engines) {
@@ -498,12 +587,17 @@ for (const model of activeModels) {
           engine,
           attempt: attempt + 1,
           ok: cell.ok ?? false,
+          turns: cell.turns,
+          input: cell.input,
+          cacheRead: cell.cacheRead,
+          output: cell.output,
           billedIn: billedInput(cell),
           cost: cell.cost,
           seconds: cell.seconds,
           resumed: cell.resumed ?? false,
           verifyError: cell.verifyError,
         })
+        await persist()
         const previous = best.get(key)
         const better =
           previous === undefined ||
@@ -513,12 +607,6 @@ for (const model of activeModels) {
       }
     }
   }
-}
-
-const percentile = (values: number[], p: number) => {
-  if (values.length === 0) return 0
-  const sorted = [...values].sort((a, b) => a - b)
-  return sorted[Math.min(sorted.length - 1, Math.floor((p / 100) * sorted.length))]!
 }
 
 const fmt = (cell: Cell | undefined) => {
