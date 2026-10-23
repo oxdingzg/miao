@@ -150,6 +150,7 @@ pub struct Policy {
     revision: String,
     matchers: Vec<CompiledMatcher>,
     ordered: Option<crate::agent_policy::Compiled>,
+    auto: bool,
 }
 impl Policy {
     /// Derive an immutable policy for one agent turn. Capability limits and all
@@ -177,6 +178,7 @@ impl Policy {
             .as_ref()
             .map(|policy| policy.compile())
             .transpose()?;
+        policy.auto = agent.permission_mode.is_some();
         policy.revision = digest(&serde_json::to_vec(&serde_json::json!({
             "policy": policy.revision, "agent": agent.digest()?,
         }))?);
@@ -232,6 +234,7 @@ impl Policy {
             revision,
             matchers,
             ordered: None,
+            auto: false,
         })
     }
     /// Snapshot the same immutable Config whose matchers enforce each tool.
@@ -320,6 +323,44 @@ impl Policy {
         self.ordered
             .as_ref()
             .map_or(base, |policy| policy.assess(tool, path, input))
+    }
+
+    /// Whether the agent's `auto` mode settles this ask without a prompt. Only
+    /// asks the default or the agent's own ordered rules raise qualify: an
+    /// operator ask rule in the base config stays authoritative, the same way
+    /// the ordered overlay can never lift one.
+    pub(crate) fn auto_settles(
+        &self,
+        tool: &str,
+        path: &str,
+        access: Access,
+        input: Option<&Value>,
+        targets: &[String],
+    ) -> bool {
+        if !self.auto {
+            return false;
+        }
+        let base = self.assess_base(tool, path, access);
+        if base.0 == Decision::Deny || (base.0 == Decision::Ask && base.1.source == MatchSource::Rule)
+        {
+            return false;
+        }
+        let action = self
+            .ordered
+            .as_ref()
+            .and_then(|policy| policy.descriptor().bindings.get(tool))
+            .map_or(tool, |binding| binding.action.as_str());
+        match action {
+            "edit" => crate::agent_classifier::edit(targets) == crate::agent_classifier::Verdict::Safe,
+            "bash" => input
+                .filter(|input| input.get("stdin").is_none())
+                .and_then(|input| input["command"].as_str())
+                .is_some_and(|command| {
+                    crate::agent_classifier::bash(command)
+                        == crate::agent_classifier::Verdict::Safe
+                }),
+            _ => false,
+        }
     }
 
     fn assess_base(&self, tool: &str, path: &str, access: Access) -> (Decision, RuleMatch) {
@@ -414,6 +455,142 @@ pub fn context_digest(system: &str, sources: &[Value]) -> Result<String, Error> 
     Ok(digest(&serde_json::to_vec(
         &serde_json::json!({"version":1,"system":system,"sources":sources}),
     )?))
+}
+
+#[cfg(test)]
+mod auto_mode_tests {
+    use super::*;
+
+    fn policy_with(mode: Option<crate::session_agent::PermissionMode>, ordered: Value) -> Policy {
+        let base = Policy::new(Config {
+            mode: Mode::Workspace,
+            allow_process: true,
+            ..Config::default()
+        })
+        .unwrap();
+        let agent: crate::session_agent::AgentManifest =
+            serde_json::from_value(serde_json::json!({
+                "name": "auto",
+                "permission_mode": mode,
+                "ordered_permissions": ordered,
+            }))
+            .unwrap();
+        base.for_agent(Some(&agent)).unwrap()
+    }
+
+    fn ordered_ask() -> Value {
+        serde_json::json!({
+            "semantics": "ordered-wildcard-v1",
+            "rules": [
+                {"action": "bash", "resource": "*", "effect": "ask"},
+                {"action": "edit", "resource": "*", "effect": "ask"}
+            ],
+            "bindings": {
+                "bash": {"action": "bash", "resource": "command"},
+                "write_file": {"action": "edit", "resource": "native"}
+            }
+        })
+    }
+
+    #[test]
+    fn auto_settles_classifier_proven_asks_only() {
+        let policy = policy_with(Some(crate::session_agent::PermissionMode::Auto), ordered_ask());
+        let bash_input = serde_json::json!({"command": "ls -la"});
+        assert!(policy.auto_settles(
+            "bash",
+            ".",
+            Access::Execute,
+            Some(&bash_input),
+            &[".".to_owned()]
+        ));
+        let dangerous = serde_json::json!({"command": "rm -rf scratch"});
+        assert!(!policy.auto_settles(
+            "bash",
+            ".",
+            Access::Execute,
+            Some(&dangerous),
+            &[".".to_owned()]
+        ));
+        assert!(
+            policy.auto_settles("write_file", "src/a.ts", Access::Write, None, &["src/a.ts".to_owned()]),
+            "an edit target inside the workspace settles"
+        );
+        assert!(
+            !policy.auto_settles("write_file", ".env", Access::Write, None, &[".env".to_owned()]),
+            "a protected target stays an ask"
+        );
+        assert!(
+            !policy.auto_settles("glob", "**", Access::Read, None, &["**".to_owned()]),
+            "an unbound action never settles"
+        );
+    }
+
+    #[test]
+    fn without_the_mode_every_ask_stays_a_prompt() {
+        let policy = policy_with(None, ordered_ask());
+        let bash_input = serde_json::json!({"command": "ls -la"});
+        assert!(!policy.auto_settles(
+            "bash",
+            ".",
+            Access::Execute,
+            Some(&bash_input),
+            &[".".to_owned()]
+        ));
+    }
+
+    #[test]
+    fn operator_ask_rules_stay_authoritative_under_auto() {
+        let base = Policy::new(Config {
+            mode: Mode::Workspace,
+            allow_process: true,
+            rules: vec![Rule {
+                tool: "bash".into(),
+                path: "**".into(),
+                decision: Decision::Ask,
+            }],
+            ..Config::default()
+        })
+        .unwrap();
+        let agent: crate::session_agent::AgentManifest = serde_json::from_value(serde_json::json!({
+            "name": "auto",
+            "permission_mode": "auto",
+            "ordered_permissions": ordered_ask(),
+        }))
+        .unwrap();
+        let policy = base.for_agent(Some(&agent)).unwrap();
+        let bash_input = serde_json::json!({"command": "ls -la"});
+        assert_eq!(
+            policy.assess_input("bash", ".", Access::Execute, Some(&bash_input)).0,
+            Decision::Ask
+        );
+        assert!(!policy.auto_settles(
+            "bash",
+            ".",
+            Access::Execute,
+            Some(&bash_input),
+            &[".".to_owned()]
+        ));
+    }
+
+    #[test]
+    fn default_asks_settle_without_any_ordered_rule() {
+        let policy = policy_with(
+            Some(crate::session_agent::PermissionMode::Auto),
+            serde_json::json!({
+                "semantics": "ordered-wildcard-v1",
+                "rules": [{"action": "*", "resource": "*", "effect": "allow"}],
+                "bindings": {"bash": {"action": "bash", "resource": "command"}}
+            }),
+        );
+        let bash_input = serde_json::json!({"command": "cat report.md"});
+        assert!(policy.auto_settles(
+            "bash",
+            ".",
+            Access::Execute,
+            Some(&bash_input),
+            &[".".to_owned()]
+        ));
+    }
 }
 
 #[cfg(test)]

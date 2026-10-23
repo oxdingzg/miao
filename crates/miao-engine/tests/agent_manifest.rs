@@ -119,6 +119,7 @@ fn manifest() -> AgentManifest {
         }),
         permissions: None,
         ordered_permissions: None,
+        permission_mode: None,
         model: None,
         mode: None,
         request: None,

@@ -3993,7 +3993,24 @@ async fn authorize(
             inner.store.record(session,crate::events::Lifecycle::PermissionDenied.name(),json!({"run_id":run,"call_id":call,"tool":prepared.name(),"resource":prepared.resource(),"reason":"policy","policy_revision":policy.revision()})).await?;
             return Ok(false);
         }
-        Decision::Ask => {}
+        Decision::Ask => {
+            let mut auto_targets = prepared.targets().to_vec();
+            if auto_targets.is_empty() {
+                auto_targets.push(prepared.resource().to_owned());
+            }
+            if policy.auto_settles(
+                prepared.name(),
+                prepared.resource(),
+                prepared.access(),
+                Some(prepared.input()),
+                &auto_targets,
+            ) {
+                inner.store
+                    .record(session, "permission.auto_allowed", json!({"run_id":run,"call_id":call,"tool":prepared.name(),"resource":prepared.resource(),"reason":"classifier","policy_revision":policy.revision()}))
+                    .await?;
+                return Ok(true);
+            }
+        }
     }
     let input_hash = input_digest(
         inner.tools.location(),
