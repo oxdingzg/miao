@@ -254,6 +254,14 @@ mod tests {
 
     #[test]
     fn readonly_bash_is_safe_and_mutating_or_opaque_bash_stays_unknown() {
+        if cfg!(windows) {
+            // The host classifier also declines on Windows: cmd/bat semantics
+            // make token-level readonly checks unreliable, so every bash ask
+            // stays a prompt there.
+            assert_eq!(bash("ls -la"), Verdict::Unknown);
+            assert_eq!(bash("rm -rf scratch"), Verdict::Unknown);
+            return;
+        }
         assert_eq!(bash("ls -la"), Verdict::Safe);
         assert_eq!(bash("git status; git log --oneline"), Verdict::Safe);
         assert_eq!(bash("echo hello world"), Verdict::Safe);
@@ -277,6 +285,13 @@ mod tests {
 
     #[test]
     fn protected_paths_are_never_classified_safe() {
+        if cfg!(windows) {
+            // Bash declines wholesale on Windows (see the readonly test), so
+            // no path distinction is observable through it there.
+            assert_eq!(bash("cat .env"), Verdict::Unknown);
+            assert_eq!(bash("cat src/app.ts"), Verdict::Unknown);
+            return;
+        }
         assert_eq!(bash("cat .env"), Verdict::Unknown);
         assert_eq!(bash("cat .env.local"), Verdict::Unknown);
         assert_eq!(bash("grep pattern .ssh/config"), Verdict::Unknown);

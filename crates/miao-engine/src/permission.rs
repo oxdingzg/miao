@@ -501,13 +501,18 @@ mod auto_mode_tests {
             ordered_ask(),
         );
         let bash_input = serde_json::json!({"command": "ls -la"});
-        assert!(policy.auto_settles(
-            "bash",
-            ".",
-            Access::Execute,
-            Some(&bash_input),
-            &[".".to_owned()]
-        ));
+        // On Windows the bash classifier declines wholesale (host parity), so
+        // only edit asks can settle there.
+        assert_eq!(
+            cfg!(windows),
+            !policy.auto_settles(
+                "bash",
+                ".",
+                Access::Execute,
+                Some(&bash_input),
+                &[".".to_owned()]
+            )
+        );
         let dangerous = serde_json::json!({"command": "rm -rf scratch"});
         assert!(!policy.auto_settles(
             "bash",
@@ -603,13 +608,18 @@ mod auto_mode_tests {
             }),
         );
         let bash_input = serde_json::json!({"command": "cat report.md"});
-        assert!(policy.auto_settles(
-            "bash",
-            ".",
-            Access::Execute,
-            Some(&bash_input),
-            &[".".to_owned()]
-        ));
+        // Windows declines bash wholesale (host parity); off-Windows the
+        // classifier proves the read and settles.
+        assert_eq!(
+            cfg!(windows),
+            !policy.auto_settles(
+                "bash",
+                ".",
+                Access::Execute,
+                Some(&bash_input),
+                &[".".to_owned()]
+            )
+        );
     }
 }
 
