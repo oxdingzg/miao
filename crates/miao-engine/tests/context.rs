@@ -359,20 +359,37 @@ async fn explicit_sources_reject_ambiguous_paths_and_total_context_overflow() {
     std::fs::write(dir.path().join("AGENTS.md"), "r".repeat(32768)).unwrap();
     std::fs::write(dir.path().join("extra.md"), "x".repeat(32768)).unwrap();
     let tools = tools
+        .clone()
         .with_context_sources(vec![Source {
             label: "extra".into(),
             path: "extra.md".into(),
         }])
         .unwrap();
-    assert!(matches!(
-        assemble(
-            &tools,
-            &Policy::new(Config::default()).unwrap(),
-            CancellationToken::new()
-        )
-        .await,
-        Err(ToolError::ContextBudget)
-    ));
+    // Budget-aware assembly: the oversized extra source is skipped (recorded
+    // as context_budget) instead of failing the whole session, and the base
+    // instructions still load.
+    let bundle = assemble(
+        &tools,
+        &Policy::new(Config::default()).unwrap(),
+        CancellationToken::new(),
+    )
+    .await
+    .unwrap();
+    assert!(bundle.system.len() <= 65536);
+    assert!(bundle.system.contains("AGENTS.md"));
+    let skipped = bundle
+        .sources
+        .iter()
+        .find(|source| source["label"] == "extra")
+        .unwrap();
+    assert_eq!(skipped["status"], json!("skipped"));
+    assert_eq!(skipped["reason"], json!("context_budget"));
+    let loaded = bundle
+        .sources
+        .iter()
+        .find(|source| source["label"] == "AGENTS.md")
+        .unwrap();
+    assert_eq!(loaded["status"], json!("loaded"));
     let token = CancellationToken::new();
     token.cancel();
     assert!(matches!(
@@ -456,4 +473,36 @@ async fn host_instruction_files_require_an_exact_reference_and_refresh_context_e
             .iter()
             .any(|entry| entry["label"] == "global-instructions" && entry["status"] == "skipped"));
     }
+}
+
+#[tokio::test]
+async fn rich_projects_exceeding_sixteen_sources_still_select() {
+    // The serialized-sources byte cap is the real guard; a separate entry
+    // count broke rich projects (instructions + skills + references) that
+    // legitimately exceed 16 sources.
+    let dir = tempfile::tempdir().unwrap();
+    let store = Store::open(dir.path().join("engine.db")).await.unwrap();
+    store
+        .admit_at(input("s", "one"), Some("root".into()))
+        .await
+        .unwrap();
+    let sources: Vec<Value> = (0..18)
+        .map(|index| {
+            json!({
+                "type": "project-instructions",
+                "label": format!("source-{index}"),
+                "path": format!("docs/source-{index}.md"),
+                "resource": format!("docs/source-{index}.md"),
+                "status": "loaded",
+                "sha256": format!("{index:064x}"),
+            })
+        })
+        .collect();
+    let system = "system ".repeat(400);
+    let bundle = ContextBundle {
+        system: system.clone(),
+        sources: sources.clone(),
+        fingerprint: context_digest(&system, &sources).unwrap(),
+    };
+    assert_eq!(store.select_context("s", bundle).await.unwrap(), 1);
 }

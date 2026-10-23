@@ -967,12 +967,24 @@ command: None,
         bundle: ContextBundle,
         lease: Option<SessionLease>,
     ) -> Result<u64, Error> {
-        if bundle.system.len() > 65536
-            || bundle.sources.len() > 16
-            || serde_json::to_vec(&bundle.sources)?.len() > 65536
-            || context_digest(&bundle.system, &bundle.sources)? != bundle.fingerprint
-        {
-            return Err(Error::Invalid("invalid context bundle".into()));
+        // The serialized-sources cap is the real guard: it bounds the
+        // context.changed event and the engine_context row. A separate entry
+        // count would only duplicate that protection and break rich projects
+        // (instructions + skills + references) that legitimately exceed 16.
+        let sources_bytes = serde_json::to_vec(&bundle.sources)?.len();
+        if bundle.system.len() > 65536 || sources_bytes > 65536 {
+            return Err(Error::Invalid(format!(
+                "invalid context bundle: system {} bytes, serialized sources {} bytes (caps: 65536/65536)",
+                bundle.system.len(),
+                sources_bytes
+            )));
+        }
+        let digest = context_digest(&bundle.system, &bundle.sources)?;
+        if digest != bundle.fingerprint {
+            return Err(Error::Invalid(format!(
+                "invalid context bundle: fingerprint mismatch (expected {digest}, got {})",
+                bundle.fingerprint
+            )));
         }
         let session = session.to_owned();
         self.call(move |conn| {

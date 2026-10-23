@@ -367,7 +367,13 @@ pub(crate) async fn assemble_for_agent(
                 let data=tools.execute_prepared(prepared,policy,cancel.child_token()).await?;
                 let text=data["text"].as_str().ok_or(ToolError::InvalidFile)?;
                 let block=format!("\n\n<project-instructions source=\"{}\">\n{}\n</project-instructions>",source.label,text);
-                if system.len()+block.len()>65536{return Err(ToolError::ContextBudget);}
+                // Budget-aware assembly: an instructions block that would blow
+                // the context budget is skipped (recorded for the client) so a
+                // huge repo cannot fail the whole session at startup.
+                if system.len()+block.len()>65536{
+                    sources.push(json!({"label":source.label,"path":source.path,"resource":resource,"status":"skipped","reason":"context_budget"}));
+                    continue;
+                }
                 system.push_str(&block);
                 sources.push(json!({"label":source.label,"path":source.path,"resource":resource,"status":"loaded","sha256":data["sha256"]}));
             },
@@ -376,9 +382,12 @@ pub(crate) async fn assemble_for_agent(
             Err(error)=>return Err(error),
         }
     }
-    system.push_str("\n\nBuilt-in skill: media-observe — use load_skill with name media-observe when inspecting video/audio. Follow its timestamped frame/contact-sheet workflow using bash and read_image. Project skills below are loaded using read_file.");
-    if system.len() > 65536 {
-        return Err(ToolError::ContextBudget);
+    // The builtin-skill and listing sections are advisory; when the budget is
+    // exhausted they are omitted instead of failing the session. Their sources
+    // stay registered so read_file still reaches them.
+    let media_line="\n\nBuilt-in skill: media-observe — use load_skill with name media-observe when inspecting video/audio. Follow its timestamped frame/contact-sheet workflow using bash and read_image. Project skills below are loaded using read_file.";
+    if system.len() + media_line.len() <= 65536 {
+        system.push_str(media_line);
     }
     sources.push(json!({"type":"builtin_skill","name":"media-observe","path":"@builtin/skill/media-observe","status":"registered","sha256":crate::permission::digest(MEDIA_OBSERVE.as_bytes())}));
     let skills = discover_skills(tools, policy, cancel.child_token(), &mut sources).await?;
@@ -393,10 +402,9 @@ pub(crate) async fn assemble_for_agent(
             ));
         }
         section.push_str("</available-skills>");
-        if system.len() + section.len() > 65536 {
-            return Err(ToolError::ContextBudget);
+        if system.len() + section.len() <= 65536 {
+            system.push_str(&section);
         }
-        system.push_str(&section);
         for skill in skills {
             sources.push(
                 json!({"type":"skill","name":skill.name,"path":skill.path,"status":"registered"}),
@@ -415,10 +423,9 @@ pub(crate) async fn assemble_for_agent(
             ));
         }
         section.push_str("</available-references>");
-        if system.len() + section.len() > 65536 {
-            return Err(ToolError::ContextBudget);
+        if system.len() + section.len() <= 65536 {
+            system.push_str(&section);
         }
-        system.push_str(&section);
         for reference in references {
             sources.push(json!({"type":"reference","path":reference.path,"status":"authorized"}));
         }
