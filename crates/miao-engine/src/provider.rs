@@ -872,6 +872,7 @@ pub(crate) async fn request_with_retry(
             Err(ProviderError::Interrupted) => (None, "interrupted_unknown"),
             Err(_) => (None, "transport_unknown"),
         };
+        let mut last_failure_detail: Option<String> = None;
         let error = match response {
             Ok(response) if response.status().is_success() => {
                 crate::runtime_profile::result(request_seq, status, outcome, None).await?;
@@ -896,6 +897,7 @@ pub(crate) async fn request_with_retry(
                     outcome,
                     detail.as_deref(),
                 );
+                last_failure_detail = detail;
                 ProviderError::Http(status)
             }
             Err(error) => {
@@ -904,10 +906,16 @@ pub(crate) async fn request_with_retry(
                 error
             }
         };
-        if !matches!(
+        let transient_image_parse = matches!(error, ProviderError::Http(400))
+            && last_failure_detail
+                .as_deref()
+                .is_some_and(image_parse_transient);
+        let retryable = matches!(
             error,
             ProviderError::Transport | ProviderError::Http(429 | 500 | 502 | 503 | 504 | 529)
-        ) || attempt + 1 >= scope.limit
+        ) || transient_image_parse;
+        if !retryable
+            || attempt + 1 >= scope.limit
             || scope.budget.used() >= 3
             || tokio::time::Instant::now() >= deadline
         {
@@ -930,6 +938,17 @@ pub(crate) async fn request_with_retry(
         }
     }
     unreachable!()
+}
+
+/// Some gateways report their own transient image-decode failures as HTTP 400:
+/// the zhipuai coding endpoint answers `{"error":{"code":"1210"}}` for a
+/// request the same model accepts unchanged seconds later. Replay that response
+/// class within the existing retry budget; every other 400 stays terminal.
+fn image_parse_transient(body: &str) -> bool {
+    serde_json::from_str::<Value>(body)
+        .ok()
+        .and_then(|value| value["error"]["code"].as_str().map(str::to_owned))
+        .is_some_and(|code| code == "1210")
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -1333,6 +1352,93 @@ async fn read_stream_with_budget<P: Parser>(
                 return parser.finish();
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod image_parse_retry_tests {
+    use super::request_with_retry;
+    use crate::provider::ProviderError;
+    use axum::{
+        extract::State, http::StatusCode, response::IntoResponse, routing::get, Json, Router,
+    };
+    use serde_json::json;
+    use std::sync::{
+        atomic::{AtomicUsize, Ordering},
+        Arc,
+    };
+    use tokio::sync::mpsc;
+    use tokio_util::sync::CancellationToken;
+
+    async fn serve(responses: Arc<AtomicUsize>, first: serde_json::Value) -> String {
+        let router = Router::new()
+            .route(
+                "/fixture",
+                get(move |State(state): State<Arc<AtomicUsize>>| async move {
+                    if state.fetch_add(1, Ordering::SeqCst) == 0 {
+                        (StatusCode::BAD_REQUEST, Json(first)).into_response()
+                    } else {
+                        (StatusCode::OK, "ok").into_response()
+                    }
+                }),
+            )
+            .with_state(responses);
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let endpoint = format!("http://{}/fixture", listener.local_addr().unwrap());
+        tokio::spawn(async move { axum::serve(listener, router).await.unwrap() });
+        endpoint
+    }
+
+    #[tokio::test]
+    async fn transient_image_parse_400_replays_the_request() {
+        let attempts = Arc::new(AtomicUsize::new(0));
+        let endpoint = serve(
+            attempts.clone(),
+            json!({"error":{"code":"1210","message":"图片输入格式/解析错误"}}),
+        )
+        .await;
+        let client = reqwest::Client::new();
+        let (progress, mut received) = mpsc::channel(16);
+        let request = client.get(&endpoint).build().unwrap();
+        let response = request_with_retry(
+            "openai-chat",
+            &client,
+            request,
+            &progress,
+            &CancellationToken::new(),
+        )
+        .await
+        .unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+        assert_eq!(attempts.load(Ordering::SeqCst), 2);
+        let frames: Vec<serde_json::Value> =
+            std::iter::from_fn(|| received.try_recv().ok()).collect();
+        assert!(frames
+            .iter()
+            .any(|frame| frame["kind"] == "provider.retry" && frame["status"] == 400));
+    }
+
+    #[tokio::test]
+    async fn other_400_bodies_stay_terminal() {
+        let attempts = Arc::new(AtomicUsize::new(0));
+        let endpoint = serve(
+            attempts.clone(),
+            json!({"error":{"code":"1211","message":"other"}}),
+        )
+        .await;
+        let client = reqwest::Client::new();
+        let (progress, _received) = mpsc::channel(16);
+        let request = client.get(&endpoint).build().unwrap();
+        let result = request_with_retry(
+            "openai-chat",
+            &client,
+            request,
+            &progress,
+            &CancellationToken::new(),
+        )
+        .await;
+        assert!(matches!(result, Err(ProviderError::Http(400))));
+        assert_eq!(attempts.load(Ordering::SeqCst), 1);
     }
 }
 
