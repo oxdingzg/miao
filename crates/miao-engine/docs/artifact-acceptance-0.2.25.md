@@ -66,10 +66,25 @@ python3 script/engine-artifact-drill.py \
 | Published 0.2.24 macOS arm64 | `1b281880c5968e45eed7aa64b024761bea29953a3d64dab5ee8fb62e08fed73a` |
 | Published 0.2.25 Linux x64 | `d25d513f290665ce6163f8dceedf90e9223c9ce94b09bcf3bbe73ff160f354c6` |
 
+## Windows x64: cross-version drill (2026-10-23 addendum)
+
+The published 0.2.24 and 0.2.25 Windows x64 executables ran the full drill
+(`script/engine-artifact-drill.py`, Python 3.12) on the Windows host:
+`ENGINE_ARTIFACT_DRILL=PASS` across install, data migration, rollback and
+compaction stages with the guarded-process scope (workspace write allowed,
+outside denied; network/PTY not exercised by the fixture). Archive SHA-256s
+verified before extraction:
+
+| Executable | SHA-256 |
+| --- | --- |
+| Published 0.2.25 Windows x64 | `f8e41934a6b7cea009ae594d5fe63604f8873b55e34445546624805abaace54d` |
+| Published 0.2.24 Windows x64 | `357d9f0e5fc9c79f99bf7e8ec62ea203ead7015010686168ab17f9cef15971ac` |
+
+The 0.2.24 hash matches the 0.2.23 record, so the upgrade leg ran a genuine
+prior release. Raw verdict: `drill-0.2.25.json` (drill host).
+
 ## Not covered
 
-- Windows 0.2.25: not re-drilled here; the 0.2.23 Windows drill passed in the
-  0.2.23 record.
 - Linux cross-version upgrade/downgrade: blocked on a runnable prior Linux
   asset; 0.2.25 is the first musl build, so the next release can cover it.
 - Native Intel macOS hardware remains open.
