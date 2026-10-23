@@ -1213,6 +1213,9 @@ async fn drain(
     // that lost it. Reconcile it before opening a new run; otherwise the active
     // run index would reject the start.
     inner.store.recover_session(Some(&session)).await?;
+    // Message tail before this drain promotes its inputs: a terminal
+    // first-turn provider rejection quarantines exactly what it promoted.
+    let history_base = inner.store.max_message_seq(&session).await?;
     let promoted = inner.store.promote_fenced(&session, true, &lease).await?;
     if promoted.is_empty() && !force {
         return Ok(());
@@ -1240,7 +1243,7 @@ async fn drain(
             .await?;
     }
     record_promotions(&inner, &session, &run, &promoted, &lease).await?;
-    let result = execute(&session, &run, &inner, cancel.clone(), &lease).await;
+    let result = execute(&session, &run, &inner, cancel.clone(), &lease, history_base).await;
     let reason = if cancel.is_cancelled() {
         "interrupted"
     } else if result.is_ok() {
@@ -1330,12 +1333,64 @@ fn touched_paths(name: &str, input: &Value) -> Vec<String> {
     }
 }
 
+/// The transport-level outcome of the request that just failed, read back from
+/// the durable `provider.request.result` fact, so the failure record carries
+/// the provider's own error body instead of a bare status. Absent for
+/// in-process providers that never cross HTTP.
+async fn provider_failure_detail(
+    store: &Store,
+    session: &str,
+    run: &str,
+    step: u64,
+) -> Option<Value> {
+    let event = store
+        .latest_event(session, "provider.request.result")
+        .await
+        .ok()??;
+    if event.data["run_id"].as_str() != Some(run) || event.data["step"].as_u64() != Some(step) {
+        return None;
+    }
+    let status = event.data["http_status"].as_u64()?;
+    if status < 400 {
+        return None;
+    }
+    let mut detail = json!({"http_status": status});
+    if let Some(body) = event.data["response_body"].as_str() {
+        if !body.is_empty() {
+            let mut body = body.to_owned();
+            if body.len() > 2000 {
+                let mut cut = 2000;
+                while !body.is_char_boundary(cut) {
+                    cut -= 1;
+                }
+                body.truncate(cut);
+            }
+            detail["response_body"] = json!(body);
+        }
+    }
+    Some(detail)
+}
+
+/// The provider's own error words for the failure line, parsed from the
+/// recorded response body (for example `{"error":{"code":"1210",
+/// "message":"图片输入格式/解析错误"}}`). Non-JSON bodies stay unparsed.
+fn provider_error_text(detail: &Value) -> Option<String> {
+    let body = detail["response_body"].as_str()?;
+    let parsed: Value = serde_json::from_str(body).ok()?;
+    let message = parsed["error"]["message"].as_str()?;
+    match parsed["error"]["code"].as_str() {
+        Some(code) => Some(format!("{message} (code {code})")),
+        None => Some(message.to_owned()),
+    }
+}
+
 async fn execute(
     session: &str,
     run: &str,
     inner: &Arc<Inner>,
     cancel: CancellationToken,
     lease: &SessionLease,
+    history_base: u64,
 ) -> Result<(), Error> {
     let mut step = 0;
     let mut allowance = inner.policy.max_provider_turns();
@@ -1677,13 +1732,14 @@ async fn execute(
             Ok(reply) => reply,
             Err(ProviderError::Interrupted) => return Ok(()),
             Err(error) => {
+                let detail = provider_failure_detail(&inner.store, session, run, step as u64).await;
+                let mut failure = json!({"run_id":run,"step":step,"message":error.to_string(),"routing":error.routing()});
+                if let Some(detail) = &detail {
+                    failure["provider"] = detail.clone();
+                }
                 inner
                     .store
-                    .record(
-                        session,
-                        "provider.failed",
-                        json!({"run_id":run,"step":step,"message":error.to_string(),"routing":error.routing()}),
-                    )
+                    .record(session, "provider.failed", failure)
                     .await?;
                 if cancel.is_cancelled() {
                     return Ok(());
@@ -1773,7 +1829,25 @@ command: None,
                         )
                         .await?;
                 }
-                return Err(Error::Invalid(error.to_string()));
+                // A first-turn provider rejection is aimed at the promoted
+                // input itself: keeping it selected would fail every later
+                // prompt the same way, which is how a session gets bricked by
+                // one bad attachment. Quarantine what this run promoted so the
+                // next prompt starts from the last good history; the transcript
+                // keeps the message visible next to the failure record.
+                if step == 0
+                    && !produced
+                    && matches!(error, ProviderError::Http(400 | 404 | 413 | 422))
+                {
+                    inner
+                        .store
+                        .quarantine_failed_input(session, history_base, &error.to_string())
+                        .await?;
+                }
+                match detail.as_ref().and_then(provider_error_text) {
+                    Some(text) => return Err(Error::Invalid(format!("{error}: {text}"))),
+                    None => return Err(Error::Invalid(error.to_string())),
+                }
             }
         };
         inner

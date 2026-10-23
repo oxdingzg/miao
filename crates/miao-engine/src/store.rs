@@ -233,6 +233,13 @@ impl Store {
                         [],
                     )?;
                 }
+                let has_quarantined:bool=conn.query_row("SELECT EXISTS(SELECT 1 FROM pragma_table_info('engine_message') WHERE name='quarantined')",[],|r|r.get(0))?;
+                if !has_quarantined {
+                    conn.execute(
+                        "ALTER TABLE engine_message ADD COLUMN quarantined INTEGER NOT NULL DEFAULT 0",
+                        [],
+                    )?;
+                }
                 let has_owner_pid: bool = conn.query_row(
                     "SELECT EXISTS(SELECT 1 FROM pragma_table_info('engine_lease') WHERE name='owner_pid')",
                     [], |row| row.get(0),
@@ -1280,6 +1287,40 @@ command: None,
             )?;
             tx.commit()?;
             Ok(json!({"restored":restored}))
+        })
+        .await
+    }
+
+    /// Quarantine the user messages a failed run promoted before its first
+    /// provider turn. A provider that rejected the request as invalid would
+    /// reject every later prompt too while the offending message stays
+    /// selected, so the messages leave provider history while the transcript
+    /// keeps them visible next to the failure record. Only run-promoted user
+    /// messages are expected here; never call it past the first turn, where
+    /// committed assistant and tool work must survive.
+    pub async fn quarantine_failed_input(
+        &self,
+        session: &str,
+        after_seq: u64,
+        reason: &str,
+    ) -> Result<Value, Error> {
+        let (session, reason) = (session.to_owned(), reason.to_owned());
+        self.call(move |conn| {
+            let tx = write_tx(conn)?;
+            let quarantined = tx.execute(
+                "UPDATE engine_message SET quarantined=1 WHERE session_id=?1 AND seq>?2 AND quarantined=0 AND role='user' AND reverted=0",
+                params![session, after_seq],
+            )?;
+            if quarantined > 0 {
+                append(
+                    &tx,
+                    &session,
+                    "provider.failure.quarantined",
+                    json!({"after_seq":after_seq,"quarantined":quarantined,"reason":reason}),
+                )?;
+            }
+            tx.commit()?;
+            Ok(json!({"after_seq":after_seq,"quarantined":quarantined}))
         })
         .await
     }
