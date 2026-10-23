@@ -125,7 +125,7 @@ if (binary)
         expect(wire).toContain('"id":"store-native-client"')
         expect(wire).not.toContain('"durable":')
         expect(wire).toContain('"provider":{"protocol":"openai-chat","model":"fixture"}')
-        expect(wire).toContain('"model":{"providerID":"openai-chat","id":"fixture"}')
+        expect(wire).toContain('"model":{"id":"fixture","providerID":"openai-chat"}')
         expect(local).toContainEqual(
           expect.objectContaining({
             payload: expect.objectContaining({

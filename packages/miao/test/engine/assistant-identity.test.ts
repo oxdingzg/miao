@@ -108,7 +108,7 @@ real(
       expect(identity[0].data).toMatchObject({
         sessionID: "ses_identity_native",
         provider: { protocol: "openai-chat", model: "fixture" },
-        model: null,
+        model: { providerID: "openai-chat", id: "fixture" },
         agent: null,
       })
       const data = identity[0].data
