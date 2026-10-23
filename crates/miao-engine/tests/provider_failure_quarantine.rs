@@ -107,12 +107,19 @@ async fn wait_for_runs(store: &Store, runs: usize) -> Vec<Event> {
     tokio::time::timeout(Duration::from_secs(10), async {
         loop {
             let events = store.events("s", 0, 1000).await.unwrap();
-            if events
+            // A drain journals `run.finished` and then records the terminal
+            // `stop`/`stop_failure` in a separate transaction. Waiting only for
+            // `run.finished` can return a snapshot taken between the two, so
+            // every settled run needs its lifecycle event as well.
+            let finished = events
                 .iter()
                 .filter(|event| event.kind == "run.finished")
-                .count()
-                >= runs
-            {
+                .count();
+            let stopped = events
+                .iter()
+                .filter(|event| event.kind == "stop" || event.kind == "stop_failure")
+                .count();
+            if finished >= runs && stopped >= runs {
                 return events;
             }
             tokio::time::sleep(Duration::from_millis(20)).await;
