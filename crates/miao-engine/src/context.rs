@@ -247,10 +247,11 @@ pub(crate) fn find_skill(tools: &Tools, name: &str) -> Option<LoadedSkill> {
                 files: entries
                     .iter()
                     .map(|entry| {
-                        entry
+                        let path = entry
                             .strip_prefix(&directory)
-                            .map(|path| path.to_string_lossy().trim_start_matches('/').to_owned())
-                            .unwrap_or_else(|_| entry.to_string_lossy().into_owned())
+                            .map(|path| path.to_string_lossy().into_owned())
+                            .unwrap_or_else(|_| entry.to_string_lossy().into_owned());
+                        path.replace('\\', "/").trim_start_matches('/').to_owned()
                     })
                     .collect(),
             });

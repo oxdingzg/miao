@@ -188,7 +188,7 @@ async fn page_text(path: &Path, page: usize) -> Result<String, ToolError> {
 }
 
 async fn render_page(path: &Path, page: usize) -> Result<Value, ToolError> {
-    let directory = tempfile::tempdir().map_err(|error| ToolError::Io(error))?;
+    let directory = tempfile::tempdir().map_err(ToolError::Io)?;
     let prefix = directory.path().join(format!("page-{page}"));
     let start = page.to_string();
     let dpi = RENDER_DPI.to_string();
@@ -234,7 +234,7 @@ async fn run(
     let output = tokio::time::timeout(timeout, command.output())
         .await
         .map_err(|_| ToolError::External(format!("{program} timed out")))?
-        .map_err(|error| ToolError::Io(error))?;
+        .map_err(ToolError::Io)?;
     if !output.status.success() {
         return Err(ToolError::External(format!(
             "{program} failed: {}",

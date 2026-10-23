@@ -3690,6 +3690,7 @@ async fn delegate(
     Ok(json!({"session_id":child,"text":text}))
 }
 
+#[allow(clippy::too_many_arguments)]
 async fn finish_delegation(
     inner: &Arc<Inner>,
     parent: &str,
