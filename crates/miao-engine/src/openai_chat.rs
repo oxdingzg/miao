@@ -380,7 +380,10 @@ impl Parser for ChatState {
         if let Some(text) = delta["content"].as_str() {
             self.text.push_str(text);
         }
-        if let Some(calls) = delta.get("tool_calls") {
+        // OpenAI-compatible gateways (e.g. the opencode-go inference gateway
+        // serving mimo) emit every absent delta field as an explicit null on
+        // every frame; presence with a null value is not a tool call.
+        if let Some(calls) = delta.get("tool_calls").filter(|value| !value.is_null()) {
             for tool in calls.as_array().ok_or_else(invalid)? {
                 if tool.get("type").is_some_and(|v| v != "function") {
                     return Err(invalid());

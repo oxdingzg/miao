@@ -351,3 +351,45 @@ async fn anthropic_defaults_keep_the_plain_system_prompt_uncached() {
     assert!(body["tools"][0].get("cache_control").is_none());
     server.await.unwrap();
 }
+
+#[tokio::test]
+async fn openai_chat_tolerates_explicit_null_delta_fields() {
+    // Captured from the opencode-go inference gateway serving mimo-v2.6-flash
+    // on 2026-10-23: every frame carries explicit nulls for absent delta
+    // fields (`tool_calls: null` included) and ends with an empty-choices
+    // usage frame. The parser must not treat field presence as a tool call.
+    let frames: String = [
+        json!({"id":"capture","object":"chat.completion.chunk","created":1,"model":"mimo-v2.6-flash","choices":[{"index":0,"finish_reason":null,"delta":{"role":"assistant","content":"","reasoning_content":null,"tool_calls":null}}]}),
+        json!({"id":"capture","object":"chat.completion.chunk","created":1,"model":"mimo-v2.6-flash","choices":[{"index":0,"finish_reason":null,"delta":{"role":null,"content":null,"reasoning_content":"Call get_time","tool_calls":null}}]}),
+        json!({"id":"capture","object":"chat.completion.chunk","created":1,"model":"mimo-v2.6-flash","choices":[{"index":0,"finish_reason":null,"delta":{"role":null,"content":null,"reasoning_content":null,"tool_calls":[{"index":0,"id":"call_0a9aea4556d94c0086a91a1c","type":"function","function":{"name":"get_time","arguments":""}}]}}]}),
+        json!({"id":"capture","object":"chat.completion.chunk","created":1,"model":"mimo-v2.6-flash","choices":[{"index":0,"finish_reason":null,"delta":{"role":null,"content":null,"reasoning_content":null,"tool_calls":[{"index":0,"id":null,"type":"function","function":{"name":null,"arguments":"{}"}}]}}]}),
+        json!({"id":"capture","object":"chat.completion.chunk","created":1,"model":"mimo-v2.6-flash","choices":[{"index":0,"finish_reason":"tool_calls","delta":{"role":null,"content":null,"reasoning_content":null,"tool_calls":null}}]}),
+        json!({"id":"capture","object":"chat.completion.chunk","created":1,"model":"mimo-v2.6-flash","choices":[],"usage":{"prompt_tokens":74,"completion_tokens":17,"total_tokens":91,"prompt_tokens_details":{},"completion_tokens_details":{"reasoning_tokens":14}}}),
+    ]
+    .iter()
+    .map(|value| format!("data: {value}\r\n\r\n"))
+    .collect();
+    let (url, _requests, server) = common::endpoint(vec![(
+        200,
+        format!(": keep-alive\r\n\r\n{frames}data: [DONE]\r\n\r\n"),
+    )])
+    .await;
+    let provider = miao_engine::openai_chat::OpenAIChat::new(
+        url,
+        "fixture-key".into(),
+        "fixture-model".into(),
+    )
+    .unwrap();
+    let (progress, _receive) = mpsc::channel(64);
+    let reply = provider
+        .stream(history(), progress, CancellationToken::new())
+        .await
+        .unwrap();
+    assert!(reply.needs_tools);
+    let content = reply.content.as_array().unwrap();
+    assert_eq!(content.len(), 2);
+    assert_eq!(content[0]["type"], "reasoning");
+    assert_eq!(content[1]["type"], "tool_use");
+    assert_eq!(content[1]["name"], "get_time");
+    server.abort();
+}
