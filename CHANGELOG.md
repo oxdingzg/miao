@@ -11,6 +11,37 @@ at `docs/releases/vX.Y.Z.md` and `docs/releases/vX.Y.Z.zh.md`; both are required
 
 ## [Unreleased]
 
+## [0.2.26] - 2026-10-23
+
+### Added
+- **mcp**: key MCP OAuth credentials by authorization-server issuer (#1288)
+- **engine**: dump provider request bodies behind an env flag (#1284)
+- **engine**: settle auto-mode asks with the native classifier (#1281)
+- **engine**: ride the first request after compaction with a restore budget (#1280)
+- **mcp**: CIMD client metadata URLs and RFC 9207 issuer validation (#1282)
+- **experiments**: persist engine-benchmark evidence and results.csv (#1278)
+- **engine**: generate native session titles after the first exchange (#1273)
+- **engine**: route long-tail plugin providers through a host gateway (#1263)
+- **engine**: relay worker context.ask to the durable question flow (#1262)
+- **engine**: add skill, plan, background task, and PDF tools (#1255)
+- **engine**: add job_list and job_wait tools (#1253)
+
+### Fixed
+- **engine**: price and persist native turn usage on every delivery path (#1294)
+- **engine**: stabilize the native context directory for prefix-cache affinity (#1283)
+- **engine**: default the acp entry to the workspace policy (#1277)
+- **core**: advertise empty tool inputs as object schemas (#1264)
+- **engine**: carry assistant identity facts onto native assistant rows (#1260)
+- **engine**: pause gracefully when the provider turn allowance runs out (#1259)
+- **engine**: recover a session after a first-turn provider rejection (#1261)
+- **engine**: retry transient image-parse 400s within the existing budget (#1258)
+- **engine**: tolerate explicit null delta fields in Chat Completions streams (#1252)
+- **core**: price glm coding-plan models at standard-API reference rates (#1251)
+- **engine**: keep rich project contexts selectable (#1250)
+- **core**: identify session owners in window conflicts (#1249)
+- **tui**: silence refresh cancellations during shutdown (#1248)
+- **release**: keep PATH when cross-env builds the musl engine (#1247)
+
 ## [0.2.25] - 2026-10-22
 
 ### Fixed
