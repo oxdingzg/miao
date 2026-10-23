@@ -49,7 +49,9 @@ JSON-RPC frame, so each claim below is backed by the recorded exchange.
 
 `acp` reads credentials from the environment (`OPENAI_API_KEY`,
 `ANTHROPIC_API_KEY`, `GEMINI_API_KEY`), so wrap the command in a small
-launcher that exports the key when Zed cannot pass env directly. Supply the
+launcher that exports the key when Zed cannot pass env directly. It defaults to
+the workspace mode (reads allow, writes ask through the editor's permission
+dialog); pass `--mode read-only` for a browse-only agent. Supply the
 transport's bare model id here: the product's `provider/model` form is a
 host-side route name, not a wire model id.
 

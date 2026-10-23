@@ -1,7 +1,7 @@
 use miao_engine::{
     credential::{Credential, Source},
     host::Host,
-    permission::{Config, Policy},
+    permission::{Config, Mode, Policy},
     protocol::{Command, Error, Request},
     provider::Provider,
     runtime::Runtime,
@@ -131,7 +131,7 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
     }
     let mode = args.first().map(String::as_str);
     if !matches!(mode, Some("serve" | "acp")) {
-        eprintln!("Usage: miao-engine serve --db PATH --workspace PATH --model MODEL [--provider anthropic|openai-chat|openai-responses|subscription-responses|gemini|amazon-bedrock] [--endpoint URL] [--policy PATH] [--verify-command COMMAND] [--prompt-cache on|off] [--responses-cache-contract JSON] [--responses-websocket-contract JSON] [--tool-disclosure full|compact] [--lsp-diagnostics on|off] [--context-limits JSON] [--http ADDR [--http-token TOKEN]]\n       miao-engine acp --db PATH --workspace PATH --model MODEL [--provider ...] [--endpoint URL] [--policy PATH] [--verify-command COMMAND] [--prompt-cache on|off] [--responses-cache-contract JSON] [--responses-websocket-contract JSON] [--tool-disclosure full|compact] [--lsp-diagnostics on|off]\n       miao-engine export --db PATH --session ID [--after CURSOR]\n       miao-engine doctor [--db PATH]\nUse ANTHROPIC_API_KEY, OPENAI_API_KEY or GEMINI_API_KEY for the selected provider. Bedrock uses AWS_BEARER_TOKEN_BEDROCK or the AWS SDK credential chain (--aws-region/--aws-profile). An explicit engine database is required.");
+        eprintln!("Usage: miao-engine serve --db PATH --workspace PATH --model MODEL [--provider anthropic|openai-chat|openai-responses|subscription-responses|gemini|amazon-bedrock] [--endpoint URL] [--policy PATH] [--mode read-only|workspace] [--verify-command COMMAND] [--prompt-cache on|off] [--responses-cache-contract JSON] [--responses-websocket-contract JSON] [--tool-disclosure full|compact] [--lsp-diagnostics on|off] [--context-limits JSON] [--http ADDR [--http-token TOKEN]]\n       miao-engine acp --db PATH --workspace PATH --model MODEL [--provider ...] [--endpoint URL] [--policy PATH] [--mode read-only|workspace] [--verify-command COMMAND] [--prompt-cache on|off] [--responses-cache-contract JSON] [--responses-websocket-contract JSON] [--tool-disclosure full|compact] [--lsp-diagnostics on|off]\n       miao-engine export --db PATH --session ID [--after CURSOR]\n       miao-engine doctor [--db PATH]\nUse ANTHROPIC_API_KEY, OPENAI_API_KEY or GEMINI_API_KEY for the selected provider. Bedrock uses AWS_BEARER_TOKEN_BEDROCK or the AWS SDK credential chain (--aws-region/--aws-profile). An explicit engine database is required.");
         std::process::exit(2);
     }
     let acp = mode == Some("acp");
@@ -147,6 +147,7 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
             "--fallback-endpoint",
             "--provider",
             "--policy",
+            "--mode",
             "--edit-recovery",
             "--verify-command",
             "--prompt-cache",
@@ -393,15 +394,24 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
     } else {
         provider
     };
-    let config = if let Some(path) = options.get("--policy") {
+    let mut config = if let Some(path) = options.get("--policy") {
         let bytes = tokio::fs::read(path).await?;
         if bytes.len() > 65536 {
             return Err("permission config exceeds 64 KiB".into());
         }
         serde_json::from_slice::<Config>(&bytes)?
     } else {
-        Config::default()
+        Config::for_entry(acp)
     };
+    // An explicit flag wins over both the entry default and the policy file,
+    // so an operator can keep a shared policy and pick the mode per launch.
+    if let Some(mode) = options.get("--mode") {
+        config.mode = match mode.as_str() {
+            "read-only" | "read_only" => Mode::ReadOnly,
+            "workspace" => Mode::Workspace,
+            other => return Err(format!("unknown --mode `{other}`, expected read-only or workspace").into()),
+        };
+    }
     let policy = Policy::new(config)?;
     let mut tools = Tools::new(workspace)
         .await?

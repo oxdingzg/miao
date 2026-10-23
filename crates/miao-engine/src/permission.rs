@@ -76,6 +76,19 @@ fn provider_turns() -> u32 {
 fn approval_timeout() -> u64 {
     60_000
 }
+impl Config {
+    /// Entry-point default. An interactive editor (ACP) is the approval
+    /// surface: it needs write tools registered so the client can grant or
+    /// reject each write, while reads stay silent and process tools stay off.
+    /// A headless runner keeps the conservative read-only default.
+    pub fn for_entry(interactive: bool) -> Self {
+        Self {
+            mode: if interactive { Mode::Workspace } else { Mode::ReadOnly },
+            ..Self::default()
+        }
+    }
+}
+
 impl Default for Config {
     fn default() -> Self {
         Self {
@@ -397,6 +410,23 @@ pub fn context_digest(system: &str, sources: &[Value]) -> Result<String, Error> 
     Ok(digest(&serde_json::to_vec(
         &serde_json::json!({"version":1,"system":system,"sources":sources}),
     )?))
+}
+
+#[cfg(test)]
+mod entry_defaults {
+    use super::*;
+
+    #[test]
+    fn entry_points_default_to_the_mode_their_client_can_drive() {
+        let acp = Config::for_entry(true);
+        assert_eq!(acp.mode, Mode::Workspace);
+        assert!(!acp.allow_process);
+        assert!(Policy::new(acp).unwrap().writes_enabled());
+
+        let serve = Config::for_entry(false);
+        assert_eq!(serve.mode, Mode::ReadOnly);
+        assert!(!Policy::new(serve).unwrap().writes_enabled());
+    }
 }
 
 #[cfg(test)]

@@ -82,7 +82,11 @@ request capabilities, not measured cache hits; use provider usage and cache diag
 
 `acp` mode provides ACP (newline-delimited JSON-RPC 2.0) on stdio for editors to integrate directly:
 `miao-engine acp --db PATH --workspace PATH --model MODEL [--provider ...] [--endpoint URL]
-[--policy PATH]`. The current implementation covers
+[--policy PATH] [--mode read-only|workspace]`. `acp` defaults to the workspace mode because the
+editor is the approval surface: reads are allowed, workspace writes are registered and ask through
+`session/request_permission`, and process tools stay off. `serve` keeps the read-only default.
+`--mode` overrides both the entry default and a policy file's mode, while `--policy` still carries
+fine-grained rules. The current implementation covers
 `initialize`/`authenticate`/`session/new`/`session/prompt`/`session/cancel`, mapping engine
 approvals onto a `session/request_permission` round-trip, streaming committed tool calls as
 `tool_call`/`tool_call_update`, supporting
