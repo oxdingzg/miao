@@ -85,7 +85,7 @@ without asking. Only the live stream is missing.
 | Provider failure | ACP HTTP 400 followed by a successful new prompt; failure is a JSON-RPC error, not end_turn (#861) | Visible error and usable next prompt in actual clients |
 | Process restart/resume | ACP process replacement on the same DB: prior context retained, prior answer not streamed twice (#861) | Client reconnect without duplicate messages or cross-engine takeover |
 | Slow client | HTTP SSE/cursor and restore coverage | Bound the real client's backlog, disconnect it and resume from its cursor |
-| Step accounting | Product bridge and native journal tests (#850); HTTP history verifies per-message tokens, and Session GET verifies two-turn/cache totals (#911) | Full TUI cache/TTFT presentation and per-model usage summary still require acceptance; native pricing remains zero until price resolution lands |
+| Step accounting | Product bridge and native journal tests (#850); HTTP history verifies per-message tokens, and Session GET verifies two-turn/cache totals (#911); native steps are priced at catalog rates (#1166) and per-model TTFT/cache rows are presented (#1200) | No open step-accounting gap |
 
 These deterministic peers use no paid model calls. Their oracle is the observed
 wire response, committed history and next provider request, rather than a
@@ -141,6 +141,6 @@ rendered in a real client. Keep that product acceptance row open until tested.
 
 Record the commit and artifact identifier, platform/client version, exact
 scenario, observable outcome and failure/recovery evidence. For a required
-capability that remains unavailable (notably Windows native terminals), record
+capability that remains unavailable, record
 an explicitly accepted replacement or keep G6 open. Do not delete the legacy
 execution path on the strength of this table alone.
