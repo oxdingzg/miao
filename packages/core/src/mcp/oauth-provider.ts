@@ -198,6 +198,22 @@ export class McpOAuthPendingProvider extends McpOAuthProvider {
   private pendingClientInfo?: OAuthClientInformationFull
   private pendingTokens?: OAuthTokens
 
+  /**
+   * The authorization-server issuer pinned by metadata discovery, if any.
+   * `commit` stamps it on the entry so entries behind one authorization
+   * server can share and rotate a single grant.
+   */
+  constructor(
+    mcpName: string,
+    serverUrl: string,
+    config: McpOAuthConfig,
+    redirect: { onRedirect: (url: URL) => Promise<void> },
+    auth: McpAuth.Interface,
+    private grantedIssuer?: string,
+  ) {
+    super(mcpName, serverUrl, config, redirect, auth)
+  }
+
   override async clientInformation(): Promise<OAuthClientInformation | undefined> {
     if (!this.config.clientId) return this.pendingClientInfo
     return {
@@ -244,6 +260,7 @@ export class McpOAuthPendingProvider extends McpOAuthProvider {
                   clientSecretExpiresAt: this.pendingClientInfo.client_secret_expires_at,
                 }
               : undefined,
+          ...(this.grantedIssuer ? { issuer: this.grantedIssuer } : {}),
         },
         this.serverUrl,
       ),
