@@ -40,8 +40,9 @@ Sessions intact throughout.
    their recorded placement, and legacy TS remains the fallback without any
    opt-in.
 4. **Default for new Sessions.** New Sessions place natively; an escape
-   hatch (`--engine legacy`) keeps the TS path reachable. Native-owned
-   Sessions never double-write; TS-owned Sessions never route to the engine.
+   hatch (`--engine ts`, which clears the storage override) keeps the TS path
+   reachable. Native-owned Sessions never double-write; TS-owned Sessions
+   never route to the engine.
 5. **Retirement.** After two consecutive releases pass G1–G6 with no
    regression reopen: the TS runner stops accepting new Sessions (read-only
    for history), and the removal PR deletes the second execution core.
