@@ -118,7 +118,7 @@ export function make<
       const definition = new ToolDefinition({
         name,
         description: config.description,
-        inputSchema: toJsonSchema(config.input),
+        inputSchema: parametersSchema(toJsonSchema(config.input)),
         outputSchema: toJsonSchema(config.structured ?? config.output),
       })
       definitions.set(name, definition)
@@ -272,4 +272,27 @@ function toJsonSchema(schema: Schema.Top): JsonSchema.JsonSchema {
   const document = Schema.toJsonSchemaDocument(schema)
   if (Object.keys(document.definitions).length === 0) return document.schema
   return { ...document.schema, $defs: document.definitions }
+}
+
+/** Effect lowers an empty `Schema.Struct({})` to `anyOf: [object, array]`, and
+ * a no-field input is the common shape for zero-argument tools. OpenAI-compatible
+ * function calling requires a tool's `parameters` to be a JSON Schema of
+ * `type: "object"` at the top level and rejects the whole request when it is
+ * not, so advertise the empty object schema instead of the union. */
+function parametersSchema(schema: JsonSchema.JsonSchema): JsonSchema.JsonSchema {
+  if (typeof schema !== "object" || schema === null || Array.isArray(schema)) return schema
+  const record = schema as Record<string, unknown>
+  if (record.type !== undefined || !Array.isArray(record.anyOf)) return schema
+  const branches = record.anyOf as ReadonlyArray<unknown>
+  const objectOrArray =
+    branches.length === 2 &&
+    branches.every(
+      (branch) =>
+        typeof branch === "object" &&
+        branch !== null &&
+        ["object", "array"].includes((branch as { type?: unknown }).type as string),
+    )
+  if (!objectOrArray) return schema
+  const rest = Object.fromEntries(Object.entries(record).filter(([key]) => key !== "anyOf"))
+  return { ...rest, type: "object", properties: (rest.properties as unknown) ?? {} }
 }
