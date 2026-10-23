@@ -112,10 +112,10 @@ inline with `[RS: …]`.
    credentials), released-binary upgrade path.
 2. **§1.2** App transcript retype onto V2 types (its own cutover, per the
    staged note below).
-3. **§2.4** Real-client restart acceptance for crash recovery: the RS
-   primitives (tool replay + outcome-unknown), the recovery controller/CLI
-   (#968, #974, ADR-16), and the product dialog are in — what remains is a
-   recorded restart drill.
+3. **§2.4** ~~Real-client restart acceptance~~ — recorded 2026-10-23: SIGKILL
+   mid-tool, fresh client+engine, unknown outcome surfaced and abandoned
+   through the recovery API
+   ([drill](../crates/miao-engine/docs/restart-recovery-drill-2026-10-23.md)).
 4. Then the remaining TS-side and operational items in section order (§1.3
    confirmation, §2.5 body caps, §2.7 issuer-keyed credentials, §2.8 monitor
    sandboxing, §3 hot reload, §4 storage ops, §5 report, §7 docs, §8

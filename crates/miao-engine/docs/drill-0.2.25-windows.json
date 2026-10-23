@@ -1,0 +1,45 @@
+{
+  "platform": "Windows",
+  "architecture": "AMD64",
+  "previous": {
+    "version": "miao-engine 0.2.24",
+    "sha256": "357d9f0e5fc9c79f99bf7e8ec62ea203ead7015010686168ab17f9cef15971ac"
+  },
+  "binary": {
+    "version": "miao-engine 0.2.25",
+    "sha256": "7d02eec5eecbaeea65f679e907ee658cbc474b391962e14df1a99975177b164a"
+  },
+  "compatibility": {
+    "result": "PASS",
+    "providerCalls": 3,
+    "retainedEvents": 46,
+    "checks": [
+      "SQLite integrity",
+      "unchanged journal prefixes",
+      "history after upgrade and downgrade",
+      "no duplicate output on resume",
+      "no repeated provider work"
+    ]
+  },
+  "confinement": {
+    "checks": [
+      {
+        "scenario": "workspace-write-control",
+        "result": "PASS",
+        "exitCode": 0
+      },
+      {
+        "scenario": "outside-write-denied",
+        "result": "PASS",
+        "exitCode": 1
+      }
+    ],
+    "scope": "workspace write allowed; outside write denied by the guarded process; network/PTY not tested"
+  },
+  "compaction": {
+    "result": "PASS",
+    "providerCalls": 6,
+    "checkpoints": 2,
+    "scope": "local fixture only; real guarded tools and closed-answer compaction; no paid provider calls"
+  }
+}
