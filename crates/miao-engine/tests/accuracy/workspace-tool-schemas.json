@@ -337,6 +337,9 @@
         "minimum": 1,
         "type": "integer"
       },
+      "pages": {
+        "type": "string"
+      },
       "path": {
         "type": "string"
       }

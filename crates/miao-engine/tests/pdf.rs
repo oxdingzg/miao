@@ -21,7 +21,10 @@ fn page_selections_reject_out_of_range_input() {
 
 #[tokio::test]
 async fn reads_text_pages_and_renders_pages_without_a_text_layer() {
-    if Command::new("ps2pdf").arg("-v").output().is_err() {
+    if ["ps2pdf", "pdfinfo", "pdftotext", "pdftoppm"]
+        .iter()
+        .any(|program| Command::new(program).arg("-v").output().is_err())
+    {
         return;
     }
     let directory = tempfile::tempdir().unwrap();
