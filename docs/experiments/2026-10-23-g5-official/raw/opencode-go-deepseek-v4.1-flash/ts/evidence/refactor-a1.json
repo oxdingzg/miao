@@ -1,0 +1,15 @@
+{
+  "model": "opencode-go/deepseek-v4.1-flash",
+  "task": "refactor",
+  "engine": "ts",
+  "attempt": 1,
+  "ok": true,
+  "turns": 6,
+  "input": 15959,
+  "cacheRead": 74112,
+  "output": 617,
+  "billedIn": 90071,
+  "cost": 0.0030211860000000004,
+  "seconds": 19.541,
+  "resumed": false
+}
