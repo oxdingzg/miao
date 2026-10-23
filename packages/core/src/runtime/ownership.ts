@@ -1,12 +1,25 @@
 export * as RuntimeOwnership from "./ownership"
 
 import { openRuntimeLock } from "#sqlite"
-import { chmod, mkdir, realpath } from "node:fs/promises"
+import { chmod, mkdir, readFile, realpath, writeFile } from "node:fs/promises"
+import os from "node:os"
 import path from "node:path"
+import { Option, Schema } from "effect"
+
+const OwnerInfo = Schema.Struct({
+  pid: Schema.Number,
+  hostname: Schema.String,
+  directory: Schema.String,
+  startedAt: Schema.String,
+})
+export type OwnerInfo = typeof OwnerInfo.Type
 
 export class BusyError extends Error {
   override readonly name = "RuntimeOwnership.BusyError"
-  constructor(message = "This storage already has a running Runtime; close its windows before exclusive maintenance") {
+  constructor(
+    message = "This storage already has a running Runtime; close its windows before exclusive maintenance",
+    readonly owner?: OwnerInfo,
+  ) {
     super(message)
   }
 }
@@ -134,12 +147,27 @@ export async function acquire(filename: string): Promise<Owner> {
     native.exec("BEGIN EXCLUSIVE")
   } catch (error) {
     native.close()
-    if (typeof error === "object" && error !== null && "code" in error && error.code === "SQLITE_BUSY")
-      throw new BusyError()
-    // node:sqlite exposes SQLite result codes separately from its Node error code.
-    if (typeof error === "object" && error !== null && "errcode" in error && error.errcode === 5) throw new BusyError()
+    if (busy(error)) {
+      const owner = await readFile(`${storage}.owner.json`, "utf8")
+        .then((text) => Option.getOrUndefined(Schema.decodeUnknownOption(Schema.fromJsonString(OwnerInfo))(text)))
+        .catch(() => undefined)
+      throw new BusyError(undefined, owner)
+    }
     throw error
   }
+  // Diagnostic only: the kernel lock above is the sole ownership authority.
+  // Keep this record after release so shared scopes cannot delete a newer owner's
+  // details. Old or missing records must never prevent acquisition or recovery.
+  await writeFile(
+    `${storage}.owner.json`,
+    JSON.stringify({
+      pid: process.pid,
+      hostname: os.hostname(),
+      directory: process.cwd(),
+      startedAt: new Date(Date.now() - process.uptime() * 1000).toISOString(),
+    } satisfies OwnerInfo),
+    { mode: 0o600 },
+  ).catch(() => undefined)
   return {
     storage,
     release: () => {

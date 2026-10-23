@@ -103,6 +103,9 @@ test("another window can read a session but cannot admit input or change its met
     expect(reader.ready).toContain('"pending":1')
     expect(reader.ready).toContain('"messages":0')
     await expect(window(storage, id)).rejects.toThrow("another miao window")
+    await expect(window(storage, id)).rejects.toThrow(`PID ${first.child.pid}`)
+    await expect(window(storage, id)).rejects.toThrow(`Window startup directory: ${process.cwd()}`)
+    await expect(window(storage, id)).rejects.toThrow("exit it with /exit and retry from prompt history here")
     await expect(window(storage, id, "rename")).rejects.toThrow("another miao window")
   } finally {
     first.child.kill()

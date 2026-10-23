@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, test } from "bun:test"
-import { mkdtemp, realpath, rm, symlink } from "node:fs/promises"
+import { mkdtemp, realpath, rm, symlink, writeFile } from "node:fs/promises"
 import os from "node:os"
 import path from "node:path"
 import { RuntimeOwnership } from "../src/runtime/ownership"
@@ -64,6 +64,32 @@ describe("Runtime ownership", () => {
     owner.release()
     owner.release()
     expect((await acquire(filename)).storage).toBe(filename)
+  })
+
+  test("reports diagnostic owner details only after a real lock conflict", async () => {
+    const filename = await storage()
+    const owner = await acquire(filename)
+    const conflict = await RuntimeOwnership.acquire(filename).catch((error: unknown) => error)
+    expect(conflict).toBeInstanceOf(RuntimeOwnership.BusyError)
+    if (!(conflict instanceof RuntimeOwnership.BusyError)) throw conflict
+    expect(conflict.owner).toMatchObject({ pid: process.pid, hostname: os.hostname(), directory: process.cwd() })
+    expect(Date.parse(conflict.owner?.startedAt ?? "")).toBeLessThanOrEqual(Date.now())
+    owner.release()
+    // A stale diagnostic record cannot block recovery after the real lock closes.
+    expect((await acquire(filename)).storage).toBe(filename)
+  })
+
+  test("missing or invalid diagnostics never bypass a live owner's lock", async () => {
+    const filename = await storage()
+    await acquire(filename)
+    for (const metadata of [undefined, "not json", JSON.stringify({ pid: "invalid" })]) {
+      if (metadata === undefined) await rm(`${filename}.owner.json`)
+      if (metadata !== undefined) await writeFile(`${filename}.owner.json`, metadata)
+      const conflict = await RuntimeOwnership.acquire(filename).catch((error: unknown) => error)
+      expect(conflict).toBeInstanceOf(RuntimeOwnership.BusyError)
+      if (!(conflict instanceof RuntimeOwnership.BusyError)) throw conflict
+      expect(conflict.owner).toBeUndefined()
+    }
   })
 
   test("normalizes directory symlinks before selecting the lock", async () => {
