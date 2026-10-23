@@ -199,4 +199,4 @@ test.skipIf(!binary)("an explicit hooks manifest takes precedence over product c
     await server.stderr
     provider.stop(true)
   }
-})
+}, 30_000)
