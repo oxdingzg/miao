@@ -1,0 +1,169 @@
+{
+  "sample": {
+    "task": "read-only",
+    "engine": "typescript",
+    "repetition": 2,
+    "suiteHash": "bd905b4f81f0a9412b614631a36337723067574848c5f05b50ead1cf48675091",
+    "taskHash": "99609eafd6e7256a96d31d1a93f377283455859087a19e39a86887127c47f3a4",
+    "profile": {
+      "model": "glm-5.3-flash",
+      "modelParametersHash": "c772948ff245a7966645afbf63c27752b4c45463eca69668344a481dfe7b7193",
+      "agentManifestHash": "65f5b195d0914de69d4b552cde2d9ffbb52550dbfd799d12e29543d3c391ebe3",
+      "permissionHash": "c543f74083d81ea4815754bd82b58c7475e0253a9c15e938d6dfe5f15a73e2d9",
+      "toolSurfaceHash": "569f7e5c50f8c856ebeb33ec6bb521a33e3021be589edf23bc8b33f0348ad9cc"
+    },
+    "revision": "ed524903ae8dec701eba0e880390986ac98e0975",
+    "artifactHash": "1cf2a42baae11727ea2f82138beaf289f244a74bdb3488318abcfab660724792",
+    "receiptHash": "0a9f53a980bcac1ff9b77c28c3f1126fd5e9c3414f95a1f52198347806260adb",
+    "outcome": "passed",
+    "elapsedMs": 14997,
+    "attempts": [
+      {
+        "inputTokens": 13585,
+        "outputTokens": 60,
+        "cost": null
+      },
+      {
+        "inputTokens": 13708,
+        "outputTokens": 35,
+        "cost": null
+      },
+      {
+        "inputTokens": 13806,
+        "outputTokens": 19,
+        "cost": null
+      }
+    ]
+  },
+  "rejection": null,
+  "evidence": {
+    "engine": "typescript",
+    "revision": "ed524903ae8dec701eba0e880390986ac98e0975",
+    "task": "read-only",
+    "repetition": 2,
+    "terminal": "completed",
+    "error": null,
+    "receipts": [],
+    "attempts": [
+      {
+        "inputTokens": 13585,
+        "outputTokens": 60,
+        "cacheReadTokens": 11392,
+        "cacheWriteTokens": null,
+        "reasoningTokens": 30,
+        "cost": null
+      },
+      {
+        "inputTokens": 13708,
+        "outputTokens": 35,
+        "cacheReadTokens": 11456,
+        "cacheWriteTokens": null,
+        "reasoningTokens": 22,
+        "cost": null
+      },
+      {
+        "inputTokens": 13806,
+        "outputTokens": 19,
+        "cacheReadTokens": 13696,
+        "cacheWriteTokens": null,
+        "reasoningTokens": 0,
+        "cost": null
+      }
+    ],
+    "phases": [
+      {
+        "phase": "step-start",
+        "atMs": 1792769128109,
+        "clock": "observed"
+      },
+      {
+        "phase": "tool-part",
+        "atMs": 1792769129318,
+        "clock": "observed"
+      },
+      {
+        "phase": "tool-part",
+        "atMs": 1792769129371,
+        "clock": "observed"
+      },
+      {
+        "phase": "step-start",
+        "atMs": 1792769130481,
+        "clock": "observed"
+      },
+      {
+        "phase": "tool-part",
+        "atMs": 1792769131381,
+        "clock": "observed"
+      },
+      {
+        "phase": "step-start",
+        "atMs": 1792769135563,
+        "clock": "observed"
+      },
+      {
+        "phase": "first-output",
+        "atMs": 1792769136235,
+        "clock": "observed"
+      },
+      {
+        "phase": "exit",
+        "atMs": 1792769136287,
+        "clock": "observed"
+      },
+      {
+        "phase": "verified",
+        "atMs": 1792769136290,
+        "clock": "observed"
+      }
+    ],
+    "profile": {
+      "model": "glm-5.3-flash",
+      "modelParametersHash": "c772948ff245a7966645afbf63c27752b4c45463eca69668344a481dfe7b7193",
+      "agentManifestHash": "65f5b195d0914de69d4b552cde2d9ffbb52550dbfd799d12e29543d3c391ebe3",
+      "permissionHash": "c543f74083d81ea4815754bd82b58c7475e0253a9c15e938d6dfe5f15a73e2d9",
+      "toolSurfaceHash": "569f7e5c50f8c856ebeb33ec6bb521a33e3021be589edf23bc8b33f0348ad9cc"
+    },
+    "profileReceipts": 3,
+    "loops": {
+      "continuations": [],
+      "stopped": []
+    },
+    "toolCalls": 3,
+    "textHash": "3be9cf2ce60c57084ff91cf0d018c9ccc1769bbfdc7035932648687e7ead77d3",
+    "binarySha256": null,
+    "startedAtMs": 1792769121293,
+    "admissionMs": null,
+    "elapsedMs": 14997
+  },
+  "assessment": {
+    "suiteHash": "bd905b4f81f0a9412b614631a36337723067574848c5f05b50ead1cf48675091",
+    "taskHash": "99609eafd6e7256a96d31d1a93f377283455859087a19e39a86887127c47f3a4",
+    "artifactPass": true,
+    "unexpected": [],
+    "immutable": [
+      {
+        "file": "AGENTS.md",
+        "unchanged": true
+      },
+      {
+        "file": "package.json",
+        "unchanged": true
+      },
+      {
+        "file": "src/catalog.ts",
+        "unchanged": true
+      }
+    ],
+    "expected": [],
+    "check": null,
+    "executionVerdict": "unverified",
+    "requiredReceipts": [],
+    "answerContains": [
+      "src/catalog.ts",
+      "configureRelay",
+      "7"
+    ]
+  },
+  "answer": "`configureRelay` in src/catalog.ts:1 — capacity is 7."
+}

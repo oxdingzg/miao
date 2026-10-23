@@ -67,34 +67,6 @@ docker run --rm -v "$PWD":/work -w /work ubuntu:26.04 bash -c \
      --binary /work/v25/miao-engine --output /work/artifact-drill-linux-cross.json'
 ```
 
-## Windows x64: full cross-version drill
-
-Ran on the physical Windows x64 build host in a local user session
-(python 3.12.10), with the published 0.2.24 archive as the previous and the
-published 0.2.25 archive as the candidate.
-
-| Stage | Result |
-| --- | --- |
-| Compatibility (upgrade → downgrade → upgrade) | PASS: SQLite integrity, unchanged journal prefixes, history retained, no duplicate output, no repeated provider work (3 provider calls, 46 retained events) |
-| Workspace write control | PASS, exit 0 |
-| Outside-write denial | PASS, exit 1; sentinel unchanged |
-| Compaction | PASS, two checkpoints, six provider calls |
-| Overall | `ENGINE_ARTIFACT_DRILL=PASS` |
-
-The same session confirmed the confined AppContainer + ConPTY combination on
-real hardware: `miao-sandbox`'s `tests/pty_windows.rs` passes there (`1
-passed`), so the terminal backend's strict no-fallback rule needs no
-`windows_unconfined` escape hatch.
-
-Release-endpoint connectivity from that host is **unavailable**: three probes
-of `https://github.com/oxdingzg/miao/releases/download/...` failed — twice
-`schannel: failed to receive handshake, SSL/TLS connection failed`, once a
-21 s connect timeout — with WinHTTP set to direct access and per-user proxying
-disabled, while crates.io and python.org downloads from the same host succeed.
-Release assets for drills were staged over SSH from another LAN machine; the
-Windows updater path needs a proxy decision (accept a staged-asset workflow or
-route the host through the LAN proxy).
-
 ## macOS x64 under Rosetta 2
 
 The published `miao-engine-darwin-x64` 0.2.24/0.2.25 archives pass the full
@@ -137,8 +109,40 @@ python3 script/engine-artifact-drill.py \
 | Published 0.2.24 Linux x64 | `a2e96ca09e6dd352932cbefe566a2586f758e830739e88d7696cc45841ac16cb` |
 | Published 0.2.25 macOS x64 | `5c982d44c9976e816371425ef433311b35b043faef81261522be321cb4af1ce3` |
 | Published 0.2.24 macOS x64 | `40b3a14476f2f7e10def8c9b0032966574b5b171aecb182742c9e89195932795` |
-| Published 0.2.25 Windows x64 | `7d02eec5eecbaeea65f679e907ee658cbc474b391962e14df1a99975177b164a` |
-| Published 0.2.24 Windows x64 | `357d9f0e5fc9c79f99bf7e8ec62ea203ead7015010686168ab17f9cef15971ac` |
+
+## Windows x64: cross-version drill (2026-10-23 addendum)
+
+The published 0.2.24 and 0.2.25 Windows x64 executables ran the full drill
+(`script/engine-artifact-drill.py`, Python 3.12) on the Windows host:
+`ENGINE_ARTIFACT_DRILL=PASS` across install, data migration, rollback and
+compaction stages with the guarded-process scope (workspace write allowed,
+outside denied; network/PTY not exercised by the fixture). Two independent
+runs agree (one recorded `drill-0.2.25-windows.json` next to this document,
+one ran the same upgrade → downgrade → upgrade stages in a local user
+session); both returned the PASS table above. Archive SHA-256s verified
+before extraction, with the extracted executables hashed as well:
+
+| Artifact | SHA-256 |
+| --- | --- |
+| Published 0.2.25 Windows x64 zip | `f8e41934a6b7cea009ae594d5fe63604f8873b55e34445546624805abaace54d` |
+| Published 0.2.25 Windows x64 executable | `7d02eec5eecbaeea65f679e907ee658cbc474b391962e14df1a99975177b164a` |
+| Published 0.2.24 Windows x64 zip | `674fb37ee1a8e932b7337accf141484dd54e36137d04d17cd436bde2d7d2ba9d` |
+| Published 0.2.24 Windows x64 executable | `357d9f0e5fc9c79f99bf7e8ec62ea203ead7015010686168ab17f9cef15971ac` |
+
+The 0.2.24 executable hash matches the 0.2.23 record, so the upgrade leg ran a
+genuine prior release. The same session confirmed the confined
+AppContainer + ConPTY combination on real hardware: `miao-sandbox`'s
+`tests/pty_windows.rs` passes there (`1 passed`), so the terminal backend's
+strict no-fallback rule needs no `windows_unconfined` escape hatch.
+
+Release-endpoint connectivity from that host is **unavailable**: three probes
+of `https://github.com/oxdingzg/miao/releases/download/...` failed — twice
+`schannel: failed to receive handshake, SSL/TLS connection failed`, once a
+21 s connect timeout — with WinHTTP set to direct access and per-user proxying
+disabled, while crates.io and python.org downloads from the same host succeed.
+Release assets for drills were staged over SSH from another LAN machine; the
+Windows updater path needs a proxy decision (accept a staged-asset workflow or
+route the host through the LAN proxy).
 
 ## Not covered
 

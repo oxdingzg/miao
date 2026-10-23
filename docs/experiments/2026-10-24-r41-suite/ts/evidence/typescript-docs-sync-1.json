@@ -1,0 +1,207 @@
+{
+  "sample": {
+    "task": "docs-sync",
+    "engine": "typescript",
+    "repetition": 1,
+    "suiteHash": "bd905b4f81f0a9412b614631a36337723067574848c5f05b50ead1cf48675091",
+    "taskHash": "81770a3ba16cad0c85823ad75587b559a670da480642d3491f6d5b8814394fee",
+    "profile": {
+      "model": "glm-5.3-flash",
+      "modelParametersHash": "75dd1d55c0b0815c7641f84d97b031579e84d8f2c4da8f4a4eea73e4ddfd1e35",
+      "agentManifestHash": "0cf42609927cbf88b03454f606e08a023ac89b4dfbc5bcd82913d077ccca3226",
+      "permissionHash": "63d21e2f34770e756afe1a58f4a08e5b16d46e90ce01efd0fea9c28cf7db0f20",
+      "toolSurfaceHash": "569f7e5c50f8c856ebeb33ec6bb521a33e3021be589edf23bc8b33f0348ad9cc"
+    },
+    "revision": "ed524903ae8dec701eba0e880390986ac98e0975",
+    "artifactHash": "f45c980517c6640ed715435e1fda1711f7f4db2b182c8823162edbf622d06300",
+    "receiptHash": "f244fb54bf4998a7d70ce8fd206c069bcc3d8c9829c69f3a984e2911218dccd7",
+    "outcome": "passed",
+    "elapsedMs": 28464,
+    "attempts": [
+      {
+        "inputTokens": 13602,
+        "outputTokens": 76,
+        "cost": null
+      },
+      {
+        "inputTokens": 13725,
+        "outputTokens": 54,
+        "cost": null
+      },
+      {
+        "inputTokens": 13876,
+        "outputTokens": 54,
+        "cost": null
+      },
+      {
+        "inputTokens": 13983,
+        "outputTokens": 64,
+        "cost": null
+      },
+      {
+        "inputTokens": 14096,
+        "outputTokens": 43,
+        "cost": null
+      }
+    ]
+  },
+  "rejection": null,
+  "evidence": {
+    "engine": "typescript",
+    "revision": "ed524903ae8dec701eba0e880390986ac98e0975",
+    "task": "docs-sync",
+    "repetition": 1,
+    "terminal": "completed",
+    "error": null,
+    "receipts": [],
+    "attempts": [
+      {
+        "inputTokens": 13602,
+        "outputTokens": 76,
+        "cacheReadTokens": 0,
+        "cacheWriteTokens": null,
+        "reasoningTokens": 50,
+        "cost": null
+      },
+      {
+        "inputTokens": 13725,
+        "outputTokens": 54,
+        "cacheReadTokens": 11392,
+        "cacheWriteTokens": null,
+        "reasoningTokens": 29,
+        "cost": null
+      },
+      {
+        "inputTokens": 13876,
+        "outputTokens": 54,
+        "cacheReadTokens": 13696,
+        "cacheWriteTokens": null,
+        "reasoningTokens": 0,
+        "cost": null
+      },
+      {
+        "inputTokens": 13983,
+        "outputTokens": 64,
+        "cacheReadTokens": 13824,
+        "cacheWriteTokens": null,
+        "reasoningTokens": 33,
+        "cost": null
+      },
+      {
+        "inputTokens": 14096,
+        "outputTokens": 43,
+        "cacheReadTokens": 13952,
+        "cacheWriteTokens": null,
+        "reasoningTokens": 0,
+        "cost": null
+      }
+    ],
+    "phases": [
+      {
+        "phase": "step-start",
+        "atMs": 1792770337440,
+        "clock": "observed"
+      },
+      {
+        "phase": "tool-part",
+        "atMs": 1792770338862,
+        "clock": "observed"
+      },
+      {
+        "phase": "step-start",
+        "atMs": 1792770343090,
+        "clock": "observed"
+      },
+      {
+        "phase": "tool-part",
+        "atMs": 1792770344085,
+        "clock": "observed"
+      },
+      {
+        "phase": "step-start",
+        "atMs": 1792770349056,
+        "clock": "observed"
+      },
+      {
+        "phase": "tool-part",
+        "atMs": 1792770349141,
+        "clock": "observed"
+      },
+      {
+        "phase": "step-start",
+        "atMs": 1792770353252,
+        "clock": "observed"
+      },
+      {
+        "phase": "tool-part",
+        "atMs": 1792770354239,
+        "clock": "observed"
+      },
+      {
+        "phase": "step-start",
+        "atMs": 1792770358424,
+        "clock": "observed"
+      },
+      {
+        "phase": "first-output",
+        "atMs": 1792770359305,
+        "clock": "observed"
+      },
+      {
+        "phase": "exit",
+        "atMs": 1792770359364,
+        "clock": "observed"
+      },
+      {
+        "phase": "verified",
+        "atMs": 1792770359368,
+        "clock": "observed"
+      }
+    ],
+    "profile": {
+      "model": "glm-5.3-flash",
+      "modelParametersHash": "75dd1d55c0b0815c7641f84d97b031579e84d8f2c4da8f4a4eea73e4ddfd1e35",
+      "agentManifestHash": "0cf42609927cbf88b03454f606e08a023ac89b4dfbc5bcd82913d077ccca3226",
+      "permissionHash": "63d21e2f34770e756afe1a58f4a08e5b16d46e90ce01efd0fea9c28cf7db0f20",
+      "toolSurfaceHash": "569f7e5c50f8c856ebeb33ec6bb521a33e3021be589edf23bc8b33f0348ad9cc"
+    },
+    "profileReceipts": 5,
+    "loops": {
+      "continuations": [],
+      "stopped": []
+    },
+    "toolCalls": 4,
+    "textHash": "a51fe582aaddc3d7067a870f1d26b15b031477ce32d0e2a3a8d9b35b1c59d088",
+    "binarySha256": null,
+    "startedAtMs": 1792770330904,
+    "admissionMs": null,
+    "elapsedMs": 28464
+  },
+  "assessment": {
+    "suiteHash": "bd905b4f81f0a9412b614631a36337723067574848c5f05b50ead1cf48675091",
+    "taskHash": "81770a3ba16cad0c85823ad75587b559a670da480642d3491f6d5b8814394fee",
+    "artifactPass": true,
+    "unexpected": [],
+    "immutable": [
+      {
+        "file": "AGENTS.md",
+        "unchanged": true
+      },
+      {
+        "file": "package.json",
+        "unchanged": true
+      }
+    ],
+    "expected": [
+      {
+        "file": "README.md",
+        "matches": true
+      }
+    ],
+    "check": null,
+    "executionVerdict": "unverified",
+    "requiredReceipts": [],
+    "answerContains": []
+  },
+  "answer": "已完成：README.md:2805 处 `miao install` 改为 `miao setup --fast`,全文档仅此一处匹配、仅此一行变更，未改动其他文件。"
+}

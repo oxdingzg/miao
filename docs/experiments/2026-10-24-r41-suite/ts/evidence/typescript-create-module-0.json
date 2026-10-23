@@ -1,0 +1,230 @@
+{
+  "sample": {
+    "task": "create-module",
+    "engine": "typescript",
+    "repetition": 0,
+    "suiteHash": "bd905b4f81f0a9412b614631a36337723067574848c5f05b50ead1cf48675091",
+    "taskHash": "4d67f12a4d53767d5219ff7c2739a21fb22df729363f19d7b0d03a12e6ed5049",
+    "profile": {
+      "model": "glm-5.3-flash",
+      "modelParametersHash": "ad94bf81ac33447fe45d6b78e8c8a75596f216af4c0f7d78801264b61aace073",
+      "agentManifestHash": "bc553d215998222e05a833e5668574d9755604c7cf00645395089ec9307fa27c",
+      "permissionHash": "1e44689e9ac6f44d6be70a32e0a4425e0c4a05baa6489cd0fe0c1d25d4bb048d",
+      "toolSurfaceHash": "569f7e5c50f8c856ebeb33ec6bb521a33e3021be589edf23bc8b33f0348ad9cc"
+    },
+    "revision": "ed524903ae8dec701eba0e880390986ac98e0975",
+    "artifactHash": "8372b0ea4b531e284378b7e4478c1aa09496cbb019ed56607cdbeffeb27265f4",
+    "receiptHash": "b1d98e4011046258a65afb23561f77b07c1d86da5aaa2e681c852cf3aba83d81",
+    "outcome": "passed",
+    "elapsedMs": 34521,
+    "attempts": [
+      {
+        "inputTokens": 13609,
+        "outputTokens": 86,
+        "cost": null
+      },
+      {
+        "inputTokens": 13757,
+        "outputTokens": 15,
+        "cost": null
+      },
+      {
+        "inputTokens": 13906,
+        "outputTokens": 120,
+        "cost": null
+      },
+      {
+        "inputTokens": 14037,
+        "outputTokens": 12,
+        "cost": null
+      },
+      {
+        "inputTokens": 14106,
+        "outputTokens": 36,
+        "cost": null
+      }
+    ]
+  },
+  "rejection": null,
+  "evidence": {
+    "engine": "typescript",
+    "revision": "ed524903ae8dec701eba0e880390986ac98e0975",
+    "task": "create-module",
+    "repetition": 0,
+    "terminal": "completed",
+    "error": null,
+    "receipts": [],
+    "attempts": [
+      {
+        "inputTokens": 13609,
+        "outputTokens": 86,
+        "cacheReadTokens": 0,
+        "cacheWriteTokens": null,
+        "reasoningTokens": 32,
+        "cost": null
+      },
+      {
+        "inputTokens": 13757,
+        "outputTokens": 15,
+        "cacheReadTokens": 0,
+        "cacheWriteTokens": null,
+        "reasoningTokens": 0,
+        "cost": null
+      },
+      {
+        "inputTokens": 13906,
+        "outputTokens": 120,
+        "cacheReadTokens": 13696,
+        "cacheWriteTokens": null,
+        "reasoningTokens": 14,
+        "cost": null
+      },
+      {
+        "inputTokens": 14037,
+        "outputTokens": 12,
+        "cacheReadTokens": 13888,
+        "cacheWriteTokens": null,
+        "reasoningTokens": 0,
+        "cost": null
+      },
+      {
+        "inputTokens": 14106,
+        "outputTokens": 36,
+        "cacheReadTokens": 14016,
+        "cacheWriteTokens": null,
+        "reasoningTokens": 0,
+        "cost": null
+      }
+    ],
+    "phases": [
+      {
+        "phase": "step-start",
+        "atMs": 1792770245529,
+        "clock": "observed"
+      },
+      {
+        "phase": "first-output",
+        "atMs": 1792770246938,
+        "clock": "observed"
+      },
+      {
+        "phase": "tool-part",
+        "atMs": 1792770247341,
+        "clock": "observed"
+      },
+      {
+        "phase": "tool-part",
+        "atMs": 1792770247368,
+        "clock": "observed"
+      },
+      {
+        "phase": "step-start",
+        "atMs": 1792770253366,
+        "clock": "observed"
+      },
+      {
+        "phase": "tool-part",
+        "atMs": 1792770253697,
+        "clock": "observed"
+      },
+      {
+        "phase": "step-start",
+        "atMs": 1792770258332,
+        "clock": "observed"
+      },
+      {
+        "phase": "first-output",
+        "atMs": 1792770260420,
+        "clock": "observed"
+      },
+      {
+        "phase": "tool-part",
+        "atMs": 1792770261538,
+        "clock": "observed"
+      },
+      {
+        "phase": "step-start",
+        "atMs": 1792770266844,
+        "clock": "observed"
+      },
+      {
+        "phase": "tool-part",
+        "atMs": 1792770267540,
+        "clock": "observed"
+      },
+      {
+        "phase": "step-start",
+        "atMs": 1792770271802,
+        "clock": "observed"
+      },
+      {
+        "phase": "first-output",
+        "atMs": 1792770272477,
+        "clock": "observed"
+      },
+      {
+        "phase": "exit",
+        "atMs": 1792770272558,
+        "clock": "observed"
+      },
+      {
+        "phase": "verified",
+        "atMs": 1792770272576,
+        "clock": "observed"
+      }
+    ],
+    "profile": {
+      "model": "glm-5.3-flash",
+      "modelParametersHash": "ad94bf81ac33447fe45d6b78e8c8a75596f216af4c0f7d78801264b61aace073",
+      "agentManifestHash": "bc553d215998222e05a833e5668574d9755604c7cf00645395089ec9307fa27c",
+      "permissionHash": "1e44689e9ac6f44d6be70a32e0a4425e0c4a05baa6489cd0fe0c1d25d4bb048d",
+      "toolSurfaceHash": "569f7e5c50f8c856ebeb33ec6bb521a33e3021be589edf23bc8b33f0348ad9cc"
+    },
+    "profileReceipts": 5,
+    "loops": {
+      "continuations": [],
+      "stopped": []
+    },
+    "toolCalls": 5,
+    "textHash": "73ab44db662659347490d3948fda71d0ad26536d05bf653762e41bdb7e7be5b5",
+    "binarySha256": null,
+    "startedAtMs": 1792770238055,
+    "admissionMs": null,
+    "elapsedMs": 34521
+  },
+  "assessment": {
+    "suiteHash": "bd905b4f81f0a9412b614631a36337723067574848c5f05b50ead1cf48675091",
+    "taskHash": "4d67f12a4d53767d5219ff7c2739a21fb22df729363f19d7b0d03a12e6ed5049",
+    "artifactPass": true,
+    "unexpected": [],
+    "immutable": [
+      {
+        "file": "AGENTS.md",
+        "unchanged": true
+      },
+      {
+        "file": "package.json",
+        "unchanged": true
+      },
+      {
+        "file": "test/oracle.test.ts",
+        "unchanged": true
+      }
+    ],
+    "expected": [],
+    "check": {
+      "command": [
+        "bun",
+        "test",
+        "test/oracle.test.ts"
+      ],
+      "exit": 0,
+      "stdoutHash": "d6684989b8dd63b37d2f1954270826fbe1bd89a8debd12bcacf03ed1c6140ef6",
+      "stderrHash": "fad999b54253277fd2ddf08b79e89a1d5c9d6c83c0fb88a0319bb612978a36c0"
+    },
+    "executionVerdict": "unverified",
+    "requiredReceipts": [],
+    "answerContains": []
+  },
+  "answer": "I'll look at the existing test and project structure first.\nThe test uses `bun:test`. Creating the module and running the test.\nDone. `src/report.ts` exports `summarize` (mean = 0 for empty list); test result: **1 pass, 0 fail**."
+}

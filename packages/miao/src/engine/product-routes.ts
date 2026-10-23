@@ -14,6 +14,7 @@ import { ModelV2 } from "@miao/core/model"
 import { PluginV2 } from "@miao/core/plugin"
 import { Deferred, Effect, Option } from "effect"
 import { EngineError, type EngineOptions } from "./client"
+import type { EnginePrice } from "./session"
 import { ProviderGateway } from "./provider-gateway"
 
 type Source =
@@ -66,6 +67,29 @@ const explicitModel = (catalog: Catalog.Interface, model: string | undefined) =>
     return selected.length === 1 ? selected[0] : undefined
   })
 
+/**
+ * Index catalog entries by every id the engine can journal for a served route:
+ * product-generated routes journal the api id, while operator routes commonly
+ * name the `provider/model` ref or the bare model id. A bare id prices only
+ * when no other key claims it, so an ambiguous id never charges the wrong
+ * model's rate.
+ */
+const priceIndex = (models: readonly ModelV2.Info[]) => {
+  const prices: Record<string, EnginePrice> = {}
+  const ambiguous = new Set<string>()
+  for (const model of models) {
+    const entry = { cost: model.cost, model: { providerID: model.providerID, id: model.id } }
+    prices[model.api.id] = entry
+    const ref = `${model.providerID}/${model.id}`
+    prices[ref] = entry
+    if (model.id === model.api.id || model.id === ref) continue
+    if (model.id in prices) ambiguous.add(model.id)
+    else prices[model.id] = entry
+  }
+  for (const id of ambiguous) delete prices[id]
+  return prices
+}
+
 /** Build exact host routes from the product catalog and active connections.
  * The manifest holds credential references only; refresh stays with its owner. */
 export const prepare = Effect.fn("Engine.productRoutes")(function* (
@@ -92,8 +116,23 @@ export const prepare = Effect.fn("Engine.productRoutes")(function* (
     configuration.credentialDatabase ||
     configuration.credentialID ||
     configuration.credentialIntegration
-  )
-    return { ...options, prices: undefined }
+  ) {
+    // Explicit routes keep the operator's endpoint and credentials, but pricing
+    // stays a product fact: usage journals the serving model's api id either
+    // way, so the same catalog prices it. Without a booted catalog (worker or
+    // test contexts) pricing stays unknown.
+    const catalog = Option.getOrUndefined(yield* Effect.serviceOption(Catalog.Service))
+    if (!catalog) return { ...options, prices: undefined }
+    const plugins = Option.getOrUndefined(yield* Effect.serviceOption(PluginV2.Service))
+    if (plugins) yield* Deferred.await(plugins.booted)
+    const models = (yield* catalog.model.available()).filter(
+      (model) => model.capabilities.tools && model.capabilities.output.includes("text"),
+    )
+    return {
+      ...options,
+      prices: priceIndex(models),
+    }
+  }
   const catalog = Option.getOrUndefined(yield* Effect.serviceOption(Catalog.Service))
   const integrations = Option.getOrUndefined(yield* Effect.serviceOption(Integration.Service))
   const credentials = Option.getOrUndefined(yield* Effect.serviceOption(Credential.Service))
@@ -114,11 +153,9 @@ export const prepare = Effect.fn("Engine.productRoutes")(function* (
   const models = (yield* catalog.model.available()).filter(
     (model) => model.capabilities.tools && model.capabilities.output.includes("text"),
   )
-  // The engine journals the serving model's api id with each usage event; this
+  // The engine journals the serving route's model with each usage event; this
   // index prices those ids at the catalog's tiered rates.
-  const prices: Record<string, ModelV2.Info["cost"]> = Object.fromEntries(
-    models.map((model) => [model.api.id, model.cost]),
-  )
+  const prices = priceIndex(models)
   const selected = configuration.model
     ? models.filter(
         (model) => `${model.providerID}/${model.id}` === configuration.model || model.api.id === configuration.model,
