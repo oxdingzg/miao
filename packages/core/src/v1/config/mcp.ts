@@ -42,6 +42,10 @@ export const OAuth = Schema.Struct({
   redirectUri: Schema.optional(Schema.String).annotate({
     description: "OAuth redirect URI (default: http://127.0.0.1:19876/mcp/oauth/callback).",
   }),
+  clientMetadataUrl: Schema.optional(Schema.String).annotate({
+    description:
+      "HTTPS URL of this client's OAuth client metadata document (CIMD). An authorization server advertising `client_id_metadata_document_supported` uses it as the client_id instead of dynamic registration. Must be hosted and reachable by the server.",
+  }),
 }).annotate({ identifier: "McpOAuthConfig" })
 export type OAuth = Schema.Schema.Type<typeof OAuth>
 

@@ -33,6 +33,10 @@ export class OAuth extends Schema.Class<OAuth>("ConfigV2.MCP.OAuth")({
   scope: Schema.String.pipe(Schema.optional),
   callback_port: Schema.Int.check(Schema.isBetween({ minimum: 1, maximum: 65535 })).pipe(Schema.optional),
   redirect_uri: Schema.String.pipe(Schema.optional),
+  client_metadata_url: Schema.String.pipe(Schema.optional).annotate({
+    description:
+      "HTTPS URL of this client's OAuth client metadata document (CIMD). An authorization server advertising `client_id_metadata_document_supported` uses it as the client_id instead of dynamic registration. Must be hosted and reachable by the server.",
+  }),
 }) {}
 
 export class Remote extends Schema.Class<Remote>("ConfigV2.MCP.Remote")({

@@ -31,6 +31,7 @@ const OAuth = Schema.Struct({
   scope: Schema.optional(Schema.String),
   callback_port: Schema.optional(Schema.Int.check(Schema.isBetween({ minimum: 1, maximum: 65535 }))),
   redirect_uri: Schema.optional(Schema.String),
+  client_metadata_url: Schema.optional(Schema.String),
 })
 const Server = Schema.Union([
   Schema.Struct({
@@ -268,7 +269,7 @@ function normalizeMcp(input: Record<string, unknown>, result: Record<string, unk
         Object.hasOwn(record.value, "codemode") ||
         typeof record.value.timeout === "object" ||
         (Option.isSome(oauth) &&
-          ["client_id", "client_secret", "callback_port", "redirect_uri"].some((key) =>
+          ["client_id", "client_secret", "callback_port", "redirect_uri", "client_metadata_url"].some((key) =>
             Object.hasOwn(oauth.value, key),
           )))
     // Keep invalid flat entries for the final V1 decoder rather than sanitizing them.
@@ -387,6 +388,7 @@ function lowerServer(input: Schema.Schema.Type<typeof Server>) {
     if (input.oauth.scope !== undefined) oauth.scope = input.oauth.scope
     if (input.oauth.callback_port !== undefined) oauth.callbackPort = input.oauth.callback_port
     if (input.oauth.redirect_uri !== undefined) oauth.redirectUri = input.oauth.redirect_uri
+    if (input.oauth.client_metadata_url !== undefined) oauth.clientMetadataUrl = input.oauth.client_metadata_url
     result.oauth = oauth
   }
 
