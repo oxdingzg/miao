@@ -1,5 +1,7 @@
 # Engine cost benchmark — pilot (2026-10-21)
 
+> **Full-dimension rerun (2026-10-23):** [2026-10-23-engine-cost-batch](2026-10-23-engine-cost-batch/README.zh.md) re-ran this exact batch with the evidence-writing harness (turns, token split, wall totals, and per-attempt evidence are committed there). Notably `opencode-go/deepseek-v4.1-flash` is now natively routable (14/14), superseding this round's N/A rows; use the rerun for cross-round comparisons.
+
 Methodology, harness, and first pilot numbers for comparing the TypeScript
 and Rust (native) engines over a representative task set. The harness lives
 at `script/engine-benchmark.ts`; every figure below is reproducible from it.
@@ -24,18 +26,18 @@ bun script/engine-benchmark.ts --binary miao-dev --out report.md
 
 ## Pilot data (single run per cell, configured-default model)
 
-| task | typescript | rust |
-|---|---|---|
-| bugfix | 5t · 16046in/330out · 15s ✓ | 6t · 69121in/622out · 16s ✓ |
-| feature | 5t · 14865in/337out · 17s ✓ | 7t · 82345in/1274out · 20s ✓ |
+| task     | typescript                  | rust                              |
+| -------- | --------------------------- | --------------------------------- |
+| bugfix   | 5t · 16046in/330out · 15s ✓ | 6t · 69121in/622out · 16s ✓       |
+| feature  | 5t · 14865in/337out · 17s ✓ | 7t · 82345in/1274out · 20s ✓      |
 | refactor | 5t · 15544in/649out · 22s ✓ | 2/3 runs ✓ (9-12t · 110k-156k in) |
 
 ## Batch data (best-of-3 per cell, 2026-10-22, same default model)
 
-| task | typescript | rust |
-|---|---|---|
-| bugfix | 5t · 15712in/371out · 12s ✓ | 7t · 81878in/804out · 20s ✓ |
-| feature | 7t · 14216in/453out · 29s ✓ | 9t · 108161in/1582out · 25s ✓ |
+| task     | typescript                  | rust                           |
+| -------- | --------------------------- | ------------------------------ |
+| bugfix   | 5t · 15712in/371out · 12s ✓ | 7t · 81878in/804out · 20s ✓    |
+| feature  | 7t · 14216in/453out · 29s ✓ | 9t · 108161in/1582out · 25s ✓  |
 | refactor | 6t · 13456in/612out · 16s ✓ | 10t · 123203in/2164out · 29s ✓ |
 
 Best-of-3 eliminated the pilot's refactor flake: with three attempts per
@@ -79,28 +81,28 @@ three plus **multifile** (cross-file consistency), **recovery** (mid-run
 and ran two priced models from different families, best-of-2 per cell, with
 `billed-in = input + cacheRead` for both runtimes.
 
-| task | glm-5.3 ts | glm-5.3 rust | deepseek-v4.1-flash ts | deepseek-v4.1-flash rust |
-|---|---|---|---|---|
-| bugfix | 70273b-in · $0.0354 · 11s ✓ | 118132b-in · 18s ✓ | 73286b-in · $0.0027 · 18s ✓ | N/A |
-| feature | 74033b-in · $0.0345 · 30s ✓ | 156852b-in · 71s ✓ | 74217b-in · $0.0029 · 16s ✓ | N/A |
-| refactor | 87037b-in · $0.0435 · 20s ✓ | 119707b-in · 32s ✓ | 74708b-in · $0.0029 · 44s ✓ | N/A |
-| multifile | 73060b-in · $0.0305 · 17s ✓ | 137588b-in · 49s ✓ | 74020b-in · $0.0029 · 14s ✓ | N/A |
-| recovery | 78573b-in · $0.0468 · 61s ✓ resumed | 230365b-in · 260s ✓ resumed | 75566b-in · $0.0030 · 24s ✓ resumed | N/A |
-| long-session | 128733b-in · $0.0431 · 25s ✓ | 190984b-in · 81s ✓ | 117360b-in · $0.0026 · 18s ✓ | N/A |
-| impossible | 60630b-in · $0.0621 · 70s ✓ refused | 215646b-in · 132s ✓ refused | 59361b-in · $0.0040 · 71s ✓ refused | N/A |
+| task         | glm-5.3 ts                          | glm-5.3 rust                | deepseek-v4.1-flash ts              | deepseek-v4.1-flash rust |
+| ------------ | ----------------------------------- | --------------------------- | ----------------------------------- | ------------------------ |
+| bugfix       | 70273b-in · $0.0354 · 11s ✓         | 118132b-in · 18s ✓          | 73286b-in · $0.0027 · 18s ✓         | N/A                      |
+| feature      | 74033b-in · $0.0345 · 30s ✓         | 156852b-in · 71s ✓          | 74217b-in · $0.0029 · 16s ✓         | N/A                      |
+| refactor     | 87037b-in · $0.0435 · 20s ✓         | 119707b-in · 32s ✓          | 74708b-in · $0.0029 · 44s ✓         | N/A                      |
+| multifile    | 73060b-in · $0.0305 · 17s ✓         | 137588b-in · 49s ✓          | 74020b-in · $0.0029 · 14s ✓         | N/A                      |
+| recovery     | 78573b-in · $0.0468 · 61s ✓ resumed | 230365b-in · 260s ✓ resumed | 75566b-in · $0.0030 · 24s ✓ resumed | N/A                      |
+| long-session | 128733b-in · $0.0431 · 25s ✓        | 190984b-in · 81s ✓          | 117360b-in · $0.0026 · 18s ✓        | N/A                      |
+| impossible   | 60630b-in · $0.0621 · 70s ✓ refused | 215646b-in · 132s ✓ refused | 59361b-in · $0.0040 · 71s ✓ refused | N/A                      |
 
 All 42 runnable cells passed their gates; the only cells that could not run
 are the four deepseek rust ones (below). Task families exercised every
 acceptance axis: the recovery family was `SIGKILL`-ed mid-run and resumed to a
 passing gate on both engines, and the impossible family was correctly refused
-by both engines on both models (marked ✓ because a refusal *is* the pass).
+by both engines on both models (marked ✓ because a refusal _is_ the pass).
 
 ### Findings
 
 1. **deepseek-v4.1-flash on `opencode-go` failed its first provider turn.**
    The route itself resolves; the turn was rejected with HTTP 400 because the
    native product-tools bridge advertised `plan_enter` with `parameters:
-   {"anyOf": [object, array]}` (Effect lowers an empty `Schema.Struct({})` to
+{"anyOf": [object, array]}` (Effect lowers an empty `Schema.Struct({})` to
    that union), and the DeepSeek upstream requires function parameters to be a
    JSON Schema of `type: "object"`. The whole request fails before the first
    token, so the four deepseek rust cells are **N/A in this batch** — an engine
