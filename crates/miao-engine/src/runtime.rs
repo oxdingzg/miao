@@ -1386,7 +1386,20 @@ async fn execute(
         };
         reset_allowance = false;
         if allowance == 0 {
-            return Err(Error::Invalid("provider turn allowance exceeded".into()));
+            // Exhausting the allowance pauses the drain; it is not a provider
+            // failure. End the run cleanly and leave a visible history fact so
+            // the transcript explains the pause. The next promoted input
+            // resets the allowance and continues.
+            inner
+                .store
+                .inject(
+                    session,
+                    &format!("allowance-{run}"),
+                    "Reached the provider turn allowance for this prompt. Send a message to continue.",
+                    "engine",
+                )
+                .await?;
+            return Ok(());
         }
         allowance -= 1;
         let binding = match (inner.store.model_selection(session).await?, agent.as_ref()) {

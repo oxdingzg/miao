@@ -39,7 +39,7 @@ impl Provider for MultiStep {
 
 #[tokio::test]
 async fn host_budget_allows_long_tasks_and_still_bounds_provider_work() {
-    for (budget, expected, reason) in [(3, 3, "failed"), (25, 25, "failed"), (40, 33, "completed")]
+    for (budget, expected, reason) in [(3, 3, "completed"), (25, 25, "completed"), (40, 33, "completed")]
     {
         let dir = tempfile::tempdir().unwrap();
         for step in 0..32 {

@@ -308,10 +308,13 @@ async fn changing_progress_does_not_refill_the_provider_allowance() {
     runtime.resume("s").await.unwrap();
     finished(&store).await;
     assert_eq!(provider.calls.load(Ordering::SeqCst), 25);
-    assert!(store
-        .events("s", 0, 500)
-        .await
-        .unwrap()
+    let events = store.events("s", 0, 5000).await.unwrap();
+    assert!(events
         .iter()
-        .any(|event| event.kind == "run.finished" && event.data["reason"] == "failed"));
+        .any(|event| event.kind == "run.finished" && event.data["reason"] == "completed"));
+    assert!(events.iter().any(|event| event.kind == "message.synthetic"
+        && event.data["text"]
+            .as_str()
+            .unwrap_or_default()
+            .contains("provider turn allowance")));
 }
