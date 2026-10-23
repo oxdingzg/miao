@@ -38,6 +38,7 @@ import { Effect, Layer, Option, Schema, Context } from "effect"
 import { EngineError, type EngineOptions, type EngineEvent } from "./client"
 import { discoveredEngine } from "./discovery"
 import { makeEngineOwners } from "./owners"
+import type { EnginePricing } from "./session"
 import { NativeRecovery } from "./recovery"
 import { ProductTools } from "./product-tools"
 import { engineMessageSequence } from "./message-sequence"
@@ -56,6 +57,7 @@ import { Prompt } from "@miao/core/session/prompt"
 import { SessionSchema } from "@miao/core/session/schema"
 import { SessionStore } from "@miao/core/session/store"
 import { SessionOwnership } from "@miao/core/session/ownership"
+import { SessionUsageStore } from "@miao/core/session/usage-store"
 import { Question } from "@miao/schema/question"
 import { translateApproval, translateQuestion } from "./bridge"
 
@@ -312,6 +314,7 @@ export const fromOwners = (
     }) => Effect.Effect<void, unknown>
   } = {},
   storageRoot?: string,
+  pricing?: EnginePricing,
 ): NativeEngine.Interface => {
   const connect = (input: { storage: string; location: Location.Ref; refreshContext?: boolean }) =>
     owners.get({
@@ -556,6 +559,7 @@ export const fromOwners = (
         readTranscript({
           ...input,
           engineID: input.storage,
+          pricing,
           request: (method, params) => connection.client.request(method, params),
         }),
       ),
@@ -717,6 +721,7 @@ export const fromOwners = (
         replayJournal({
           ...input,
           engineID: input.storage,
+          pricing,
           request: (method, params) => connection.client.request(method, params),
         }),
       ),
@@ -730,6 +735,7 @@ export const fromOwners = (
               replayJournal({
                 ...input,
                 engineID: input.storage,
+                pricing,
                 request: (method, params) => connection.client.request(method, params),
               }),
             catch: (error) => refusal(input.sessionID, error),
@@ -778,11 +784,15 @@ const layer = Layer.effect(
     }
     const mcp = yield* ProductMcp.prepare(configuration).pipe(Effect.provideService(McpAuth.Service, mcpAuth))
     let ownerRouter: Owners | undefined
+    // Journal replays price with the same catalog the live connection got; the
+    // per-Location prepare refreshes it whenever an owner connects.
+    let locationPricing: EnginePricing | undefined
     const owners = yield* makeEngineOwners({ ...configuration, ...mcp }, (location) =>
       Effect.gen(function* () {
         const { prices, ...routes } = yield* ProductRoutes.prepare(location, configuration, compaction).pipe(
           Effect.provideService(Credential.Service, credentials),
         )
+        locationPricing = prices && ((model: string) => prices[model])
         const effective = { ...configuration, ...routes, ...mcp }
         const context = yield* AmbientContext.prepare(location, effective)
         const hooks = yield* ProductHooks.prepare(location, { ...effective, ...context.options })
@@ -861,6 +871,16 @@ const layer = Layer.effect(
         yield* Effect.ignore(owners.sweepTimers())
       }),
     ).pipe(Effect.forkScoped)
+    // Native steps never enter the TypeScript journal, so their turn usage is
+    // projected straight off the translated live event; the engine-stable
+    // event id keeps a replayed projection inserting at most once.
+    const clients = yield* ClientEvents.Service
+    const unsubscribeUsage = yield* clients.listen((event) =>
+      event.type === "session.next.step.ended" && event.metadata?.engine !== undefined
+        ? SessionUsageStore.projectStepEnded(database.db, event)
+        : Effect.void,
+    )
+    yield* Effect.addFinalizer(() => unsubscribeUsage)
     return fromOwners(
       owners,
       {
@@ -902,6 +922,7 @@ const layer = Layer.effect(
           }),
       },
       engineStorageRoot(process.env, settings),
+      (model: string) => locationPricing?.(model),
     )
   }),
 )

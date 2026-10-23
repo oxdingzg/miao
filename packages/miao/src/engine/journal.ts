@@ -4,7 +4,7 @@ import { Location } from "@miao/schema/location"
 import { OpenCodeEvent } from "@miao/protocol/groups/event"
 import { EngineError } from "./client"
 import { clientEvent } from "./event"
-import { EngineTranslator, isReplayEvent, type EngineSessionEvent } from "./session"
+import { EngineTranslator, isReplayEvent, type EnginePricing, type EngineSessionEvent } from "./session"
 
 /** Rebuild bridge state from the prefix, emitting only events beyond the requested cursor. */
 export async function replayJournal(input: {
@@ -13,6 +13,8 @@ export async function replayJournal(input: {
   limit?: number
   engineID: string
   location: Location.Ref
+  /** Replayed steps price like live ones: replayed step.ended carries the same catalog rates. */
+  pricing?: EnginePricing
   request: (method: string, params: { session_id: string; after?: number; cursor?: number }) => Promise<unknown>
 }) {
   const snapshot = await input.request("snapshot", { session_id: input.sessionID })
@@ -30,7 +32,7 @@ export async function replayJournal(input: {
   const outputs: EngineSessionEvent[] = []
   const translator = new EngineTranslator((event) => {
     if (event.source.seq > input.after) outputs.push(event)
-  })
+  }, input.pricing)
   let after = 0
   while (after < snapshot.cursor) {
     const page = await input.request("events", { session_id: input.sessionID, after })
