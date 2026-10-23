@@ -1,0 +1,23 @@
+{
+  "date": "2026-10-23",
+  "revision": "ed524903ae8dec701eba0e880390986ac98e0975",
+  "harness": "script/engine-benchmark.ts with --data persistence (#1278)",
+  "repeat": 2,
+  "engines": ["ts", "rust"],
+  "models": ["zhipuai-coding-plan/glm-5.3-flash", "opencode-go/deepseek-v4.1-flash"],
+  "arms": {
+    "typescript": {
+      "kind": "source wrapper",
+      "note": "argv[0] wrapper execing bun on packages/miao/src/index.ts of this tree; default TypeScript placement"
+    },
+    "rust": {
+      "kind": "engine binary",
+      "binarySha256": "0d1240910265be4df4ae5f7b11a3fbfac720555276f971953544435129ea4091",
+      "version": "0.2.25",
+      "protocol": 2,
+      "schema": 21,
+      "note": "release build of crates/miao-engine at 188fa4ab53; engine crates are unchanged through ed524903ae (intervening merges touch TypeScript only); placement via MIAO_ENGINE_STORAGE"
+    }
+  },
+  "tasks": ["bugfix", "feature", "refactor", "multifile", "recovery", "long-session", "impossible"]
+}
