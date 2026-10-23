@@ -456,9 +456,46 @@ async fn image_reader_bounds_files_and_rejects_non_images() {
     assert!(skill["content"].as_str().unwrap().contains("ffmpeg"));
     assert_eq!(skill["tool_mapping"]["read_images"], "read_image");
     assert!(tools
-        .prepare("load_skill", json!({"name":"missing"}))
+        .execute(
+            "load_skill",
+            json!({"name":"missing"}),
+            tokio_util::sync::CancellationToken::new()
+        )
         .await
         .is_err());
+}
+
+#[tokio::test]
+async fn project_skills_load_by_name_and_list_sampled_files() {
+    let dir = tempfile::tempdir().unwrap();
+    let workspace = dir.path().join("workspace");
+    std::fs::create_dir(&workspace).unwrap();
+    let skills = dir.path().join("skills/demo");
+    std::fs::create_dir_all(skills.join("scripts")).unwrap();
+    std::fs::write(
+        skills.join("SKILL.md"),
+        "---\nname: demo\ndescription: demo skill\n---\n# Demo\n\nRun scripts/run.sh.\n",
+    )
+    .unwrap();
+    std::fs::write(skills.join("scripts/run.sh"), "echo demo\n").unwrap();
+    let tools = Tools::new(&workspace)
+        .await
+        .unwrap()
+        .with_skill_directories(vec![miao_engine::context::SkillDirectory {
+            path: skills.to_string_lossy().into_owned(),
+        }])
+        .unwrap();
+    let skill = tools
+        .execute(
+            "load_skill",
+            json!({"name":"demo"}),
+            tokio_util::sync::CancellationToken::new(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(skill["name"], "demo");
+    assert_eq!(skill["content"], "# Demo\n\nRun scripts/run.sh.\n");
+    assert_eq!(skill["files"], json!(["scripts/run.sh"]));
 }
 
 #[cfg(unix)]
