@@ -1,0 +1,15 @@
+{
+  "model": "opencode-go/deepseek-v4.1-flash",
+  "task": "multifile",
+  "engine": "ts",
+  "attempt": 2,
+  "ok": true,
+  "turns": 5,
+  "input": 16219,
+  "cacheRead": 58752,
+  "output": 778,
+  "billedIn": 74971,
+  "cost": 0.0031617059999999994,
+  "seconds": 20.422,
+  "resumed": false
+}

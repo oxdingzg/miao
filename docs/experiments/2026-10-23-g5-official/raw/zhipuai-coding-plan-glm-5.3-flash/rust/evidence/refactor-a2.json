@@ -1,0 +1,15 @@
+{
+  "model": "zhipuai-coding-plan/glm-5.3-flash",
+  "task": "refactor",
+  "engine": "rust",
+  "attempt": 2,
+  "ok": true,
+  "turns": 9,
+  "input": 112198,
+  "cacheRead": 109504,
+  "output": 1958,
+  "billedIn": 221702,
+  "cost": 0,
+  "seconds": 82.022,
+  "resumed": false
+}
