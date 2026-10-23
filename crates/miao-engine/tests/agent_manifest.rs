@@ -202,12 +202,6 @@ async fn turn(runtime: &Runtime, store: &Store, input_id: &str) {
                 .any(|event| event.kind == "provider.started")
                 && stopped
                 && store.active_run("s").await.unwrap().is_none()
-                // A drain clears its active run before it records the terminal
-                // `stop`/`stop_failure`. Waiting on the run alone lets callers
-                // snapshot the gap and miss the lifecycle event.
-                && events.iter().skip(before).any(|event| {
-                    event.kind == "stop" || event.kind == "stop_failure"
-                })
             {
                 break;
             }
