@@ -238,7 +238,7 @@ async fn the_first_request_after_a_checkpoint_carries_the_restore_budget_note() 
         |entry: &(String, String)| entry.1.starts_with("The conversation was just compacted");
     let note_index = request
         .iter()
-        .position(|entry| is_note(entry))
+        .position(&is_note)
         .expect("the restore budget note rides the first request after the checkpoint");
     assert_eq!(
         request.iter().filter(|entry| is_note(entry)).count(),
