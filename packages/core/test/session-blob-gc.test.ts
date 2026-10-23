@@ -103,12 +103,17 @@ describe("SessionBlobGc", () => {
           .pipe(Effect.orDie)
 
         const referenced = yield* SessionBlobGc.collect(db)
-        const dry = yield* SessionBlobGc.sweep({ blob, directory, referenced, dryRun: true, graceMs: 0 })
+        // Date.now() is integral while stat reports fractional mtimeMs, so a
+        // sweep at the same millisecond can see mtime > now and treat the
+        // orphan as fresh. Sweep from a point one second past the writes to
+        // keep the grace-0 assertions deterministic on macOS.
+        const settled = Date.now() + 1_000
+        const dry = yield* SessionBlobGc.sweep({ blob, directory, referenced, dryRun: true, graceMs: 0, now: settled })
         expect(dry).toMatchObject({ orphans: 1, deleted: 0 })
         expect(dry.referenced).toBeGreaterThanOrEqual(2)
         expect(yield* blob.has(orphan.hash)).toBe(true)
 
-        const result = yield* SessionBlobGc.sweep({ blob, directory, referenced, graceMs: 0 })
+        const result = yield* SessionBlobGc.sweep({ blob, directory, referenced, graceMs: 0, now: settled })
         expect(result).toMatchObject({ orphans: 1, deleted: 1 })
         expect(yield* blob.has(orphan.hash)).toBe(false)
         expect(yield* blob.has(message.hash)).toBe(true)
