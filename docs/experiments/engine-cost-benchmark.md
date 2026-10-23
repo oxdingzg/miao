@@ -97,13 +97,17 @@ by both engines on both models (marked ✓ because a refusal *is* the pass).
 
 ### Findings
 
-1. **deepseek-v4.1-flash on `opencode-go` has no native route.** Its wire form
-   on that subscription resolves to no usable credential/provider route, so
-   the four deepseek rust cells are **N/A** (model limitation, not an engine
-   failure) — `miao run` reports "the selected product model has no usable
-   native credential/provider route". Picking a native-routable deepseek
-   variant is follow-up work, not a blocker: the glm family already provides
-   complete two-engine coverage.
+1. **deepseek-v4.1-flash on `opencode-go` failed its first provider turn.**
+   The route itself resolves; the turn was rejected with HTTP 400 because the
+   native product-tools bridge advertised `plan_enter` with `parameters:
+   {"anyOf": [object, array]}` (Effect lowers an empty `Schema.Struct({})` to
+   that union), and the DeepSeek upstream requires function parameters to be a
+   JSON Schema of `type: "object"`. The whole request fails before the first
+   token, so the four deepseek rust cells are **N/A in this batch** — an engine
+   wiring bug, not a model limitation. Fixed by #1264 (2026-10-23): empty-input
+   tool schemas are now advertised as `{"type": "object", "properties": {}}`,
+   and `miao run --engine native` against this model returns a normal reply. A
+   rerun of this batch fills the deepseek rust cells.
 2. **GLM rust cells lack price entries**, so their cost column reads $0.0000;
    the billed-in columns carry the comparison. On deepseek ts cells (priced),
    a full run costs $0.0026–0.0059. **Fixed by #1251** (2026-10-23): the
@@ -125,6 +129,6 @@ by both engines on both models (marked ✓ because a refusal *is* the pass).
 
 The harness, task set, and gates are the deliverable; the priced multi-model
 acceptance batch above (G5) ran for real with the widened families. Remaining
-follow-ups: a native-routable deepseek variant for the deepseek rust cells,
-and per-endpoint confirmation of `prompt_tokens_details.cached_tokens`
-reporting for rust-routed traffic.
+follow-ups: a rerun that fills the deepseek rust cells now that #1264 removed
+their blocker, and per-endpoint confirmation of
+`prompt_tokens_details.cached_tokens` reporting for rust-routed traffic.
