@@ -128,3 +128,74 @@ test("changing a server URL through client registration cannot rebind old tokens
     }),
   )
 })
+
+test("issuer-keyed grants: adopt, fan-out and freshest lookup", async () => {
+  const file = authFile()
+  await Effect.runPromise(
+    Effect.gen(function* () {
+      const auth = yield* authService(file.fsLayer)
+      const issuer = "https://as.example.test/"
+      const fresh = (accessToken: string, expiresIn: number) => ({
+        accessToken,
+        refreshToken: `${accessToken}-refresh`,
+        expiresAt: Date.now() / 1000 + expiresIn,
+      })
+      yield* auth.set(
+        "posthog",
+        {
+          tokens: fresh("as-one", 3600),
+          clientInfo: { clientId: "shared-client" },
+          issuer,
+        },
+        "https://mcp.posthog.com/mcp",
+      )
+
+      expect(Object.keys(yield* auth.findByIssuer(issuer))).toEqual(["posthog"])
+
+      // Adoption copies the grant and binds the adopting server's URL.
+      const donor = (yield* auth.getForUrl("posthog", "https://mcp.posthog.com/mcp"))!
+      expect(
+        yield* auth.adopt("linear", "https://mcp.linear.app/mcp", { name: "posthog", entry: donor }),
+      ).toBe(true)
+      const adopted = yield* auth.getForUrl("linear", "https://mcp.linear.app/mcp")
+      expect(adopted?.tokens?.accessToken).toBe("as-one")
+      expect(adopted?.issuer).toBe(issuer)
+      // The dynamically registered client rides along, so the adopting
+      // server reuses it instead of registering again.
+      expect(adopted?.clientInfo).toEqual({ clientId: "shared-client" })
+      expect(Object.keys(yield* auth.findByIssuer(issuer))).toEqual(["posthog", "linear"])
+
+      // A stale donor view adopts nothing.
+      expect(
+        yield* auth.adopt("other", "https://mcp.other.test/mcp", {
+          name: "posthog",
+          entry: { ...donor, tokens: fresh("stale", 3600) },
+        }),
+      ).toBe(false)
+
+      // Rotation fans out to every sharer except the rotator, keeping
+      // per-entry refresh fallbacks (refresh responses may omit an unchanged
+      // refresh token), and never touches entries behind a different issuer.
+      yield* auth.updateTokens("linear", { accessToken: "as-two", refreshToken: "as-two-refresh" })
+      yield* auth.updateTokens("unrelated", { accessToken: "other-issuer" }, "https://mcp.other.test/mcp")
+      yield* auth.updateTokensForIssuer(issuer, "linear", {
+        accessToken: "as-three",
+        expiresAt: Date.now() / 1000 + 7200,
+      })
+      expect((yield* auth.getForUrl("linear", "https://mcp.linear.app/mcp"))?.tokens?.accessToken).toBe("as-two")
+      expect((yield* auth.getForUrl("linear", "https://mcp.linear.app/mcp"))?.tokens?.refreshToken).toBe(
+        "as-two-refresh",
+      )
+      expect((yield* auth.getForUrl("posthog", "https://mcp.posthog.com/mcp"))?.tokens?.accessToken).toBe("as-three")
+      expect((yield* auth.getForUrl("posthog", "https://mcp.posthog.com/mcp"))?.tokens?.refreshToken).toBe(
+        "as-one-refresh",
+      )
+      expect((yield* auth.get("unrelated"))?.tokens?.accessToken).toBe("other-issuer")
+
+      // The freshest sharer's tokens win; expired and excluded entries do not.
+      yield* auth.updateTokens("posthog", fresh("stale-sharer", -10))
+      expect(yield* auth.freshFromIssuer(issuer, undefined)).toMatchObject({ accessToken: "as-two" })
+      expect(yield* auth.freshFromIssuer(issuer, "linear")).toBeUndefined()
+    }),
+  )
+})
