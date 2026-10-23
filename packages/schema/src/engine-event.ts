@@ -5,6 +5,7 @@ import { Schema } from "effect"
 import { DateTimeUtcFromMillis, NonNegativeInt } from "./schema"
 import { SessionID } from "./session-id"
 import { SessionMessage } from "./session-message"
+import { Model } from "./model"
 
 /** Native-owned evidence delivered to clients, never a TS journal mutation. */
 export const AssistantIdentity = Event.define({
@@ -15,9 +16,10 @@ export const AssistantIdentity = Event.define({
     assistantMessageID: SessionMessage.ID,
     assistantSeq: NonNegativeInt,
     provider: Schema.NullOr(Schema.Struct({ protocol: Schema.String, model: Schema.String })),
-    // Wire protocol/model facts do not establish product catalog or agent identities.
-    model: Schema.Null,
-    agent: Schema.Null,
+    // Wire model facts are display fallbacks keyed by protocol, not catalog
+    // identities; `agent` is the host-resolved agent name when the host knows it.
+    model: Schema.NullOr(Model.Ref),
+    agent: Schema.NullOr(Schema.String),
   },
 })
 

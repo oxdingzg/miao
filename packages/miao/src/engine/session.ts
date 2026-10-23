@@ -71,6 +71,7 @@ export class EngineTranslator {
   #anchors = new Map<string, StreamAnchor>()
   #usage = new Map<string, { runID: string; step: number; usage: BufferedUsage }>()
   #ttft = new Map<string, number>()
+  #agents = new Map<string, string>()
   #pricing: EnginePricing | undefined
 
   constructor(publish: EnginePublish, pricing?: EnginePricing) {
@@ -164,7 +165,8 @@ export class EngineTranslator {
       const selected = Schema.decodeUnknownOption(Schema.Struct({ agent: Schema.Struct({ name: Schema.String }) }))(
         event.data,
       )
-      if (Option.isSome(selected))
+      if (Option.isSome(selected)) {
+        this.#agents.set(event.session_id, selected.value.agent.name)
         publish({
           type: "session.next.agent.switched",
           data: {
@@ -174,6 +176,7 @@ export class EngineTranslator {
             agent: selected.value.agent.name,
           },
         })
+      }
     }
     if (event.kind === "session.account.selected" && typeof event.recorded_at_ms === "number") {
       const selected = Schema.decodeUnknownOption(
@@ -342,7 +345,13 @@ export class EngineTranslator {
       }
     }
     const identity = translateAssistantIdentity(event)
-    if (identity) publish({ type: "session.next.assistant.identity", data: identity })
+    if (identity) {
+      const agent = this.#agents.get(event.session_id)
+      publish({
+        type: "session.next.assistant.identity",
+        data: agent === undefined ? identity : { ...identity, agent },
+      })
+    }
     const failure = translateRunFailure(event)
     if (failure) publish({ type: "session.next.failed", data: failure })
     for (const reasoning of translateReasoning(event)) {

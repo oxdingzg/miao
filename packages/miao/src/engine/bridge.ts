@@ -1,6 +1,7 @@
 import { DateTime, Option, Schema } from "effect"
 import { SessionID } from "@miao/schema/session-id"
 import { SessionMessage } from "@miao/schema/session-message"
+import { Model } from "@miao/schema/model"
 import { Permission } from "@miao/schema/permission"
 import { Prompt, CommandInvocation, AgentAttachment } from "@miao/schema/prompt"
 import { Question } from "@miao/schema/question"
@@ -130,8 +131,8 @@ export type SessionAssistantIdentity = {
   assistantMessageID: SessionMessage.ID
   assistantSeq: number
   provider: { protocol: string; model: string } | null
-  model: null
-  agent: null
+  model: Model.Ref | null
+  agent: string | null
 }
 
 /**
@@ -147,7 +148,7 @@ export function translateAssistantIdentity(event: EngineEvent): SessionAssistant
   if (typeof seq !== "number" || !Number.isSafeInteger(seq) || seq <= 0 || seq >= event.seq) return undefined
   if (!("provider" in event.data)) return undefined
   const provider = nativeProvider(event.data.provider)
-  if (provider === undefined) return undefined
+  if (provider === undefined || provider === null) return undefined
   if (
     typeof event.recorded_at_ms !== "number" ||
     !Number.isSafeInteger(event.recorded_at_ms) ||
@@ -162,7 +163,9 @@ export function translateAssistantIdentity(event: EngineEvent): SessionAssistant
     assistantMessageID: messageID(event.session_id, anchorSeq(event) ?? seq),
     assistantSeq: seq,
     provider,
-    model: null,
+    // The engine only knows the wire protocol and model id, so the reference
+    // carries those as a display fallback; catalog resolution stays client-side.
+    model: Schema.decodeUnknownSync(Model.Ref)({ id: provider.model, providerID: provider.protocol }),
     agent: null,
   }
 }
