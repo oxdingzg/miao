@@ -82,6 +82,16 @@ struct Skill {
     path: String,
 }
 
+/// A skill body resolved on demand by `load_skill`. Only files inside a
+/// host-selected skill directory are read, and the body keeps the same bounds
+/// as discovery.
+pub(crate) struct LoadedSkill {
+    pub name: String,
+    pub directory: String,
+    pub content: String,
+    pub files: Vec<String>,
+}
+
 fn parse_frontmatter(text: &str) -> (Option<String>, Option<String>) {
     let mut lines = text.lines();
     if lines.next().map(str::trim_end) != Some("---") {
@@ -100,6 +110,23 @@ fn parse_frontmatter(text: &str) -> (Option<String>, Option<String>) {
         }
     }
     (name, description)
+}
+
+fn strip_frontmatter(text: &str) -> &str {
+    let Some(rest) = text
+        .strip_prefix("---\n")
+        .or_else(|| text.strip_prefix("---\r\n"))
+    else {
+        return text;
+    };
+    let mut offset = text.len() - rest.len();
+    for line in rest.split_inclusive('\n') {
+        offset += line.len();
+        if line.trim_end() == "---" {
+            return text[offset..].trim_start_matches(['\r', '\n']);
+        }
+    }
+    text
 }
 
 /// Collect skill files: `*.md` directly in the directory, and any `SKILL.md` in
@@ -132,6 +159,104 @@ fn collect_skills(dir: &std::path::Path, depth: u8, out: &mut Vec<std::path::Pat
             out.push(path);
         }
     }
+}
+
+fn collect_files(dir: &std::path::Path, depth: u8, out: &mut Vec<std::path::PathBuf>) {
+    if depth > 4 || out.len() >= 64 {
+        return;
+    }
+    let Ok(entries) = std::fs::read_dir(dir) else {
+        return;
+    };
+    for entry in entries.flatten() {
+        if out.len() >= 64 {
+            return;
+        }
+        let Ok(file_type) = entry.file_type() else {
+            continue;
+        };
+        if file_type.is_symlink() {
+            continue;
+        }
+        let path = entry.path();
+        if file_type.is_dir() {
+            collect_files(&path, depth + 1, out);
+        } else if file_type.is_file() {
+            out.push(path);
+        }
+    }
+}
+
+/// Resolve one skill by name from the host-selected directories. A skill whose
+/// body exceeds the discovery bound is skipped, matching the listing.
+pub(crate) fn find_skill(tools: &Tools, name: &str) -> Option<LoadedSkill> {
+    for directory in tools.skill_directories() {
+        let path = std::path::Path::new(&directory.path);
+        let root = if path.is_absolute() {
+            path.to_path_buf()
+        } else {
+            std::path::Path::new(tools.location()).join(path)
+        };
+        let mut files = Vec::new();
+        collect_skills(&root, 0, &mut files);
+        files.sort();
+        for file in files {
+            let Ok(text) = std::fs::read_to_string(&file) else {
+                continue;
+            };
+            if text.len() > 65536 {
+                continue;
+            }
+            let (declared, _) = parse_frontmatter(&text);
+            let resolved = declared
+                .filter(|declared| !declared.is_empty())
+                .or_else(|| {
+                    if file
+                        .file_name()
+                        .is_some_and(|name| name == std::ffi::OsStr::new("SKILL.md"))
+                    {
+                        file.parent()?
+                            .file_name()
+                            .map(|name| name.to_string_lossy().into_owned())
+                    } else {
+                        file.file_stem()
+                            .map(|name| name.to_string_lossy().into_owned())
+                    }
+                })?;
+            if resolved != name || resolved.len() > 64 {
+                continue;
+            }
+            let directory = file
+                .parent()
+                .map(|path| path.to_string_lossy().into_owned())
+                .unwrap_or_default();
+            let mut entries = Vec::new();
+            if file
+                .file_name()
+                .is_some_and(|name| name == std::ffi::OsStr::new("SKILL.md"))
+            {
+                collect_files(std::path::Path::new(&directory), 0, &mut entries);
+                entries.retain(|entry| entry != &file);
+                entries.sort();
+                entries.truncate(10);
+            }
+            return Some(LoadedSkill {
+                name: resolved,
+                content: strip_frontmatter(&text).to_owned(),
+                directory: directory.clone(),
+                files: entries
+                    .iter()
+                    .map(|entry| {
+                        entry
+                            .strip_prefix(&directory)
+                            .map(|path| path.to_string_lossy().trim_start_matches('/').to_owned())
+                            .unwrap_or_else(|_| entry.to_string_lossy().into_owned())
+                    })
+                    .collect(),
+            });
+        }
+    }
+    None
 }
 
 pub(crate) const MEDIA_OBSERVE: &str =
@@ -385,7 +510,7 @@ pub(crate) async fn assemble_for_agent(
     // The builtin-skill and listing sections are advisory; when the budget is
     // exhausted they are omitted instead of failing the session. Their sources
     // stay registered so read_file still reaches them.
-    let media_line="\n\nBuilt-in skill: media-observe — use load_skill with name media-observe when inspecting video/audio. Follow its timestamped frame/contact-sheet workflow using bash and read_image. Project skills below are loaded using read_file.";
+    let media_line="\n\nBuilt-in skill: media-observe — use load_skill with name media-observe when inspecting video/audio. Follow its timestamped frame/contact-sheet workflow using bash and read_image. Load any project skill below by name with load_skill.";
     if system.len() + media_line.len() <= 65536 {
         system.push_str(media_line);
     }
@@ -393,7 +518,7 @@ pub(crate) async fn assemble_for_agent(
     let skills = discover_skills(tools, policy, cancel.child_token(), &mut sources).await?;
     if !skills.is_empty() {
         let mut section = String::from(
-            "\n\n<available-skills>\nSkill bodies are not included; read the listed path when a skill applies.\n",
+            "\n\n<available-skills>\nSkill bodies are not included; call load_skill with the skill name when one applies.\n",
         );
         for skill in &skills {
             section.push_str(&format!(

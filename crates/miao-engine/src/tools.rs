@@ -69,6 +69,19 @@ struct SkillInput {
     name: String,
 }
 
+impl SkillInput {
+    fn parse(input: Value) -> Result<Self, ToolError> {
+        let input: Self = serde_json::from_value(input).map_err(|_| ToolError::InvalidInput)?;
+        if input.name.is_empty()
+            || input.name.len() > 64
+            || input.name.chars().any(|character| character.is_control())
+        {
+            return Err(ToolError::InvalidInput);
+        }
+        Ok(input)
+    }
+}
+
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
 struct ListInput {
@@ -950,11 +963,7 @@ impl Tools {
                     .path
             }
             "load_skill" => {
-                let parsed: SkillInput =
-                    serde_json::from_value(input.clone()).map_err(|_| ToolError::InvalidInput)?;
-                if parsed.name != "media-observe" {
-                    return Err(ToolError::InvalidInput);
-                }
+                SkillInput::parse(input.clone())?;
                 ".".into()
             }
             "list_files" => {
@@ -1118,7 +1127,12 @@ impl Tools {
                 .collect::<Result<Vec<_>, _>>()?
         };
         let resource = if name == "load_skill" {
-            "@builtin/skill/media-observe".into()
+            let parsed = SkillInput::parse(input.clone())?;
+            if parsed.name == "media-observe" {
+                "@builtin/skill/media-observe".into()
+            } else {
+                format!("@skills/{}", parsed.name)
+            }
         } else if external {
             // Authorized external reads use a namespaced resource: an absolute
             // path would be rejected by `permission::assess`'s boundary check, so
@@ -1631,8 +1645,8 @@ impl Tools {
         });
         definitions.push(ToolDefinition {
             name: "load_skill".into(),
-            description: "Load the built-in media-observe skill for timestamped video/audio inspection through Bash, ffmpeg/ffprobe, and read_image. Project skill bodies remain available through their listed read_file paths.".into(),
-            input_schema: json!({"type":"object","properties":{"name":{"type":"string","enum":["media-observe"]}},"required":["name"],"additionalProperties":false}),
+            description: "Load a skill by name from the available skills list in the system context. Returns its instructions plus the skill directory and sampled files, so relative script and reference paths can be resolved.".into(),
+            input_schema: json!({"type":"object","properties":{"name":{"type":"string","minLength":1,"maxLength":64}},"required":["name"],"additionalProperties":false}),
         });
         definitions.push(ToolDefinition {
             name:"knowledge".into(),
@@ -1755,14 +1769,22 @@ impl Tools {
         let task = async {
             match name {
                 "load_skill" => {
-                    let input: SkillInput =
-                        serde_json::from_value(input).map_err(|_| ToolError::InvalidInput)?;
-                    if input.name != "media-observe" {
-                        return Err(ToolError::InvalidInput);
+                    let input = SkillInput::parse(input)?;
+                    if input.name == "media-observe" {
+                        return Ok(
+                            json!({"name":input.name,"content":crate::context::MEDIA_OBSERVE,"sha256":digest(crate::context::MEDIA_OBSERVE.as_bytes()),"tool_mapping":{"bash":"bash","read_images":"read_image","read_text":"read_file"}}),
+                        );
                     }
-                    Ok(
-                        json!({"name":input.name,"content":crate::context::MEDIA_OBSERVE,"sha256":digest(crate::context::MEDIA_OBSERVE.as_bytes()),"tool_mapping":{"bash":"bash","read_images":"read_image","read_text":"read_file"}}),
-                    )
+                    let skill = crate::context::find_skill(self, &input.name).ok_or_else(|| {
+                        ToolError::External(format!("unknown skill: {}", input.name))
+                    })?;
+                    Ok(json!({
+                        "name":skill.name,
+                        "content":skill.content,
+                        "sha256":digest(skill.content.as_bytes()),
+                        "directory":skill.directory,
+                        "files":skill.files,
+                    }))
                 }
                 "read_image" => {
                     use base64::Engine;
