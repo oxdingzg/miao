@@ -1,0 +1,20 @@
+{
+  "date": "2026-10-23",
+  "unit": "USD per 1M tokens",
+  "models": {
+    "zhipuai-coding-plan/glm-5.3-flash": {
+      "input": 0.11952,
+      "output": 0.41831,
+      "cache_read": 0.03436,
+      "cache_write": 0,
+      "source": "miao models overlay (#1251): standard-API reference rates mirrored from this catalog's own zhipuai entries (open.bigmodel.cn published pricing); the upstream catalog records 0 for this plan-inclusive provider"
+    },
+    "opencode-go/deepseek-v4.1-flash": {
+      "input": 0.15,
+      "output": 0.6,
+      "cache_read": 0.003,
+      "cache_write": 0,
+      "source": "mtty.dev models catalog snapshot fetched 2026-10-23"
+    }
+  }
+}
