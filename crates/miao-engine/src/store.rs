@@ -2731,6 +2731,53 @@ impl Store {
     /// provider/model that served each turn (roadmap A5). Tokens and lineage
     /// come from the durable `usage` and `provider.started` rows; TTFT comes
     /// from the `engine_timing` side table, never from replayed payloads.
+    /// Background delegations started by this Session. Synchronous delegations
+    /// are omitted: their caller already received the final message.
+    pub async fn subagents(&self, session: &str) -> Result<Vec<Value>, Error> {
+        let session = session.to_owned();
+        self.call(move |conn| {
+            let mut stmt = conn.prepare(
+                "SELECT kind,data FROM engine_event WHERE session_id=?1 AND kind IN ('subagent_start','subagent_stop') ORDER BY seq",
+            )?;
+            let mut rows = stmt.query(params![session])?;
+            let mut tasks: Vec<Value> = Vec::new();
+            while let Some(row) = rows.next()? {
+                let kind: String = row.get(0)?;
+                let data: Value = serde_json::from_str(&row.get::<_, String>(1)?)?;
+                let Some(id) = data["subagent_id"].as_str() else {
+                    continue;
+                };
+                if kind == "subagent_start" {
+                    if data["background"] != true {
+                        continue;
+                    }
+                    tasks.push(json!({
+                        "id":id,
+                        "session_id":id,
+                        "description":data["description"].as_str().unwrap_or("subagent"),
+                        "status":"running",
+                        "text":Value::Null,
+                    }));
+                    continue;
+                }
+                if let Some(task) = tasks
+                    .iter_mut()
+                    .find(|task| task["id"].as_str() == Some(id))
+                {
+                    task["status"] = json!(match data["reason"].as_str() {
+                        Some("completed") => "completed",
+                        Some("cancelled") => "cancelled",
+                        Some("failed") => "failed",
+                        _ => "interrupted",
+                    });
+                    task["text"] = json!(data["text"].as_str().unwrap_or(""));
+                }
+            }
+            Ok(tasks)
+        })
+        .await
+    }
+
     pub async fn usage_report(&self, session: &str) -> Result<Value, Error> {
         let session = session.to_owned();
         self.call(move |conn| {
