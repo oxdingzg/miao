@@ -1,4 +1,5 @@
 pub mod acp;
+pub mod agent_classifier;
 pub mod agent_policy;
 pub mod approval;
 pub mod bedrock;

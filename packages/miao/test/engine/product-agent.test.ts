@@ -60,12 +60,14 @@ test("external directory rules stay with the ordered manifest", () => {
   expect(agentManifest(agent, []).ordered_permissions.rules).toEqual(agent.permissions)
 })
 
-test("unsupported auto-classifier mode is not silently downgraded", () => {
+test("auto-classifier mode rides the manifest for the engine to settle", () => {
   const agent = Schema.decodeUnknownSync(Agent.Info)({
     ...Agent.Info.empty(Agent.ID.make("auto-agent")),
     permission_mode: "auto",
   })
-  expect(() => agentManifest(agent, [])).toThrow("automatic host classification is not available")
+  expect(agentManifest(agent, []).permission_mode).toBe("auto")
+  const plain = Schema.decodeUnknownSync(Agent.Info)(Agent.Info.empty(Agent.ID.make("plain-agent")))
+  expect("permission_mode" in agentManifest(plain, [])).toBe(false)
 })
 
 test("an explicit engine route binds its primary model by identity", () => {

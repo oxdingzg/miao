@@ -32,6 +32,15 @@ pub struct AgentTools {
     pub deny: Vec<String>,
 }
 
+/// The host permission mode an agent manifest carries. `Auto` lets the engine
+/// settle asks its deterministic classifier proves safe instead of bouncing
+/// every one of them through a host approval round-trip.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum PermissionMode {
+    Auto,
+}
+
 /// A host-resolved agent definition.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -53,6 +62,11 @@ pub struct AgentManifest {
     /// remain a separate operator-shaped restriction layer.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub ordered_permissions: Option<crate::agent_policy::OrderedPolicy>,
+    /// `auto`: asks the default or ordered policy raises may be settled by the
+    /// engine's deterministic classifier (`agent_classifier`) instead of a
+    /// host approval. Operator ask rules stay authoritative either way.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub permission_mode: Option<PermissionMode>,
     /// Applied only while the Session has no explicit model selection.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub model: Option<Binding>,
