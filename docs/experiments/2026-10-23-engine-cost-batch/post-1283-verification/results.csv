@@ -1,0 +1,17 @@
+model,scope,engine,task,runs,passed,attempts,billed_input,cached_input,output,cost,p50_ms,p95_ms
+zhipuai-coding-plan/glm-5.3-flash,total,ts,*,14,14,83,287517,926976,5137,0.07357,47466,100258
+zhipuai-coding-plan/glm-5.3-flash,task,ts,bugfix,2,2,10,31435,110336,419,0.00778,24883,24883
+zhipuai-coding-plan/glm-5.3-flash,task,ts,feature,2,2,14,44485,160512,779,0.01213,47466,47466
+zhipuai-coding-plan/glm-5.3-flash,task,ts,refactor,2,2,12,47821,123136,660,0.01025,39857,39857
+zhipuai-coding-plan/glm-5.3-flash,task,ts,multifile,2,2,10,8102,138112,1048,0.00619,49300,49300
+zhipuai-coding-plan/glm-5.3-flash,task,ts,recovery,2,2,13,69466,133824,773,0.01545,100258,100258
+zhipuai-coding-plan/glm-5.3-flash,task,ts,long-session,2,2,16,30729,200640,913,0.01139,61928,61928
+zhipuai-coding-plan/glm-5.3-flash,task,ts,impossible,2,2,8,55479,60416,545,0.01038,79550,79550
+zhipuai-coding-plan/glm-5.3-flash,total,rust,*,14,14,98,1220144,1152384,34305,0,76133,163900
+zhipuai-coding-plan/glm-5.3-flash,task,rust,bugfix,2,2,12,139429,136960,1036,0,28510,28510
+zhipuai-coding-plan/glm-5.3-flash,task,rust,feature,2,2,15,182684,177344,3854,0,89112,89112
+zhipuai-coding-plan/glm-5.3-flash,task,rust,refactor,2,2,13,154914,151104,2069,0,39867,39867
+zhipuai-coding-plan/glm-5.3-flash,task,rust,multifile,2,2,13,162352,155584,4358,0,68589,68589
+zhipuai-coding-plan/glm-5.3-flash,task,rust,recovery,2,2,11,154417,142208,10415,0,144968,144968
+zhipuai-coding-plan/glm-5.3-flash,task,rust,long-session,2,2,21,262274,256064,4617,0,87615,87615
+zhipuai-coding-plan/glm-5.3-flash,task,rust,impossible,2,2,13,164074,133120,7956,0,163900,163900
