@@ -8,19 +8,20 @@ import type { z } from "zod"
 /**
  * ADR-12 extension compatibility worker: the stdio newline-JSON process the
  * native engine spawns through `--worker-config` and drives with `hello` /
- * `tool.list` / `tool.call` / `shutdown`. This host serves the workspace's own
+ * `tool.list` / `tool.call` / worker-initiated `ask` / `shutdown`. This host
+ * serves the workspace's own
  * custom tool files (`{tool,tools}/*.{js,ts}` under `.miao` and `.opencode`,
  * the V1-compatible convention) so real project tools keep working when a
  * Session runs on the native engine.
  *
  * Authorization lives at the engine boundary: the engine marks worker tools
  * "requires external-tool authorization" and gates model-initiated calls
- * through its own permission flow. Inside the host there is no approver, so a
- * tool that calls `context.ask(...)` fails with a clear error instead of being
- * granted silently.
+ * through its own permission flow. A mid-call `context.ask(...)` (protocol 2)
+ * is relayed by the engine to the Session's durable question flow, so the
+ * operator answers it like any other question.
  */
 
-const PROTOCOL = 1
+const PROTOCOL = 2
 
 const directoryFlag = process.argv.indexOf("--directory")
 const fallbackDirectory = directoryFlag !== -1 && process.argv[directoryFlag + 1]
@@ -110,6 +111,33 @@ const discover = async (workspaceDirectory: string) => {
   })
 }
 
+const pendingAsks = new Map<number, { resolve: () => void; reject: (error: Error) => void }>()
+let nextAskId = 1
+
+// Protocol 2: a mid-call interactive permission request. The engine relays it
+// to the Session's durable question flow and answers with `{approved}`; a
+// denial rejects so the tool sees a permission error. `always` patterns are
+// accepted by the TS contract but not persisted by the engine, so they are
+// not sent.
+const ask = (input: {
+  permission: string
+  patterns: string[]
+  always: string[]
+  metadata: Record<string, unknown>
+}): Promise<void> => {
+  const id = nextAskId++
+  process.stdout.write(
+    JSON.stringify({
+      id,
+      method: "ask",
+      params: { permission: input.permission, patterns: input.patterns, metadata: input.metadata },
+    }) + "\n",
+  )
+  return new Promise<void>((resolve, reject) => {
+    pendingAsks.set(id, { resolve, reject })
+  })
+}
+
 const context = () => ({
   sessionID: "ses_worker",
   messageID: "msg_worker",
@@ -118,11 +146,7 @@ const context = () => ({
   worktree: workspace,
   abort: new AbortController().signal,
   metadata: () => {},
-  ask: async () => {
-    throw new Error(
-      "interactive permission is unavailable for worker tools; the engine's external-tool authorization is the gate",
-    )
-  },
+  ask,
 })
 
 const reply = (id: number, result: unknown) => {
@@ -169,10 +193,21 @@ const dispatch = async (id: number, method: string, params: Record<string, unkno
 const lines = readline.createInterface({ input: process.stdin, terminal: false })
 lines.on("line", (line) => {
   if (!line.trim()) return
-  let frame: { id?: unknown; method?: unknown; params?: unknown }
+  let frame: { id?: unknown; method?: unknown; params?: unknown; result?: { approved?: unknown; message?: unknown } }
   try {
     frame = JSON.parse(line)
   } catch {
+    return
+  }
+  if (typeof frame.id === "number" && frame.method === undefined) {
+    const pending = pendingAsks.get(frame.id)
+    if (!pending) return
+    pendingAsks.delete(frame.id)
+    if (frame.result?.approved === true) pending.resolve()
+    else
+      pending.reject(
+        new Error(typeof frame.result?.message === "string" ? frame.result.message : "permission denied"),
+      )
     return
   }
   if (typeof frame.id !== "number" || typeof frame.method !== "string") return
