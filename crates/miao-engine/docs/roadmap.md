@@ -2,6 +2,13 @@
 
 Status snapshot: **2026-10-12**; reviewed baseline: `c3baaa6d1` (including #589).
 
+> Refresh 2026-10-23: this snapshot predates the product integration. The B1
+> rows ("product Session handlers still use TS core") are superseded — the
+> product execution facade, events, history, and live interaction run through
+> the engine (see `docs/roadmap.md` §0 and `docs/native-engine-enablement.*.md`).
+> The B2 "product recovery UI remains open" note is closed: the recovery
+> dialog is wired (#974); real-client restart acceptance is the remaining leg.
+
 ## 1. Objective and document responsibilities
 
 **Improve real-task completion quality while reducing token consumption, end-to-end latency, and human correction.**
@@ -113,7 +120,8 @@ Recently landed product-integration evidence (2026-10-12), recorded without chan
   [ADR-16](adr/0016-explicit-tool-recovery.md) defines the ownership and
   admission boundary; `tests/recovery_decisions.rs` covers Host dispatch,
   explicit continuation, conflicting retries and original-effect preservation.
-  Product recovery UI and real-client restart acceptance remain open.
+  The product recovery dialog is wired (#974); real-client restart acceptance
+  remains the open leg.
 
 - B3 credential rollback: the standalone daemon's `release` IPC/CLI operation
   joins in-flight refresh before atomically handing a row back to the product
