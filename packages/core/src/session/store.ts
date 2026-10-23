@@ -1,4 +1,5 @@
 export * as SessionStore from "./store"
+export * as SessionNativeTitle from "./native-title"
 
 import { asc, eq, sql } from "drizzle-orm"
 import { Context, Effect, Layer, Schema } from "effect"
