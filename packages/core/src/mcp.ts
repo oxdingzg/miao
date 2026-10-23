@@ -20,6 +20,7 @@ import { McpAuth } from "./mcp/auth"
 import { McpBrowser } from "./mcp/browser"
 import { McpOAuthCallback } from "./mcp/oauth-callback"
 import { McpOAuthPendingProvider, OAUTH_CALLBACK_PATH, type McpOAuthConfig } from "./mcp/oauth-provider"
+import { buildDiscoveryUrls } from "@modelcontextprotocol/sdk/client/auth.js"
 import { oauthFetch } from "./mcp/oauth-fetch"
 import { PermissionV2 } from "./permission"
 import { ToolRegistry } from "./tool/registry"
@@ -259,6 +260,7 @@ function oauthConfig(oauth: ConfigMCP.OAuth | undefined): McpOAuthConfig {
     scope: oauth?.scope,
     callbackPort: oauth?.callback_port,
     redirectUri: oauth?.redirect_uri,
+    clientMetadataUrl: oauth?.client_metadata_url,
   }
 }
 
@@ -507,7 +509,27 @@ const layer = Layer.effect(
       }
 
       const target = authorizationUrl.toString()
-      const callback = McpOAuthCallback.waitForCallback(state, name)
+      // RFC 9207: pin the expected issuer from authorization server metadata
+      // so the callback can reject a contradicting `iss` before the code is
+      // exchanged. Best-effort: a server whose metadata cannot be probed (for
+      // example an indirect `authorization_servers` deployment) keeps today's
+      // no-check behavior instead of risking a false rejection.
+      const expectedIss = yield* Effect.tryPromise(async () => {
+        for (const candidate of buildDiscoveryUrls(url)) {
+          const response = await fetch(candidate.url, {
+            headers: { Accept: "application/json" },
+            signal: AbortSignal.timeout(5_000),
+          })
+          if (!response.ok) continue
+          const metadata: unknown = await response.json()
+          if (!(typeof metadata === "object" && metadata !== null && "authorization_endpoint" in metadata)) continue
+          const parsed = candidate.url
+          const issuer = parsed.origin + (parsed.pathname.split("/.well-known/")[0] ?? "").replace(/\/$/, "")
+          return new URL(issuer).toString()
+        }
+        return undefined
+      }).pipe(Effect.orElseSucceed(() => undefined))
+      const callback = McpOAuthCallback.waitForCallback(state, name, expectedIss)
       yield* browser
         .open(target)
         .pipe(Effect.catch(() => events.publish(McpEvent.BrowserOpenFailed, { mcpName: name, url: target })))

@@ -63,6 +63,10 @@ struct Inner {
     /// Task-specific verification command run before a run may finish.
     verification: Mutex<Option<String>>,
     breaker: Mutex<context_trigger::Breaker>,
+    /// Sessions whose next provider request carries the post-compaction
+    /// restore budget note. Process-local and request-scoped, like the host
+    /// runner's `turns` map.
+    restore_pending: Mutex<std::collections::HashSet<String>>,
 }
 
 struct Actor {
@@ -183,6 +187,7 @@ impl Runtime {
                 route_limits: Mutex::new(crate::model_routes::RouteLimits::default()),
                 verification: Mutex::new(None),
                 breaker: Mutex::new(crate::context_trigger::Breaker::new(3)),
+                restore_pending: Mutex::new(std::collections::HashSet::new()),
             }),
         };
         let inner = runtime.inner.clone();
@@ -1616,6 +1621,25 @@ async fn execute(
                 }
             }
         }
+        // The first request after a compaction checkpoint carries a restore
+        // budget note so the model can re-read its working set (see
+        // [`crate::history::restore_note`]). Request-scoped: one note only,
+        // and the closing user prompt stays last.
+        if inner.restore_pending.lock().await.remove(session) {
+            let insert_at = match history.last() {
+                Some(last) if last.role == "user" => history.len() - 1,
+                _ => history.len(),
+            };
+            history.insert(
+                insert_at,
+                crate::protocol::Message {
+                    role: "user".into(),
+                    content: json!([{"type":"text","text":crate::history::restore_note()}]),
+                    checkpoint: None,
+                    recorded_at_ms: None,
+                },
+            );
+        }
         let named = inner.store.named_agents(session).await?;
         let mut tools = agent_tools(&inner.tools, agent.as_ref(), &policy);
         for tool in &mut tools {
@@ -2570,6 +2594,14 @@ command: None,
             )
             .await
             .unwrap_or(false);
+            if compacted {
+                // The next provider request rides the restore budget note.
+                inner
+                    .restore_pending
+                    .lock()
+                    .await
+                    .insert(session.to_owned());
+            }
             if let Some(seq) = requested {
                 // One attempt answers the request either way, so a summarizer the
                 // provider keeps refusing cannot pin the Session: asking again is

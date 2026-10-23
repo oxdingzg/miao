@@ -790,6 +790,7 @@ export const McpDebugCommand = effectCmd({
               clientSecret: oauthConfig?.clientSecret,
               scope: oauthConfig?.scope,
               redirectUri: oauthConfig?.redirectUri,
+              clientMetadataUrl: oauthConfig?.clientMetadataUrl,
             },
             {
               onRedirect: async () => {},
