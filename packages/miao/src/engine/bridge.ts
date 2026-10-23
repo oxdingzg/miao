@@ -1,6 +1,7 @@
 import { DateTime, Option, Schema } from "effect"
 import { SessionID } from "@miao/schema/session-id"
 import { SessionMessage } from "@miao/schema/session-message"
+import { Model } from "@miao/schema/model"
 import { Permission } from "@miao/schema/permission"
 import { Prompt, CommandInvocation, AgentAttachment } from "@miao/schema/prompt"
 import { Question } from "@miao/schema/question"
@@ -130,8 +131,8 @@ export type SessionAssistantIdentity = {
   assistantMessageID: SessionMessage.ID
   assistantSeq: number
   provider: { protocol: string; model: string } | null
-  model: null
-  agent: null
+  model: Model.Ref | null
+  agent: string | null
 }
 
 /**
@@ -162,7 +163,11 @@ export function translateAssistantIdentity(event: EngineEvent): SessionAssistant
     assistantMessageID: messageID(event.session_id, anchorSeq(event) ?? seq),
     assistantSeq: seq,
     provider,
-    model: null,
+    // The engine only knows the wire protocol and model id, so the reference
+    // carries those as a display fallback; catalog resolution stays client-side.
+    model: provider
+      ? Schema.decodeUnknownSync(Model.Ref)({ id: provider.model, providerID: provider.protocol })
+      : null,
     agent: null,
   }
 }

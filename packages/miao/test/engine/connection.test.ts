@@ -125,14 +125,14 @@ if (binary)
         expect(wire).toContain('"id":"store-native-client"')
         expect(wire).not.toContain('"durable":')
         expect(wire).toContain('"provider":{"protocol":"openai-chat","model":"fixture"}')
-        expect(wire).toContain('"model":null')
+        expect(wire).toContain('"model":{"id":"fixture","providerID":"openai-chat"}')
         expect(local).toContainEqual(
           expect.objectContaining({
             payload: expect.objectContaining({
               type: "session.next.assistant.identity",
               properties: expect.objectContaining({
                 provider: { protocol: "openai-chat", model: "fixture" },
-                model: null,
+                model: { providerID: "openai-chat", id: "fixture" },
                 agent: null,
               }),
             }),
