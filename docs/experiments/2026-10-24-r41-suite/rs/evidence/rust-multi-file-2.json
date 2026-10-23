@@ -1,0 +1,422 @@
+{
+  "sample": {
+    "task": "multi-file",
+    "engine": "rust",
+    "repetition": 2,
+    "suiteHash": "bd905b4f81f0a9412b614631a36337723067574848c5f05b50ead1cf48675091",
+    "taskHash": "a5041ea521bf1671656245fae3d7fab12d071b4b5b82cf29607998143aadc602",
+    "profile": {
+      "model": "glm-5.3-flash",
+      "modelParametersHash": "ef3d96a9ec0464401ae599f38c478bab21fa051e068e9d158e5c186628e7a393",
+      "agentManifestHash": "573aa060a6418ca4dadddd6bd819cb2de1a75dfac93eb2141d9fdbdbae28d722",
+      "permissionHash": "9e90aa2fba3ce7e178bafd4990280c05d1aa386a75673b717c97d791fe5be040",
+      "toolSurfaceHash": "16429204e3588b7e1aa23caea877263c673b88181b975c59f82e604791ee7633"
+    },
+    "revision": "ed524903ae8dec701eba0e880390986ac98e0975",
+    "artifactHash": "fecd0e773ee019216bf3e3ad74fed85e8804ce24403509fa4ef243aea878805c",
+    "receiptHash": "885265a2eca1d79fc3494bffc5dd0fed66e89b4543603879630966975b7288c6",
+    "outcome": "passed",
+    "elapsedMs": 37049,
+    "attempts": [
+      {
+        "inputTokens": 5021,
+        "outputTokens": 35,
+        "cost": null
+      },
+      {
+        "inputTokens": 5158,
+        "outputTokens": 51,
+        "cost": null
+      },
+      {
+        "inputTokens": 5562,
+        "outputTokens": 496,
+        "cost": null
+      },
+      {
+        "inputTokens": 6200,
+        "outputTokens": 82,
+        "cost": null
+      },
+      {
+        "inputTokens": 6407,
+        "outputTokens": 203,
+        "cost": null
+      },
+      {
+        "inputTokens": 6712,
+        "outputTokens": 295,
+        "cost": null
+      }
+    ]
+  },
+  "rejection": null,
+  "evidence": {
+    "engine": "rust",
+    "revision": "ed524903ae8dec701eba0e880390986ac98e0975",
+    "task": "multi-file",
+    "repetition": 2,
+    "terminal": "completed",
+    "error": null,
+    "receipts": [],
+    "attempts": [
+      {
+        "inputTokens": 5021,
+        "outputTokens": 35,
+        "cacheReadTokens": 4992,
+        "cacheWriteTokens": null,
+        "reasoningTokens": 13,
+        "cost": null
+      },
+      {
+        "inputTokens": 5158,
+        "outputTokens": 51,
+        "cacheReadTokens": 4992,
+        "cacheWriteTokens": null,
+        "reasoningTokens": 0,
+        "cost": null
+      },
+      {
+        "inputTokens": 5562,
+        "outputTokens": 496,
+        "cacheReadTokens": 5120,
+        "cacheWriteTokens": null,
+        "reasoningTokens": 240,
+        "cost": null
+      },
+      {
+        "inputTokens": 6200,
+        "outputTokens": 82,
+        "cacheReadTokens": 5504,
+        "cacheWriteTokens": null,
+        "reasoningTokens": 36,
+        "cost": null
+      },
+      {
+        "inputTokens": 6407,
+        "outputTokens": 203,
+        "cacheReadTokens": 6144,
+        "cacheWriteTokens": null,
+        "reasoningTokens": 101,
+        "cost": null
+      },
+      {
+        "inputTokens": 6712,
+        "outputTokens": 295,
+        "cacheReadTokens": 6400,
+        "cacheWriteTokens": null,
+        "reasoningTokens": 39,
+        "cost": null
+      }
+    ],
+    "phases": [
+      {
+        "phase": "input.admitted",
+        "atMs": 1792770958402,
+        "clock": "recorded"
+      },
+      {
+        "phase": "input.promoted",
+        "atMs": 1792770958403,
+        "clock": "recorded"
+      },
+      {
+        "phase": "run.started",
+        "atMs": 1792770958403,
+        "clock": "recorded"
+      },
+      {
+        "phase": "provider.request",
+        "atMs": 1792770958407,
+        "clock": "recorded"
+      },
+      {
+        "phase": "provider.request.result",
+        "atMs": 1792770962395,
+        "clock": "recorded"
+      },
+      {
+        "phase": "tool.dispatched",
+        "atMs": 1792770962965,
+        "clock": "recorded"
+      },
+      {
+        "phase": "tool.dispatched",
+        "atMs": 1792770962966,
+        "clock": "recorded"
+      },
+      {
+        "phase": "tool.completed",
+        "atMs": 1792770962967,
+        "clock": "recorded"
+      },
+      {
+        "phase": "tool.completed",
+        "atMs": 1792770962967,
+        "clock": "recorded"
+      },
+      {
+        "phase": "provider.request",
+        "atMs": 1792770962969,
+        "clock": "recorded"
+      },
+      {
+        "phase": "provider.request.result",
+        "atMs": 1792770967171,
+        "clock": "recorded"
+      },
+      {
+        "phase": "tool.dispatched",
+        "atMs": 1792770967567,
+        "clock": "recorded"
+      },
+      {
+        "phase": "tool.dispatched",
+        "atMs": 1792770967567,
+        "clock": "recorded"
+      },
+      {
+        "phase": "tool.dispatched",
+        "atMs": 1792770967567,
+        "clock": "recorded"
+      },
+      {
+        "phase": "tool.dispatched",
+        "atMs": 1792770967568,
+        "clock": "recorded"
+      },
+      {
+        "phase": "tool.completed",
+        "atMs": 1792770967569,
+        "clock": "recorded"
+      },
+      {
+        "phase": "tool.completed",
+        "atMs": 1792770967569,
+        "clock": "recorded"
+      },
+      {
+        "phase": "tool.completed",
+        "atMs": 1792770967569,
+        "clock": "recorded"
+      },
+      {
+        "phase": "tool.completed",
+        "atMs": 1792770967570,
+        "clock": "recorded"
+      },
+      {
+        "phase": "provider.request",
+        "atMs": 1792770967572,
+        "clock": "recorded"
+      },
+      {
+        "phase": "provider.request.result",
+        "atMs": 1792770968864,
+        "clock": "recorded"
+      },
+      {
+        "phase": "tool.dispatched",
+        "atMs": 1792770976126,
+        "clock": "recorded"
+      },
+      {
+        "phase": "tool.completed",
+        "atMs": 1792770976138,
+        "clock": "recorded"
+      },
+      {
+        "phase": "tool.dispatched",
+        "atMs": 1792770976139,
+        "clock": "recorded"
+      },
+      {
+        "phase": "tool.completed",
+        "atMs": 1792770976150,
+        "clock": "recorded"
+      },
+      {
+        "phase": "provider.request",
+        "atMs": 1792770976153,
+        "clock": "recorded"
+      },
+      {
+        "phase": "provider.request.result",
+        "atMs": 1792770977550,
+        "clock": "recorded"
+      },
+      {
+        "phase": "tool.dispatched",
+        "atMs": 1792770978777,
+        "clock": "recorded"
+      },
+      {
+        "phase": "tool.completed",
+        "atMs": 1792770979016,
+        "clock": "recorded"
+      },
+      {
+        "phase": "provider.request",
+        "atMs": 1792770979020,
+        "clock": "recorded"
+      },
+      {
+        "phase": "provider.request.result",
+        "atMs": 1792770983003,
+        "clock": "recorded"
+      },
+      {
+        "phase": "tool.dispatched",
+        "atMs": 1792770986360,
+        "clock": "recorded"
+      },
+      {
+        "phase": "tool.completed",
+        "atMs": 1792770986575,
+        "clock": "recorded"
+      },
+      {
+        "phase": "provider.request",
+        "atMs": 1792770986578,
+        "clock": "recorded"
+      },
+      {
+        "phase": "provider.request.result",
+        "atMs": 1792770990591,
+        "clock": "recorded"
+      },
+      {
+        "phase": "run.usage",
+        "atMs": 1792770995395,
+        "clock": "recorded"
+      },
+      {
+        "phase": "run.finished",
+        "atMs": 1792770995395,
+        "clock": "recorded"
+      },
+      {
+        "phase": "stop",
+        "atMs": 1792770995395,
+        "clock": "recorded"
+      },
+      {
+        "phase": "first-output",
+        "atMs": 1792770962396,
+        "clock": "observed"
+      },
+      {
+        "phase": "verified",
+        "atMs": 1792770995429,
+        "clock": "observed"
+      }
+    ],
+    "profile": {
+      "model": "glm-5.3-flash",
+      "modelParametersHash": "ef3d96a9ec0464401ae599f38c478bab21fa051e068e9d158e5c186628e7a393",
+      "agentManifestHash": "573aa060a6418ca4dadddd6bd819cb2de1a75dfac93eb2141d9fdbdbae28d722",
+      "permissionHash": "9e90aa2fba3ce7e178bafd4990280c05d1aa386a75673b717c97d791fe5be040",
+      "toolSurfaceHash": "16429204e3588b7e1aa23caea877263c673b88181b975c59f82e604791ee7633"
+    },
+    "profileReceipts": 6,
+    "loops": {
+      "continuations": [],
+      "stopped": []
+    },
+    "toolCalls": 10,
+    "parallel": {
+      "batches": 2,
+      "batchedReads": 6,
+      "batchWallMs": 1
+    },
+    "context": {
+      "compaction": {},
+      "reasons": [],
+      "recallCalls": 0
+    },
+    "providerAttempts": [
+      {
+        "attempt": 0,
+        "protocol": "openai-chat",
+        "status": 200,
+        "outcome": "headers_received",
+        "detail": null
+      },
+      {
+        "attempt": 0,
+        "protocol": "openai-chat",
+        "status": 200,
+        "outcome": "headers_received",
+        "detail": null
+      },
+      {
+        "attempt": 0,
+        "protocol": "openai-chat",
+        "status": 200,
+        "outcome": "headers_received",
+        "detail": null
+      },
+      {
+        "attempt": 0,
+        "protocol": "openai-chat",
+        "status": 200,
+        "outcome": "headers_received",
+        "detail": null
+      },
+      {
+        "attempt": 0,
+        "protocol": "openai-chat",
+        "status": 200,
+        "outcome": "headers_received",
+        "detail": null
+      },
+      {
+        "attempt": 0,
+        "protocol": "openai-chat",
+        "status": 200,
+        "outcome": "headers_received",
+        "detail": null
+      }
+    ],
+    "textHash": "f097ef111142fdf6e5324c412f756e60e71c79ae1d2c6193bdc8e0adf29d6b62",
+    "binarySha256": "0d1240910265be4df4ae5f7b11a3fbfac720555276f971953544435129ea4091",
+    "startedAtMs": 1792770958380,
+    "admissionMs": 1792770958402,
+    "elapsedMs": 37049
+  },
+  "assessment": {
+    "suiteHash": "bd905b4f81f0a9412b614631a36337723067574848c5f05b50ead1cf48675091",
+    "taskHash": "a5041ea521bf1671656245fae3d7fab12d071b4b5b82cf29607998143aadc602",
+    "artifactPass": true,
+    "unexpected": [],
+    "immutable": [
+      {
+        "file": "AGENTS.md",
+        "unchanged": true
+      },
+      {
+        "file": "package.json",
+        "unchanged": true
+      },
+      {
+        "file": "test/oracle.test.ts",
+        "unchanged": true
+      }
+    ],
+    "expected": [],
+    "check": {
+      "command": [
+        "bun",
+        "test",
+        "test/oracle.test.ts"
+      ],
+      "exit": 0,
+      "stdoutHash": "d6684989b8dd63b37d2f1954270826fbe1bd89a8debd12bcacf03ed1c6140ef6",
+      "stderrHash": "13d5281766f0a7c3dae417f8ab92d3bb2d643f14c9d61decb1824831f4dac93c"
+    },
+    "executionVerdict": "unverified",
+    "requiredReceipts": [],
+    "answerContains": []
+  },
+  "answer": "Both bugs are clear:\n1. `src/config.ts` uses `Boolean(value)`, so truthy values like `1` or `'false'` incorrectly enable the feature — it must only accept the literal `true`.\n2. `src/display.ts` returns `'ON'` for both branches — disabled must return `'OFF'`.\n\nI'll fix both, keeping the exported APIs identical and leaving the test untouched:\nBoth fixes applied. Now let me verify with the existing test (it uses `bun:test`):\nThe test passes. A quick sanity check on edge cases beyond the test's inputs:\nDone. Both bugs are fixed with minimal, surgical changes:\n\n**`src/config.ts`** — strict parsing:\n```ts\nexport function enabled(value: unknown) { return value === true }\n```\nPreviously `Boolean(value)` treated any truthy value (`1`, `'false'`, `{}`, …) as enabled. Now only the literal `true` enables the feature.\n\n**`src/display.ts`** — correct formatting:\n```ts\nexport function display(value: boolean) { return value ? 'ON' : 'OFF' }\n```\nPreviously both branches returned `'ON'`; disabled features now display `OFF`.\n\n**Verification:**\n- Existing test `test/oracle.test.ts` passes unchanged: `1 pass, 0 fail, 6 expect() calls` — confirming `false, 'false', 1, null, undefined` → `OFF` and `true` → `ON`.\n- Additional smoke test: only `true → ON`; `false, \"true\", \"false\", 1, 0, [], {}, \"yes\", null, undefined` all → `OFF`.\n\nExported APIs (function names, signatures) are preserved, and no test files, `AGENTS.md`, or `package.json` were modified."
+}

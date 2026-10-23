@@ -1,0 +1,30 @@
+{
+  "engine": "rust",
+  "model": "glm-5.3-flash",
+  "revision": "ed524903ae8dec701eba0e880390986ac98e0975",
+  "binary": "/Users/dingzg/.local/share/miao/bin/miao-engine-batch",
+  "binarySha256": "0d1240910265be4df4ae5f7b11a3fbfac720555276f971953544435129ea4091",
+  "tasks": [
+    "read-only",
+    "multi-read",
+    "small-edit",
+    "multi-file",
+    "test-repair",
+    "permission-denial",
+    "tool-error",
+    "stream-interruption",
+    "long-session",
+    "multi-line-edit",
+    "typed-repair",
+    "large-file",
+    "rename-symbol",
+    "create-module",
+    "docs-sync"
+  ],
+  "repetitions": 3,
+  "suiteHash": "bd905b4f81f0a9412b614631a36337723067574848c5f05b50ead1cf48675091",
+  "startedAtMs": 1792770736565,
+  "finishedAtMs": 1792772351896,
+  "samples": 45,
+  "rejected": 0
+}

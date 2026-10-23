@@ -1,0 +1,1307 @@
+{
+  "sample": {
+    "task": "long-session",
+    "engine": "rust",
+    "repetition": 1,
+    "suiteHash": "bd905b4f81f0a9412b614631a36337723067574848c5f05b50ead1cf48675091",
+    "taskHash": "acc85904b2dcd251e4f30fbe7b74f29d6ae3d4266a73c7319c966169a74baa82",
+    "profile": {
+      "model": "glm-5.3-flash",
+      "modelParametersHash": "ef3d96a9ec0464401ae599f38c478bab21fa051e068e9d158e5c186628e7a393",
+      "agentManifestHash": "573aa060a6418ca4dadddd6bd819cb2de1a75dfac93eb2141d9fdbdbae28d722",
+      "permissionHash": "7db96acb6a659bf78c677f670c75c7af245acfa868bd0f54f397b0bc4c844b7d",
+      "toolSurfaceHash": "16429204e3588b7e1aa23caea877263c673b88181b975c59f82e604791ee7633"
+    },
+    "revision": "ed524903ae8dec701eba0e880390986ac98e0975",
+    "artifactHash": "35db0efd98aa1e4e9e4d5f20fa6bec3541731bf457323eaf25c2bdcebe0d3f1c",
+    "receiptHash": "0ed968135871559580d118746fb656b3d08df20086255b7a703d78cdb60fa908",
+    "outcome": "passed",
+    "elapsedMs": 236036,
+    "attempts": [
+      {
+        "inputTokens": 5006,
+        "outputTokens": 93,
+        "cost": null
+      },
+      {
+        "inputTokens": 5154,
+        "outputTokens": 87,
+        "cost": null
+      },
+      {
+        "inputTokens": 5255,
+        "outputTokens": 157,
+        "cost": null
+      },
+      {
+        "inputTokens": 5426,
+        "outputTokens": 151,
+        "cost": null
+      },
+      {
+        "inputTokens": 5653,
+        "outputTokens": 35,
+        "cost": null
+      },
+      {
+        "inputTokens": 5749,
+        "outputTokens": 52,
+        "cost": null
+      },
+      {
+        "inputTokens": 5824,
+        "outputTokens": 90,
+        "cost": null
+      },
+      {
+        "inputTokens": 5994,
+        "outputTokens": 23,
+        "cost": null
+      },
+      {
+        "inputTokens": 6101,
+        "outputTokens": 58,
+        "cost": null
+      },
+      {
+        "inputTokens": 6189,
+        "outputTokens": 133,
+        "cost": null
+      },
+      {
+        "inputTokens": 6421,
+        "outputTokens": 122,
+        "cost": null
+      },
+      {
+        "inputTokens": 6615,
+        "outputTokens": 265,
+        "cost": null
+      },
+      {
+        "inputTokens": 6947,
+        "outputTokens": 994,
+        "cost": null
+      },
+      {
+        "inputTokens": 8019,
+        "outputTokens": 72,
+        "cost": null
+      },
+      {
+        "inputTokens": 8603,
+        "outputTokens": 405,
+        "cost": null
+      },
+      {
+        "inputTokens": 9317,
+        "outputTokens": 1067,
+        "cost": null
+      },
+      {
+        "inputTokens": 10497,
+        "outputTokens": 517,
+        "cost": null
+      },
+      {
+        "inputTokens": 11098,
+        "outputTokens": 199,
+        "cost": null
+      },
+      {
+        "inputTokens": 11406,
+        "outputTokens": 809,
+        "cost": null
+      },
+      {
+        "inputTokens": 12581,
+        "outputTokens": 939,
+        "cost": null
+      },
+      {
+        "inputTokens": 13596,
+        "outputTokens": 47,
+        "cost": null
+      },
+      {
+        "inputTokens": 13847,
+        "outputTokens": 131,
+        "cost": null
+      },
+      {
+        "inputTokens": 14032,
+        "outputTokens": 347,
+        "cost": null
+      },
+      {
+        "inputTokens": 14400,
+        "outputTokens": 423,
+        "cost": null
+      },
+      {
+        "inputTokens": 15030,
+        "outputTokens": 103,
+        "cost": null
+      },
+      {
+        "inputTokens": 15187,
+        "outputTokens": 155,
+        "cost": null
+      },
+      {
+        "inputTokens": 15358,
+        "outputTokens": 244,
+        "cost": null
+      }
+    ]
+  },
+  "rejection": null,
+  "evidence": {
+    "engine": "rust",
+    "revision": "ed524903ae8dec701eba0e880390986ac98e0975",
+    "task": "long-session",
+    "repetition": 1,
+    "terminal": "completed",
+    "error": null,
+    "receipts": [
+      "tool.error"
+    ],
+    "attempts": [
+      {
+        "inputTokens": 5006,
+        "outputTokens": 93,
+        "cacheReadTokens": 4992,
+        "cacheWriteTokens": null,
+        "reasoningTokens": 71,
+        "cost": null
+      },
+      {
+        "inputTokens": 5154,
+        "outputTokens": 87,
+        "cacheReadTokens": 4992,
+        "cacheWriteTokens": null,
+        "reasoningTokens": 32,
+        "cost": null
+      },
+      {
+        "inputTokens": 5255,
+        "outputTokens": 157,
+        "cacheReadTokens": 5120,
+        "cacheWriteTokens": null,
+        "reasoningTokens": 110,
+        "cost": null
+      },
+      {
+        "inputTokens": 5426,
+        "outputTokens": 151,
+        "cacheReadTokens": 5248,
+        "cacheWriteTokens": null,
+        "reasoningTokens": 95,
+        "cost": null
+      },
+      {
+        "inputTokens": 5653,
+        "outputTokens": 35,
+        "cacheReadTokens": 5376,
+        "cacheWriteTokens": null,
+        "reasoningTokens": 12,
+        "cost": null
+      },
+      {
+        "inputTokens": 5749,
+        "outputTokens": 52,
+        "cacheReadTokens": 5632,
+        "cacheWriteTokens": null,
+        "reasoningTokens": 0,
+        "cost": null
+      },
+      {
+        "inputTokens": 5824,
+        "outputTokens": 90,
+        "cacheReadTokens": 5696,
+        "cacheWriteTokens": null,
+        "reasoningTokens": 36,
+        "cost": null
+      },
+      {
+        "inputTokens": 5994,
+        "outputTokens": 23,
+        "cacheReadTokens": 5824,
+        "cacheWriteTokens": null,
+        "reasoningTokens": 8,
+        "cost": null
+      },
+      {
+        "inputTokens": 6101,
+        "outputTokens": 58,
+        "cacheReadTokens": 5952,
+        "cacheWriteTokens": null,
+        "reasoningTokens": 0,
+        "cost": null
+      },
+      {
+        "inputTokens": 6189,
+        "outputTokens": 133,
+        "cacheReadTokens": 6080,
+        "cacheWriteTokens": null,
+        "reasoningTokens": 110,
+        "cost": null
+      },
+      {
+        "inputTokens": 6421,
+        "outputTokens": 122,
+        "cacheReadTokens": 6144,
+        "cacheWriteTokens": null,
+        "reasoningTokens": 98,
+        "cost": null
+      },
+      {
+        "inputTokens": 6615,
+        "outputTokens": 265,
+        "cacheReadTokens": 6400,
+        "cacheWriteTokens": null,
+        "reasoningTokens": 200,
+        "cost": null
+      },
+      {
+        "inputTokens": 6947,
+        "outputTokens": 994,
+        "cacheReadTokens": 6592,
+        "cacheWriteTokens": null,
+        "reasoningTokens": 880,
+        "cost": null
+      },
+      {
+        "inputTokens": 8019,
+        "outputTokens": 72,
+        "cacheReadTokens": 6912,
+        "cacheWriteTokens": null,
+        "reasoningTokens": 42,
+        "cost": null
+      },
+      {
+        "inputTokens": 8603,
+        "outputTokens": 405,
+        "cacheReadTokens": 8000,
+        "cacheWriteTokens": null,
+        "reasoningTokens": 312,
+        "cost": null
+      },
+      {
+        "inputTokens": 9317,
+        "outputTokens": 1067,
+        "cacheReadTokens": 8576,
+        "cacheWriteTokens": null,
+        "reasoningTokens": 871,
+        "cost": null
+      },
+      {
+        "inputTokens": 10497,
+        "outputTokens": 517,
+        "cacheReadTokens": 9280,
+        "cacheWriteTokens": null,
+        "reasoningTokens": 333,
+        "cost": null
+      },
+      {
+        "inputTokens": 11098,
+        "outputTokens": 199,
+        "cacheReadTokens": 10496,
+        "cacheWriteTokens": null,
+        "reasoningTokens": 60,
+        "cost": null
+      },
+      {
+        "inputTokens": 11406,
+        "outputTokens": 809,
+        "cacheReadTokens": 11072,
+        "cacheWriteTokens": null,
+        "reasoningTokens": 477,
+        "cost": null
+      },
+      {
+        "inputTokens": 12581,
+        "outputTokens": 939,
+        "cacheReadTokens": 11392,
+        "cacheWriteTokens": null,
+        "reasoningTokens": 799,
+        "cost": null
+      },
+      {
+        "inputTokens": 13596,
+        "outputTokens": 47,
+        "cacheReadTokens": 12544,
+        "cacheWriteTokens": null,
+        "reasoningTokens": 0,
+        "cost": null
+      },
+      {
+        "inputTokens": 13847,
+        "outputTokens": 131,
+        "cacheReadTokens": 13568,
+        "cacheWriteTokens": null,
+        "reasoningTokens": 79,
+        "cost": null
+      },
+      {
+        "inputTokens": 14032,
+        "outputTokens": 347,
+        "cacheReadTokens": 13824,
+        "cacheWriteTokens": null,
+        "reasoningTokens": 0,
+        "cost": null
+      },
+      {
+        "inputTokens": 14400,
+        "outputTokens": 423,
+        "cacheReadTokens": 14016,
+        "cacheWriteTokens": null,
+        "reasoningTokens": 112,
+        "cost": null
+      },
+      {
+        "inputTokens": 15030,
+        "outputTokens": 103,
+        "cacheReadTokens": 14400,
+        "cacheWriteTokens": null,
+        "reasoningTokens": 20,
+        "cost": null
+      },
+      {
+        "inputTokens": 15187,
+        "outputTokens": 155,
+        "cacheReadTokens": 14976,
+        "cacheWriteTokens": null,
+        "reasoningTokens": 0,
+        "cost": null
+      },
+      {
+        "inputTokens": 15358,
+        "outputTokens": 244,
+        "cacheReadTokens": 15168,
+        "cacheWriteTokens": null,
+        "reasoningTokens": 59,
+        "cost": null
+      }
+    ],
+    "phases": [
+      {
+        "phase": "input.admitted",
+        "atMs": 1792771399274,
+        "clock": "recorded"
+      },
+      {
+        "phase": "input.promoted",
+        "atMs": 1792771399275,
+        "clock": "recorded"
+      },
+      {
+        "phase": "run.started",
+        "atMs": 1792771399275,
+        "clock": "recorded"
+      },
+      {
+        "phase": "provider.request",
+        "atMs": 1792771399278,
+        "clock": "recorded"
+      },
+      {
+        "phase": "provider.request.result",
+        "atMs": 1792771403391,
+        "clock": "recorded"
+      },
+      {
+        "phase": "tool.dispatched",
+        "atMs": 1792771405308,
+        "clock": "recorded"
+      },
+      {
+        "phase": "tool.dispatched",
+        "atMs": 1792771405308,
+        "clock": "recorded"
+      },
+      {
+        "phase": "tool.completed",
+        "atMs": 1792771405309,
+        "clock": "recorded"
+      },
+      {
+        "phase": "tool.completed",
+        "atMs": 1792771405309,
+        "clock": "recorded"
+      },
+      {
+        "phase": "provider.request",
+        "atMs": 1792771405311,
+        "clock": "recorded"
+      },
+      {
+        "phase": "provider.request.result",
+        "atMs": 1792771409623,
+        "clock": "recorded"
+      },
+      {
+        "phase": "tool.completed",
+        "atMs": 1792771410774,
+        "clock": "recorded"
+      },
+      {
+        "phase": "provider.request",
+        "atMs": 1792771410777,
+        "clock": "recorded"
+      },
+      {
+        "phase": "provider.request.result",
+        "atMs": 1792771414655,
+        "clock": "recorded"
+      },
+      {
+        "phase": "tool.completed",
+        "atMs": 1792771417754,
+        "clock": "recorded"
+      },
+      {
+        "phase": "provider.request",
+        "atMs": 1792771417756,
+        "clock": "recorded"
+      },
+      {
+        "phase": "provider.request.result",
+        "atMs": 1792771421681,
+        "clock": "recorded"
+      },
+      {
+        "phase": "tool.dispatched",
+        "atMs": 1792771424949,
+        "clock": "recorded"
+      },
+      {
+        "phase": "tool.completed",
+        "atMs": 1792771424957,
+        "clock": "recorded"
+      },
+      {
+        "phase": "provider.request",
+        "atMs": 1792771424960,
+        "clock": "recorded"
+      },
+      {
+        "phase": "provider.request.result",
+        "atMs": 1792771425989,
+        "clock": "recorded"
+      },
+      {
+        "phase": "tool.dispatched",
+        "atMs": 1792771426539,
+        "clock": "recorded"
+      },
+      {
+        "phase": "tool.completed",
+        "atMs": 1792771426539,
+        "clock": "recorded"
+      },
+      {
+        "phase": "provider.request",
+        "atMs": 1792771426542,
+        "clock": "recorded"
+      },
+      {
+        "phase": "provider.request.result",
+        "atMs": 1792771430652,
+        "clock": "recorded"
+      },
+      {
+        "phase": "run.usage",
+        "atMs": 1792771431304,
+        "clock": "recorded"
+      },
+      {
+        "phase": "run.finished",
+        "atMs": 1792771431304,
+        "clock": "recorded"
+      },
+      {
+        "phase": "stop",
+        "atMs": 1792771431305,
+        "clock": "recorded"
+      },
+      {
+        "phase": "input.admitted",
+        "atMs": 1792771431399,
+        "clock": "recorded"
+      },
+      {
+        "phase": "input.promoted",
+        "atMs": 1792771431400,
+        "clock": "recorded"
+      },
+      {
+        "phase": "run.started",
+        "atMs": 1792771431401,
+        "clock": "recorded"
+      },
+      {
+        "phase": "provider.request",
+        "atMs": 1792771431404,
+        "clock": "recorded"
+      },
+      {
+        "phase": "provider.request.result",
+        "atMs": 1792771432435,
+        "clock": "recorded"
+      },
+      {
+        "phase": "tool.dispatched",
+        "atMs": 1792771433706,
+        "clock": "recorded"
+      },
+      {
+        "phase": "tool.completed",
+        "atMs": 1792771433715,
+        "clock": "recorded"
+      },
+      {
+        "phase": "provider.request",
+        "atMs": 1792771433719,
+        "clock": "recorded"
+      },
+      {
+        "phase": "provider.request.result",
+        "atMs": 1792771434650,
+        "clock": "recorded"
+      },
+      {
+        "phase": "tool.dispatched",
+        "atMs": 1792771434920,
+        "clock": "recorded"
+      },
+      {
+        "phase": "tool.completed",
+        "atMs": 1792771434920,
+        "clock": "recorded"
+      },
+      {
+        "phase": "provider.request",
+        "atMs": 1792771434924,
+        "clock": "recorded"
+      },
+      {
+        "phase": "provider.request.result",
+        "atMs": 1792771435909,
+        "clock": "recorded"
+      },
+      {
+        "phase": "run.usage",
+        "atMs": 1792771436597,
+        "clock": "recorded"
+      },
+      {
+        "phase": "run.finished",
+        "atMs": 1792771436598,
+        "clock": "recorded"
+      },
+      {
+        "phase": "stop",
+        "atMs": 1792771436598,
+        "clock": "recorded"
+      },
+      {
+        "phase": "input.admitted",
+        "atMs": 1792771436613,
+        "clock": "recorded"
+      },
+      {
+        "phase": "input.promoted",
+        "atMs": 1792771436613,
+        "clock": "recorded"
+      },
+      {
+        "phase": "run.started",
+        "atMs": 1792771436614,
+        "clock": "recorded"
+      },
+      {
+        "phase": "provider.request",
+        "atMs": 1792771436617,
+        "clock": "recorded"
+      },
+      {
+        "phase": "provider.request.result",
+        "atMs": 1792771440680,
+        "clock": "recorded"
+      },
+      {
+        "phase": "tool.dispatched",
+        "atMs": 1792771442723,
+        "clock": "recorded"
+      },
+      {
+        "phase": "tool.completed",
+        "atMs": 1792771442723,
+        "clock": "recorded"
+      },
+      {
+        "phase": "tool.completed",
+        "atMs": 1792771442724,
+        "clock": "recorded"
+      },
+      {
+        "phase": "provider.request",
+        "atMs": 1792771442726,
+        "clock": "recorded"
+      },
+      {
+        "phase": "provider.request.result",
+        "atMs": 1792771444967,
+        "clock": "recorded"
+      },
+      {
+        "phase": "tool.dispatched",
+        "atMs": 1792771447015,
+        "clock": "recorded"
+      },
+      {
+        "phase": "tool.dispatched",
+        "atMs": 1792771447015,
+        "clock": "recorded"
+      },
+      {
+        "phase": "tool.completed",
+        "atMs": 1792771447016,
+        "clock": "recorded"
+      },
+      {
+        "phase": "tool.completed",
+        "atMs": 1792771447016,
+        "clock": "recorded"
+      },
+      {
+        "phase": "provider.request",
+        "atMs": 1792771447019,
+        "clock": "recorded"
+      },
+      {
+        "phase": "provider.request.result",
+        "atMs": 1792771451029,
+        "clock": "recorded"
+      },
+      {
+        "phase": "tool.dispatched",
+        "atMs": 1792771457098,
+        "clock": "recorded"
+      },
+      {
+        "phase": "tool.completed",
+        "atMs": 1792771457374,
+        "clock": "recorded"
+      },
+      {
+        "phase": "provider.request",
+        "atMs": 1792771457378,
+        "clock": "recorded"
+      },
+      {
+        "phase": "provider.request.result",
+        "atMs": 1792771461401,
+        "clock": "recorded"
+      },
+      {
+        "phase": "tool.dispatched",
+        "atMs": 1792771483377,
+        "clock": "recorded"
+      },
+      {
+        "phase": "tool.completed",
+        "atMs": 1792771483385,
+        "clock": "recorded"
+      },
+      {
+        "phase": "provider.request",
+        "atMs": 1792771483389,
+        "clock": "recorded"
+      },
+      {
+        "phase": "provider.request.result",
+        "atMs": 1792771485956,
+        "clock": "recorded"
+      },
+      {
+        "phase": "tool.dispatched",
+        "atMs": 1792771487520,
+        "clock": "recorded"
+      },
+      {
+        "phase": "tool.completed",
+        "atMs": 1792771487819,
+        "clock": "recorded"
+      },
+      {
+        "phase": "provider.request",
+        "atMs": 1792771487823,
+        "clock": "recorded"
+      },
+      {
+        "phase": "provider.request.result",
+        "atMs": 1792771491635,
+        "clock": "recorded"
+      },
+      {
+        "phase": "tool.dispatched",
+        "atMs": 1792771498338,
+        "clock": "recorded"
+      },
+      {
+        "phase": "tool.completed",
+        "atMs": 1792771499317,
+        "clock": "recorded"
+      },
+      {
+        "phase": "provider.request",
+        "atMs": 1792771499321,
+        "clock": "recorded"
+      },
+      {
+        "phase": "provider.request.result",
+        "atMs": 1792771504854,
+        "clock": "recorded"
+      },
+      {
+        "phase": "tool.dispatched",
+        "atMs": 1792771529672,
+        "clock": "recorded"
+      },
+      {
+        "phase": "tool.completed",
+        "atMs": 1792771530452,
+        "clock": "recorded"
+      },
+      {
+        "phase": "provider.request",
+        "atMs": 1792771530457,
+        "clock": "recorded"
+      },
+      {
+        "phase": "provider.request.result",
+        "atMs": 1792771531459,
+        "clock": "recorded"
+      },
+      {
+        "phase": "tool.dispatched",
+        "atMs": 1792771544628,
+        "clock": "recorded"
+      },
+      {
+        "phase": "tool.completed",
+        "atMs": 1792771544852,
+        "clock": "recorded"
+      },
+      {
+        "phase": "provider.request",
+        "atMs": 1792771544857,
+        "clock": "recorded"
+      },
+      {
+        "phase": "provider.request.result",
+        "atMs": 1792771549137,
+        "clock": "recorded"
+      },
+      {
+        "phase": "tool.dispatched",
+        "atMs": 1792771552205,
+        "clock": "recorded"
+      },
+      {
+        "phase": "tool.completed",
+        "atMs": 1792771552563,
+        "clock": "recorded"
+      },
+      {
+        "phase": "provider.request",
+        "atMs": 1792771552567,
+        "clock": "recorded"
+      },
+      {
+        "phase": "provider.request.result",
+        "atMs": 1792771556707,
+        "clock": "recorded"
+      },
+      {
+        "phase": "tool.dispatched",
+        "atMs": 1792771569346,
+        "clock": "recorded"
+      },
+      {
+        "phase": "tool.completed",
+        "atMs": 1792771569805,
+        "clock": "recorded"
+      },
+      {
+        "phase": "provider.request",
+        "atMs": 1792771569809,
+        "clock": "recorded"
+      },
+      {
+        "phase": "provider.request.result",
+        "atMs": 1792771570838,
+        "clock": "recorded"
+      },
+      {
+        "phase": "tool.dispatched",
+        "atMs": 1792771590629,
+        "clock": "recorded"
+      },
+      {
+        "phase": "tool.completed",
+        "atMs": 1792771590637,
+        "clock": "recorded"
+      },
+      {
+        "phase": "provider.request",
+        "atMs": 1792771590643,
+        "clock": "recorded"
+      },
+      {
+        "phase": "provider.request.result",
+        "atMs": 1792771595986,
+        "clock": "recorded"
+      },
+      {
+        "phase": "tool.dispatched",
+        "atMs": 1792771595988,
+        "clock": "recorded"
+      },
+      {
+        "phase": "tool.completed",
+        "atMs": 1792771596424,
+        "clock": "recorded"
+      },
+      {
+        "phase": "provider.request",
+        "atMs": 1792771596429,
+        "clock": "recorded"
+      },
+      {
+        "phase": "provider.request.result",
+        "atMs": 1792771597514,
+        "clock": "recorded"
+      },
+      {
+        "phase": "tool.dispatched",
+        "atMs": 1792771600166,
+        "clock": "recorded"
+      },
+      {
+        "phase": "tool.completed",
+        "atMs": 1792771600390,
+        "clock": "recorded"
+      },
+      {
+        "phase": "provider.request",
+        "atMs": 1792771600396,
+        "clock": "recorded"
+      },
+      {
+        "phase": "provider.request.result",
+        "atMs": 1792771604396,
+        "clock": "recorded"
+      },
+      {
+        "phase": "run.usage",
+        "atMs": 1792771609369,
+        "clock": "recorded"
+      },
+      {
+        "phase": "run.finished",
+        "atMs": 1792771609370,
+        "clock": "recorded"
+      },
+      {
+        "phase": "stop",
+        "atMs": 1792771609370,
+        "clock": "recorded"
+      },
+      {
+        "phase": "input.admitted",
+        "atMs": 1792771609436,
+        "clock": "recorded"
+      },
+      {
+        "phase": "input.promoted",
+        "atMs": 1792771609437,
+        "clock": "recorded"
+      },
+      {
+        "phase": "run.started",
+        "atMs": 1792771609438,
+        "clock": "recorded"
+      },
+      {
+        "phase": "provider.request",
+        "atMs": 1792771609443,
+        "clock": "recorded"
+      },
+      {
+        "phase": "provider.request.result",
+        "atMs": 1792771611118,
+        "clock": "recorded"
+      },
+      {
+        "phase": "tool.dispatched",
+        "atMs": 1792771617029,
+        "clock": "recorded"
+      },
+      {
+        "phase": "tool.completed",
+        "atMs": 1792771617465,
+        "clock": "recorded"
+      },
+      {
+        "phase": "provider.request",
+        "atMs": 1792771617471,
+        "clock": "recorded"
+      },
+      {
+        "phase": "provider.request.result",
+        "atMs": 1792771621526,
+        "clock": "recorded"
+      },
+      {
+        "phase": "tool.dispatched",
+        "atMs": 1792771623430,
+        "clock": "recorded"
+      },
+      {
+        "phase": "tool.completed",
+        "atMs": 1792771623629,
+        "clock": "recorded"
+      },
+      {
+        "phase": "provider.request",
+        "atMs": 1792771623634,
+        "clock": "recorded"
+      },
+      {
+        "phase": "provider.request.result",
+        "atMs": 1792771627652,
+        "clock": "recorded"
+      },
+      {
+        "phase": "run.usage",
+        "atMs": 1792771630531,
+        "clock": "recorded"
+      },
+      {
+        "phase": "run.finished",
+        "atMs": 1792771630531,
+        "clock": "recorded"
+      },
+      {
+        "phase": "stop",
+        "atMs": 1792771630531,
+        "clock": "recorded"
+      },
+      {
+        "phase": "input.admitted",
+        "atMs": 1792771630554,
+        "clock": "recorded"
+      },
+      {
+        "phase": "input.promoted",
+        "atMs": 1792771630555,
+        "clock": "recorded"
+      },
+      {
+        "phase": "run.started",
+        "atMs": 1792771630556,
+        "clock": "recorded"
+      },
+      {
+        "phase": "provider.request",
+        "atMs": 1792771630563,
+        "clock": "recorded"
+      },
+      {
+        "phase": "provider.request.result",
+        "atMs": 1792771631797,
+        "clock": "recorded"
+      },
+      {
+        "phase": "run.usage",
+        "atMs": 1792771635230,
+        "clock": "recorded"
+      },
+      {
+        "phase": "run.finished",
+        "atMs": 1792771635230,
+        "clock": "recorded"
+      },
+      {
+        "phase": "stop",
+        "atMs": 1792771635230,
+        "clock": "recorded"
+      },
+      {
+        "phase": "first-output",
+        "atMs": 1792771403392,
+        "clock": "observed"
+      },
+      {
+        "phase": "verified",
+        "atMs": 1792771635290,
+        "clock": "observed"
+      }
+    ],
+    "profile": {
+      "model": "glm-5.3-flash",
+      "modelParametersHash": "ef3d96a9ec0464401ae599f38c478bab21fa051e068e9d158e5c186628e7a393",
+      "agentManifestHash": "573aa060a6418ca4dadddd6bd819cb2de1a75dfac93eb2141d9fdbdbae28d722",
+      "permissionHash": "7db96acb6a659bf78c677f670c75c7af245acfa868bd0f54f397b0bc4c844b7d",
+      "toolSurfaceHash": "16429204e3588b7e1aa23caea877263c673b88181b975c59f82e604791ee7633"
+    },
+    "profileReceipts": 27,
+    "loops": {
+      "continuations": [],
+      "stopped": []
+    },
+    "toolCalls": 25,
+    "parallel": {
+      "batches": 2,
+      "batchedReads": 4,
+      "batchWallMs": 1
+    },
+    "context": {
+      "compaction": {},
+      "reasons": [],
+      "recallCalls": 0
+    },
+    "providerAttempts": [
+      {
+        "attempt": 0,
+        "protocol": "openai-chat",
+        "status": 200,
+        "outcome": "headers_received",
+        "detail": null
+      },
+      {
+        "attempt": 0,
+        "protocol": "openai-chat",
+        "status": 200,
+        "outcome": "headers_received",
+        "detail": null
+      },
+      {
+        "attempt": 0,
+        "protocol": "openai-chat",
+        "status": 200,
+        "outcome": "headers_received",
+        "detail": null
+      },
+      {
+        "attempt": 0,
+        "protocol": "openai-chat",
+        "status": 200,
+        "outcome": "headers_received",
+        "detail": null
+      },
+      {
+        "attempt": 0,
+        "protocol": "openai-chat",
+        "status": 200,
+        "outcome": "headers_received",
+        "detail": null
+      },
+      {
+        "attempt": 0,
+        "protocol": "openai-chat",
+        "status": 200,
+        "outcome": "headers_received",
+        "detail": null
+      },
+      {
+        "attempt": 0,
+        "protocol": "openai-chat",
+        "status": 200,
+        "outcome": "headers_received",
+        "detail": null
+      },
+      {
+        "attempt": 0,
+        "protocol": "openai-chat",
+        "status": 200,
+        "outcome": "headers_received",
+        "detail": null
+      },
+      {
+        "attempt": 0,
+        "protocol": "openai-chat",
+        "status": 200,
+        "outcome": "headers_received",
+        "detail": null
+      },
+      {
+        "attempt": 0,
+        "protocol": "openai-chat",
+        "status": 200,
+        "outcome": "headers_received",
+        "detail": null
+      },
+      {
+        "attempt": 0,
+        "protocol": "openai-chat",
+        "status": 200,
+        "outcome": "headers_received",
+        "detail": null
+      },
+      {
+        "attempt": 0,
+        "protocol": "openai-chat",
+        "status": 200,
+        "outcome": "headers_received",
+        "detail": null
+      },
+      {
+        "attempt": 0,
+        "protocol": "openai-chat",
+        "status": 200,
+        "outcome": "headers_received",
+        "detail": null
+      },
+      {
+        "attempt": 0,
+        "protocol": "openai-chat",
+        "status": 200,
+        "outcome": "headers_received",
+        "detail": null
+      },
+      {
+        "attempt": 0,
+        "protocol": "openai-chat",
+        "status": 200,
+        "outcome": "headers_received",
+        "detail": null
+      },
+      {
+        "attempt": 0,
+        "protocol": "openai-chat",
+        "status": 200,
+        "outcome": "headers_received",
+        "detail": null
+      },
+      {
+        "attempt": 0,
+        "protocol": "openai-chat",
+        "status": 200,
+        "outcome": "headers_received",
+        "detail": null
+      },
+      {
+        "attempt": 0,
+        "protocol": "openai-chat",
+        "status": 200,
+        "outcome": "headers_received",
+        "detail": null
+      },
+      {
+        "attempt": 0,
+        "protocol": "openai-chat",
+        "status": 200,
+        "outcome": "headers_received",
+        "detail": null
+      },
+      {
+        "attempt": 0,
+        "protocol": "openai-chat",
+        "status": 200,
+        "outcome": "headers_received",
+        "detail": null
+      },
+      {
+        "attempt": 0,
+        "protocol": "openai-chat",
+        "status": 200,
+        "outcome": "headers_received",
+        "detail": null
+      },
+      {
+        "attempt": 0,
+        "protocol": "openai-chat",
+        "status": 200,
+        "outcome": "headers_received",
+        "detail": null
+      },
+      {
+        "attempt": 0,
+        "protocol": "openai-chat",
+        "status": 200,
+        "outcome": "headers_received",
+        "detail": null
+      },
+      {
+        "attempt": 0,
+        "protocol": "openai-chat",
+        "status": 200,
+        "outcome": "headers_received",
+        "detail": null
+      },
+      {
+        "attempt": 0,
+        "protocol": "openai-chat",
+        "status": 200,
+        "outcome": "headers_received",
+        "detail": null
+      },
+      {
+        "attempt": 0,
+        "protocol": "openai-chat",
+        "status": 200,
+        "outcome": "headers_received",
+        "detail": null
+      },
+      {
+        "attempt": 0,
+        "protocol": "openai-chat",
+        "status": 200,
+        "outcome": "headers_received",
+        "detail": null
+      }
+    ],
+    "textHash": "a8616bf6f228d6b6295e4b752175c1c87900f70993dc26eb5a5acc788a011aed",
+    "binarySha256": "0d1240910265be4df4ae5f7b11a3fbfac720555276f971953544435129ea4091",
+    "startedAtMs": 1792771399254,
+    "admissionMs": 1792771399274,
+    "elapsedMs": 236036
+  },
+  "assessment": {
+    "suiteHash": "bd905b4f81f0a9412b614631a36337723067574848c5f05b50ead1cf48675091",
+    "taskHash": "acc85904b2dcd251e4f30fbe7b74f29d6ae3d4266a73c7319c966169a74baa82",
+    "artifactPass": true,
+    "unexpected": [],
+    "immutable": [
+      {
+        "file": "AGENTS.md",
+        "unchanged": true
+      },
+      {
+        "file": "package.json",
+        "unchanged": true
+      }
+    ],
+    "expected": [],
+    "check": {
+      "command": [
+        "bun",
+        "test",
+        "test/long.test.ts"
+      ],
+      "exit": 0,
+      "stdoutHash": "c384cdaa55dad157820800a4aaa48c4963ea5500be5bd17037485dc40c6e23b8",
+      "stderrHash": "0a4d7ad9faa6cc5d2a08b577a7fa79c4b0416e888e754d017cb3896ab8965cd9"
+    },
+    "executionVerdict": "unverified",
+    "requiredReceipts": [],
+    "answerContains": [
+      "LONG_SESSION_OK"
+    ]
+  },
+  "answer": "The `src/` directory doesn't exist yet; I'll create `src/unit.ts` now.\nThe write failed with a tool input error; let me retry.\nThe write tool keeps rejecting the input, so I'll use `apply_patch` to add the file instead.\nThe patch applied. Verifying the file:\nDone. Created `src/unit.ts` containing:\n\n```ts\nexport const unit = 21;\n```\n\nNothing else in the workspace was modified — `AGENTS.md`, `package.json`, and `test/oracle.test.ts` are untouched.\nDone. Created `src/double.ts`:\n\n```ts\nimport { unit } from './unit';\n\nexport function double(): number {\n  return unit * 2;\n}\n```\n\n`double()` returns `unit * 2` = 42. Nothing else was touched.\nNo test directory or runner exists yet — `package.json` is minimal ESM with no test script, so I'll use Node's built-in test runner. Let me check the Node version for TypeScript support:\nNode 22.23 with type stripping is available. Now I'll create the test file:\nNode's ESM resolver requires explicit extensions, but the source files use extensionless imports. Let me see what TypeScript runners are available:\nA local `tsc` exists. Since the sources use extensionless imports (valid TS, invalid for Node's ESM resolver), I'll transpile to CommonJS in a temp directory outside the workspace and run the compiled test with `node --test` (still Node's built-in runner — no config added to the workspace):\n`@types/node` isn't resolvable for a standalone `tsc` run. I'll check for `esbuild` in that node_modules — it transpiles without type-checking:\nTypeScript 5.8.2 is usable as a library. I'll transpile the three files to CommonJS in a temp build dir with `transpileModule` (no type-checking, no workspace config), then run the compiled test:\nModule resolution works now; the failure is CJS interop — the default import compiles to `assert.default.equal`. I'll switch to a namespace import, which works in both CJS and native ESM:\nThe test passes. Let me clean up the temp build artifacts:\nDone. Created `test/long.test.ts`:\n\n```ts\nimport { test } from 'node:test';\nimport * as assert from 'node:assert/strict';\nimport { double } from '../src/double';\n\ntest('double() returns unit * 2', () => {\n  assert.equal(double(), 42);\n  console.log('LONG_SESSION_OK');\n});\n```\n\n**Run result: pass** — TAP output shows `ok 1 - double() returns unit * 2` with `LONG_SESSION_OK` printed, `# pass 1 / # fail 0`.\n\nNotes on how it was run (no workspace changes made for this):\n- `package.json` has no test script and Node's ESM resolver rejects the extensionless TS imports (`'../src/double'`, `'./unit'`), so running `node --test` directly on the `.ts` files failed.\n- Rather than adding config or changing your source files, I transpiled the three files to CommonJS with the system's TypeScript 5.8.2 library (`transpileModule`, into `/tmp`) and ran the compiled test with Node's built-in runner (`node --test`). Temp files were removed afterward.\n- One fix along the way: default-importing `node:assert/strict` broke under CJS interop (`assert.default.equal`), so the test uses a namespace import, which is valid in both ESM and CJS.\n\nWorkspace files touched: only the new `test/long.test.ts`. `AGENTS.md`, `package.json`, `src/*`, and `test/oracle.test.ts` (which doesn't currently exist in the workspace) are unchanged.\nThe test passed on the last run, so let me re-verify the current state before concluding no repair is needed:\nThe test **passes** (`ok 1`, `LONG_SESSION_OK` printed, exit code 0), so the repair condition doesn't trigger — no source changes are needed or made. Cleaning up the temp build:\n**Result: no repair needed.**\n\n- Re-ran the test from a fresh transpile: `ok 1 - double() returns unit * 2`, marker `LONG_SESSION_OK` printed, `# pass 1 / # fail 0`, exit code 0.\n- Since the assertion holds (`unit` = 21 → `double()` = 42), the \"if it fails\" branch never applies — `src/unit.ts` and `src/double.ts` are untouched, and the test was never modified.\n- Temp build artifacts under `/tmp` were removed again; the workspace still only contains `AGENTS.md`, `package.json`, `src/unit.ts`, `src/double.ts`, and `test/long.test.ts`.\n**Files created this session:**\n\n1. **`src/unit.ts`**\n   ```ts\n   export const unit = 21;\n   ```\n\n2. **`src/double.ts`**\n   ```ts\n   import { unit } from './unit';\n\n   export function double(): number {\n     return unit * 2;\n   }\n   ```\n\n3. **`test/long.test.ts`** — asserts `double()` equals 42 using `node:test` / `node:assert/strict`, and prints the marker on success. Test status: **pass** (`# pass 1 / # fail 0`).\n\nNo other files were created or modified (`AGENTS.md` and `package.json` untouched; note that `test/oracle.test.ts` referenced in AGENTS.md does not exist in this workspace).\n\n**Exact printed marker:**\n\n```\nLONG_SESSION_OK\n```"
+}
