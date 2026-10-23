@@ -26,6 +26,7 @@ use tokio_util::sync::CancellationToken;
 struct Fixture {
     summaries: AtomicUsize,
     counts: AtomicUsize,
+    main_messages: std::sync::Mutex<Vec<Vec<(String, String)>>>,
 }
 
 #[async_trait]
@@ -47,6 +48,18 @@ impl Provider for Fixture {
                 needs_tools: false,
             });
         }
+        self.main_messages.lock().unwrap().push(
+            request
+                .messages
+                .iter()
+                .map(|message| {
+                    (
+                        message.role.clone(),
+                        message.content[0]["text"].as_str().unwrap_or("").to_owned(),
+                    )
+                })
+                .collect(),
+        );
         Ok(Reply {
             content: json!([{"type":"text","text":"the answer"}]),
             usage: json!({"inputTokens": 900_000, "outputTokens": 1_000}),
@@ -101,6 +114,7 @@ async fn a_crossed_limit_compacts_in_one_call_and_the_next_turn_starts_from_it()
     let provider = Arc::new(Fixture {
         summaries: AtomicUsize::new(0),
         counts: AtomicUsize::new(0),
+        main_messages: std::sync::Mutex::new(Vec::new()),
     });
     let runtime = Runtime::with_policy(
         store.clone(),
@@ -182,6 +196,67 @@ async fn a_crossed_limit_compacts_in_one_call_and_the_next_turn_starts_from_it()
         .filter(|event| event.kind == "history.compacted")
         .count();
     assert_eq!(compactions, 2, "one checkpoint per crossed turn");
+}
+
+#[tokio::test]
+async fn the_first_request_after_a_checkpoint_carries_the_restore_budget_note() {
+    let dir = tempfile::tempdir().unwrap();
+    let store = Store::open(dir.path().join("engine.db")).await.unwrap();
+    let provider = Arc::new(Fixture {
+        summaries: AtomicUsize::new(0),
+        counts: AtomicUsize::new(0),
+        main_messages: std::sync::Mutex::new(Vec::new()),
+    });
+    let runtime = Runtime::with_policy(
+        store.clone(),
+        provider.clone(),
+        Tools::new(dir.path()).await.unwrap(),
+        Policy::new(Config::default()).unwrap(),
+    )
+    .await
+    .unwrap();
+    runtime
+        .set_context_limits(Some(ContextLimits {
+            window: 1_000_000,
+            ratio: 0.8,
+            headroom: 0,
+            per_pass: 1000,
+            prune_chars: None,
+            prune_total_chars: None,
+            protect_turns: 2,
+        }))
+        .await;
+
+    drain(&runtime, &store, "one", 1).await;
+    let before = provider.main_messages.lock().unwrap().len();
+    drain(&runtime, &store, "two", 2).await;
+
+    let requests = provider.main_messages.lock().unwrap();
+    assert!(requests.len() > before, "the second drain sent a request");
+    let request = &requests[before];
+    let is_note = |entry: &(String, String)| entry.1.starts_with("The conversation was just compacted");
+    let note_index = request
+        .iter()
+        .position(|entry| is_note(entry))
+        .expect("the restore budget note rides the first request after the checkpoint");
+    assert_eq!(
+        request.iter().filter(|entry| is_note(entry)).count(),
+        1,
+        "the note is request-scoped, not durable"
+    );
+    assert_eq!(
+        note_index,
+        request.len() - 2,
+        "the closing user prompt stays last"
+    );
+    assert_eq!(request.last().unwrap().1, "work");
+    assert_eq!(
+        request[note_index].1,
+        "The conversation was just compacted into a summary, so earlier details may be missing. \
+         You have a restore budget of about 50,000 tokens: re-read the files you need to continue \
+         correctly (at most 5 files, about 5,000 tokens each) before answering, \
+         and skip anything the summary already covers."
+    );
 }
 
 struct ToolContinuation {

@@ -143,3 +143,16 @@ impl Store {
         }).await
     }
 }
+
+/// The first request after a compaction checkpoint carries a restore budget:
+/// the model works from a summary, so it may need to re-read the files the
+/// summary names. Prompt guidance rather than a gate, and request-scoped
+/// rather than durable — mirrored byte-for-byte from the host runner.
+pub(crate) fn restore_note() -> String {
+    format!(
+        "The conversation was just compacted into a summary, so earlier details may be missing. \
+         You have a restore budget of about 50,000 tokens: re-read the files you need to continue \
+         correctly (at most 5 files, about 5,000 tokens each) before answering, \
+         and skip anything the summary already covers."
+    )
+}
