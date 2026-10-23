@@ -25,7 +25,13 @@ fn confined_pty_runs_a_child_and_reports_confinement() {
         rows: 24,
         cols: 80,
     };
-    let mut pty = Pty::spawn(spec).expect("confined ConPTY launch must succeed on Windows");
+    let mut pty = match Pty::spawn(spec) {
+        Ok(pty) => pty,
+        Err(
+            miao_sandbox::win::WinError::Unavailable(message)
+            | miao_sandbox::win::WinError::Start(message),
+        ) => panic!("confined ConPTY launch must succeed on Windows: {message}"),
+    };
     assert!(
         pty.confined(),
         "the child must run inside an AppContainer; an unconfined launch is a regression"
