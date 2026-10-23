@@ -187,10 +187,20 @@ async fn turn(runtime: &Runtime, store: &Store, input_id: &str) {
     tokio::time::timeout(std::time::Duration::from_secs(10), async {
         loop {
             let events = store.events("s", 0, 500).await.unwrap();
+            // A drain journals its terminal `stop`/`stop_failure` in a
+            // transaction separate from the run's own completion, so waiting
+            // only for `provider.started` and an inactive run can return a
+            // snapshot taken between the two. Every settled turn needs its
+            // lifecycle event too.
+            let stopped = events
+                .iter()
+                .skip(before)
+                .any(|event| event.kind == "stop" || event.kind == "stop_failure");
             if events
                 .iter()
                 .skip(before)
                 .any(|event| event.kind == "provider.started")
+                && stopped
                 && store.active_run("s").await.unwrap().is_none()
             {
                 break;
