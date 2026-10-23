@@ -119,7 +119,7 @@ impl Store {
             let mut pending_tools=std::collections::HashSet::new();
             let mut deferred_context=Vec::new();
             let mut count=selected.len();
-            let mut stmt=tx.prepare("SELECT m.role,m.content,m.recorded_at_ms,e.kind FROM engine_message m JOIN engine_event e ON e.session_id=m.session_id AND e.seq=m.seq WHERE m.session_id=?1 AND m.seq>?2 AND m.reverted=0 ORDER BY m.seq LIMIT 1001")?;
+            let mut stmt=tx.prepare("SELECT m.role,m.content,m.recorded_at_ms,e.kind FROM engine_message m JOIN engine_event e ON e.session_id=m.session_id AND e.seq=m.seq WHERE m.session_id=?1 AND m.seq>?2 AND m.reverted=0 AND m.quarantined=0 ORDER BY m.seq LIMIT 1001")?;
             let mut rows=stmt.query(params![session,through])?;
             while let Some(row)=rows.next()? {
                 let content:String=row.get(1)?;bytes+=content.len();count+=1;if bytes>2*1024*1024||count>1000{return Err(Error::Invalid("selected history exceeds budget; compact at a closed boundary".into()));}

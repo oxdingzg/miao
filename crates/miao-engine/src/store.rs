@@ -233,6 +233,13 @@ impl Store {
                         [],
                     )?;
                 }
+                let has_quarantined:bool=conn.query_row("SELECT EXISTS(SELECT 1 FROM pragma_table_info('engine_message') WHERE name='quarantined')",[],|r|r.get(0))?;
+                if !has_quarantined {
+                    conn.execute(
+                        "ALTER TABLE engine_message ADD COLUMN quarantined INTEGER NOT NULL DEFAULT 0",
+                        [],
+                    )?;
+                }
                 let has_owner_pid: bool = conn.query_row(
                     "SELECT EXISTS(SELECT 1 FROM pragma_table_info('engine_lease') WHERE name='owner_pid')",
                     [], |row| row.get(0),
@@ -1284,6 +1291,40 @@ command: None,
         .await
     }
 
+    /// Quarantine the user messages a failed run promoted before its first
+    /// provider turn. A provider that rejected the request as invalid would
+    /// reject every later prompt too while the offending message stays
+    /// selected, so the messages leave provider history while the transcript
+    /// keeps them visible next to the failure record. Only run-promoted user
+    /// messages are expected here; never call it past the first turn, where
+    /// committed assistant and tool work must survive.
+    pub async fn quarantine_failed_input(
+        &self,
+        session: &str,
+        after_seq: u64,
+        reason: &str,
+    ) -> Result<Value, Error> {
+        let (session, reason) = (session.to_owned(), reason.to_owned());
+        self.call(move |conn| {
+            let tx = write_tx(conn)?;
+            let quarantined = tx.execute(
+                "UPDATE engine_message SET quarantined=1 WHERE session_id=?1 AND seq>?2 AND quarantined=0 AND role='user' AND reverted=0",
+                params![session, after_seq],
+            )?;
+            if quarantined > 0 {
+                append(
+                    &tx,
+                    &session,
+                    "provider.failure.quarantined",
+                    json!({"after_seq":after_seq,"quarantined":quarantined,"reason":reason}),
+                )?;
+            }
+            tx.commit()?;
+            Ok(json!({"after_seq":after_seq,"quarantined":quarantined}))
+        })
+        .await
+    }
+
     pub async fn history(&self, session: &str) -> Result<Vec<Message>, Error> {
         let session = session.to_owned();
         self.call(move |conn| {
@@ -1845,17 +1886,32 @@ command: None,
             if changed!=1 { return Err(Error::Invalid("tool is not dispatched".into())); }
             let name: String = tx.query_row("SELECT name FROM engine_tool WHERE id=?1",params![key],|row| row.get(0))?;
             let mut result = result;
-            let image = if name == "read_image" && !is_error {
+            let mut attachments = Vec::new();
+            if name == "read_image" && !is_error {
                 let image = result.as_object_mut().and_then(|result| result.remove("image"))
                     .ok_or_else(|| Error::Invalid("image tool result is missing its attachment".into()))?;
                 let attachment: crate::protocol::Attachment = serde_json::from_value(image)?;
                 attachment.validate()?;
                 result["image_attached"] = json!(true);
-                Some(attachment.part())
-            } else { None };
+                attachments.push(attachment.part());
+            } else if name == "read_file" && !is_error {
+                if let Some(images) = result.as_object_mut().and_then(|result| result.remove("images")) {
+                    let images: Vec<crate::protocol::Attachment> = serde_json::from_value(images)?;
+                    if images.len() > 5 {
+                        return Err(Error::Invalid("a tool result may attach at most five images".into()));
+                    }
+                    for attachment in images {
+                        attachment.validate()?;
+                        attachments.push(attachment.part());
+                    }
+                    if !attachments.is_empty() {
+                        result["images_attached"] = json!(attachments.len());
+                    }
+                }
+            }
             append(&tx,&session,"tool.completed",json!({"call_id":key,"result":result,"result_json":serde_json::to_string(&result)?,"is_error":is_error}))?;
             let mut content = vec![json!({"type":"tool_result","tool_use_id":id,"content":serde_json::to_string(&result)?,"is_error":is_error})];
-            if let Some(image) = image { content.push(image); }
+            content.extend(attachments);
             let event=project_message(&tx,&session,"user",json!(content),None,None)?;
             tx.commit()?;
             Ok(event)
@@ -2731,6 +2787,53 @@ impl Store {
     /// provider/model that served each turn (roadmap A5). Tokens and lineage
     /// come from the durable `usage` and `provider.started` rows; TTFT comes
     /// from the `engine_timing` side table, never from replayed payloads.
+    /// Background delegations started by this Session. Synchronous delegations
+    /// are omitted: their caller already received the final message.
+    pub async fn subagents(&self, session: &str) -> Result<Vec<Value>, Error> {
+        let session = session.to_owned();
+        self.call(move |conn| {
+            let mut stmt = conn.prepare(
+                "SELECT kind,data FROM engine_event WHERE session_id=?1 AND kind IN ('subagent_start','subagent_stop') ORDER BY seq",
+            )?;
+            let mut rows = stmt.query(params![session])?;
+            let mut tasks: Vec<Value> = Vec::new();
+            while let Some(row) = rows.next()? {
+                let kind: String = row.get(0)?;
+                let data: Value = serde_json::from_str(&row.get::<_, String>(1)?)?;
+                let Some(id) = data["subagent_id"].as_str() else {
+                    continue;
+                };
+                if kind == "subagent_start" {
+                    if data["background"] != true {
+                        continue;
+                    }
+                    tasks.push(json!({
+                        "id":id,
+                        "session_id":id,
+                        "description":data["description"].as_str().unwrap_or("subagent"),
+                        "status":"running",
+                        "text":Value::Null,
+                    }));
+                    continue;
+                }
+                if let Some(task) = tasks
+                    .iter_mut()
+                    .find(|task| task["id"].as_str() == Some(id))
+                {
+                    task["status"] = json!(match data["reason"].as_str() {
+                        Some("completed") => "completed",
+                        Some("cancelled") => "cancelled",
+                        Some("failed") => "failed",
+                        _ => "interrupted",
+                    });
+                    task["text"] = json!(data["text"].as_str().unwrap_or(""));
+                }
+            }
+            Ok(tasks)
+        })
+        .await
+    }
+
     pub async fn usage_report(&self, session: &str) -> Result<Value, Error> {
         let session = session.to_owned();
         self.call(move |conn| {

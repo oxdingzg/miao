@@ -1213,6 +1213,9 @@ async fn drain(
     // that lost it. Reconcile it before opening a new run; otherwise the active
     // run index would reject the start.
     inner.store.recover_session(Some(&session)).await?;
+    // Message tail before this drain promotes its inputs: a terminal
+    // first-turn provider rejection quarantines exactly what it promoted.
+    let history_base = inner.store.max_message_seq(&session).await?;
     let promoted = inner.store.promote_fenced(&session, true, &lease).await?;
     if promoted.is_empty() && !force {
         return Ok(());
@@ -1240,7 +1243,7 @@ async fn drain(
             .await?;
     }
     record_promotions(&inner, &session, &run, &promoted, &lease).await?;
-    let result = execute(&session, &run, &inner, cancel.clone(), &lease).await;
+    let result = execute(&session, &run, &inner, cancel.clone(), &lease, history_base).await;
     let reason = if cancel.is_cancelled() {
         "interrupted"
     } else if result.is_ok() {
@@ -1330,12 +1333,64 @@ fn touched_paths(name: &str, input: &Value) -> Vec<String> {
     }
 }
 
+/// The transport-level outcome of the request that just failed, read back from
+/// the durable `provider.request.result` fact, so the failure record carries
+/// the provider's own error body instead of a bare status. Absent for
+/// in-process providers that never cross HTTP.
+async fn provider_failure_detail(
+    store: &Store,
+    session: &str,
+    run: &str,
+    step: u64,
+) -> Option<Value> {
+    let event = store
+        .latest_event(session, "provider.request.result")
+        .await
+        .ok()??;
+    if event.data["run_id"].as_str() != Some(run) || event.data["step"].as_u64() != Some(step) {
+        return None;
+    }
+    let status = event.data["http_status"].as_u64()?;
+    if status < 400 {
+        return None;
+    }
+    let mut detail = json!({"http_status": status});
+    if let Some(body) = event.data["response_body"].as_str() {
+        if !body.is_empty() {
+            let mut body = body.to_owned();
+            if body.len() > 2000 {
+                let mut cut = 2000;
+                while !body.is_char_boundary(cut) {
+                    cut -= 1;
+                }
+                body.truncate(cut);
+            }
+            detail["response_body"] = json!(body);
+        }
+    }
+    Some(detail)
+}
+
+/// The provider's own error words for the failure line, parsed from the
+/// recorded response body (for example `{"error":{"code":"1210",
+/// "message":"图片输入格式/解析错误"}}`). Non-JSON bodies stay unparsed.
+fn provider_error_text(detail: &Value) -> Option<String> {
+    let body = detail["response_body"].as_str()?;
+    let parsed: Value = serde_json::from_str(body).ok()?;
+    let message = parsed["error"]["message"].as_str()?;
+    match parsed["error"]["code"].as_str() {
+        Some(code) => Some(format!("{message} (code {code})")),
+        None => Some(message.to_owned()),
+    }
+}
+
 async fn execute(
     session: &str,
     run: &str,
     inner: &Arc<Inner>,
     cancel: CancellationToken,
     lease: &SessionLease,
+    history_base: u64,
 ) -> Result<(), Error> {
     let mut step = 0;
     let mut allowance = inner.policy.max_provider_turns();
@@ -1690,13 +1745,14 @@ async fn execute(
             Ok(reply) => reply,
             Err(ProviderError::Interrupted) => return Ok(()),
             Err(error) => {
+                let detail = provider_failure_detail(&inner.store, session, run, step as u64).await;
+                let mut failure = json!({"run_id":run,"step":step,"message":error.to_string(),"routing":error.routing()});
+                if let Some(detail) = &detail {
+                    failure["provider"] = detail.clone();
+                }
                 inner
                     .store
-                    .record(
-                        session,
-                        "provider.failed",
-                        json!({"run_id":run,"step":step,"message":error.to_string(),"routing":error.routing()}),
-                    )
+                    .record(session, "provider.failed", failure)
                     .await?;
                 if cancel.is_cancelled() {
                     return Ok(());
@@ -1786,7 +1842,25 @@ command: None,
                         )
                         .await?;
                 }
-                return Err(Error::Invalid(error.to_string()));
+                // A first-turn provider rejection is aimed at the promoted
+                // input itself: keeping it selected would fail every later
+                // prompt the same way, which is how a session gets bricked by
+                // one bad attachment. Quarantine what this run promoted so the
+                // next prompt starts from the last good history; the transcript
+                // keeps the message visible next to the failure record.
+                if step == 0
+                    && !produced
+                    && matches!(error, ProviderError::Http(400 | 404 | 413 | 422))
+                {
+                    inner
+                        .store
+                        .quarantine_failed_input(session, history_base, &error.to_string())
+                        .await?;
+                }
+                match detail.as_ref().and_then(provider_error_text) {
+                    Some(text) => return Err(Error::Invalid(format!("{error}: {text}"))),
+                    None => return Err(Error::Invalid(error.to_string())),
+                }
             }
         };
         inner
@@ -2059,6 +2133,42 @@ command: None,
                                         Delegation {target:None,referenced_agents:&[],agent:manifest,binding:binding.as_ref(),account:account.as_ref(),model_override:None,attachments:&[],agent_references:&[]},
                                     )
                                     .await
+                                }
+                                "task_list" => match inner.store.subagents(session).await {
+                                    Ok(tasks) => Ok(json!({"tasks":tasks})),
+                                    Err(error) => Err(ToolError::External(error.to_string())),
+                                },
+                                "task_result" => {
+                                    match crate::subagent::Selector::parse(prepared.input().clone()) {
+                                        Ok(selector) => match inner.store.subagents(session).await {
+                                            Ok(tasks) => match tasks.into_iter().find(|task| task["id"].as_str() == Some(&selector.id)) {
+                                                Some(task) => {
+                                                    let text = task["text"].as_str().filter(|text| !text.is_empty()).unwrap_or(
+                                                        if task["status"] == "running" { "Background task is still running." } else { "(no output)" },
+                                                    );
+                                                    Ok(json!({"task":task,"text":text}))
+                                                }
+                                                None => Err(ToolError::External("Unknown background task for this Session.".into())),
+                                            },
+                                            Err(error) => Err(ToolError::External(error.to_string())),
+                                        },
+                                        Err(error) => Err(error),
+                                    }
+                                }
+                                "task_cancel" => {
+                                    match crate::subagent::Selector::parse(prepared.input().clone()) {
+                                        Ok(selector) => match inner.store.lineage_parent(&selector.id).await {
+                                            Ok(parent) if parent.as_deref() == Some(session) => {
+                                                match cancel_session(inner,&selector.id).await {
+                                                    Ok(cancelled) => Ok(json!({"cancelled":cancelled})),
+                                                    Err(error) => Err(ToolError::External(error.to_string())),
+                                                }
+                                            }
+                                            Ok(_) => Err(ToolError::External("Unknown background task for this Session.".into())),
+                                            Err(error) => Err(ToolError::External(error.to_string())),
+                                        },
+                                        Err(error) => Err(error),
+                                    }
                                 }
                                 "start_job" => {
                                     start_background(inner, session, run, id, prepared).await
@@ -3572,12 +3682,22 @@ async fn delegate(
                 .into(),
         ));
     }
+    let description: String = task
+        .prompt
+        .lines()
+        .next()
+        .unwrap_or("subagent")
+        .chars()
+        .take(256)
+        .collect();
     inner
         .store
         .record(
             parent,
             crate::events::Lifecycle::SubagentStart.name(),
-            json!({"run_id":run,"subagent_id":child,"call_id":call}),
+            json!({"run_id":run,"subagent_id":child,"call_id":call,"background":task.background,
+                   "agent":selected.as_ref().map(|agent|agent.name.as_str()).unwrap_or("subagent"),
+                   "description":description}),
         )
         .await
         .map_err(|_| ToolError::External("subagent start could not be recorded".into()))?;
@@ -3612,18 +3732,75 @@ async fn delegate(
         .await
         .map_err(|_| ToolError::External("subagent could not be scheduled".into()))?;
 
+    if task.background {
+        let background = inner.clone();
+        let parent = parent.to_owned();
+        let run = run.to_owned();
+        let call = call.to_owned();
+        let watcher_child = child.clone();
+        tokio::spawn(async move {
+            if let Err(error) = finish_delegation(
+                &background,
+                &parent,
+                &run,
+                &call,
+                &watcher_child,
+                admission.admitted_seq,
+                permit,
+                background.stop.clone(),
+            )
+            .await
+            {
+                let _ = background
+                    .store
+                    .record(
+                        &parent,
+                        crate::events::Lifecycle::SubagentStop.name(),
+                        json!({"run_id":run,"subagent_id":watcher_child,"call_id":call,"reason":"failed","text":error.to_string()}),
+                    )
+                    .await;
+            }
+        });
+        return Ok(json!({"session_id":child,"background":true,"status":"running"}));
+    }
+    let text = finish_delegation(
+        inner,
+        parent,
+        run,
+        call,
+        &child,
+        admission.admitted_seq,
+        permit,
+        cancel,
+    )
+    .await?;
+    Ok(json!({"session_id":child,"text":text}))
+}
+
+#[allow(clippy::too_many_arguments)]
+async fn finish_delegation(
+    inner: &Arc<Inner>,
+    parent: &str,
+    run: &str,
+    call: &str,
+    child: &str,
+    admitted_seq: u64,
+    permit: tokio::sync::OwnedSemaphorePermit,
+    cancel: CancellationToken,
+) -> Result<String, ToolError> {
+    let mut reason = "completed";
     loop {
         tokio::select! {
             _ = cancel.cancelled() => {
-                let _ = cancel_session(inner, &child).await;
-                let _ = inner.store.record(parent, crate::events::Lifecycle::SubagentStop.name(), json!({"run_id":run,"subagent_id":child,"call_id":call,"reason":"interrupted"})).await;
-                return Err(ToolError::Interrupted);
+                let _ = cancel_session(inner, child).await;
+                reason = "interrupted";
+                break;
             }
             _ = tokio::time::sleep(std::time::Duration::from_millis(20)) => {}
         }
         let events = inner
             .store
-            .events(&child, admission.admitted_seq, 500)
+            .events(child, admitted_seq, 500)
             .await
             .map_err(|_| ToolError::External("subagent events unavailable".into()))?;
         if events.iter().any(|event| event.kind == "run.finished") {
@@ -3631,10 +3808,9 @@ async fn delegate(
         }
     }
     drop(permit);
-
     let history = inner
         .store
-        .history(&child)
+        .history(child)
         .await
         .map_err(|_| ToolError::External("subagent history unavailable".into()))?;
     let text = history
@@ -3648,14 +3824,9 @@ async fn delegate(
             })
         })
         .unwrap_or_default();
-    // Delegation outcome evidence (roadmap A10): the child's billed totals and
-    // turn count ride the deterministic SubagentStop payload so a report can
-    // price parent+child without reconstructing provenance. Wall-clock cost
-    // stays on the ephemeral progress feed — the replayed journal pins
-    // payloads, and durations are not reproducible.
     let usage = inner
         .store
-        .usage_report(&child)
+        .usage_report(child)
         .await
         .map_err(|_| ToolError::External("subagent usage report unavailable".into()))?;
     inner
@@ -3663,14 +3834,18 @@ async fn delegate(
         .record(
             parent,
             crate::events::Lifecycle::SubagentStop.name(),
-            json!({"run_id":run,"subagent_id":child,"call_id":call,"reason":"completed",
+            json!({"run_id":run,"subagent_id":child,"call_id":call,"reason":reason,
+                   "text":text,
                    "tokens":{"input":usage["providerUsage"]["tokens"]["input"].as_u64().unwrap_or(0),"output":usage["providerUsage"]["tokens"]["output"].as_u64().unwrap_or(0)},
                    "usageCoverage":usage["providerUsage"],
                    "turns":usage["turns"]}),
         )
         .await
         .map_err(|_| ToolError::External("subagent stop could not be recorded".into()))?;
-    Ok(json!({"session_id":child,"text":text}))
+    if reason == "interrupted" {
+        return Err(ToolError::Interrupted);
+    }
+    Ok(text)
 }
 
 async fn wake_session(inner: &Arc<Inner>, session: &str, force: bool) -> Result<(), Error> {

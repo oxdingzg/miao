@@ -250,9 +250,8 @@
     "additionalProperties": false,
     "properties": {
       "name": {
-        "enum": [
-          "media-observe"
-        ],
+        "maxLength": 64,
+        "minLength": 1,
         "type": "string"
       }
     },
@@ -337,6 +336,9 @@
       "offset": {
         "minimum": 1,
         "type": "integer"
+      },
+      "pages": {
+        "type": "string"
       },
       "path": {
         "type": "string"
