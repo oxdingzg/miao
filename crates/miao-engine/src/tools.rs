@@ -57,6 +57,8 @@ struct ReadInput {
     path: String,
     offset: Option<usize>,
     limit: Option<usize>,
+    /// PDF only: a 1-based selection such as `1-3,5`. Omit for the first ten.
+    pages: Option<String>,
 }
 
 /// A ranged read returns at most this many lines, and never more than the
@@ -1624,8 +1626,8 @@ impl Tools {
     pub fn definitions(&self) -> Vec<ToolDefinition> {
         let mut definitions=vec![ToolDefinition {
             name:"read_file".into(),
-            description:"Read a UTF-8 file under the configured workspace. Maximum 32768 bytes; for larger files pass a 1-based line offset and a line limit (up to 2000 lines) to read one window.".into(),
-            input_schema:json!({"type":"object","properties":{"path":{"type":"string"},"offset":{"type":"integer","minimum":1},"limit":{"type":"integer","minimum":1,"maximum":2000}},"required":["path"],"additionalProperties":false}),
+            description:"Read a UTF-8 file or PDF under the configured workspace. Text reads are limited to 32768 bytes; for larger files pass a 1-based line offset and a line limit (up to 2000 lines) to read one window. PDF reads return page text and page images; pass pages such as 1-3,5 (at most 20 pages) to select pages.".into(),
+            input_schema:json!({"type":"object","properties":{"path":{"type":"string"},"offset":{"type":"integer","minimum":1},"limit":{"type":"integer","minimum":1,"maximum":2000},"pages":{"type":"string"}},"required":["path"],"additionalProperties":false}),
         },ToolDefinition {
             name:"list_files".into(),
             description:"List immediate entries of a workspace directory. Does not recurse or follow symlinks; output is bounded.".into(),
@@ -1853,6 +1855,12 @@ impl Tools {
                     let metadata = tokio::fs::metadata(&path).await?;
                     if !metadata.is_file() {
                         return Err(ToolError::InvalidFile);
+                    }
+                    if path
+                        .extension()
+                        .is_some_and(|extension| extension.eq_ignore_ascii_case("pdf"))
+                    {
+                        return crate::pdf::read(&input.path, &path, input.pages.as_deref()).await;
                     }
                     // A line range makes a large file readable; the whole-file
                     // path keeps its historical 32 KiB bound.

@@ -1845,17 +1845,32 @@ command: None,
             if changed!=1 { return Err(Error::Invalid("tool is not dispatched".into())); }
             let name: String = tx.query_row("SELECT name FROM engine_tool WHERE id=?1",params![key],|row| row.get(0))?;
             let mut result = result;
-            let image = if name == "read_image" && !is_error {
+            let mut attachments = Vec::new();
+            if name == "read_image" && !is_error {
                 let image = result.as_object_mut().and_then(|result| result.remove("image"))
                     .ok_or_else(|| Error::Invalid("image tool result is missing its attachment".into()))?;
                 let attachment: crate::protocol::Attachment = serde_json::from_value(image)?;
                 attachment.validate()?;
                 result["image_attached"] = json!(true);
-                Some(attachment.part())
-            } else { None };
+                attachments.push(attachment.part());
+            } else if name == "read_file" && !is_error {
+                if let Some(images) = result.as_object_mut().and_then(|result| result.remove("images")) {
+                    let images: Vec<crate::protocol::Attachment> = serde_json::from_value(images)?;
+                    if images.len() > 5 {
+                        return Err(Error::Invalid("a tool result may attach at most five images".into()));
+                    }
+                    for attachment in images {
+                        attachment.validate()?;
+                        attachments.push(attachment.part());
+                    }
+                    if !attachments.is_empty() {
+                        result["images_attached"] = json!(attachments.len());
+                    }
+                }
+            }
             append(&tx,&session,"tool.completed",json!({"call_id":key,"result":result,"result_json":serde_json::to_string(&result)?,"is_error":is_error}))?;
             let mut content = vec![json!({"type":"tool_result","tool_use_id":id,"content":serde_json::to_string(&result)?,"is_error":is_error})];
-            if let Some(image) = image { content.push(image); }
+            content.extend(attachments);
             let event=project_message(&tx,&session,"user",json!(content),None,None)?;
             tx.commit()?;
             Ok(event)
