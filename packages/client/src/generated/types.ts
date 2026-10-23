@@ -4240,8 +4240,8 @@ export type EventsDurableOutput =
         readonly assistantMessageID: string
         readonly assistantSeq: number
         readonly provider: { readonly protocol: string; readonly model: string } | null
-        readonly model: null
-        readonly agent: null
+        readonly model: { readonly id: string; readonly providerID: string; readonly variant?: string } | null
+        readonly agent: string | null
       }
     }
   | {

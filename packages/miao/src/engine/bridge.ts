@@ -148,7 +148,7 @@ export function translateAssistantIdentity(event: EngineEvent): SessionAssistant
   if (typeof seq !== "number" || !Number.isSafeInteger(seq) || seq <= 0 || seq >= event.seq) return undefined
   if (!("provider" in event.data)) return undefined
   const provider = nativeProvider(event.data.provider)
-  if (provider === undefined || provider === null) return undefined
+  if (provider === undefined) return undefined
   if (
     typeof event.recorded_at_ms !== "number" ||
     !Number.isSafeInteger(event.recorded_at_ms) ||
@@ -165,7 +165,9 @@ export function translateAssistantIdentity(event: EngineEvent): SessionAssistant
     provider,
     // The engine only knows the wire protocol and model id, so the reference
     // carries those as a display fallback; catalog resolution stays client-side.
-    model: Schema.decodeUnknownSync(Model.Ref)({ id: provider.model, providerID: provider.protocol }),
+    model: provider
+      ? Schema.decodeUnknownSync(Model.Ref)({ id: provider.model, providerID: provider.protocol })
+      : null,
     agent: null,
   }
 }

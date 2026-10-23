@@ -22,7 +22,7 @@ test("assistant identity binds to the committed message by its durable sequence"
     assistantSeq: 3,
     assistantMessageID: "msg_ses_identity_3",
     provider: { protocol: "openai-chat", model: "actual" },
-    model: null,
+    model: { providerID: "openai-chat", id: "actual" },
     agent: null,
   })
 })
