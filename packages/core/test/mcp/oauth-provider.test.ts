@@ -1,6 +1,8 @@
 import { test, expect, describe } from "bun:test"
+import { Schema } from "effect"
 import { determineScope } from "@modelcontextprotocol/sdk/client/auth.js"
 import { McpOAuthProvider, OAUTH_CALLBACK_PORT, OAUTH_CALLBACK_PATH } from "@miao/core/mcp/oauth-provider"
+import { ConfigMCP } from "@miao/core/config/mcp"
 import type { McpAuth } from "@miao/core/mcp/auth"
 
 // Stub auth — only synchronous getters are exercised in these tests
@@ -62,6 +64,24 @@ describe("McpOAuthProvider.redirectToAuthorization", () => {
       "returned a file: authorization URL",
     )
     expect(seen).toEqual([])
+  })
+})
+
+describe("McpOAuthProvider.clientMetadataUrl", () => {
+  test("rides the config for the SDK's CIMD step", () => {
+    const provider = makeProvider({ clientMetadataUrl: "https://tools.example.com/oauth/miao-client.json" })
+    expect(provider.clientMetadataUrl).toBe("https://tools.example.com/oauth/miao-client.json")
+  })
+
+  test("stays undefined when unset", () => {
+    expect(makeProvider({}).clientMetadataUrl).toBeUndefined()
+  })
+
+  test("decodes from the snake_case config key", () => {
+    const oauth = Schema.decodeUnknownSync(ConfigMCP.OAuth)({
+      client_metadata_url: "https://tools.example.com/oauth/miao-client.json",
+    })
+    expect(oauth.client_metadata_url).toBe("https://tools.example.com/oauth/miao-client.json")
   })
 })
 

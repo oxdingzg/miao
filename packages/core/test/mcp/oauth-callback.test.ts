@@ -112,3 +112,37 @@ describe("McpOAuthCallback.ensureRunning", () => {
     expect(await canConnect("::1", port)).toBe(false)
   })
 })
+
+describe("McpOAuthCallback RFC 9207 issuer validation", () => {
+  afterEach(async () => {
+    await McpOAuthCallback.stop()
+  })
+
+  test("rejects a contradicting iss before resolving the code", async () => {
+    const redirectUri = "http://127.0.0.1:18004/custom/callback"
+    await McpOAuthCallback.ensureRunning(redirectUri)
+    const callback = McpOAuthCallback.waitForCallback("iss-mismatch", undefined, "https://auth.example.com/")
+    const observed = callback.then(
+      () => "resolved",
+      (error: Error) => error.message,
+    )
+
+    const response = await fetch(
+      `${redirectUri}?code=code&state=iss-mismatch&iss=${encodeURIComponent("https://evil.example/")}`,
+    )
+    expect(response.status).toBe(400)
+    expect(await observed).toContain("OAuth issuer mismatch")
+  })
+
+  test("accepts a matching iss and a missing iss", async () => {
+    const redirectUri = "http://127.0.0.1:18005/custom/callback"
+    await McpOAuthCallback.ensureRunning(redirectUri)
+    const matching = McpOAuthCallback.waitForCallback("iss-match", undefined, "https://auth.example.com/")
+    const missing = McpOAuthCallback.waitForCallback("iss-absent", undefined, "https://auth.example.com/")
+
+    await fetch(`${redirectUri}?code=one&state=iss-match&iss=${encodeURIComponent("https://auth.example.com/")}`)
+    await expect(matching).resolves.toBe("one")
+    await fetch(`${redirectUri}?code=two&state=iss-absent`)
+    await expect(missing).resolves.toBe("two")
+  })
+})
