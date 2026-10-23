@@ -71,11 +71,6 @@ const bindings = {
 } as const
 
 export function agentManifest(agent: Agent.Info, catalog: readonly Route[]) {
-  if (agent.permission_mode === "auto")
-    throw new EngineError(
-      "unsupported_agent_permission_mode",
-      "Native agents require explicit permission rules; automatic host classification is not available",
-    )
   return {
     name: agent.id,
     semantics: "product-agent-ordered-v1",
@@ -85,6 +80,9 @@ export function agentManifest(agent: Agent.Info, catalog: readonly Route[]) {
       rules: agent.permissions,
       bindings,
     },
+    // `auto` rides the manifest: the engine settles classifier-proven asks
+    // itself instead of bouncing them through host approvals.
+    ...(agent.permission_mode === "auto" ? { permission_mode: "auto" as const } : {}),
     ...(agent.model === undefined ? {} : { model: modelRoute(agent.model, catalog) }),
     ...(agent.steps === undefined ? {} : { steps: agent.steps }),
     ...(Object.keys(agent.request.body).length || Object.keys(agent.request.headers).length

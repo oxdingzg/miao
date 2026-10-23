@@ -112,11 +112,14 @@ inline with `[RS: …]`.
    credentials), released-binary upgrade path.
 2. **§1.2** App transcript retype onto V2 types (its own cutover, per the
    staged note below).
-3. **§2.4** Crash-recovery idempotency on the RS primitives (tool replay +
-   outcome-unknown).
+3. **§2.4** ~~Real-client restart acceptance~~ — recorded 2026-10-23: SIGKILL
+   mid-tool, fresh client+engine, unknown outcome surfaced and abandoned
+   through the recovery API
+   ([drill](../crates/miao-engine/docs/restart-recovery-drill-2026-10-23.md)).
 4. Then the remaining TS-side and operational items in section order (§1.3
-   confirmation, §2.5 body caps, §2.7 CIMD ordering, §2.8 monitor sandboxing,
-   §3 hot reload, §4 storage ops, §5 report, §7 docs, §8 push/APNs).
+   confirmation, §2.5 body caps, §2.7 issuer-keyed credentials, §2.8 monitor
+   sandboxing, §3 hot reload, §4 storage ops, §5 report, §7 docs, §8
+   push/APNs).
 
 ---
 
@@ -323,10 +326,12 @@ is bounded (#132).
 Progress: canonical MCP tool names are deduped deterministically (codepoint order, first wins).
 - [ ] Progressive discovery (`search_tools` → `get_tool_details`, switch at 1–5% context, append
       after the cache breakpoint, never reorder).
-- [ ] OAuth via CIMD ordering (pre-registered → CIMD → DCR → prompt), credentials keyed by AS
-      `issuer`, validate `iss` (RFC 9207).
-- [RS: deterministic catalogs with `list_changed` refresh landed (#1018);
-  CIMD OAuth ordering remains open.]
+- [ ] Credentials keyed by AS `issuer` (one grant shared across server URLs behind one
+      authorization server) — a storage-model migration over existing persisted credentials.
+- [RS: deterministic catalogs with `list_changed` refresh landed (#1018); the CIMD leg of the
+  OAuth ladder and RFC 9207 `iss` validation on the interactive callback landed (#1282):
+  pre-registered clientId → CIMD `client_metadata_url` when the AS advertises
+  `client_id_metadata_document_supported` → dynamic registration → manual prompt.]
 - [ ] Deterministic `tools/list` with `ttlMs`/`cacheScope` where the installed
       `@modelcontextprotocol/sdk` exposes them.
 - **Acceptance:** a large MCP catalog loads lazily without disturbing the prompt-cache prefix;
@@ -491,7 +496,8 @@ estimate.
       says matter, bounded per file and per compaction, so a checkpoint does not cost the model its
       working set (#724). The budget rides the first provider request after the compaction
       checkpoint as prompt guidance — about 50k tokens, at most five files at about 5k each — and
-      is request-scoped rather than durable, so it cannot tax later turns.
+      is request-scoped rather than durable, so it cannot tax later turns. The native engine now
+      mirrors the same byte-for-byte note and the same request-scoped semantics (#1280).
 - [x] Optional polish: render the streaming summary text mid-flight. The app folds `.delta` fragments
       into an unsettled draft the transcript renders as plain assistant text and swaps for the settled
       checkpoint on `ended` (a refused or failed summary publishes no `ended`, so the app drops the
@@ -654,8 +660,9 @@ options and narrowed step budget. The native transcript projects agent switches
 and Session info reports the current identity. A dedicated TypeScript reference
 corpus pins last-match exceptions and Bash AST command extraction; real HTTP
 acceptance proves a read-only switch refuses writes while a later single-file
-allow exception succeeds. Host `permission_mode: auto` is explicitly unsupported
-by this initial bridge; it is never silently downgraded.
+allow exception succeeds. Host `permission_mode: auto` no longer blocks native Sessions: the
+manifest carries the mode and the engine settles classifier-proven asks itself (a deterministic
+port of the product permission classifier; operator ask rules stay authoritative) (#1281).
 
 ## 9. Native-engine enablement gates
 

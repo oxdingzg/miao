@@ -53,8 +53,9 @@
 
 1. **§6** 实时验收：Gemini/Anthropic 实账号（缺凭据受阻）、发布二进制升级路径。
 2. **§1.2** app transcript 迁移到 V2 类型（按下文分阶段说明独立切换）。
-3. **§2.4** 基于 RS 原语的崩溃恢复幂等（tool replay + outcome-unknown）。
-4. 其余 TS 侧与运维项按节顺序推进（§1.3 确认、§2.5 body 上限、§2.7 CIMD 排序、
+3. **§2.4** 崩溃恢复的真实客户端重启验收：RS 原语（tool replay + outcome-unknown）、恢复
+   controller/CLI（#968、#974、ADR-16）与产品对话框均已就位——剩一次有记录的重启演练。
+4. 其余 TS 侧与运维项按节顺序推进（§1.3 确认、§2.5 body 上限、§2.7 按 issuer 键控凭据、
    §2.8 monitor 沙箱化、§3 热重载、§4 存储运维、§5 报告、§7 文档、§8 push/APNs）。
 
 ---
@@ -194,8 +195,12 @@ webfetch/websearch 对响应体设界；MCP 图片结果上限 5 MB base64；完
 进展：MCP 规范工具名按码点顺序确定性去重（先到先得）。
 - [ ] 渐进发现（`search_tools` → `get_tool_details`，在 1–5% context 时切换，在缓存断点后追加，
       永不重排）。
-- [ ] 通过 CIMD 排序的 OAuth（预注册 → CIMD → DCR → prompt），凭据以 AS `issuer` 为键，校验
-      `iss`（RFC 9207）。
+- [ ] 凭据以 AS `issuer` 为键（同一授权服务器背后的多个 server URL 共享一份授权）——这是对既有
+      持久化凭据的存储模型迁移。
+- [RS: 确定性目录与 `list_changed` 刷新已落地（#1018）；OAuth 阶梯的 CIMD 一级与交互回调的
+  RFC 9207 `iss` 校验已落地（#1282）：预注册 clientId → AS 广告
+  `client_id_metadata_document_supported` 时采用 CIMD `client_metadata_url` → 动态注册 → 手动
+  提示。]
 - [ ] 在已安装的 `@modelcontextprotocol/sdk` 暴露的前提下，实现带 `ttlMs`/`cacheScope` 的确定性
       `tools/list`。
 - **验收：** 大型 MCP 目录在不扰动 prompt-cache 前缀的前提下惰性加载；OAuth 完成且凭据按 issuer
@@ -390,7 +395,9 @@ Host manifest 只保存凭据引用，枚举或选择备选账号都不会修改
 生成参数及收窄的 step 预算。原生事件投影保留 agent 切换，会话信息回报当前身份。
 TypeScript 参考语料固定 last-match 例外及 Bash AST 命令提取语义；真实 HTTP 验收
 覆盖只读 agent 拒绝写入，以及后置单文件 allow 例外实际写入成功。
-当前桥接显式拒绝 host 的 `permission_mode: auto`，不会将其静默降级。
+host 的 `permission_mode: auto` 不再阻塞原生会话：manifest 携带该模式，引擎
+用产品权限分类器的确定性移植自行落定可证明安全的 ask（operator ask 规则保持
+权威）（#1281）。
 
 ## 9. 原生引擎启用门槛
 

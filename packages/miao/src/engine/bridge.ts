@@ -348,6 +348,8 @@ export type SessionStepEnded = {
   sessionID: SessionID
   timestamp: DateTime.Utc
   assistantMessageID: SessionMessage.ID
+  /** The serving model's product ref, resolved from the journaled model id. */
+  model?: Model.Ref
   finish: string
   cost: number
   tokens: { input: number; output: number; reasoning: number; cache: { read: number; write: number } }
@@ -365,6 +367,7 @@ export function translateStepEnded(
   usage: BufferedUsage | undefined,
   ttft: number | undefined,
   costs: ModelV2.Info["cost"] | undefined,
+  model: Model.Ref | undefined,
 ): SessionStepEnded | undefined {
   if (event.kind !== "message.committed") return undefined
   if (typeof event.data !== "object" || event.data === null) return undefined
@@ -379,6 +382,7 @@ export function translateStepEnded(
     sessionID: adoptSession(event.session_id),
     timestamp: eventTimestamp(event),
     assistantMessageID,
+    ...(model ? { model } : {}),
     finish,
     // Billed input is inclusive, so the plain input tokens price only what the
     // cache did not already serve. An unknown price stays 0, matching the

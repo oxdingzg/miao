@@ -23,9 +23,7 @@ export const capture = Effect.fn("ProductCommand.capture")(function* (input: {
     return yield* Effect.fail(new EngineError("command_agent_missing", "Command agent is not configured"))
   const fallback = yield* agents.default()
   const current = input.sessionAgent ? yield* agents.resolve(input.sessionAgent) : fallback
-  const directory = (yield* agents.all())
-    .filter((agent) => agent.permission_mode !== "auto" || agent.id === selected?.id || agent.id === fallback?.id)
-    .sort((left, right) => (left.id < right.id ? -1 : left.id > right.id ? 1 : 0))
+  const directory = (yield* agents.all()).sort((left, right) => (left.id < right.id ? -1 : left.id > right.id ? 1 : 0))
   // Host-only model routes remain outside the native catalog. An explicitly
   // requested/default agent is checked strictly below rather than substituted.
   const definitions = yield* Effect.forEach(directory, (agent) =>

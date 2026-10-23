@@ -1,4 +1,5 @@
 import { SessionModelRoute } from "@miao/schema/session-model-route"
+import type { Model } from "@miao/schema/model"
 import type { NativeCommand, NativeAgentReferences } from "./command-manifest"
 import { Credential } from "@miao/schema/credential"
 import { DateTime, Option, Schema } from "effect"
@@ -46,8 +47,12 @@ export type EngineSessionEvent = {
 }
 export type EnginePublish = (event: EngineSessionEvent) => void
 
-/** Resolves the catalog rates for the model id an engine usage event names. */
-export type EnginePricing = (model: string) => ModelV2.Info["cost"] | undefined
+/** One priced catalog entry: the rates plus the product model they belong to,
+ * so a settled step can carry the serving model's ref for durable attribution. */
+export type EnginePrice = { cost: ModelV2.Info["cost"]; model: Model.Ref }
+
+/** Resolves the priced catalog entry for the model id an engine usage event names. */
+export type EnginePricing = (model: string) => EnginePrice | undefined
 
 /** Refreshes an expired credential through its owning broker (ADR-09); true
  * when the refresh succeeded and the Session may retry the failed turn. */
@@ -371,8 +376,8 @@ export class EngineTranslator {
     for (const call of translateTools(event)) publish({ type: "session.next.tool.called", data: call })
     const usage = this.#usage.get(event.session_id)
     const ttft = this.#ttft.get(event.session_id)
-    const costs = usage?.usage.model ? this.#pricing?.(usage.usage.model) : undefined
-    const ended = translateStepEnded(event, usage?.usage, ttft, costs)
+    const priced = usage?.usage.model ? this.#pricing?.(usage.usage.model) : undefined
+    const ended = translateStepEnded(event, usage?.usage, ttft, priced?.cost, priced?.model)
     if (ended) {
       publish({ type: "session.next.step.ended", data: ended })
       this.#usage.delete(event.session_id)

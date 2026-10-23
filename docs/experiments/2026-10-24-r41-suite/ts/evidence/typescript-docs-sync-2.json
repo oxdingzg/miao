@@ -1,0 +1,212 @@
+{
+  "sample": {
+    "task": "docs-sync",
+    "engine": "typescript",
+    "repetition": 2,
+    "suiteHash": "bd905b4f81f0a9412b614631a36337723067574848c5f05b50ead1cf48675091",
+    "taskHash": "81770a3ba16cad0c85823ad75587b559a670da480642d3491f6d5b8814394fee",
+    "profile": {
+      "model": "glm-5.3-flash",
+      "modelParametersHash": "b9131781404fc28043080ca1ed911eeddb9916481511bf5658f0299acb7a3255",
+      "agentManifestHash": "b1e6fdb4e27831b47b53751863d25b6bdc2f3195fd0fcdc772b85a5a8f44706e",
+      "permissionHash": "29c2ef4c95a5bc5ee577d184f8f02d43333d45d5470b5e2ce26b3445dd359bc7",
+      "toolSurfaceHash": "569f7e5c50f8c856ebeb33ec6bb521a33e3021be589edf23bc8b33f0348ad9cc"
+    },
+    "revision": "ed524903ae8dec701eba0e880390986ac98e0975",
+    "artifactHash": "f45c980517c6640ed715435e1fda1711f7f4db2b182c8823162edbf622d06300",
+    "receiptHash": "9038b111f8612d2e54354ed3cc63857b3c623df325b11bf18d41b11bd72e2121",
+    "outcome": "passed",
+    "elapsedMs": 29463,
+    "attempts": [
+      {
+        "inputTokens": 13602,
+        "outputTokens": 67,
+        "cost": null
+      },
+      {
+        "inputTokens": 13716,
+        "outputTokens": 217,
+        "cost": null
+      },
+      {
+        "inputTokens": 14075,
+        "outputTokens": 66,
+        "cost": null
+      },
+      {
+        "inputTokens": 14194,
+        "outputTokens": 78,
+        "cost": null
+      },
+      {
+        "inputTokens": 14321,
+        "outputTokens": 40,
+        "cost": null
+      }
+    ]
+  },
+  "rejection": null,
+  "evidence": {
+    "engine": "typescript",
+    "revision": "ed524903ae8dec701eba0e880390986ac98e0975",
+    "task": "docs-sync",
+    "repetition": 2,
+    "terminal": "completed",
+    "error": null,
+    "receipts": [],
+    "attempts": [
+      {
+        "inputTokens": 13602,
+        "outputTokens": 67,
+        "cacheReadTokens": 0,
+        "cacheWriteTokens": null,
+        "reasoningTokens": 47,
+        "cost": null
+      },
+      {
+        "inputTokens": 13716,
+        "outputTokens": 217,
+        "cacheReadTokens": 11392,
+        "cacheWriteTokens": null,
+        "reasoningTokens": 170,
+        "cost": null
+      },
+      {
+        "inputTokens": 14075,
+        "outputTokens": 66,
+        "cacheReadTokens": 13696,
+        "cacheWriteTokens": null,
+        "reasoningTokens": 12,
+        "cost": null
+      },
+      {
+        "inputTokens": 14194,
+        "outputTokens": 78,
+        "cacheReadTokens": 14016,
+        "cacheWriteTokens": null,
+        "reasoningTokens": 52,
+        "cost": null
+      },
+      {
+        "inputTokens": 14321,
+        "outputTokens": 40,
+        "cacheReadTokens": 14144,
+        "cacheWriteTokens": null,
+        "reasoningTokens": 0,
+        "cost": null
+      }
+    ],
+    "phases": [
+      {
+        "phase": "step-start",
+        "atMs": 1792770366197,
+        "clock": "observed"
+      },
+      {
+        "phase": "tool-part",
+        "atMs": 1792770367044,
+        "clock": "observed"
+      },
+      {
+        "phase": "step-start",
+        "atMs": 1792770371124,
+        "clock": "observed"
+      },
+      {
+        "phase": "tool-part",
+        "atMs": 1792770376057,
+        "clock": "observed"
+      },
+      {
+        "phase": "tool-part",
+        "atMs": 1792770376077,
+        "clock": "observed"
+      },
+      {
+        "phase": "step-start",
+        "atMs": 1792770377606,
+        "clock": "observed"
+      },
+      {
+        "phase": "tool-part",
+        "atMs": 1792770378457,
+        "clock": "observed"
+      },
+      {
+        "phase": "step-start",
+        "atMs": 1792770382857,
+        "clock": "observed"
+      },
+      {
+        "phase": "tool-part",
+        "atMs": 1792770384234,
+        "clock": "observed"
+      },
+      {
+        "phase": "step-start",
+        "atMs": 1792770388360,
+        "clock": "observed"
+      },
+      {
+        "phase": "first-output",
+        "atMs": 1792770389288,
+        "clock": "observed"
+      },
+      {
+        "phase": "exit",
+        "atMs": 1792770389350,
+        "clock": "observed"
+      },
+      {
+        "phase": "verified",
+        "atMs": 1792770389354,
+        "clock": "observed"
+      }
+    ],
+    "profile": {
+      "model": "glm-5.3-flash",
+      "modelParametersHash": "b9131781404fc28043080ca1ed911eeddb9916481511bf5658f0299acb7a3255",
+      "agentManifestHash": "b1e6fdb4e27831b47b53751863d25b6bdc2f3195fd0fcdc772b85a5a8f44706e",
+      "permissionHash": "29c2ef4c95a5bc5ee577d184f8f02d43333d45d5470b5e2ce26b3445dd359bc7",
+      "toolSurfaceHash": "569f7e5c50f8c856ebeb33ec6bb521a33e3021be589edf23bc8b33f0348ad9cc"
+    },
+    "profileReceipts": 5,
+    "loops": {
+      "continuations": [],
+      "stopped": []
+    },
+    "toolCalls": 5,
+    "textHash": "8eb11401d8e5fb2c8f80289e945d47670d09dbd3713dd51d838681a7e1b60a93",
+    "binarySha256": null,
+    "startedAtMs": 1792770359891,
+    "admissionMs": null,
+    "elapsedMs": 29463
+  },
+  "assessment": {
+    "suiteHash": "bd905b4f81f0a9412b614631a36337723067574848c5f05b50ead1cf48675091",
+    "taskHash": "81770a3ba16cad0c85823ad75587b559a670da480642d3491f6d5b8814394fee",
+    "artifactPass": true,
+    "unexpected": [],
+    "immutable": [
+      {
+        "file": "AGENTS.md",
+        "unchanged": true
+      },
+      {
+        "file": "package.json",
+        "unchanged": true
+      }
+    ],
+    "expected": [
+      {
+        "file": "README.md",
+        "matches": true
+      }
+    ],
+    "check": null,
+    "executionVerdict": "unverified",
+    "requiredReceipts": [],
+    "answerContains": []
+  },
+  "answer": "README.md:2805 — `miao install` → `miao setup --fast`,仅此一处替换（全文档唯一出现，其余字节不变），未改动其他文件。"
+}
