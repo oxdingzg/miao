@@ -409,7 +409,11 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
         config.mode = match mode.as_str() {
             "read-only" | "read_only" => Mode::ReadOnly,
             "workspace" => Mode::Workspace,
-            other => return Err(format!("unknown --mode `{other}`, expected read-only or workspace").into()),
+            other => {
+                return Err(
+                    format!("unknown --mode `{other}`, expected read-only or workspace").into(),
+                )
+            }
         };
     }
     let policy = Policy::new(config)?;

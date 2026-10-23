@@ -83,7 +83,11 @@ impl Config {
     /// A headless runner keeps the conservative read-only default.
     pub fn for_entry(interactive: bool) -> Self {
         Self {
-            mode: if interactive { Mode::Workspace } else { Mode::ReadOnly },
+            mode: if interactive {
+                Mode::Workspace
+            } else {
+                Mode::ReadOnly
+            },
             ..Self::default()
         }
     }
