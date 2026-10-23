@@ -9,7 +9,7 @@ import { AgentV2 } from "@miao/core/agent"
 import { PluginV2 } from "@miao/core/plugin"
 import { SessionImageNormalize } from "@miao/core/session/image-normalize"
 import { SessionUsageStore } from "@miao/core/session/usage-store"
-import { Clock, DateTime, Deferred, Effect, Option, Schema, Stream } from "effect"
+import { Clock, DateTime, Deferred, Effect, Option, Schema, Stream, Exit, Cause } from "effect"
 import { BackgroundJob } from "@miao/core/background-job"
 import { SessionBackgroundJobs } from "@miao/core/session/background-jobs"
 import { SessionSchedule } from "@miao/core/session/schedule"
@@ -597,23 +597,30 @@ export const SessionHandler = HttpApiBuilder.group(Api, "server.session", (handl
           if (native && placement) {
             yield* booted
             yield* waitNative({ native, sessionID: ctx.params.sessionID, ...placement })
-            const page = yield* native.history({
-              sessionID: ctx.params.sessionID,
-              storage: placement.storage,
-              location: placement.location,
-              after: 0,
-              limit: 30,
-            })
-            const prompt = nativeTitlePrompt(page.events)
-            if (prompt !== undefined) {
-              yield* native
-                .title({
+            // Title generation is best-effort: any failure or defect (missing
+            // history, unresolved location runtime, model errors) must never
+            // turn the wait itself into an error for the client.
+            const titleExit = yield* Effect.exit(
+              Effect.gen(function* () {
+                const page = yield* native.history({
+                  sessionID: ctx.params.sessionID,
+                  storage: placement.storage,
+                  location: placement.location,
+                  after: 0,
+                  limit: 30,
+                })
+                const prompt = nativeTitlePrompt(page.events)
+                if (prompt === undefined) return
+                yield* native.title({
                   sessionID: ctx.params.sessionID,
                   storage: placement.storage,
                   location: placement.location,
                   prompt,
                 })
-                .pipe(Effect.catch((error) => Effect.logWarning("native title generation failed", { error })))
+              }),
+            )
+            if (Exit.isFailure(titleExit)) {
+              yield* Effect.logWarning("native title generation skipped", { cause: Cause.squash(titleExit.cause) })
             }
             return HttpApiSchema.NoContent.make()
           }
