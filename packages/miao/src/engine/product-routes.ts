@@ -2,6 +2,7 @@ import { createHash } from "node:crypto"
 import { mkdtemp, rm, writeFile } from "node:fs/promises"
 import os from "node:os"
 import path from "node:path"
+import { AISDK } from "@miao/core/aisdk"
 import { Catalog } from "@miao/core/catalog"
 import { Credential } from "@miao/core/credential"
 import { CopilotModels } from "@miao/core/github-copilot/models"
@@ -13,6 +14,7 @@ import { ModelV2 } from "@miao/core/model"
 import { PluginV2 } from "@miao/core/plugin"
 import { Deferred, Effect, Option } from "effect"
 import { EngineError, type EngineOptions } from "./client"
+import { ProviderGateway } from "./provider-gateway"
 
 type Source =
   | { type: "database"; path: string; id: string; integration: string }
@@ -282,7 +284,48 @@ export const prepare = Effect.fn("Engine.productRoutes")(function* (
       ]
     })
   })
-  const primary = routes.find((route) => route.id === `${defaultModel.providerID}/${defaultModel.id}`)
+  // Long-tail plugin providers: an AI SDK wire the engine has no native
+  // transport for still gets a Session on the native engine. The host-local
+  // gateway translates Chat Completions into that plugin's LanguageModel.
+  const routed = new Set(routes.map((route) => route.account.model_key))
+  const unrouted = models.filter(
+    (model) => !routed.has(`${model.providerID}/${model.id}`) && model.api.type === "aisdk",
+  )
+  const aisdk = Option.getOrUndefined(yield* Effect.serviceOption(AISDK.Service))
+  const gateway =
+    unrouted.length && aisdk
+      ? yield* Effect.acquireRelease(ProviderGateway.prepare(aisdk), (gateway) => gateway.close)
+      : undefined
+  const gatewayRoutes = gateway
+    ? unrouted.map((model) => ({
+        id: `${model.providerID}/${model.id}`,
+        account: { id: null, model_key: `${model.providerID}/${model.id}`, default: true },
+        ...gateway.route(model),
+        model: model.api.id,
+        primary: model.providerID === defaultModel.providerID && model.id === defaultModel.id,
+        credential: { type: "environment" as const, key: gateway.tokenEnv },
+        ...(model.capabilities.input.length ? { input_modalities: model.capabilities.input } : {}),
+        ...(Number.isFinite(model.limit?.context) && model.limit.context > 0
+          ? {
+              limit: {
+                context: model.limit.context,
+                ...(Number.isFinite(model.limit.output) && model.limit.output > 0
+                  ? { output: model.limit.output }
+                  : {}),
+              },
+            }
+          : {}),
+        ...(model.request.variant === undefined ? {} : { default_variant: model.request.variant }),
+        request: { body: model.request.body },
+        variants: model.variants.map((variant) => ({
+          id: variant.id,
+          body: variant.body,
+          headers: variant.headers,
+        })),
+      }))
+    : []
+  const allRoutes = [...routes, ...gatewayRoutes]
+  const primary = allRoutes.find((route) => route.id === `${defaultModel.providerID}/${defaultModel.id}`)
   if (!primary)
     return yield* Effect.fail(
       new EngineError(
@@ -290,13 +333,13 @@ export const prepare = Effect.fn("Engine.productRoutes")(function* (
         "the selected product model has no usable native credential/provider route",
       ),
     )
-  if (routes.length > 1024)
+  if (allRoutes.length > 1024)
     return yield* Effect.fail(new EngineError("engine_routes_limit", "native product catalog exceeds 1024 routes"))
   if (options.contextLimits === undefined) {
     const limits = contextLimitsFor(defaultModel, compaction)
     if (limits) options.contextLimits = limits
   }
-  const content = JSON.stringify(routes)
+  const content = JSON.stringify(allRoutes)
   if (Buffer.byteLength(content) > 1024 * 1024)
     return yield* Effect.fail(new EngineError("engine_routes_limit", "native product routes exceed 1 MiB"))
   const directory = yield* Effect.acquireRelease(
@@ -323,6 +366,7 @@ export const prepare = Effect.fn("Engine.productRoutes")(function* (
         : [],
     )
   if (environment.length) options.env = { ...configuration.env, ...Object.fromEntries(environment) }
+  if (gateway) options.env = { ...configuration.env, ...options.env, [gateway.tokenEnv]: gateway.token }
   if (primary.credential.type === "database") {
     options.credentialDatabase = primary.credential.path
     options.credentialID = primary.credential.id
