@@ -8,6 +8,7 @@ use miao_engine::{
     tools::Tools,
 };
 use serde_json::{json, Value};
+use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
 use tokio::sync::mpsc;
 use tokio_util::sync::CancellationToken;
@@ -160,6 +161,157 @@ async fn task_delegates_to_a_child_session_and_returns_its_message() {
 async fn task_is_denied_without_subagent_authority() {
     let (result, _) = run(false).await;
     assert!(!result["error"].is_null(), "{result}");
+}
+
+struct Background {
+    step: AtomicUsize,
+}
+
+#[async_trait]
+impl Provider for Background {
+    async fn stream(
+        &self,
+        request: ModelRequest,
+        _: mpsc::Sender<Value>,
+        _: CancellationToken,
+    ) -> Result<Reply, ProviderError> {
+        let text = request
+            .messages
+            .iter()
+            .rev()
+            .find(|message| message.role == "user")
+            .and_then(|message| {
+                message
+                    .content
+                    .as_array()
+                    .and_then(|parts| parts.iter().find_map(|part| part["text"].as_str()))
+            })
+            .unwrap_or("");
+        if text.contains("say hello") {
+            return Ok(Reply {
+                content: json!([{"type":"text","text":"hello from child"}]),
+                usage: json!({"inputTokens": 30, "outputTokens": 5, "totalTokens": 35}),
+                needs_tools: false,
+            });
+        }
+        let results: Vec<Value> = request
+            .messages
+            .iter()
+            .flat_map(|message| message.content.as_array().into_iter().flatten())
+            .filter(|part| part["type"] == "tool_result")
+            .cloned()
+            .collect();
+        let step = self.step.fetch_add(1, Ordering::SeqCst);
+        let content = match step {
+            0 => {
+                json!([{"type":"tool_use","id":"start","name":"task","input":{"prompt":"say hello","background":true}}])
+            }
+            1 => {
+                let started: Value =
+                    serde_json::from_str(results[0]["content"].as_str().unwrap()).unwrap();
+                assert_eq!(started["background"], true);
+                json!([{"type":"tool_use","id":"list","name":"task_list","input":{}}])
+            }
+            2 => {
+                let listed: Value =
+                    serde_json::from_str(results[1]["content"].as_str().unwrap()).unwrap();
+                assert_eq!(listed["tasks"].as_array().unwrap().len(), 1);
+                let id = listed["tasks"][0]["id"].as_str().unwrap();
+                json!([{"type":"tool_use","id":"result","name":"task_result","input":{"id":id}}])
+            }
+            3 => {
+                let id = results[2]["content"]
+                    .as_str()
+                    .and_then(|content| serde_json::from_str::<Value>(content).ok())
+                    .and_then(|result| result["task"]["id"].as_str().map(str::to_owned))
+                    .unwrap();
+                json!([{"type":"tool_use","id":"result2","name":"task_result","input":{"id":id}}])
+            }
+            _ => json!([{"type":"text","text":"parent done"}]),
+        };
+        Ok(Reply {
+            content,
+            usage: json!({}),
+            needs_tools: step < 4,
+        })
+    }
+}
+
+#[tokio::test]
+async fn background_task_survives_the_parent_turn_and_reports_durably() {
+    let dir = tempfile::tempdir().unwrap();
+    let store = Store::open(dir.path().join("engine.db")).await.unwrap();
+    let runtime = Runtime::with_policy(
+        store.clone(),
+        Arc::new(Background {
+            step: AtomicUsize::new(0),
+        }),
+        Tools::new(dir.path()).await.unwrap(),
+        policy(true),
+    )
+    .await
+    .unwrap();
+    runtime
+        .admit(
+            Input {
+                agent_references: Default::default(),
+                command: None,
+                session_id: "parent".into(),
+                input_id: "one".into(),
+                prompt: "delegate in background".into(),
+                delivery: Delivery::Steer,
+            },
+            true,
+        )
+        .await
+        .unwrap();
+    tokio::time::timeout(std::time::Duration::from_secs(10), async {
+        loop {
+            if store
+                .events("parent", 0, 500)
+                .await
+                .unwrap()
+                .iter()
+                .any(|event| event.kind == "run.finished")
+            {
+                break;
+            }
+            tokio::time::sleep(std::time::Duration::from_millis(5)).await;
+        }
+    })
+    .await
+    .unwrap();
+    let start = store
+        .events("parent", 0, 500)
+        .await
+        .unwrap()
+        .into_iter()
+        .find(|event| event.kind == "subagent_start")
+        .unwrap();
+    assert_eq!(start.data["background"], true);
+    let stop = tokio::time::timeout(std::time::Duration::from_secs(10), async {
+        loop {
+            if let Some(stop) = store
+                .events("parent", 0, 500)
+                .await
+                .unwrap()
+                .into_iter()
+                .find(|event| event.kind == "subagent_stop")
+            {
+                return stop;
+            }
+            tokio::time::sleep(std::time::Duration::from_millis(5)).await;
+        }
+    })
+    .await
+    .unwrap();
+    assert_eq!(stop.data["reason"], "completed");
+    assert_eq!(stop.data["text"], "hello from child");
+    let tasks = store.subagents("parent").await.unwrap();
+    assert_eq!(tasks.len(), 1);
+    assert_eq!(tasks[0]["status"], "completed");
+    assert_eq!(tasks[0]["text"], "hello from child");
+    runtime.shutdown().await;
 }
 
 /// Parent: read a file, then delegate with a reference to that read. Child:

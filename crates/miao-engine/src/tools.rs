@@ -57,6 +57,8 @@ struct ReadInput {
     path: String,
     offset: Option<usize>,
     limit: Option<usize>,
+    /// PDF only: a 1-based selection such as `1-3,5`. Omit for the first ten.
+    pages: Option<String>,
 }
 
 /// A ranged read returns at most this many lines, and never more than the
@@ -67,6 +69,19 @@ const MAX_READ_LINES: usize = 2000;
 #[serde(deny_unknown_fields)]
 struct SkillInput {
     name: String,
+}
+
+impl SkillInput {
+    fn parse(input: Value) -> Result<Self, ToolError> {
+        let input: Self = serde_json::from_value(input).map_err(|_| ToolError::InvalidInput)?;
+        if input.name.is_empty()
+            || input.name.len() > 64
+            || input.name.chars().any(|character| character.is_control())
+        {
+            return Err(ToolError::InvalidInput);
+        }
+        Ok(input)
+    }
 }
 
 #[derive(Deserialize)]
@@ -950,11 +965,17 @@ impl Tools {
                     .path
             }
             "load_skill" => {
-                let parsed: SkillInput =
-                    serde_json::from_value(input.clone()).map_err(|_| ToolError::InvalidInput)?;
-                if parsed.name != "media-observe" {
+                SkillInput::parse(input.clone())?;
+                ".".into()
+            }
+            "task_list" if self.delegation_enabled => {
+                if input != json!({}) {
                     return Err(ToolError::InvalidInput);
                 }
+                ".".into()
+            }
+            "task_result" | "task_cancel" if self.delegation_enabled => {
+                crate::subagent::Selector::parse(input.clone())?;
                 ".".into()
             }
             "list_files" => {
@@ -1118,7 +1139,12 @@ impl Tools {
                 .collect::<Result<Vec<_>, _>>()?
         };
         let resource = if name == "load_skill" {
-            "@builtin/skill/media-observe".into()
+            let parsed = SkillInput::parse(input.clone())?;
+            if parsed.name == "media-observe" {
+                "@builtin/skill/media-observe".into()
+            } else {
+                format!("@skills/{}", parsed.name)
+            }
         } else if external {
             // Authorized external reads use a namespaced resource: an absolute
             // path would be rejected by `permission::assess`'s boundary check, so
@@ -1151,6 +1177,8 @@ impl Tools {
                 .and_then(Value::as_str)
                 .unwrap_or("@subagent")
                 .to_owned()
+        } else if name == "task_list" {
+            "@subagents".into()
         } else if name.starts_with("terminal_")
             && name != "terminal_start"
             && name != "terminal_list"
@@ -1166,6 +1194,11 @@ impl Tools {
             )
         } else if name == "job_wait" {
             format!("@jobs/{}", crate::jobs::Wait::parse(input.clone())?.job_id)
+        } else if name == "task_result" || name == "task_cancel" {
+            format!(
+                "@subagents/{}",
+                crate::subagent::Selector::parse(input.clone())?.id
+            )
         } else if parts.is_empty() {
             ".".into()
         } else {
@@ -1175,13 +1208,15 @@ impl Tools {
             Access::Cron
         } else if name == "schedule_wakeup" {
             Access::Schedule
-        } else if matches!(name, "cancel_wakeup" | "todowrite" | "goal" | "cron_delete")
-            || self.is_product(name)
+        } else if matches!(
+            name,
+            "cancel_wakeup" | "todowrite" | "goal" | "cron_delete" | "task_list" | "task_result"
+        ) || self.is_product(name)
         {
             Access::SessionState
         } else if name == "start_job" || name == "monitor" || name.starts_with("terminal_") {
             Access::Background
-        } else if name == "task" {
+        } else if matches!(name, "task" | "task_cancel") {
             Access::Delegate
         } else if matches!(name, "run_command" | "bash") {
             Access::Execute
@@ -1213,6 +1248,9 @@ impl Tools {
                         | "job_list"
                         | "job_wait"
                         | "cancel_job"
+                        | "task_list"
+                        | "task_result"
+                        | "task_cancel"
                 ),
             access,
             name: name.into(),
@@ -1545,7 +1583,12 @@ impl Tools {
         if !self.delegation_enabled {
             return Vec::new();
         }
-        vec![ToolDefinition{name:"task".into(),description:"Delegate a self-contained task to a child Session and return its final message. The child inherits this Session's workspace and permission policy, has its own run and cancellation, and is bounded by a subagent depth and concurrency limit. A child starts without this Session's history, so pass references (at most four) naming archived tool outputs by tool_use_id, with an optional offset, instead of restating their content. Requires explicit subagent authority.".into(),input_schema:json!({"type":"object","properties":{"agent":{"type":"string","minLength":1,"maxLength":128},"prompt":{"type":"string","minLength":1,"maxLength":65536},"session_id":{"type":"string","maxLength":256},"references":{"type":"array","maxItems":4,"items":{"type":"object","properties":{"tool_use_id":{"type":"string","maxLength":128},"offset":{"type":"integer","minimum":0}},"required":["tool_use_id"],"additionalProperties":false}}},"required":["prompt"],"additionalProperties":false})}]
+        vec![
+            ToolDefinition{name:"task".into(),description:"Delegate a self-contained task to a child Session. By default wait and return its final message; with background true, return as soon as the child is scheduled so it survives this turn. The child inherits this Session's workspace and permission policy, has its own run and cancellation, and is bounded by a subagent depth and concurrency limit. A child starts without this Session's history, so pass references (at most four) naming archived tool outputs by tool_use_id, with an optional offset, instead of restating their content. Requires explicit subagent authority.".into(),input_schema:json!({"type":"object","properties":{"agent":{"type":"string","minLength":1,"maxLength":128},"prompt":{"type":"string","minLength":1,"maxLength":65536},"session_id":{"type":"string","maxLength":256},"background":{"type":"boolean"},"references":{"type":"array","maxItems":4,"items":{"type":"object","properties":{"tool_use_id":{"type":"string","maxLength":128},"offset":{"type":"integer","minimum":0}},"required":["tool_use_id"],"additionalProperties":false}}},"required":["prompt"],"additionalProperties":false})},
+            ToolDefinition{name:"task_list".into(),description:"List this Session's background subagent tasks, with child Session IDs and durable status.".into(),input_schema:json!({"type":"object","properties":{},"additionalProperties":false})},
+            ToolDefinition{name:"task_result".into(),description:"Read a background task's durable report by the child Session ID returned from task. Does not wait or restart it.".into(),input_schema:json!({"type":"object","properties":{"id":{"type":"string","minLength":1,"maxLength":256}},"required":["id"],"additionalProperties":false})},
+            ToolDefinition{name:"task_cancel".into(),description:"Cancel an owned background subagent task. Interrupting the parent alone does not cancel background children.".into(),input_schema:json!({"type":"object","properties":{"id":{"type":"string","minLength":1,"maxLength":256}},"required":["id"],"additionalProperties":false})},
+        ]
     }
 
     fn lsp_definitions(&self) -> Vec<ToolDefinition> {
@@ -1585,8 +1628,8 @@ impl Tools {
     pub fn definitions(&self) -> Vec<ToolDefinition> {
         let mut definitions=vec![ToolDefinition {
             name:"read_file".into(),
-            description:"Read a UTF-8 file under the configured workspace. Maximum 32768 bytes; for larger files pass a 1-based line offset and a line limit (up to 2000 lines) to read one window.".into(),
-            input_schema:json!({"type":"object","properties":{"path":{"type":"string"},"offset":{"type":"integer","minimum":1},"limit":{"type":"integer","minimum":1,"maximum":2000}},"required":["path"],"additionalProperties":false}),
+            description:"Read a UTF-8 file or PDF under the configured workspace. Text reads are limited to 32768 bytes; for larger files pass a 1-based line offset and a line limit (up to 2000 lines) to read one window. PDF reads return page text and page images; pass pages such as 1-3,5 (at most 20 pages) to select pages.".into(),
+            input_schema:json!({"type":"object","properties":{"path":{"type":"string"},"offset":{"type":"integer","minimum":1},"limit":{"type":"integer","minimum":1,"maximum":2000},"pages":{"type":"string"}},"required":["path"],"additionalProperties":false}),
         },ToolDefinition {
             name:"list_files".into(),
             description:"List immediate entries of a workspace directory. Does not recurse or follow symlinks; output is bounded.".into(),
@@ -1631,8 +1674,8 @@ impl Tools {
         });
         definitions.push(ToolDefinition {
             name: "load_skill".into(),
-            description: "Load the built-in media-observe skill for timestamped video/audio inspection through Bash, ffmpeg/ffprobe, and read_image. Project skill bodies remain available through their listed read_file paths.".into(),
-            input_schema: json!({"type":"object","properties":{"name":{"type":"string","enum":["media-observe"]}},"required":["name"],"additionalProperties":false}),
+            description: "Load a skill by name from the available skills list in the system context. Returns its instructions plus the skill directory and sampled files, so relative script and reference paths can be resolved.".into(),
+            input_schema: json!({"type":"object","properties":{"name":{"type":"string","minLength":1,"maxLength":64}},"required":["name"],"additionalProperties":false}),
         });
         definitions.push(ToolDefinition {
             name:"knowledge".into(),
@@ -1755,14 +1798,22 @@ impl Tools {
         let task = async {
             match name {
                 "load_skill" => {
-                    let input: SkillInput =
-                        serde_json::from_value(input).map_err(|_| ToolError::InvalidInput)?;
-                    if input.name != "media-observe" {
-                        return Err(ToolError::InvalidInput);
+                    let input = SkillInput::parse(input)?;
+                    if input.name == "media-observe" {
+                        return Ok(
+                            json!({"name":input.name,"content":crate::context::MEDIA_OBSERVE,"sha256":digest(crate::context::MEDIA_OBSERVE.as_bytes()),"tool_mapping":{"bash":"bash","read_images":"read_image","read_text":"read_file"}}),
+                        );
                     }
-                    Ok(
-                        json!({"name":input.name,"content":crate::context::MEDIA_OBSERVE,"sha256":digest(crate::context::MEDIA_OBSERVE.as_bytes()),"tool_mapping":{"bash":"bash","read_images":"read_image","read_text":"read_file"}}),
-                    )
+                    let skill = crate::context::find_skill(self, &input.name).ok_or_else(|| {
+                        ToolError::External(format!("unknown skill: {}", input.name))
+                    })?;
+                    Ok(json!({
+                        "name":skill.name,
+                        "content":skill.content,
+                        "sha256":digest(skill.content.as_bytes()),
+                        "directory":skill.directory,
+                        "files":skill.files,
+                    }))
                 }
                 "read_image" => {
                     use base64::Engine;
@@ -1806,6 +1857,12 @@ impl Tools {
                     let metadata = tokio::fs::metadata(&path).await?;
                     if !metadata.is_file() {
                         return Err(ToolError::InvalidFile);
+                    }
+                    if path
+                        .extension()
+                        .is_some_and(|extension| extension.eq_ignore_ascii_case("pdf"))
+                    {
+                        return crate::pdf::read(&input.path, &path, input.pages.as_deref()).await;
                     }
                     // A line range makes a large file readable; the whole-file
                     // path keeps its historical 32 KiB bound.

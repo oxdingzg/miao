@@ -2047,6 +2047,42 @@ command: None,
                                     )
                                     .await
                                 }
+                                "task_list" => match inner.store.subagents(session).await {
+                                    Ok(tasks) => Ok(json!({"tasks":tasks})),
+                                    Err(error) => Err(ToolError::External(error.to_string())),
+                                },
+                                "task_result" => {
+                                    match crate::subagent::Selector::parse(prepared.input().clone()) {
+                                        Ok(selector) => match inner.store.subagents(session).await {
+                                            Ok(tasks) => match tasks.into_iter().find(|task| task["id"].as_str() == Some(&selector.id)) {
+                                                Some(task) => {
+                                                    let text = task["text"].as_str().filter(|text| !text.is_empty()).unwrap_or(
+                                                        if task["status"] == "running" { "Background task is still running." } else { "(no output)" },
+                                                    );
+                                                    Ok(json!({"task":task,"text":text}))
+                                                }
+                                                None => Err(ToolError::External("Unknown background task for this Session.".into())),
+                                            },
+                                            Err(error) => Err(ToolError::External(error.to_string())),
+                                        },
+                                        Err(error) => Err(error),
+                                    }
+                                }
+                                "task_cancel" => {
+                                    match crate::subagent::Selector::parse(prepared.input().clone()) {
+                                        Ok(selector) => match inner.store.lineage_parent(&selector.id).await {
+                                            Ok(parent) if parent.as_deref() == Some(session) => {
+                                                match cancel_session(inner,&selector.id).await {
+                                                    Ok(cancelled) => Ok(json!({"cancelled":cancelled})),
+                                                    Err(error) => Err(ToolError::External(error.to_string())),
+                                                }
+                                            }
+                                            Ok(_) => Err(ToolError::External("Unknown background task for this Session.".into())),
+                                            Err(error) => Err(ToolError::External(error.to_string())),
+                                        },
+                                        Err(error) => Err(error),
+                                    }
+                                }
                                 "start_job" => {
                                     start_background(inner, session, run, id, prepared).await
                                 }
@@ -3559,12 +3595,22 @@ async fn delegate(
                 .into(),
         ));
     }
+    let description: String = task
+        .prompt
+        .lines()
+        .next()
+        .unwrap_or("subagent")
+        .chars()
+        .take(256)
+        .collect();
     inner
         .store
         .record(
             parent,
             crate::events::Lifecycle::SubagentStart.name(),
-            json!({"run_id":run,"subagent_id":child,"call_id":call}),
+            json!({"run_id":run,"subagent_id":child,"call_id":call,"background":task.background,
+                   "agent":selected.as_ref().map(|agent|agent.name.as_str()).unwrap_or("subagent"),
+                   "description":description}),
         )
         .await
         .map_err(|_| ToolError::External("subagent start could not be recorded".into()))?;
@@ -3599,18 +3645,75 @@ async fn delegate(
         .await
         .map_err(|_| ToolError::External("subagent could not be scheduled".into()))?;
 
+    if task.background {
+        let background = inner.clone();
+        let parent = parent.to_owned();
+        let run = run.to_owned();
+        let call = call.to_owned();
+        let watcher_child = child.clone();
+        tokio::spawn(async move {
+            if let Err(error) = finish_delegation(
+                &background,
+                &parent,
+                &run,
+                &call,
+                &watcher_child,
+                admission.admitted_seq,
+                permit,
+                background.stop.clone(),
+            )
+            .await
+            {
+                let _ = background
+                    .store
+                    .record(
+                        &parent,
+                        crate::events::Lifecycle::SubagentStop.name(),
+                        json!({"run_id":run,"subagent_id":watcher_child,"call_id":call,"reason":"failed","text":error.to_string()}),
+                    )
+                    .await;
+            }
+        });
+        return Ok(json!({"session_id":child,"background":true,"status":"running"}));
+    }
+    let text = finish_delegation(
+        inner,
+        parent,
+        run,
+        call,
+        &child,
+        admission.admitted_seq,
+        permit,
+        cancel,
+    )
+    .await?;
+    Ok(json!({"session_id":child,"text":text}))
+}
+
+#[allow(clippy::too_many_arguments)]
+async fn finish_delegation(
+    inner: &Arc<Inner>,
+    parent: &str,
+    run: &str,
+    call: &str,
+    child: &str,
+    admitted_seq: u64,
+    permit: tokio::sync::OwnedSemaphorePermit,
+    cancel: CancellationToken,
+) -> Result<String, ToolError> {
+    let mut reason = "completed";
     loop {
         tokio::select! {
             _ = cancel.cancelled() => {
-                let _ = cancel_session(inner, &child).await;
-                let _ = inner.store.record(parent, crate::events::Lifecycle::SubagentStop.name(), json!({"run_id":run,"subagent_id":child,"call_id":call,"reason":"interrupted"})).await;
-                return Err(ToolError::Interrupted);
+                let _ = cancel_session(inner, child).await;
+                reason = "interrupted";
+                break;
             }
             _ = tokio::time::sleep(std::time::Duration::from_millis(20)) => {}
         }
         let events = inner
             .store
-            .events(&child, admission.admitted_seq, 500)
+            .events(child, admitted_seq, 500)
             .await
             .map_err(|_| ToolError::External("subagent events unavailable".into()))?;
         if events.iter().any(|event| event.kind == "run.finished") {
@@ -3618,10 +3721,9 @@ async fn delegate(
         }
     }
     drop(permit);
-
     let history = inner
         .store
-        .history(&child)
+        .history(child)
         .await
         .map_err(|_| ToolError::External("subagent history unavailable".into()))?;
     let text = history
@@ -3635,14 +3737,9 @@ async fn delegate(
             })
         })
         .unwrap_or_default();
-    // Delegation outcome evidence (roadmap A10): the child's billed totals and
-    // turn count ride the deterministic SubagentStop payload so a report can
-    // price parent+child without reconstructing provenance. Wall-clock cost
-    // stays on the ephemeral progress feed — the replayed journal pins
-    // payloads, and durations are not reproducible.
     let usage = inner
         .store
-        .usage_report(&child)
+        .usage_report(child)
         .await
         .map_err(|_| ToolError::External("subagent usage report unavailable".into()))?;
     inner
@@ -3650,14 +3747,18 @@ async fn delegate(
         .record(
             parent,
             crate::events::Lifecycle::SubagentStop.name(),
-            json!({"run_id":run,"subagent_id":child,"call_id":call,"reason":"completed",
+            json!({"run_id":run,"subagent_id":child,"call_id":call,"reason":reason,
+                   "text":text,
                    "tokens":{"input":usage["providerUsage"]["tokens"]["input"].as_u64().unwrap_or(0),"output":usage["providerUsage"]["tokens"]["output"].as_u64().unwrap_or(0)},
                    "usageCoverage":usage["providerUsage"],
                    "turns":usage["turns"]}),
         )
         .await
         .map_err(|_| ToolError::External("subagent stop could not be recorded".into()))?;
-    Ok(json!({"session_id":child,"text":text}))
+    if reason == "interrupted" {
+        return Err(ToolError::Interrupted);
+    }
+    Ok(text)
 }
 
 async fn wake_session(inner: &Arc<Inner>, session: &str, force: bool) -> Result<(), Error> {

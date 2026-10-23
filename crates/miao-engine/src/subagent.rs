@@ -35,6 +35,10 @@ pub struct Input {
     pub session_id: Option<String>,
     #[serde(default)]
     pub references: Vec<Reference>,
+    /// Return as soon as the child is scheduled instead of waiting for its
+    /// final message. Background children survive the parent turn.
+    #[serde(default)]
+    pub background: bool,
 }
 impl Input {
     pub fn parse(input: Value) -> Result<Self, ToolError> {
@@ -59,5 +63,25 @@ impl Input {
             return Err(ToolError::InvalidInput);
         }
         Ok(parsed)
+    }
+}
+
+/// Identifies one background child Session owned by the calling Session.
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct Selector {
+    pub id: String,
+}
+
+impl Selector {
+    pub fn parse(input: Value) -> Result<Self, ToolError> {
+        let selector: Self = serde_json::from_value(input).map_err(|_| ToolError::InvalidInput)?;
+        if selector.id.is_empty()
+            || selector.id.len() > 256
+            || selector.id.chars().any(char::is_control)
+        {
+            return Err(ToolError::InvalidInput);
+        }
+        Ok(selector)
     }
 }
