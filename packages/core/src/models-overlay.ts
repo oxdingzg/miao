@@ -14,7 +14,7 @@ export * as ModelsOverlay from "./models-overlay"
  * discovered at runtime (see `plugin/provider/commandcode.ts`); only the
  * provider identity and credential environment names live here.
  */
-export const providers: Record<string, ModelsCatalog.Provider> = {
+export const providers: Record<string, ProviderPatch> = {
   commandcode: {
     id: "commandcode",
     name: "Command Code",
@@ -22,6 +22,38 @@ export const providers: Record<string, ModelsCatalog.Provider> = {
     api: "https://api.commandcode.ai",
     models: {},
   },
+  /**
+   * The coding-plan gateway bills through subscription quota, and the upstream
+   * catalog records that as zero cost on every model. Zero is the marginal
+   * price, not the value of the tokens, so usage display and native-engine
+   * pricing both read $0.00 and comparisons like the engine cost benchmark
+   * lose their cost column. Patch the two models the plan officially supports
+   * (per bigmodel.cn/glm-coding) with their standard-API reference rates,
+   * mirrored from this catalog's own `zhipuai` entries so both providers stay
+   * consistent (source: https://open.bigmodel.cn/pricing).
+   */
+  "zhipuai-coding-plan": {
+    id: "zhipuai-coding-plan",
+    models: {
+      "glm-5.3": {
+        cost: { input: 1.19516, output: 4.18306, cache_read: 0.29879, cache_write: 0 },
+      },
+      "glm-5.3-flash": {
+        cost: { input: 0.11952, output: 0.41831, cache_read: 0.03436, cache_write: 0 },
+      },
+    },
+  },
+}
+
+/**
+ * Overlay providers may carry partial model patches (for example a cost-only
+ * correction), so overlay models merge field-wise over the catalog entry
+ * instead of replacing it.
+ */
+type ModelPatch = Partial<Omit<ModelsCatalog.Model, "id">>
+type ProviderPatch = Partial<Omit<ModelsCatalog.Provider, "id" | "models">> & {
+  id: ModelsCatalog.Provider["id"]
+  models: Record<string, ModelPatch>
 }
 
 /** Merge the overlay over a catalog, letting overlay provider fields win. */
@@ -32,7 +64,15 @@ export const merge = (catalog: Record<string, ModelsCatalog.Provider>): Record<s
     result[id] = {
       ...existing,
       ...provider,
-      models: { ...existing?.models, ...provider.models },
+      models: {
+        ...existing?.models,
+        ...Object.fromEntries(
+          Object.entries(provider.models).map(([modelID, model]) => [
+            modelID,
+            { ...existing?.models[modelID], ...model },
+          ]),
+        ),
+      },
     }
   }
   return result
