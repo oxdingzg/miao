@@ -1048,6 +1048,16 @@ impl Tools {
                 crate::jobs::Selector::parse(input.clone())?;
                 ".".into()
             }
+            "job_list" if self.background_enabled => {
+                if input != json!({}) {
+                    return Err(ToolError::InvalidInput);
+                }
+                ".".into()
+            }
+            "job_wait" if self.background_enabled => {
+                crate::jobs::Wait::parse(input.clone())?;
+                ".".into()
+            }
             "run_command" if self.process_enabled => process::Input::parse(input.clone())?.cwd,
             "bash" if self.process_enabled => process::BashInput::parse(input.clone())?.cwd,
             "write_file" | "edit_file" if self.writes => {
@@ -1154,6 +1164,8 @@ impl Tools {
                 "@jobs/{}",
                 crate::jobs::Selector::parse(input.clone())?.job_id
             )
+        } else if name == "job_wait" {
+            format!("@jobs/{}", crate::jobs::Wait::parse(input.clone())?.job_id)
         } else if parts.is_empty() {
             ".".into()
         } else {
@@ -1194,7 +1206,13 @@ impl Tools {
             batchable_read: access == Access::Read
                 && !matches!(
                     name,
-                    "question" | "recall" | "cron_list" | "job_status" | "cancel_job"
+                    "question"
+                        | "recall"
+                        | "cron_list"
+                        | "job_status"
+                        | "job_list"
+                        | "job_wait"
+                        | "cancel_job"
                 ),
             access,
             name: name.into(),
@@ -1664,6 +1682,12 @@ impl Tools {
             for name in ["job_status", "cancel_job"] {
                 definitions.push(ToolDefinition{name:name.into(),description:if name=="job_status"{"Inspect this Session's job state and bounded terminal output.".into()}else{"Request cancellation of this Session's active background job.".into()},input_schema:json!({"type":"object","properties":{"job_id":{"type":"string"}},"required":["job_id"],"additionalProperties":false})});
             }
+            definitions.push(ToolDefinition {
+                name: "job_list".into(),
+                description: "List this Session's managed background jobs and their status.".into(),
+                input_schema: json!({"type":"object","properties":{},"additionalProperties":false}),
+            });
+            definitions.push(ToolDefinition{name:"job_wait".into(),description:"Wait for one of this Session's background jobs to finish (max 600000 ms).".into(),input_schema:json!({"type":"object","properties":{"job_id":{"type":"string"},"timeout_ms":{"type":"integer","minimum":0,"maximum":600000}},"required":["job_id"],"additionalProperties":false})});
             definitions.push(ToolDefinition{name:"monitor".into(),description:"Run a shell command in the background and stream stdout lines as monitor.notice progress events. Optional regex pattern filters delivered lines (batched ~200ms, max 200 lines/8KiB each, 64 notices then suppressed). Default timeout 600000 ms, max 3600000 ms kills the command. Cancel with cancel_job.".into(),input_schema:json!({"type":"object","properties":{"command":{"type":"string","minLength":1},"description":{"type":"string","maxLength":256},"pattern":{"type":"string","maxLength":512},"timeout_ms":{"type":"integer","minimum":1,"maximum":3600000}},"required":["command"],"additionalProperties":false})});
         }
         // Host-dispatched product tools do not need process or background

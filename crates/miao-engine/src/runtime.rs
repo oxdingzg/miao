@@ -2071,6 +2071,15 @@ command: None,
                                         Err(error) => Err(error),
                                     }
                                 }
+                                "job_list" => {
+                                    Ok(json!({"jobs":inner.store.jobs(session).await?}))
+                                }
+                                "job_wait" => {
+                                    match crate::jobs::Wait::parse(prepared.input().clone()) {
+                                        Ok(wait) => wait_background(inner, session, &wait, cancel.child_token()).await,
+                                        Err(error) => Err(error),
+                                    }
+                                }
                                 "cancel_job" => {
                                     match crate::jobs::Selector::parse(prepared.input().clone()) {
                                         Ok(selector) => Ok(
@@ -3878,6 +3887,39 @@ async fn authorize(
             }
         }
         tokio::select! {_=cancel.cancelled()=>return Ok(false),_=tokio::time::sleep(std::time::Duration::from_millis(25))=>{}}
+    }
+}
+
+/// Wait for a Session-owned job to settle, bounded by the tool contract and
+/// the turn's cancellation. A missing job settles immediately, like a finished
+/// one: the caller sees `job: null` instead of an error.
+async fn wait_background(
+    inner: &Inner,
+    session: &str,
+    wait: &crate::jobs::Wait,
+    cancel: CancellationToken,
+) -> Result<Value, ToolError> {
+    let deadline = tokio::time::Instant::now() + std::time::Duration::from_millis(wait.timeout_ms);
+    loop {
+        let job = inner
+            .store
+            .job(session, &wait.job_id)
+            .await
+            .map_err(|error| ToolError::External(error.to_string()))?;
+        let active = job
+            .as_ref()
+            .is_some_and(|job| matches!(job["state"].as_str(), Some("queued" | "running")));
+        if !active {
+            return Ok(json!({"job":job,"timedOut":false}));
+        }
+        let remaining = deadline.saturating_duration_since(tokio::time::Instant::now());
+        if remaining.is_zero() {
+            return Ok(json!({"job":job,"timedOut":true}));
+        }
+        tokio::select! {
+            _ = cancel.cancelled() => return Err(ToolError::Interrupted),
+            _ = tokio::time::sleep(remaining.min(std::time::Duration::from_millis(50))) => {}
+        }
     }
 }
 

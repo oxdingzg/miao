@@ -22,7 +22,7 @@ external tools fall back to a generic/plugin renderer.
 | `edit_file` | `edit` |
 | `apply_patch` | `apply-patch` |
 | `run_command`, `bash` | `bash` |
-| `start_job`, `job_status`, `cancel_job` | `background-job` |
+| `start_job`, `job_status`, `job_list`, `job_wait`, `cancel_job` | `background-job` |
 | `task` | `task` |
 | `todowrite` | `todowrite` |
 | `goal` | `goal` |

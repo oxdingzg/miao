@@ -726,6 +726,8 @@ const TOOL_IDS: Record<string, string> = {
   bash: "bash",
   start_job: "background-job",
   job_status: "background-job",
+  job_list: "background-job",
+  job_wait: "background-job",
   cancel_job: "background-job",
   task: "task",
   todowrite: "todowrite",
