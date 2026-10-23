@@ -29,6 +29,16 @@ export function oauthFetch(
           )
             return entry.tokens.accessToken
           if (!entry?.tokens?.refreshToken) throw new UnauthorizedError("MCP OAuth authorization required")
+          // A sharer behind the same issuer may have rotated the grant
+          // already: adopt the freshest tokens instead of burning this
+          // entry's refresh token on an already-rotated grant.
+          if (entry.issuer) {
+            const fresher = await Effect.runPromise(store.freshFromIssuer(entry.issuer, name)).catch(() => undefined)
+            if (fresher !== undefined && fresher.accessToken !== observed) {
+              await Effect.runPromise(store.updateTokens(name, fresher, serverUrl))
+              return fresher.accessToken
+            }
+          }
           const provider = new RefreshProvider(name, serverUrl, config, store, entry)
           const signal = AbortSignal.timeout(30_000)
           const result = await auth(provider, {
@@ -39,6 +49,14 @@ export function oauthFetch(
           if (result !== "AUTHORIZED") throw new UnauthorizedError("MCP OAuth authorization required")
           const updated = await current()
           if (!updated?.tokens?.accessToken) throw new UnauthorizedError("MCP OAuth authorization required")
+          if (updated.issuer) {
+            // Fan the rotated grant out to every other entry behind the same
+            // issuer; a failure here must not fail the request that holds a
+            // working token.
+            await Effect.runPromise(
+              store.updateTokensForIssuer(updated.issuer, name, updated.tokens).pipe(Effect.catch(() => Effect.void)),
+            ).catch(() => undefined)
+          }
           return updated.tokens.accessToken
         }),
       ),

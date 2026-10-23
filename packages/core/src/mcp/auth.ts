@@ -28,6 +28,10 @@ export const Entry = Schema.Struct({
   codeVerifier: Schema.mutableKey(Schema.optional(Schema.String)),
   oauthState: Schema.mutableKey(Schema.optional(Schema.String)),
   serverUrl: Schema.mutableKey(Schema.optional(Schema.String)),
+  /** The authorization server these tokens came from. Entries sharing an
+   * issuer share one grant: adoption, rotation fan-out and the refresh lock
+   * are all keyed by it. Legacy entries without it keep working untouched. */
+  issuer: Schema.optional(Schema.String),
 })
 export type Entry = Schema.Schema.Type<typeof Entry>
 
@@ -63,6 +67,18 @@ export interface Interface {
   readonly updateOAuthState: (mcpName: string, oauthState: string) => Effect.Effect<void>
   readonly getOAuthState: (mcpName: string) => Effect.Effect<string | undefined>
   readonly clearOAuthState: (mcpName: string) => Effect.Effect<void>
+  readonly findByIssuer: (issuer: string) => Effect.Effect<Record<string, Entry>>
+  readonly adopt: (
+    mcpName: string,
+    serverUrl: string,
+    donor: { readonly name: string; readonly entry: Entry },
+  ) => Effect.Effect<boolean>
+  readonly updateTokensForIssuer: (
+    issuer: string,
+    except: string | undefined,
+    tokens: Tokens,
+  ) => Effect.Effect<void>
+  readonly freshFromIssuer: (issuer: string, except: string | undefined) => Effect.Effect<Tokens | undefined>
 }
 
 export class Service extends Context.Service<Service, Interface>()("@miao/McpAuth") {}
@@ -105,6 +121,81 @@ const layer = Layer.effect(
       if (!entry.serverUrl) return undefined
       if (entry.serverUrl !== serverUrl) return undefined
       return entry
+    })
+
+    const findByIssuer = Effect.fn("McpAuth.findByIssuer")(function* (issuer: string) {
+      const data = yield* all()
+      const found: Record<string, Entry> = {}
+      for (const [mcpName, entry] of Object.entries(data)) {
+        if (entry.issuer === issuer && entry.tokens) found[mcpName] = entry
+      }
+      return found
+    })
+
+    const adopt = Effect.fn("McpAuth.adopt")(function* (
+      mcpName: string,
+      serverUrl: string,
+      donor: { readonly name: string; readonly entry: Entry },
+    ) {
+      if (!donor.entry.tokens) return false
+      const expected = JSON.stringify(donor.entry.tokens)
+      let adopted = false
+      yield* mutate((data) => {
+        // Re-check under the write lock: the donor may have rotated or been
+        // removed while this effect waited.
+        const source = data[donor.name]
+        if (source?.tokens === undefined || JSON.stringify(source.tokens) !== expected) return undefined
+        const current = data[mcpName]
+        const next: Entry = { ...(current ?? {}), issuer: source.issuer, tokens: source.tokens }
+        if (source.clientInfo && !current?.clientInfo) next.clientInfo = source.clientInfo
+        if (serverUrl) next.serverUrl = serverUrl
+        adopted = true
+        return { ...data, [mcpName]: next }
+      })
+      return adopted
+    })
+
+    const updateTokensForIssuer = Effect.fn("McpAuth.updateTokensForIssuer")(function* (
+      issuer: string,
+      except: string | undefined,
+      tokens: Tokens,
+    ) {
+      yield* mutate((data) => {
+        let changed = false
+        const next: AuthData = {}
+        for (const [mcpName, entry] of Object.entries(data)) {
+          if (mcpName === except || entry.issuer !== issuer || !entry.tokens) {
+            next[mcpName] = entry
+            continue
+          }
+          changed = true
+          next[mcpName] = {
+            ...entry,
+            tokens: {
+              ...tokens,
+              // Refresh responses may omit an unchanged refresh token.
+              refreshToken: tokens.refreshToken ?? entry.tokens.refreshToken,
+            },
+          }
+        }
+        return changed ? next : undefined
+      })
+    })
+
+    const freshFromIssuer = Effect.fn("McpAuth.freshFromIssuer")(function* (
+      issuer: string,
+      except: string | undefined,
+    ) {
+      const data = yield* all()
+      const now = Date.now() / 1000
+      let freshest: Tokens | undefined
+      for (const [mcpName, entry] of Object.entries(data)) {
+        if (mcpName === except || entry.issuer !== issuer || !entry.tokens) continue
+        if (entry.tokens.expiresAt !== undefined && entry.tokens.expiresAt <= now + 30) continue
+        if (freshest === undefined || (entry.tokens.expiresAt ?? Infinity) > (freshest.expiresAt ?? Infinity))
+          freshest = entry.tokens
+      }
+      return freshest
     })
 
     const set = Effect.fn("McpAuth.set")(function* (mcpName: string, entry: Entry, serverUrl?: string) {
@@ -200,10 +291,20 @@ const layer = Layer.effect(
           return true
         }).pipe(flock.withLock(lockKey), Effect.orDie),
       withRefreshLock: (mcpName, serverUrl, body) =>
-        body.pipe(flock.withLock(`mcp-oauth-refresh:${filepath}:${JSON.stringify([mcpName, serverUrl])}`)),
+        Effect.gen(function* () {
+          // Entries sharing an issuer share one grant, so their refreshes
+          // must serialize against each other, not just against themselves.
+          const entry = yield* get(mcpName)
+          const scope = entry?.issuer ?? JSON.stringify([mcpName, serverUrl])
+          return yield* body.pipe(flock.withLock(`mcp-oauth-refresh:${filepath}:${scope}`))
+        }),
       all,
       get,
       getForUrl,
+      adopt,
+      findByIssuer,
+      updateTokensForIssuer,
+      freshFromIssuer,
       set,
       remove,
       updateTokens,
