@@ -1208,13 +1208,15 @@ impl Tools {
             Access::Cron
         } else if name == "schedule_wakeup" {
             Access::Schedule
-        } else if matches!(name, "cancel_wakeup" | "todowrite" | "goal" | "cron_delete")
-            || self.is_product(name)
+        } else if matches!(
+            name,
+            "cancel_wakeup" | "todowrite" | "goal" | "cron_delete" | "task_list" | "task_result"
+        ) || self.is_product(name)
         {
             Access::SessionState
         } else if name == "start_job" || name == "monitor" || name.starts_with("terminal_") {
             Access::Background
-        } else if matches!(name, "task" | "task_list" | "task_result" | "task_cancel") {
+        } else if matches!(name, "task" | "task_cancel") {
             Access::Delegate
         } else if matches!(name, "run_command" | "bash") {
             Access::Execute
