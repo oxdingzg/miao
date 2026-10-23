@@ -40,3 +40,16 @@ MIAO_ENGINE_BIN=<engine binary> bun script/engine-benchmark.ts \
 - `raw/<model>/<engine>/samples.json` and `evidence/*.json` are the harness's structured per-attempt records (including gate-failure reasons); they do NOT contain full `miao run` event journals (only the suite-v6 rounds keep those). `tools/compare.py` targets suite-v6 evidence; this directory recomputes from `samples.json`/`results.csv`.
 - n=2: the harness's p50/p95 resolve to the same (worse) attempt — directional only.
 - Same task set, models, and basis as the [10-22 cost batch](../../engine-cost-benchmark.md); use this directory for cross-round comparison, and keep the 10-22 rows as history.
+
+## Post-#1283 verification (2026-10-23, same batch re-run after the context-directory fix)
+
+`post-1283-verification/` holds a full 28-run re-run (glm-5.3-flash, both engines, best-of-2) after landing #1283 (content-addressed native context directory). Request dumps prove the three sessions' system prompts are now byte-identical (pre-fix they diverged at byte 7167), and gates recovered to 14/14 for rust (the recovery cell passed this time — consistent with variance, not with a systematic failure).
+
+| model         | engine | gates | turns | uncached in | cached read | output | engine cost | computed cost | wall (s) | p50/p95 (s)  |
+| ------------- | ------ | ----- | ----- | ----------- | ----------- | ------ | ----------- | ------------- | -------- | ------------ |
+| glm-5.3-flash | TS     | 14/14 | 83    | 287,517     | 926,976     | 5,137  | 0.0736      | 0.0690        | 676      | 47.5 / 100.3 |
+| glm-5.3-flash | RS     | 14/14 | 98    | 1,220,144   | 1,152,384   | 34,305 | 0.0000 ¹    | 0.1998        | 1,075    | 76.1 / 163.9 |
+
+**The uncached-input collapse did NOT happen**: rust still carries ~87k uncached per run (vs ~20k for TS), and the computed cost ratio stays ≈2.6×. The verified byte-stable system prompt was therefore NOT the dominant cache-miss driver. Per-request math on `results.csv` shows both arms cache only ~11k tokens per request (≈ system + tools) while everything past that — the growing history — is re-paid uncached by rust (≈11.6k/request) but far less by TS (≈4.9k/request, whose history grows slower). The leading hypothesis is now **within-run cache expiry/keying correlated with rust's longer steps** (3-6× output tokens → longer gaps between requests → the provider's short-lived prefix cache expires between steps), not request-key divergence. Next diagnostic: per-request cache-read telemetry with timestamps (extend the request dump to also record the response usage) to separate TTL expiry from key divergence.
+
+¹ Native-placement pricing still unwired (issue #1285).

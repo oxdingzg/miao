@@ -40,3 +40,16 @@ MIAO_ENGINE_BIN=<engine binary> bun script/engine-benchmark.ts \
 - `raw/<model>/<engine>/samples.json` 与 `evidence/*.json` 是 harness 的结构化逐次记录（含门槛失败原因），**不含** `miao run` 的完整事件流 journal（suite-v6 才保留）；`tools/compare.py` 面向 suite-v6 evidence，本目录从 `samples.json`/`results.csv` 重算。
 - n=2：harness 的 p50/p95 落在同一（较差）次上，分位数只作方向参考。
 - 与 [10-22 成本批](../../engine-cost-benchmark.md) 同任务集/模型/口径；横向对比请用本目录数据，10-22 行保留为历史记录。
+
+## Post-#1283 验证（2026-10-23，上下文目录修复落地后同批重跑）
+
+`post-1283-verification/` holds a full 28-run re-run (glm-5.3-flash, both engines, best-of-2) after landing #1283 (content-addressed native context directory). 请求 dump 证明三个独立会话的 system prompt 已字节一致（修复前在 7167 字节处分叉），rust 门槛恢复 14/14（recovery 本轮通过——与随机波动一致，而非系统性问题消失）。
+
+| model         | engine | gates | turns | uncached in | cached read | output | engine cost | computed cost | wall (s) | p50/p95 (s)  |
+| ------------- | ------ | ----- | ----- | ----------- | ----------- | ------ | ----------- | ------------- | -------- | ------------ |
+| glm-5.3-flash | TS     | 14/14 | 83    | 287,517     | 926,976     | 5,137  | 0.0736      | 0.0690        | 676      | 47.5 / 100.3 |
+| glm-5.3-flash | RS     | 14/14 | 98    | 1,220,144   | 1,152,384   | 34,305 | 0.0000 ¹    | 0.1998        | 1,075    | 76.1 / 163.9 |
+
+**未缓存输入并未塌缩**: rust still carries ~87k uncached per run (vs ~20k for TS), and the computed cost ratio stays ≈2.6×. 因此字节稳定的 system prompt 并不是缓存不命中的主导因素。对 `results.csv` 的逐请求计算显示：两臂每次请求都只有 ~11k token（≈ system + tools）命中缓存，其后不断增长的历史全部按未缓存重付——rust 每请求 ≈11.6k，TS 仅 ≈4.9k（其历史增长慢）。当前主假设是 **run 内缓存过期/键控与 rust 更长的步强相关**（3-6× 输出 → 请求间隔拉长 → 网关短 TTL 前缀缓存步间过期），而非缓存键分歧。下一步诊断：给 request dump 增加带时间戳的逐请求 cache-read 遥测，区分 TTL 过期与键分歧。
+
+¹ 原生 placement 计价仍未接线（issue #1285）。
