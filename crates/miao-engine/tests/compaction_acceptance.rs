@@ -234,7 +234,8 @@ async fn the_first_request_after_a_checkpoint_carries_the_restore_budget_note() 
     let requests = provider.main_messages.lock().unwrap();
     assert!(requests.len() > before, "the second drain sent a request");
     let request = &requests[before];
-    let is_note = |entry: &(String, String)| entry.1.starts_with("The conversation was just compacted");
+    let is_note =
+        |entry: &(String, String)| entry.1.starts_with("The conversation was just compacted");
     let note_index = request
         .iter()
         .position(|entry| is_note(entry))
