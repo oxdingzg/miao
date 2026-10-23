@@ -106,7 +106,11 @@ by both engines on both models (marked ✓ because a refusal *is* the pass).
    complete two-engine coverage.
 2. **GLM rust cells lack price entries**, so their cost column reads $0.0000;
    the billed-in columns carry the comparison. On deepseek ts cells (priced),
-   a full run costs $0.0026–0.0059.
+   a full run costs $0.0026–0.0059. **Fixed by #1251** (2026-10-23): the
+   models overlay now prices `zhipuai-coding-plan/glm-5.3` and
+   `glm-5.3-flash` at their standard-API reference rates, so native steps on
+   that provider are priced at catalog rates. The table above predates the
+   fix; a rerun of this batch would fill the GLM rust cost column.
 3. **Billed-in gap on glm narrowed to +38–256%** (from the unpriced batch's
    raw-input 4–7×), and rust wall-clock stays comparable or better on the
    larger tasks even while carrying the full prompt in `input`.

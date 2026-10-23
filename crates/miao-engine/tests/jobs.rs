@@ -9,6 +9,7 @@ use miao_engine::{
     tools::Tools,
 };
 use serde_json::{json, Value};
+use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
 use tokio::sync::{mpsc, Notify};
 use tokio_util::sync::CancellationToken;
@@ -321,5 +322,113 @@ async fn job_completion_after_idle_admits_once_and_wakes_the_existing_owner() {
             .count(),
         2
     );
+    runtime.shutdown().await;
+}
+
+struct Observer {
+    step: AtomicUsize,
+    done: Arc<Notify>,
+}
+
+fn tool_results(request: &ModelRequest) -> Vec<Value> {
+    request
+        .messages
+        .iter()
+        .flat_map(|message| message.content.as_array().into_iter().flatten())
+        .filter(|part| part["type"] == "tool_result")
+        .cloned()
+        .collect()
+}
+
+#[async_trait]
+impl Provider for Observer {
+    async fn stream(
+        &self,
+        request: ModelRequest,
+        _: mpsc::Sender<Value>,
+        _: CancellationToken,
+    ) -> Result<Reply, ProviderError> {
+        let results = tool_results(&request);
+        let step = self.step.fetch_add(1, Ordering::SeqCst);
+        let content = match step {
+            0 => {
+                json!([{"type":"tool_use","id":"start","name":"start_job","input":{"argv":["/bin/sh","-c","sleep 0.2; printf waited"],"timeout_ms":10000}}])
+            }
+            1 => {
+                let started: Value =
+                    serde_json::from_str(results[0]["content"].as_str().unwrap()).unwrap();
+                assert_eq!(started["state"], "queued");
+                json!([{"type":"tool_use","id":"list","name":"job_list","input":{}}])
+            }
+            2 => {
+                let listed: Value =
+                    serde_json::from_str(results[1]["content"].as_str().unwrap()).unwrap();
+                assert_eq!(listed["jobs"].as_array().unwrap().len(), 1);
+                let id = listed["jobs"][0]["job_id"].as_str().unwrap();
+                json!([{"type":"tool_use","id":"wait","name":"job_wait","input":{"job_id":id,"timeout_ms":5000}}])
+            }
+            3 => {
+                let waited: Value =
+                    serde_json::from_str(results[2]["content"].as_str().unwrap()).unwrap();
+                assert_eq!(waited["timedOut"], false);
+                assert_eq!(waited["job"]["state"], "completed");
+                assert_eq!(waited["job"]["result"]["stdout"], "waited");
+                json!([{"type":"tool_use","id":"missing","name":"job_wait","input":{"job_id":"missing","timeout_ms":10}}])
+            }
+            _ => {
+                let missing: Value =
+                    serde_json::from_str(results[3]["content"].as_str().unwrap()).unwrap();
+                assert!(missing["job"].is_null());
+                assert_eq!(missing["timedOut"], false);
+                self.done.notify_one();
+                json!([{"type":"text","text":"observed"}])
+            }
+        };
+        Ok(Reply {
+            content,
+            usage: json!({}),
+            needs_tools: step < 4,
+        })
+    }
+}
+
+#[tokio::test]
+async fn job_list_and_wait_observe_a_completed_job() {
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path().join("workspace");
+    std::fs::create_dir(&root).unwrap();
+    let store = Store::open(dir.path().join("engine.db")).await.unwrap();
+    let done = Arc::new(Notify::new());
+    let runtime = Runtime::with_policy(
+        store.clone(),
+        Arc::new(Observer {
+            step: AtomicUsize::new(0),
+            done: done.clone(),
+        }),
+        Tools::new(root)
+            .await
+            .unwrap()
+            .with_process_runner(env!("CARGO_BIN_EXE_miao-engine").into()),
+        policy(),
+    )
+    .await
+    .unwrap();
+    runtime
+        .admit(
+            Input {
+                agent_references: Default::default(),
+                command: None,
+                session_id: "s".into(),
+                input_id: "one".into(),
+                prompt: "observe a job".into(),
+                delivery: Delivery::Steer,
+            },
+            true,
+        )
+        .await
+        .unwrap();
+    tokio::time::timeout(std::time::Duration::from_secs(10), done.notified())
+        .await
+        .unwrap();
     runtime.shutdown().await;
 }
