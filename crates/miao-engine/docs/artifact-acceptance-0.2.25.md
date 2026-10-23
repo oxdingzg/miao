@@ -71,9 +71,21 @@ docker run --rm -v "$PWD":/work -w /work ubuntu:26.04 bash -c \
 
 The published `miao-engine-darwin-x64` 0.2.24/0.2.25 archives pass the full
 cross-version drill on Apple Silicon (macOS 26.5, arm64) under Rosetta 2, so
-the Intel artifacts are exercised end to end. This is translation-layer
-evidence: native Intel macOS hardware remains the open acceptance item and is
-not replaced by this run.
+the Intel artifacts are exercised end to end. Superseded as the primary
+Intel evidence by the native-Intel run below; kept because it predates the
+hosted Intel runners and covers the 0.2.24→0.2.25 pair.
+
+| Stage | Result |
+| --- | --- |
+| Compatibility (upgrade → downgrade → upgrade) | PASS: SQLite integrity, unchanged journal prefixes, history retained, no duplicate output, no repeated provider work |
+| Workspace write control | PASS, exit 0 |
+| Outside-write denial | PASS, exit 1; sentinel unchanged |
+| Compaction | PASS |
+| Overall | `ENGINE_ARTIFACT_DRILL=PASS` |
+
+Executables: 0.2.25 `5c982d44c9976e816371425ef433311b35b043faef81261522be321cb4af1ce3`
+(matches the table above), 0.2.26
+`a18f5a8dfec720e1b3ba699f41491525bfcf78b03f2dd2901a2bf261bcb3a8f5`.
 
 | Stage | Result |
 | --- | --- |
@@ -91,6 +103,28 @@ python3 script/engine-artifact-drill.py \
   --binary /path/to/0.2.25/miao-engine \
   --output /tmp/artifact-drill-0.2.25.json
 ```
+
+## macOS x64 on native Intel hardware (2026-10-24 addendum)
+
+The published `miao-engine-darwin-x64` v0.2.25→v0.2.26 archives pass the full
+cross-version drill on **native Intel macOS** — GitHub's hosted
+`macos-15-intel` runner (`x86_64`, macOS 15.7.9), which is a standard
+free-for-public-repos runner, so the drill no longer depends on owning Intel
+hardware. The drill runs on demand via
+`.github/workflows/artifact-drill.yml` against any release pair
+([run 40040213453](https://github.com/oxdingzg/miao/actions/runs/40040213453)).
+
+| Stage | Result |
+| --- | --- |
+| Compatibility (upgrade → downgrade → upgrade) | PASS: SQLite integrity, unchanged journal prefixes, history retained, no duplicate output, no repeated provider work |
+| Workspace write control | PASS, exit 0 |
+| Outside-write denial | PASS, exit 1; sentinel unchanged |
+| Compaction | PASS |
+| Overall | `ENGINE_ARTIFACT_DRILL=PASS` |
+
+Executables: 0.2.25 `5c982d44c9976e816371425ef433311b35b043faef81261522be321cb4af1ce3`
+(matches the table above), 0.2.26
+`a18f5a8dfec720e1b3ba699f41491525bfcf78b03f2dd2901a2bf261bcb3a8f5`.
 
 ## Published assets
 
@@ -146,9 +180,6 @@ route the host through the LAN proxy).
 
 ## Not covered
 
-- Native Intel macOS hardware: the x64 artifacts pass the full cross-version
-  drill under Rosetta 2 (above), which is evidence about the artifacts but not
-  a substitute for native Intel hardware.
 - Windows direct release-endpoint connectivity: the release host is
   unreachable from the Windows build host without a proxy (three failed probes,
   see the Windows section). Accept a staged-asset workflow there or route the
