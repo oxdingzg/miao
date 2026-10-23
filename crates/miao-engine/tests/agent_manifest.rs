@@ -654,3 +654,29 @@ async fn an_agent_can_narrow_but_not_silently_reset_the_provider_turn_allowance(
     assert!(store.active_run("s").await.unwrap().is_none());
     runtime.shutdown().await;
 }
+
+#[tokio::test]
+async fn exhausting_the_provider_turn_allowance_pauses_instead_of_failing() {
+    let dir = tempfile::tempdir().unwrap();
+    let (runtime, store, provider) = setup(dir.path()).await;
+    let mut agent = manifest();
+    agent.tools = None;
+    agent.steps = Some(1);
+    runtime.set_agent("s", agent).await.unwrap();
+    turn(&runtime, &store, "one").await;
+    assert_eq!(provider.calls.load(Ordering::SeqCst), 1);
+    let events = store.events("s", 0, 500).await.unwrap();
+    assert!(events.iter().any(|event| event.kind == "message.synthetic"
+        && event.data["text"]
+            .as_str()
+            .unwrap_or_default()
+            .contains("provider turn allowance")));
+    let stop = events
+        .iter()
+        .rev()
+        .find(|event| event.kind == "stop" || event.kind == "stop_failure")
+        .unwrap();
+    assert_eq!(stop.kind, "stop");
+    assert_eq!(stop.data["reason"], "completed");
+    runtime.shutdown().await;
+}
