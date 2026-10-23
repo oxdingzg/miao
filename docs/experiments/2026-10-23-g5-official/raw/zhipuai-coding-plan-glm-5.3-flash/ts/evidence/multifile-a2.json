@@ -1,0 +1,15 @@
+{
+  "model": "zhipuai-coding-plan/glm-5.3-flash",
+  "task": "multifile",
+  "engine": "ts",
+  "attempt": 2,
+  "ok": true,
+  "turns": 5,
+  "input": 17654,
+  "cacheRead": 55104,
+  "output": 552,
+  "billedIn": 72758,
+  "cost": 0.00428866694,
+  "seconds": 19.539,
+  "resumed": false
+}
