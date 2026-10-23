@@ -3,6 +3,7 @@ import type { AgentAttachment } from "@miao/schema/prompt"
 import { Event } from "@miao/schema/event"
 import { agentManifest, modelRoute, type Route } from "./product-agent"
 import { LocationServiceMap } from "@miao/core/location-service-map"
+import type { LocationServices } from "@miao/core/location-services"
 import { SessionCreate } from "@miao/core/session-create"
 import { SessionModelRoute } from "@miao/schema/session-model-route"
 import { Model } from "@miao/schema/model"
@@ -33,7 +34,7 @@ import { ClientEvents } from "@miao/server/client-events"
 import { NativeEngine } from "@miao/server/native-engine"
 import { ConflictError } from "@miao/protocol/errors"
 import { Location } from "@miao/schema/location"
-import { Effect, Layer, Option, Schema } from "effect"
+import { Effect, Layer, Option, Schema, Context } from "effect"
 import { EngineError, type EngineOptions, type EngineEvent } from "./client"
 import { discoveredEngine } from "./discovery"
 import { makeEngineOwners } from "./owners"
@@ -43,6 +44,12 @@ import { engineMessageSequence } from "./message-sequence"
 import { Permission } from "@miao/schema/permission"
 import { Database } from "@miao/core/database/database"
 import { EventV2 } from "@miao/core/event"
+import { AgentV2 } from "@miao/core/agent"
+import { LLMClient, type LLMClientService } from "@miao/llm"
+import { SessionNativeTitle } from "@miao/core/session/native-title"
+import { SessionRunnerModel } from "@miao/core/session/runner/model"
+import { memoMap } from "@miao/core/effect/memo-map"
+
 import { SessionInput } from "@miao/core/session/input"
 import { SessionMessage } from "@miao/core/session/message"
 import { Prompt } from "@miao/core/session/prompt"
@@ -297,6 +304,12 @@ export const fromOwners = (
       mentions: readonly AgentAttachment[],
       catalog: readonly Route[],
     ) => Effect.Effect<NativeAgentReferences, unknown>
+    title?: (input: {
+      sessionID: Parameters<NativeEngine.Interface["title"]>[0]["sessionID"]
+      storage: Parameters<NativeEngine.Interface["title"]>[0]["storage"]
+      location: Parameters<NativeEngine.Interface["title"]>[0]["location"]
+      prompt: string
+    }) => Effect.Effect<void, unknown>
   } = {},
   storageRoot?: string,
 ): NativeEngine.Interface => {
@@ -707,6 +720,8 @@ export const fromOwners = (
           request: (method, params) => connection.client.request(method, params),
         }),
       ),
+    title: (input) =>
+      (preparation.title?.(input) ?? Effect.void).pipe(Effect.catch(() => Effect.void)),
     events: (input) =>
       connect(input).pipe(
         Effect.flatMap((connection) =>
@@ -731,6 +746,11 @@ const layer = Layer.effect(
     const credentials = yield* Credential.Service
     const mcpAuth = yield* McpAuth.Service
     const locations = yield* LocationServiceMap.Service
+    // The layer's install scope backs location runtimes built for title
+    // generation; they live (and memoize) for as long as this layer does.
+    const layerScope = yield* Effect.scope
+    const buildLocationRuntime = (location: Location.Ref) =>
+      Layer.buildWithMemoMap(locations.get(location), memoMap, layerScope)
     const database = yield* Database.Service
     const events = yield* EventV2.Service
     const sessions = yield* SessionStore.Service
@@ -864,6 +884,22 @@ const layer = Layer.effect(
             const { ProductCommand } = yield* Effect.promise(() => import("./product-command"))
             return yield* ProductCommand.references(mentions, catalog)
           }).pipe(Effect.provide(locations.get(input.location))),
+        title: (input: Parameters<NativeEngine.Interface["title"]>[0]) =>
+          Effect.gen(function* () {
+            const runtime = yield* buildLocationRuntime(input.location)
+            const locationContext = runtime as unknown as Context.Context<
+              LLMClientService | AgentV2.Service | EventV2.Service | SessionRunnerModel.Service
+            >
+            yield* SessionNativeTitle.afterRun({
+              sessionID: input.sessionID,
+              prompt: input.prompt,
+              store: sessions,
+              llm: Context.get(locationContext, LLMClient.Service),
+              agents: Context.get(locationContext, AgentV2.Service),
+              models: Context.get(locationContext, SessionRunnerModel.Service),
+              events: Context.get(locationContext, EventV2.Service),
+            }).pipe(Effect.catch(() => Effect.void))
+          }),
       },
       engineStorageRoot(process.env, settings),
     )
