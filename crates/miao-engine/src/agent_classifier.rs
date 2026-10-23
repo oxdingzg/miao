@@ -53,9 +53,9 @@ const PROTECTED_SUFFIXES: [&str; 4] = [".pem", ".key", ".p12", ".pfx"];
 /// `find -delete`), execute arguments (`xargs`, `awk`), or dump secrets
 /// (`printenv`, `env`) are excluded so the list needs no flag analysis.
 const READONLY: [&str; 34] = [
-    "ls", "pwd", "echo", "printf", "cat", "head", "tail", "wc", "grep", "rg", "fd", "file", "stat", "du", "df",
-    "tree", "which", "type", "basename", "dirname", "realpath", "readlink", "diff", "cmp", "comm", "cut", "uniq",
-    "jq", "date", "whoami", "id", "hostname", "uname", "sleep",
+    "ls", "pwd", "echo", "printf", "cat", "head", "tail", "wc", "grep", "rg", "fd", "file", "stat",
+    "du", "df", "tree", "which", "type", "basename", "dirname", "realpath", "readlink", "diff",
+    "cmp", "comm", "cut", "uniq", "jq", "date", "whoami", "id", "hostname", "uname", "sleep",
 ];
 
 /// `git` subcommands that only read the repository.
@@ -288,7 +288,10 @@ mod tests {
 
     #[test]
     fn edit_targets_must_be_plain_workspace_paths() {
-        assert_eq!(edit(&["src/app.ts".into(), "docs/b.md".into()]), Verdict::Safe);
+        assert_eq!(
+            edit(&["src/app.ts".into(), "docs/b.md".into()]),
+            Verdict::Safe
+        );
         assert_eq!(edit(&[".env".into()]), Verdict::Unknown);
         assert_eq!(edit(&["keys/server.key".into()]), Verdict::Unknown);
         assert_eq!(edit(&[".miao/store/x".into()]), Verdict::Unknown);

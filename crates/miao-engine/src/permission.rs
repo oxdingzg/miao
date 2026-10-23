@@ -341,7 +341,8 @@ impl Policy {
             return false;
         }
         let base = self.assess_base(tool, path, access);
-        if base.0 == Decision::Deny || (base.0 == Decision::Ask && base.1.source == MatchSource::Rule)
+        if base.0 == Decision::Deny
+            || (base.0 == Decision::Ask && base.1.source == MatchSource::Rule)
         {
             return false;
         }
@@ -351,13 +352,14 @@ impl Policy {
             .and_then(|policy| policy.descriptor().bindings.get(tool))
             .map_or(tool, |binding| binding.action.as_str());
         match action {
-            "edit" => crate::agent_classifier::edit(targets) == crate::agent_classifier::Verdict::Safe,
+            "edit" => {
+                crate::agent_classifier::edit(targets) == crate::agent_classifier::Verdict::Safe
+            }
             "bash" => input
                 .filter(|input| input.get("stdin").is_none())
                 .and_then(|input| input["command"].as_str())
                 .is_some_and(|command| {
-                    crate::agent_classifier::bash(command)
-                        == crate::agent_classifier::Verdict::Safe
+                    crate::agent_classifier::bash(command) == crate::agent_classifier::Verdict::Safe
                 }),
             _ => false,
         }
@@ -494,7 +496,10 @@ mod auto_mode_tests {
 
     #[test]
     fn auto_settles_classifier_proven_asks_only() {
-        let policy = policy_with(Some(crate::session_agent::PermissionMode::Auto), ordered_ask());
+        let policy = policy_with(
+            Some(crate::session_agent::PermissionMode::Auto),
+            ordered_ask(),
+        );
         let bash_input = serde_json::json!({"command": "ls -la"});
         assert!(policy.auto_settles(
             "bash",
@@ -512,11 +517,23 @@ mod auto_mode_tests {
             &[".".to_owned()]
         ));
         assert!(
-            policy.auto_settles("write_file", "src/a.ts", Access::Write, None, &["src/a.ts".to_owned()]),
+            policy.auto_settles(
+                "write_file",
+                "src/a.ts",
+                Access::Write,
+                None,
+                &["src/a.ts".to_owned()]
+            ),
             "an edit target inside the workspace settles"
         );
         assert!(
-            !policy.auto_settles("write_file", ".env", Access::Write, None, &[".env".to_owned()]),
+            !policy.auto_settles(
+                "write_file",
+                ".env",
+                Access::Write,
+                None,
+                &[".env".to_owned()]
+            ),
             "a protected target stays an ask"
         );
         assert!(
@@ -551,16 +568,19 @@ mod auto_mode_tests {
             ..Config::default()
         })
         .unwrap();
-        let agent: crate::session_agent::AgentManifest = serde_json::from_value(serde_json::json!({
-            "name": "auto",
-            "permission_mode": "auto",
-            "ordered_permissions": ordered_ask(),
-        }))
-        .unwrap();
+        let agent: crate::session_agent::AgentManifest =
+            serde_json::from_value(serde_json::json!({
+                "name": "auto",
+                "permission_mode": "auto",
+                "ordered_permissions": ordered_ask(),
+            }))
+            .unwrap();
         let policy = base.for_agent(Some(&agent)).unwrap();
         let bash_input = serde_json::json!({"command": "ls -la"});
         assert_eq!(
-            policy.assess_input("bash", ".", Access::Execute, Some(&bash_input)).0,
+            policy
+                .assess_input("bash", ".", Access::Execute, Some(&bash_input))
+                .0,
             Decision::Ask
         );
         assert!(!policy.auto_settles(
