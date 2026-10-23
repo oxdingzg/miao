@@ -340,8 +340,16 @@ impl Parser for ChatState {
             }
             Frame::Json(value) => value,
         };
-        if event.get("error").is_some() {
-            return Err(ProviderError::Stream("provider emitted an error".into()));
+        if let Some(error) = event.get("error") {
+            let message = error
+                .get("message")
+                .and_then(Value::as_str)
+                .filter(|message| !message.is_empty())
+                .unwrap_or("provider emitted an error")
+                .chars()
+                .take(2048)
+                .collect::<String>();
+            return Err(ProviderError::Stream(message));
         }
         if let Some(usage) = event.get("usage").filter(|v| v.is_object()) {
             self.usage = usage.clone();
