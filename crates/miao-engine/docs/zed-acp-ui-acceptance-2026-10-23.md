@@ -10,12 +10,14 @@ ACP frames recorded by the stdio proxy.
   `~/.local/share/miao/zed/zed-acp-proxy.ts`.
 - `miao-engine 0.2.25`, `deepseek-flash` on DeepSeek's official
   OpenAI-compatible endpoint, real billed traffic.
-- The engine runs with a workspace policy
-  (`~/.local/share/miao/zed/acp-policy.json`, `{"mode": "workspace"}`). The
-  engine's default policy is `read_only`: reads are allowed without asking and
-  write/process tools are not registered, so nothing can raise a permission
-  prompt. Workspace mode is what makes writes available and workspace writes
-  ask, which is the surface this acceptance exercises.
+- The engine runs in workspace mode: reads stay silent and workspace writes
+  ask through the editor's permission dialog, which is the surface this
+  acceptance exercises. The recording was taken on `miao-engine 0.2.25`, whose
+  `acp` entry defaulted to `read_only` (reads silent, write/process tools not
+  registered, so no prompt was possible), so it passed
+  `--policy acp-policy.json` (`{"mode": "workspace"}`). #1277 makes workspace
+  the `acp` default; a release carrying it needs no policy for this flow, and
+  `--mode read-only|workspace` overrides either default.
 - Workspace: an empty scratch directory. The recording proxy appends every
   chunk to `~/.local/share/miao/zed/acp-protocol.log`.
 
