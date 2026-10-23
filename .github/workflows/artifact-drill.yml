@@ -51,4 +51,4 @@ jobs:
         with:
           name: artifact-drill-darwin-x64-intel
           path: artifact-drill-darwin-x64-intel.json
-          if-no-files-found: warning
+          if-no-files-found: warn
