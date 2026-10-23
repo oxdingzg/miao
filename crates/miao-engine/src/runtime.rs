@@ -2189,6 +2189,13 @@ command: None,
                                             &policy,
                                             cancel.child_token(),
                                             progress,
+                                            Some(&crate::worker::AskBridge {
+                                                store: &inner.store,
+                                                location: inner.tools.location(),
+                                                session,
+                                                run,
+                                                call: id,
+                                            }),
                                         )
                                         .await
                                 }
@@ -2622,7 +2629,7 @@ command: None,
                     Err(error) => json!({"error":error.to_string()}),
                     Ok(prepared) => match inner
                         .tools
-                        .execute_prepared(prepared, &policy, cancel.child_token())
+                        .execute_prepared(prepared, &policy, cancel.child_token(), None)
                         .await
                     {
                         Err(error) => json!({"error":error.to_string()}),
@@ -4556,7 +4563,17 @@ async fn execute_read_batch(
     let mut pending = futures_util::stream::iter(prepared.into_iter().map(|(id, tool)| {
         let cancel = cancel.child_token();
         async move {
-            let result = inner.tools.execute_prepared(tool, policy, cancel).await;
+            let ask = crate::worker::AskBridge {
+                store: &inner.store,
+                location: inner.tools.location(),
+                session,
+                run,
+                call: &id,
+            };
+            let result = inner
+                .tools
+                .execute_prepared(tool, policy, cancel, Some(&ask))
+                .await;
             (id, result)
         }
     }))

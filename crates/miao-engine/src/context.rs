@@ -333,7 +333,7 @@ async fn discover_skills(
                 continue;
             }
             let data = match tools
-                .execute_prepared(prepared, policy, cancel.child_token())
+                .execute_prepared(prepared, policy, cancel.child_token(), None)
                 .await
             {
                 Ok(data) => data,
@@ -490,7 +490,7 @@ pub(crate) async fn assemble_for_agent(
                     continue;
                 }
                 let resource=prepared.resource().to_owned();
-                let data=tools.execute_prepared(prepared,policy,cancel.child_token()).await?;
+                let data=tools.execute_prepared(prepared,policy,cancel.child_token(),None).await?;
                 let text=data["text"].as_str().ok_or(ToolError::InvalidFile)?;
                 let block=format!("\n\n<project-instructions source=\"{}\">\n{}\n</project-instructions>",source.label,text);
                 // Budget-aware assembly: an instructions block that would blow

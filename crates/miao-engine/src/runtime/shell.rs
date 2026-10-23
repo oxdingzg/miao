@@ -144,7 +144,7 @@ pub(super) async fn execute_in_run(
     let start = std::time::Instant::now();
     let result = inner
         .tools
-        .execute_prepared(prepared, &policy, cancel.clone())
+        .execute_prepared(prepared, &policy, cancel.clone(), None)
         .await;
     let result = match result {
         Ok(result) => {

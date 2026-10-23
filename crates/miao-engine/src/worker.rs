@@ -1,8 +1,10 @@
 //! M3 extension compatibility worker (ADR-12). A process invoked through a fixed
 //! capability interface, never an in-process script host: newline-delimited JSON
-//! over stdio, a `hello` handshake that negotiates protocol 1, then `tool.list`,
-//! `tool.call` and `shutdown`. Worker tools are External authority, bounded and
-//! cancellable; a missing or crashed worker degrades only its capabilities.
+//! over stdio, a `hello` handshake that negotiates protocol 2, then `tool.list`,
+//! `tool.call`, worker-initiated `ask` (a mid-call interactive permission
+//! request relayed to the Session's durable question flow, like MCP
+//! elicitation), and `shutdown`. Worker tools are External authority, bounded
+//! and cancellable; a missing or crashed worker degrades only its capabilities.
 
 use crate::{
     protocol::{Error, ToolDefinition},
@@ -15,6 +17,7 @@ use std::{
     path::Path,
     process::Stdio,
     sync::atomic::{AtomicBool, Ordering},
+    sync::Arc,
     time::Duration,
 };
 use tokio::{
@@ -24,13 +27,27 @@ use tokio::{
 };
 use tokio_util::sync::CancellationToken;
 
-const PROTOCOL: u64 = 1;
+const PROTOCOL: u64 = 2;
 const MESSAGE_LIMIT: usize = 256 * 1024;
 const CATALOG_LIMIT: usize = 64;
 const HANDSHAKE_TIMEOUT: Duration = Duration::from_secs(15);
 const CALL_TIMEOUT: Duration = Duration::from_secs(60);
 const CANCEL_TIMEOUT: Duration = Duration::from_millis(200);
 const STOP_TIMEOUT: Duration = Duration::from_secs(1);
+/// How much longer a worker call may run after it asks the operator a
+/// question. Matches the durable question bound (600 s) plus transport slack.
+const ASK_WINDOW: Duration = Duration::from_secs(660);
+const ASK_TIMEOUT_MS: u64 = 600_000;
+
+/// Session context a worker `ask` needs to raise a durable question bound to
+/// the worker tool call currently being executed.
+pub(crate) struct AskBridge<'a> {
+    pub store: &'a crate::store::Store,
+    pub location: &'a str,
+    pub session: &'a str,
+    pub run: &'a str,
+    pub call: &'a str,
+}
 
 #[derive(Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
@@ -308,6 +325,28 @@ impl Registry {
         input: Value,
         cancel: CancellationToken,
     ) -> Result<Value, ToolError> {
+        self.call_inner(name, input, cancel, None).await
+    }
+
+    /// Like [`Registry::call`], but a worker-initiated `ask` is relayed to the
+    /// Session's durable question flow instead of failing outright.
+    pub(crate) async fn call_with_ask(
+        &self,
+        name: &str,
+        input: Value,
+        cancel: CancellationToken,
+        ask: Option<&AskBridge<'_>>,
+    ) -> Result<Value, ToolError> {
+        self.call_inner(name, input, cancel, ask).await
+    }
+
+    async fn call_inner(
+        &self,
+        name: &str,
+        input: Value,
+        cancel: CancellationToken,
+        ask: Option<&AskBridge<'_>>,
+    ) -> Result<Value, ToolError> {
         self.validate(name, &input)?;
         let native = self
             .tools
@@ -325,6 +364,9 @@ impl Registry {
         // The deadline covers queueing, sending, and reading. A peer that never
         // reads stdin must not make write_all uncancellable or unbounded.
         let deadline = tokio::time::Instant::now() + CALL_TIMEOUT;
+        // Each operator question widens the call's deadline once, from the
+        // moment the ask is answered, without unbounding the call.
+        let deadline_extension = Arc::new(std::sync::atomic::AtomicU64::new(0));
         let mut client = tokio::select! {
             biased;
             _ = cancel.cancelled() => return Err(ToolError::Interrupted),
@@ -358,6 +400,44 @@ impl Registry {
                         .await
                         .map_err(|_| ToolError::External("worker transport failed".into()))?
                         .ok_or_else(|| ToolError::External("worker closed".into()))?;
+                    // Protocol 2: the worker may request an interactive
+                    // permission decision mid-call. It is relayed to the
+                    // Session's durable question flow, and the answer rides
+                    // back as the reply to the worker's own request id.
+                    if frame.get("method").and_then(Value::as_str) == Some("ask") {
+                        let reply = match (frame.get("id").and_then(Value::as_u64), ask) {
+                            (Some(ask_id), Some(bridge)) => {
+                                match resolve_ask(
+                                    bridge,
+                                    name,
+                                    frame.get("params").cloned().unwrap_or(Value::Null),
+                                )
+                                .await
+                                {
+                                    Ok(result) => json!({"id":ask_id,"result":result}),
+                                    Err(message) => {
+                                        json!({"id":ask_id,"error":{"message":message}})
+                                    }
+                                }
+                            }
+                            (Some(ask_id), None) => {
+                                json!({"id":ask_id,"error":{"message":"interactive permission is unavailable for this worker call"}})
+                            }
+                            _ => continue,
+                        };
+                        client
+                            .send(&reply)
+                            .await
+                            .map_err(|_| ToolError::External("worker transport failed".into()))?;
+                        healthy_reply = true;
+                        deadline_extension.fetch_max(
+                            (tokio::time::Instant::now() + ASK_WINDOW)
+                                .saturating_duration_since(deadline)
+                                .as_millis() as u64,
+                            std::sync::atomic::Ordering::AcqRel,
+                        );
+                        continue;
+                    }
                     if frame["id"].as_u64() != Some(id) {
                         continue;
                     }
@@ -383,12 +463,23 @@ impl Registry {
                     return Ok(result);
                 }
             };
+            let watch = deadline_extension.clone();
+            let expiry = async move {
+                loop {
+                    let effective = deadline
+                        + Duration::from_millis(watch.load(std::sync::atomic::Ordering::Acquire));
+                    let now = tokio::time::Instant::now();
+                    if now >= effective {
+                        return;
+                    }
+                    tokio::time::sleep(effective - now).await;
+                }
+            };
             tokio::select! {
                 biased;
                 _ = cancel.cancelled() => Err(ToolError::Interrupted),
-                result = tokio::time::timeout_at(deadline, operation) => {
-                    result.unwrap_or_else(|_| Err(ToolError::External("worker call timed out".into())))
-                },
+                _ = expiry => Err(ToolError::External("worker call timed out".into())),
+                result = operation => result,
             }
         };
         if result.is_err() && !healthy_reply {
@@ -443,4 +534,121 @@ impl Drop for Registry {
 /// A stable alias so `resources` never collide with native or MCP tool names.
 pub fn owns(name: &str) -> bool {
     name.starts_with("worker__")
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct AskParams {
+    permission: String,
+    #[serde(default)]
+    patterns: Vec<String>,
+    /// Persistence of always-allow patterns is a product permission-store
+    /// concern; the engine asks without persisting, so the field is accepted
+    /// and ignored rather than silently granted.
+    #[serde(default)]
+    always: Vec<String>,
+    #[serde(default)]
+    metadata: Value,
+}
+
+/// Relay one worker `context.ask` to the durable question flow bound to the
+/// running worker tool call, then map the operator's answer back to the
+/// worker's `{approved}` contract.
+async fn resolve_ask(bridge: &AskBridge<'_>, tool: &str, params: Value) -> Result<Value, String> {
+    let parsed: AskParams =
+        serde_json::from_value(params).map_err(|_| "invalid ask params".to_string())?;
+    if parsed.permission.is_empty()
+        || parsed.permission.len() > 128
+        || parsed.permission.chars().any(char::is_control)
+        || parsed.patterns.len() > 8
+        || parsed.patterns.iter().any(|pattern| {
+            pattern.is_empty() || pattern.len() > 512 || pattern.chars().any(char::is_control)
+        })
+        || parsed.always.len() > 8
+        || parsed.always.iter().any(|pattern| {
+            pattern.is_empty() || pattern.len() > 512 || pattern.chars().any(char::is_control)
+        })
+        || serde_json::to_vec(&parsed.metadata)
+            .map(|bytes| bytes.len() > 16 * 1024)
+            .unwrap_or(true)
+    {
+        return Err("invalid ask params".into());
+    }
+    let patterns = if parsed.patterns.is_empty() {
+        String::new()
+    } else {
+        format!(" for {}", parsed.patterns.join(", "))
+    };
+    let question: String = format!(
+        "Custom tool \"{tool}\" requests permission \"{}\"{patterns}",
+        parsed.permission
+    )
+    .chars()
+    .take(4096)
+    .collect();
+    let input = crate::question::Input {
+        questions: vec![crate::question::Question {
+            question,
+            header: "Permission".into(),
+            options: vec![
+                crate::question::Choice {
+                    label: "Allow".into(),
+                    description: format!("Allow \"{}\" for this call", parsed.permission),
+                },
+                crate::question::Choice {
+                    label: "Deny".into(),
+                    description: "Deny the request; the tool sees a permission error".into(),
+                },
+            ],
+            multi_select: false,
+            custom: false,
+        }],
+        timeout_ms: ASK_TIMEOUT_MS,
+    };
+    let request = bridge
+        .store
+        .request_question(
+            bridge.session,
+            bridge.run,
+            bridge.call,
+            bridge.location,
+            input,
+        )
+        .await
+        .map_err(|error| error.to_string())?;
+    let id = request["question_id"]
+        .as_str()
+        .ok_or_else(|| "question id missing".to_string())?;
+    let deadline = tokio::time::Instant::now() + std::time::Duration::from_millis(ASK_TIMEOUT_MS);
+    loop {
+        if let Some(resolved) = bridge
+            .store
+            .question_resolution(bridge.session, id)
+            .await
+            .map_err(|error| error.to_string())?
+        {
+            let approved = resolved["state"] == "answered"
+                && resolved["answers"]
+                    .get(0)
+                    .and_then(|answers| answers.get(0))
+                    .and_then(Value::as_str)
+                    == Some("Allow");
+            return Ok(if approved {
+                json!({"approved":true})
+            } else {
+                json!({"approved":false,"message":format!("Permission denied: {}", parsed.permission)})
+            });
+        }
+        if tokio::time::Instant::now() >= deadline
+            || crate::approval::now_ms() >= request["expires_at_ms"].as_u64().unwrap_or(0)
+        {
+            bridge
+                .store
+                .expire_question(bridge.session, id)
+                .await
+                .map_err(|error| error.to_string())?;
+            return Err("permission request expired".into());
+        }
+        tokio::time::sleep(Duration::from_millis(25)).await;
+    }
 }

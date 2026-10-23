@@ -1309,8 +1309,9 @@ impl Tools {
         prepared: Prepared,
         policy: &Policy,
         cancel: CancellationToken,
+        ask: Option<&crate::worker::AskBridge<'_>>,
     ) -> Result<Value, ToolError> {
-        self.execute_prepared_with_progress(prepared, policy, cancel, None)
+        self.execute_prepared_with_progress(prepared, policy, cancel, None, ask)
             .await
     }
 
@@ -1320,6 +1321,7 @@ impl Tools {
         policy: &Policy,
         cancel: CancellationToken,
         progress: Option<process::Progress>,
+        ask: Option<&crate::worker::AskBridge<'_>>,
     ) -> Result<Value, ToolError> {
         if prepared.name() == "knowledge" && prepared.access() == Access::Read {
             return self.execute_knowledge(prepared, policy, "", cancel).await;
@@ -1337,7 +1339,7 @@ impl Tools {
                 self.worker
                     .as_ref()
                     .ok_or(ToolError::Unsupported)?
-                    .call(&prepared.name, prepared.input, cancel)
+                    .call_with_ask(&prepared.name, prepared.input, cancel, ask)
                     .await?
             } else {
                 self.mcp

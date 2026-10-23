@@ -3,6 +3,7 @@ use miao_engine::{
     permission::{Config, Decision, Mode, Policy, Rule},
     protocol::{Delivery, Input, ModelRequest},
     provider::{Provider, ProviderError, Reply},
+    question::Answer,
     runtime::Runtime,
     store::Store,
     tools::{ToolError, Tools},
@@ -30,7 +31,7 @@ async fn recv(read: &mut (impl AsyncBufReadExt + Unpin)) -> Option<Value> {
     serde_json::from_str(line.trim()).ok()
 }
 
-/// A fake worker implementing the ADR-12 revision-1 protocol.
+/// A fake worker implementing the ADR-12 revision-2 protocol.
 async fn fake_worker(stream: DuplexStream) {
     let (read, mut write) = tokio::io::split(stream);
     let mut read = BufReader::new(read);
@@ -40,7 +41,7 @@ async fn fake_worker(stream: DuplexStream) {
             "hello" => {
                 send(
                     &mut write,
-                    &json!({"id":id,"result":{"protocol":1,"operations":["tool.list","tool.call","shutdown"]}}),
+                    &json!({"id":id,"result":{"protocol":2,"operations":["tool.list","tool.call","shutdown"]}}),
                 )
                 .await
             }
@@ -59,6 +60,32 @@ async fn fake_worker(stream: DuplexStream) {
                 let text = message["params"]["input"]["text"].clone();
                 if text == "fail" {
                     send(&mut write, &json!({"id":id,"error":{"code":"fixture_error"}})).await;
+                    continue;
+                }
+                if text == "ask" {
+                    // Protocol 2: request an interactive permission decision
+                    // mid-call, then surface the operator's answer.
+                    send(
+                        &mut write,
+                        &json!({"id":9001,"method":"ask","params":{"permission":"network","patterns":["api.example.com"],"metadata":{"tool":"echo"}}}),
+                    )
+                    .await;
+                    loop {
+                        let frame = recv(&mut read).await.unwrap();
+                        if frame.get("id").and_then(Value::as_u64) == Some(9001) {
+                            let approved = frame
+                                .get("result")
+                                .and_then(|result| result.get("approved"))
+                                .and_then(Value::as_bool)
+                                .unwrap_or(false);
+                            send(
+                                &mut write,
+                                &json!({"id":id,"result":{"result":{"asked":true,"approved":approved}}}),
+                            )
+                            .await;
+                            break;
+                        }
+                    }
                     continue;
                 }
                 send(&mut write, &json!({"id":id,"result":{"result":{"echoed":text}}})).await
@@ -235,7 +262,7 @@ async fn faulty_registry(
         let (read, mut write) = tokio::io::split(server);
         let mut read = BufReader::new(read);
         let hello = recv(&mut read).await.unwrap();
-        send(&mut write, &json!({"id":hello["id"],"result":{"protocol":1,"operations":["tool.list","tool.call","shutdown"]}})).await;
+        send(&mut write, &json!({"id":hello["id"],"result":{"protocol":2,"operations":["tool.list","tool.call","shutdown"]}})).await;
         let list = recv(&mut read).await.unwrap();
         send(&mut write, &json!({"id":list["id"],"result":{"tools":[{"name":"echo","description":"fixture","input_schema":{"type":"object","properties":{"text":{"type":"string"}},"required":["text"],"additionalProperties":false}}]}})).await;
         match fault {
@@ -358,7 +385,7 @@ async fn truncated_frame_degrades_the_worker() {
 async fn cancelling_a_stalled_spawned_worker_reaps_its_process() {
     let workspace = tempfile::tempdir().unwrap();
     let hello =
-        json!({"id":1,"result":{"protocol":1,"operations":["tool.list","tool.call","shutdown"]}});
+        json!({"id":1,"result":{"protocol":2,"operations":["tool.list","tool.call","shutdown"]}});
     let catalog = json!({"id":2,"result":{"tools":[{"name":"echo","description":"fixture","input_schema":{"type":"object","properties":{"text":{"type":"string"}},"required":["text"],"additionalProperties":false}}]}});
     let script = format!("printf '%s\n' \"$$\" > pid.txt; read hello; printf '%s\n' '{}'; read list; printf '%s\n' '{}'; exec sleep 60", hello, catalog);
     let registry = Registry::connect(
@@ -466,4 +493,152 @@ async fn missing_optional_worker_does_not_prevent_engine_admission() {
     })
     .await
     .unwrap();
+}
+
+struct Asker;
+#[async_trait]
+impl Provider for Asker {
+    async fn stream(
+        &self,
+        request: ModelRequest,
+        _: mpsc::Sender<Value>,
+        _: CancellationToken,
+    ) -> Result<Reply, ProviderError> {
+        if request.messages.len() == 1 {
+            return Ok(Reply {
+                content: json!([{"type":"tool_use","id":"a","name":"worker__echo","input":{"text":"ask"}}]),
+                usage: json!({}),
+                needs_tools: true,
+            });
+        }
+        Ok(Reply {
+            content: json!([{"type":"text","text":"done"}]),
+            usage: json!({}),
+            needs_tools: false,
+        })
+    }
+}
+
+async fn answer_pending_question(store: &Store, session: &str, label: &str) {
+    loop {
+        let events = store.events(session, 0, 500).await.unwrap();
+        if let Some(event) = events
+            .iter()
+            .rev()
+            .find(|event| event.kind == "question.requested")
+        {
+            store
+                .answer_question(
+                    session,
+                    Answer {
+                        question_id: event.data["question_id"].as_str().unwrap().into(),
+                        input_hash: event.data["input_hash"].as_str().unwrap().into(),
+                        answers: vec![vec![label.into()]],
+                    },
+                )
+                .await
+                .unwrap();
+            return;
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(5)).await;
+    }
+}
+
+async fn run_ask_session(store: &Store, workspace: &std::path::Path) -> Runtime {
+    let tools = Tools::new(workspace)
+        .await
+        .unwrap()
+        .with_worker(registry(workspace).await);
+    let runtime = Runtime::with_policy(store.clone(), Arc::new(Asker), tools, policy())
+        .await
+        .unwrap();
+    runtime
+        .admit(
+            Input {
+                agent_references: Default::default(),
+                command: None,
+                session_id: "s".into(),
+                input_id: "one".into(),
+                prompt: "ask".into(),
+                delivery: Delivery::Steer,
+            },
+            true,
+        )
+        .await
+        .unwrap();
+    runtime
+}
+
+#[tokio::test]
+async fn worker_ask_relays_to_the_durable_question_flow() {
+    let dir = tempfile::tempdir().unwrap();
+    let workspace = dir.path().join("workspace");
+    std::fs::create_dir_all(&workspace).unwrap();
+    let store = Store::open(dir.path().join("engine.db")).await.unwrap();
+    let runtime = run_ask_session(&store, &workspace).await;
+    let session = "s".to_string();
+    answer_pending_question(&store, &session, "Allow").await;
+    let result = tokio::time::timeout(std::time::Duration::from_secs(10), async {
+        loop {
+            if store
+                .events(&session, 0, 500)
+                .await
+                .unwrap()
+                .iter()
+                .any(|event| event.kind == "run.finished")
+            {
+                let history = store.history(&session).await.unwrap();
+                return serde_json::from_str::<Value>(
+                    history[2].content[0]["content"].as_str().unwrap(),
+                )
+                .unwrap();
+            }
+            tokio::time::sleep(std::time::Duration::from_millis(5)).await;
+        }
+    })
+    .await
+    .unwrap();
+    assert_eq!(result["asked"], true, "{result}");
+    assert_eq!(result["approved"], true, "{result}");
+    let events = store.events(&session, 0, 500).await.unwrap();
+    let resolved = events
+        .iter()
+        .find(|event| event.kind == "question.resolved")
+        .unwrap();
+    assert_eq!(resolved.data["state"], "answered");
+    runtime.shutdown().await;
+}
+
+#[tokio::test]
+async fn worker_ask_denial_surfaces_as_a_denied_answer() {
+    let dir = tempfile::tempdir().unwrap();
+    let workspace = dir.path().join("workspace");
+    std::fs::create_dir_all(&workspace).unwrap();
+    let store = Store::open(dir.path().join("engine.db")).await.unwrap();
+    let runtime = run_ask_session(&store, &workspace).await;
+    let session = "s".to_string();
+    answer_pending_question(&store, &session, "Deny").await;
+    let result = tokio::time::timeout(std::time::Duration::from_secs(10), async {
+        loop {
+            if store
+                .events(&session, 0, 500)
+                .await
+                .unwrap()
+                .iter()
+                .any(|event| event.kind == "run.finished")
+            {
+                let history = store.history(&session).await.unwrap();
+                return serde_json::from_str::<Value>(
+                    history[2].content[0]["content"].as_str().unwrap(),
+                )
+                .unwrap();
+            }
+            tokio::time::sleep(std::time::Duration::from_millis(5)).await;
+        }
+    })
+    .await
+    .unwrap();
+    assert_eq!(result["asked"], true, "{result}");
+    assert_eq!(result["approved"], false, "{result}");
+    runtime.shutdown().await;
 }
