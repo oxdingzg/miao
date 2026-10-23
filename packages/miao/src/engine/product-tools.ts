@@ -7,6 +7,7 @@ import { Database } from "@miao/core/database/database"
 import { SessionDelegationStore } from "@miao/core/session/delegation-store"
 import { EventV2 } from "@miao/core/event"
 import { PermissionV2 } from "@miao/core/permission"
+import { QuestionV2 } from "@miao/core/question"
 import { ProjectV2 } from "@miao/core/project"
 import { ProjectWorktree } from "@miao/core/project/worktree"
 import { SessionMoveCoordinator } from "@miao/core/session/move-coordinator"
@@ -113,6 +114,7 @@ export const prepare = Effect.fn("Engine.productTools")(function* (
   const storageRoot = process.env.MIAO_ENGINE_STORAGE
   const store = yield* SessionStore.Service
   const permission = yield* PermissionV2.Service
+  const question = yield* QuestionV2.Service
   const events = yield* EventV2.Service
   const todos = yield* SessionTodo.Service
   const ownership = yield* SessionOwnership.Service
@@ -569,6 +571,113 @@ export const prepare = Effect.fn("Engine.productTools")(function* (
       }
     })
 
+  // Plan switching stays host-resolved: the engine advertises these tools, but
+  // permission, root checks and the durable agent switch run against the
+  // product Session exactly like the TypeScript plan tools.
+  const makePlanTools = (): Readonly<Record<string, Tool.AnyTool>> => {
+    const switchAgent = (direction: "plan_enter" | "plan_exit") => {
+      const model =
+        direction === "plan_enter"
+          ? {
+              from: AgentV2.ID.make("build"),
+              to: AgentV2.ID.make("plan"),
+              description: [
+                "Use this tool when the user asks to plan, research, or design before any code is changed.",
+                "It asks the user whether to switch to the plan agent, which cannot edit files.",
+                "Only the user's approval switches the Session; the switch is durable for the rest of the Session.",
+                "Call it when the request needs design or investigation, not for a task that is already ready to implement.",
+              ].join("\n"),
+              approved: "User approved switching to the plan agent. Plan the approach before making changes.",
+              wrongRoot: "Only the root build Session can switch to the plan agent.",
+              approval: {
+                question: "Switch to the plan agent and start planning before making any changes?",
+                header: "Plan Agent",
+                yes: "Switch to the plan agent and design the approach first",
+                no: "Stay with the build agent and continue implementing",
+                denied: "Plan entry was not approved.",
+                changed: "The Session changed while waiting for approval; the switch was not applied.",
+              },
+            }
+          : {
+              from: AgentV2.ID.make("plan"),
+              to: AgentV2.ID.make("build"),
+              description: [
+                "Use this tool when you have completed the planning phase and are ready to start implementing.",
+                "It switches the Session to the build agent immediately, then continue by carrying out the plan.",
+                "Call it after the plan is finalized and any questions are answered.",
+                "Do not call it before the plan is ready, with unanswered questions, or when the user wants to keep planning.",
+              ].join("\n"),
+              approved: "Switched to the build agent. Continue by implementing the plan.",
+              wrongRoot: "Only the root plan Session can switch to the build agent.",
+            }
+      return Tool.make({
+        description: model.description,
+        input: Schema.Struct({}),
+        output: Schema.Struct({ switched: Schema.Literal(true) }),
+        execute: (_input, context) =>
+          Effect.gen(function* () {
+            yield* permission
+              .assert({
+                action: direction,
+                resources: ["*"],
+                sessionID: context.sessionID,
+                agent: context.agent,
+                source: {
+                  type: "tool" as const,
+                  messageID: context.assistantMessageID,
+                  callID: context.toolCallID,
+                },
+                explicit: true,
+              })
+              .pipe(Effect.mapError(() => new ToolFailure({ message: `Permission denied: ${direction}` })))
+            const started = yield* store.get(context.sessionID)
+            if (
+              started === undefined ||
+              started.parentID !== undefined ||
+              started.agent !== model.from ||
+              context.agent !== model.from
+            )
+              return yield* new ToolFailure({ message: model.wrongRoot })
+            const approval = model.approval
+            if (approval !== undefined) {
+              const answers = yield* question
+                .ask({
+                  sessionID: context.sessionID,
+                  questions: [
+                    {
+                      question: approval.question,
+                      header: approval.header,
+                      custom: false,
+                      options: [
+                        { label: "Yes", description: approval.yes },
+                        { label: "No", description: approval.no },
+                      ],
+                    },
+                  ],
+                  tool: { messageID: context.assistantMessageID, callID: context.toolCallID },
+                })
+                .pipe(Effect.mapError(() => new ToolFailure({ message: approval.denied })))
+              if (answers[0]?.[0] !== "Yes") return yield* new ToolFailure({ message: approval.denied })
+              const current = yield* store.get(context.sessionID)
+              if (
+                current === undefined ||
+                DateTime.toEpochMillis(current.time.updated) !== DateTime.toEpochMillis(started.time.updated)
+              )
+                return yield* new ToolFailure({ message: approval.changed })
+            }
+            yield* events.publish(SessionEvent.AgentSwitched, {
+              sessionID: context.sessionID,
+              messageID: SessionMessage.ID.create(),
+              timestamp: yield* DateTime.now,
+              agent: model.to,
+            })
+            return { switched: true as const }
+          }),
+      })
+    }
+    return { plan_enter: switchAgent("plan_enter"), plan_exit: switchAgent("plan_exit") }
+  }
+
   const make = (sessionID: SessionSchema.ID): Readonly<Record<string, Tool.AnyTool>> => ({
     ...PeerTools.make({ sessionID, permission, peers }),
     ...makeWorktreeTools(sessionID),
@@ -584,6 +693,7 @@ export const prepare = Effect.fn("Engine.productTools")(function* (
         Effect.mapError(() => new ToolFailure({ message: "Unable to raise the notification" })),
       ),
     ),
+    ...makePlanTools(),
     ...(registry && plugins && agents ? PluginTools.make({ registry, plugins, agents, store }) : {}),
     ...(creation && agents ? { workflow: makeWorkflow(sessionID) } : {}),
   })
