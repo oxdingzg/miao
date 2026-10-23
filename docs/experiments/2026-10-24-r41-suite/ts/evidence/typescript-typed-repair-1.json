@@ -1,0 +1,230 @@
+{
+  "sample": {
+    "task": "typed-repair",
+    "engine": "typescript",
+    "repetition": 1,
+    "suiteHash": "bd905b4f81f0a9412b614631a36337723067574848c5f05b50ead1cf48675091",
+    "taskHash": "6d7a5f740fead5293e5e5ffb8d80de678897f4422c739a10fa17ed3caffaaea2",
+    "profile": {
+      "model": "glm-5.3-flash",
+      "modelParametersHash": "843cf45b4d7e3e668ef5bad0c13e2ffe3686f8aae349227c85a94122a2db466e",
+      "agentManifestHash": "2d05aecd73868efdb179e58a44c5c2ab9b8ac752d0f273f741d02889ec07ac4c",
+      "permissionHash": "ade206d1b5a99ac352b24c5906ff73881343a6c5827a436ac2f21dc1e9d96c3b",
+      "toolSurfaceHash": "569f7e5c50f8c856ebeb33ec6bb521a33e3021be589edf23bc8b33f0348ad9cc"
+    },
+    "revision": "ed524903ae8dec701eba0e880390986ac98e0975",
+    "artifactHash": "828f1b7094592b41f254ea081791e50d5ef2eb5b9d99bb7d305ef9895aa30f15",
+    "receiptHash": "81327e3c5d80b37f3a602fabe885cbb798b81812a2c06a9722e324f4f7448755",
+    "outcome": "passed",
+    "elapsedMs": 16508,
+    "attempts": [
+      {
+        "inputTokens": 13603,
+        "outputTokens": 51,
+        "cost": null
+      },
+      {
+        "inputTokens": 13782,
+        "outputTokens": 15,
+        "cost": null
+      },
+      {
+        "inputTokens": 13906,
+        "outputTokens": 125,
+        "cost": null
+      },
+      {
+        "inputTokens": 14098,
+        "outputTokens": 12,
+        "cost": null
+      },
+      {
+        "inputTokens": 14167,
+        "outputTokens": 61,
+        "cost": null
+      }
+    ]
+  },
+  "rejection": null,
+  "evidence": {
+    "engine": "typescript",
+    "revision": "ed524903ae8dec701eba0e880390986ac98e0975",
+    "task": "typed-repair",
+    "repetition": 1,
+    "terminal": "completed",
+    "error": null,
+    "receipts": [],
+    "attempts": [
+      {
+        "inputTokens": 13603,
+        "outputTokens": 51,
+        "cacheReadTokens": 0,
+        "cacheWriteTokens": null,
+        "reasoningTokens": 15,
+        "cost": null
+      },
+      {
+        "inputTokens": 13782,
+        "outputTokens": 15,
+        "cacheReadTokens": 13568,
+        "cacheWriteTokens": null,
+        "reasoningTokens": 0,
+        "cost": null
+      },
+      {
+        "inputTokens": 13906,
+        "outputTokens": 125,
+        "cacheReadTokens": 13760,
+        "cacheWriteTokens": null,
+        "reasoningTokens": 35,
+        "cost": null
+      },
+      {
+        "inputTokens": 14098,
+        "outputTokens": 12,
+        "cacheReadTokens": 13888,
+        "cacheWriteTokens": null,
+        "reasoningTokens": 0,
+        "cost": null
+      },
+      {
+        "inputTokens": 14167,
+        "outputTokens": 61,
+        "cacheReadTokens": 14080,
+        "cacheWriteTokens": null,
+        "reasoningTokens": 8,
+        "cost": null
+      }
+    ],
+    "phases": [
+      {
+        "phase": "step-start",
+        "atMs": 1792770009271,
+        "clock": "observed"
+      },
+      {
+        "phase": "first-output",
+        "atMs": 1792770010311,
+        "clock": "observed"
+      },
+      {
+        "phase": "tool-part",
+        "atMs": 1792770010420,
+        "clock": "observed"
+      },
+      {
+        "phase": "tool-part",
+        "atMs": 1792770010465,
+        "clock": "observed"
+      },
+      {
+        "phase": "step-start",
+        "atMs": 1792770012154,
+        "clock": "observed"
+      },
+      {
+        "phase": "tool-part",
+        "atMs": 1792770012224,
+        "clock": "observed"
+      },
+      {
+        "phase": "step-start",
+        "atMs": 1792770016256,
+        "clock": "observed"
+      },
+      {
+        "phase": "first-output",
+        "atMs": 1792770018432,
+        "clock": "observed"
+      },
+      {
+        "phase": "tool-part",
+        "atMs": 1792770018482,
+        "clock": "observed"
+      },
+      {
+        "phase": "step-start",
+        "atMs": 1792770019751,
+        "clock": "observed"
+      },
+      {
+        "phase": "tool-part",
+        "atMs": 1792770019943,
+        "clock": "observed"
+      },
+      {
+        "phase": "step-start",
+        "atMs": 1792770020804,
+        "clock": "observed"
+      },
+      {
+        "phase": "first-output",
+        "atMs": 1792770021908,
+        "clock": "observed"
+      },
+      {
+        "phase": "exit",
+        "atMs": 1792770021985,
+        "clock": "observed"
+      },
+      {
+        "phase": "verified",
+        "atMs": 1792770022019,
+        "clock": "observed"
+      }
+    ],
+    "profile": {
+      "model": "glm-5.3-flash",
+      "modelParametersHash": "843cf45b4d7e3e668ef5bad0c13e2ffe3686f8aae349227c85a94122a2db466e",
+      "agentManifestHash": "2d05aecd73868efdb179e58a44c5c2ab9b8ac752d0f273f741d02889ec07ac4c",
+      "permissionHash": "ade206d1b5a99ac352b24c5906ff73881343a6c5827a436ac2f21dc1e9d96c3b",
+      "toolSurfaceHash": "569f7e5c50f8c856ebeb33ec6bb521a33e3021be589edf23bc8b33f0348ad9cc"
+    },
+    "profileReceipts": 5,
+    "loops": {
+      "continuations": [],
+      "stopped": []
+    },
+    "toolCalls": 5,
+    "textHash": "3702ee944c3fabd73ad27917cf5203291ed282e9cd29fe949d7cf3fa9f6ea5ac",
+    "binarySha256": null,
+    "startedAtMs": 1792770005511,
+    "admissionMs": null,
+    "elapsedMs": 16508
+  },
+  "assessment": {
+    "suiteHash": "bd905b4f81f0a9412b614631a36337723067574848c5f05b50ead1cf48675091",
+    "taskHash": "6d7a5f740fead5293e5e5ffb8d80de678897f4422c739a10fa17ed3caffaaea2",
+    "artifactPass": true,
+    "unexpected": [],
+    "immutable": [
+      {
+        "file": "AGENTS.md",
+        "unchanged": true
+      },
+      {
+        "file": "package.json",
+        "unchanged": true
+      },
+      {
+        "file": "test/oracle.test.ts",
+        "unchanged": true
+      }
+    ],
+    "expected": [],
+    "check": {
+      "command": [
+        "bash",
+        "-lc",
+        "bun test test/oracle.test.ts && ! grep -q 'total: string' src/calc.ts && echo TYPED_REPAIR_OK"
+      ],
+      "exit": 0,
+      "stdoutHash": "efb93a940334384e8864956fb03b0b4baa725db808f1358cf83ce3a00cd53051",
+      "stderrHash": "bcbc5ba71e98b7f2e3a6f949a46a1b944fea2d7b5ef1094d5d1c38f65375cd49"
+    },
+    "executionVerdict": "unverified",
+    "requiredReceipts": [],
+    "answerContains": []
+  },
+  "answer": "I'll look at the source and test first.\nThe bug is the `total: string` annotation on a numeric reduce. Fixing it to `number`:\nFixed src/calc.ts:2 — `total` annotation changed from `string` to `number`, matching the numeric reduce. Exported signature `average(values: number[]): number` unchanged; `bun test`: 1 pass, 0 fail."
+}
