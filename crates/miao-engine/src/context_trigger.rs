@@ -765,7 +765,7 @@ impl Store {
         let session = session.to_owned();
         self.call(move |conn| {
             let mut stmt = conn.prepare(
-                "SELECT role,content,recorded_at_ms FROM engine_message WHERE session_id=?1 AND seq>?2 AND reverted=0 ORDER BY seq",
+                "SELECT role,content,recorded_at_ms FROM engine_message WHERE session_id=?1 AND seq>?2 AND reverted=0 AND quarantined=0 ORDER BY seq",
             )?;
             let mut rows = stmt.query(rusqlite::params![session, counted_through])?;
             let mut chars = 0usize;
