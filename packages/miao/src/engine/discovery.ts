@@ -1,5 +1,5 @@
 import { spawnSync } from "node:child_process"
-import { existsSync } from "node:fs"
+import { existsSync, realpathSync } from "node:fs"
 import os from "node:os"
 import path from "node:path"
 
@@ -33,7 +33,8 @@ const EXE = process.platform === "win32" ? ".exe" : ""
  * Install locations the release flow can write, most specific first. An
  * explicit `MIAO_ENGINE_BIN` always wins.
  */
-const candidates = () => [
+const candidates = (executable: string) => [
+  ...(path.basename(executable).startsWith("miao") ? [path.join(path.dirname(executable), `miao-engine${EXE}`)] : []),
   path.join(os.homedir(), ".miao", "bin", `miao-engine${EXE}`),
   path.join(os.homedir(), ".local", "share", "miao-engine", "bin", `miao-engine${EXE}`),
   path.join(os.homedir(), ".local", "bin", `miao-engine${EXE}`),
@@ -66,6 +67,7 @@ export function resolveEngine(input: {
   environment?: Record<string, string | undefined>
   probe?: (binary: string) => Capabilities | undefined
   exists?: (binary: string) => boolean
+  executable?: string
 } = {}): { binary: string; capabilities: Capabilities } | undefined {
   const environment = input.environment ?? process.env
   const probe = input.probe ?? capabilities
@@ -85,7 +87,8 @@ export function resolveEngine(input: {
     }
     return { binary: explicit, capabilities: found }
   }
-  for (const binary of candidates()) {
+  const executable = input.executable ?? process.execPath
+  for (const binary of candidates(existsSync(executable) ? realpathSync(executable) : executable)) {
     if (!exists(binary)) continue
     const found = probe(binary)
     if (found && compatible(found)) return { binary, capabilities: found }
