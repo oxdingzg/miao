@@ -11,6 +11,23 @@ at `docs/releases/vX.Y.Z.md` and `docs/releases/vX.Y.Z.zh.md`; both are required
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-10-24
+
+### Added
+- **provider**: Google browser-login (no API key) for personal Gemini accounts (#1322) (`9f8a2282d0`)
+- **engine**: response-side per-request usage dump (#1309) (`c2fd6cc07e`)
+- **core**: add personal Google account browser OAuth (#1321) (`0330bfc46d`)
+
+### Fixed
+- **engine**: raise the snapshot/fork projection limit for large Sessions (#1310) (`bbc32b11a5`)
+- **engine**: retry once after an open-boundary overflow refusal (#1314) (`f4c8b7c46c`)
+- **engine**: atomically aggregate native usage through session ancestors (#1319) (`7feeb071b5`)
+- **engine**: price usage from matching recorded provider identity (#1318) (`ab5b763517`)
+- **core**: start the session projector before creating sessions (#1317) (`ae2274c02f`)
+- **bench**: align inherited PWD with each task workspace (#1315) (`d69de27a2f`)
+- **engine**: provide scoped services for native workflow tools (#1312) (`acd9996f20`)
+- **run**: derive the compaction budget for operator-routed models (#1302) (`ebaf9efffa`)
+
 ## [0.2.26] - 2026-10-23
 
 ### Added
