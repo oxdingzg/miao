@@ -1,6 +1,8 @@
 export function statusSegments(
   input: {
     model: string
+    provider?: string
+    variant?: string
     context: string
     directory: string
     branch?: string
@@ -12,7 +14,15 @@ export function statusSegments(
   const items = [
     {
       key: "model",
-      text: input.model,
+      text: [
+        input.model,
+        input.provider && !input.model.toLowerCase().includes(input.provider.toLowerCase())
+          ? input.provider
+          : undefined,
+        input.variant,
+      ]
+        .filter(Boolean)
+        .join(" · "),
       min: Math.min(36, Math.max(1, width - Bun.stringWidth(input.context) - 3)),
       max: 56,
     },
