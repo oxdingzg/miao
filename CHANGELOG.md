@@ -11,6 +11,29 @@ at `docs/releases/vX.Y.Z.md` and `docs/releases/vX.Y.Z.zh.md`; both are required
 
 ## [Unreleased]
 
+## [0.3.2] - 2026-10-24
+
+### Added
+- **tui**: add a compact session status line (#1348) (`410bbfc15b`)
+
+### Fixed
+- **core**: retry shared runtime lock handoff during startup (#1355) (`886e321d82`)
+- **ci**: preserve checks for each merged main commit (#1354) (`c1e2a9d75a`)
+- **native**: retain matching engines with preview builds (#1356) (`38a604d1a3`)
+- **tui**: retain native tool names and reasoning summaries (#1353) (`2071d0d3be`)
+- **tui**: separate prompt preparation and receipt timeouts (#1352) (`1e2b12ff34`)
+- **native**: refresh owned OAuth credentials and resume natively (#1350) (`3c2548aa56`)
+- **native**: restore readable progress between tool calls (#1349) (`103fd33f26`)
+- **ci**: require model service configuration for issue checks (#1351) (`95909dca39`)
+- **engine**: settle lsp diagnostics pushes before reporting them (#1343) (`90adebc648`)
+- **server**: bind the requested model when creating native sessions (#1347) (`a608318a6d`)
+- **engine**: support Google account OAuth routes (#1345) (`80a99c56e9`)
+- **tui**: align native models and session account selection (#1344) (`8d0506c355`)
+- **session**: unify native session titles with the catalog placeholder (#1346) (`4b034108e4`)
+- **engine**: snapshot normalized mutation paths (#1342) (`903ca97ebe`)
+- **engine**: generate native session titles when a run goes idle (#1337) (`c3d48f4f80`)
+- **miao**: match the engine's timed_out reason when projecting shell results (#1338) (`41663670be`)
+
 ## [0.3.1] - 2026-10-24
 
 ### Added
