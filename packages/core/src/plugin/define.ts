@@ -10,6 +10,7 @@ import type { AgentV2 } from "../agent"
 import type { Catalog } from "../catalog"
 import type { CommandV2 } from "../command"
 import type { Config } from "../config"
+import type { Credential } from "../credential"
 import type { EventV2 } from "../event"
 import type { FileSystem } from "../filesystem"
 import type { FSUtil } from "../fs-util"
@@ -26,6 +27,7 @@ export type Requirements =
   | Catalog.Service
   | CommandV2.Service
   | Config.Service
+  | Credential.Service
   | EventV2.Service
   | FileSystem.Service
   | FSUtil.Service
