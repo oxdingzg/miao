@@ -54,7 +54,7 @@ export function StatusLine(props: { sessionID?: string; directory?: string; newW
     const directory = props.directory ?? session()?.location.directory ?? (sync.path.directory || paths.cwd)
     return statusSegments(
       {
-        model: local.model.parsed().model,
+        model: [local.model.parsed().model, local.model.variant.current()].filter(Boolean).join(" · "),
         context: context().label,
         directory: props.newWorkspace ? "New workspace" : abbreviateHome(directory, paths.home),
         shortcut: paletteShortcut() ? `${paletteShortcut()} commands` : undefined,
