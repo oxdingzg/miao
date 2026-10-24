@@ -188,4 +188,4 @@ export const createGoogleAccountPlugin = (options: GoogleAccount.Options = Googl
 
 }
 
-export const GoogleAccountPlugin = createGoogleAccountPlugin()
+export const GoogleAccountPlugin = createGoogleAccountPlugin(GoogleAccount.defaults, "google")
