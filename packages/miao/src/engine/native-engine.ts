@@ -806,7 +806,7 @@ const layer = Layer.effect(
             ownerRouter === undefined
               ? Effect.fail(new EngineError("engine_owner_closed", "product tool router is not ready"))
               : ownerRouter.get(input),
-        })
+        }).pipe(Effect.provide(locations.get(location)))
         const pluginHooks = yield* PluginHooks.prepare({ ...configuration, ...productTools }, { store: sessions })
         return {
           options: {
@@ -943,6 +943,7 @@ export const node = makeGlobalNode({
     Database.node,
     EventV2.node,
     SessionStore.node,
+    SessionCreate.node,
     SessionOwnership.node,
     llmClient,
   ],
