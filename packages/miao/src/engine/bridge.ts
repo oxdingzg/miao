@@ -817,6 +817,67 @@ export function productToolInput(engineTool: string, input: Record<string, unkno
   return { command, run_in_background: true }
 }
 
+/**
+ * Project an engine tool result into the product shape: the readable text the
+ * renderers (and the model) expect as the call's content, plus the structured
+ * output the V1 `metadata` readers consume. The engine returns its own JSON
+ * shapes — a shell result keyed by `stdout`, session-state mutations wrapped in
+ * `{kind, revision, value}` — so without this projection every tool part in the
+ * transcript rendered as that raw JSON, and structured-only readers (todos,
+ * diffs) saw nothing at all.
+ */
+export function productToolResult(tool: string, result: unknown): { structured: Record<string, unknown>; text: string } {
+  if (typeof result === "string") return { structured: {}, text: result }
+  if (typeof result !== "object" || result === null) return { structured: {}, text: JSON.stringify(result ?? null) }
+  const record = result as Record<string, unknown>
+  if (tool === "bash") return shellResult(record)
+  if (tool === "todowrite") return todosResult(record)
+  if (tool === "goal") return goalResult(record)
+  return { structured: {}, text: JSON.stringify(record) }
+}
+
+/** Shell results keyed by `stdout`/`stderr` project to the bash tool's output text and `StructuredOutput`. */
+function shellResult(record: Record<string, unknown>): { structured: Record<string, unknown>; text: string } {
+  const stdout = typeof record.stdout === "string" ? record.stdout : ""
+  const stderr = typeof record.stderr === "string" ? record.stderr : ""
+  const exit = typeof record.exit_code === "number" ? record.exit_code : undefined
+  const timedOut = record.reason === "timeout"
+  const truncated = record.output_incomplete === true || record.reason === "output_limit"
+  return {
+    structured: {
+      ...(exit === undefined ? {} : { exit }),
+      truncated,
+      ...(timedOut ? { timeout: true } : {}),
+      sandbox: {
+        state: record.enforcement_required === true ? "sandboxed" : "unsandboxed",
+        backend: typeof record.sandbox_profile === "string" ? record.sandbox_profile : "workspace_write",
+        network: record.network_allowed === true,
+        denied: [],
+        approved: [],
+      },
+    },
+    text: `${[stdout, stderr].filter(Boolean).join("\n")}${timedOut ? "[command timed out]" : exit === undefined ? "[command not executed]" : `[exit code ${exit}]`}`,
+  }
+}
+
+/** Session-state mutations wrap the payload in `{kind, revision, value}`; the tool contract is the payload alone. */
+function engineStateValue(record: Record<string, unknown>): Record<string, unknown> | undefined {
+  const value = record.value
+  return typeof value === "object" && value !== null ? (value as Record<string, unknown>) : undefined
+}
+
+function todosResult(record: Record<string, unknown>): { structured: Record<string, unknown>; text: string } {
+  const value = engineStateValue(record)
+  const todos = Array.isArray(value?.todos) ? value.todos : []
+  return { structured: { todos }, text: JSON.stringify(todos, null, 2) }
+}
+
+function goalResult(record: Record<string, unknown>): { structured: Record<string, unknown>; text: string } {
+  const value = engineStateValue(record)
+  if (value === undefined) return { structured: {}, text: JSON.stringify(record) }
+  return { structured: value, text: JSON.stringify(value, null, 2) }
+}
+
 /** The product `session.next.tool.called` payload for one committed tool_use block. */
 export type SessionToolCalled = {
   sessionID: SessionID
@@ -899,13 +960,13 @@ export type SessionToolResult = SessionToolSuccess | SessionToolFailed
  * committed assistant projection, then `result` maps the completion.
  */
 export class ToolBridge {
-  #calls = new Map<string, { sessionID: SessionID; assistantMessageID: SessionMessage.ID }>()
+  #calls = new Map<string, { sessionID: SessionID; assistantMessageID: SessionMessage.ID; tool: string }>()
   #plans = new Map<
     string,
     {
       session: string
       provider: string
-      known?: { sessionID: SessionID; assistantMessageID: SessionMessage.ID }
+      known?: { sessionID: SessionID; assistantMessageID: SessionMessage.ID; tool: string }
     }
   >()
 
@@ -938,7 +999,8 @@ export class ToolBridge {
       if (typeof block !== "object" || block === null) continue
       if (!("type" in block) || block.type !== "tool_use") continue
       if (!("id" in block) || typeof block.id !== "string") continue
-      const known = { sessionID, assistantMessageID }
+      const tool = "name" in block && typeof block.name === "string" ? productToolID(block.name) : "custom"
+      const known = { sessionID, assistantMessageID, tool }
       this.#calls.set(JSON.stringify([event.session_id, block.id]), known)
       for (const plan of this.#plans.values()) {
         if (plan.session === event.session_id && plan.provider === block.id && !plan.known) plan.known = known
@@ -966,7 +1028,13 @@ export class ToolBridge {
     if ("is_error" in event.data && event.data.is_error === true) {
       return { type: "session.next.tool.failed", ...base, error: { type: "unknown", message: output } }
     }
-    return { type: "session.next.tool.success", ...base, structured: {}, content: [{ type: "text", text: output }] }
+    const mapped = productToolResult(known.tool, raw)
+    return {
+      type: "session.next.tool.success",
+      ...base,
+      structured: mapped.structured,
+      content: [{ type: "text", text: mapped.text }],
+    }
   }
 }
 
