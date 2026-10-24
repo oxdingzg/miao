@@ -243,16 +243,7 @@ impl OpenAIChat {
         }
         let response =
             request_with_retry("openai-chat", &self.client, request, &progress, &cancel).await?;
-        read_stream(
-            response,
-            progress,
-            cancel,
-            ChatState {
-                model: self.model.clone(),
-                ..Default::default()
-            },
-        )
-        .await
+        read_stream(response, progress, cancel, ChatState::default()).await
     }
 }
 
@@ -344,7 +335,6 @@ struct Call {
 }
 #[derive(Default)]
 struct ChatState {
-    model: String,
     text: String,
     reasoning: String,
     calls: BTreeMap<u64, Call>,
@@ -526,30 +516,6 @@ impl Parser for ChatState {
                 &call.name,
                 &call.arguments,
             )?);
-        }
-        // Dev diagnostic (opt-in): append the response usage for the same
-        // prefix-cache triage as MIAO_ENGINE_REQUEST_DUMP — per-request
-        // cached_tokens separates gateway TTL expiry from prefix divergence.
-        if let Ok(path) = std::env::var("MIAO_ENGINE_RESPONSE_DUMP") {
-            use std::io::Write as _;
-            if let Ok(mut file) = std::fs::OpenOptions::new()
-                .create(true)
-                .append(true)
-                .open(&path)
-            {
-                let _ = writeln!(
-                    file,
-                    "{}",
-                    json!({
-                        "model": self.model,
-                        "ts_ms": std::time::SystemTime::now()
-                            .duration_since(std::time::UNIX_EPOCH)
-                            .map(|d| d.as_millis())
-                            .unwrap_or(0),
-                        "usage": self.usage,
-                    })
-                );
-            }
         }
         Ok(Reply {
             content: Value::Array(content),
