@@ -29,14 +29,17 @@ import { eq } from "drizzle-orm"
 import os from "node:os"
 import path from "node:path"
 import { Config } from "@miao/core/config"
+import { AbsolutePath } from "@miao/core/schema"
 import { ResponsesCacheContract, ResponsesWebSocketContract } from "@miao/schema/config"
 import { Global } from "@miao/core/global"
 import { makeGlobalNode } from "@miao/core/effect/app-node"
 import { ClientEvents } from "@miao/server/client-events"
 import { NativeEngine } from "@miao/server/native-engine"
+import { generateNativeTitle } from "@miao/server/native-session"
 import { ConflictError } from "@miao/protocol/errors"
+import type { OpenCodeEvent } from "@miao/protocol/groups/event"
 import { Location } from "@miao/schema/location"
-import { Effect, Layer, Option, Schema, Context } from "effect"
+import { Cause, Effect, Layer, Option, Queue, Schema, Context } from "effect"
 import { EngineError, type EngineOptions, type EngineEvent } from "./client"
 import { discoveredEngine } from "./discovery"
 import { makeEngineOwners } from "./owners"
@@ -288,6 +291,24 @@ const refusal = (sessionID: string, error: unknown) =>
       })
 
 type Owners = Effect.Success<ReturnType<typeof makeEngineOwners>>
+
+/** An idle native Session whose product title may still need generating. */
+type NativeTitleRequest = {
+  sessionID: Parameters<NativeEngine.Interface["title"]>[0]["sessionID"]
+  storage: Parameters<NativeEngine.Interface["title"]>[0]["storage"]
+  location: Parameters<NativeEngine.Interface["title"]>[0]["location"]
+}
+
+/** The engine store a client event came from, when the event is native's. */
+const engineStorageID = (event: OpenCodeEvent) => {
+  const metadata = event.metadata
+  if (metadata === undefined) return undefined
+  const engine = metadata.engine
+  if (typeof engine !== "object" || engine === null) return undefined
+  const id = (engine as { id?: unknown }).id
+  if (typeof id !== "string") return undefined
+  return Option.getOrUndefined(Schema.decodeUnknownOption(AbsolutePath)(id))
+}
 
 /**
  * The transport implementation over a server-scoped owner registry. Kept apart
@@ -946,7 +967,7 @@ const layer = Layer.effect(
         : Effect.void,
     )
     yield* Effect.addFinalizer(() => unsubscribeUsage)
-    return fromOwners(
+    const engine = fromOwners(
       owners,
       {
         prompt: (input) =>
@@ -989,6 +1010,36 @@ const layer = Layer.effect(
       engineStorageRoot(process.env, settings),
       (model: string) => locationPricing?.(model),
     )
+    // Native Sessions settle through the engine's own lifecycle events, and
+    // the TUI never calls session.wait — so the wait handler's title hook
+    // never fires interactively and the first exchange kept its creation
+    // placeholder forever. Pump idle transitions through the same
+    // generateNativeTitle the wait handler uses; the queue keeps the LLM call
+    // off the client fan-out, and the core guard inside the title hook makes
+    // repeat idle transitions of a titled Session cost one history read.
+    const pendingTitles = yield* Queue.unbounded<NativeTitleRequest>()
+    yield* Effect.forever(
+      Effect.gen(function* () {
+        const request = yield* Queue.take(pendingTitles)
+        yield* generateNativeTitle({ native: engine, ...request }).pipe(
+          Effect.catchCause((cause) => Effect.logWarning("native title generation skipped", { cause })),
+        )
+      }),
+    ).pipe(Effect.forkScoped)
+    const unsubscribeTitle = yield* clients.listen((event) => {
+      if (event.type !== "session.next.status" || event.metadata?.engine === undefined) return Effect.void
+      const data = event.data as { sessionID?: NativeTitleRequest["sessionID"]; status?: { type?: string } }
+      const storage = engineStorageID(event)
+      if (data.status?.type !== "idle" || data.sessionID === undefined || storage === undefined) return Effect.void
+      if (event.location === undefined) return Effect.void
+      return Queue.offer(pendingTitles, {
+        sessionID: data.sessionID,
+        storage,
+        location: event.location,
+      }).pipe(Effect.asVoid)
+    })
+    yield* Effect.addFinalizer(() => unsubscribeTitle)
+    return engine
   }),
 )
 

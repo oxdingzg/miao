@@ -437,3 +437,50 @@ export const waitNative = Effect.fn("NativeSession.wait")(function* (input: {
     yield* Effect.sleep("250 millis")
   }
 })
+
+const stripImageMarkers = (text: string) => text.replace(/\[Image \d+\]/gi, "").trim()
+
+/** The title prompt mirrors SessionTitle.prompt over the native wire events:
+ * the first user prompt, or — when that prompt is just an image — the first
+ * assistant answer, which is the only part a title model can read. */
+export const nativeTitlePrompt = (events: readonly { type: string; data: unknown }[]) => {
+  const prompted = events.find((event) => event.type === "session.next.prompted")
+  if (prompted?.type !== "session.next.prompted") return undefined
+  const data = prompted.data as { prompt?: { text?: string } }
+  const text = typeof data.prompt?.text === "string" ? stripImageMarkers(data.prompt.text) : ""
+  if (text) return text
+  const answered = events.find((event) => event.type === "session.next.text.ended")
+  if (answered?.type !== "session.next.text.ended") return undefined
+  const answer = answered.data as { text?: string }
+  return typeof answer.text === "string" && answer.text ? answer.text : undefined
+}
+
+/**
+ * Best-effort product title for a native Session whose first run just settled:
+ * read the durable wire page, derive the title prompt from it, and hand both to
+ * the engine host's `title` hook, which runs the same title model the
+ * TypeScript runner uses. Callers wrap this in their own error boundary — a
+ * missing title must never fail a wait or an idle transition.
+ */
+export const generateNativeTitle = Effect.fn("NativeSession.generateTitle")(function* (input: {
+  native: Pick<NativeEngine.Interface, "history" | "title">
+  sessionID: SessionID
+  storage: AbsolutePath
+  location: Location.Ref
+}) {
+  const page = yield* input.native.history({
+    sessionID: input.sessionID,
+    storage: input.storage,
+    location: input.location,
+    after: 0,
+    limit: 30,
+  })
+  const prompt = nativeTitlePrompt(page.events)
+  if (prompt === undefined) return
+  yield* input.native.title({
+    sessionID: input.sessionID,
+    storage: input.storage,
+    location: input.location,
+    prompt,
+  })
+})
