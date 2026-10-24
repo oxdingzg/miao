@@ -1,5 +1,5 @@
-import { InputRenderable } from "@opentui/core"
 /** @jsxImportSource @opentui/solid */
+import { InputRenderable } from "@opentui/core"
 import { createDefaultOpenTuiKeymap } from "@opentui/keymap/opentui"
 import { testRender, useRenderer } from "@opentui/solid"
 import { expect, test } from "bun:test"
