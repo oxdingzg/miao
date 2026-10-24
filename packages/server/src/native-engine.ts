@@ -283,13 +283,14 @@ export interface Interface {
     after: number
     limit: number
   }) => Effect.Effect<NativeJournalPage & { readonly hasMore: boolean }, ConflictError>
-  /** Generate the product title for a native Session from its durable wire page. */
+  /** Generate the product title for a native Session from its durable wire
+   * page; returns the title it published, if any. */
   readonly title: (input: {
     sessionID: SessionID
     storage: AbsolutePath
     location: Location.Ref
     prompt: string
-  }) => Effect.Effect<void, ConflictError>
+  }) => Effect.Effect<string | undefined, ConflictError>
 }
 
 export interface NativeJournalPage {
