@@ -33,3 +33,25 @@ test("Unicode paths and long branch names fit by terminal cells without broken g
   expect(Bun.stringWidth(result.map((item) => item.text).join(" · "))).toBeLessThanOrEqual(90)
   expect(result.find((item) => item.key === "directory")?.text).toContain("…")
 })
+
+test("the single status row retains distinct providers without repeating names already in the model", () => {
+  const common = { context: "Context —", directory: "~/project" }
+  for (const width of [40, 60, 80, 120]) {
+    const result = statusSegments(
+      { ...common, model: "DeepSeek V4.1 Flash", provider: "Command Code", variant: "high" },
+      width,
+    )
+    expect(result.map((item) => item.key)).toContain("context")
+    expect(Bun.stringWidth(result.map((item) => item.text).join(" · "))).toBeLessThanOrEqual(width)
+  }
+  expect(statusSegments({ ...common, model: "DeepSeek V4.1 Flash", provider: "Command Code" }, 200)[0]?.text).toBe(
+    "DeepSeek V4.1 Flash · Command Code",
+  )
+  expect(
+    statusSegments({ ...common, model: "Gemini Flash (Google account)", provider: "Google", variant: "high" }, 200)[0]
+      ?.text,
+  ).toBe("Gemini Flash (Google account) · high")
+  expect(statusSegments({ ...common, model: "DeepSeek V4.1 Flash", provider: "Deepseek" }, 200)[0]?.text).toBe(
+    "DeepSeek V4.1 Flash",
+  )
+})
