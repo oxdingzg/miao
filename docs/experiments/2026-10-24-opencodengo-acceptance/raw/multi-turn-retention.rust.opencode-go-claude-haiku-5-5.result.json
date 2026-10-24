@@ -1,0 +1,18 @@
+{
+  "scenario": "multi-turn-retention",
+  "engine": "rust",
+  "model": "opencode-go/claude-haiku-5-5",
+  "outcome": {
+    "status": "fail",
+    "reason": "follow-up reply does not recall MIAO-CONFORMANCE-7391: "
+  },
+  "cost": 0,
+  "tokensIn": 0,
+  "tokensOut": 0,
+  "stepFinishes": 0,
+  "tools": [],
+  "errors": [
+    "invalid request: provider HTTP 400: Model does not support this protocol.",
+    "invalid request: provider HTTP 400: Model does not support this protocol."
+  ]
+}

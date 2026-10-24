@@ -1,0 +1,10 @@
+--- .miao/miao.json
+{
+  "$schema": "https://mtty.dev/miao/config.json",
+  "agents": {
+    "title": {
+      "model": "zhipuai-coding-plan/glm-5.3-flash"
+    }
+  }
+}
+

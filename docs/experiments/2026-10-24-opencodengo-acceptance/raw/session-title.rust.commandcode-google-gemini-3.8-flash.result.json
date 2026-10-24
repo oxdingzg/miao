@@ -1,0 +1,17 @@
+{
+  "scenario": "session-title",
+  "engine": "rust",
+  "model": "commandcode/google/gemini-3.8-flash",
+  "outcome": {
+    "status": "fail",
+    "reason": "no sessionID in events"
+  },
+  "cost": 0,
+  "tokensIn": 0,
+  "tokensOut": 0,
+  "stepFinishes": 0,
+  "tools": [],
+  "errors": [
+    "invalid request: provider HTTP 400: You have insufficient credits to make this request. Please purchase more credits to continue using the service. (code BAD_REQUEST)"
+  ]
+}

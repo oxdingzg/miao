@@ -1,0 +1,15 @@
+{
+  "scenario": "multi-turn-retention",
+  "engine": "rust",
+  "model": "commandcode/google/gemini-3.8-flash",
+  "outcome": {
+    "status": "pass"
+  },
+  "sessionID": "ses_gfe5e93bcbc72ffe76JSHJuvDI",
+  "cost": 0,
+  "tokensIn": 15693,
+  "tokensOut": 96,
+  "stepFinishes": 2,
+  "tools": [],
+  "errors": []
+}
