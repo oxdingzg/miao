@@ -20,14 +20,14 @@ const modelID = "gemini-3-fixture"
 const fixture = Effect.fn("GoogleAccount.transportFixture")(function* () {
   let signalAbort: () => void = () => {}
   const aborted = new Promise<void>((resolve) => { signalAbort = resolve })
-  const state = { mode: "text", status: 200, calls: [] as Array<{ auth: string | null; key: string | null; body: unknown }> }
+  const state = { mode: "text", status: 200, reason: undefined as string | undefined, retry: undefined as string | undefined, reset: undefined as string | undefined, calls: [] as Array<{ auth: string | null; key: string | null; body: unknown }> }
   const server = Bun.serve({
     hostname: "127.0.0.1", port: 0, idleTimeout: 0,
     async fetch(request) {
       const path = new URL(request.url).pathname
       const body: unknown = await request.json()
       state.calls.push({ auth: request.headers.get("authorization"), key: request.headers.get("x-goog-api-key"), body })
-      if (state.status !== 200) return Response.json({ error: { message: "fixture-private-token-must-not-leak" } }, { status: state.status })
+      if (state.status !== 200) return Response.json({ error: { message: "fixture-private-token-must-not-leak", details: state.reason ? [{ reason: state.reason, metadata: { quotaResetDelay: state.reset } }] : [] } }, { status: state.status, headers: state.retry ? { "retry-after": state.retry } : {} })
       if (path === "/v1internal:fetchAvailableModels") return Response.json({ models: {
         [modelID]: { displayName: "Fixture Gemini", maxTokens: 12345, maxOutputTokens: 4096, supportsImages: true },
         "gemini-disabled": { disabled: true }, "gemini-unselectable": { selectable: false }, "other-model": {},
@@ -88,6 +88,7 @@ it.live("quota/authentication failures do not leak upstream token descriptions",
   state.status = 429
   const error = yield* Effect.tryPromise({ try: () => modelFetch("fixture-access", "project-one", options)(`https://example.test/models/${modelID}:generateContent`, { method: "POST", body: "{}" }), catch: (cause) => cause }).pipe(Effect.flip)
   expect(String(error)).toContain("HTTP 429")
+  expect(String(error)).not.toContain("account quota is exhausted")
   expect(String(error)).not.toContain("fixture-private-token-must-not-leak")
 }))
 
@@ -234,3 +235,82 @@ it.live("Google thought summaries reach the actual chat bridge and explicit opt-
     })
   }),
 )
+
+it.live("the SDK gateway preserves rate-limit evidence without hidden retries", () =>
+  Effect.gen(function* () {
+    const { state, options } = yield* fixture()
+    state.status = 429
+    state.reason = "RATE_LIMIT_EXCEEDED"
+    state.retry = "2"
+    const sdk = createGoogleGenerativeAI({
+      apiKey: "fixture-sentinel",
+      fetch: modelFetch("fixture-access", "project-one", options),
+    })
+    const response = yield* Effect.promise(() =>
+      ProviderGateway.reply(
+        sdk.languageModel(modelID),
+        {
+          model: modelID,
+          messages: [{ role: "user", content: "hello" }],
+        },
+        null,
+        modelID,
+      ),
+    )
+    const text = yield* Effect.promise(() => response.text())
+    expect(state.calls).toHaveLength(1)
+    expect(text).toContain('"status":429')
+    expect(text).toContain("RATE_LIMIT_EXCEEDED")
+    expect(text).toContain("Retry after 2 seconds")
+    expect(text).not.toContain("fixture-private-token-must-not-leak")
+    expect(text).not.toContain("account quota is exhausted")
+  }),
+)
+
+it.live("temporary capacity and service quotas remain distinguishable", () =>
+  Effect.gen(function* () {
+    for (const [reason, expected] of [
+      ["MODEL_CAPACITY_EXHAUSTED", "insufficient capacity"],
+      ["QUOTA_EXCEEDED", "quota for this service or model"],
+    ]) {
+      const { state, options } = yield* fixture()
+      state.status = 429
+      state.reason = reason
+      const error = yield* Effect.tryPromise({
+        try: () =>
+          modelFetch(
+            "fixture-access",
+            "project-one",
+            options,
+          )(`https://example.test/models/${modelID}:generateContent`, { method: "POST", body: "{}" }),
+        catch: (cause) => cause,
+      }).pipe(Effect.flip)
+      expect(String(error)).toContain(expected)
+      expect(String(error)).not.toContain("fixture-private-token-must-not-leak")
+    }
+  }),
+)
+
+
+it.live("service quota reset delays are retained without raw provider descriptions", () => Effect.gen(function* () {
+  const { state, options } = yield* fixture()
+  state.status = 429
+  state.reason = "QUOTA_EXHAUSTED"
+  state.reset = "12.5s"
+  const error = yield* Effect.tryPromise({ try: () => modelFetch("fixture-access", "project-one", options)(`https://example.test/models/${modelID}:generateContent`, { method: "POST", body: "{}" }), catch: (cause) => cause }).pipe(Effect.flip)
+  expect(error).toBeInstanceOf(GoogleAccount.RequestError)
+  expect(String(error)).toContain("Retry after 13 seconds")
+  expect(String(error)).not.toContain("fixture-private-token-must-not-leak")
+}))
+
+
+it.live("weekly reset hints are not dropped by a one-day delay cap", () => Effect.gen(function* () {
+  const { state, options } = yield* fixture()
+  state.status = 429
+  state.reason = "QUOTA_EXHAUSTED"
+  state.reset = "518400s"
+  const error = yield* Effect.tryPromise({ try: () => modelFetch("fixture-access", "project-one", options)(`https://example.test/models/${modelID}:generateContent`, { method: "POST", body: "{}" }), catch: (cause) => cause }).pipe(Effect.flip)
+  expect(error).toBeInstanceOf(GoogleAccount.RequestError)
+  expect((error as GoogleAccount.RequestError).retryAfterMs).toBe(518400000)
+  expect(String(error)).toMatch(/Retry after \d{4}-\d{2}-\d{2}T/)
+}))

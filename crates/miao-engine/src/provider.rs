@@ -43,6 +43,8 @@ pub enum ProviderError {
     Http(u16),
     #[error("invalid provider stream: {0}")]
     Stream(String),
+    #[error("provider request rejected: {0}")]
+    Rejected(String),
 }
 
 impl ProviderError {

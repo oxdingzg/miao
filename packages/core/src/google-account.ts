@@ -41,9 +41,11 @@ export class RequestError extends Error {
   constructor(
     readonly operation: string,
     readonly status: number,
+    readonly reason?: string,
+    readonly retryAfterMs?: number,
   ) {
     super(
-      `Google account ${operation} failed (HTTP ${status}). ${status === 401 ? "Reconnect the Google account." : status === 403 ? "The account may not be eligible for this model service." : status === 429 ? "The account quota is exhausted; retry after its reset." : "Retry the request or check the service status."}`,
+      `Google account ${operation} failed (HTTP ${status}). ${status === 401 ? "Reconnect the Google account." : status === 403 ? "The account may not be eligible for this model service." : status === 429 ? `${reason === "RATE_LIMIT_EXCEEDED" || reason === "RATE_LIMITED" ? "The service is rate limiting requests." : reason === "QUOTA_EXHAUSTED" || reason === "QUOTA_EXCEEDED" ? "The quota for this service or model was reached." : reason === "MODEL_CAPACITY_EXHAUSTED" || reason === "CAPACITY_EXHAUSTED" ? "The service temporarily has insufficient capacity." : "The service returned a rate or quota limit."}${retryAfterMs === undefined ? " Retry later or choose another model/account." : ` Retry after ${retryAfterMs < 60_000 ? `${Math.ceil(retryAfterMs / 1000)} seconds` : new Date(Date.now() + retryAfterMs).toISOString()}.`}${reason ? ` Service reason: ${reason}.` : ""}` : "Retry the request or check the service status."}`,
     )
     this.name = "GoogleAccount.RequestError"
   }
