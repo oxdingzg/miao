@@ -51,20 +51,65 @@ export const contextLimitsFor = (
   }
 }
 
-/** Resolve the served model for the compaction trigger on an explicit route.
+/** The routes file's serving model id for the configured model ref, when the
+ * file carries a matching entry: `deepseek/deepseek-v4.1-flash` matches the
+ * entry whose id or model field names it, and that entry's `model` field is
+ * the api id the catalog indexes the model under. */
+const routeHint = (configuration: {
+  readonly model?: string
+  readonly modelRoutesConfigFile?: string
+}) =>
+  Effect.gen(function* () {
+    if (configuration.model === undefined || configuration.modelRoutesConfigFile === undefined) return undefined
+    const routes = yield* Effect.tryPromise({
+      try: () =>
+        Bun.file(configuration.modelRoutesConfigFile!).json() as Promise<Array<{ id?: string; model?: string }>>,
+      catch: () => undefined,
+    }).pipe(Effect.catch(() => Effect.succeed(undefined)))
+    if (routes === undefined || !Array.isArray(routes)) return undefined
+    const entry = routes.find(
+      (route) => route.id === configuration.model || route.model === configuration.model,
+    )
+    return entry?.model
+  })
+
+/**
+ * Resolve the served model for the compaction trigger on an explicit route.
  * Best effort: without the configured model in the catalog (provider plugins
- * not booted, worker or test contexts) the engine default stands. */
-const explicitModel = (catalog: Catalog.Interface, model: string | undefined) =>
+ * not booted, worker or test contexts) the engine default stands.
+ *
+ * Operator routes can serve a model ref the catalog does not carry verbatim:
+ * `engine-on.sh` style configs journal `deepseek/deepseek-v4.1-flash` while
+ * the catalog lists that id under origin providers (`above/…`, `opencode/…`)
+ * with the bare api id. When the model-routes file holds a matching entry,
+ * its `model` field acts as an api-id hint — a candidate whose api id equals
+ * the hint or is the hint's suffix matches. Context windows only depend on
+ * the model id, so the alphabetical first candidate is deterministic here;
+ * pricing stays out of this path because vendor rates are not interchangeable. */
+const explicitModel = (catalog: Catalog.Interface, model: string | undefined, hint?: string) =>
   Effect.gen(function* () {
     const capable = (yield* catalog.model.available()).filter(
       (candidate) => candidate.capabilities.tools && candidate.capabilities.output.includes("text"),
     )
-    const selected = model
-      ? capable.filter(
-          (candidate) => `${candidate.providerID}/${candidate.id}` === model || candidate.api.id === model,
-        )
-      : [yield* catalog.model.default()]
-    return selected.length === 1 ? selected[0] : undefined
+    if (model === undefined) return (yield* catalog.model.default()) ?? undefined
+    const matches = capable.filter(
+      (candidate) =>
+        `${candidate.providerID}/${candidate.id}` === model ||
+        candidate.api?.id === model ||
+        (hint !== undefined &&
+          candidate.api?.id !== undefined &&
+          (candidate.api.id === hint || hint.endsWith(`/${candidate.api.id}`))),
+    )
+    // Context windows only depend on the model id, so collapsing same-api-id
+    // candidates and taking the alphabetical first provider is deterministic.
+    const unique = [
+      ...new Map(
+        matches
+          .filter((candidate) => candidate.api?.id !== undefined)
+          .map((candidate) => [candidate.api!.id, candidate] as const),
+      ).values(),
+    ].sort((left, right) => (left.providerID ?? "").localeCompare(right.providerID ?? ""))
+    return unique.length >= 1 && (unique.length === 1 || hint !== undefined) ? unique[0] : undefined
   })
 
 /**
@@ -105,7 +150,8 @@ export const prepare = Effect.fn("Engine.productRoutes")(function* (
   // models this best-effort pass cannot see yet.
   if (configuration.contextLimits === undefined) {
     const catalog = Option.getOrUndefined(yield* Effect.serviceOption(Catalog.Service))
-    const model = catalog ? yield* explicitModel(catalog, configuration.model) : undefined
+    const hint = yield* routeHint(configuration)
+    const model = catalog ? yield* explicitModel(catalog, configuration.model, hint) : undefined
     const derived = model ? contextLimitsFor(model, compaction) : undefined
     if (derived) options.contextLimits = derived
   }
