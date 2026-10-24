@@ -1,0 +1,6 @@
+{"type":"segment","index":0,"resume":false,"prompt":"Remember this magic word for the rest of this session: MIAO-CONFORMANCE-7391. Do not write any files; just reply ok."}
+{"type":"error","timestamp":1792818235812,"sessionID":"ses_gfe5e93b4bf85ffeIQlcK6xiI9","error":{"type":"unknown","message":"invalid request: provider HTTP 400: Model does not support this protocol."}}
+{"type":"segment.end","index":0,"exitCode":1,"seconds":4.6,"killed":false,"timedOut":false}
+{"type":"segment","index":1,"resume":true,"prompt":"What was the magic word I asked you to remember? Reply with only the word."}
+{"type":"error","timestamp":1792818239919,"sessionID":"ses_gfe5e93b4bf85ffeIQlcK6xiI9","error":{"type":"unknown","message":"invalid request: provider HTTP 400: Model does not support this protocol."}}
+{"type":"segment.end","index":1,"exitCode":1,"seconds":3.2,"killed":false,"timedOut":false}

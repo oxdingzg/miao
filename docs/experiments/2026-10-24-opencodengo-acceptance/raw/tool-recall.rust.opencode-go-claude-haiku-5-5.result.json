@@ -1,0 +1,17 @@
+{
+  "scenario": "tool-recall",
+  "engine": "rust",
+  "model": "opencode-go/claude-haiku-5-5",
+  "outcome": {
+    "status": "fail",
+    "reason": "reply does not contain MIAO-CONFORMANCE-7391"
+  },
+  "cost": 0,
+  "tokensIn": 0,
+  "tokensOut": 0,
+  "stepFinishes": 0,
+  "tools": [],
+  "errors": [
+    "invalid request: provider HTTP 400: Model does not support this protocol."
+  ]
+}
