@@ -473,3 +473,38 @@ test("translateExpiredCredential parses the structured expired failure", () => {
   expect(translateExpiredCredential(make("provider connection refused"))).toBeUndefined()
   expect(translateExpiredCredential(make(undefined))).toBeUndefined()
 })
+
+test("native commits infer tool continuation without overriding explicit finishes", () => {
+  const commit: EngineEvent = {
+    session_id: "ses_test",
+    seq: 7,
+    kind: "message.committed",
+    recorded_at_ms: 20,
+    data: {
+      role: "assistant",
+      content: [
+        { type: "text", text: "Checking" },
+        { type: "tool_use", id: "call", name: "run_command", input: {} },
+      ],
+    },
+  }
+  expect(translateStepEnded(commit, undefined, undefined, undefined, undefined)?.finish).toBe("tool-calls")
+  expect(
+    translateStepEnded(
+      { ...commit, data: { role: "assistant", content: [{ type: "text", text: "Done" }] } },
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+    )?.finish,
+  ).toBe("stop")
+  expect(
+    translateStepEnded(
+      { ...commit, data: { role: "assistant", content: [{ type: "tool_use" }], finish: "length" } },
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+    )?.finish,
+  ).toBe("length")
+})

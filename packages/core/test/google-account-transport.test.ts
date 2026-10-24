@@ -36,7 +36,7 @@ const fixture = Effect.fn("GoogleAccount.transportFixture")(function* () {
       const followup = JSON.stringify(body).includes("functionResponse")
       const parts = state.mode === "tool" && !followup
         ? [{ functionCall: { name: "echo", args: { text: "hello" } }, thoughtSignature: "fixture-real-thought-signature" }]
-        : [{ text: "你好 Gemini" }]
+        : state.mode === "reasoning" ? [{ text: "Checking the relevant files", thought: true }, { text: "你好 Gemini" }] : [{ text: "你好 Gemini" }]
       const data = { candidates: [{ index: 0, content: { role: "model", parts }, finishReason: "STOP" }], usageMetadata: { promptTokenCount: 10, candidatesTokenCount: 3, totalTokenCount: 13, cachedContentTokenCount: 2 }, modelVersion: modelID }
       if (path.endsWith(":generateContent")) return Response.json({ response: data })
       const frame = new TextEncoder().encode(`data: ${JSON.stringify({ response: data })}\r\n\r\n`)
@@ -198,3 +198,39 @@ test("parallel Gemini tool history attaches a signature only to its first functi
     {type:"tool-call",toolCallId:"second"},
   ]})
 })
+
+it.live("Google thought summaries reach the actual chat bridge and explicit opt-outs are preserved", () =>
+  Effect.gen(function* () {
+    const { state, options } = yield* fixture()
+    state.mode = "reasoning"
+    const send = modelFetch("fixture-access", "project-one", options)
+    const sdk = createGoogleGenerativeAI({ apiKey: "fixture-sentinel", fetch: send })
+    const response = yield* Effect.promise(() =>
+      ProviderGateway.reply(
+        sdk.languageModel(modelID),
+        { model: modelID, messages: [{ role: "user", content: "hello" }] },
+        null,
+        modelID,
+      ),
+    )
+    const text = yield* Effect.promise(() => response.text())
+    expect(text).toContain('"reasoning_content":"Checking the relevant files"')
+    expect(text).toContain("你好 Gemini")
+    expect(state.calls[0].body).toMatchObject({
+      request: { generationConfig: { thinkingConfig: { includeThoughts: true } } },
+    })
+    yield* Effect.promise(() =>
+      send(`https://example.test/models/${modelID}:generateContent`, {
+        method: "POST",
+        body: JSON.stringify({
+          generationConfig: { temperature: 0.5, thinkingConfig: { includeThoughts: false, thinkingBudget: 128 } },
+        }),
+      }),
+    )
+    expect(state.calls.at(-1)?.body).toMatchObject({
+      request: {
+        generationConfig: { temperature: 0.5, thinkingConfig: { includeThoughts: false, thinkingBudget: 128 } },
+      },
+    })
+  }),
+)

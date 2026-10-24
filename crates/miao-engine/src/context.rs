@@ -453,7 +453,7 @@ pub(crate) async fn assemble_for_agent(
         .map(|t| t.name.clone())
         .collect::<Vec<_>>()
         .join(", ");
-    let mut system=format!("You are miao, a coding assistant. Complete the user's task using available capabilities. Respond in the user's language. Preserve unrelated user changes. Respect permission and tool errors. Use read_file fingerprints for conditional edits. Do not automatically repeat operations with unknown side effects. Available tools: {names}.");
+    let mut system=format!("You are miao, a coding assistant. Complete the user's task using available capabilities. Respond in the user's language. Preserve unrelated user changes. Respect permission and tool errors. Use read_file fingerprints for conditional edits. Do not automatically repeat operations with unknown side effects. For multi-step tasks, briefly explain what you are checking and why before a group of tool calls. Share important findings, decisions, and blockers while you work, without narrating every routine command. Finish with the result and verification. Available tools: {names}.");
     let mut sources = Vec::new();
     let root = Source {
         label: "AGENTS.md".into(),
