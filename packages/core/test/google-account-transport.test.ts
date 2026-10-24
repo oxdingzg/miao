@@ -20,14 +20,14 @@ const modelID = "gemini-3-fixture"
 const fixture = Effect.fn("GoogleAccount.transportFixture")(function* () {
   let signalAbort: () => void = () => {}
   const aborted = new Promise<void>((resolve) => { signalAbort = resolve })
-  const state = { mode: "text", status: 200, reason: undefined as string | undefined, retry: undefined as string | undefined, calls: [] as Array<{ auth: string | null; key: string | null; body: unknown }> }
+  const state = { mode: "text", status: 200, reason: undefined as string | undefined, retry: undefined as string | undefined, reset: undefined as string | undefined, calls: [] as Array<{ auth: string | null; key: string | null; body: unknown }> }
   const server = Bun.serve({
     hostname: "127.0.0.1", port: 0, idleTimeout: 0,
     async fetch(request) {
       const path = new URL(request.url).pathname
       const body: unknown = await request.json()
       state.calls.push({ auth: request.headers.get("authorization"), key: request.headers.get("x-goog-api-key"), body })
-      if (state.status !== 200) return Response.json({ error: { message: "fixture-private-token-must-not-leak", details: state.reason ? [{ reason: state.reason }] : [] } }, { status: state.status, headers: state.retry ? { "retry-after": state.retry } : {} })
+      if (state.status !== 200) return Response.json({ error: { message: "fixture-private-token-must-not-leak", details: state.reason ? [{ reason: state.reason, metadata: { quotaResetDelay: state.reset } }] : [] } }, { status: state.status, headers: state.retry ? { "retry-after": state.retry } : {} })
       if (path === "/v1internal:fetchAvailableModels") return Response.json({ models: {
         [modelID]: { displayName: "Fixture Gemini", maxTokens: 12345, maxOutputTokens: 4096, supportsImages: true },
         "gemini-disabled": { disabled: true }, "gemini-unselectable": { selectable: false }, "other-model": {},
@@ -290,3 +290,15 @@ it.live("temporary capacity and service quotas remain distinguishable", () =>
     }
   }),
 )
+
+
+it.live("service quota reset delays are retained without raw provider descriptions", () => Effect.gen(function* () {
+  const { state, options } = yield* fixture()
+  state.status = 429
+  state.reason = "QUOTA_EXHAUSTED"
+  state.reset = "12.5s"
+  const error = yield* Effect.tryPromise({ try: () => modelFetch("fixture-access", "project-one", options)(`https://example.test/models/${modelID}:generateContent`, { method: "POST", body: "{}" }), catch: (cause) => cause }).pipe(Effect.flip)
+  expect(error).toBeInstanceOf(GoogleAccount.RequestError)
+  expect(String(error)).toContain("Retry after 13 seconds")
+  expect(String(error)).not.toContain("fixture-private-token-must-not-leak")
+}))

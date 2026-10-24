@@ -136,6 +136,9 @@ export const reply = async (
     // The caller owns retries and durable tool admission. SDK retries here
     // otherwise multiply rejected requests behind one native provider turn.
     maxRetries: 0,
+    // Rejections are forwarded below as structured stream errors; the SDK's
+    // default console logger would also write them into the terminal UI.
+    onError: () => {},
     ...(messages.system ? { system: messages.system } : {}),
     messages: messages.conversation,
     ...(tools ? { tools } : {}),

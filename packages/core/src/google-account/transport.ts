@@ -215,8 +215,10 @@ async function rejection(response: Response, operation: string) {
   const headerDelay =
     retry === null ? undefined : /^\d+(?:\.\d+)?$/.test(retry) ? Number(retry) * 1000 : Date.parse(retry) - Date.now()
   const detailDelay = details.flatMap((entry) => {
-    if (!isRecord(entry) || typeof entry.retryDelay !== "string") return []
-    const match = /^(\d+(?:\.\d+)?)s$/.exec(entry.retryDelay)
+    if (!isRecord(entry)) return []
+    const value = typeof entry.retryDelay === "string" ? entry.retryDelay : isRecord(entry.metadata) ? entry.metadata.quotaResetDelay : undefined
+    if (typeof value !== "string") return []
+    const match = /^(\d+(?:\.\d+)?)s$/.exec(value)
     return match ? [Number(match[1]) * 1000] : []
   })[0]
   const delay = headerDelay ?? detailDelay
