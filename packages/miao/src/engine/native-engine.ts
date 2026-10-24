@@ -366,18 +366,69 @@ export const fromOwners = (
         )(snapshot).agent?.name
         const catalog = yield* Effect.tryPromise({ try: () => routes(connection), catch: (error) => error })
         const captured = yield* preparation.command(input, catalog, sessionAgent)
+        const admit = (resume: boolean) =>
+          connection.session.promptProduct({
+            sessionID: input.sessionID,
+            id: input.id,
+            prompt: { text: captured.text, command: captured.command },
+            command: captured.command,
+            agentReferences: captured.agentReferences,
+            resume,
+          })
         yield* Effect.tryPromise({
-          try: () =>
-            connection.session.promptProduct({
-              sessionID: input.sessionID,
-              id: input.id,
-              prompt: { text: captured.text, command: captured.command },
-              command: captured.command,
-              agentReferences: captured.agentReferences,
-              resume: input.resume,
-            }),
+          try: () => admit(input.resume ?? false),
           catch: (error) => error,
-        })
+        }).pipe(
+          // The engine refuses an open-boundary overflow on purpose: the turn
+          // boundary must close before a compaction pass can run. Compact,
+          // wait for the pass to commit, then re-admit the exact prompt once —
+          // durable-input reconciliation makes the retry idempotent.
+          Effect.catch((error) =>
+            Effect.tryPromise(async () => {
+              if (
+                !(error instanceof Error) ||
+                !error.message.includes("selected history exceeds budget")
+              )
+                throw error
+              const seen = await Effect.runPromise(
+              Effect.tryPromise({
+                try: () =>
+                  connection.client.request("events", {
+                    session_id: input.sessionID,
+                    after: "",
+                  }) as Promise<Array<{ seq?: number }>>,
+                catch: (cause) => cause,
+              }).pipe(Effect.catch(() => Effect.succeed(undefined))),
+            ).catch(() => undefined)
+            const cursor = Array.isArray(seen)
+              ? Math.max(0, ...seen.map((event) => event?.seq ?? 0))
+              : 0
+            await connection.client.request("request_compact", {
+              session_id: input.sessionID,
+            })
+            await connection.client.request("wake", { session_id: input.sessionID })
+            const deadline = Date.now() + 180_000
+            let compacted = false
+            while (Date.now() < deadline && !compacted) {
+              await Bun.sleep(2_000)
+              const events = (await Effect.runPromise(
+                Effect.tryPromise({
+                  try: () =>
+                    connection.client.request("events", {
+                      session_id: input.sessionID,
+                      after: String(cursor),
+                    }) as Promise<Array<{ type?: string }>>,
+                  catch: (cause) => cause,
+                }).pipe(Effect.catch(() => Effect.succeed(undefined))),
+              ).catch(() => undefined)) as Array<{ type?: string }> | undefined
+              compacted =
+                Array.isArray(events) &&
+                events.some((event) => event?.type === "history.compacted")
+            }
+            if (!compacted) throw error
+            await admit(true)
+          })),
+        )
       }).pipe(Effect.mapError((error) => refusal(input.sessionID, error))),
     shell: (input) =>
       read(input, async (connection) => {
