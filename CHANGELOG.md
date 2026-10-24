@@ -11,6 +11,19 @@ at `docs/releases/vX.Y.Z.md` and `docs/releases/vX.Y.Z.zh.md`; both are required
 
 ## [Unreleased]
 
+## [0.3.1] - 2026-10-24
+
+### Added
+- **core**: add the history tool for full durable-history reads (#1334) (`d7c523c9ef`)
+- **core**: bound the checkpoint injection to a render-time token budget (#1333) (`d13296224c`)
+- **core**: add per-model compaction max_context budget (#1331) (`c45744bb0f`)
+- **tool**: add token-efficient bash output pipeline (#1327) (`ffbffe7069`)
+
+### Fixed
+- **miao**: project engine tool results to the product contract (#1335) (`4dc13680a3`)
+- **tui**: dismiss direct Hub sign-in on Escape (#1330) (`acdd9f1395`)
+- **provider**: register google-account OAuth under the google integration (#1328) (`441d97dfde`)
+
 ## [0.3.0] - 2026-10-24
 
 ### Added
