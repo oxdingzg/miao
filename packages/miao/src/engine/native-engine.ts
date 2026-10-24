@@ -333,7 +333,7 @@ export const fromOwners = (
       storage: Parameters<NativeEngine.Interface["title"]>[0]["storage"]
       location: Parameters<NativeEngine.Interface["title"]>[0]["location"]
       prompt: string
-    }) => Effect.Effect<void, unknown>
+    }) => Effect.Effect<string | undefined, unknown>
   } = {},
   storageRoot?: string,
   pricing?: EnginePricing,
@@ -798,7 +798,10 @@ export const fromOwners = (
           request: (method, params) => connection.client.request(method, params),
         }),
       ),
-    title: (input) => (preparation.title?.(input) ?? Effect.void).pipe(Effect.catch(() => Effect.void)),
+    title: (input) =>
+      (preparation.title?.(input) ?? Effect.succeed(undefined)).pipe(
+        Effect.catch(() => Effect.succeed(undefined)),
+      ),
     events: (input) =>
       connect(input).pipe(
         Effect.flatMap((connection) =>
@@ -996,7 +999,7 @@ const layer = Layer.effect(
             const locationContext = runtime as unknown as Context.Context<
               AgentV2.Service | EventV2.Service | SessionRunnerModel.Service
             >
-            yield* SessionNativeTitle.afterRun({
+            return yield* SessionNativeTitle.afterRun({
               sessionID: input.sessionID,
               prompt: input.prompt,
               store: sessions,
@@ -1004,7 +1007,7 @@ const layer = Layer.effect(
               agents: Context.get(locationContext, AgentV2.Service),
               models: Context.get(locationContext, SessionRunnerModel.Service),
               events: Context.get(locationContext, EventV2.Service),
-            }).pipe(Effect.catch(() => Effect.void))
+            }).pipe(Effect.catch(() => Effect.succeed(undefined)))
           }),
       },
       engineStorageRoot(process.env, settings),

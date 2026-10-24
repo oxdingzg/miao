@@ -23,7 +23,6 @@ import { requireNativeOwner, requireTypescriptOwner } from "../native-command"
 import { SessionEnginePlacement } from "@miao/core/session/engine-placement"
 import { nativeExecution, nativeTodos } from "../native-state"
 import { nativeSessionEvents } from "../native-events"
-import { SessionNativeTitle } from "@miao/core/session/native-title"
 import { SessionEvent } from "@miao/schema/session-event"
 import {
   generateNativeTitle,
@@ -153,8 +152,15 @@ export const SessionHandler = HttpApiBuilder.group(Api, "server.session", (handl
           // Initialize the engine before publishing its placement: get/list
           // must work even when no prompt has ever been submitted. Retrying a
           // catalogued identity preserves its original placement.
+          // The engine copy carries the same placeholder the catalog writes, so
+          // every surface recognizes an untitled Session with one vocabulary.
           if (native && nativeStorage)
-            yield* native.initialize({ sessionID: id, storage: nativeStorage, location, title: "New session" })
+            yield* native.initialize({
+              sessionID: id,
+              storage: nativeStorage,
+              location,
+              title: `New session - ${new Date().toISOString()}`,
+            })
           if (binding?.engine === "rust" && !native)
             return yield* new ConflictError({ message: "Native engine transport is not composed", resource: id })
           const created = yield* session.create({
