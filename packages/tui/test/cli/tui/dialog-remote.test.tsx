@@ -366,6 +366,56 @@ test("relay setup offers the private default and custom Hub before desktop socia
   }
 })
 
+test.each(["hub", "name"])("Escape closes direct sign-in at the %s step without restarting it", async (step) => {
+  await using tmp = await tmpdir()
+  const control = deviceControl(false)
+  let settingsCalls = 0
+  let loginCalls = 0
+  const view = await mount(
+    tmp.path,
+    environment({
+      startInLogin: true,
+      devices: control.api,
+      configure: async () => control.state.status,
+      local: {
+        settings: async () => {
+          settingsCalls++
+          return { defaultHubURL: "https://default.example.invalid" }
+        },
+        providers: async () => ({ providers: ["github"] }),
+        setup: async () => {
+          loginCalls++
+          return control.state.status
+        },
+        setupOAuth: async () => {
+          loginCalls++
+          return control.state.status
+        },
+      },
+    }),
+  )
+  try {
+    await view.until((frame) => frame.includes("选择 Hub"))
+    if (step === "name") {
+      await view.select(0)
+      await view.until((frame) => frame.includes("这台电脑的名称"))
+    }
+    await view.app.mockInput.pressEscape()
+    await view.until((frame) => !frame.includes("选择 Hub") && !frame.includes("这台电脑的名称"))
+    // Direct sign-in starts on a timer; wait past it to catch a remount loop.
+    await Bun.sleep(250)
+    await view.app.renderOnce()
+    const frame = view.app.captureCharFrame()
+    expect(frame).toContain("Conversation")
+    expect(frame).not.toContain("选择 Hub")
+    expect(frame).not.toContain("远程遥控")
+    expect(settingsCalls).toBe(1)
+    expect(loginCalls).toBe(0)
+  } finally {
+    view.cleanup()
+  }
+})
+
 test("current-session publication sends the selected Session ID and both toggle states", async () => {
   await using tmp = await tmpdir()
   const calls: Array<{ sessionID: string; enabled: boolean }> = []

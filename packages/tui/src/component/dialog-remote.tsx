@@ -86,7 +86,12 @@ export function DialogRemoteView(props: { environment: RemoteEnvironment }) {
   const environment = props.environment
   const local = environment.local
   const dialog = useDialog()
-  const reopen = () => dialog.replace(() => <DialogRemoteView environment={environment} />)
+  const reopen = () => {
+    // Direct sign-in has no parent menu to return to. Reopening it would mount
+    // startInLogin again and immediately restart the flow after Escape.
+    if (environment.startInLogin) return dialog.clear()
+    dialog.replace(() => <DialogRemoteView environment={environment} />)
+  }
   const runtime: RemoteRuntime | undefined =
     environment.devices && environment.configure
       ? { get: () => environment.devices!.get(), configure: environment.configure! }
