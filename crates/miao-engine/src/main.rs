@@ -761,11 +761,27 @@ async fn serve(
     let mut bytes = Vec::new();
     let mut progress = runtime.progress();
     let mut poll = tokio::time::interval(Duration::from_millis(100));
+    // Auto-reclaim: a stdio engine whose client died without a clean exit
+    // would otherwise linger forever (its stdin pipe can stay open through
+    // grandchild processes). Exit after this much inactivity; any request,
+    // event or progress notice counts as activity. 0 disables.
+    let idle = std::env::var("MIAO_ENGINE_STDIO_IDLE_SECS")
+        .ok()
+        .and_then(|value| value.parse::<u64>().ok())
+        .unwrap_or(900);
+    let idle = if idle == 0 { None } else { Some(Duration::from_secs(idle)) };
+    let mut idle_deadline =
+        tokio::time::Instant::now() + idle.unwrap_or(Duration::from_secs(3600));
+    let mut idle_deadline =
+        tokio::time::Instant::now() + idle.unwrap_or(Duration::from_secs(3600));
     let result=async {
         loop {
             tokio::select! {
                 line=read_line(&mut input,&mut bytes)=>{
                     let Some(line)=line? else { break; };
+                    if let Some(duration) = idle {
+                        idle_deadline = tokio::time::Instant::now() + duration;
+                    }
                     let value:Value=match serde_json::from_slice(&line) {Ok(v)=>v,Err(_)=>{send(&output,json!({"id":null,"error":{"code":"invalid_request","message":"expected a JSON object"}}))?;continue;}};
                     if let Some(bridge_id)=value.get("bridge_id").and_then(|id|id.as_u64()) {
                         runtime.deliver_product_reply(bridge_id, value);
@@ -783,11 +799,15 @@ async fn serve(
                 },
                 _=poll.tick()=>{
                     for value in host.poll_events().await.map_err(io::Error::other)? {
+                        if let Some(duration) = idle {
+                            idle_deadline = tokio::time::Instant::now() + duration;
+                        }
                         send(&output,value)?;
                     }
                 },
+                _=tokio::time::sleep_until(idle_deadline), if idle.is_some() => { break; },
                 notice=progress.recv()=>match notice {
-                    Ok(notice)=>{if notice["session_id"].as_str().is_some_and(|s|host.subscribed(s)) {send(&output,json!({"method":"progress","params":notice}))?;}},
+                    Ok(notice)=>{if notice["session_id"].as_str().is_some_and(|s|host.subscribed(s)) {if let Some(duration) = idle { idle_deadline = tokio::time::Instant::now() + duration; } send(&output,json!({"method":"progress","params":notice}))?;}},
                     Err(tokio::sync::broadcast::error::RecvError::Lagged(_))=>send(&output,json!({"method":"resync","params":{"reason":"ephemeral_progress_lagged"}}))?,
                     Err(tokio::sync::broadcast::error::RecvError::Closed)=>break,
                 },
