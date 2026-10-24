@@ -22,5 +22,6 @@ export function nativeModelLabel(
     provider: provider?.name ?? route.productModel?.providerID ?? route.protocol,
     providerID: provider?.id ?? route.productModel?.providerID,
     model: model?.name ?? route.wireModel,
+    modelID: route.productModel?.id ?? (provider && id ? id.slice(provider.id.length + 1) : undefined),
   }
 }

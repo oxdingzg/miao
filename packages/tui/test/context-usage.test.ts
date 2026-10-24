@@ -1,3 +1,4 @@
+import { remainingContext } from "../src/util/context-usage"
 import { expect, test } from "bun:test"
 import type { SessionMessageAssistant } from "@miao/schema/view-models"
 import { contextLabel, contextUsage } from "../src/util/context-usage"
@@ -66,4 +67,28 @@ test("compaction invalidates the displayed request estimate", () => {
   ]
   expect(contextLabel(messages, String)).toBe("compacted")
   expect(contextUsage(messages).percent).toBeUndefined()
+})
+
+test("status line reports remaining capacity and keeps unknown or failed requests unmeasured", () => {
+  expect(remainingContext([successful, pending])).toEqual({ label: "Context ~20% left", remaining: 20 })
+  expect(remainingContext([])).toEqual({ label: "Context —", remaining: undefined })
+  expect(remainingContext([successful])).toEqual({ label: "Context —", remaining: undefined })
+  expect(remainingContext([{ ...pending, error: { type: "unknown", message: "rejected" } }]).remaining).toBeUndefined()
+  expect(
+    remainingContext([
+      { ...pending, contextBudget: { input: 120_000, source: "estimated", window: 100_000, limit: 70_000 } },
+    ]).remaining,
+  ).toBe(0)
+})
+
+test("native usage estimates capacity only for the same known served model", () => {
+  const model = { providerID: "host", id: "served", window: 10_000 }
+  const message = { ...successful, model: { providerID: model.providerID, id: model.id } }
+  expect(remainingContext([message], model)).toEqual({ label: "Context ~89% left", remaining: 89 })
+  expect(remainingContext([message], { ...model, id: "different" }).remaining).toBeUndefined()
+  expect(remainingContext([message], { ...model, window: 0 }).remaining).toBeUndefined()
+  expect(remainingContext([message, pending], model).remaining).toBe(20)
+  expect(
+    remainingContext([{ ...message, error: { type: "unknown", message: "rejected" } }], model).remaining,
+  ).toBeUndefined()
 })

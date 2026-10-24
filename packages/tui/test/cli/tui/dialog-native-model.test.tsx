@@ -18,6 +18,7 @@ async function mount(root: string, reject = false, variant = false, providerID?:
   const [
     { DialogProvider, useDialog },
     { DialogNativeModel },
+    { StatusLine },
     { DialogVariant },
     { LocalProvider, useLocal },
     { KVProvider },
@@ -38,6 +39,7 @@ async function mount(root: string, reject = false, variant = false, providerID?:
   ] = await Promise.all([
     import("../../../src/ui/dialog"),
     import("../../../src/component/dialog-native-model"),
+    import("../../../src/component/status-line"),
     import("../../../src/component/dialog-variant"),
     import("../../../src/context/local"),
     import("../../../src/context/kv"),
@@ -148,7 +150,12 @@ async function mount(root: string, reject = false, variant = false, providerID?:
           ),
         )
     })
-    return <text>Conversation model: {sync.session.get(sessionID)?.model?.id}</text>
+    return (
+      <box flexDirection="column">
+        <text>Conversation model: {sync.session.get(sessionID)?.model?.id}</text>
+        <StatusLine sessionID={sessionID} />
+      </box>
+    )
   }
 
   function Harness() {
@@ -315,6 +322,19 @@ test("provider filtering and account labels use host model metadata", async () =
     await view.app.mockInput.pressEnter()
     await view.until(() => view.selected.length === 1)
     expect(view.selected).toEqual([{ model: { providerID: "native-engine", id: "account-two/shared" } }])
+  } finally {
+    view.cleanup()
+  }
+})
+
+test("native sessions display the host model and an honest unknown context in the status line", async () => {
+  await using tmp = await tmpdir()
+  const view = await mount(tmp.path)
+  try {
+    const frame = await view.until((value) => value.includes("Context —"))
+    expect(frame).toContain("shared")
+    expect(frame).not.toContain("100% left")
+    expect(frame).not.toContain("Host default")
   } finally {
     view.cleanup()
   }
