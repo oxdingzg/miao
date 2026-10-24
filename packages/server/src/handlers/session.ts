@@ -25,7 +25,13 @@ import { nativeExecution, nativeTodos } from "../native-state"
 import { nativeSessionEvents } from "../native-events"
 import { SessionNativeTitle } from "@miao/core/session/native-title"
 import { SessionEvent } from "@miao/schema/session-event"
-import { mergeNativeSessions, nativeSessionInfo, nativeSessionUsage, waitNative } from "../native-session"
+import {
+  generateNativeTitle,
+  mergeNativeSessions,
+  nativeSessionInfo,
+  nativeSessionUsage,
+  waitNative,
+} from "../native-session"
 import { booted } from "../location"
 import { SessionsCursor } from "@miao/protocol/groups/session"
 import {
@@ -40,23 +46,6 @@ import { AbsolutePath } from "@miao/core/schema"
 
 const DefaultSessionsLimit = 50
 const DefaultSessionHistoryLimit = 50
-
-const stripImageMarkers = (text: string) => text.replace(/\[Image \d+\]/gi, "").trim()
-
-/** The title prompt mirrors SessionTitle.prompt over the native wire events:
- * the first user prompt, or — when that prompt is just an image — the first
- * assistant answer, which is the only part a title model can read. */
-const nativeTitlePrompt = (events: readonly { type: string; data: unknown }[]) => {
-  const prompted = events.find((event) => event.type === "session.next.prompted")
-  if (prompted?.type !== "session.next.prompted") return undefined
-  const data = prompted.data as { prompt?: { text?: string } }
-  const text = typeof data.prompt?.text === "string" ? stripImageMarkers(data.prompt.text) : ""
-  if (text) return text
-  const answered = events.find((event) => event.type === "session.next.text.ended")
-  if (answered?.type !== "session.next.text.ended") return undefined
-  const answer = answered.data as { text?: string }
-  return typeof answer.text === "string" && answer.text ? answer.text : undefined
-}
 
 const legacyNotMigrated = (error: SessionV2.LegacyNotMigratedError) =>
   new ServiceUnavailableError({ message: error.message, service: "session-migration" })
@@ -601,22 +590,11 @@ export const SessionHandler = HttpApiBuilder.group(Api, "server.session", (handl
             // history, unresolved location runtime, model errors) must never
             // turn the wait itself into an error for the client.
             const titleExit = yield* Effect.exit(
-              Effect.gen(function* () {
-                const page = yield* native.history({
-                  sessionID: ctx.params.sessionID,
-                  storage: placement.storage,
-                  location: placement.location,
-                  after: 0,
-                  limit: 30,
-                })
-                const prompt = nativeTitlePrompt(page.events)
-                if (prompt === undefined) return
-                yield* native.title({
-                  sessionID: ctx.params.sessionID,
-                  storage: placement.storage,
-                  location: placement.location,
-                  prompt,
-                })
+              generateNativeTitle({
+                native,
+                sessionID: ctx.params.sessionID,
+                storage: placement.storage,
+                location: placement.location,
               }),
             )
             if (Exit.isFailure(titleExit)) {
