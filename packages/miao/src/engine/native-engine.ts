@@ -879,7 +879,7 @@ const layer = Layer.effect(
     const clients = yield* ClientEvents.Service
     const unsubscribeUsage = yield* clients.listen((event) =>
       event.type === "session.next.step.ended" && event.metadata?.engine !== undefined
-        ? SessionUsageStore.projectStepEnded(database.db, event)
+        ? SessionUsageStore.projectNativeStepEnded(database.db, event)
         : Effect.void,
     )
     yield* Effect.addFinalizer(() => unsubscribeUsage)

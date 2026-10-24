@@ -11,6 +11,50 @@ import { SessionTable, SessionToolUsageTable, SessionTurnUsageTable } from "./sq
 
 type DB = Database.Interface["db"]
 
+export type Usage = Pick<SessionEvent.Step.Ended["data"], "cost" | "tokens">
+
+export function applyUsage(db: DB, sessionID: SessionSchema.ID, value: Usage, sign = 1) {
+  return db
+    .update(SessionTable)
+    .set({
+      cost: sql`${SessionTable.cost} + ${value.cost * sign}`,
+      tokens_input: sql`${SessionTable.tokens_input} + ${value.tokens.input * sign}`,
+      tokens_output: sql`${SessionTable.tokens_output} + ${value.tokens.output * sign}`,
+      tokens_reasoning: sql`${SessionTable.tokens_reasoning} + ${value.tokens.reasoning * sign}`,
+      tokens_cache_read: sql`${SessionTable.tokens_cache_read} + ${value.tokens.cache.read * sign}`,
+      tokens_cache_write: sql`${SessionTable.tokens_cache_write} + ${value.tokens.cache.write * sign}`,
+      time_updated: sql`${SessionTable.time_updated}`,
+    })
+    .where(eq(SessionTable.id, sessionID))
+    .run()
+    .pipe(Effect.orDie)
+}
+
+/**
+ * Apply a session's step usage to the session and every ancestor session, so a
+ * parent's `cost`/tokens reflect its subagents. Each descendant step is applied
+ * once per ancestor, which sums the subtree without double counting.
+ */
+const MAX_ANCESTORS = 64
+export function applyUsageWithAncestors(db: DB, sessionID: SessionSchema.ID, value: Usage, sign = 1) {
+  return Effect.gen(function* () {
+    yield* applyUsage(db, sessionID, value, sign)
+    let current = sessionID
+    for (let depth = 0; depth < MAX_ANCESTORS; depth++) {
+      const row = yield* db
+        .select({ parentID: SessionTable.parent_id })
+        .from(SessionTable)
+        .where(eq(SessionTable.id, current))
+        .get()
+        .pipe(Effect.orDie)
+      const parentID = row?.parentID
+      if (!parentID) break
+      yield* applyUsage(db, parentID, value, sign)
+      current = parentID
+    }
+  })
+}
+
 /**
  * `Step.Ended` events settled before the model was recorded on the event carry
  * no model; fall back to the Session's selected model, and drop the row only
@@ -31,8 +75,8 @@ export const projectStepEnded = Effect.fn("SessionUsageStore.projectStepEnded")(
   event: SessionEvent.Step.Ended,
 ) {
   const model = event.data.model ?? (yield* resolveModel(db, event.data.sessionID))
-  if (!model) return
-  yield* db
+  if (!model) return false
+  const inserted = yield* db
     .insert(SessionTurnUsageTable)
     .values({
       event_id: event.id,
@@ -52,7 +96,26 @@ export const projectStepEnded = Effect.fn("SessionUsageStore.projectStepEnded")(
       time_created: DateTime.toEpochMillis(event.data.timestamp),
     })
     .onConflictDoNothing()
-    .run()
+    .returning({ id: SessionTurnUsageTable.event_id })
+    .get()
+    .pipe(Effect.orDie)
+  return inserted !== undefined
+})
+
+// Native steps do not enter the TS message journal. Keep their fact and
+// aggregate updates atomic, using the stable event ID as the replay guard.
+export const projectNativeStepEnded = Effect.fn("SessionUsageStore.projectNativeStepEnded")(function* (
+  db: DB,
+  event: SessionEvent.Step.Ended,
+) {
+  yield* db
+    .transaction(() =>
+      Effect.gen(function* () {
+        const inserted = yield* projectStepEnded(db, event)
+        if (!inserted) return
+        yield* applyUsageWithAncestors(db, event.data.sessionID, event.data)
+      }),
+    )
     .pipe(Effect.orDie)
 })
 
@@ -117,11 +180,7 @@ export const summary = Effect.fn("SessionUsageStore.summary")(function* (db: DB,
     })
     .from(SessionTurnUsageTable)
     .where(eq(SessionTurnUsageTable.session_id, sessionID))
-    .groupBy(
-      SessionTurnUsageTable.model_provider,
-      SessionTurnUsageTable.model_id,
-      SessionTurnUsageTable.variant,
-    )
+    .groupBy(SessionTurnUsageTable.model_provider, SessionTurnUsageTable.model_id, SessionTurnUsageTable.variant)
     .all()
     .pipe(Effect.orDie)
   const tools = yield* db
