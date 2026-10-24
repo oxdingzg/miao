@@ -1,6 +1,7 @@
 import type { NativeCommand, NativeAgentReferences } from "./command-manifest"
 import type { AgentAttachment } from "@miao/schema/prompt"
 import { Event } from "@miao/schema/event"
+import { SessionEvent } from "@miao/schema/session-event"
 import { agentManifest, modelRoute, type Route } from "./product-agent"
 import { LocationServiceMap } from "@miao/core/location-service-map"
 import type { LocationServices } from "@miao/core/location-services"
@@ -37,7 +38,7 @@ import { generateNativeTitle } from "@miao/server/native-session"
 import { ConflictError } from "@miao/protocol/errors"
 import type { OpenCodeEvent } from "@miao/protocol/groups/event"
 import { Location } from "@miao/schema/location"
-import { Cause, Effect, Layer, Option, Queue, Schema, Context } from "effect"
+import { Cause, DateTime, Effect, Layer, Option, Queue, Schema, Context } from "effect"
 import { EngineError, type EngineOptions, type EngineEvent } from "./client"
 import { discoveredEngine } from "./discovery"
 import { makeEngineOwners } from "./owners"
@@ -52,6 +53,7 @@ import { AgentV2 } from "@miao/core/agent"
 import { LLMClient } from "@miao/llm"
 import { llmClient } from "@miao/core/effect/app-node-platform"
 import { SessionNativeTitle } from "@miao/core/session/native-title"
+import { SessionTitle } from "@miao/core/session/title"
 import { SessionRunnerModel } from "@miao/core/session/runner/model"
 import { memoMap } from "@miao/core/effect/memo-map"
 
@@ -804,9 +806,7 @@ export const fromOwners = (
         }),
       ),
     title: (input) =>
-      (preparation.title?.(input) ?? Effect.succeed(undefined)).pipe(
-        Effect.catch(() => Effect.succeed(undefined)),
-      ),
+      (preparation.title?.(input) ?? Effect.succeed(undefined)).pipe(Effect.catch(() => Effect.succeed(undefined))),
     events: (input) =>
       connect(input).pipe(
         Effect.flatMap((connection) =>
@@ -920,11 +920,13 @@ const layer = Layer.effect(
                   // This built-in method explicitly owns its refresh in the TS
                   // host. Daemon-owned and inherited read-only rows keep their
                   // existing ownership checks; the engine never writes tokens.
-                  if (
-                    !GoogleAccount.owns(row.integrationID, row.value)
-                  )
-                    return false
-                  const fresh = yield* integrations.connection.resolve({ type: "credential", id: Credential.ID.make(input.id), label: row.label, active: row.active ?? false })
+                  if (!GoogleAccount.owns(row.integrationID, row.value)) return false
+                  const fresh = yield* integrations.connection.resolve({
+                    type: "credential",
+                    id: Credential.ID.make(input.id),
+                    label: row.label,
+                    active: row.active ?? false,
+                  })
                   if (fresh?.type !== "oauth" || fresh.expires <= Date.now()) return false
                 }
                 return true
@@ -1013,11 +1015,22 @@ const layer = Layer.effect(
     // off the client fan-out, and the core guard inside the title hook makes
     // repeat idle transitions of a titled Session cost one history read.
     const pendingTitles = yield* Queue.unbounded<NativeTitleRequest>()
+    const scheduledTitles = new Set<string>()
+    const titleAttempts = new Map<string, number>()
+    const scheduleTitle = (request: NativeTitleRequest) =>
+      Effect.gen(function* () {
+        const key = `${request.storage}:${request.sessionID}`
+        if (scheduledTitles.has(key) || Date.now() - (titleAttempts.get(key) ?? 0) < 60_000) return
+        scheduledTitles.add(key)
+        titleAttempts.set(key, Date.now())
+        yield* Queue.offer(pendingTitles, request)
+      })
     yield* Effect.forever(
       Effect.gen(function* () {
         const request = yield* Queue.take(pendingTitles)
         yield* generateNativeTitle({ native: engine, ...request }).pipe(
           Effect.catchCause((cause) => Effect.logWarning("native title generation skipped", { cause })),
+          Effect.ensuring(Effect.sync(() => scheduledTitles.delete(`${request.storage}:${request.sessionID}`))),
         )
       }),
     ).pipe(Effect.forkScoped)
@@ -1027,14 +1040,36 @@ const layer = Layer.effect(
       const storage = engineStorageID(event)
       if (data.status?.type !== "idle" || data.sessionID === undefined || storage === undefined) return Effect.void
       if (event.location === undefined) return Effect.void
-      return Queue.offer(pendingTitles, {
+      return scheduleTitle({
         sessionID: data.sessionID,
         storage,
         location: event.location,
       }).pipe(Effect.asVoid)
     })
     yield* Effect.addFinalizer(() => unsubscribeTitle)
-    return engine
+    return NativeEngine.Service.of({
+      ...engine,
+      snapshot: (input) =>
+        engine.snapshot(input).pipe(
+          Effect.tap((snapshot) =>
+            Effect.gen(function* () {
+              if (typeof snapshot.title !== "string") return
+              if (!SessionTitle.isDefault(snapshot.title)) {
+                const current = yield* sessions.get(input.sessionID)
+                if (current && current.title !== snapshot.title)
+                  yield* events.publish(SessionEvent.Info.Updated, {
+                    sessionID: input.sessionID,
+                    timestamp: yield* DateTime.now,
+                    title: snapshot.title,
+                  })
+                return
+              }
+              if (snapshot.active_run || !Array.isArray(snapshot.messages) || snapshot.messages.length === 0) return
+              yield* scheduleTitle(input)
+            }),
+          ),
+        ),
+    })
   }),
 )
 

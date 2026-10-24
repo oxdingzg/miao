@@ -1,15 +1,15 @@
 export * as SessionNativeTitle from "./native-title"
 
-import type { LLMError, LLMEvent, LLMRequest, Model } from "@miao/llm"
+import type { LLMError, LLMEvent, LLMRequest } from "@miao/llm"
 import { SessionTitle } from "./title"
-import { SessionRunnerModel, type Interface as SessionRunnerModelInterface } from "./runner/model"
+import { SessionRunnerModel } from "./runner/model"
 import type { SessionStore } from "./store"
 import { AgentV2 } from "../agent"
 import type { EventV2 } from "../event"
 import { SessionSchema } from "./schema"
 import type { SessionID } from "@miao/schema/session-id"
 import { SessionEvent } from "@miao/schema/session-event"
-import { DateTime, Effect, type Stream } from "effect"
+import { DateTime, Effect, Option, type Stream } from "effect"
 
 const inFlight = new Set<string>()
 
@@ -29,7 +29,7 @@ export const afterRun = Effect.fn("SessionNativeTitle.afterRun")(function* (inpu
   readonly store: { readonly get: SessionStore.Interface["get"] }
   readonly llm: { readonly stream: (request: LLMRequest) => Stream.Stream<LLMEvent, LLMError> }
   readonly agents: Pick<AgentV2.Interface, "get">
-  readonly models: { readonly resolve: SessionRunnerModelInterface["resolve"] }
+  readonly models: { readonly resolve: SessionRunnerModel.Interface["resolve"] }
   readonly events: {
     readonly publish: (
       definition: typeof SessionEvent.Info.Updated,
@@ -42,36 +42,52 @@ export const afterRun = Effect.fn("SessionNativeTitle.afterRun")(function* (inpu
   }
 }) {
   if (inFlight.has(input.sessionID)) return
-  const info = yield* input.store.get(input.sessionID)
-  if (!info || info.parentID !== undefined || !SessionTitle.isDefault(info.title)) return
   inFlight.add(input.sessionID)
   return yield* Effect.gen(function* () {
+    const info = yield* input.store.get(input.sessionID)
+    if (!info || info.parentID !== undefined || !SessionTitle.isDefault(info.title)) return
     const titleAgent = yield* input.agents.get(AgentV2.ID.make("title"))
-    let preferred: Model | undefined
-    if (titleAgent?.model) {
-      const option = yield* input.models.resolve({ ...info, model: titleAgent.model }).pipe(Effect.option)
-      if (option._tag === "Some") preferred = option.value.model
+    const preferred = titleAgent?.model
+      ? Option.getOrUndefined(yield* input.models.resolve({ ...info, model: titleAgent.model }).pipe(Effect.option))
+      : undefined
+    const own = Option.getOrUndefined(yield* input.models.resolve(info).pipe(Effect.option))
+    // A stored native route may have disappeared from the product catalog.
+    // Auxiliary naming may use the current default, without carrying a pin
+    // belonging to the unavailable provider into that fallback resolution.
+    const selected =
+      own ??
+      Option.getOrUndefined(
+        yield* input.models.resolve({ ...info, model: undefined, credentialID: undefined }).pipe(Effect.option),
+      )
+    const candidates = [preferred, selected]
+      .filter((value) => value !== undefined)
+      .filter(
+        (value, index, all) =>
+          all.findIndex(
+            (candidate) => candidate.model.provider === value.model.provider && candidate.model.id === value.model.id,
+          ) === index,
+      )
+    for (const resolved of candidates) {
+      const title = yield* SessionTitle.generate({
+        llm: input.llm,
+        model: resolved.model,
+        system: titleAgent?.system,
+        prompt: input.prompt,
+      }).pipe(
+        Effect.timeoutOption("15 seconds"),
+        Effect.map(Option.getOrUndefined),
+        Effect.catch(() => Effect.succeed(undefined)),
+      )
+      if (!title) continue
+      // The user may have renamed the Session while the title model ran.
+      const current = yield* input.store.get(input.sessionID)
+      if (!current || !SessionTitle.isDefault(current.title)) return
+      yield* input.events.publish(SessionEvent.Info.Updated, {
+        sessionID: input.sessionID,
+        timestamp: yield* DateTime.now,
+        title,
+      })
+      return title
     }
-    if (!preferred) {
-      const option = yield* input.models.resolve(info).pipe(Effect.option)
-      if (option._tag === "Some") preferred = option.value.model
-    }
-    if (!preferred) return
-    const title = yield* SessionTitle.generate({
-      llm: input.llm,
-      model: preferred,
-      system: titleAgent?.system,
-      prompt: input.prompt,
-    }).pipe(Effect.catch(() => Effect.succeed(undefined)))
-    if (!title) return
-    // The user may have renamed the Session while the title model ran.
-    const current = yield* input.store.get(input.sessionID)
-    if (!current || !SessionTitle.isDefault(current.title)) return
-    yield* input.events.publish(SessionEvent.Info.Updated, {
-      sessionID: input.sessionID,
-      timestamp: yield* DateTime.now,
-      title,
-    })
-    return title
   }).pipe(Effect.ensuring(Effect.sync(() => inFlight.delete(input.sessionID))))
 })

@@ -155,7 +155,9 @@ export const SessionHandler = HttpApiBuilder.group(Api, "server.session", (handl
           // The engine and catalog use the same placeholder until a title is generated.
           if (native && nativeStorage) {
             yield* native.initialize({
-              sessionID: id, storage: nativeStorage, location,
+              sessionID: id,
+              storage: nativeStorage,
+              location,
               title: `New session - ${new Date().toISOString()}`,
             })
             // Bind the model shown before the first prompt, rather than the owner's default.
@@ -808,12 +810,20 @@ export const SessionHandler = HttpApiBuilder.group(Api, "server.session", (handl
         Effect.fn(function* (ctx) {
           const native = yield* Effect.serviceOption(NativeEngine.Service)
           const placement = Option.getOrUndefined(yield* Effect.serviceOption(NativeEngine.Placement))
-          if (Option.isSome(native) && placement)
-            return yield* native.value.rename({
+          if (Option.isSome(native) && placement) {
+            yield* native.value.rename({
               sessionID: ctx.params.sessionID,
               title: ctx.payload.title,
               ...placement,
             })
+            // Mirror the accepted native fact without claiming TS execution.
+            yield* events.publish(SessionEvent.Info.Updated, {
+              sessionID: ctx.params.sessionID,
+              timestamp: yield* DateTime.now,
+              title: ctx.payload.title,
+            })
+            return
+          }
           yield* session.rename({ sessionID: ctx.params.sessionID, title: ctx.payload.title }).pipe(
             Effect.catchTag("Session.NotFoundError", (error) =>
               Effect.fail(

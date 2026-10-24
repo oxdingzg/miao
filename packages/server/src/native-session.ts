@@ -468,14 +468,24 @@ export const generateNativeTitle = Effect.fn("NativeSession.generateTitle")(func
   storage: AbsolutePath
   location: Location.Ref
 }) {
-  const page = yield* input.native.history({
-    sessionID: input.sessionID,
-    storage: input.storage,
-    location: input.location,
-    after: 0,
-    limit: 30,
+  const events: Array<{ type: string; data: unknown }> = []
+  const readPrompt = Effect.gen(function* () {
+    let after = 0
+    // Image-only requests may not have a readable assistant answer until
+    // several tool batches later. Follow bounded pages, not just page one.
+    for (let pageIndex = 0; pageIndex < 20; pageIndex++) {
+      const page = yield* input.native.history({
+        sessionID: input.sessionID, storage: input.storage, location: input.location,
+        after, limit: 100,
+      })
+      events.push(...page.events)
+      const prompt = nativeTitlePrompt(events)
+      if (prompt !== undefined) return prompt
+      if (!page.hasMore || page.cursor <= after) return
+      after = page.cursor
+    }
   })
-  const prompt = nativeTitlePrompt(page.events)
+  const prompt = yield* readPrompt
   if (prompt === undefined) return
   const title = yield* input.native.title({
     sessionID: input.sessionID,
