@@ -153,8 +153,13 @@ export const SessionHandler = HttpApiBuilder.group(Api, "server.session", (handl
           // Initialize the engine before publishing its placement: get/list
           // must work even when no prompt has ever been submitted. Retrying a
           // catalogued identity preserves its original placement.
-          if (native && nativeStorage)
+          if (native && nativeStorage) {
             yield* native.initialize({ sessionID: id, storage: nativeStorage, location, title: "New session" })
+            // Bind the model shown before the first prompt. The Rust runner
+            // otherwise uses the owner's global default instead of this choice.
+            if (ctx.payload.model)
+              yield* native.selectModel({ sessionID: id, storage: nativeStorage, location, model: ctx.payload.model })
+          }
           if (binding?.engine === "rust" && !native)
             return yield* new ConflictError({ message: "Native engine transport is not composed", resource: id })
           const created = yield* session.create({
