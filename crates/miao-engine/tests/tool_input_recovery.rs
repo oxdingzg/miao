@@ -95,7 +95,8 @@ async fn real_wire_correction_preserves_completed_write_and_durable_error_withou
                 (
                     "write",
                     "write_file",
-                    "{\"path\":\"audit\",\"text\":\"once\",\"expected_sha256\":null}",
+                    &json!({"path":dir.path().join("audit"),"text":"once","expected_sha256":null})
+                        .to_string(),
                 ),
                 (
                     "invalid-1",
@@ -178,6 +179,22 @@ async fn real_wire_correction_preserves_completed_write_and_durable_error_withou
             events.iter().filter(|event| event.kind == "usage").count(),
             4
         );
+        assert_eq!(
+            std::fs::read_to_string(dir.path().join("audit")).unwrap(),
+            "once"
+        );
+        // Absolute tool paths must be captured under their workspace-relative
+        // identity, and remain restorable after the provider continues.
+        std::fs::write(dir.path().join("audit"), "later").unwrap();
+        store
+            .revert_stage(
+                "s",
+                store.snapshot("s").await.unwrap()["cursor"]
+                    .as_u64()
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
         assert_eq!(
             std::fs::read_to_string(dir.path().join("audit")).unwrap(),
             "once"
