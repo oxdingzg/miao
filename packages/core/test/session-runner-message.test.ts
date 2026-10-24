@@ -13,6 +13,7 @@ import { ProviderV2 } from "@miao/core/provider"
 import { SessionMessage } from "@miao/core/session/message"
 import { AgentAttachment, FileAttachment } from "@miao/core/session/prompt"
 import { toLLMMessages } from "@miao/core/session/runner/to-llm-message"
+import { Token } from "@miao/core/util/token"
 import { SessionV2 } from "@miao/core/session"
 import { DateTime, Effect } from "effect"
 
@@ -230,6 +231,27 @@ Recent work
         },
       ],
     ])
+  })
+
+  test("bounds an oversized checkpoint to the render-time budget", () => {
+    const messages = toLLMMessages(
+      [
+        SessionMessage.Compaction.make({
+          id: id("compaction"),
+          type: "compaction",
+          reason: "auto",
+          summary: "Earlier work",
+          recent: `line\n`.repeat(40_000),
+          time: { created },
+        }),
+      ],
+      model,
+    )
+    const text = (messages[0]?.content[0] as { type: "text"; text: string }).text
+    expect(Token.estimate(text)).toBeLessThan(Token.estimate(`line\n`.repeat(40_000)))
+    expect(text).toContain("[recent context truncated to ~12000 of")
+    expect(text).toContain("search the durable history with the recall tool")
+    expect(text).toContain("<summary>\nEarlier work\n</summary>")
   })
 
   test("replaces image attachments with a text placeholder when the model has no image input", () => {
