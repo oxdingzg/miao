@@ -11,6 +11,15 @@ at `docs/releases/vX.Y.Z.md` and `docs/releases/vX.Y.Z.zh.md`; both are required
 
 ## [Unreleased]
 
+## [0.3.1] - 2026-10-24
+
+### Fixed
+- **tui**: dismiss direct Hub sign-in on Escape instead of restarting the flow (#1330).
+- **provider**: register personal Google account OAuth under the Google integration (#1328).
+
+### Added
+- **tool**: reduce model-facing Bash output with progress folding, ANSI stripping, credential redaction, and long-line collapse (#1327).
+
 ## [0.3.0] - 2026-10-24
 
 ### Added
