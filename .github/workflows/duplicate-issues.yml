@@ -33,17 +33,31 @@ jobs:
             echo "Skipping issue automation for non-team author: $LOGIN ($ASSOCIATION)"
           fi
 
-      - uses: ./.github/actions/setup-bun
-        if: steps.author.outputs.skip != 'true'
-
-      - name: Install miao
-        if: steps.author.outputs.skip != 'true'
-        run: curl -fsSL https://mtty.dev/miao/install | bash
-
-      - name: Check duplicates and compliance
-        if: steps.author.outputs.skip != 'true'
+      - name: Check model service configuration
+        id: model
         env:
           MIAO_API_KEY: ${{ secrets.MIAO_API_KEY }}
+          MIAO_AUTOMATION_MODEL: ${{ vars.MIAO_AUTOMATION_MODEL }}
+        run: |
+          if [ -z "$MIAO_API_KEY" ] || [ -z "$MIAO_AUTOMATION_MODEL" ]; then
+            echo "enabled=false" >> "$GITHUB_OUTPUT"
+            echo "Issue model automation skipped: configure the MIAO_API_KEY secret and MIAO_AUTOMATION_MODEL repository variable to enable it." >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "enabled=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - uses: ./.github/actions/setup-bun
+        if: steps.author.outputs.skip != 'true' && steps.model.outputs.enabled == 'true'
+
+      - name: Install miao
+        if: steps.author.outputs.skip != 'true' && steps.model.outputs.enabled == 'true'
+        run: curl -fsSL https://raw.githubusercontent.com/oxdingzg/miao/main/install | bash
+
+      - name: Check duplicates and compliance
+        if: steps.author.outputs.skip != 'true' && steps.model.outputs.enabled == 'true'
+        env:
+          MIAO_API_KEY: ${{ secrets.MIAO_API_KEY }}
+          MIAO_AUTOMATION_MODEL: ${{ vars.MIAO_AUTOMATION_MODEL }}
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           MIAO_PERMISSION: |
             {
@@ -54,7 +68,7 @@ jobs:
               "webfetch": "deny"
             }
         run: |
-          miao run -m opencode/gpt-5.6-luna --variant high "A new issue has been created:
+          miao run -m "$MIAO_AUTOMATION_MODEL" "A new issue has been created:
 
           Issue number: ${{ github.event.issue.number }}
           Issue author association: ${{ github.event.issue.author_association }}
@@ -167,17 +181,31 @@ jobs:
             echo "Skipping issue automation for non-team author: $LOGIN ($ASSOCIATION)"
           fi
 
-      - uses: ./.github/actions/setup-bun
-        if: steps.author.outputs.skip != 'true'
-
-      - name: Install miao
-        if: steps.author.outputs.skip != 'true'
-        run: curl -fsSL https://mtty.dev/miao/install | bash
-
-      - name: Recheck compliance
-        if: steps.author.outputs.skip != 'true'
+      - name: Check model service configuration
+        id: model
         env:
           MIAO_API_KEY: ${{ secrets.MIAO_API_KEY }}
+          MIAO_AUTOMATION_MODEL: ${{ vars.MIAO_AUTOMATION_MODEL }}
+        run: |
+          if [ -z "$MIAO_API_KEY" ] || [ -z "$MIAO_AUTOMATION_MODEL" ]; then
+            echo "enabled=false" >> "$GITHUB_OUTPUT"
+            echo "Issue model automation skipped: configure the MIAO_API_KEY secret and MIAO_AUTOMATION_MODEL repository variable to enable it." >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "enabled=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - uses: ./.github/actions/setup-bun
+        if: steps.author.outputs.skip != 'true' && steps.model.outputs.enabled == 'true'
+
+      - name: Install miao
+        if: steps.author.outputs.skip != 'true' && steps.model.outputs.enabled == 'true'
+        run: curl -fsSL https://raw.githubusercontent.com/oxdingzg/miao/main/install | bash
+
+      - name: Recheck compliance
+        if: steps.author.outputs.skip != 'true' && steps.model.outputs.enabled == 'true'
+        env:
+          MIAO_API_KEY: ${{ secrets.MIAO_API_KEY }}
+          MIAO_AUTOMATION_MODEL: ${{ vars.MIAO_AUTOMATION_MODEL }}
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           MIAO_PERMISSION: |
             {
@@ -188,7 +216,7 @@ jobs:
               "webfetch": "deny"
             }
         run: |
-          miao run -m opencode/gpt-5.6-luna --variant high "Issue #${{ github.event.issue.number }} was previously flagged as non-compliant and has been edited.
+          miao run -m "$MIAO_AUTOMATION_MODEL" "Issue #${{ github.event.issue.number }} was previously flagged as non-compliant and has been edited.
           Issue author association: ${{ github.event.issue.author_association }}
 
           Lookup this issue with gh issue view ${{ github.event.issue.number }}.
