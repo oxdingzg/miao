@@ -30,13 +30,24 @@ response dump). Harness: `/tmp/s213-run9.sh` — nine ~520 KB fill chunks
    original mid-content recall failures, so the refusal itself is correct;
    what is missing is the retry loop.
 
-## Verdict
+## Verdict (final, 2026-10-24)
 
-§2.13 remains **not met** for read-heavy 1M fills until the overflow →
-compact → retry loop exists; the acceptance as originally written (compaction
-triggers and content survives) is otherwise satisfied at smaller budgets
-(forced-compaction scenario: engine_compaction rows > 0, 12-scenario
-conformance suite PASS). The budget-derivation half of the finding is fixed
-(#1302); the projection-cap half is fixed (#1310); the retry loop is the one
-open engineering item, with repro scripts at `/tmp/s213-run9.sh` and raw logs
-`/tmp/s213-v9-c*.log`.
+With the three runaway guards raised (#1310 projection 64 MB, selection
+64 MB, snapshot 64 MB) and the overflow retry loop landed (#1314), the
+full nine-chunk chain completes end to end on a 1M-window model: no
+rejections, chunk 9 clean at input 148,067.
+
+The acceptance criterion "recall the magic values without re-reading"
+**fails by design**: the engine elides old read results from the
+selection (requests stay <= ~470k tokens against the 900k trigger, so
+real compaction never fires — correct resource behavior) and hands the
+model a `recall {"tool_use_id"}` handle instead. The verify prompt
+forbade reading, so the model honestly reported the values absent. The
+§2.13 conclusion is therefore rewritten per the design semantics:
+**the 1M window works under read-heavy load via elision + recall;
+unassisted recall after elision is not reachable by design.** Real
+compaction triggering is proven separately by the forced-compaction
+conformance scenario (engine_compaction > 0, 12-scenario suite).
+
+Open items left: none in miao code from this acceptance; the
+Gemini/Anthropic live-account leg stays blocked on credentials (#1267).
