@@ -77,6 +77,14 @@ impl Query {
     }
 }
 
+/// Bounded wait for the first diagnostics push after a document opens.
+const DIAGNOSTICS_WAIT: Duration = Duration::from_secs(10);
+
+/// Many servers clear a document's diagnostics with an empty push before the
+/// first analysis pass lands its results; keep listening this long after an
+/// empty push before reporting the empty set as final.
+const DIAGNOSTICS_SETTLE: Duration = Duration::from_secs(5);
+
 struct Client {
     read: BufReader<Box<dyn AsyncRead + Unpin + Send>>,
     write: Box<dyn AsyncWrite + Unpin + Send>,
@@ -90,6 +98,8 @@ struct Document {
     version: u32,
     diagnostics: Option<Vec<Value>>,
     diagnostics_version: Option<u64>,
+    publishes: u32,
+    settled: bool,
 }
 
 impl Client {
@@ -198,6 +208,8 @@ impl Client {
                     version,
                     diagnostics: None,
                     diagnostics_version: None,
+                    publishes: 0,
+                    settled: false,
                 },
             );
             return Ok(());
@@ -217,30 +229,32 @@ impl Client {
                 version: 1,
                 diagnostics: None,
                 diagnostics_version: None,
+                publishes: 0,
+                settled: false,
             },
         );
         Ok(())
     }
 
-    fn retain_diagnostics(&mut self, frame: &Value) {
+    /// Store a diagnostics push for an open document. Returns the pushed URI
+    /// so a caller waiting on that document can react to the push landing.
+    fn retain_diagnostics(&mut self, frame: &Value) -> Option<String> {
         if frame["method"] != "textDocument/publishDiagnostics" {
-            return;
+            return None;
         }
-        let Some(document) = frame["params"]["uri"]
-            .as_str()
-            .and_then(|uri| self.opened.get_mut(uri))
-        else {
-            return;
-        };
+        let pushed = frame["params"]["uri"].as_str()?.to_owned();
+        let document = self.opened.get_mut(&pushed)?;
         if let Some(version) = frame["params"]["version"].as_u64() {
             if version != u64::from(document.version) {
-                return;
+                return None;
             }
         }
+        document.publishes = document.publishes.saturating_add(1);
         document.diagnostics = frame["params"]["diagnostics"]
             .as_array()
             .map(|items| items.iter().take(256).cloned().collect());
         document.diagnostics_version = frame["params"]["version"].as_u64();
+        Some(pushed)
     }
 
     async fn request(
@@ -269,7 +283,7 @@ impl Client {
                 self.answer_server_request(&frame).await?;
                 continue;
             }
-            self.retain_diagnostics(&frame);
+            let _ = self.retain_diagnostics(&frame);
             if frame.get("id") == Some(&json!(id)) {
                 if frame.get("error").is_some() {
                     return Err(Error::Invalid(format!("LSP {method} failed")));
@@ -283,47 +297,62 @@ impl Client {
         }
     }
 
-    /// Open the document and collect diagnostics published for it within the
-    /// wait window. Servers publish diagnostics as notifications, so the engine
-    /// waits a bounded time rather than issuing a request.
+    /// Open the document and wait, bounded, for diagnostics published for it.
+    /// Servers publish diagnostics as notifications, so the engine waits rather
+    /// than issuing a request. A lone empty push is provisional — rust-analyzer
+    /// and peers clear a freshly opened document before its first analysis — so
+    /// the query settles on a non-empty push, a second push for this version,
+    /// or the settle window closing. A document that never receives a push at
+    /// all fails the query instead of reporting "no findings" for an analysis
+    /// that never happened.
     async fn diagnostics(
         &mut self,
         uri: &str,
         language: &str,
         text: &str,
         wait: Duration,
+        settle: Duration,
     ) -> Result<Vec<Value>, Error> {
         self.open(uri, language, text).await?;
-        if let Some(diagnostics) = self
-            .opened
-            .get(uri)
-            .and_then(|document| document.diagnostics.clone())
-        {
-            return Ok(diagnostics);
-        }
-        let deadline = tokio::time::Instant::now() + wait;
+        let overall = tokio::time::Instant::now() + wait;
+        let mut clearing: Option<tokio::time::Instant> = None;
         loop {
-            let remaining = deadline.saturating_duration_since(tokio::time::Instant::now());
+            if let Some(document) = self.opened.get(uri) {
+                if let Some(items) = &document.diagnostics {
+                    if !items.is_empty() || document.publishes >= 2 || document.settled {
+                        return Ok(items.clone());
+                    }
+                }
+            }
+            let limit = clearing.map_or(overall, |bound| bound.min(overall));
+            let remaining = limit.saturating_duration_since(tokio::time::Instant::now());
             if remaining.is_zero() {
-                return Err(Error::Invalid("LSP diagnostics timed out".into()));
+                let document = self
+                    .opened
+                    .get_mut(uri)
+                    .ok_or_else(|| Error::Invalid("LSP document missing".into()))?;
+                if document.diagnostics.is_none() {
+                    return Err(Error::Invalid(format!(
+                        "no publishDiagnostics push within {wait:?}"
+                    )));
+                }
+                document.settled = true;
+                return Ok(document.diagnostics.clone().unwrap_or_default());
             }
             let frame = match tokio::time::timeout(remaining, self.read_frame()).await {
                 Ok(Ok(Some(frame))) => frame,
                 Ok(Ok(None)) => return Err(Error::Invalid("LSP server closed".into())),
                 Ok(Err(error)) => return Err(error),
-                Err(_) => return Err(Error::Invalid("LSP diagnostics timed out".into())),
+                Err(_) => continue,
             };
             if frame.get("id").is_some() && frame.get("method").is_some() {
                 self.answer_server_request(&frame).await?;
                 continue;
             }
-            self.retain_diagnostics(&frame);
-            if let Some(diagnostics) = self
-                .opened
-                .get(uri)
-                .and_then(|document| document.diagnostics.clone())
-            {
-                return Ok(diagnostics);
+            if let Some(pushed) = self.retain_diagnostics(&frame) {
+                if pushed == uri && clearing.is_none() {
+                    clearing = Some(tokio::time::Instant::now() + settle);
+                }
             }
         }
     }
@@ -526,12 +555,13 @@ impl Registry {
             .map_err(|_| ToolError::External("LSP diagnostics failed".into()))?;
         let mut client = server.client.lock().await;
         let diagnostics = client
-            .diagnostics(&uri, &language, &text, Duration::from_secs(3))
+            .diagnostics(&uri, &language, &text, DIAGNOSTICS_WAIT, DIAGNOSTICS_SETTLE)
             .await
-            .map_err(|_| ToolError::External("LSP diagnostics failed".into()))?;
+            .map_err(|error| ToolError::External(format!("LSP diagnostics failed: {error}")))?;
         let document = client.opened.get(&uri).ok_or(ToolError::ResourceChanged)?;
         let version = document.version;
         let diagnostics_version = document.diagnostics_version;
+        let pushes = document.publishes;
         drop(client);
         let sha256 = crate::permission::digest(text.as_bytes());
         // An external writer can change disk content while the server is answering.
@@ -544,7 +574,7 @@ impl Registry {
         Ok(json!({
             "diagnostics": if stale { Vec::new() } else { diagnostics },
             "source":{"sha256":sha256,"current_sha256":current_sha256,"document_version":version,
-                "diagnostics_version":diagnostics_version,"stale":stale,
+                "diagnostics_version":diagnostics_version,"pushes":pushes,"stale":stale,
                 "version_verified": !stale && diagnostics_version == Some(u64::from(version))}
         }))
     }
@@ -749,5 +779,144 @@ mod tests {
             .await
             .unwrap();
         fixture.await.unwrap();
+    }
+
+    /// Complete the initialize handshake on the fixture side of a duplex.
+    async fn handshake(mut server: Client) -> Client {
+        let frame = server.read_frame().await.unwrap().unwrap();
+        assert_eq!(frame["method"], "initialize");
+        server
+            .send(&json!({"jsonrpc":"2.0","id":frame["id"],"result":{"capabilities":{}}}))
+            .await
+            .unwrap();
+        let initialized = server.read_frame().await.unwrap().unwrap();
+        assert_eq!(initialized["method"], "initialized");
+        server
+    }
+
+    #[tokio::test]
+    async fn diagnostics_wait_behind_a_clearing_push_for_the_real_results() {
+        let (host, peer) = tokio::io::duplex(64 * 1024);
+        let (read, write) = tokio::io::split(host);
+        let mut client = Client::new(read, write);
+        let fixture = tokio::spawn(async move {
+            let (read, write) = tokio::io::split(peer);
+            let mut server = handshake(Client::new(read, write)).await;
+            let open = server.read_frame().await.unwrap().unwrap();
+            assert_eq!(open["method"], "textDocument/didOpen");
+            let target = open["params"]["textDocument"]["uri"].clone();
+            // rust-analyzer-style servers clear first, then publish results.
+            server.send(&json!({"jsonrpc":"2.0","method":"textDocument/publishDiagnostics","params":{"uri":target,"version":1,"diagnostics":[]}})).await.unwrap();
+            tokio::time::sleep(Duration::from_millis(50)).await;
+            server.send(&json!({"jsonrpc":"2.0","method":"textDocument/publishDiagnostics","params":{"uri":target,"version":1,"diagnostics":[{"range":{},"severity":1,"message":"E0308"}]}})).await.unwrap();
+            // Hold the transport open: EOF would fail the query.
+            std::future::pending::<()>().await;
+        });
+        client
+            .initialize(&std::path::PathBuf::from("."), None)
+            .await
+            .unwrap();
+        let diagnostics = client
+            .diagnostics(
+                "file:///ws/src/main.rs",
+                "rust",
+                "fn main() {}",
+                Duration::from_secs(5),
+                Duration::from_secs(2),
+            )
+            .await
+            .unwrap();
+        assert_eq!(diagnostics.len(), 1);
+        assert_eq!(diagnostics[0]["message"], "E0308");
+        fixture.abort();
+    }
+
+    #[tokio::test]
+    async fn a_lone_empty_push_settles_and_is_served_from_cache() {
+        let (host, peer) = tokio::io::duplex(64 * 1024);
+        let (read, write) = tokio::io::split(host);
+        let mut client = Client::new(read, write);
+        let fixture = tokio::spawn(async move {
+            let (read, write) = tokio::io::split(peer);
+            let mut server = handshake(Client::new(read, write)).await;
+            let open = server.read_frame().await.unwrap().unwrap();
+            assert_eq!(open["method"], "textDocument/didOpen");
+            let target = open["params"]["textDocument"]["uri"].clone();
+            // A server whose analysis found nothing pushes exactly once.
+            server.send(&json!({"jsonrpc":"2.0","method":"textDocument/publishDiagnostics","params":{"uri":target,"version":1,"diagnostics":[]}})).await.unwrap();
+            std::future::pending::<()>().await;
+        });
+        let started = std::time::Instant::now();
+        client
+            .initialize(&std::path::PathBuf::from("."), None)
+            .await
+            .unwrap();
+        let diagnostics = client
+            .diagnostics(
+                "file:///ws/src/main.rs",
+                "rust",
+                "fn main() {}",
+                Duration::from_secs(5),
+                Duration::from_millis(150),
+            )
+            .await
+            .unwrap();
+        assert!(diagnostics.is_empty());
+        assert!(started.elapsed() >= Duration::from_millis(150));
+        let document = client.opened.get("file:///ws/src/main.rs").unwrap();
+        assert!(document.settled);
+        assert_eq!(document.publishes, 1);
+        // A settled document is served from the cache without re-opening.
+        let resumed = std::time::Instant::now();
+        let again = client
+            .diagnostics(
+                "file:///ws/src/main.rs",
+                "rust",
+                "fn main() {}",
+                Duration::from_secs(5),
+                Duration::from_millis(150),
+            )
+            .await
+            .unwrap();
+        assert!(again.is_empty());
+        assert!(resumed.elapsed() < Duration::from_millis(50));
+        assert_eq!(
+            client
+                .opened
+                .get("file:///ws/src/main.rs")
+                .unwrap()
+                .publishes,
+            1
+        );
+        fixture.abort();
+    }
+
+    #[tokio::test]
+    async fn a_document_that_is_never_published_fails_instead_of_reading_clean() {
+        let (host, peer) = tokio::io::duplex(64 * 1024);
+        let (read, write) = tokio::io::split(host);
+        let mut client = Client::new(read, write);
+        let fixture = tokio::spawn(async move {
+            let (read, write) = tokio::io::split(peer);
+            let server = handshake(Client::new(read, write)).await;
+            std::future::pending::<()>().await;
+            drop(server);
+        });
+        client
+            .initialize(&std::path::PathBuf::from("."), None)
+            .await
+            .unwrap();
+        let error = client
+            .diagnostics(
+                "file:///ws/src/main.rs",
+                "rust",
+                "fn main() {}",
+                Duration::from_millis(200),
+                Duration::from_millis(50),
+            )
+            .await
+            .unwrap_err();
+        assert!(error.to_string().contains("no publishDiagnostics push"));
+        fixture.abort();
     }
 }
