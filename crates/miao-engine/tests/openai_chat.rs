@@ -349,3 +349,28 @@ async fn oauth_bearer_credentials_reach_chat_bridges_but_not_api_key_routes() {
         Err(ProviderError::AuthProfile)
     ));
 }
+
+#[tokio::test]
+async fn gateway_rate_limit_is_a_provider_rejection_not_an_invalid_stream() {
+    let body = frames(
+        vec![
+            json!({"error":{"type":"gateway_error","status":429,"message":"The service is rate limiting requests. Retry after 2 seconds."}}),
+        ],
+        true,
+    );
+    let (url, mut requests, server) = common::endpoint(vec![(200, body)]).await;
+    let provider = OpenAIChat::new(url, "fixture".into(), "model".into()).unwrap();
+    let (progress, _receive) = mpsc::channel(64);
+    let error = match provider
+        .stream(request(), progress, CancellationToken::new())
+        .await
+    {
+        Err(error) => error,
+        Ok(_) => panic!("a rejected request must not complete"),
+    };
+    assert!(matches!(error, ProviderError::Rejected(_)));
+    assert!(error.to_string().contains("HTTP 429"));
+    assert!(!error.to_string().contains("invalid provider stream"));
+    assert!(requests.recv().await.is_some());
+    server.await.unwrap();
+}

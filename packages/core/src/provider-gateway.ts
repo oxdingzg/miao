@@ -133,6 +133,9 @@ export const reply = async (
   const tools = await toTools(body.tools ?? [])
   const result = streamText({
     model: language,
+    // The caller owns retries and durable tool admission. SDK retries here
+    // otherwise multiply rejected requests behind one native provider turn.
+    maxRetries: 0,
     ...(messages.system ? { system: messages.system } : {}),
     messages: messages.conversation,
     ...(tools ? { tools } : {}),
@@ -203,7 +206,19 @@ export const reply = async (
         if (detached || abortSignal.aborted) return
         push(
           `data: ${JSON.stringify({
-            error: { message: error instanceof Error ? error.message : String(error), type: "gateway_error" },
+            error: {
+              message: error instanceof Error ? error.message : String(error),
+              type: "gateway_error",
+              ...(typeof error === "object" && error !== null && "status" in error && typeof error.status === "number"
+                ? { status: error.status }
+                : {}),
+              ...(typeof error === "object" &&
+              error !== null &&
+              "statusCode" in error &&
+              typeof error.statusCode === "number"
+                ? { status: error.statusCode }
+                : {}),
+            },
           })}\n\n`,
         )
         push("data: [DONE]\n\n")
