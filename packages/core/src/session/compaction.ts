@@ -3,6 +3,7 @@ export * as SessionCompaction from "./compaction"
 import { LLM, LLMError, LLMEvent, Message, ModelLimits, mergeJsonRecords, type LLMRequest, type Model } from "@miao/llm"
 import { DateTime, Effect, Stream } from "effect"
 import type { Config } from "../config"
+import { maxContext, type MaxContext } from "../config/compaction"
 import type { EventV2 } from "../event"
 import type { ModelV2 } from "../model"
 import { ModelVariants } from "../model-variants"
@@ -120,6 +121,7 @@ type Settings = {
   readonly buffer: number
   readonly threshold: number
   readonly tokens: number
+  readonly maxContext: MaxContext | undefined
 }
 
 type Dependencies = {
@@ -274,6 +276,7 @@ const settings = (documents: readonly Config.Entry[]) => {
       buffer: current.buffer ?? result.buffer,
       threshold: normalizeThreshold(current.threshold ?? result.threshold),
       tokens: current.keep?.tokens ?? result.tokens,
+      maxContext: current.max_context ?? result.maxContext,
     }),
     {
       auto: true,
@@ -288,6 +291,7 @@ const settings = (documents: readonly Config.Entry[]) => {
       buffer: DEFAULT_BUFFER,
       threshold: DEFAULT_THRESHOLD,
       tokens: DEFAULT_KEEP_TOKENS,
+      maxContext: undefined,
     },
   )
 }
@@ -763,6 +767,15 @@ export const make = (dependencies: Dependencies) => {
     // is refused outright instead of compacted, which is how a Session reaches the
     // endpoint's ceiling with its own meter still reading room to spare.
     const context = fitWindow(input.model.route.defaults.limits) ?? 0
+    // A configured per-model budget clamps the working window; the provider cap
+    // stays what it is, the request just plans (and compacts) against less.
+    const budget = maxContext({
+      configured: config.maxContext,
+      provider: input.model.provider,
+      model: input.model.id,
+      context,
+    })
+    const window = budget === undefined ? context : Math.min(context, budget)
     // Reserve what this turn can still generate, not the model's declared output
     // ceiling: `limits.output` is a catalog limit, and treating it as the reserve
     // shrinks the usable window to a fraction of the real context.
@@ -774,11 +787,11 @@ export const make = (dependencies: Dependencies) => {
     // to about 94%, in the band other harnesses work in, while a small window still
     // fires at the configured ratio instead of at whatever the headroom leaves.
     const headroom = PROTECT_TOKENS + SUMMARY_OUTPUT_TOKENS + reserve
-    const limit = context > 0 ? Math.max(0, Math.max(context - headroom, context * config.threshold - reserve)) : 0
-    const size = context > 0
-      ? yield* exactTokens(input, anchoredTokens(input), limit, context)
+    const limit = window > 0 ? Math.max(0, Math.max(window - headroom, window * config.threshold - reserve)) : 0
+    const size = window > 0
+      ? yield* exactTokens(input, anchoredTokens(input), limit, window)
       : { input: anchoredTokens(input), source: "estimated" as const }
-    return { ...size, window: context, limit, observed: input.observedTokens }
+    return { ...size, window, limit, observed: input.observedTokens }
   })
 
   const compactIfNeeded = Effect.fn("SessionCompaction.compactIfNeeded")(function* (
