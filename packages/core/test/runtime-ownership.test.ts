@@ -117,9 +117,10 @@ describe("Runtime ownership", () => {
         process.execPath,
         "-e",
         `import { RuntimeOwnership } from ${JSON.stringify(module)};
-      await RuntimeOwnership.acquire(${JSON.stringify(filename)});
+      const owner = await RuntimeOwnership.acquire(${JSON.stringify(filename)});
+      process.on("exit", () => owner.release());
       console.log("locked");
-      await new Promise(() => {});`,
+      setInterval(() => {}, 60_000);`,
       ],
       { stdout: "pipe", stderr: "pipe" },
     )
