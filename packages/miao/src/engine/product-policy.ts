@@ -36,6 +36,9 @@ export const prepare = Effect.fn("Engine.productPolicy")(function* (configuratio
     allow_wakeup: true,
     allow_cron: true,
     process_network: true,
+    // Product tasks routinely exceed the standalone engine's 25-turn default.
+    // Explicit operator policies and narrower agent.steps remain authoritative.
+    max_provider_turns: 1000,
   })
   yield* Effect.tryPromise({
     try: () => writeFile(file, content, { mode: 0o600 }),

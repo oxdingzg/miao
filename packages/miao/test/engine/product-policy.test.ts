@@ -20,6 +20,7 @@ it.live("generates the product capability policy when no explicit policy is conf
         allow_wakeup: true,
         allow_cron: true,
         process_network: true,
+        max_provider_turns: 1000,
       })
       if (process.platform !== "win32")
         expect((yield* Effect.promise(() => Bun.file(options.policyFile!).stat())).mode & 0o777).toBe(0o600)

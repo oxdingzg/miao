@@ -85,25 +85,52 @@ test("called and settled tools restore without input stream fragments", () => {
   })
 })
 
-
 test("sending-time budget survives transient projection, settlement, and replayed starts", () => {
   const reducer = SessionTranscript.create()
   const properties = {
-    sessionID, assistantMessageID, timestamp: 10, agent: "build",
+    sessionID,
+    assistantMessageID,
+    timestamp: 10,
+    agent: "build",
     model: { providerID: "test", id: "model" },
     contextBudget: { input: 50_000, source: "estimated" as const, window: 100_000, limit: 70_000 },
   }
   const started = reducer.reduce([], { id: "evt_budget_start", type: "session.next.step.started", properties })
   expect(started?.messages[0]).toMatchObject({ contextBudget: properties.contextBudget })
   const failed = reducer.reduce(started?.messages ?? [], {
-    id: "evt_budget_failed", type: "session.next.step.failed",
-    properties: { sessionID, assistantMessageID, timestamp: 11, error: { type: "unknown", message: "prompt too long" } },
+    id: "evt_budget_failed",
+    type: "session.next.step.failed",
+    properties: {
+      sessionID,
+      assistantMessageID,
+      timestamp: 11,
+      error: { type: "unknown", message: "prompt too long" },
+    },
   })
   expect(failed?.messages[0]).toMatchObject({ contextBudget: properties.contextBudget, finish: "error" })
   const restarted = reducer.reduce(failed?.messages ?? [], {
-    id: "evt_budget_restart", type: "session.next.step.started",
+    id: "evt_budget_restart",
+    type: "session.next.step.started",
     properties: { ...properties, contextBudget: { ...properties.contextBudget, input: 20_000 } },
   })
   expect(restarted?.messages).toHaveLength(1)
   expect(restarted?.messages[0]).toMatchObject({ contextBudget: { input: 20_000 }, error: undefined })
+})
+
+test("synthetic pause metadata survives transcript projection and duplicate replay", () => {
+  const reducer = SessionTranscript.create()
+  const event = {
+    id: "evt_paused",
+    type: "session.next.synthetic" as const,
+    properties: {
+      sessionID,
+      messageID: "msg_paused",
+      timestamp: 50,
+      text: "Task paused. Send a message to continue.",
+      metadata: { source: "engine", notificationPause: true },
+    },
+  }
+  const result = reducer.reduce([], event)
+  expect(result?.messages[0]).toMatchObject({ type: "synthetic", metadata: event.properties.metadata })
+  expect(reducer.reduce(result!.messages, event)?.messages).toEqual(result!.messages)
 })

@@ -200,9 +200,9 @@ export class EngineTranslator {
         })
     }
     if (event.kind === "message.synthetic" && typeof event.recorded_at_ms === "number") {
-      const injected = Schema.decodeUnknownOption(Schema.Struct({ text: Schema.String, source: Schema.String }))(
-        event.data,
-      )
+      const injected = Schema.decodeUnknownOption(
+        Schema.Struct({ text: Schema.String, source: Schema.String, input_id: Schema.optional(Schema.String) }),
+      )(event.data)
       if (Option.isSome(injected))
         publish({
           type: "session.next.synthetic",
@@ -211,7 +211,13 @@ export class EngineTranslator {
             timestamp: DateTime.makeUnsafe(event.recorded_at_ms),
             messageID: messageID(event.session_id, event.seq),
             text: injected.value.text,
-            metadata: { source: injected.value.source },
+            metadata: {
+              source: injected.value.source,
+              ...(injected.value.source === "engine" &&
+              (injected.value.input_id?.startsWith("allowance-") || injected.value.input_id?.startsWith("loop-paused-"))
+                ? { notificationPause: true }
+                : {}),
+            },
           },
         })
     }
@@ -490,7 +496,13 @@ export class EngineSession {
     client.onEvent((event) => {
       this.#translator.dispatch(event)
       // Live events only: a replayed failure must never re-trigger a refresh.
-      if (event.kind === "message.committed" && typeof event.data === "object" && event.data !== null && "role" in event.data && event.data.role === "assistant")
+      if (
+        event.kind === "message.committed" &&
+        typeof event.data === "object" &&
+        event.data !== null &&
+        "role" in event.data &&
+        event.data.role === "assistant"
+      )
         this.#refreshAttempts.delete(event.session_id)
       const expired = translateExpiredCredential(event)
       const trigger = this.#onCredentialExpired
@@ -503,12 +515,16 @@ export class EngineSession {
           .then(async (refreshed) => {
             if (!refreshed || !this.#refreshAttempts.get(event.session_id)?.has(expired.id)) return
             // Admit through the native inbox: TypeScript admission rejects native placement.
-            await this.#client.admit({
-              session_id: event.session_id,
-              input_id: `credential-refresh-${event.session_id}-${event.seq}`,
-              prompt: "<system-reminder>Authentication was refreshed. Continue the interrupted task using the fresh credential.</system-reminder>",
-              delivery: "steer",
-            }, true)
+            await this.#client.admit(
+              {
+                session_id: event.session_id,
+                input_id: `credential-refresh-${event.session_id}-${event.seq}`,
+                prompt:
+                  "<system-reminder>Authentication was refreshed. Continue the interrupted task using the fresh credential.</system-reminder>",
+                delivery: "steer",
+              },
+              true,
+            )
           })
           .catch(() => undefined)
       }
@@ -522,8 +538,14 @@ export class EngineSession {
       const subscription = (async () => {
         if (!this.#onCredentialExpired) return this.#client.subscribe(sessionID, 0)
         const snapshot = await this.#client.request("snapshot", { session_id: sessionID })
-        if (typeof snapshot !== "object" || snapshot === null || !("cursor" in snapshot) ||
-            typeof snapshot.cursor !== "number" || !Number.isSafeInteger(snapshot.cursor) || snapshot.cursor < 0)
+        if (
+          typeof snapshot !== "object" ||
+          snapshot === null ||
+          !("cursor" in snapshot) ||
+          typeof snapshot.cursor !== "number" ||
+          !Number.isSafeInteger(snapshot.cursor) ||
+          snapshot.cursor < 0
+        )
           throw new EngineError("engine_snapshot_invalid", "native snapshot has no valid Session cursor")
         this.#refreshAfter.set(sessionID, snapshot.cursor)
         return this.#client.subscribe(sessionID, 0)

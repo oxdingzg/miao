@@ -24,3 +24,25 @@ test("synthetic context projects as injected history with stable replay and fork
   })
   expect(engineMessageSequence("ses_injected", SessionMessage.ID.make("msg_ses_injected_7"), [event])).toBe(7)
 })
+
+test.each(["allowance-run", "loop-paused-run"])(
+  "native pause %s remains visible through live delivery and replay",
+  (input_id) => {
+    const event = {
+      session_id: "ses_paused",
+      seq: 9,
+      recorded_at_ms: 2000,
+      kind: "message.synthetic",
+      data: { input_id, source: "engine", text: "Task paused. Send a message to continue." },
+    }
+    const live: EngineSessionEvent[] = []
+    const replay: EngineSessionEvent[] = []
+    new EngineTranslator((item) => live.push(item)).dispatch(event)
+    new EngineTranslator((item) => replay.push(item)).dispatch(event)
+    expect(live).toEqual(replay)
+    expect(live[0]).toMatchObject({
+      type: "session.next.synthetic",
+      data: { text: event.data.text, metadata: { source: "engine", notificationPause: true } },
+    })
+  },
+)

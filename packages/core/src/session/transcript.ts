@@ -140,6 +140,7 @@ export function create() {
           type: "synthetic",
           sessionID: event.properties.sessionID,
           text: event.properties.text,
+          metadata: event.properties.metadata,
           time: { created: event.properties.timestamp },
         })
       case "session.next.context.updated":

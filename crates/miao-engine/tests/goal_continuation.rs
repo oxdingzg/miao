@@ -221,6 +221,21 @@ async fn no_progress_is_bounded_and_synthetic_admissions_do_not_restart_the_loop
         .unwrap()
         .iter()
         .any(|event| event.kind == "loop.stopped" && event.data["reason"] == "no-progress"));
+    assert!(store
+        .events("s", 0, 500)
+        .await
+        .unwrap()
+        .iter()
+        .any(|event| {
+            event.kind == "message.synthetic"
+                && event.data["source"] == "engine"
+                && event.data["input_id"]
+                    .as_str()
+                    .is_some_and(|id| id.starts_with("loop-paused-"))
+                && event.data["text"]
+                    .as_str()
+                    .is_some_and(|text| text.contains("Task paused"))
+        }));
 }
 
 #[tokio::test]

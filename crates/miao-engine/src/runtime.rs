@@ -2633,6 +2633,16 @@ command: None,
                             json!({"run_id":run,"reason":reason}),
                         )
                         .await?;
+                    inner.store.inject(
+                        session,
+                        &format!("loop-paused-{run}"),
+                        match reason {
+                            "budget" => "Task paused: reached the provider turn limit. Send a message to continue.",
+                            "max-iterations" => "Task paused: reached the autonomous continuation limit with work still pending. Send a message to continue.",
+                            _ => "Task paused: autonomous continuation did not update task progress. Review the remaining work and send a message to continue.",
+                        },
+                        "engine",
+                    ).await?;
                 } else {
                     goal_iterations += 1;
                     let input_id = format!("goal:{run}:{goal_iterations}");
