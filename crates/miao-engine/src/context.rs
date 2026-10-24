@@ -1,6 +1,6 @@
 use crate::{
     permission::{context_digest, Decision, Policy},
-    protocol::ContextBundle,
+    protocol::{ContextBundle, Message},
     tools::{ToolError, Tools},
 };
 use serde::Deserialize;
@@ -453,7 +453,7 @@ pub(crate) async fn assemble_for_agent(
         .map(|t| t.name.clone())
         .collect::<Vec<_>>()
         .join(", ");
-    let mut system=format!("You are miao, a coding assistant. Complete the user's task using available capabilities. Respond in the user's language. Preserve unrelated user changes. Respect permission and tool errors. Use read_file fingerprints for conditional edits. Do not automatically repeat operations with unknown side effects. For multi-step tasks, briefly explain what you are checking and why before a group of tool calls. Share important findings, decisions, and blockers while you work, without narrating every routine command. Finish with the result and verification. Available tools: {names}.");
+    let mut system=format!("You are miao, a coding assistant. Complete the user's task using available capabilities. Respond in the user's language. Preserve unrelated user changes. Respect permission and tool errors. Use read_file fingerprints for conditional edits. Do not automatically repeat operations with unknown side effects. For multi-step tasks, send a short user-facing update as normal assistant text before starting tools. During work, share concrete findings, decisions, blockers, and the next step in the user's language after a few tool batches; do not leave the user watching a long sequence of commands. Put these updates in text alongside tool calls, not only in reasoning or tool arguments: reasoning may be hidden. Summarize what the evidence establishes without exposing private reasoning or narrating every routine command. A progress update is not a final answer: continue the authorized work. Finish with the result and verification. Available tools: {names}.");
     let mut sources = Vec::new();
     let root = Source {
         label: "AGENTS.md".into(),
@@ -562,4 +562,39 @@ pub(crate) async fn assemble_for_agent(
         fingerprint,
         sources,
     })
+}
+
+/// Request-only guidance based on committed history, so restart and resume do
+/// not reset the silence count. Reasoning is not a user-facing progress report.
+pub(crate) fn progress_reminder(history: &[Message]) -> Option<&'static str> {
+    let silent = history
+        .iter()
+        .rev()
+        .take_while(|message| {
+            let blocks = message.content.as_array().into_iter().flatten();
+            match message.role.as_str() {
+                "assistant" => !blocks.clone().any(|block| {
+                    block["type"] == "text"
+                        && block["text"]
+                            .as_str()
+                            .is_some_and(|text| !text.trim().is_empty())
+                }),
+                "user" => !blocks.clone().any(|block| block["type"] != "tool_result"),
+                _ => true,
+            }
+        })
+        .filter(|message| {
+            message.role == "assistant"
+                && message
+                    .content
+                    .as_array()
+                    .into_iter()
+                    .flatten()
+                    .any(|block| block["type"] == "tool_use")
+        })
+        .take(3)
+        .count();
+    (silent == 3).then_some(
+        "<system-reminder>\nSeveral tool batches have completed without a user-facing update. In your next response, include a brief normal-text update in the user's language describing what you have actually learned and what you will check or change next. Use the tool results as evidence; say if the investigation is still inconclusive. Do not expose private reasoning, repeat command logs, or claim unverified success. Continue the task and call tools as needed; this reminder does not ask you to stop or give a final answer.\n</system-reminder>",
+    )
 }

@@ -1614,6 +1614,16 @@ async fn execute(
                 },
             );
         }
+        // Add request-only guidance after the final tool results, preserving
+        // their order and delivery boundary without changing the system prefix.
+        if let Some(text) = crate::context::progress_reminder(&history) {
+            if let Some(blocks) = history
+                .last_mut()
+                .and_then(|message| message.content.as_array_mut())
+            {
+                blocks.push(json!({"type":"text","text":text}));
+            }
+        }
         let named = inner.store.named_agents(session).await?;
         let mut tools = agent_tools(&inner.tools, agent.as_ref(), &policy);
         for tool in &mut tools {
