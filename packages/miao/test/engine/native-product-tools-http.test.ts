@@ -14,13 +14,18 @@ if (binary)
       await Bun.$`mkdir -p ${directory}`.quiet()
       const policyFile = path.join(tmp.path, "policy.json")
       await Bun.write(policyFile, JSON.stringify({ mode: "workspace" }))
+      const tools: string[] = []
       let calls = 0
       const provider = Bun.serve({
         hostname: "127.0.0.1",
         port: 0,
         async fetch(request) {
           calls++
-          const body = await request.json()
+          const body = (await request.json()) as {
+            messages: Array<{ role: string }>
+            tools?: Array<{ function: { name: string } }>
+          }
+          tools.push(...(body.tools ?? []).map((tool) => tool.function.name))
           const first = !body.messages.some((message: { role: string }) => message.role === "tool")
           const delta = first
             ? {
@@ -142,6 +147,7 @@ if (binary)
         )
         expect(states).toContain("completed")
         expect(calls).toBe(2)
+        expect(tools).toContain("workflow")
       } finally {
         clearTimeout(timer)
         child.kill()
