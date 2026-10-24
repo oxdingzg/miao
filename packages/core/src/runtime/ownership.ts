@@ -44,13 +44,20 @@ export async function use(filename: string): Promise<Usage> {
 async function usage(storage: string): Promise<Usage> {
   const filename = `${storage}.runtime-lock`
   const native = openRuntimeLock(filename)
-  const state = { exclusive: false, released: false }
+  const state = { exclusive: false, shared: false, released: false }
   const share = () => {
+    if (state.shared) return
     if (state.exclusive) native.exec("ROLLBACK")
-    // Acquisition retries belong to the caller; native waits multiply that
-    // budget and block the event loop while another process owns this store.
-    native.exec("BEGIN; SELECT name FROM sqlite_master LIMIT 1")
     state.exclusive = false
+    try {
+      native.exec("BEGIN")
+      native.exec("SELECT name FROM sqlite_master LIMIT 1")
+      state.shared = true
+    } catch (error) {
+      try { native.exec("ROLLBACK") } catch {}
+      if (busy(error)) throw new BusyError("Another miao window is initializing this database; retry shared access")
+      throw error
+    }
   }
   try {
     await chmod(filename, 0o600)
@@ -71,17 +78,11 @@ async function usage(storage: string): Promise<Usage> {
   }
   return {
     storage,
-    share: () => {
-      if (!state.exclusive) return
-      share()
-    },
+    share,
     exclusive: () => {
       if (state.exclusive) return
-      // bun:sqlite autocommits the multi-statement share(), so the fallback
-      // connection may have no active transaction to roll back.
-      try {
-        native.exec("ROLLBACK")
-      } catch {}
+      if (state.shared) native.exec("ROLLBACK")
+      state.shared = false
       try {
         native.exec("BEGIN EXCLUSIVE")
         state.exclusive = true

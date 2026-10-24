@@ -18,7 +18,12 @@ export function initialize(db: Database, usage: { exclusive: () => void; share: 
   return initialization.withPermit(
     Effect.gen(function* () {
       if (yield* upgradeExclusive(db, usage)) yield* apply(db)
-      yield* Effect.sync(usage.share)
+      yield* Effect.try({ try: usage.share, catch: (error) => error }).pipe(
+        Effect.retry({
+          while: (error) => error instanceof RuntimeOwnership.BusyError,
+          schedule: Schedule.spaced("50 millis").pipe(Schedule.while((metadata) => metadata.elapsed < 5000)),
+        }),
+      )
       yield* verify(db)
     }),
   )

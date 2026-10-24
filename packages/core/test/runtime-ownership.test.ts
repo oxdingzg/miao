@@ -22,6 +22,24 @@ async function acquire(filename: string) {
 }
 
 describe("Runtime ownership", () => {
+  test("shared usage survives a failed exclusive upgrade and can be reacquired", async () => {
+    const filename = await storage()
+    const first = await RuntimeOwnership.use(filename)
+    owners.push(first)
+    first.share()
+    const second = await RuntimeOwnership.use(filename)
+    owners.push(second)
+    second.share()
+    expect(() => first.exclusive()).toThrow(RuntimeOwnership.BusyError)
+    first.share()
+    await expect(RuntimeOwnership.acquire(filename)).rejects.toBeInstanceOf(RuntimeOwnership.BusyError)
+    second.release()
+    first.exclusive()
+    first.share()
+    first.release()
+    expect((await acquire(filename)).storage).toBe(filename)
+  })
+
   test("database initialization cannot bypass another process's owner", async () => {
     const filename = await storage()
     await acquire(filename)
