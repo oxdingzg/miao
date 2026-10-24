@@ -391,12 +391,13 @@ const runCell = async (
           cwd: workspace,
           stdout: "pipe",
           stderr: "pipe",
+          // run resolves its Location from PWD, not just the spawned process cwd.
           env:
             engine === "rust"
-              ? { ...process.env, MIAO_ENGINE_STORAGE: options.storage }
+              ? { ...process.env, PWD: workspace, MIAO_ENGINE_STORAGE: options.storage }
               : (() => {
                   const { MIAO_ENGINE_STORAGE: _ignored, ...rest } = process.env
-                  return rest
+                  return { ...rest, PWD: workspace }
                 })(),
         },
       )

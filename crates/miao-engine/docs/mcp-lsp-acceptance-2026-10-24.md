@@ -1,43 +1,83 @@
 # MCP + LSP real-client acceptance (2026-10-24)
 
-Both acceptances were driven against the **released 0.2.26 product** in an
-isolated sandbox (own `XDG_DATA_HOME`, copied config + credentials, the
-`commandcode/deepseek` route with the owner's API key — no gateway models), on
-the **native runtime** (TUI footer: `Native · Host default Native runtime`;
-engine journal under the sandbox `engines/` directory).
+These checks use the released 0.2.26 product, isolated data directories, and
+native Session placement. The real TUI displays `Native · Host default Native
+runtime`; the corresponding engine journal supplies the structured evidence.
+No credential values are included in this record.
 
-## MCP: user-configured server attach, tools, cancellation
+## MCP: attach, tools, and client interruption
 
-Server: the official open-source test server
-`@modelcontextprotocol/server-everything` (stdio), added exactly as a user
-would: `miao mcp add everything -- bunx -y @modelcontextprotocol/server-everything`,
-then the session started from the TUI.
+The official open-source `@modelcontextprotocol/server-everything` stdio
+server is configured as a local MCP server. The TUI displays `1 MCP`, and an
+`echo` call returns `Echo: MCP-NATIVE-OK` in the product.
 
-| Check | Result |
+Client interruption is verified by durable events, not by spinner changes.
+In Session `ses_gfe5e94c15027ffe8zuud5gMaF`, run
+`9626e3bd-c60f-4f79-96bd-474701ef3051`:
+
+| Sequence | Evidence |
 | --- | --- |
-| Attach | TUI status bar shows `⊙ 1 MCP`; the engine spawns the server over stdio |
-| Tools | `echo` called with `message=MCP-NATIVE-OK`; TUI renders `● custom [message=…]` and the model quotes `Echo: MCP-NATIVE-OK` |
-| Headless parity | `miao run --engine native` against the same server returns `Echo: MCP-ACCEPTANCE-OK` |
-| Cancellation | `session.interrupt` (Esc) during `trigger-long-running-operation` stops the turn: the spinner ends, the model's after-interrupt turn runs, and the in-flight tool result is never delivered to the model |
+| 15 | Assistant commits a tool call with `duration: 60` |
+| 18 | `tool.dispatched` for that call |
+| 19 | Matching error tool result: `Execution interrupted; outcome unknown. Do not automatically repeat side effects.` |
+| 21 | `run.finished` with `reason: interrupted` |
+| 22 | `stop` with `reason: interrupted` |
 
-Journal nuance, recorded honestly: the engine's `engine_tool` rows for the
-interrupted call end as `unknown`/`completed` because the everything server
-finishes its sleep server-side even after the cancelled notification; the
-user-visible cancellation is the accepted behavior, and a stricter
-row-level `cancelled` state for MCP tools can be a follow-up hardening.
+A second explicit prompt repeats this sequence at 36–40. There is no
+`tool.completed` success result for either interrupted call. The journal's
+`unknown` tool state is deliberate: client interruption cannot establish that
+an external operation stopped or undo effects it may already have performed.
+It must not be interpreted as successful completion or automatically replayed.
 
-## LSP: a real language server through the native process — partial, follow-up filed
+This verifies interruption through a real client after tool dispatch. It does
+**not** establish that the server received `notifications/cancelled`, or that
+server-side execution stopped. The earlier claim that the server kept running
+"even after the cancelled notification" was unsupported and is withdrawn.
 
-The plumbing is verified end to end: with `"lsp": true` in the sandbox config
-and rust-analyzer installed, the engine spawned the real language server and
-the agent executed `lsp_diagnostics` on a cargo project seeded with a type
-error (`let count: String = 5;`). `engine_tool` journals
-`lsp_diagnostics | completed` with structured input, and the tool returned a
-well-formed (but empty) diagnostics result — twice, minutes apart, while
-rust-analyzer itself flags `E0308` at src/main.rs:2:22.
+## LSP: real Pyright diagnostics rendered in the native TUI
 
-Root cause (filed as #1304): rust-analyzer publishes diagnostics via
-notifications after analysis; the engine's query lands before the first push
-and returns an empty set. Until #1304 lands, "diagnostics rendered in the
-product" cannot be accepted — this section documents the verified plumbing and
-the open gap.
+Use the open-source Pyright language server 1.1.414 with a native manifest:
+
+```json
+[
+  {
+    "name": "python",
+    "argv": ["/path/to/pyright-langserver", "--stdio"],
+    "extensions": [".py"],
+    "env": {},
+    "initialization": {}
+  }
+]
+```
+
+Pass its path with `MIAO_ENGINE_LSP_CONFIG` and opt new Sessions into native
+placement with `MIAO_ENGINE_STORAGE`. Open this file in the workspace:
+
+```python
+count: int = "not an integer"
+```
+
+Ask the native Session to call `lsp_diagnostics` on `example.py`. In Session
+`ses_gfe5e94735790ffedX053H47p1`, event 19 is `tool.completed` with:
+
+- `source: Pyright`, `code: reportAssignmentType`, `severity: 1`;
+- range line 0, characters 13–29;
+- message: the string literal is not assignable to `int`;
+- `document_version: 1`, `diagnostics_version: 1`, `stale: false`,
+  `version_verified: true`.
+
+The TUI renders the LSP tool part and the diagnostic JSON, followed by the
+assistant explaining the error. This satisfies the real-language-server,
+native-process, product-rendering acceptance without a paid account or native
+compilation.
+
+## Rust-specific empty diagnostics remain an investigation
+
+The earlier rust-analyzer run returned an empty diagnostic set for a Rust type
+error. That alone does not establish a push-timing bug: the engine already
+opens the document and waits for `publishDiagnostics` for up to three seconds.
+Rust semantic diagnostics may also depend on `cargo check`, which is blocked
+by the workstation's no-local-compilation policy. Neither cause has yet been
+isolated for that run. #1304 tracks the Rust-specific investigation; the
+previous asserted root cause is withdrawn. The successful Pyright run above
+independently verifies the native LSP diagnostics path.

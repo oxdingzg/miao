@@ -119,5 +119,5 @@ const layer = Layer.effect(
 export const node = makeGlobalNode({
   service: Service,
   layer,
-  deps: [Database.node, EventV2.node, ProjectV2.node, SessionStore.node, SessionOwnership.node],
+  deps: [Database.node, EventV2.node, ProjectV2.node, SessionStore.node, SessionOwnership.node, SessionProjector.node],
 })

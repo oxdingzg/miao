@@ -1,0 +1,44 @@
+[
+  {
+    "model": "deepseek/deepseek-v4-flash",
+    "task": "long-session",
+    "engine": "ts",
+    "repetition": 1,
+    "elapsedMs": 29577,
+    "attempts": 11,
+    "outcome": "pass",
+    "billed_input": 151251,
+    "uncached_input": 13139,
+    "cached_input": 138112,
+    "output": 891,
+    "cost": 0.00323
+  },
+  {
+    "model": "deepseek/deepseek-v4-flash",
+    "task": "long-session",
+    "engine": "ts",
+    "repetition": 2,
+    "elapsedMs": 20908,
+    "attempts": 11,
+    "outcome": "pass",
+    "billed_input": 150583,
+    "uncached_input": 12983,
+    "cached_input": 137600,
+    "output": 808,
+    "cost": 0.00304
+  },
+  {
+    "model": "deepseek/deepseek-v4-flash",
+    "task": "long-session",
+    "engine": "ts",
+    "repetition": 3,
+    "elapsedMs": 25444,
+    "attempts": 13,
+    "outcome": "pass",
+    "billed_input": 184359,
+    "uncached_input": 13479,
+    "cached_input": 170880,
+    "output": 1497,
+    "cost": 0.00368
+  }
+]

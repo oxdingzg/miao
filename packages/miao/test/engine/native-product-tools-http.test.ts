@@ -1,4 +1,5 @@
 import { expect, test } from "bun:test"
+import { Database } from "bun:sqlite"
 import path from "node:path"
 import { tmpdir } from "../fixture/fixture"
 
@@ -6,22 +7,30 @@ const binary = process.env.MIAO_ENGINE_BIN
 if (!binary) test.skip("native product tools settle a host-owned Session tool", () => {})
 
 if (binary)
-  test(
-    "native product tools settle a host-owned Session tool",
-    async () => {
+  for (const toolName of ["list_sessions", "workflow"] as const)
+    test(`native product tools settle ${toolName} through the host`, async () => {
       await using tmp = await tmpdir()
       const directory = path.join(tmp.path, "project")
       await Bun.$`mkdir -p ${directory}`.quiet()
       const policyFile = path.join(tmp.path, "policy.json")
       await Bun.write(policyFile, JSON.stringify({ mode: "workspace" }))
+      const tools: string[] = []
       let calls = 0
       const provider = Bun.serve({
         hostname: "127.0.0.1",
         port: 0,
         async fetch(request) {
           calls++
-          const body = await request.json()
-          const first = !body.messages.some((message: { role: string }) => message.role === "tool")
+          const body = (await request.json()) as {
+            messages: Array<{ role: string; content?: unknown }>
+            tools?: Array<{ function: { name: string } }>
+          }
+          tools.push(...(body.tools ?? []).map((tool) => tool.function.name))
+          const childTurn = body.messages.some(
+            (message) =>
+              message.role === "user" && JSON.stringify(message.content).includes("workflow-child-acceptance"),
+          )
+          const first = !childTurn && !body.messages.some((message) => message.role === "tool")
           const delta = first
             ? {
                 role: "assistant",
@@ -31,13 +40,20 @@ if (binary)
                     id: "list-call",
                     type: "function",
                     function: {
-                      name: "list_sessions",
-                      arguments: JSON.stringify({ includeHistory: true }),
+                      name: toolName,
+                      arguments: JSON.stringify(
+                        toolName === "list_sessions"
+                          ? { includeHistory: true }
+                          : {
+                              script:
+                                'return await tools.workflow.agent({agent:"explore",description:"Fixture child",prompt:"Reply workflow-child-acceptance"})',
+                            },
+                      ),
                     },
                   },
                 ],
               }
-            : { content: "completed-product-tool-turn" }
+            : { content: childTurn ? "workflow-child-acceptance" : "completed-product-tool-turn" }
           return new Response(
             `data: ${JSON.stringify({ id: "fixture", choices: [{ index: 0, delta, finish_reason: first ? "tool_calls" : "stop" }] })}\n\ndata: [DONE]\n\n`,
             { headers: { "content-type": "text/event-stream" } },
@@ -67,6 +83,7 @@ if (binary)
           XDG_CACHE_HOME: path.join(tmp.path, "cache"),
           MIAO_CONFIG_CONTENT: JSON.stringify({
             model: "fixture/fixture",
+            permission: "allow",
             providers: {
               fixture: {
                 name: "Fixture",
@@ -135,13 +152,26 @@ if (binary)
         expect(context.status).toBe(200)
         const transcript = await context.json()
         const rendered = JSON.stringify(transcript.data)
-        expect(rendered).toContain(peer.id)
+        expect(rendered).toContain(toolName === "list_sessions" ? peer.id : "workflow-child-acceptance")
+        if (toolName === "workflow") {
+          using db = new Database(path.join(tmp.path, "miao.db"), { readonly: true })
+          const children = db
+            .query<{ id: string }, [string]>("select id from session where parent_id = ?")
+            .all(target.id)
+          expect(children).toHaveLength(1)
+          const spawned = children.at(0)
+          if (!spawned) throw new Error("workflow child was not projected")
+          const result = await fetch(url + "/api/session/" + spawned.id + "/context", { headers })
+          expect(result.status).toBe(200)
+          expect(await result.text()).toContain("workflow-child-acceptance")
+        }
         const states = transcript.data.flatMap(
           (message: { content?: { type: string; state?: { status: string } }[] }) =>
             message.content?.filter((part) => part.type === "tool").map((part) => part.state?.status) ?? [],
         )
         expect(states).toContain("completed")
-        expect(calls).toBe(2)
+        expect(calls).toBe(toolName === "list_sessions" ? 2 : 3)
+        expect(tools).toContain("workflow")
       } finally {
         clearTimeout(timer)
         child.kill()
@@ -149,6 +179,4 @@ if (binary)
         await stderr
         provider.stop(true)
       }
-    },
-    40_000,
-  )
+    }, 40_000)
