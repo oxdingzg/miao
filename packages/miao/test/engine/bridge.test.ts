@@ -3,6 +3,7 @@ import {
   StatusBridge,
   ToolBridge,
   productToolID,
+  productToolInput,
   statusOf,
   translateApproval,
   translateApprovalResolved,
@@ -19,6 +20,8 @@ import { messageID } from "@/engine/identity"
 import { translateExpiredCredential } from "@/engine/bridge"
 import type { EngineEvent } from "@/engine/client"
 import type { ModelV2 } from "@miao/core/model"
+import { Model } from "@miao/schema/model"
+import { Provider } from "@miao/schema/provider"
 
 const event = (kind: string): EngineEvent => ({ session_id: "ses_test", seq: 1, kind, data: {} })
 
@@ -117,10 +120,28 @@ test("maps a committed assistant tool_use block to tool.called", () => {
 test("maps engine tool names to product tool ids", () => {
   expect(productToolID("read_file")).toBe("read")
   expect(productToolID("list_files")).toBe("read")
-  expect(productToolID("apply_patch")).toBe("apply-patch")
+  expect(productToolID("apply_patch")).toBe("apply_patch")
   expect(productToolID("run_command")).toBe("bash")
+  expect(productToolID("start_job")).toBe("bash")
+  expect(productToolID("job_status")).toBe("job_list")
+  expect(productToolID("job_list")).toBe("job_list")
+  expect(productToolID("job_wait")).toBe("job_wait")
+  expect(productToolID("cancel_job")).toBe("job_cancel")
+  expect(productToolID("monitor")).toBe("monitor")
+  expect(productToolID("task_list")).toBe("task_list")
   expect(productToolID("cron_list")).toBe("schedule")
+  expect(productToolID("mcp_dice_roll_dice")).toBe("mcp__dice__roll_dice")
+  expect(productToolID("mcp_dice_roll_dice_f03cf0c725b907c9894d9e5988840834")).toBe("mcp__dice__roll_dice")
   expect(productToolID("worker__echo")).toBe("custom")
+})
+
+test("projects start_job input into the product bash shape", () => {
+  expect(productToolInput("start_job", { argv: ["bash", "-c", "sleep 2"], timeout_ms: 1000 })).toEqual({
+    command: "sleep 2",
+    run_in_background: true,
+  })
+  expect(productToolInput("start_job", { argv: ["echo", "hi"] })).toEqual({ command: "echo hi", run_in_background: true })
+  expect(productToolInput("bash", { command: "ls" })).toEqual({ command: "ls" })
 })
 
 test("correlates tool.completed with its committed call", () => {
@@ -322,6 +343,7 @@ test("settles a step on the committed assistant message", () => {
     { tokens: { input: 30, output: 5, reasoning: 0, cache: { read: 12, write: 0 } } },
     95,
     undefined,
+    undefined,
   )
   expect(`${ended?.sessionID}`).toBe("ses_test")
   expect(ended?.assistantMessageID).toBe(messageID("ses_test", 7))
@@ -338,11 +360,12 @@ test("settles a step on the committed assistant message", () => {
     { tokens: { input: 30, output: 5, reasoning: 0, cache: { read: 12, write: 0 } } },
     95,
     rates,
+    { providerID: Provider.ID.make("p"), id: Model.ID.make("m") },
   )
   expect(priced?.cost).toBeCloseTo((18 * 1 + 5 * 3 + 12 * 0.1) / 1_000_000, 12)
 
   // No buffered usage settles with zeroed tokens and no ttft claim.
-  const bare = translateStepEnded(commit, undefined, undefined, undefined)
+  const bare = translateStepEnded(commit, undefined, undefined, undefined, undefined)
   expect(bare?.tokens.input).toBe(0)
   expect(bare?.ttft).toBeUndefined()
   expect(bare?.cost).toBe(0)
@@ -350,7 +373,7 @@ test("settles a step on the committed assistant message", () => {
   // A user commit never settles a step.
   const userData: object = { role: "user", content: [] }
   const user: EngineEvent = { ...commit, data: userData }
-  expect(translateStepEnded(user, undefined, undefined, undefined)).toBeUndefined()
+  expect(translateStepEnded(user, undefined, undefined, undefined, undefined)).toBeUndefined()
 })
 
 test("translateExpiredCredential parses the structured expired failure", () => {

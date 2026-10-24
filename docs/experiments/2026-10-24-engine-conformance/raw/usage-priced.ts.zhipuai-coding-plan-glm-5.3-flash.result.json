@@ -1,0 +1,15 @@
+{
+  "scenario": "usage-priced",
+  "engine": "ts",
+  "model": "zhipuai-coding-plan/glm-5.3-flash",
+  "outcome": {
+    "status": "pass"
+  },
+  "sessionID": "ses_gfe5e94b6f7f8ffeFM4eAr6fCL",
+  "cost": 0.00068,
+  "tokensIn": 2239,
+  "tokensOut": 5,
+  "stepFinishes": 1,
+  "tools": [],
+  "errors": []
+}

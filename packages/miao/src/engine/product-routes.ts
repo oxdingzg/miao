@@ -14,6 +14,7 @@ import { ModelV2 } from "@miao/core/model"
 import { PluginV2 } from "@miao/core/plugin"
 import { Deferred, Effect, Option } from "effect"
 import { EngineError, type EngineOptions } from "./client"
+import type { EnginePrice } from "./session"
 import { ProviderGateway } from "./provider-gateway"
 
 type Source =
@@ -50,21 +51,89 @@ export const contextLimitsFor = (
   }
 }
 
-/** Resolve the served model for the compaction trigger on an explicit route.
+/** The routes file's serving model id for the configured model ref, when the
+ * file carries a matching entry: `deepseek/deepseek-v4.1-flash` matches the
+ * entry whose id or model field names it, and that entry's `model` field is
+ * the api id the catalog indexes the model under. */
+const routeHint = (configuration: {
+  readonly model?: string
+  readonly modelRoutesConfigFile?: string
+}) =>
+  Effect.gen(function* () {
+    if (configuration.model === undefined || configuration.modelRoutesConfigFile === undefined) return undefined
+    const routes = yield* Effect.tryPromise({
+      try: () =>
+        Bun.file(configuration.modelRoutesConfigFile!).json() as Promise<Array<{ id?: string; model?: string }>>,
+      catch: () => undefined,
+    }).pipe(Effect.catch(() => Effect.succeed(undefined)))
+    if (routes === undefined || !Array.isArray(routes)) return undefined
+    const entry = routes.find(
+      (route) => route.id === configuration.model || route.model === configuration.model,
+    )
+    return entry?.model
+  })
+
+/**
+ * Resolve the served model for the compaction trigger on an explicit route.
  * Best effort: without the configured model in the catalog (provider plugins
- * not booted, worker or test contexts) the engine default stands. */
-const explicitModel = (catalog: Catalog.Interface, model: string | undefined) =>
+ * not booted, worker or test contexts) the engine default stands.
+ *
+ * Operator routes can serve a model ref the catalog does not carry verbatim:
+ * `engine-on.sh` style configs journal `deepseek/deepseek-v4.1-flash` while
+ * the catalog lists that id under origin providers (`above/…`, `opencode/…`)
+ * with the bare api id. When the model-routes file holds a matching entry,
+ * its `model` field acts as an api-id hint — a candidate whose api id equals
+ * the hint or is the hint's suffix matches. Context windows only depend on
+ * the model id, so the alphabetical first candidate is deterministic here;
+ * pricing stays out of this path because vendor rates are not interchangeable. */
+const explicitModel = (catalog: Catalog.Interface, model: string | undefined, hint?: string) =>
   Effect.gen(function* () {
     const capable = (yield* catalog.model.available()).filter(
       (candidate) => candidate.capabilities.tools && candidate.capabilities.output.includes("text"),
     )
-    const selected = model
-      ? capable.filter(
-          (candidate) => `${candidate.providerID}/${candidate.id}` === model || candidate.api.id === model,
-        )
-      : [yield* catalog.model.default()]
-    return selected.length === 1 ? selected[0] : undefined
+    if (model === undefined) return (yield* catalog.model.default()) ?? undefined
+    const matches = capable.filter(
+      (candidate) =>
+        `${candidate.providerID}/${candidate.id}` === model ||
+        candidate.api?.id === model ||
+        (hint !== undefined &&
+          candidate.api?.id !== undefined &&
+          (candidate.api.id === hint || hint.endsWith(`/${candidate.api.id}`))),
+    )
+    // Context windows only depend on the model id, so collapsing same-api-id
+    // candidates and taking the alphabetical first provider is deterministic.
+    const unique = [
+      ...new Map(
+        matches
+          .filter((candidate) => candidate.api?.id !== undefined)
+          .map((candidate) => [candidate.api!.id, candidate] as const),
+      ).values(),
+    ].sort((left, right) => (left.providerID ?? "").localeCompare(right.providerID ?? ""))
+    return unique.length >= 1 && (unique.length === 1 || hint !== undefined) ? unique[0] : undefined
   })
+
+/**
+ * Index catalog entries by every id the engine can journal for a served route:
+ * product-generated routes journal the api id, while operator routes commonly
+ * name the `provider/model` ref or the bare model id. A bare id prices only
+ * when no other key claims it, so an ambiguous id never charges the wrong
+ * model's rate.
+ */
+const priceIndex = (models: readonly ModelV2.Info[]) => {
+  const prices: Record<string, EnginePrice> = {}
+  const ambiguous = new Set<string>()
+  for (const model of models) {
+    const entry = { cost: model.cost, model: { providerID: model.providerID, id: model.id } }
+    prices[model.api.id] = entry
+    const ref = `${model.providerID}/${model.id}`
+    prices[ref] = entry
+    if (model.id === model.api.id || model.id === ref) continue
+    if (model.id in prices) ambiguous.add(model.id)
+    else prices[model.id] = entry
+  }
+  for (const id of ambiguous) delete prices[id]
+  return prices
+}
 
 /** Build exact host routes from the product catalog and active connections.
  * The manifest holds credential references only; refresh stays with its owner. */
@@ -81,7 +150,8 @@ export const prepare = Effect.fn("Engine.productRoutes")(function* (
   // models this best-effort pass cannot see yet.
   if (configuration.contextLimits === undefined) {
     const catalog = Option.getOrUndefined(yield* Effect.serviceOption(Catalog.Service))
-    const model = catalog ? yield* explicitModel(catalog, configuration.model) : undefined
+    const hint = yield* routeHint(configuration)
+    const model = catalog ? yield* explicitModel(catalog, configuration.model, hint) : undefined
     const derived = model ? contextLimitsFor(model, compaction) : undefined
     if (derived) options.contextLimits = derived
   }
@@ -92,8 +162,23 @@ export const prepare = Effect.fn("Engine.productRoutes")(function* (
     configuration.credentialDatabase ||
     configuration.credentialID ||
     configuration.credentialIntegration
-  )
-    return { ...options, prices: undefined }
+  ) {
+    // Explicit routes keep the operator's endpoint and credentials, but pricing
+    // stays a product fact: usage journals the serving model's api id either
+    // way, so the same catalog prices it. Without a booted catalog (worker or
+    // test contexts) pricing stays unknown.
+    const catalog = Option.getOrUndefined(yield* Effect.serviceOption(Catalog.Service))
+    if (!catalog) return { ...options, prices: undefined }
+    const plugins = Option.getOrUndefined(yield* Effect.serviceOption(PluginV2.Service))
+    if (plugins) yield* Deferred.await(plugins.booted)
+    const models = (yield* catalog.model.available()).filter(
+      (model) => model.capabilities.tools && model.capabilities.output.includes("text"),
+    )
+    return {
+      ...options,
+      prices: priceIndex(models),
+    }
+  }
   const catalog = Option.getOrUndefined(yield* Effect.serviceOption(Catalog.Service))
   const integrations = Option.getOrUndefined(yield* Effect.serviceOption(Integration.Service))
   const credentials = Option.getOrUndefined(yield* Effect.serviceOption(Credential.Service))
@@ -114,11 +199,9 @@ export const prepare = Effect.fn("Engine.productRoutes")(function* (
   const models = (yield* catalog.model.available()).filter(
     (model) => model.capabilities.tools && model.capabilities.output.includes("text"),
   )
-  // The engine journals the serving model's api id with each usage event; this
+  // The engine journals the serving route's model with each usage event; this
   // index prices those ids at the catalog's tiered rates.
-  const prices: Record<string, ModelV2.Info["cost"]> = Object.fromEntries(
-    models.map((model) => [model.api.id, model.cost]),
-  )
+  const prices = priceIndex(models)
   const selected = configuration.model
     ? models.filter(
         (model) => `${model.providerID}/${model.id}` === configuration.model || model.api.id === configuration.model,

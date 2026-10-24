@@ -1,0 +1,171 @@
+{
+  "sample": {
+    "task": "tool-error",
+    "engine": "typescript",
+    "repetition": 2,
+    "suiteHash": "bd905b4f81f0a9412b614631a36337723067574848c5f05b50ead1cf48675091",
+    "taskHash": "d805c342f165a7193bf45347ebba54a0e1c0d75e9baffd9c5979d07f5b0fb09e",
+    "profile": {
+      "model": "glm-5.3-flash",
+      "modelParametersHash": "4ce2bc84c22a40bef978c3d1f4fdd9714d6b6447fc5658a8185632085eec67fa",
+      "agentManifestHash": "656ec8f5eb3b14ec726b48324887612376b5300f1867bca8da5d9a1735dc3065",
+      "permissionHash": "8f6e27d08abbf98797371c973b2e28ceb68be0eca543a14c2cff4ddc679e37ea",
+      "toolSurfaceHash": "569f7e5c50f8c856ebeb33ec6bb521a33e3021be589edf23bc8b33f0348ad9cc"
+    },
+    "revision": "ed524903ae8dec701eba0e880390986ac98e0975",
+    "artifactHash": "42a0929bd2c953adb3b7ae60782aeb2d7a5a7101e999baa01b6d9c9d85b7e5ad",
+    "receiptHash": "1cdce9ecc0199d37cbebe20fbd366f8163d735dfb205ab7fcaf25b0f5906ab8f",
+    "outcome": "passed",
+    "elapsedMs": 8220,
+    "attempts": [
+      {
+        "inputTokens": 13594,
+        "outputTokens": 62,
+        "cost": null
+      },
+      {
+        "inputTokens": 13682,
+        "outputTokens": 28,
+        "cost": null
+      },
+      {
+        "inputTokens": 13761,
+        "outputTokens": 30,
+        "cost": null
+      }
+    ]
+  },
+  "rejection": null,
+  "evidence": {
+    "engine": "typescript",
+    "revision": "ed524903ae8dec701eba0e880390986ac98e0975",
+    "task": "tool-error",
+    "repetition": 2,
+    "terminal": "completed",
+    "error": null,
+    "receipts": [
+      "tool.error"
+    ],
+    "attempts": [
+      {
+        "inputTokens": 13594,
+        "outputTokens": 62,
+        "cacheReadTokens": 0,
+        "cacheWriteTokens": null,
+        "reasoningTokens": 33,
+        "cost": null
+      },
+      {
+        "inputTokens": 13682,
+        "outputTokens": 28,
+        "cacheReadTokens": 11392,
+        "cacheWriteTokens": null,
+        "reasoningTokens": 16,
+        "cost": null
+      },
+      {
+        "inputTokens": 13761,
+        "outputTokens": 30,
+        "cacheReadTokens": 13632,
+        "cacheWriteTokens": null,
+        "reasoningTokens": 0,
+        "cost": null
+      }
+    ],
+    "phases": [
+      {
+        "phase": "step-start",
+        "atMs": 1792769597751,
+        "clock": "observed"
+      },
+      {
+        "phase": "first-output",
+        "atMs": 1792769598836,
+        "clock": "observed"
+      },
+      {
+        "phase": "tool-part",
+        "atMs": 1792769598883,
+        "clock": "observed"
+      },
+      {
+        "phase": "step-start",
+        "atMs": 1792769600062,
+        "clock": "observed"
+      },
+      {
+        "phase": "tool-part",
+        "atMs": 1792769600465,
+        "clock": "observed"
+      },
+      {
+        "phase": "step-start",
+        "atMs": 1792769601729,
+        "clock": "observed"
+      },
+      {
+        "phase": "first-output",
+        "atMs": 1792769602239,
+        "clock": "observed"
+      },
+      {
+        "phase": "exit",
+        "atMs": 1792769602298,
+        "clock": "observed"
+      },
+      {
+        "phase": "verified",
+        "atMs": 1792769602311,
+        "clock": "observed"
+      }
+    ],
+    "profile": {
+      "model": "glm-5.3-flash",
+      "modelParametersHash": "4ce2bc84c22a40bef978c3d1f4fdd9714d6b6447fc5658a8185632085eec67fa",
+      "agentManifestHash": "656ec8f5eb3b14ec726b48324887612376b5300f1867bca8da5d9a1735dc3065",
+      "permissionHash": "8f6e27d08abbf98797371c973b2e28ceb68be0eca543a14c2cff4ddc679e37ea",
+      "toolSurfaceHash": "569f7e5c50f8c856ebeb33ec6bb521a33e3021be589edf23bc8b33f0348ad9cc"
+    },
+    "profileReceipts": 3,
+    "loops": {
+      "continuations": [],
+      "stopped": []
+    },
+    "toolCalls": 2,
+    "textHash": "b6e1e8691013de8641a87c68257a30520afbc2a2c1a9843b1bdbd3d4eddc54cb",
+    "binarySha256": null,
+    "startedAtMs": 1792769594091,
+    "admissionMs": null,
+    "elapsedMs": 8220
+  },
+  "assessment": {
+    "suiteHash": "bd905b4f81f0a9412b614631a36337723067574848c5f05b50ead1cf48675091",
+    "taskHash": "d805c342f165a7193bf45347ebba54a0e1c0d75e9baffd9c5979d07f5b0fb09e",
+    "artifactPass": true,
+    "unexpected": [],
+    "immutable": [
+      {
+        "file": "AGENTS.md",
+        "unchanged": true
+      },
+      {
+        "file": "package.json",
+        "unchanged": true
+      },
+      {
+        "file": "alternate.txt",
+        "unchanged": true
+      }
+    ],
+    "expected": [],
+    "check": null,
+    "executionVerdict": "unverified",
+    "requiredReceipts": [
+      "tool.error"
+    ],
+    "answerContains": [
+      "RECOVERY_TOKEN_83"
+    ]
+  },
+  "answer": "Reading missing.txt first as instructed (expected to fail), then recovering via alternate.txt.\nmissing.txt 读取失败(文件不存在),已按恢复路径读取 alternate.txt。Recovery token: `RECOVERY_TOKEN_83`"
+}

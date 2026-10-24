@@ -68,20 +68,32 @@ const postCompact = {
   data: { compaction_id: "cmp_1" },
 } satisfies EngineEvent
 
+const historyCompacted = {
+  session_id: "ses_replay",
+  seq: 41,
+  kind: "history.compacted",
+  recorded_at_ms: 1_700_000_041_123,
+  data: { compaction_id: "cmp_1", summary: "Kept the goal; summarized the file read.", through_message_seq: 38 },
+} satisfies EngineEvent
+
 test("compaction lifecycle projects as started/ended with a stable message id", () => {
   const started = translateCompaction(preCompact)
-  expect(started).toEqual({ type: "session.next.compaction.started", data: { status: "compacting context" } })
-  const ended = translateCompaction(postCompact)
+  if (!started || started.type !== "session.next.compaction.started") throw new Error("wrong projection")
+  expect(String(started.data.sessionID)).toBe("ses_replay")
+  expect(String(started.data.messageID)).toBe("msg_compaction_cmp_1")
+  expect(started.data.reason).toBe("auto")
+  const ended = translateCompaction(historyCompacted)
   if (!ended || ended.type !== "session.next.compaction.ended") throw new Error("wrong projection")
   expect(String(ended.data.messageID)).toBe("msg_compaction_cmp_1")
   expect(ended.data.reason).toBe("auto")
+  expect(ended.data.text).toBe("Kept the goal; summarized the file read.")
 })
 
 test("non-compaction events and anonymous compactions project nothing", () => {
   expect(translateCompaction(reasoningCommitted)).toBeUndefined()
   expect(
     translateCompaction({
-      ...postCompact,
+      ...historyCompacted,
       data: {},
     }),
   ).toBeUndefined()

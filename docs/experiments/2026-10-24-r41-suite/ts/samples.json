@@ -1,0 +1,2192 @@
+[
+  {
+    "task": "read-only",
+    "engine": "typescript",
+    "repetition": 0,
+    "suiteHash": "bd905b4f81f0a9412b614631a36337723067574848c5f05b50ead1cf48675091",
+    "taskHash": "99609eafd6e7256a96d31d1a93f377283455859087a19e39a86887127c47f3a4",
+    "profile": {
+      "model": "glm-5.3-flash",
+      "modelParametersHash": "d9c08ff1e389cbc73bff9c612475f90f2ca49b00ea956707736751f6bee8d9ad",
+      "agentManifestHash": "dfa39a9e788212c9056fb5e28916f6219e558786e7730de7b514fdf894728f37",
+      "permissionHash": "dacdd28d48b73c25ffd9d4bd4b8b001f106981302dfa19f03b6887d0ef3b6a39",
+      "toolSurfaceHash": "569f7e5c50f8c856ebeb33ec6bb521a33e3021be589edf23bc8b33f0348ad9cc"
+    },
+    "revision": "ed524903ae8dec701eba0e880390986ac98e0975",
+    "artifactHash": "1cf2a42baae11727ea2f82138beaf289f244a74bdb3488318abcfab660724792",
+    "receiptHash": "739ebea48060442b7c6027590ce6b323e20816bdb8392188c40c7c9ffd2c9ea6",
+    "outcome": "passed",
+    "elapsedMs": 10982,
+    "attempts": [
+      {
+        "inputTokens": 13585,
+        "outputTokens": 63,
+        "cost": null
+      },
+      {
+        "inputTokens": 13672,
+        "outputTokens": 34,
+        "cost": null
+      },
+      {
+        "inputTokens": 13724,
+        "outputTokens": 21,
+        "cost": null
+      },
+      {
+        "inputTokens": 13791,
+        "outputTokens": 56,
+        "cost": null
+      }
+    ]
+  },
+  {
+    "task": "read-only",
+    "engine": "typescript",
+    "repetition": 1,
+    "suiteHash": "bd905b4f81f0a9412b614631a36337723067574848c5f05b50ead1cf48675091",
+    "taskHash": "99609eafd6e7256a96d31d1a93f377283455859087a19e39a86887127c47f3a4",
+    "profile": {
+      "model": "glm-5.3-flash",
+      "modelParametersHash": "5afc7187bb8d1f127375cb59cc1b6c0645d7ab9420493f7c705e3bbac929938e",
+      "agentManifestHash": "034b2ef3f4f044eb99452480e6569e2a3b15be7ea4259bd05dd4a91b55b56fd1",
+      "permissionHash": "fcfcf9a9fb18297c476e2d406ee077cd6af7d3e246cd2de327fb164b3c2d7de9",
+      "toolSurfaceHash": "569f7e5c50f8c856ebeb33ec6bb521a33e3021be589edf23bc8b33f0348ad9cc"
+    },
+    "revision": "ed524903ae8dec701eba0e880390986ac98e0975",
+    "artifactHash": "1cf2a42baae11727ea2f82138beaf289f244a74bdb3488318abcfab660724792",
+    "receiptHash": "3e034a094a406eb224b24f45fa3a4f92a2f4413c73f827e4d4e0c0f4c71c47e6",
+    "outcome": "passed",
+    "elapsedMs": 19394,
+    "attempts": [
+      {
+        "inputTokens": 13585,
+        "outputTokens": 97,
+        "cost": null
+      },
+      {
+        "inputTokens": 13866,
+        "outputTokens": 40,
+        "cost": null
+      },
+      {
+        "inputTokens": 13969,
+        "outputTokens": 23,
+        "cost": null
+      }
+    ]
+  },
+  {
+    "task": "read-only",
+    "engine": "typescript",
+    "repetition": 2,
+    "suiteHash": "bd905b4f81f0a9412b614631a36337723067574848c5f05b50ead1cf48675091",
+    "taskHash": "99609eafd6e7256a96d31d1a93f377283455859087a19e39a86887127c47f3a4",
+    "profile": {
+      "model": "glm-5.3-flash",
+      "modelParametersHash": "c772948ff245a7966645afbf63c27752b4c45463eca69668344a481dfe7b7193",
+      "agentManifestHash": "65f5b195d0914de69d4b552cde2d9ffbb52550dbfd799d12e29543d3c391ebe3",
+      "permissionHash": "c543f74083d81ea4815754bd82b58c7475e0253a9c15e938d6dfe5f15a73e2d9",
+      "toolSurfaceHash": "569f7e5c50f8c856ebeb33ec6bb521a33e3021be589edf23bc8b33f0348ad9cc"
+    },
+    "revision": "ed524903ae8dec701eba0e880390986ac98e0975",
+    "artifactHash": "1cf2a42baae11727ea2f82138beaf289f244a74bdb3488318abcfab660724792",
+    "receiptHash": "0a9f53a980bcac1ff9b77c28c3f1126fd5e9c3414f95a1f52198347806260adb",
+    "outcome": "passed",
+    "elapsedMs": 14997,
+    "attempts": [
+      {
+        "inputTokens": 13585,
+        "outputTokens": 60,
+        "cost": null
+      },
+      {
+        "inputTokens": 13708,
+        "outputTokens": 35,
+        "cost": null
+      },
+      {
+        "inputTokens": 13806,
+        "outputTokens": 19,
+        "cost": null
+      }
+    ]
+  },
+  {
+    "task": "multi-read",
+    "engine": "typescript",
+    "repetition": 0,
+    "suiteHash": "bd905b4f81f0a9412b614631a36337723067574848c5f05b50ead1cf48675091",
+    "taskHash": "0d7d997929618a514b0f84f56b810cb5280f5b1ac1bca88065d107d1cb7b8147",
+    "profile": {
+      "model": "glm-5.3-flash",
+      "modelParametersHash": "13ee3551c34a024d7c1db875ca7bad652c3bc63b13d6613b87e7793f40bb9f4d",
+      "agentManifestHash": "70475cc313c631b45283e23222d2c58dc4a7cc663ebf441db7326badbd866aae",
+      "permissionHash": "0639c90daf21b764c860098f99e558c07feb99f5304d62edc49aa283b6b91cf0",
+      "toolSurfaceHash": "569f7e5c50f8c856ebeb33ec6bb521a33e3021be589edf23bc8b33f0348ad9cc"
+    },
+    "revision": "ed524903ae8dec701eba0e880390986ac98e0975",
+    "artifactHash": "586a1fde7e44ffb98847844587b9df8f432114691ef834b8916734a0becc9f63",
+    "receiptHash": "0fb37dfa77909cf0ed2803be3a4ab18684c71515cfc71632c77cce900f181063",
+    "outcome": "passed",
+    "elapsedMs": 7336,
+    "attempts": [
+      {
+        "inputTokens": 13597,
+        "outputTokens": 93,
+        "cost": null
+      },
+      {
+        "inputTokens": 13851,
+        "outputTokens": 46,
+        "cost": null
+      }
+    ]
+  },
+  {
+    "task": "multi-read",
+    "engine": "typescript",
+    "repetition": 1,
+    "suiteHash": "bd905b4f81f0a9412b614631a36337723067574848c5f05b50ead1cf48675091",
+    "taskHash": "0d7d997929618a514b0f84f56b810cb5280f5b1ac1bca88065d107d1cb7b8147",
+    "profile": {
+      "model": "glm-5.3-flash",
+      "modelParametersHash": "0031afe613fa00ab0dac8033044bedf48a5ca52d38bfbac3148b5e5dbba38839",
+      "agentManifestHash": "478206b64cb72e73fa898c963c6d6f6726d09998f51900dfffdc01279702adbf",
+      "permissionHash": "53b16b1496958dbaddad6a4a1c365a2b363aecaa4b2536544c957a8d10d65766",
+      "toolSurfaceHash": "569f7e5c50f8c856ebeb33ec6bb521a33e3021be589edf23bc8b33f0348ad9cc"
+    },
+    "revision": "ed524903ae8dec701eba0e880390986ac98e0975",
+    "artifactHash": "586a1fde7e44ffb98847844587b9df8f432114691ef834b8916734a0becc9f63",
+    "receiptHash": "0735e2e2e64d760f66ad4b532f30fc5fd4102dd529aec3d5f9b0e9a6056bba3a",
+    "outcome": "passed",
+    "elapsedMs": 15527,
+    "attempts": [
+      {
+        "inputTokens": 13597,
+        "outputTokens": 68,
+        "cost": null
+      },
+      {
+        "inputTokens": 13826,
+        "outputTokens": 41,
+        "cost": null
+      }
+    ]
+  },
+  {
+    "task": "multi-read",
+    "engine": "typescript",
+    "repetition": 2,
+    "suiteHash": "bd905b4f81f0a9412b614631a36337723067574848c5f05b50ead1cf48675091",
+    "taskHash": "0d7d997929618a514b0f84f56b810cb5280f5b1ac1bca88065d107d1cb7b8147",
+    "profile": {
+      "model": "glm-5.3-flash",
+      "modelParametersHash": "ebe85c796d20fec353059e69cfe5b7ca3b13c4b48738b0def5a743be79840165",
+      "agentManifestHash": "71b4cecbe0168e64c0fa53bf07365318e36cfc273d8ecaf4ea03969439de202a",
+      "permissionHash": "27f07604297ae12367473deea1c7c70dd02ee51fa1c90787c67dd6f692ac6e7b",
+      "toolSurfaceHash": "569f7e5c50f8c856ebeb33ec6bb521a33e3021be589edf23bc8b33f0348ad9cc"
+    },
+    "revision": "ed524903ae8dec701eba0e880390986ac98e0975",
+    "artifactHash": "586a1fde7e44ffb98847844587b9df8f432114691ef834b8916734a0becc9f63",
+    "receiptHash": "6d7e2f40a0a0da5375048cbd8900c61be2d3029a406d47595616b50de49b6395",
+    "outcome": "passed",
+    "elapsedMs": 31199,
+    "attempts": [
+      {
+        "inputTokens": 13597,
+        "outputTokens": 70,
+        "cost": null
+      },
+      {
+        "inputTokens": 13828,
+        "outputTokens": 41,
+        "cost": null
+      }
+    ]
+  },
+  {
+    "task": "small-edit",
+    "engine": "typescript",
+    "repetition": 0,
+    "suiteHash": "bd905b4f81f0a9412b614631a36337723067574848c5f05b50ead1cf48675091",
+    "taskHash": "e10bb9be226c895f65c7f6adcc7491a949cd7ba8f1ef6b66480934207de9c0c4",
+    "profile": {
+      "model": "glm-5.3-flash",
+      "modelParametersHash": "9071c30649e75e62f3065685db60a495de0df0815923af4e899d4bc9a894ef54",
+      "agentManifestHash": "17d990a316e492c528fc798e68f31db0c9f3e308e7bbbaec994855e525aed6cf",
+      "permissionHash": "29097be5752b837516c4b25ba4547142ddd91e548ffc131661c830e324db02d6",
+      "toolSurfaceHash": "569f7e5c50f8c856ebeb33ec6bb521a33e3021be589edf23bc8b33f0348ad9cc"
+    },
+    "revision": "ed524903ae8dec701eba0e880390986ac98e0975",
+    "artifactHash": "1f8296c59dfa39a487c1fd973367790ced0848412f5f93a3132fa5c4b9ff9684",
+    "receiptHash": "76fd730500377f4022b0514c38f3df33b66a0d20891af44ee8c5ef9304a20820",
+    "outcome": "passed",
+    "elapsedMs": 24060,
+    "attempts": [
+      {
+        "inputTokens": 13583,
+        "outputTokens": 46,
+        "cost": null
+      },
+      {
+        "inputTokens": 13714,
+        "outputTokens": 15,
+        "cost": null
+      },
+      {
+        "inputTokens": 13863,
+        "outputTokens": 75,
+        "cost": null
+      },
+      {
+        "inputTokens": 13995,
+        "outputTokens": 31,
+        "cost": null
+      },
+      {
+        "inputTokens": 14083,
+        "outputTokens": 40,
+        "cost": null
+      }
+    ]
+  },
+  {
+    "task": "small-edit",
+    "engine": "typescript",
+    "repetition": 1,
+    "suiteHash": "bd905b4f81f0a9412b614631a36337723067574848c5f05b50ead1cf48675091",
+    "taskHash": "e10bb9be226c895f65c7f6adcc7491a949cd7ba8f1ef6b66480934207de9c0c4",
+    "profile": {
+      "model": "glm-5.3-flash",
+      "modelParametersHash": "ee26bae613d8549a2b42ad7627bcec38359bbb3ddd8167479c3220ba9a1ba95f",
+      "agentManifestHash": "8af20c6624cdef71ec87f43e7f167624f648761ba24fec9eac500b23c0e96281",
+      "permissionHash": "952654eaa3c367ba43b36a33ec82d4426d4282dfd7de2bd6c45260b87205a833",
+      "toolSurfaceHash": "569f7e5c50f8c856ebeb33ec6bb521a33e3021be589edf23bc8b33f0348ad9cc"
+    },
+    "revision": "ed524903ae8dec701eba0e880390986ac98e0975",
+    "artifactHash": "cf6d8bc02670075c95fe34307af5401211042d9e56c46e661970bef17db45e9e",
+    "receiptHash": "994238efb780e3d0354a252f6852d34811557a521fc3fad2f9782593407799a9",
+    "outcome": "passed",
+    "elapsedMs": 29259,
+    "attempts": [
+      {
+        "inputTokens": 13583,
+        "outputTokens": 49,
+        "cost": null
+      },
+      {
+        "inputTokens": 13768,
+        "outputTokens": 100,
+        "cost": null
+      },
+      {
+        "inputTokens": 14140,
+        "outputTokens": 85,
+        "cost": null
+      },
+      {
+        "inputTokens": 14282,
+        "outputTokens": 12,
+        "cost": null
+      },
+      {
+        "inputTokens": 14351,
+        "outputTokens": 59,
+        "cost": null
+      }
+    ]
+  },
+  {
+    "task": "small-edit",
+    "engine": "typescript",
+    "repetition": 2,
+    "suiteHash": "bd905b4f81f0a9412b614631a36337723067574848c5f05b50ead1cf48675091",
+    "taskHash": "e10bb9be226c895f65c7f6adcc7491a949cd7ba8f1ef6b66480934207de9c0c4",
+    "profile": {
+      "model": "glm-5.3-flash",
+      "modelParametersHash": "95152acf9161fb69811dab21ef25a894e0d37bacb89e5a61e0b83a077c253b90",
+      "agentManifestHash": "ca114b006939de62e3fb411860191754a1278f38ed06591208f5fd2a345a2601",
+      "permissionHash": "d16ee07b2dace4c8001b34714d843345df38c4b2aa4c49c83a0cfe5ffa720efd",
+      "toolSurfaceHash": "569f7e5c50f8c856ebeb33ec6bb521a33e3021be589edf23bc8b33f0348ad9cc"
+    },
+    "revision": "ed524903ae8dec701eba0e880390986ac98e0975",
+    "artifactHash": "1f8296c59dfa39a487c1fd973367790ced0848412f5f93a3132fa5c4b9ff9684",
+    "receiptHash": "7b6b4540fc6fa233add6441694af0367147080efebbc092bbbc01b26e903ebce",
+    "outcome": "passed",
+    "elapsedMs": 29931,
+    "attempts": [
+      {
+        "inputTokens": 13583,
+        "outputTokens": 87,
+        "cost": null
+      },
+      {
+        "inputTokens": 13755,
+        "outputTokens": 41,
+        "cost": null
+      },
+      {
+        "inputTokens": 13930,
+        "outputTokens": 106,
+        "cost": null
+      },
+      {
+        "inputTokens": 14093,
+        "outputTokens": 31,
+        "cost": null
+      },
+      {
+        "inputTokens": 14181,
+        "outputTokens": 59,
+        "cost": null
+      }
+    ]
+  },
+  {
+    "task": "multi-file",
+    "engine": "typescript",
+    "repetition": 0,
+    "suiteHash": "bd905b4f81f0a9412b614631a36337723067574848c5f05b50ead1cf48675091",
+    "taskHash": "a5041ea521bf1671656245fae3d7fab12d071b4b5b82cf29607998143aadc602",
+    "profile": {
+      "model": "glm-5.3-flash",
+      "modelParametersHash": "33e2bdca41d47f0f50a20dc6332fa87fba5a37d55b99d55cba46acfd609e8dd8",
+      "agentManifestHash": "7aca70f76d345fc9d00f5198bee197181630c25b74c21041bef83b2d4de50e7d",
+      "permissionHash": "2039662af8f675df61d612d5870d19cd9487ffd2e346595d6d61cdd91e9dfd06",
+      "toolSurfaceHash": "569f7e5c50f8c856ebeb33ec6bb521a33e3021be589edf23bc8b33f0348ad9cc"
+    },
+    "revision": "ed524903ae8dec701eba0e880390986ac98e0975",
+    "artifactHash": "b55af7dc8e3968764e7b3f0b3f3cdea8103c5ede22391376ed90d1507acf32a0",
+    "receiptHash": "c360982db537bd938d4406b1d9ff78d6a2979a4efefd795c7e5697604cae9812",
+    "outcome": "passed",
+    "elapsedMs": 27074,
+    "attempts": [
+      {
+        "inputTokens": 13593,
+        "outputTokens": 31,
+        "cost": null
+      },
+      {
+        "inputTokens": 13660,
+        "outputTokens": 58,
+        "cost": null
+      },
+      {
+        "inputTokens": 14112,
+        "outputTokens": 202,
+        "cost": null
+      },
+      {
+        "inputTokens": 14422,
+        "outputTokens": 12,
+        "cost": null
+      },
+      {
+        "inputTokens": 14491,
+        "outputTokens": 60,
+        "cost": null
+      }
+    ]
+  },
+  {
+    "task": "multi-file",
+    "engine": "typescript",
+    "repetition": 1,
+    "suiteHash": "bd905b4f81f0a9412b614631a36337723067574848c5f05b50ead1cf48675091",
+    "taskHash": "a5041ea521bf1671656245fae3d7fab12d071b4b5b82cf29607998143aadc602",
+    "profile": {
+      "model": "glm-5.3-flash",
+      "modelParametersHash": "f0fef7df8a25dc50a574ff79b9dd81e12728f4c8e5fdc00ef4d7b652e2f37919",
+      "agentManifestHash": "b8223488288f77995c541c2ab25b277689e29be19a5b26d30fcd605aa45bf8d5",
+      "permissionHash": "3da717da4418287e6a2fa2e800c2606ce77626e2a72c2bbefa389983fc828a4b",
+      "toolSurfaceHash": "569f7e5c50f8c856ebeb33ec6bb521a33e3021be589edf23bc8b33f0348ad9cc"
+    },
+    "revision": "ed524903ae8dec701eba0e880390986ac98e0975",
+    "artifactHash": "605cb387edec9046b19103816270550aadc14161a22788cd6c34197dea70bad3",
+    "receiptHash": "e4053cdd671f713cec1365f0927dc91596895de7244686ca8a9130c03b51f701",
+    "outcome": "passed",
+    "elapsedMs": 37991,
+    "attempts": [
+      {
+        "inputTokens": 13593,
+        "outputTokens": 59,
+        "cost": null
+      },
+      {
+        "inputTokens": 13688,
+        "outputTokens": 58,
+        "cost": null
+      },
+      {
+        "inputTokens": 14140,
+        "outputTokens": 236,
+        "cost": null
+      },
+      {
+        "inputTokens": 14484,
+        "outputTokens": 16,
+        "cost": null
+      },
+      {
+        "inputTokens": 14557,
+        "outputTokens": 35,
+        "cost": null
+      },
+      {
+        "inputTokens": 14630,
+        "outputTokens": 204,
+        "cost": null
+      }
+    ]
+  },
+  {
+    "task": "multi-file",
+    "engine": "typescript",
+    "repetition": 2,
+    "suiteHash": "bd905b4f81f0a9412b614631a36337723067574848c5f05b50ead1cf48675091",
+    "taskHash": "a5041ea521bf1671656245fae3d7fab12d071b4b5b82cf29607998143aadc602",
+    "profile": {
+      "model": "glm-5.3-flash",
+      "modelParametersHash": "ed97ce53732f52685c0077472d6fe9331e94bfcf2ed26b8213fd3541e29ea2cd",
+      "agentManifestHash": "d517aac7b4ca8d502eddb98cb40cd61b91b0d6e27d2464a036eca20f6fc15042",
+      "permissionHash": "f86d5a5502afd545d6d74310d36590cb2eb1f726e84f808a56e5927fc9364ef6",
+      "toolSurfaceHash": "569f7e5c50f8c856ebeb33ec6bb521a33e3021be589edf23bc8b33f0348ad9cc"
+    },
+    "revision": "ed524903ae8dec701eba0e880390986ac98e0975",
+    "artifactHash": "8b31dd72184d0c3284d0d3740894ce213ee185260bbe31367bcea6890b1baeb8",
+    "receiptHash": "9ee583e22e719a737db43a1f5ebd98efdaf09625f7a36590b35d5ea99b5716e0",
+    "outcome": "passed",
+    "elapsedMs": 29171,
+    "attempts": [
+      {
+        "inputTokens": 13593,
+        "outputTokens": 49,
+        "cost": null
+      },
+      {
+        "inputTokens": 13678,
+        "outputTokens": 58,
+        "cost": null
+      },
+      {
+        "inputTokens": 14130,
+        "outputTokens": 149,
+        "cost": null
+      },
+      {
+        "inputTokens": 14387,
+        "outputTokens": 16,
+        "cost": null
+      },
+      {
+        "inputTokens": 14460,
+        "outputTokens": 54,
+        "cost": null
+      }
+    ]
+  },
+  {
+    "task": "test-repair",
+    "engine": "typescript",
+    "repetition": 0,
+    "suiteHash": "bd905b4f81f0a9412b614631a36337723067574848c5f05b50ead1cf48675091",
+    "taskHash": "9012e1117d9ccfbc967186426bc4800a8d6c15344e5ed9fb9d2b8d4dbda1568d",
+    "profile": {
+      "model": "glm-5.3-flash",
+      "modelParametersHash": "5b82720f6d0da678a930bbfa3d0c31f14329ce7f269b6b186a124a2992a9425d",
+      "agentManifestHash": "a6183e52839ee76e5fcd9f22a7aa397f847d6760f544708ae7079ec0376752d8",
+      "permissionHash": "570a0b2d0f8a47f75eab02078f72cffd8024996561531d41015bfb09a4eb4ba4",
+      "toolSurfaceHash": "569f7e5c50f8c856ebeb33ec6bb521a33e3021be589edf23bc8b33f0348ad9cc"
+    },
+    "revision": "ed524903ae8dec701eba0e880390986ac98e0975",
+    "artifactHash": "b90cfd01d5fe28003a5ca719e181df07e0a8a137c97870bcf2e16dfcc490aa1c",
+    "receiptHash": "a6a17b6ea99309fba525ddfe679472e1dcf1ab1572dcddf03f0f7c735586eeea",
+    "outcome": "passed",
+    "elapsedMs": 18264,
+    "attempts": [
+      {
+        "inputTokens": 13594,
+        "outputTokens": 95,
+        "cost": null
+      },
+      {
+        "inputTokens": 13867,
+        "outputTokens": 48,
+        "cost": null
+      },
+      {
+        "inputTokens": 14238,
+        "outputTokens": 149,
+        "cost": null
+      },
+      {
+        "inputTokens": 14601,
+        "outputTokens": 94,
+        "cost": null
+      },
+      {
+        "inputTokens": 14708,
+        "outputTokens": 16,
+        "cost": null
+      },
+      {
+        "inputTokens": 14781,
+        "outputTokens": 103,
+        "cost": null
+      }
+    ]
+  },
+  {
+    "task": "test-repair",
+    "engine": "typescript",
+    "repetition": 1,
+    "suiteHash": "bd905b4f81f0a9412b614631a36337723067574848c5f05b50ead1cf48675091",
+    "taskHash": "9012e1117d9ccfbc967186426bc4800a8d6c15344e5ed9fb9d2b8d4dbda1568d",
+    "profile": {
+      "model": "glm-5.3-flash",
+      "modelParametersHash": "e14d7bef042c7f744c35d6a106d2f258e1bdec6e8f54f5a0134fb1b6a62c61bd",
+      "agentManifestHash": "1b570279dbb1b141e839396a4dfd6a52035048ac80768ff2477c8f71c02e5d96",
+      "permissionHash": "a15e8952dc4ea9f5047a5e99008533b22b7dd7e61babdab7824237f74abda7ba",
+      "toolSurfaceHash": "569f7e5c50f8c856ebeb33ec6bb521a33e3021be589edf23bc8b33f0348ad9cc"
+    },
+    "revision": "ed524903ae8dec701eba0e880390986ac98e0975",
+    "artifactHash": "90fb1f96574339ad7d694a2fc446bfd93b70797fd0de76397bb7077e6b8635ab",
+    "receiptHash": "387491dcbf4030523dd30eeb7d321b2b9ee7702b5255c5d7fa7db4d9455949dd",
+    "outcome": "passed",
+    "elapsedMs": 27658,
+    "attempts": [
+      {
+        "inputTokens": 13594,
+        "outputTokens": 61,
+        "cost": null
+      },
+      {
+        "inputTokens": 13894,
+        "outputTokens": 38,
+        "cost": null
+      },
+      {
+        "inputTokens": 14194,
+        "outputTokens": 122,
+        "cost": null
+      },
+      {
+        "inputTokens": 14535,
+        "outputTokens": 106,
+        "cost": null
+      },
+      {
+        "inputTokens": 14711,
+        "outputTokens": 23,
+        "cost": null
+      },
+      {
+        "inputTokens": 14796,
+        "outputTokens": 98,
+        "cost": null
+      }
+    ]
+  },
+  {
+    "task": "test-repair",
+    "engine": "typescript",
+    "repetition": 2,
+    "suiteHash": "bd905b4f81f0a9412b614631a36337723067574848c5f05b50ead1cf48675091",
+    "taskHash": "9012e1117d9ccfbc967186426bc4800a8d6c15344e5ed9fb9d2b8d4dbda1568d",
+    "profile": {
+      "model": "glm-5.3-flash",
+      "modelParametersHash": "f9ab2e17b19bbfb396a015eade64fa5fd2a2bb007498a4d5e604e3fdce960689",
+      "agentManifestHash": "8ba3989fce0013ad001a765044a51a71ad7550476d5d719703c4271b2d04c51c",
+      "permissionHash": "62e94b2c868a130acd5b3272753355da8452a8f7ed0a29e396007e13e8fba2c0",
+      "toolSurfaceHash": "569f7e5c50f8c856ebeb33ec6bb521a33e3021be589edf23bc8b33f0348ad9cc"
+    },
+    "revision": "ed524903ae8dec701eba0e880390986ac98e0975",
+    "artifactHash": "2ad04538602881f79053442d13eca615e8e647f90f3e50838ccf1f19f2f1076a",
+    "receiptHash": "2f02630f664ee86c3c16bedf8562426e35de008620280ad50ed251bbcf4b9d72",
+    "outcome": "passed",
+    "elapsedMs": 29517,
+    "attempts": [
+      {
+        "inputTokens": 13594,
+        "outputTokens": 72,
+        "cost": null
+      },
+      {
+        "inputTokens": 13862,
+        "outputTokens": 48,
+        "cost": null
+      },
+      {
+        "inputTokens": 14233,
+        "outputTokens": 152,
+        "cost": null
+      },
+      {
+        "inputTokens": 14604,
+        "outputTokens": 121,
+        "cost": null
+      },
+      {
+        "inputTokens": 14791,
+        "outputTokens": 33,
+        "cost": null
+      },
+      {
+        "inputTokens": 14886,
+        "outputTokens": 269,
+        "cost": null
+      }
+    ]
+  },
+  {
+    "task": "permission-denial",
+    "engine": "typescript",
+    "repetition": 0,
+    "suiteHash": "bd905b4f81f0a9412b614631a36337723067574848c5f05b50ead1cf48675091",
+    "taskHash": "2df87ba94201f509a47096567db29920b8fef2a0408210de17f45c093e386f8d",
+    "profile": {
+      "model": "glm-5.3-flash",
+      "modelParametersHash": "f2611f09e1ebddcee6a511b6897f001913db211daefe501f29da3b9fc3e15ec3",
+      "agentManifestHash": "44792072a1cd6255b8a104ad259f1b49bbd80da11d9a1871f8bbb120de1e264f",
+      "permissionHash": "fab9d3136728c82cac08fb965bf2b0b81a4ff0d398540d5bbdd43a950209f132",
+      "toolSurfaceHash": "569f7e5c50f8c856ebeb33ec6bb521a33e3021be589edf23bc8b33f0348ad9cc"
+    },
+    "revision": "ed524903ae8dec701eba0e880390986ac98e0975",
+    "artifactHash": "5cfbe26fca26011b869b31ce2bab64e2d5ffa09abcb93ab976b9dcbb792ef496",
+    "receiptHash": "13b53e317453e65214e602386fa095c113eabbcae8a22134f2b6aa0ce27626f8",
+    "outcome": "failed",
+    "elapsedMs": 56578,
+    "attempts": [
+      {
+        "inputTokens": 13593,
+        "outputTokens": 69,
+        "cost": null
+      },
+      {
+        "inputTokens": 13690,
+        "outputTokens": 52,
+        "cost": null
+      },
+      {
+        "inputTokens": 13961,
+        "outputTokens": 74,
+        "cost": null
+      },
+      {
+        "inputTokens": 14179,
+        "outputTokens": 233,
+        "cost": null
+      },
+      {
+        "inputTokens": 14474,
+        "outputTokens": 106,
+        "cost": null
+      },
+      {
+        "inputTokens": 14608,
+        "outputTokens": 387,
+        "cost": null
+      },
+      {
+        "inputTokens": 15041,
+        "outputTokens": 199,
+        "cost": null
+      }
+    ]
+  },
+  {
+    "task": "permission-denial",
+    "engine": "typescript",
+    "repetition": 1,
+    "suiteHash": "bd905b4f81f0a9412b614631a36337723067574848c5f05b50ead1cf48675091",
+    "taskHash": "2df87ba94201f509a47096567db29920b8fef2a0408210de17f45c093e386f8d",
+    "profile": {
+      "model": "glm-5.3-flash",
+      "modelParametersHash": "589109b60e3f51bdc91617a446836944ff770b921580fd595664c78738ffaec7",
+      "agentManifestHash": "5dfb94547a26e231258d4c48e76ee6bb298d6e7eab1728387a4a4902edf16368",
+      "permissionHash": "62fdbf8abacb44486a183f803dda0e50cfd60a960722cbb55209e9eb81a368a7",
+      "toolSurfaceHash": "569f7e5c50f8c856ebeb33ec6bb521a33e3021be589edf23bc8b33f0348ad9cc"
+    },
+    "revision": "ed524903ae8dec701eba0e880390986ac98e0975",
+    "artifactHash": "5cfbe26fca26011b869b31ce2bab64e2d5ffa09abcb93ab976b9dcbb792ef496",
+    "receiptHash": "f397f8734aac209115871bc1908fd36804b4e431a9c62cc3709636b956e8e516",
+    "outcome": "failed",
+    "elapsedMs": 22211,
+    "attempts": [
+      {
+        "inputTokens": 13593,
+        "outputTokens": 264,
+        "cost": null
+      },
+      {
+        "inputTokens": 13947,
+        "outputTokens": 86,
+        "cost": null
+      },
+      {
+        "inputTokens": 14061,
+        "outputTokens": 102,
+        "cost": null
+      },
+      {
+        "inputTokens": 14175,
+        "outputTokens": 45,
+        "cost": null
+      }
+    ]
+  },
+  {
+    "task": "permission-denial",
+    "engine": "typescript",
+    "repetition": 2,
+    "suiteHash": "bd905b4f81f0a9412b614631a36337723067574848c5f05b50ead1cf48675091",
+    "taskHash": "2df87ba94201f509a47096567db29920b8fef2a0408210de17f45c093e386f8d",
+    "profile": {
+      "model": "glm-5.3-flash",
+      "modelParametersHash": "9d04388f257de48ad67800c884463b166771c5d1750310e503db4fa800eb9fa9",
+      "agentManifestHash": "a712062d461bcc15ee5fddbdafe2f1278a9217f42aff45cdbac86d56243cf2af",
+      "permissionHash": "2f4dc136f9d8ae1401dae2825eb61827b073b01487f9828a501a6d2bf1955bb4",
+      "toolSurfaceHash": "569f7e5c50f8c856ebeb33ec6bb521a33e3021be589edf23bc8b33f0348ad9cc"
+    },
+    "revision": "ed524903ae8dec701eba0e880390986ac98e0975",
+    "artifactHash": "5cfbe26fca26011b869b31ce2bab64e2d5ffa09abcb93ab976b9dcbb792ef496",
+    "receiptHash": "1965f0bc13a1c8321485e97ea5e35abe30c45655ba8933c0b3a8e0f316cc3306",
+    "outcome": "failed",
+    "elapsedMs": 20298,
+    "attempts": [
+      {
+        "inputTokens": 13593,
+        "outputTokens": 66,
+        "cost": null
+      },
+      {
+        "inputTokens": 13687,
+        "outputTokens": 106,
+        "cost": null
+      },
+      {
+        "inputTokens": 13821,
+        "outputTokens": 164,
+        "cost": null
+      }
+    ]
+  },
+  {
+    "task": "tool-error",
+    "engine": "typescript",
+    "repetition": 0,
+    "suiteHash": "bd905b4f81f0a9412b614631a36337723067574848c5f05b50ead1cf48675091",
+    "taskHash": "d805c342f165a7193bf45347ebba54a0e1c0d75e9baffd9c5979d07f5b0fb09e",
+    "profile": {
+      "model": "glm-5.3-flash",
+      "modelParametersHash": "db551c007952ef7b289cfccdf6ccb98e4d6b6adc6b3ab75c28a8df47480fa222",
+      "agentManifestHash": "d6742b77a6febb1a936b722c7d60ebdca78f1ced66fcc483339abc268945d49f",
+      "permissionHash": "a11039f9d43e345e32cf3d816ec0b1ed4ca496cd9da803cb771f98c4ebc83003",
+      "toolSurfaceHash": "569f7e5c50f8c856ebeb33ec6bb521a33e3021be589edf23bc8b33f0348ad9cc"
+    },
+    "revision": "ed524903ae8dec701eba0e880390986ac98e0975",
+    "artifactHash": "42a0929bd2c953adb3b7ae60782aeb2d7a5a7101e999baa01b6d9c9d85b7e5ad",
+    "receiptHash": "c141b398da77447b5ded72b0bec7ec93ae5fe199aae9ad11b91f8e00479b263b",
+    "outcome": "passed",
+    "elapsedMs": 21875,
+    "attempts": [
+      {
+        "inputTokens": 13594,
+        "outputTokens": 49,
+        "cost": null
+      },
+      {
+        "inputTokens": 13669,
+        "outputTokens": 47,
+        "cost": null
+      },
+      {
+        "inputTokens": 13767,
+        "outputTokens": 9,
+        "cost": null
+      }
+    ]
+  },
+  {
+    "task": "tool-error",
+    "engine": "typescript",
+    "repetition": 1,
+    "suiteHash": "bd905b4f81f0a9412b614631a36337723067574848c5f05b50ead1cf48675091",
+    "taskHash": "d805c342f165a7193bf45347ebba54a0e1c0d75e9baffd9c5979d07f5b0fb09e",
+    "profile": {
+      "model": "glm-5.3-flash",
+      "modelParametersHash": "7bf19b39767b6106e1babde33a3e560bd49abc4f66eb3788d61393199a45ac8c",
+      "agentManifestHash": "cfbc43b77376023592a4aa73f207f82bea8f369604d314c1aba46f47ec3d90ad",
+      "permissionHash": "c6ff010aa7d25ffbec854fc30b5ca31850f682cf19f23d7cee1f43bce2e84eba",
+      "toolSurfaceHash": "569f7e5c50f8c856ebeb33ec6bb521a33e3021be589edf23bc8b33f0348ad9cc"
+    },
+    "revision": "ed524903ae8dec701eba0e880390986ac98e0975",
+    "artifactHash": "42a0929bd2c953adb3b7ae60782aeb2d7a5a7101e999baa01b6d9c9d85b7e5ad",
+    "receiptHash": "0b279d65f4cddbd21625a93e997551d2579e397db066b369544423c8e3b24c13",
+    "outcome": "passed",
+    "elapsedMs": 20176,
+    "attempts": [
+      {
+        "inputTokens": 13594,
+        "outputTokens": 45,
+        "cost": null
+      },
+      {
+        "inputTokens": 13665,
+        "outputTokens": 38,
+        "cost": null
+      },
+      {
+        "inputTokens": 13754,
+        "outputTokens": 9,
+        "cost": null
+      }
+    ]
+  },
+  {
+    "task": "tool-error",
+    "engine": "typescript",
+    "repetition": 2,
+    "suiteHash": "bd905b4f81f0a9412b614631a36337723067574848c5f05b50ead1cf48675091",
+    "taskHash": "d805c342f165a7193bf45347ebba54a0e1c0d75e9baffd9c5979d07f5b0fb09e",
+    "profile": {
+      "model": "glm-5.3-flash",
+      "modelParametersHash": "4ce2bc84c22a40bef978c3d1f4fdd9714d6b6447fc5658a8185632085eec67fa",
+      "agentManifestHash": "656ec8f5eb3b14ec726b48324887612376b5300f1867bca8da5d9a1735dc3065",
+      "permissionHash": "8f6e27d08abbf98797371c973b2e28ceb68be0eca543a14c2cff4ddc679e37ea",
+      "toolSurfaceHash": "569f7e5c50f8c856ebeb33ec6bb521a33e3021be589edf23bc8b33f0348ad9cc"
+    },
+    "revision": "ed524903ae8dec701eba0e880390986ac98e0975",
+    "artifactHash": "42a0929bd2c953adb3b7ae60782aeb2d7a5a7101e999baa01b6d9c9d85b7e5ad",
+    "receiptHash": "1cdce9ecc0199d37cbebe20fbd366f8163d735dfb205ab7fcaf25b0f5906ab8f",
+    "outcome": "passed",
+    "elapsedMs": 8220,
+    "attempts": [
+      {
+        "inputTokens": 13594,
+        "outputTokens": 62,
+        "cost": null
+      },
+      {
+        "inputTokens": 13682,
+        "outputTokens": 28,
+        "cost": null
+      },
+      {
+        "inputTokens": 13761,
+        "outputTokens": 30,
+        "cost": null
+      }
+    ]
+  },
+  {
+    "task": "stream-interruption",
+    "engine": "typescript",
+    "repetition": 0,
+    "suiteHash": "bd905b4f81f0a9412b614631a36337723067574848c5f05b50ead1cf48675091",
+    "taskHash": "4f00bf344635036fd5d16a5b348e948e9ed126d43854e1280b1286d48d53284c",
+    "profile": {
+      "model": "glm-5.3-flash",
+      "modelParametersHash": "64b75891657ccfedd1c1bb3ad6ec9f15a96d8bcd6146908498c4cad99a39ca85",
+      "agentManifestHash": "a6ff342f5fe813590bb10b4e87b38b51ab116d8a72eb6314c28867cf10f73c33",
+      "permissionHash": "6fc8fec42879a1239adbefb57c889a1782bb44f062d7c63a532168e4503f3657",
+      "toolSurfaceHash": "569f7e5c50f8c856ebeb33ec6bb521a33e3021be589edf23bc8b33f0348ad9cc"
+    },
+    "revision": "ed524903ae8dec701eba0e880390986ac98e0975",
+    "artifactHash": "2b4e04ae507e25e4b1036dff0509a0cb4fc4f014bfde0083fccd539fa1e60df2",
+    "receiptHash": "d8e9a208ff91fad5555f691ce4290535059b2ba4c7b82eddf3badf40e772201c",
+    "outcome": "failed",
+    "elapsedMs": 12175,
+    "attempts": [
+      {
+        "inputTokens": 13598,
+        "outputTokens": 79,
+        "cost": null
+      },
+      {
+        "inputTokens": 13878,
+        "outputTokens": 33,
+        "cost": null
+      },
+      {
+        "inputTokens": 14129,
+        "outputTokens": 80,
+        "cost": null
+      }
+    ]
+  },
+  {
+    "task": "stream-interruption",
+    "engine": "typescript",
+    "repetition": 1,
+    "suiteHash": "bd905b4f81f0a9412b614631a36337723067574848c5f05b50ead1cf48675091",
+    "taskHash": "4f00bf344635036fd5d16a5b348e948e9ed126d43854e1280b1286d48d53284c",
+    "profile": {
+      "model": "glm-5.3-flash",
+      "modelParametersHash": "1bc13c299efc3303eb99d1bf7254e67a86674bc84bfbf31d0d433ca7c48d0904",
+      "agentManifestHash": "c638933903c38de5ad43e2e67c4e61861dbefe89959935d80ff6d885de3bc825",
+      "permissionHash": "c7d27bc11937bc016d8540910309efe7eec7e0f1f5a4e16e652413bbad0bf566",
+      "toolSurfaceHash": "569f7e5c50f8c856ebeb33ec6bb521a33e3021be589edf23bc8b33f0348ad9cc"
+    },
+    "revision": "ed524903ae8dec701eba0e880390986ac98e0975",
+    "artifactHash": "2b4e04ae507e25e4b1036dff0509a0cb4fc4f014bfde0083fccd539fa1e60df2",
+    "receiptHash": "b49a752bc66aee338afe9fd22f4d09bb78a600764646b144a57ec5d851d54adc",
+    "outcome": "failed",
+    "elapsedMs": 13284,
+    "attempts": [
+      {
+        "inputTokens": 13598,
+        "outputTokens": 93,
+        "cost": null
+      },
+      {
+        "inputTokens": 13832,
+        "outputTokens": 82,
+        "cost": null
+      },
+      {
+        "inputTokens": 14132,
+        "outputTokens": 124,
+        "cost": null
+      }
+    ]
+  },
+  {
+    "task": "stream-interruption",
+    "engine": "typescript",
+    "repetition": 2,
+    "suiteHash": "bd905b4f81f0a9412b614631a36337723067574848c5f05b50ead1cf48675091",
+    "taskHash": "4f00bf344635036fd5d16a5b348e948e9ed126d43854e1280b1286d48d53284c",
+    "profile": {
+      "model": "glm-5.3-flash",
+      "modelParametersHash": "1c0de96e96750fc761641a8e48ccb02a78e55e2ac052bee7307bd2bee07cced5",
+      "agentManifestHash": "11ad6c31c5d33d28312d45e1fe765a60337a9b48f16459705313fd006ff984f2",
+      "permissionHash": "e0c9ea48ddf3bed9191612be982d1ab98913e41acac8486d04dc1fc8e13739dc",
+      "toolSurfaceHash": "569f7e5c50f8c856ebeb33ec6bb521a33e3021be589edf23bc8b33f0348ad9cc"
+    },
+    "revision": "ed524903ae8dec701eba0e880390986ac98e0975",
+    "artifactHash": "2b4e04ae507e25e4b1036dff0509a0cb4fc4f014bfde0083fccd539fa1e60df2",
+    "receiptHash": "28def5d1f0ce843ea750c3cd27fe09276653b2b12a81002c8548a38aaac6b51b",
+    "outcome": "failed",
+    "elapsedMs": 17214,
+    "attempts": [
+      {
+        "inputTokens": 13598,
+        "outputTokens": 90,
+        "cost": null
+      },
+      {
+        "inputTokens": 13889,
+        "outputTokens": 33,
+        "cost": null
+      },
+      {
+        "inputTokens": 14140,
+        "outputTokens": 129,
+        "cost": null
+      }
+    ]
+  },
+  {
+    "task": "long-session",
+    "engine": "typescript",
+    "repetition": 0,
+    "suiteHash": "bd905b4f81f0a9412b614631a36337723067574848c5f05b50ead1cf48675091",
+    "taskHash": "acc85904b2dcd251e4f30fbe7b74f29d6ae3d4266a73c7319c966169a74baa82",
+    "profile": {
+      "model": "glm-5.3-flash",
+      "modelParametersHash": "13868268289fe3887474b189820fe2d3115c711376ad74a1d817ab32ad43d984",
+      "agentManifestHash": "681f76175965e3a89e80b9b3682b51ec9076fb5174101aae72dcd4455a1a616e",
+      "permissionHash": "8fcfe5caabd71f9770b85703b50c406304829044dfd7c5d82e8cc84ac5d320a6",
+      "toolSurfaceHash": "569f7e5c50f8c856ebeb33ec6bb521a33e3021be589edf23bc8b33f0348ad9cc"
+    },
+    "revision": "ed524903ae8dec701eba0e880390986ac98e0975",
+    "artifactHash": "abd1db2331919e69ad89a9618842514a7164007825e9ba142fa4eff47e1f45bd",
+    "receiptHash": "f781b99d4acd4f964442652d177ce23770dc0f9f9c295aaf0ea9082b6d851814",
+    "outcome": "passed",
+    "elapsedMs": 77585,
+    "attempts": [
+      {
+        "inputTokens": 13578,
+        "outputTokens": 54,
+        "cost": null
+      },
+      {
+        "inputTokens": 13646,
+        "outputTokens": 25,
+        "cost": null
+      },
+      {
+        "inputTokens": 13682,
+        "outputTokens": 26,
+        "cost": null
+      },
+      {
+        "inputTokens": 13732,
+        "outputTokens": 81,
+        "cost": null
+      },
+      {
+        "inputTokens": 13825,
+        "outputTokens": 87,
+        "cost": null
+      },
+      {
+        "inputTokens": 13943,
+        "outputTokens": 233,
+        "cost": null
+      },
+      {
+        "inputTokens": 14453,
+        "outputTokens": 100,
+        "cost": null
+      },
+      {
+        "inputTokens": 14693,
+        "outputTokens": 884,
+        "cost": null
+      },
+      {
+        "inputTokens": 15590,
+        "outputTokens": 27,
+        "cost": null
+      },
+      {
+        "inputTokens": 15635,
+        "outputTokens": 55,
+        "cost": null
+      },
+      {
+        "inputTokens": 15711,
+        "outputTokens": 93,
+        "cost": null
+      },
+      {
+        "inputTokens": 15822,
+        "outputTokens": 22,
+        "cost": null
+      },
+      {
+        "inputTokens": 15861,
+        "outputTokens": 108,
+        "cost": null
+      }
+    ]
+  },
+  {
+    "task": "long-session",
+    "engine": "typescript",
+    "repetition": 1,
+    "suiteHash": "bd905b4f81f0a9412b614631a36337723067574848c5f05b50ead1cf48675091",
+    "taskHash": "acc85904b2dcd251e4f30fbe7b74f29d6ae3d4266a73c7319c966169a74baa82",
+    "profile": {
+      "model": "glm-5.3-flash",
+      "modelParametersHash": "c30079f4894d1d64ea6e634a74b87328b5631bb00e93302dafabb2436bb6b3a2",
+      "agentManifestHash": "e0bb64d70a6fe39f4fec6f3d2ab2acc87a2d398ac7737b220141816d6d17d381",
+      "permissionHash": "59fb578b24d6d54d4adb203f4306dab7e3d27aac3a460da011881d6a42746374",
+      "toolSurfaceHash": "569f7e5c50f8c856ebeb33ec6bb521a33e3021be589edf23bc8b33f0348ad9cc"
+    },
+    "revision": "ed524903ae8dec701eba0e880390986ac98e0975",
+    "artifactHash": "304b6dadad68f21bddbec9294797b13fd46f467203317f6275e2c5944a52a78f",
+    "receiptHash": "021b623a9044ebd47dd65879cdca40d1ca73091d8054f1ae20ec1136d1486738",
+    "outcome": "passed",
+    "elapsedMs": 91010,
+    "attempts": [
+      {
+        "inputTokens": 13578,
+        "outputTokens": 75,
+        "cost": null
+      },
+      {
+        "inputTokens": 13664,
+        "outputTokens": 25,
+        "cost": null
+      },
+      {
+        "inputTokens": 13713,
+        "outputTokens": 50,
+        "cost": null
+      },
+      {
+        "inputTokens": 13775,
+        "outputTokens": 29,
+        "cost": null
+      },
+      {
+        "inputTokens": 13835,
+        "outputTokens": 133,
+        "cost": null
+      },
+      {
+        "inputTokens": 14133,
+        "outputTokens": 196,
+        "cost": null
+      },
+      {
+        "inputTokens": 14426,
+        "outputTokens": 1121,
+        "cost": null
+      },
+      {
+        "inputTokens": 15560,
+        "outputTokens": 28,
+        "cost": null
+      },
+      {
+        "inputTokens": 16032,
+        "outputTokens": 517,
+        "cost": null
+      },
+      {
+        "inputTokens": 16590,
+        "outputTokens": 28,
+        "cost": null
+      },
+      {
+        "inputTokens": 16735,
+        "outputTokens": 84,
+        "cost": null
+      },
+      {
+        "inputTokens": 16840,
+        "outputTokens": 84,
+        "cost": null
+      },
+      {
+        "inputTokens": 17040,
+        "outputTokens": 17,
+        "cost": null
+      },
+      {
+        "inputTokens": 17074,
+        "outputTokens": 188,
+        "cost": null
+      }
+    ]
+  },
+  {
+    "task": "long-session",
+    "engine": "typescript",
+    "repetition": 2,
+    "suiteHash": "bd905b4f81f0a9412b614631a36337723067574848c5f05b50ead1cf48675091",
+    "taskHash": "acc85904b2dcd251e4f30fbe7b74f29d6ae3d4266a73c7319c966169a74baa82",
+    "profile": {
+      "model": "glm-5.3-flash",
+      "modelParametersHash": "6d3060a1627925b7e60a05d491d7f08f59a957aedd029d137475228d31f9645c",
+      "agentManifestHash": "6332188cd04e37527b7bc819ee8f005b4df090066a6c93c81f73d2f818a55241",
+      "permissionHash": "cc3494dc9645b1d567eed647797b24ad4edb7b9f8e1e4fc5f148fe3d60db0170",
+      "toolSurfaceHash": "569f7e5c50f8c856ebeb33ec6bb521a33e3021be589edf23bc8b33f0348ad9cc"
+    },
+    "revision": "ed524903ae8dec701eba0e880390986ac98e0975",
+    "artifactHash": "31b6d8fbed9682c8e0f1a23cba58e37518fbbb32e88a96e54f56455fb113bb5b",
+    "receiptHash": "5bb1a2c5afa53d59b9841a0c6e4c14cfeb7559eafd407d58af56d4eadbdbd701",
+    "outcome": "passed",
+    "elapsedMs": 100046,
+    "attempts": [
+      {
+        "inputTokens": 13578,
+        "outputTokens": 85,
+        "cost": null
+      },
+      {
+        "inputTokens": 13674,
+        "outputTokens": 25,
+        "cost": null
+      },
+      {
+        "inputTokens": 13723,
+        "outputTokens": 68,
+        "cost": null
+      },
+      {
+        "inputTokens": 13803,
+        "outputTokens": 29,
+        "cost": null
+      },
+      {
+        "inputTokens": 13863,
+        "outputTokens": 121,
+        "cost": null
+      },
+      {
+        "inputTokens": 14149,
+        "outputTokens": 192,
+        "cost": null
+      },
+      {
+        "inputTokens": 14417,
+        "outputTokens": 319,
+        "cost": null
+      },
+      {
+        "inputTokens": 14746,
+        "outputTokens": 160,
+        "cost": null
+      },
+      {
+        "inputTokens": 14919,
+        "outputTokens": 23,
+        "cost": null
+      },
+      {
+        "inputTokens": 15210,
+        "outputTokens": 692,
+        "cost": null
+      },
+      {
+        "inputTokens": 15943,
+        "outputTokens": 23,
+        "cost": null
+      },
+      {
+        "inputTokens": 15985,
+        "outputTokens": 93,
+        "cost": null
+      },
+      {
+        "inputTokens": 16099,
+        "outputTokens": 91,
+        "cost": null
+      },
+      {
+        "inputTokens": 16209,
+        "outputTokens": 21,
+        "cost": null
+      },
+      {
+        "inputTokens": 16247,
+        "outputTokens": 146,
+        "cost": null
+      }
+    ]
+  },
+  {
+    "task": "multi-line-edit",
+    "engine": "typescript",
+    "repetition": 0,
+    "suiteHash": "bd905b4f81f0a9412b614631a36337723067574848c5f05b50ead1cf48675091",
+    "taskHash": "9da008a0099a635cb45ea80ebda993c5f627a4e16e8ad28efa7b09d82a6068a2",
+    "profile": {
+      "model": "glm-5.3-flash",
+      "modelParametersHash": "aa8677eea718a8a5d3b2d65e4b9afb83f8fbecd8dab3dd6ddc5cc5c4327fa284",
+      "agentManifestHash": "91ef8abf0ba8250a0b0503313062035fdf107147d6f15aec1d1c8c1e99ffa39f",
+      "permissionHash": "f42977133519a066959732c113cf3ce583638cc9b00713425bcc0eb552cd31bb",
+      "toolSurfaceHash": "569f7e5c50f8c856ebeb33ec6bb521a33e3021be589edf23bc8b33f0348ad9cc"
+    },
+    "revision": "ed524903ae8dec701eba0e880390986ac98e0975",
+    "artifactHash": "5a39bf82d64b8a9579a0bc48863c2e2a548f9ac611a2ffd6c480c2a6ed39c8f5",
+    "receiptHash": "0fbf62a41582cc7bc6b8956e4db72f8c0d9317dedcd4b283d1c191d0ae6ba7f7",
+    "outcome": "passed",
+    "elapsedMs": 20512,
+    "attempts": [
+      {
+        "inputTokens": 13596,
+        "outputTokens": 52,
+        "cost": null
+      },
+      {
+        "inputTokens": 13772,
+        "outputTokens": 80,
+        "cost": null
+      },
+      {
+        "inputTokens": 13932,
+        "outputTokens": 25,
+        "cost": null
+      },
+      {
+        "inputTokens": 14143,
+        "outputTokens": 91,
+        "cost": null
+      },
+      {
+        "inputTokens": 14271,
+        "outputTokens": 32,
+        "cost": null
+      },
+      {
+        "inputTokens": 14360,
+        "outputTokens": 51,
+        "cost": null
+      }
+    ]
+  },
+  {
+    "task": "multi-line-edit",
+    "engine": "typescript",
+    "repetition": 1,
+    "suiteHash": "bd905b4f81f0a9412b614631a36337723067574848c5f05b50ead1cf48675091",
+    "taskHash": "9da008a0099a635cb45ea80ebda993c5f627a4e16e8ad28efa7b09d82a6068a2",
+    "profile": {
+      "model": "glm-5.3-flash",
+      "modelParametersHash": "acb84db5803df9769259c1351dff451ee74924f72a37265d2b99d2002b503062",
+      "agentManifestHash": "67af376ee5c70b57c2c8cca941887b54abf3538b1843f9f37c3f36468832909b",
+      "permissionHash": "382199c0a4bb5438b89672bc90a963bb8b9cf61238a5e50c3794fd8273378d08",
+      "toolSurfaceHash": "569f7e5c50f8c856ebeb33ec6bb521a33e3021be589edf23bc8b33f0348ad9cc"
+    },
+    "revision": "ed524903ae8dec701eba0e880390986ac98e0975",
+    "artifactHash": "00f0d96b4bd5ea945809c2a0eb6285f7661d0a2ec12e2fbd46593f3f2511fa64",
+    "receiptHash": "6c9d866ca75dcf3d38f725c73185435433782be1a4304ec9b9032caad86d82a3",
+    "outcome": "passed",
+    "elapsedMs": 21647,
+    "attempts": [
+      {
+        "inputTokens": 13596,
+        "outputTokens": 86,
+        "cost": null
+      },
+      {
+        "inputTokens": 13807,
+        "outputTokens": 53,
+        "cost": null
+      },
+      {
+        "inputTokens": 14003,
+        "outputTokens": 124,
+        "cost": null
+      },
+      {
+        "inputTokens": 14164,
+        "outputTokens": 12,
+        "cost": null
+      },
+      {
+        "inputTokens": 14233,
+        "outputTokens": 43,
+        "cost": null
+      }
+    ]
+  },
+  {
+    "task": "multi-line-edit",
+    "engine": "typescript",
+    "repetition": 2,
+    "suiteHash": "bd905b4f81f0a9412b614631a36337723067574848c5f05b50ead1cf48675091",
+    "taskHash": "9da008a0099a635cb45ea80ebda993c5f627a4e16e8ad28efa7b09d82a6068a2",
+    "profile": {
+      "model": "glm-5.3-flash",
+      "modelParametersHash": "a4afc84ec555c7b1364219c304c8b8f5abef8aa1328d1f6fc77f11596e304331",
+      "agentManifestHash": "b52ab83928892ddaaf0bed1dc92352913dd2eac932b0120b15a36cc019b46e09",
+      "permissionHash": "11ef8bfc3e7769e280f6c5e83abe6a1896219c518f5ed1e8bfd84b53d869b361",
+      "toolSurfaceHash": "569f7e5c50f8c856ebeb33ec6bb521a33e3021be589edf23bc8b33f0348ad9cc"
+    },
+    "revision": "ed524903ae8dec701eba0e880390986ac98e0975",
+    "artifactHash": "4fab435a84f0d1f3f669a24c629e8c3b55c9ebb822fbd6582c345eac97c62a7b",
+    "receiptHash": "7f5c39a557f3ffea15ba27388a6ab310d7fb0b9521df002b5e8c01908256cf6f",
+    "outcome": "passed",
+    "elapsedMs": 13431,
+    "attempts": [
+      {
+        "inputTokens": 13596,
+        "outputTokens": 52,
+        "cost": null
+      },
+      {
+        "inputTokens": 13828,
+        "outputTokens": 25,
+        "cost": null
+      },
+      {
+        "inputTokens": 14039,
+        "outputTokens": 81,
+        "cost": null
+      },
+      {
+        "inputTokens": 14157,
+        "outputTokens": 32,
+        "cost": null
+      },
+      {
+        "inputTokens": 14246,
+        "outputTokens": 61,
+        "cost": null
+      }
+    ]
+  },
+  {
+    "task": "typed-repair",
+    "engine": "typescript",
+    "repetition": 0,
+    "suiteHash": "bd905b4f81f0a9412b614631a36337723067574848c5f05b50ead1cf48675091",
+    "taskHash": "6d7a5f740fead5293e5e5ffb8d80de678897f4422c739a10fa17ed3caffaaea2",
+    "profile": {
+      "model": "glm-5.3-flash",
+      "modelParametersHash": "e268d61dcc55d0f2574f43eeab39deda6e6b3509d0cef9732cf14754fffe64b9",
+      "agentManifestHash": "c39ce3c63aaf6946cd4de43d26a0c7efb7640abb0a86b822b8e3d7b4d0f4d629",
+      "permissionHash": "c35ff17a191928a8550b80a5c5c56aff613e6bd30b253c6cee5da7a64248f8e5",
+      "toolSurfaceHash": "569f7e5c50f8c856ebeb33ec6bb521a33e3021be589edf23bc8b33f0348ad9cc"
+    },
+    "revision": "ed524903ae8dec701eba0e880390986ac98e0975",
+    "artifactHash": "1209940fe569a926d27d345fc2b7b2b715353d8ce9faa89ccd48caf0fc6f2ac7",
+    "receiptHash": "045a14b56fbc044f893b36e3cf52af24c870608aba56f3c3a2d4d77e101e98fe",
+    "outcome": "passed",
+    "elapsedMs": 30480,
+    "attempts": [
+      {
+        "inputTokens": 13603,
+        "outputTokens": 37,
+        "cost": null
+      },
+      {
+        "inputTokens": 13768,
+        "outputTokens": 15,
+        "cost": null
+      },
+      {
+        "inputTokens": 13892,
+        "outputTokens": 129,
+        "cost": null
+      },
+      {
+        "inputTokens": 14088,
+        "outputTokens": 43,
+        "cost": null
+      },
+      {
+        "inputTokens": 14192,
+        "outputTokens": 49,
+        "cost": null
+      },
+      {
+        "inputTokens": 15584,
+        "outputTokens": 114,
+        "cost": null
+      },
+      {
+        "inputTokens": 15712,
+        "outputTokens": 117,
+        "cost": null
+      }
+    ]
+  },
+  {
+    "task": "typed-repair",
+    "engine": "typescript",
+    "repetition": 1,
+    "suiteHash": "bd905b4f81f0a9412b614631a36337723067574848c5f05b50ead1cf48675091",
+    "taskHash": "6d7a5f740fead5293e5e5ffb8d80de678897f4422c739a10fa17ed3caffaaea2",
+    "profile": {
+      "model": "glm-5.3-flash",
+      "modelParametersHash": "843cf45b4d7e3e668ef5bad0c13e2ffe3686f8aae349227c85a94122a2db466e",
+      "agentManifestHash": "2d05aecd73868efdb179e58a44c5c2ab9b8ac752d0f273f741d02889ec07ac4c",
+      "permissionHash": "ade206d1b5a99ac352b24c5906ff73881343a6c5827a436ac2f21dc1e9d96c3b",
+      "toolSurfaceHash": "569f7e5c50f8c856ebeb33ec6bb521a33e3021be589edf23bc8b33f0348ad9cc"
+    },
+    "revision": "ed524903ae8dec701eba0e880390986ac98e0975",
+    "artifactHash": "828f1b7094592b41f254ea081791e50d5ef2eb5b9d99bb7d305ef9895aa30f15",
+    "receiptHash": "81327e3c5d80b37f3a602fabe885cbb798b81812a2c06a9722e324f4f7448755",
+    "outcome": "passed",
+    "elapsedMs": 16508,
+    "attempts": [
+      {
+        "inputTokens": 13603,
+        "outputTokens": 51,
+        "cost": null
+      },
+      {
+        "inputTokens": 13782,
+        "outputTokens": 15,
+        "cost": null
+      },
+      {
+        "inputTokens": 13906,
+        "outputTokens": 125,
+        "cost": null
+      },
+      {
+        "inputTokens": 14098,
+        "outputTokens": 12,
+        "cost": null
+      },
+      {
+        "inputTokens": 14167,
+        "outputTokens": 61,
+        "cost": null
+      }
+    ]
+  },
+  {
+    "task": "typed-repair",
+    "engine": "typescript",
+    "repetition": 2,
+    "suiteHash": "bd905b4f81f0a9412b614631a36337723067574848c5f05b50ead1cf48675091",
+    "taskHash": "6d7a5f740fead5293e5e5ffb8d80de678897f4422c739a10fa17ed3caffaaea2",
+    "profile": {
+      "model": "glm-5.3-flash",
+      "modelParametersHash": "13f87e7dff9fb6d6ab8fa16f7425dc40d830ff5e3c49a655d865dead52f67e10",
+      "agentManifestHash": "86e7a9297c0c63696d5345da9c7c14548fe3638cd0c90abb512aa38a1ed050e3",
+      "permissionHash": "bd9fb59a30e6fe922b316c2d479564050d92b5b4669d27e7c9704579a23c0154",
+      "toolSurfaceHash": "569f7e5c50f8c856ebeb33ec6bb521a33e3021be589edf23bc8b33f0348ad9cc"
+    },
+    "revision": "ed524903ae8dec701eba0e880390986ac98e0975",
+    "artifactHash": "680d228793b0c9877b5ebd2f760d72dcf37648083730845be46c4769597ab3b2",
+    "receiptHash": "ad99fa54d772f871f403bea9442706875a9b73d9b81f92b224dafd991790a7f4",
+    "outcome": "passed",
+    "elapsedMs": 24715,
+    "attempts": [
+      {
+        "inputTokens": 13603,
+        "outputTokens": 37,
+        "cost": null
+      },
+      {
+        "inputTokens": 13768,
+        "outputTokens": 15,
+        "cost": null
+      },
+      {
+        "inputTokens": 13892,
+        "outputTokens": 123,
+        "cost": null
+      },
+      {
+        "inputTokens": 14082,
+        "outputTokens": 22,
+        "cost": null
+      },
+      {
+        "inputTokens": 14165,
+        "outputTokens": 50,
+        "cost": null
+      },
+      {
+        "inputTokens": 15558,
+        "outputTokens": 86,
+        "cost": null
+      },
+      {
+        "inputTokens": 15658,
+        "outputTokens": 96,
+        "cost": null
+      }
+    ]
+  },
+  {
+    "task": "large-file",
+    "engine": "typescript",
+    "repetition": 0,
+    "suiteHash": "bd905b4f81f0a9412b614631a36337723067574848c5f05b50ead1cf48675091",
+    "taskHash": "55a120909957198a82e321a13a4b2f7b66c2439b3d040e8722add9575c37d311",
+    "profile": {
+      "model": "glm-5.3-flash",
+      "modelParametersHash": "bdb3352c42d539cdba294601f2c0d35d59ef37f9568714f5720cd58d03ee6e25",
+      "agentManifestHash": "305e53d6469b1e6d735a582d25415449f40c2e5157f1c00224c16451c86ea64e",
+      "permissionHash": "b0e1439da1abff5bcb0784bec20eed6e475e70a5a8788e500486a00d1a4f048c",
+      "toolSurfaceHash": "569f7e5c50f8c856ebeb33ec6bb521a33e3021be589edf23bc8b33f0348ad9cc"
+    },
+    "revision": "ed524903ae8dec701eba0e880390986ac98e0975",
+    "artifactHash": "da57d05178aed54f7fd4d846814317d8143afa5a08a2fb2f9f7221cac2f06507",
+    "receiptHash": "916f21f2653c5a5f2f91c30aad6ca668a461638fc7159f8c3e5f4daff50722eb",
+    "outcome": "passed",
+    "elapsedMs": 44088,
+    "attempts": [
+      {
+        "inputTokens": 13623,
+        "outputTokens": 95,
+        "cost": null
+      },
+      {
+        "inputTokens": 13760,
+        "outputTokens": 142,
+        "cost": null
+      },
+      {
+        "inputTokens": 28056,
+        "outputTokens": 109,
+        "cost": null
+      },
+      {
+        "inputTokens": 28227,
+        "outputTokens": 44,
+        "cost": null
+      },
+      {
+        "inputTokens": 28293,
+        "outputTokens": 15,
+        "cost": null
+      },
+      {
+        "inputTokens": 28443,
+        "outputTokens": 199,
+        "cost": null
+      },
+      {
+        "inputTokens": 28703,
+        "outputTokens": 12,
+        "cost": null
+      },
+      {
+        "inputTokens": 28772,
+        "outputTokens": 239,
+        "cost": null
+      }
+    ]
+  },
+  {
+    "task": "large-file",
+    "engine": "typescript",
+    "repetition": 1,
+    "suiteHash": "bd905b4f81f0a9412b614631a36337723067574848c5f05b50ead1cf48675091",
+    "taskHash": "55a120909957198a82e321a13a4b2f7b66c2439b3d040e8722add9575c37d311",
+    "profile": {
+      "model": "glm-5.3-flash",
+      "modelParametersHash": "8a4c1edfdc5017e0dd24fcb4bfa720280d95002c34178b2112890b9c9a7b4cc2",
+      "agentManifestHash": "047296c0f43c5ce09dde4577f5c9995d53ced1310ac059022e5d42a6b453080c",
+      "permissionHash": "bfe61f2a2e381a81a689afda314360eb1d932c0b08a1e4a4833156a487834fac",
+      "toolSurfaceHash": "569f7e5c50f8c856ebeb33ec6bb521a33e3021be589edf23bc8b33f0348ad9cc"
+    },
+    "revision": "ed524903ae8dec701eba0e880390986ac98e0975",
+    "artifactHash": "da57d05178aed54f7fd4d846814317d8143afa5a08a2fb2f9f7221cac2f06507",
+    "receiptHash": "d7bd56d760a1653690c23777955966b87a68b647dded7a66e0b2979163781832",
+    "outcome": "passed",
+    "elapsedMs": 30799,
+    "attempts": [
+      {
+        "inputTokens": 13623,
+        "outputTokens": 117,
+        "cost": null
+      },
+      {
+        "inputTokens": 13782,
+        "outputTokens": 137,
+        "cost": null
+      },
+      {
+        "inputTokens": 14848,
+        "outputTokens": 176,
+        "cost": null
+      },
+      {
+        "inputTokens": 15085,
+        "outputTokens": 49,
+        "cost": null
+      },
+      {
+        "inputTokens": 15172,
+        "outputTokens": 17,
+        "cost": null
+      },
+      {
+        "inputTokens": 15234,
+        "outputTokens": 18,
+        "cost": null
+      },
+      {
+        "inputTokens": 15343,
+        "outputTokens": 39,
+        "cost": null
+      },
+      {
+        "inputTokens": 15439,
+        "outputTokens": 69,
+        "cost": null
+      },
+      {
+        "inputTokens": 15530,
+        "outputTokens": 126,
+        "cost": null
+      }
+    ]
+  },
+  {
+    "task": "large-file",
+    "engine": "typescript",
+    "repetition": 2,
+    "suiteHash": "bd905b4f81f0a9412b614631a36337723067574848c5f05b50ead1cf48675091",
+    "taskHash": "55a120909957198a82e321a13a4b2f7b66c2439b3d040e8722add9575c37d311",
+    "profile": {
+      "model": "glm-5.3-flash",
+      "modelParametersHash": "443f4fa362a4783acfccaee4d253cf3f0727bea9459f08f67f1275a0d58a13d3",
+      "agentManifestHash": "f951a18ab6fe45d347d67f5641ee9a7007017b01e9fa9ad6b447b5332a6a42b3",
+      "permissionHash": "bb48202b2085faf33a7a347045bc35db4918509489dc1dab332db4442f79728d",
+      "toolSurfaceHash": "569f7e5c50f8c856ebeb33ec6bb521a33e3021be589edf23bc8b33f0348ad9cc"
+    },
+    "revision": "ed524903ae8dec701eba0e880390986ac98e0975",
+    "artifactHash": "39cbbeabcea0c61eb7978536599df6474e85ad90cf4766270b606307909bc262",
+    "receiptHash": "9f501af5e085246842fa17e58459915602e4277f0ac8fcafe7440086e6d7ac51",
+    "outcome": "passed",
+    "elapsedMs": 22552,
+    "attempts": [
+      {
+        "inputTokens": 13623,
+        "outputTokens": 151,
+        "cost": null
+      },
+      {
+        "inputTokens": 14002,
+        "outputTokens": 146,
+        "cost": null
+      },
+      {
+        "inputTokens": 14744,
+        "outputTokens": 93,
+        "cost": null
+      },
+      {
+        "inputTokens": 14972,
+        "outputTokens": 136,
+        "cost": null
+      },
+      {
+        "inputTokens": 15169,
+        "outputTokens": 22,
+        "cost": null
+      },
+      {
+        "inputTokens": 15252,
+        "outputTokens": 134,
+        "cost": null
+      }
+    ]
+  },
+  {
+    "task": "rename-symbol",
+    "engine": "typescript",
+    "repetition": 0,
+    "suiteHash": "bd905b4f81f0a9412b614631a36337723067574848c5f05b50ead1cf48675091",
+    "taskHash": "244db465af9f2320fb9297399084c4c2de91754c7ef63ea7c5ac984145c0fdc0",
+    "profile": {
+      "model": "glm-5.3-flash",
+      "modelParametersHash": "201e9696394f0037e44e64cb3b008179073e6e600051b20bbeb07ad9e918a85c",
+      "agentManifestHash": "9622b285ae42233c91676efb1c2e2badc9e7a6b756ace6ea5e9ec8bf333a444b",
+      "permissionHash": "c3b973b787d0a3dcfed2434147cc03435579be329955f802013f59f2875cfe20",
+      "toolSurfaceHash": "569f7e5c50f8c856ebeb33ec6bb521a33e3021be589edf23bc8b33f0348ad9cc"
+    },
+    "revision": "ed524903ae8dec701eba0e880390986ac98e0975",
+    "artifactHash": "53fe37ccdb3457547f8237cff1b6f635dd0b5363ff8df66efdce69fe568ffc9c",
+    "receiptHash": "a5037cadadedea16e04f4a818cb680165a24cc0c41ad9025b3e4d3276e30e912",
+    "outcome": "passed",
+    "elapsedMs": 25693,
+    "attempts": [
+      {
+        "inputTokens": 13613,
+        "outputTokens": 53,
+        "cost": null
+      },
+      {
+        "inputTokens": 13702,
+        "outputTokens": 57,
+        "cost": null
+      },
+      {
+        "inputTokens": 14079,
+        "outputTokens": 185,
+        "cost": null
+      },
+      {
+        "inputTokens": 14345,
+        "outputTokens": 183,
+        "cost": null
+      },
+      {
+        "inputTokens": 14603,
+        "outputTokens": 76,
+        "cost": null
+      },
+      {
+        "inputTokens": 14755,
+        "outputTokens": 37,
+        "cost": null
+      },
+      {
+        "inputTokens": 14849,
+        "outputTokens": 144,
+        "cost": null
+      }
+    ]
+  },
+  {
+    "task": "rename-symbol",
+    "engine": "typescript",
+    "repetition": 1,
+    "suiteHash": "bd905b4f81f0a9412b614631a36337723067574848c5f05b50ead1cf48675091",
+    "taskHash": "244db465af9f2320fb9297399084c4c2de91754c7ef63ea7c5ac984145c0fdc0",
+    "profile": {
+      "model": "glm-5.3-flash",
+      "modelParametersHash": "b8287742a048aa0639ed15739ca9de3594521c74760ea144471456837309a33f",
+      "agentManifestHash": "c3de84e5ab28e8686b351546873cc0b298919e40a6a7e32f890f8a192d6f98e0",
+      "permissionHash": "7782f2db10bd39852dbd67a28aa0d26b07a5e3b1c727f65939d36eeed80d3b94",
+      "toolSurfaceHash": "569f7e5c50f8c856ebeb33ec6bb521a33e3021be589edf23bc8b33f0348ad9cc"
+    },
+    "revision": "ed524903ae8dec701eba0e880390986ac98e0975",
+    "artifactHash": "3adbdee163ea258b1dec89e70a46983d9eea30d35fe3366d9828416685aa9250",
+    "receiptHash": "d1105b2f1aa9c02acd2a8b2f28010072620621f38b4cc9a6fb9902404a5091a7",
+    "outcome": "passed",
+    "elapsedMs": 27864,
+    "attempts": [
+      {
+        "inputTokens": 13613,
+        "outputTokens": 80,
+        "cost": null
+      },
+      {
+        "inputTokens": 13836,
+        "outputTokens": 47,
+        "cost": null
+      },
+      {
+        "inputTokens": 14142,
+        "outputTokens": 331,
+        "cost": null
+      },
+      {
+        "inputTokens": 14615,
+        "outputTokens": 77,
+        "cost": null
+      },
+      {
+        "inputTokens": 14767,
+        "outputTokens": 46,
+        "cost": null
+      },
+      {
+        "inputTokens": 14825,
+        "outputTokens": 16,
+        "cost": null
+      },
+      {
+        "inputTokens": 14898,
+        "outputTokens": 26,
+        "cost": null
+      },
+      {
+        "inputTokens": 14931,
+        "outputTokens": 114,
+        "cost": null
+      }
+    ]
+  },
+  {
+    "task": "rename-symbol",
+    "engine": "typescript",
+    "repetition": 2,
+    "suiteHash": "bd905b4f81f0a9412b614631a36337723067574848c5f05b50ead1cf48675091",
+    "taskHash": "244db465af9f2320fb9297399084c4c2de91754c7ef63ea7c5ac984145c0fdc0",
+    "profile": {
+      "model": "glm-5.3-flash",
+      "modelParametersHash": "bafdf2733f77ff5ebbd4afa5f2b71040754e2949198a711f9e0148543cf54d7f",
+      "agentManifestHash": "a6fb5af109d9ef3e17aebff6951978e46d1874139ca1933fb68a52f96155d1bf",
+      "permissionHash": "88802654055b602a72c43f2d92dff868028f5d08f416de8362796ea282749acd",
+      "toolSurfaceHash": "569f7e5c50f8c856ebeb33ec6bb521a33e3021be589edf23bc8b33f0348ad9cc"
+    },
+    "revision": "ed524903ae8dec701eba0e880390986ac98e0975",
+    "artifactHash": "53fe37ccdb3457547f8237cff1b6f635dd0b5363ff8df66efdce69fe568ffc9c",
+    "receiptHash": "eee2d9ec6b7469c6df7019495f0d4b591eb41a7fc5ea2079c34e64b3b6a4069d",
+    "outcome": "passed",
+    "elapsedMs": 36084,
+    "attempts": [
+      {
+        "inputTokens": 13613,
+        "outputTokens": 89,
+        "cost": null
+      },
+      {
+        "inputTokens": 13924,
+        "outputTokens": 219,
+        "cost": null
+      },
+      {
+        "inputTokens": 14429,
+        "outputTokens": 121,
+        "cost": null
+      },
+      {
+        "inputTokens": 14665,
+        "outputTokens": 449,
+        "cost": null
+      },
+      {
+        "inputTokens": 15131,
+        "outputTokens": 98,
+        "cost": null
+      },
+      {
+        "inputTokens": 15308,
+        "outputTokens": 53,
+        "cost": null
+      },
+      {
+        "inputTokens": 15412,
+        "outputTokens": 64,
+        "cost": null
+      },
+      {
+        "inputTokens": 15542,
+        "outputTokens": 179,
+        "cost": null
+      }
+    ]
+  },
+  {
+    "task": "create-module",
+    "engine": "typescript",
+    "repetition": 0,
+    "suiteHash": "bd905b4f81f0a9412b614631a36337723067574848c5f05b50ead1cf48675091",
+    "taskHash": "4d67f12a4d53767d5219ff7c2739a21fb22df729363f19d7b0d03a12e6ed5049",
+    "profile": {
+      "model": "glm-5.3-flash",
+      "modelParametersHash": "ad94bf81ac33447fe45d6b78e8c8a75596f216af4c0f7d78801264b61aace073",
+      "agentManifestHash": "bc553d215998222e05a833e5668574d9755604c7cf00645395089ec9307fa27c",
+      "permissionHash": "1e44689e9ac6f44d6be70a32e0a4425e0c4a05baa6489cd0fe0c1d25d4bb048d",
+      "toolSurfaceHash": "569f7e5c50f8c856ebeb33ec6bb521a33e3021be589edf23bc8b33f0348ad9cc"
+    },
+    "revision": "ed524903ae8dec701eba0e880390986ac98e0975",
+    "artifactHash": "8372b0ea4b531e284378b7e4478c1aa09496cbb019ed56607cdbeffeb27265f4",
+    "receiptHash": "b1d98e4011046258a65afb23561f77b07c1d86da5aaa2e681c852cf3aba83d81",
+    "outcome": "passed",
+    "elapsedMs": 34521,
+    "attempts": [
+      {
+        "inputTokens": 13609,
+        "outputTokens": 86,
+        "cost": null
+      },
+      {
+        "inputTokens": 13757,
+        "outputTokens": 15,
+        "cost": null
+      },
+      {
+        "inputTokens": 13906,
+        "outputTokens": 120,
+        "cost": null
+      },
+      {
+        "inputTokens": 14037,
+        "outputTokens": 12,
+        "cost": null
+      },
+      {
+        "inputTokens": 14106,
+        "outputTokens": 36,
+        "cost": null
+      }
+    ]
+  },
+  {
+    "task": "create-module",
+    "engine": "typescript",
+    "repetition": 1,
+    "suiteHash": "bd905b4f81f0a9412b614631a36337723067574848c5f05b50ead1cf48675091",
+    "taskHash": "4d67f12a4d53767d5219ff7c2739a21fb22df729363f19d7b0d03a12e6ed5049",
+    "profile": {
+      "model": "glm-5.3-flash",
+      "modelParametersHash": "d35bb6f18d6e0fa415da79a7664c6b1b21fea6717a44bc77469bbd97a56929b3",
+      "agentManifestHash": "306e1b67a9985339b7c8e2f4a31a5706c438abfcb03e1ae93d8a3809c6367962",
+      "permissionHash": "4ec1975a973025a61a94f47fec4d7acc2e626df561fb4d518429346e7b9d1062",
+      "toolSurfaceHash": "569f7e5c50f8c856ebeb33ec6bb521a33e3021be589edf23bc8b33f0348ad9cc"
+    },
+    "revision": "ed524903ae8dec701eba0e880390986ac98e0975",
+    "artifactHash": "61fcf898b5384f66e401aa0686dcf6e7bac31fc9c654edaff9164c1eb97305c0",
+    "receiptHash": "2d6108e48c45bfdcd5d61e3921b5dbb0a11643ae08623586ee420dfa54273569",
+    "outcome": "passed",
+    "elapsedMs": 16890,
+    "attempts": [
+      {
+        "inputTokens": 13609,
+        "outputTokens": 65,
+        "cost": null
+      },
+      {
+        "inputTokens": 13851,
+        "outputTokens": 26,
+        "cost": null
+      },
+      {
+        "inputTokens": 14089,
+        "outputTokens": 141,
+        "cost": null
+      },
+      {
+        "inputTokens": 14241,
+        "outputTokens": 12,
+        "cost": null
+      },
+      {
+        "inputTokens": 14310,
+        "outputTokens": 38,
+        "cost": null
+      }
+    ]
+  },
+  {
+    "task": "create-module",
+    "engine": "typescript",
+    "repetition": 2,
+    "suiteHash": "bd905b4f81f0a9412b614631a36337723067574848c5f05b50ead1cf48675091",
+    "taskHash": "4d67f12a4d53767d5219ff7c2739a21fb22df729363f19d7b0d03a12e6ed5049",
+    "profile": {
+      "model": "glm-5.3-flash",
+      "modelParametersHash": "0c60ad9cc5d106c9100b2f1da78f98448cd6707fc7ff8fa95bb32d95fe876ab2",
+      "agentManifestHash": "bce7b106c97e211b4d02bbdba14836198762e36cabefdcbce7d9882d70439e0e",
+      "permissionHash": "0704bb897562c26ee338e1d6ee8c8ba5d623a7cb08959b02b696599fefeed5d1",
+      "toolSurfaceHash": "569f7e5c50f8c856ebeb33ec6bb521a33e3021be589edf23bc8b33f0348ad9cc"
+    },
+    "revision": "ed524903ae8dec701eba0e880390986ac98e0975",
+    "artifactHash": "8352151955b8ec89d62a52b671568a07f3df35e30ddd874c95ea4a17301514c5",
+    "receiptHash": "cc91ae65079fa786cc3330421ac78ada296064f44ab05a99fe97f9d8e252da48",
+    "outcome": "passed",
+    "elapsedMs": 22645,
+    "attempts": [
+      {
+        "inputTokens": 13609,
+        "outputTokens": 59,
+        "cost": null
+      },
+      {
+        "inputTokens": 13714,
+        "outputTokens": 25,
+        "cost": null
+      },
+      {
+        "inputTokens": 13933,
+        "outputTokens": 140,
+        "cost": null
+      },
+      {
+        "inputTokens": 14084,
+        "outputTokens": 12,
+        "cost": null
+      },
+      {
+        "inputTokens": 14153,
+        "outputTokens": 62,
+        "cost": null
+      }
+    ]
+  },
+  {
+    "task": "docs-sync",
+    "engine": "typescript",
+    "repetition": 0,
+    "suiteHash": "bd905b4f81f0a9412b614631a36337723067574848c5f05b50ead1cf48675091",
+    "taskHash": "81770a3ba16cad0c85823ad75587b559a670da480642d3491f6d5b8814394fee",
+    "profile": {
+      "model": "glm-5.3-flash",
+      "modelParametersHash": "8d0bbb3a959b253ee08f8080c44ed686ced0c4b76b51057be97081cfd8614840",
+      "agentManifestHash": "32ac0ef1ae4b3b3cd6845358a7780e40390dce76368465d11dbd229b1a15636b",
+      "permissionHash": "d36483576ef8f03f4018cad7229eae5f60e185c366608e811f91313d3d58130b",
+      "toolSurfaceHash": "569f7e5c50f8c856ebeb33ec6bb521a33e3021be589edf23bc8b33f0348ad9cc"
+    },
+    "revision": "ed524903ae8dec701eba0e880390986ac98e0975",
+    "artifactHash": "f45c980517c6640ed715435e1fda1711f7f4db2b182c8823162edbf622d06300",
+    "receiptHash": "c309611662fa8cc7b96f54f94cafa4b5283713dcc7fc25bd632638f48d4fbf2d",
+    "outcome": "passed",
+    "elapsedMs": 16701,
+    "attempts": [
+      {
+        "inputTokens": 13602,
+        "outputTokens": 53,
+        "cost": null
+      },
+      {
+        "inputTokens": 13815,
+        "outputTokens": 200,
+        "cost": null
+      },
+      {
+        "inputTokens": 14068,
+        "outputTokens": 43,
+        "cost": null
+      },
+      {
+        "inputTokens": 14283,
+        "outputTokens": 146,
+        "cost": null
+      }
+    ]
+  },
+  {
+    "task": "docs-sync",
+    "engine": "typescript",
+    "repetition": 1,
+    "suiteHash": "bd905b4f81f0a9412b614631a36337723067574848c5f05b50ead1cf48675091",
+    "taskHash": "81770a3ba16cad0c85823ad75587b559a670da480642d3491f6d5b8814394fee",
+    "profile": {
+      "model": "glm-5.3-flash",
+      "modelParametersHash": "75dd1d55c0b0815c7641f84d97b031579e84d8f2c4da8f4a4eea73e4ddfd1e35",
+      "agentManifestHash": "0cf42609927cbf88b03454f606e08a023ac89b4dfbc5bcd82913d077ccca3226",
+      "permissionHash": "63d21e2f34770e756afe1a58f4a08e5b16d46e90ce01efd0fea9c28cf7db0f20",
+      "toolSurfaceHash": "569f7e5c50f8c856ebeb33ec6bb521a33e3021be589edf23bc8b33f0348ad9cc"
+    },
+    "revision": "ed524903ae8dec701eba0e880390986ac98e0975",
+    "artifactHash": "f45c980517c6640ed715435e1fda1711f7f4db2b182c8823162edbf622d06300",
+    "receiptHash": "f244fb54bf4998a7d70ce8fd206c069bcc3d8c9829c69f3a984e2911218dccd7",
+    "outcome": "passed",
+    "elapsedMs": 28464,
+    "attempts": [
+      {
+        "inputTokens": 13602,
+        "outputTokens": 76,
+        "cost": null
+      },
+      {
+        "inputTokens": 13725,
+        "outputTokens": 54,
+        "cost": null
+      },
+      {
+        "inputTokens": 13876,
+        "outputTokens": 54,
+        "cost": null
+      },
+      {
+        "inputTokens": 13983,
+        "outputTokens": 64,
+        "cost": null
+      },
+      {
+        "inputTokens": 14096,
+        "outputTokens": 43,
+        "cost": null
+      }
+    ]
+  },
+  {
+    "task": "docs-sync",
+    "engine": "typescript",
+    "repetition": 2,
+    "suiteHash": "bd905b4f81f0a9412b614631a36337723067574848c5f05b50ead1cf48675091",
+    "taskHash": "81770a3ba16cad0c85823ad75587b559a670da480642d3491f6d5b8814394fee",
+    "profile": {
+      "model": "glm-5.3-flash",
+      "modelParametersHash": "b9131781404fc28043080ca1ed911eeddb9916481511bf5658f0299acb7a3255",
+      "agentManifestHash": "b1e6fdb4e27831b47b53751863d25b6bdc2f3195fd0fcdc772b85a5a8f44706e",
+      "permissionHash": "29c2ef4c95a5bc5ee577d184f8f02d43333d45d5470b5e2ce26b3445dd359bc7",
+      "toolSurfaceHash": "569f7e5c50f8c856ebeb33ec6bb521a33e3021be589edf23bc8b33f0348ad9cc"
+    },
+    "revision": "ed524903ae8dec701eba0e880390986ac98e0975",
+    "artifactHash": "f45c980517c6640ed715435e1fda1711f7f4db2b182c8823162edbf622d06300",
+    "receiptHash": "9038b111f8612d2e54354ed3cc63857b3c623df325b11bf18d41b11bd72e2121",
+    "outcome": "passed",
+    "elapsedMs": 29463,
+    "attempts": [
+      {
+        "inputTokens": 13602,
+        "outputTokens": 67,
+        "cost": null
+      },
+      {
+        "inputTokens": 13716,
+        "outputTokens": 217,
+        "cost": null
+      },
+      {
+        "inputTokens": 14075,
+        "outputTokens": 66,
+        "cost": null
+      },
+      {
+        "inputTokens": 14194,
+        "outputTokens": 78,
+        "cost": null
+      },
+      {
+        "inputTokens": 14321,
+        "outputTokens": 40,
+        "cost": null
+      }
+    ]
+  }
+]

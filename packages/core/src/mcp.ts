@@ -473,6 +473,27 @@ const layer = Layer.effect(
         byte.toString(16).padStart(2, "0"),
       ).join("")
       yield* auth.updateOAuthState(name, state)
+      // RFC 9207: pin the expected issuer from authorization server metadata
+      // so the callback can reject a contradicting `iss` before the code is
+      // exchanged, and so the grant can be keyed by issuer. Best-effort: a
+      // server whose metadata cannot be probed (for example an indirect
+      // `authorization_servers` deployment) keeps today's no-check behavior
+      // instead of risking a false rejection.
+      const expectedIss = yield* Effect.tryPromise(async () => {
+        for (const candidate of buildDiscoveryUrls(url)) {
+          const response = await fetch(candidate.url, {
+            headers: { Accept: "application/json" },
+            signal: AbortSignal.timeout(5_000),
+          })
+          if (!response.ok) continue
+          const metadata: unknown = await response.json()
+          if (!(typeof metadata === "object" && metadata !== null && "authorization_endpoint" in metadata)) continue
+          const parsed = candidate.url
+          const issuer = parsed.origin + (parsed.pathname.split("/.well-known/")[0] ?? "").replace(/\/$/, "")
+          return new URL(issuer).toString()
+        }
+        return undefined
+      }).pipe(Effect.orElseSucceed(() => undefined))
       let authorizationUrl: URL | undefined
       const provider = new McpOAuthPendingProvider(
         name,
@@ -484,6 +505,7 @@ const layer = Layer.effect(
           },
         },
         auth,
+        expectedIss,
       )
       const transport = new StreamableHTTPClientTransport(url, {
         authProvider: provider,
@@ -502,33 +524,33 @@ const layer = Layer.effect(
         return yield* reconnect(name)
       }
       const failure = Cause.squash(started.cause)
-      if (!(failure instanceof UnauthorizedError) || authorizationUrl === undefined) {
+      if (!(failure instanceof UnauthorizedError)) {
+        yield* closeProbe
+        yield* auth.clearOAuthState(name)
+        return { status: "failed", error: message(failure) } satisfies Status
+      }
+      // One grant per authorization server: another server behind the same
+      // issuer may already hold fresh tokens, so adopt them instead of a
+      // second browser round-trip.
+      if (expectedIss !== undefined) {
+        const sharers = yield* auth.findByIssuer(expectedIss)
+        const donor = Object.entries(sharers).find(([holder]) => holder !== name)
+        if (donor !== undefined) {
+          const adopted = yield* auth.adopt(name, server.url, { name: donor[0], entry: donor[1] })
+          if (adopted) {
+            yield* closeProbe
+            yield* auth.clearOAuthState(name)
+            return yield* reconnect(name)
+          }
+        }
+      }
+      if (authorizationUrl === undefined) {
         yield* closeProbe
         yield* auth.clearOAuthState(name)
         return { status: "failed", error: message(failure) } satisfies Status
       }
 
       const target = authorizationUrl.toString()
-      // RFC 9207: pin the expected issuer from authorization server metadata
-      // so the callback can reject a contradicting `iss` before the code is
-      // exchanged. Best-effort: a server whose metadata cannot be probed (for
-      // example an indirect `authorization_servers` deployment) keeps today's
-      // no-check behavior instead of risking a false rejection.
-      const expectedIss = yield* Effect.tryPromise(async () => {
-        for (const candidate of buildDiscoveryUrls(url)) {
-          const response = await fetch(candidate.url, {
-            headers: { Accept: "application/json" },
-            signal: AbortSignal.timeout(5_000),
-          })
-          if (!response.ok) continue
-          const metadata: unknown = await response.json()
-          if (!(typeof metadata === "object" && metadata !== null && "authorization_endpoint" in metadata)) continue
-          const parsed = candidate.url
-          const issuer = parsed.origin + (parsed.pathname.split("/.well-known/")[0] ?? "").replace(/\/$/, "")
-          return new URL(issuer).toString()
-        }
-        return undefined
-      }).pipe(Effect.orElseSucceed(() => undefined))
       const callback = McpOAuthCallback.waitForCallback(state, name, expectedIss)
       yield* browser
         .open(target)

@@ -1,0 +1,54 @@
+name: engine-artifact-drill
+
+on:
+  workflow_dispatch:
+    inputs:
+      previous-version:
+        description: Previous release tag providing the previous engine archive
+        required: false
+        default: v0.2.25
+      candidate-version:
+        description: Candidate release tag providing the candidate engine archive
+        required: false
+        default: v0.2.26
+
+concurrency: engine-artifact-drill-${{ github.ref }}
+
+permissions:
+  contents: read
+
+jobs:
+  darwin-x64-intel:
+    name: darwin-x64 on native Intel macOS
+    runs-on: macos-15-intel
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+      - name: Fetch published engine archives
+        env:
+          PREVIOUS: ${{ inputs.previous-version }}
+          CANDIDATE: ${{ inputs.candidate-version }}
+        run: |
+          curl --proto '=https' --tlsv1.2 --retry 5 --location --silent --show-error --fail \
+            -o prev.zip "https://github.com/oxdingzg/miao/releases/download/$PREVIOUS/miao-engine-darwin-x64.zip"
+          curl --proto '=https' --tlsv1.2 --retry 5 --location --silent --show-error --fail \
+            -o cand.zip "https://github.com/oxdingzg/miao/releases/download/$CANDIDATE/miao-engine-darwin-x64.zip"
+          mkdir prev cand
+          ditto -x -k prev.zip prev
+          ditto -x -k cand.zip cand
+          shasum -a 256 prev.zip cand.zip prev/miao-engine cand/miao-engine
+      - name: Run the cross-version drill
+        run: |
+          python3 script/engine-artifact-drill.py \
+            --previous prev/miao-engine \
+            --binary cand/miao-engine \
+            --output artifact-drill-darwin-x64-intel.json
+      - name: Record the machine
+        if: always()
+        run: uname -m && sw_vers -productVersion
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        if: always()
+        with:
+          name: artifact-drill-darwin-x64-intel
+          path: artifact-drill-darwin-x64-intel.json
+          if-no-files-found: warn
