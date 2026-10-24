@@ -1,0 +1,15 @@
+{
+  "scenario": "multi-turn-retention",
+  "engine": "ts",
+  "model": "zhipuai-coding-plan/glm-5.3-flash",
+  "outcome": {
+    "status": "pass"
+  },
+  "sessionID": "ses_gfe5e94bd10e4ffeQ93K50JdVE",
+  "cost": 0.00117,
+  "tokensIn": 2325,
+  "tokensOut": 15,
+  "stepFinishes": 2,
+  "tools": [],
+  "errors": []
+}

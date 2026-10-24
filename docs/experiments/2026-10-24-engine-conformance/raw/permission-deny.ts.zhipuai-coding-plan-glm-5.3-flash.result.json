@@ -1,0 +1,35 @@
+{
+  "scenario": "permission-deny",
+  "engine": "ts",
+  "model": "zhipuai-coding-plan/glm-5.3-flash",
+  "outcome": {
+    "status": "pass"
+  },
+  "sessionID": "ses_gfe5e94acfa3dfferptNjrLQ6H",
+  "cost": 0.00358,
+  "tokensIn": 16513,
+  "tokensOut": 207,
+  "stepFinishes": 4,
+  "tools": [
+    {
+      "tool": "bash",
+      "status": "error",
+      "error": "Unable to execute command: rm deleteme.txt",
+      "command": "rm deleteme.txt",
+      "background": false
+    },
+    {
+      "tool": "bash",
+      "status": "completed",
+      "command": "ls -la",
+      "background": false
+    },
+    {
+      "tool": "bash",
+      "status": "completed",
+      "command": "find .miao -type f | head -50 && cat .miao/*.json 2>/dev/null; cat .miao/*.jsonc 2>/dev/null",
+      "background": false
+    }
+  ],
+  "errors": []
+}

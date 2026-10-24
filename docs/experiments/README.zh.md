@@ -52,6 +52,7 @@ docs/experiments/
 | 2026-10-23 | [mimo-engine-benchmark-2026-10-23.md](mimo-engine-benchmark-2026-10-23.md)          | 同 7 任务族 × `opencode-go/mimo-v2.6-flash`，best-of-2：TS 14/14 vs RS 9/14；RS 成本 ≈9.5×（网关前缀缓存不命中）、总时长 +90%；含 #1252 null 帧修复前后的证据                                              |
 | 2026-10-23 | [2026-10-23-engine-cost-batch](2026-10-23-engine-cost-batch/README.zh.md)           | 10-22 成本批的全维度重跑（同 7 任务族 × 2 模型，harness 落盘 `results.csv` + `raw/`）：deepseek rust 已可原生路由 14/14；TS 28/28 vs RS 27/28；RS 折算成本 glm 2.66× / deepseek 5.64× TS（前缀缓存不命中） |
 | 2026-10-23 | [2026-10-23-g5-official](2026-10-23-g5-official/README.zh.md)                       | 所有者授权的 G5 正式重跑（同 7 任务族 × 2 模型，基线 `ed524903ae`）：门槛 56/56 全过（deepseek rust 连续两轮 14/14，N/A 正式关闭）；RS 折算成本 glm 2.83× / deepseek 5.96× TS                              |
+| 2026-10-24 | [2026-10-24-engine-conformance](2026-10-24-engine-conformance/results.zh.md)        | 功能一致性套件：12 结构场景 × 双引擎（glm-5.3-flash，视觉 cell 用 glm-4.6v），23/24 PASS、花费 $0.092；发现并修复 4 个产品层缺陷（桥接工具 id 映射、压缩事件投影、原生标题 LLMClient 接线、本地附件 file://），1 项 TS 标题限制 OPEN |
 
 ## 横向汇总（统一维度）
 
@@ -90,3 +91,7 @@ docs/experiments/
 6. 本轮 rust 仍上报 $0.0000（原生 placement 计价未接线，follow-up 未闭合）；按该轮 `prices.json` 折算：glm $0.1913 ≈ 2.66× TS、deepseek $0.2762 ≈ 5.64× TS。另：`opencode-go/deepseek-v4.1-flash` 自此轮起可原生路由（10-22 的 N/A 行已过时）；`glm/recovery/rust#2` 失败与 mimo 轮同签名（跨模型系统性续跑问题，evidence 已保留）。 G5 正式轮（同日）：RS 折算 glm 2.83× / deepseek 5.96× TS，门槛 56/56 全过。
 
 **可比性提示**：成本跨模型/单价不同**不可直接横比**，同一轮内 TS/RS 比值才可比——10-19 至 10-21 三轮 RS ≈ TS 的 0.53–0.59×，10-22 best-of-2 按文档口径 0.55–0.59×，10-23 mimo 轮 ≈ 9.5×（贵，主因网关前缀缓存不命中，见该轮 follow-up）。门槛通过率：除 mimo 轮（TS 14/14 > RS 9/14）外，RS 均 ≥ TS。 10-23 成本批全维度重跑：RS 折算成本 glm 2.66× / deepseek 5.64× TS；门槛 TS 28/28 vs RS 27/28（glm recovery 续跑失败，与 mimo 轮同签名）；deepseek rust 从 N/A 变为 14/14。 G5 正式轮：RS 折算 glm 2.83× / deepseek 5.96× TS，门槛 56/56（deepseek rust 两连 14/14）。
+
+## 功能一致性（引擎对照，独立维度）
+
+[2026-10-24 功能一致性套件](2026-10-24-engine-conformance/results.zh.md) 与上方 7/15 任务族质量-成本轮不同维度：12 个结构性场景（工具执行、文件变更、sqlite 行、中断恢复、MCP、权限拒绝、视觉输入等）× 双引擎，断言只看结构结果不看回复原文。首轮 24 cell 中 8 个失败，全部定位：4 个产品层缺陷已修复（桥接工具 id 映射、压缩事件投影不满足 schema、原生标题 LLMClient 接线、本地 `--file` 附件 `file://`），1 项 TS 临时运行的标题限制 OPEN，其余为场景脚本侧修正。最终 23/24 PASS，花费 $0.092。套件常驻 `script/engine-conformance.ts`，可随引擎改动重跑回归。

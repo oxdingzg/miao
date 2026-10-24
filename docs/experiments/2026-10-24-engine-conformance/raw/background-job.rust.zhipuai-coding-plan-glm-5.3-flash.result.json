@@ -1,0 +1,32 @@
+{
+  "scenario": "background-job",
+  "engine": "rust",
+  "model": "zhipuai-coding-plan/glm-5.3-flash",
+  "outcome": {
+    "status": "pass"
+  },
+  "sessionID": "ses_gfe5e94adaec1ffepjr8sGKLd4",
+  "cost": 0.00215,
+  "tokensIn": 47293,
+  "tokensOut": 1039,
+  "stepFinishes": 4,
+  "tools": [
+    {
+      "tool": "bash",
+      "status": "completed",
+      "command": "sleep 2",
+      "background": true
+    },
+    {
+      "tool": "job_list",
+      "status": "completed",
+      "background": false
+    },
+    {
+      "tool": "job_list",
+      "status": "completed",
+      "background": false
+    }
+  ],
+  "errors": []
+}

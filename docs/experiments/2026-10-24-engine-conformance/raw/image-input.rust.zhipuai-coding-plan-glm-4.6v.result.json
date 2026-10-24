@@ -1,0 +1,21 @@
+{
+  "scenario": "image-input",
+  "engine": "rust",
+  "model": "zhipuai-coding-plan/glm-4.6v",
+  "outcome": {
+    "status": "pass"
+  },
+  "sessionID": "ses_gfe5e949e766effer1BJwEbPQi",
+  "cost": 0,
+  "tokensIn": 22567,
+  "tokensOut": 438,
+  "stepFinishes": 2,
+  "tools": [
+    {
+      "tool": "read",
+      "status": "completed",
+      "background": false
+    }
+  ],
+  "errors": []
+}

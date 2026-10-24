@@ -1,0 +1,32 @@
+{
+  "scenario": "file-edit",
+  "engine": "rust",
+  "model": "zhipuai-coding-plan/glm-5.3-flash",
+  "outcome": {
+    "status": "pass"
+  },
+  "sessionID": "ses_gfe5e94be21fbffeTJfgjPQanj",
+  "cost": 0.00182,
+  "tokensIn": 45777,
+  "tokensOut": 445,
+  "stepFinishes": 4,
+  "tools": [
+    {
+      "tool": "read",
+      "status": "completed",
+      "background": false
+    },
+    {
+      "tool": "edit",
+      "status": "error",
+      "error": "{\"error\":\"invalid tool input\"}",
+      "background": false
+    },
+    {
+      "tool": "edit",
+      "status": "completed",
+      "background": false
+    }
+  ],
+  "errors": []
+}
