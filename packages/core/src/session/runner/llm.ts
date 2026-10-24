@@ -51,6 +51,7 @@ import { DelegationReportTool } from "../../tool/delegation-report"
 import { Tool } from "../../tool/tool"
 import { GoalTool } from "../../tool/goal"
 import { RecallTool } from "../../tool/recall"
+import { HistoryTool } from "../../tool/history"
 import { BackgroundJob } from "../../background-job"
 import { BackgroundJobTool } from "../../tool/background-job"
 import { WorktreeTool } from "../../tool/worktree"
@@ -1910,6 +1911,14 @@ const layer = Layer.effect(
                 ),
                 recall: Tool.withConcurrency(
                   RecallTool.make(() =>
+                    SessionHistory.all(db, input.sessionID).pipe(
+                      Effect.mapError(() => new ToolFailure({ message: "Unable to read session history" })),
+                    ),
+                  ),
+                  "concurrent",
+                ),
+                history: Tool.withConcurrency(
+                  HistoryTool.make(() =>
                     SessionHistory.all(db, input.sessionID).pipe(
                       Effect.mapError(() => new ToolFailure({ message: "Unable to read session history" })),
                     ),
