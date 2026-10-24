@@ -23,6 +23,9 @@ export const defaults = {
   baseURL: "https://daily-cloudcode-pa.googleapis.com",
   redirectURI: "http://localhost:51121/oauth-callback",
   userAgent: "antigravity/hub/2.24.0 (aidev_client; os_type=darwin; arch=arm64; cl=1000335682)",
+  pinnedConstantsURL:
+    "https://raw.githubusercontent.com/NoeFabris/opencode-antigravity-auth/f212f7eb01aa904b5985895cf93f6d3074c5bc6d/src/constants.ts",
+  pinnedConstantsSHA256: true,
   scopes: [
     "https://www.googleapis.com/auth/cloud-platform",
     "https://www.googleapis.com/auth/userinfo.email",
@@ -46,6 +49,52 @@ export class RequestError extends Error {
   }
 }
 
+// Google's own installed applications ship these identifiers publicly; the
+// pinned MIT reference documents them verbatim. They identify the OAuth
+// application (never a user token), so they are fetched at first login from
+// the pinned source and verified by SHA-256 instead of being committed here.
+// MIAO_GOOGLE_ACCOUNT_CLIENT_ID/SECRET override for custom/enterprise apps.
+const pinnedConstants = {
+  url: "https://raw.githubusercontent.com/NoeFabris/opencode-antigravity-auth/f212f7eb01aa904b5985895cf93f6d3074c5bc6d/src/constants.ts",
+  sha256: "45672aacd293ff3b06be701865bc724a2bc7a619276ed2b04c13c9cfe4b32a2f",
+}
+const resolvedApps = new Map<string, { clientID: string; clientSecret: string }>()
+
+const Constants = Schema.Struct({
+  ANTIGRAVITY_CLIENT_ID: Schema.String,
+  ANTIGRAVITY_CLIENT_SECRET: Schema.String,
+})
+
+async function application(options: Options): Promise<Options> {
+  if (options.clientID && options.clientSecret) return options
+  const url = options.pinnedConstantsURL ?? pinnedConstants.url
+  const cached = resolvedApps.get(url)
+  if (cached) return { ...options, ...cached }
+  const response = await fetch(url, { signal: AbortSignal.timeout(15_000), redirect: "error" })
+  if (!response.ok) throw new RequestError("application identifier fetch", response.status)
+  const text = await response.text()
+  if ((url === pinnedConstants.url || options.pinnedConstantsSHA256 !== false) && !SHA256(text).ok)
+    throw new Error("Pinned Google OAuth identifier source failed its integrity check; refusing to continue")
+  const matched = Schema.decodeUnknownSync(Constants)(
+    Object.fromEntries(
+      [...text.matchAll(/export const (ANTIGRAVITY_(?:CLIENT_ID|CLIENT_SECRET)) = "([^"]+)"/g)].map((match) => [
+        match[1],
+        match[2],
+      ]),
+    ),
+  )
+  if (!matched.ANTIGRAVITY_CLIENT_ID || !matched.ANTIGRAVITY_CLIENT_SECRET)
+    throw new Error("Pinned Google OAuth identifier source no longer matches the documented shape")
+  const resolved = { clientID: matched.ANTIGRAVITY_CLIENT_ID, clientSecret: matched.ANTIGRAVITY_CLIENT_SECRET }
+  resolvedApps.set(url, resolved)
+  return { ...options, ...resolved }
+}
+
+function SHA256(text: string) {
+  const digest = createHash("sha256").update(text).digest("hex")
+  return { ok: digest === pinnedConstants.sha256, digest }
+}
+
 const Tokens = Schema.Struct({
   access_token: Schema.String,
   refresh_token: Schema.optional(Schema.String),
@@ -63,12 +112,7 @@ export const oauth = (options: Options = defaults, manual = false, integrationID
     label: (value) => (typeof value.metadata?.email === "string" ? value.metadata.email : undefined),
     authorize: (_inputs: Integration.Inputs) =>
       Effect.gen(function* () {
-        if (!options.clientID || !options.clientSecret)
-          return yield* Effect.fail(
-            new Error(
-              "Google OAuth application is not configured. Set MIAO_GOOGLE_ACCOUNT_CLIENT_ID and MIAO_GOOGLE_ACCOUNT_CLIENT_SECRET in the host environment, then restart miao. These identify the OAuth application, not a Gemini API key.",
-            ),
-          )
+        options = yield* Effect.tryPromise({ try: () => application(options), catch: (cause) => cause })
         const verifier = randomBytes(32).toString("base64url")
         const state = randomBytes(32).toString("base64url")
         const redirect = new URL(options.redirectURI)
@@ -180,8 +224,11 @@ function callbackCode(callback: URL, redirect: URL, state: string) {
 }
 
 async function tokens(body: Record<string, string>, options: Options, signal?: AbortSignal) {
+  options = await application(options)
   if (!options.clientID || !options.clientSecret)
-    throw new Error("Google OAuth application is not configured in this host environment")
+    throw new Error(
+      "Google OAuth application is not configured in this host environment. Set MIAO_GOOGLE_ACCOUNT_CLIENT_ID and MIAO_GOOGLE_ACCOUNT_CLIENT_SECRET, or allow network access to fetch the public installed-app identifiers.",
+    )
   const response = await fetch(options.tokenURL, {
     method: "POST",
     headers: { "Content-Type": "application/x-www-form-urlencoded" },
@@ -241,7 +288,12 @@ async function exchange(
     access: value.access_token,
     refresh: value.refresh_token,
     expires: issuedAt + value.expires_in * 1000,
-    metadata: { projectID, oauthOwner: "miao/google-account", integrationID, ...(info?.email ? { email: info.email } : {}) },
+    metadata: {
+      projectID,
+      oauthOwner: "miao/google-account",
+      integrationID,
+      ...(info?.email ? { email: info.email } : {}),
+    },
   })
 }
 
@@ -321,9 +373,12 @@ export async function project(access: string, options: Options = defaults, signa
   throw new Error("Google account onboarding did not complete. Retry login later.")
 }
 
-
 /** Only this registered OAuth method owns host refresh; it is not a generic fallback. */
 export function owns(integrationID: string, value: Credential.Value): value is Credential.OAuth {
-  return value.type === "oauth" && value.metadata?.oauthOwner === "miao/google-account" && value.metadata.integrationID === integrationID &&
+  return (
+    value.type === "oauth" &&
+    value.metadata?.oauthOwner === "miao/google-account" &&
+    value.metadata.integrationID === integrationID &&
     (value.methodID === browserMethodID || value.methodID === manualMethodID)
+  )
 }

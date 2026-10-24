@@ -15,7 +15,7 @@ This compatibility integration is independently implemented for miao. It is
 not an official Google client. It does not use Gemini website cookies, API
 keys, the retired personal Gemini CLI entitlement, or an external agent loop.
 Google-account model access depends on the backend's current account eligibility.
-OAuth application credentials are provided by the deployment through environment variables; no third-party client secret is embedded or committed. They are distinct from user access/refresh tokens and from Gemini API keys.
+Public installed-app identifiers are resolved at first login from the pinned MIT source (commit + SHA-256 verified) or provided via MIAO_GOOGLE_ACCOUNT_CLIENT_ID/SECRET for custom/enterprise apps; no third-party client secret is embedded or committed. They are distinct from user access/refresh tokens and from Gemini API keys. They are distinct from user access/refresh tokens and from Gemini API keys.
 
 Tool-history restoration follows Google's documented thought-signature rules:
 https://ai.google.dev/gemini-api/docs/generate-content/thought-signatures
