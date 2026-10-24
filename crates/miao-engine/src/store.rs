@@ -1062,7 +1062,10 @@ command: None,
             let staged_revert=staged_revert.map(|(boundary_seq,snapshot_id)|json!({"boundary_seq":boundary_seq,"snapshot_id":snapshot_id}));
             let transfer_import:Option<String>=tx.query_row("SELECT id FROM engine_transfer_import WHERE session_id=?1",[&session],|row|row.get(0)).optional()?;
             let snapshot=json!({"transfer_import":transfer_import,"session_id":session,"parent_session_id":parent,"cursor":cursor,"location":location,"mode":mode,"title":title,"created_at_ms":created_at_ms,"updated_at_ms":updated_at_ms,"archived_at_ms":archived_at_ms,"messages":messages,"selection":selection,"pending":pending,"active_run":active,"approvals":approvals,"context":context,"state":state,"questions":questions,"wakeups":wakeups,"crons":crons,"model_selection":model_selection,"account_selection":account_selection,"agent":agent,"staged_revert":staged_revert});
-            if serde_json::to_vec(&snapshot)?.len()>4*1024*1024{return Err(Error::Invalid("snapshot exceeds limit; use events pagination".into()));}
+            // A snapshot carries the whole Session (messages + selection + state);
+            // a 1M-token Session serializes to roughly 4-6 MB, so this bound
+            // only stops runaway payloads.
+            if serde_json::to_vec(&snapshot)?.len()>64*1024*1024{return Err(Error::Invalid("snapshot exceeds runaway limit".into()));}
             tx.commit()?;Ok(snapshot)
         }).await
     }
