@@ -769,9 +769,12 @@ async fn serve(
         .ok()
         .and_then(|value| value.parse::<u64>().ok())
         .unwrap_or(900);
-    let idle = if idle == 0 { None } else { Some(Duration::from_secs(idle)) };
-    let mut idle_deadline =
-        tokio::time::Instant::now() + idle.unwrap_or(Duration::from_secs(3600));
+    let idle = if idle == 0 {
+        None
+    } else {
+        Some(Duration::from_secs(idle))
+    };
+    let mut idle_deadline = tokio::time::Instant::now() + idle.unwrap_or(Duration::from_secs(3600));
     let result=async {
         loop {
             tokio::select! {
