@@ -1495,89 +1495,93 @@ export function Prompt(props: PromptProps) {
             </PromptPlaceholder>
             <Show when={!props.compactFooter || store.mode === "shell" || hasRightContent()}>
               <box flexDirection="row" flexShrink={0} paddingTop={1} gap={1} justifyContent="space-between">
-                <box flexDirection="row" gap={1}>
-                  <Show when={local.agent.current()} fallback={<box height={1} />}>
-                    {(agent) => (
-                      <>
-                        <box
-                          flexShrink={0}
-                          onMouseOver={() => setFooterHover("agent")}
-                          onMouseOut={() => setFooterHover(null)}
-                          onMouseUp={openAgentList}
-                        >
-                          <text fg={fadeColor(footerHover() === "agent" ? theme.text : highlight(), agentMetaAlpha())}>
-                            {store.mode === "shell"
-                              ? "Shell"
-                              : local.selectionLocked()
-                                ? "Native"
-                                : Locale.titlecase(agent().name)}
-                          </text>
-                        </box>
-                        <Show when={store.mode === "normal" && local.permission.mode === "auto"}>
-                          <text fg={fadeColor(theme.textMuted, agentMetaAlpha())}>auto</text>
-                        </Show>
-                        <Show when={store.mode === "normal"}>
-                          <box flexDirection="row" gap={1}>
-                            <text fg={fadeColor(theme.textMuted, modelMetaAlpha())}>·</text>
-                            <box
-                              flexShrink={0}
-                              onMouseOver={() => setFooterHover("model")}
-                              onMouseOut={() => setFooterHover(null)}
-                              onMouseUp={openModelList}
+                <Show when={!props.compactFooter || store.mode === "shell"}>
+                  <box flexDirection="row" gap={1}>
+                    <Show when={local.agent.current()} fallback={<box height={1} />}>
+                      {(agent) => (
+                        <>
+                          <box
+                            flexShrink={0}
+                            onMouseOver={() => setFooterHover("agent")}
+                            onMouseOut={() => setFooterHover(null)}
+                            onMouseUp={openAgentList}
+                          >
+                            <text
+                              fg={fadeColor(footerHover() === "agent" ? theme.text : highlight(), agentMetaAlpha())}
                             >
-                              <text
-                                flexShrink={0}
-                                fg={fadeColor(
-                                  footerHover() === "model" ? theme.text : leader() ? theme.textMuted : theme.text,
-                                  modelMetaAlpha(),
-                                )}
-                              >
-                                {local.model.parsed().model}
-                              </text>
-                            </box>
-                            <box
-                              onMouseOver={() => setFooterHover("provider")}
-                              onMouseOut={() => setFooterHover(null)}
-                              onMouseUp={openProviderList}
-                            >
-                              <text
-                                fg={fadeColor(
-                                  footerHover() === "provider" ? theme.text : theme.textMuted,
-                                  modelMetaAlpha(),
-                                )}
-                              >
-                                {currentProviderLabel()}
-                              </text>
-                            </box>
-                            <Show when={showVariant()}>
-                              <text fg={fadeColor(theme.textMuted, variantMetaAlpha())}>·</text>
+                              {store.mode === "shell"
+                                ? "Shell"
+                                : local.selectionLocked()
+                                  ? "Native"
+                                  : Locale.titlecase(agent().name)}
+                            </text>
+                          </box>
+                          <Show when={store.mode === "normal" && local.permission.mode === "auto"}>
+                            <text fg={fadeColor(theme.textMuted, agentMetaAlpha())}>auto</text>
+                          </Show>
+                          <Show when={store.mode === "normal"}>
+                            <box flexDirection="row" gap={1}>
+                              <text fg={fadeColor(theme.textMuted, modelMetaAlpha())}>·</text>
                               <box
                                 flexShrink={0}
-                                onMouseOver={() => setFooterHover("variant")}
+                                onMouseOver={() => setFooterHover("model")}
                                 onMouseOut={() => setFooterHover(null)}
-                                onMouseUp={() => keymap.dispatchCommand("variant.list")}
+                                onMouseUp={openModelList}
                               >
-                                <text>
-                                  <span
-                                    style={{
-                                      fg: fadeColor(
-                                        footerHover() === "variant" ? theme.text : theme.warning,
-                                        variantMetaAlpha(),
-                                      ),
-                                      bold: true,
-                                    }}
-                                  >
-                                    {local.model.variant.current() ?? "default"}
-                                  </span>
+                                <text
+                                  flexShrink={0}
+                                  fg={fadeColor(
+                                    footerHover() === "model" ? theme.text : leader() ? theme.textMuted : theme.text,
+                                    modelMetaAlpha(),
+                                  )}
+                                >
+                                  {local.model.parsed().model}
                                 </text>
                               </box>
-                            </Show>
-                          </box>
-                        </Show>
-                      </>
-                    )}
-                  </Show>
-                </box>
+                              <box
+                                onMouseOver={() => setFooterHover("provider")}
+                                onMouseOut={() => setFooterHover(null)}
+                                onMouseUp={openProviderList}
+                              >
+                                <text
+                                  fg={fadeColor(
+                                    footerHover() === "provider" ? theme.text : theme.textMuted,
+                                    modelMetaAlpha(),
+                                  )}
+                                >
+                                  {currentProviderLabel()}
+                                </text>
+                              </box>
+                              <Show when={showVariant()}>
+                                <text fg={fadeColor(theme.textMuted, variantMetaAlpha())}>·</text>
+                                <box
+                                  flexShrink={0}
+                                  onMouseOver={() => setFooterHover("variant")}
+                                  onMouseOut={() => setFooterHover(null)}
+                                  onMouseUp={() => keymap.dispatchCommand("variant.list")}
+                                >
+                                  <text>
+                                    <span
+                                      style={{
+                                        fg: fadeColor(
+                                          footerHover() === "variant" ? theme.text : theme.warning,
+                                          variantMetaAlpha(),
+                                        ),
+                                        bold: true,
+                                      }}
+                                    >
+                                      {local.model.variant.current() ?? "default"}
+                                    </span>
+                                  </text>
+                                </box>
+                              </Show>
+                            </box>
+                          </Show>
+                        </>
+                      )}
+                    </Show>
+                  </box>
+                </Show>
                 <Show when={hasRightContent()}>
                   <box flexDirection="row" gap={1} alignItems="center">
                     {props.right}
