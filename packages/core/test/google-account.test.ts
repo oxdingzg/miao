@@ -11,7 +11,7 @@ import { testEffect } from "./lib/effect"
 const it = testEffect(Layer.empty)
 
 const fixture = Effect.fn("GoogleAccount.fixture")(function* () {
-  const state = { grants: [] as URLSearchParams[], reject: false, eligible: true, hasModels: true }
+  const state = { grants: [] as URLSearchParams[], reject: false, eligible: true, hasModels: true, duringRefresh: async () => {} }
   const server = Bun.serve({
     hostname: "127.0.0.1",
     port: 0,
@@ -25,6 +25,7 @@ const fixture = Effect.fn("GoogleAccount.fixture")(function* () {
             { error: "invalid_grant", error_description: "fixture-private-refresh-must-not-leak" },
             { status: 400 },
           )
+        if (form.get("grant_type") === "refresh_token") await state.duringRefresh()
         return Response.json({
           access_token: form.get("grant_type") === "refresh_token" ? "fixture-refreshed-access" : "fixture-access",
           expires_in: 3600,
@@ -81,7 +82,7 @@ it.live("Google account manual OAuth validates state and exchanges PKCE without 
     expect(value.methodID).toBe(GoogleAccount.manualMethodID)
     expect(value.access).toBe("fixture-access")
     expect(value.refresh).toBe("fixture-refresh")
-    expect(value.metadata).toEqual({ projectID: "fixture-project", email: "person@example.test" })
+    expect(value.metadata).toMatchObject({ projectID: "fixture-project", email: "person@example.test", oauthOwner: "miao/google-account", integrationID: GoogleAccount.providerID })
     expect(value.expires).toBeGreaterThan(Date.now())
     const grant = state.grants[0]
     expect(grant.get("redirect_uri")).toBe(options.redirectURI)
@@ -230,3 +231,17 @@ it.live("missing OAuth application configuration fails before opening a browser 
     expect(state.grants).toHaveLength(0)
   }),
 )
+
+
+broker.live("disconnect during a Google token exchange cannot resurrect the removed credential", () => Effect.gen(function* () {
+  const integrations = yield* Integration.Service
+  const credentials = yield* Credential.Service
+  const { state, options } = yield* fixture()
+  yield* integrations.transform((editor) => editor.method.update(GoogleAccount.oauth(options, true)))
+  const integrationID = Integration.ID.make(GoogleAccount.providerID)
+  const entry = yield* credentials.create({integrationID,value:Credential.OAuth.make({type:"oauth",methodID:GoogleAccount.manualMethodID,access:"expired",refresh:"fixture-refresh",expires:1,metadata:{projectID:"fixture-project"}})})
+  state.duringRefresh = () => Effect.runPromise(credentials.remove(entry.id))
+  const result = yield* integrations.connection.resolve({type:"credential",id:entry.id,label:entry.label,active:true})
+  expect(result).toBeUndefined()
+  expect(yield* credentials.get(entry.id)).toBeUndefined()
+}))

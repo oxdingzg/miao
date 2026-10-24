@@ -21,6 +21,8 @@ import { Blob } from "@miao/core/blob"
 import { FSUtil } from "@miao/core/fs-util"
 import type { PromptInput } from "@miao/schema/prompt-input"
 import { Credential } from "@miao/core/credential"
+import { Integration } from "@miao/core/integration"
+import { GoogleAccount } from "@miao/core/google-account"
 import { CredentialDaemon } from "@miao/core/credential/daemon"
 import { CredentialTable } from "@miao/core/credential/sql"
 import { eq } from "drizzle-orm"
@@ -248,9 +250,7 @@ export const engineStorageRoot = (
   // An explicit empty value is the `--engine ts` opt-out: it must beat a
   // configured `engine.storage` rather than resolving to the working directory.
   const root =
-    environment.MIAO_ENGINE_STORAGE !== undefined
-      ? environment.MIAO_ENGINE_STORAGE || undefined
-      : settings?.storage
+    environment.MIAO_ENGINE_STORAGE !== undefined ? environment.MIAO_ENGINE_STORAGE || undefined : settings?.storage
   return root ? path.resolve(root) : undefined
 }
 
@@ -726,8 +726,7 @@ export const fromOwners = (
           request: (method, params) => connection.client.request(method, params),
         }),
       ),
-    title: (input) =>
-      (preparation.title?.(input) ?? Effect.void).pipe(Effect.catch(() => Effect.void)),
+    title: (input) => (preparation.title?.(input) ?? Effect.void).pipe(Effect.catch(() => Effect.void)),
     events: (input) =>
       connect(input).pipe(
         Effect.flatMap((connection) =>
@@ -791,6 +790,7 @@ const layer = Layer.effect(
     let locationPricing: EnginePricing | undefined
     const owners = yield* makeEngineOwners({ ...configuration, ...mcp }, (location) =>
       Effect.gen(function* () {
+        const integrations = yield* Integration.Service
         const { prices, ...routes } = yield* ProductRoutes.prepare(location, configuration, compaction).pipe(
           Effect.provideService(Credential.Service, credentials),
         )
@@ -826,20 +826,32 @@ const layer = Layer.effect(
             Effect.runPromise(
               Effect.gen(function* () {
                 // ADR-09: daemon-owned rows refresh on read and the daemon
-                // stays the sole writer; rows without an owner marker keep
-                // their error.
+                // stays the sole writer. Only explicitly owned Google-account
+                // methods may otherwise refresh in this TS host.
                 const row = yield* database.db
-                  .select({ value: CredentialTable.value })
+                  .select({ value: CredentialTable.value, integrationID: CredentialTable.integration_id, label: CredentialTable.label, active: CredentialTable.active })
                   .from(CredentialTable)
                   .where(eq(CredentialTable.id, Credential.ID.make(input.id)))
                   .get()
                   .pipe(Effect.orDie)
-                const socket = row?.value ? CredentialDaemon.socket(row.value) : undefined
-                if (!socket) return false
-                yield* Effect.tryPromise({
-                  try: () => CredentialDaemon.get(socket, input.id, input.integration),
-                  catch: (cause) => new Error(String(cause)),
-                })
+                if (!row || row.integrationID !== input.integration) return false
+                const socket = CredentialDaemon.socket(row.value)
+                if (socket)
+                  yield* Effect.tryPromise({
+                    try: () => CredentialDaemon.get(socket, input.id, input.integration),
+                    catch: (cause) => new Error(String(cause)),
+                  })
+                else {
+                  // This built-in method explicitly owns its refresh in the TS
+                  // host. Daemon-owned and inherited read-only rows keep their
+                  // existing ownership checks; the engine never writes tokens.
+                  if (
+                    !GoogleAccount.owns(row.integrationID, row.value)
+                  )
+                    return false
+                  const fresh = yield* integrations.connection.resolve({ type: "credential", id: Credential.ID.make(input.id), label: row.label, active: row.active ?? false })
+                  if (fresh?.type !== "oauth" || fresh.expires <= Date.now()) return false
+                }
                 yield* SessionInput.admit(database.db, events, {
                   id: SessionMessage.ID.create(),
                   sessionID: SessionSchema.ID.make(input.sessionID),

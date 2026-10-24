@@ -52,9 +52,9 @@ const Tokens = Schema.Struct({
   expires_in: Schema.Number,
 })
 
-export const oauth = (options: Options = defaults, manual = false) =>
+export const oauth = (options: Options = defaults, manual = false, integrationID = Integration.ID.make(providerID)) =>
   ({
-    integrationID: Integration.ID.make(providerID),
+    integrationID,
     method: {
       id: manual ? manualMethodID : browserMethodID,
       type: "oauth",
@@ -91,6 +91,7 @@ export const oauth = (options: Options = defaults, manual = false) =>
                 callbackCode(callback, redirect, state),
                 verifier,
                 manual ? manualMethodID : browserMethodID,
+                integrationID,
                 options,
                 signal,
               ),
@@ -199,6 +200,7 @@ async function exchange(
   code: string,
   verifier: string,
   methodID: Integration.MethodID,
+  integrationID: Integration.ID,
   options: Options,
   signal?: AbortSignal,
 ) {
@@ -239,7 +241,7 @@ async function exchange(
     access: value.access_token,
     refresh: value.refresh_token,
     expires: issuedAt + value.expires_in * 1000,
-    metadata: { projectID, ...(info?.email ? { email: info.email } : {}) },
+    metadata: { projectID, oauthOwner: "miao/google-account", integrationID, ...(info?.email ? { email: info.email } : {}) },
   })
 }
 
@@ -317,4 +319,11 @@ export async function project(access: string, options: Options = defaults, signa
     })
   }
   throw new Error("Google account onboarding did not complete. Retry login later.")
+}
+
+
+/** Only this registered OAuth method owns host refresh; it is not a generic fallback. */
+export function owns(integrationID: string, value: Credential.Value): value is Credential.OAuth {
+  return value.type === "oauth" && value.metadata?.oauthOwner === "miao/google-account" && value.metadata.integrationID === integrationID &&
+    (value.methodID === browserMethodID || value.methodID === manualMethodID)
 }
