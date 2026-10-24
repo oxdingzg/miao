@@ -1614,6 +1614,16 @@ async fn execute(
                 },
             );
         }
+        // Keep the cacheable system prefix stable. This is request guidance,
+        // not a durable user input or an invented assistant progress message.
+        if let Some(text) = crate::context::progress_reminder(&history) {
+            history.push(crate::protocol::Message {
+                role: "user".into(),
+                content: json!([{"type":"text","text":text}]),
+                checkpoint: None,
+                recorded_at_ms: None,
+            });
+        }
         let named = inner.store.named_agents(session).await?;
         let mut tools = agent_tools(&inner.tools, agent.as_ref(), &policy);
         for tool in &mut tools {
