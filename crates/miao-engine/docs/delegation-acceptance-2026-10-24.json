@@ -1,0 +1,60 @@
+{
+  "host_source_trial": "fd0238d8ff70fdf3c95c0e9131fdc3b714b8283d",
+  "engine_version": "0.2.26",
+  "engine_darwin_arm64_sha256": "84f9c426f6391f5a824ed3f70e5a1aa58bf5fbb5124f69b3fd527c40bfba23b7",
+  "model": "deepseek/deepseek-v4-flash",
+  "success": {
+    "parent": "ses_gfe5e941edfb3ffeTUOZ5bItwu",
+    "child": "ses_gfe5e941ed067ffe5lw2MOdIco",
+    "parent_own_cost": 0.00025125,
+    "child_own_cost": 6.5616e-05,
+    "observed_parent_total_before_cancellation": 0.000316866,
+    "observed_child_total_before_cancellation": 6.5616e-05,
+    "first_run_stop_ms": 1792811284451
+  },
+  "cancellation": {
+    "parent": "ses_gfe5e941edfb3ffeTUOZ5bItwu",
+    "child": "ses_gfe5e941db131ffeKn0Bb1BBU9",
+    "child_provider_started_seq": 9,
+    "events": [
+      {
+        "session": "ses_gfe5e941edfb3ffeTUOZ5bItwu",
+        "seq": 49,
+        "kind": "stop",
+        "data": {
+          "message": null,
+          "reason": "interrupted",
+          "run_id": "917facff-aa90-4525-9090-078677dc3d3c"
+        }
+      },
+      {
+        "session": "ses_gfe5e941edfb3ffeTUOZ5bItwu",
+        "seq": 48,
+        "kind": "run.finished",
+        "data": {
+          "reason": "interrupted",
+          "run_id": "917facff-aa90-4525-9090-078677dc3d3c"
+        }
+      },
+      {
+        "session": "ses_gfe5e941db131ffeKn0Bb1BBU9",
+        "seq": 14,
+        "kind": "stop",
+        "data": {
+          "message": null,
+          "reason": "interrupted",
+          "run_id": "c6399acd-a494-444c-b378-ee52705acda9"
+        }
+      },
+      {
+        "session": "ses_gfe5e941db131ffeKn0Bb1BBU9",
+        "seq": 13,
+        "kind": "run.finished",
+        "data": {
+          "reason": "interrupted",
+          "run_id": "c6399acd-a494-444c-b378-ee52705acda9"
+        }
+      }
+    ]
+  }
+}

@@ -1,0 +1,114 @@
+{
+  "product_version": "0.2.26",
+  "mcp": {
+    "session": "ses_gfe5e94c15027ffe8zuud5gMaF",
+    "events": [
+      {
+        "seq": 15,
+        "kind": "message.committed",
+        "data": {
+          "anchor_seq": 10,
+          "checkpoint": null,
+          "content": [
+            {
+              "text": "I'll call that tool now.",
+              "type": "text"
+            },
+            {
+              "id": "call_00_ET_q07IzJB1HmDsTofS67WX4451",
+              "input": {
+                "duration": 60
+              },
+              "name": "mcp_everything_trigger_long_r_39dfed1fb5f02704c5719c76a623ba62",
+              "type": "tool_use"
+            }
+          ],
+          "role": "assistant"
+        }
+      },
+      {
+        "seq": 18,
+        "kind": "tool.dispatched",
+        "data": {
+          "call_id": "9626e3bd-c60f-4f79-96bd-474701ef3051/call_00_ET_q07IzJB1HmDsTofS67WX4451",
+          "provider_id": "call_00_ET_q07IzJB1HmDsTofS67WX4451",
+          "run_id": "9626e3bd-c60f-4f79-96bd-474701ef3051"
+        }
+      },
+      {
+        "seq": 19,
+        "kind": "message.committed",
+        "data": {
+          "checkpoint": null,
+          "content": [
+            {
+              "content": "Execution interrupted; outcome unknown. Do not automatically repeat side effects.",
+              "is_error": true,
+              "tool_use_id": "call_00_ET_q07IzJB1HmDsTofS67WX4451",
+              "type": "tool_result"
+            }
+          ],
+          "role": "user"
+        }
+      },
+      {
+        "seq": 21,
+        "kind": "run.finished",
+        "data": {
+          "reason": "interrupted",
+          "run_id": "9626e3bd-c60f-4f79-96bd-474701ef3051"
+        }
+      },
+      {
+        "seq": 22,
+        "kind": "stop",
+        "data": {
+          "message": null,
+          "reason": "interrupted",
+          "run_id": "9626e3bd-c60f-4f79-96bd-474701ef3051"
+        }
+      }
+    ]
+  },
+  "lsp": {
+    "session": "ses_gfe5e94735790ffedX053H47p1",
+    "seq": 19,
+    "kind": "tool.completed",
+    "data": {
+      "call_id": "ce1b80d4-e53d-4d9c-9e47-5719331c2800/call_00_xBPD8h8gzI1h8XC7qLhE8458",
+      "is_error": false,
+      "result": {
+        "diagnostics": [
+          {
+            "code": "reportAssignmentType",
+            "codeDescription": {
+              "href": "https://github.com/microsoft/pyright/blob/main/docs/configuration.md#reportAssignmentType"
+            },
+            "message": "Type \"Literal['not an integer']\" is not assignable to declared type \"int\"\n  \"Literal['not an integer']\" is not assignable to \"int\"",
+            "range": {
+              "end": {
+                "character": 29,
+                "line": 0
+              },
+              "start": {
+                "character": 13,
+                "line": 0
+              }
+            },
+            "severity": 1,
+            "source": "Pyright"
+          }
+        ],
+        "source": {
+          "current_sha256": "a4cae14989d27f369b209ecefe1eff6de30d0e9f1d90c9f3c04b2893a738abbc",
+          "diagnostics_version": 1,
+          "document_version": 1,
+          "sha256": "a4cae14989d27f369b209ecefe1eff6de30d0e9f1d90c9f3c04b2893a738abbc",
+          "stale": false,
+          "version_verified": true
+        }
+      },
+      "result_json": "{\"diagnostics\":[{\"code\":\"reportAssignmentType\",\"codeDescription\":{\"href\":\"https://github.com/microsoft/pyright/blob/main/docs/configuration.md#reportAssignmentType\"},\"message\":\"Type \\\"Literal['not an integer']\\\" is not assignable to declared type \\\"int\\\"\\n  \\\"Literal['not an integer']\\\" is not assignable to \\\"int\\\"\",\"range\":{\"end\":{\"character\":29,\"line\":0},\"start\":{\"character\":13,\"line\":0}},\"severity\":1,\"source\":\"Pyright\"}],\"source\":{\"current_sha256\":\"a4cae14989d27f369b209ecefe1eff6de30d0e9f1d90c9f3c04b2893a738abbc\",\"diagnostics_version\":1,\"document_version\":1,\"sha256\":\"a4cae14989d27f369b209ecefe1eff6de30d0e9f1d90c9f3c04b2893a738abbc\",\"stale\":false,\"version_verified\":true}}"
+    }
+  }
+}

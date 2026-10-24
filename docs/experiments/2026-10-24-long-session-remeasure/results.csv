@@ -1,0 +1,5 @@
+model,scope,engine,task,runs,passed,attempts,billed_input,cached_input,output,cost,p50_ms,p95_ms
+deepseek/deepseek-v4-flash,total,ts,*,3,3,35,39601,446592,3196,0.00995,25444,29577
+deepseek/deepseek-v4-flash,task,ts,long-session,3,3,35,39601,446592,3196,0.00995,25444,29577
+deepseek/deepseek-v4-flash,total,rust,*,3,3,32,334937,325248,7750,0.00708,30989,31134
+deepseek/deepseek-v4-flash,task,rust,long-session,3,3,32,334937,325248,7750,0.00708,30989,31134

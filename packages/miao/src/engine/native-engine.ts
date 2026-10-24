@@ -857,7 +857,7 @@ const layer = Layer.effect(
             ownerRouter === undefined
               ? Effect.fail(new EngineError("engine_owner_closed", "product tool router is not ready"))
               : ownerRouter.get(input),
-        })
+        }).pipe(Effect.provide(locations.get(location)))
         const pluginHooks = yield* PluginHooks.prepare({ ...configuration, ...productTools }, { store: sessions })
         return {
           options: {
@@ -930,7 +930,7 @@ const layer = Layer.effect(
     const clients = yield* ClientEvents.Service
     const unsubscribeUsage = yield* clients.listen((event) =>
       event.type === "session.next.step.ended" && event.metadata?.engine !== undefined
-        ? SessionUsageStore.projectStepEnded(database.db, event)
+        ? SessionUsageStore.projectNativeStepEnded(database.db, event)
         : Effect.void,
     )
     yield* Effect.addFinalizer(() => unsubscribeUsage)
@@ -994,6 +994,7 @@ export const node = makeGlobalNode({
     Database.node,
     EventV2.node,
     SessionStore.node,
+    SessionCreate.node,
     SessionOwnership.node,
     llmClient,
   ],
