@@ -730,15 +730,19 @@ const TOOL_IDS: Record<string, string> = {
   grep: "grep",
   write_file: "write",
   edit_file: "edit",
-  apply_patch: "apply-patch",
+  apply_patch: "apply_patch",
   run_command: "bash",
   bash: "bash",
-  start_job: "background-job",
-  job_status: "background-job",
-  job_list: "background-job",
-  job_wait: "background-job",
-  cancel_job: "background-job",
+  start_job: "bash",
+  job_status: "job_list",
+  job_list: "job_list",
+  job_wait: "job_wait",
+  cancel_job: "job_cancel",
+  monitor: "monitor",
   task: "task",
+  task_list: "task_list",
+  task_result: "task_result",
+  task_cancel: "task_cancel",
   todowrite: "todowrite",
   goal: "goal",
   question: "question",
@@ -760,12 +764,36 @@ const TOOL_IDS: Record<string, string> = {
 
 /**
  * Map an engine tool name to the product tool id whose renderer already exists
- * (`facade-mapping.md`). Unknown, worker and MCP tools fall back to `custom`.
+ * (`facade-mapping.md`). Engine MCP tools surface under the product's
+ * `mcp__<server>__<tool>` vocabulary: the engine aliases a server tool as
+ * `mcp_<server>_<tool>_<32-hex digest>` (slugs truncated to 12/14 chars), so
+ * the digest suffix is stripped and the first underscore separates server from
+ * tool. Unknown, worker and MCP tools fall back to `custom`.
  */
 export function productToolID(engineTool: string): string {
   if (engineTool in TOOL_IDS) return TOOL_IDS[engineTool]
+  if (engineTool.startsWith("mcp_")) {
+    const rest = engineTool.slice("mcp_".length)
+    const digest = rest.match(/_[0-9a-f]{32}$/)
+    const body = digest?.index === undefined ? rest : rest.slice(0, digest.index)
+    const split = body.indexOf("_")
+    if (split > 0) return `mcp__${body.slice(0, split)}__${body.slice(split + 1)}`
+  }
   if (engineTool.startsWith("cron_")) return "schedule"
   return "custom"
+}
+
+/**
+ * Project an engine tool input into the shape the product tool's renderer and
+ * consumers expect. `start_job` is the engine's background admission of
+ * `run_command` (argv-shaped); the product vocabulary is a `bash` call with
+ * `run_in_background`, so the bridge translates instead of leaking argv.
+ */
+export function productToolInput(engineTool: string, input: Record<string, unknown>): Record<string, unknown> {
+  if (engineTool !== "start_job") return input
+  const argv = Array.isArray(input.argv) ? input.argv.filter((item): item is string => typeof item === "string") : []
+  const command = argv.length > 2 && argv[0] === "bash" && argv[1] === "-c" ? argv.slice(2).join(" ") : argv.join(" ")
+  return { command, run_in_background: true }
 }
 
 /** The product `session.next.tool.called` payload for one committed tool_use block. */
@@ -811,7 +839,7 @@ export function translateTools(event: EngineEvent): SessionToolCalled[] {
         assistantMessageID,
         callID: block.id,
         tool: productToolID(block.name),
-        input,
+        input: productToolInput(block.name, input),
         provider: { executed: false },
       },
     ]
