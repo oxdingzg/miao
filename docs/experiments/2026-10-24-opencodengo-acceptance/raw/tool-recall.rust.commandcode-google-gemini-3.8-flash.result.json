@@ -1,0 +1,22 @@
+{
+  "scenario": "tool-recall",
+  "engine": "rust",
+  "model": "commandcode/google/gemini-3.8-flash",
+  "outcome": {
+    "status": "pass"
+  },
+  "sessionID": "ses_gfe5e93beef60ffek2k3ogHTZJ",
+  "cost": 0,
+  "tokensIn": 15736,
+  "tokensOut": 92,
+  "stepFinishes": 2,
+  "tools": [
+    {
+      "tool": "bash",
+      "status": "completed",
+      "command": "echo MIAO-CONFORMANCE-7391",
+      "background": false
+    }
+  ],
+  "errors": []
+}

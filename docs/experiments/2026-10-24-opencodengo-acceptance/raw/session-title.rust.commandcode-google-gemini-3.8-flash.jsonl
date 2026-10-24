@@ -1,0 +1,3 @@
+{"type":"segment","index":0,"resume":false,"prompt":"Reply with exactly: conformance-title-check"}
+{"type":"error","timestamp":1792817739406,"sessionID":"ses_gfe5e93bc52aeffeF0TM19jGM2","error":{"type":"unknown","message":"invalid request: provider HTTP 400: You have insufficient credits to make this request. Please purchase more credits to continue using the service. (code BAD_REQUEST)"}}
+{"type":"segment.end","index":0,"exitCode":1,"seconds":7.9,"killed":false,"timedOut":false}
