@@ -68,3 +68,10 @@ test("an engine whose route manifest schema is too old is refused", () => {
   // An engine that predates the field is still used; its loader decides.
   expect(resolveEngine({ environment: {}, probe: () => engine(2), exists: () => true })?.binary).toContain("miao-engine")
 })
+
+test("an installed preview's paired engine precedes the stable engine", () => {
+  const executable = path.join("/preview", ".versions", "build", "miao")
+  const paired = path.join(path.dirname(executable), process.platform === "win32" ? "miao-engine.exe" : "miao-engine")
+  expect(resolveEngine({ executable, environment: {}, exists: () => true, probe: () => engine(2) })?.binary).toBe(paired)
+  expect(resolveEngine({ executable, environment: { MIAO_ENGINE_BIN: "/chosen" }, exists: () => true, probe: () => engine(2) })?.binary).toBe("/chosen")
+})
