@@ -75,6 +75,7 @@ export class EngineTranslator {
   #settledThrough = new Map<string, number>()
   #anchors = new Map<string, StreamAnchor>()
   #usage = new Map<string, { runID: string; step: number; usage: BufferedUsage }>()
+  #providerModels = new Map<string, { runID: string; step: number; model: string }>()
   #ttft = new Map<string, number>()
   #agents = new Map<string, string>()
   #pricing: EnginePricing | undefined
@@ -309,6 +310,26 @@ export class EngineTranslator {
     }
     if (event.kind === "provider.started" && event.seq > (this.#settledThrough.get(event.session_id) ?? 0)) {
       const data: unknown = event.data
+      this.#providerModels.delete(event.session_id)
+      const identity = Schema.decodeUnknownOption(
+        Schema.Struct({
+          run_id: Schema.String,
+          step: Schema.Number,
+          identity: Schema.Struct({ protocol: Schema.String, model: Schema.String }),
+        }),
+      )(data)
+      if (
+        Option.isSome(identity) &&
+        identity.value.identity.model.length > 0 &&
+        identity.value.identity.protocol.length > 0 &&
+        Number.isSafeInteger(event.recorded_at_ms) &&
+        (event.recorded_at_ms ?? -1) >= 0
+      )
+        this.#providerModels.set(event.session_id, {
+          runID: identity.value.run_id,
+          step: identity.value.step,
+          model: identity.value.identity.model,
+        })
       const run = typeof data === "object" && data !== null && "run_id" in data ? data.run_id : undefined
       const step = typeof data === "object" && data !== null && "step" in data ? data.step : undefined
       if (
@@ -376,13 +397,21 @@ export class EngineTranslator {
     for (const call of translateTools(event)) publish({ type: "session.next.tool.called", data: call })
     const usage = this.#usage.get(event.session_id)
     const ttft = this.#ttft.get(event.session_id)
-    const priced = usage?.usage.model ? this.#pricing?.(usage.usage.model) : undefined
+    const provider = this.#providerModels.get(event.session_id)
+    // Older engines can journal null usage.model despite recording the actual
+    // serving identity at provider.started. Never borrow another step or run.
+    const model =
+      usage?.usage.model ??
+      (provider && usage && provider.runID === usage.runID && provider.step === usage.step ? provider.model : undefined)
+    const priced = model ? this.#pricing?.(model) : undefined
     const ended = translateStepEnded(event, usage?.usage, ttft, priced?.cost, priced?.model)
     if (ended) {
       publish({ type: "session.next.step.ended", data: ended })
       this.#usage.delete(event.session_id)
       this.#ttft.delete(event.session_id)
+      this.#providerModels.delete(event.session_id)
     }
+    if (event.kind === "run.finished") this.#providerModels.delete(event.session_id)
     const result = this.#tools.result(event)
     if (result) publish({ type: result.type, data: result })
     const asked = translateApproval(event)
