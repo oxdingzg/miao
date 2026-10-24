@@ -1,0 +1,91 @@
+[
+  {
+    "sha256": "95a6c4d843275af11c66ed464dfc1b815f5a5938de0f3ecc675cc34c6921dea5"
+  },
+  {
+    "providerID": "fixture",
+    "modelID": "custom",
+    "sha256": "95a6c4d843275af11c66ed464dfc1b815f5a5938de0f3ecc675cc34c6921dea5"
+  },
+  {
+    "modelID": "gpt-4.1",
+    "sha256": "c08589a60ebd9e3b770dfa9f1129995468e90c30010d093711bee90b5be2d88a"
+  },
+  {
+    "modelID": "o1",
+    "sha256": "c08589a60ebd9e3b770dfa9f1129995468e90c30010d093711bee90b5be2d88a"
+  },
+  {
+    "modelID": "o3",
+    "sha256": "c08589a60ebd9e3b770dfa9f1129995468e90c30010d093711bee90b5be2d88a"
+  },
+  {
+    "modelID": "gpt-5",
+    "sha256": "f691f946291a9da50f74b25471abc73f8d7d51037d1770bce59ca358b3300aac"
+  },
+  {
+    "modelID": "gpt-6.1-sol",
+    "sha256": "7464a544099f0c5028833cecc5fbd1f11c43aed906dade8e8b55069737b76e9a"
+  },
+  {
+    "modelID": "gpt-5-codex",
+    "sha256": "c7d55adba3b71b84a56229aa85c6702863e1f2747bfcca46821d0e757107a255"
+  },
+  {
+    "modelID": "gemini-3.8-flash-medium",
+    "sha256": "158eed0c31d847b568c975f47a6db2352452111158e172c1c1d9c6e8bf60f05d"
+  },
+  {
+    "modelID": "claude-sonnet",
+    "sha256": "b8f777f7bff46b8a971952f5cf30c5af250def773aa0b1ecd29ce0324449d5c9"
+  },
+  {
+    "modelID": "trinity-large",
+    "sha256": "98502cd3d72d485de4cf461fa7b5f064ec8ab83a65ca7aa207b2d86f166322eb"
+  },
+  {
+    "modelID": "kimi-k2",
+    "sha256": "5ebd3aafd493d20fe3fcc8aa315f81ce38f86b86e91cebbd53fa9830b9880921"
+  },
+  {
+    "providerID": "kimi-for-coding",
+    "modelID": "custom",
+    "sha256": "5ebd3aafd493d20fe3fcc8aa315f81ce38f86b86e91cebbd53fa9830b9880921"
+  },
+  {
+    "providerID": "moonshotai",
+    "apiID": "custom",
+    "sha256": "5ebd3aafd493d20fe3fcc8aa315f81ce38f86b86e91cebbd53fa9830b9880921"
+  },
+  {
+    "providerID": "moonshotai-cn",
+    "apiID": "custom",
+    "sha256": "5ebd3aafd493d20fe3fcc8aa315f81ce38f86b86e91cebbd53fa9830b9880921"
+  },
+  {
+    "modelID": "muse-spark",
+    "sha256": "79ec8736dbbc4e7c28bbcac064e06bafd8589c74a3bafc64b8fa3fbf5107ca9d"
+  },
+  {
+    "modelID": "muse-glimmer",
+    "sha256": "62554ed816924fe68e270793b3049a9de1e2fe4971035d0a8b91fd0ca2858008"
+  },
+  {
+    "modelID": "GEMINI-3-FLASH",
+    "sha256": "158eed0c31d847b568c975f47a6db2352452111158e172c1c1d9c6e8bf60f05d"
+  },
+  {
+    "modelID": "logical-alias",
+    "apiID": "gemini-3-flash",
+    "sha256": "158eed0c31d847b568c975f47a6db2352452111158e172c1c1d9c6e8bf60f05d"
+  },
+  {
+    "modelID": "gemini-3-flash",
+    "apiID": "gpt-4.1",
+    "sha256": "c08589a60ebd9e3b770dfa9f1129995468e90c30010d093711bee90b5be2d88a"
+  },
+  {
+    "modelID": "codex",
+    "sha256": "95a6c4d843275af11c66ed464dfc1b815f5a5938de0f3ecc675cc34c6921dea5"
+  }
+]

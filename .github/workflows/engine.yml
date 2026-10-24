@@ -32,6 +32,7 @@ jobs:
         run: |
           bun crates/miao-engine/tests/differential/generate.ts --check
           bun crates/miao-engine/tests/differential/generate-agent-policy.ts --check
+          bun crates/miao-engine/tests/differential/generate-personas.ts --check
 
   engine:
     name: engine (${{ matrix.os }})

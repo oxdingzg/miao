@@ -1641,6 +1641,30 @@ async fn execute(
         // before it reaches the model, the same reverse dispatch the
         // before/after families use around calls.
         let tools = dispatch_plugin_definitions(inner, session, run, tools).await?;
+        // Match the TS harness: explicit agent instructions replace the model
+        // persona. Family instructions follow the effective wire model on each
+        // turn and stay outside the durable baseline/context epoch.
+        let system = if manifest.is_some_and(|agent| {
+            agent.semantics.as_deref() == Some("product-agent-ordered-v1")
+                && agent.instructions.is_none()
+        }) {
+            let identity = provider.identity();
+            let route = binding
+                .as_ref()
+                .and_then(|binding| binding.route_id.as_deref())
+                .and_then(|route| route.split_once('/'));
+            let persona = crate::persona::system(
+                route.map(|(provider, _)| provider).unwrap_or_default(),
+                route.map(|(_, model)| model).unwrap_or_default(),
+                identity
+                    .as_ref()
+                    .map(|identity| identity.model.as_str())
+                    .unwrap_or_default(),
+            );
+            format!("{persona}\n\n{system}")
+        } else {
+            system
+        };
         let request = ModelRequest {
             system,
             messages: history,

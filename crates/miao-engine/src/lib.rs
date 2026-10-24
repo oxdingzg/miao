@@ -33,6 +33,7 @@ pub mod patch;
 pub mod pdf;
 pub mod permission;
 pub mod permission_grant;
+mod persona;
 pub mod process;
 pub mod protocol;
 pub mod provider;
