@@ -1358,13 +1358,12 @@ export const {
           })
           let selected = false
           return retryPromptSend({
-            send: async (signal, attempt) => {
-              if (!selected) {
-                await applySelection(input, signal, attempt > 0)
-                selected = true
-              }
-              return sdk.api.sessions.prompt({ id, sessionID: input.sessionID, prompt }, { signal })
+            prepare: async (signal, attempt) => {
+              if (selected) return
+              await applySelection(input, signal, attempt > 0)
+              selected = true
             },
+            send: (signal) => sdk.api.sessions.prompt({ id, sessionID: input.sessionID, prompt }, { signal }),
             // An event receipt or removal/reconciliation is authoritative even
             // if the HTTP reply is lost. Never resend a cleared local intent.
             received: () => !pendingPrompts.data[id] || pendingPrompts.data[id].state === "admitted",
