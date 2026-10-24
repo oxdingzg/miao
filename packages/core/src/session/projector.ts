@@ -29,15 +29,7 @@ const encodeMessage = Schema.encodeSync(SessionMessage.Message)
 
 export class SessionAlreadyProjected extends Error {}
 
-type Usage = {
-  cost: number
-  tokens: {
-    input: number
-    output: number
-    reasoning: number
-    cache: { read: number; write: number }
-  }
-}
+type Usage = SessionUsageStore.Usage
 
 function usage(part: (typeof SessionV1.Event.PartUpdated.Type)["data"]["part"] | unknown): Usage | undefined {
   if (typeof part !== "object" || part === null) return undefined
@@ -123,47 +115,6 @@ function partData(part: (typeof SessionV1.Event.PartUpdated.Type)["data"]["part"
   return rest as DeepMutable<typeof rest>
 }
 
-function applyUsage(db: DatabaseService, sessionID: SessionSchema.ID, value: Usage, sign = 1) {
-  return db
-    .update(SessionTable)
-    .set({
-      cost: sql`${SessionTable.cost} + ${value.cost * sign}`,
-      tokens_input: sql`${SessionTable.tokens_input} + ${value.tokens.input * sign}`,
-      tokens_output: sql`${SessionTable.tokens_output} + ${value.tokens.output * sign}`,
-      tokens_reasoning: sql`${SessionTable.tokens_reasoning} + ${value.tokens.reasoning * sign}`,
-      tokens_cache_read: sql`${SessionTable.tokens_cache_read} + ${value.tokens.cache.read * sign}`,
-      tokens_cache_write: sql`${SessionTable.tokens_cache_write} + ${value.tokens.cache.write * sign}`,
-      time_updated: sql`${SessionTable.time_updated}`,
-    })
-    .where(eq(SessionTable.id, sessionID))
-    .run()
-    .pipe(Effect.orDie)
-}
-
-/**
- * Apply a session's step usage to the session and every ancestor session, so a
- * parent's `cost`/tokens reflect its subagents. Each descendant step is applied
- * once per ancestor, which sums the subtree without double counting.
- */
-const MAX_ANCESTORS = 64
-function applyUsageWithAncestors(db: DatabaseService, sessionID: SessionSchema.ID, value: Usage, sign = 1) {
-  return Effect.gen(function* () {
-    yield* applyUsage(db, sessionID, value, sign)
-    let current = sessionID
-    for (let depth = 0; depth < MAX_ANCESTORS; depth++) {
-      const row = yield* db
-        .select({ parentID: SessionTable.parent_id })
-        .from(SessionTable)
-        .where(eq(SessionTable.id, current))
-        .get()
-        .pipe(Effect.orDie)
-      const parentID = row?.parentID
-      if (!parentID) break
-      yield* applyUsage(db, parentID, value, sign)
-      current = parentID
-    }
-  })
-}
 
 type RunCache = {
   readonly assistantByID: Map<SessionMessage.ID, SessionMessage.Assistant>
@@ -474,7 +425,7 @@ const layer = Layer.effectDiscard(
           .pipe(Effect.orDie)
         for (const row of rows) {
           const previous = usage(row.data)
-          if (previous) yield* applyUsage(db, event.data.sessionID, previous, -1)
+          if (previous) yield* SessionUsageStore.applyUsage(db, event.data.sessionID, previous, -1)
         }
         yield* db
           .delete(MessageTable)
@@ -493,7 +444,7 @@ const layer = Layer.effectDiscard(
           .get()
           .pipe(Effect.orDie)
         const previous = row && usage(row.data)
-        if (previous) yield* applyUsage(db, event.data.sessionID, previous, -1)
+        if (previous) yield* SessionUsageStore.applyUsage(db, event.data.sessionID, previous, -1)
         yield* db
           .delete(PartTable)
           .where(and(eq(PartTable.id, event.data.partID), eq(PartTable.session_id, event.data.sessionID)))
@@ -517,8 +468,8 @@ const layer = Layer.effectDiscard(
           .pipe(Effect.orDie)
         const previous = row && usage(row.data)
         const next = usage(event.data.part)
-        if (previous) yield* applyUsage(db, row.session_id, previous, -1)
-        if (next) yield* applyUsage(db, sessionID, next)
+        if (previous) yield* SessionUsageStore.applyUsage(db, row.session_id, previous, -1)
+        if (next) yield* SessionUsageStore.applyUsage(db, sessionID, next)
       }),
     )
     yield* events.project(SessionEvent.AgentSwitched, (event) =>
@@ -607,7 +558,7 @@ const layer = Layer.effectDiscard(
     yield* events.project(SessionEvent.Step.Started, (event) => run(db, event))
     yield* events.project(SessionEvent.Step.Ended, (event) =>
       Effect.gen(function* () {
-        yield* applyUsageWithAncestors(db, event.data.sessionID, { cost: event.data.cost, tokens: event.data.tokens })
+        yield* SessionUsageStore.applyUsageWithAncestors(db, event.data.sessionID, { cost: event.data.cost, tokens: event.data.tokens })
         yield* run(db, event)
         yield* SessionUsageStore.projectStepEnded(db, event)
       }),
@@ -686,7 +637,7 @@ const layer = Layer.effectDiscard(
         for (const row of removed) {
           const message = decodeMessage({ ...row.data, id: row.id, type: row.type })
           if (message.type === "assistant" && message.cost !== undefined && message.tokens !== undefined)
-            yield* applyUsageWithAncestors(db, event.data.sessionID, { cost: message.cost, tokens: message.tokens }, -1)
+            yield* SessionUsageStore.applyUsageWithAncestors(db, event.data.sessionID, { cost: message.cost, tokens: message.tokens }, -1)
         }
         yield* db
           .delete(SessionMessageTable)
