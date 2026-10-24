@@ -133,7 +133,9 @@ test("maps engine tool names to product tool ids", () => {
   expect(productToolID("cron_list")).toBe("schedule")
   expect(productToolID("mcp_dice_roll_dice")).toBe("mcp__dice__roll_dice")
   expect(productToolID("mcp_dice_roll_dice_f03cf0c725b907c9894d9e5988840834")).toBe("mcp__dice__roll_dice")
-  expect(productToolID("worker__echo")).toBe("custom")
+  expect(productToolID("worker__echo")).toBe("worker__echo")
+  expect(productToolID("session_state")).toBe("session_state")
+  expect(productToolID("session_message")).toBe("session_message")
 })
 
 test("projects engine shell results into the product bash shape", () => {

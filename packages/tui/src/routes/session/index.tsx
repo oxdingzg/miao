@@ -1775,9 +1775,10 @@ function ReasoningPart(props: {
   )
   const duration = createMemo(() => {
     const completed = props.part.time?.completed
-    return completed === undefined
+    const created = props.part.time?.created
+    return completed === undefined || typeof created !== "number" || completed <= created
       ? undefined
-      : Locale.duration(Math.max(0, completed - (props.part.time?.created ?? 0)))
+      : Locale.duration(completed - created)
   })
   const summary = createMemo(() => reasoningSummary(content()))
   const syntax = createSyntaxStyleMemo(() => generateSubtleSyntax(theme))
@@ -1791,7 +1792,11 @@ function ReasoningPart(props: {
         flexDirection="column"
         flexShrink={0}
       >
-        <ReasoningHeader done={isDone()} duration={isDone() ? duration() : undefined} />
+        <ReasoningHeader
+          done={isDone()}
+          duration={isDone() ? duration() : undefined}
+          summary={Locale.truncate(summary().title ?? summary().body.split(/\r?\n/, 1)[0], Math.max(20, ctx.width - 28))}
+        />
         <Show when={!hidden() && !opaque() && summary().body}>
           <box marginTop={1}>
             <code
@@ -1810,21 +1815,18 @@ function ReasoningPart(props: {
   )
 }
 
-function ReasoningHeader(props: { done: boolean; duration?: string }) {
+function ReasoningHeader(props: { done: boolean; duration?: string; summary?: string }) {
   const { theme } = useTheme()
   // Theme fields are store reads; keep them inside a thunk so a theme switch
   // repaints the header instead of freezing the color it was mounted with.
   const fg = () => theme.textMuted
-  // Claude Code style: a plain label while thinking, then only how long it took.
-  // The raw reasoning stays behind the thinking toggle instead of leaking a
-  // provider-language headline into the transcript.
-  const completed = () => (props.duration ? `Thought for ${props.duration}` : "Thought")
+  const completed = () => [props.duration ? `Thought for ${props.duration}` : "Thought", props.summary].filter(Boolean).join(" · ")
 
   return (
     <Switch>
       <Match when={!props.done}>
         <box flexDirection="row">
-          <Spinner color={fg()}>Thinking</Spinner>
+          <Spinner color={fg()}>{props.summary ? `Thinking · ${props.summary}` : "Thinking"}</Spinner>
         </box>
       </Match>
       <Match when={true}>
