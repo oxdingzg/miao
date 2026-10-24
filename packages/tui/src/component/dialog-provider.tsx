@@ -24,7 +24,6 @@ const PROVIDER_PRIORITY: Record<string, number> = {
   "github-copilot": 3,
   anthropic: 4,
   google: 5,
-  "google-account": 6,
 }
 
 const CUSTOM_PROVIDER_OPTION_VALUE = "__opencode_custom_provider__"
@@ -64,8 +63,7 @@ export function providerOptions(list: { id: string; name: string }[]): ProviderO
           opencode: "(Recommended)",
           anthropic: "(API key)",
           openai: "(ChatGPT Plus/Pro or API key)",
-          google: "(Google AI API key)",
-          "google-account": "(Google browser login, no API key)",
+          google: "(API key or Google browser login)",
         }[provider.id],
         category: provider.id in PROVIDER_PRIORITY ? "Popular" : "Providers",
       })),

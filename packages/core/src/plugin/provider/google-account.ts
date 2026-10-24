@@ -138,10 +138,11 @@ export const createGoogleAccountPlugin = (options: GoogleAccount.Options = Googl
       Effect.gen(function* () {
         // Always expose the connection method, but never manufacture a callable
         // model list before the account has successfully discovered its models.
+        // Attach the OAuth methods to the existing google provider so one
+        // entry offers browser login AND API key. Never touch the provider
+        // api/keys that API-key users rely on.
         catalog.provider.update(id, (provider) => {
-          provider.name = "Gemini (Google account)"
           provider.integrationID = integrationID
-          provider.api = { type: "aisdk", package: "@ai-sdk/openai-compatible" }
         })
         const connection = yield* ctx.integration.connection.active(integrationID)
         if (!connection || connection.type !== "credential") return
@@ -161,12 +162,9 @@ export const createGoogleAccountPlugin = (options: GoogleAccount.Options = Googl
         if (!found.length) return
         const server = start()
         const base = `http://127.0.0.1:${server.port}/v1`
-        catalog.provider.update(id, (provider) => {
-          provider.api = { type: "aisdk", package: "@ai-sdk/openai-compatible", url: base }
-        })
         for (const remote of found)
           catalog.model.update(id, ModelV2.ID.make(remote.id), (model) => {
-            model.name = remote.displayName ?? remote.id
+            model.name = `${remote.displayName ?? remote.id} (Google account)`
             model.api = {
               type: "aisdk",
               package: "@ai-sdk/openai-compatible",
