@@ -88,3 +88,16 @@ test("generateNativeTitle leaves the engine copy alone without a generated title
   expect(Exit.isSuccess(exit)).toBe(true)
   expect(renamed).toEqual([])
 })
+
+
+test("image-only native titles can find an answer beyond the first journal page", async () => {
+  const named: string[] = []
+  const native: Parameters<typeof generateNativeTitle>[0]["native"] = {
+    ...fakeNative([], named),
+    history: (input) => Effect.succeed(input.after === 0
+      ? { events: [{ type: "session.next.prompted", data: { prompt: { text: "[Image 1]" } } }], cursor: 100, hasMore: true }
+      : { events: [{ type: "session.next.text.ended", data: { text: "The screenshot shows a paused task." } }], cursor: 120, hasMore: false }) as never,
+  }
+  await Effect.runPromise(generateNativeTitle({ native, sessionID: "ses_page" as never, storage: "/tmp/paged-title" as never, location: {} as never }))
+  expect(named).toEqual(["The screenshot shows a paused task."])
+})
