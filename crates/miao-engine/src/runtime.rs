@@ -1312,32 +1312,6 @@ async fn record_promotions(
     Ok(())
 }
 
-/// Paths a successful mutating tool changed, in workspace-relative form.
-fn touched_paths(name: &str, input: &Value) -> Vec<String> {
-    match name {
-        "write_file" | "edit_file" => input["path"]
-            .as_str()
-            .map(|path| vec![path.to_owned()])
-            .unwrap_or_default(),
-        "apply_patch" => input["patch"]
-            .as_str()
-            .map(|patch| {
-                patch
-                    .lines()
-                    .filter_map(|line| {
-                        ["*** Add File: ", "*** Update File: ", "*** Delete File: "]
-                            .iter()
-                            .find_map(|prefix| line.strip_prefix(prefix))
-                    })
-                    .map(|path| path.trim().to_owned())
-                    .filter(|path| !path.is_empty())
-                    .collect()
-            })
-            .unwrap_or_default(),
-        _ => Vec::new(),
-    }
-}
-
 /// The transport-level outcome of the request that just failed, read back from
 /// the durable `provider.request.result` fact, so the failure record carries
 /// the provider's own error body instead of a bare status. Absent for
@@ -2047,7 +2021,16 @@ command: None,
                                         .mark_dispatched_fenced(session, run, id, lease)
                                         .await?;
                                     verification_scope.observe(&prepared);
-                                    let touched = touched_paths(name, prepared.input());
+                                    // Snapshot the same normalized resources that passed
+                                    // workspace containment and permission checks. Raw
+                                    // tool input may contain an absolute path.
+                                    let touched = match name {
+                                        "write_file" | "edit_file" => {
+                                            vec![prepared.resource().to_owned()]
+                                        }
+                                        "apply_patch" => prepared.targets().to_vec(),
+                                        _ => Vec::new(),
+                                    };
                                     let prepared_external =
                                         prepared.access() == crate::permission::Access::External;
                                     let replayed = if let Some(replay) = &inner.tool_replay {
