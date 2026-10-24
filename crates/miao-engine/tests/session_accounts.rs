@@ -87,10 +87,18 @@ async fn account_selection_retains_model_family_variant_and_is_session_local() {
     let dir = tempfile::tempdir().unwrap();
     let store = Store::open(dir.path().join("engine.db")).await.unwrap();
     let provider = catalog();
-    // Credential identities and model-family metadata stay out of public catalogs.
-    let public = serde_json::to_string(&provider.model_catalog()).unwrap();
-    assert!(!public.contains("credential-b"));
-    assert!(!public.contains("model_key"));
+    // Public catalogs carry display identities, never endpoint or secret data.
+    let public = serde_json::to_value(provider.model_catalog()).unwrap();
+    assert_eq!(public[0]["model_key"], "host/shared");
+    assert_eq!(public[0]["credential_id"], "credential-a");
+    assert!(public
+        .as_array()
+        .unwrap()
+        .iter()
+        .any(
+            |route| route["credential_id"] == "credential-b" && route["model_key"] == "host/shared"
+        ));
+    assert!(!public.to_string().contains("127.0.0.1"));
     let runtime = Runtime::new(
         store.clone(),
         provider,

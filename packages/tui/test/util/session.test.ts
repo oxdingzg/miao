@@ -7,4 +7,8 @@ describe("util.session", () => {
     expect(isDefaultTitle("Child session - 2026-06-06T12:34:56.789Z")).toBeTrue()
     expect(isDefaultTitle("New session - custom")).toBeFalse()
   })
+
+  test("recognizes the bare native creation placeholder", () => {
+    expect(isDefaultTitle("New session")).toBeTrue()
+  })
 })

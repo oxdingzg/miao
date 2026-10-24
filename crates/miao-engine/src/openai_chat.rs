@@ -197,7 +197,9 @@ impl OpenAIChat {
         let copilot =
             matches!(self.auth_style, AuthStyle::Copilot).then(|| crate::copilot::turn(&request));
         let credential = self.source.load().await?;
-        if credential.kind() != Kind::Key && !matches!(self.auth_style, AuthStyle::Copilot) {
+        // Chat-compatible OAuth bridges use the same bearer header as API
+        // keys. Only api-key authentication requires a key credential.
+        if credential.kind() != Kind::Key && matches!(self.auth_style, AuthStyle::ApiKey) {
             return Err(ProviderError::AuthProfile);
         }
         let mut messages = messages(&request.messages)?;

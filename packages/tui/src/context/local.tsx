@@ -1,3 +1,4 @@
+import { nativeModelLabel } from "../util/native-model"
 import { createStore } from "solid-js/store"
 import { createSimpleContext } from "./helper"
 import { batch, createEffect, createMemo, createResource, createSignal } from "solid-js"
@@ -303,16 +304,17 @@ export const { use: useLocal, provider: LocalProvider } = createSimpleContext({
         },
         parsed: createMemo(() => {
           if (selectionLocked()) {
-            const current = route.data
-            const model = current.type === "session" ? sync.session.get(current.sessionID)?.model : undefined
+            const model = nativeModel()
+            const selected = nativeRoutes()?.find(
+              (item) => item.model.providerID === model?.providerID && item.model.id === model?.id,
+            )
+            const label = selected ? nativeModelLabel(selected, sync.data.provider) : undefined
             return {
-              provider: "Native runtime",
-              model: [
-                model?.providerID === "native-engine-default" ? "Host default" : (model?.id ?? "Host configured"),
-                model?.variant,
-              ]
-                .filter(Boolean)
-                .join(" · "),
+              provider: label?.provider ?? "Loading provider…",
+              providerID: label?.providerID,
+              modelID: label?.modelID,
+              wireModel: selected ? { providerID: selected.protocol, id: selected.wireModel } : undefined,
+              model: label?.model ?? model?.id ?? "Loading model…",
               reasoning: false,
             }
           }
@@ -320,6 +322,9 @@ export const { use: useLocal, provider: LocalProvider } = createSimpleContext({
           if (!value) {
             return {
               provider: "Connect a provider",
+              providerID: undefined,
+              modelID: undefined,
+              wireModel: undefined,
               model: "No provider selected",
               reasoning: false,
             }
@@ -328,6 +333,9 @@ export const { use: useLocal, provider: LocalProvider } = createSimpleContext({
           const info = provider?.models[value.modelID]
           return {
             provider: provider?.name ?? value.providerID,
+            providerID: value.providerID,
+            modelID: value.modelID,
+            wireModel: undefined,
             model: info?.name ?? value.modelID,
             reasoning: info?.capabilities?.reasoning ?? false,
           }

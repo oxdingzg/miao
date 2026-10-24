@@ -11,13 +11,14 @@ import { TestTuiContexts } from "../../fixture/tui-environment"
 
 const sessionID = "ses_native_model"
 
-async function mount(root: string, reject = false, variant = false) {
+async function mount(root: string, reject = false, variant = false, providerID?: string) {
   const state = path.join(root, "state")
   await mkdir(state, { recursive: true })
   await Bun.write(path.join(state, "kv.json"), "{}")
   const [
     { DialogProvider, useDialog },
     { DialogNativeModel },
+    { StatusLine },
     { DialogVariant },
     { LocalProvider, useLocal },
     { KVProvider },
@@ -38,6 +39,7 @@ async function mount(root: string, reject = false, variant = false) {
   ] = await Promise.all([
     import("../../../src/ui/dialog"),
     import("../../../src/component/dialog-native-model"),
+    import("../../../src/component/status-line"),
     import("../../../src/component/dialog-variant"),
     import("../../../src/context/local"),
     import("../../../src/context/kv"),
@@ -62,6 +64,20 @@ async function mount(root: string, reject = false, variant = false) {
   let restore: (() => void) | undefined
   let busy: (() => boolean) | undefined
   const fetch = createFetch((url, request) => {
+    if (url.pathname === "/api/integration")
+      return json({
+        data: [
+          {
+            id: "account-two",
+            name: "Account two",
+            methods: [],
+            connections: [
+              { type: "credential", id: "cred_primary", label: "Primary account", active: true },
+              { type: "credential", id: "cred_two", label: "Work account", active: false },
+            ],
+          },
+        ],
+      })
     if (url.pathname === `/api/session/${sessionID}/model-routes`)
       return json({
         data: [
@@ -69,6 +85,8 @@ async function mount(root: string, reject = false, variant = false) {
             model: { providerID: "native-engine-default", id: "default" },
             protocol: "openai-chat",
             wireModel: "shared",
+            productModel: { providerID: "primary", id: "shared" },
+            credentialID: "cred_primary",
             default: true,
             variants: variant ? ["high"] : [],
           },
@@ -77,6 +95,8 @@ async function mount(root: string, reject = false, variant = false) {
             variants: ["high"],
             protocol: "openai-chat",
             wireModel: "shared",
+            productModel: { providerID: "account-two", id: "shared" },
+            credentialID: "cred_two",
             default: false,
           },
         ],
@@ -124,9 +144,18 @@ async function mount(root: string, reject = false, variant = false) {
     onMount(() => {
       void sync.session
         .sync(sessionID)
-        .then(() => dialog.replace(() => (variant ? <DialogVariant /> : <DialogNativeModel sessionID={sessionID} />)))
+        .then(() =>
+          dialog.replace(() =>
+            variant ? <DialogVariant /> : <DialogNativeModel sessionID={sessionID} providerID={providerID} />,
+          ),
+        )
     })
-    return <text>Conversation model: {sync.session.get(sessionID)?.model?.id}</text>
+    return (
+      <box flexDirection="column">
+        <text>Conversation model: {sync.session.get(sessionID)?.model?.id}</text>
+        <StatusLine sessionID={sessionID} />
+      </box>
+    )
   }
 
   function Harness() {
@@ -200,7 +229,7 @@ test("renders host routes and submits the exact reference through the native mod
   await using tmp = await tmpdir()
   const view = await mount(tmp.path)
   try {
-    const frame = await view.until((value) => value.includes("account-two/shared"))
+    const frame = await view.until((value) => value.includes("shared (default)"))
     expect(frame).toContain("shared (default)")
     expect(frame).toContain("openai-chat")
     await view.app.mockInput.pressArrow("down")
@@ -208,8 +237,7 @@ test("renders host routes and submits the exact reference through the native mod
     await view.until(() => view.selected.length === 1)
     expect(view.selected).toEqual([{ model: { providerID: "native-engine", id: "account-two/shared" } }])
     const updated = await view.until(
-      (value) =>
-        !value.includes("Select native model route") && value.includes("Conversation model: account-two/shared"),
+      (value) => !value.includes("Select model") && value.includes("Conversation model: account-two/shared"),
     )
     expect(updated).toContain("Conversation model: account-two/shared")
   } finally {
@@ -221,11 +249,11 @@ test("keeps the route dialog open and shows engine selection errors", async () =
   await using tmp = await tmpdir()
   const view = await mount(tmp.path, true)
   try {
-    await view.until((value) => value.includes("account-two/shared"))
+    await view.until((value) => value.includes("shared (default)"))
     await view.app.mockInput.pressArrow("down")
     await view.app.mockInput.pressEnter()
     const frame = await view.until((value) => value.includes("opaque history"))
-    expect(frame).toContain("Select native model route")
+    expect(frame).toContain("Select model")
     expect(view.selected).toHaveLength(1)
   } finally {
     view.cleanup()
@@ -236,7 +264,7 @@ test("host-advertised variants are selectable without inventing routes", async (
   await using tmp = await tmpdir()
   const view = await mount(tmp.path)
   try {
-    await view.until((value) => value.includes("account-two/shared · high"))
+    await view.until((value) => value.includes("shared · high"))
     await view.app.mockInput.pressArrow("down")
     await view.app.mockInput.pressArrow("down")
     await view.app.mockInput.pressEnter()
@@ -278,6 +306,35 @@ test("native variant cycle reports rejected selections without changing the owne
     const frame = await view.until((value) => value.includes("opaque history"))
     expect(frame).toContain("Conversation model: default")
     expect(view.selected).toEqual([{ model: { providerID: "native-engine-default", id: "default", variant: "high" } }])
+  } finally {
+    view.cleanup()
+  }
+})
+
+test("provider filtering and account labels use host model metadata", async () => {
+  await using tmp = await tmpdir()
+  const view = await mount(tmp.path, false, false, "account-two")
+  try {
+    const frame = await view.until((value) => value.includes("Work account"))
+    expect(frame).toContain("account-two")
+    expect(frame).not.toContain("shared (default)")
+    expect(frame).not.toContain("Primary account")
+    await view.app.mockInput.pressEnter()
+    await view.until(() => view.selected.length === 1)
+    expect(view.selected).toEqual([{ model: { providerID: "native-engine", id: "account-two/shared" } }])
+  } finally {
+    view.cleanup()
+  }
+})
+
+test("native sessions display the host model and an honest unknown context in the status line", async () => {
+  await using tmp = await tmpdir()
+  const view = await mount(tmp.path)
+  try {
+    const frame = await view.until((value) => value.includes("Context —"))
+    expect(frame).toContain("shared")
+    expect(frame).not.toContain("100% left")
+    expect(frame).not.toContain("Host default")
   } finally {
     view.cleanup()
   }

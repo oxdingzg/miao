@@ -148,6 +148,14 @@ plugins.live("real provider registration keeps API-key Google separate and route
   const events = yield* EventV2.Service
   const catalog = yield* Catalog.Service
   const { state, options } = yield* fixture()
+  yield* catalog.transform((draft) => {
+    draft.model.update(ProviderV2.ID.make(GoogleAccount.providerID), ModelV2.ID.make("gemini-api-key-only"), (model) => {
+      model.api = { type: "aisdk", package: "@ai-sdk/google", id: model.id }
+      model.enabled = true
+      model.capabilities.tools = true
+      model.capabilities.output = ["text"]
+    })
+  })
   const implementation = createGoogleAccountPlugin(options)
   yield* registry.add(PluginV2.ID.make("google-account-fixture"), (ctx) => implementation.effect(ctx).pipe(
     Effect.provideService(Credential.Service, credentials), Effect.provideService(Integration.Service, integration), Effect.provideService(EventV2.Service, events),
@@ -162,6 +170,8 @@ plugins.live("real provider registration keeps API-key Google separate and route
   const model = yield* catalog.model.get(ProviderV2.ID.make(GoogleAccount.providerID), ModelV2.ID.make(modelID))
   if (model?.api.type !== "aisdk" || !model.api.url) throw new Error("OAuth model did not appear")
   expect(model.limit.context).toBe(12345)
+  expect(yield* catalog.model.getAvailable(ProviderV2.ID.make(GoogleAccount.providerID), ModelV2.ID.make("gemini-api-key-only"))).toBeUndefined()
+  expect((yield* catalog.model.available()).map((model) => model.id)).toEqual([ModelV2.ID.make(modelID)])
   const before = state.calls.length
   const invalid = yield* Effect.promise(() => fetch(`${model.api.url}/chat/completions`, { method: "POST", headers: { Authorization: "Bearer unregistered" }, body: JSON.stringify({ model: modelID, messages: [] }) }))
   expect(invalid.status).toBe(401)
@@ -170,6 +180,10 @@ plugins.live("real provider registration keeps API-key Google separate and route
   expect(result.status).toBe(200)
   expect(yield* Effect.promise(() => result.text())).toContain("你好 Gemini")
   expect(state.calls.at(-1)).toMatchObject({ auth: "Bearer first-access", body: { project: "project-first" } })
+  const key = yield* credentials.create({ integrationID: id, label: "API key", value: Credential.Key.make({ type: "key", key: "key-fixture" }) })
+  yield* credentials.activate(key.id)
+  yield* catalog.reload()
+  expect((yield* catalog.model.available()).map((model) => model.id)).toEqual([ModelV2.ID.make("gemini-api-key-only")])
 }))
 
 

@@ -36,3 +36,33 @@ export function contextLabel(messages: readonly SessionMessage[], format: (token
     return `${state.source === "estimated" ? "~" : ""}${format(state.tokens)}${state.percent === undefined ? "" : ` (${state.percent}%)`}`
   return state.observed === undefined ? undefined : `last ${format(state.observed)}`
 }
+
+/** Remaining capacity only describes a measured or estimated current request. */
+export function remainingContext(
+  messages: readonly SessionMessage[],
+  model?: { providerID: string; id: string; window: number },
+) {
+  const usage = contextUsage(messages)
+  const latest = messages.findLast((item): item is SessionMessageAssistant => item.type === "assistant")
+  if (model && latest?.model && (latest.model.providerID !== model.providerID || latest.model.id !== model.id))
+    return { label: "Context —", remaining: undefined }
+  // Native providers may publish measured usage without a preflight budget.
+  // Estimate only against the same served model, never a stale turn or window.
+  const estimated =
+    usage.percent === undefined &&
+    !usage.rejected &&
+    !usage.compacted &&
+    latest?.tokens !== undefined &&
+    model !== undefined &&
+    Number.isFinite(model.window) &&
+    model.window > 0 &&
+    latest.model?.providerID === model.providerID &&
+    latest.model.id === model.id &&
+    usage.observed !== undefined &&
+    usage.observed > 0
+  const percent =
+    usage.percent ?? (estimated ? Math.round(((usage.observed ?? 0) / (model?.window ?? 1)) * 100) : undefined)
+  if (percent === undefined) return { label: "Context —", remaining: undefined }
+  const remaining = Math.max(0, Math.min(100, 100 - percent))
+  return { label: `Context ${estimated || usage.source === "estimated" ? "~" : ""}${remaining}% left`, remaining }
+}

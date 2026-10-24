@@ -40,9 +40,7 @@ export function nativeSessionInfo(input: {
   const model = Option.isSome(selection)
     ? selection.value === null
       ? SessionModelRoute.reference(null)
-      : selection.value.route_id || selection.value.variant
-        ? SessionModelRoute.reference(selection.value.route_id ?? null, selection.value.variant ?? undefined)
-        : undefined
+      : SessionModelRoute.reference(selection.value.route_id ?? null, selection.value.variant ?? undefined)
     : undefined
   const created = number(input.snapshot["created_at_ms"])
   const updated = number(input.snapshot["updated_at_ms"])
@@ -459,11 +457,13 @@ export const nativeTitlePrompt = (events: readonly { type: string; data: unknown
  * Best-effort product title for a native Session whose first run just settled:
  * read the durable wire page, derive the title prompt from it, and hand both to
  * the engine host's `title` hook, which runs the same title model the
- * TypeScript runner uses. Callers wrap this in their own error boundary — a
- * missing title must never fail a wait or an idle transition.
+ * TypeScript runner uses. A generated title is also renamed onto the engine's
+ * own copy — the title authority every listing page projects — so the merge
+ * cannot resurrect the placeholder. Callers wrap this in their own error
+ * boundary — a missing title must never fail a wait or an idle transition.
  */
 export const generateNativeTitle = Effect.fn("NativeSession.generateTitle")(function* (input: {
-  native: Pick<NativeEngine.Interface, "history" | "title">
+  native: Pick<NativeEngine.Interface, "history" | "title" | "rename">
   sessionID: SessionID
   storage: AbsolutePath
   location: Location.Ref
@@ -477,10 +477,14 @@ export const generateNativeTitle = Effect.fn("NativeSession.generateTitle")(func
   })
   const prompt = nativeTitlePrompt(page.events)
   if (prompt === undefined) return
-  yield* input.native.title({
+  const title = yield* input.native.title({
     sessionID: input.sessionID,
     storage: input.storage,
     location: input.location,
     prompt,
   })
+  if (title !== undefined)
+    yield* input.native
+      .rename({ sessionID: input.sessionID, storage: input.storage, location: input.location, title })
+      .pipe(Effect.catch(() => Effect.void))
 })

@@ -353,6 +353,8 @@ pub trait Provider: Send + Sync {
                 protocol: identity.protocol,
                 model: identity.model,
                 variants: vec![],
+                model_key: None,
+                credential_id: None,
             })
             .collect()
     }
