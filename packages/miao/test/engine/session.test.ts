@@ -192,3 +192,30 @@ test("native fragments translate into reasoning, tool, and indexed text events",
     await fs.rm(root, { recursive: true, force: true })
   }
 })
+
+test.each([true, false])("expired native credentials resume through native admission only after successful refresh (%s)", async (refreshed) => {
+  const root = await tmp()
+  const client = EngineClient.start({ binary: fake, db: path.join(root, "engine.db"), workspace: root, model: "test" })
+  const outputs: EngineSessionEvent[] = []
+  const refreshes: Array<{ sessionID: string; id: string; integration: string }> = []
+  const session = new EngineSession(client, (event) => outputs.push(event), undefined, async (input) => { refreshes.push(input); return refreshed })
+  const failure = (seq: number) => ({ method: "event", params: { session_id: "ses_expired", seq, kind: "stop_failure", recorded_at_ms: 1_700_000_000_123, data: { reason: "failed", message: "invalid request: credential: credential cred_google (google) is expired; its owning broker must refresh it" } } })
+  try {
+    await client.request("fixture_frames", { frames: [failure(9)] })
+    await Bun.sleep(20)
+    expect(refreshes).toHaveLength(0)
+    await session.watch("ses_expired")
+    await client.request("fixture_frames", { frames: [failure(9), failure(10), failure(11)] })
+    await waitFor(() => refreshes.length === 1)
+    if (refreshed) await waitFor(() => JSON.stringify(outputs).includes("Authentication was refreshed"))
+    await Bun.sleep(50)
+    expect(refreshes).toEqual([{ sessionID: "ses_expired", id: "cred_google", integration: "google" }])
+    expect(JSON.stringify(outputs).includes("Authentication was refreshed")).toBe(refreshed)
+    if (refreshed) {
+      expect(JSON.stringify(await client.request("history", { session_id: "ses_expired" }))).toContain("Continue the interrupted task")
+    }
+  } finally {
+    await client.close()
+    await fs.rm(root, { recursive: true, force: true })
+  }
+})

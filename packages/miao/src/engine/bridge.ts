@@ -588,7 +588,7 @@ export function translateExpiredCredential(event: EngineEvent): { id: string; in
   if (typeof data !== "object" || data === null) return undefined
   const message = readNonEmptyString(data, "message")
   if (message === undefined) return undefined
-  const match = /^credential (.+?) \((.+?)\) is expired/.exec(message)
+  const match = /^(?:invalid request: )?(?:credential: )?credential (.+?) \((.+?)\) is expired/.exec(message)
   if (!match) return undefined
   return { id: match[1], integration: match[2] }
 }

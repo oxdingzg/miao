@@ -24,8 +24,6 @@ import { Credential } from "@miao/core/credential"
 import { Integration } from "@miao/core/integration"
 import { GoogleAccount } from "@miao/core/google-account"
 import { CredentialDaemon } from "@miao/core/credential/daemon"
-import { CredentialTable } from "@miao/core/credential/sql"
-import { eq } from "drizzle-orm"
 import os from "node:os"
 import path from "node:path"
 import { Config } from "@miao/core/config"
@@ -57,10 +55,6 @@ import { SessionNativeTitle } from "@miao/core/session/native-title"
 import { SessionRunnerModel } from "@miao/core/session/runner/model"
 import { memoMap } from "@miao/core/effect/memo-map"
 
-import { SessionInput } from "@miao/core/session/input"
-import { SessionMessage } from "@miao/core/session/message"
-import { Prompt } from "@miao/core/session/prompt"
-import { SessionSchema } from "@miao/core/session/schema"
 import { SessionStore } from "@miao/core/session/store"
 import { SessionOwnership } from "@miao/core/session/ownership"
 import { SessionUsageStore } from "@miao/core/session/usage-store"
@@ -914,12 +908,7 @@ const layer = Layer.effect(
                 // ADR-09: daemon-owned rows refresh on read and the daemon
                 // stays the sole writer. Only explicitly owned Google-account
                 // methods may otherwise refresh in this TS host.
-                const row = yield* database.db
-                  .select({ value: CredentialTable.value, integrationID: CredentialTable.integration_id, label: CredentialTable.label, active: CredentialTable.active })
-                  .from(CredentialTable)
-                  .where(eq(CredentialTable.id, Credential.ID.make(input.id)))
-                  .get()
-                  .pipe(Effect.orDie)
+                const row = yield* credentials.get(Credential.ID.make(input.id))
                 if (!row || row.integrationID !== input.integration) return false
                 const socket = CredentialDaemon.socket(row.value)
                 if (socket)
@@ -938,14 +927,6 @@ const layer = Layer.effect(
                   const fresh = yield* integrations.connection.resolve({ type: "credential", id: Credential.ID.make(input.id), label: row.label, active: row.active ?? false })
                   if (fresh?.type !== "oauth" || fresh.expires <= Date.now()) return false
                 }
-                yield* SessionInput.admit(database.db, events, {
-                  id: SessionMessage.ID.create(),
-                  sessionID: SessionSchema.ID.make(input.sessionID),
-                  prompt: Prompt.make({
-                    text: `<system-reminder>Credential ${input.id} (${input.integration}) was refreshed by its owning broker; continue with the fresh token.</system-reminder>`,
-                  }),
-                  delivery: "steer",
-                })
                 return true
               }),
             ),
