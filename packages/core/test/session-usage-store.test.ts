@@ -1,6 +1,6 @@
 import { describe, expect } from "bun:test"
 import { DateTime, Effect } from "effect"
-import { eq } from "drizzle-orm"
+import { eq, sql } from "drizzle-orm"
 import { Database } from "@miao/core/database/database"
 import { LayerNode } from "@miao/core/effect/layer-node"
 import { AppNodeBuilder } from "@miao/core/effect/app-node-builder"
@@ -52,13 +52,85 @@ const stepEnded = {
 } as const
 
 describe("SessionUsageStore", () => {
+  it.effect("native fact insertion rolls back when the aggregate update fails", () =>
+    Effect.gen(function* () {
+      const database = yield* Database.Service
+      const db = database.db
+      yield* seed(db)
+      yield* db.run(sql`CREATE TRIGGER reject_native_usage BEFORE UPDATE OF cost ON session BEGIN SELECT RAISE(ABORT, 'aggregate rejected'); END;`)
+      const failed = yield* Effect.exit(SessionUsageStore.projectNativeStepEnded(db, {
+        id: EventV2.ID.make("evt_native_rollback"), type: SessionEvent.Step.Ended.type, data: stepEnded,
+      }))
+      expect(failed._tag).toBe("Failure")
+      expect(yield* db.select().from(SessionTurnUsageTable).all()).toHaveLength(0)
+      yield* db.run(sql`DROP TRIGGER reject_native_usage`)
+      yield* SessionUsageStore.projectNativeStepEnded(db, {
+        id: EventV2.ID.make("evt_native_rollback"), type: SessionEvent.Step.Ended.type, data: stepEnded,
+      })
+      const session = yield* db.select().from(SessionTable).where(eq(SessionTable.id, sessionID)).get()
+      expect(session?.cost).toBe(0.25)
+      expect(yield* db.select().from(SessionTurnUsageTable).all()).toHaveLength(1)
+    }),
+  )
+
+  it.effect("native child facts update ancestor totals exactly once across replay", () =>
+    Effect.gen(function* () {
+      const database = yield* Database.Service
+      const db = database.db
+      yield* seed(db)
+      const child = SessionV2.ID.make("ses_native_usage_child")
+      yield* db
+        .insert(SessionTable)
+        .values({
+          id: child,
+          parent_id: sessionID,
+          project_id: Project.ID.global,
+          slug: "child",
+          directory: "/project",
+          title: "child",
+          version: "test",
+        })
+        .run()
+      const childEvent = {
+        id: EventV2.ID.make("evt_native_child"),
+        type: SessionEvent.Step.Ended.type,
+        data: { ...stepEnded, sessionID: child },
+      }
+      const parentEvent = {
+        id: EventV2.ID.make("evt_native_parent"),
+        type: SessionEvent.Step.Ended.type,
+        data: stepEnded,
+      }
+      yield* SessionUsageStore.projectNativeStepEnded(db, childEvent)
+      yield* SessionUsageStore.projectNativeStepEnded(db, parentEvent)
+      yield* SessionUsageStore.projectNativeStepEnded(db, childEvent)
+      yield* SessionUsageStore.projectNativeStepEnded(db, parentEvent)
+      const rows = yield* db.select().from(SessionTable).all()
+      expect(rows.find((row) => row.id === child)).toMatchObject({ cost: 0.25, tokens_input: 100, tokens_output: 20 })
+      expect(rows.find((row) => row.id === sessionID)).toMatchObject({
+        cost: 0.5,
+        tokens_input: 200,
+        tokens_output: 40,
+      })
+      const facts = yield* db.select().from(SessionTurnUsageTable).all()
+      expect(facts).toHaveLength(2)
+      expect(facts.filter((row) => row.session_id === child)).toHaveLength(1)
+      const summary = yield* SessionUsageStore.summary(db, child)
+      expect(summary?.models[0].cost).toBe(0.25)
+    }),
+  )
+
   it.effect("projects a settled step into one turn usage row", () =>
     Effect.gen(function* () {
       const { db } = yield* Database.Service
       const events = yield* EventV2.Service
       yield* seed(db)
       yield* events.publish(SessionEvent.Step.Ended, stepEnded)
-      const rows = yield* db.select().from(SessionTurnUsageTable).where(eq(SessionTurnUsageTable.session_id, sessionID)).all()
+      const rows = yield* db
+        .select()
+        .from(SessionTurnUsageTable)
+        .where(eq(SessionTurnUsageTable.session_id, sessionID))
+        .all()
       expect(rows).toHaveLength(1)
       expect(rows[0]).toMatchObject({
         model_provider: "zhipu",
@@ -229,18 +301,22 @@ describe("SessionUsageStore", () => {
           provider: { executed: false },
         },
       })
-      yield* SessionUsageStore.projectToolSettled(db, {
-        id: EventV2.ID.make("evt_sum_4"),
-        type: SessionEvent.Tool.Failed.type,
-        data: {
-          sessionID,
-          timestamp: DateTime.makeUnsafe(4_100),
-          assistantMessageID: SessionMessage.ID.make("msg_assistant"),
-          callID: "call_s",
-          error: { type: "unknown", message: "boom" },
-          provider: { executed: false },
+      yield* SessionUsageStore.projectToolSettled(
+        db,
+        {
+          id: EventV2.ID.make("evt_sum_4"),
+          type: SessionEvent.Tool.Failed.type,
+          data: {
+            sessionID,
+            timestamp: DateTime.makeUnsafe(4_100),
+            assistantMessageID: SessionMessage.ID.make("msg_assistant"),
+            callID: "call_s",
+            error: { type: "unknown", message: "boom" },
+            provider: { executed: false },
+          },
         },
-      }, "failed")
+        "failed",
+      )
       const summary = yield* SessionUsageStore.summary(db, sessionID)
       expect(summary?.turns).toBe(2)
       expect(summary?.tools).toEqual({ calls: 1, failures: 1 })
