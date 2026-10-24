@@ -55,7 +55,7 @@ async function usage(storage: string): Promise<Usage> {
       state.shared = true
     } catch (error) {
       try { native.exec("ROLLBACK") } catch {}
-      if (busy(error)) throw new BusyError("Another miao window is initializing this database; retry shared access")
+      if (busy(error)) throw new BusyError()
       throw error
     }
   }
