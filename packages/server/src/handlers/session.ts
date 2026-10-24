@@ -152,15 +152,16 @@ export const SessionHandler = HttpApiBuilder.group(Api, "server.session", (handl
           // Initialize the engine before publishing its placement: get/list
           // must work even when no prompt has ever been submitted. Retrying a
           // catalogued identity preserves its original placement.
-          // The engine copy carries the same placeholder the catalog writes, so
-          // every surface recognizes an untitled Session with one vocabulary.
-          if (native && nativeStorage)
+          // The engine and catalog use the same placeholder until a title is generated.
+          if (native && nativeStorage) {
             yield* native.initialize({
-              sessionID: id,
-              storage: nativeStorage,
-              location,
+              sessionID: id, storage: nativeStorage, location,
               title: `New session - ${new Date().toISOString()}`,
             })
+            // Bind the model shown before the first prompt, rather than the owner's default.
+            if (ctx.payload.model)
+              yield* native.selectModel({ sessionID: id, storage: nativeStorage, location, model: ctx.payload.model })
+          }
           if (binding?.engine === "rust" && !native)
             return yield* new ConflictError({ message: "Native engine transport is not composed", resource: id })
           const created = yield* session.create({
