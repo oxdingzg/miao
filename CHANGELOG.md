@@ -11,6 +11,16 @@ at `docs/releases/vX.Y.Z.md` and `docs/releases/vX.Y.Z.zh.md`; both are required
 
 ## [Unreleased]
 
+## [0.3.3] - 2026-10-25
+
+### Fixed
+- **native**: continue product tasks without an implicit turn limit and preserve explicit pause notices (#1359).
+- **engine**: share TypeScript model personas and request progress after silent tool batches (#1358, #1363).
+- **session**: recover native titles and synchronize manual renames (#1361).
+- **provider**: preserve Google rate, capacity, service-quota and reset evidence without hidden retries (#1360).
+- **tui**: consolidate session details into one persistent status row (#1364).
+- **ci**: gate native product behavior with real HTTP and deterministic model fixtures (#1362).
+
 ## [0.3.2] - 2026-10-24
 
 ### Added
