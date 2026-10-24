@@ -226,6 +226,6 @@ async function rejection(response: Response, operation: string) {
     operation,
     response.status,
     reason,
-    delay !== undefined && Number.isFinite(delay) && delay >= 0 && delay <= 86_400_000 ? delay : undefined,
+    delay !== undefined && Number.isFinite(delay) && delay >= 0 && delay <= 604_800_000 ? delay : undefined,
   )
 }

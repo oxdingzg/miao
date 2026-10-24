@@ -302,3 +302,15 @@ it.live("service quota reset delays are retained without raw provider descriptio
   expect(String(error)).toContain("Retry after 13 seconds")
   expect(String(error)).not.toContain("fixture-private-token-must-not-leak")
 }))
+
+
+it.live("weekly reset hints are not dropped by a one-day delay cap", () => Effect.gen(function* () {
+  const { state, options } = yield* fixture()
+  state.status = 429
+  state.reason = "QUOTA_EXHAUSTED"
+  state.reset = "518400s"
+  const error = yield* Effect.tryPromise({ try: () => modelFetch("fixture-access", "project-one", options)(`https://example.test/models/${modelID}:generateContent`, { method: "POST", body: "{}" }), catch: (cause) => cause }).pipe(Effect.flip)
+  expect(error).toBeInstanceOf(GoogleAccount.RequestError)
+  expect((error as GoogleAccount.RequestError).retryAfterMs).toBe(518400000)
+  expect(String(error)).toMatch(/Retry after \d{4}-\d{2}-\d{2}T/)
+}))
