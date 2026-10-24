@@ -25,7 +25,7 @@ export function DialogModel(props: { providerID?: string }) {
   })
   return (
     <Show when={nativeSessionID()} keyed fallback={<DialogProductModel {...props} />}>
-      {(sessionID) => <DialogNativeModel sessionID={sessionID} />}
+      {(sessionID) => <DialogNativeModel sessionID={sessionID} providerID={props.providerID} />}
     </Show>
   )
 }

@@ -148,6 +148,11 @@ export const createGoogleAccountPlugin = (options: GoogleAccount.Options = Googl
         if (!connection || connection.type !== "credential") return
         const value = yield* ctx.integration.connection.resolve(connection).pipe(Effect.catch(() => Effect.succeed(undefined)))
         if (value?.type !== "oauth" || typeof value.metadata?.projectID !== "string") return
+        // An OAuth subscription cannot call the API-key model catalog.
+        // Only models discovered for this account are enabled below.
+        catalog.provider.get(id)?.models.forEach((model) => {
+          catalog.model.update(id, model.id, (model) => { model.enabled = false })
+        })
         const projectID = value.metadata.projectID
         const found = yield* Effect.tryPromise({
           try: (signal) => models(value.access, projectID, options, signal),

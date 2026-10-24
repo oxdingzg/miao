@@ -311,3 +311,41 @@ async fn length_truncation_with_nothing_salvageable_is_a_transport_failure() {
     ));
     server.await.unwrap();
 }
+
+#[tokio::test]
+async fn oauth_bearer_credentials_reach_chat_bridges_but_not_api_key_routes() {
+    use miao_engine::credential::Source;
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("auth.json");
+    std::fs::write(
+        &path,
+        json!({"google":{
+            "type":"oauth", "access":"oauth-fixture", "refresh":"refresh-fixture",
+            "expires":u64::MAX
+        }})
+        .to_string(),
+    )
+    .unwrap();
+    let body = frames(vec![chunk(json!({"content":"done"}), json!("stop"))], true);
+    let (url, mut requests, server) = common::endpoint(vec![(200, body)]).await;
+    let source = Source::Legacy {
+        path,
+        integration: "google".into(),
+    };
+    let bearer = OpenAIChat::with_source(url.clone(), source.clone(), "model".into()).unwrap();
+    let (progress, _receive) = mpsc::channel(64);
+    let reply = bearer
+        .stream(request(), progress, CancellationToken::new())
+        .await
+        .unwrap();
+    assert_eq!(reply.content[0]["text"], "done");
+    assert_eq!(requests.recv().await.unwrap()["model"], "model");
+    server.await.unwrap();
+    let key = OpenAIChat::with_azure(url, source, "model".into(), "2024-10-21").unwrap();
+    let (progress, _receive) = mpsc::channel(64);
+    assert!(matches!(
+        key.stream(request(), progress, CancellationToken::new())
+            .await,
+        Err(ProviderError::AuthProfile)
+    ));
+}
