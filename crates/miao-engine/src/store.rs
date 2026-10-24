@@ -2663,7 +2663,11 @@ pub(crate) fn projected(
     while let Some(row) = rows.next()? {
         let content: String = row.get(2)?;
         bytes += content.len();
-        if bytes > 2 * 1024 * 1024 || messages.len() >= 1000 {
+        // The projection must carry a whole Session for a snapshot or fork:
+        // a 1M-token Session serializes to roughly 4-6 MB of content, so the
+        // bound only exists to stop runaway payloads, not to cap legitimate
+        // large Sessions.
+        if bytes > 64 * 1024 * 1024 || messages.len() >= 20_000 {
             return Err(Error::Invalid(
                 "projection exceeds snapshot/fork limit".into(),
             ));
