@@ -122,7 +122,12 @@ impl Store {
             let mut stmt=tx.prepare("SELECT m.role,m.content,m.recorded_at_ms,e.kind FROM engine_message m JOIN engine_event e ON e.session_id=m.session_id AND e.seq=m.seq WHERE m.session_id=?1 AND m.seq>?2 AND m.reverted=0 AND m.quarantined=0 ORDER BY m.seq LIMIT 1001")?;
             let mut rows=stmt.query(params![session,through])?;
             while let Some(row)=rows.next()? {
-                let content:String=row.get(1)?;bytes+=content.len();count+=1;if bytes>2*1024*1024||count>1000{return Err(Error::Invalid("selected history exceeds budget; compact at a closed boundary".into()));}
+                let content:String=row.get(1)?;bytes+=content.len();count+=1;
+                // The selection must carry a whole Session so the budget gate
+                // (not this guard) decides when compaction runs: a 1M-token
+                // Session serializes to roughly 4-6 MB of content, so the cap
+                // only exists to stop runaway payloads.
+                if bytes>64*1024*1024||count>20_000{return Err(Error::Invalid("selected history exceeds runaway guard; compaction should have triggered earlier".into()));}
                 let message=Message{role:row.get(0)?,content:serde_json::from_str(&content)?,checkpoint:None,recorded_at_ms:row.get(2)?};
                 // Injected context may arrive while tools execute. Keep the
                 // immutable transcript order, but do not split the provider's
