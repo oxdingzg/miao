@@ -5,14 +5,19 @@ import { generateNativeTitle, nativeTitlePrompt } from "@miao/server/native-sess
 
 const prompted = { type: "session.next.prompted", data: { prompt: { text: "[Image 1] 修复后台电池雷达" } } }
 
-const fakeNative = (events: unknown[], titled: string[]) =>
+const fakeNative = (events: unknown[], titled: string[], generated?: string, renamed: string[] = []) =>
   ({
     history: () => Effect.succeed({ events, cursor: events.length, hasMore: false }),
     title: (input: { prompt: string }) =>
       Effect.sync(() => {
         titled.push(input.prompt)
+        return generated
       }),
-  }) as unknown as Pick<NativeEngine.Interface, "history" | "title">
+    rename: (input: { title: string }) =>
+      Effect.sync(() => {
+        renamed.push(input.title)
+      }),
+  }) as unknown as Pick<NativeEngine.Interface, "history" | "title" | "rename">
 
 test("nativeTitlePrompt prefers the first user prompt and strips image markers", () => {
   expect(nativeTitlePrompt([prompted])).toBe("修复后台电池雷达")
@@ -52,4 +57,34 @@ test("generateNativeTitle does not call the title hook without a prompt", async 
   )
   expect(Exit.isSuccess(exit)).toBe(true)
   expect(titled).toEqual([])
+})
+
+test("generateNativeTitle renames the engine copy with the generated title", async () => {
+  const titled: string[] = []
+  const renamed: string[] = []
+  const exit = await Effect.runPromiseExit(
+    generateNativeTitle({
+      native: fakeNative([prompted], titled, "修复后台电池雷达", renamed),
+      sessionID: "ses_x" as never,
+      storage: "/tmp/x" as never,
+      location: {} as never,
+    }),
+  )
+  expect(Exit.isSuccess(exit)).toBe(true)
+  expect(renamed).toEqual(["修复后台电池雷达"])
+})
+
+test("generateNativeTitle leaves the engine copy alone without a generated title", async () => {
+  const titled: string[] = []
+  const renamed: string[] = []
+  const exit = await Effect.runPromiseExit(
+    generateNativeTitle({
+      native: fakeNative([prompted], titled, undefined, renamed),
+      sessionID: "ses_x" as never,
+      storage: "/tmp/x" as never,
+      location: {} as never,
+    }),
+  )
+  expect(Exit.isSuccess(exit)).toBe(true)
+  expect(renamed).toEqual([])
 })
