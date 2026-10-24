@@ -40,9 +40,10 @@ impl Provider for MultiStep {
 #[tokio::test]
 async fn host_budget_allows_long_tasks_and_still_bounds_provider_work() {
     for (budget, expected, reason) in [
-        (3, 3, "completed"),
-        (25, 25, "completed"),
-        (40, 33, "completed"),
+        (Some(3), 3, "completed"),
+        (Some(25), 25, "completed"),
+        (Some(40), 33, "completed"),
+        (None, 33, "completed"),
     ] {
         let dir = tempfile::tempdir().unwrap();
         for step in 0..32 {
@@ -119,21 +120,23 @@ async fn host_budget_allows_long_tasks_and_still_bounds_provider_work() {
 #[test]
 fn budget_is_defaulted_validated_and_part_of_policy_identity() {
     let default: Config = serde_json::from_value(json!({})).unwrap();
-    assert_eq!(default.max_provider_turns, 25);
+    assert_eq!(default.max_provider_turns, Some(25));
+    let unlimited: Config = serde_json::from_value(json!({"max_provider_turns":null})).unwrap();
+    assert_eq!(Policy::new(unlimited).unwrap().max_provider_turns(), None);
     assert!(Policy::new(Config {
-        max_provider_turns: 0,
+        max_provider_turns: Some(0),
         ..Config::default()
     })
     .is_err());
     assert!(Policy::new(Config {
-        max_provider_turns: 10001,
+        max_provider_turns: Some(10001),
         ..Config::default()
     })
     .is_err());
     assert_ne!(
         Policy::new(default).unwrap().revision(),
         Policy::new(Config {
-            max_provider_turns: 100,
+            max_provider_turns: Some(100),
             ..Config::default()
         })
         .unwrap()

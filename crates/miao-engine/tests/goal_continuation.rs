@@ -20,6 +20,7 @@ struct Script {
     calls: AtomicUsize,
     progress: bool,
     churn: bool,
+    finish_after: Option<usize>,
 }
 #[async_trait]
 impl Provider for Script {
@@ -31,11 +32,16 @@ impl Provider for Script {
     ) -> Result<Reply, ProviderError> {
         let index = self.calls.fetch_add(1, Ordering::SeqCst);
         if self.churn {
+            let status = if self.finish_after.is_some_and(|last| index >= last) {
+                "completed"
+            } else {
+                "pending"
+            };
             return Ok(Reply {
                 needs_tools: index.is_multiple_of(2),
                 content: if index.is_multiple_of(2) {
                     json!([{"type":"tool_use","id":format!("progress-{index}"),"name":"todowrite","input":{"todos":[
-                        {"id":"7","content":format!("Ready update {index}"),"status":"pending","priority":"medium"}
+                        {"id":"7","content":format!("Ready update {index}"),"status":status,"priority":"medium"}
                     ]}}])
                 } else {
                     json!([{"type":"text","text":"early stop"}])
@@ -109,11 +115,11 @@ async fn setup(
         .unwrap();
 }
 async fn finished(store: &Store) {
-    // Windows runners may need several seconds for 25 durable provider turns.
+    // Windows runners may need several seconds for long sequences of durable provider turns.
     tokio::time::timeout(std::time::Duration::from_secs(30), async {
         loop {
             if store
-                .events("s", 0, 500)
+                .events("s", 0, 5000)
                 .await
                 .unwrap()
                 .iter()
@@ -137,6 +143,7 @@ async fn continues_independent_work_without_a_human_prompt_then_idles_with_locke
         calls: AtomicUsize::new(0),
         progress: true,
         churn: false,
+        finish_after: None,
     });
     let runtime = Runtime::with_policy(
         store.clone(),
@@ -204,6 +211,7 @@ async fn no_progress_is_bounded_and_synthetic_admissions_do_not_restart_the_loop
         calls: AtomicUsize::new(0),
         progress: false,
         churn: false,
+        finish_after: None,
     });
     let runtime = Runtime::new(
         store.clone(),
@@ -221,6 +229,21 @@ async fn no_progress_is_bounded_and_synthetic_admissions_do_not_restart_the_loop
         .unwrap()
         .iter()
         .any(|event| event.kind == "loop.stopped" && event.data["reason"] == "no-progress"));
+    assert!(store
+        .events("s", 0, 500)
+        .await
+        .unwrap()
+        .iter()
+        .any(|event| {
+            event.kind == "message.synthetic"
+                && event.data["source"] == "engine"
+                && event.data["input_id"]
+                    .as_str()
+                    .is_some_and(|id| id.starts_with("loop-paused-"))
+                && event.data["text"]
+                    .as_str()
+                    .is_some_and(|text| text.contains("Task paused"))
+        }));
 }
 
 #[tokio::test]
@@ -239,6 +262,7 @@ async fn only_waits_paused_goals_and_missing_authorization_never_create_extra_tu
             calls: AtomicUsize::new(0),
             progress: false,
             churn: false,
+            finish_after: None,
         });
         let runtime = Runtime::new(
             store.clone(),
@@ -266,6 +290,7 @@ async fn denied_state_read_does_not_grant_autonomous_continuation() {
         calls: AtomicUsize::new(0),
         progress: false,
         churn: false,
+        finish_after: None,
     });
     let runtime = Runtime::with_policy(
         store.clone(),
@@ -297,6 +322,7 @@ async fn changing_progress_does_not_refill_the_provider_allowance() {
         calls: AtomicUsize::new(0),
         progress: false,
         churn: true,
+        finish_after: None,
     });
     let runtime = Runtime::new(
         store.clone(),
@@ -317,4 +343,44 @@ async fn changing_progress_does_not_refill_the_provider_allowance() {
             .as_str()
             .unwrap_or_default()
             .contains("provider turn allowance")));
+}
+
+#[tokio::test]
+async fn unlimited_product_tasks_keep_continuing_past_twenty_five_goal_iterations() {
+    let dir = tempfile::tempdir().unwrap();
+    let store = Store::open(dir.path().join("engine.db")).await.unwrap();
+    setup(&store, "active", true, true, dir.path()).await;
+    let provider = Arc::new(Script {
+        calls: AtomicUsize::new(0),
+        progress: false,
+        churn: true,
+        finish_after: Some(60),
+    });
+    let runtime = Runtime::with_policy(
+        store.clone(),
+        provider.clone(),
+        Tools::new(dir.path()).await.unwrap(),
+        Policy::new(Config {
+            max_provider_turns: None,
+            ..Config::default()
+        })
+        .unwrap(),
+    )
+    .await
+    .unwrap();
+    runtime.resume("s").await.unwrap();
+    finished(&store).await;
+    assert_eq!(provider.calls.load(Ordering::SeqCst), 62);
+    assert!(!store
+        .events("s", 0, 5000)
+        .await
+        .unwrap()
+        .iter()
+        .any(|event| event.kind == "loop.stopped"));
+    assert!(
+        miao_engine::state::runnable_state(&store.state("s").await.unwrap())
+            .unwrap()
+            .is_empty()
+    );
+    runtime.shutdown().await;
 }

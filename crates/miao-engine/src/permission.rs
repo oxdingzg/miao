@@ -68,10 +68,12 @@ pub struct Config {
     #[serde(default = "approval_timeout")]
     pub approval_timeout_ms: u64,
     #[serde(default = "provider_turns")]
-    pub max_provider_turns: u32,
+    /// None explicitly disables the request-count budget. Missing JSON keeps
+    /// the conservative standalone default; products opt out with null.
+    pub max_provider_turns: Option<u32>,
 }
-fn provider_turns() -> u32 {
-    25
+fn provider_turns() -> Option<u32> {
+    Some(25)
 }
 fn approval_timeout() -> u64 {
     60_000
@@ -167,7 +169,11 @@ impl Policy {
         agent.validate()?;
         let mut config = self.config.clone();
         if let Some(steps) = agent.steps {
-            config.max_provider_turns = config.max_provider_turns.min(steps);
+            config.max_provider_turns = Some(
+                config
+                    .max_provider_turns
+                    .map_or(steps, |limit| limit.min(steps)),
+            );
         }
         if let Some(rules) = &agent.permissions {
             config.rules.extend(rules.iter().cloned());
@@ -185,13 +191,15 @@ impl Policy {
         Ok(policy)
     }
 
-    pub fn max_provider_turns(&self) -> u32 {
+    pub fn max_provider_turns(&self) -> Option<u32> {
         self.config.max_provider_turns
     }
 
     pub fn new(config: Config) -> Result<Self, Error> {
         if !(1..=600_000).contains(&config.approval_timeout_ms)
-            || !(1..=10_000).contains(&config.max_provider_turns)
+            || config
+                .max_provider_turns
+                .is_some_and(|limit| !(1..=10_000).contains(&limit))
             || config.rules.len() > 256
         {
             return Err(Error::Invalid("invalid permission limits".into()));

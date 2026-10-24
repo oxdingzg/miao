@@ -36,6 +36,9 @@ export const prepare = Effect.fn("Engine.productPolicy")(function* (configuratio
     allow_wakeup: true,
     allow_cron: true,
     process_network: true,
+    // Match the TS product: no implicit request-count cutoff. Explicit
+    // operator policies and agent.steps remain authoritative.
+    max_provider_turns: null,
   })
   yield* Effect.tryPromise({
     try: () => writeFile(file, content, { mode: 0o600 }),
