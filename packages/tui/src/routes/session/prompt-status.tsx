@@ -32,7 +32,7 @@ export function PromptStatus(props: { prompt: PendingPrompt }) {
         {props.prompt.state === "sending"
           ? props.prompt.retries
             ? `RETRYING · awaiting receipt · retry ${props.prompt.retries}/3${waited()}`
-            : "SENDING · awaiting receipt"
+            : `SENDING · awaiting receipt${waited()}`
           : props.prompt.state === "failed"
             ? "SEND FAILED · use prompt history to retry"
             : props.prompt.delivery === "queue"
