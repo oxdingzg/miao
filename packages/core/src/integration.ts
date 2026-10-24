@@ -491,7 +491,10 @@ export const locationLayer = Layer.effect(
             })
           }
           if (credential.value.type === "key") return credential.value
-          if (credential.source === "shared") {
+          const sharedOwner = credential.source === "shared"
+            ? (yield* Effect.promise(() => import("./google-account"))).GoogleAccount.owns(credential.integrationID, credential.value)
+            : false
+          if (credential.source === "shared" && !sharedOwner) {
             const now = yield* Clock.currentTimeMillis
             if (credential.value.expires <= now)
               return yield* new AuthorizationError({
@@ -524,6 +527,11 @@ export const locationLayer = Layer.effect(
               current.value.methodID !== credential.value.methodID || current.value.refresh !== credential.value.refresh ||
               current.value.access !== credential.value.access || current.value.expires !== credential.value.expires)
             return yield* new AuthorizationError({ cause: new Error("OAuth credential changed during refresh; retry with the current connection") })
+          if (sharedOwner) {
+            const { writeSharedCredential } = yield* Effect.promise(() => import("./google-account/shared-credential"))
+            yield* writeSharedCredential(credential, value).pipe(Effect.mapError((cause) => new AuthorizationError({ cause })))
+            return value
+          }
           yield* credentials.update(credential.id, { value })
           return value
           }))

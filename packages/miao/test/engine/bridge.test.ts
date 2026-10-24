@@ -469,6 +469,8 @@ test("translateExpiredCredential parses the structured expired failure", () => {
   )
   expect(identity).toEqual({ id: "cred_1", integration: "openai" })
 
+  expect(translateExpiredCredential(make("invalid request: credential: credential cred_google (google) is expired; its owning broker must refresh it"))).toEqual({ id: "cred_google", integration: "google" })
+  expect(translateExpiredCredential(make("credential: credential cred_google (google) is expired; its owning broker must refresh it"))).toEqual({ id: "cred_google", integration: "google" })
   // An unrelated failure carries no credential identity.
   expect(translateExpiredCredential(make("provider connection refused"))).toBeUndefined()
   expect(translateExpiredCredential(make(undefined))).toBeUndefined()

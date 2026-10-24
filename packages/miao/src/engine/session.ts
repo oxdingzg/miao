@@ -474,6 +474,8 @@ export class EngineSession {
   #client: EngineTransport
   #translator: EngineTranslator
   #onCredentialExpired: CredentialExpiredTrigger | undefined
+  #refreshAttempts = new Map<string, Set<string>>()
+  #refreshAfter = new Map<string, number>()
   #subscriptions = new Map<string, { mode: "live" | "restored"; ready: Promise<unknown> }>()
 
   constructor(
@@ -488,12 +490,27 @@ export class EngineSession {
     client.onEvent((event) => {
       this.#translator.dispatch(event)
       // Live events only: a replayed failure must never re-trigger a refresh.
+      if (event.kind === "message.committed" && typeof event.data === "object" && event.data !== null && "role" in event.data && event.data.role === "assistant")
+        this.#refreshAttempts.delete(event.session_id)
       const expired = translateExpiredCredential(event)
       const trigger = this.#onCredentialExpired
-      if (expired && trigger) {
-        void trigger({ sessionID: event.session_id, id: expired.id, integration: expired.integration }).catch(
-          () => undefined,
-        )
+      if (expired && trigger && event.seq > (this.#refreshAfter.get(event.session_id) ?? Infinity)) {
+        const attempts = this.#refreshAttempts.get(event.session_id) ?? new Set<string>()
+        if (attempts.has(expired.id)) return
+        attempts.add(expired.id)
+        this.#refreshAttempts.set(event.session_id, attempts)
+        void trigger({ sessionID: event.session_id, id: expired.id, integration: expired.integration })
+          .then(async (refreshed) => {
+            if (!refreshed || !this.#refreshAttempts.get(event.session_id)?.has(expired.id)) return
+            // Admit through the native inbox: TypeScript admission rejects native placement.
+            await this.#client.admit({
+              session_id: event.session_id,
+              input_id: `credential-refresh-${event.session_id}-${event.seq}`,
+              prompt: "<system-reminder>Authentication was refreshed. Continue the interrupted task using the fresh credential.</system-reminder>",
+              delivery: "steer",
+            }, true)
+          })
+          .catch(() => undefined)
       }
     })
     client.onProgress((progress) => this.#translator.progress(progress))
@@ -502,7 +519,15 @@ export class EngineSession {
   /** Share the live subscription before any operation that can admit work. */
   async watch(sessionID: string) {
     if (!this.#subscriptions.has(sessionID)) {
-      const subscription = this.#client.subscribe(sessionID, 0).catch((error: unknown) => {
+      const subscription = (async () => {
+        if (!this.#onCredentialExpired) return this.#client.subscribe(sessionID, 0)
+        const snapshot = await this.#client.request("snapshot", { session_id: sessionID })
+        if (typeof snapshot !== "object" || snapshot === null || !("cursor" in snapshot) ||
+            typeof snapshot.cursor !== "number" || !Number.isSafeInteger(snapshot.cursor) || snapshot.cursor < 0)
+          throw new EngineError("engine_snapshot_invalid", "native snapshot has no valid Session cursor")
+        this.#refreshAfter.set(sessionID, snapshot.cursor)
+        return this.#client.subscribe(sessionID, 0)
+      })().catch((error: unknown) => {
         this.#subscriptions.delete(sessionID)
         throw error
       })
@@ -542,6 +567,7 @@ export class EngineSession {
     } = {},
   ): Promise<unknown> {
     await this.watch(sessionID)
+    this.#refreshAttempts.delete(sessionID)
     return this.#client.admit(
       {
         session_id: sessionID,
@@ -583,6 +609,7 @@ export class EngineSession {
       snapshot.cursor < 0
     )
       throw new EngineError("engine_snapshot_invalid", "native snapshot has no valid Session cursor")
+    this.#refreshAfter.set(sessionID, snapshot.cursor)
     let after = 0
     while (after < snapshot.cursor) {
       const page = await this.#client.request("events", { session_id: sessionID, after })

@@ -10,7 +10,14 @@ const requestLog = process.env.ENGINE_FAKE_REQUESTS
 const prompts = new Map<string, string>()
 let buffer = ""
 
-const send = (value: unknown) => process.stdout.write(JSON.stringify(value) + "\n")
+const cursors = new Map<string, number>()
+const send = (value: unknown) => {
+  if (typeof value === "object" && value !== null && "method" in value && value.method === "event" && "params" in value &&
+      typeof value.params === "object" && value.params !== null && "session_id" in value.params && typeof value.params.session_id === "string" &&
+      "seq" in value.params && typeof value.params.seq === "number")
+    cursors.set(value.params.session_id, Math.max(cursors.get(value.params.session_id) ?? 0, value.params.seq))
+  return process.stdout.write(JSON.stringify(value) + "\n")
+}
 
 // An optional scripted run for harness tests: each step may emit one progress
 // or event message, with an optional delay before it. Without it the fake keeps
@@ -53,6 +60,10 @@ function handle(request: { id: number; method: string; params: Record<string, un
   if (method === "fixture_frames" && Array.isArray(params.frames)) {
     params.frames.forEach(send)
     send({ id, result: { accepted: true } })
+    return
+  }
+  if (method === "snapshot") {
+    send({ id, result: { session_id: params.session_id, cursor: cursors.get(String(params.session_id)) ?? 0 } })
     return
   }
   if (method === "boom") {

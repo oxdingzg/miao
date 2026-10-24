@@ -5,6 +5,7 @@ import { tmpdir } from "node:os"
 import path from "node:path"
 import { Cause, Effect, Exit, Layer } from "effect"
 import { Credential } from "@miao/core/credential"
+import { writeSharedCredential } from "@miao/core/google-account/shared-credential"
 import { Integration } from "@miao/core/integration"
 import { LayerNode } from "@miao/core/effect/layer-node"
 import { testEffect } from "./lib/effect"
@@ -163,3 +164,32 @@ it.live("authorization failures have a useful non-secret message instead of an e
     expect(privateCause.message).not.toContain("private-refresh-token")
   }),
 )
+
+it.live("the built-in Google OAuth owner refreshes its shared row without copying accounts", () => Effect.gen(function* () {
+  const integrations = yield* Integration.Service
+  const credentials = yield* Credential.Service
+  const file = yield* Credential.SharedDatabasePath
+  if (!file) throw new Error("missing fixture")
+  const provider = Integration.ID.make("google")
+  const method = Integration.MethodID.make("google-account-browser")
+  const value = Credential.OAuth.make({ type: "oauth", methodID: method, access: "expired-google", refresh: "google-refresh", expires: 1, metadata: { oauthOwner: "miao/google-account", integrationID: provider, projectID: "fixture-project" } })
+  yield* Effect.sync(() => {
+    const db = new Database(file)
+    try { db.query("INSERT INTO credential VALUES(?,?,?,?,?)").run("cred_google", provider, "Personal", JSON.stringify(value), 2) } finally { db.close() }
+  })
+  let refreshes = 0
+  yield* integrations.transform((editor) => editor.method.update({
+    integrationID: provider,
+    method: { id: method, type: "oauth", label: "Google account" },
+    authorize: () => Effect.succeed({ mode: "auto" as const, url: "https://example.test", instructions: "Sign in", callback: Effect.never }),
+    refresh: () => Effect.sync(() => { refreshes++; return Credential.OAuth.make({ ...value, access: "fresh-google", expires: Date.now() + 3600_000 }) }),
+  }))
+  const connection = { type: "credential" as const, id: Credential.ID.make("cred_google"), label: "Personal", active: false }
+  expect(yield* integrations.connection.resolve(connection)).toMatchObject({ access: "fresh-google" })
+  expect(yield* integrations.connection.resolve(connection)).toMatchObject({ access: "fresh-google" })
+  expect(refreshes).toBe(1)
+  const stale = new Credential.Info({ id: connection.id, integrationID: provider, label: "Personal", active: false, source: "shared", value })
+  const overwrite = yield* writeSharedCredential(stale, Credential.OAuth.make({ ...value, access: "stale-overwrite", expires: Date.now() + 3600_000 })).pipe(Effect.exit)
+  expect(Exit.isFailure(overwrite)).toBe(true)
+  expect(yield* credentials.get(connection.id)).toMatchObject({ source: "shared", label: "Personal", value: { access: "fresh-google" } })
+}))
