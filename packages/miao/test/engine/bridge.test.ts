@@ -160,6 +160,22 @@ test("projects engine shell results into the product bash shape", () => {
   expect(productToolResult("bash", "plain output")).toEqual({ structured: {}, text: "plain output" })
 })
 
+test("the engine's timed_out reason projects the timeout marker", () => {
+  const result = productToolResult("bash", {
+    stdout: "",
+    stderr: "",
+    exit_code: null,
+    signal: null,
+    reason: "timed_out",
+    output_incomplete: true,
+    sandbox_profile: "workspace_write",
+    enforcement_required: true,
+    network_allowed: true,
+  })
+  expect(result.structured).toMatchObject({ timeout: true, truncated: true })
+  expect(result.text).toContain("[command timed out]")
+})
+
 test("unwraps engine session-state mutations to the tool contract", () => {
   const todos = [{ id: "t1", content: "first", status: "pending", priority: "high" }]
   expect(productToolResult("todowrite", { kind: "todos", revision: 7, value: { todos }, duplicate: false })).toEqual({
