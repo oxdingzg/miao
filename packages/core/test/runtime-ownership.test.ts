@@ -117,9 +117,11 @@ describe("Runtime ownership", () => {
         process.execPath,
         "-e",
         `import { RuntimeOwnership } from ${JSON.stringify(module)};
-      await RuntimeOwnership.acquire(${JSON.stringify(filename)});
-      console.log("locked");
-      await new Promise(() => {});`,
+      const owner = await RuntimeOwnership.acquire(${JSON.stringify(filename)});
+      process.on("exit", () => owner.release());
+      // A pending Promise alone does not keep Bun's event loop alive.
+      setInterval(() => {}, 1000);
+      console.log("locked");`,
       ],
       { stdout: "pipe", stderr: "pipe" },
     )
