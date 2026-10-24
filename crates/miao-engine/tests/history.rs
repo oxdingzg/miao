@@ -136,7 +136,7 @@ async fn oversized_history_can_be_checkpointed_by_streaming_validation() {
         .message(
             "s",
             "assistant",
-            json!([{"type":"text","text":"x".repeat(2*1024*1024)}]),
+            json!([{"type":"text","text":"x".repeat(65*1024*1024)}]),
         )
         .await
         .unwrap();
