@@ -206,7 +206,11 @@ const INHERITED_ENVIRONMENT = [
   "MIAO_TOOL_INPUT_MAX_BYTES",
   "MIAO_TOOL_INPUT_TIMEOUT_MS",
   // Dev diagnostic: request-body dump for prefix-cache divergence triage.
+  // Dev diagnostic: request-body dump for prefix-cache divergence triage.
   "MIAO_ENGINE_REQUEST_DUMP",
+  // Dev diagnostic: response-side per-request usage (cached_tokens) for
+  // prefix-cache divergence triage.
+  "MIAO_ENGINE_RESPONSE_DUMP",
 ] as const
 
 /**
