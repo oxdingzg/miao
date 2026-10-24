@@ -1,0 +1,3 @@
+{"type":"segment","index":0,"resume":false,"prompt":"In src/note.ts, change the string \"alpha\" to \"beta\". Use the edit tool rather than recreating the file."}
+{"type":"error","timestamp":1792818231425,"sessionID":"ses_gfe5e93b4d1d4ffehC72mtU3cJ","error":{"type":"unknown","message":"invalid request: provider HTTP 400: Model does not support this protocol."}}
+{"type":"segment.end","index":0,"exitCode":1,"seconds":4.7,"killed":false,"timedOut":false}

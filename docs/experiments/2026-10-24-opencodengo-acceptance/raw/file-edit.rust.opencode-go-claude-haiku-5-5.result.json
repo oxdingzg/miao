@@ -1,0 +1,17 @@
+{
+  "scenario": "file-edit",
+  "engine": "rust",
+  "model": "opencode-go/claude-haiku-5-5",
+  "outcome": {
+    "status": "fail",
+    "reason": "file not updated to beta: \"export const note = \\\"alpha\\\"\\n\""
+  },
+  "cost": 0,
+  "tokensIn": 0,
+  "tokensOut": 0,
+  "stepFinishes": 0,
+  "tools": [],
+  "errors": [
+    "invalid request: provider HTTP 400: Model does not support this protocol."
+  ]
+}

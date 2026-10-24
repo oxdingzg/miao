@@ -153,7 +153,7 @@ async fn projection_limits_fail_without_partially_creating_branch() {
         .message(
             "parent",
             "assistant",
-            json!([{"type":"text","text":"x".repeat(2*1024*1024)}]),
+            json!([{"type":"text","text":"x".repeat(65*1024*1024)}]),
         )
         .await
         .unwrap();

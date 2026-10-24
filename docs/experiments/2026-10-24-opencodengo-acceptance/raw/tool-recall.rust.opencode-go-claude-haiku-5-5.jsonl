@@ -1,0 +1,3 @@
+{"type":"segment","index":0,"resume":false,"prompt":"Run this exact bash command: echo MIAO-CONFORMANCE-7391 — then reply with the exact token it printed."}
+{"type":"error","timestamp":1792818226542,"sessionID":"ses_gfe5e93b4e588ffeuKZVTQ84Ax","error":{"type":"unknown","message":"invalid request: provider HTTP 400: Model does not support this protocol."}}
+{"type":"segment.end","index":0,"exitCode":1,"seconds":5.2,"killed":false,"timedOut":false}

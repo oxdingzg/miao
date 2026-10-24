@@ -1,0 +1,44 @@
+{
+  "spent": 0,
+  "rows": [
+    {
+      "scenario": "tool-recall",
+      "engine": "rust",
+      "model": "opencode-go/claude-haiku-5-5",
+      "status": "fail",
+      "note": "reply does not contain MIAO-CONFORMANCE-7391",
+      "seconds": 5.244,
+      "cost": 0,
+      "tokensIn": 0,
+      "tokensOut": 0,
+      "turns": 0,
+      "archived": "docs/experiments/2026-10-24-opencodengo-acceptance/raw/tool-recall.rust.opencode-go-claude-haiku-5-5"
+    },
+    {
+      "scenario": "file-edit",
+      "engine": "rust",
+      "model": "opencode-go/claude-haiku-5-5",
+      "status": "fail",
+      "note": "file not updated to beta: \"export const note = \\\"alpha\\\"\\n\"",
+      "seconds": 4.668,
+      "cost": 0,
+      "tokensIn": 0,
+      "tokensOut": 0,
+      "turns": 0,
+      "archived": "docs/experiments/2026-10-24-opencodengo-acceptance/raw/file-edit.rust.opencode-go-claude-haiku-5-5"
+    },
+    {
+      "scenario": "multi-turn-retention",
+      "engine": "rust",
+      "model": "opencode-go/claude-haiku-5-5",
+      "status": "fail",
+      "note": "follow-up reply does not recall MIAO-CONFORMANCE-7391: ",
+      "seconds": 7.792,
+      "cost": 0,
+      "tokensIn": 0,
+      "tokensOut": 0,
+      "turns": 0,
+      "archived": "docs/experiments/2026-10-24-opencodengo-acceptance/raw/multi-turn-retention.rust.opencode-go-claude-haiku-5-5"
+    }
+  ]
+}

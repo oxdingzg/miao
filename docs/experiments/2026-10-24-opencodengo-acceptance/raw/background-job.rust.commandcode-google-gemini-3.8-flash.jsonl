@@ -1,0 +1,3 @@
+{"type":"segment","index":0,"resume":false,"prompt":"Start a background bash job that runs: sleep 2 (use the bash tool with run_in_background=true). Then use the job_list tool to check it, and reply with the job's final status."}
+{"type":"error","timestamp":1792817734321,"sessionID":"ses_gfe5e93bc6963ffemciqIYS9Gk","error":{"type":"unknown","message":"invalid request: provider HTTP 400: You have insufficient credits to make this request. Please purchase more credits to continue using the service. (code BAD_REQUEST)"}}
+{"type":"segment.end","index":0,"exitCode":1,"seconds":5.8,"killed":false,"timedOut":false}
