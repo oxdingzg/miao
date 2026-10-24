@@ -772,7 +772,6 @@ const TOOL_IDS: Record<string, string> = {
   goal: "goal",
   question: "question",
   recall: "recall",
-  session_state: "custom",
   schedule_wakeup: "schedule",
   cancel_wakeup: "schedule",
   lsp_diagnostics: "lsp",
@@ -793,7 +792,7 @@ const TOOL_IDS: Record<string, string> = {
  * `mcp__<server>__<tool>` vocabulary: the engine aliases a server tool as
  * `mcp_<server>_<tool>_<32-hex digest>` (slugs truncated to 12/14 chars), so
  * the digest suffix is stripped and the first underscore separates server from
- * tool. Unknown, worker and MCP tools fall back to `custom`.
+ * tool. Other tools retain their native names for the generic renderer.
  */
 export function productToolID(engineTool: string): string {
   if (engineTool in TOOL_IDS) return TOOL_IDS[engineTool]
@@ -805,7 +804,7 @@ export function productToolID(engineTool: string): string {
     if (split > 0) return `mcp__${body.slice(0, split)}__${body.slice(split + 1)}`
   }
   if (engineTool.startsWith("cron_")) return "schedule"
-  return "custom"
+  return engineTool
 }
 
 /**
