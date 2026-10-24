@@ -36,3 +36,11 @@ export function contextLabel(messages: readonly SessionMessage[], format: (token
     return `${state.source === "estimated" ? "~" : ""}${format(state.tokens)}${state.percent === undefined ? "" : ` (${state.percent}%)`}`
   return state.observed === undefined ? undefined : `last ${format(state.observed)}`
 }
+
+/** Remaining capacity only describes a measured or estimated current request. */
+export function remainingContext(messages: readonly SessionMessage[]) {
+  const usage = contextUsage(messages)
+  if (usage.percent === undefined) return { label: "Context —", remaining: undefined }
+  const remaining = Math.max(0, Math.min(100, 100 - usage.percent))
+  return { label: `Context ${usage.source === "estimated" ? "~" : ""}${remaining}% left`, remaining }
+}

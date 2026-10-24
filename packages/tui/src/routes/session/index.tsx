@@ -1,3 +1,4 @@
+import { StatusLine } from "../../component/status-line"
 import { Markdown } from "../../component/markdown"
 import {
   batch,
@@ -1494,6 +1495,7 @@ export function Session() {
             </Switch>
           </Show>
         </box>
+        <StatusLine sessionID={route.sessionID} />
       </context.Provider>
     </LocationProvider>
   )
