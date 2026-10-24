@@ -100,7 +100,7 @@ miao
 | `lsp`                                                             | 语言服务器：`true` 启用全部内置，`false` 关闭，或按名配置。**省略 = 全部禁用**                                          |
 | `formatter`                                                       | 代码格式化：`true` 启用内置，或按名配置命令                                                                             |
 | `mcp`                                                             | MCP 服务器（local stdio / remote streamable-http）                                                                      |
-| `compaction`                                                      | 压缩（`prune` 裁剪旧输出、`threshold` 触发比例、`summarize_small` 廉价摘要、`hot_prefix` 热前缀、`precise_tokens` BPE） |
+| `compaction`                                                      | 压缩（`prune` 裁剪旧输出、`threshold` 触发比例、`max_context` 每模型窗口、`summarize_small` 廉价摘要、`hot_prefix` 热前缀、`precise_tokens` BPE） |
 | `cache`                                                           | `ttl_seconds` 延长 prompt cache TTL                                                                                     |
 | `cost`                                                            | `budget_usd` 每会话成本预算（超限告警并停止续跑）                                                                       |
 | `loop`                                                            | 自治续跑（见 §5.8）                                                                                                     |
@@ -218,6 +218,8 @@ V2 `list_sessions` 可发现同项目会话，`send_message` 接受会话 ID 或
 ```
 
 这组可选配置组合了待办续跑、调度预算、旧输出裁剪和逐工具的模型可见输出限额。预算不会中断正在执行的轮次，也不是账单硬上限。完整输出文件是临时的，受限的会话记录才是持久化历史。工具结果裁剪（微压缩）默认开启，可用 `"prune": false` 关闭。自动压缩默认在上下文达到窗口的 `threshold`（默认 `0.9`）时触发，并依据供应商回报的真实 prompt tokens 判断，因此会在窗口填满前提前压缩，而不是等到最后。主动压缩默认复用当前请求前缀做一次摘要，让供应商直接命中 prompt 缓存；只有前缀放不下指令时才回退到分阶段恢复，可用 `"hot_prefix": false` 强制走分阶段策略。廉价模型摘要仍需单独开启，开启前先确认解析出的廉价模型适合当前供应商和任务。
+
+`compaction.max_context` 让模型在比其声明窗口更小的范围内工作，用于控制成本、延迟或缓存抖动。它接受一个作用于所有模型的值，或以 `"<providerID>/<modelID>"` 为键的映射（支持 `*`/`?` 通配，最长匹配键胜出）：可以是 token 数、`"300K"` / `"1.5M"` 简写，或模型窗口的 `"50%"`。该值只会被钳制到模型真实窗口之内，绝不会抬高它；压缩、上下文提示与溢出恢复都按钳制后的窗口规划。由于配置合并不支持删除键，`0` 表示恢复模型默认。
 
 被压缩出模型窗口的原文仍然持久化在磁盘上。`recall` 工具按关键词检索这段历史，让 agent 找回被摘要丢掉的细节，而不必重新读文件或重复已完成的工作。
 

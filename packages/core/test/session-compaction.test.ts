@@ -5,6 +5,7 @@ import { DateTime, Effect, Exit, Fiber, Stream } from "effect"
 import { SessionMessage } from "@miao/core/session/message"
 import { Token } from "@miao/core/util/token"
 import { SessionCompaction } from "@miao/core/session/compaction"
+import { PROTECT_TOKENS } from "@miao/core/session/prune"
 import { SessionSchema } from "@miao/core/session/schema"
 
 const model = (id: string, context: number) =>
@@ -791,6 +792,45 @@ test("the sending budget exposes provider counting and reserves generation space
   expect(budget).toMatchObject({ input: 69_000, source: "counted", window: 100_000, limit: 70_000, observed: 68_000 })
   expect(await Effect.runPromise(compaction.compactIfNeeded(input, budget))).toBe(false)
   expect(counts).toBe(1)
+})
+
+const maxContextInput = (main: ReturnType<typeof model>) => ({
+  sessionID: SessionSchema.ID.make("ses_max_context"),
+  entries: [],
+  model: main,
+  request: LLM.request({ model: main, messages: [] }),
+})
+
+test("a configured max_context clamps the working window and the trigger follows it", async () => {
+  const main = model("main", 1_000_000)
+  const { compaction } = customHarness(
+    [{ type: "document", info: { compaction: { max_context: "500K" } } }],
+    summary("summary"),
+  )
+  const budget = await Effect.runPromise(compaction.budget(maxContextInput(main)))
+  expect(budget.window).toBe(500_000)
+  // buffer 20_000 + summary output 2_048 + prune protect 40_000.
+  expect(budget.limit).toBe(Math.max(500_000 - (PROTECT_TOKENS + 2_048 + 20_000), 430_000))
+})
+
+test("a keyed max_context applies only to the matching model", async () => {
+  const main = model("main", 1_000_000)
+  const { compaction } = customHarness(
+    [{ type: "document", info: { compaction: { max_context: { "openai/other": "300K", "openai/ma*": "200K" } } } }],
+    summary("summary"),
+  )
+  const budget = await Effect.runPromise(compaction.budget(maxContextInput(main)))
+  expect(budget.window).toBe(200_000)
+})
+
+test("a max_context at or above the window leaves the model window in place", async () => {
+  const main = model("main", 1_000_000)
+  const { compaction } = customHarness(
+    [{ type: "document", info: { compaction: { max_context: { "openai/main": "2M" } } } }],
+    summary("summary"),
+  )
+  const budget = await Effect.runPromise(compaction.budget(maxContextInput(main)))
+  expect(budget.window).toBe(1_000_000)
 })
 
 test("hot compaction fits the request against the size the decision measured", async () => {

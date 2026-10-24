@@ -22,6 +22,26 @@ export const count = (input: string) => {
   return encoder(input).length
 }
 
+/**
+ * Parse a token quantity: a plain count, a `"300K"` / `"1.5M"` shorthand
+ * (case-insensitive), or `"40%"` of `relativeTo`. Returns undefined when the
+ * input is not a valid quantity, so callers pick their own fallback.
+ */
+export const parseQuantity = (input: number | string, relativeTo?: number): number | undefined => {
+  if (typeof input === "number") return Number.isFinite(input) && input >= 0 ? Math.floor(input) : undefined
+  const trimmed = input.trim()
+  if (trimmed.endsWith("%")) {
+    if (relativeTo === undefined) return undefined
+    const pct = Number.parseFloat(trimmed.slice(0, -1))
+    if (!Number.isFinite(pct) || pct <= 0 || pct > 100) return undefined
+    return Math.floor((relativeTo * pct) / 100)
+  }
+  const match = trimmed.match(/^(\d+(?:\.\d+)?)([KkMm]?)$/)
+  if (!match) return undefined
+  const scale = match[2] === "" ? 1 : match[2].toLowerCase() === "k" ? 1_000 : 1_000_000
+  return Math.floor(Number.parseFloat(match[1]) * scale)
+}
+
 // Providers tokenize attachments by resolution and cap the per-image cost, so
 // inline base64 length is the wrong unit for a context budget: a screenshot is a
 // few thousand base64 characters per real token. Charging a flat ceiling keeps
