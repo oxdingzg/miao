@@ -807,6 +807,8 @@ export type SessionsModelRoutesInput = { readonly sessionID: { readonly sessionI
 export type SessionsModelRoutesOutput = {
   readonly data: ReadonlyArray<{
     readonly model: { readonly id: string; readonly providerID: string; readonly variant?: string }
+    readonly productModel?: { readonly id: string; readonly providerID: string; readonly variant?: string }
+    readonly credentialID?: string
     readonly protocol: string
     readonly wireModel: string
     readonly default: boolean

@@ -293,3 +293,13 @@ test("a bare engine model id prices when exactly one catalog model claims it", (
   expect(usage!.models[0].providerID).toBe(ProviderV2.ID.make("opencode-go"))
   expect(usage!.models[0].cost).toBeCloseTo((1_000 * 1 + 100 * 2 + 9_000 * 0.1) / 1_000_000)
 })
+
+test("an explicit primary binding projects the same model identity as resetting to the host default", () => {
+  const info = nativeSessionInfo({
+    sessionID,
+    projectID,
+    location,
+    snapshot: { model_selection: { protocol: "openai-chat", model: "wire", route_id: null } },
+  })
+  expect(info.model).toMatchObject({ providerID: "native-engine-default", id: "default" })
+})

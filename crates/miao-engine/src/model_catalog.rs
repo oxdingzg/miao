@@ -24,9 +24,14 @@ pub struct Info {
     pub model: String,
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub variants: Vec<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub model_key: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub credential_id: Option<String>,
 }
 
-/// Trusted route metadata, never included in model_catalog replies. `model_key`
+/// Trusted route metadata. Only logical model and opaque credential identities
+/// appear in model_catalog replies; endpoints and secrets remain private. `model_key`
 /// is a host-declared logical model family, not inferred from route id syntax.
 #[derive(Clone, Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -248,9 +253,24 @@ impl Provider for Catalog {
                 protocol: identity.protocol,
                 model: identity.model,
                 variants: self.primary_variants.keys().cloned().collect(),
+                model_key: self
+                    .primary_route
+                    .as_ref()
+                    .and_then(|route| self.accounts.get(route))
+                    .map(|account| account.model_key.clone()),
+                credential_id: self
+                    .primary_route
+                    .as_ref()
+                    .and_then(|route| self.accounts.get(route))
+                    .and_then(|account| account.id.clone()),
             })
             .chain(self.routes.iter().filter_map(|(id, provider)| {
                 provider.identity().map(|identity| Info {
+                    model_key: self
+                        .accounts
+                        .get(id)
+                        .map(|account| account.model_key.clone()),
+                    credential_id: self.accounts.get(id).and_then(|account| account.id.clone()),
                     route_id: Some(id.clone()),
                     protocol: identity.protocol,
                     model: identity.model,

@@ -40,9 +40,7 @@ export function nativeSessionInfo(input: {
   const model = Option.isSome(selection)
     ? selection.value === null
       ? SessionModelRoute.reference(null)
-      : selection.value.route_id || selection.value.variant
-        ? SessionModelRoute.reference(selection.value.route_id ?? null, selection.value.variant ?? undefined)
-        : undefined
+      : SessionModelRoute.reference(selection.value.route_id ?? null, selection.value.variant ?? undefined)
     : undefined
   const created = number(input.snapshot["created_at_ms"])
   const updated = number(input.snapshot["updated_at_ms"])

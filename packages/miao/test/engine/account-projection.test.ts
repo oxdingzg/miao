@@ -11,7 +11,10 @@ test("account intent has its own replay identity and model-only events do not fa
     recorded_at_ms: 1000,
     data: { binding: null },
   })
-  expect(events).toHaveLength(0)
+  expect(events).toHaveLength(1)
+  expect(events[0].type).toBe("session.next.model.switched")
+  expect(events[0].data).toMatchObject({ model: { providerID: "native-engine-default", id: "default" } })
+  events.length = 0
   translator.dispatch({
     session_id: "ses_account",
     seq: 2,
