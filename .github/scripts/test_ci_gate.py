@@ -21,6 +21,20 @@ class GateTest(unittest.TestCase):
             self.assertTrue(flags[name], name)
         self.assertTrue(gate.classify(["packages/remote-control/src/browser.ts"])["e2e"])
 
+    def test_product_session_changes_require_actual_native_contracts(self):
+        for path in [
+            "packages/miao/src/engine/native-engine.ts",
+            "packages/miao/test/engine/native-default-parity-http.test.ts",
+            "packages/miao/test/preload.ts",
+            "packages/server/src/handlers/session.ts",
+            "packages/server/src/native-session.ts",
+            "packages/core/src/session/runner/llm.ts",
+            "packages/core/src/system-context/persona/gemini.txt",
+            "packages/core/src/google-account/transport.ts",
+            "packages/schema/src/agent.ts",
+        ]:
+            self.assertTrue(gate.classify([path])["engine"], path)
+
     def test_successful_and_intentionally_skipped_results_pass(self):
         flags = {name: "false" for name in gate.CHECKS}
         needs = {name: {"result": "skipped"} for name in gate.CHECKS}
