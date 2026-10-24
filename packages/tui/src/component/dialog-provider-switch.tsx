@@ -43,7 +43,7 @@ export function DialogProviderSwitch() {
       map((provider) => ({
         title: provider.name,
         value: provider.id,
-        description: provider.id === local.model.current()?.providerID ? "(Current)" : undefined,
+        description: provider.id === local.model.parsed().providerID ? "(Current)" : undefined,
         onSelect() {
           dialog.replace(() => <DialogModel providerID={provider.id} />)
         },
@@ -57,7 +57,7 @@ export function DialogProviderSwitch() {
       compact
       title="Switch provider"
       options={options()}
-      current={local.model.current()?.providerID}
+      current={local.model.parsed().providerID}
       actions={[
         {
           command: "model.dialog.provider",

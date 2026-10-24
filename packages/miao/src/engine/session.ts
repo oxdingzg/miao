@@ -153,7 +153,7 @@ export class EngineTranslator {
       const selected = Schema.decodeUnknownOption(Schema.Struct({ binding: Schema.NullOr(SessionModelRoute.Binding) }))(
         event.data,
       )
-      if (Option.isSome(selected) && selected.value.binding)
+      if (Option.isSome(selected))
         publish({
           type: "session.next.model.switched",
           data: {
@@ -161,8 +161,8 @@ export class EngineTranslator {
             timestamp: DateTime.makeUnsafe(event.recorded_at_ms),
             messageID: messageID(event.session_id, event.seq),
             model: SessionModelRoute.reference(
-              selected.value.binding.route_id ?? null,
-              selected.value.binding.variant ?? undefined,
+              selected.value.binding?.route_id ?? null,
+              selected.value.binding?.variant ?? undefined,
             ),
           },
         })

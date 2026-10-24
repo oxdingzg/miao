@@ -1,3 +1,4 @@
+import { nativeModelLabel } from "../util/native-model"
 import { createMemo, createResource, createSignal } from "solid-js"
 import { useSDK } from "../context/sdk"
 import { useSync } from "../context/sync"
@@ -8,7 +9,7 @@ import { useToast } from "../ui/toast"
 import { errorMessage } from "../util/error"
 
 /** A native Session selects only routes published by its owning engine. */
-export function DialogNativeModel(props: { sessionID: string }) {
+export function DialogNativeModel(props: { sessionID: string; providerID?: string }) {
   const sdk = useSDK()
   const sync = useSync()
   const dialog = useDialog()
@@ -24,12 +25,35 @@ export function DialogNativeModel(props: { sessionID: string }) {
         return []
       }),
   )
+  const [integrations] = createResource(() =>
+    sdk.api.integrations
+      .list({ location: { directory: sdk.directory } })
+      .then((result) => result.data)
+      .catch((error: unknown) => {
+        toast.error(error)
+        return []
+      }),
+  )
   const options = createMemo(() =>
-    (routes() ?? []).flatMap((route) =>
-      [undefined, ...(route.variants ?? [])].map((variant) => ({
-        title: `${route.default ? `${route.wireModel} (default)` : route.model.id}${variant === undefined ? "" : ` · ${variant}`}`,
-        description: `${route.protocol} · ${route.wireModel}`,
-        category: "Host model routes",
+    (routes() ?? []).flatMap((route) => {
+      const label = nativeModelLabel(route, sync.data.provider)
+      if (props.providerID && label.providerID !== props.providerID) return []
+      return [undefined, ...(route.variants ?? [])].map((variant) => ({
+        title: `${label.model}${route.default ? " (default)" : ""}${variant === undefined ? "" : ` · ${variant}`}`,
+        description: [
+          integrations()
+            ?.flatMap((integration) =>
+              integration.connections.flatMap((connection) =>
+                connection.type === "credential" && connection.id === route.credentialID ? [connection.label] : [],
+              ),
+            )
+            .at(0),
+          route.protocol,
+          route.wireModel,
+        ]
+          .filter(Boolean)
+          .join(" · "),
+        category: label.provider,
         value: { ...route.model, ...(variant === undefined ? {} : { variant }) },
         footer:
           sync.session.get(props.sessionID)?.model?.providerID === route.model.providerID &&
@@ -37,12 +61,12 @@ export function DialogNativeModel(props: { sessionID: string }) {
           sync.session.get(props.sessionID)?.model?.variant === variant
             ? "Selected"
             : undefined,
-      })),
-    ),
+      }))
+    }),
   )
   return (
     <DialogSelect
-      title="Select native model route"
+      title="Select model"
       options={options()}
       locked={routes.loading || busy()}
       detail={

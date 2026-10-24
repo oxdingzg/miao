@@ -363,6 +363,8 @@ export const fromOwners = (
       Schema.Array(
         Schema.Struct({
           route_id: Schema.NullOr(Schema.String),
+          model_key: Schema.optionalKey(Schema.String),
+          credential_id: Schema.optionalKey(Credential.ID),
           protocol: Schema.String,
           model: Schema.String,
           variants: Schema.optionalKey(Schema.Array(Model.VariantID)),
@@ -510,6 +512,15 @@ export const fromOwners = (
         await connection.client.request("snapshot", { session_id: input.sessionID })
         return (await routes(connection)).map((entry) => ({
           model: SessionModelRoute.reference(entry.route_id),
+          ...(entry.model_key
+            ? {
+                productModel: Schema.decodeUnknownSync(Model.Ref)({
+                  providerID: entry.model_key.split("/")[0],
+                  id: entry.model_key.split("/").slice(1).join("/"),
+                }),
+              }
+            : {}),
+          ...(entry.credential_id ? { credentialID: entry.credential_id } : {}),
           protocol: entry.protocol,
           wireModel: entry.model,
           default: entry.route_id === null,

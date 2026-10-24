@@ -2,10 +2,14 @@ export * as SessionModelRoute from "./session-model-route"
 
 import { Schema } from "effect"
 import { Model } from "./model"
+import { Credential } from "./credential"
+import { optional } from "./schema"
 
 /** Engine-owned routes use a reserved product namespace; wire model names are display metadata. */
 export const Info = Schema.Struct({
   model: Model.Ref,
+  productModel: optional(Model.Ref),
+  credentialID: optional(Credential.ID),
   protocol: Schema.String,
   wireModel: Schema.String,
   default: Schema.Boolean,

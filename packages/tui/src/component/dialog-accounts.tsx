@@ -82,7 +82,7 @@ export function DialogAccounts(props: { providerID: string }) {
   const reopen = () => dialog.replace(() => <DialogAccounts providerID={props.providerID} />)
   const session = createMemo(() => {
     const id = route.data.type === "session" ? route.data.sessionID : undefined
-    return id ? sync.data.session.find((item) => item.id === id) : undefined
+    return id ? sync.session.get(id) : undefined
   })
   const describe = (item: Account) =>
     [item.active ? "active" : "inactive", session()?.credentialID === item.id ? "used in this session" : undefined]
@@ -120,7 +120,7 @@ export function DialogAccounts(props: { providerID: string }) {
       toast.error(error)
       return undefined
     })
-    await sync.bootstrap()
+    await sync.session.reload(current.id)
     reopen()
   }
 
@@ -174,7 +174,7 @@ export function DialogAccounts(props: { providerID: string }) {
       value: item.id,
       description: describe(item),
       gutter: item.active ? () => <text fg={theme.success}>✓</text> : undefined,
-      onSelect: (): void => void activate(item.id),
+      onSelect: (): void => void (session()?.execution?.engine === "rust" ? pin(item.id) : activate(item.id)),
     })),
     {
       title: "Add account",
@@ -188,7 +188,7 @@ export function DialogAccounts(props: { providerID: string }) {
     <DialogSelect
       title={`Accounts · ${props.providerID}`}
       options={options()}
-      current={accounts().find((item) => item.active)?.id}
+      current={session()?.credentialID ?? accounts().find((item) => item.active)?.id}
       actions={[
         {
           command: "provider.account.add",

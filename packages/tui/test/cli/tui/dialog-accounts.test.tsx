@@ -1,4 +1,5 @@
 /** @jsxImportSource @opentui/solid */
+import { InputRenderable } from "@opentui/core"
 import { createDefaultOpenTuiKeymap } from "@opentui/keymap/opentui"
 import { testRender, useRenderer } from "@opentui/solid"
 import { expect, test } from "bun:test"
@@ -11,7 +12,7 @@ import { TestTuiContexts } from "../../fixture/tui-environment"
 
 const providerID = "openai"
 
-async function mount(root: string, onConnectKey?: (body: { key: string; label?: string }) => void) {
+async function mount(root: string, onConnectKey?: (body: { key: string; label?: string }) => void, native = false) {
   const state = path.join(root, "state")
   await mkdir(state, { recursive: true })
   await Bun.write(path.join(state, "kv.json"), "{}")
@@ -28,7 +29,7 @@ async function mount(root: string, onConnectKey?: (body: { key: string; label?: 
     { SDKProvider },
     { PermissionProvider },
     { ProjectProvider },
-    { SyncProvider },
+    { SyncProvider, useSync },
     { RouteProvider },
     { ExitProvider },
     { LocationProvider },
@@ -57,7 +58,45 @@ async function mount(root: string, onConnectKey?: (body: { key: string; label?: 
   // active account in memory.
   let active = "cred_work"
   const activated: string[] = []
+  const pinned: string[] = []
+  const sessionID = "ses_native_accounts"
   const fetch = createFetch((url, request) => {
+    if (native && url.pathname === "/api/session")
+      return json({
+        data: [
+          {
+            id: sessionID,
+            projectID: "proj_test",
+            title: "Native",
+            cost: 0,
+            tokens: { input: 0, output: 0, reasoning: 0, cache: { read: 0, write: 0 } },
+            time: { created: 0, updated: 0 },
+            location: { directory },
+            execution: { engine: "rust", selection: "operator" },
+            credentialID: pinned.at(-1) ?? "cred_work",
+          },
+        ],
+        cursor: {},
+      })
+    if (native && url.pathname === `/api/session/${sessionID}`)
+      return json({
+        data: {
+          id: sessionID,
+          projectID: "proj_test",
+          title: "Native",
+          cost: 0,
+          tokens: { input: 0, output: 0, reasoning: 0, cache: { read: 0, write: 0 } },
+          time: { created: 0, updated: 0 },
+          location: { directory },
+          execution: { engine: "rust", selection: "operator" },
+          credentialID: pinned.at(-1) ?? "cred_work",
+        },
+      })
+    if (native && url.pathname === `/api/session/${sessionID}/account`)
+      return request!.json().then((body) => {
+        pinned.push(body.credentialID)
+        return new Response(null, { status: 204 })
+      })
     if (url.pathname === `/api/integration/${providerID}`)
       return json({
         location: { directory, project: { id: "proj_test", directory } },
@@ -86,7 +125,14 @@ async function mount(root: string, onConnectKey?: (body: { key: string; label?: 
 
   function Opener() {
     const dialog = useDialog()
-    onMount(() => dialog.replace(() => <DialogAccounts providerID={providerID} />))
+    const sync = useSync()
+    onMount(() => {
+      if (!native) return dialog.replace(() => <DialogAccounts providerID={providerID} />)
+      void sync
+        .bootstrap()
+        .then(() => sync.session.sync(sessionID))
+        .then(() => dialog.replace(() => <DialogAccounts providerID={providerID} />))
+    })
     return <text>Conversation</text>
   }
 
@@ -109,7 +155,7 @@ async function mount(root: string, onConnectKey?: (body: { key: string; label?: 
                           <ProjectProvider>
                             <ExitProvider exit={() => {}}>
                               <SyncProvider>
-                                <RouteProvider>
+                                <RouteProvider initialRoute={native ? { type: "session", sessionID } : undefined}>
                                   <LocationProvider location={{ directory }}>
                                     <DialogProvider>
                                       <Opener />
@@ -144,7 +190,7 @@ async function mount(root: string, onConnectKey?: (body: { key: string; label?: 
     }
     throw new Error(`frame never matched:\n${app.captureCharFrame()}`)
   }
-  return { app, until, activated, cleanup: () => app.renderer.destroy() }
+  return { app, until, activated, pinned, cleanup: () => app.renderer.destroy() }
 }
 
 test("lists every account of a provider and switches the active one", async () => {
@@ -190,6 +236,26 @@ test("adds an account under the label entered before signing in", async () => {
     await view.until(() => connected !== undefined)
     expect(connected?.label).toBe("team")
     expect(connected?.key).toBe("sk-test")
+  } finally {
+    view.cleanup()
+  }
+})
+
+test("selecting an account in a native session pins it and refreshes its selection", async () => {
+  await using tmp = await tmpdir()
+  const view = await mount(tmp.path, undefined, true)
+  try {
+    await view.until((value) => value.includes("Personal") && value.includes("used in this session"))
+    await view.until(() => view.app.renderer.currentFocusedRenderable instanceof InputRenderable)
+    await view.app.mockInput.typeText("Personal")
+    await view.until((value) => value.includes("Personal") && !value.includes("Work active"))
+    // DialogSelect defers its filtered-row selection to the next timer tick.
+    await Bun.sleep(0)
+    await view.app.mockInput.pressEnter()
+    await view.until(() => view.pinned.length === 1)
+    expect(view.pinned).toEqual(["cred_personal"])
+    expect(view.activated).toEqual([])
+    await view.until((value) => value.includes("inactive · used in this session"))
   } finally {
     view.cleanup()
   }
