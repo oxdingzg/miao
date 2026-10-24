@@ -13,11 +13,12 @@ async function window(filename: string) {
       "-e",
       `import { Database } from ${JSON.stringify(path.resolve(import.meta.dir, "../src/database/database.ts"))};
        import { Effect } from "effect";
+       const keepalive = setInterval(() => {}, 1000);
        await Effect.runPromise(Effect.gen(function* () {
          yield* Database.Service;
          console.log("ready");
          yield* Effect.never;
-       }).pipe(Effect.provide(Database.sharedLayerFromPath(${JSON.stringify(filename)})), Effect.scoped));`,
+       }).pipe(Effect.provide(Database.sharedLayerFromPath(${JSON.stringify(filename)})), Effect.scoped)).finally(() => clearInterval(keepalive));`,
     ],
     { stdout: "pipe", stderr: "pipe" },
   )
@@ -107,6 +108,8 @@ test("pending migrations wait for another window instead of touching its databas
     expect(database.db).toBeDefined()
   } finally {
     native.close()
+    first.kill()
+    await first.exited
   }
 }, 20_000)
 
