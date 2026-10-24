@@ -1416,10 +1416,14 @@ async fn execute(
         allowance = if reset_allowance {
             policy.max_provider_turns()
         } else {
-            allowance.min(policy.max_provider_turns())
+            match (allowance, policy.max_provider_turns()) {
+                (Some(remaining), Some(limit)) => Some(remaining.min(limit)),
+                (remaining, None) => remaining,
+                (None, limit) => limit,
+            }
         };
         reset_allowance = false;
-        if allowance == 0 {
+        if allowance == Some(0) {
             // Exhausting the allowance pauses the drain; it is not a provider
             // failure. End the run cleanly and leave a visible history fact so
             // the transcript explains the pause. The next promoted input
@@ -1435,7 +1439,9 @@ async fn execute(
                 .await?;
             return Ok(());
         }
-        allowance -= 1;
+        if let Some(remaining) = &mut allowance {
+            *remaining -= 1;
+        }
         let binding = match (inner.store.model_selection(session).await?, agent.as_ref()) {
             (Some(selection), _) => Some(selection),
             (None, Some((manifest, _))) => manifest.model.clone(),
@@ -1791,7 +1797,7 @@ async fn execute(
                     if cancel.is_cancelled() {
                         return Ok(());
                     }
-                    if transport_continuations < 2 && allowance > 0 {
+                    if transport_continuations < 2 && allowance != Some(0) {
                         transport_continuations += 1;
                         let input_id = format!("transport:{run}:{transport_continuations}");
                         inner.store.admit(crate::protocol::Input {
@@ -2614,10 +2620,8 @@ command: None,
                     0
                 };
                 goal_signature = Some(signature);
-                let reason = if allowance == 0 {
+                let reason = if allowance == Some(0) {
                     Some("budget")
-                } else if goal_iterations >= 25 {
-                    Some("max-iterations")
                 } else if goal_stalls >= 2 {
                     Some("no-progress")
                 } else {
@@ -2638,7 +2642,6 @@ command: None,
                         &format!("loop-paused-{run}"),
                         match reason {
                             "budget" => "Task paused: reached the provider turn limit. Send a message to continue.",
-                            "max-iterations" => "Task paused: reached the autonomous continuation limit with work still pending. Send a message to continue.",
                             _ => "Task paused: autonomous continuation did not update task progress. Review the remaining work and send a message to continue.",
                         },
                         "engine",

@@ -991,13 +991,19 @@ with actual exit/output, task revisions and bounded source coverage.
 
 ### Provider-turn budget
 
-The host policy accepts `max_provider_turns` (1–10000, default 25). For a
-long multi-step task, set e.g. `"max_provider_turns": 100` in the policy JSON.
-This budget applies to provider turns per admitted user input, including tool
-round trips and transport continuations. External user admissions reset it;
-synthetic autonomous-continuation inputs do not. Exhaustion remains an explicit
-failed run and never silently replays tool calls. The policy revision records
-the configured budget.
+The host policy accepts `max_provider_turns`: an integer from 1 to 10000 sets
+an explicit budget, and `null` disables the request-count cutoff. Omitting the
+field retains the standalone engine's conservative default of 25. The miao
+product explicitly uses `null`, matching the TypeScript product's default;
+`agent.steps` and explicit operator policy limits still apply.
+
+A configured budget counts provider requests per admitted user input, including
+tool round trips and transport continuations. External user admissions reset
+it; synthetic autonomous-continuation inputs do not. Exhaustion pauses execution
+with a visible notice and leaves unfinished work incomplete. It never silently
+replays tools. Autonomous continuation has no extra hidden iteration cutoff;
+the no-progress guard still stops a loop that does not advance task state.
+The policy revision records the configured budget.
 
 
 ## Prompt attachments
