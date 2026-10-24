@@ -113,6 +113,10 @@ export function modelFetch(
     if (!model.startsWith("gemini-")) throw new Error("The Google account provider exposes only Gemini models")
     const payload: unknown = await request.json()
     if (!isRecord(payload)) throw new Error("Invalid Gemini request body")
+    // Request provider-authored summaries alongside tool calls; keep explicit settings.
+    const generation = isRecord(payload.generationConfig) ? payload.generationConfig : {}
+    const thinking = isRecord(generation.thinkingConfig) ? generation.thinkingConfig : {}
+    payload.generationConfig = { ...generation, thinkingConfig: { includeThoughts: true, ...thinking } }
     if (isRecord(payload.systemInstruction)) payload.systemInstruction = { ...payload.systemInstruction, role: "user" }
     if (Array.isArray(payload.tools))
       payload.tools = payload.tools.map((tool: unknown) => {

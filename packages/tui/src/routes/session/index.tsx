@@ -2281,6 +2281,12 @@ function Shell(props: ToolProps) {
   const pathFormatter = usePathFormatter()
   const ctx = use()
   const isRunning = createMemo(() => props.part.state.status === "running")
+  const failed = createMemo(
+    () =>
+      props.part.state.status === "error" ||
+      props.metadata.timeout === true ||
+      (typeof props.metadata.exit === "number" && props.metadata.exit !== 0),
+  )
   const command = createMemo(() => stringValue(props.input.command) ?? "")
   const output = createMemo(() => stripAnsi(stringValue(props.metadata.output) ?? props.output ?? "").trim())
   const preview = createMemo(() =>
@@ -2289,7 +2295,7 @@ function Shell(props: ToolProps) {
       .trim(),
   )
   const [expanded, setExpanded] = createSignal(false)
-  const collapsed = createMemo(() => collapseToolOutput(preview(), 3, 3 * Math.max(20, ctx.width - 8)))
+  const collapsed = createMemo(() => collapseToolOutput(preview(), 6, 6 * Math.max(20, ctx.width - 8)))
   const title = createMemo(() => Locale.truncate(command().split("\n", 1)[0].trim(), Math.max(20, ctx.width - 12)))
   const stdin = createMemo(() => {
     const value = stringValue(props.input.stdin)
@@ -2303,7 +2309,7 @@ function Shell(props: ToolProps) {
     <box ref={(el: BoxRenderable) => alwaysSeparate.add(el)} marginTop={1}>
       <InlineTool
         icon="●"
-        iconColor={props.part.state.status === "completed" ? theme.success : undefined}
+        iconColor={failed() ? theme.error : props.part.state.status === "completed" ? theme.success : undefined}
         color={theme.text}
         pending="Preparing command…"
         complete={command()}
@@ -2316,7 +2322,18 @@ function Shell(props: ToolProps) {
           )
         }
       >
-        <Show when={isRunning()} fallback={<b>Ran</b>}>
+        <Show
+          when={isRunning()}
+          fallback={
+            <b>
+              {failed()
+                ? props.metadata.timeout === true
+                  ? "Timed out"
+                  : `Failed${typeof props.metadata.exit === "number" ? ` (exit ${props.metadata.exit})` : ""}`
+                : "Command"}
+            </b>
+          }
+        >
           <b>Running</b> {title()}
         </Show>
       </InlineTool>

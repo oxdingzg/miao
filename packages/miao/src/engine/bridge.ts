@@ -165,9 +165,7 @@ export function translateAssistantIdentity(event: EngineEvent): SessionAssistant
     provider,
     // The engine only knows the wire protocol and model id, so the reference
     // carries those as a display fallback; catalog resolution stays client-side.
-    model: provider
-      ? Schema.decodeUnknownSync(Model.Ref)({ id: provider.model, providerID: provider.protocol })
-      : null,
+    model: provider ? Schema.decodeUnknownSync(Model.Ref)({ id: provider.model, providerID: provider.protocol }) : null,
     agent: null,
   }
 }
@@ -374,7 +372,13 @@ export function translateStepEnded(
   if (!("role" in event.data) || event.data.role !== "assistant") return undefined
   if (!hasRecordedTime(event)) return undefined
   const rawFinish = "finish" in event.data ? event.data.finish : undefined
-  const finish = typeof rawFinish === "string" && rawFinish ? rawFinish : "stop"
+  const content = "content" in event.data ? event.data.content : undefined
+  const tools =
+    Array.isArray(content) &&
+    content.some(
+      (block: unknown) => typeof block === "object" && block !== null && "type" in block && block.type === "tool_use",
+    )
+  const finish = typeof rawFinish === "string" && rawFinish ? rawFinish : tools ? "tool-calls" : "stop"
   const anchor = anchorSeq(event)
   const assistantMessageID = messageID(event.session_id, anchor ?? event.seq)
   const tokens = usage?.tokens ?? { input: 0, output: 0, reasoning: 0, cache: { read: 0, write: 0 } }
@@ -826,7 +830,10 @@ export function productToolInput(engineTool: string, input: Record<string, unkno
  * transcript rendered as that raw JSON, and structured-only readers (todos,
  * diffs) saw nothing at all.
  */
-export function productToolResult(tool: string, result: unknown): { structured: Record<string, unknown>; text: string } {
+export function productToolResult(
+  tool: string,
+  result: unknown,
+): { structured: Record<string, unknown>; text: string } {
   if (typeof result === "string") return { structured: {}, text: result }
   if (typeof result !== "object" || result === null) return { structured: {}, text: JSON.stringify(result ?? null) }
   const record = result as Record<string, unknown>
