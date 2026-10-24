@@ -1,3 +1,4 @@
+import { InputRenderable } from "@opentui/core"
 /** @jsxImportSource @opentui/solid */
 import { createDefaultOpenTuiKeymap } from "@opentui/keymap/opentui"
 import { testRender, useRenderer } from "@opentui/solid"
@@ -245,7 +246,11 @@ test("selecting an account in a native session pins it and refreshes its selecti
   const view = await mount(tmp.path, undefined, true)
   try {
     await view.until((value) => value.includes("Personal") && value.includes("used in this session"))
-    await view.app.mockInput.pressArrow("up")
+    await view.until(() => view.app.renderer.currentFocusedRenderable instanceof InputRenderable)
+    await view.app.mockInput.typeText("Personal")
+    await view.until((value) => value.includes("Personal") && !value.includes("Work active"))
+    // DialogSelect defers its filtered-row selection to the next timer tick.
+    await Bun.sleep(0)
     await view.app.mockInput.pressEnter()
     await view.until(() => view.pinned.length === 1)
     expect(view.pinned).toEqual(["cred_personal"])
