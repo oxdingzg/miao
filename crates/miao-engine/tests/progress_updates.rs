@@ -153,6 +153,10 @@ async fn silent_tool_batches_trigger_request_only_guidance_and_visible_text_rese
     // Guidance must not omit real evidence or force a text-only provider turn.
     for turn in [3, 7] {
         assert!(!requests[turn].tools.is_empty());
+        assert_eq!(
+            requests[turn].messages.last().unwrap().content[0]["type"],
+            "tool_result"
+        );
         assert!(requests[turn]
             .messages
             .iter()

@@ -295,7 +295,9 @@ async fn runtime_dispatches_terminal_tools_through_durable_history() {
                 path: "**".into(),
                 decision: Decision::Allow,
             }],
-            ..Config::default()
+            // This workflow polls a real PTY through provider turns; give
+            // its readiness handshake a budget independent of the default.
+            ..serde_json::from_value(json!({"max_provider_turns":100})).unwrap()
         })
         .unwrap(),
     )
@@ -318,7 +320,7 @@ async fn runtime_dispatches_terminal_tools_through_durable_history() {
     tokio::time::timeout(Duration::from_secs(10), async {
         loop {
             if store
-                .events("s", 0, 1000)
+                .events("s", 0, 5000)
                 .await
                 .unwrap()
                 .iter()
