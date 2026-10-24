@@ -178,8 +178,26 @@ Release assets for drills were staged over SSH from another LAN machine; the
 Windows updater path needs a proxy decision (accept a staged-asset workflow or
 route the host through the LAN proxy).
 
+## Windows x64: cross-version drill (2026-10-23 addendum)
+
+The published 0.2.24 and 0.2.25 Windows x64 executables ran the full drill
+(`script/engine-artifact-drill.py`, Python 3.12) on the Windows host:
+`ENGINE_ARTIFACT_DRILL=PASS` across install, data migration, rollback and
+compaction stages with the guarded-process scope (workspace write allowed,
+outside denied; network/PTY not exercised by the fixture). Archive SHA-256s
+verified before extraction:
+
+| Executable | SHA-256 |
+| --- | --- |
+| Published 0.2.25 Windows x64 | `f8e41934a6b7cea009ae594d5fe63604f8873b55e34445546624805abaace54d` |
+| Published 0.2.24 Windows x64 | `357d9f0e5fc9c79f99bf7e8ec62ea203ead7015010686168ab17f9cef15971ac` |
+
+The 0.2.24 hash matches the 0.2.23 record, so the upgrade leg ran a genuine
+prior release. Raw verdict: `drill-0.2.25.json` (drill host).
+
 ## Not covered
 
+>>>>>>> main
 - Windows direct release-endpoint connectivity: the release host is
   unreachable from the Windows build host without a proxy (three failed probes,
   see the Windows section). Accept a staged-asset workflow there or route the
