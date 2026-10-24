@@ -23,7 +23,6 @@ import { requireNativeOwner, requireTypescriptOwner } from "../native-command"
 import { SessionEnginePlacement } from "@miao/core/session/engine-placement"
 import { nativeExecution, nativeTodos } from "../native-state"
 import { nativeSessionEvents } from "../native-events"
-import { SessionNativeTitle } from "@miao/core/session/native-title"
 import { SessionEvent } from "@miao/schema/session-event"
 import {
   generateNativeTitle,
@@ -153,10 +152,13 @@ export const SessionHandler = HttpApiBuilder.group(Api, "server.session", (handl
           // Initialize the engine before publishing its placement: get/list
           // must work even when no prompt has ever been submitted. Retrying a
           // catalogued identity preserves its original placement.
+          // The engine and catalog use the same placeholder until a title is generated.
           if (native && nativeStorage) {
-            yield* native.initialize({ sessionID: id, storage: nativeStorage, location, title: "New session" })
-            // Bind the model shown before the first prompt. The Rust runner
-            // otherwise uses the owner's global default instead of this choice.
+            yield* native.initialize({
+              sessionID: id, storage: nativeStorage, location,
+              title: `New session - ${new Date().toISOString()}`,
+            })
+            // Bind the model shown before the first prompt, rather than the owner's default.
             if (ctx.payload.model)
               yield* native.selectModel({ sessionID: id, storage: nativeStorage, location, model: ctx.payload.model })
           }

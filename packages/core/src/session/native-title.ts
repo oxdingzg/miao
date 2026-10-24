@@ -20,7 +20,8 @@ const inFlight = new Set<string>()
  * can reuse it. Model choice mirrors the runner: the `title` agent's preferred
  * model when it declares one, otherwise the Session's own. Dependencies are
  * passed in by the host; failures are silent — a missing title must never
- * fail a wait.
+ * fail a wait. Returns the title it published, if any, so the host can mirror
+ * it onto its own title authority.
  */
 export const afterRun = Effect.fn("SessionNativeTitle.afterRun")(function* (input: {
   readonly sessionID: SessionID
@@ -71,5 +72,6 @@ export const afterRun = Effect.fn("SessionNativeTitle.afterRun")(function* (inpu
       timestamp: yield* DateTime.now,
       title,
     })
+    return title
   }).pipe(Effect.ensuring(Effect.sync(() => inFlight.delete(input.sessionID))))
 })

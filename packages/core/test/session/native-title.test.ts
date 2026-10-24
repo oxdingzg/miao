@@ -71,7 +71,7 @@ describe("SessionNativeTitle", () => {
         model: Model.make({ id: "test-model", provider: "test", route: {} as never }),
         info: undefined as never,
       })
-    await Effect.runPromise(
+    const generated = await Effect.runPromise(
       SessionNativeTitle.afterRun({
         sessionID: info0.id,
         prompt: "Fix the login flake",
@@ -89,6 +89,7 @@ describe("SessionNativeTitle", () => {
     )
     expect(published).toHaveLength(1)
     expect(published[0]!.title).toBe("Fix the login flake")
+    expect(generated).toBe("Fix the login flake")
   })
 
   test("skips sessions whose title was set on purpose", async () => {
