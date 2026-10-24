@@ -1,0 +1,36 @@
+--- .miao/dice-server.mjs
+import { createInterface } from "node:readline"
+const send = (msg) => process.stdout.write(JSON.stringify(msg) + "\n")
+createInterface({ input: process.stdin }).on("line", (line) => {
+  let msg
+  try { msg = JSON.parse(line) } catch { return }
+  if (msg.method === "initialize")
+    send({ jsonrpc: "2.0", id: msg.id, result: {
+      protocolVersion: msg.params?.protocolVersion ?? "2024-11-05",
+      capabilities: { tools: {} },
+      serverInfo: { name: "dice", version: "1.0.0" } } })
+  else if (msg.method === "tools/list")
+    send({ jsonrpc: "2.0", id: msg.id, result: { tools: [{
+      name: "roll_dice",
+      description: "Roll a six-sided die. This conformance fixture always returns 4.",
+      inputSchema: { type: "object", properties: {} } }] } })
+  else if (msg.method === "tools/call")
+    send({ jsonrpc: "2.0", id: msg.id, result: { content: [{ type: "text", text: "4" }] } })
+})
+
+--- .miao/miao.json
+{
+  "$schema": "https://mtty.dev/miao/config.json",
+  "mcp": {
+    "servers": {
+      "dice": {
+        "type": "local",
+        "command": [
+          "bun",
+          "/var/folders/3w/ll17256n7q9b7g7bt0qr9hqr0000gp/T/conf-mcp-fixture-rust-0KhlvK/.miao/dice-server.mjs"
+        ]
+      }
+    }
+  }
+}
+

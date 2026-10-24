@@ -1,0 +1,15 @@
+{
+  "scenario": "image-input",
+  "engine": "ts",
+  "model": "zhipuai-coding-plan/glm-4.6v",
+  "outcome": {
+    "status": "pass"
+  },
+  "sessionID": "ses_gfe5e949d3918ffeGHdSEArQNk",
+  "cost": 0,
+  "tokensIn": 13076,
+  "tokensOut": 7,
+  "stepFinishes": 1,
+  "tools": [],
+  "errors": []
+}

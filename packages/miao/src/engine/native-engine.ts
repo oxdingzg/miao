@@ -46,7 +46,8 @@ import { Permission } from "@miao/schema/permission"
 import { Database } from "@miao/core/database/database"
 import { EventV2 } from "@miao/core/event"
 import { AgentV2 } from "@miao/core/agent"
-import { LLMClient, type LLMClientService } from "@miao/llm"
+import { LLMClient } from "@miao/llm"
+import { llmClient } from "@miao/core/effect/app-node-platform"
 import { SessionNativeTitle } from "@miao/core/session/native-title"
 import { SessionRunnerModel } from "@miao/core/session/runner/model"
 import { memoMap } from "@miao/core/effect/memo-map"
@@ -757,6 +758,7 @@ const layer = Layer.effect(
     const layerScope = yield* Effect.scope
     const buildLocationRuntime = (location: Location.Ref) =>
       Layer.buildWithMemoMap(locations.get(location), memoMap, layerScope)
+    const llm = yield* LLMClient.Service
     const database = yield* Database.Service
     const events = yield* EventV2.Service
     const sessions = yield* SessionStore.Service
@@ -908,13 +910,13 @@ const layer = Layer.effect(
           Effect.gen(function* () {
             const runtime = yield* buildLocationRuntime(input.location)
             const locationContext = runtime as unknown as Context.Context<
-              LLMClientService | AgentV2.Service | EventV2.Service | SessionRunnerModel.Service
+              AgentV2.Service | EventV2.Service | SessionRunnerModel.Service
             >
             yield* SessionNativeTitle.afterRun({
               sessionID: input.sessionID,
               prompt: input.prompt,
               store: sessions,
-              llm: Context.get(locationContext, LLMClient.Service),
+              llm: llm,
               agents: Context.get(locationContext, AgentV2.Service),
               models: Context.get(locationContext, SessionRunnerModel.Service),
               events: Context.get(locationContext, EventV2.Service),
@@ -942,6 +944,7 @@ export const node = makeGlobalNode({
     EventV2.node,
     SessionStore.node,
     SessionOwnership.node,
+    llmClient,
   ],
 })
 

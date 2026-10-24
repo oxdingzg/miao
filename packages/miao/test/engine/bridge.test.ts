@@ -3,6 +3,7 @@ import {
   StatusBridge,
   ToolBridge,
   productToolID,
+  productToolInput,
   statusOf,
   translateApproval,
   translateApprovalResolved,
@@ -119,10 +120,28 @@ test("maps a committed assistant tool_use block to tool.called", () => {
 test("maps engine tool names to product tool ids", () => {
   expect(productToolID("read_file")).toBe("read")
   expect(productToolID("list_files")).toBe("read")
-  expect(productToolID("apply_patch")).toBe("apply-patch")
+  expect(productToolID("apply_patch")).toBe("apply_patch")
   expect(productToolID("run_command")).toBe("bash")
+  expect(productToolID("start_job")).toBe("bash")
+  expect(productToolID("job_status")).toBe("job_list")
+  expect(productToolID("job_list")).toBe("job_list")
+  expect(productToolID("job_wait")).toBe("job_wait")
+  expect(productToolID("cancel_job")).toBe("job_cancel")
+  expect(productToolID("monitor")).toBe("monitor")
+  expect(productToolID("task_list")).toBe("task_list")
   expect(productToolID("cron_list")).toBe("schedule")
+  expect(productToolID("mcp_dice_roll_dice")).toBe("mcp__dice__roll_dice")
+  expect(productToolID("mcp_dice_roll_dice_f03cf0c725b907c9894d9e5988840834")).toBe("mcp__dice__roll_dice")
   expect(productToolID("worker__echo")).toBe("custom")
+})
+
+test("projects start_job input into the product bash shape", () => {
+  expect(productToolInput("start_job", { argv: ["bash", "-c", "sleep 2"], timeout_ms: 1000 })).toEqual({
+    command: "sleep 2",
+    run_in_background: true,
+  })
+  expect(productToolInput("start_job", { argv: ["echo", "hi"] })).toEqual({ command: "echo hi", run_in_background: true })
+  expect(productToolInput("bash", { command: "ls" })).toEqual({ command: "ls" })
 })
 
 test("correlates tool.completed with its committed call", () => {

@@ -369,7 +369,10 @@ export const RunCommand = cmd({
         }
 
         const content = await (async () => {
-          if (local) return
+          // Local directories keep their file:// URL (the app can read them);
+          // regular files are inlined as base64 so every provider transport
+          // accepts the media part - openai-chat rejects file:// references.
+          if (local && isDirectory) return
           const handle = await open(resolvedPath, "r")
           try {
             const opened = await handle.stat()
@@ -392,12 +395,13 @@ export const RunCommand = cmd({
         })()
         const detected = FSUtil.mimeType(resolvedPath)
         const text = content?.toString("utf8")
-        const mime = local
-          ? isDirectory
-            ? "application/x-directory"
-            : "text/plain"
-          : content && text !== undefined && Buffer.from(text, "utf8").equals(content)
-            ? "text/plain"
+        const mime =
+          content === undefined
+            ? isDirectory
+              ? "application/x-directory"
+              : "text/plain"
+            : text !== undefined && Buffer.from(text, "utf8").equals(content)
+              ? "text/plain"
             : detected
 
         files.push({
