@@ -8,7 +8,7 @@ const DEFAULT_TITLE = /^(New session - |Child session - )\d{4}-\d{2}-\d{2}T\d{2}
 const MAX_LENGTH = 100
 
 /** True for the placeholder title Session creation assigns; anything else was set on purpose. */
-export const isDefault = (title: string) => DEFAULT_TITLE.test(title)
+export const isDefault = (title: string) => title === "New session" || DEFAULT_TITLE.test(title)
 
 /** Keeps the first non-empty line of a title-model reply, without reasoning blocks, capped like V1. */
 export const clean = (text: string) => {

@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test"
 import { LLMEvent, Model, type LLMRequest } from "@miao/llm"
+import { AgentV2 } from "@miao/core/agent"
 import { SessionNativeTitle } from "@miao/core/session/native-title"
 import { SessionRunnerModel } from "@miao/core/session/runner/model"
 import { SessionSchema } from "@miao/core/session/schema"
@@ -15,22 +16,15 @@ const llmStream = () =>
     LLMEvent.textEnd({ id: "1" }),
   ) as unknown as Stream.Stream<LLMEvent, never>
 
-const makeDeps = (
-  info: SessionSchema.Info,
-  resolve?: SessionRunnerModel.Interface["resolve"],
-) => {
+const makeDeps = (info: SessionSchema.Info, resolve?: SessionRunnerModel.Interface["resolve"]) => {
   const published: Array<{ readonly title: string }> = []
   const deps = {
     sessionID: "ses_title" as SessionID,
     prompt: "Fix the login flake",
     store: { get: () => Effect.succeed(info) },
-    llm: { stream: () => llmStream() },
+    llm: { stream: (_request: LLMRequest) => llmStream() },
     agents: {
-      get: () =>
-        Effect.succeed({
-          model: undefined,
-          system: "one line only",
-        } ),
+      get: () => Effect.succeed({ ...AgentV2.Info.empty(AgentV2.ID.make("title")), system: "one line only" }),
     },
     models: {
       resolve:
@@ -44,7 +38,7 @@ const makeDeps = (
     events: {
       publish: (
         definition: unknown,
-        payload: { readonly sessionID: SessionID; readonly timestamp: Date; readonly title: string },
+        payload: { readonly sessionID: SessionID; readonly timestamp: DateTime.Utc; readonly title: string },
       ) => {
         published.push(payload)
         return Effect.void
@@ -159,7 +153,8 @@ describe("SessionNativeTitle", () => {
         llm: { stream: () => llmStream() },
         agents: { get: () => Effect.succeed(undefined as never) },
         models: {
-          resolve: (() => Effect.fail(new Error("model unavailable"))) as unknown as SessionRunnerModel.Interface["resolve"],
+          resolve: (() =>
+            Effect.fail(new Error("model unavailable"))) as unknown as SessionRunnerModel.Interface["resolve"],
         },
         events: {
           publish: (definition: unknown, payload: { readonly title: string }) => {
@@ -171,4 +166,66 @@ describe("SessionNativeTitle", () => {
     )
     expect(published).toHaveLength(0)
   })
+})
+
+test("legacy bare native placeholders are titled", async () => {
+  const { deps, published } = makeDeps(info("New session"))
+  await Effect.runPromise(SessionNativeTitle.afterRun(deps))
+  expect(published[0]?.title).toBe("Fix the login flake")
+})
+
+test("an unavailable stored model falls back without carrying its credential pin", async () => {
+  const seen: Array<SessionSchema.Info> = []
+  const fixture = makeDeps(info("New session"))
+  fixture.deps.models.resolve = (session) => {
+    seen.push(session)
+    return session.model
+      ? Effect.fail(new SessionRunnerModel.ModelNotSelectedError({ sessionID: session.id }))
+      : Effect.succeed({
+          model: Model.make({ id: "default-model", provider: "fixture", route: {} as never }),
+          info: undefined as never,
+        })
+  }
+  await Effect.runPromise(SessionNativeTitle.afterRun(fixture.deps))
+  expect(fixture.published).toHaveLength(1)
+  expect(seen.at(-1)?.model).toBeUndefined()
+  expect(seen.at(-1)?.credentialID).toBeUndefined()
+})
+
+test("a failed auxiliary title model falls back to the session model", async () => {
+  const fixture = makeDeps(info("New session"))
+  fixture.deps.agents.get = () =>
+    Effect.succeed({ model: { providerID: "fixture", id: "bad-title" }, system: "one line only" }) as never
+  fixture.deps.models.resolve = (session) =>
+    Effect.succeed({
+      model: Model.make({ id: session.model!.id, provider: "fixture", route: {} as never }),
+      info: undefined as never,
+    })
+  const requests: string[] = []
+  fixture.deps.llm.stream = (request: LLMRequest) => {
+    requests.push(request.model.id)
+    return request.model.id === "bad-title" ? Stream.empty : llmStream()
+  }
+  await Effect.runPromise(SessionNativeTitle.afterRun(fixture.deps))
+  expect(requests).toEqual(["bad-title", "test-model"])
+  expect(fixture.published).toHaveLength(1)
+})
+
+test("a manual rename while the title model runs is preserved", async () => {
+  const fixture = makeDeps(info("New session"))
+  const state = { reads: 0 }
+  fixture.deps.store.get = () => Effect.sync(() => info(state.reads++ === 0 ? "New session" : "User title"))
+  await Effect.runPromise(SessionNativeTitle.afterRun(fixture.deps))
+  expect(fixture.published).toHaveLength(0)
+})
+
+test("concurrent title requests share the guard before asynchronous store reads", async () => {
+  const fixture = makeDeps(info("New session"))
+  fixture.deps.store.get = () => Effect.yieldNow.pipe(Effect.as(info("New session")))
+  await Effect.runPromise(
+    Effect.all([SessionNativeTitle.afterRun(fixture.deps), SessionNativeTitle.afterRun(fixture.deps)], {
+      concurrency: "unbounded",
+    }),
+  )
+  expect(fixture.published).toHaveLength(1)
 })

@@ -23,3 +23,11 @@ test("an auxiliary title call carries its provider options into the request", as
   expect(title).toBeUndefined()
   expect(seen[0]?.providerOptions).toEqual({ "@ai-sdk/openai-compatible": { reasoningEffort: "low" } })
 })
+
+
+test("native and catalog creation placeholders use the same title predicate", () => {
+  expect(SessionTitle.isDefault("New session")).toBe(true)
+  expect(SessionTitle.isDefault("New session - 2026-10-23T00:00:00.000Z")).toBe(true)
+  expect(SessionTitle.isDefault("New session planning")).toBe(false)
+  expect(SessionTitle.isDefault("Fix session titles")).toBe(false)
+})
