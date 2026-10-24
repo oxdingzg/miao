@@ -234,7 +234,7 @@ This optional project configuration combines continued todo work, a scheduling b
 
 `compaction.max_context` works in a smaller window than the model declares — for cost, latency, or cache churn. It takes one value for every model or a map keyed by `"<providerID>/<modelID>"` (globs allowed, longest key wins): a token count, a `"300K"` / `"1.5M"` shorthand, or `"50%"` of the model window. The value is clamped to the model's real window and never raises it; compaction, context notices, and overflow recovery all plan against the clamped window. Because a config merge cannot delete a key, `0` restores the model default.
 
-Content that a compaction removed from the model window stays durable on disk. The `recall` tool searches that history by keyword, so an agent can recover a dropped detail instead of re-reading files or repeating finished work.
+Content that a compaction removed from the model window stays durable on disk. The `recall` tool searches that history by keyword, so an agent can recover a dropped detail instead of re-reading files or repeating finished work, and the `history` tool reads full earlier messages in bounded, position-addressed pages (`history(from: …)` continues a page).
 
 ## 6. Runtime status and ongoing work
 

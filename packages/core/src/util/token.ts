@@ -42,6 +42,20 @@ export const parseQuantity = (input: number | string, relativeTo?: number): numb
   return Math.floor(Number.parseFloat(match[1]) * scale)
 }
 
+/**
+ * Bound injected text to a token budget. The cut follows the character/token
+ * ratio and snaps back to the last line break, so the remainder starts on a
+ * clean line, and `note` names the cut for the model. Tokens are estimated by
+ * characters — a prompt budget, not a guarantee.
+ */
+export const truncate = (text: string, budget: number, note: (total: number) => string): { text: string; total: number } => {
+  const total = estimate(text)
+  if (total <= budget) return { text, total }
+  const cut = Math.max(0, Math.floor(text.length * (budget / total) * 0.95))
+  const line = text.lastIndexOf("\n", cut)
+  return { text: `${text.slice(0, line > 0 ? line : cut)}\n\n${note(total)}`, total }
+}
+
 // Providers tokenize attachments by resolution and cap the per-image cost, so
 // inline base64 length is the wrong unit for a context budget: a screenshot is a
 // few thousand base64 characters per real token. Charging a flat ceiling keeps

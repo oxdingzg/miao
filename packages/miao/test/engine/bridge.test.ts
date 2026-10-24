@@ -4,6 +4,7 @@ import {
   ToolBridge,
   productToolID,
   productToolInput,
+  productToolResult,
   statusOf,
   translateApproval,
   translateApprovalResolved,
@@ -135,6 +136,43 @@ test("maps engine tool names to product tool ids", () => {
   expect(productToolID("worker__echo")).toBe("custom")
 })
 
+test("projects engine shell results into the product bash shape", () => {
+  expect(
+    productToolResult("bash", {
+      stdout: "line one\n",
+      stderr: "",
+      exit_code: 0,
+      signal: null,
+      reason: "completed",
+      output_incomplete: false,
+      sandbox_profile: "workspace_write",
+      enforcement_required: true,
+      network_allowed: true,
+    }),
+  ).toEqual({
+    structured: {
+      exit: 0,
+      truncated: false,
+      sandbox: { state: "sandboxed", backend: "workspace_write", network: true, denied: [], approved: [] },
+    },
+    text: "line one\n[exit code 0]",
+  })
+  expect(productToolResult("bash", "plain output")).toEqual({ structured: {}, text: "plain output" })
+})
+
+test("unwraps engine session-state mutations to the tool contract", () => {
+  const todos = [{ id: "t1", content: "first", status: "pending", priority: "high" }]
+  expect(productToolResult("todowrite", { kind: "todos", revision: 7, value: { todos }, duplicate: false })).toEqual({
+    structured: { todos },
+    text: JSON.stringify(todos, null, 2),
+  })
+  const goal = { objective: "ship", status: "active" }
+  expect(productToolResult("goal", { kind: "goal", revision: 3, value: goal, duplicate: false })).toEqual({
+    structured: goal,
+    text: JSON.stringify(goal, null, 2),
+  })
+})
+
 test("projects start_job input into the product bash shape", () => {
   expect(productToolInput("start_job", { argv: ["bash", "-c", "sleep 2"], timeout_ms: 1000 })).toEqual({
     command: "sleep 2",
@@ -142,6 +180,31 @@ test("projects start_job input into the product bash shape", () => {
   })
   expect(productToolInput("start_job", { argv: ["echo", "hi"] })).toEqual({ command: "echo hi", run_in_background: true })
   expect(productToolInput("bash", { command: "ls" })).toEqual({ command: "ls" })
+})
+
+test("tool.completed for a shell call carries the projected result", () => {
+  const bridge = new ToolBridge()
+  bridge.note({
+    session_id: "ses_abc",
+    seq: 4,
+    kind: "message.committed",
+    data: { role: "assistant", content: [{ type: "tool_use", id: "c1", name: "run_command", input: {} }] },
+  })
+  const success = bridge.result({
+    session_id: "ses_abc",
+    seq: 6,
+    kind: "tool.completed",
+    data: {
+      call_id: "c1",
+      result: { stdout: "ok\n", stderr: "", exit_code: 0, reason: "completed", output_incomplete: false },
+      is_error: false,
+    },
+  })
+  expect(success?.type).toBe("session.next.tool.success")
+  if (success?.type === "session.next.tool.success") {
+    expect(success.content[0]).toEqual({ type: "text", text: "ok\n[exit code 0]" })
+    expect(success.structured).toMatchObject({ exit: 0 })
+  }
 })
 
 test("correlates tool.completed with its committed call", () => {
