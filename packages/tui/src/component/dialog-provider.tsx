@@ -63,6 +63,7 @@ export function providerOptions(list: { id: string; name: string }[]): ProviderO
           opencode: "(Recommended)",
           anthropic: "(API key)",
           openai: "(ChatGPT Plus/Pro or API key)",
+          google: "(API key or Google browser login)",
         }[provider.id],
         category: provider.id in PROVIDER_PRIORITY ? "Popular" : "Providers",
       })),
