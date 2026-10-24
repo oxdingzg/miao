@@ -671,24 +671,45 @@ export function translateReasoning(event: EngineEvent): SessionReasoningEnded[] 
  * `session.next.compaction.started`/`ended` pair, so native compaction is
  * visible in every client instead of silently rewriting context. */
 export function translateCompaction(event: EngineEvent):
-  | { type: "session.next.compaction.started"; data: { status: string } }
+  | {
+      type: "session.next.compaction.started"
+      data: {
+        sessionID: SessionID
+        timestamp: DateTime.Utc
+        messageID: SessionMessage.ID
+        reason: "auto"
+      }
+    }
   | {
       type: "session.next.compaction.ended"
-      data: { messageID: SessionMessage.ID; reason: string }
+      data: {
+        sessionID: SessionID
+        timestamp: DateTime.Utc
+        messageID: SessionMessage.ID
+        reason: "auto"
+        text: string
+        recent: string
+      }
     }
   | undefined {
-  if (event.kind !== "pre_compact" && event.kind !== "post_compact") return undefined
+  if (event.kind !== "pre_compact" && event.kind !== "history.compacted") return undefined
   if (!hasRecordedTime(event)) return undefined
   const data = event.data
   if (typeof data !== "object" || data === null) return undefined
   const compactionID = readNonEmptyString(data, "compaction_id")
   if (compactionID === undefined) return undefined
-  if (event.kind === "pre_compact") {
-    return { type: "session.next.compaction.started", data: { status: "compacting context" } }
+  const base = {
+    sessionID: adoptSession(event.session_id),
+    timestamp: eventTimestamp(event),
+    messageID: SessionMessage.ID.make(`msg_compaction_${compactionID}`),
+    reason: "auto" as const,
   }
+  if (event.kind === "pre_compact") return { type: "session.next.compaction.started", data: base }
+  const summary = readNonEmptyString(data, "summary")
+  if (summary === undefined) return undefined
   return {
     type: "session.next.compaction.ended",
-    data: { messageID: SessionMessage.ID.make(`msg_compaction_${compactionID}`), reason: "auto" },
+    data: { ...base, text: summary, recent: "" },
   }
 }
 
