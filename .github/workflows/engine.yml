@@ -86,11 +86,14 @@ jobs:
         with:
           install-flags: --frozen-lockfile --ignore-scripts
 
-      - name: Verify native ACP with the independent client SDK
+      - name: Verify native product contracts and independent ACP SDK
         working-directory: packages/miao
         env:
           MIAO_ENGINE_BIN: ${{ github.workspace }}/crates/miao-engine/target/debug/miao-engine
-        run: bun test test/engine/native-acp-sdk.test.ts test/engine/native-acp-capabilities.test.ts test/engine/native-host-config.test.ts
+        run: |
+          test -f "$MIAO_ENGINE_BIN"
+          "$MIAO_ENGINE_BIN" --version
+          bun test --timeout 120000 test/engine/native-*.test.ts
 
       - name: Verify accuracy checks detect injected faults
         if: matrix.os == 'ubuntu-latest'
@@ -128,6 +131,21 @@ jobs:
 
       - name: Credential daemon clippy
         run: cargo clippy --locked --manifest-path ../miao-credential/Cargo.toml --all-targets -- -D warnings
+
+      - name: Setup product client runtime
+        uses: ./.github/actions/setup-bun
+        with:
+          install-flags: --frozen-lockfile --ignore-scripts
+
+      - name: Verify native and TypeScript long tasks through actual HTTP
+        working-directory: packages/miao
+        env:
+          MIAO_ENGINE_BIN: ${{ github.workspace }}/crates/miao-engine/target/debug/miao-engine.exe
+        run: |
+          test -f "$MIAO_ENGINE_BIN"
+          "$MIAO_ENGINE_BIN" --version
+          bun test --timeout 120000 test/engine/native-default-parity-http.test.ts test/engine/native-allowance-http.test.ts test/engine/native-explicit-route-http.test.ts test/engine/native-product-policy-http.test.ts
+
 
   artifacts:
     name: engine artifact (${{ matrix.target }})

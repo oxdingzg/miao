@@ -35,7 +35,10 @@ process.env["XDG_DATA_HOME"] = path.join(dir, "share")
 process.env["XDG_CACHE_HOME"] = path.join(dir, "cache")
 process.env["XDG_CONFIG_HOME"] = path.join(dir, "config")
 process.env["XDG_STATE_HOME"] = path.join(dir, "state")
-process.env["MIAO_MODELS_PATH"] = path.join(import.meta.dir, "tool", "fixtures", "models-api.json")
+const modelsFixture = path.resolve(import.meta.dir, "../../core/test/plugin/fixtures/models.json")
+await fs.access(modelsFixture)
+process.env["MIAO_MODELS_PATH"] = modelsFixture
+process.env["MIAO_DISABLE_MODELS_FETCH"] = "true"
 process.env["MIAO_EXPERIMENTAL_EVENT_SYSTEM"] = "true"
 process.env["MIAO_EXPERIMENTAL_WORKSPACES"] = "true"
 
