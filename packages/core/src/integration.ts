@@ -1,5 +1,7 @@
 export * as Integration from "./integration"
 
+import { KeyedMutex } from "./effect/keyed-mutex"
+
 import { makeLocationNode } from "./effect/app-node"
 import {
   Cause,
@@ -268,6 +270,7 @@ export const locationLayer = Layer.effect(
     const events = yield* EventV2.Service
     const fsys = yield* FSUtil.Service
     const scope = yield* Scope.Scope
+    const refreshLocks = KeyedMutex.makeUnsafe<Credential.ID>()
     const attempts = SynchronizedRef.makeUnsafe(new Map<AttemptID, AttemptEntry>())
     const state = State.create<Data, Draft>({
       initial: () => ({ integrations: new Map<ID, Entry>() }),
@@ -477,6 +480,7 @@ export const locationLayer = Layer.effect(
             const key = process.env[connection.name]
             return key ? Credential.Key.make({ type: "key", key }) : undefined
           }
+          return yield* refreshLocks.withLock(connection.id)(Effect.gen(function* () {
           const credential = yield* credentials.get(connection.id)
           if (!credential) return undefined
           const socket = CredentialDaemon.socket(credential.value)
@@ -514,8 +518,15 @@ export const locationLayer = Layer.effect(
               }),
             ),
           )
+          const current = yield* credentials.get(credential.id)
+          if (!current) return undefined
+          if (current.value.type !== "oauth" || CredentialDaemon.socket(current.value) ||
+              current.value.methodID !== credential.value.methodID || current.value.refresh !== credential.value.refresh ||
+              current.value.access !== credential.value.access || current.value.expires !== credential.value.expires)
+            return yield* new AuthorizationError({ cause: new Error("OAuth credential changed during refresh; retry with the current connection") })
           yield* credentials.update(credential.id, { value })
           return value
+          }))
         }),
         key: Effect.fn("Integration.connection.key")(function* (input) {
           const method = state
