@@ -24,7 +24,7 @@ describe("native model labels", () => {
         { model: { providerID: "native-engine", id: "vendor/org/model" }, protocol: "openai-chat", wireModel: "wire" },
         [provider],
       ),
-    ).toEqual({ provider: "Vendor", providerID: "vendor", model: "wire" })
+    ).toEqual({ provider: "Vendor", providerID: "vendor", model: "wire", modelID: "org/model" })
     for (const ref of [
       { providerID: "native-engine-default", id: "default" },
       { providerID: "native-engine", id: "account/hash" },
@@ -39,7 +39,7 @@ describe("native model labels", () => {
           },
           [provider],
         ),
-      ).toEqual({ provider: "Vendor", providerID: "vendor", model: "wire" })
+      ).toEqual({ provider: "Vendor", providerID: "vendor", model: "wire", modelID: "org/model" })
   })
   test("shows the actual host wire model for defaults and opaque account routes", () => {
     expect(
@@ -51,7 +51,7 @@ describe("native model labels", () => {
         },
         [],
       ),
-    ).toEqual({ provider: "gemini", providerID: undefined, model: "gemini-flash" })
+    ).toEqual({ provider: "gemini", providerID: undefined, model: "gemini-flash", modelID: undefined })
     expect(
       nativeModelLabel(
         { model: { providerID: "native-engine", id: "account/hash" }, protocol: "openai-chat", wireModel: "flash" },

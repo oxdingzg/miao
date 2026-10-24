@@ -80,3 +80,15 @@ test("status line reports remaining capacity and keeps unknown or failed request
     ]).remaining,
   ).toBe(0)
 })
+
+test("native usage estimates capacity only for the same known served model", () => {
+  const model = { providerID: "host", id: "served", window: 10_000 }
+  const message = { ...successful, model: { providerID: model.providerID, id: model.id } }
+  expect(remainingContext([message], model)).toEqual({ label: "Context ~89% left", remaining: 89 })
+  expect(remainingContext([message], { ...model, id: "different" }).remaining).toBeUndefined()
+  expect(remainingContext([message], { ...model, window: 0 }).remaining).toBeUndefined()
+  expect(remainingContext([message, pending], model).remaining).toBe(20)
+  expect(
+    remainingContext([{ ...message, error: { type: "unknown", message: "rejected" } }], model).remaining,
+  ).toBeUndefined()
+})

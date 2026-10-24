@@ -312,6 +312,8 @@ export const { use: useLocal, provider: LocalProvider } = createSimpleContext({
             return {
               provider: label?.provider ?? "Loading provider…",
               providerID: label?.providerID,
+              modelID: label?.modelID,
+              wireModel: selected ? { providerID: selected.protocol, id: selected.wireModel } : undefined,
               model: label?.model ?? model?.id ?? "Loading model…",
               reasoning: false,
             }
@@ -321,6 +323,8 @@ export const { use: useLocal, provider: LocalProvider } = createSimpleContext({
             return {
               provider: "Connect a provider",
               providerID: undefined,
+              modelID: undefined,
+              wireModel: undefined,
               model: "No provider selected",
               reasoning: false,
             }
@@ -330,6 +334,8 @@ export const { use: useLocal, provider: LocalProvider } = createSimpleContext({
           return {
             provider: provider?.name ?? value.providerID,
             providerID: value.providerID,
+            modelID: value.modelID,
+            wireModel: undefined,
             model: info?.name ?? value.modelID,
             reasoning: info?.capabilities?.reasoning ?? false,
           }

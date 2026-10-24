@@ -1,3 +1,4 @@
+import { Model } from "../util/model"
 import { createMemo, For } from "solid-js"
 import { useTerminalDimensions } from "@opentui/solid"
 import { useLocal } from "../context/local"
@@ -19,7 +20,16 @@ export function StatusLine(props: { sessionID?: string; directory?: string; newW
   const dialog = useDialog()
   const { theme } = useTheme()
   const session = createMemo(() => (props.sessionID ? sync.session.get(props.sessionID) : undefined))
-  const context = createMemo(() => remainingContext(props.sessionID ? (sync.data.message[props.sessionID] ?? []) : []))
+  const context = createMemo(() => {
+    const selected = local.model.parsed()
+    const model = Model.get(sync.data.provider, selected.providerID, selected.modelID)
+    return remainingContext(
+      props.sessionID ? (sync.data.message[props.sessionID] ?? []) : [],
+      model
+        ? { ...(selected.wireModel ?? { providerID: model.providerID, id: model.id }), window: model.limit.context }
+        : undefined,
+    )
+  })
   const contextColor = createMemo(() => {
     const remaining = context().remaining
     if (remaining === undefined) return theme.textMuted
