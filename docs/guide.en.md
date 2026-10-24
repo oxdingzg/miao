@@ -98,7 +98,7 @@ overrides the path. Main fields:
 | `lsp`                                                             | language servers: `true` enables all built-ins, `false` disables, or a per-name record. **Omitted = all disabled** |
 | `formatter`                                                       | formatters: `true` enables built-ins, or a per-name record with commands                                           |
 | `mcp`                                                             | MCP servers (local stdio / remote streamable-http)                                                                 |
-| `compaction`                                                      | `prune` old tool output, `threshold` ratio, `summarize_small`, `hot_prefix`, `precise_tokens`                      |
+| `compaction`                                                      | `prune` old tool output, `threshold` ratio, `max_context` per-model window, `summarize_small`, `hot_prefix`, `precise_tokens` |
 | `cache`                                                           | `ttl_seconds` extends the prompt-cache TTL                                                                         |
 | `cost`                                                            | `budget_usd` per-session cost budget (warns and stops continuation)                                                |
 | `loop`                                                            | autonomous continuation (see §5.8)                                                                                 |
@@ -231,6 +231,8 @@ V2's `list_sessions` discovers project peers, and `send_message` accepts a sessi
 ```
 
 This optional project configuration combines continued todo work, a scheduling budget, old-output pruning, and a bound on each tool's model-visible output. A budget does not interrupt an in-flight turn and is not a billing cap. Output files are temporary; the bounded transcript is the durable record. Tool-output pruning is on by default (disable with `"prune": false`). Automatic compaction triggers at `threshold` (default `0.9`) of the window using the provider's reported prompt tokens, so it runs before the window fills rather than at the last moment. Proactive compaction summarizes once over the request prefix, so the provider serves it from its prompt cache, and falls back to staged recovery when the prefix no longer has room for the instruction; set `"hot_prefix": false` to force the staged strategy. Small-model summaries stay opt-in: enable them after checking that the resolved cheap model suits your provider and workload.
+
+`compaction.max_context` works in a smaller window than the model declares — for cost, latency, or cache churn. It takes one value for every model or a map keyed by `"<providerID>/<modelID>"` (globs allowed, longest key wins): a token count, a `"300K"` / `"1.5M"` shorthand, or `"50%"` of the model window. The value is clamped to the model's real window and never raises it; compaction, context notices, and overflow recovery all plan against the clamped window. Because a config merge cannot delete a key, `0` restores the model default.
 
 Content that a compaction removed from the model window stays durable on disk. The `recall` tool searches that history by keyword, so an agent can recover a dropped detail instead of re-reading files or repeating finished work.
 
