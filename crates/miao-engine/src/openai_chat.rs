@@ -356,6 +356,9 @@ impl Parser for ChatState {
             Frame::Json(value) => value,
         };
         if let Some(error) = event.get("error") {
+            if !error.is_object() {
+                return Err(invalid());
+            }
             let message = error
                 .get("message")
                 .and_then(Value::as_str)
@@ -364,7 +367,14 @@ impl Parser for ChatState {
                 .chars()
                 .take(2048)
                 .collect::<String>();
-            return Err(ProviderError::Stream(message));
+            // A valid provider rejection is not malformed stream syntax.
+            // Preserve status from the product gateway without replaying a
+            // possibly partially executed request or switching accounts.
+            let message = match error.get("status").and_then(Value::as_u64) {
+                Some(status @ 400..=599) => format!("HTTP {status}: {message}"),
+                _ => message,
+            };
+            return Err(ProviderError::Rejected(message));
         }
         if let Some(usage) = event.get("usage").filter(|v| v.is_object()) {
             self.usage = usage.clone();

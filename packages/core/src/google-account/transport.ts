@@ -153,7 +153,7 @@ export function modelFetch(
       signal: request.signal,
       redirect: "error",
     })
-    if (!response.ok) throw new GoogleAccount.RequestError("model request", response.status)
+    if (!response.ok) throw await rejection(response, "model request")
     if (!streaming) {
       const data: unknown = await response.json()
       if (!isRecord(data) || !isRecord(data.response)) throw new Error("Google returned an invalid generation envelope")
@@ -191,4 +191,41 @@ export function modelFetch(
       .pipeThrough(new TextEncoderStream())
     return new Response(body, { headers: { "content-type": "text/event-stream", "cache-control": "no-store" } })
   }, { preconnect: () => {} })
+}
+
+// Preserve machine-readable rejection evidence without exposing arbitrary
+// provider text, which can contain credential or project details.
+async function rejection(response: Response, operation: string) {
+  const body: unknown = await response.json().catch(() => undefined)
+  const details = isRecord(body) && isRecord(body.error) && Array.isArray(body.error.details) ? body.error.details : []
+  const reason = details
+    .flatMap((entry) => (isRecord(entry) && typeof entry.reason === "string" ? [entry.reason] : []))
+    .find((value) =>
+      [
+        "RATE_LIMIT_EXCEEDED",
+        "RATE_LIMITED",
+        "QUOTA_EXHAUSTED",
+        "QUOTA_EXCEEDED",
+        "RESOURCE_EXHAUSTED",
+        "MODEL_CAPACITY_EXHAUSTED",
+        "CAPACITY_EXHAUSTED",
+      ].includes(value),
+    )
+  const retry = response.headers.get("retry-after")
+  const headerDelay =
+    retry === null ? undefined : /^\d+(?:\.\d+)?$/.test(retry) ? Number(retry) * 1000 : Date.parse(retry) - Date.now()
+  const detailDelay = details.flatMap((entry) => {
+    if (!isRecord(entry)) return []
+    const value = typeof entry.retryDelay === "string" ? entry.retryDelay : isRecord(entry.metadata) ? entry.metadata.quotaResetDelay : undefined
+    if (typeof value !== "string") return []
+    const match = /^(\d+(?:\.\d+)?)s$/.exec(value)
+    return match ? [Number(match[1]) * 1000] : []
+  })[0]
+  const delay = headerDelay ?? detailDelay
+  return new GoogleAccount.RequestError(
+    operation,
+    response.status,
+    reason,
+    delay !== undefined && Number.isFinite(delay) && delay >= 0 && delay <= 86_400_000 ? delay : undefined,
+  )
 }
