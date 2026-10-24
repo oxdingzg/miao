@@ -16,6 +16,7 @@ import { FSUtil } from "../fs-util"
 import { Location } from "../location"
 import { LocationMutation } from "../location-mutation"
 import { AppProcess } from "../process"
+import { BashTokenPipeline } from "./bash-token-pipeline"
 import { ToolOutputStore } from "../tool-output-store"
 import { BackgroundJob } from "../background-job"
 import { PermissionV2 } from "../permission"
@@ -726,8 +727,9 @@ const executionLayer = Layer.effect(
               }
             }
 
-            const output =
+            const rawOutput =
               (outcome.result.output ? AppProcess.decodeOutput(outcome.result.output) : "") || "(no output)"
+            const output = BashTokenPipeline.clean(rawOutput, { command: input.command })
             const notice = outcome.result.outputTruncated
               ? outcome.result.outputPath === undefined
                 ? "[output capture truncated at the in-memory safety limit]"
