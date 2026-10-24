@@ -1459,6 +1459,7 @@ export function Session() {
                     ref={bind}
                   >
                     <Prompt
+                      compactFooter
                       visible={visible()}
                       ref={bind}
                       disabled={disabled()}

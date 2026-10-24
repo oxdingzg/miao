@@ -5,6 +5,7 @@ export function statusSegments(
     directory: string
     branch?: string
     agent?: string
+    shortcut?: string
   },
   width: number,
 ) {
@@ -19,6 +20,16 @@ export function statusSegments(
     { key: "directory", text: input.directory, min: 12, max: 48 },
     ...(input.branch ? [{ key: "branch", text: input.branch, min: 10, max: 28 }] : []),
     ...(input.agent ? [{ key: "agent", text: input.agent, min: 10, max: 24 }] : []),
+    ...(input.shortcut
+      ? [
+          {
+            key: "shortcut",
+            text: input.shortcut,
+            min: Bun.stringWidth(input.shortcut),
+            max: Bun.stringWidth(input.shortcut),
+          },
+        ]
+      : []),
   ].map((item) => ({
     ...item,
     min: Math.min(item.min, Bun.stringWidth(item.text)),
@@ -26,7 +37,7 @@ export function statusSegments(
   }))
   // Keep the model and context first; drop secondary details before wrapping.
   const shown =
-    [items, items.slice(0, 4), items.slice(0, 3), items.slice(0, 2)].find(
+    [items, items.slice(0, 5), items.slice(0, 4), items.slice(0, 3), items.slice(0, 2)].find(
       (list) => list.reduce((total, item) => total + item.min, 0) + (list.length - 1) * 3 <= width,
     ) ?? items.slice(0, 1)
   const remaining = width - shown.reduce((total, item) => total + item.min, 0) - (shown.length - 1) * 3

@@ -7,6 +7,7 @@ const input = {
   directory: "~/workspace/code/github/miao",
   branch: "fix/native-model-state",
   agent: "Build · 2/4 agents",
+  shortcut: "ctrl+p commands",
 }
 
 test("wide status lines show model, capacity, directory, branch and agents in order", () => {

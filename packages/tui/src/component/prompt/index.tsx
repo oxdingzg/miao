@@ -74,6 +74,7 @@ export type PromptProps = {
   onSubmit?: () => void
   ref?: (ref: PromptRef | undefined) => void
   hint?: JSX.Element
+  compactFooter?: boolean
   right?: JSX.Element
   showPlaceholder?: boolean
   placeholders?: {
@@ -1610,135 +1611,154 @@ export function Prompt(props: PromptProps) {
             }
           />
         </box>
-        <box width="100%" flexDirection="row" justifyContent="space-between">
-          <Switch>
-            <Match when={status().type !== "idle" || compaction()}>
-              <box
-                flexDirection="row"
-                gap={1}
-                flexGrow={1}
-                justifyContent={status().type === "retry" ? "space-between" : "flex-start"}
-              >
-                <box flexShrink={0} flexDirection="row" gap={1}>
-                  <box marginLeft={1}>
-                    <Show when={kv.get("animations_enabled", true)} fallback={<text fg={theme.textMuted}>[⋯]</text>}>
-                      <ScannerSpinner color={spinnerDef().color} frames={spinnerDef().frames} />
-                    </Show>
-                  </box>
-                  <box flexDirection="row" gap={1} flexShrink={0}>
-                    <Show when={compaction()} fallback={<ProviderRetryStatus status={status()} />}>
-                      <text fg={theme.warning}>Compacting context</text>
-                    </Show>
-                  </box>
-                </box>
-                <Show
-                  when={
-                    (status().type === "busy" || compaction()) && turnElapsed() !== null && (turnElapsed() ?? 0) > 0
-                  }
+        <Show
+          when={
+            !props.compactFooter ||
+            status().type !== "idle" ||
+            compaction() ||
+            workspace.notice() ||
+            workspace.label() ||
+            move.progress() ||
+            move.pendingNew() ||
+            props.hint ||
+            editorContextLabelState() !== "none" ||
+            store.mode === "shell"
+          }
+        >
+          <box width="100%" flexDirection="row" justifyContent="space-between">
+            <Switch>
+              <Match when={status().type !== "idle" || compaction()}>
+                <box
+                  flexDirection="row"
+                  gap={1}
+                  flexGrow={1}
+                  justifyContent={status().type === "retry" ? "space-between" : "flex-start"}
                 >
-                  <text fg={theme.textMuted}>{Locale.duration(turnElapsed())}</text>
-                </Show>
-                <text fg={theme.text}>
-                  esc <span style={{ fg: theme.textMuted }}>interrupt</span>
-                </text>
-              </box>
-            </Match>
-            <Match when={workspace.notice()}>
-              {(notice) => (
-                <box paddingLeft={3}>
-                  <text fg={theme.accent}>{notice()}</text>
-                </box>
-              )}
-            </Match>
-            <Match when={workspace.label()}>
-              {(label) => (
-                <box paddingLeft={3} flexDirection="row" gap={1}>
-                  <Show when={workspace.creating()}>
-                    <Spinner color={theme.accent} />
+                  <box flexShrink={0} flexDirection="row" gap={1}>
+                    <box marginLeft={1}>
+                      <Show when={kv.get("animations_enabled", true)} fallback={<text fg={theme.textMuted}>[⋯]</text>}>
+                        <ScannerSpinner color={spinnerDef().color} frames={spinnerDef().frames} />
+                      </Show>
+                    </box>
+                    <box flexDirection="row" gap={1} flexShrink={0}>
+                      <Show when={compaction()} fallback={<ProviderRetryStatus status={status()} />}>
+                        <text fg={theme.warning}>Compacting context</text>
+                      </Show>
+                    </box>
+                  </box>
+                  <Show
+                    when={
+                      (status().type === "busy" || compaction()) && turnElapsed() !== null && (turnElapsed() ?? 0) > 0
+                    }
+                  >
+                    <text fg={theme.textMuted}>{Locale.duration(turnElapsed())}</text>
                   </Show>
-                  <text fg={workspace.creating() ? theme.accent : theme.text}>
-                    {(() => {
-                      const item = label()
-                      if (item.type === "new") {
-                        if (workspace.creating())
-                          return `Creating ${item.workspaceType}${".".repeat(workspace.creatingDots())}`
+                  <text fg={theme.text}>
+                    esc <span style={{ fg: theme.textMuted }}>interrupt</span>
+                  </text>
+                </box>
+              </Match>
+              <Match when={workspace.notice()}>
+                {(notice) => (
+                  <box paddingLeft={3}>
+                    <text fg={theme.accent}>{notice()}</text>
+                  </box>
+                )}
+              </Match>
+              <Match when={workspace.label()}>
+                {(label) => (
+                  <box paddingLeft={3} flexDirection="row" gap={1}>
+                    <Show when={workspace.creating()}>
+                      <Spinner color={theme.accent} />
+                    </Show>
+                    <text fg={workspace.creating() ? theme.accent : theme.text}>
+                      {(() => {
+                        const item = label()
+                        if (item.type === "new") {
+                          if (workspace.creating())
+                            return `Creating ${item.workspaceType}${".".repeat(workspace.creatingDots())}`
+                          return (
+                            <>
+                              Workspace <span style={{ fg: theme.textMuted }}>(new {item.workspaceType})</span>
+                            </>
+                          )
+                        }
                         return (
                           <>
-                            Workspace <span style={{ fg: theme.textMuted }}>(new {item.workspaceType})</span>
+                            Workspace <span style={{ fg: theme.textMuted }}>{item.workspaceName}</span>
                           </>
                         )
-                      }
-                      return (
-                        <>
-                          Workspace <span style={{ fg: theme.textMuted }}>{item.workspaceName}</span>
-                        </>
-                      )
-                    })()}
-                  </text>
-                </box>
-              )}
-            </Match>
-            <Match when={move.progress()}>
-              {(progress) => (
-                <box paddingLeft={3}>
-                  <Spinner color={theme.accent}>
-                    {progress()}
-                    <span style={{ fg: theme.textMuted }}>{".".repeat(move.creatingDots())}</span>
-                  </Spinner>
-                </box>
-              )}
-            </Match>
-            <Match when={move.pendingNew()}>
-              <box paddingLeft={3}>
-                <text fg={theme.accent}>(new working copy)</text>
-              </box>
-            </Match>
-            <Match when={true}>
-              {props.hint ?? (
-                <Show when={props.sessionID} fallback={<text />}>
-                  <box marginLeft={1}>
-                    <text fg={theme.textMuted}>{location()?.directory ?? paths.cwd}</text>
+                      })()}
+                    </text>
                   </box>
-                </Show>
-              )}
-            </Match>
-          </Switch>
-          <Show when={status().type !== "retry"}>
-            <box gap={2} flexDirection="row">
-              <Show when={editorContextLabelState() !== "none" ? editorFileLabelDisplay() : undefined}>
-                {(file) => (
-                  <text fg={editorContextLabelState() === "pending" ? theme.secondary : theme.textMuted}>{file()}</text>
                 )}
-              </Show>
-              <Switch>
-                <Match when={store.mode === "normal"}>
-                  <Switch>
-                    <Match when={usage()}>
-                      {(item) => (
-                        <text fg={theme.textMuted} wrapMode="none">
-                          {[item().context, item().cost].filter(Boolean).join(" · ")}
-                        </text>
-                      )}
-                    </Match>
-                    <Match when={true}>
+              </Match>
+              <Match when={move.progress()}>
+                {(progress) => (
+                  <box paddingLeft={3}>
+                    <Spinner color={theme.accent}>
+                      {progress()}
+                      <span style={{ fg: theme.textMuted }}>{".".repeat(move.creatingDots())}</span>
+                    </Spinner>
+                  </box>
+                )}
+              </Match>
+              <Match when={move.pendingNew()}>
+                <box paddingLeft={3}>
+                  <text fg={theme.accent}>(new working copy)</text>
+                </box>
+              </Match>
+              <Match when={true}>
+                {props.hint ?? (
+                  <Show when={props.sessionID && !props.compactFooter} fallback={<text />}>
+                    <box marginLeft={1}>
+                      <text fg={theme.textMuted}>{location()?.directory ?? paths.cwd}</text>
+                    </box>
+                  </Show>
+                )}
+              </Match>
+            </Switch>
+            <Show when={status().type !== "retry"}>
+              <box gap={2} flexDirection="row">
+                <Show when={editorContextLabelState() !== "none" ? editorFileLabelDisplay() : undefined}>
+                  {(file) => (
+                    <text fg={editorContextLabelState() === "pending" ? theme.secondary : theme.textMuted}>
+                      {file()}
+                    </text>
+                  )}
+                </Show>
+                <Switch>
+                  <Match when={store.mode === "normal"}>
+                    <Show when={!props.compactFooter}>
+                      <Switch>
+                        <Match when={usage()}>
+                          {(item) => (
+                            <text fg={theme.textMuted} wrapMode="none">
+                              {[item().context, item().cost].filter(Boolean).join(" · ")}
+                            </text>
+                          )}
+                        </Match>
+                        <Match when={true}>
+                          <text fg={theme.text}>
+                            {agentShortcut()} <span style={{ fg: theme.textMuted }}>agents</span>
+                          </text>
+                        </Match>
+                      </Switch>
                       <text fg={theme.text}>
-                        {agentShortcut()} <span style={{ fg: theme.textMuted }}>agents</span>
+                        {paletteShortcut()} <span style={{ fg: theme.textMuted }}>commands</span>
                       </text>
-                    </Match>
-                  </Switch>
-                  <text fg={theme.text}>
-                    {paletteShortcut()} <span style={{ fg: theme.textMuted }}>commands</span>
-                  </text>
-                </Match>
-                <Match when={store.mode === "shell"}>
-                  <text fg={theme.text}>
-                    esc <span style={{ fg: theme.textMuted }}>exit shell mode</span>
-                  </text>
-                </Match>
-              </Switch>
-            </box>
-          </Show>
-        </box>
+                    </Show>
+                  </Match>
+                  <Match when={store.mode === "shell"}>
+                    <text fg={theme.text}>
+                      esc <span style={{ fg: theme.textMuted }}>exit shell mode</span>
+                    </text>
+                  </Match>
+                </Switch>
+              </box>
+            </Show>
+          </box>
+        </Show>
       </box>
       <Autocomplete
         sessionID={props.sessionID}

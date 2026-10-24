@@ -1,3 +1,4 @@
+import { useCommandShortcut, useOpencodeKeymap } from "../keymap"
 import { Model } from "../util/model"
 import { createMemo, For } from "solid-js"
 import { useTerminalDimensions } from "@opentui/solid"
@@ -18,6 +19,8 @@ export function StatusLine(props: { sessionID?: string; directory?: string; newW
   const paths = useTuiPaths()
   const dimensions = useTerminalDimensions()
   const dialog = useDialog()
+  const keymap = useOpencodeKeymap()
+  const paletteShortcut = useCommandShortcut("command.palette.show")
   const { theme } = useTheme()
   const session = createMemo(() => (props.sessionID ? sync.session.get(props.sessionID) : undefined))
   const context = createMemo(() => {
@@ -54,6 +57,7 @@ export function StatusLine(props: { sessionID?: string; directory?: string; newW
         model: local.model.parsed().model,
         context: context().label,
         directory: props.newWorkspace ? "New workspace" : abbreviateHome(directory, paths.home),
+        shortcut: paletteShortcut() ? `${paletteShortcut()} commands` : undefined,
         branch: !props.newWorkspace && directory === sync.path.directory ? sync.data.vcs?.branch : undefined,
         agent: [
           Locale.titlecase(session()?.agent ?? local.agent.current()?.name ?? "Agent"),
@@ -85,6 +89,7 @@ export function StatusLine(props: { sessionID?: string; directory?: string; newW
               fg={item.key === "model" ? theme.text : item.key === "context" ? contextColor() : theme.textMuted}
               onMouseUp={() => {
                 if (item.key === "model") dialog.replace(() => <DialogModel />)
+                if (item.key === "shortcut") keymap.dispatchCommand("command.palette.show")
               }}
             >
               {item.text}
