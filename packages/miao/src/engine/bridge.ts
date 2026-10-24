@@ -841,7 +841,7 @@ function shellResult(record: Record<string, unknown>): { structured: Record<stri
   const stdout = typeof record.stdout === "string" ? record.stdout : ""
   const stderr = typeof record.stderr === "string" ? record.stderr : ""
   const exit = typeof record.exit_code === "number" ? record.exit_code : undefined
-  const timedOut = record.reason === "timeout"
+  const timedOut = record.reason === "timed_out"
   const truncated = record.output_incomplete === true || record.reason === "output_limit"
   return {
     structured: {
