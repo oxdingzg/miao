@@ -66,9 +66,14 @@ impl Provider for Scripted {
 }
 
 fn policy(allow_subagents: bool) -> Policy {
+    policy_turns(allow_subagents, 25)
+}
+
+fn policy_turns(allow_subagents: bool, max_provider_turns: u32) -> Policy {
     Policy::new(Config {
         mode: Mode::Workspace,
         allow_subagents,
+        max_provider_turns: Some(max_provider_turns),
         rules: vec![Rule {
             tool: "*".into(),
             path: "**".into(),
@@ -185,10 +190,13 @@ impl Provider for Chatty {
             .filter_map(|part| part["text"].as_str())
             .collect();
         if texts.iter().any(|text| text.contains("say hello")) {
+            // A unique command per turn keeps the engine's loop detector from
+            // ending the child early; the turns are only there to grow the
+            // journal past one event page.
             let turn = self.turns.fetch_add(1, Ordering::SeqCst);
-            if turn < 200 {
+            if turn < 80 {
                 return Ok(Reply {
-                    content: json!([{"type":"tool_use","id":format!("c{turn}"),"name":"bash","input":{"command":"true"}}]),
+                    content: json!([{"type":"tool_use","id":format!("c{turn}"),"name":"bash","input":{"command":format!("echo {turn}")}}]),
                     usage: json!({}),
                     needs_tools: true,
                 });
@@ -231,7 +239,7 @@ async fn task_returns_a_child_result_that_outlives_one_event_page() {
             turns: AtomicUsize::new(0),
         }),
         tools,
-        policy(true),
+        policy_turns(true, 120),
     )
     .await
     .unwrap();
