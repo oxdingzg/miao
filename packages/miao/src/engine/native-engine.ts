@@ -41,7 +41,8 @@ import type { OpenCodeEvent } from "@miao/protocol/groups/event"
 import { Location } from "@miao/schema/location"
 import { Cause, DateTime, Effect, Layer, Option, Queue, Schema, Context } from "effect"
 import { EngineError, type EngineOptions, type EngineEvent } from "./client"
-import { discoveredEngine } from "./discovery"
+import { capabilities, discoveredEngine } from "./discovery"
+import { readCatalog } from "./catalog"
 import { makeEngineOwners } from "./owners"
 import type { EnginePricing } from "./session"
 import { NativeRecovery } from "./recovery"
@@ -376,6 +377,7 @@ const engineStorageID = (event: OpenCodeEvent) => {
 export const fromOwners = (
   owners: Owners,
   preparation: {
+    catalog?: NativeEngine.Interface["catalog"]
     prompt?: (input: Parameters<NativeEngine.Interface["admit"]>[0]) => Effect.Effect<PromptInput.Prompt, unknown>
     command?: (
       input: Parameters<NativeEngine.Interface["command"]>[0],
@@ -432,6 +434,7 @@ export const fromOwners = (
     )(await connection.client.request("model_catalog"))
   return {
     storageRoot,
+    catalog: preparation.catalog,
     command: (input) =>
       Effect.gen(function* () {
         if (!preparation.command)
@@ -1040,9 +1043,11 @@ const layer = Layer.effect(
         : Effect.void,
     )
     yield* Effect.addFinalizer(() => unsubscribeUsage)
+    const catalog = capabilities(configuration.binary)?.catalog === 1
     const engine = fromOwners(
       owners,
       {
+        catalog: catalog ? (input) => readCatalog(configuration.binary, input) : undefined,
         prompt: (input) =>
           PromptMaterialization.prepare(input.prompt).pipe(
             Effect.provideService(Blob.Service, blob),

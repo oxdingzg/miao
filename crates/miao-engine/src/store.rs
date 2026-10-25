@@ -78,6 +78,81 @@ impl Drop for RuntimeLease {
 }
 
 impl Store {
+    /// Read committed catalog facts without migrations, leases, or a Runtime.
+    pub async fn open_reader(path: impl AsRef<Path>) -> Result<Self, Error> {
+        let path = path.as_ref().to_path_buf();
+        let (work, mut receive) = mpsc::channel::<Work>(64);
+        let (ready, started) = oneshot::channel();
+        let (stopped, closed) = watch::channel(());
+        std::thread::spawn(move || {
+            let _stopped = stopped;
+            let opened = (|| -> Result<_, Error> {
+                let canonical = path.canonicalize()?;
+                let conn = Connection::open_with_flags(
+                    &canonical,
+                    rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY,
+                )?;
+                conn.busy_timeout(std::time::Duration::from_secs(2))?;
+                let application: u32 =
+                    conn.query_row("PRAGMA application_id", [], |row| row.get(0))?;
+                let version: u32 = conn.query_row("PRAGMA user_version", [], |row| row.get(0))?;
+                if application != APPLICATION_ID || version > SCHEMA_VERSION {
+                    return Err(Error::Invalid("unsupported engine catalog database".into()));
+                }
+                Ok((conn, canonical))
+            })();
+            match opened {
+                Ok((mut conn, canonical)) => {
+                    if ready.send(Ok(canonical)).is_err() {
+                        return;
+                    }
+                    while let Some(job) = receive.blocking_recv() {
+                        job(&mut conn);
+                    }
+                }
+                Err(error) => {
+                    let _ = ready.send(Err(error));
+                }
+            }
+        });
+        let path = started.await.map_err(|_| Error::Closed)??;
+        Ok(Self {
+            work,
+            closed,
+            runtime_owner: Arc::new(AtomicBool::new(false)),
+            path: Arc::new(path),
+        })
+    }
+
+    /// Only the fields needed for catalog projection; never materialize inbox,
+    /// transcript, tool payloads, questions, or context-source contents.
+    pub async fn catalog_info(&self, session: &str) -> Result<Value, Error> {
+        let session = session.to_owned();
+        self.call(move |conn| {
+            let tx = conn.transaction()?;
+            // Catalog reads must not migrate an older store just to display
+            // it. Metadata added by newer writers remains unknown until then.
+            let columns = {
+                let mut statement = tx.prepare("SELECT name FROM pragma_table_info('engine_session')")?;
+                let rows = statement.query_map([], |row| row.get::<_, String>(0))?;
+                rows.collect::<Result<HashSet<_>, _>>()?
+            };
+            let fields = ["title", "created_at_ms", "updated_at_ms", "archived_at_ms"].map(|name| {
+                if columns.contains(name) { name } else if name == "title" { "''" } else { "NULL" }
+            });
+            let (title, created, updated, archived): (String, Option<i64>, Option<i64>, Option<i64>) = tx.query_row(
+                &format!("SELECT {} FROM engine_session WHERE id=?1", fields.join(",")), [&session],
+                |row| Ok((row.get(0)?,row.get(1)?,row.get(2)?,row.get(3)?)),
+            )?;
+            let parent: Option<String> = tx.query_row("SELECT parent_session_id FROM engine_lineage WHERE session_id=?1", [&session], |row| row.get(0)).optional()?;
+            let model = crate::session_model::selected(&tx, &session)?;
+            let account = crate::session_account::selected_at(&tx, &session, i64::MAX as u64)?;
+            let agent = crate::session_agent::selected(&tx, &session)?.map(|(agent, _)| json!({"name":agent.name}));
+            tx.commit()?;
+            Ok(json!({"session_id":session,"title":title,"created_at_ms":created,"updated_at_ms":updated,"archived_at_ms":archived,"parent_session_id":parent,"model_selection":model,"account_selection":account,"agent":agent}))
+        }).await
+    }
+
     pub(crate) fn claim_runtime(&self) -> Result<RuntimeLease, Error> {
         self.runtime_owner
             .compare_exchange(false, true, Ordering::AcqRel, Ordering::Acquire)

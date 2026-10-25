@@ -25,6 +25,8 @@ export type Capabilities = {
   schema: number
   /** Host route manifest version; absent on engines that predate it. */
   routesSchema?: number
+  /** Version of the short-lived read-only catalog command, when supported. */
+  catalog?: number
 }
 
 const EXE = process.platform === "win32" ? ".exe" : ""
@@ -49,6 +51,7 @@ export function capabilities(binary: string): Capabilities | undefined {
     if (typeof value.protocol !== "number") return undefined
     if (typeof value.schema !== "number") return undefined
     if (typeof value.version !== "string") return undefined
+    if (value.catalog !== undefined && typeof value.catalog !== "number") return undefined
     if (value.routesSchema !== undefined && typeof value.routesSchema !== "number") return undefined
     return value as Capabilities
   } catch {
@@ -63,12 +66,14 @@ export function capabilities(binary: string): Capabilities | undefined {
  * discovered engine that is too old is ignored, so an upgraded product keeps
  * running TypeScript Sessions instead of refusing to start.
  */
-export function resolveEngine(input: {
-  environment?: Record<string, string | undefined>
-  probe?: (binary: string) => Capabilities | undefined
-  exists?: (binary: string) => boolean
-  executable?: string
-} = {}): { binary: string; capabilities: Capabilities } | undefined {
+export function resolveEngine(
+  input: {
+    environment?: Record<string, string | undefined>
+    probe?: (binary: string) => Capabilities | undefined
+    exists?: (binary: string) => boolean
+    executable?: string
+  } = {},
+): { binary: string; capabilities: Capabilities } | undefined {
   const environment = input.environment ?? process.env
   const probe = input.probe ?? capabilities
   const exists = input.exists ?? existsSync

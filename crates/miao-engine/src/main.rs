@@ -57,6 +57,7 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
                 "protocol": miao_engine::PROTOCOL,
                 "schema": miao_engine::store::SCHEMA_VERSION,
                 "routes_schema": miao_engine::model_routes::SCHEMA,
+                "catalog": 1,
             })
         );
         return Ok(());
@@ -71,6 +72,39 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
             tokio::task::spawn_blocking(move || miao_engine::doctor::report(path.as_deref()))
                 .await??;
         println!("{}", serde_json::to_string(&report)?);
+        return Ok(());
+    }
+    if args.first().map(String::as_str) == Some("catalog") {
+        let (flags, remainder) = args[1..].as_chunks::<2>();
+        let mut options = HashMap::new();
+        for flag in flags {
+            if !["--db", "--sessions", "--usage"].contains(&flag[0].as_str())
+                || options.insert(flag[0].clone(), flag[1].clone()).is_some()
+            {
+                return Err("unknown or duplicate catalog option".into());
+            }
+        }
+        if !remainder.is_empty() {
+            return Err("missing catalog option value".into());
+        }
+        let db = options.remove("--db").ok_or("--db is required")?;
+        let sessions: Vec<String> = serde_json::from_str(
+            &options
+                .remove("--sessions")
+                .ok_or("--sessions is required")?,
+        )?;
+        let usage = match options.remove("--usage").as_deref() {
+            Some("true") => true,
+            Some("false") | None => false,
+            _ => return Err("--usage must be true or false".into()),
+        };
+        let entries = miao_engine::catalog::read(db, &sessions, usage).await?;
+        let output = serde_json::to_vec(&entries)?;
+        if output.len() > 8 * 1024 * 1024 {
+            return Err("catalog exceeds output bound".into());
+        }
+        use std::io::Write;
+        std::io::stdout().lock().write_all(&output)?;
         return Ok(());
     }
     if args.first().map(String::as_str) == Some("credentials") {
