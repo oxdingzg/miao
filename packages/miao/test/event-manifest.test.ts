@@ -9,8 +9,8 @@ describe("public event manifest", () => {
     expect(EventManifest.Definitions).toBe(SchemaEventManifest.Definitions)
     expect(EventManifest.Latest).toBe(SchemaEventManifest.Latest)
     expect(EventManifest.Durable).toBe(SchemaEventManifest.Durable)
-    // Pinning a conversation to one provider account added one wire type.
-    expect(EventManifest.Latest.size).toBe(107)
+    // Context pruning adds a public durable settlement event.
+    expect(EventManifest.Latest.size).toBe(108)
     expect(EventManifest.Latest.get("session.next.stream.discarded")).toBe(SessionEvent.StreamDiscarded)
     expect([...EventManifest.Durable.values()]).not.toContain(SessionEvent.StreamDiscarded)
     expect(EventManifest.Latest.has("session.next.assistant.identity")).toBe(true)
@@ -29,6 +29,8 @@ describe("public event manifest", () => {
     expect(EventManifest.Durable.get("session.next.delegation.started.1")).toBe(SessionEvent.DelegationStarted)
     expect(EventManifest.Durable.get("session.next.delegation.ended.1")).toBe(SessionEvent.DelegationEnded)
     expect(EventManifest.Durable.get("session.next.delegation.reported.1")).toBe(SessionEvent.DelegationReported)
+    expect(EventManifest.Latest.get("session.next.context.pruned")).toBe(SessionEvent.ContextPruned)
+    expect(EventManifest.Durable.get("session.next.context.pruned.1")).toBe(SessionEvent.ContextPruned)
     expect(EventManifest.Latest.get("session.next.step.ended")).toBe(SessionEvent.Step.Ended)
     expect(EventManifest.Latest.get("session.next.command.started")).toBe(SessionEvent.Command.Started)
     expect(EventManifest.Latest.get("session.next.command.completed")).toBe(SessionEvent.Command.Completed)
