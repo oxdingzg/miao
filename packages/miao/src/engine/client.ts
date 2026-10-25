@@ -233,7 +233,6 @@ export function engineEnvironment(
 /** The argv the child engine is spawned with; pure so tests can assert it. */
 export function engineArgs(options: EngineOptions): string[] {
   const args = ["serve", "--db", options.db, "--workspace", options.workspace, "--model", options.model]
-  if (options.workerConfigFile) console.log("[worker-host] engine argv includes --worker-config")
   if (options.workerConfigFile) args.push("--worker-config", options.workerConfigFile)
   if (options.provider) args.push("--provider", options.provider)
   if (options.endpoint) args.push("--endpoint", options.endpoint)

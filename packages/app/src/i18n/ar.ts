@@ -1,4 +1,17 @@
 export const dict = {
+  "context.timeline.title": "السياق وتاريخ ذاكرة التخزين المؤقت",
+  "context.timeline.step":
+    "{{model}} · {{time}} · {{input}} الرموز المميزة للمطالبة · {{read}} قراءة ذاكرة التخزين المؤقت · {{write}} كتابة ذاكرة التخزين المؤقت",
+  "context.timeline.requestWindow": "{{value}} نافذة الرمز المميز في وقت الطلب",
+  "context.timeline.catalogWindow": "نافذة الرمز المميز {{value}} في الكتالوج الحالي",
+  "context.timeline.unknownWindow": "نافذة السياق غير معروفة",
+  "context.timeline.empty": "لم يتم تسجيل أي استخدام مستقر للموفر حتى الآن.",
+  "context.timeline.retry": "أعد محاولة سجل الاستخدام",
+  "context.timeline.compaction": "تم ضغط السياق",
+  "context.timeline.cacheRead": "قراءة ذاكرة التخزين المؤقت",
+  "context.timeline.cacheWrite": "مخبأ الكتابة",
+  "context.timeline.ttft": "{{value}} مللي ثانية للرمز المميز الأول",
+
   "desktop.menu.app": "miao",
   "desktop.menu.file": "ملف",
   "desktop.menu.edit": "تحرير",
@@ -248,8 +261,7 @@ export const dict = {
   "provider.connect.oauth.code.invalid": "رمز التفويض غير صالح",
   "provider.connect.oauth.auto.visit.prefix": "قم بزيارة ",
   "provider.connect.oauth.auto.visit.link": "هذا الرابط",
-  "provider.connect.oauth.auto.visit.suffix":
-    " وأدخل الرمز أدناه لتوصيل حسابك واستخدام نماذج {{provider}} في Miao.",
+  "provider.connect.oauth.auto.visit.suffix": " وأدخل الرمز أدناه لتوصيل حسابك واستخدام نماذج {{provider}} في Miao.",
   "provider.connect.oauth.auto.confirmationCode": "رمز التأكيد",
   "provider.connect.toast.connected.title": "تم توصيل {{provider}}",
   "provider.connect.toast.connected.description": "نماذج {{provider}} متاحة الآن للاستخدام.",
@@ -599,7 +611,8 @@ export const dict = {
   "toast.permissions.autoaccept.off.title": "تم إيقاف قبول الأذونات تلقائيًا",
   "toast.permissions.autoaccept.off.description": "ستتطلب طلبات الأذونات موافقة",
   "settings.permissions.autoaccept.project.title": "قبول الأذونات تلقائيًا لهذا المشروع",
-  "settings.permissions.autoaccept.project.description": "الرد على طلبات الأذونات الجديدة من أي جلسة في هذا المشروع دون سؤال. تظل الاختيارات على مستوى الجلسة والمجلد ذات الأولوية.",
+  "settings.permissions.autoaccept.project.description":
+    "الرد على طلبات الأذونات الجديدة من أي جلسة في هذا المشروع دون سؤال. تظل الاختيارات على مستوى الجلسة والمجلد ذات الأولوية.",
   "toast.model.none.title": "لم يتم تحديد نموذج",
   "toast.model.none.description": "قم بتوصيل موفر لتلخيص هذه الجلسة",
   "toast.file.loadFailed.title": "فشل تحميل الملف",
@@ -886,7 +899,8 @@ export const dict = {
   "settings.general.row.reasoningSummaries.title": "إظهار ملخصات الاستدلال",
   "settings.general.row.reasoningSummaries.description": "عرض ملخصات استدلال النموذج في الشريط الزمني",
   "settings.general.row.turnDiffs.title": "إظهار الملفات المتغيرة في كل دورة",
-  "settings.general.row.turnDiffs.description": "يسرد في الجدول الزمني الملفات المتغيرة في كل دورة مكتملة مع عدد الأسطر وفروقات قابلة للتوسيع.",
+  "settings.general.row.turnDiffs.description":
+    "يسرد في الجدول الزمني الملفات المتغيرة في كل دورة مكتملة مع عدد الأسطر وفروقات قابلة للتوسيع.",
   "settings.general.row.shellToolPartsExpanded.title": "توسيع أجزاء أداة shell",
   "settings.general.row.shellToolPartsExpanded.description":
     "إظهار أجزاء أداة shell موسعة بشكل افتراضي في الشريط الزمني",

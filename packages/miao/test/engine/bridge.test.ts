@@ -112,7 +112,10 @@ test("maps input.promoted to a prompt.admitted payload", () => {
     data: { input_id: "in_1", prompt: "hello" },
   }
   const admitted = translatePrompt(event)
-  expect(String(admitted?.messageID)).toBe("msg_ses_abc_7")
+  // A generated input's identity comes from the engine input id, not the
+  // promotion seq: the inbox page, a replayed promotion and a cancel must all
+  // address the same input.
+  expect(String(admitted?.messageID)).toBe("msg_gen_aW5fMQ")
   expect(admitted?.prompt).toEqual({ text: "hello" })
   expect(String(admitted?.sessionID)).toBe("ses_abc")
   expect(admitted?.delivery).toBe("steer")

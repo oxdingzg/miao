@@ -19,7 +19,7 @@ export function providerErrorText(message: string) {
   return /^(?:[45]\d\d)\b|\bHTTP [45]\d\d\b/.test(message) ? `API Error: ${message}` : `Error: ${message}`
 }
 
-export function ProviderRetryStatus(props: { status: SessionStatus }) {
+export function ProviderRetryStatus(props: { status: SessionStatus; compact?: boolean }) {
   const { theme } = useTheme()
   const retry = createMemo(() => (props.status.type === "retry" ? props.status : undefined))
   const [seconds, setSeconds] = createSignal(0)
@@ -40,7 +40,7 @@ export function ProviderRetryStatus(props: { status: SessionStatus }) {
   return (
     <Show when={retry()}>
       {(value) => (
-        <text fg={theme.textMuted}>
+        <text fg={theme.textMuted} wrapMode={props.compact ? "none" : undefined}>
           {`Retrying${seconds() > 0 ? ` in ${seconds()}s` : ""} · attempt #${value().attempt}`}
         </text>
       )}
