@@ -308,12 +308,12 @@ async fn denied_read_keeps_policy_result_and_serial_admission() {
 }
 
 #[tokio::test]
-async fn all_dispatched_reads_settle_before_repeat_guard_stops_the_run() {
+async fn batched_reads_settle_and_report_the_identical_bound_without_stopping_the_run() {
     let dir = tempfile::tempdir().unwrap();
     std::fs::write(dir.path().join("a"), "same").unwrap();
     let store = execute(
         dir.path(),
-        json!((0..4)
+        json!((0..6)
             .map(|index| call(&format!("read{index}"), "read_file", json!({"path":"a"})))
             .collect::<Vec<_>>()),
         false,
@@ -326,21 +326,21 @@ async fn all_dispatched_reads_settle_before_repeat_guard_stops_the_run() {
             .iter()
             .filter(|event| event.kind == "tool.dispatched")
             .count(),
-        4
+        6
     );
     assert_eq!(
         events
             .iter()
             .filter(|event| event.kind == "tool.completed")
             .count(),
-        4
+        6
     );
     assert_eq!(
         events
             .iter()
             .filter(|event| event.kind == "post_tool_use")
             .count(),
-        4
+        6
     );
     assert!(!events.iter().any(|event| event.kind == "tool.unknown"));
 }

@@ -1293,7 +1293,7 @@ export const {
         agent: string
         model?: { providerID: string; modelID: string; variant?: string }
       },
-      signal: AbortSignal,
+      signal: AbortSignal | undefined,
       retry: boolean,
     ) {
       const match = search(store.session, input.sessionID, (s) => s.id)
@@ -1358,6 +1358,8 @@ export const {
           })
           let selected = false
           return retryPromptSend({
+            // Shutdown cancels the in-flight admission; it is not an error.
+            signal: sdk.signal,
             prepare: async (signal, attempt) => {
               if (selected) return
               await applySelection(input, signal, attempt > 0)
@@ -1383,6 +1385,9 @@ export const {
               return response
             },
             (error: unknown) => {
+              // A send interrupted by shutdown never reached a verdict. Failing
+              // it here would report the abort as a deliverability error.
+              if (sdk.signal.aborted) return
               pendingPrompts.fail(id, errorMessage(error))
               console.error("session prompt send failed", {
                 sessionID: input.sessionID,

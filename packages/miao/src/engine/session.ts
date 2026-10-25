@@ -378,10 +378,15 @@ export class EngineTranslator {
     }
     const identity = translateAssistantIdentity(event)
     if (identity) {
-      const agent = this.#agents.get(event.session_id)
+      // The engine's recorded serving agent wins; the host's selection
+      // history covers engines that journal no agent name. The wire model
+      // resolves through the priced catalog so clients render the product
+      // model instead of the raw wire protocol.
+      const agent = identity.agent ?? this.#agents.get(event.session_id) ?? null
+      const model = identity.provider ? this.#pricing?.(identity.provider.model)?.model : undefined
       publish({
         type: "session.next.assistant.identity",
-        data: agent === undefined ? identity : { ...identity, agent },
+        data: { ...identity, agent, ...(model ? { model } : {}) },
       })
     }
     const failure = translateRunFailure(event)

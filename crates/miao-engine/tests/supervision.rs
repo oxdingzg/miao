@@ -92,7 +92,7 @@ async fn terminal(store: &Store, session: &str) -> String {
     tokio::time::timeout(std::time::Duration::from_secs(5), async {
         loop {
             if let Some(event) = store
-                .events(session, 0, 100)
+                .events(session, 0, 2000)
                 .await
                 .unwrap()
                 .iter()
@@ -108,7 +108,7 @@ async fn terminal(store: &Store, session: &str) -> String {
 }
 
 #[tokio::test]
-async fn repeated_unchanged_results_stop_before_spending_entire_turn_allowance() {
+async fn repeated_identical_calls_are_refused_with_a_corrective_error() {
     let dir = tempfile::tempdir().unwrap();
     std::fs::write(dir.path().join("file"), "unchanged").unwrap();
     let store = Store::open(dir.path().join("engine.db")).await.unwrap();
@@ -122,12 +122,16 @@ async fn repeated_unchanged_results_stop_before_spending_entire_turn_allowance()
     .await
     .unwrap();
     runtime.admit(input("s", "loop"), true).await.unwrap();
-    assert_eq!(terminal(&store, "s").await, "failed");
-    let events = store.events("s", 0, 100).await.unwrap();
+    assert_eq!(terminal(&store, "s").await, "completed");
+    let events = store.events("s", 0, 2000).await.unwrap();
     assert_eq!(
         events.iter().filter(|e| e.kind == "tool.completed").count(),
-        3
+        25
     );
+    assert!(events.iter().any(|e| e.kind == "tool.completed"
+        && e.data["result"]["error"]
+            .as_str()
+            .is_some_and(|text| text.contains("Refusing to run read_file again"))));
     assert_eq!(
         events.iter().filter(|e| e.kind == "loop.detected").count(),
         1

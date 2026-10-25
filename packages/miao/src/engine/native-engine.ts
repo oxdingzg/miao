@@ -630,9 +630,11 @@ export const fromOwners = (
           return yield* Effect.fail(
             new EngineError("agent_capture_unavailable", "Native agent reference capture is not configured"),
           )
-        const catalog = mentions.length ? yield* Effect.tryPromise(() => routes(connection)) : []
-        const agentReferences =
-          mentions.length && preparation.agents ? yield* preparation.agents(input, mentions, catalog) : undefined
+        // The catalog rides every admission, not only @-mentions: the engine
+        // resolves the task tool's named subagents against it.
+        const agentReferences = preparation.agents
+          ? yield* preparation.agents(input, mentions, yield* Effect.tryPromise(() => routes(connection)))
+          : undefined
         return yield* Effect.tryPromise(() =>
           connection.session.promptProduct({
             sessionID: input.sessionID,
