@@ -192,6 +192,7 @@ async fn run_owned_checkpoint_preserves_idle_api_and_raw_history() {
             Some(started.seq),
             json!([{"type":"text","text":"done"}]),
             None,
+            None,
         )
         .await
         .unwrap()
@@ -278,7 +279,7 @@ async fn run_owned_checkpoint_rejects_inflight_provider_and_unsettled_tools() {
         .compact_for_run("s", "run", "wrong-step", boundary, "summary".into())
         .await
         .is_err());
-    store.assistant_reply_profiled("s", "run", 0, Some(started.seq), json!([{"type":"text","text":"calling"},{"type":"tool_use","id":"call","name":"read_file","input":{"path":"file"}}]), None).await.unwrap();
+    store.assistant_reply_profiled("s", "run", 0, Some(started.seq), json!([{"type":"text","text":"calling"},{"type":"tool_use","id":"call","name":"read_file","input":{"path":"file"}}]), None, None).await.unwrap();
     assert!(store
         .compact_for_run("s", "run", "tools", boundary, "summary".into())
         .await

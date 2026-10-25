@@ -55,6 +55,7 @@ async fn seeded() -> (tempfile::TempDir, Store, u64, u64) {
             Some(started.seq),
             json!([{"type":"text","text":"answer one"}]),
             None,
+            None,
         )
         .await
         .unwrap()

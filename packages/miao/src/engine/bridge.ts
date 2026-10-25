@@ -166,7 +166,9 @@ export function translateAssistantIdentity(event: EngineEvent): SessionAssistant
     // The engine only knows the wire protocol and model id, so the reference
     // carries those as a display fallback; catalog resolution stays client-side.
     model: provider ? Schema.decodeUnknownSync(Model.Ref)({ id: provider.model, providerID: provider.protocol }) : null,
-    agent: null,
+    // Engines record the serving agent manifest's name; null on engines that
+    // predate agent attribution.
+    agent: readNonEmptyString(event.data, "agent") ?? null,
   }
 }
 
