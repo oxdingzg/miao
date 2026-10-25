@@ -7,10 +7,18 @@ import { capabilities, resolveEngine, type Capabilities } from "./discovery"
 
 const EXE = process.platform === "win32" ? ".exe" : ""
 
-async function embeddedBlob(): Promise<Blob | undefined> {
+/**
+ * The build embeds the engine with `import ... with { type: "file" }`. The
+ * default export is a `/$bunfs/root/...` path string in a compiled binary and
+ * a Blob otherwise.
+ */
+async function embeddedBytes(): Promise<Uint8Array | undefined> {
   try {
     // @ts-expect-error - generated file at build time
-    return (await import("miao-engine.gen.ts")).default as Blob
+    const embedded = (await import("miao-engine.gen.ts")).default as Blob | string | undefined
+    if (!embedded) return undefined
+    if (typeof embedded === "string") return new Uint8Array(await Bun.file(embedded).arrayBuffer())
+    return new Uint8Array(await embedded.arrayBuffer())
   } catch {
     return undefined
   }
@@ -20,9 +28,8 @@ export type EmbeddedEngine = { bytes: Uint8Array; sha256: string }
 
 /** The engine binary baked into this executable, if the build embedded one. */
 export async function loadEmbeddedEngine(): Promise<EmbeddedEngine | undefined> {
-  const blob = await embeddedBlob()
-  if (!blob) return undefined
-  const bytes = new Uint8Array(await blob.arrayBuffer())
+  const bytes = await embeddedBytes()
+  if (!bytes) return undefined
   return { bytes, sha256: createHash("sha256").update(bytes).digest("hex") }
 }
 
