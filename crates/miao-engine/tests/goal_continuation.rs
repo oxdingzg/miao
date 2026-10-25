@@ -115,23 +115,23 @@ async fn setup(
         .unwrap();
 }
 async fn finished(store: &Store) {
-    // Windows runners may need several seconds for long sequences of durable provider turns.
+    // Advance through the bounded journal pages rather than repeatedly
+    // parsing the entire growing prefix and competing with durable writes.
+    let mut after = 0;
     tokio::time::timeout(std::time::Duration::from_secs(30), async {
         loop {
-            if store
-                .events("s", 0, 5000)
-                .await
-                .unwrap()
-                .iter()
-                .any(|event| event.kind == "run.finished")
-            {
+            let events = store.events("s", after, 5000).await.unwrap();
+            if events.iter().any(|event| event.kind == "run.finished") {
                 return;
+            }
+            if let Some(event) = events.last() {
+                after = event.seq;
             }
             tokio::time::sleep(std::time::Duration::from_millis(5)).await;
         }
     })
     .await
-    .unwrap();
+    .unwrap_or_else(|_| panic!("run.finished was not observed after journal cursor {after}"));
 }
 
 #[tokio::test]
