@@ -1,4 +1,17 @@
 export const dict = {
+  "context.timeline.title": "Kontekst va kesh tarixi",
+  "context.timeline.step":
+    "{{model}} · {{time}} · {{input}} tezkor tokenlar · {{read}} keshni oʻqish · {{write}} kesh yozish",
+  "context.timeline.requestWindow": "{{value}} so'rov vaqtida token oynasi",
+  "context.timeline.catalogWindow": "{{value}} joriy katalogdagi token oynasi",
+  "context.timeline.unknownWindow": "Kontekst oynasi noma'lum",
+  "context.timeline.empty": "Hozircha provayderning doimiy foydalanishi qayd etilmagan.",
+  "context.timeline.retry": "Foydalanish tarixini qaytadan urinib ko‘ring",
+  "context.timeline.compaction": "Kontekst siqilgan",
+  "context.timeline.cacheRead": "Kesh o'qildi",
+  "context.timeline.cacheWrite": "Kesh yozish",
+  "context.timeline.ttft": "Birinchi tokenga {{value}} ms",
+
   "desktop.menu.app": "miao",
   "desktop.menu.file": "Fayl",
   "desktop.menu.edit": "Tahrirlash",
@@ -605,7 +618,8 @@ export const dict = {
   "toast.permissions.autoaccept.off.title": "Ruxsatlarni avtomatik qabul qilish toʻxtatildi",
   "toast.permissions.autoaccept.off.description": "Ruxsat so'rovlari tasdiqlashni talab qiladi",
   "settings.permissions.autoaccept.project.title": "Bu loyiha uchun ruxsatlarni avtomatik qabul qilish",
-  "settings.permissions.autoaccept.project.description": "Bu loyihadagi har qanday sessiyadan kelgan yangi ruxsat so'rovlariga so'ramasdan javob bering. Sesiya va katalog darajasidagi tanlovlar ustunlik qiladi.",
+  "settings.permissions.autoaccept.project.description":
+    "Bu loyihadagi har qanday sessiyadan kelgan yangi ruxsat so'rovlariga so'ramasdan javob bering. Sesiya va katalog darajasidagi tanlovlar ustunlik qiladi.",
   "toast.model.none.title": "Hech qanday model tanlanmagan",
   "toast.model.none.description": "Ushbu seansni yakunlash uchun provayderni ulang",
   "toast.file.loadFailed.title": "Faylni yuklab boʻlmadi",
@@ -977,7 +991,8 @@ export const dict = {
   "settings.general.row.reasoningSummaries.title": "Fikrlash xulosalarini ko'rsating",
   "settings.general.row.reasoningSummaries.description": "Vaqt jadvalida model asoslarini ko'rsatish",
   "settings.general.row.turnDiffs.title": "Har bosqich uchun o'zgargan fayllarni ko'rsatish",
-  "settings.general.row.turnDiffs.description": "Vaqt chizig'ida har bir tugallangan bosqichning o'zgargan fayllarini qatorlar soni va yoyiladigan farqlar bilan sanab ko'rsatadi.",
+  "settings.general.row.turnDiffs.description":
+    "Vaqt chizig'ida har bir tugallangan bosqichning o'zgargan fayllarini qatorlar soni va yoyiladigan farqlar bilan sanab ko'rsatadi.",
   "settings.general.row.shellToolPartsExpanded.title": "Qobiq asboblari qismlarini kengaytiring",
   "settings.general.row.shellToolPartsExpanded.description":
     "Xronologiyada sukut bo'yicha kengaytirilgan qobiq asboblari qismlarini ko'rsatish",

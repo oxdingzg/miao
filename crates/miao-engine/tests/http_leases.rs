@@ -110,6 +110,7 @@ async fn unauthenticated_or_invalid_clients_cannot_keep_an_idle_engine_alive() {
 async fn running_work_outlives_all_ui_leases() {
     let (runtime, _dir) = runtime().await;
     runtime.initialize("s", "running").await.unwrap();
+    runtime.store().claim_session("s", 30_000).await.unwrap();
     runtime.store().start_run("s", "run").await.unwrap();
     let (_url, task) = serve(&runtime, Duration::from_millis(200)).await;
     tokio::time::sleep(Duration::from_millis(500)).await;
@@ -145,5 +146,34 @@ async fn idle_shutdown_closes_existing_event_streams() {
         .unwrap()
         .unwrap();
     drop(response);
+    runtime.shutdown().await;
+}
+
+#[tokio::test]
+async fn an_unowned_durable_run_does_not_keep_an_idle_runtime_alive() {
+    let (runtime, _dir) = runtime().await;
+    runtime.initialize("foreign", "unowned").await.unwrap();
+    runtime
+        .store()
+        .start_run("foreign", "foreign-run")
+        .await
+        .unwrap();
+    assert!(!runtime.has_live_work().await.unwrap());
+    let (_url, task) = serve(&runtime, Duration::from_millis(200)).await;
+    tokio::time::timeout(Duration::from_secs(3), task)
+        .await
+        .unwrap()
+        .unwrap()
+        .unwrap();
+    // Idle detection must not reconcile or mutate another owner's work.
+    assert_eq!(
+        runtime
+            .store()
+            .active_run("foreign")
+            .await
+            .unwrap()
+            .as_deref(),
+        Some("foreign-run")
+    );
     runtime.shutdown().await;
 }

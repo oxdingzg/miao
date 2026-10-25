@@ -1,4 +1,17 @@
 export const dict = {
+  "context.timeline.title": "Историја на контекст и кеш",
+  "context.timeline.step":
+    "{{model}} · {{time}} · {{input}} промптни токени · {{read}} прочитана кешот · {{write}} кеш запишување",
+  "context.timeline.requestWindow": "Прозорец за токени {{value}} по време на барање",
+  "context.timeline.catalogWindow": "Прозорец за токени {{value}} во тековниот каталог",
+  "context.timeline.unknownWindow": "Контекстен прозорец непознат",
+  "context.timeline.empty": "Сè уште не е регистрирано користење на добавувач.",
+  "context.timeline.retry": "Обидете се повторно со историја на користење",
+  "context.timeline.compaction": "Контекстот е набиен",
+  "context.timeline.cacheRead": "Читање на кешот",
+  "context.timeline.cacheWrite": "Запишување во кеш",
+  "context.timeline.ttft": "{{value}} ms до првиот токен",
+
   "desktop.menu.app": "miao",
   "desktop.menu.file": "Датотека",
   "desktop.menu.edit": "Уреди",
@@ -605,7 +618,8 @@ export const dict = {
   "toast.permissions.autoaccept.off.title": "Го прекина автоматското прифаќање дозволи",
   "toast.permissions.autoaccept.off.description": "Барањата за дозвола ќе бараат одобрување",
   "settings.permissions.autoaccept.project.title": "Автоматично прифаќање на дозволите за овој проект",
-  "settings.permissions.autoaccept.project.description": "Одговарај на нови барања за дозволи од било која сесија на овој проект без прашање. Изборите на ниво сесија и директориум имаат предност.",
+  "settings.permissions.autoaccept.project.description":
+    "Одговарај на нови барања за дозволи од било која сесија на овој проект без прашање. Изборите на ниво сесија и директориум имаат предност.",
   "toast.model.none.title": "Не е избран модел",
   "toast.model.none.description": "Поврзете провајдер за да ја сумира оваа сесија",
   "toast.file.loadFailed.title": "Не успеа да се вчита датотеката",
@@ -666,8 +680,7 @@ export const dict = {
   "error.chain.didYouMean": "Дали сакаше да каже: {{suggestions}}",
   "error.chain.modelNotFound": "Моделот не е пронајден: {{provider}}/{{model}}",
   "error.chain.checkConfig": "Проверете ги имињата на давателот/моделот за конфигурација (miao.json).",
-  "error.chain.mcpFailed":
-    "MCP серверот „{{name}}“ не успеа. Забелешка, miao сè уште не поддржува автентикација MCP.",
+  "error.chain.mcpFailed": "MCP серверот „{{name}}“ не успеа. Забелешка, miao сè уште не поддржува автентикација MCP.",
   "error.chain.providerAuthFailed": "Неуспешна автентикација на провајдерот ({{provider}}): {{message}}",
   "error.chain.providerInitFailed":
     "Не успеа да се иницијализира провајдерот „{{provider}}“. Проверете ги ингеренциите и конфигурацијата.",
@@ -974,8 +987,9 @@ export const dict = {
   "settings.general.row.reasoningSummaries.title": "Прикажи резимеа за расудување",
   "settings.general.row.reasoningSummaries.description":
     "Прикажи резимеа на расудувањето на моделите во временската линија",
-    "settings.general.row.turnDiffs.title": "Show changed files per turn",
-    "settings.general.row.turnDiffs.description": "List each finished turn's changed files with line counts and expandable diffs in the timeline.",
+  "settings.general.row.turnDiffs.title": "Show changed files per turn",
+  "settings.general.row.turnDiffs.description":
+    "List each finished turn's changed files with line counts and expandable diffs in the timeline.",
   "settings.general.row.shellToolPartsExpanded.title": "Проширете ги shell делови од алатот",
   "settings.general.row.shellToolPartsExpanded.description":
     "Прикажи shell делови од алатката стандардно проширени во временската линија",
