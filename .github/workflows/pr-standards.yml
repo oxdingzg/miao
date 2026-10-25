@@ -1,8 +1,10 @@
 name: pr-standards
 
 on:
+  # `edited` is deliberately absent: every body or title edit re-ran the whole
+  # check while drafting, and the result is recomputed on the next push anyway.
   pull_request_target:
-    types: [opened, edited, synchronize]
+    types: [opened, synchronize]
 
 jobs:
   check-standards:

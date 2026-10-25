@@ -1,0 +1,105 @@
+{
+  "sources": {
+    "r2": {
+      "sourceCheckpoint": "bed91deeac",
+      "cells": 24,
+      "reportedMainTurnReferenceCost": 0.05245875718
+    },
+    "r3": {
+      "sourceCheckpoint": "5ff51aa007",
+      "cells": 1,
+      "reportedMainTurnReferenceCost": 0.004046012690000001
+    },
+    "r4": {
+      "sourceCheckpoint": "4c95a4182b",
+      "cells": 1,
+      "reportedMainTurnReferenceCost": 0.0016855901400000001
+    },
+    "r5": {
+      "sourceCheckpoint": "73959cb247",
+      "cells": 1,
+      "reportedMainTurnReferenceCost": 0.00168409617
+    },
+    "r7": {
+      "sourceCheckpoint": "96e5d42c33",
+      "cells": 24,
+      "pass": 23,
+      "fail": 1,
+      "reportedMainTurnReferenceCost": 0.05362252294000001,
+      "fullWebUIEmbedded": true
+    },
+    "r6": {
+      "sourceCheckpoint": "96e5d42c33",
+      "aborted": true,
+      "reason": "Harness mistakenly pinned a raw zero-rate catalog, bypassing the normal reference-price overlay. Partial run not counted as acceptance."
+    },
+    "r13": {
+      "sourceCheckpoint": "7aa5c0abb30693d86f48cbba51360e333b0be084",
+      "cells": 24,
+      "pass": 23,
+      "fail": 1,
+      "skip": 0,
+      "reportedMainTurnReferenceCost": 0.04854149622,
+      "fullWebUIEmbedded": true,
+      "cliSha256": "b407db0783d0790ffe098100c1d8ce0793a934246b27ba8c0241948bcee682ab",
+      "engineSha256": "a0ef6cf53bdb58bc2b66229d5d78594c726b01e42b682a77d8c622e894b3362a"
+    },
+    "r14": {
+      "sourceCheckpoint": "599f279a785833d2b8bf152fcff7067a526ecf21",
+      "cells": 24,
+      "pass": 23,
+      "fail": 1,
+      "skip": 0,
+      "reportedMainTurnReferenceCost": 0.05058853966,
+      "fullWebUIEmbedded": true,
+      "cliSha256": "5c8f904fc1dec4c747cbaa96820b894ca86ced715087d268a7bb8e7a8ecb60fa",
+      "engineSha256": "a0ef6cf53bdb58bc2b66229d5d78594c726b01e42b682a77d8c622e894b3362a",
+      "completedAtUTC": "2026-10-25T16:39:11.697833+00:00"
+    },
+    "r14-title": {
+      "sourceCheckpoint": "599f279a785833d2b8bf152fcff7067a526ecf21",
+      "cells": 1,
+      "pass": 1,
+      "fail": 0,
+      "role": "Separate targeted live native-title verification, not a replacement matrix cell."
+    }
+  },
+  "fixes": {
+    "nativeContextLimits": "66cfa5086a",
+    "headlessTitleSettlement": "d657c09090",
+    "conformanceHarness": "0f3a4712a8",
+    "releaseEnginePairing": "7cdace8835",
+    "nativeCreateRetry": "0b68705b09",
+    "routeCapabilities": "c267e6de64",
+    "nativeProtocolLogging": "30f1f7a37f",
+    "mcpOriginalIdentity": "91c54fa39b",
+    "compactToolApproval": "0bfb4cfb9f",
+    "hookCancellation": "5d7aab7838",
+    "compactPendingReceipt": "bb46bdfa07",
+    "nativeTitleSettlement": "6c9b36d40a"
+  },
+  "artifactHashes": {
+    "r2-host": "9e2643c096a691d76b315e7ba5b99aefd589e569418c209134a46af401fa44df",
+    "r2-engine": "608f08abe310ce4627c1187e36012f21ec617d54398f3bec8656fbb54eb216aa",
+    "r4-host": "ae3445f31d5428a2d97266a3f27edefaf654daeeedf3d8c1d1787b5408d4fca3",
+    "r4-engine": "614cac3a7bdb0e2082460213b54ec137398c416b91488da1c4b2e20c7c6e2e5d",
+    "r5-host": "bdbd70a48ad858d24d15d03d5ddb6945284837e354045740dc0700e36cc1579b",
+    "r5-engine": "fdf793e224dac6a2a8a97ce63d434e1b2ef1eac2b8b832d47990dcac1770ece9",
+    "r7-host": "8f19156725475282d37273837faa0b48d894e77e3f658301ede595205198f712",
+    "r7-engine": "65cf97243fbb7bbfe66d971acafb818be9617b7941decca095b20c1b48f5fd3c",
+    "r13-host": "b407db0783d0790ffe098100c1d8ce0793a934246b27ba8c0241948bcee682ab",
+    "r13-engine": "a0ef6cf53bdb58bc2b66229d5d78594c726b01e42b682a77d8c622e894b3362a",
+    "r14-host": "5c8f904fc1dec4c747cbaa96820b894ca86ced715087d268a7bb8e7a8ecb60fa",
+    "r14-engine": "a0ef6cf53bdb58bc2b66229d5d78594c726b01e42b682a77d8c622e894b3362a"
+  },
+  "limitations": [
+    "R14 permission-deny failed because both rm attempts were correctly denied, then the model used the separately authorized apply_patch tool. The fixture only denies bash rm; this is not evidence of a permission-matcher bypass.",
+    "R14 is a private feature integration, not final merged main or a published release.",
+    "All latest R14 results are selected, including any failure; older failures and individual retries remain preserved.",
+    "TypeScript forced-compaction checks completion only; a Rust compaction pass additionally requires a durable engine_compaction row.",
+    "Model conformance records parsed CLI events and does not prove raw ACP protocol purity. A separate compiled R12 ACP test passed strict framing; actual R11 Neovim/CodeCompanion UI receipts are in the ACP acceptance record.",
+    "The full Web UI was embedded; this matrix does not establish App UI correctness or final cross-platform release installation.",
+    "Reference costs count main provider turns, exclude auxiliary title calls, and are not subscription cash charges. Missing vision prices do not establish free calls.",
+    "Final merged-artifact checks, real-provider quota/natural credential-expiry acceptance and later Rust migration phases remain separate gates."
+  ]
+}

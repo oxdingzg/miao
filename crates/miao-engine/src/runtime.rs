@@ -1488,6 +1488,13 @@ async fn execute(
         if let Some(remaining) = &mut allowance {
             *remaining -= 1;
         }
+        // The turn that spends the last allowed provider turn still runs, but
+        // only to close the prompt: the tool surface is withheld and the
+        // request carries the TS runner's step wrap-up, so the transcript ends
+        // with a summary instead of stopping mid-operation. Internal
+        // continuations are withheld for the same reason.
+        let final_turn = allowance == Some(0) && !budget_exhausted;
+        let text_only = budget_exhausted || final_turn;
         let binding = match (inner.store.model_selection(session).await?, agent.as_ref()) {
             (Some(selection), _) => Some(selection),
             (None, Some((manifest, _))) => manifest.model.clone(),
@@ -1686,18 +1693,20 @@ async fn execute(
         // The plugin `tool.definition` family reviews the assembled surface
         // before it reaches the model, the same reverse dispatch the
         // before/after families use around calls.
-        let tools = if budget_exhausted {
-            // An exhausted budget withholds the tool surface for this turn, so
-            // the model can only close with text. Skipping the definition hook
-            // is part of the same decision: there is no surface to review.
+        let tools = if text_only {
+            // A text-only turn withholds the tool surface, so the model can
+            // only close with text. Skipping the definition hook is part of the
+            // same decision: there is no surface to review.
             Vec::new()
         } else {
             dispatch_plugin_definitions(inner, session, run, tools).await?
         };
-        // Soft-budget guidance rides the request after the durable history as
-        // an assistant note, matching the TS runner's message shape.
+        // Wrap-up guidance rides the request after the durable history as an
+        // assistant note, matching the TS runner's message shape.
         if let Some(note) = if budget_exhausted {
             Some(crate::history::BUDGET_EXHAUSTED_PROMPT)
+        } else if final_turn {
+            Some(crate::history::MAX_STEPS_PROMPT)
         } else if budget_wrap_up {
             Some(crate::history::BUDGET_WRAP_UP_NOTE)
         } else {
@@ -1997,6 +2006,7 @@ command: None,
             );
         }
         crate::session_model::stamp_route(&mut reply.content, binding.as_ref());
+        inner.tools.stamp_tool_identities(&mut reply.content);
         let assistant_boundary = inner
             .store
             .assistant_reply_profiled_fenced(
@@ -2024,7 +2034,7 @@ command: None,
         if invalid_input {
             input_corrections += 1;
         }
-        if reply.needs_tools && !budget_exhausted {
+        if reply.needs_tools && !text_only {
             let mut reads = execute_read_batch(
                 inner,
                 session,
@@ -2157,6 +2167,7 @@ command: None,
                                     session,
                                     crate::events::Lifecycle::PreToolUse,
                                     effective_name,
+                                    cancel.child_token(),
                                 )
                                 .await?
                                 {
@@ -2517,6 +2528,7 @@ command: None,
                     session,
                     crate::events::Lifecycle::PostToolUse,
                     effective_name,
+                    cancel.child_token(),
                 )
                 .await?;
                 if polling_terminal {
@@ -2746,7 +2758,7 @@ command: None,
             .promote_fenced(session, !reply.needs_tools, lease)
             .await?;
         let mut goal_stopped_this_turn = false;
-        if !reply.needs_tools && !budget_exhausted && promoted.is_empty() && state_allowed {
+        if !reply.needs_tools && !text_only && promoted.is_empty() && state_allowed {
             let state = inner.store.state(session).await?;
             let goal = &state["goal"]["value"];
             if goal["status"] == "active"
@@ -2815,7 +2827,7 @@ command: None,
             })
         });
         if !reply.needs_tools
-            && !budget_exhausted
+            && !text_only
             && promoted.is_empty()
             && !goal_stopped_this_turn
             && reply_text_empty
@@ -2863,8 +2875,7 @@ command: None,
         // configured, a run may not finish until it passes. A failure is a
         // classified continuation carrying the bounded output, and the retry
         // budget turns a persistent failure into a classified closure.
-        if !reply.needs_tools && !budget_exhausted && promoted.is_empty() && !goal_stopped_this_turn
-        {
+        if !reply.needs_tools && !text_only && promoted.is_empty() && !goal_stopped_this_turn {
             let command = inner.verification.lock().await.clone();
             if let Some(command) = command {
                 // The configured value is a command line, so the check runs
@@ -2974,10 +2985,10 @@ command: None,
                 }
             }
         }
-        // An exhausted soft budget ends the drain even if the reply still names
-        // tools: the surface was withheld, so none of them may run. The pause
-        // is visible in history and the next external input re-arms the budget.
-        if (budget_exhausted || !reply.needs_tools) && promoted.is_empty() {
+        // A text-only turn ends the drain even if the reply still names tools:
+        // the surface was withheld, so none of them may run. The pause is
+        // visible in history and the next external input re-arms it.
+        if (text_only || !reply.needs_tools) && promoted.is_empty() {
             if budget_exhausted {
                 let note = match budget {
                     Some(budget) => format!(
@@ -2988,6 +2999,16 @@ command: None,
                 inner
                     .store
                     .inject(session, &format!("prompt-budget-{run}"), &note, "engine")
+                    .await?;
+            } else if final_turn {
+                inner
+                    .store
+                    .inject(
+                        session,
+                        &format!("allowance-{run}"),
+                        "Reached the provider turn allowance for this prompt. Send a message to continue.",
+                        "engine",
+                    )
                     .await?;
             }
             if let Some(replay) = &inner.tool_replay {
@@ -3636,6 +3657,7 @@ async fn run_hooks(
     session: &str,
     phase: crate::events::Lifecycle,
     tool: &str,
+    cancel: CancellationToken,
 ) -> Result<Option<String>, Error> {
     let hooks = inner.tools.hooks();
     if hooks.is_empty() {
@@ -3643,11 +3665,11 @@ async fn run_hooks(
     }
     let mut blocked = None;
     for hook in hooks.iter().filter(|hook| hook.matches(phase, tool)) {
+        if cancel.is_cancelled() {
+            break;
+        }
         let started = std::time::Instant::now();
-        let result = inner
-            .tools
-            .run_hook(hook, tokio_util::sync::CancellationToken::new())
-            .await;
+        let result = inner.tools.run_hook(hook, cancel.child_token()).await;
         let (outcome, exit_code, reason) = match &result {
             Ok(output) => {
                 let exit = output["exit_code"].as_i64();
@@ -4261,6 +4283,7 @@ async fn authorize(
         call_id: call.into(),
         location: inner.tools.location().into(),
         tool: prepared.name().into(),
+        mcp: inner.tools.mcp_identity(prepared.name()),
         resource: prepared.resource().into(),
         input: prepared.input().clone(),
         input_hash,
