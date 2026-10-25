@@ -715,8 +715,13 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
         result?;
         return Ok(());
     }
-    serve(runtime, options.remove("--product-tools"), plugin_hooks).await?;
-    Ok(())
+    let result = serve(runtime.clone(), options.remove("--product-tools"), plugin_hooks).await;
+    runtime.shutdown().await;
+    // tokio's stdin fallback reader parks in read(2) while a pipe peer keeps
+    // the descriptor open, so dropping the async runtime after an idle
+    // reclaim can block forever. shutdown() has released every engine-owned
+    // resource (LSP, MCP and worker children included), so exit directly.
+    std::process::exit(if result.is_ok() { 0 } else { 1 });
 }
 
 async fn serve(
@@ -763,8 +768,10 @@ async fn serve(
     let mut poll = tokio::time::interval(Duration::from_millis(100));
     // Auto-reclaim: a stdio engine whose client died without a clean exit
     // would otherwise linger forever (its stdin pipe can stay open through
-    // grandchild processes). Exit after this much inactivity; any request,
-    // event or progress notice counts as activity. 0 disables.
+    // grandchild processes). Only client input counts as activity: internal
+    // events and progress notices keep flowing long after the client is gone
+    // (watchers, LSP pushes), so they must not extend the deadline. Live
+    // background work still postpones the reclaim. 0 disables.
     let idle = std::env::var("MIAO_ENGINE_STDIO_IDLE_SECS")
         .ok()
         .and_then(|value| value.parse::<u64>().ok())
@@ -800,18 +807,22 @@ async fn serve(
                 },
                 _=poll.tick()=>{
                     for value in host.poll_events().await.map_err(io::Error::other)? {
-                        if let Some(duration) = idle {
-                            idle_deadline = tokio::time::Instant::now() + duration;
-                        }
                         send(&output,value)?;
                     }
                 },
-                _=tokio::time::sleep_until(idle_deadline), if idle.is_some() => { break; },
+                _=tokio::time::sleep_until(idle_deadline), if idle.is_some() => {
+                    if runtime.has_live_work().await.unwrap_or(false) {
+                        idle_deadline = tokio::time::Instant::now() + idle.unwrap_or_default();
+                    } else {
+                        break;
+                    }
+                },
                 notice=progress.recv()=>match notice {
-                    Ok(notice)=>{if notice["session_id"].as_str().is_some_and(|s|host.subscribed(s)) {if let Some(duration) = idle { idle_deadline = tokio::time::Instant::now() + duration; } send(&output,json!({"method":"progress","params":notice}))?;}},
+                    Ok(notice)=>{if notice["session_id"].as_str().is_some_and(|s|host.subscribed(s)) {send(&output,json!({"method":"progress","params":notice}))?;}},
                     Err(tokio::sync::broadcast::error::RecvError::Lagged(_))=>send(&output,json!({"method":"resync","params":{"reason":"ephemeral_progress_lagged"}}))?,
                     Err(tokio::sync::broadcast::error::RecvError::Closed)=>break,
                 },
+                _=signal_exit()=>{ break; },
             }
         }
         Ok::<_,io::Error>(())
@@ -828,6 +839,30 @@ fn send(output: &mpsc::Sender<Value>, value: Value) -> io::Result<()> {
             "stdio subscriber must reconnect and replay committed events",
         )
     })
+}
+
+/// A terminated or interrupted engine must unwind instead of dying by
+/// default signal disposition, so its kill-on-drop children (LSP, MCP,
+/// workers) are reaped rather than orphaned. Registration failure disables
+/// the branch instead of exiting spuriously.
+#[cfg(unix)]
+async fn signal_exit() {
+    let terminate = tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate());
+    match terminate {
+        Ok(mut terminate) => {
+            tokio::select! {
+                _ = tokio::signal::ctrl_c() => {}
+                _ = terminate.recv() => {}
+            }
+        }
+        _ => std::future::pending::<()>().await,
+    }
+}
+
+/// Windows has no SIGTERM; Ctrl-C is the only graceful interruption.
+#[cfg(not(unix))]
+async fn signal_exit() {
+    tokio::signal::ctrl_c().await.ok();
 }
 
 /// Keep partial input across select cancellation; read_line itself is not
