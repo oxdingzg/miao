@@ -947,6 +947,13 @@ export const {
           })
           break
         }
+        case "session.next.prompt.cancelled": {
+          // A waiting prompt removed by another client (or by this one's cancel
+          // call) must stop rendering as pending, or the footer keeps a receipt
+          // for a message the Session will never promote.
+          pendingPrompts.remove(event.properties.messageID)
+          break
+        }
         case "server.instance.disposed":
           void bootstrap()
           break
@@ -1397,6 +1404,17 @@ export const {
               throw error
             },
           )
+        },
+        // Remove a prompt that was admitted but not promoted yet. The server's
+        // answer decides whether the receipt goes: a prompt that already crossed
+        // the promotion boundary is history and must not look cancellable.
+        async cancel(input: { sessionID: string; messageID: string }) {
+          const response = await sdk.api.sessions.inputCancel({
+            sessionID: input.sessionID,
+            messageID: input.messageID,
+          })
+          if (response.cancelled) pendingPrompts.remove(input.messageID)
+          return response.cancelled
         },
       },
       set: setStore,

@@ -15,6 +15,15 @@ export type PendingPrompt = {
 // Admission is visible to the user, but only Prompted makes it model-visible.
 export function createPendingPrompts() {
   const [data, setData] = createStore<Record<string, PendingPrompt>>({})
+  // Durably admitted prompts still waiting for promotion, oldest first.
+  // In-flight ("sending") receipts are excluded: the server may not have
+  // admitted them yet, so cancelling one is a race.
+  const waiting = (sessionID: string) => {
+    const pending = Object.values(data).filter((prompt) => prompt.sessionID === sessionID && prompt.state === "admitted")
+    return chronological(pending.map((prompt) => ({ id: prompt.info.id, time: prompt.info.time, prompt }))).map(
+      (item) => item.prompt,
+    )
+  }
   return {
     data,
     add(prompt: PendingPrompt) {
@@ -63,6 +72,7 @@ export function createPendingPrompts() {
         }),
       )
     },
+    waiting,
     // The footer renders one receipt line. Receipts enter in send order, so the
     // last one for this Session is the prompt whose state the user is waiting on.
     latest(sessionID: string): PendingPrompt | undefined {
@@ -72,12 +82,11 @@ export function createPendingPrompts() {
       }
       return found
     },
-    // Durably admitted prompts still waiting for promotion, oldest first.
-    // In-flight ("sending") receipts are excluded: the server may not have
-    // admitted them yet, so cancelling one is a race.
-    waiting(sessionID: string): PendingPrompt[] {
-      const pending = Object.values(data).filter((prompt) => prompt.sessionID === sessionID && prompt.state === "admitted")
-      return chronological(pending.map((prompt) => ({ id: prompt.info.id, time: prompt.info.time, prompt }))).map((item) => item.prompt)
+    // The one prompt esc removes and the up arrow takes back for editing: the
+    // newest admitted prompt. Two actions on the same target must not disagree
+    // about which message the user is pointing at.
+    newest(sessionID: string): PendingPrompt | undefined {
+      return waiting(sessionID).at(-1)
     },
     messages(sessionID: string, projected: ReadonlyArray<SessionMessage>): SessionMessage[] {
       const ids = new Set(projected.map((message) => message.id))
