@@ -14,8 +14,8 @@
     "metrics": {
       "summary": {
         "samples": 4,
-        "firstDestinationObservedMs": 24.100000381469727,
-        "stableDestinationObservedMs": 37.30000019073486,
+        "firstDestinationObservedMs": 20.600000381469727,
+        "stableDestinationObservedMs": 35.5,
         "sourceSamples": 0,
         "blankSamples": 0,
         "unknownSamples": 0,
@@ -23,7 +23,7 @@
       },
       "samples": [
         {
-          "observedAtMs": 24.100000381469727,
+          "observedAtMs": 20.600000381469727,
           "source": false,
           "destination": true,
           "content": true,
@@ -31,7 +31,7 @@
           "center": " charlie juliet quartz delta kilo river echo lima signal foxtrot metro vector go"
         },
         {
-          "observedAtMs": 32.60000038146973,
+          "observedAtMs": 23.300000190734863,
           "source": false,
           "destination": true,
           "content": true,
@@ -39,7 +39,7 @@
           "center": " echo lima signal foxtrot metro vector golf nova alpha hotel orbit bravo india p"
         },
         {
-          "observedAtMs": 37.30000019073486,
+          "observedAtMs": 35.5,
           "source": false,
           "destination": true,
           "content": true,
@@ -47,7 +47,7 @@
           "center": " echo lima signal foxtrot metro vector golf nova alpha hotel orbit bravo india p"
         },
         {
-          "observedAtMs": 45.69999980926514,
+          "observedAtMs": 48.10000038146973,
           "source": false,
           "destination": true,
           "content": true,

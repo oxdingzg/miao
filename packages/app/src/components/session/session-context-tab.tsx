@@ -191,7 +191,20 @@ export function SessionContextTab() {
   })
 
   const projected = createMemo(() => contentParts(params.id ?? "", messages()))
-  const history = createMemo(() => estimateSessionContextHistory({ messages: messages(), parts: projected() }))
+  const historyRevision = createMemo(() =>
+    messages()
+      .map((message) =>
+        message.type === "assistant"
+          ? `${message.id}:${message.time.completed ?? ""}:${message.tokens?.input ?? 0}:${message.tokens?.cache.read ?? 0}:${message.tokens?.cache.write ?? 0}`
+          : message.id,
+      )
+      .join("|"),
+  )
+  // Live text deltas do not change a settled checkpoint. Recompute the
+  // estimates only when history pages or reported input facts change.
+  const history = createMemo(
+    on(historyRevision, () => estimateSessionContextHistory({ messages: messages(), parts: projected() })),
+  )
 
   const breakdown = createMemo(
     on(
