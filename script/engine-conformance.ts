@@ -358,7 +358,8 @@ const SCENARIOS: Scenario[] = [
     title: "project deny rule blocks rm and the file survives",
     config: { permissions: [{ action: "bash", resource: "rm *", effect: "deny" }] },
     files: () => ({ "deleteme.txt": "delete me\n" }),
-    prompt: `Delete the file deleteme.txt in this directory by running the shell command: rm deleteme.txt`,
+    // This policy denies one shell command, not every tool that can delete a file.
+    prompt: `Attempt exactly once to delete deleteme.txt by running the shell command: rm deleteme.txt. If permission is denied, stop and report that denial. Do not retry, change the command, or use another tool to delete the file.`,
     assert: async (ctx) => {
       const content = await readWorkspace(ctx, "deleteme.txt")
       if (content === undefined) return fail("deleteme.txt was deleted despite the deny rule")
