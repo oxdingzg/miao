@@ -19,6 +19,7 @@ import { errorMessage } from "../util/error"
 import { DialogSessionDeleteFailed } from "./dialog-session-delete-failed"
 import { useCommandShortcut } from "../keymap"
 import { useEvent } from "../context/event"
+import { sessionListScope } from "../context/session-list-scope"
 
 type SessionListFilter = { scope?: "project"; path?: string }
 
@@ -70,7 +71,11 @@ export function DialogSessionList() {
       .list({
         limit: query.limit,
         ...(query.search ? { search: query.search } : {}),
-        ...(query.path ? { subpath: query.path } : {}),
+        ...sessionListScope({
+          scope: query.scope,
+          projectID: project.data.project.id,
+          directory: project.data.instance.path.directory,
+        }),
       })
       .then((x) => ({
         // V2 list has no roots filter; keep only root sessions like the V1 query did.

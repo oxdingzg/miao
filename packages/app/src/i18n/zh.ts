@@ -3,6 +3,19 @@ import { dict as en } from "./en"
 type Keys = keyof typeof en
 
 export const dict = {
+  "context.timeline.title": "上下文与缓存历史",
+  "context.timeline.step":
+    "{{model}} · {{time}} · 提示词 {{input}} token · 缓存读取 {{read}} token · 缓存写入 {{write}} token",
+  "context.timeline.requestWindow": "请求时的上下文窗口：{{value}} token",
+  "context.timeline.catalogWindow": "当前模型目录中的上下文窗口：{{value}} token",
+  "context.timeline.unknownWindow": "上下文窗口未知",
+  "context.timeline.empty": "尚未记录已结算的模型调用用量。",
+  "context.timeline.retry": "重新加载用量历史",
+  "context.timeline.compaction": "上下文已压缩",
+  "context.timeline.cacheRead": "缓存读取",
+  "context.timeline.cacheWrite": "缓存写入",
+  "context.timeline.ttft": "首个 token 延迟 {{value}} 毫秒",
+
   "desktop.menu.app": "miao",
   "desktop.menu.file": "文件",
   "desktop.menu.edit": "编辑",
@@ -88,8 +101,7 @@ export const dict = {
   "desktop.wsl.error.miaoMissing": "此发行版中未安装 miao",
   "desktop.wsl.error.miaoCannotRun": "已安装 miao，但无法运行",
   "desktop.wsl.error.miaoNotInstalled": "{{distro}} 中未安装 miao",
-  "desktop.wsl.error.updateVersion":
-    "miao 更新已完成，但 {{distro}} 仍报告版本 {{installed}}；预期版本为 {{expected}}",
+  "desktop.wsl.error.updateVersion": "miao 更新已完成，但 {{distro}} 仍报告版本 {{installed}}；预期版本为 {{expected}}",
   "desktop.wsl.error.noVersion": "无版本信息",
   "desktop.wsl.error.serverExited": "WSL 服务器启动后退出（code={{code}} signal={{signal}}）",
   "desktop.wsl.error.serverExitedBeforeHealthy":
@@ -647,7 +659,8 @@ export const dict = {
   "toast.permissions.autoaccept.off.title": "已停止自动接受权限",
   "toast.permissions.autoaccept.off.description": "权限请求将需要批准",
   "settings.permissions.autoaccept.project.title": "自动接受本项目的权限请求",
-  "settings.permissions.autoaccept.project.description": "自动批准本项目内所有会话的权限请求。会话与目录的选择仍然优先。",
+  "settings.permissions.autoaccept.project.description":
+    "自动批准本项目内所有会话的权限请求。会话与目录的选择仍然优先。",
   "toast.model.none.title": "未选择模型",
   "toast.model.none.description": "请先连接提供商以总结此会话",
   "toast.file.loadFailed.title": "加载文件失败",
