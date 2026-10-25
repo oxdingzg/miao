@@ -1,0 +1,33 @@
+{
+  "scenario": "forced-compaction",
+  "engine": "rust",
+  "model": "zhipuai-coding-plan/glm-5.3-flash",
+  "outcome": {
+    "status": "pass",
+    "note": "engine_compaction rows: 1 (db ebb2881442c5974fb843e9f34dcdcde97875740772d7bc517b9e0c09c34c5ce5.db)"
+  },
+  "sessionID": "ses_gfe5e8c1fc8d0ffeQn3fTG2qTi",
+  "cost": 0.00404,
+  "tokensIn": 76230,
+  "tokensOut": 770,
+  "stepFinishes": 4,
+  "tools": [
+    {
+      "tool": "bash",
+      "status": "completed",
+      "command": "wc -l data/large.txt; wc -c data/large.txt",
+      "background": false
+    },
+    {
+      "tool": "read",
+      "status": "completed",
+      "background": false
+    },
+    {
+      "tool": "read",
+      "status": "completed",
+      "background": false
+    }
+  ],
+  "errors": []
+}
