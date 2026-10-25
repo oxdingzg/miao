@@ -561,13 +561,33 @@ impl Runtime {
 
     /// Detaching the last UI must not kill useful background work.
     pub async fn has_live_work(&self) -> Result<bool, Error> {
-        if !self.inner.jobs.lock().await.is_empty()
-            || !self.inner.timers.lock().await.is_empty()
-            || !self.inner.crons.lock().await.is_empty()
+        if self
+            .inner
+            .jobs
+            .lock()
+            .await
+            .values()
+            .any(|job| !job.join.is_finished())
+            || self
+                .inner
+                .timers
+                .lock()
+                .await
+                .values()
+                .any(|timer| !timer.join.is_finished())
+            || self
+                .inner
+                .crons
+                .lock()
+                .await
+                .values()
+                .any(|cron| !cron.join.is_finished())
         {
             return Ok(true);
         }
-        self.inner.store.has_running_runs().await
+        // Other processes can share this store. Their work, and stale rows
+        // without a local execution owner, must not keep this engine alive.
+        self.inner.store.has_owned_running_runs().await
     }
 
     /// Ephemeral deltas have no durable cursor. Slow clients lose deltas and

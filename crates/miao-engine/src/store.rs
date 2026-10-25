@@ -1741,13 +1741,13 @@ command: None,
         })
         .await
     }
-    /// A lease is alive while its last heartbeat is within twice the declared
-    /// interval; expired or missing leases make timers adoptable.
-    pub async fn has_running_runs(&self) -> Result<bool, Error> {
+    /// Runs claimed by this process, excluding other owners and unclaimed
+    /// crash residue in the shared database.
+    pub async fn has_owned_running_runs(&self) -> Result<bool, Error> {
         self.call(|conn| {
             Ok(conn.query_row(
-                "SELECT EXISTS(SELECT 1 FROM engine_run WHERE state='running')",
-                [],
+                "SELECT EXISTS(SELECT 1 FROM engine_run r JOIN engine_lease l ON l.session_id=r.session_id WHERE r.state='running' AND l.owner_pid=?1)",
+                [std::process::id()],
                 |row| row.get(0),
             )?)
         })
