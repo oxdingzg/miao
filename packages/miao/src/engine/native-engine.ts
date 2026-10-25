@@ -42,6 +42,7 @@ import { Location } from "@miao/schema/location"
 import { Cause, DateTime, Effect, Layer, Option, Queue, Schema, Context } from "effect"
 import { EngineError, type EngineOptions, type EngineEvent } from "./client"
 import { discoveredEngine } from "./discovery"
+import { messageID } from "./identity"
 import { makeEngineOwners } from "./owners"
 import type { EnginePricing } from "./session"
 import { NativeRecovery } from "./recovery"
@@ -309,7 +310,12 @@ export function pendingInputsPage(sessionID: SessionID, value: unknown) {
     Schema.Struct({
       inputs: Schema.Array(
         Schema.Struct({
-          id: SessionMessage.ID,
+          // The engine also admits inputs it generated itself (monitor
+          // notices, cron/wakeup fires, job completion receipts), and those
+          // identities do not carry the product's `msg_` prefix. Decoding
+          // them as SessionMessage.ID failed the whole page, turning every
+          // session with a pending notice into a 500 on /inputs.
+          id: Schema.String.check(Schema.isMinLength(1), Schema.isMaxLength(512)),
           prompt: Schema.String,
           delivery: SessionInput.Delivery,
           admitted_seq: Schema.Number,
@@ -324,7 +330,12 @@ export function pendingInputsPage(sessionID: SessionID, value: unknown) {
     inputs: page.inputs.map((entry) =>
       SessionInput.Admitted.make({
         admittedSeq: entry.admitted_seq,
-        id: entry.id,
+        // A product prompt keeps the identity it was submitted with, so a
+        // later cancel can address it. An engine-generated notice has no
+        // product identity of its own; synthesize the same deterministic
+        // message id the promotion event falls back to instead of failing
+        // the page on a non-`msg_` engine id.
+        id: entry.id.startsWith("msg_") ? SessionMessage.ID.make(entry.id) : messageID(sessionID, entry.admitted_seq),
         sessionID,
         prompt: {
           text: entry.prompt,

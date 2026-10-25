@@ -53,3 +53,52 @@ test("an empty inbox stays empty", () => {
   expect(page.inputs).toEqual([])
   expect(page.hasMore).toBe(false)
 })
+
+test("engine-generated inputs get a product identity instead of failing the page", () => {
+  const page = pendingInputsPage(SessionID.make("ses_inbox"), {
+    inputs: [
+      {
+        id: "monitor:8ffca768-5f2a-4cea-a62a-1d1688529fdf:d3a3e670-4240-472b-8fb7-ca5672ea0f2c",
+        session_id: "ses_inbox",
+        prompt: "Monitor job produced matching output",
+        delivery: "steer",
+        admitted_seq: 9,
+        recorded_at_ms: 1_700_000_000_000,
+        attachments: [],
+      },
+      {
+        id: "wakeup/sched_1",
+        session_id: "ses_inbox",
+        prompt: "scheduled wakeup",
+        delivery: "queue",
+        admitted_seq: 11,
+        recorded_at_ms: 1_700_000_000_500,
+        attachments: [],
+      },
+    ],
+    has_more: false,
+  })
+  expect(page.inputs.map((input) => String(input.id))).toEqual([
+    "msg_ses_inbox_9",
+    "msg_ses_inbox_11",
+  ])
+})
+
+test("an engine input needs a non-empty identity", () => {
+  expect(() =>
+    pendingInputsPage(SessionID.make("ses_inbox"), {
+      inputs: [
+        {
+          id: "",
+          session_id: "ses_inbox",
+          prompt: "missing identity",
+          delivery: "steer",
+          admitted_seq: 1,
+          recorded_at_ms: 1_700_000_000_000,
+          attachments: [],
+        },
+      ],
+      has_more: false,
+    }),
+  ).toThrow()
+})
