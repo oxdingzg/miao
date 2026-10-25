@@ -63,6 +63,15 @@ export function createPendingPrompts() {
         }),
       )
     },
+    // The footer renders one receipt line. Receipts enter in send order, so the
+    // last one for this Session is the prompt whose state the user is waiting on.
+    latest(sessionID: string): PendingPrompt | undefined {
+      let found: PendingPrompt | undefined
+      for (const prompt of Object.values(data)) {
+        if (prompt.sessionID === sessionID) found = prompt
+      }
+      return found
+    },
     // Durably admitted prompts still waiting for promotion, oldest first.
     // In-flight ("sending") receipts are excluded: the server may not have
     // admitted them yet, so cancelling one is a race.
