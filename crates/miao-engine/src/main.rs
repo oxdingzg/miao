@@ -715,7 +715,12 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
         result?;
         return Ok(());
     }
-    let result = serve(runtime.clone(), options.remove("--product-tools"), plugin_hooks).await;
+    let result = serve(
+        runtime.clone(),
+        options.remove("--product-tools"),
+        plugin_hooks,
+    )
+    .await;
     runtime.shutdown().await;
     // tokio's stdin fallback reader parks in read(2) while a pipe peer keeps
     // the descriptor open, so dropping the async runtime after an idle
