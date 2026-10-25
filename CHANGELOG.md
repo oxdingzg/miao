@@ -11,28 +11,31 @@ at `docs/releases/vX.Y.Z.md` and `docs/releases/vX.Y.Z.zh.md`; both are required
 
 ## [Unreleased]
 
+## [0.3.5] - 2026-10-25
+
+### Added
+- **core**: add a soft per-prompt token budget for agents (#1378) (`03addcfb7d`)
+
+### Fixed
+- **core**: clarify Google account quota errors (#1379) (`48ba056c62`)
+- **session**: title native sessions with their serving model (#1374) (`a7643ee6cd`)
+- **engine**: skip journal replay for caught-up subscribers (#1375) (`7fff3e9bae`)
+
 ## [0.3.4] - 2026-10-25
 
 ### Added
+- **tui**: let a waiting prompt be edited before it is delivered (#1387) (`ae8dd89b71`)
+- **tui**: collapse read runs and preview long diffs (#1384) (`ffe8447124`)
+- **tui**: summarize a settled turn with its duration and completion time (#1388) (`625399c357`)
 - **tui**: offer new messages instead of pulling the reader to the tail (#1380) (`9c55e8adac`)
 - **engine**: honor the operator sandbox switch for process commands (#1367) (`8c8ddd7a36`)
 
 ### Fixed
+- **tui**: show the session title without the product prefix (#1381) (`0eb08af704`)
+- **tui**: show prompt delivery state on the footer line (#1383) (`d110bfd322`)
 - **ci**: run the Playwright e2e suite on the image it supports (#1386) (`0514b2fe51`)
 - **tui**: remember successful native model selections (#1373) (`a321fcabf4`)
 - **engine**: bound native RPC waits and reap closed clients (#1376) (`3befb60880`)
-- **engine**: register the task tool's named subagents for every admission (#1371) (`824ff9e13f`)
-- **engine**: attribute assistant identity to the serving agent (#1370) (`4646d63b6b`)
-- **engine**: refuse identical tool calls with a corrective error (#1369) (`7fdb1dd7d9`)
-- **tui**: wait for prompt admission without a client timeout (#1382) (`649778397a`)
-- **engine**: reclaim idle stdio engines from client activity alone (#1368) (`056e505705`)
-
-## [0.3.4] - 2026-10-25
-
-### Added
-- **engine**: honor the operator sandbox switch for process commands (#1367) (`8c8ddd7a36`)
-
-### Fixed
 - **engine**: register the task tool's named subagents for every admission (#1371) (`824ff9e13f`)
 - **engine**: attribute assistant identity to the serving agent (#1370) (`4646d63b6b`)
 - **engine**: refuse identical tool calls with a corrective error (#1369) (`7fdb1dd7d9`)
