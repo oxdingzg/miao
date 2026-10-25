@@ -2795,7 +2795,7 @@ pub(crate) fn projected(
     skip_transferred: bool,
 ) -> Result<Vec<Value>, Error> {
     let mut stmt=tx.prepare("SELECT m.seq,m.role,m.content,m.checkpoint,m.recorded_at_ms FROM engine_message m WHERE m.session_id=?1 AND m.seq<=?2 AND m.reverted=0
-        AND (?3=0 OR NOT EXISTS(SELECT 1 FROM engine_transfer_message t JOIN engine_transfer_import i ON i.id=t.import_id WHERE i.session_id=m.session_id AND t.seq=m.seq)) ORDER BY m.seq LIMIT 1001")?;
+        AND (?3=0 OR NOT EXISTS(SELECT 1 FROM engine_transfer_message t JOIN engine_transfer_import i ON i.id=t.import_id WHERE i.session_id=m.session_id AND t.seq=m.seq)) ORDER BY m.seq LIMIT 20001")?;
     let mut rows = stmt.query(params![session, cursor, skip_transferred])?;
     let mut messages = Vec::new();
     let mut bytes = 0;
