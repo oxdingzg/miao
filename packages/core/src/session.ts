@@ -822,8 +822,18 @@ const layer = Layer.effect(
         yield* execution.resume(input.sessionID).pipe(Effect.ignore)
       }),
       wait: Effect.fn("V2Session.wait")(function* (sessionID) {
-        yield* result.get(sessionID)
+        const session = yield* result.get(sessionID)
         yield* execution.wait(sessionID)
+        // A headless caller closes its runtime after this wait. Keep the
+        // already-running title alive until it settles, without extending
+        // execution ownership or the Session's busy status.
+        yield* Effect.gen(function* () {
+          const runner = yield* Effect.serviceOption(SessionRunner.Service)
+          if (Option.isSome(runner)) yield* runner.value.settleTitle?.(sessionID) ?? Effect.void
+        }).pipe(
+          Effect.provide(locations.get(session.location)),
+          Effect.catchCause((cause) => Effect.logWarning("Session title settlement skipped", { sessionID, cause })),
+        )
       }),
       active: execution.active,
       executions: execution.executions,

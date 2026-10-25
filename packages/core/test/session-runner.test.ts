@@ -9207,6 +9207,62 @@ describe("SessionRunnerLLM", () => {
       Effect.map((session) => session.title),
     )
 
+    it.effect("explicit settlement awaits only this Session's delayed title", () =>
+      Effect.gen(function* () {
+        yield* setup
+        yield* titleAgent
+        yield* setTitle(defaultTitle)
+        const gate = yield* Deferred.make<void>()
+        responseFor = (request) => request.system.some((part) => part.text === TITLE_SYSTEM)
+          ? Stream.unwrap(Deferred.await(gate).pipe(Effect.as(Stream.fromIterable(
+              fragmentFixture("text", "delayed-title", ["Persist the delayed title"]).completeEvents,
+            ))))
+          : Stream.fromIterable(fragmentFixture("text", "main-before-title", ["Answer"]).completeEvents)
+        const session = yield* SessionV2.Service
+        yield* session.prompt({ sessionID, prompt: Prompt.make({ text: "A fast main answer with a slower title" }), resume: false })
+        yield* session.resume(sessionID)
+        expect(yield* currentTitle).toBe(defaultTitle)
+        const runner = yield* SessionRunner.Service
+        const waiting = yield* (runner.settleTitle?.(sessionID) ?? Effect.void).pipe(Effect.forkChild)
+        yield* settle
+        expect(waiting.pollUnsafe()).toBeUndefined()
+        const unrelated = yield* (runner.settleTitle?.(otherSessionID) ?? Effect.void).pipe(Effect.forkChild)
+        yield* settle
+        expect(unrelated.pollUnsafe()?._tag).toBe("Success")
+        expect(waiting.pollUnsafe()).toBeUndefined()
+        yield* Deferred.succeed(gate, undefined)
+        yield* Fiber.join(waiting)
+        expect(yield* currentTitle).toBe("Persist the delayed title")
+      }),
+    )
+
+    it.effect("title settlement is bounded without cancelling the background title", () =>
+      Effect.gen(function* () {
+        yield* setup
+        yield* titleAgent
+        yield* setTitle(defaultTitle)
+        const gate = yield* Deferred.make<void>()
+        responseFor = (request) => request.system.some((part) => part.text === TITLE_SYSTEM)
+          ? Stream.unwrap(Deferred.await(gate).pipe(Effect.as(Stream.fromIterable(
+              fragmentFixture("text", "bounded-title", ["A title can finish later"]).completeEvents,
+            ))))
+          : Stream.fromIterable(fragmentFixture("text", "bounded-main", ["Answer"]).completeEvents)
+        const session = yield* SessionV2.Service
+        yield* session.prompt({ sessionID, prompt: Prompt.make({ text: "A title that takes too long" }), resume: false })
+        yield* session.resume(sessionID)
+        const runner = yield* SessionRunner.Service
+        const waiting = yield* (runner.settleTitle?.(sessionID) ?? Effect.void).pipe(Effect.forkChild)
+        yield* settle
+        expect(waiting.pollUnsafe()).toBeUndefined()
+        yield* TestClock.adjust("30 seconds")
+        yield* Fiber.join(waiting)
+        expect(yield* currentTitle).toBe(defaultTitle)
+        yield* Deferred.succeed(gate, undefined)
+        yield* runner.settleTitle?.(sessionID) ?? Effect.void
+        expect(yield* currentTitle).toBe("A title can finish later")
+      }),
+    )
+
     it.effect("titles a root Session with a placeholder title after its first prompt", () =>
       Effect.gen(function* () {
         yield* setup
