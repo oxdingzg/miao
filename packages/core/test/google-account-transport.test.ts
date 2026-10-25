@@ -314,3 +314,27 @@ it.live("weekly reset hints are not dropped by a one-day delay cap", () => Effec
   expect((error as GoogleAccount.RequestError).retryAfterMs).toBe(518400000)
   expect(String(error)).toMatch(/Retry after \d{4}-\d{2}-\d{2}T/)
 }))
+
+it.live("model discovery retains service rejection reasons and reset delays", () =>
+  Effect.gen(function* () {
+    const { state, options } = yield* fixture()
+    state.status = 429
+    state.reason = "QUOTA_EXHAUSTED"
+    state.reset = "120s"
+    const error = yield* Effect.tryPromise({
+      try: () => models("fixture-access", "project-one", options),
+      catch: (cause) => cause,
+    }).pipe(Effect.flip)
+    expect(error).toBeInstanceOf(GoogleAccount.RequestError)
+    expect(error).toMatchObject({
+      operation: "fetchAvailableModels",
+      status: 429,
+      reason: "QUOTA_EXHAUSTED",
+      retryAfterMs: 120_000,
+    })
+    expect(String(error)).toContain("Antigravity quota")
+    expect(String(error)).toContain("Gemini App usage limits are separate")
+    expect(String(error)).not.toContain("fixture-private-token-must-not-leak")
+    expect(state.calls).toHaveLength(1)
+  }),
+)
