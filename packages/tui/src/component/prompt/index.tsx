@@ -1699,7 +1699,7 @@ export function Prompt(props: PromptProps) {
                     <text fg={theme.textMuted}>{Locale.duration(turnElapsed())}</text>
                   </Show>
                   <text fg={theme.text}>
-                    esc <span style={{ fg: theme.textMuted }}>interrupt</span>
+                    esc <span style={{ fg: theme.textMuted }}>{waitingPrompts().length > 0 ? "remove prompt" : "interrupt"}</span>
                   </text>
                 </box>
               </Match>
