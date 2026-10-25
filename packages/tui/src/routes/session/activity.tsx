@@ -8,7 +8,9 @@ import { Locale } from "../../util/locale"
 import { toolDisplay } from "../../util/tool-display"
 import type {
   AssistantContent,
+  SessionMessage,
   SessionStatus,
+  TranscriptAssistantMessage,
   TranscriptMessage,
   TranscriptReasoningPart,
   TranscriptToolPart,
@@ -170,6 +172,24 @@ export function SessionActivity(props: { sessionID: string }) {
     const status = sync.data.session_status[props.sessionID]
     return status?.type === "retry" ? status.message : sync.data.session_error[props.sessionID]
   })
+  // Background work the turn left behind: child sessions still executing. The
+  // transcript already lists their tool blocks, but a settled turn that is
+  // still delegating must not read as finished.
+  const background = createMemo(
+    () =>
+      sync.data.session.filter((session) => {
+        if (session.parentID !== props.sessionID) return false
+        const status = sync.data.session_status[session.id]
+        return status !== undefined && status.type !== "idle"
+      }).length,
+  )
+  // Replaced by the live line while the turn runs; a settled turn keeps one
+  // line naming its duration and completion time.
+  const summary = createMemo(() =>
+    busy() || compaction() || blocked()
+      ? undefined
+      : turnSummary({ messages: messages(), background: background() }),
+  )
   // The esc hint names the next esc action, matching the prompt footer: one
   // esc cancels the newest waiting prompt, and only an empty queue interrupts.
   const waitingCount = createMemo(() => sync.prompt.waiting(props.sessionID).length)
@@ -181,14 +201,17 @@ export function SessionActivity(props: { sessionID: string }) {
         <Show
           when={active()}
           fallback={
-            <SessionWaiting
-              waiting={waiting()}
-              elapsed={0}
-              activity={activity()}
-              phase={phase()}
-              progress={progress()}
-              esc={esc()}
-            />
+            <>
+              <SessionWaiting
+                waiting={waiting()}
+                elapsed={0}
+                activity={activity()}
+                phase={phase()}
+                progress={progress()}
+                esc={esc()}
+              />
+              <SessionSummary text={summary()} />
+            </>
           }
         >
           <SessionActiveWaiting
@@ -236,6 +259,34 @@ function SessionActiveWaiting(props: {
       esc={props.esc}
     />
   )
+}
+
+// Claude Code closes a turn with one settled line. The per-message footer
+// describes a single step, so the turn's own span — from the prompt that opened
+// it to the last completed step — has no other place to appear.
+export function turnSummary(input: {
+  messages: ReadonlyArray<SessionMessage>
+  /** Child sessions still executing when the turn settled. */
+  background?: number
+}): string | undefined {
+  const start = input.messages.findLastIndex((message) => message.type === "user")
+  if (start < 0) return undefined
+  const opened = input.messages[start].time.created
+  if (opened === null) return undefined
+  const tail = input.messages
+    .slice(start + 1)
+    .findLast((message): message is TranscriptAssistantMessage => message.type === "assistant")
+  // A turn without a completed step is still running, or was interrupted
+  // before it could settle; neither has a finished span to report.
+  if (!tail || tail.time.completed === undefined) return undefined
+  // A failed tail renders its own error block. Summarizing it as work would
+  // read as success.
+  if (tail.error !== undefined && tail.error.interrupted !== true) return undefined
+  const duration = Locale.duration(Math.max(0, tail.time.completed - opened))
+  const verb = tail.error?.interrupted === true ? `Stopped after ${duration}` : `Worked for ${duration}`
+  const running = input.background ?? 0
+  const background = running > 0 ? ` · ${running} subagent${running === 1 ? "" : "s"} still running` : ""
+  return `${verb} · done ${Locale.todayTimeOrDateTime(tail.time.completed)}${background}`
 }
 
 export function turnActivity(input: { parts: AssistantContent[]; working: boolean }) {
@@ -406,6 +457,22 @@ export function SessionWaiting(props: {
       {(value) => (
         <box paddingLeft={3} marginTop={1} flexShrink={0}>
           <Spinner color={theme.textMuted}>{value()}</Spinner>
+        </box>
+      )}
+    </Show>
+  )
+}
+
+// The settled counterpart of the live status line, in the same slot and at the
+// same size so the turn's ending replaces its progress rather than appearing
+// somewhere else.
+function SessionSummary(props: { text?: string }) {
+  const { theme } = useTheme()
+  return (
+    <Show when={props.text}>
+      {(text) => (
+        <box paddingLeft={3} marginTop={1} flexShrink={0}>
+          <text fg={theme.textMuted}>● {text()}</text>
         </box>
       )}
     </Show>
