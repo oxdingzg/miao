@@ -446,6 +446,7 @@ export const waitNative = Effect.fn("NativeSession.wait")(function* (input: {
       sessionID: input.sessionID,
       storage: input.storage,
       location: input.location,
+      metadataOnly: true,
     })
     if (nativeIdle(snapshot)) return
     yield* Effect.sleep("250 millis")
