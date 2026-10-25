@@ -44,7 +44,7 @@ describe("contextTimeline", () => {
           model: { providerID: "provider", id: "small" },
           content: [],
           contextBudget: { input: 350, source: "counted", window: 600, limit: 500 },
-          time: { created: 0 },
+          time: { created: 0, completed: 2 },
         },
       ],
       new Map(),
@@ -70,5 +70,25 @@ describe("contextTimeline", () => {
       new Map(),
     )
     expect(segments[0].points.map((point) => point.compacted)).toEqual([false, true, false])
+  })
+
+  test("does not attribute a newer completed request budget to an older usage page", () => {
+    const segments = contextTimeline(
+      [step("older", 1)],
+      [
+        {
+          id: "msg_shared",
+          type: "assistant",
+          agent: "build",
+          model: { providerID: "provider", id: "small" },
+          content: [],
+          contextBudget: { input: 350, source: "counted", window: 600, limit: 500 },
+          time: { created: 0, completed: 2 },
+        },
+      ],
+      new Map(),
+    )
+    expect(segments[0].window).toBeUndefined()
+    expect(segments[0].source).toBeUndefined()
   })
 })
