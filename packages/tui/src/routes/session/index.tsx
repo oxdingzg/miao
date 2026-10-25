@@ -73,7 +73,16 @@ import { usePromptRef } from "../../context/prompt"
 import { normalizePath } from "../../util/path"
 import { PermissionPrompt } from "./permission"
 import { QuestionPrompt } from "./question"
-import { SessionActivity, latestSubagentPartID, orderTaskBlocks, subagentActivity, subagentResult, subagentRunning } from "./activity"
+import {
+  SessionActivity,
+  groupReadRuns,
+  latestSubagentPartID,
+  orderTaskBlocks,
+  subagentActivity,
+  subagentResult,
+  subagentRunning,
+  type ReadRun,
+} from "./activity"
 import { SessionTimers } from "./timers"
 import { SessionMessageContent } from "./session-message"
 import { PromptStatus } from "./prompt-status"
@@ -94,7 +103,7 @@ import {
   type ThinkingMode,
 } from "../../context/thinking"
 import { getScrollAcceleration } from "../../util/scroll"
-import { collapseToolOutput } from "../../util/collapse-tool-output"
+import { collapseToolOutput, diffPreview } from "../../util/collapse-tool-output"
 import { stdinPreview } from "../../util/stdin-preview"
 import { createScrollAnchoring, createTranscriptWindow, type ScrollAnchorGeometry } from "../../util/transcript-window"
 import { createDiffHighlighter } from "../../util/diff-context-highlight"
@@ -1688,24 +1697,42 @@ function AssistantMessage(props: { message: TranscriptAssistantMessage; sessionI
   // One block per subagent with the running ones on top; only sibling tool
   // parts reorder among themselves, so the timeline itself stays honest.
   const content = createMemo(() => orderTaskBlocks(props.message.content))
+  // `<For>` keeps rows mounted by identity, and grouping builds a new object on
+  // every streamed update. Reuse a run while its parts are unchanged so the
+  // group does not remount on each token.
+  const readRuns = new Map<string, ReadRun>()
+  const rendered = createMemo(() =>
+    groupReadRuns(content()).map((part) => {
+      if (part.type !== "read-run") return part
+      const key = part.parts.map((item) => item.id).join(",")
+      const cached = readRuns.get(key)
+      if (cached) return cached
+      readRuns.set(key, part)
+      return part
+    }),
+  )
 
   return (
     <>
-      <For each={content()}>
-        {(part, index) => {
-          const component = createMemo(() => PART_MAPPING[part.type as keyof typeof PART_MAPPING])
-          return (
-            <Show when={component()}>
-              <Dynamic
-                last={index() === content().length - 1}
-                component={component()}
-                part={part as any}
-                message={props.message}
-                sessionID={props.sessionID}
-              />
-            </Show>
-          )
-        }}
+      <For each={rendered()}>
+        {(part, index) => (
+          <Switch>
+            <Match when={part.type === "read-run"}>
+              <ReadRun parts={(part as ReadRun).parts} />
+            </Match>
+            <Match when={true}>
+              <Show when={PART_MAPPING[(part as TranscriptAssistantMessage["content"][number]).type]}>
+                <Dynamic
+                  last={index() === rendered().length - 1}
+                  component={PART_MAPPING[(part as TranscriptAssistantMessage["content"][number]).type]}
+                  part={part as any}
+                  message={props.message}
+                  sessionID={props.sessionID}
+                />
+              </Show>
+            </Match>
+          </Switch>
+        )}
       </For>
       <Show when={tools().some((x) => x.name === "task")}>
         <box paddingTop={1} paddingLeft={3}>
@@ -2547,6 +2574,38 @@ function Read(props: ToolProps) {
   )
 }
 
+// A run of completed reads is one action. The paths stay one click away so a
+// dozen reads do not push the answer off the screen.
+function ReadRun(props: { parts: TranscriptToolPart[] }) {
+  const { theme } = useTheme()
+  const renderer = useRenderer()
+  const pathFormatter = usePathFormatter()
+  const [expanded, setExpanded] = createSignal(false)
+  const files = createMemo(() =>
+    props.parts.flatMap((part) => {
+      const input =
+        typeof part.state.input === "object" && part.state.input !== null ? toolInput(part.name, part.state.input) : {}
+      const filePath = stringValue(input.filePath)
+      return filePath ? [pathFormatter.format(filePath)] : []
+    }),
+  )
+  return (
+    <box
+      onMouseUp={() => {
+        if (renderer.getSelection()?.getSelectedText()) return
+        setExpanded((value) => !value)
+      }}
+    >
+      <InlineToolRow icon="●" iconColor={theme.success} color={theme.text} complete={true} pending="Reading files…">
+        <b>Read</b> {props.parts.length} files
+      </InlineToolRow>
+      <Show when={expanded()}>
+        <For each={files()}>{(file) => <FileToolResult summary={file} color={theme.textMuted} />}</For>
+      </Show>
+    </box>
+  )
+}
+
 function Grep(props: ToolProps) {
   const pathFormatter = usePathFormatter()
   return (
@@ -2857,11 +2916,12 @@ function Edit(props: ToolProps) {
   const ft = createMemo(() => filetype(stringValue(props.input.filePath)))
 
   const diffContent = createMemo(() => stringValue(props.metadata.diff) ?? "")
+  const preview = createMemo(() => diffPreview(diffContent(), PREVIEW_DIFF_LINES))
   const [expanded, setExpanded] = createSignal(diffFitsInline(diffContent()))
   const highlighter = useDiffHighlighter({
     patch: diffContent,
     filePath: () => stringValue(props.input.filePath),
-    enabled: expanded,
+    enabled: () => expanded() || preview() !== undefined,
   })
 
   return (
@@ -2880,9 +2940,9 @@ function Edit(props: ToolProps) {
             <b>Update</b>({pathFormatter.format(stringValue(props.input.filePath))})
           </InlineTool>
           <FileToolResult summary={fileToolSummary("edit", props.metadata) ?? "Updated file"} color={theme.text}>
-            <Show when={expanded() && highlighter.ready()}>
+            <Show when={(expanded() || preview()) && highlighter.ready()}>
               <diff
-                diff={diffContent()}
+                diff={expanded() ? diffContent() : (preview()?.patch ?? "")}
                 view="unified"
                 treeSitterClient={highlighter.client()}
                 filetype={ft()}
@@ -2904,7 +2964,7 @@ function Edit(props: ToolProps) {
             </Show>
             <Show when={!expanded()}>
               <text fg={theme.textMuted} onMouseUp={() => setExpanded(true)}>
-                … click to view diff
+                {preview() ? `… ${preview()!.hidden} more lines · click to view diff` : "… click to view diff"}
               </text>
             </Show>
             <Diagnostics diagnostics={props.metadata.diagnostics} filePath={stringValue(props.input.filePath) ?? ""} />
@@ -2976,6 +3036,7 @@ function ApplyPatch(props: ToolProps) {
         <For each={files()}>
           {(file) => {
             const [expanded, setExpanded] = createSignal(diffFitsInline(file.patch))
+            const preview = createMemo(() => diffPreview(file.patch, PREVIEW_DIFF_LINES))
             return (
               <box ref={(el: BoxRenderable) => alwaysSeparate.add(el)} marginTop={1}>
                 <InlineTool
@@ -2994,11 +3055,15 @@ function ApplyPatch(props: ToolProps) {
                   summary={file.type === "delete" ? `Removed ${file.deletions} lines` : "Updated file"}
                   color={theme.text}
                 >
-                  <Show when={expanded() && file.patch.trim().length > 0}>
-                    <Diff diff={file.patch} filePath={file.filePath} />
+                  <Show when={(expanded() || preview()) && file.patch.trim().length > 0}>
+                    <Diff diff={expanded() ? file.patch : (preview()?.patch ?? "")} filePath={file.filePath} />
                   </Show>
                   <text fg={theme.textMuted} onMouseUp={() => setExpanded((value) => !value)}>
-                    {expanded() ? "Click to collapse" : "… click to view diff"}
+                    {expanded()
+                      ? "Click to collapse"
+                      : preview()
+                        ? `… ${preview()!.hidden} more lines · click to view diff`
+                        : "… click to view diff"}
                   </text>
                   <Diagnostics diagnostics={props.metadata.diagnostics} filePath={file.movePath ?? file.filePath} />
                 </FileToolResult>
@@ -3135,6 +3200,9 @@ function input(input: Record<string, unknown>, omit?: string[]): string {
 // The diff is what an edit row is for, so it shows inline like Claude Code and
 // Codex do; only a diff too long to scan stays behind a click.
 const INLINE_DIFF_LINES = 80
+// A diff longer than that still previews its head, so the row shows what a long
+// edit did without expanding it.
+const PREVIEW_DIFF_LINES = 20
 
 function diffFitsInline(diff: string) {
   return diff.split("\n").length <= INLINE_DIFF_LINES
