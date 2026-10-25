@@ -1091,6 +1091,7 @@ command: None,
             let cursor:u64=tx.query_row("SELECT next_seq FROM engine_session WHERE id=?1",[&session],|r|r.get(0)).optional()?.ok_or_else(||Error::Invalid("Session does not exist".into()))?;
             let location:Option<String>=tx.query_row("SELECT root FROM engine_location WHERE session_id=?1",[&session],|r|r.get(0)).optional()?;
             let messages=if metadata_only { Vec::new() } else { projected(&tx,&session,cursor,true)? };
+            let has_messages:bool=tx.query_row("SELECT EXISTS(SELECT 1 FROM engine_message m WHERE m.session_id=?1 AND m.reverted=0 AND NOT EXISTS(SELECT 1 FROM engine_transfer_message t JOIN engine_transfer_import i ON i.id=t.import_id WHERE i.session_id=m.session_id AND t.seq=m.seq))",[&session],|row|row.get(0))?;
             // Context readers need the cut and summary from the same transaction
             // as the visible messages. A second selected-history read could race
             // a compaction/revert and produce a mixed-generation transcript.
@@ -1133,6 +1134,7 @@ command: None,
             if metadata_only {
                 snapshot.as_object_mut().unwrap().remove("messages");
             }
+            snapshot["has_messages"]=json!(has_messages);
             // A snapshot carries the whole Session (messages + selection + state);
             // a 1M-token Session serializes to roughly 4-6 MB, so this bound
             // only stops runaway payloads.

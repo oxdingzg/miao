@@ -1153,7 +1153,11 @@ const layer = Layer.effect(
                   })
                 return
               }
-              if (snapshot.active_run || !Array.isArray(snapshot.messages) || snapshot.messages.length === 0) return
+              if (
+                snapshot.active_run ||
+                !(snapshot.has_messages === true || (Array.isArray(snapshot.messages) && snapshot.messages.length > 0))
+              )
+                return
               yield* scheduleTitle(input)
             }),
           ),

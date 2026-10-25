@@ -46,6 +46,10 @@ async fn metadata_snapshot_omits_large_history_but_preserves_catalog_facts() {
     let store = Store::open(dir.path().join("engine.db")).await.unwrap();
     store.ensure("s").await.unwrap();
     store.rename("s", "Large Session").await.unwrap();
+    assert_eq!(
+        store.snapshot_with_metadata("s", true).await.unwrap()["has_messages"],
+        false
+    );
     store
         .message(
             "s",
@@ -58,6 +62,7 @@ async fn metadata_snapshot_omits_large_history_but_preserves_catalog_facts() {
     assert_eq!(full["messages"].as_array().unwrap().len(), 1);
     let summary = store.snapshot_with_metadata("s", true).await.unwrap();
     assert!(summary.get("messages").is_none());
+    assert_eq!(summary["has_messages"], true);
     assert!(serde_json::to_vec(&summary).unwrap().len() < 4096);
     for key in [
         "session_id",
