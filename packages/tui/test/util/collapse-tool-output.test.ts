@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test"
-import { collapseToolOutput } from "../../src/util/collapse-tool-output"
+import { collapseToolOutput, diffPreview } from "../../src/util/collapse-tool-output"
 
 test("preview preserves short output and caps long lines without splitting Unicode", () => {
   expect(collapseToolOutput("ok\nfinished", 3, 40)).toEqual({ output: "ok\nfinished", overflow: false })
@@ -17,4 +17,12 @@ test("multi-megabyte output is previewed without materializing its entire conten
   // A generous budget catches regressions that split/copy the 8 MB tail on
   // every preview, while allowing slower CI runners plenty of headroom.
   expect(performance.now() - start).toBeLessThan(1000)
+})
+
+test("a diff longer than the budget previews its head and counts the rest", () => {
+  expect(diffPreview("+one\n-two", 4)).toBeUndefined()
+  expect(diffPreview("@@\n+one\n-two\n+three\n-four\n+five", 3)).toEqual({
+    patch: "@@\n+one\n-two",
+    hidden: 3,
+  })
 })
