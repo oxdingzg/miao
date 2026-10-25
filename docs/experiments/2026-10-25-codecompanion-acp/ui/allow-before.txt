@@ -1,0 +1,45 @@
+## Me                                                                      │
+                                                                           │~
+ACP_ALLOW Welcome to CodeCompanion ✨! Press ? for options                 │~
+                                                                           │~
+## CodeCompanion (miao ACP acceptance)                                     │~
+                                                                           │~
+  Execute: [workspace]       │~
+                                                                           │~
+---                                                                        │~
+**Approval Required**                                                      │~
+                                                                           │~
+Execute: bash: .                                                           │~
+                                                                           │~
+Please select an option:                                                   │~
+- `g2` - Accept                                                            │~
+- `g1` - Always accept                                                     │~
+- `g3` - Reject                                                            │~
+- `g4` - Cancel                                                            │~
+                                                                           │~
+                                                                           │~
+~                                                                          │~
+~                                                                          │~
+~                                                                          │~
+~                                                                          │~
+~                                                                          │~
+~                                                                          │~
+~                                                                          │~
+~                                                                          │~
+~                                                                          │~
+~                                                                          │~
+~                                                                          │~
+~                                                                          │~
+~                                                                          │~
+~                                                                          │~
+~                                                                          │~
+~                                                                          │~
+~                                                                          │~
+~                                                                          │~
+~                                                                          │~
+~                                                                          │~
+~                                                                          │~
+~                                                                          │~
+~                                                                          │~
+[CodeCompanion] 2 [-]                                    20,0-1         All [No Name]                                               0,0-1          All
+
