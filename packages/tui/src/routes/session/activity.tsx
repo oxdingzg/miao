@@ -446,11 +446,15 @@ export function SessionWaiting(props: {
   const text = createMemo(() => {
     if (props.phase === "compacting")
       return waitingText(props.phase, props.elapsed, props.esc ?? "interrupt", props.progress)
+    // Waiting for the model outranks the last tool activity: "ran 2 shell
+    // commands · 8m 46s" while a request sits unanswered reads as a turn that
+    // stopped eight minutes ago, which is exactly when an operator decides the
+    // tool has hung.
+    if (props.waiting) return waitingText(props.phase, props.elapsed, props.esc ?? "interrupt", props.progress)
     if (props.activity) {
       return props.elapsed > 0 ? `${props.activity} · ${Locale.duration(props.elapsed)}` : props.activity
     }
-    if (!props.waiting) return undefined
-    return waitingText(props.phase, props.elapsed, props.esc ?? "interrupt", props.progress)
+    return undefined
   })
   return (
     <Show when={text()}>

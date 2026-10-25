@@ -1469,17 +1469,33 @@ export const {
           const previous = store.session_status[sessionID]
           const previousType = previous?.type
           const previousPhase = previousType === "busy" ? previous.phase : undefined
+          // A natively owned Session answers the status route from its snapshot,
+          // which knows busy or idle but not which phase the turn is in; the
+          // event stream carries that finer state. Keep the live phase, its
+          // start time and its slice progress instead of flattening the line
+          // back to a bare "Preparing request" on every poll.
+          const live =
+            response.type === "busy" && previousType === "busy" && previous.phase !== undefined && response.phase === undefined
+              ? {
+                  type: "busy" as const,
+                  phase: previous.phase,
+                  since: previous.since,
+                  progress: previous.progress,
+                }
+              : response
           // Every store write notifies subscribers, and one tick repaints the
           // whole screen (see sidebar/context.tsx), so an unchanged status must
           // not be written back once a second. A busy -> busy phase change is a
           // real change and still updates the store.
           const changed =
-            previousType !== response.type ||
-            (response.type === "busy" && previousType === "busy" && previousPhase !== response.phase)
+            previousType !== live.type ||
+            (live.type === "busy" &&
+              previousType === "busy" &&
+              (previousPhase !== live.phase || previous.since !== live.since))
           // A retry notice stays until provider output resumes, so a busy poll
           // must not clear it.
-          if (changed && !(previousType === "retry" && response.type === "busy"))
-            setStore("session_status", sessionID, response)
+          if (changed && !(previousType === "retry" && live.type === "busy"))
+            setStore("session_status", sessionID, live)
           // An idle transition is also a recovery path for a missed terminal
           // event: fetch the final transcript instead of leaving stale output.
           if ((previousType === "busy" || previousType === "retry") && response.type === "idle")
