@@ -629,6 +629,7 @@ async fn windows_terminal_preserves_nested_cwd_and_write_confinement() {
             &cwd,
             Start::parse(json!({"argv":["cmd.exe"]})).unwrap(),
             false,
+            true,
         )
         .await
         .unwrap();
