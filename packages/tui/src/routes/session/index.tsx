@@ -1277,7 +1277,11 @@ export function Session() {
       >
         <box flexDirection="row" flexGrow={1} minHeight={0}>
           <box flexGrow={1} minWidth={0} minHeight={0} paddingBottom={1} paddingLeft={1} paddingRight={1} gap={1}>
-            <Show when={session()}>
+            <Show when={session()} fallback={
+              <box flexGrow={1} paddingTop={2}>
+                <text fg={theme.textMuted}>Loading session…</text>
+              </box>
+            }>
               <box flexGrow={1} minHeight={0}>
               <SessionScrollbox
                 ref={(r) => {

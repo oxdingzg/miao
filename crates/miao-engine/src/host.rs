@@ -280,7 +280,15 @@ impl Host {
                 .context(&session_id, epoch)
                 .await
                 .map(|value| value.unwrap_or(Value::Null)),
-            Command::Snapshot { session_id } => runtime.store().snapshot(&session_id).await,
+            Command::Snapshot {
+                session_id,
+                metadata_only,
+            } => {
+                runtime
+                    .store()
+                    .snapshot_with_metadata(&session_id, metadata_only)
+                    .await
+            }
             Command::TransferValidate {
                 path,
                 bundle_sha256,
