@@ -34,6 +34,12 @@ provider turn without being silently killed by turn cancellation.
   no in-memory owner, and its in-flight work is reconciled (ADR-02) rather than
   replayed.
 
+- **Idle reclamation is process-scoped.** Only runs claimed by this process,
+  and unfinished local job/timer/cron tasks, postpone this engine's idle exit.
+  Other processes' runs and unclaimed crash residue in the shared store are
+  not local work. Retained, completed task handles do not count as live work.
+  This check does not cancel or reconcile another process's execution.
+
 ## Consequences
 
 - Control latency does not depend on provider or tool latency.

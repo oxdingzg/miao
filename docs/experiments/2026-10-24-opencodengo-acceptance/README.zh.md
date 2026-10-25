@@ -50,3 +50,30 @@ the privacy setting.
   `/chat/completions`).
 
 Backup: `model-routes.json.bak`.
+
+## Update 2026-10-25 — the Anthropic route is confirmed on the catalog path
+
+Blockage 2 above is settled as a routing question. The catalog entry for
+`opencode-go/claude-haiku-5-5` carries a model-level
+`provider.npm = @ai-sdk/anthropic` with `api =
+https://opencode.ai/inference/go/anthropic/v1`, so `ProductRoutes.profile()`
+already selects the `anthropic` wire. The hand-written route entry this record
+described is no longer needed for that model.
+
+Evidence from the released 0.3.5 binary with the user's global config
+(`engine.storage` set), `--engine native -m opencode-go/claude-haiku-5-5`
+(`raw/anthropic-native-2026-10-25.jsonl`):
+
+- The first provider turn completed — `step_finish` with reason `tool-calls`,
+  21,145 input tokens — and the `read` tool executed with call id
+  `toolu_015Fbv4AURbfKCGb98uXDtgW`, an Anthropic-style id, returning the
+  file's sha256 and text.
+- The continuation was refused with HTTP 429 `GoUsageLimitError`,
+  `limitName: "weekly"` (`Go usage limit exceeded`). Direct probes of both
+  `/inference/go/anthropic/v1/messages` (catalog) and `/zen/go/v1/messages`
+  (claude-oc) reach the model and answer with Anthropic-shaped errors, so the
+  remaining blocker is the workspace's weekly quota, not the protocol.
+
+What this does and does not establish: the route, the wire format and the
+native tool loop are verified end to end for one turn. A daily multi-turn
+session is still unverified, and nothing here claims it.
