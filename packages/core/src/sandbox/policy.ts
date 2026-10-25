@@ -35,6 +35,20 @@ export function settings(
   }
 }
 
+/**
+ * The native engine's sandbox decision. Unlike `settings`, no config and no
+ * environment keeps the sandbox ON — the engine has always confined commands —
+ * so only an explicit operator choice lifts it: `sandbox.mode: "off"` in any
+ * config document, or `MIAO_SANDBOX=0` in the environment.
+ */
+export function nativeEnabled(
+  configs: readonly ConfigSandbox.Info[],
+  env: Readonly<Record<string, string | undefined>>,
+): boolean {
+  const mode = configs.findLast((config) => config.mode !== undefined)?.mode
+  return envSwitch(env.MIAO_SANDBOX) ?? (mode === undefined || mode === "workspace-write")
+}
+
 function envSwitch(value: string | undefined) {
   if (value === undefined || value === "") return undefined
   return ["1", "true"].includes(value.toLowerCase())

@@ -149,6 +149,7 @@ pub struct Tools {
     wakeup_enabled: bool,
     cron_enabled: bool,
     process_network: bool,
+    process_sandbox: bool,
     runner: Option<Arc<PathBuf>>,
     protected: Vec<PathBuf>,
     private_store: Option<PathBuf>,
@@ -194,6 +195,7 @@ impl Tools {
             wakeup_enabled: false,
             cron_enabled: false,
             process_network: false,
+            process_sandbox: true,
             runner: None,
             protected: vec![],
             private_store: None,
@@ -245,12 +247,14 @@ impl Tools {
                 &prepared.path,
                 crate::terminal::Start::parse(prepared.input)?,
                 self.process_network,
+                self.process_sandbox,
             )
             .await
     }
-    pub(crate) fn with_process(mut self, enabled: bool, network: bool) -> Self {
+    pub(crate) fn with_process(mut self, enabled: bool, network: bool, sandbox: bool) -> Self {
         self.process_enabled = enabled && self.runner.is_some() && process::enforced();
         self.process_network = network;
+        self.process_sandbox = sandbox;
         self
     }
     /// The sandbox runner executable; background tools fail closed without it.
@@ -259,6 +263,9 @@ impl Tools {
     }
     pub(crate) fn process_network_allowed(&self) -> bool {
         self.process_network
+    }
+    pub(crate) fn process_sandbox(&self) -> bool {
+        self.process_sandbox
     }
     /// A product host can supply its resolved aggregate without standalone
     /// discovery reintroducing disabled sources or duplicating instructions.
@@ -315,7 +322,16 @@ impl Tools {
         let runner = self.runner.as_deref().ok_or(ToolError::Unsupported)?;
         let mut input = hook.input()?;
         input.cwd = ".".into();
-        process::execute(runner, &self.root, &self.root, input, false, cancel).await
+        process::execute(
+            runner,
+            &self.root,
+            &self.root,
+            input,
+            false,
+            self.process_sandbox,
+            cancel,
+        )
+        .await
     }
 
     pub fn with_skill_directories(
@@ -418,7 +434,9 @@ impl Tools {
             value["formatters"] = json!([{"status":"skipped_external_change"}]);
             return;
         }
-        let reports = registry.file(path, runner, cancel).await;
+        let reports = registry
+            .file(path, runner, self.process_sandbox, cancel)
+            .await;
         if reports.is_empty() {
             return;
         }
@@ -1283,6 +1301,7 @@ impl Tools {
             &prepared.path,
             process::Input::parse(prepared.input)?,
             self.process_network,
+            self.process_sandbox,
             cancel,
         )
         .await
@@ -1398,6 +1417,7 @@ impl Tools {
                 &prepared.path,
                 input,
                 self.process_network,
+                self.process_sandbox,
                 cancel,
                 progress,
             )

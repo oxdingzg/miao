@@ -132,3 +132,21 @@ describe("SandboxPolicy.settings", () => {
     expect(SandboxPolicy.settings(off, { MIAO_SANDBOX_DENY_NETWORK: "0" }).network).toBe(true)
   })
 })
+
+describe("SandboxPolicy.nativeEnabled", () => {
+  test("keeps the engine sandbox on when the operator has not chosen", () => {
+    expect(SandboxPolicy.nativeEnabled([], {})).toBe(true)
+    expect(SandboxPolicy.nativeEnabled([info({})], {})).toBe(true)
+  })
+
+  test("follows an explicit sandbox mode", () => {
+    expect(SandboxPolicy.nativeEnabled([info({ mode: "off" })], {})).toBe(false)
+    expect(SandboxPolicy.nativeEnabled([info({ mode: "workspace-write" })], {})).toBe(true)
+  })
+
+  test("the environment overrides config in both directions", () => {
+    expect(SandboxPolicy.nativeEnabled([info({ mode: "off" })], { MIAO_SANDBOX: "1" })).toBe(true)
+    expect(SandboxPolicy.nativeEnabled([], { MIAO_SANDBOX: "0" })).toBe(false)
+    expect(SandboxPolicy.nativeEnabled([info({})], { MIAO_SANDBOX: "" })).toBe(true)
+  })
+})
