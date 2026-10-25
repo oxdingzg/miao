@@ -552,7 +552,7 @@ export class EngineSession {
     if (!this.#subscriptions.has(sessionID)) {
       const subscription = (async () => {
         if (!this.#onCredentialExpired) return this.#client.subscribe(sessionID, 0)
-        const snapshot = await this.#client.request("snapshot", { session_id: sessionID })
+        const snapshot = await this.#client.request("snapshot", { session_id: sessionID, metadata_only: true })
         if (
           typeof snapshot !== "object" ||
           snapshot === null ||

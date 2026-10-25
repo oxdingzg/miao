@@ -726,6 +726,9 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
     // the descriptor open, so dropping the async runtime after an idle
     // reclaim can block forever. shutdown() has released every engine-owned
     // resource (LSP, MCP and worker children included), so exit directly.
+    if let Err(error) = &result {
+        eprintln!("miao-engine stdio: {error}");
+    }
     std::process::exit(if result.is_ok() { 0 } else { 1 });
 }
 
@@ -748,9 +751,23 @@ async fn serve(
             plugin_hooks,
         );
     }
+    let writer_stop = tokio_util::sync::CancellationToken::new();
+    let stop_output = writer_stop.clone();
     let writer = tokio::spawn(async move {
         let mut stdout = tokio::io::stdout();
-        while let Some(value) = outgoing.recv().await {
+        loop {
+            let value = tokio::select! {
+                _ = stop_output.cancelled(), if !outgoing.is_closed() => {
+                    // Runtime product bridges retain sender clones. Close the
+                    // receiver explicitly so shutdown can drain and finish.
+                    outgoing.close();
+                    outgoing.recv().await
+                }
+                value = outgoing.recv() => value,
+            };
+            let Some(value) = value else {
+                break;
+            };
             let mut line = serde_json::to_vec(&value).map_err(io::Error::other)?;
             line.push(b'\n');
             tokio::time::timeout(Duration::from_secs(5), async {
@@ -795,24 +812,27 @@ async fn serve(
                     if let Some(duration) = idle {
                         idle_deadline = tokio::time::Instant::now() + duration;
                     }
-                    let value:Value=match serde_json::from_slice(&line) {Ok(v)=>v,Err(_)=>{send(&output,json!({"id":null,"error":{"code":"invalid_request","message":"expected a JSON object"}}))?;continue;}};
+                    let value:Value=match serde_json::from_slice(&line) {Ok(v)=>v,Err(_)=>{send(&output,json!({"id":null,"error":{"code":"invalid_request","message":"expected a JSON object"}})).await?;continue;}};
                     if let Some(bridge_id)=value.get("bridge_id").and_then(|id|id.as_u64()) {
                         runtime.deliver_product_reply(bridge_id, value);
                         continue;
                     }
                     let request=match serde_json::from_value::<Request>(value) {
                         Ok(r) if r.id.is_string()||r.id.is_number()=>r,
-                        _=>{send(&output,json!({"id":null,"error":{"code":"invalid_request","message":"expected an id and a typed method/params request"}}))?;continue;},
+                        _=>{send(&output,json!({"id":null,"error":{"code":"invalid_request","message":"expected an id and a typed method/params request"}})).await?;continue;},
                     };
                     let stop=matches!(request.command,Command::Shutdown);
                     let result:Result<Value,Error>=host.dispatch(request.command).await;
                     let response=match result {Ok(value)=>json!({"id":request.id,"result":value}),Err(error)=>json!({"id":request.id,"error":{"code":error.code(),"message":error.to_string()}})};
-                    send(&output,response)?;
+                    send(&output,response).await?;
                     if stop {break;}
                 },
                 _=poll.tick()=>{
+                    if writer.is_finished() {
+                        return Err(io::Error::new(io::ErrorKind::BrokenPipe, "stdio output writer stopped"));
+                    }
                     for value in host.poll_events().await.map_err(io::Error::other)? {
-                        send(&output,value)?;
+                        send(&output,value).await?;
                     }
                 },
                 _=tokio::time::sleep_until(idle_deadline), if idle.is_some() => {
@@ -823,8 +843,8 @@ async fn serve(
                     }
                 },
                 notice=progress.recv()=>match notice {
-                    Ok(notice)=>{if notice["session_id"].as_str().is_some_and(|s|host.subscribed(s)) {send(&output,json!({"method":"progress","params":notice}))?;}},
-                    Err(tokio::sync::broadcast::error::RecvError::Lagged(_))=>send(&output,json!({"method":"resync","params":{"reason":"ephemeral_progress_lagged"}}))?,
+                    Ok(notice)=>{if notice["session_id"].as_str().is_some_and(|s|host.subscribed(s)) {send(&output,json!({"method":"progress","params":notice})).await?;}},
+                    Err(tokio::sync::broadcast::error::RecvError::Lagged(_))=>send(&output,json!({"method":"resync","params":{"reason":"ephemeral_progress_lagged"}})).await?,
                     Err(tokio::sync::broadcast::error::RecvError::Closed)=>break,
                 },
                 _=signal_exit()=>{ break; },
@@ -832,18 +852,19 @@ async fn serve(
         }
         Ok::<_,io::Error>(())
     }.await;
+    writer_stop.cancel();
     drop(output);
     writer.await.map_err(io::Error::other)??;
     result
 }
 
-fn send(output: &mpsc::Sender<Value>, value: Value) -> io::Result<()> {
-    output.try_send(value).map_err(|_| {
-        io::Error::new(
-            io::ErrorKind::BrokenPipe,
-            "stdio subscriber must reconnect and replay committed events",
-        )
-    })
+async fn send(output: &mpsc::Sender<Value>, value: Value) -> io::Result<()> {
+    // A replay burst can exceed the queue even while stdout is being drained.
+    // Apply bounded backpressure instead of terminating every active Session.
+    tokio::time::timeout(Duration::from_secs(5), output.send(value))
+        .await
+        .map_err(|_| io::Error::new(io::ErrorKind::TimedOut, "stdio subscriber too slow"))?
+        .map_err(|_| io::Error::new(io::ErrorKind::BrokenPipe, "stdio subscriber disconnected"))
 }
 
 /// A terminated or interrupted engine must unwind instead of dying by
@@ -901,5 +922,27 @@ async fn read_line(
         if end.is_some() {
             return Ok(Some(std::mem::take(bytes)));
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    #[tokio::test]
+    async fn replay_burst_waits_for_output_capacity_instead_of_closing_the_engine() {
+        let (output, mut incoming) = tokio::sync::mpsc::channel(2);
+        output.send(serde_json::json!(1)).await.unwrap();
+        output.send(serde_json::json!(2)).await.unwrap();
+        let send = super::send(&output, serde_json::json!(3));
+        tokio::pin!(send);
+        // A healthy reader has not caught up yet; queue pressure is not EOF.
+        assert!(
+            tokio::time::timeout(std::time::Duration::from_millis(20), &mut send)
+                .await
+                .is_err()
+        );
+        assert_eq!(incoming.recv().await, Some(serde_json::json!(1)));
+        send.await.unwrap();
+        assert_eq!(incoming.recv().await, Some(serde_json::json!(2)));
+        assert_eq!(incoming.recv().await, Some(serde_json::json!(3)));
     }
 }

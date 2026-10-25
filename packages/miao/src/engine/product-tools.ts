@@ -95,7 +95,7 @@ const nativeOwner = (router: Router, placement: { storage: string; location: Loc
       location: placement.location,
     })
     return yield* Effect.tryPromise({
-      try: () => owner.client.request("snapshot", { session_id: sessionID }),
+      try: () => owner.client.request("snapshot", { session_id: sessionID, metadata_only: true }),
       catch: (error) => (error instanceof Error ? error : new Error(String(error))),
     })
   })

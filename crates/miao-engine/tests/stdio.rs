@@ -390,3 +390,51 @@ fn version_uses_root_manifest_and_no_provider_configuration() {
         format!("miao-engine {}", env!("MIAO_ENGINE_VERSION"))
     );
 }
+
+#[tokio::test]
+async fn product_bridge_does_not_keep_stdio_shutdown_open() {
+    use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
+    let dir = tempfile::tempdir().unwrap();
+    let manifest = dir.path().join("tools.json");
+    std::fs::write(&manifest, r#"{"tools":[]}"#).unwrap();
+    let mut child = tokio::process::Command::new(env!("CARGO_BIN_EXE_miao-engine"))
+        .args([
+            "serve",
+            "--db",
+            dir.path().join("engine.db").to_str().unwrap(),
+            "--workspace",
+            dir.path().to_str().unwrap(),
+            "--model",
+            "fixture",
+            "--product-tools",
+            manifest.to_str().unwrap(),
+        ])
+        .env("ANTHROPIC_API_KEY", "fixture-only")
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::inherit())
+        .kill_on_drop(true)
+        .spawn()
+        .unwrap();
+    let mut input = child.stdin.take().unwrap();
+    let mut output = BufReader::new(child.stdout.take().unwrap()).lines();
+    input
+        .write_all(b"{\"id\":1,\"method\":\"shutdown\"}\n")
+        .await
+        .unwrap();
+    let response = tokio::time::timeout(std::time::Duration::from_secs(10), output.next_line())
+        .await
+        .unwrap()
+        .unwrap()
+        .unwrap();
+    assert_eq!(serde_json::from_str::<Value>(&response).unwrap()["id"], 1);
+    // Keep stdin open: Shutdown must finish without relying on client EOF or
+    // the host's force-kill fallback to drop the reverse-bridge sender.
+    assert!(
+        tokio::time::timeout(std::time::Duration::from_secs(5), child.wait())
+            .await
+            .expect("bridge sender held stdout open after shutdown")
+            .unwrap()
+            .success()
+    );
+}

@@ -8,7 +8,7 @@ import { EventTable } from "@miao/core/event/sql"
 import { ClientEvents } from "@miao/server/client-events"
 import { SessionID } from "@miao/schema/session-id"
 import { SessionMessage } from "@miao/schema/session-message"
-import { DateTime } from "effect"
+import { DateTime, Deferred } from "effect"
 import { Location } from "@miao/schema/location"
 import { Effect, Schema } from "effect"
 import { eq } from "drizzle-orm"
@@ -178,3 +178,68 @@ if (binary)
       }),
     { timeout: 30000 },
   )
+
+it.live("engine exit settles busy Sessions without inventing durable events", () =>
+  Effect.gen(function* () {
+    const tmp = yield* Effect.acquireRelease(
+      Effect.promise(() => tmpdir()),
+      (tmp) => Effect.promise(() => tmp[Symbol.asyncDispose]()),
+    )
+    const clients = yield* ClientEvents.Service
+    const received: OpenCodeEvent[] = []
+    const done = yield* Deferred.make<void>()
+    const unsubscribe = yield* clients.listen((event) =>
+      Effect.gen(function* () {
+        received.push(event)
+        if (
+          event.type === "session.next.status" &&
+          event.data.sessionID === "ses_crashed" &&
+          event.data.status.type === "idle"
+        )
+          yield* Deferred.succeed(done, undefined)
+      }),
+    )
+    yield* Effect.addFinalizer(() => unsubscribe)
+    const owner = yield* connectEngine({
+      binary: path.join(import.meta.dir, "../fixture/engine-fake.ts"),
+      db: path.join(tmp.path, "engine.db"),
+      workspace: tmp.path,
+      model: "fixture",
+      engineID: "failure-fixture",
+      location: { directory: tmp.path as never },
+    })
+    yield* Effect.promise(() =>
+      owner.client.request("fixture_frames", {
+        frames: [
+          {
+            method: "event",
+            params: { session_id: "ses_crashed", seq: 1, kind: "run.started", data: { run_id: "run" } },
+          },
+          {
+            method: "event",
+            params: {
+              session_id: "ses_idle",
+              seq: 1,
+              kind: "run.finished",
+              data: { run_id: "old", reason: "completed" },
+            },
+          },
+        ],
+      }),
+    )
+    yield* owner.flush
+    yield* Effect.promise(() => owner.client.request("fixture_exit"))
+    yield* Deferred.await(done).pipe(Effect.timeout("5 seconds"))
+    yield* owner.flush
+    const failures = received.filter((event) => event.type === "session.next.failed")
+    expect(failures).toHaveLength(1)
+    expect(failures[0]).toMatchObject({ data: { sessionID: "ses_crashed", name: "EngineConnectionFailed" } })
+    expect(failures[0].durable).toBeUndefined()
+    expect(failures[0].metadata).toBeUndefined()
+    expect(
+      received
+        .filter((event) => event.type === "session.next.status" && event.data.sessionID === "ses_crashed")
+        .map((event) => event.data),
+    ).toMatchObject([{ status: { type: "busy" } }, { status: { type: "idle" } }])
+  }).pipe(Effect.scoped),
+)

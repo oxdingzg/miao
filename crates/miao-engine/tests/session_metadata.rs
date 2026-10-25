@@ -39,3 +39,39 @@ async fn snapshot_exposes_title_and_times_and_rename_is_durable() {
         .as_i64()
         .is_some_and(|value| value > 0));
 }
+
+#[tokio::test]
+async fn metadata_snapshot_omits_large_history_but_preserves_catalog_facts() {
+    let dir = tempfile::tempdir().unwrap();
+    let store = Store::open(dir.path().join("engine.db")).await.unwrap();
+    store.ensure("s").await.unwrap();
+    store.rename("s", "Large Session").await.unwrap();
+    store
+        .message(
+            "s",
+            "user",
+            serde_json::json!([{ "type": "text", "text": "x".repeat(4 * 1024 * 1024) }]),
+        )
+        .await
+        .unwrap();
+    let full = store.snapshot("s").await.unwrap();
+    assert_eq!(full["messages"].as_array().unwrap().len(), 1);
+    let summary = store.snapshot_with_metadata("s", true).await.unwrap();
+    assert!(summary.get("messages").is_none());
+    assert!(serde_json::to_vec(&summary).unwrap().len() < 4096);
+    for key in [
+        "session_id",
+        "cursor",
+        "title",
+        "created_at_ms",
+        "updated_at_ms",
+        "active_run",
+        "pending",
+        "state",
+        "model_selection",
+        "account_selection",
+        "agent",
+    ] {
+        assert_eq!(summary[key], full[key], "{key}");
+    }
+}

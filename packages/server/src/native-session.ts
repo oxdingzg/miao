@@ -370,7 +370,7 @@ export const mergeNativeSessions = Effect.fn("NativeSession.mergeSessions")(func
       const entries: SessionInfo.Info[] = []
       for (const raw of group.sessions) {
         const sessionID = Schema.decodeUnknownSync(SessionID)(raw)
-        const snapshot = yield* input.native.snapshot({ sessionID, storage: group.storage, location: group.location })
+        const snapshot = yield* input.native.snapshot({ sessionID, storage: group.storage, location: group.location, metadataOnly: true })
         const usage = input.models
           ? nativeSessionUsage({
               report: yield* input.native.usage({ sessionID, storage: group.storage, location: group.location }),

@@ -701,7 +701,7 @@ export const fromOwners = (
       }).pipe(Effect.mapError((error) => refusal(input.sessionID, error))),
     snapshot: (input) =>
       read<Readonly<Record<string, unknown>>>(input, (connection) =>
-        connection.client.request("snapshot", { session_id: input.sessionID }),
+        connection.client.request("snapshot", { session_id: input.sessionID, metadata_only: input.metadataOnly ?? false }),
       ).pipe(Effect.map((value) => (typeof value === "object" && value !== null ? value : {}))),
     usage: (input) =>
       read<Readonly<Record<string, unknown>>>(input, (connection) =>

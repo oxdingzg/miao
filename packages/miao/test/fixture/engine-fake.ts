@@ -12,9 +12,19 @@ let buffer = ""
 
 const cursors = new Map<string, number>()
 const send = (value: unknown) => {
-  if (typeof value === "object" && value !== null && "method" in value && value.method === "event" && "params" in value &&
-      typeof value.params === "object" && value.params !== null && "session_id" in value.params && typeof value.params.session_id === "string" &&
-      "seq" in value.params && typeof value.params.seq === "number")
+  if (
+    typeof value === "object" &&
+    value !== null &&
+    "method" in value &&
+    value.method === "event" &&
+    "params" in value &&
+    typeof value.params === "object" &&
+    value.params !== null &&
+    "session_id" in value.params &&
+    typeof value.params.session_id === "string" &&
+    "seq" in value.params &&
+    typeof value.params.seq === "number"
+  )
     cursors.set(value.params.session_id, Math.max(cursors.get(value.params.session_id) ?? 0, value.params.seq))
   return process.stdout.write(JSON.stringify(value) + "\n")
 }
@@ -57,12 +67,17 @@ function substitute(value: unknown, session: string, inputID: string): unknown {
 function handle(request: { id: number; method: string; params: Record<string, unknown> }) {
   const { id, method, params } = request
   if (requestLog) appendFileSync(requestLog, method + "\n")
+  if (method === "fixture_exit") {
+    send({ id, result: { accepted: true } })
+    process.exit(1)
+  }
   if (method === "fixture_frames" && Array.isArray(params.frames)) {
     params.frames.forEach(send)
     send({ id, result: { accepted: true } })
     return
   }
   if (method === "snapshot") {
+    if (process.env.ENGINE_FAKE_IGNORE_SNAPSHOT === "1") return
     send({ id, result: { session_id: params.session_id, cursor: cursors.get(String(params.session_id)) ?? 0 } })
     return
   }

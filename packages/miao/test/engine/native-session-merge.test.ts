@@ -41,10 +41,12 @@ test("an unreadable native Location does not fail the session listing", async ()
     }
     return yield* mergeNativeSessions({
       native: {
-        snapshot: (input) =>
-          input.location.directory === broken
+        snapshot: (input) => {
+          expect(input.metadataOnly).toBe(true)
+          return input.location.directory === broken
             ? Effect.die(new Error("engine child died"))
-            : Effect.succeed({ session_id: input.sessionID, title: "kept", created_at_ms: 1, updated_at_ms: 2 }),
+            : Effect.succeed({ session_id: input.sessionID, title: "kept", created_at_ms: 1, updated_at_ms: 2 })
+        },
         usage: () => Effect.succeed({}),
       },
       db: database.db,

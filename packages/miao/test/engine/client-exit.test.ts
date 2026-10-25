@@ -105,12 +105,12 @@ test.skipIf(process.platform === "win32")(
       requestTimeoutMs: 50,
     })
     try {
-      const first = client.request("snapshot", { session_id: "s" }).catch((error: unknown) => error)
+      const first = client.request("admit", { session_id: "s" }).catch((error: unknown) => error)
       const second = client.request("sessions").catch((error: unknown) => error)
       const error = await first
       expect(error).toMatchObject({ code: "engine_request_timeout" })
       if (!(error instanceof EngineError)) throw error
-      expect(error.message).toContain("snapshot")
+      expect(error.message).toContain("admit")
       expect(error.message).toContain("durable receipt")
       expect(await second).toBe(error)
       expect(client.available).toBe(false)
@@ -121,3 +121,27 @@ test.skipIf(process.platform === "win32")(
   },
   5_000,
 )
+
+test("a timed-out read leaves other requests and the executing engine available", async () => {
+  await using tmp = await tmpdir()
+  const client = EngineClient.start({
+    binary: path.join(import.meta.dir, "../fixture/engine-fake.ts"),
+    db: path.join(tmp.path, "engine.db"),
+    workspace: tmp.path,
+    model: "fixture",
+    requestTimeoutMs: 500,
+    env: { ENGINE_FAKE_IGNORE_SNAPSHOT: "1" },
+  })
+  try {
+    // Establish startup before testing a bounded request.
+    await client.request("sessions")
+    // The real fixture deliberately leaves a snapshot request unanswered.
+    const failure = client.request("snapshot", { session_id: "s" }).catch((error: unknown) => error)
+    expect(await client.request("sessions")).toEqual({ accepted: true })
+    expect(await failure).toMatchObject({ code: "engine_request_timeout" })
+    expect(client.available).toBe(true)
+    expect(await client.request("sessions")).toEqual({ accepted: true })
+  } finally {
+    await client.close()
+  }
+})
