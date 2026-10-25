@@ -5,6 +5,7 @@ import {
   productToolID,
   productToolInput,
   productToolResult,
+  progressStatus,
   statusOf,
   translateApproval,
   translateApprovalResolved,
@@ -24,27 +25,80 @@ import type { ModelV2 } from "@miao/core/model"
 import { Model } from "@miao/schema/model"
 import { Provider } from "@miao/schema/provider"
 
-const event = (kind: string): EngineEvent => ({ session_id: "ses_test", seq: 1, kind, data: {} })
+const event = (kind: string, recordedAtMs?: number): EngineEvent => ({
+  session_id: "ses_test",
+  seq: 1,
+  kind,
+  data: {},
+  ...(recordedAtMs === undefined ? {} : { recorded_at_ms: recordedAtMs }),
+})
 
 test("maps run lifecycle events to product status", () => {
-  expect(statusOf(event("run.started"))).toEqual({ type: "busy" })
+  expect(statusOf(event("run.started"))).toEqual({ type: "busy", phase: "preparing" })
+  expect(statusOf(event("run.started", 1_700_000_000_000))).toEqual({
+    type: "busy",
+    phase: "preparing",
+    since: 1_700_000_000_000,
+  })
   expect(statusOf(event("run.finished"))).toEqual({ type: "idle" })
   expect(statusOf(event("provider.failed"))).toBeUndefined()
   expect(statusOf(event("message.committed"))).toBeUndefined()
 })
 
+test("names the phase of a provider step from the durable events", () => {
+  // Local preparation is distinguishable from an unanswered request: the
+  // latter is what an operator reads as a stalled turn.
+  expect(statusOf(event("provider.started", 1_700_000_000_100))).toEqual({
+    type: "busy",
+    phase: "preparing",
+    since: 1_700_000_000_100,
+  })
+  expect(statusOf(event("provider.request", 1_700_000_000_200))).toEqual({
+    type: "busy",
+    phase: "requesting",
+    since: 1_700_000_000_200,
+  })
+  expect(statusOf(event("provider.retry", 1_700_000_000_300))).toEqual({
+    type: "busy",
+    phase: "retrying",
+    since: 1_700_000_000_300,
+  })
+})
+
+test("the first token turns a dispatched request into a stream", () => {
+  expect(progressStatus({ session_id: "ses_test", kind: "provider.ttft", ttft_ms: 58_000 })).toEqual({
+    type: "busy",
+    phase: "streaming",
+    since: expect.any(Number),
+  })
+  expect(progressStatus({ session_id: "ses_test", kind: "provider.delta" })).toBeUndefined()
+})
+
 test("translateStatus carries the engine session id and a status", () => {
   const status = translateStatus(event("run.started"))
   expect(`${status?.sessionID}`).toBe("ses_test")
-  expect(status?.status).toEqual({ type: "busy" })
+  expect(status?.status).toEqual({ type: "busy", phase: "preparing" })
   expect(translateStatus(event("tool.planned"))).toBeUndefined()
 })
 
 test("StatusBridge emits only on a transition", () => {
   const bridge = new StatusBridge()
-  expect(bridge.update(event("run.started"))?.status).toEqual({ type: "busy" })
+  expect(bridge.update(event("run.started"))?.status).toEqual({ type: "busy", phase: "preparing" })
   expect(bridge.update(event("message.committed"))).toBeUndefined()
   expect(bridge.update(event("run.started"))).toBeUndefined()
+  // A phase change inside busy is a real transition, not a heartbeat.
+  expect(bridge.update(event("provider.request", 1_700_000_000_200))?.status).toEqual({
+    type: "busy",
+    phase: "requesting",
+    since: 1_700_000_000_200,
+  })
+  expect(bridge.update(event("provider.request", 1_700_000_000_201))).toBeUndefined()
+  expect(bridge.progress({ session_id: "ses_test", kind: "provider.ttft", ttft_ms: 1200 })?.status).toEqual({
+    type: "busy",
+    phase: "streaming",
+    since: expect.any(Number),
+  })
+  expect(bridge.progress({ session_id: "ses_test", kind: "provider.ttft", ttft_ms: 1300 })).toBeUndefined()
   expect(bridge.update(event("run.finished"))?.status).toEqual({ type: "idle" })
 })
 

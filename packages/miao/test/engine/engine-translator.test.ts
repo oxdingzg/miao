@@ -153,3 +153,55 @@ test.each([
   expect(ended.model?.id).toBe(row.expected)
   expect(ended.cost).toBeCloseTo(row.expected ? 0.14 : 0)
 })
+
+test("a native turn publishes each provider phase as the turn advances", () => {
+  const { outputs, translator } = collect()
+  translator.dispatch({
+    session_id: "ses_phase",
+    seq: 1,
+    kind: "run.started",
+    recorded_at_ms: 1000,
+    data: {},
+  })
+  // The same phase recorded again is not a transition; a new step restarting
+  // preparation after a tool result is.
+  translator.dispatch({
+    session_id: "ses_phase",
+    seq: 2,
+    kind: "provider.started",
+    recorded_at_ms: 1100,
+    data: {},
+  })
+  translator.dispatch({
+    session_id: "ses_phase",
+    seq: 3,
+    kind: "provider.request",
+    recorded_at_ms: 1200,
+    data: {},
+  })
+  translator.progress({ session_id: "ses_phase", kind: "provider.ttft", ttft_ms: 900 })
+  translator.dispatch({
+    session_id: "ses_phase",
+    seq: 4,
+    kind: "provider.started",
+    recorded_at_ms: 1300,
+    data: {},
+  })
+  translator.dispatch({
+    session_id: "ses_phase",
+    seq: 5,
+    kind: "run.finished",
+    recorded_at_ms: 2000,
+    data: {},
+  })
+  const phases = outputs
+    .filter((event) => event.type === "session.next.status")
+    .map((event) => (event.data as { status: unknown }).status)
+  expect(phases).toEqual([
+    { type: "busy", phase: "preparing", since: 1000 },
+    { type: "busy", phase: "requesting", since: 1200 },
+    { type: "busy", phase: "streaming", since: expect.any(Number) },
+    { type: "busy", phase: "preparing", since: 1300 },
+    { type: "idle" },
+  ])
+})

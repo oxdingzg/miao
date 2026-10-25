@@ -47,6 +47,13 @@ export type EngineSessionEvent = {
 }
 export type EnginePublish = (event: EngineSessionEvent) => void
 
+/**
+ * Ordinal offset for events that exist only in the live stream. A durable
+ * event's ordinals start at zero and stay in the low tens, so this range keeps
+ * a live event's delivery id distinct from every journaled one.
+ */
+const LIVE_ORDINAL = 1_000_000
+
 /** One priced catalog entry: the rates plus the product model they belong to,
  * so a settled step can carry the serving model's ref for durable attribution. */
 export type EnginePrice = { cost: ModelV2.Info["cost"]; model: Model.Ref }
@@ -437,6 +444,31 @@ export class EngineTranslator {
 
   /** Live-only delta fragments, anchored to the durable step-start sequence. */
   progress(progress: EngineProgress): void {
+    // A phase that only live frames can report (the first token) refines the
+    // status the durable events already published.
+    const status = this.#status.progress(progress)
+    const statusSession = progress.session_id
+    if (status && typeof statusSession === "string") {
+      const anchor =
+        typeof progress.run_id === "string" && typeof progress.step === "number"
+          ? this.#anchors.get(`${statusSession}/${progress.run_id}/${progress.step}`)
+          : undefined
+      // A live status has no journal position of its own, so it borrows the
+      // step's durable start for provenance. Its ordinal lives in a separate
+      // range above every durable event's shared ordinal, so the delivery id
+      // stays stable within the step without ever colliding with one.
+      this.#publish({
+        type: "session.next.status",
+        data: status,
+        source: {
+          sessionID: statusSession,
+          seq: anchor?.seq ?? 0,
+          index: LIVE_ORDINAL + (anchor?.nextDelta ?? 0),
+          recordedAtMs: anchor?.recordedAtMs ?? null,
+        },
+      })
+      if (anchor) anchor.nextDelta++
+    }
     if (progress.kind === "provider.ttft") {
       const sessionID = progress.session_id
       const ttft = progress.ttft_ms
