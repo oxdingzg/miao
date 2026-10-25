@@ -252,7 +252,10 @@ test("projects start_job input into the product bash shape", () => {
     command: "sleep 2",
     run_in_background: true,
   })
-  expect(productToolInput("start_job", { argv: ["echo", "hi"] })).toEqual({ command: "echo hi", run_in_background: true })
+  expect(productToolInput("start_job", { argv: ["echo", "hi"] })).toEqual({
+    command: "echo hi",
+    run_in_background: true,
+  })
   expect(productToolInput("bash", { command: "ls" })).toEqual({ command: "ls" })
 })
 
@@ -531,21 +534,32 @@ test("settles a step on the committed assistant message", () => {
 })
 
 test("translateExpiredCredential parses the structured expired failure", () => {
-  const make = (message: string | undefined): EngineEvent => ({
-    kind: "stop_failure",
-    seq: 1,
-    session_id: "ses_test",
-    recorded_at_ms: 1,
-    ...(message === undefined ? {} : { data: { reason: "error", message } } as object),
-  }) as unknown as EngineEvent
+  const make = (message: string | undefined): EngineEvent =>
+    ({
+      kind: "stop_failure",
+      seq: 1,
+      session_id: "ses_test",
+      recorded_at_ms: 1,
+      ...(message === undefined ? {} : ({ data: { reason: "error", message } } as object)),
+    }) as unknown as EngineEvent
 
   const identity = translateExpiredCredential(
     make("credential cred_1 (openai) is expired; its owning broker must refresh it"),
   )
   expect(identity).toEqual({ id: "cred_1", integration: "openai" })
 
-  expect(translateExpiredCredential(make("invalid request: credential: credential cred_google (google) is expired; its owning broker must refresh it"))).toEqual({ id: "cred_google", integration: "google" })
-  expect(translateExpiredCredential(make("credential: credential cred_google (google) is expired; its owning broker must refresh it"))).toEqual({ id: "cred_google", integration: "google" })
+  expect(
+    translateExpiredCredential(
+      make(
+        "invalid request: credential: credential cred_google (google) is expired; its owning broker must refresh it",
+      ),
+    ),
+  ).toEqual({ id: "cred_google", integration: "google" })
+  expect(
+    translateExpiredCredential(
+      make("credential: credential cred_google (google) is expired; its owning broker must refresh it"),
+    ),
+  ).toEqual({ id: "cred_google", integration: "google" })
   // An unrelated failure carries no credential identity.
   expect(translateExpiredCredential(make("provider connection refused"))).toBeUndefined()
   expect(translateExpiredCredential(make(undefined))).toBeUndefined()
@@ -641,4 +655,21 @@ test("malformed identity metadata cannot override builtins or break historical a
   }
   expect(productToolID("run_command", { server: "forged", tool: "forged" })).toBe("bash")
   expect(productToolID("tool_call", { server: "dice", tool: "roll_dice" })).toBe("mcp__dice__roll_dice")
+})
+
+test("projects foreground argv commands into readable product shell input", () => {
+  expect(productToolInput("run_command", { argv: ["echo", "hello world"], cwd: "src", timeout_ms: 50 })).toEqual({
+    argv: ["echo", "hello world"],
+    cwd: "src",
+    timeout_ms: 50,
+    command: "echo 'hello world'",
+  })
+  expect(productToolInput("bash", { argv: ["rm", "deleteme.txt"] })).toEqual({
+    argv: ["rm", "deleteme.txt"],
+    command: "rm deleteme.txt",
+  })
+  expect(productToolInput("run_command", { argv: ["echo", "", "$HOME"] }).command).toBe("echo '' '$HOME'")
+  expect(productToolInput("bash", { command: "ls", argv: ["rm", "x"] }).command).toBe("ls")
+  expect(productToolInput("run_command", { argv: ["echo", "a'b"] }).command).toBe("echo 'a'\\''b'")
+  expect(productToolInput("read_file", { argv: ["x"] })).toEqual({ argv: ["x"] })
 })
