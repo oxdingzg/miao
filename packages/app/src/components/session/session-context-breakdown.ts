@@ -1,4 +1,4 @@
-import type { Message } from "@miao/schema/view-models"
+import type { SessionMessageInfo } from "@/utils/server"
 import type { Part } from "@miao/schema/render-part"
 
 export type SessionContextBreakdownKey = "system" | "user" | "assistant" | "tool" | "other"
@@ -109,19 +109,71 @@ export function estimateSessionContextBreakdown(args: {
     },
   )
 
+  return estimateFromCharacters(counts, args.input)
+}
+
+/** Each point estimates the last reported input of one loaded assistant message. */
+export function estimateSessionContextHistory(args: {
+  messages: readonly SessionMessageInfo[]
+  parts: Record<string, Part[] | undefined>
+}) {
+  const counts = { system: 0, user: 0, assistant: 0, tool: 0, other: 0 }
+  const points: { id: string; time: number | null; total: number; segments: SessionContextBreakdownSegment[] }[] = []
+  for (const message of args.messages) {
+    if (message.type === "system") {
+      counts.system = message.text.length
+      continue
+    }
+    if (message.type === "compaction") {
+      counts.user = 0
+      counts.assistant = 0
+      counts.tool = 0
+      counts.other = message.summary.length + message.recent.length
+      continue
+    }
+    const parts = args.parts[message.id] ?? []
+    if (message.type === "user") {
+      counts.user += parts.reduce((sum, part) => sum + charsFromUserPart(part), 0)
+      continue
+    }
+    if (message.type !== "assistant") continue
+    const added = parts.reduce(
+      (sum, part) => {
+        const next = charsFromAssistantPart(part)
+        return { assistant: sum.assistant + next.assistant, tool: sum.tool + next.tool }
+      },
+      { assistant: 0, tool: 0 },
+    )
+    counts.tool += added.tool
+    const total = message.tokens ? message.tokens.input + message.tokens.cache.read + message.tokens.cache.write : 0
+    // The final answer is not part of its own request. Earlier tool outputs
+    // can be part of that input; text from this message enters the next point.
+    if (total > 0 && message.time.completed !== undefined)
+      points.push({
+        id: message.id,
+        time: message.time.completed,
+        total,
+        segments: estimateFromCharacters(counts, total),
+      })
+    counts.assistant += added.assistant
+  }
+  return points.slice(-80)
+}
+
+function estimateFromCharacters(
+  counts: { system: number; user: number; assistant: number; tool: number; other?: number },
+  input: number,
+) {
   const tokens = {
     system: estimateTokens(counts.system),
     user: estimateTokens(counts.user),
     assistant: estimateTokens(counts.assistant),
     tool: estimateTokens(counts.tool),
+    other: estimateTokens(counts.other ?? 0),
   }
-  const estimated = tokens.system + tokens.user + tokens.assistant + tokens.tool
-
-  if (estimated <= args.input) {
-    return build({ ...tokens, other: args.input - estimated }, args.input)
-  }
-
-  const scale = args.input / estimated
+  const estimated = tokens.system + tokens.user + tokens.assistant + tokens.tool + tokens.other
+  if (estimated <= input) return build({ ...tokens, other: tokens.other + input - estimated }, input)
+  const scale = input / estimated
   const scaled = {
     system: Math.floor(tokens.system * scale),
     user: Math.floor(tokens.user * scale),
@@ -129,5 +181,5 @@ export function estimateSessionContextBreakdown(args: {
     tool: Math.floor(tokens.tool * scale),
   }
   const total = scaled.system + scaled.user + scaled.assistant + scaled.tool
-  return build({ ...scaled, other: Math.max(0, args.input - total) }, args.input)
+  return build({ ...scaled, other: Math.max(0, input - total) }, input)
 }

@@ -28,3 +28,9 @@ The old streaming benchmark still emits retired `message.part.*` live events, so
 All 61 supported non-English dictionaries contain the context-history keys with matching placeholders. New English source copy is unchanged. Machine-assisted drafts were checked against the existing product dictionaries and available maintained browser/editor corpora; Simplified/Traditional Chinese and selected ambiguous retry/settlement phrases were corrected in context. `localization-sources.json` records the primary reference URLs per locale. Unicode CLDR supplies locale/script reference data; it is not treated as proof of every translated phrase.
 
 Sparse developer-corpus coverage remains for `am`, `bn`, `dv`, `dz`, `fo`, `hy`, `lo`, `mn`, `ne`, `sv`, `tk`, and `ur`. In particular, no maintained developer corpus was obtained for `dv`, and its language-academy dictionary endpoint returned HTTP 403. Native-speaker phrase review remains recommended, especially for this set. Key/placeholder parity and source availability do not certify native grammar.
+
+## Estimated category history
+
+The second chart shows up to 80 loaded assistant-message checkpoints. It reuses the current category estimator in one forward pass, includes cache tokens in the reported prompt total, excludes a response from its own input estimate, and resets prior user/assistant/tool attribution at a compaction checkpoint. Missing or unclassified prefixes remain Other. The caption explicitly identifies the values as estimates rather than saved historical request snapshots.
+
+The complete App unit suite passes 686 tests and the browser-oriented unit suite passes 41 tests; package typecheck and the remote UI smoke test pass. Production navigation raw records are `composition-before.json` and `composition-after.json`: first observed 20.3→24.1 ms, stable observed 58.0→37.3 ms, with zero blank/unknown samples in both runs. These remain single-run diagnostics rather than a performance claim.

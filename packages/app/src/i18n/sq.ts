@@ -1,4 +1,8 @@
 export const dict = {
+  "context.history.title": "Përbërja e vlerësuar e hyrjes me kalimin e kohës",
+  "context.history.point": "{{time}} · {{tokens}} argumentet e raportuara të menjëhershme",
+  "context.history.note":
+    "Bazuar në deri në 80 kthesa të ngarkuara të asistentit. Vlerësimet e kategorive përdorin tekst të ngarkuar, të shkallëzuar në shenjat e raportuara të menjëhershme. Pikat e kontrollit rifillojnë vlerësimin; përmbajtja e shkarkuar ose e paklasifikuar përfshihet në Tjetër. Këto nuk janë fotografi të ruajtura të kërkesës.",
   "context.timeline.title": "Historia e kontekstit dhe e cache",
   "context.timeline.step":
     "{{model}} · {{time}} · {{input}} argumentet e menjëhershme · {{read}} cache lexuar · {{write}} cache shkrim",

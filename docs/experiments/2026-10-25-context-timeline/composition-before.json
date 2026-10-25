@@ -1,0 +1,60 @@
+[
+  {
+    "schemaVersion": 2,
+    "runID": "miao-context-after-nav-20261025",
+    "name": "performance: first navigation paint > opens an unvisited session tab without a blank frame",
+    "status": "passed",
+    "expectedStatus": "passed",
+    "retry": 0,
+    "repeatEachIndex": 0,
+    "context": {
+      "project": "chromium",
+      "platform": "darwin"
+    },
+    "metrics": {
+      "summary": {
+        "samples": 4,
+        "firstDestinationObservedMs": 20.300000190734863,
+        "stableDestinationObservedMs": 58,
+        "sourceSamples": 0,
+        "blankSamples": 0,
+        "unknownSamples": 0,
+        "destinationSamples": 4
+      },
+      "samples": [
+        {
+          "observedAtMs": 20.300000190734863,
+          "source": false,
+          "destination": true,
+          "content": true,
+          "pathname": "/server/aHR0cDovLzEyNy4wLjAuMTo0NDYx/session/ses_smoke_target",
+          "center": " charlie juliet quartz delta kilo river echo lima signal foxtrot metro vector go"
+        },
+        {
+          "observedAtMs": 41,
+          "source": false,
+          "destination": true,
+          "content": true,
+          "pathname": "/server/aHR0cDovLzEyNy4wLjAuMTo0NDYx/session/ses_smoke_target",
+          "center": " echo lima signal foxtrot metro vector golf nova alpha hotel orbit bravo india p"
+        },
+        {
+          "observedAtMs": 58,
+          "source": false,
+          "destination": true,
+          "content": true,
+          "pathname": "/server/aHR0cDovLzEyNy4wLjAuMTo0NDYx/session/ses_smoke_target",
+          "center": " echo lima signal foxtrot metro vector golf nova alpha hotel orbit bravo india p"
+        },
+        {
+          "observedAtMs": 67.10000038146973,
+          "source": false,
+          "destination": true,
+          "content": true,
+          "pathname": "/server/aHR0cDovLzEyNy4wLjAuMTo0NDYx/session/ses_smoke_target",
+          "center": " echo lima signal foxtrot metro vector golf nova alpha hotel orbit bravo india p"
+        }
+      ]
+    }
+  }
+]

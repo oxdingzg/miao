@@ -1,4 +1,8 @@
 export const dict = {
+  "context.history.title": "Vaqt o'tishi bilan taxminiy kiritish tarkibi",
+  "context.history.point": "{{time}} · {{tokens}} tezkor tokenlar haqida xabar berdi",
+  "context.history.note":
+    "80 tagacha yuklangan yordamchi burilishlar asosida. Kategoriyalarni baholashda yuklangan matndan foydalaniladi, ular bildirilgan tezkor tokenlar uchun masshtablanadi. Tekshirish punktlari smetani qaytadan boshlaydi; yuklanmagan yoki tasniflanmagan kontent Boshqalar qatoriga kiritilgan. Bu soʻrovning oniy tasvirlari emas.",
   "context.timeline.title": "Kontekst va kesh tarixi",
   "context.timeline.step":
     "{{model}} · {{time}} · {{input}} tezkor tokenlar · {{read}} keshni oʻqish · {{write}} kesh yozish",

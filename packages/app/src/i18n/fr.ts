@@ -1,4 +1,8 @@
 export const dict = {
+  "context.history.title": "Évolution estimée de la composition des entrées",
+  "context.history.point": "{{time}} · {{tokens}} tokens de prompt signalés",
+  "context.history.note":
+    "Basé sur un maximum de 80 tours chargés de l’assistant. Les catégories sont estimées à partir du texte chargé et ajustées au nombre de tokens de prompt signalé. Les points de contrôle relancent l’estimation ; le contenu non chargé ou non classé est inclus dans « Autres ». Il ne s’agit pas d’instantanés enregistrés des requêtes.",
   "context.timeline.title": "Historique du contexte et du cache",
   "context.timeline.step":
     "{{model}} · {{time}} · {{input}} tokens de prompt · {{read}} lus dans le cache · {{write}} écrits dans le cache",

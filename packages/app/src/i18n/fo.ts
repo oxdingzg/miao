@@ -1,4 +1,8 @@
 export const dict = {
+  "context.history.title": "Mett inntøkusamanseting yvir tíð",
+  "context.history.point": "{{time}} · {{tokens}} meldaði skjótarmerki",
+  "context.history.note":
+    "Við støði í upp til 80 lastaðum hjálparvendingum. Floksmetingar brúka heintaðan tekst, skaleraðan til fráboðað spurnamerki. Kanningarstøð endurbyrja metingina; óheintað ella óflokkað innihald er við í Annað. Hetta eru ikki goymdar fyrispurningar løtumyndir.",
   "context.timeline.title": "Samanhangur og goymslusøga",
   "context.timeline.step":
     "{{model}} · {{time}} · {{input}} biðjamerki · {{read}} goymsla lesa · {{write}} goymsla skriva",

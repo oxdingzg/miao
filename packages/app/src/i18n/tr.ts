@@ -3,6 +3,10 @@ import { dict as en } from "./en"
 type Keys = keyof typeof en
 
 export const dict = {
+  "context.history.title": "Zaman içindeki tahmini girdi bileşimi",
+  "context.history.point": "{{time}} · {{tokens}} bilgi istemi jetonunu bildirdi",
+  "context.history.note":
+    "80'e kadar yüklü asistan dönüşüne dayanmaktadır. Kategori tahminleri, raporlanan bilgi istemi belirteçlerine göre ölçeklendirilmiş yüklü metni kullanır. Kontrol noktaları tahmini yeniden başlatır; Yüklenmemiş veya sınıflandırılmamış içerik Diğer kategorisine dahildir. Bunlar kayıtlı istek anlık görüntüleri değildir.",
   "context.timeline.title": "Bağlam ve önbellek geçmişi",
   "context.timeline.step":
     "{{model}} · {{time}} · {{input}} bilgi istemi jetonu · {{read}} önbellek okuma · {{write}} önbellek yazma",

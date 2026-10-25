@@ -21,9 +21,14 @@ import { useSDK } from "@/context/sdk"
 import { useSessionLayout } from "@/pages/session/session-layout"
 import { getSessionContextFromRecords, getUsageModelRows } from "./session-context-metrics"
 import { contentParts } from "@miao/session-ui/content"
-import { estimateSessionContextBreakdown, type SessionContextBreakdownKey } from "./session-context-breakdown"
+import {
+  estimateSessionContextBreakdown,
+  estimateSessionContextHistory,
+  type SessionContextBreakdownKey,
+} from "./session-context-breakdown"
 import { createSessionContextFormatter } from "./session-context-format"
 import { SessionContextTimeline } from "./session-context-timeline"
+import { SessionContextComposition } from "./session-context-composition"
 
 const BREAKDOWN_COLOR: Record<SessionContextBreakdownKey, string> = {
   system: "var(--syntax-info)",
@@ -186,6 +191,7 @@ export function SessionContextTab() {
   })
 
   const projected = createMemo(() => contentParts(params.id ?? "", messages()))
+  const history = createMemo(() => estimateSessionContextHistory({ messages: messages(), parts: projected() }))
 
   const breakdown = createMemo(
     on(
@@ -323,6 +329,7 @@ export function SessionContextTab() {
             <SessionContextTimeline sessionID={sessionID} revision={info()?.usage?.turns ?? 0} messages={messages()} />
           )}
         </Show>
+        <SessionContextComposition points={history()} colors={BREAKDOWN_COLOR} label={breakdownLabel} />
         <div class="grid grid-cols-1 @[32rem]:grid-cols-2 gap-4">
           <For each={stats}>
             {(stat) => <Stat label={language.t(stat.label as Parameters<typeof language.t>[0])} value={stat.value()} />}

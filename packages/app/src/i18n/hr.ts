@@ -94,6 +94,10 @@ const desktop = [
 ]
 
 export const dict = {
+  "context.history.title": "Procijenjeni sastav ulaza tijekom vremena",
+  "context.history.point": "{{time}} · {{tokens}} je prijavilo brze tokene",
+  "context.history.note":
+    "Na temelju do 80 učitanih okreta pomoćnika. Procjene kategorija koriste učitani tekst, skaliran na prijavljene tokene upita. Kontrolne točke ponovno pokreću procjenu; neučitani ili neklasificirani sadržaj uključen je u Ostalo. Ovo nisu spremljene snimke zahtjeva.",
   "context.timeline.title": "Kontekst i povijest predmemorije",
   "context.timeline.step":
     "{{model}} · {{time}} · {{input}} tokena upita · {{read}} čitanje predmemorije · {{write}} pisanje u predmemoriju",

@@ -1,4 +1,8 @@
 export const dict = {
+  "context.history.title": "በጊዜ ሂደት የሚገመተው የግቤት ቅንብር",
+  "context.history.point": "{{time}} · {{tokens}} የጥያቄ ምልክቶችን ሪፖርት አድርገዋል",
+  "context.history.note":
+    "እስከ 80 የሚደርሱ የተጫኑ ረዳት መዞሪያዎች ላይ በመመስረት። የምድብ ግምቶች የተጫነ ጽሑፍን ይጠቀማሉ፣ ወደ ሪፖርት መጠየቂያ ምልክቶች የተመጣጠነ። የፍተሻ ነጥቦች ግምቱን እንደገና ያስጀምራሉ; ያልተጫነ ወይም ያልተመደበ ይዘት በሌላ ውስጥ ተካትቷል። እነዚህ ያልተቀመጡ የጥያቄ ቅጽበተ-ፎቶዎች አይደሉም።",
   "context.timeline.title": "የአውድ እና የመሸጎጫ ታሪክ",
   "context.timeline.step": "{{model}} · {{time}} · {{input}} መጠየቂያ ምልክቶች · {{read}} መሸጎጫ ማንበብ · {{write}} መሸጎጫ ጻፍ",
   "context.timeline.requestWindow": "በጥያቄ ጊዜ {{value}} ማስመሰያ መስኮት",

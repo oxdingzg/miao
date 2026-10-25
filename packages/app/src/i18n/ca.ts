@@ -1,4 +1,8 @@
 export const dict = {
+  "context.history.title": "Composició d'entrada estimada al llarg del temps",
+  "context.history.point": "{{time}} · {{tokens}} ha informat de fitxes d'indicació",
+  "context.history.note":
+    "Basat en fins a 80 torns d'assistent carregats. Les estimacions de categories utilitzen text carregat, escalat als testimonis de sol·licitud informats. Els punts de control reinicien l'estimació; contingut descarregat o no classificat s'inclou a Altres. Aquestes no són instantànies de sol·licitud desades.",
   "context.timeline.title": "Context i historial de memòria cau",
   "context.timeline.step":
     "{{model}} · {{time}} · {{input}} fitxes d'indicació · {{read}} lectura de memòria cau · {{write}} escriptura de memòria cau",

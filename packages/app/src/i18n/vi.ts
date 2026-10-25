@@ -1,4 +1,8 @@
 export const dict = {
+  "context.history.title": "Thành phần đầu vào ước tính theo thời gian",
+  "context.history.point": "{{time}} · {{tokens}} đã báo cáo mã thông báo nhắc nhở",
+  "context.history.note":
+    "Dựa trên tối đa 80 lượt trợ lý được tải. Ước tính danh mục sử dụng văn bản đã tải, được chia tỷ lệ theo mã thông báo lời nhắc được báo cáo. Điểm kiểm tra khởi động lại ước tính; nội dung chưa được tải hoặc chưa được phân loại được đưa vào Khác. Đây không phải là ảnh chụp nhanh yêu cầu đã lưu.",
   "context.timeline.title": "Lịch sử bối cảnh và bộ đệm",
   "context.timeline.step":
     "{{model}} · {{time}} · {{input}} mã thông báo nhắc nhở · {{read}} đọc bộ nhớ đệm · {{write}} ghi bộ nhớ đệm",

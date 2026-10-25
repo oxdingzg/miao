@@ -2,6 +2,10 @@ import { dict as en } from "./en"
 type Keys = keyof typeof en
 
 export const dict = {
+  "context.history.title": "Estimert inputsammensetning over tid",
+  "context.history.point": "{{time}} · {{tokens}} rapporterte prompt-tokens",
+  "context.history.note":
+    "Basert på opptil 80 belastede assistentsvinger. Kategoriberegninger bruker innlastet tekst, skalert til rapporterte ledetekst-tokens. Sjekkpunkter starter estimatet på nytt; ulastet eller uklassifisert innhold er inkludert i Annet. Dette er ikke lagrede øyeblikksbilder av forespørselen.",
   "context.timeline.title": "Kontekst- og hurtigbufferhistorikk",
   "context.timeline.step":
     "{{model}} · {{time}} · {{input}} prompt tokens · {{read}} cache les · {{write}} cache skrive",

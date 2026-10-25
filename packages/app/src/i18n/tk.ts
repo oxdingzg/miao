@@ -1,4 +1,8 @@
 export const dict = {
+  "context.history.title": "Wagtyň geçmegi bilen çak edilýän giriş kompozisiýasy",
+  "context.history.point": "{{time}} · {{tokens}} gyssagly bellikleri habar berdi",
+  "context.history.note":
+    "80-e çenli ýüklenen kömekçi öwrümlerine esaslanýar. Kategoriýa bahalandyrmalary, habar berlen gyssagly bellikler üçin ulaldylan teksti ulanýar. Barlag nokatlary smeta täzeden başlaýar; düşürilmedik ýa-da klassifikasiýa edilmedik mazmun Başgalaryna girýär. Bular haýyş suratlary ýatda saklanmaýar.",
   "context.timeline.title": "Kontekst we keş keşbi",
   "context.timeline.step":
     "{{model}} · {{time}} · {{input}} gyssagly bellikler · {{read}} keş keşi oka · {{write}} keş keşi",

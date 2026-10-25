@@ -94,6 +94,10 @@ const desktop = [
 ]
 
 export const dict = {
+  "context.history.title": "Becsült bemeneti összetétel az idő függvényében",
+  "context.history.point": "{{time}} · {{tokens}} prompt tokeneket jelentett",
+  "context.history.note":
+    "Akár 80 betöltött asszisztens fordulat alapján. A kategóriabecslések betöltött szöveget használnak, amelyet a jelentett prompt tokenekre méreteznek. Az ellenőrzőpontok újraindítják a becslést; a kirakott vagy besorolatlan tartalom szerepel az Egyéb. Ezek nem mentett kérés pillanatképek.",
   "context.timeline.title": "Kontextus és gyorsítótár előzmények",
   "context.timeline.step":
     "{{model}} · {{time}} · {{input}} prompt tokenek · {{read}} gyorsítótár olvasása · {{write}} gyorsítótár írása",

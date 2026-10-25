@@ -94,6 +94,10 @@ const desktop = [
 ]
 
 export const dict = {
+  "context.history.title": "Apskaičiuota įvesties sudėtis laikui bėgant",
+  "context.history.point": "{{time}} · {{tokens}} pranešė apie raginimo žetonus",
+  "context.history.note":
+    "Remiantis iki 80 pakrautų asistento apsisukimų. Kategorijų įvertinimuose naudojamas įkeltas tekstas, pakeistas pagal praneštus raginimo prieigos raktus. Kontroliniai taškai iš naujo paleidžia sąmatą; neįkeltas arba neįslaptintas turinys įtrauktas į Kita. Tai nėra išsaugotos užklausos momentinės nuotraukos.",
   "context.timeline.title": "Kontekstas ir talpyklos istorija",
   "context.timeline.step":
     "{{model}} · {{time}} · {{input}} raginimo prieigos raktai · {{read}} talpyklos skaitymas · {{write}} rašymas talpykloje",

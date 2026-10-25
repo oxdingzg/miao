@@ -1,4 +1,8 @@
 export const dict = {
+  "context.history.title": "Odhadované složení vstupů v průběhu času",
+  "context.history.point": "{{time}} · {{tokens}} nahlásilo tokeny výzvy",
+  "context.history.note":
+    "Na základě až 80 načtených otočení asistenta. Odhady kategorií používají načtený text, který je škálován na hlášené tokeny výzvy. Kontrolní body restartují odhad; nenačtený nebo nezařazený obsah je zahrnut do Ostatní. Toto nejsou uložené snímky požadavků.",
   "context.timeline.title": "Kontext a historie mezipaměti",
   "context.timeline.step":
     "{{model}} · {{time}} · {{input}} tokeny výzvy · {{read}} čtení z mezipaměti · {{write}} zápis do mezipaměti",

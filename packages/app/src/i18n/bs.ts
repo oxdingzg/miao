@@ -1,4 +1,8 @@
 export const dict = {
+  "context.history.title": "Procijenjeni sastav ulaza tokom vremena",
+  "context.history.point": "{{time}} · {{tokens}} prijavio prompt tokene",
+  "context.history.note":
+    "Na osnovu do 80 napunjenih okreta pomoćnika. Procjene kategorija koriste učitani tekst, skaliran na prijavljene prompt tokene. Kontrolne tačke ponovo pokreću procjenu; neučitani ili neklasifikovani sadržaji su uključeni u Ostalo. Ovo nisu sačuvani snimci zahtjeva.",
   "context.timeline.title": "Kontekst i historija keša",
   "context.timeline.step":
     "{{model}} · {{time}} · {{input}} prompt tokeni · {{read}} keš čitanje · {{write}} keš upisivanje",

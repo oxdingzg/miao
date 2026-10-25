@@ -484,6 +484,10 @@ export const dict = {
 
   "context.breakdown.title": "Context Breakdown",
   "context.timeline.title": "Context and cache history",
+  "context.history.title": "Estimated input composition over time",
+  "context.history.point": "{{time}} · {{tokens}} reported prompt tokens",
+  "context.history.note":
+    "Based on up to 80 loaded assistant turns. Category estimates use loaded text, scaled to reported prompt tokens. Checkpoints restart the estimate; unloaded or unclassified content is included in Other. These are not saved request snapshots.",
   "context.timeline.step":
     "{{model}} · {{time}} · {{input}} prompt tokens · {{read}} cache read · {{write}} cache write",
   "context.timeline.requestWindow": "{{value}} token window at request time",

@@ -1,0 +1,60 @@
+[
+  {
+    "schemaVersion": 2,
+    "runID": "miao-composition-after-nav-20261025",
+    "name": "performance: first navigation paint > opens an unvisited session tab without a blank frame",
+    "status": "passed",
+    "expectedStatus": "passed",
+    "retry": 0,
+    "repeatEachIndex": 0,
+    "context": {
+      "project": "chromium",
+      "platform": "darwin"
+    },
+    "metrics": {
+      "summary": {
+        "samples": 4,
+        "firstDestinationObservedMs": 24.100000381469727,
+        "stableDestinationObservedMs": 37.30000019073486,
+        "sourceSamples": 0,
+        "blankSamples": 0,
+        "unknownSamples": 0,
+        "destinationSamples": 4
+      },
+      "samples": [
+        {
+          "observedAtMs": 24.100000381469727,
+          "source": false,
+          "destination": true,
+          "content": true,
+          "pathname": "/server/aHR0cDovLzEyNy4wLjAuMTo0NDYx/session/ses_smoke_target",
+          "center": " charlie juliet quartz delta kilo river echo lima signal foxtrot metro vector go"
+        },
+        {
+          "observedAtMs": 32.60000038146973,
+          "source": false,
+          "destination": true,
+          "content": true,
+          "pathname": "/server/aHR0cDovLzEyNy4wLjAuMTo0NDYx/session/ses_smoke_target",
+          "center": " echo lima signal foxtrot metro vector golf nova alpha hotel orbit bravo india p"
+        },
+        {
+          "observedAtMs": 37.30000019073486,
+          "source": false,
+          "destination": true,
+          "content": true,
+          "pathname": "/server/aHR0cDovLzEyNy4wLjAuMTo0NDYx/session/ses_smoke_target",
+          "center": " echo lima signal foxtrot metro vector golf nova alpha hotel orbit bravo india p"
+        },
+        {
+          "observedAtMs": 45.69999980926514,
+          "source": false,
+          "destination": true,
+          "content": true,
+          "pathname": "/server/aHR0cDovLzEyNy4wLjAuMTo0NDYx/session/ses_smoke_target",
+          "center": " echo lima signal foxtrot metro vector golf nova alpha hotel orbit bravo india p"
+        }
+      ]
+    }
+  }
+]

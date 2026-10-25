@@ -1,4 +1,8 @@
 export const dict = {
+  "context.history.title": "Composición estimada de los insumos a lo largo del tiempo",
+  "context.history.point": "{{time}} · {{tokens}} tokens de aviso informados",
+  "context.history.note":
+    "Basado en hasta 80 turnos de asistente cargados. Las estimaciones de categorías utilizan texto cargado, escalado a tokens de aviso informados. Los puntos de control reinician la estimación; El contenido descargado o no clasificado se incluye en Otros. Estas no son instantáneas de solicitudes guardadas.",
   "context.timeline.title": "Contexto e historial de caché",
   "context.timeline.step":
     "{{model}} · {{time}} · {{input}} tokens de aviso · {{read}} lectura de caché · {{write}} escritura de caché",

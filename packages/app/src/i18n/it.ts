@@ -1,4 +1,8 @@
 export const dict = {
+  "context.history.title": "Composizione stimata degli input nel tempo",
+  "context.history.point": "{{time}} · {{tokens}} ha segnalato token di richiesta",
+  "context.history.note":
+    "Basato su un massimo di 80 turni di assistente caricati. Le stime delle categorie utilizzano il testo caricato, adattato ai token prompt segnalati. I checkpoint riavviano il preventivo; il contenuto scaricato o non classificato è incluso in Altro. Questi non sono snapshot delle richieste salvate.",
   "context.timeline.title": "Contesto e cronologia della cache",
   "context.timeline.step":
     "{{model}} · {{time}} · {{input}} token di prompt · {{read}} lettura della cache · {{write}} scrittura della cache",

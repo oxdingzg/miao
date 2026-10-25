@@ -1,4 +1,8 @@
 export const dict = {
+  "context.history.title": "経時的な推定入力構成",
+  "context.history.point": "{{time}} · 報告されたプロンプトトークン数 {{tokens}}",
+  "context.history.note":
+    "最大 80 回のロードされたアシスタント ターンに基づいています。カテゴリの推定では、報告されたプロンプト トークンに合わせて調整された読み込まれたテキストが使用されます。チェックポイントにより推定が再開されます。アンロードまたは未分類のコンテンツは「その他」に含まれます。これらは保存されたリクエストのスナップショットではありません。",
   "context.timeline.title": "コンテキストとキャッシュ履歴",
   "context.timeline.step":
     "{{model}} · {{time}} · {{input}} プロンプト トークン · {{read}} キャッシュ読み取り · {{write}} キャッシュ書き込み",
