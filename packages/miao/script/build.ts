@@ -2,7 +2,8 @@
 
 import { $ } from "bun"
 import { existsSync } from "fs"
-import { copyFile, mkdir, rename } from "fs/promises"
+import { copyFile, mkdir, mkdtemp, rename } from "fs/promises"
+import os from "os"
 import path from "path"
 import { fileURLToPath } from "url"
 import { createSolidTransformPlugin } from "@opentui/solid/bun-plugin"
@@ -30,6 +31,19 @@ const skipInstall = process.argv.includes("--skip-install")
 const sourcemapsFlag = process.argv.includes("--sourcemaps")
 const plugin = createSolidTransformPlugin()
 const skipEmbedWebUi = process.argv.includes("--skip-embed-web-ui")
+
+const createEmbeddedEngineModule = (enginePath: string) => {
+  if (!existsSync(enginePath)) throw new Error(`--engine: no such file: ${enginePath}`)
+  const spec = path.relative(dir, enginePath).replaceAll("\\", "/")
+  return [
+    `import engine from ${JSON.stringify(spec.startsWith(".") ? spec : `./${spec}`)} with { type: "file" };`,
+    `export default engine;`,
+  ].join("\n")
+}
+
+const engineFlagIndex = process.argv.indexOf("--engine")
+const engineFlag = engineFlagIndex !== -1 ? process.argv[engineFlagIndex + 1] : undefined
+const embeddedEngineModule = engineFlag ? createEmbeddedEngineModule(engineFlag) : null
 
 const createEmbeddedWebUIBundle = async () => {
   console.log(`Building Web UI to embed in the binary`)
@@ -208,8 +222,14 @@ for (const item of targets) {
     files: {
       [treeSitterWorkerPath]: treeSitterWorker,
       ...(embeddedFileMap ? { "miao-web-ui.gen.ts": embeddedFileMap } : {}),
+      ...(embeddedEngineModule ? { "miao-engine.gen.ts": embeddedEngineModule } : {}),
     },
-    entrypoints: ["./src/index.ts", treeSitterWorkerPath, ...(embeddedFileMap ? ["miao-web-ui.gen.ts"] : [])],
+    entrypoints: [
+      "./src/index.ts",
+      treeSitterWorkerPath,
+      ...(embeddedFileMap ? ["miao-web-ui.gen.ts"] : []),
+      ...(embeddedEngineModule ? ["miao-engine.gen.ts"] : []),
+    ],
     define: {
       FFF_LIBC: JSON.stringify(item.abi === "musl" ? "musl" : "gnu"),
       MIAO_VERSION: `'${Script.version}'`,
@@ -246,8 +266,8 @@ for (const item of targets) {
   }
 
   // Smoke test: only run if binary is for current platform
+  const binaryPath = `dist/${name}/bin/miao`
   if (item.os === process.platform && item.arch === process.arch && !item.abi) {
-    const binaryPath = `dist/${name}/bin/miao`
     console.log(`Running smoke test: ${binaryPath} --version`)
     try {
       const versionOutput = await $`${binaryPath} --version`.text()
@@ -255,6 +275,22 @@ for (const item of targets) {
     } catch (e) {
       console.error(`Smoke test failed for ${name}:`, e)
       process.exit(1)
+    }
+  }
+
+  if (embeddedEngineModule && item.os === process.platform && item.arch === process.arch && !item.abi && item.os !== "win32") {
+    const home = await mkdtemp(path.join(os.tmpdir(), "miao-engine-embed-"))
+    try {
+      await $`env HOME=${home} ${binaryPath} --version`.quiet()
+      const extracted = path.join(home, ".local/share/miao-engine/bin/miao-engine")
+      const caps = JSON.parse(await $`${extracted} --capabilities`.text())
+      if (caps.name !== "miao-engine") throw new Error(`embedded engine reports name ${caps.name}`)
+      console.log(`Embedded engine smoke passed: ${extracted} (protocol ${caps.protocol})`)
+    } catch (e) {
+      console.error(`Embedded engine smoke failed for ${name}:`, e)
+      process.exit(1)
+    } finally {
+      await $`rm -rf ${home}`
     }
   }
 

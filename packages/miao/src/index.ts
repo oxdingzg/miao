@@ -34,6 +34,12 @@ if (sandboxIndex !== -1) {
   process.exit(await sandboxRun(process.argv.slice(sandboxIndex + 1)))
 }
 
+// A single-file build can carry its engine; materialize it before dispatch so
+// the first launch finds it through normal candidate discovery.
+await import("./engine/embedded")
+  .then((embedded) => embedded.ensureEmbeddedEngine())
+  .catch(() => undefined)
+
 function show(out: string) {
   const text = out.trimStart()
   if (!text.startsWith("opencode ")) {
