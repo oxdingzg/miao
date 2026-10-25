@@ -109,6 +109,50 @@ test("turn activity replaces the waiting text on the same status line", async ()
   }
 })
 
+test("waiting for the model outranks the settled activity of the previous step", async () => {
+  await using tmp = await tmpdir()
+  const state = path.join(tmp.path, "state")
+  await mkdir(state, { recursive: true })
+  await Bun.write(path.join(state, "kv.json"), "{}")
+  const [{ SessionWaiting }, { KVProvider }, { ThemeProvider }, { TuiConfigProvider }] = await Promise.all([
+    import("../../../src/routes/session/activity"),
+    import("../../../src/context/kv"),
+    import("../../../src/context/theme"),
+    import("../../../src/config"),
+  ])
+  const app = await testRender(
+    () => (
+      <TestTuiContexts directory={tmp.path} paths={{ home: tmp.path, state, worktree: tmp.path }}>
+        <TuiConfigProvider config={createTuiResolvedConfig()}>
+          <KVProvider>
+            <ThemeProvider mode="dark">
+              <SessionWaiting
+                waiting
+                elapsed={526_000}
+                phase="requesting"
+                activity="ran 2 shell commands, delegated to 1 subagent"
+              />
+            </ThemeProvider>
+          </KVProvider>
+        </TuiConfigProvider>
+      </TestTuiContexts>
+    ),
+    { width: 120, height: 10 },
+  )
+  try {
+    const deadline = Date.now() + 2000
+    while (!app.captureCharFrame().includes("Waiting for model response") && Date.now() < deadline) {
+      await Bun.sleep(20)
+      await app.renderOnce()
+    }
+    const frame = app.captureCharFrame()
+    expect(frame).toContain("Waiting for model response")
+    expect(frame).not.toContain("ran 2 shell commands")
+  } finally {
+    app.renderer.destroy()
+  }
+})
+
 test("the waiting label names the current drain phase", async () => {
   await using tmp = await tmpdir()
   const state = path.join(tmp.path, "state")

@@ -66,9 +66,14 @@ impl Provider for Scripted {
 }
 
 fn policy(allow_subagents: bool) -> Policy {
+    policy_turns(allow_subagents, 25)
+}
+
+fn policy_turns(allow_subagents: bool, max_provider_turns: u32) -> Policy {
     Policy::new(Config {
         mode: Mode::Workspace,
         allow_subagents,
+        max_provider_turns: Some(max_provider_turns),
         rules: vec![Rule {
             tool: "*".into(),
             path: "**".into(),
@@ -161,6 +166,125 @@ async fn task_delegates_to_a_child_session_and_returns_its_message() {
 async fn task_is_denied_without_subagent_authority() {
     let (result, _) = run(false).await;
     assert!(!result["error"].is_null(), "{result}");
+}
+
+/// A child that needs many provider turns to finish, so its event journal
+/// outgrows the single page a delegation watcher reads in one pass.
+struct Chatty {
+    turns: AtomicUsize,
+}
+
+#[async_trait]
+impl Provider for Chatty {
+    async fn stream(
+        &self,
+        request: ModelRequest,
+        _: mpsc::Sender<Value>,
+        _: CancellationToken,
+    ) -> Result<Reply, ProviderError> {
+        let texts: Vec<&str> = request
+            .messages
+            .iter()
+            .filter(|message| message.role == "user")
+            .flat_map(|message| message.content.as_array().into_iter().flatten())
+            .filter_map(|part| part["text"].as_str())
+            .collect();
+        if texts.iter().any(|text| text.contains("say hello")) {
+            // A unique command per turn keeps the engine's loop detector from
+            // ending the child early; the turns are only there to grow the
+            // journal past one event page.
+            let turn = self.turns.fetch_add(1, Ordering::SeqCst);
+            if turn < 80 {
+                return Ok(Reply {
+                    content: json!([{"type":"tool_use","id":format!("c{turn}"),"name":"bash","input":{"command":format!("echo {turn}")}}]),
+                    usage: json!({}),
+                    needs_tools: true,
+                });
+            }
+            return Ok(Reply {
+                content: json!([{"type":"text","text":"hello from child"}]),
+                usage: json!({"inputTokens": 30, "outputTokens": 5, "totalTokens": 35}),
+                needs_tools: false,
+            });
+        }
+        let has_result = request.messages.iter().any(|message| {
+            message
+                .content
+                .as_array()
+                .is_some_and(|parts| parts.iter().any(|part| part["type"] == "tool_result"))
+        });
+        if texts.iter().any(|text| text.contains("delegate")) && !has_result {
+            return Ok(Reply {
+                content: json!([{"type":"tool_use","id":"d1","name":"task","input":{"prompt":"say hello"}}]),
+                usage: json!({}),
+                needs_tools: true,
+            });
+        }
+        Ok(Reply {
+            content: json!([{"type":"text","text":"parent done"}]),
+            usage: json!({}),
+            needs_tools: false,
+        })
+    }
+}
+
+#[tokio::test]
+async fn task_returns_a_child_result_that_outlives_one_event_page() {
+    let dir = tempfile::tempdir().unwrap();
+    let store = Store::open(dir.path().join("engine.db")).await.unwrap();
+    let tools = Tools::new(dir.path()).await.unwrap();
+    let runtime = Runtime::with_policy(
+        store.clone(),
+        Arc::new(Chatty {
+            turns: AtomicUsize::new(0),
+        }),
+        tools,
+        policy_turns(true, 120),
+    )
+    .await
+    .unwrap();
+    runtime
+        .admit(
+            Input {
+                agent_references: Default::default(),
+                command: None,
+                session_id: "parent".into(),
+                input_id: "one".into(),
+                prompt: "delegate this".into(),
+                delivery: Delivery::Steer,
+            },
+            true,
+        )
+        .await
+        .unwrap();
+    tokio::time::timeout(std::time::Duration::from_secs(120), async {
+        loop {
+            let events = store.events("parent", 0, 1000).await.unwrap();
+            if events.iter().any(|event| event.kind == "run.finished") {
+                return;
+            }
+            tokio::time::sleep(std::time::Duration::from_millis(10)).await;
+        }
+    })
+    .await
+    .expect("parent finished while the child outgrew one event page");
+    runtime.shutdown().await;
+    let parent = store.events("parent", 0, 1000).await.unwrap();
+    let child = parent
+        .iter()
+        .find(|event| event.kind == "subagent_start")
+        .and_then(|event| event.data["subagent_id"].as_str())
+        .unwrap()
+        .to_owned();
+    let child_events = store.events(&child, 0, 1000).await.unwrap();
+    assert!(
+        child_events.len() > 500,
+        "child produced {} events",
+        child_events.len()
+    );
+    assert!(parent
+        .iter()
+        .any(|event| event.kind == "subagent_stop" && event.data["reason"] == "completed"));
 }
 
 struct Background {

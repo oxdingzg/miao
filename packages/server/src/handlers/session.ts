@@ -1029,6 +1029,18 @@ export const SessionHandler = HttpApiBuilder.group(Api, "server.session", (handl
       .handle(
         "session.inputs",
         Effect.fn(function* (ctx) {
+          const native = yield* Effect.serviceOption(NativeEngine.Service)
+          const placement = Option.getOrUndefined(yield* Effect.serviceOption(NativeEngine.Placement))
+          if (Option.isSome(native) && placement) {
+            const page = yield* native.value.inputs({
+              sessionID: ctx.params.sessionID,
+              storage: placement.storage,
+              location: placement.location,
+              after: ctx.query.after,
+              limit: ctx.query.limit ?? DefaultSessionHistoryLimit,
+            })
+            return { data: [...page.inputs], hasMore: page.hasMore }
+          }
           const page = yield* session
             .inputs({
               sessionID: ctx.params.sessionID,

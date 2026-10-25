@@ -2,7 +2,7 @@ import { expect, test } from "bun:test"
 import path from "node:path"
 import { EngineClient } from "@/engine/client"
 import { translateAssistantIdentity } from "@/engine/bridge"
-import { EngineSession, type EngineSessionEvent } from "@/engine/session"
+import { EngineSession, LIVE_ORDINAL_BASE, type EngineSessionEvent } from "@/engine/session"
 import { tmpdir } from "../fixture/fixture"
 
 const event = (data: unknown, kind = "assistant.identity", seq = 7) => ({
@@ -133,15 +133,15 @@ real(
       expect(outputs.filter((event) => event.type === "session.next.stream.discarded")).toHaveLength(0)
       expect(data.assistantMessageID).toBe(text.assistantMessageID)
       // The first frame carries reasoning and content together: the reasoning
-      // fragment publishes as its own event and consumes a stream index, so
-      // the second text fragment lands at index 2.
+      // fragment publishes as its own event and consumes a stream ordinal, so
+      // the second text fragment takes the one after it.
       const reasoning = outputs.filter((event) => event.type === "session.next.reasoning.delta")
       expect(reasoning).toHaveLength(1)
-      expect(reasoning[0]?.source.index).toBe(1)
+      expect(reasoning[0]?.source.index).toBe(LIVE_ORDINAL_BASE + 1)
       expect((reasoning[0]?.data as { delta: string }).delta).toBe("check identity")
       const deltas = outputs.filter((event) => event.type === "session.next.text.delta")
       expect(deltas).toHaveLength(2)
-      expect(deltas.map((event) => event.source.index)).toEqual([0, 2])
+      expect(deltas.map((event) => event.source.index)).toEqual([LIVE_ORDINAL_BASE, LIVE_ORDINAL_BASE + 2])
       for (const delta of deltas) {
         expect(delta.data).toMatchObject({ assistantMessageID: text.assistantMessageID })
         expect(delta.data).toMatchObject({ textID: Reflect.get(text, "textID") })

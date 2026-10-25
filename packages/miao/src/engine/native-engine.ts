@@ -45,6 +45,7 @@ import { discoveredEngine } from "./discovery"
 import { makeEngineOwners } from "./owners"
 import type { EnginePricing } from "./session"
 import { NativeRecovery } from "./recovery"
+import { decodeAttachments } from "./prompt-attachments"
 import { ProductTools } from "./product-tools"
 import { engineMessageSequence } from "./message-sequence"
 import { Permission } from "@miao/schema/permission"
@@ -54,6 +55,9 @@ import { AgentV2 } from "@miao/core/agent"
 import { LLMClient } from "@miao/llm"
 import { llmClient } from "@miao/core/effect/app-node-platform"
 import { SessionNativeTitle } from "@miao/core/session/native-title"
+import { SessionInput } from "@miao/schema/session-input"
+import { SessionMessage } from "@miao/schema/session-message"
+import type { SessionID } from "@miao/schema/session-id"
 import { SessionTitle } from "@miao/core/session/title"
 import { SessionRunnerModel } from "@miao/core/session/runner/model"
 import { memoMap } from "@miao/core/effect/memo-map"
@@ -292,6 +296,47 @@ export const applyEngineOptIn = (
 
 /** Whether the composition root should build the native transport at all. */
 export const configured = (): boolean => nativeEngineOptions() !== undefined
+
+/**
+ * Map one engine pending-inbox page onto the product's admitted receipts.
+ *
+ * A natively placed Session keeps its queue in the engine, so there is no
+ * TypeScript row to read back; the engine stores the prompt text and its
+ * attachments, which decode into the same file shapes an admission carries.
+ */
+export function pendingInputsPage(sessionID: SessionID, value: unknown) {
+  const page = Schema.decodeUnknownSync(
+    Schema.Struct({
+      inputs: Schema.Array(
+        Schema.Struct({
+          id: SessionMessage.ID,
+          prompt: Schema.String,
+          delivery: SessionInput.Delivery,
+          admitted_seq: Schema.Number,
+          recorded_at_ms: Schema.Number,
+          attachments: Schema.Array(Schema.Unknown),
+        }),
+      ),
+      has_more: Schema.Boolean,
+    }),
+  )(value)
+  return {
+    inputs: page.inputs.map((entry) =>
+      SessionInput.Admitted.make({
+        admittedSeq: entry.admitted_seq,
+        id: entry.id,
+        sessionID,
+        prompt: {
+          text: entry.prompt,
+          ...(entry.attachments.length ? { files: decodeAttachments(entry.attachments) } : {}),
+        },
+        delivery: entry.delivery,
+        timeCreated: DateTime.makeUnsafe(entry.recorded_at_ms),
+      }),
+    ),
+    hasMore: page.has_more,
+  }
+}
 
 const refusal = (sessionID: string, error: unknown) =>
   error instanceof ConflictError
@@ -563,6 +608,14 @@ export const fromOwners = (
       read(input, (connection) =>
         connection.client.request("initialize", { session_id: input.sessionID, title: input.title }),
       ).pipe(Effect.asVoid),
+    inputs: (input) =>
+      read<unknown>(input, (connection) =>
+        connection.client.request("pending_inputs", {
+          session_id: input.sessionID,
+          after: input.after ?? null,
+          limit: input.limit,
+        }),
+      ).pipe(Effect.map((value) => pendingInputsPage(input.sessionID, value))),
     cancelInput: (input) =>
       read<unknown>(input, (connection) =>
         connection.client.request("cancel_input", {

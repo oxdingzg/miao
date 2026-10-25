@@ -41,6 +41,42 @@ async fn lost_ack_is_exact_retry_and_conflicts_do_not_change_history() {
 }
 
 #[tokio::test]
+async fn pending_inputs_lists_only_unpromoted_admissions_in_order() {
+    let dir = tempfile::tempdir().unwrap();
+    let store = Store::open(dir.path().join("engine.db")).await.unwrap();
+    store.admit(input("first", Delivery::Queue)).await.unwrap();
+    store.admit(input("drop", Delivery::Queue)).await.unwrap();
+    store.admit(input("live", Delivery::Steer)).await.unwrap();
+    store.admit(input("second", Delivery::Queue)).await.unwrap();
+    store.cancel_input("s", "drop").await.unwrap();
+    assert_eq!(store.promote("s", false).await.unwrap().len(), 1);
+    let page = store.pending_inputs("s", None, 50).await.unwrap();
+    assert_eq!(page["has_more"], json!(false));
+    assert_eq!(
+        page["inputs"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|entry| entry["id"].as_str().unwrap())
+            .collect::<Vec<_>>(),
+        vec!["first", "second"],
+        "a cancelled or promoted input is no longer waiting"
+    );
+    assert_eq!(page["inputs"][0]["prompt"], json!("first"));
+    assert_eq!(page["inputs"][0]["delivery"], json!("queue"));
+    assert!(page["inputs"][0]["recorded_at_ms"].as_u64().unwrap() > 0);
+    let head = store.pending_inputs("s", None, 1).await.unwrap();
+    assert_eq!(head["has_more"], json!(true));
+    assert_eq!(head["inputs"].as_array().unwrap().len(), 1);
+    let rest = store
+        .pending_inputs("s", head["inputs"][0]["admitted_seq"].as_u64(), 1)
+        .await
+        .unwrap();
+    assert_eq!(rest["inputs"][0]["id"], json!("second"));
+    assert_eq!(rest["has_more"], json!(false));
+}
+
+#[tokio::test]
 async fn cancelling_a_pending_input_keeps_it_from_being_promoted_or_resurrected() {
     let dir = tempfile::tempdir().unwrap();
     let store = Store::open(dir.path().join("engine.db")).await.unwrap();

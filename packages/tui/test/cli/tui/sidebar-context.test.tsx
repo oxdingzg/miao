@@ -93,10 +93,9 @@ test("a rejected request shows its estimate and historical usage without a curre
   })
   try {
     const frame = app.captureCharFrame()
-    expect(frame).toContain("~500k input · estimated")
-    expect(frame).toContain("input budget 936k")
+    expect(frame).toContain("~500k attempted")
+    expect(frame).toContain("last input unknown")
     expect(frame).toContain("Request failed")
-    expect(frame).toContain("last successful input unknown")
     expect(frame).not.toContain("% of configured window")
     expect(frame).not.toContain("% used")
   } finally {

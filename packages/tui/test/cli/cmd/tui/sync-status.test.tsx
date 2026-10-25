@@ -61,6 +61,42 @@ test("busy status heartbeats update status without rehydrating history; idle set
   }
 })
 
+test("a busy poll keeps the phase and start time the event stream reported", async () => {
+  await using tmp = await tmpdir()
+  await Bun.write(`${tmp.path}/kv.json`, "{}")
+  const sessionID = "ses_status_phase"
+  const mounted = await mount((url) => {
+    if (url.pathname === `/api/session/${sessionID}/status`) return json({ data: { type: "busy" } })
+    return undefined
+  }, tmp.path)
+  try {
+    await mounted.sync.session.sync(sessionID)
+    mounted.emit({
+      directory,
+      project: "proj_test",
+      payload: {
+        id: "evt_phase",
+        type: "session.next.status",
+        properties: { sessionID, timestamp: 3, status: { type: "busy", phase: "requesting", since: 1_700_000_000_000 } },
+      },
+    })
+    await wait(() => {
+      const status = mounted.sync.data.session_status[sessionID]
+      return status?.type === "busy" && status.phase === "requesting"
+    })
+    // A natively owned Session answers the poll with busy/idle only. Flattening
+    // the status to that answer would drop the phase the live event carried.
+    await mounted.sync.session.syncStatus(sessionID)
+    expect(mounted.sync.data.session_status[sessionID]).toMatchObject({
+      type: "busy",
+      phase: "requesting",
+      since: 1_700_000_000_000,
+    })
+  } finally {
+    mounted.app.renderer.destroy()
+  }
+})
+
 test("a failing status poll surfaces one error and never strands the parallel input read", async () => {
   await using tmp = await tmpdir()
   await Bun.write(`${tmp.path}/kv.json`, "{}")

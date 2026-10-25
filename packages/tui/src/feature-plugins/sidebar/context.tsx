@@ -17,6 +17,24 @@ const id = "internal:sidebar-context"
 const TTL_COLOR = { fresh: "success", aging: "warning", stale: "error" } as const
 const TREND_ARROW = { up: "↑", down: "↓", flat: "-" } as const
 
+/** Chart widths stay inside the sidebar's 42 columns so rows never wrap. */
+const BAR_WIDTH = 18
+const SPARK_TURNS = 40
+const SPARK = "▁▂▃▄▅▆▇█"
+
+function pressureBar(percent: number) {
+  const filled = Math.max(0, Math.min(BAR_WIDTH, Math.round((percent / 100) * BAR_WIDTH)))
+  return "█".repeat(filled) + "·".repeat(BAR_WIDTH - filled)
+}
+
+function trendSparkline(values: number[]) {
+  const max = Math.max(...values, 0)
+  if (max <= 0) return ""
+  return values
+    .map((value) => SPARK[Math.min(SPARK.length - 1, Math.floor((value / max) * SPARK.length))])
+    .join("")
+}
+
 /** Sidebar rows are 42 columns wide, so cache counts stay abbreviated. */
 function compact(value: number) {
   if (value < 10000) return value.toLocaleString()
@@ -206,41 +224,69 @@ function View(props: { api: TuiPluginApi; session_id: string }) {
   const children = createMemo(() => props.api.state.session.children(props.session_id))
   const childCost = createMemo(() => children().reduce((total, child) => total + (child.cost ?? 0), 0))
 
+  // Bands follow the footer's remaining-context convention (error at ≥90% used,
+  // warning at ≥80%) so one pressure reads the same in both surfaces.
+  const pressure = createMemo(() => {
+    const percent = context().percent
+    if (percent === undefined) return undefined
+    return {
+      percent,
+      limit: context().budget?.limit ?? 0,
+      color: percent >= 90 ? theme().error : percent >= 80 ? theme().warning : theme().textMuted,
+    }
+  })
+  const trend = createMemo(() =>
+    trendSparkline(
+      assistants().slice(-SPARK_TURNS).map((turn) => {
+        const tokens = turn.tokens
+        return tokens ? tokens.input + tokens.cache.read + tokens.cache.write : 0
+      }),
+    ),
+  )
+  const inputRow = createMemo(() => {
+    const budget = context().budget
+    const observed = context().observed
+    // A rejected turn's budget describes the request that failed, not history,
+    // so the row must not read it as a settled input.
+    if (context().rejected) {
+      const attempted = budget ? `${budget.source === "estimated" ? "~" : ""}${compact(budget.input)} attempted` : "attempt unknown"
+      return `${attempted} · ${observed === undefined ? "last input unknown" : `last input ${compact(observed)}`}`
+    }
+    const head = budget
+      ? `${budget.source === "estimated" ? "~" : ""}${compact(budget.input)} input`
+      : observed === undefined
+        ? "input unknown"
+        : `last input ${compact(observed)}`
+    return `${head} · ${cached()}`
+  })
+
   return (
     <box>
       <text fg={theme().text}>
         <b>Context</b>
       </text>
-      <Show when={context().budget}>
-        {(budget) => (
-          <>
-            <text fg={theme().textMuted}>
-              {budget().source === "estimated" ? "~" : ""}{compact(budget().input)} input · {budget().source}
-            </text>
-            <text fg={theme().textMuted}>
-              input budget {budget().window > 0 ? compact(budget().limit) : "unknown"}
-            </text>
-          </>
-        )}
-      </Show>
       <Show when={context().rejected}>
         <text fg={theme().warning}>Request failed · usage unconfirmed</text>
       </Show>
       <Show when={context().compacted}>
         <text fg={theme().textMuted}>Compacted · awaiting next request</text>
       </Show>
-      <Show when={context().percent !== undefined}>
-        <text fg={theme().textMuted}>{context().percent}% of configured window</text>
+      <Show when={pressure()}>
+        {(p) => (
+          <box flexDirection="row">
+            <text fg={p().color}>{pressureBar(p().percent)}</text>
+            <text fg={p().color}>
+              {" "}{p().percent}% of {compact(p().limit)}
+            </text>
+          </box>
+        )}
       </Show>
-      <text fg={theme().textMuted}>
-        last successful input {context().observed === undefined ? "unknown" : compact(context().observed ?? 0)}
-      </text>
-      <text fg={theme().textMuted}>{cached()}</text>
-      <text fg={theme().textMuted}>
-        read {compact(economy().read)} · write {compact(economy().write)}
-      </text>
-      <text fg={theme().textMuted}>
-        {savedRow()}
+      <Show when={trend() !== ""}>
+        <text fg={theme().textMuted}>{trend()}</text>
+      </Show>
+      <text fg={theme().textMuted}>{inputRow()}</text>
+      <text fg={economy().saved > 0 ? theme().success : theme().textMuted}>
+        read {compact(economy().read)} · write {compact(economy().write)} · {savedRow()}
         {pricing() ? ` · ${pricing()}` : ""}
       </text>
       <Show when={ttl()}>

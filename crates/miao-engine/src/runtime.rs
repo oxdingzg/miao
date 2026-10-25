@@ -3965,6 +3965,11 @@ async fn finish_delegation(
     cancel: CancellationToken,
 ) -> Result<String, ToolError> {
     let mut reason = "completed";
+    // A child that outlives one event page would never show its finish: the
+    // window is anchored at the admission sequence, so a fixed read returns
+    // the same first page forever and the parent waits on a completion it can
+    // never observe. Advance the cursor through every appended page instead.
+    let mut after = admitted_seq;
     loop {
         tokio::select! {
             _ = cancel.cancelled() => {
@@ -3974,12 +3979,24 @@ async fn finish_delegation(
             }
             _ = tokio::time::sleep(std::time::Duration::from_millis(20)) => {}
         }
-        let events = inner
-            .store
-            .events(child, admitted_seq, 500)
-            .await
-            .map_err(|_| ToolError::External("subagent events unavailable".into()))?;
-        if events.iter().any(|event| event.kind == "run.finished") {
+        let finished = loop {
+            let events = inner
+                .store
+                .events(child, after, 500)
+                .await
+                .map_err(|_| ToolError::External("subagent events unavailable".into()))?;
+            if events.iter().any(|event| event.kind == "run.finished") {
+                break true;
+            }
+            let Some(last) = events.last() else {
+                break false;
+            };
+            after = last.seq;
+            if events.len() < 500 {
+                break false;
+            }
+        };
+        if finished {
             break;
         }
     }
