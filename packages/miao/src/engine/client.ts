@@ -543,7 +543,9 @@ export class EngineClient {
       const params = message.params as
         | { session_id?: string; name?: string; input?: unknown; call_id?: unknown; message_seq?: unknown }
         | undefined
-      const reply = (value: Record<string, unknown>) => this.child.stdin.write(JSON.stringify({ bridge_id: bridgeID, ...value }) + EOL)
+      const reply = (value: Record<string, unknown>) => {
+        if (this.available) this.child.stdin.write(JSON.stringify({ bridge_id: bridgeID, ...value }) + EOL)
+      }
       if (typeof bridgeID !== "number" || !params?.name || !this.onProductTool) {
         reply({ error: "product tool is not available on this host" })
         return
@@ -557,10 +559,12 @@ export class EngineClient {
         callID: typeof params.call_id === "string" && params.call_id.length > 0 ? params.call_id : String(bridgeID),
         bridgeID,
         ...(typeof params.message_seq === "number" ? { messageSeq: params.message_seq } : {}),
-      }).then(
-        (result) => reply({ result }),
-        (error) => reply({ error: error instanceof Error ? error.message : String(error) }),
-      )
+      })
+        .then(
+          (result) => reply({ result }),
+          (error) => reply({ error: error instanceof Error ? error.message : String(error) }),
+        )
+        .catch(() => this.inputClosed())
       return
     }
     if (message.method === "product_tool.cancel") {
@@ -582,8 +586,9 @@ export class EngineClient {
             definition?: unknown
           }
         | undefined
-      const reply = (value: Record<string, unknown>) =>
-        this.child.stdin.write(JSON.stringify({ bridge_id: bridgeID, ...value }) + EOL)
+      const reply = (value: Record<string, unknown>) => {
+        if (this.available) this.child.stdin.write(JSON.stringify({ bridge_id: bridgeID, ...value }) + EOL)
+      }
       if (typeof bridgeID !== "number" || !params?.kind || !this.onHookTool) {
         reply({ error: "tool hooks are not available on this host" })
         return
@@ -596,10 +601,12 @@ export class EngineClient {
         args: params.args,
         output: params.output,
         definition: params.definition,
-      }).then(
-        (result) => reply({ result }),
-        (error) => reply({ error: error instanceof Error ? error.message : String(error) }),
-      )
+      })
+        .then(
+          (result) => reply({ result }),
+          (error) => reply({ error: error instanceof Error ? error.message : String(error) }),
+        )
+        .catch(() => this.inputClosed())
       return
     }
     if (message.method === "event") for (const handler of this.eventHandlers) handler(message.params as EngineEvent)
