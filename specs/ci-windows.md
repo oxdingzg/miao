@@ -5,9 +5,21 @@ Status: `unit (windows)` and `e2e (windows)` in `.github/workflows/test.yml` run
 
 `e2e (windows)` does not run on pull requests at all: it is non-blocking and cost a Windows
 runner on every push, so `.github/workflows/e2e.yml` now lists it only on the nightly schedule
-and on manual dispatch. `engine (windows)` follows the same split — a pull request runs
-`cargo check --all-targets`, and the full Rust suite runs on merge, nightly, manual and engine
-release runs.
+and on manual dispatch.
+
+`engine (windows)` and `window runtime (windows)` follow the same rule and are stricter about
+it: they do not run on pull requests **or** on pushes to `main`. Windows validation is not part
+of the per-commit gate:
+
+- The nightly schedule is the early warning.
+- `release.yml` runs the full Windows engine suite against the exact release commit and
+  `publish` waits for it, so a Windows regression cannot ship without either run having seen
+  it.
+- `engine-v*` tags and manual dispatch still run the engine suite directly.
+
+An ordinary pull request therefore starts no Windows job at all; the price is that a
+Windows-only compile or behaviour break surfaces at night or at the release gate rather than
+on the pull request that caused it.
 
 This file tracks what still fails so the Windows jobs can become blocking again. Remove a row
 once a fix is merged and a green Windows run proves it; make the `blocking: true` Windows
