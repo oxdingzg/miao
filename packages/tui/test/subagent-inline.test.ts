@@ -1,5 +1,6 @@
 import { expect, test } from "bun:test"
 import {
+  groupReadRuns,
   latestSubagentPartID,
   orderTaskBlocks,
   subagentActivity,
@@ -137,5 +138,46 @@ test("orderTaskBlocks preserves the running blocks' own arrival order", () => {
     partID(second),
     partID(first),
     partID(settled),
+  ])
+})
+
+test("consecutive completed reads collapse into one run", () => {
+  const first = tool("read", "completed", { filePath: "src/a.ts" })
+  const second = tool("read", "completed", { filePath: "src/b.ts" })
+  const content: AssistantContent[] = [first, second]
+  const runs = groupReadRuns(content)
+  expect(runs).toHaveLength(1)
+  const run = runs[0]
+  expect(run.type).toBe("read-run")
+  expect(run.type === "read-run" ? run.parts.map(partID) : []).toEqual([partID(first), partID(second)])
+  expect(run.type === "read-run" ? run.id : "").toBe(`read-run-${first.id}`)
+})
+
+test("a single read keeps its own row and summary", () => {
+  const read = tool("read", "completed", { filePath: "src/a.ts" })
+  expect(groupReadRuns([read])).toEqual([read])
+})
+
+test("running and failed reads are never hidden inside a run", () => {
+  const finished = tool("read", "completed", { filePath: "src/a.ts" })
+  const running = tool("read", "running", { filePath: "src/b.ts" })
+  const failed = testToolPart("prt_read_failed", "read", "error", { input: { filePath: "src/c.ts" } })
+  expect(groupReadRuns([finished, running, finished])).toHaveLength(3)
+  expect(groupReadRuns([finished, finished, failed, finished, finished]).map((part) => part.type)).toEqual([
+    "read-run",
+    "tool",
+    "read-run",
+  ])
+})
+
+test("prose and other tools break a read run", () => {
+  const first = tool("read", "completed", { filePath: "src/a.ts" })
+  const second = tool("read", "completed", { filePath: "src/b.ts" })
+  const text: AssistantContent = { type: "text", id: "prt_text", text: "meanwhile" }
+  expect(groupReadRuns([first, text, second]).map((part) => part.type)).toEqual(["tool", "text", "tool"])
+  expect(groupReadRuns([first, tool("bash"), second]).map((part) => part.type)).toEqual([
+    "tool",
+    "tool",
+    "tool",
   ])
 })
