@@ -418,6 +418,8 @@ pub enum Command {
     },
     Snapshot {
         session_id: String,
+        #[serde(default)]
+        metadata_only: bool,
     },
     TransferTimeline {
         session_id: String,

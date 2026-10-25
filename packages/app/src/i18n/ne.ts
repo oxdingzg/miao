@@ -1,4 +1,17 @@
 export const dict: Record<string, string> = {
+  "context.timeline.title": "सन्दर्भ र क्यास इतिहास",
+  "context.timeline.step":
+    "{{model}} · {{time}} · {{input}} प्रम्प्ट टोकनहरू · {{read}} क्यास पढ्नुहोस् · {{write}} क्यास लेख्नुहोस्",
+  "context.timeline.requestWindow": "अनुरोधको समयमा {{value}} टोकन विन्डो",
+  "context.timeline.catalogWindow": "हालको क्याटलगमा {{value}} टोकन विन्डो",
+  "context.timeline.unknownWindow": "सन्दर्भ विन्डो अज्ञात",
+  "context.timeline.empty": "कुनै पनि व्यवस्थित प्रदायकको प्रयोग अहिलेसम्म रेकर्ड गरिएको छैन।",
+  "context.timeline.retry": "प्रयोग इतिहास पुन: प्रयास गर्नुहोस्",
+  "context.timeline.compaction": "सन्दर्भ संकुचित",
+  "context.timeline.cacheRead": "क्यास पढियो",
+  "context.timeline.cacheWrite": "क्यास लेख्नुहोस्",
+  "context.timeline.ttft": "{{value}} ms पहिलो टोकनमा",
+
   "desktop.menu.app": "miao",
   "desktop.menu.file": "फाइल",
   "desktop.menu.edit": "सम्पादन गर्नुहोस्",
@@ -603,7 +616,8 @@ export const dict: Record<string, string> = {
   "toast.permissions.autoaccept.off.title": "स्वत: स्वीकार गर्ने अनुमतिहरू रोकियो",
   "toast.permissions.autoaccept.off.description": "अनुमति अनुरोधहरू अनुमोदन आवश्यक हुनेछ",
   "settings.permissions.autoaccept.project.title": "यो परियोजनाका लागि अनुमतिहरू स्वतः स्वीकार गर्नुहोस्",
-  "settings.permissions.autoaccept.project.description": "यो परियोजनाको कुनै पनि सेसनबाट आएका नयाँ अनुमति अनुरोधहरूको सोधबिना जवाफ दिनुहोस्। सेसन र डाइरेक्टरी स्तरका विकल्पहरूलाई प्राथमिकता दिइन्छ।",
+  "settings.permissions.autoaccept.project.description":
+    "यो परियोजनाको कुनै पनि सेसनबाट आएका नयाँ अनुमति अनुरोधहरूको सोधबिना जवाफ दिनुहोस्। सेसन र डाइरेक्टरी स्तरका विकल्पहरूलाई प्राथमिकता दिइन्छ।",
   "toast.model.none.title": "कुनै मोडेल चयन गरिएको छैन",
   "toast.model.none.description": "यो सत्र संक्षेप गर्न प्रदायक जडान गर्नुहोस्",
   "toast.file.loadFailed.title": "फाइल लोड गर्न असफल भयो",
@@ -966,7 +980,8 @@ export const dict: Record<string, string> = {
   "settings.general.row.reasoningSummaries.title": "तर्क सारांशहरू देखाउनुहोस्",
   "settings.general.row.reasoningSummaries.description": "टाइमलाइनमा मोडेल तर्क सारांशहरू प्रदर्शन गर्नुहोस्",
   "settings.general.row.turnDiffs.title": "प्रत्येक चरणमा परिवर्तित फाइलहरू देखाउनुहोस्",
-  "settings.general.row.turnDiffs.description": "समयरेखामा प्रत्येक पूर्ण चरणका परिवर्तित फाइलहरू पङ्क्ति सङ्ख्या र विस्तारयोग्य भिन्नतासहित सूचीबद्ध गर्छ।",
+  "settings.general.row.turnDiffs.description":
+    "समयरेखामा प्रत्येक पूर्ण चरणका परिवर्तित फाइलहरू पङ्क्ति सङ्ख्या र विस्तारयोग्य भिन्नतासहित सूचीबद्ध गर्छ।",
   "settings.general.row.shellToolPartsExpanded.title": "शेल उपकरणका भागहरू विस्तार गर्नुहोस्",
   "settings.general.row.shellToolPartsExpanded.description":
     "टाइमलाइनमा पूर्वनिर्धारित रूपमा विस्तारित शेल उपकरण भागहरू देखाउनुहोस्",

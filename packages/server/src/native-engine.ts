@@ -195,6 +195,8 @@ export interface Interface {
    * for a native Session: their catalog does not contain it.
    */
   readonly snapshot: (input: {
+    /** Omit transcript projection for catalog and peer reads. */
+    metadataOnly?: boolean
     sessionID: SessionID
     storage: AbsolutePath
     location: Location.Ref

@@ -1,4 +1,17 @@
 export const dict = {
+  "context.timeline.title": "ކޮންޓެކްސްޓް އަދި ކެޝް ހީސްޓްރީ",
+  "context.timeline.step":
+    "{{model}} · {{time}} · {{input}} ޕްރޮމްޕްޓް ޓޯކަންސް · {{read}} ކެޝް ރީޑް · {{write}} ކެޝް ރައިޓް",
+  "context.timeline.requestWindow": "{{value}} ޓޯކަން ވިންޑޯ ރިކުއެސްޓް ކުރާއިރު",
+  "context.timeline.catalogWindow": "މިހާރު ހުރި ކެޓަލަގުގައިވާ {{value}} ޓޯކަން ވިންޑޯ",
+  "context.timeline.unknownWindow": "ކޮންޓެކްސްޓް ވިންޑޯއެއް ނޭނގެއެވެ",
+  "context.timeline.empty": "އަދި ސެޓްލްޑް ޕްރޮވައިޑަރ ޔޫސޭޖް ރެކޯޑްކޮށްފައެއް ނުވެއެވެ.",
+  "context.timeline.retry": "ޔޫސޭޖް ހީސްޓްރީ އަލުން މަސައްކަތް ކުރާށެވެ",
+  "context.timeline.compaction": "ކޮންޓެކްސްޓް ކޮމްޕެކްޓް ކޮށްފައި ހުރެއެވެ",
+  "context.timeline.cacheRead": "ކެޝް ރީޑް",
+  "context.timeline.cacheWrite": "ކެޝް ރައިޓް",
+  "context.timeline.ttft": "{{value}} ms އަށް ފުރަތަމަ ޓޯކަން",
+
   "desktop.menu.app": "miao އެވެ",
   "desktop.menu.file": "ފައިލް",
   "desktop.menu.edit": "ބަދަލު ގެނައުން",
@@ -610,7 +623,8 @@ export const dict = {
   "toast.permissions.autoaccept.off.title": "ހުއްދަތައް އޮޓޯ އެކްސެޕްޓްކުރުން ހުއްޓާލިއެވެ",
   "toast.permissions.autoaccept.off.description": "ހުއްދައަށް އެދޭ ފަރާތްތަކަށް ރުހުން ހޯދަން ޖެހޭނެއެވެ",
   "settings.permissions.autoaccept.project.title": "Auto-accept permissions for this project",
-  "settings.permissions.autoaccept.project.description": "Answer new permission requests from any session in this project without asking. Session and directory choices still win.",
+  "settings.permissions.autoaccept.project.description":
+    "Answer new permission requests from any session in this project without asking. Session and directory choices still win.",
   "toast.model.none.title": "އެއްވެސް މޮޑެލްއެއް ހޮވިފައެއް ނުވެއެވެ",
   "toast.model.none.description": "މި ސެޝަން ޚުލާޞާ ކުރުމަށް ޕްރޮވައިޑަރަކާ ގުޅުވާށެވެ",
   "toast.file.loadFailed.title": "ފައިލް ލޯޑް ނުކުރެވުނެވެ",
@@ -948,8 +962,7 @@ export const dict = {
   "settings.general.row.appearance.title": "މަލަމަތި",
   "settings.general.row.appearance.description": "ޑިވައިސްގައި miao ފެންނަ ގޮތް ކަސްޓަމައިޒް ކުރާށެވެ",
   "settings.general.row.colorScheme.title": "ކުލަ ސްކީމް",
-  "settings.general.row.colorScheme.description":
-    "miao އިން ސިސްޓަމް، ލައިޓް، ނުވަތަ ޑާކް ތީމް އަށް ތަބާވާތޯ ހޮވާށެވެ",
+  "settings.general.row.colorScheme.description": "miao އިން ސިސްޓަމް، ލައިޓް، ނުވަތަ ޑާކް ތީމް އަށް ތަބާވާތޯ ހޮވާށެވެ",
   "settings.general.row.theme.title": "ތީމް",
   "settings.general.row.theme.description": "miao ތީމް ކުރެވިފައިވާ ގޮތް ކަސްޓަމައިޒް ކުރުން.",
   "settings.general.row.font.title": "ކޯޑް ފޮންޓެވެ",
@@ -982,7 +995,8 @@ export const dict = {
   "settings.general.row.reasoningSummaries.title": "ރިޒަނިންގ ސުމާރީސް ދައްކާށެވެ",
   "settings.general.row.reasoningSummaries.description": "ޓައިމްލައިންގައި މޮޑެލް ރިޒަނިންގ ސުމާރީތައް ދައްކާލުން",
   "settings.general.row.turnDiffs.title": "Show changed files per turn",
-  "settings.general.row.turnDiffs.description": "List each finished turn's changed files with line counts and expandable diffs in the timeline.",
+  "settings.general.row.turnDiffs.description":
+    "List each finished turn's changed files with line counts and expandable diffs in the timeline.",
   "settings.general.row.shellToolPartsExpanded.title": "ޝެލް ޓޫލް ބައިތައް ފުޅާކުރުން",
   "settings.general.row.shellToolPartsExpanded.description":
     "ޓައިމްލައިންގައި ޑިފޯލްޓްކޮށް ފުޅާކޮށްފައިވާ ޝެލް ޓޫލް ބައިތައް ދައްކާށެވެ",
