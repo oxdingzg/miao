@@ -3,6 +3,19 @@ import { dict as en } from "./en"
 type Keys = keyof typeof en
 
 export const dict = {
+  "context.timeline.title": "Kontext- und Cache-Verlauf",
+  "context.timeline.step":
+    "{{model}} · {{time}} · {{input}} Prompt-Tokens · {{read}} Cache-Lesen · {{write}} Cache-Schreiben",
+  "context.timeline.requestWindow": "{{value}} Token-Fenster zum Zeitpunkt der Anfrage",
+  "context.timeline.catalogWindow": "{{value}} Token-Fenster im aktuellen Katalog",
+  "context.timeline.unknownWindow": "Kontextfenster unbekannt",
+  "context.timeline.empty": "Es wurde noch keine abgerechnete Provider-Nutzung erfasst.",
+  "context.timeline.retry": "Nutzungsverlauf erneut versuchen",
+  "context.timeline.compaction": "Kontext verdichtet",
+  "context.timeline.cacheRead": "Cache gelesen",
+  "context.timeline.cacheWrite": "Cache-Schreiben",
+  "context.timeline.ttft": "{{value}} ms bis zum ersten Token",
+
   "command.category.suggested": "Vorgeschlagen",
   "command.category.view": "Ansicht",
   "command.category.project": "Projekt",
@@ -494,7 +507,8 @@ export const dict = {
   "toast.permissions.autoaccept.off.title": "Automatische Akzeptanz von Berechtigungen gestoppt",
   "toast.permissions.autoaccept.off.description": "Berechtigungsanfragen erfordern eine Genehmigung",
   "settings.permissions.autoaccept.project.title": "Berechtigungen für dieses Projekt automatisch annehmen",
-  "settings.permissions.autoaccept.project.description": "Neue Berechtigungsanfragen aus allen Sitzungen dieses Projekts ohne Nachfrage annehmen. Sitzungs- und Verzeichnisauswahl haben Vorrang.",
+  "settings.permissions.autoaccept.project.description":
+    "Neue Berechtigungsanfragen aus allen Sitzungen dieses Projekts ohne Nachfrage annehmen. Sitzungs- und Verzeichnisauswahl haben Vorrang.",
   "toast.model.none.title": "Kein Modell ausgewählt",
   "toast.model.none.description": "Verbinden Sie einen Anbieter, um diese Sitzung zusammenzufassen",
   "toast.file.loadFailed.title": "Datei konnte nicht geladen werden",
@@ -748,8 +762,7 @@ export const dict = {
   "settings.general.row.appearance.title": "Erscheinungsbild",
   "settings.general.row.appearance.description": "Anpassen, wie miao auf Ihrem Gerät aussieht",
   "settings.general.row.colorScheme.title": "Farbschema",
-  "settings.general.row.colorScheme.description":
-    "Wählen Sie, ob miao dem System-, hellen oder dunklen Thema folgt",
+  "settings.general.row.colorScheme.description": "Wählen Sie, ob miao dem System-, hellen oder dunklen Thema folgt",
   "settings.general.row.theme.title": "Thema",
   "settings.general.row.theme.description": "Das Thema von miao anpassen.",
   "settings.general.row.font.title": "Code-Schriftart",
@@ -784,8 +797,9 @@ export const dict = {
   "settings.general.row.reasoningSummaries.title": "Reasoning-Zusammenfassungen anzeigen",
   "settings.general.row.reasoningSummaries.description":
     "Zusammenfassungen des Modell-Reasonings in der Timeline anzeigen",
-    "settings.general.row.turnDiffs.title": "Show changed files per turn",
-    "settings.general.row.turnDiffs.description": "List each finished turn's changed files with line counts and expandable diffs in the timeline.",
+  "settings.general.row.turnDiffs.title": "Show changed files per turn",
+  "settings.general.row.turnDiffs.description":
+    "List each finished turn's changed files with line counts and expandable diffs in the timeline.",
   "settings.general.row.shellToolPartsExpanded.title": "Shell-Tool-Abschnitte ausklappen",
   "settings.general.row.shellToolPartsExpanded.description":
     "Shell-Tool-Abschnitte standardmäßig in der Timeline ausgeklappt anzeigen",

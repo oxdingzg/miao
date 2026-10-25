@@ -418,7 +418,7 @@ export const prepare = Effect.fn("Engine.productRoutes")(function* (
     )
   if (allRoutes.length > 1024)
     return yield* Effect.fail(new EngineError("engine_routes_limit", "native product catalog exceeds 1024 routes"))
-  if (options.contextLimits === undefined) {
+  if (configuration.contextLimits === undefined && options.contextLimits === undefined) {
     const limits = contextLimitsFor(defaultModel, compaction)
     if (limits) options.contextLimits = limits
   }
