@@ -113,3 +113,10 @@ The orphan-cleanup source Session is `ses_gfe5e8d4368c6ffeggzQpy8PJl`. Its unfin
 The TUI’s refresh and session picker dropped the directory/project scope when calling the V2 API, causing global native catalog enumeration. The scope repair is committed and pushed as `14926197e5`, with seven targeted tests and package typecheck passing. It is stacked on #1399. Same-directory historical test placements remain a separate issue; do not delete them heuristically. #1402 isolates future conformance databases.
 
 PR backlog has multiple causes: unreconciled approving reviews, strict up-to-date checks on root branches, dependent PR chains, and actual Windows CI failures. #1408 and this ledger branch were updated from main. #1405 has a newly pushed incremental test waiter and is rerunning; #1414 has a failed Windows job requiring repair. No open branch in the audit was proven safe to delete merely because main lacks its commits.
+
+
+## Owner-sweep race repair
+
+Further review of #1411 reproduced a second ownership defect using a real native engine: a timer sweep could unregister a live replacement created by a concurrent request. Commit `50500f36b3` guards snapshot and connection identity before publishing probe results or deleting the registry entry. The regression failed before the guard and passes after it, including ten concurrent close/sweep/reopen rounds and 27 assertions; the miao package typecheck passes. The commit was pushed directly to the existing #1411 topic branch because it is the same cleanup concern. The temporary remote topic was deleted; no extra PR was created. New-head CI remains required.
+
+The session-list scope repair is #1417, stacked on #1399. Its historical same-directory placement limitation remains tracked in #1412.
