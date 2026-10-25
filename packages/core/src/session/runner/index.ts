@@ -21,8 +21,6 @@ export type RunError =
 
 /** Runs one local continuation from already-recorded Session history. */
 export interface Interface {
-  /** Best-effort title settlement for explicit waiters before headless teardown. */
-  readonly settleTitle?: (sessionID: SessionSchema.ID) => Effect.Effect<void>
   /** Drains eligible durable work. Explicit runs perform one provider attempt even when no work is eligible. */
   readonly run: (input: {
     readonly sessionID: SessionSchema.ID

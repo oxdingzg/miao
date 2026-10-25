@@ -25,6 +25,7 @@ import { AbsolutePath, PositiveInt, RelativePath } from "./schema"
 import { AgentV2 } from "./agent"
 import { fromRow } from "./session/info"
 import { SessionRunner } from "./session/runner/index"
+import { SessionTitleSettlement } from "./session/title-settlement"
 import { SessionStore } from "./session/store"
 import { SessionV1 } from "./v1/session"
 import { AppProcess } from "./process"
@@ -282,6 +283,7 @@ const layer = Layer.effect(
     const db = database.db
     const events = yield* EventV2.Service
     const execution = yield* SessionExecution.Service
+    const titleSettlement = yield* SessionTitleSettlement.Service
     const ownership = yield* SessionOwnership.Service
     const store = yield* SessionStore.Service
     const creation = yield* SessionCreate.Service
@@ -822,18 +824,11 @@ const layer = Layer.effect(
         yield* execution.resume(input.sessionID).pipe(Effect.ignore)
       }),
       wait: Effect.fn("V2Session.wait")(function* (sessionID) {
-        const session = yield* result.get(sessionID)
+        yield* result.get(sessionID)
         yield* execution.wait(sessionID)
-        // A headless caller closes its runtime after this wait. Keep the
-        // already-running title alive until it settles, without extending
-        // execution ownership or the Session's busy status.
-        yield* Effect.gen(function* () {
-          const runner = yield* Effect.serviceOption(SessionRunner.Service)
-          if (Option.isSome(runner)) yield* runner.value.settleTitle?.(sessionID) ?? Effect.void
-        }).pipe(
-          Effect.provide(locations.get(session.location)),
-          Effect.catchCause((cause) => Effect.logWarning("Session title settlement skipped", { sessionID, cause })),
-        )
+        // A headless caller closes its runtime next. Join only a title already
+        // running in this process, without discovering or starting a Location.
+        yield* titleSettlement.wait(sessionID)
       }),
       active: execution.active,
       executions: execution.executions,
@@ -904,6 +899,7 @@ export const node = makeGlobalNode({
     EventV2.node,
     ProjectV2.node,
     SessionExecution.node,
+    SessionTitleSettlement.node,
     SessionStore.node,
     SessionCreate.node,
     SessionOwnership.node,

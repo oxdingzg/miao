@@ -16,7 +16,7 @@ import {
 import { SessionGoal } from "../goal"
 import { SessionExecution } from "../execution"
 import { SessionEnginePlacement } from "../engine-placement"
-import { Cause, DateTime, Deferred, Duration, Effect, Fiber, FiberSet, Layer, Option, Semaphore, Stream, Schema } from "effect"
+import { Cause, DateTime, Duration, Effect, Exit, Fiber, FiberSet, Layer, Option, Semaphore, Stream, Schema } from "effect"
 import { and, asc, eq, sql } from "drizzle-orm"
 import { AgentV2 } from "../../agent"
 import { Config } from "../../config"
@@ -83,6 +83,7 @@ import { SessionImageNormalize } from "../image-normalize"
 import { SessionBlobStorage } from "../blob-storage"
 import { SessionTodo } from "../todo"
 import { SessionTitle } from "../title"
+import { SessionTitleSettlement } from "../title-settlement"
 import { LegacyNotMigratedError } from "../error"
 import { type RunError, Service } from "./index"
 import { SessionRunnerModel } from "./model"
@@ -383,7 +384,7 @@ const layer = Layer.effect(
     // a failure clears it so a later drain retries while the title is still the
     // placeholder.
     const titleFibers = yield* FiberSet.make<void>()
-    const titleWaiters = new Map<SessionSchema.ID, Deferred.Deferred<void>>()
+    const titleSettlement = yield* SessionTitleSettlement.Service
     const titled = new Set<string>()
     const titlePrompts = new Map<string, SessionMessage.ID>()
     const unavailableTitleModels = new Set<string>()
@@ -864,17 +865,15 @@ const layer = Layer.effect(
         if (!prompt) return
         titlePrompts.set(session.id, user.id)
         titled.add(session.id)
-        const settled = yield* Deferred.make<void>()
-        titleWaiters.set(session.id, settled)
-        yield* FiberSet.run(titleFibers, generateTitle({
-          session, prompt, model, small: summarizeModel, info: resolved.info, http: request.http,
-        }).pipe(
-          Effect.tap((published) => published ? Effect.void : Effect.sync(() => titled.delete(session.id))),
-          Effect.ensuring(Effect.gen(function* () {
-            yield* Deferred.succeed(settled, undefined)
-            if (titleWaiters.get(session.id) === settled) titleWaiters.delete(session.id)
-          })),
-        ))
+        yield* Effect.uninterruptibleMask((restore) => Effect.gen(function* () {
+          const settled = yield* titleSettlement.begin(session.id)
+          yield* FiberSet.run(titleFibers, restore(generateTitle({
+            session, prompt, model, small: summarizeModel, info: resolved.info, http: request.http,
+          }).pipe(
+            Effect.tap((published) => published ? Effect.void : Effect.sync(() => titled.delete(session.id))),
+            Effect.ensuring(settled.finish),
+          ))).pipe(Effect.onExit((exit) => Exit.isFailure(exit) ? settled.finish : Effect.void))
+        }))
       })
       yield* maybeTitle(context)
       const compactStartedAt = Date.now()
@@ -2208,12 +2207,7 @@ const layer = Layer.effect(
 
     return Service.of({
       run,
-      settleTitle: (sessionID) => Effect.suspend(() => {
-        const pending = titleWaiters.get(sessionID)
-        return pending
-          ? Deferred.await(pending).pipe(Effect.timeoutOption("30 seconds"), Effect.asVoid)
-          : Effect.void
-      }),
+
     })
   }),
 )
@@ -2223,6 +2217,7 @@ export const node = makeLocationNode({
   layer,
   deps: [
     EventV2.node,
+    SessionTitleSettlement.node,
     llmClient,
     AgentV2.node,
     ToolRegistry.node,

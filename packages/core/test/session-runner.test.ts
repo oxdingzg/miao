@@ -50,6 +50,7 @@ import { SessionProjector } from "@miao/core/session/projector"
 import { SessionExecution } from "@miao/core/session/execution"
 import { SessionRunCoordinator } from "@miao/core/session/run-coordinator"
 import { SessionRunner } from "@miao/core/session/runner"
+import { SessionTitleSettlement } from "@miao/core/session/title-settlement"
 import { SessionBlackbox } from "@miao/core/session/blackbox"
 import { BlackboxTape } from "@miao/core/blackbox/tape"
 import * as SessionRunnerLLM from "@miao/core/session/runner/llm"
@@ -534,6 +535,7 @@ const appNodes = [
   LocationServiceMap.node,
   Snapshot.node,
   SessionRunnerLLM.node,
+  SessionTitleSettlement.node,
   SessionExecution.node,
   SessionV2.node,
 ]
@@ -9222,11 +9224,11 @@ describe("SessionRunnerLLM", () => {
         yield* session.prompt({ sessionID, prompt: Prompt.make({ text: "A fast main answer with a slower title" }), resume: false })
         yield* session.resume(sessionID)
         expect(yield* currentTitle).toBe(defaultTitle)
-        const runner = yield* SessionRunner.Service
-        const waiting = yield* (runner.settleTitle?.(sessionID) ?? Effect.void).pipe(Effect.forkChild)
+        const waiting = yield* session.wait(sessionID).pipe(Effect.forkChild)
         yield* settle
         expect(waiting.pollUnsafe()).toBeUndefined()
-        const unrelated = yield* (runner.settleTitle?.(otherSessionID) ?? Effect.void).pipe(Effect.forkChild)
+        const titles = yield* SessionTitleSettlement.Service
+        const unrelated = yield* titles.wait(otherSessionID).pipe(Effect.forkChild)
         yield* settle
         expect(unrelated.pollUnsafe()?._tag).toBe("Success")
         expect(waiting.pollUnsafe()).toBeUndefined()
@@ -9250,15 +9252,14 @@ describe("SessionRunnerLLM", () => {
         const session = yield* SessionV2.Service
         yield* session.prompt({ sessionID, prompt: Prompt.make({ text: "A title that takes too long" }), resume: false })
         yield* session.resume(sessionID)
-        const runner = yield* SessionRunner.Service
-        const waiting = yield* (runner.settleTitle?.(sessionID) ?? Effect.void).pipe(Effect.forkChild)
+        const waiting = yield* session.wait(sessionID).pipe(Effect.forkChild)
         yield* settle
         expect(waiting.pollUnsafe()).toBeUndefined()
         yield* TestClock.adjust("30 seconds")
         yield* Fiber.join(waiting)
         expect(yield* currentTitle).toBe(defaultTitle)
         yield* Deferred.succeed(gate, undefined)
-        yield* runner.settleTitle?.(sessionID) ?? Effect.void
+        yield* session.wait(sessionID)
         expect(yield* currentTitle).toBe("A title can finish later")
       }),
     )
