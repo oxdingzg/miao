@@ -373,12 +373,19 @@ pub(crate) fn register_references(
         return Ok(());
     }
     validate_references(agents)?;
-    let mut merged = references_at(tx, session, i64::MAX as u64)?
-        .into_iter()
-        .map(|agent| (agent.name.clone(), agent))
+    let existing = references_at(tx, session, i64::MAX as u64)?;
+    let existing_by_name = existing
+        .iter()
+        .map(|agent| (agent.name.clone(), agent.clone()))
         .collect::<std::collections::BTreeMap<_, _>>();
+    let mut merged = existing_by_name.clone();
     for agent in agents {
         merged.insert(agent.name.clone(), agent.clone());
+    }
+    // The host carries its subagent catalog on every admission; an unchanged
+    // set must not append another registered event per prompt.
+    if merged == existing_by_name {
+        return Ok(());
     }
     let merged = merged.into_values().collect::<Vec<_>>();
     validate_references(&merged)?;
