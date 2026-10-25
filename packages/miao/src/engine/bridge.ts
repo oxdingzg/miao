@@ -28,7 +28,18 @@ export type SessionStatus = {
 export function statusOf(event: EngineEvent): StatusInfo | undefined {
   switch (event.kind) {
     case "run.started":
-      return { type: "busy" }
+      return busy("preparing", event.recorded_at_ms)
+    case "provider.started":
+      // Local request preparation: history, tools, and the request body for
+      // this step. The engine records it after pruning, before transport.
+      return busy("preparing", event.recorded_at_ms)
+    case "provider.request":
+      // The request body is prepared and about to go on the wire. Without this
+      // phase a long time-to-first-token is indistinguishable from local work,
+      // which is what makes a slow provider read as a stalled turn.
+      return busy("requesting", event.recorded_at_ms)
+    case "provider.retry":
+      return busy("retrying", event.recorded_at_ms)
     case "run.finished":
     case "stop":
     case "stop_failure":
@@ -40,6 +51,10 @@ export function statusOf(event: EngineEvent): StatusInfo | undefined {
   }
 }
 
+function busy(phase: "preparing" | "requesting" | "retrying", since?: number | null): StatusInfo {
+  return { type: "busy", phase, ...(typeof since === "number" ? { since } : {}) }
+}
+
 export function translateStatus(event: EngineEvent): SessionStatus | undefined {
   const status = statusOf(event)
   if (!status) return undefined
@@ -48,16 +63,24 @@ export function translateStatus(event: EngineEvent): SessionStatus | undefined {
 
 /**
  * Emits a product status payload only when the session's status actually changes,
- * so a burst of engine events (or a resubscribe) does not republish `busy`.
+ * so a burst of engine events (or a resubscribe) does not republish `busy`. A
+ * phase change within `busy` is a real change: it is what tells the shell that
+ * a request left for the provider.
  */
 export class StatusBridge {
-  #current = new Map<string, StatusInfo["type"]>()
+  #current = new Map<string, string>()
 
   update(event: EngineEvent): SessionStatus | undefined {
     const status = statusOf(event)
-    if (!status || status.type === this.#current.get(event.session_id)) return undefined
-    this.#current.set(event.session_id, status.type)
-    return { sessionID: SessionID.descending(event.session_id), timestamp: eventTimestamp(event), status }
+    if (!status) return undefined
+    return this.#emit(event.session_id, status, eventTimestamp(event))
+  }
+
+  #emit(sessionID: string, status: StatusInfo, timestamp: DateTime.Utc): SessionStatus | undefined {
+    const key = status.type === "busy" ? `busy:${status.phase ?? ""}` : status.type
+    if (this.#current.get(sessionID) === key) return undefined
+    this.#current.set(sessionID, key)
+    return { sessionID: SessionID.descending(sessionID), timestamp, status }
   }
 }
 

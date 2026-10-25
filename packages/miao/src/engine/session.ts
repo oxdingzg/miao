@@ -63,6 +63,16 @@ export type CredentialExpiredTrigger = (input: {
 }) => Promise<boolean>
 
 /**
+ * Live-only frames publish above the durable ordinals of the sequence they
+ * anchor to. A progress frame can arrive before the commit it belongs to is
+ * delivered (journal pages and the progress pipe are separate channels), so a
+ * shared low ordinal would let the delta and the commit's own events collide on
+ * one source triple, and a reconnect would dedupe one of them away. Replay has
+ * no progress pipe, so the durable ordinals stay identical across reconnects.
+ */
+export const LIVE_ORDINAL_BASE = 1_000_000
+
+/**
  * The per-Session translation state: the status/tool/prompt bridges plus the
  * settled-event cursor. Live delivery and journal replay share it, so replaying
  * a journalled page reconstructs exactly the events live delivery published.
@@ -306,7 +316,7 @@ export class EngineTranslator {
             source: {
               sessionID: event.session_id,
               seq: anchor.seq,
-              index: anchor.nextDelta,
+              index: LIVE_ORDINAL_BASE + anchor.nextDelta,
               recordedAtMs: anchor.recordedAtMs,
             },
           })
@@ -470,7 +480,7 @@ export class EngineTranslator {
     this.#publish({
       type: fragment.type,
       data: fragment.data,
-      source: { sessionID, seq: anchor.seq, index: anchor.nextDelta++, recordedAtMs: anchor.recordedAtMs },
+      source: { sessionID, seq: anchor.seq, index: LIVE_ORDINAL_BASE + anchor.nextDelta++, recordedAtMs: anchor.recordedAtMs },
     })
   }
 }

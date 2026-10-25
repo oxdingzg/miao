@@ -1,7 +1,7 @@
 import { expect, test } from "bun:test"
 import { Schema } from "effect"
 import { Model } from "@miao/schema/model"
-import { EngineTranslator, type EngineSessionEvent } from "@/engine/session"
+import { EngineTranslator, LIVE_ORDINAL_BASE, type EngineSessionEvent } from "@/engine/session"
 import { messageID } from "@/engine/identity"
 
 const collect = () => {
@@ -152,4 +152,84 @@ test.each([
   expect(ended).toBeDefined()
   expect(ended.model?.id).toBe(row.expected)
   expect(ended.cost).toBeCloseTo(row.expected ? 0.14 : 0)
+})
+
+test("a delta cannot take the ordinal of the commit it anchors to", () => {
+  const { outputs, translator } = collect()
+  translator.dispatch({
+    session_id: "ses_band",
+    seq: 4,
+    kind: "provider.started",
+    recorded_at_ms: 900,
+    data: { run_id: "run", step: 0 },
+  })
+  // The progress pipe and the journal pages are separate channels, so the
+  // delta can land before the commit that bears its ordinal. Sharing the low
+  // ordinals would give two published events one source triple.
+  translator.progress({
+    session_id: "ses_band",
+    kind: "provider.delta",
+    run_id: "run",
+    step: 0,
+    anchor_seq: 4,
+    recorded_at_ms: 900,
+    data: { delta: { kind: "text.delta", text: "hi" } },
+  })
+  const status = outputs.find((event) => event.type === "session.next.status")
+  const delta = outputs.find((event) => event.type === "session.next.text.delta")
+  expect(status?.source).toEqual({ sessionID: "ses_band", seq: 4, index: 0, recordedAtMs: 900 })
+  expect(delta?.source).toEqual({ sessionID: "ses_band", seq: 4, index: LIVE_ORDINAL_BASE, recordedAtMs: 900 })
+})
+
+test("a native turn publishes each provider phase as the turn advances", () => {
+  const { outputs, translator } = collect()
+  translator.dispatch({
+    session_id: "ses_phase",
+    seq: 1,
+    kind: "run.started",
+    recorded_at_ms: 1000,
+    data: {},
+  })
+  // The same phase recorded again is not a transition; a new step restarting
+  // preparation after a tool result is.
+  translator.dispatch({
+    session_id: "ses_phase",
+    seq: 2,
+    kind: "provider.started",
+    recorded_at_ms: 1100,
+    data: {},
+  })
+  translator.dispatch({
+    session_id: "ses_phase",
+    seq: 3,
+    kind: "provider.request",
+    recorded_at_ms: 1200,
+    data: {},
+  })
+  // A live-only frame must not produce a status: the journal would not have it
+  // on replay, so the replayed stream would differ from the live one.
+  translator.progress({ session_id: "ses_phase", kind: "provider.ttft", ttft_ms: 900 })
+  translator.dispatch({
+    session_id: "ses_phase",
+    seq: 4,
+    kind: "provider.started",
+    recorded_at_ms: 1300,
+    data: {},
+  })
+  translator.dispatch({
+    session_id: "ses_phase",
+    seq: 5,
+    kind: "run.finished",
+    recorded_at_ms: 2000,
+    data: {},
+  })
+  const phases = outputs
+    .filter((event) => event.type === "session.next.status")
+    .map((event) => (event.data as { status: unknown }).status)
+  expect(phases).toEqual([
+    { type: "busy", phase: "preparing", since: 1000 },
+    { type: "busy", phase: "requesting", since: 1200 },
+    { type: "busy", phase: "preparing", since: 1300 },
+    { type: "idle" },
+  ])
 })
