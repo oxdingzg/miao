@@ -1754,6 +1754,7 @@ command: None,
             .await
     }
 
+    #[allow(clippy::too_many_arguments)]
     /// Bind successful reply identity to its assistant projection atomically.
     pub async fn assistant_reply_profiled(
         &self,
@@ -1763,13 +1764,14 @@ command: None,
         anchor: Option<u64>,
         content: Value,
         identity: Option<crate::provider::Identity>,
+        agent: Option<&str>,
     ) -> Result<Event, Error> {
         self.assistant_projection(
             session,
             run,
             anchor,
             content,
-            Some(json!({"run_id":run,"step":step,"provider":identity,"agent":null})),
+            Some(json!({"run_id":run,"step":step,"provider":identity,"agent":agent})),
             None,
         )
         .await
@@ -1785,6 +1787,7 @@ command: None,
         anchor: Option<u64>,
         content: Value,
         identity: Option<crate::provider::Identity>,
+        agent: Option<&str>,
         lease: &SessionLease,
     ) -> Result<Event, Error> {
         self.assistant_projection(
@@ -1792,7 +1795,7 @@ command: None,
             run,
             anchor,
             content,
-            Some(json!({"run_id":run,"step":step,"provider":identity,"agent":null})),
+            Some(json!({"run_id":run,"step":step,"provider":identity,"agent":agent})),
             Some(lease.clone()),
         )
         .await
