@@ -937,7 +937,7 @@ const layer = Layer.effect(
       const host = path.resolve(import.meta.dir, "worker-host.ts")
       yield* Effect.promise(() => Bun.write(workerConfigFile, JSON.stringify({ argv: [process.execPath, host] })))
       configuration.workerConfigFile = workerConfigFile
-      console.log("[worker-host] config written:", workerConfigFile)
+      yield* Effect.logInfo("[worker-host] config written:", workerConfigFile)
     }
     const mcp = yield* ProductMcp.prepare(configuration).pipe(Effect.provideService(McpAuth.Service, mcpAuth))
     let ownerRouter: Owners | undefined
