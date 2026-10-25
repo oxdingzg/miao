@@ -850,40 +850,14 @@ impl Store {
         let session = session.to_owned();
         self.call(move |conn| {
             let tx = write_tx(conn)?;
-            if let Some(lease) = &lease { require_lease(&tx, &session, lease)?; }
-            let mut pending: Vec<(String, String, Option<String>)> = {
-                let mut stmt = tx.prepare("SELECT id,prompt,attachments FROM engine_input WHERE session_id=?1 AND state='pending' AND delivery='steer' ORDER BY admitted_seq")?;
-                let rows = stmt.query_map([&session], |r| Ok((r.get(0)?,r.get(1)?,r.get(2)?)))?;
-                rows.collect::<Result<_,_>>()?
-            };
-            if pending.is_empty() && idle {
-                if let Some(row) = tx.query_row("SELECT id,prompt,attachments FROM engine_input WHERE session_id=?1 AND state='pending' AND delivery='queue' ORDER BY admitted_seq LIMIT 1", [&session], |r| Ok((r.get(0)?,r.get(1)?,r.get(2)?))).optional()? { pending.push(row); }
+            if let Some(lease) = &lease {
+                require_lease(&tx, &session, lease)?;
             }
-            let mut events = Vec::new();
-            for (id,prompt,attachments) in pending {
-                let checkpoint=uuid::Uuid::new_v4().to_string();
-                let media = attachments.as_deref().map(serde_json::from_str::<Vec<Attachment>>).transpose()?.unwrap_or_default();
-                let mut data = json!({"input_id":id,"prompt":prompt,"checkpoint":checkpoint});
-                if !media.is_empty() { data["attachments"] = json!(media); }
-                if let Some(command)=crate::session_command::for_input(&tx,&session,&id)? {data["command"]=serde_json::to_value(command)?;}
-                let agents=crate::session_agent::input_references(&tx,&session,&id)?;
-                if !agents.is_empty() {data["agent_references"]=serde_json::to_value(&agents)?;crate::session_agent::register_references(&tx,&session,&agents.catalog)?;}
-                let is_command=data["command"].is_object();
-                let e = append(&tx, &session, "input.promoted", data)?;
-                tx.execute("UPDATE engine_input SET state='promoted' WHERE id=?1", [&id])?;
-                let mut parts = vec![json!({"type":"text","text":prompt})];
-                parts.extend(media.iter().map(Attachment::part));
-                if !is_command {parts.extend(agents.mentions.iter().map(|reference|json!({"type":"agent_reference","name":reference.name,"metadata":{"source":reference.source}})));}
-                tx.execute("INSERT INTO engine_message(session_id,seq,role,content,checkpoint,recorded_at_ms) VALUES(?1,?2,'user',?3,?4,?5)", params![session,e.seq,serde_json::to_string(&Value::Array(parts))?,checkpoint,e.recorded_at_ms])?;
-                events.push(e);
-                // Preparation is a settled operator boundary. Do not promote
-                // a later steer past this command before its effects settle.
-                if is_command {break;}
-
-            }
+            let events = promote_tx(&tx, &session, idle)?;
             tx.commit()?;
             Ok(events)
-        }).await
+        })
+        .await
     }
 
     pub async fn create_job(
@@ -1527,6 +1501,43 @@ command: None,
     ) -> Result<Event, Error> {
         self.start_run_inner(session, run, Some(lease.clone()))
             .await
+    }
+
+    /// Publish the first input promotion and its running execution together.
+    /// A concurrent snapshot must never see both an empty inbox and no run
+    /// after admission while the coordinator is still starting execution.
+    pub async fn start_run_with_inputs_fenced(
+        &self,
+        session: &str,
+        run: &str,
+        force: bool,
+        lease: &SessionLease,
+    ) -> Result<Option<Vec<Event>>, Error> {
+        let (session, run, lease) = (session.to_owned(), run.to_owned(), lease.clone());
+        self.call(move |conn| {
+            let tx = write_tx(conn)?;
+            require_lease(&tx, &session, &lease)?;
+            let promoted = promote_tx(&tx, &session, true)?;
+            if promoted.is_empty() && !force {
+                return Ok(None);
+            }
+            let history: bool = tx.query_row(
+                "SELECT EXISTS(SELECT 1 FROM engine_message WHERE session_id=?1 AND reverted=0)",
+                [&session],
+                |row| row.get(0),
+            )?;
+            if !history {
+                return Err(Error::Invalid("Session has no admitted history".into()));
+            }
+            tx.execute(
+                "INSERT INTO engine_run VALUES(?1,?2,'running')",
+                params![run, session],
+            )?;
+            append(&tx, &session, "run.started", json!({"run_id":run}))?;
+            tx.commit()?;
+            Ok(Some(promoted))
+        })
+        .await
     }
 
     async fn start_run_inner(
@@ -2263,6 +2274,57 @@ command: None,
         })
         .await
     }
+}
+
+fn promote_tx(tx: &Transaction<'_>, session: &str, idle: bool) -> Result<Vec<Event>, Error> {
+    let mut pending: Vec<(String, String, Option<String>)> = {
+        let mut stmt = tx.prepare("SELECT id,prompt,attachments FROM engine_input WHERE session_id=?1 AND state='pending' AND delivery='steer' ORDER BY admitted_seq")?;
+        let rows = stmt.query_map([session], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)))?;
+        rows.collect::<Result<_, _>>()?
+    };
+    if pending.is_empty() && idle {
+        if let Some(row) = tx.query_row("SELECT id,prompt,attachments FROM engine_input WHERE session_id=?1 AND state='pending' AND delivery='queue' ORDER BY admitted_seq LIMIT 1", [session], |r| Ok((r.get(0)?,r.get(1)?,r.get(2)?))).optional()? { pending.push(row); }
+    }
+    let mut events = Vec::new();
+    for (id, prompt, attachments) in pending {
+        let checkpoint = uuid::Uuid::new_v4().to_string();
+        let media = attachments
+            .as_deref()
+            .map(serde_json::from_str::<Vec<Attachment>>)
+            .transpose()?
+            .unwrap_or_default();
+        let mut data = json!({"input_id":id,"prompt":prompt,"checkpoint":checkpoint});
+        if !media.is_empty() {
+            data["attachments"] = json!(media);
+        }
+        if let Some(command) = crate::session_command::for_input(tx, session, &id)? {
+            data["command"] = serde_json::to_value(command)?;
+        }
+        let agents = crate::session_agent::input_references(tx, session, &id)?;
+        if !agents.is_empty() {
+            data["agent_references"] = serde_json::to_value(&agents)?;
+            crate::session_agent::register_references(tx, session, &agents.catalog)?;
+        }
+        let is_command = data["command"].is_object();
+        let e = append(tx, session, "input.promoted", data)?;
+        tx.execute(
+            "UPDATE engine_input SET state='promoted' WHERE id=?1",
+            [&id],
+        )?;
+        let mut parts = vec![json!({"type":"text","text":prompt})];
+        parts.extend(media.iter().map(Attachment::part));
+        if !is_command {
+            parts.extend(agents.mentions.iter().map(|reference|json!({"type":"agent_reference","name":reference.name,"metadata":{"source":reference.source}})));
+        }
+        tx.execute("INSERT INTO engine_message(session_id,seq,role,content,checkpoint,recorded_at_ms) VALUES(?1,?2,'user',?3,?4,?5)", params![session,e.seq,serde_json::to_string(&Value::Array(parts))?,checkpoint,e.recorded_at_ms])?;
+        events.push(e);
+        // Preparation is a settled operator boundary. Do not promote
+        // a later steer past this command before its effects settle.
+        if is_command {
+            break;
+        }
+    }
+    Ok(events)
 }
 
 /// A lease is live while its heartbeat is fresh and, on hosts where the owner

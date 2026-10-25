@@ -1250,15 +1250,14 @@ async fn drain(
     // Message tail before this drain promotes its inputs: a terminal
     // first-turn provider rejection quarantines exactly what it promoted.
     let history_base = inner.store.max_message_seq(&session).await?;
-    let promoted = inner.store.promote_fenced(&session, true, &lease).await?;
-    if promoted.is_empty() && !force {
-        return Ok(());
-    }
-    if inner.store.history(&session).await?.is_empty() {
-        return Err(Error::Invalid("Session has no admitted history".into()));
-    }
     let run = uuid::Uuid::new_v4().to_string();
-    inner.store.start_run_fenced(&session, &run, &lease).await?;
+    let Some(promoted) = inner
+        .store
+        .start_run_with_inputs_fenced(&session, &run, force, &lease)
+        .await?
+    else {
+        return Ok(());
+    };
     let _keepalive = LeaseKeepalive(tokio::spawn(keep_lease(
         inner.store.clone(),
         lease.clone(),
