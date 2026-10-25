@@ -8,5 +8,5 @@ export function terminalTitle(input: string) {
     .trim()
   if (!title) return "miao"
   const chars = Array.from(segments.segment(title), (part) => part.segment)
-  return `miao | ${chars.length > 40 ? chars.slice(0, 37).join("") + "…" : title}`
+  return chars.length > 40 ? chars.slice(0, 37).join("") + "…" : title
 }
