@@ -54,6 +54,7 @@ type Ctx = {
   model: string
   workspace: string
   storageDir: string
+  productDbPath: string
   segments: SegmentRecord[]
   text: string
   tools: ToolCall[]
@@ -187,8 +188,6 @@ const toolRan = (ctx: Ctx, name: RegExp, status = "completed") =>
 const readWorkspace = async (ctx: Ctx, relative: string) =>
   readFile(path.join(ctx.workspace, relative), "utf8").catch(() => undefined)
 
-const productDbPath = path.join(os.homedir(), ".local/share/miao/miao-local.db")
-
 const queryOne = <T>(file: string, sql: string, ...params: unknown[]): T | undefined => {
   const db = new Database(file, { readonly: true })
   try {
@@ -209,18 +208,24 @@ const newestEngineDb = async (dir: string) => {
   return newest === undefined ? undefined : path.join(dir, newest.name)
 }
 
-const sessionTitle = (sessionID: string) => {
+const sessionTitle = async (ctx: Ctx) => {
   try {
-    return queryOne<{ title: string }>(productDbPath, "SELECT title FROM session WHERE id = ?", sessionID)?.title
+    const file = ctx.engine === "rust" ? await newestEngineDb(ctx.storageDir) : ctx.productDbPath
+    if (!file) return
+    return queryOne<{ title: string }>(
+      file,
+      `SELECT title FROM ${ctx.engine === "rust" ? "engine_session" : "session"} WHERE id = ?`,
+      ctx.sessionID,
+    )?.title
   } catch {
     return undefined
   }
 }
 
-const waitFor = async (probe: () => boolean, budgetMs: number, gapMs = 2000) => {
+const waitFor = async (probe: () => boolean | Promise<boolean>, budgetMs: number, gapMs = 2000) => {
   const deadline = Date.now() + budgetMs
   for (;;) {
-    if (probe()) return true
+    if (await probe()) return true
     if (Date.now() >= deadline) return false
     await Bun.sleep(gapMs)
   }
@@ -247,7 +252,9 @@ const SCENARIOS: Scenario[] = [
       if (content === undefined) return fail("src/note.ts missing after run")
       if (!content.includes(`"beta"`)) return fail(`file not updated to beta: ${JSON.stringify(content)}`)
       if (content.includes("alpha")) return fail("file still contains alpha")
-      if (!ctx.tools.some((call) => /^(edit|write|apply_patch|multiedit)$/.test(call.tool) && call.status === "completed"))
+      if (
+        !ctx.tools.some((call) => /^(edit|write|apply_patch|multiedit)$/.test(call.tool) && call.status === "completed")
+      )
         return fail("no completed file-mutating tool in events")
       return pass()
     },
@@ -259,7 +266,8 @@ const SCENARIOS: Scenario[] = [
     prompt: `Use the apply_patch tool to append a new line reading patched-line-7391 to the end of notes.md. Do not modify the file any other way.`,
     assert: async (ctx) => {
       const content = await readWorkspace(ctx, "notes.md")
-      if (content === undefined || !content.includes("patched-line-7391")) return fail("appended line missing from notes.md")
+      if (content === undefined || !content.includes("patched-line-7391"))
+        return fail("appended line missing from notes.md")
       if (!toolRan(ctx, /^apply_patch$/)) return fail("no completed apply_patch execution in events")
       return pass()
     },
@@ -272,7 +280,8 @@ const SCENARIOS: Scenario[] = [
     assert: (ctx) => {
       const resumed = ctx.segments.filter((segment) => segment.resume).at(-1)
       if (resumed === undefined) return fail("no follow-up segment ran")
-      if (!resumed.text.includes(TOKEN)) return fail(`follow-up reply does not recall ${TOKEN}: ${resumed.text.slice(0, 200)}`)
+      if (!resumed.text.includes(TOKEN))
+        return fail(`follow-up reply does not recall ${TOKEN}: ${resumed.text.slice(0, 200)}`)
       return pass()
     },
   },
@@ -287,8 +296,14 @@ const SCENARIOS: Scenario[] = [
       if (ctx.engine === "ts") return pass("completion-only; the compaction-row assert is rust-only (tsEquivalent n/a)")
       const dbPath = await newestEngineDb(ctx.storageDir)
       if (dbPath === undefined) return fail(`no engine db found under ${ctx.storageDir}`)
-      const row = queryOne<{ n: number }>(dbPath, "SELECT COUNT(*) AS n FROM engine_compaction")
-      return (row?.n ?? 0) > 0 ? pass(`engine_compaction rows: ${row?.n} (db ${path.basename(dbPath)})`) : fail(`engine_compaction empty in ${path.basename(dbPath)}`)
+      const row = queryOne<{ n: number }>(
+        dbPath,
+        "SELECT COUNT(*) AS n FROM engine_compaction WHERE session_id = ?",
+        ctx.sessionID,
+      )
+      return (row?.n ?? 0) > 0
+        ? pass(`engine_compaction rows: ${row?.n} (db ${path.basename(dbPath)})`)
+        : fail(`engine_compaction empty in ${path.basename(dbPath)}`)
     },
   },
   {
@@ -305,7 +320,9 @@ const SCENARIOS: Scenario[] = [
       if (content === undefined) return fail("marker.txt was never created")
       const lines = content.trim().split("\n").filter(Boolean)
       if (lines.length !== 1 || !lines[0]!.includes("INTERRUPT-RECOVERY-7391"))
-        return fail(`marker.txt has ${lines.length} line(s), expected exactly one: ${JSON.stringify(content.slice(0, 200))}`)
+        return fail(
+          `marker.txt has ${lines.length} line(s), expected exactly one: ${JSON.stringify(content.slice(0, 200))}`,
+        )
       return pass()
     },
   },
@@ -359,15 +376,19 @@ const SCENARIOS: Scenario[] = [
     title: "turn is priced: step cost > 0 and usage row recorded",
     models: "primary",
     prompt: `What is 2+2? Reply with just the number.`,
-    assert: (ctx) => {
+    assert: async (ctx) => {
       if (ctx.sessionID === undefined) return fail("no sessionID in events")
       if (!(ctx.cost > 0)) return fail(`total step cost is ${ctx.cost}, expected > 0`)
+      const file = ctx.engine === "rust" ? await newestEngineDb(ctx.storageDir) : ctx.productDbPath
+      if (!file) return fail("no authoritative usage database")
       const row = queryOne<{ n: number }>(
-        productDbPath,
-        "SELECT COUNT(*) AS n FROM session_turn_usage WHERE session_id = ?",
+        file,
+        ctx.engine === "rust"
+          ? "SELECT COUNT(*) AS n FROM engine_event WHERE session_id = ? AND kind = 'usage'"
+          : "SELECT COUNT(*) AS n FROM session_turn_usage WHERE session_id = ?",
         ctx.sessionID,
       )
-      if ((row?.n ?? 0) === 0) return fail(`no session_turn_usage row for ${ctx.sessionID}`)
+      if ((row?.n ?? 0) === 0) return fail(`no durable usage row for ${ctx.sessionID}`)
       return pass()
     },
   },
@@ -378,14 +399,12 @@ const SCENARIOS: Scenario[] = [
     prompt: `Reply with exactly: conformance-title-check`,
     assert: async (ctx) => {
       if (ctx.sessionID === undefined) return fail("no sessionID in events")
-      const settled = await waitFor(() => {
-        const title = sessionTitle(ctx.sessionID!)
+      const settled = await waitFor(async () => {
+        const title = await sessionTitle(ctx)
         return title !== undefined && title.length > 0 && !DEFAULT_TITLE.test(title)
       }, 30_000)
-      const title = sessionTitle(ctx.sessionID!)
-      return settled
-        ? pass(`title: ${title}`)
-        : fail(`title still default or missing after 30s: ${title ?? "<none>"}`)
+      const title = await sessionTitle(ctx)
+      return settled ? pass(`title: ${title}`) : fail(`title still default or missing after 30s: ${title ?? "<none>"}`)
     },
   },
   {
@@ -438,7 +457,10 @@ const parse = {
 const options: ParsedArgs = {
   binary: parse.string("--binary") ?? "miao-dev",
   models: parse.list("--models", [PRIMARY]),
-  scenarios: parse.list("--scenarios", SCENARIOS.map((scenario) => scenario.id)),
+  scenarios: parse.list(
+    "--scenarios",
+    SCENARIOS.map((scenario) => scenario.id),
+  ),
   engines: parse
     .list("--engines", ["ts", "rust"])
     .filter((engine): engine is Engine => engine === "ts" || engine === "rust"),
@@ -469,6 +491,7 @@ const redact = (input: string) => {
 
 const runSegment = async (input: {
   binary: string
+  engine: Engine
   cwd: string
   model?: string
   prompt: string
@@ -483,6 +506,8 @@ const runSegment = async (input: {
     "run",
     "--format",
     "json",
+    "--engine",
+    input.engine === "rust" ? "native" : "ts",
     // Bun's cwd does not update inherited PWD, which the CLI uses for local
     // placement. Bind the run explicitly to its isolated fixture workspace.
     "--dir",
@@ -493,6 +518,7 @@ const runSegment = async (input: {
     ...input.attachments.flatMap((file) => [`--file=${file}`]),
   ]
   const child = Bun.spawn(args, { cwd: input.cwd, stdout: "pipe", stderr: "pipe", env: input.env })
+  const stderr = new Response(child.stderr).text()
   const record: SegmentRecord = {
     prompt: input.prompt,
     resume: input.resume,
@@ -547,10 +573,10 @@ const runSegment = async (input: {
   }
   if (interruptTimer !== undefined) clearTimeout(interruptTimer)
   clearTimeout(timeoutTimer)
-  const [exitCode, stderr] = await Promise.all([child.exited, new Response(child.stderr).text()])
+  const [exitCode, diagnostics] = await Promise.all([child.exited, stderr])
   record.exitCode = exitCode
   record.seconds = (Date.now() - started) / 1000
-  record.stderr = redact(stderr)
+  record.stderr = redact(diagnostics)
   record.killed = interrupted
   record.timedOut = timedOut
   return record
@@ -570,8 +596,7 @@ const harvest = (ctx: Ctx, segment: SegmentRecord) => {
     const type = asText(event.type) ?? ""
     if (type === "error") {
       const error = field(event, "error") ?? field(event, "issue")
-      const message =
-        asText(field(error, "message")) ?? asText(field(error, "name")) ?? asText(field(event, "message"))
+      const message = asText(field(error, "message")) ?? asText(field(error, "name")) ?? asText(field(event, "message"))
       if (message) ctx.errors.push(message)
       continue
     }
@@ -684,6 +709,7 @@ const runCell = async (scenario: Scenario, engine: Engine, model: string) => {
     model,
     workspace,
     storageDir,
+    productDbPath: `${storageDir}.product.db`,
     segments: [],
     text: "",
     tools: [],
@@ -704,12 +730,13 @@ const runCell = async (scenario: Scenario, engine: Engine, model: string) => {
   for (const segment of segmentsFor(scenario)) {
     const record = await runSegment({
       binary: options.binary,
+      engine,
       cwd: workspace,
       model,
       prompt: segment.text,
       resume: segment.resume,
       attachments: segment.resume ? [] : attachments,
-      env: childEnv(engine, storageDir, scenario.env?.(workspace) ?? {}),
+      env: childEnv(engine, storageDir, { ...scenario.env?.(workspace), MIAO_DB: ctx.productDbPath }),
       interruptAfterSeconds: segment.killAfterSeconds,
       timeoutSeconds: options.segmentTimeout,
     })
@@ -717,7 +744,23 @@ const runCell = async (scenario: Scenario, engine: Engine, model: string) => {
     harvest(ctx, record)
     if (record.timedOut) break
   }
-  const outcome = await scenario.assert(ctx)
+  const outcome = await (async () => {
+    const last = ctx.segments.at(-1)
+    if (!last || last.exitCode !== 0 || last.timedOut)
+      return fail(`final segment did not complete (exit=${last?.exitCode}, timeout=${last?.timedOut})`)
+    if (engine === "rust") {
+      const file = await newestEngineDb(storageDir)
+      if (!file || !ctx.sessionID) return fail("no native execution receipt")
+      const run = queryOne<{ state: string }>(
+        file,
+        "SELECT state FROM engine_run WHERE session_id = ? ORDER BY rowid DESC LIMIT 1",
+        ctx.sessionID,
+      )
+      if (run?.state !== "completed")
+        return fail(`native run ended as ${run?.state ?? "<missing>"} despite exit code 0`)
+    }
+    return scenario.assert(ctx)
+  })()
   if (outcome.status === "fail")
     await Bun.write(
       path.join(options.data, "raw", `${scenario.id}.${engine}.${model.replaceAll("/", "-")}.workspace.txt`),
