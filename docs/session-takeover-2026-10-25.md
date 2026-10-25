@@ -88,5 +88,13 @@ Before App changes, the production first-navigation benchmark passed on a build 
 
 - Context history #1410 passed 683 App unit tests after all 61 non-English dictionaries received the new keys; the initial CI key-parity failure was fixed and pushed.
 - Estimated composition #1413 passed the complete App checks: 686 unit tests, 41 browser-oriented unit tests, typecheck, and remote UI smoke. Production navigation before/after records have zero blank/unknown samples. Current CI is listed above; local checks do not establish CI success.
-- The reliability continuation also opened #1411 for orphaned engine cleanup and resurrection. Its failing engine jobs remain an active repair task and must not be merged as green.
+- An independent active writer owns #1411 for orphaned engine cleanup and resurrection. Its original Clippy failure was repaired in `567d237aaa`; the replacement CI run is pending. Do not overwrite that writer’s checkout.
 - Localization source coverage, single-run performance limits, and the existing obsolete streaming/e2e fixtures are recorded in `docs/experiments/2026-10-25-context-timeline/` on the feature branches. Native phrase review remains recommended for sparse-corpus locales.
+
+## Reidentified blank context window
+
+The window showing branch `feat/app-context-timeline` is the original context-display Session `ses_gfe5e8db8dcc1ffeWmHuyL3KE3`. Its last durable receipt is `run.finished` at 2026-10-25 19:04:25 +08:00 with `reason=interrupted` and `recovered=true`; the recorded owner process is gone. All 302 message records were preserved in the private recovery snapshot. Its four display tasks are the same ones tracked above, not a second implementation queue.
+
+The window is running the published 0.3.6 binary. Logs at 2026-10-25 11:54 UTC show invalid native catalog identities causing the miao Location’s Sessions to be skipped. #1399 addresses per-Session catalog failure isolation and pinned identity retention, but that fix is not in the published 0.3.6 binary. This evidence does not establish a regression in the repaired preview.
+
+The App history and category branches are committed and pushed through `c24a96b52d` and `62507317ea`; the latest combined App unit suite passes 687 tests and package typecheck. The TUI settlement continuation is still completing native integration and must be committed/pushed once its required checks pass. The Windows continuation-test timeout on #1405 is also an active repair item; its failed run must not be called green.
