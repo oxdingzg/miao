@@ -27,11 +27,17 @@ pub struct Input {
     #[serde(default)]
     pub pty: bool,
 }
+/// Product parity with `packages/core/src/tool/bash.ts`: a foreground command
+/// defaults to two minutes and may ask for up to ten. Remote builds routinely
+/// exceed the old two-minute ceiling, and an over-limit value was rejected as
+/// a bare "invalid tool input" the model could not explain.
+pub(crate) const DEFAULT_TIMEOUT_MS: u64 = 120_000;
+pub(crate) const MAX_TIMEOUT_MS: u64 = 600_000;
 fn cwd() -> String {
     ".".into()
 }
 fn timeout() -> u64 {
-    10_000
+    DEFAULT_TIMEOUT_MS
 }
 fn sandbox_on() -> bool {
     true
@@ -44,7 +50,7 @@ impl Input {
             || input.argv[0].is_empty()
             || input.argv.iter().any(|s| s.contains('\0'))
             || input.argv.iter().map(String::len).sum::<usize>() > 32768
-            || !(1..=120_000).contains(&input.timeout_ms)
+            || !(1..=MAX_TIMEOUT_MS).contains(&input.timeout_ms)
         {
             return Err(ToolError::InvalidInput);
         }
@@ -71,7 +77,7 @@ impl BashInput {
         if input.command.is_empty()
             || input.command.len() > 32768
             || input.command.contains('\0')
-            || !(1..=120_000).contains(&input.timeout_ms)
+            || !(1..=MAX_TIMEOUT_MS).contains(&input.timeout_ms)
         {
             return Err(ToolError::InvalidInput);
         }
