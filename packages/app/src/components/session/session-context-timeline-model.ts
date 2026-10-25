@@ -20,6 +20,7 @@ export function contextTimeline(
     const measured =
       message?.type === "assistant" &&
       last.get(step.messageID) === step.id &&
+      message.time.completed === step.time &&
       message.model?.id === step.model.id &&
       message.model.providerID === step.model.providerID
         ? message.contextBudget?.window
