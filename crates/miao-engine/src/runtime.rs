@@ -3988,7 +3988,9 @@ async fn finish_delegation(
             if events.iter().any(|event| event.kind == "run.finished") {
                 break true;
             }
-            let Some(last) = events.last() else { break false };
+            let Some(last) = events.last() else {
+                break false;
+            };
             after = last.seq;
             if events.len() < 500 {
                 break false;
