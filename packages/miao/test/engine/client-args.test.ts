@@ -137,5 +137,5 @@ test("worker configuration diagnostics leave stdout available for protocols", as
   ])
   expect(exit).toBe(0)
   expect(JSON.parse(stdout)).toContain("--worker-config")
-  expect(stderr).toContain("[worker-host] engine argv includes --worker-config")
+  expect(stderr).toBe("")
 })
