@@ -19,6 +19,8 @@ test.skipIf(!binary)(
         const body = await request.json()
         const title = JSON.stringify(body).includes("Generate a title for this conversation")
         if (title) state.titleCalls++
+        if (title && body.model === "stale")
+          return Response.json({ error: { message: "stale model quota exhausted" } }, { status: 429 })
         if (title && !state.repair)
           return Response.json({ error: { message: "title service temporarily unavailable" } }, { status: 400 })
         return new Response(
@@ -27,6 +29,21 @@ test.skipIf(!binary)(
         )
       },
     })
+    const routes = path.join(tmp.path, "routes.json")
+    await Bun.write(
+      routes,
+      JSON.stringify([
+        {
+          id: "fixture/fixture",
+          provider: "openai-chat",
+          model: "fixture",
+          endpoint: new URL("chat/completions", provider.url).toString(),
+          credential: { type: "environment", key: "OPENAI_API_KEY" },
+          account: { id: null, model_key: "fixture/fixture", default: true },
+          primary: true,
+        },
+      ]),
+    )
     const database = path.join(tmp.path, "miao.db")
     const children: ReturnType<typeof Bun.spawn>[] = []
     const readers: Promise<string>[] = []
@@ -45,7 +62,7 @@ test.skipIf(!binary)(
           MIAO_ENGINE_CREDENTIAL_DB: "",
           MIAO_ENGINE_CREDENTIAL_ID: "",
           MIAO_ENGINE_MODEL_ROUTES: "",
-          MIAO_ENGINE_MODEL_ROUTES_CONFIG: "",
+          MIAO_ENGINE_MODEL_ROUTES_CONFIG: routes,
           MIAO_PURE: "1",
           OPENAI_API_KEY: "fixture-only",
           MIAO_SERVER_USERNAME: "fixture",
@@ -61,7 +78,7 @@ test.skipIf(!binary)(
                   url: provider.url.href,
                   settings: { apiKey: "fixture-only" },
                 },
-                models: { fixture: { name: "Fixture" } },
+                models: { fixture: { name: "Fixture" }, stale: { name: "Stale" } },
               },
             },
             formatter: false,
@@ -105,6 +122,9 @@ test.skipIf(!binary)(
             method: "POST",
             headers,
             body: JSON.stringify({ id: sid, location: { directory } }),
+          }).then(async (response) => {
+            if (!response.ok) throw new Error(await response.text())
+            return response
           })
         ).status,
       ).toBe(200)
@@ -146,6 +166,32 @@ test.skipIf(!binary)(
       ).toBe(204)
       const info = await (await fetch(second.url + `/api/session/${sid}`, { headers })).json()
       expect(info.data.title).toBe("My retained title")
+      // Native selection is authoritative even when the product creation row
+      // still points at a provider/model whose auxiliary requests fail.
+      const drifted = `${sid}_drifted`
+      expect(
+        (
+          await fetch(second.url + "/api/session", {
+            method: "POST",
+            headers,
+            body: JSON.stringify({ id: drifted, location: { directory } }),
+          })
+        ).status,
+      ).toBe(200)
+      setStoredModel(database, drifted, { providerID: "fixture", id: "stale" })
+      expect(
+        (
+          await fetch(second.url + `/api/session/${drifted}/prompt`, {
+            method: "POST",
+            headers,
+            body: JSON.stringify({ id: `msg_${drifted}`, prompt: { text: "Title the serving model" } }),
+          })
+        ).status,
+      ).toBe(200)
+      await until(async () => {
+        const response = await fetch(second.url + `/api/session/${drifted}`, { headers })
+        return (await response.json()).data.title === "Recovered native title"
+      })
       const catalog = new Database(database, { readonly: true })
       try {
         expect(catalog.query<{ title: string }, [string]>("SELECT title FROM session WHERE id=?").get(sid)?.title).toBe(
@@ -165,3 +211,12 @@ test.skipIf(!binary)(
   },
   60_000,
 )
+
+function setStoredModel(database: string, sessionID: string, model: { providerID: string; id: string }) {
+  const catalog = new Database(database)
+  try {
+    catalog.query("UPDATE session SET model=? WHERE id=?").run(JSON.stringify(model), sessionID)
+  } finally {
+    catalog.close()
+  }
+}
