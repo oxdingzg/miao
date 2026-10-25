@@ -52,20 +52,77 @@ const stepEnded = {
 } as const
 
 describe("SessionUsageStore", () => {
+  it.effect("pages persisted steps across timestamp ties without leaking other sessions or replay duplicates", () =>
+    Effect.gen(function* () {
+      const database = yield* Database.Service
+      yield* seed(database.db)
+      const other = SessionV2.ID.make("ses_usage_other")
+      yield* database.db
+        .insert(SessionTable)
+        .values({
+          id: other,
+          project_id: Project.ID.global,
+          slug: "other",
+          directory: "/project",
+          title: "other",
+          version: "test",
+        })
+        .run()
+      for (const id of ["evt_a", "evt_b", "evt_c", "evt_d"]) {
+        const event = { id: EventV2.ID.make(id), type: SessionEvent.Step.Ended.type, data: stepEnded }
+        yield* SessionUsageStore.projectStepEnded(database.db, event)
+        yield* SessionUsageStore.projectStepEnded(database.db, event)
+      }
+      yield* SessionUsageStore.projectStepEnded(database.db, {
+        id: EventV2.ID.make("evt_other"),
+        type: SessionEvent.Step.Ended.type,
+        data: { ...stepEnded, sessionID: other },
+      })
+      const first = yield* SessionUsageStore.history(database.db, sessionID, { limit: 2 })
+      expect(first?.items.map((row) => row.id)).toEqual(["evt_c", "evt_d"])
+      expect(first?.next).toBe("evt_c")
+      expect(first?.items[0]).toMatchObject({
+        messageID: "msg_assistant",
+        time: 1000,
+        ttftMs: 413,
+        tokens: { input: 100, cache: { read: 30, write: 10 } },
+      })
+      yield* SessionUsageStore.projectStepEnded(database.db, {
+        id: EventV2.ID.make("evt_new"),
+        type: SessionEvent.Step.Ended.type,
+        data: { ...stepEnded, timestamp: DateTime.makeUnsafe(2000) },
+      })
+      const second = yield* SessionUsageStore.history(database.db, sessionID, { limit: 2, before: first?.next })
+      expect(second?.items.map((row) => row.id)).toEqual(["evt_a", "evt_b"])
+      expect(second?.next).toBeUndefined()
+      expect(yield* SessionUsageStore.history(database.db, sessionID, { before: "evt_other" })).toBeUndefined()
+      expect(yield* SessionUsageStore.history(database.db, sessionID, { before: "missing" })).toBeUndefined()
+      expect((yield* SessionUsageStore.history(database.db, other))?.items.map((row) => row.id)).toEqual(["evt_other"])
+    }),
+  )
+
   it.effect("native fact insertion rolls back when the aggregate update fails", () =>
     Effect.gen(function* () {
       const database = yield* Database.Service
       const db = database.db
       yield* seed(db)
-      yield* db.run(sql`CREATE TRIGGER reject_native_usage BEFORE UPDATE OF cost ON session BEGIN SELECT RAISE(ABORT, 'aggregate rejected'); END;`)
-      const failed = yield* Effect.exit(SessionUsageStore.projectNativeStepEnded(db, {
-        id: EventV2.ID.make("evt_native_rollback"), type: SessionEvent.Step.Ended.type, data: stepEnded,
-      }))
+      yield* db.run(
+        sql`CREATE TRIGGER reject_native_usage BEFORE UPDATE OF cost ON session BEGIN SELECT RAISE(ABORT, 'aggregate rejected'); END;`,
+      )
+      const failed = yield* Effect.exit(
+        SessionUsageStore.projectNativeStepEnded(db, {
+          id: EventV2.ID.make("evt_native_rollback"),
+          type: SessionEvent.Step.Ended.type,
+          data: stepEnded,
+        }),
+      )
       expect(failed._tag).toBe("Failure")
       expect(yield* db.select().from(SessionTurnUsageTable).all()).toHaveLength(0)
       yield* db.run(sql`DROP TRIGGER reject_native_usage`)
       yield* SessionUsageStore.projectNativeStepEnded(db, {
-        id: EventV2.ID.make("evt_native_rollback"), type: SessionEvent.Step.Ended.type, data: stepEnded,
+        id: EventV2.ID.make("evt_native_rollback"),
+        type: SessionEvent.Step.Ended.type,
+        data: stepEnded,
       })
       const session = yield* db.select().from(SessionTable).where(eq(SessionTable.id, sessionID)).get()
       expect(session?.cost).toBe(0.25)

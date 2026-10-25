@@ -27,6 +27,7 @@ import { Revert } from "@miao/schema/revert"
 import { SessionEvent } from "@miao/schema/session-event"
 import { SessionExecution } from "@miao/schema/session-execution"
 import { SessionRecovery } from "@miao/schema/session-recovery"
+import { SessionTurnUsage } from "@miao/schema/session-turn-usage"
 
 const SessionsQueryFields = {
   workspace: Workspace.ID.pipe(Schema.optional),
@@ -120,6 +121,29 @@ export const SessionsQuery = Schema.Struct({
 
 export const makeSessionGroup = <I extends HttpApiMiddleware.AnyId, S>(sessionLocationMiddleware: Context.Key<I, S>) =>
   HttpApiGroup.make("server.session")
+    .add(
+      HttpApiEndpoint.get("session.usageHistory", "/api/session/:sessionID/usage-history", {
+        params: { sessionID: Session.ID },
+        query: Schema.Struct({
+          before: Schema.optional(Schema.String),
+          limit: Schema.NumberFromString.pipe(
+            Schema.decodeTo(PositiveInt.check(Schema.isLessThanOrEqualTo(200))),
+            Schema.optional,
+          ),
+        }),
+        success: Schema.Struct({ data: SessionTurnUsage.Page }),
+        error: [InvalidCursorError, SessionNotFoundError, ConflictError],
+      })
+        .middleware(sessionLocationMiddleware)
+        .annotateMerge(
+          OpenApi.annotations({
+            identifier: "v2.session.usageHistory",
+            summary: "Read settled provider step usage",
+            description:
+              "Read bounded pages of persisted usage facts, newest page first and chronological within each page. before is the exclusive event ID returned as next. This read does not load or replay the transcript.",
+          }),
+        ),
+    )
     .add(
       HttpApiEndpoint.get("session.list", "/api/session", {
         query: SessionsQuery,

@@ -32,6 +32,8 @@ import type {
   LocationPathOutput,
   AgentsListInput,
   AgentsListOutput,
+  SessionsUsageHistoryInput,
+  SessionsUsageHistoryOutput,
   SessionsListInput,
   SessionsListOutput,
   SessionsCreateInput,
@@ -614,6 +616,18 @@ export function make(options: ClientOptions) {
         ),
     },
     sessions: {
+      usageHistory: (input: SessionsUsageHistoryInput, requestOptions?: RequestOptions) =>
+        request<{ readonly data: SessionsUsageHistoryOutput }>(
+          {
+            method: "GET",
+            path: `/api/session/${encodeURIComponent(input.sessionID)}/usage-history`,
+            query: { before: input["before"], limit: input["limit"] },
+            successStatus: 200,
+            declaredStatuses: [400, 404, 409, 410, 401],
+            empty: false,
+          },
+          requestOptions,
+        ).then((value) => value.data),
       list: (input?: SessionsListInput, requestOptions?: RequestOptions) =>
         request<SessionsListOutput>(
           {
