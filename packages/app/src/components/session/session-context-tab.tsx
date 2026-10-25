@@ -23,6 +23,7 @@ import { getSessionContextFromRecords, getUsageModelRows } from "./session-conte
 import { contentParts } from "@miao/session-ui/content"
 import { estimateSessionContextBreakdown, type SessionContextBreakdownKey } from "./session-context-breakdown"
 import { createSessionContextFormatter } from "./session-context-format"
+import { SessionContextTimeline } from "./session-context-timeline"
 
 const BREAKDOWN_COLOR: Record<SessionContextBreakdownKey, string> = {
   system: "var(--syntax-info)",
@@ -184,6 +185,8 @@ export function SessionContextTab() {
     return c.modelLabel
   })
 
+  const projected = createMemo(() => contentParts(params.id ?? "", messages()))
+
   const breakdown = createMemo(
     on(
       () => [ctx()?.message.id, ctx()?.input, messages().length, systemPrompt()],
@@ -259,7 +262,6 @@ export function SessionContextTab() {
   let scroll: HTMLDivElement | undefined
   let frame: number | undefined
   let pending: { x: number; y: number } | undefined
-  const projected = createMemo(() => contentParts(params.id ?? "", messages()))
   const getParts = (id: string) => projected()[id] ?? []
 
   const restoreScroll = () => {
@@ -316,6 +318,11 @@ export function SessionContextTab() {
       onScroll={handleScroll}
     >
       <div class="px-6 pt-4 pb-10 flex flex-col gap-10">
+        <Show when={params.id} keyed>
+          {(sessionID) => (
+            <SessionContextTimeline sessionID={sessionID} revision={info()?.usage?.turns ?? 0} messages={messages()} />
+          )}
+        </Show>
         <div class="grid grid-cols-1 @[32rem]:grid-cols-2 gap-4">
           <For each={stats}>
             {(stat) => <Stat label={language.t(stat.label as Parameters<typeof language.t>[0])} value={stat.value()} />}

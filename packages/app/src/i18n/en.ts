@@ -483,6 +483,18 @@ export const dict = {
   "dialog.usageExceeded.dontShowAgain": "Don't show again",
 
   "context.breakdown.title": "Context Breakdown",
+  "context.timeline.title": "Context and cache history",
+  "context.timeline.step":
+    "{{model}} · {{time}} · {{input}} prompt tokens · {{read}} cache read · {{write}} cache write",
+  "context.timeline.requestWindow": "{{value}} token window at request time",
+  "context.timeline.catalogWindow": "{{value}} token window in current catalog",
+  "context.timeline.unknownWindow": "Context window unknown",
+  "context.timeline.empty": "No settled provider usage has been recorded yet.",
+  "context.timeline.retry": "Retry usage history",
+  "context.timeline.compaction": "Context compacted",
+  "context.timeline.cacheRead": "Cache read",
+  "context.timeline.cacheWrite": "Cache write",
+  "context.timeline.ttft": "{{value}} ms to first token",
   "context.breakdown.note": 'Approximate breakdown of input tokens. "Other" includes tool definitions and overhead.',
   "context.breakdown.system": "System",
   "context.breakdown.user": "User",
@@ -552,7 +564,8 @@ export const dict = {
   "toast.permissions.autoaccept.off.title": "Stopped auto-accepting permissions",
   "toast.permissions.autoaccept.off.description": "Permission requests will require approval",
   "settings.permissions.autoaccept.project.title": "Auto-accept permissions for this project",
-  "settings.permissions.autoaccept.project.description": "Answer new permission requests from any session in this project without asking. Session and directory choices still win.",
+  "settings.permissions.autoaccept.project.description":
+    "Answer new permission requests from any session in this project without asking. Session and directory choices still win.",
 
   "toast.model.none.title": "No model selected",
   "toast.model.none.description": "Connect a provider to summarize this session",
@@ -948,7 +961,8 @@ export const dict = {
   "settings.general.row.reasoningSummaries.title": "Show reasoning summaries",
   "settings.general.row.reasoningSummaries.description": "Display model reasoning summaries in the timeline",
   "settings.general.row.turnDiffs.title": "Show changed files per turn",
-  "settings.general.row.turnDiffs.description": "List each finished turn's changed files with line counts and expandable diffs in the timeline.",
+  "settings.general.row.turnDiffs.description":
+    "List each finished turn's changed files with line counts and expandable diffs in the timeline.",
   "settings.general.row.shellToolPartsExpanded.title": "Expand shell tool parts",
   "settings.general.row.shellToolPartsExpanded.description":
     "Show shell tool parts expanded by default in the timeline",
