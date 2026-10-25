@@ -546,6 +546,26 @@ pub fn prune_history(
     protect_turns: usize,
     total: Option<usize>,
 ) -> (usize, usize) {
+    let stats = prune_history_with_stats(messages, budget, protect_turns, total);
+    (stats.payloads, stats.before_bytes - stats.after_bytes)
+}
+
+/// Measured UTF-8 payload bytes, including the replacement marker in `after`.
+/// These are request-only tool results, not tokens or the full context window.
+#[derive(Default)]
+pub struct PruneStats {
+    pub payloads: usize,
+    pub messages: usize,
+    pub before_bytes: usize,
+    pub after_bytes: usize,
+}
+
+pub fn prune_history_with_stats(
+    messages: &mut [Message],
+    budget: usize,
+    protect_turns: usize,
+    total: Option<usize>,
+) -> PruneStats {
     // Selection is budget-aware. The candidates are the payloads above the
     // per-payload budget outside the protected turns; with a total target
     // configured, only as many of them -- oldest first, because the work in
@@ -559,10 +579,10 @@ pub fn prune_history(
             .sum::<usize>()
             .saturating_sub(target)
     });
-    let mut elided = 0;
-    let mut dropped = 0;
+    let mut stats = PruneStats::default();
+    let mut previous_message = None;
     for (index, block, len) in candidates {
-        if dropped >= required {
+        if stats.before_bytes - stats.after_bytes >= required {
             break;
         }
         let pruned = {
@@ -595,11 +615,14 @@ pub fn prune_history(
                 &content[tail..]
             )
         };
-        dropped += len - pruned.len();
+        stats.before_bytes += len;
+        stats.after_bytes += pruned.len();
+        stats.messages += usize::from(previous_message != Some(index));
+        previous_message = Some(index);
         messages[index].content[block]["content"] = json!(pruned);
-        elided += 1;
+        stats.payloads += 1;
     }
-    (elided, dropped)
+    stats
 }
 
 /// The payloads elision may consider: above the per-payload budget and outside

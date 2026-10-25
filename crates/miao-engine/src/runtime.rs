@@ -1608,16 +1608,26 @@ async fn execute(
         // before.
         if let Some(limits) = &*inner.context.lock().await {
             if let Some(budget) = limits.prune_chars {
-                let (elided, dropped) = crate::context_trigger::prune_history(
+                let stats = crate::context_trigger::prune_history_with_stats(
                     &mut history,
                     budget,
                     limits.protect_turns,
                     limits.prune_total_chars,
                 );
-                if elided > 0 {
+                if stats.payloads > 0 {
+                    let saved = stats.before_bytes - stats.after_bytes;
+                    inner.store.record_fenced(session, "context.pruned", json!({
+                        "run_id": run, "step": step, "context_epoch": context_epoch,
+                        "reason": "tool_output_budget", "scope": "tool_result_payloads",
+                        "unit": "utf8_bytes", "payloads": stats.payloads, "messages": stats.messages,
+                        "before_bytes": stats.before_bytes, "after_bytes": stats.after_bytes,
+                        "saved_bytes": saved,
+                    }), lease).await?;
                     let _ = inner.progress.send(json!({
                         "session_id": session, "run_id": run, "step": step,
-                        "kind": "context.pruned", "payloads": elided, "characters": dropped,
+                        "kind": "context.pruned", "payloads": stats.payloads, "characters": saved,
+                        "unit": "utf8_bytes", "before_bytes": stats.before_bytes,
+                        "after_bytes": stats.after_bytes, "saved_bytes": saved,
                     }));
                 }
             }

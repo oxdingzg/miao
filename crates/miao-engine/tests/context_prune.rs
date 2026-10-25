@@ -143,6 +143,42 @@ async fn oversized_tool_output_is_elided_from_the_request_only() {
         content.contains(r#"recall {"tool_use_id":"call"}"#),
         "the elision mark carries the recovery handle: {content}"
     );
+    let events = store.events("s", 0, 200).await.unwrap();
+    let pruned = events
+        .iter()
+        .find(|event| event.kind == "context.pruned")
+        .expect("pruning facts survive independently of progress subscribers");
+    assert_eq!(pruned.data["unit"], "utf8_bytes");
+    assert_eq!(pruned.data["scope"], "tool_result_payloads");
+    assert_eq!(pruned.data["reason"], "tool_output_budget");
+    assert_eq!(pruned.data["payloads"], 1);
+    assert_eq!(pruned.data["messages"], 1);
+    let before = store.snapshot("s").await.unwrap()["messages"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .flat_map(|message| message["content"].as_array().cloned().unwrap_or_default())
+        .find(|part| part["type"] == "tool_result")
+        .unwrap()["content"]
+        .as_str()
+        .unwrap()
+        .len();
+    assert_eq!(pruned.data["before_bytes"], before);
+    assert_eq!(pruned.data["after_bytes"], content.len());
+    assert_eq!(pruned.data["saved_bytes"], before - content.len());
+    let dispatch = events
+        .iter()
+        .find(|event| {
+            event.kind == "provider.started"
+                && event.data["step"] == pruned.data["step"]
+                && event.data["run_id"] == pruned.data["run_id"]
+        })
+        .unwrap();
+    assert!(
+        pruned.seq < dispatch.seq,
+        "facts commit before the affected dispatch"
+    );
+    assert!(!pruned.data["context_epoch"].is_null());
     let restored = store
         .recall(
             "s",
@@ -172,7 +208,38 @@ async fn oversized_tool_output_is_elided_from_the_request_only() {
 
 #[tokio::test]
 async fn without_a_prune_budget_the_request_is_untouched() {
-    let (captured, _store) = run(None).await;
+    let (captured, store) = run(None).await;
     assert!(!captured.contains("elided by context management"));
     assert!(captured.contains(&"abcdefgh".repeat(100)));
+    assert!(!store
+        .events("s", 0, 200)
+        .await
+        .unwrap()
+        .iter()
+        .any(|event| event.kind == "context.pruned"));
+}
+
+#[test]
+fn stats_count_affected_messages_once_and_measure_unicode_bytes() {
+    let mut messages = vec![miao_engine::protocol::Message {
+        role: "user".into(),
+        content: json!([
+            {"type":"tool_result","tool_use_id":"a","content":"中".repeat(3000)},
+            {"type":"tool_result","tool_use_id":"b","content":"文".repeat(3000)},
+            {"type":"tool_result","tool_use_id":"c","content":"short"},
+        ]),
+        checkpoint: None,
+        recorded_at_ms: None,
+    }];
+    let stats =
+        miao_engine::context_trigger::prune_history_with_stats(&mut messages, 2000, 0, None);
+    assert_eq!(stats.payloads, 2);
+    assert_eq!(stats.messages, 1);
+    assert_eq!(stats.before_bytes, 18_000);
+    let after: usize = messages[0].content.as_array().unwrap()[..2]
+        .iter()
+        .map(|block| block["content"].as_str().unwrap().len())
+        .sum();
+    assert_eq!(stats.after_bytes, after);
+    assert_eq!(messages[0].content[2]["content"], "short");
 }
