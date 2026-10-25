@@ -1076,12 +1076,22 @@ command: None,
     /// One read transaction captures a replay cursor and its projections. This
     /// is a bounded resync view, not an unbounded transcript dump.
     pub async fn snapshot(&self, session: &str) -> Result<Value, Error> {
+        self.snapshot_with_metadata(session, false).await
+    }
+
+    /// Catalog and peer readers never need to project or serialize transcripts.
+    pub async fn snapshot_with_metadata(
+        &self,
+        session: &str,
+        metadata_only: bool,
+    ) -> Result<Value, Error> {
         let session = session.to_owned();
         self.call(move |conn| {
             let tx=conn.transaction()?;
             let cursor:u64=tx.query_row("SELECT next_seq FROM engine_session WHERE id=?1",[&session],|r|r.get(0)).optional()?.ok_or_else(||Error::Invalid("Session does not exist".into()))?;
             let location:Option<String>=tx.query_row("SELECT root FROM engine_location WHERE session_id=?1",[&session],|r|r.get(0)).optional()?;
-            let messages=projected(&tx,&session,cursor,true)?;
+            let messages=if metadata_only { Vec::new() } else { projected(&tx,&session,cursor,true)? };
+            let has_messages:bool=tx.query_row("SELECT EXISTS(SELECT 1 FROM engine_message m WHERE m.session_id=?1 AND m.reverted=0 AND NOT EXISTS(SELECT 1 FROM engine_transfer_message t JOIN engine_transfer_import i ON i.id=t.import_id WHERE i.session_id=m.session_id AND t.seq=m.seq))",[&session],|row|row.get(0))?;
             // Context readers need the cut and summary from the same transaction
             // as the visible messages. A second selected-history read could race
             // a compaction/revert and produce a mixed-generation transcript.
@@ -1120,7 +1130,11 @@ command: None,
             let staged_revert:Option<(i64,i64)>=tx.query_row("SELECT boundary_seq,snapshot_id FROM engine_staged_revert WHERE session_id=?1",[&session],|r|Ok((r.get(0)?,r.get(1)?))).optional()?;
             let staged_revert=staged_revert.map(|(boundary_seq,snapshot_id)|json!({"boundary_seq":boundary_seq,"snapshot_id":snapshot_id}));
             let transfer_import:Option<String>=tx.query_row("SELECT id FROM engine_transfer_import WHERE session_id=?1",[&session],|row|row.get(0)).optional()?;
-            let snapshot=json!({"transfer_import":transfer_import,"session_id":session,"parent_session_id":parent,"cursor":cursor,"location":location,"mode":mode,"title":title,"created_at_ms":created_at_ms,"updated_at_ms":updated_at_ms,"archived_at_ms":archived_at_ms,"messages":messages,"selection":selection,"pending":pending,"active_run":active,"approvals":approvals,"context":context,"state":state,"questions":questions,"wakeups":wakeups,"crons":crons,"model_selection":model_selection,"account_selection":account_selection,"agent":agent,"staged_revert":staged_revert});
+            let mut snapshot=json!({"transfer_import":transfer_import,"session_id":session,"parent_session_id":parent,"cursor":cursor,"location":location,"mode":mode,"title":title,"created_at_ms":created_at_ms,"updated_at_ms":updated_at_ms,"archived_at_ms":archived_at_ms,"messages":messages,"selection":selection,"pending":pending,"active_run":active,"approvals":approvals,"context":context,"state":state,"questions":questions,"wakeups":wakeups,"crons":crons,"model_selection":model_selection,"account_selection":account_selection,"agent":agent,"staged_revert":staged_revert});
+            if metadata_only {
+                snapshot.as_object_mut().unwrap().remove("messages");
+            }
+            snapshot["has_messages"]=json!(has_messages);
             // A snapshot carries the whole Session (messages + selection + state);
             // a 1M-token Session serializes to roughly 4-6 MB, so this bound
             // only stops runaway payloads.
@@ -1729,13 +1743,13 @@ command: None,
         })
         .await
     }
-    /// A lease is alive while its last heartbeat is within twice the declared
-    /// interval; expired or missing leases make timers adoptable.
-    pub async fn has_running_runs(&self) -> Result<bool, Error> {
+    /// Runs claimed by this process, excluding other owners and unclaimed
+    /// crash residue in the shared database.
+    pub async fn has_owned_running_runs(&self) -> Result<bool, Error> {
         self.call(|conn| {
             Ok(conn.query_row(
-                "SELECT EXISTS(SELECT 1 FROM engine_run WHERE state='running')",
-                [],
+                "SELECT EXISTS(SELECT 1 FROM engine_run r JOIN engine_lease l ON l.session_id=r.session_id WHERE r.state='running' AND l.owner_pid=?1)",
+                [std::process::id()],
                 |row| row.get(0),
             )?)
         })

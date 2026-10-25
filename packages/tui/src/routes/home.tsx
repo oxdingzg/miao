@@ -7,9 +7,11 @@ import { useArgs } from "../context/args"
 import { useRouteData } from "../context/route"
 import { usePromptRef } from "../context/prompt"
 import { useLocal } from "../context/local"
+import { useTheme } from "../context/theme"
 import { usePluginRuntime } from "../plugin/runtime"
 import { useEditorContext } from "../context/editor"
 import { useKV } from "../context/kv"
+import { InstallationVersion } from "@miao/core/installation/version"
 import { useTerminalDimensions } from "@opentui/solid"
 import { useTuiConfig } from "../config"
 import { HomeSessionDestinationProvider } from "./home/session-destination"
@@ -30,6 +32,7 @@ export function Home() {
   const local = useLocal()
   const editor = useEditorContext()
   const kv = useKV()
+  const { theme } = useTheme()
   const dimensions = useTerminalDimensions()
   const tuiConfig = useTuiConfig()
   const promptMaxWidth = createMemo(() => {
@@ -74,10 +77,11 @@ export function Home() {
       <box flexGrow={1} alignItems="center" paddingLeft={2} paddingRight={2}>
         <box flexGrow={1} minHeight={0} />
         <box height={4} minHeight={0} flexShrink={1} />
-        <box flexShrink={0}>
+        <box flexShrink={0} alignItems="center">
           <pluginRuntime.Slot name="home_logo" mode="replace">
             <Logo shape={bannerShape} idle={kv.get("animations_enabled", true)} />
           </pluginRuntime.Slot>
+          <text fg={theme.textMuted}>v{InstallationVersion}</text>
         </box>
         <box height={1} minHeight={0} flexShrink={1} />
         <box width="100%" maxWidth={promptMaxWidth()} zIndex={1000} paddingTop={1} flexShrink={0}>

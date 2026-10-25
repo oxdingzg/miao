@@ -314,7 +314,7 @@ export class EngineClient {
   private readonly pending = new Map<number, Pending>()
   private readonly eventHandlers: Array<(event: EngineEvent) => void> = []
   private readonly progressHandlers: Array<(progress: EngineProgress) => void> = []
-  private readonly lines = { buffer: "" }
+  private readonly failureHandlers: Array<(error: Error) => void> = []
   private stderr = ""
   private closed = false
   private failure?: Error
@@ -392,6 +392,11 @@ export class EngineClient {
     this.progressHandlers.push(handler)
   }
 
+  onFailure(handler: (error: Error) => void) {
+    this.failureHandlers.push(handler)
+    if (this.failure && !this.closed) handler(this.failure)
+  }
+
   get stderrText() {
     return this.stderr
   }
@@ -402,13 +407,19 @@ export class EngineClient {
     const id = this.next++
     return new Promise<unknown>((resolve, reject) => {
       const timeout = setTimeout(() => {
-        this.fail(
-          new EngineError(
-            "engine_request_timeout",
-            `miao-engine ${method} request timed out after ${this.requestTimeoutMs} ms; inspect its durable receipt before retrying`,
-          ),
-          true,
+        const error = new EngineError(
+          "engine_request_timeout",
+          `miao-engine ${method} request timed out after ${this.requestTimeoutMs} ms; inspect its durable receipt before retrying`,
         )
+        // An expensive catalog read must not kill unrelated active Sessions.
+        // A timed-out mutation still retires the transport: its durable outcome
+        // must be inspected before another attempt.
+        if (["snapshot", "sessions", "history", "events", "usage", "timer_sessions"].includes(method)) {
+          this.pending.delete(id)
+          reject(error)
+          return
+        }
+        this.fail(error, true)
         this.child.kill()
         const force = setTimeout(() => this.child.kill("SIGKILL"), 1_000)
         void this.child.exited.then(() => clearTimeout(force))
@@ -504,9 +515,11 @@ export class EngineClient {
   }
 
   private fail(error: Error, terminal = false) {
+    const notify = terminal && !this.failure && !this.closed
     if (terminal) this.failure ??= error
     for (const pending of this.pending.values()) pending.reject(this.failure ?? error)
     this.pending.clear()
+    if (notify) for (const handler of this.failureHandlers) handler(this.failure ?? error)
   }
 
   private dispatch(line: string) {
@@ -617,18 +630,29 @@ export class EngineClient {
   private async readStdout() {
     const decoder = new TextDecoder()
     const reader = this.child.stdout.getReader()
+    const fragments: string[] = []
     for (;;) {
       const { done, value } = await reader.read()
       if (done) break
-      this.lines.buffer += decoder.decode(value, { stream: true })
-      let index = this.lines.buffer.indexOf("\n")
-      while (index >= 0) {
-        const line = this.lines.buffer.slice(0, index)
-        this.lines.buffer = this.lines.buffer.slice(index + 1)
-        if (line.trim()) this.dispatch(line)
-        index = this.lines.buffer.indexOf("\n")
+      // Search each chunk once. Repeatedly scanning a growing multi-megabyte
+      // snapshot blocks Bun's event loop, starving RPC replies and tool bridges.
+      const lines = decoder.decode(value, { stream: true }).split("\n")
+      for (const line of lines.slice(0, -1)) {
+        fragments.push(line)
+        const frame = fragments.join("")
+        fragments.length = 0
+        if (frame.trim()) this.dispatch(frame)
       }
+      if (lines[lines.length - 1]) fragments.push(lines[lines.length - 1])
     }
+    // EOF can precede the child's exit status; give its stderr the normal
+    // drain window, then fail a live process that closed only stdout.
+    void Promise.race([this.exited, Bun.sleep(1_500)]).then(() => {
+      if (!this.failure && !this.closed) {
+        this.fail(new EngineError("engine_closed", "miao-engine output stream closed"), true)
+        this.child.kill()
+      }
+    })
   }
 
   private async readStderr() {

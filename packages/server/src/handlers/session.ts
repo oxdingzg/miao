@@ -188,6 +188,7 @@ export const SessionHandler = HttpApiBuilder.group(Api, "server.session", (handl
               sessionID: id,
               storage: placement.storage,
               location: placement.location,
+              metadataOnly: true,
             })
             return {
               data: nativeSessionInfo({
@@ -223,6 +224,7 @@ export const SessionHandler = HttpApiBuilder.group(Api, "server.session", (handl
               sessionID: ctx.params.sessionID,
               storage: placement.storage,
               location: placement.location,
+              metadataOnly: true,
             })
             const project = yield* (yield* Project.Service).resolve(placement.location.directory)
             const usage = nativeSessionUsage({
@@ -416,6 +418,7 @@ export const SessionHandler = HttpApiBuilder.group(Api, "server.session", (handl
               sessionID: ctx.params.sessionID,
               storage: placement.storage,
               location: placement.location,
+              metadataOnly: true,
             })
             const selected = Schema.decodeUnknownOption(
               Schema.Struct({ agent: Schema.optional(Schema.NullOr(Schema.Struct({ name: Schema.String }))) }),
@@ -796,7 +799,11 @@ export const SessionHandler = HttpApiBuilder.group(Api, "server.session", (handl
           const native = yield* Effect.serviceOption(NativeEngine.Service)
           const placement = Option.getOrUndefined(yield* Effect.serviceOption(NativeEngine.Placement))
           if (Option.isSome(native) && placement) {
-            const snapshot = yield* native.value.snapshot({ sessionID: ctx.params.sessionID, ...placement })
+            const snapshot = yield* native.value.snapshot({
+              sessionID: ctx.params.sessionID,
+              ...placement,
+              metadataOnly: true,
+            })
             return { data: nativeTodos(snapshot) }
           }
           return {
@@ -985,7 +992,11 @@ export const SessionHandler = HttpApiBuilder.group(Api, "server.session", (handl
               location: placement.location,
               nativeStorage: placement.storage,
             })
-            const snapshot = yield* native.value.snapshot({ sessionID: targetSessionID, ...placement })
+            const snapshot = yield* native.value.snapshot({
+              sessionID: targetSessionID,
+              ...placement,
+              metadataOnly: true,
+            })
             return {
               data: nativeSessionInfo({
                 sessionID: targetSessionID,
@@ -1136,7 +1147,11 @@ export const SessionHandler = HttpApiBuilder.group(Api, "server.session", (handl
           const native = yield* Effect.serviceOption(NativeEngine.Service)
           const placement = Option.getOrUndefined(yield* Effect.serviceOption(NativeEngine.Placement))
           if (Option.isSome(native) && placement) {
-            const snapshot = yield* native.value.snapshot({ sessionID: ctx.params.sessionID, ...placement })
+            const snapshot = yield* native.value.snapshot({
+              sessionID: ctx.params.sessionID,
+              ...placement,
+              metadataOnly: true,
+            })
             return {
               data:
                 nativeExecution(snapshot).type === "running" ? { type: "busy" as const } : { type: "idle" as const },
@@ -1238,7 +1253,11 @@ export const SessionHandler = HttpApiBuilder.group(Api, "server.session", (handl
           const native = yield* Effect.serviceOption(NativeEngine.Service)
           const placement = Option.getOrUndefined(yield* Effect.serviceOption(NativeEngine.Placement))
           if (Option.isSome(native) && placement) {
-            const snapshot = yield* native.value.snapshot({ sessionID: ctx.params.sessionID, ...placement })
+            const snapshot = yield* native.value.snapshot({
+              sessionID: ctx.params.sessionID,
+              ...placement,
+              metadataOnly: true,
+            })
             return nativeExecution(snapshot)
           }
           const executionID = (yield* session.executions).get(ctx.params.sessionID)
