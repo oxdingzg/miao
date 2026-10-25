@@ -61,6 +61,7 @@ import { batch, onCleanup, onMount } from "solid-js"
 import path from "path"
 import { useKV } from "./kv"
 import { usePermission } from "./permission"
+import { sessionListScope } from "./session-list-scope"
 
 function permissionRequest(request: Extract<TuiEvent, { type: "permission.v2.asked" }>["properties"]) {
   return {
@@ -384,7 +385,14 @@ export const {
     function listSessions() {
       const query = sessionListQuery()
       const promise = sdk.api.sessions
-        .list({ limit: 200, ...(query.path ? { subpath: query.path } : {}) })
+        .list({
+          limit: 200,
+          ...sessionListScope({
+            scope: query.scope,
+            projectID: project.data.project.id,
+            directory: project.data.instance.path.directory,
+          }),
+        })
         .then((x) => ({ data: (x.data ?? []) as Session[] }))
       return promise.then((x) => (x.data ?? []).toSorted((a, b) => a.id.localeCompare(b.id)))
     }

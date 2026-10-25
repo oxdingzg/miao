@@ -1,4 +1,17 @@
 export const dict = {
+  "context.timeline.title": "Konteks dan riwayat cache",
+  "context.timeline.step":
+    "{{model}} · {{time}} · {{input}} token prompt · {{read}} pembacaan cache · {{write}} penulisan cache",
+  "context.timeline.requestWindow": "{{value}} jendela token pada waktu permintaan",
+  "context.timeline.catalogWindow": "Jendela token {{value}} di katalog saat ini",
+  "context.timeline.unknownWindow": "Jendela konteks tidak diketahui",
+  "context.timeline.empty": "Belum ada penggunaan penyedia yang diselesaikan yang tercatat.",
+  "context.timeline.retry": "Coba lagi riwayat penggunaan",
+  "context.timeline.compaction": "Konteksnya dipadatkan",
+  "context.timeline.cacheRead": "Baca cache",
+  "context.timeline.cacheWrite": "Tulis cache",
+  "context.timeline.ttft": "{{value}} ms ke token pertama",
+
   "desktop.menu.app": "miao",
   "desktop.menu.file": "Berkas",
   "desktop.menu.edit": "Sunting",
@@ -651,7 +664,8 @@ export const dict = {
   "toast.permissions.autoaccept.off.title": "Berhenti menerima izin otomatis",
   "toast.permissions.autoaccept.off.description": "Permintaan izin akan memerlukan persetujuan",
   "settings.permissions.autoaccept.project.title": "Setujui izin secara otomatis untuk proyek ini",
-  "settings.permissions.autoaccept.project.description": "Jawabi permintaan izin baru dari sesi mana pun di proyek ini tanpa bertanya. Pilihan per sesi dan direktori tetap diutamakan.",
+  "settings.permissions.autoaccept.project.description":
+    "Jawabi permintaan izin baru dari sesi mana pun di proyek ini tanpa bertanya. Pilihan per sesi dan direktori tetap diutamakan.",
 
   "toast.model.none.title": "Tidak ada model dipilih",
   "toast.model.none.description": "Hubungkan penyedia untuk meringkas sesi ini",
@@ -1047,7 +1061,8 @@ export const dict = {
   "settings.general.row.reasoningSummaries.title": "Tampilkan ringkasan penalaran",
   "settings.general.row.reasoningSummaries.description": "Tampilkan ringkasan penalaran model di linimasa",
   "settings.general.row.turnDiffs.title": "Tampilkan file yang berubah per putaran",
-  "settings.general.row.turnDiffs.description": "Menampilkan daftar file yang berubah di setiap putaran yang selesai, dengan jumlah baris dan diff yang bisa dibuka di lini masa.",
+  "settings.general.row.turnDiffs.description":
+    "Menampilkan daftar file yang berubah di setiap putaran yang selesai, dengan jumlah baris dan diff yang bisa dibuka di lini masa.",
   "settings.general.row.shellToolPartsExpanded.title": "Bentangkan bagian alat shell",
   "settings.general.row.shellToolPartsExpanded.description":
     "Tampilkan bagian alat shell yang dibentangkan secara bawaan di linimasa",

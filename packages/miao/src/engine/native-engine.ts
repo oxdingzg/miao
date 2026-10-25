@@ -3,6 +3,7 @@ import type { AgentAttachment } from "@miao/schema/prompt"
 import { Event } from "@miao/schema/event"
 import { SessionEvent } from "@miao/schema/session-event"
 import { agentManifest, modelRoute, type Route } from "./product-agent"
+import type { SessionMessage } from "@miao/schema/session-message"
 import { LocationServiceMap } from "@miao/core/location-service-map"
 import type { LocationServices } from "@miao/core/location-services"
 import { SessionCreate } from "@miao/core/session-create"
@@ -42,6 +43,7 @@ import { Location } from "@miao/schema/location"
 import { Cause, DateTime, Effect, Layer, Option, Queue, Schema, Context } from "effect"
 import { EngineError, type EngineOptions, type EngineEvent } from "./client"
 import { discoveredEngine } from "./discovery"
+import { generatedInputEngineID, messageID, promotedInputMessageID } from "./identity"
 import { makeEngineOwners } from "./owners"
 import type { EnginePricing } from "./session"
 import { NativeRecovery } from "./recovery"
@@ -56,7 +58,6 @@ import { LLMClient } from "@miao/llm"
 import { llmClient } from "@miao/core/effect/app-node-platform"
 import { SessionNativeTitle } from "@miao/core/session/native-title"
 import { SessionInput } from "@miao/schema/session-input"
-import { SessionMessage } from "@miao/schema/session-message"
 import type { SessionID } from "@miao/schema/session-id"
 import { SessionTitle } from "@miao/core/session/title"
 import { SessionRunnerModel } from "@miao/core/session/runner/model"
@@ -89,6 +90,8 @@ const QuestionBindings = Schema.Array(
 )
 /** The engine's `{accepted: boolean}` reply shared by cancel-shaped commands. */
 const AcceptedReply = Schema.Struct({ accepted: Schema.Boolean })
+/** A refused cancel names why, so an unknown id can be resolved and a final one kept. */
+const CancelReply = Schema.Struct({ accepted: Schema.Boolean, reason: Schema.optional(Schema.String) })
 
 import { replayJournal } from "./journal"
 import { readTranscript } from "./transcript"
@@ -309,7 +312,12 @@ export function pendingInputsPage(sessionID: SessionID, value: unknown) {
     Schema.Struct({
       inputs: Schema.Array(
         Schema.Struct({
-          id: SessionMessage.ID,
+          // The engine also admits inputs it generated itself (monitor
+          // notices, cron/wakeup fires, job completion receipts), and those
+          // identities do not carry the product's `msg_` prefix. Decoding
+          // them as SessionMessage.ID failed the whole page, turning every
+          // session with a pending notice into a 500 on /inputs.
+          id: Schema.String.check(Schema.isMinLength(1), Schema.isMaxLength(512)),
           prompt: Schema.String,
           delivery: SessionInput.Delivery,
           admitted_seq: Schema.Number,
@@ -324,7 +332,13 @@ export function pendingInputsPage(sessionID: SessionID, value: unknown) {
     inputs: page.inputs.map((entry) =>
       SessionInput.Admitted.make({
         admittedSeq: entry.admitted_seq,
-        id: entry.id,
+        // A product prompt keeps the identity it was submitted with, so a
+        // later exact retry and cancel can address it. An engine-generated
+        // notice has no product identity of its own, so derive one from the
+        // durable engine input id — the same derivation the promotion event
+        // and the cancel path use. Decoding it as SessionMessage.ID failed the
+        // whole page on ids like `monitor:<job>:<uuid>`.
+        id: promotedInputMessageID(entry.id),
         sessionID,
         prompt: {
           text: entry.prompt,
@@ -336,6 +350,28 @@ export function pendingInputsPage(sessionID: SessionID, value: unknown) {
     ),
     hasMore: page.has_more,
   }
+}
+
+/**
+ * Cancel one admitted input.
+ *
+ * A product prompt is cancelled under the identity it was submitted with. A
+ * generated notice is displayed under an identity derived from the engine's
+ * own input id, so a refusal that names an unknown id is resolved back to that
+ * durable row. Only `reason: "unknown"` is resolved: a promoted or cancelled
+ * row already has a final answer, and retrying it under another id would
+ * address a different input.
+ */
+export async function cancelPendingInput(
+  request: (inputID: string) => Promise<unknown>,
+  inputID: SessionMessage.ID,
+): Promise<boolean> {
+  const reply = Schema.decodeUnknownSync(CancelReply)(await request(inputID))
+  if (reply.accepted) return true
+  if (reply.reason !== "unknown") return false
+  const engineInputID = generatedInputEngineID(inputID)
+  if (engineInputID === undefined || engineInputID === inputID) return false
+  return Schema.decodeUnknownSync(AcceptedReply)(await request(engineInputID)).accepted
 }
 
 const refusal = (sessionID: string, error: unknown) =>
@@ -610,12 +646,13 @@ export const fromOwners = (
         }),
       ).pipe(Effect.map((value) => pendingInputsPage(input.sessionID, value))),
     cancelInput: (input) =>
-      read<unknown>(input, (connection) =>
-        connection.client.request("cancel_input", {
-          session_id: input.sessionID,
-          input_id: input.inputID,
-        }),
-      ).pipe(Effect.map((value) => Schema.decodeUnknownSync(AcceptedReply)(value).accepted)),
+      read<boolean>(input, (connection) =>
+        cancelPendingInput(
+          (inputID) =>
+            connection.client.request("cancel_input", { session_id: input.sessionID, input_id: inputID }),
+          input.inputID,
+        ),
+      ),
     revertStage: (input) =>
       read(input, async (connection) => {
         const snapshot = Schema.decodeUnknownSync(Schema.Struct({ cursor: Schema.Number }))(
@@ -937,7 +974,7 @@ const layer = Layer.effect(
       const host = path.resolve(import.meta.dir, "worker-host.ts")
       yield* Effect.promise(() => Bun.write(workerConfigFile, JSON.stringify({ argv: [process.execPath, host] })))
       configuration.workerConfigFile = workerConfigFile
-      console.log("[worker-host] config written:", workerConfigFile)
+      yield* Effect.logInfo("[worker-host] config written:", workerConfigFile)
     }
     const mcp = yield* ProductMcp.prepare(configuration).pipe(Effect.provideService(McpAuth.Service, mcpAuth))
     let ownerRouter: Owners | undefined

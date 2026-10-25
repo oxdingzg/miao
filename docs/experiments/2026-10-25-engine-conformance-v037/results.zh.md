@@ -1,28 +1,36 @@
 # 0.3.7 候选版本双引擎一致性验证（2026-10-25）
 
-最新完整 R7 在同一份未变更、包含完整 Web UI 的 CLI／引擎配对产物上通过 **23/24**。唯一失败是 TypeScript 工具调用单元：模型直接回答提示中已有的 token，没有执行要求的 bash 命令。命令正常退出，但缺少实际工具调用仍判失败，不能称为 24/24。在同一份冻结产物上单独重跑该单元（`runs/r7-retry-ts`，$0.0035）通过，用了 2 轮：这次模型真的执行了命令；说明该单元依赖模型行为，R7 的失败仍按原样保留。
+完整 R14 在同一份未变更、包含完整 Web UI 的 CLI／引擎配对候选产物上通过 **23/24**，失败 1、跳过 0。results.json 选择全部最新单元结果。
 
-| Scenario             | TypeScript | Rust      |
-| -------------------- | ---------- | --------- |
-| tool-recall          | FAIL (r7)  | PASS (r7) |
-| file-edit            | PASS (r7)  | PASS (r7) |
-| apply-patch          | PASS (r7)  | PASS (r7) |
-| multi-turn-retention | PASS (r7)  | PASS (r7) |
-| forced-compaction    | PASS (r7)  | PASS (r7) |
-| interrupt-recovery   | PASS (r7)  | PASS (r7) |
-| background-job       | PASS (r7)  | PASS (r7) |
-| mcp-fixture          | PASS (r7)  | PASS (r7) |
-| permission-deny      | PASS (r7)  | PASS (r7) |
-| usage-priced         | PASS (r7)  | PASS (r7) |
-| session-title        | PASS (r7)  | PASS (r7) |
-| image-input          | PASS (r7)  | PASS (r7) |
+最新未通过项：permission-deny / rust: deleteme.txt was deleted despite the deny rule。
 
-两种引擎的文件编辑、补丁应用、多轮记忆、中断恢复、后台任务、MCP、权限拒绝、用量计价、标题保存和图片输入均通过。Rust 强制压缩确认一条持久化 engine_compaction 记录；TS 压缩单元只验证完成，不证明发生了 TS 压缩。本轮矩阵没有观察到进程卡死或崩溃。
+| Scenario | TypeScript | Rust |
+| --- | --- | --- |
+| tool-recall | PASS (r14) | PASS (r14) |
+| file-edit | PASS (r14) | PASS (r14) |
+| apply-patch | PASS (r14) | PASS (r14) |
+| multi-turn-retention | PASS (r14) | PASS (r14) |
+| forced-compaction | PASS (r14) | PASS (r14) |
+| interrupt-recovery | PASS (r14) | PASS (r14) |
+| background-job | PASS (r14) | PASS (r14) |
+| mcp-fixture | PASS (r14) | PASS (r14) |
+| permission-deny | PASS (r14) | FAIL (r14) |
+| usage-priced | PASS (r14) | PASS (r14) |
+| session-title | PASS (r14) | PASS (r14) |
+| image-input | PASS (r14) | PASS (r14) |
 
-每个单元显式指定引擎与 --dir，隔离产品数据库和原生存储。宿主与引擎均报告 0.3.7。凭据只通过进程内存传递。验收读取原生持久化完成、用量及标题记录，退出码为零但运行中断不能通过。主模型为 zhipuai-coding-plan/glm-5.3-flash，图片单元为 glm-4.6v；源码与可执行文件摘要见 provenance.json。
+R14 的 Rust 权限单元中，两次 rm 均被正确拒绝；模型随后使用该测试策略允许的 apply_patch 删除文件。保留此次失败。此处测试指令应明确要求拒绝后停止，才能单独验证命令级规则；现有记录不能证明权限匹配被绕过。
 
-R2 曾通过 22/24，两个产品缺陷分别是显式上下文限制被覆盖和 TS 短命令退出前标题尚未保存。#1422、#1423 修复后经 R3–R5 定向验证通过，本次完整 R7 也均通过。旧轮次及此前汇总保留在 runs；results.json 现在选择全部最新 R7 记录，包括失败，不会用较早通过结果遮盖新失败。
+每个单元显式指定 --engine、--dir，隔离产品数据库和原生存储。原生完成状态、用量与标题读取实际持久化记录，不能因中断命令退出码为零而判通过。Rust 强制压缩还要求 engine_compaction 记录；TS 压力场景只验证完成，不证明发生 TS 压缩。主模型是 zhipuai-coding-plan/glm-5.3-flash，图片场景使用 glm-4.6v。
 
-R7 主模型轮次参考成本为 $0.05362252294，R2–R5 为 $0.05987445618；均不含辅助标题调用，也不是订阅实付费用。视觉模型缺少目录价格而记零，不能据此认定免费。R6 因验收环境误固定零价原始目录、绕过正常参考价覆盖而中止，保留中止记录，不算一次完整验收。
+源码检查点为 599f279a785833d2b8bf152fcff7067a526ecf21。相较 R7，本次产物加入原生路由兼容检查、协议日志修复、MCP 原始身份保留、间接工具调用审批绑定、生命周期钩子取消、等待标题完整写回的协调修复，以及最终紧凑排队状态布局。provenance.json 记录产物摘要与修复提交；凭据只通过进程内存传递，公开证据中的私有测试路径已归一化。
 
-R7 产物包含 #1425 引擎配对与 #1426 并发创建修复。完整 Web UI 构建及编译版 TUI 在 120／42 列显示输入框均通过；模型验收不替代 App UI、最终 main 集成、最终安装产物或跨平台升级验收。另行发现的路由能力字段解码修复也不在本轮冻结产物中。未发布版本；外部编辑器／服务商／自然到期凭据验收及后续 Rust 迁移没有因此完成。
+完整 R13 仍为 **23/24**：原生命令正常退出后标题仍是默认值，促成 #1438 的标题生成／写回协调修复。完整 R14 之前，同一新产物的原生标题单项复验通过，单独保留，没有替换进完整矩阵。
+
+此前完整 R7 仍为 **23/24**：TS 工具调用单元直接回答提示中已有的 token，未执行要求的 bash 命令。同一冻结产物的单项重试通过，但没有替换最初失败。R2–R6 与各自限制也继续保留。本次是一次新的完整运行，没有拼接较早通过项。
+
+R14 主模型轮次参考成本为 $0.05058853966，不含辅助标题调用，也不是订阅实付费用；视觉模型目录缺价记零，不代表免费。
+
+同一 R14 产物的真实原生 TUI 已验证 120／42 列：常规运行与排队保持三行、空闲两行，阶段及排队计时持续更新，一次 Esc 移除待处理输入，再次 Esc 取消请求并持久化 interrupted。此前 R13 的两个原会话隔离副本在 200／42 列正常显示标题与未发送输入，原始及副本事件／运行数量保持 2158／9、1955／10，没有隐式执行旧任务。这些界面验证独立于模型矩阵。另有编译 R12 的严格 ACP 协议验证，以及 R11 实际编辑器接受、拒绝、取消的[完整记录](../2026-10-25-codecompanion-acp/results.json)。
+
+这仍是候选集成产物。最终 main 产物、App UI、最终跨平台升级、外部服务商／额度／自然到期凭据，以及后续 Rust 迁移仍是独立关口。本次验证没有发布版本。
