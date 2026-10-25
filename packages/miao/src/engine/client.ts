@@ -19,10 +19,12 @@ import { prepareMcpConfig } from "./mcp-config"
 export interface EngineOptions {
   /**
    * Headless callers that own the whole process lifetime (for example
-   * `miao run`) set this so close() terminates the engine child instead of
-   * detaching it. Interactive hosts keep the daemon alive on purpose.
+   * `miao run`) set this so close() immediately signals the engine child.
+   * Interactive hosts first request graceful shutdown of their stdio child.
    */
   ephemeral?: boolean
+  /** Bound control-plane RPCs; model execution itself runs asynchronously. */
+  requestTimeoutMs?: number
 
   binary: string
   db: string
@@ -326,6 +328,7 @@ export class EngineClient {
     private readonly onHookTool?: EngineOptions["onHookTool"],
     private readonly onProductToolCancel?: EngineOptions["onProductToolCancel"],
     private readonly ephemeral: boolean = false,
+    private readonly requestTimeoutMs = 60_000,
   ) {
     const stdout = this.readStdout().catch(() => {
       this.fail(new EngineError("engine_protocol", "miao-engine output stream failed"), true)
@@ -368,6 +371,7 @@ export class EngineClient {
         options.onHookTool,
         options.onProductToolCancel,
         options.ephemeral ?? false,
+        options.requestTimeoutMs,
       )
     } catch (error) {
       manifest?.dispose()
@@ -397,7 +401,28 @@ export class EngineClient {
     if (this.closed) return Promise.reject(new EngineError("engine_closed", "miao-engine client is closed"))
     const id = this.next++
     return new Promise<unknown>((resolve, reject) => {
-      this.pending.set(id, { resolve, reject })
+      const timeout = setTimeout(() => {
+        this.fail(
+          new EngineError(
+            "engine_request_timeout",
+            `miao-engine ${method} request timed out after ${this.requestTimeoutMs} ms; inspect its durable receipt before retrying`,
+          ),
+          true,
+        )
+        this.child.kill()
+        const force = setTimeout(() => this.child.kill("SIGKILL"), 1_000)
+        void this.child.exited.then(() => clearTimeout(force))
+      }, this.requestTimeoutMs)
+      this.pending.set(id, {
+        resolve: (value) => {
+          clearTimeout(timeout)
+          resolve(value)
+        },
+        reject: (error) => {
+          clearTimeout(timeout)
+          reject(error)
+        },
+      })
       try {
         this.child.stdin.write(JSON.stringify({ id, method, params }) + EOL)
         void Promise.resolve(this.child.stdin.flush()).catch(() => this.inputClosed())
@@ -454,20 +479,27 @@ export class EngineClient {
   async close() {
     if (this.closed) return
     this.closed = true
-    // Ending stdin asks the engine to exit, and a daemon with attached
-    // product-tool clients legitimately keeps serving afterwards — waiting
-    // for child exit here hung every interactive teardown. Detach instead:
-    // the engine exits on its own once its last client is gone. A headless
-    // caller owns the whole process lifetime, so its engine child must not
-    // outlive the run — every detached instance becomes an orphan.
-    if (this.ephemeral) {
-      this.child.kill()
-      this.child.exited.catch(() => {})
-      this.cleanup()
-      return
+    // This stdio child depends on its host for reverse tool calls. Detaching
+    // it leaves active runs waiting for replies that can never arrive, and
+    // inherited pipe descriptors can prevent stdin EOF indefinitely.
+    this.fail(new EngineError("engine_closed", "miao-engine client is closed"), true)
+    if (this.ephemeral) this.child.kill()
+    if (!this.ephemeral) {
+      await Promise.resolve()
+        .then(() => {
+          this.child.stdin.write(JSON.stringify({ id: this.next++, method: "shutdown" }) + EOL)
+          void Promise.resolve(this.child.stdin.flush()).catch(() => {})
+          this.child.stdin.end()
+        })
+        .catch(() => {})
     }
-    this.child.stdin.end()
-    this.child.exited.catch(() => {})
+    const exited = await Promise.race([this.child.exited.then(() => true), Bun.sleep(1_000).then(() => false)])
+    if (!exited) {
+      this.child.kill()
+      const stopped = await Promise.race([this.child.exited.then(() => true), Bun.sleep(1_000).then(() => false)])
+      if (!stopped) this.child.kill("SIGKILL")
+    }
+    await this.exited
     this.cleanup()
   }
 
@@ -511,7 +543,9 @@ export class EngineClient {
       const params = message.params as
         | { session_id?: string; name?: string; input?: unknown; call_id?: unknown; message_seq?: unknown }
         | undefined
-      const reply = (value: Record<string, unknown>) => this.child.stdin.write(JSON.stringify({ bridge_id: bridgeID, ...value }) + EOL)
+      const reply = (value: Record<string, unknown>) => {
+        if (this.available) this.child.stdin.write(JSON.stringify({ bridge_id: bridgeID, ...value }) + EOL)
+      }
       if (typeof bridgeID !== "number" || !params?.name || !this.onProductTool) {
         reply({ error: "product tool is not available on this host" })
         return
@@ -525,17 +559,18 @@ export class EngineClient {
         callID: typeof params.call_id === "string" && params.call_id.length > 0 ? params.call_id : String(bridgeID),
         bridgeID,
         ...(typeof params.message_seq === "number" ? { messageSeq: params.message_seq } : {}),
-      }).then(
-        (result) => reply({ result }),
-        (error) => reply({ error: error instanceof Error ? error.message : String(error) }),
-      )
+      })
+        .then(
+          (result) => reply({ result }),
+          (error) => reply({ error: error instanceof Error ? error.message : String(error) }),
+        )
+        .catch(() => this.inputClosed())
       return
     }
     if (message.method === "product_tool.cancel") {
       const bridgeID = message.bridge_id
       const params = message.params as { session_id?: string } | undefined
-      if (typeof bridgeID === "number")
-        this.onProductToolCancel?.({ sessionID: params?.session_id ?? "", bridgeID })
+      if (typeof bridgeID === "number") this.onProductToolCancel?.({ sessionID: params?.session_id ?? "", bridgeID })
       return
     }
     if (message.method === "hook_tool") {
@@ -551,8 +586,9 @@ export class EngineClient {
             definition?: unknown
           }
         | undefined
-      const reply = (value: Record<string, unknown>) =>
-        this.child.stdin.write(JSON.stringify({ bridge_id: bridgeID, ...value }) + EOL)
+      const reply = (value: Record<string, unknown>) => {
+        if (this.available) this.child.stdin.write(JSON.stringify({ bridge_id: bridgeID, ...value }) + EOL)
+      }
       if (typeof bridgeID !== "number" || !params?.kind || !this.onHookTool) {
         reply({ error: "tool hooks are not available on this host" })
         return
@@ -565,10 +601,12 @@ export class EngineClient {
         args: params.args,
         output: params.output,
         definition: params.definition,
-      }).then(
-        (result) => reply({ result }),
-        (error) => reply({ error: error instanceof Error ? error.message : String(error) }),
-      )
+      })
+        .then(
+          (result) => reply({ result }),
+          (error) => reply({ error: error instanceof Error ? error.message : String(error) }),
+        )
+        .catch(() => this.inputClosed())
       return
     }
     if (message.method === "event") for (const handler of this.eventHandlers) handler(message.params as EngineEvent)
