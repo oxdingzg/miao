@@ -64,7 +64,7 @@ test("the terminal title is re-asserted when the renderer reports focus", async 
         await Bun.sleep(10)
       }
     }
-    const expected = "miao | 查看历史消息无内容问题（v0.1.31）"
+    const expected = "查看历史消息无内容问题（v0.1.31）"
     await waitFor(() => titles.includes(expected))
 
     // A terminal that restored its tab lost the title; focus brings it back.
