@@ -1939,6 +1939,7 @@ command: None,
                 Some(started.seq),
                 reply.content.clone(),
                 provider.reply_identity(&reply),
+                manifest.map(|manifest| manifest.name.as_str()),
                 lease,
             )
             .await?
