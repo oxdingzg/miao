@@ -141,7 +141,9 @@ jobs:
   window-runtime-windows:
     name: window runtime (windows)
     needs: changes
-    if: needs.changes.outputs.windows == 'true'
+    # Windows validation is not a per-commit gate: the nightly schedule and
+    # `release.yml` are where it runs (see specs/ci-windows.md).
+    if: needs.changes.outputs.windows == 'true' && (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch')
     runs-on: windows-2025
     timeout-minutes: 15
     defaults:
