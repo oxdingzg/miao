@@ -28,6 +28,7 @@ import { CredentialDaemon } from "@miao/core/credential/daemon"
 import os from "node:os"
 import path from "node:path"
 import { Config } from "@miao/core/config"
+import { SandboxPolicy } from "@miao/core/sandbox/policy"
 import { AbsolutePath } from "@miao/core/schema"
 import { ResponsesCacheContract, ResponsesWebSocketContract } from "@miao/schema/config"
 import { Global } from "@miao/core/global"
@@ -235,6 +236,23 @@ export const compactionSettings = async (
     if (info) documents.push(new Config.Document({ type: "document", info }))
   }
   return Option.getOrUndefined(Config.decodeDocument(Config.merge(documents)))?.compaction
+}
+
+/**
+ * The operator's sandbox switch for native engine commands: `MIAO_SANDBOX`
+ * wins, then the merged `sandbox.mode`. With neither set the engine keeps its
+ * historical always-sandboxed behavior.
+ */
+export const sandboxSettings = async (globalConfig: string): Promise<boolean> => {
+  const documents: Config.Entry[] = []
+  for (const name of Config.fileNames) {
+    const file = path.join(globalConfig, name)
+    if (!(await Bun.file(file).exists())) continue
+    const info = Option.getOrUndefined(Config.decodeDocument(Config.parseJsonc(await Bun.file(file).text())))
+    if (info) documents.push(new Config.Document({ type: "document", info }))
+  }
+  const merged = Option.getOrUndefined(Config.decodeDocument(Config.merge(documents)))
+  return SandboxPolicy.nativeEnabled(merged?.sandbox ? [merged.sandbox] : [], process.env)
 }
 
 /**
@@ -850,6 +868,7 @@ const layer = Layer.effect(
     const fs = yield* FSUtil.Service
     const settings = yield* Effect.promise(() => engineSettings(global.config))
     const compaction = yield* Effect.promise(() => compactionSettings(global.config))
+    const sandbox = yield* Effect.promise(() => sandboxSettings(global.config))
     const configuration = nativeEngineOptions(process.env, settings)
     if (!configuration) return yield* Effect.die("NativeEngine layer built without MIAO_ENGINE_BIN")
     if (process.env.MIAO_ENGINE_WORKER === "1") {
@@ -880,7 +899,7 @@ const layer = Layer.effect(
         const hooks = yield* ProductHooks.prepare(location, { ...effective, ...context.options })
         const lsp = yield* ProductLsp.prepare(location, effective)
         const formatter = yield* ProductFormatter.prepare(location, effective)
-        const policy = yield* ProductPolicy.prepare(effective)
+        const policy = yield* ProductPolicy.prepare(effective, sandbox)
         const productTools = yield* ProductTools.prepare(configuration, creation, {
           get: (input) =>
             ownerRouter === undefined

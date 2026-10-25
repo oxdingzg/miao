@@ -38,7 +38,7 @@ async fn wait_output(registry: &Registry, session: &str, id: &str, pattern: &str
 async fn interactive_terminal_input_resize_replay_and_session_isolation() {
     let dir = tempfile::tempdir().unwrap();
     let registry = Registry::default();
-    let started = registry.start("a", std::path::Path::new(env!("CARGO_BIN_EXE_miao-engine")), dir.path(), dir.path(), Start::parse(json!({"argv":["bash","-c","test -t 0 && test -t 1 && echo READY; while IFS= read -r line; do if test \"$line\" = size; then stty size; elif test \"$line\" = quit; then echo BYE; exit 7; else printf 'RESULT:%s\\n' \"$line\"; fi; done"]})).unwrap(), false).await.unwrap();
+    let started = registry.start("a", std::path::Path::new(env!("CARGO_BIN_EXE_miao-engine")), dir.path(), dir.path(), Start::parse(json!({"argv":["bash","-c","test -t 0 && test -t 1 && echo READY; while IFS= read -r line; do if test \"$line\" = size; then stty size; elif test \"$line\" = quit; then echo BYE; exit 7; else printf 'RESULT:%s\\n' \"$line\"; fi; done"]})).unwrap(), false, true).await.unwrap();
     let id = started["id"].as_str().unwrap();
     let ready = wait_output(&registry, "a", id, "READY").await;
     assert!(registry
@@ -124,7 +124,7 @@ async fn interactive_terminal_input_resize_replay_and_session_isolation() {
 async fn terminal_stop_and_shutdown_reap_processes_and_bound_output() {
     let dir = tempfile::tempdir().unwrap();
     let registry = Registry::default();
-    let started = registry.start("a", std::path::Path::new(env!("CARGO_BIN_EXE_miao-engine")), dir.path(), dir.path(), Start::parse(json!({"argv":["bash","-c","head -c 1200000 /dev/zero | tr '\\000' x; echo END; read -r line"]})).unwrap(), false).await.unwrap();
+    let started = registry.start("a", std::path::Path::new(env!("CARGO_BIN_EXE_miao-engine")), dir.path(), dir.path(), Start::parse(json!({"argv":["bash","-c","head -c 1200000 /dev/zero | tr '\\000' x; echo END; read -r line"]})).unwrap(), false, true).await.unwrap();
     let id = started["id"].as_str().unwrap();
     let output = tokio::time::timeout(Duration::from_secs(10), async {
         loop {
@@ -164,6 +164,7 @@ async fn terminal_stop_and_shutdown_reap_processes_and_bound_output() {
             Start::parse(json!({"argv":["bash","-c","echo $$ > pid; echo READY; read -r line"]}))
                 .unwrap(),
             false,
+            true,
         )
         .await
         .unwrap();
@@ -422,6 +423,7 @@ async fn start_terminal(registry: &Registry, argv: &[&str]) -> (Value, tempfile:
             dir.path(),
             input,
             false,
+            true,
         )
         .await
         .unwrap();
