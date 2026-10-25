@@ -132,3 +132,20 @@ test("a discontinuous journal fails instead of silently truncating replay", asyn
     }),
   ).rejects.toThrow("discontinuous")
 })
+
+test("caught-up idle polling does not reread a long journal", async () => {
+  const methods: string[] = []
+  const page = await replayJournal({
+    sessionID,
+    location,
+    engineID: "store",
+    after: 2500,
+    request: async (method) => {
+      methods.push(method)
+      if (method !== "snapshot") throw new Error("idle poll reread the journal")
+      return { session_id: sessionID, cursor: 2500 }
+    },
+  })
+  expect(methods).toEqual(["snapshot"])
+  expect(page).toEqual({ events: [], cursor: 2500, hasMore: false })
+})
