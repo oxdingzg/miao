@@ -1014,8 +1014,21 @@ const layer = Layer.effect(
             const locationContext = runtime as unknown as Context.Context<
               AgentV2.Service | EventV2.Service | SessionRunnerModel.Service
             >
+            const snapshot = yield* engine.snapshot(input)
+            const selection = Schema.decodeUnknownOption(Schema.NullOr(SessionModelRoute.Binding))(
+              snapshot["model_selection"],
+            )
+            const routes = yield* engine.modelRoutes(input)
+            const reference = Option.isSome(selection)
+              ? SessionModelRoute.reference(selection.value?.route_id ?? null)
+              : undefined
+            const route = routes.find(
+              (route) => route.model.id === reference?.id && route.model.providerID === reference?.providerID,
+            )
             return yield* SessionNativeTitle.afterRun({
               sessionID: input.sessionID,
+              model: route?.productModel,
+              credentialID: route?.credentialID,
               prompt: input.prompt,
               store: sessions,
               llm: llm,

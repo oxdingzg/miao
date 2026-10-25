@@ -229,3 +229,51 @@ test("concurrent title requests share the guard before asynchronous store reads"
   )
   expect(fixture.published).toHaveLength(1)
 })
+
+test("the serving model replaces a stale stored model and its credential pin", async () => {
+  const seen: SessionSchema.Info[] = []
+  const fixture = makeDeps({ ...info("New session"), credentialID: "cred_stale" as never })
+  fixture.deps.models.resolve = (session) => {
+    seen.push(session)
+    return Effect.succeed({
+      model: Model.make({ id: session.model!.id, provider: session.model!.providerID, route: {} as never }),
+      info: undefined as never,
+    })
+  }
+  const requests: string[] = []
+  fixture.deps.llm.stream = (request) => {
+    requests.push(request.model.id)
+    return request.model.id === "serving-model" ? llmStream() : Stream.empty
+  }
+  await Effect.runPromise(
+    SessionNativeTitle.afterRun({
+      ...fixture.deps,
+      model: { providerID: "working", id: "serving-model" } as never,
+      credentialID: "cred_serving" as never,
+    }),
+  )
+  expect(requests).toEqual(["serving-model"])
+  expect(String(seen[0]?.credentialID)).toBe("cred_serving")
+  expect(fixture.published).toHaveLength(1)
+})
+
+test("a serving model without a pin clears the stale stored credential", async () => {
+  const seen: SessionSchema.Info[] = []
+  const fixture = makeDeps({ ...info("New session"), model: undefined, credentialID: "cred_stale" as never })
+  fixture.deps.models.resolve = (session) => {
+    seen.push(session)
+    return Effect.succeed({
+      model: Model.make({ id: session.model!.id, provider: "working", route: {} as never }),
+      info: undefined as never,
+    })
+  }
+  await Effect.runPromise(
+    SessionNativeTitle.afterRun({
+      ...fixture.deps,
+      model: { providerID: "working", id: "serving-model" } as never,
+    }),
+  )
+  expect(String(seen[0]?.model?.id)).toBe("serving-model")
+  expect(seen[0]?.credentialID).toBeUndefined()
+  expect(fixture.published).toHaveLength(1)
+})

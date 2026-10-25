@@ -1,5 +1,7 @@
 export * as SessionNativeTitle from "./native-title"
 
+import type { Model } from "@miao/schema/model"
+import type { Credential } from "@miao/schema/credential"
 import type { LLMError, LLMEvent, LLMRequest } from "@miao/llm"
 import { SessionTitle } from "./title"
 import { SessionRunnerModel } from "./runner/model"
@@ -26,6 +28,8 @@ const inFlight = new Set<string>()
 export const afterRun = Effect.fn("SessionNativeTitle.afterRun")(function* (input: {
   readonly sessionID: SessionID
   readonly prompt: string
+  readonly model?: Model.Ref
+  readonly credentialID?: Credential.ID
   readonly store: { readonly get: SessionStore.Interface["get"] }
   readonly llm: { readonly stream: (request: LLMRequest) => Stream.Stream<LLMEvent, LLMError> }
   readonly agents: Pick<AgentV2.Interface, "get">
@@ -50,7 +54,12 @@ export const afterRun = Effect.fn("SessionNativeTitle.afterRun")(function* (inpu
     const preferred = titleAgent?.model
       ? Option.getOrUndefined(yield* input.models.resolve({ ...info, model: titleAgent.model }).pipe(Effect.option))
       : undefined
-    const own = Option.getOrUndefined(yield* input.models.resolve(info).pipe(Effect.option))
+    // The engine's selected route can differ from the creation-time product row.
+    const own = Option.getOrUndefined(
+      yield* input.models
+        .resolve(input.model ? { ...info, model: input.model, credentialID: input.credentialID } : info)
+        .pipe(Effect.option),
+    )
     // A stored native route may have disappeared from the product catalog.
     // Auxiliary naming may use the current default, without carrying a pin
     // belonging to the unavailable provider into that fallback resolution.
@@ -89,5 +98,8 @@ export const afterRun = Effect.fn("SessionNativeTitle.afterRun")(function* (inpu
       })
       return title
     }
+    yield* Effect.logWarning("Native Session title generation exhausted its model candidates").pipe(
+      Effect.annotateLogs({ sessionID: input.sessionID }),
+    )
   }).pipe(Effect.ensuring(Effect.sync(() => inFlight.delete(input.sessionID))))
 })
