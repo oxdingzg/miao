@@ -841,7 +841,7 @@ async fn serve(
                 _=signal_exit()=>{ break; },
                 _ = tokio::time::sleep_until(host_watch_deadline), if host_watch => {
                     #[cfg(unix)]
-                    if std::os::unix::process::parent_id() != initial_parent.unwrap_or(0) {
+                    if Some(std::os::unix::process::parent_id()) != initial_parent {
                         break;
                     }
                     host_watch_deadline = tokio::time::Instant::now() + Duration::from_secs(5);
