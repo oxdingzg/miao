@@ -452,6 +452,25 @@ async fn runtime_permission_denial_prevents_wire_dispatch_and_allowed_error_is_d
             )
             .await
             .unwrap();
+        // Hook execution has its own configured 30s bound. Start the separate
+        // provider-continuation deadline only once that work has settled.
+        if blocked {
+            tokio::time::timeout(std::time::Duration::from_secs(31), async {
+                loop {
+                    let events = store.events("s", 0, 200).await.unwrap();
+                    if events.iter().any(|event| event.kind == "hook.completed") {
+                        break;
+                    }
+                    assert!(
+                        !events.iter().any(|event| event.kind == "run.finished"),
+                        "run ended before its hook settled: {events:?}"
+                    );
+                    tokio::time::sleep(std::time::Duration::from_millis(5)).await;
+                }
+            })
+            .await
+            .unwrap();
+        }
         tokio::time::timeout(std::time::Duration::from_secs(3), done.notified())
             .await
             .unwrap();

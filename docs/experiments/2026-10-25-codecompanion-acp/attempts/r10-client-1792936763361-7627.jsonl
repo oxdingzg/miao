@@ -1,0 +1,2 @@
+{"id":1,"jsonrpc":"2.0","method":"initialize","params":{"protocolVersion":1,"clientCapabilities":{"fs":{"writeTextFile":true,"readTextFile":true}},"clientInfo":{"version":"1.0.0","name":"CodeCompanion.nvim"}}}
+{"id":2,"jsonrpc":"2.0","method":"session/new","params":{"mcpServers":[],"cwd":"[workspace]"}}

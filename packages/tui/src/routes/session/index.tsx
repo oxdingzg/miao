@@ -285,6 +285,10 @@ export function Session() {
   // Delivery state is transient chrome, not a transcript event: it lives on the
   // footer line instead of growing the history row it belongs to.
   const latestReceipt = createMemo(() => sync.prompt.latest(route.sessionID))
+  const inlineReceipt = createMemo(() => {
+    const status = sync.data.session_status[route.sessionID]
+    return latestReceipt()?.state === "admitted" && visible() && (status?.type === "busy" || status?.type === "retry")
+  })
 
   const dimensions = useTerminalDimensions()
   const [sidebar, setSidebar] = kv.signal<"auto" | "hide">("sidebar", "auto")
@@ -1276,7 +1280,7 @@ export function Session() {
         }}
       >
         <box flexDirection="row" flexGrow={1} minHeight={0}>
-          <box flexGrow={1} minWidth={0} minHeight={0} paddingBottom={1} paddingLeft={1} paddingRight={1} gap={1}>
+          <box flexGrow={1} minWidth={0} minHeight={0} paddingLeft={1} paddingRight={1}>
             <Show when={session()} fallback={
               <box flexGrow={1} paddingTop={2}>
                 <text fg={theme.textMuted}>Loading session…</text>
@@ -1457,7 +1461,7 @@ export function Session() {
                 <Show when={transcript.bottom() > 0}>
                   <box height={transcript.bottom()} flexShrink={0} />
                 </Show>
-                <SessionActivity sessionID={route.sessionID} />
+                <SessionActivity sessionID={route.sessionID} settledOnly />
               </SessionScrollbox>
               <Show when={unseen() > 0}>
                 <box position="absolute" bottom={0} left={0} right={0} justifyContent="center" zIndex={100}>
@@ -1496,7 +1500,7 @@ export function Session() {
                 <Show when={session()?.parentID}>
                   <SubagentFooter />
                 </Show>
-                <Show when={latestReceipt()}>{(receipt) => <PromptStatus prompt={receipt()} />}</Show>
+                <Show when={!inlineReceipt() && latestReceipt()}>{(receipt) => <PromptStatus prompt={receipt()} />}</Show>
                 <SessionTimers sessionID={route.sessionID} />
                 <Show when={visible()}>
                   <pluginRuntime.Slot
@@ -1777,7 +1781,16 @@ function AssistantMessage(props: { message: TranscriptAssistantMessage; sessionI
         </box>
       </Show>
       <Switch>
-        <Match when={props.last || final() || aborted()}>
+        <Match
+          when={
+            (props.last || final() || aborted()) &&
+            !(props.last && (
+              sync.data.session_status[props.sessionID]?.type === "busy" ||
+              sync.data.session_status[props.sessionID]?.type === "retry" ||
+              sync.data.session_compaction[props.sessionID]
+            ))
+          }
+        >
           <box ref={(el: BoxRenderable) => alwaysSeparate.add(el)} paddingLeft={2}>
             <text marginTop={1} fg={theme.textMuted}>
               {Locale.titlecase(props.message.agent)}
