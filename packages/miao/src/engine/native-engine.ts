@@ -41,7 +41,7 @@ import type { OpenCodeEvent } from "@miao/protocol/groups/event"
 import { Location } from "@miao/schema/location"
 import { Cause, DateTime, Effect, Layer, Option, Queue, Schema, Context } from "effect"
 import { EngineError, type EngineOptions, type EngineEvent } from "./client"
-import { discoveredEngine } from "./discovery"
+import { discoveredEngine, resolveEngine } from "./discovery"
 import { makeEngineOwners } from "./owners"
 import type { EnginePricing } from "./session"
 import { NativeRecovery } from "./recovery"
@@ -103,9 +103,10 @@ export const nativeEngineOptions = (
   environment: Record<string, string | undefined> = process.env,
   settings: Omit<EngineOptions, "db" | "workspace"> | undefined = undefined,
 ): Omit<EngineOptions, "db" | "workspace"> | undefined => {
-  // Production discovery validates explicit overrides as well as installed
-  // candidates. Custom environments compose options without probing binaries.
-  const binary = environment === process.env ? discoveredEngine() : environment.MIAO_ENGINE_BIN
+  // An explicit binary wins; otherwise use a discovered, protocol-compatible
+  // installation so native Sessions need no environment variable. A custom
+  // environment object stays deterministic for tests.
+  const binary = environment.MIAO_ENGINE_BIN ?? (environment === process.env ? discoveredEngine() : undefined)
   if (!binary) return undefined
   const limits = environment.MIAO_CONTEXT_LIMITS
   // Precedence: the operator's environment overrides the global config file
@@ -943,6 +944,12 @@ const layer = Layer.effect(
     let locationPricing: EnginePricing | undefined
     const owners = yield* makeEngineOwners({ ...configuration, ...mcp }, (location) =>
       Effect.gen(function* () {
+        // A shared transport must not probe or reject binaries for TS-only
+        // Sessions. Validate when an actual native owner is opened.
+        yield* Effect.try({
+          try: () => resolveEngine({ environment: { MIAO_ENGINE_BIN: configuration.binary } }),
+          catch: (error) => new EngineError("engine_incompatible", error instanceof Error ? error.message : String(error)),
+        })
         const integrations = yield* Integration.Service
         const { prices, ...routes } = yield* ProductRoutes.prepare(location, configuration, compaction).pipe(
           Effect.provideService(Credential.Service, credentials),
