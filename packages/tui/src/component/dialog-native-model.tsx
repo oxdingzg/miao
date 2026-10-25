@@ -1,5 +1,6 @@
 import { nativeModelLabel } from "../util/native-model"
 import { createMemo, createResource, createSignal } from "solid-js"
+import { useLocal } from "../context/local"
 import { useSDK } from "../context/sdk"
 import { useSync } from "../context/sync"
 import { useTheme } from "../context/theme"
@@ -11,6 +12,7 @@ import { errorMessage } from "../util/error"
 /** A native Session selects only routes published by its owning engine. */
 export function DialogNativeModel(props: { sessionID: string; providerID?: string }) {
   const sdk = useSDK()
+  const local = useLocal()
   const sync = useSync()
   const dialog = useDialog()
   const toast = useToast()
@@ -80,6 +82,11 @@ export function DialogNativeModel(props: { sessionID: string; providerID?: strin
         void sdk.api.sessions
           .switchModel({ sessionID: props.sessionID, model: option.value })
           .then(async () => {
+            const selected = routes()?.find(
+              (route) => route.model.providerID === option.value.providerID && route.model.id === option.value.id,
+            )
+            if (selected?.productModel)
+              local.model.rememberNative(props.sessionID, { ...selected.productModel, variant: option.value.variant })
             await sync.session.reload(props.sessionID)
             dialog.clear()
           })

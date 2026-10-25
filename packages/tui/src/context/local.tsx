@@ -407,6 +407,20 @@ export const { use: useLocal, provider: LocalProvider } = createSimpleContext({
             save()
           })
         },
+        // A confirmed native selection updates future-session defaults, while
+        // the owning engine remains authoritative for this Session.
+        rememberNative(sessionID: string, selected: { providerID: string; id: string; variant?: string }) {
+          const model = { providerID: selected.providerID, modelID: selected.id }
+          if (!isModelValid(model)) return
+          const name = sync.session.get(sessionID)?.agent ?? agent.current()?.name
+          if (!name) return
+          batch(() => {
+            setModelStore("model", name, model)
+            setModelStore("recent", recentModels(model, modelStore.recent))
+            setModelStore("variant", `${model.providerID}/${model.modelID}`, selected.variant ?? "default")
+            save()
+          })
+        },
         toggleFavorite(model: { providerID: string; modelID: string }) {
           batch(() => {
             if (!isModelValid(model)) {
@@ -486,7 +500,14 @@ export const { use: useLocal, provider: LocalProvider } = createSimpleContext({
                   ...(value === undefined ? {} : { variant: value }),
                 },
               })
-              .then(() => sync.session.reload(current.sessionID))
+              .then(() => {
+                const selected = nativeRoutes()?.find(
+                  (route) => route.model.providerID === model.providerID && route.model.id === model.id,
+                )
+                if (selected?.productModel)
+                  result.model.rememberNative(current.sessionID, { ...selected.productModel, variant: value })
+                return sync.session.reload(current.sessionID)
+              })
               .catch((error: unknown) => {
                 toast.show({ variant: "error", message: errorMessage(error), duration: 6000 })
               })

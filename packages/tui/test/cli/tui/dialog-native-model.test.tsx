@@ -64,6 +64,38 @@ async function mount(root: string, reject = false, variant = false, providerID?:
   let restore: (() => void) | undefined
   let busy: (() => boolean) | undefined
   const fetch = createFetch((url, request) => {
+    if (url.pathname === "/api/config/providers")
+      return json({
+        data: {
+          default: {},
+          providers: [
+            {
+              id: "primary",
+              name: "Primary",
+              models: {
+                shared: {
+                  id: "shared",
+                  name: "shared",
+                  limit: { context: 0, input: 0, output: 0 },
+                  variants: { high: {} },
+                },
+              },
+            },
+            {
+              id: "account-two",
+              name: "account-two",
+              models: {
+                shared: {
+                  id: "shared",
+                  name: "shared",
+                  limit: { context: 0, input: 0, output: 0 },
+                  variants: { high: {} },
+                },
+              },
+            },
+          ],
+        },
+      })
     if (url.pathname === "/api/integration")
       return json({
         data: [
@@ -119,6 +151,7 @@ async function mount(root: string, reject = false, variant = false, providerID?:
           id: sessionID,
           projectID: "proj_test",
           title: "Native",
+          agent: "build",
           cost: 0,
           tokens: { input: 0, output: 0, reasoning: 0, cache: { read: 0, write: 0 } },
           time: { created: 0, updated: 0 },
@@ -218,6 +251,7 @@ async function mount(root: string, reject = false, variant = false, providerID?:
     app,
     until,
     selected,
+    preferences: async () => Bun.file(path.join(state, "model.json")).json(),
     cycle: () => cycle?.(),
     restore: () => restore?.(),
     busy: () => busy?.(),
@@ -240,6 +274,9 @@ test("renders host routes and submits the exact reference through the native mod
       (value) => !value.includes("Select model") && value.includes("Conversation model: account-two/shared"),
     )
     expect(updated).toContain("Conversation model: account-two/shared")
+    await view.until(() => Bun.file(path.join(tmp.path, "state/model.json")).size > 0)
+    expect((await view.preferences()).current.build).toEqual({ providerID: "account-two", modelID: "shared" })
+    expect((await view.preferences()).recent[0]).toEqual({ providerID: "account-two", modelID: "shared" })
   } finally {
     view.cleanup()
   }
@@ -255,6 +292,7 @@ test("keeps the route dialog open and shows engine selection errors", async () =
     const frame = await view.until((value) => value.includes("opaque history"))
     expect(frame).toContain("Select model")
     expect(view.selected).toHaveLength(1)
+    expect(await Bun.file(path.join(tmp.path, "state/model.json")).exists()).toBe(false)
   } finally {
     view.cleanup()
   }
@@ -272,6 +310,8 @@ test("host-advertised variants are selectable without inventing routes", async (
     expect(view.selected).toEqual([
       { model: { providerID: "native-engine", id: "account-two/shared", variant: "high" } },
     ])
+    await view.until((value) => !value.includes("Select model"))
+    expect((await view.preferences()).variant["account-two/shared"]).toBe("high")
   } finally {
     view.cleanup()
   }
