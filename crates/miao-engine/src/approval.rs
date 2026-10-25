@@ -11,6 +11,8 @@ pub struct Approval {
     pub call_id: String,
     pub location: String,
     pub tool: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub mcp: Option<crate::mcp::Identity>,
     pub resource: String,
     pub input: Value,
     pub input_hash: String,
