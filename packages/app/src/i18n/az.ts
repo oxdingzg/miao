@@ -1,4 +1,17 @@
 export const dict = {
+  "context.timeline.title": "Kontekst və keş tarixçəsi",
+  "context.timeline.step":
+    "{{model}} · {{time}} · {{input}} operativ işarələr · {{read}} keş oxunması · {{write}} keş yazma",
+  "context.timeline.requestWindow": "{{value}} sorğu zamanı işarə pəncərəsi",
+  "context.timeline.catalogWindow": "{{value}} cari kataloqda işarə pəncərəsi",
+  "context.timeline.unknownWindow": "Kontekst pəncərəsi naməlum",
+  "context.timeline.empty": "Heç bir sabit provayder istifadəsi hələ qeydə alınmayıb.",
+  "context.timeline.retry": "İstifadə tarixçəsini yenidən cəhd edin",
+  "context.timeline.compaction": "Kontekst sıxıldı",
+  "context.timeline.cacheRead": "Keş oxudu",
+  "context.timeline.cacheWrite": "Keş yazma",
+  "context.timeline.ttft": "İlk işarəyə {{value}} ms",
+
   "desktop.menu.app": "miao",
   "desktop.menu.file": "Fayl",
   "desktop.menu.edit": "Redaktə",
@@ -609,7 +622,8 @@ export const dict = {
   "toast.permissions.autoaccept.off.title": "İcazələrin avtomatik qəbulu dayandırıldı",
   "toast.permissions.autoaccept.off.description": "İcazə sorğuları təsdiq tələb edəcək",
   "settings.permissions.autoaccept.project.title": "Bu layihə üçün icazələri avtomatik qəbul et",
-  "settings.permissions.autoaccept.project.description": "Bu layihədəki istənilən sessiyadan gələn yeni icazə sorğularını soruşmadan cavablandır. Sesiya və qovluq səviyyəsindəki seçimlər üstünlük tutur.",
+  "settings.permissions.autoaccept.project.description":
+    "Bu layihədəki istənilən sessiyadan gələn yeni icazə sorğularını soruşmadan cavablandır. Sesiya və qovluq səviyyəsindəki seçimlər üstünlük tutur.",
   "toast.model.none.title": "Model seçilməyib",
   "toast.model.none.description": "Bu sessiyanı xülasə etmək üçün provayder qoşun",
   "toast.file.loadFailed.title": "Fayl yüklənə bilmədi",
@@ -671,8 +685,7 @@ export const dict = {
   "error.chain.didYouMean": "Bunu nəzərdə tuturdunuz: {{suggestions}}",
   "error.chain.modelNotFound": "Model tapılmadı: {{provider}}/{{model}}",
   "error.chain.checkConfig": "Konfiqurasiyanızdakı (miao.json) provayder/model adlarını yoxlayın",
-  "error.chain.mcpFailed":
-    'MCP server "{{name}}" uğursuz oldu. Qeyd: miao hələ MCP autentifikasiyasını dəstəkləmir.',
+  "error.chain.mcpFailed": 'MCP server "{{name}}" uğursuz oldu. Qeyd: miao hələ MCP autentifikasiyasını dəstəkləmir.',
   "error.chain.providerAuthFailed": "Provayder autentifikasiyası uğursuz oldu ({{provider}}): {{message}}",
   "error.chain.providerInitFailed":
     '"{{provider}}" provayderinin işə salınması uğursuz oldu. Giriş məlumatlarını və konfiqurasiyanı yoxlayın.',
@@ -943,8 +956,7 @@ export const dict = {
   "settings.general.row.appearance.title": "Görünüş",
   "settings.general.row.appearance.description": "Miao-un cihazınızda necə göründüyünü fərdiləşdirin",
   "settings.general.row.colorScheme.title": "Rəng sxemi",
-  "settings.general.row.colorScheme.description":
-    "Miao-un sistem, açıq və ya tünd mövzudan istifadə etməsini seçin",
+  "settings.general.row.colorScheme.description": "Miao-un sistem, açıq və ya tünd mövzudan istifadə etməsini seçin",
   "settings.general.row.theme.title": "Mövzu",
   "settings.general.row.theme.description": "Miao-un mövzusunu fərdiləşdirin.",
   "settings.general.row.font.title": "Kod şrifti",
@@ -978,7 +990,8 @@ export const dict = {
   "settings.general.row.reasoningSummaries.title": "Düşünmə xülasələrini göstər",
   "settings.general.row.reasoningSummaries.description": "Zaman xəttində modelin düşünmə xülasələrini göstər",
   "settings.general.row.turnDiffs.title": "Hər mərhələ üçün dəyişən faylları göstər",
-  "settings.general.row.turnDiffs.description": "Zaman xəttində hər tamamlanmış mərhələnin dəyişən fayllarını sətir sayları və açılan fərqlərlə sadalayır.",
+  "settings.general.row.turnDiffs.description":
+    "Zaman xəttində hər tamamlanmış mərhələnin dəyişən fayllarını sətir sayları və açılan fərqlərlə sadalayır.",
   "settings.general.row.shellToolPartsExpanded.title": "Shell alət hissələrini genişlət",
   "settings.general.row.shellToolPartsExpanded.description":
     "Zaman xəttində shell alət hissələrini standart olaraq genişlədilmiş göstər",

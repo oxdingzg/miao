@@ -33,7 +33,7 @@ does not claim ACP or the existing miao HttpApi is compatible.
 | `select_agent` | `session_id`, `agent` | `{agent_hash, changed}` |
 | `select_account` | `session_id`, `credential_id` (string or null) | `{binding, account, changed}` |
 | `events` | `session_id`, `after` | `Event[]` (page ≤ 100) |
-| `snapshot` | `session_id` | committed Session snapshot |
+| `snapshot` | `session_id`, `metadata_only?` | committed Session snapshot; metadata-only replies omit `messages` |
 | `sessions` | — | `string[]` (Session ids) |
 | `fork` | `session_id`, `target_session_id`, `message_seq?` | `{target_session_id}` |
 | `revert` | `session_id`, `checkpoint` | `{checkpoint, from_seq, reverted}` |
@@ -50,6 +50,11 @@ does not claim ACP or the existing miao HttpApi is compatible.
 | `crons` / `cancel_cron` | `session_id`, … | schedule |
 | `wakeups` / `cancel_wakeup` | `session_id`, … | schedule |
 | `shutdown` | — | terminates the process |
+
+`snapshot` defaults to the full transcript. Catalog and peer readers can set
+`metadata_only: true` to avoid projecting or serializing message bodies while
+retaining the same cursor, identity, pending work and Session state. An omitted
+`messages` field is not evidence that the Session has no history.
 
 `event` notifications are committed canonical events; `progress` notifications
 are ephemeral provider frames that are not durable and may be followed by a

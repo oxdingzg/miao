@@ -27,7 +27,9 @@ describe("tui sync", () => {
       expect(kv.get("session_directory_filter_enabled", true)).toBe(true)
       expect(session.at(-1)?.searchParams.get("roots")).toBeNull()
       expect(session.at(-1)?.searchParams.get("scope")).toBeNull()
-      expect(session.at(-1)?.searchParams.get("subpath")).toBe("packages/tui")
+      expect(session.at(-1)?.searchParams.get("directory")).toBe("/tmp/opencode/packages/tui")
+      expect(session.at(-1)?.searchParams.get("project")).toBeNull()
+      expect(session.at(-1)?.searchParams.get("subpath")).toBeNull()
 
       kv.set("session_directory_filter_enabled", false)
       await sync.session.refresh()
@@ -35,6 +37,8 @@ describe("tui sync", () => {
       expect(session.at(-1)?.searchParams.get("scope")).toBeNull()
       expect(session.at(-1)?.searchParams.get("subpath")).toBeNull()
       expect(session.at(-1)?.searchParams.get("roots")).toBeNull()
+      expect(session.at(-1)?.searchParams.get("directory")).toBeNull()
+      expect(session.at(-1)?.searchParams.get("project")).toBe("proj_test")
     } finally {
       app.renderer.destroy()
     }

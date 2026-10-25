@@ -1,0 +1,60 @@
+[
+  {
+    "schemaVersion": 2,
+    "runID": "miao-context-before-nav-20261025",
+    "name": "performance: first navigation paint > opens an unvisited session tab without a blank frame",
+    "status": "passed",
+    "expectedStatus": "passed",
+    "retry": 0,
+    "repeatEachIndex": 0,
+    "context": {
+      "project": "chromium",
+      "platform": "darwin"
+    },
+    "metrics": {
+      "summary": {
+        "samples": 4,
+        "firstDestinationObservedMs": 33.19999980926514,
+        "stableDestinationObservedMs": 47.19999980926514,
+        "sourceSamples": 0,
+        "blankSamples": 0,
+        "unknownSamples": 0,
+        "destinationSamples": 4
+      },
+      "samples": [
+        {
+          "observedAtMs": 33.19999980926514,
+          "source": false,
+          "destination": true,
+          "content": true,
+          "pathname": "/server/aHR0cDovLzEyNy4wLjAuMTo0NDYw/session/ses_smoke_target",
+          "center": " charlie juliet quartz delta kilo river echo lima signal foxtrot metro vector go"
+        },
+        {
+          "observedAtMs": 39,
+          "source": false,
+          "destination": true,
+          "content": true,
+          "pathname": "/server/aHR0cDovLzEyNy4wLjAuMTo0NDYw/session/ses_smoke_target",
+          "center": " echo lima signal foxtrot metro vector golf nova alpha hotel orbit bravo india p"
+        },
+        {
+          "observedAtMs": 47.19999980926514,
+          "source": false,
+          "destination": true,
+          "content": true,
+          "pathname": "/server/aHR0cDovLzEyNy4wLjAuMTo0NDYw/session/ses_smoke_target",
+          "center": " echo lima signal foxtrot metro vector golf nova alpha hotel orbit bravo india p"
+        },
+        {
+          "observedAtMs": 55.39999961853027,
+          "source": false,
+          "destination": true,
+          "content": true,
+          "pathname": "/server/aHR0cDovLzEyNy4wLjAuMTo0NDYw/session/ses_smoke_target",
+          "center": " echo lima signal foxtrot metro vector golf nova alpha hotel orbit bravo india p"
+        }
+      ]
+    }
+  }
+]

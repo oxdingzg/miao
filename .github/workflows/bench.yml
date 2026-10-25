@@ -1,20 +1,16 @@
 name: bench
 
+# Benchmarks do not gate a change: the numbers move by more than the work being
+# measured does, so a pull-request run mostly produced a red status or a comment
+# that had to be ignored. Keep them on demand.
 on:
-  pull_request:
-    paths:
-      - "packages/core/bench/**"
-      - "packages/core/src/session/**"
-      - "packages/llm/src/**"
-      - ".github/workflows/bench.yml"
   workflow_dispatch:
 
 concurrency:
-  # A pull request shares one group per number, so a new push cancels its older
-  # run. A push to main groups by commit SHA, so every merged commit keeps a
-  # complete status instead of being superseded and cancelled.
-  group: ${{ format('{0}-bench-{1}', github.workflow, github.event.pull_request.number || github.sha) }}
-  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+  # One group per commit: a manual run of an older commit is cancelled once the
+  # same commit is dispatched again.
+  group: ${{ format('{0}-bench-{1}', github.workflow, github.sha) }}
+  cancel-in-progress: true
 
 jobs:
   bench:

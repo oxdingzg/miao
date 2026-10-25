@@ -1,0 +1,17 @@
+{
+  "spent": 0.00353030641,
+  "rows": [
+    {
+      "scenario": "tool-recall",
+      "engine": "ts",
+      "model": "zhipuai-coding-plan/glm-5.3-flash",
+      "status": "pass",
+      "seconds": 12.649,
+      "cost": 0.00353030641,
+      "tokensIn": 34477,
+      "tokensOut": 87,
+      "turns": 2,
+      "archived": "runs/r7-retry-ts/raw/tool-recall.ts.zhipuai-coding-plan-glm-5.3-flash"
+    }
+  ]
+}
