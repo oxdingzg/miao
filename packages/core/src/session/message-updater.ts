@@ -417,6 +417,8 @@ export function update(adapter: Adapter, event: SessionEvent.Event) {
         })
       },
       "session.next.retried": () => Effect.void,
+      // Request-only settlement facts stay in event history, never provider messages.
+      "session.next.context.pruned": () => Effect.void,
       "session.next.status": () => Effect.void,
       "session.next.notified": () => Effect.void,
       "session.next.failed": () => Effect.void,

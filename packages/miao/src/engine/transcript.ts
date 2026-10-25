@@ -100,6 +100,12 @@ async function readTranscriptWithSeq(
       active.has(sequence(event))
     )
       ids.add(event.data.messageID)
+    // Settlement cards are display facts, never additional provider context.
+    if (
+      (event.type === "session.next.context.pruned" || event.type === "session.next.compaction.ended") &&
+      !input.selected
+    )
+      ids.add(event.data.messageID)
     const reduced = project(reducer, messages, event)
     if (reduced) {
       messages = reduced.messages
@@ -141,7 +147,8 @@ async function readTranscriptWithSeq(
   // order as a stable stand-in for display and cursor arithmetic.
   for (const [index, message] of imported.entries()) if (!seqs.has(message.id)) seqs.set(message.id, index + 1)
   return {
-    messages: input.selected && snapshot.selection ? [result[0], ...imported, ...result.slice(1)] : [...imported, ...result],
+    messages:
+      input.selected && snapshot.selection ? [result[0], ...imported, ...result.slice(1)] : [...imported, ...result],
     seqs,
   }
 }
@@ -255,6 +262,10 @@ function project(
     case "session.next.model.switched":
       return reducer.reduce(source, { id: wire.id, type: wire.type, properties: wire.data })
     case "session.next.synthetic":
+      return reducer.reduce(source, { id: wire.id, type: wire.type, properties: wire.data })
+    case "session.next.context.pruned":
+      return reducer.reduce(source, { id: wire.id, type: wire.type, properties: wire.data })
+    case "session.next.compaction.ended":
       return reducer.reduce(source, { id: wire.id, type: wire.type, properties: wire.data })
     case "session.next.notification.admitted":
       return reducer.reduce(source, { id: wire.id, type: wire.type, properties: wire.data })

@@ -7,6 +7,7 @@ import { Prompt, CommandInvocation, AgentAttachment } from "@miao/schema/prompt"
 import { Question } from "@miao/schema/question"
 import { Delivery } from "@miao/schema/session-delivery"
 import { StatusInfo } from "@miao/schema/session-event"
+import { SessionContextManagement } from "@miao/schema/session-context-management"
 import { adoptSession, messageID } from "./identity"
 import type { EngineEvent, EngineProgress } from "./client"
 import { decodeAttachments } from "./prompt-attachments"
@@ -696,9 +697,34 @@ export function translateReasoning(event: EngineEvent): SessionReasoningEnded[] 
     }))
 }
 
-/** Maps the journal's compaction lifecycle events to the product
- * `session.next.compaction.started`/`ended` pair, so native compaction is
- * visible in every client instead of silently rewriting context. */
+/** Replay measured pruning facts without estimating tokens or changing history. */
+export function translateContextPruned(event: EngineEvent) {
+  if (event.kind !== "context.pruned" || !hasRecordedTime(event)) return
+  if (typeof event.data !== "object" || event.data === null) return
+  const data = event.data as Record<string, unknown>
+  const pruning = SessionContextManagement.decodePruning({
+    executionID: data.run_id,
+    step: data.step,
+    contextEpoch: data.context_epoch,
+    reason: data.reason,
+    scope: data.scope,
+    unit: data.unit,
+    payloads: data.payloads,
+    messages: data.messages,
+    beforeBytes: data.before_bytes,
+    afterBytes: data.after_bytes,
+    savedBytes: data.saved_bytes,
+  })
+  if (!pruning) return
+  return {
+    sessionID: adoptSession(event.session_id),
+    timestamp: eventTimestamp(event),
+    messageID: messageID(event.session_id, event.seq),
+    pruning,
+  }
+}
+
+/** Maps committed compaction lifecycle rows to the public client events. */
 export function translateCompaction(event: EngineEvent):
   | {
       type: "session.next.compaction.started"
@@ -718,6 +744,7 @@ export function translateCompaction(event: EngineEvent):
         reason: "auto"
         text: string
         recent: string
+        throughMessageSeq?: number
       }
     }
   | undefined {
@@ -736,9 +763,17 @@ export function translateCompaction(event: EngineEvent):
   if (event.kind === "pre_compact") return { type: "session.next.compaction.started", data: base }
   const summary = readNonEmptyString(data, "summary")
   if (summary === undefined) return undefined
+  const through = "through_message_seq" in data ? data.through_message_seq : undefined
   return {
     type: "session.next.compaction.ended",
-    data: { ...base, text: summary, recent: "" },
+    data: {
+      ...base,
+      text: summary,
+      recent: "",
+      ...(typeof through === "number" && Number.isSafeInteger(through) && through >= 0
+        ? { throughMessageSeq: through }
+        : {}),
+    },
   }
 }
 

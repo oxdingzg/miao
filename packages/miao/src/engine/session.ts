@@ -32,6 +32,7 @@ import {
   translateRunFailure,
   translateExpiredCredential,
   translateCompaction,
+  translateContextPruned,
   translateReasoning,
   translateStepEnded,
   translateTools,
@@ -406,6 +407,8 @@ export class EngineTranslator {
     }
     const compaction = translateCompaction(event)
     if (compaction) publish({ type: compaction.type, data: compaction.data })
+    const pruned = translateContextPruned(event)
+    if (pruned) publish({ type: "session.next.context.pruned", data: pruned })
     const retry = translateRetried(event)
     if (retry) publish({ type: "session.next.retried", data: retry })
     const request = translateProviderRequest(event)
@@ -480,7 +483,12 @@ export class EngineTranslator {
     this.#publish({
       type: fragment.type,
       data: fragment.data,
-      source: { sessionID, seq: anchor.seq, index: LIVE_ORDINAL_BASE + anchor.nextDelta++, recordedAtMs: anchor.recordedAtMs },
+      source: {
+        sessionID,
+        seq: anchor.seq,
+        index: LIVE_ORDINAL_BASE + anchor.nextDelta++,
+        recordedAtMs: anchor.recordedAtMs,
+      },
     })
   }
 }

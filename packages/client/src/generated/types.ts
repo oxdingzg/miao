@@ -2305,6 +2305,32 @@ export type SessionsHistoryOutput = {
           readonly reason: "auto" | "manual"
           readonly text: string
           readonly recent: string
+          readonly throughMessageSeq?: number
+        }
+      }
+    | {
+        readonly id: string
+        readonly metadata?: { readonly [x: string]: JsonValue }
+        readonly type: "session.next.context.pruned"
+        readonly durable?: { readonly aggregateID: string; readonly seq: number; readonly version: number }
+        readonly location?: { readonly directory: string; readonly workspaceID?: string }
+        readonly data: {
+          readonly timestamp: number
+          readonly sessionID: string
+          readonly messageID: string
+          readonly pruning: {
+            readonly executionID: string
+            readonly step: number
+            readonly contextEpoch: number
+            readonly reason: "tool_output_budget"
+            readonly scope: "tool_result_payloads"
+            readonly unit: "utf8_bytes"
+            readonly payloads: number
+            readonly messages: number
+            readonly beforeBytes: number
+            readonly afterBytes: number
+            readonly savedBytes: number
+          }
         }
       }
     | {
@@ -3028,6 +3054,32 @@ export type SessionsEventsOutput =
         readonly reason: "auto" | "manual"
         readonly text: string
         readonly recent: string
+        readonly throughMessageSeq?: number
+      }
+    }
+  | {
+      readonly id: string
+      readonly metadata?: { readonly [x: string]: unknown }
+      readonly type: "session.next.context.pruned"
+      readonly durable?: { readonly aggregateID: string; readonly seq: number; readonly version: number }
+      readonly location?: { readonly directory: string; readonly workspaceID?: string }
+      readonly data: {
+        readonly timestamp: number
+        readonly sessionID: string
+        readonly messageID: string
+        readonly pruning: {
+          readonly executionID: string
+          readonly step: number
+          readonly contextEpoch: number
+          readonly reason: "tool_output_budget"
+          readonly scope: "tool_result_payloads"
+          readonly unit: "utf8_bytes"
+          readonly payloads: number
+          readonly messages: number
+          readonly beforeBytes: number
+          readonly afterBytes: number
+          readonly savedBytes: number
+        }
       }
     }
   | {
@@ -6842,6 +6894,7 @@ export type EventsDurableOutput =
         readonly reason: "auto" | "manual"
         readonly text: string
         readonly recent: string
+        readonly throughMessageSeq?: number
       }
     }
   | {
@@ -6857,6 +6910,57 @@ export type EventsDurableOutput =
         readonly reason: "auto" | "manual"
         readonly text: string
         readonly recent: string
+        readonly throughMessageSeq?: number
+      }
+    }
+  | {
+      readonly id: string
+      readonly metadata?: { readonly [x: string]: unknown }
+      readonly type: "session.next.context.pruned"
+      readonly durable?: { readonly aggregateID: string; readonly seq: number; readonly version: number }
+      readonly location?: { readonly directory: string; readonly workspaceID?: string }
+      readonly data: {
+        readonly timestamp: number
+        readonly sessionID: string
+        readonly messageID: string
+        readonly pruning: {
+          readonly executionID: string
+          readonly step: number
+          readonly contextEpoch: number
+          readonly reason: "tool_output_budget"
+          readonly scope: "tool_result_payloads"
+          readonly unit: "utf8_bytes"
+          readonly payloads: number
+          readonly messages: number
+          readonly beforeBytes: number
+          readonly afterBytes: number
+          readonly savedBytes: number
+        }
+      }
+    }
+  | {
+      readonly id: string
+      readonly metadata?: { readonly [x: string]: unknown }
+      readonly type: "session.next.context.pruned"
+      readonly durable?: { readonly aggregateID: string; readonly seq: number; readonly version: number }
+      readonly location?: { readonly directory: string; readonly workspaceID?: string }
+      readonly data: {
+        readonly timestamp: number
+        readonly sessionID: string
+        readonly messageID: string
+        readonly pruning: {
+          readonly executionID: string
+          readonly step: number
+          readonly contextEpoch: number
+          readonly reason: "tool_output_budget"
+          readonly scope: "tool_result_payloads"
+          readonly unit: "utf8_bytes"
+          readonly payloads: number
+          readonly messages: number
+          readonly beforeBytes: number
+          readonly afterBytes: number
+          readonly savedBytes: number
+        }
       }
     }
   | {

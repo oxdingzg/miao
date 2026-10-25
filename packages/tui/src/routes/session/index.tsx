@@ -86,6 +86,7 @@ import {
 import { SessionTimers } from "./timers"
 import { SessionMessageContent } from "./session-message"
 import { PromptStatus } from "./prompt-status"
+import { CompactionSettlement, PruningSettlement } from "./context-settlement"
 import { providerErrorText } from "./provider-failure"
 import type { PendingPrompt } from "../../context/pending-prompts"
 import { parseSessionMessage } from "../../util/session-message"
@@ -1410,7 +1411,11 @@ export function Session() {
                         <></>
                       </Match>
                       <Match when={message.type === "compaction"}>
-                        <box marginTop={1} border={["top"]} title=" Context compacted " titleAlignment="center" borderColor={theme.borderActive} />
+                        <CompactionSettlement summary={message.type === "compaction" ? message.summary : ""}
+                          through={message.metadata?.throughMessageSeq} />
+                      </Match>
+                      <Match when={message.type === "synthetic" && message.metadata?.contextPruned}>
+                        <PruningSettlement value={message.metadata?.contextPruned} />
                       </Match>
                       <Match when={message.type === "synthetic" && message.metadata?.notificationPause}>
                         <box marginTop={1} paddingLeft={2} paddingRight={2} flexShrink={0}>
