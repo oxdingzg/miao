@@ -3,6 +3,19 @@ import { dict as en } from "./en"
 type Keys = keyof typeof en
 
 export const dict = {
+  "context.timeline.title": "上下文與快取歷程",
+  "context.timeline.step":
+    "{{model}} · {{time}} · 提示詞 {{input}} token · 快取讀取 {{read}} token · 快取寫入 {{write}} token",
+  "context.timeline.requestWindow": "請求時的上下文視窗：{{value}} token",
+  "context.timeline.catalogWindow": "目前模型目錄中的上下文視窗：{{value}} token",
+  "context.timeline.unknownWindow": "上下文視窗未知",
+  "context.timeline.empty": "尚未記錄已結算的模型呼叫用量。",
+  "context.timeline.retry": "重新載入用量歷程",
+  "context.timeline.compaction": "上下文已壓縮",
+  "context.timeline.cacheRead": "快取讀取",
+  "context.timeline.cacheWrite": "快取寫入",
+  "context.timeline.ttft": "首個 token 延遲 {{value}} 毫秒",
+
   "desktop.menu.app": "miao",
   "desktop.menu.file": "檔案",
   "desktop.menu.edit": "編輯",
@@ -261,8 +274,7 @@ export const dict = {
   "provider.connect.oauth.code.invalid": "授權碼無效",
   "provider.connect.oauth.auto.visit.prefix": "造訪 ",
   "provider.connect.oauth.auto.visit.link": "此連結",
-  "provider.connect.oauth.auto.visit.suffix":
-    " 並輸入以下程式碼，以連線你的帳戶並在 miao 中使用 {{provider}} 模型。",
+  "provider.connect.oauth.auto.visit.suffix": " 並輸入以下程式碼，以連線你的帳戶並在 miao 中使用 {{provider}} 模型。",
   "provider.connect.oauth.auto.confirmationCode": "確認碼",
   "provider.connect.toast.connected.title": "{{provider}} 已連線",
   "provider.connect.toast.connected.description": "現在可以使用 {{provider}} 模型了。",
@@ -634,7 +646,8 @@ export const dict = {
   "toast.permissions.autoaccept.off.title": "已停止自動接受權限",
   "toast.permissions.autoaccept.off.description": "權限要求將需要核准",
   "settings.permissions.autoaccept.project.title": "自動接受本專案的權限請求",
-  "settings.permissions.autoaccept.project.description": "自動批准本專案內所有會話的權限請求。會話與目錄的選擇仍然優先。",
+  "settings.permissions.autoaccept.project.description":
+    "自動批准本專案內所有會話的權限請求。會話與目錄的選擇仍然優先。",
 
   "toast.model.none.title": "未選擇模型",
   "toast.model.none.description": "請先連線提供者以摘要此工作階段",

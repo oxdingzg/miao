@@ -1,4 +1,17 @@
 export const dict = {
+  "context.timeline.title": "Kontekst we keş keşbi",
+  "context.timeline.step":
+    "{{model}} · {{time}} · {{input}} gyssagly bellikler · {{read}} keş keşi oka · {{write}} keş keşi",
+  "context.timeline.requestWindow": "Talap wagtynda {{value}} bellik penjiresi",
+  "context.timeline.catalogWindow": "Häzirki katalogda {{value}} bellik penjiresi",
+  "context.timeline.unknownWindow": "Kontekst penjiresi näbelli",
+  "context.timeline.empty": "Entek kesgitlenen üpjün edijiniň ulanylyşy ýazylmady.",
+  "context.timeline.retry": "Ulanyş taryhyny gaýtadan synanyşyň",
+  "context.timeline.compaction": "Kontekst gysyldy",
+  "context.timeline.cacheRead": "Keş oka",
+  "context.timeline.cacheWrite": "Keş ýaz",
+  "context.timeline.ttft": "Ilkinji belgä {{value}} ms",
+
   "desktop.menu.app": "miao",
   "desktop.menu.file": "Faýl",
   "desktop.menu.edit": "Redaktirläň",
@@ -603,7 +616,8 @@ export const dict = {
   "toast.permissions.autoaccept.off.title": "Awto-kabul ediş rugsatlary bes edildi",
   "toast.permissions.autoaccept.off.description": "Rugsat haýyşlary tassyklamagy talap eder",
   "settings.permissions.autoaccept.project.title": "Auto-accept permissions for this project",
-  "settings.permissions.autoaccept.project.description": "Answer new permission requests from any session in this project without asking. Session and directory choices still win.",
+  "settings.permissions.autoaccept.project.description":
+    "Answer new permission requests from any session in this project without asking. Session and directory choices still win.",
   "toast.model.none.title": "Hiç hili model saýlanmady",
   "toast.model.none.description": "Bu sessiýany jemlemek üçin üpjün edijini birikdiriň",
   "toast.file.loadFailed.title": "Faýl ýükläp bilmedi",
@@ -934,8 +948,7 @@ export const dict = {
   "settings.general.row.appearance.title": "Daş görnüşi",
   "settings.general.row.appearance.description": "miao enjamyňyzda nähili görünýändigini düzüň",
   "settings.general.row.colorScheme.title": "Reňk shemasy",
-  "settings.general.row.colorScheme.description":
-    "miao ulgamy, ýagtylygy ýa-da garaňky temany yzarlaýandygyny saýlaň",
+  "settings.general.row.colorScheme.description": "miao ulgamy, ýagtylygy ýa-da garaňky temany yzarlaýandygyny saýlaň",
   "settings.general.row.theme.title": "Mowzuk",
   "settings.general.row.theme.description": "Miao-iň mowzuklydygyny düzüň.",
   "settings.general.row.font.title": "Kod şrifti",
@@ -968,8 +981,9 @@ export const dict = {
   "settings.general.row.reasoningSummaries.title": "Pikirleriň gysgaça mazmunyny görkeziň",
   "settings.general.row.reasoningSummaries.description":
     "Wagt görkezijisinde model pikirlenişiň gysgaça mazmunyny görkeziň",
-    "settings.general.row.turnDiffs.title": "Show changed files per turn",
-    "settings.general.row.turnDiffs.description": "List each finished turn's changed files with line counts and expandable diffs in the timeline.",
+  "settings.general.row.turnDiffs.title": "Show changed files per turn",
+  "settings.general.row.turnDiffs.description":
+    "List each finished turn's changed files with line counts and expandable diffs in the timeline.",
   "settings.general.row.shellToolPartsExpanded.title": "Shell gural böleklerini giňeltmek",
   "settings.general.row.shellToolPartsExpanded.description":
     "Wagt görkezijisinde deslapky görnüşde giňeldilen shell gural böleklerini görkeziň",

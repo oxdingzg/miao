@@ -22,3 +22,9 @@ These are single-run diagnostics, not a statistically established speedup or reg
 ## Existing harness limits
 
 The old streaming benchmark still emits retired `message.part.*` live events, so it fails to produce its expected text before these UI changes. The separate e2e typecheck also has pre-existing errors in `performance/timeline-stability/fixture.ts` and its test (legacy events and encoded/decoded message types). The production app typecheck passes. Neither harness issue is represented as a passing streaming or full-e2e typecheck result.
+
+## Localization review
+
+All 61 supported non-English dictionaries contain the context-history keys with matching placeholders. New English source copy is unchanged. Machine-assisted drafts were checked against the existing product dictionaries and available maintained browser/editor corpora; Simplified/Traditional Chinese and selected ambiguous retry/settlement phrases were corrected in context. `localization-sources.json` records the primary reference URLs per locale. Unicode CLDR supplies locale/script reference data; it is not treated as proof of every translated phrase.
+
+Sparse developer-corpus coverage remains for `am`, `bn`, `dv`, `dz`, `fo`, `hy`, `lo`, `mn`, `ne`, `sv`, `tk`, and `ur`. In particular, no maintained developer corpus was obtained for `dv`, and its language-academy dictionary endpoint returned HTTP 403. Native-speaker phrase review remains recommended, especially for this set. Key/placeholder parity and source availability do not certify native grammar.

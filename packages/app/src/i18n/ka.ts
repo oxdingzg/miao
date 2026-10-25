@@ -1,4 +1,17 @@
 export const dict = {
+  "context.timeline.title": "კონტექსტი და ქეში ისტორია",
+  "context.timeline.step":
+    "{{model}} · {{time}} · {{input}} მოთხოვნის ჟეტონები · {{read}} ქეში წაკითხვა · {{write}} ქეში ჩაწერა",
+  "context.timeline.requestWindow": "{{value}} ჟეტონის ფანჯარა მოთხოვნის დროს",
+  "context.timeline.catalogWindow": "{{value}} ჟეტონის ფანჯარა მიმდინარე კატალოგში",
+  "context.timeline.unknownWindow": "კონტექსტური ფანჯარა უცნობია",
+  "context.timeline.empty": "ჯერ დაფიქსირებული პროვაიდერის გამოყენება არ დაფიქსირებულა.",
+  "context.timeline.retry": "ხელახლა სცადეთ გამოყენების ისტორია",
+  "context.timeline.compaction": "კონტექსტი შეკუმშულია",
+  "context.timeline.cacheRead": "ქეში წაკითხული",
+  "context.timeline.cacheWrite": "ქეში ჩაწერა",
+  "context.timeline.ttft": "{{value}} ms პირველ ჟეტონამდე",
+
   "desktop.menu.app": "miao",
   "desktop.menu.file": "ფაილი",
   "desktop.menu.edit": "რედაქტირება",
@@ -602,7 +615,8 @@ export const dict = {
   "toast.permissions.autoaccept.off.title": "შეწყდა ნებართვების ავტომატური მიღება",
   "toast.permissions.autoaccept.off.description": "ნებართვის მოთხოვნა საჭიროებს დამტკიცებას",
   "settings.permissions.autoaccept.project.title": "ამ პროექტის ნებართვების ავტომატური მიღება",
-  "settings.permissions.autoaccept.project.description": "პასუხი ამ პროექტის ნებისმიერი სესიიდან ახალ ნებართვის მოთხოვნებზე კითხვის გარეშე. სესიისა და დირექტორიის დონის არჩევანი მაინც უპირატესია.",
+  "settings.permissions.autoaccept.project.description":
+    "პასუხი ამ პროექტის ნებისმიერი სესიიდან ახალ ნებართვის მოთხოვნებზე კითხვის გარეშე. სესიისა და დირექტორიის დონის არჩევანი მაინც უპირატესია.",
   "toast.model.none.title": "მოდელი არ არის არჩეული",
   "toast.model.none.description": "დააკავშირეთ პროვაიდერი ამ სესიის შესაჯამებლად",
   "toast.file.loadFailed.title": "ფაილის ჩატვირთვა ვერ მოხერხდა",
@@ -966,7 +980,8 @@ export const dict = {
   "settings.general.row.reasoningSummaries.title": "მსჯელობის შეჯამების ჩვენება",
   "settings.general.row.reasoningSummaries.description": "მოდელების მსჯელობის რეზიუმეების ჩვენება ვადებში",
   "settings.general.row.turnDiffs.title": "აჩვენე შეცვლილი ფაილები თითოეული ტურისთვის",
-  "settings.general.row.turnDiffs.description": "დროის ხაზზე ჩამოთვლის თითოეული დასრულებული ტურის შეცვლილ ფაილებს ხაზების რაოდენობით და გასაშლელი სხვაობებით.",
+  "settings.general.row.turnDiffs.description":
+    "დროის ხაზზე ჩამოთვლის თითოეული დასრულებული ტურის შეცვლილ ფაილებს ხაზების რაოდენობით და გასაშლელი სხვაობებით.",
   "settings.general.row.shellToolPartsExpanded.title": "Shell ხელსაწყოს ნაწილების გაფართოება",
   "settings.general.row.shellToolPartsExpanded.description":
     "Shell ხელსაწყოს ნაწილების ნაგულისხმევად გაფართოებული ჩვენება ქრონოლოგიაში",

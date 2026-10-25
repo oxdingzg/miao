@@ -1,4 +1,17 @@
 export const dict = {
+  "context.timeline.title": "Համատեքստ և քեշի պատմություն",
+  "context.timeline.step":
+    "{{model}} · {{time}} · {{input}} հուշման նշաններ · {{read}} cache read · {{write}} cache write",
+  "context.timeline.requestWindow": "{{value}} նշանի պատուհան հարցման ժամանակ",
+  "context.timeline.catalogWindow": "{{value}} նշանի պատուհան ընթացիկ կատալոգում",
+  "context.timeline.unknownWindow": "Համատեքստային պատուհանը անհայտ է",
+  "context.timeline.empty": "Դեռևս չի գրանցվել մատակարարի կողմից հաստատված օգտագործում:",
+  "context.timeline.retry": "Կրկին փորձեք օգտագործման պատմությունը",
+  "context.timeline.compaction": "Համատեքստը սեղմված է",
+  "context.timeline.cacheRead": "Քեշը կարդացել է",
+  "context.timeline.cacheWrite": "Քեշ գրել",
+  "context.timeline.ttft": "{{value}} ms մինչև առաջին նշանը",
+
   "desktop.menu.app": "miao",
   "desktop.menu.file": "Ֆայլ",
   "desktop.menu.edit": "Խմբագրել",
@@ -606,7 +619,8 @@ export const dict = {
   "toast.permissions.autoaccept.off.title": "Դադարեցվել է ավտոմատ ընդունելության թույլտվությունները",
   "toast.permissions.autoaccept.off.description": "Թույլտվության հարցումները կպահանջեն հաստատում",
   "settings.permissions.autoaccept.project.title": "Այս նախագծի թույլտվությունների ավտոմատ ընդունում",
-  "settings.permissions.autoaccept.project.description": "Պատասխանել այս նախագծի ցանկացած նստաշրջանի նոր թույլտվության հարցումներին առանց հարցնելու։ Նստաշրջանի և դիրեկտորիայի մակարդակի ընտրությունները գերազանց են։",
+  "settings.permissions.autoaccept.project.description":
+    "Պատասխանել այս նախագծի ցանկացած նստաշրջանի նոր թույլտվության հարցումներին առանց հարցնելու։ Նստաշրջանի և դիրեկտորիայի մակարդակի ընտրությունները գերազանց են։",
   "toast.model.none.title": "Ընտրված չէ մոդել",
   "toast.model.none.description": "Միացրեք մատակարարին՝ այս նիստն ամփոփելու համար",
   "toast.file.loadFailed.title": "Չհաջողվեց բեռնել ֆայլը",
@@ -973,7 +987,8 @@ export const dict = {
   "settings.general.row.reasoningSummaries.title": "Ցույց տալ հիմնավորման ամփոփագրերը",
   "settings.general.row.reasoningSummaries.description": "Ցուցադրել մոդելի հիմնավորման ամփոփագրերը ժամանակացույցում",
   "settings.general.row.turnDiffs.title": "Ցույց տալ փոխված ֆայլերը ըստ քայլերի",
-  "settings.general.row.turnDiffs.description": "Ժամանակագծում թվարկում է ամեն ավարտված քայլի փոխված ֆայլերը տողերի հաշվով և ընդարձակվող տարբերություններով։",
+  "settings.general.row.turnDiffs.description":
+    "Ժամանակագծում թվարկում է ամեն ավարտված քայլի փոխված ֆայլերը տողերի հաշվով և ընդարձակվող տարբերություններով։",
   "settings.general.row.shellToolPartsExpanded.title": "Ընդարձակել Shell գործիքի մասերը",
   "settings.general.row.shellToolPartsExpanded.description":
     "Ցուցադրել ժամանակացույցում լռելյայնորեն ընդլայնված shell գործիքի մասերը",

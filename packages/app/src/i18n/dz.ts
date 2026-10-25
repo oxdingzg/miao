@@ -1,4 +1,17 @@
 export const dict: Record<string, string> = {
+  "context.timeline.title": "སྐབས་དོན་དང་འདྲ་མཛོད་ལོ་རྒྱུས།",
+  "context.timeline.step":
+    "{{model}} · {{time}} · {{input}} བརྡ་འཕྲིན་ཊོ་ཀེན་ཚུ་ · {{read}} འདྲ་མཛོད་བཀླག · {{write}} འདྲ་མཛོད་བྲིས།",
+  "context.timeline.requestWindow": "{{value}} ཞུ་བ་དུས་ཚོད་ལུ་ཊོ་ཀེན་སྒོ་སྒྲིག།",
+  "context.timeline.catalogWindow": "{{value}} ད་ལྟོའི་ཐོ་གཞུང་ནང་ཊོ་ཀེན་སྒོ་སྒྲིག།",
+  "context.timeline.unknownWindow": "སྐབས་དོན་སྒོ་སྒྲིག་མ་ཤེས།",
+  "context.timeline.empty": "ད་ལྟོ་ཚུན་ཚོད་ གཞི་བཅག་ཡོད་པའི་བྱིན་མི་ལག་ལེན་ཐོ་བཀོད་མ་འབད་བས།",
+  "context.timeline.retry": "ལག་ལེན་བྱུང་རབས་ལོག་འབད་རྩོལ་བསྐྱེད།",
+  "context.timeline.compaction": "སྐབས་དོན་བསྡུ་སྒྲིག་འབད་ཡོདཔ།",
+  "context.timeline.cacheRead": "འདྲ་མཛོད་ལྷག་ཡོདཔ།",
+  "context.timeline.cacheWrite": "འདྲ་མཛོད་བྲིས།",
+  "context.timeline.ttft": "{{value}} ཨེམ་ཨེསི་ ཊོ་ཀེན་དང་པ་ལུ།",
+
   "desktop.menu.app": "miao",
   "desktop.menu.file": "ཡིག༌སྣོད",
   "desktop.menu.edit": "ཞུན༌དག",
@@ -611,7 +624,8 @@ export const dict: Record<string, string> = {
   "toast.permissions.autoaccept.off.title": "རང་བཞིན་དང་ལེན་གནང་བ་ཚུ་ བཀག་བཞག་ཡོདཔ།",
   "toast.permissions.autoaccept.off.description": "གནང་བ་ཞུ་བ་ཚུ་ལུ་ ཆ་འཇོག་དགོཔ་ཨིན།",
   "settings.permissions.autoaccept.project.title": "Auto-accept permissions for this project",
-  "settings.permissions.autoaccept.project.description": "Answer new permission requests from any session in this project without asking. Session and directory choices still win.",
+  "settings.permissions.autoaccept.project.description":
+    "Answer new permission requests from any session in this project without asking. Session and directory choices still win.",
   "toast.model.none.title": "དཔེ་ཚད་སེལ་འཐུ་མ་འབད་བས།",
   "toast.model.none.description": "ལཱ་ཡུན་འདི་བཅུད་བསྡུས་འབད་ནིའི་དོན་ལུ་ བྱིན་མི་ཅིག་མཐུད།",
   "toast.file.loadFailed.title": "ཡིག་སྣོད་མངོན་གསལ་འབད་ནི་འཐུས་ཤོར་འབྱུང་ཡོདཔ།",
@@ -947,8 +961,7 @@ export const dict: Record<string, string> = {
   "settings.general.row.shell.autoDefault": "རང་བཞིན་ (སྔོན་སྒྲིག)",
   "settings.general.row.shell.terminalOnly": "ཊར་མི་ནཱལ་རྐྱངམ་ཅིག།",
   "settings.general.row.appearance.title": "བཟོ་དབྱིབས",
-  "settings.general.row.appearance.description":
-    "Miaoའདི་ཁྱོད་རའི་ཐབས་འཕྲུལ་གུ་ག་དེ་སྦེ་མཐོངམ་ཨིན་ན་སྲོལ་སྒྲིག་འབད།",
+  "settings.general.row.appearance.description": "Miaoའདི་ཁྱོད་རའི་ཐབས་འཕྲུལ་གུ་ག་དེ་སྦེ་མཐོངམ་ཨིན་ན་སྲོལ་སྒྲིག་འབད།",
   "settings.general.row.colorScheme.title": "ཚོས་གཞིའི་འཆར་གཞི།",
   "settings.general.row.colorScheme.description":
     "miao གིས་ རིམ་ལུགས་དང་ འོད་ ཡང་ན་ གནགཔོ་གི་བརྗོད་དོན་ལུ་ རྗེས་སུ་འཇུག་ནི་ཨིན་ན་ གདམ་ཁ་རྐྱབས།",
@@ -985,8 +998,9 @@ export const dict: Record<string, string> = {
   "settings.general.row.reasoningSummaries.title": "རྒྱུ་མཚན་བཅུད་བསྡུས་ཚུ་སྟོན།",
   "settings.general.row.reasoningSummaries.description":
     "དུས་ཚོད་གྲལ་ཐིག་ནང་དཔེ་ཚད་དོན་དག་བཅུད་བསྡུས་ཚུ་བཀྲམ་སྟོན་འབད།",
-    "settings.general.row.turnDiffs.title": "Show changed files per turn",
-    "settings.general.row.turnDiffs.description": "List each finished turn's changed files with line counts and expandable diffs in the timeline.",
+  "settings.general.row.turnDiffs.title": "Show changed files per turn",
+  "settings.general.row.turnDiffs.description":
+    "List each finished turn's changed files with line counts and expandable diffs in the timeline.",
   "settings.general.row.shellToolPartsExpanded.title": "Shell ལག་ཆས་ཆ་ཤས་ཚུ་རྒྱ་བསྐྱེད་འབད།",
   "settings.general.row.shellToolPartsExpanded.description":
     "དུས་ཚོད་གྲལ་ཐིག་ནང་སྔོན་སྒྲིག་གིས་རྒྱ་བསྐྱེད་འབད་ཡོད་མི་ Shell ལག་ཆས་ཆ་ཤས་ཚུ་སྟོན།",

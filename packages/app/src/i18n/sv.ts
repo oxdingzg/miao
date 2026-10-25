@@ -1,4 +1,17 @@
 export const dict = {
+  "context.timeline.title": "Kontext och cachehistorik",
+  "context.timeline.step":
+    "{{model}} · {{time}} · {{input}} prompt tokens · {{read}} cache läs · {{write}} cache skriv",
+  "context.timeline.requestWindow": "{{value}} tokenfönster vid begäran",
+  "context.timeline.catalogWindow": "{{value}} tokenfönster i aktuell katalog",
+  "context.timeline.unknownWindow": "Kontextfönster okänt",
+  "context.timeline.empty": "Ingen fast leverantörsanvändning har registrerats ännu.",
+  "context.timeline.retry": "Försök med användningshistorik igen",
+  "context.timeline.compaction": "Kontext komprimerad",
+  "context.timeline.cacheRead": "Cache läst",
+  "context.timeline.cacheWrite": "Cache skriv",
+  "context.timeline.ttft": "{{value}} ms till första token",
+
   "desktop.menu.app": "miao",
   "desktop.menu.file": "Arkiv",
   "desktop.menu.edit": "Redigera",
@@ -607,7 +620,8 @@ export const dict = {
   "toast.permissions.autoaccept.off.title": "Slutade att automatiskt acceptera behörigheter",
   "toast.permissions.autoaccept.off.description": "Behörighetsförfrågningar kommer att kräva godkännande",
   "settings.permissions.autoaccept.project.title": "Acceptera behörigheter automatiskt för det här projektet",
-  "settings.permissions.autoaccept.project.description": "Besvara nya behörighetsförfrågningar från valfri session i det här projektet utan att fråga. Val per session och katalog går före.",
+  "settings.permissions.autoaccept.project.description":
+    "Besvara nya behörighetsförfrågningar från valfri session i det här projektet utan att fråga. Val per session och katalog går före.",
   "toast.model.none.title": "Ingen modell har valts",
   "toast.model.none.description": "Anslut en leverantör för att sammanfatta denna session",
   "toast.file.loadFailed.title": "Det gick inte att ladda filen",
@@ -971,7 +985,8 @@ export const dict = {
   "settings.general.row.reasoningSummaries.title": "Visa resonemangssammanfattningar",
   "settings.general.row.reasoningSummaries.description": "Visa modellresonemangssammanfattningar i tidslinjen",
   "settings.general.row.turnDiffs.title": "Visa ändrade filer per omgång",
-  "settings.general.row.turnDiffs.description": "Listar i tidslinjen de ändrade filerna för varje avslutad omgång, med radantal och utfällbara diffar.",
+  "settings.general.row.turnDiffs.description":
+    "Listar i tidslinjen de ändrade filerna för varje avslutad omgång, med radantal och utfällbara diffar.",
   "settings.general.row.shellToolPartsExpanded.title": "Expandera skalverktygsdelar",
   "settings.general.row.shellToolPartsExpanded.description":
     "Visa skalverktygsdelar expanderade som standard på tidslinjen",

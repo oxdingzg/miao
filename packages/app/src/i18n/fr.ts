@@ -1,4 +1,17 @@
 export const dict = {
+  "context.timeline.title": "Historique du contexte et du cache",
+  "context.timeline.step":
+    "{{model}} · {{time}} · {{input}} tokens de prompt · {{read}} lus dans le cache · {{write}} écrits dans le cache",
+  "context.timeline.requestWindow": "Fenêtre de {{value}} tokens lors de la requête",
+  "context.timeline.catalogWindow": "Fenêtre de {{value}} tokens dans le catalogue actuel",
+  "context.timeline.unknownWindow": "Fenêtre de contexte inconnue",
+  "context.timeline.empty": "Aucune utilisation finalisée du fournisseur n’a encore été enregistrée.",
+  "context.timeline.retry": "Recharger l’historique d’utilisation",
+  "context.timeline.compaction": "Contexte compacté",
+  "context.timeline.cacheRead": "Lecture du cache",
+  "context.timeline.cacheWrite": "Écriture dans le cache",
+  "context.timeline.ttft": "{{value}} ms avant le premier token",
+
   "desktop.menu.app": "miao",
   "desktop.menu.file": "Fichier",
   "desktop.menu.edit": "Édition",
@@ -495,8 +508,7 @@ export const dict = {
   "wsl.onboarding.wslUnavailable.title": "WSL indisponible",
   "wsl.onboarding.wslUnavailable.description": "miao n'a pas pu vérifier WSL sur cet appareil.",
   "wsl.onboarding.installWsl": "Installer WSL",
-  "wsl.onboarding.windowsRestartRequired":
-    "Redémarrez Windows pour terminer l'installation de WSL, puis rouvrez Miao.",
+  "wsl.onboarding.windowsRestartRequired": "Redémarrez Windows pour terminer l'installation de WSL, puis rouvrez Miao.",
   "wsl.onboarding.next": "Suivant",
   "wsl.onboarding.refresh": "Actualiser",
   "wsl.onboarding.allDistrosAdded": "Toutes les distributions installées ont déjà été ajoutées.",
@@ -609,7 +621,8 @@ export const dict = {
   "toast.permissions.autoaccept.off.title": "Acceptation automatique des permissions désactivée",
   "toast.permissions.autoaccept.off.description": "Les demandes de permission nécessiteront une approbation",
   "settings.permissions.autoaccept.project.title": "Accepter automatiquement les permissions pour ce projet",
-  "settings.permissions.autoaccept.project.description": "Répondre aux nouvelles demandes de permission de toute session de ce projet sans demander. Les choix par session et par répertoire restent prioritaires.",
+  "settings.permissions.autoaccept.project.description":
+    "Répondre aux nouvelles demandes de permission de toute session de ce projet sans demander. Les choix par session et par répertoire restent prioritaires.",
   "toast.model.none.title": "Aucun modèle sélectionné",
   "toast.model.none.description": "Connectez un fournisseur pour résumer cette session",
   "toast.file.loadFailed.title": "Échec du chargement du fichier",
@@ -633,8 +646,7 @@ export const dict = {
 
   "toast.session.listFailed.title": "Échec du chargement des sessions pour {{project}}",
   "toast.update.title": "Mise à jour disponible",
-  "toast.update.description":
-    "Une nouvelle version d'miao ({{version}}) est maintenant disponible pour installation.",
+  "toast.update.description": "Une nouvelle version d'miao ({{version}}) est maintenant disponible pour installation.",
   "toast.update.action.installRestart": "Installer et redémarrer",
   "toast.update.action.notYet": "Plus tard",
   "error.page.title": "Un problème est survenu",
@@ -828,8 +840,7 @@ export const dict = {
   "sidebar.workspaces.enable": "Activer les espaces de travail",
   "sidebar.workspaces.disable": "Désactiver les espaces de travail",
   "sidebar.gettingStarted.title": "Commencer",
-  "sidebar.gettingStarted.line1":
-    "miao inclut des modèles gratuits pour que vous puissiez commencer immédiatement.",
+  "sidebar.gettingStarted.line1": "miao inclut des modèles gratuits pour que vous puissiez commencer immédiatement.",
   "sidebar.gettingStarted.line2":
     "Connectez n'importe quel fournisseur pour utiliser des modèles, y compris Claude, GPT, Gemini etc.",
   "sidebar.project.recentSessions": "Sessions récentes",
@@ -897,8 +908,9 @@ export const dict = {
   "settings.general.row.reasoningSummaries.title": "Afficher les résumés de raisonnement",
   "settings.general.row.reasoningSummaries.description":
     "Afficher les résumés de raisonnement du modèle dans la chronologie",
-    "settings.general.row.turnDiffs.title": "Show changed files per turn",
-    "settings.general.row.turnDiffs.description": "List each finished turn's changed files with line counts and expandable diffs in the timeline.",
+  "settings.general.row.turnDiffs.title": "Show changed files per turn",
+  "settings.general.row.turnDiffs.description":
+    "List each finished turn's changed files with line counts and expandable diffs in the timeline.",
   "settings.general.row.shellToolPartsExpanded.title": "Développer les parties de l'outil shell",
   "settings.general.row.shellToolPartsExpanded.description":
     "Afficher les parties de l'outil shell développées par défaut dans la chronologie",

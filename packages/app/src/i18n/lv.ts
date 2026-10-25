@@ -1,4 +1,17 @@
 export const dict = {
+  "context.timeline.title": "Konteksts un kešatmiņas vēsture",
+  "context.timeline.step":
+    "{{model}} · {{time}} · {{input}} uzvednes marķieri · {{read}} kešatmiņas lasīšana · {{write}} kešatmiņas rakstīšana",
+  "context.timeline.requestWindow": "{{value}} marķiera logs pieprasījuma laikā",
+  "context.timeline.catalogWindow": "{{value}} marķiera logs pašreizējā katalogā",
+  "context.timeline.unknownWindow": "Konteksta logs nav zināms",
+  "context.timeline.empty": "Vēl nav reģistrēts neviens nodrošināts pakalpojumu sniedzēja lietojums.",
+  "context.timeline.retry": "Mēģiniet vēlreiz izmantot lietošanas vēsturi",
+  "context.timeline.compaction": "Konteksts sablīvēts",
+  "context.timeline.cacheRead": "Kešatmiņas lasīšana",
+  "context.timeline.cacheWrite": "Rakstīšana kešatmiņā",
+  "context.timeline.ttft": "{{value}} ms līdz pirmajam pilnvaram",
+
   "desktop.menu.app": "miao",
   "desktop.menu.file": "Fails",
   "desktop.menu.edit": "Rediģēt",
@@ -602,7 +615,8 @@ export const dict = {
   "toast.permissions.autoaccept.off.title": "Automātiska atļauju apstiprināšana apturēta",
   "toast.permissions.autoaccept.off.description": "Atļauju pieprasījumiem būs nepieciešams apstiprinājums",
   "settings.permissions.autoaccept.project.title": "Automātiski pieņemt šī projekta atļaujas",
-  "settings.permissions.autoaccept.project.description": "Atbildēt uz jauniem atļauju pieprasījumiem no jebkuras šī projekta sesijas bez jautāšanas. Sesijas un mapes līmeņa izvēles joprojām ir prioritāras.",
+  "settings.permissions.autoaccept.project.description":
+    "Atbildēt uz jauniem atļauju pieprasījumiem no jebkuras šī projekta sesijas bez jautāšanas. Sesijas un mapes līmeņa izvēles joprojām ir prioritāras.",
   "toast.model.none.title": "Nav izvēlēts modelis",
   "toast.model.none.description": "Pievienojiet nodrošinātāju, lai apkopotu šo sesiju",
   "toast.file.loadFailed.title": "Neizdevās ielādēt failu",
@@ -664,8 +678,7 @@ export const dict = {
   "error.chain.didYouMean": "Vai domājāt: {{suggestions}}",
   "error.chain.modelNotFound": "Modelis nav atrasts: {{provider}}/{{model}}",
   "error.chain.checkConfig": "Pārbaudiet konfigurāciju (miao.json) pakalpojuma/modela nosaukumus",
-  "error.chain.mcpFailed":
-    'MCP serveris "{{name}}" neizdevās. Ņemiet vērā, miao vēl neatbalsta MCP autentifikāciju.',
+  "error.chain.mcpFailed": 'MCP serveris "{{name}}" neizdevās. Ņemiet vērā, miao vēl neatbalsta MCP autentifikāciju.',
   "error.chain.providerAuthFailed": "Pakalpojuma autentifikācija neizdevās ({{provider}}): {{message}}",
   "error.chain.providerInitFailed":
     'Neizdevās inicializēt pakalpojumu "{{provider}}". Pārbaudiet akreditācijas datus un konfigurāciju.',
@@ -939,8 +952,7 @@ export const dict = {
   "settings.general.row.appearance.title": "Izskats",
   "settings.general.row.appearance.description": "Pielāgojiet, kā miao izskatās jūsu ierīcē",
   "settings.general.row.colorScheme.title": "Krāsu shēma",
-  "settings.general.row.colorScheme.description":
-    "Izvēlieties, vai miao sekos sistēmas, gaišajai vai tumšajai tēmai",
+  "settings.general.row.colorScheme.description": "Izvēlieties, vai miao sekos sistēmas, gaišajai vai tumšajai tēmai",
   "settings.general.row.theme.title": "Tēma",
   "settings.general.row.theme.description": "Pielāgojiet miao tēmu.",
   "settings.general.row.font.title": "Koda fonts",
@@ -972,7 +984,8 @@ export const dict = {
   "settings.general.row.reasoningSummaries.title": "Rādīt pamatojuma kopsavilkumus",
   "settings.general.row.reasoningSummaries.description": "Rādīt modeļa pamatojuma kopsavilkumus laika joslā",
   "settings.general.row.turnDiffs.title": "Rādīt mainītos failus katrai kārtai",
-  "settings.general.row.turnDiffs.description": "Uzskaita laika līnijā katras pabeigtās kārtas mainītos failus ar rindu skaitu un izvēršamām atšķirībām.",
+  "settings.general.row.turnDiffs.description":
+    "Uzskaita laika līnijā katras pabeigtās kārtas mainītos failus ar rindu skaitu un izvēršamām atšķirībām.",
   "settings.general.row.shellToolPartsExpanded.title": "Izvērst čaulas rīka daļas",
   "settings.general.row.shellToolPartsExpanded.description":
     "Pēc noklusējuma rādīt čaulas rīka daļas izvērstas laika joslā",

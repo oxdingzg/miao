@@ -1,4 +1,17 @@
 export const dict = {
+  "context.timeline.title": "Контекст болон кэшийн түүх",
+  "context.timeline.step":
+    "{{model}} · {{time}} · {{input}} шуурхай токенууд · {{read}} кэш унших · {{write}} кэш бичих",
+  "context.timeline.requestWindow": "Хүсэлтийн үед {{value}} жетон цонх",
+  "context.timeline.catalogWindow": "Одоогийн каталог дээрх {{value}} жетон цонх",
+  "context.timeline.unknownWindow": "Контекст цонх тодорхойгүй байна",
+  "context.timeline.empty": "Суурин үйлчилгээ үзүүлэгчийн хэрэглээ хараахан бүртгэгдээгүй байна.",
+  "context.timeline.retry": "Ашиглалтын түүхийг дахин оролдоно уу",
+  "context.timeline.compaction": "Контекст нягтруулсан",
+  "context.timeline.cacheRead": "Кэш уншсан",
+  "context.timeline.cacheWrite": "Кэш бичих",
+  "context.timeline.ttft": "Эхний токен хүртэл {{value}} мс",
+
   "desktop.menu.app": "miao",
   "desktop.menu.file": "Файл",
   "desktop.menu.edit": "Засварлах",
@@ -606,7 +619,8 @@ export const dict = {
   "toast.permissions.autoaccept.off.title": "Зөвшөөрлийг автоматаар хүлээн авахаа больсон",
   "toast.permissions.autoaccept.off.description": "Зөвшөөрлийн хүсэлтэд зөвшөөрөл шаардлагатай",
   "settings.permissions.autoaccept.project.title": "Энэ төслийн зөвшөөрлийг автоматаар хүлээн зөвшөөрөх",
-  "settings.permissions.autoaccept.project.description": "Энэ төслийн аль ч сессиэс ирүүлсэн шинэ зөвшөөрлийн хүсэлтэд асуухгүйгээр хариулах. Сесси болон лавлах түвшний сонголт тэргүүлэх хэвээр байна.",
+  "settings.permissions.autoaccept.project.description":
+    "Энэ төслийн аль ч сессиэс ирүүлсэн шинэ зөвшөөрлийн хүсэлтэд асуухгүйгээр хариулах. Сесси болон лавлах түвшний сонголт тэргүүлэх хэвээр байна.",
   "toast.model.none.title": "Ямар ч загвар сонгогдоогүй байна",
   "toast.model.none.description": "Энэ сессийг дүгнэхийн тулд үйлчилгээ үзүүлэгчийг холбоно уу",
   "toast.file.loadFailed.title": "Файлыг ачаалж чадсангүй",
@@ -976,7 +990,8 @@ export const dict = {
   "settings.general.row.reasoningSummaries.title": "Шалтгаануудын хураангуйг харуул",
   "settings.general.row.reasoningSummaries.description": "Загварын үндэслэлийн хураангуйг цагийн хуваарьт харуул",
   "settings.general.row.turnDiffs.title": "Бүх шатанд өөрчлөгдсөн файлуудыг харуулах",
-  "settings.general.row.turnDiffs.description": "Цаг хугацааны шугамд дууссан бүх шатны өөрчлөгдсөн файлуудын мөрийн тоо болон дэлгэх боломжтой зөрүүг харуулна.",
+  "settings.general.row.turnDiffs.description":
+    "Цаг хугацааны шугамд дууссан бүх шатны өөрчлөгдсөн файлуудын мөрийн тоо болон дэлгэх боломжтой зөрүүг харуулна.",
   "settings.general.row.shellToolPartsExpanded.title": "shell хэрэгслийн хэсгүүдийг өргөжүүлэх",
   "settings.general.row.shellToolPartsExpanded.description":
     "Он цагийн хэлхээс дээр анхдагчаар өргөтгөсөн shell хэрэгслийн хэсгүүдийг харуул",

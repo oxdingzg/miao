@@ -1,4 +1,17 @@
 export const dict = {
+  "context.timeline.title": "Контекст ва таърихи кэш",
+  "context.timeline.step":
+    "{{model}} · {{time}} · {{input}} аломатҳои фаврӣ · {{read}} хондани кэш · {{write}} навиштани кэш",
+  "context.timeline.requestWindow": "{{value}} равзанаи нишона дар вақти дархост",
+  "context.timeline.catalogWindow": "{{value}} равзанаи нишона дар каталоги ҷорӣ",
+  "context.timeline.unknownWindow": "Равзанаи контекстӣ номаълум",
+  "context.timeline.empty": "То ҳол истифодаи муқарраршудаи провайдер сабт нашудааст.",
+  "context.timeline.retry": "Таърихи истифода аз нав кӯшиш кунед",
+  "context.timeline.compaction": "Контекст фишурда шудааст",
+  "context.timeline.cacheRead": "Хондани кэш",
+  "context.timeline.cacheWrite": "Навиштани кэш",
+  "context.timeline.ttft": "{{value}} мс то аломати аввал",
+
   "desktop.menu.app": "miao",
   "desktop.menu.file": "Файл",
   "desktop.menu.edit": "Таҳрир",
@@ -605,7 +618,8 @@ export const dict = {
   "toast.permissions.autoaccept.off.title": "Қабули худкори иҷозатҳоро қатъ кард",
   "toast.permissions.autoaccept.off.description": "Дархостҳои иҷозат тасдиқро талаб мекунанд",
   "settings.permissions.autoaccept.project.title": "Қабули худкори иҷозатҳо барои ин лоиҳа",
-  "settings.permissions.autoaccept.project.description": "Ба дархостҳои нави иҷозат аз ҳар сессияи ин лоиҳа бепурсидан ҷавоб диҳед. Интихобҳо дар сатҳи сессия ва директория бартарӣ доранд.",
+  "settings.permissions.autoaccept.project.description":
+    "Ба дархостҳои нави иҷозат аз ҳар сессияи ин лоиҳа бепурсидан ҷавоб диҳед. Интихобҳо дар сатҳи сессия ва директория бартарӣ доранд.",
   "toast.model.none.title": "Ягон модел интихоб нашудааст",
   "toast.model.none.description": "Барои ҷамъбасти ин сессия провайдерро пайваст кунед",
   "toast.file.loadFailed.title": "Файлро бор карда натавонист",
@@ -935,8 +949,7 @@ export const dict = {
   "settings.general.row.shell.autoDefault": "Авто (Пешфарз)",
   "settings.general.row.shell.terminalOnly": "танҳо терминал",
   "settings.general.row.appearance.title": "Намуди зоҳирӣ",
-  "settings.general.row.appearance.description":
-    "Фармоиш диҳед, ки чӣ гуна miao дар дастгоҳи шумо намуди зоҳирӣ дорад",
+  "settings.general.row.appearance.description": "Фармоиш диҳед, ки чӣ гуна miao дар дастгоҳи шумо намуди зоҳирӣ дорад",
   "settings.general.row.colorScheme.title": "Схемаи ранг",
   "settings.general.row.colorScheme.description":
     "Интихоб кунед, ки miao аз рӯи система, равшанӣ ё мавзӯи торик пайравӣ мекунад",
@@ -972,7 +985,8 @@ export const dict = {
   "settings.general.row.reasoningSummaries.title": "Ҷамъбасти далелҳоро нишон диҳед",
   "settings.general.row.reasoningSummaries.description": "Дар ҷадвали вақт хулосаҳои далелҳои моделиро нишон диҳед",
   "settings.general.row.turnDiffs.title": "Намоиши файлҳои тағйирёфта барои ҳар давр",
-  "settings.general.row.turnDiffs.description": "Дар хати вақт файлҳои тағйирёфтаи ҳар даври анҷомёфта бо шумораи сатрҳо ва фарқҳои кушодашаванда рӯйхат мекунад.",
+  "settings.general.row.turnDiffs.description":
+    "Дар хати вақт файлҳои тағйирёфтаи ҳар даври анҷомёфта бо шумораи сатрҳо ва фарқҳои кушодашаванда рӯйхат мекунад.",
   "settings.general.row.shellToolPartsExpanded.title": "Қисмҳои shell асбобро васеъ кунед",
   "settings.general.row.shellToolPartsExpanded.description":
     "Дар ҷадвали вақт қисмҳои асбобҳои shell васеъшударо нишон диҳед",

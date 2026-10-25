@@ -1,4 +1,17 @@
 export const dict = {
+  "context.timeline.title": "Kontekst i historija keša",
+  "context.timeline.step":
+    "{{model}} · {{time}} · {{input}} prompt tokeni · {{read}} keš čitanje · {{write}} keš upisivanje",
+  "context.timeline.requestWindow": "{{value}} prozor tokena u trenutku zahtjeva",
+  "context.timeline.catalogWindow": "{{value}} prozor tokena u trenutnom katalogu",
+  "context.timeline.unknownWindow": "Kontekst prozor nepoznat",
+  "context.timeline.empty": "Još uvijek nije zabilježeno podmireno korištenje provajdera.",
+  "context.timeline.retry": "Ponovite historiju korištenja",
+  "context.timeline.compaction": "Kontekst zbijen",
+  "context.timeline.cacheRead": "Čitanje keša",
+  "context.timeline.cacheWrite": "Zapisivanje u keš memoriju",
+  "context.timeline.ttft": "{{value}} ms do prvog tokena",
+
   "desktop.menu.app": "miao",
   "desktop.menu.file": "Datoteka",
   "desktop.menu.edit": "Uredi",
@@ -642,7 +655,8 @@ export const dict = {
   "toast.permissions.autoaccept.off.title": "Zaustavljeno automatsko prihvatanje dozvola",
   "toast.permissions.autoaccept.off.description": "Zahtjevi za dozvole će zahtijevati odobrenje",
   "settings.permissions.autoaccept.project.title": "Automatski prihvati dozvole za ovaj projekat",
-  "settings.permissions.autoaccept.project.description": "Odgovori na nove zahtjeve za dozvole iz bilo koje sesije ovog projekta bez pitanja. Izbori na nivou sesije i direktorija imaju prednost.",
+  "settings.permissions.autoaccept.project.description":
+    "Odgovori na nove zahtjeve za dozvole iz bilo koje sesije ovog projekta bez pitanja. Izbori na nivou sesije i direktorija imaju prednost.",
 
   "toast.model.none.title": "Nije odabran model",
   "toast.model.none.description": "Poveži provajdera da sažmeš ovu sesiju",
@@ -954,7 +968,8 @@ export const dict = {
   "settings.general.row.reasoningSummaries.title": "Prikaži sažetke rasuđivanja",
   "settings.general.row.reasoningSummaries.description": "Prikaži sažetke rasuđivanja modela na vremenskoj traci",
   "settings.general.row.turnDiffs.title": "Prikaži promijenjene datoteke po krugu",
-  "settings.general.row.turnDiffs.description": "Na vremenskoj liniji navodi promijenjene datoteke svakog završenog kruga s brojem linija i proširivim razlikama.",
+  "settings.general.row.turnDiffs.description":
+    "Na vremenskoj liniji navodi promijenjene datoteke svakog završenog kruga s brojem linija i proširivim razlikama.",
 
   "settings.general.row.shellToolPartsExpanded.title": "Proširi dijelove shell alata",
   "settings.general.row.shellToolPartsExpanded.description":

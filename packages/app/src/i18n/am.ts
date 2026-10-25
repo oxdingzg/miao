@@ -1,4 +1,16 @@
 export const dict = {
+  "context.timeline.title": "የአውድ እና የመሸጎጫ ታሪክ",
+  "context.timeline.step": "{{model}} · {{time}} · {{input}} መጠየቂያ ምልክቶች · {{read}} መሸጎጫ ማንበብ · {{write}} መሸጎጫ ጻፍ",
+  "context.timeline.requestWindow": "በጥያቄ ጊዜ {{value}} ማስመሰያ መስኮት",
+  "context.timeline.catalogWindow": "በአሁኑ ካታሎግ ውስጥ {{value}} ማስመሰያ መስኮት",
+  "context.timeline.unknownWindow": "የአውድ መስኮት አይታወቅም።",
+  "context.timeline.empty": "ምንም የተስተካከለ የአቅራቢ አጠቃቀም እስካሁን አልተመዘገበም።",
+  "context.timeline.retry": "የአጠቃቀም ታሪክን እንደገና ይሞክሩ",
+  "context.timeline.compaction": "አውድ የታመቀ",
+  "context.timeline.cacheRead": "መሸጎጫ ተነቧል",
+  "context.timeline.cacheWrite": "መሸጎጫ ፃፍ",
+  "context.timeline.ttft": "ለመጀመሪያ ማስመሰያ {{value}} ሚሴ",
+
   "desktop.menu.app": "miao",
   "desktop.menu.file": "ፋይል",
   "desktop.menu.edit": "አርትዕ",
@@ -80,8 +92,7 @@ export const dict = {
   "desktop.wsl.error.miaoMissing": "ክፍት ኮድ በዚህ ዲስትሪ ውስጥ አልተጫነም",
   "desktop.wsl.error.miaoCannotRun": "ክፍት ኮድ ተጭኗል ግን ማሄድ አልቻለም",
   "desktop.wsl.error.miaoNotInstalled": "miao በ{{distro}}] ውስጥ አልተጫነም",
-  "desktop.wsl.error.updateVersion":
-    "miao ዝማኔ አልቋል ግን {{distro}} አሁንም ሪፖርት ያደርጋል {{installed}}; የሚጠበቀው {{expected}}",
+  "desktop.wsl.error.updateVersion": "miao ዝማኔ አልቋል ግን {{distro}} አሁንም ሪፖርት ያደርጋል {{installed}}; የሚጠበቀው {{expected}}",
   "desktop.wsl.error.noVersion": "ምንም ስሪት የለም",
   "desktop.wsl.error.serverExited": "WSL አገልጋይ ከተጀመረ በኋላ ወጥቷል (code={{code}} signal={{signal}})",
   "desktop.wsl.error.serverExitedBeforeHealthy":
@@ -219,8 +230,7 @@ export const dict = {
   "provider.connect.status.inProgress": "ፍቃድ በሂደት ላይ...",
   "provider.connect.status.waiting": "ፈቀዳን በመጠበቅ ላይ...",
   "provider.connect.status.failed": "ፍቃድ መስጠት አልተሳካም፡ {{error}}",
-  "provider.connect.apiKey.description":
-    "መለያዎን ለማገናኘት የ{{provider}} API ቁልፍዎን ያስገቡ እና {{provider}} ሞዴሎችን በMiao ይጠቀሙ።",
+  "provider.connect.apiKey.description": "መለያዎን ለማገናኘት የ{{provider}} API ቁልፍዎን ያስገቡ እና {{provider}} ሞዴሎችን በMiao ይጠቀሙ።",
   "provider.connect.apiKey.label": "{{provider}} API ቁልፍ",
   "provider.connect.apiKey.placeholder": "API ቁልፍ",
   "provider.connect.apiKey.required": "API ቁልፍ ያስፈልጋል",
@@ -231,8 +241,7 @@ export const dict = {
   "provider.connect.miaoZen.visit.suffix": " የእርስዎን API ቁልፍ ለመሰብሰብ።",
   "provider.connect.oauth.code.visit.prefix": "ጎብኝ ",
   "provider.connect.oauth.code.visit.link": "ይህ ሊንክ",
-  "provider.connect.oauth.code.visit.suffix":
-    " መለያዎን ለማገናኘት የፈቀዳ ኮድዎን ለመሰብሰብ እና {{provider}} ሞዴሎችን በMiao ውስጥ ይጠቀሙ።",
+  "provider.connect.oauth.code.visit.suffix": " መለያዎን ለማገናኘት የፈቀዳ ኮድዎን ለመሰብሰብ እና {{provider}} ሞዴሎችን በMiao ውስጥ ይጠቀሙ።",
   "provider.connect.oauth.code.label": "{{method}}የፈቀዳ ኮድ",
   "provider.connect.oauth.code.placeholder": "የፈቃድ ኮድ",
   "provider.connect.oauth.code.required": "የፈቃድ ኮድ ያስፈልጋል",
@@ -593,7 +602,8 @@ export const dict = {
   "toast.permissions.autoaccept.off.title": "በራስ-መቀበል ፍቃዶችን አቁሟል",
   "toast.permissions.autoaccept.off.description": "የፈቃድ ጥያቄዎች መጽደቅ ያስፈልጋቸዋል",
   "settings.permissions.autoaccept.project.title": "Auto-accept permissions for this project",
-  "settings.permissions.autoaccept.project.description": "Answer new permission requests from any session in this project without asking. Session and directory choices still win.",
+  "settings.permissions.autoaccept.project.description":
+    "Answer new permission requests from any session in this project without asking. Session and directory choices still win.",
   "toast.model.none.title": "ምንም ሞዴል አልተመረጠም",
   "toast.model.none.description": "ይህን ክፍለ ጊዜ ለማጠቃለል አቅራቢን ያገናኙ",
   "toast.file.loadFailed.title": "ፋይሉን መጫን አልተቻለም",
@@ -945,7 +955,8 @@ export const dict = {
   "settings.general.row.reasoningSummaries.title": "የምክንያት ማጠቃለያዎችን አሳይ",
   "settings.general.row.reasoningSummaries.description": "የሞዴል ማመዛዘኛ ማጠቃለያዎችን በጊዜ መስመር አሳይ",
   "settings.general.row.turnDiffs.title": "Show changed files per turn",
-  "settings.general.row.turnDiffs.description": "List each finished turn's changed files with line counts and expandable diffs in the timeline.",
+  "settings.general.row.turnDiffs.description":
+    "List each finished turn's changed files with line counts and expandable diffs in the timeline.",
   "settings.general.row.shellToolPartsExpanded.title": "የሼል መሣሪያ ክፍሎችን ዘርጋ",
   "settings.general.row.shellToolPartsExpanded.description": "የሼል መሣሪያ ክፍሎችን በጊዜ መስመር በነባሪነት ያሳዩ",
   "settings.general.row.editToolPartsExpanded.title": "የመሳሪያ ክፍሎችን ዘርጋ",

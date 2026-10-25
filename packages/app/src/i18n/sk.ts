@@ -1,4 +1,17 @@
 export const dict = {
+  "context.timeline.title": "Kontext a história vyrovnávacej pamäte",
+  "context.timeline.step":
+    "{{model}} · {{time}} · {{input}} tokeny výzvy · {{read}} čítanie do vyrovnávacej pamäte · {{write}} zápis do vyrovnávacej pamäte",
+  "context.timeline.requestWindow": "Okno tokenu {{value}} v čase vyžiadania",
+  "context.timeline.catalogWindow": "Okno tokenu {{value}} v aktuálnom katalógu",
+  "context.timeline.unknownWindow": "Kontextové okno neznáme",
+  "context.timeline.empty": "Zatiaľ nebolo zaznamenané žiadne ustálené používanie poskytovateľa.",
+  "context.timeline.retry": "Znova skúsiť históriu používania",
+  "context.timeline.compaction": "Kontext zhutnený",
+  "context.timeline.cacheRead": "Čítanie z vyrovnávacej pamäte",
+  "context.timeline.cacheWrite": "Zápis do vyrovnávacej pamäte",
+  "context.timeline.ttft": "{{value}} ms do prvého tokenu",
+
   "desktop.menu.app": "miao",
   "desktop.menu.file": "Súbor",
   "desktop.menu.edit": "Upraviť",
@@ -601,7 +614,8 @@ export const dict = {
   "toast.permissions.autoaccept.off.title": "Automatické schvaľovanie povolení zastavené",
   "toast.permissions.autoaccept.off.description": "Žiadosti o povolenie budú vyžadovať schválenie",
   "settings.permissions.autoaccept.project.title": "Automaticky prijímať oprávnenia pre tento projekt",
-  "settings.permissions.autoaccept.project.description": "Odpovedať na nové žiadosti o oprávnenia z ľubovoľnej relácie tohto projektu bez dotazu. Voľby pre reláciu a adresár majú prednosť.",
+  "settings.permissions.autoaccept.project.description":
+    "Odpovedať na nové žiadosti o oprávnenia z ľubovoľnej relácie tohto projektu bez dotazu. Voľby pre reláciu a adresár majú prednosť.",
   "toast.model.none.title": "Nie je vybraný model",
   "toast.model.none.description": "Pripojte poskytovateľa na zhrnutie tejto relácie",
   "toast.file.loadFailed.title": "Nepodarilo sa načítať súbor",
@@ -937,8 +951,7 @@ export const dict = {
   "settings.general.row.appearance.title": "Vzhľad",
   "settings.general.row.appearance.description": "Prispôsobte vzhľad miao na svojom zariadení",
   "settings.general.row.colorScheme.title": "Farebná schéma",
-  "settings.general.row.colorScheme.description":
-    "Vyberte, či má miao nasledovať systémovú, svetlú alebo tmavú tému",
+  "settings.general.row.colorScheme.description": "Vyberte, či má miao nasledovať systémovú, svetlú alebo tmavú tému",
   "settings.general.row.theme.title": "Téma",
   "settings.general.row.theme.description": "Prispôsobte tému Miao.",
   "settings.general.row.font.title": "Písmo kódu",
@@ -970,7 +983,8 @@ export const dict = {
   "settings.general.row.reasoningSummaries.title": "Zobraziť súhrny uvažovania",
   "settings.general.row.reasoningSummaries.description": "Zobrazovať súhrny uvažovania modelu v časovej osi",
   "settings.general.row.turnDiffs.title": "Zobraziť zmenené súbory pre každé kolo",
-  "settings.general.row.turnDiffs.description": "Vypisuje na časovej osi zmenené súbory každého dokončeného kola s počtami riadkov a rozbaliteľnými rozdielmi.",
+  "settings.general.row.turnDiffs.description":
+    "Vypisuje na časovej osi zmenené súbory každého dokončeného kola s počtami riadkov a rozbaliteľnými rozdielmi.",
   "settings.general.row.shellToolPartsExpanded.title": "Rozbaliť časti shell nástroja",
   "settings.general.row.shellToolPartsExpanded.description": "Predvolene rozbaliť časti shell nástroja v časovej osi",
   "settings.general.row.editToolPartsExpanded.title": "Rozbaliť časti editačného nástroja",

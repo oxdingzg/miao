@@ -1,0 +1,604 @@
+[
+  {
+    "locale": "am",
+    "source_count": 0,
+    "sources": {
+      "cldr": "https://raw.githubusercontent.com/unicode-org/cldr-json/main/cldr-json/cldr-localenames-full/main/am/languages.json"
+    },
+    "review": "native review recommended"
+  },
+  {
+    "locale": "ar",
+    "source_count": 2,
+    "sources": {
+      "browser": "https://raw.githubusercontent.com/mozilla-l10n/firefox-l10n/main/ar/browser/browser/preferences/preferences.ftl",
+      "cldr": "https://raw.githubusercontent.com/unicode-org/cldr-json/main/cldr-json/cldr-localenames-full/main/ar/languages.json",
+      "kde": "https://raw.githubusercontent.com/KDE/kate/master/po/ar/kate.po"
+    },
+    "review": "terminology references available; native phrase review recommended"
+  },
+  {
+    "locale": "az",
+    "source_count": 2,
+    "sources": {
+      "browser": "https://raw.githubusercontent.com/mozilla-l10n/firefox-l10n/main/az/browser/browser/preferences/preferences.ftl",
+      "cldr": "https://raw.githubusercontent.com/unicode-org/cldr-json/main/cldr-json/cldr-localenames-full/main/az/languages.json",
+      "kde": "https://raw.githubusercontent.com/KDE/kate/master/po/az/kate.po"
+    },
+    "review": "terminology references available; native phrase review recommended"
+  },
+  {
+    "locale": "bg",
+    "source_count": 2,
+    "sources": {
+      "browser": "https://raw.githubusercontent.com/mozilla-l10n/firefox-l10n/main/bg/browser/browser/preferences/preferences.ftl",
+      "cldr": "https://raw.githubusercontent.com/unicode-org/cldr-json/main/cldr-json/cldr-localenames-full/main/bg/languages.json",
+      "kde": "https://raw.githubusercontent.com/KDE/kate/master/po/bg/kate.po"
+    },
+    "review": "terminology references available; native phrase review recommended"
+  },
+  {
+    "locale": "bn",
+    "source_count": 1,
+    "sources": {
+      "browser": "https://raw.githubusercontent.com/mozilla-l10n/firefox-l10n/main/bn-BD/browser/browser/preferences/preferences.ftl",
+      "cldr": "https://raw.githubusercontent.com/unicode-org/cldr-json/main/cldr-json/cldr-localenames-full/main/bn/languages.json"
+    },
+    "review": "native review recommended"
+  },
+  {
+    "locale": "br",
+    "source_count": 3,
+    "sources": {
+      "browser": "https://raw.githubusercontent.com/mozilla-l10n/firefox-l10n/main/pt-BR/browser/browser/preferences/preferences.ftl",
+      "editor": "https://raw.githubusercontent.com/microsoft/vscode-loc/main/i18n/vscode-language-pack-pt-BR/translations/main.i18n.json",
+      "cldr": "https://raw.githubusercontent.com/unicode-org/cldr-json/main/cldr-json/cldr-localenames-full/main/pt/languages.json",
+      "kde": "https://raw.githubusercontent.com/KDE/kate/master/po/pt_BR/kate.po"
+    },
+    "review": "terminology references available; native phrase review recommended"
+  },
+  {
+    "locale": "bs",
+    "source_count": 2,
+    "sources": {
+      "browser": "https://raw.githubusercontent.com/mozilla-l10n/firefox-l10n/main/bs/browser/browser/preferences/preferences.ftl",
+      "cldr": "https://raw.githubusercontent.com/unicode-org/cldr-json/main/cldr-json/cldr-localenames-full/main/bs/languages.json",
+      "kde": "https://raw.githubusercontent.com/KDE/kate/master/po/bs/kate.po"
+    },
+    "review": "terminology references available; native phrase review recommended"
+  },
+  {
+    "locale": "ca",
+    "source_count": 2,
+    "sources": {
+      "browser": "https://raw.githubusercontent.com/mozilla-l10n/firefox-l10n/main/ca/browser/browser/preferences/preferences.ftl",
+      "cldr": "https://raw.githubusercontent.com/unicode-org/cldr-json/main/cldr-json/cldr-localenames-full/main/ca/languages.json",
+      "kde": "https://raw.githubusercontent.com/KDE/kate/master/po/ca/kate.po"
+    },
+    "review": "terminology references available; native phrase review recommended"
+  },
+  {
+    "locale": "cs",
+    "source_count": 3,
+    "sources": {
+      "browser": "https://raw.githubusercontent.com/mozilla-l10n/firefox-l10n/main/cs/browser/browser/preferences/preferences.ftl",
+      "editor": "https://raw.githubusercontent.com/microsoft/vscode-loc/main/i18n/vscode-language-pack-cs/translations/main.i18n.json",
+      "cldr": "https://raw.githubusercontent.com/unicode-org/cldr-json/main/cldr-json/cldr-localenames-full/main/cs/languages.json",
+      "kde": "https://raw.githubusercontent.com/KDE/kate/master/po/cs/kate.po"
+    },
+    "review": "terminology references available; native phrase review recommended"
+  },
+  {
+    "locale": "da",
+    "source_count": 2,
+    "sources": {
+      "browser": "https://raw.githubusercontent.com/mozilla-l10n/firefox-l10n/main/da/browser/browser/preferences/preferences.ftl",
+      "cldr": "https://raw.githubusercontent.com/unicode-org/cldr-json/main/cldr-json/cldr-localenames-full/main/da/languages.json",
+      "kde": "https://raw.githubusercontent.com/KDE/kate/master/po/da/kate.po"
+    },
+    "review": "terminology references available; native phrase review recommended"
+  },
+  {
+    "locale": "de",
+    "source_count": 3,
+    "sources": {
+      "browser": "https://raw.githubusercontent.com/mozilla-l10n/firefox-l10n/main/de/browser/browser/preferences/preferences.ftl",
+      "editor": "https://raw.githubusercontent.com/microsoft/vscode-loc/main/i18n/vscode-language-pack-de/translations/main.i18n.json",
+      "cldr": "https://raw.githubusercontent.com/unicode-org/cldr-json/main/cldr-json/cldr-localenames-full/main/de/languages.json",
+      "kde": "https://raw.githubusercontent.com/KDE/kate/master/po/de/kate.po"
+    },
+    "review": "terminology references available; native phrase review recommended"
+  },
+  {
+    "locale": "dv",
+    "source_count": 0,
+    "sources": {},
+    "review": "native review recommended"
+  },
+  {
+    "locale": "dz",
+    "source_count": 0,
+    "sources": {
+      "cldr": "https://raw.githubusercontent.com/unicode-org/cldr-json/main/cldr-json/cldr-localenames-full/main/dz/languages.json"
+    },
+    "review": "native review recommended"
+  },
+  {
+    "locale": "el",
+    "source_count": 2,
+    "sources": {
+      "browser": "https://raw.githubusercontent.com/mozilla-l10n/firefox-l10n/main/el/browser/browser/preferences/preferences.ftl",
+      "cldr": "https://raw.githubusercontent.com/unicode-org/cldr-json/main/cldr-json/cldr-localenames-full/main/el/languages.json",
+      "kde": "https://raw.githubusercontent.com/KDE/kate/master/po/el/kate.po"
+    },
+    "review": "terminology references available; native phrase review recommended"
+  },
+  {
+    "locale": "es",
+    "source_count": 2,
+    "sources": {
+      "editor": "https://raw.githubusercontent.com/microsoft/vscode-loc/main/i18n/vscode-language-pack-es/translations/main.i18n.json",
+      "cldr": "https://raw.githubusercontent.com/unicode-org/cldr-json/main/cldr-json/cldr-localenames-full/main/es/languages.json",
+      "kde": "https://raw.githubusercontent.com/KDE/kate/master/po/es/kate.po"
+    },
+    "review": "terminology references available; native phrase review recommended"
+  },
+  {
+    "locale": "et",
+    "source_count": 2,
+    "sources": {
+      "browser": "https://raw.githubusercontent.com/mozilla-l10n/firefox-l10n/main/et/browser/browser/preferences/preferences.ftl",
+      "cldr": "https://raw.githubusercontent.com/unicode-org/cldr-json/main/cldr-json/cldr-localenames-full/main/et/languages.json",
+      "kde": "https://raw.githubusercontent.com/KDE/kate/master/po/et/kate.po"
+    },
+    "review": "terminology references available; native phrase review recommended"
+  },
+  {
+    "locale": "fa",
+    "source_count": 2,
+    "sources": {
+      "browser": "https://raw.githubusercontent.com/mozilla-l10n/firefox-l10n/main/fa/browser/browser/preferences/preferences.ftl",
+      "cldr": "https://raw.githubusercontent.com/unicode-org/cldr-json/main/cldr-json/cldr-localenames-full/main/fa/languages.json",
+      "kde": "https://raw.githubusercontent.com/KDE/kate/master/po/fa/kate.po"
+    },
+    "review": "terminology references available; native phrase review recommended"
+  },
+  {
+    "locale": "fi",
+    "source_count": 2,
+    "sources": {
+      "browser": "https://raw.githubusercontent.com/mozilla-l10n/firefox-l10n/main/fi/browser/browser/preferences/preferences.ftl",
+      "cldr": "https://raw.githubusercontent.com/unicode-org/cldr-json/main/cldr-json/cldr-localenames-full/main/fi/languages.json",
+      "kde": "https://raw.githubusercontent.com/KDE/kate/master/po/fi/kate.po"
+    },
+    "review": "terminology references available; native phrase review recommended"
+  },
+  {
+    "locale": "fo",
+    "source_count": 0,
+    "sources": {
+      "cldr": "https://raw.githubusercontent.com/unicode-org/cldr-json/main/cldr-json/cldr-localenames-full/main/fo/languages.json"
+    },
+    "review": "native review recommended"
+  },
+  {
+    "locale": "fr",
+    "source_count": 3,
+    "sources": {
+      "browser": "https://raw.githubusercontent.com/mozilla-l10n/firefox-l10n/main/fr/browser/browser/preferences/preferences.ftl",
+      "editor": "https://raw.githubusercontent.com/microsoft/vscode-loc/main/i18n/vscode-language-pack-fr/translations/main.i18n.json",
+      "cldr": "https://raw.githubusercontent.com/unicode-org/cldr-json/main/cldr-json/cldr-localenames-full/main/fr/languages.json",
+      "kde": "https://raw.githubusercontent.com/KDE/kate/master/po/fr/kate.po"
+    },
+    "review": "terminology references available; native phrase review recommended"
+  },
+  {
+    "locale": "hi",
+    "source_count": 2,
+    "sources": {
+      "browser": "https://raw.githubusercontent.com/mozilla-l10n/firefox-l10n/main/hi-IN/browser/browser/preferences/preferences.ftl",
+      "cldr": "https://raw.githubusercontent.com/unicode-org/cldr-json/main/cldr-json/cldr-localenames-full/main/hi/languages.json",
+      "kde": "https://raw.githubusercontent.com/KDE/kate/master/po/hi/kate.po"
+    },
+    "review": "terminology references available; native phrase review recommended"
+  },
+  {
+    "locale": "hr",
+    "source_count": 2,
+    "sources": {
+      "browser": "https://raw.githubusercontent.com/mozilla-l10n/firefox-l10n/main/hr/browser/browser/preferences/preferences.ftl",
+      "cldr": "https://raw.githubusercontent.com/unicode-org/cldr-json/main/cldr-json/cldr-localenames-full/main/hr/languages.json",
+      "kde": "https://raw.githubusercontent.com/KDE/kate/master/po/hr/kate.po"
+    },
+    "review": "terminology references available; native phrase review recommended"
+  },
+  {
+    "locale": "hu",
+    "source_count": 2,
+    "sources": {
+      "browser": "https://raw.githubusercontent.com/mozilla-l10n/firefox-l10n/main/hu/browser/browser/preferences/preferences.ftl",
+      "cldr": "https://raw.githubusercontent.com/unicode-org/cldr-json/main/cldr-json/cldr-localenames-full/main/hu/languages.json",
+      "kde": "https://raw.githubusercontent.com/KDE/kate/master/po/hu/kate.po"
+    },
+    "review": "terminology references available; native phrase review recommended"
+  },
+  {
+    "locale": "hy",
+    "source_count": 0,
+    "sources": {
+      "cldr": "https://raw.githubusercontent.com/unicode-org/cldr-json/main/cldr-json/cldr-localenames-full/main/hy/languages.json"
+    },
+    "review": "native review recommended"
+  },
+  {
+    "locale": "id",
+    "source_count": 2,
+    "sources": {
+      "browser": "https://raw.githubusercontent.com/mozilla-l10n/firefox-l10n/main/id/browser/browser/preferences/preferences.ftl",
+      "cldr": "https://raw.githubusercontent.com/unicode-org/cldr-json/main/cldr-json/cldr-localenames-full/main/id/languages.json",
+      "kde": "https://raw.githubusercontent.com/KDE/kate/master/po/id/kate.po"
+    },
+    "review": "terminology references available; native phrase review recommended"
+  },
+  {
+    "locale": "is",
+    "source_count": 2,
+    "sources": {
+      "browser": "https://raw.githubusercontent.com/mozilla-l10n/firefox-l10n/main/is/browser/browser/preferences/preferences.ftl",
+      "cldr": "https://raw.githubusercontent.com/unicode-org/cldr-json/main/cldr-json/cldr-localenames-full/main/is/languages.json",
+      "kde": "https://raw.githubusercontent.com/KDE/kate/master/po/is/kate.po"
+    },
+    "review": "terminology references available; native phrase review recommended"
+  },
+  {
+    "locale": "it",
+    "source_count": 3,
+    "sources": {
+      "browser": "https://raw.githubusercontent.com/mozilla-l10n/firefox-l10n/main/it/browser/browser/preferences/preferences.ftl",
+      "editor": "https://raw.githubusercontent.com/microsoft/vscode-loc/main/i18n/vscode-language-pack-it/translations/main.i18n.json",
+      "cldr": "https://raw.githubusercontent.com/unicode-org/cldr-json/main/cldr-json/cldr-localenames-full/main/it/languages.json",
+      "kde": "https://raw.githubusercontent.com/KDE/kate/master/po/it/kate.po"
+    },
+    "review": "terminology references available; native phrase review recommended"
+  },
+  {
+    "locale": "ja",
+    "source_count": 3,
+    "sources": {
+      "browser": "https://raw.githubusercontent.com/mozilla-l10n/firefox-l10n/main/ja/browser/browser/preferences/preferences.ftl",
+      "editor": "https://raw.githubusercontent.com/microsoft/vscode-loc/main/i18n/vscode-language-pack-ja/translations/main.i18n.json",
+      "cldr": "https://raw.githubusercontent.com/unicode-org/cldr-json/main/cldr-json/cldr-localenames-full/main/ja/languages.json",
+      "kde": "https://raw.githubusercontent.com/KDE/kate/master/po/ja/kate.po"
+    },
+    "review": "terminology references available; native phrase review recommended"
+  },
+  {
+    "locale": "ka",
+    "source_count": 2,
+    "sources": {
+      "browser": "https://raw.githubusercontent.com/mozilla-l10n/firefox-l10n/main/ka/browser/browser/preferences/preferences.ftl",
+      "cldr": "https://raw.githubusercontent.com/unicode-org/cldr-json/main/cldr-json/cldr-localenames-full/main/ka/languages.json",
+      "kde": "https://raw.githubusercontent.com/KDE/kate/master/po/ka/kate.po"
+    },
+    "review": "terminology references available; native phrase review recommended"
+  },
+  {
+    "locale": "km",
+    "source_count": 2,
+    "sources": {
+      "browser": "https://raw.githubusercontent.com/mozilla-l10n/firefox-l10n/main/km/browser/browser/preferences/preferences.ftl",
+      "cldr": "https://raw.githubusercontent.com/unicode-org/cldr-json/main/cldr-json/cldr-localenames-full/main/km/languages.json",
+      "kde": "https://raw.githubusercontent.com/KDE/kate/master/po/km/kate.po"
+    },
+    "review": "terminology references available; native phrase review recommended"
+  },
+  {
+    "locale": "ko",
+    "source_count": 3,
+    "sources": {
+      "browser": "https://raw.githubusercontent.com/mozilla-l10n/firefox-l10n/main/ko/browser/browser/preferences/preferences.ftl",
+      "editor": "https://raw.githubusercontent.com/microsoft/vscode-loc/main/i18n/vscode-language-pack-ko/translations/main.i18n.json",
+      "cldr": "https://raw.githubusercontent.com/unicode-org/cldr-json/main/cldr-json/cldr-localenames-full/main/ko/languages.json",
+      "kde": "https://raw.githubusercontent.com/KDE/kate/master/po/ko/kate.po"
+    },
+    "review": "terminology references available; native phrase review recommended"
+  },
+  {
+    "locale": "lo",
+    "source_count": 1,
+    "sources": {
+      "browser": "https://raw.githubusercontent.com/mozilla-l10n/firefox-l10n/main/lo/browser/browser/preferences/preferences.ftl",
+      "cldr": "https://raw.githubusercontent.com/unicode-org/cldr-json/main/cldr-json/cldr-localenames-full/main/lo/languages.json"
+    },
+    "review": "native review recommended"
+  },
+  {
+    "locale": "lt",
+    "source_count": 2,
+    "sources": {
+      "browser": "https://raw.githubusercontent.com/mozilla-l10n/firefox-l10n/main/lt/browser/browser/preferences/preferences.ftl",
+      "cldr": "https://raw.githubusercontent.com/unicode-org/cldr-json/main/cldr-json/cldr-localenames-full/main/lt/languages.json",
+      "kde": "https://raw.githubusercontent.com/KDE/kate/master/po/lt/kate.po"
+    },
+    "review": "terminology references available; native phrase review recommended"
+  },
+  {
+    "locale": "lv",
+    "source_count": 2,
+    "sources": {
+      "browser": "https://raw.githubusercontent.com/mozilla-l10n/firefox-l10n/main/lv/browser/browser/preferences/preferences.ftl",
+      "cldr": "https://raw.githubusercontent.com/unicode-org/cldr-json/main/cldr-json/cldr-localenames-full/main/lv/languages.json",
+      "kde": "https://raw.githubusercontent.com/KDE/kate/master/po/lv/kate.po"
+    },
+    "review": "terminology references available; native phrase review recommended"
+  },
+  {
+    "locale": "mk",
+    "source_count": 2,
+    "sources": {
+      "browser": "https://raw.githubusercontent.com/mozilla-l10n/firefox-l10n/main/mk/browser/browser/preferences/preferences.ftl",
+      "cldr": "https://raw.githubusercontent.com/unicode-org/cldr-json/main/cldr-json/cldr-localenames-full/main/mk/languages.json",
+      "kde": "https://raw.githubusercontent.com/KDE/kate/master/po/mk/kate.po"
+    },
+    "review": "terminology references available; native phrase review recommended"
+  },
+  {
+    "locale": "mn",
+    "source_count": 1,
+    "sources": {
+      "browser": "https://raw.githubusercontent.com/mozilla-l10n/firefox-l10n/main/mn/browser/browser/preferences/preferences.ftl",
+      "cldr": "https://raw.githubusercontent.com/unicode-org/cldr-json/main/cldr-json/cldr-localenames-full/main/mn/languages.json"
+    },
+    "review": "native review recommended"
+  },
+  {
+    "locale": "ms",
+    "source_count": 2,
+    "sources": {
+      "browser": "https://raw.githubusercontent.com/mozilla-l10n/firefox-l10n/main/ms/browser/browser/preferences/preferences.ftl",
+      "cldr": "https://raw.githubusercontent.com/unicode-org/cldr-json/main/cldr-json/cldr-localenames-full/main/ms/languages.json",
+      "kde": "https://raw.githubusercontent.com/KDE/kate/master/po/ms/kate.po"
+    },
+    "review": "terminology references available; native phrase review recommended"
+  },
+  {
+    "locale": "my",
+    "source_count": 2,
+    "sources": {
+      "browser": "https://raw.githubusercontent.com/mozilla-l10n/firefox-l10n/main/my/browser/browser/preferences/preferences.ftl",
+      "cldr": "https://raw.githubusercontent.com/unicode-org/cldr-json/main/cldr-json/cldr-localenames-full/main/my/languages.json",
+      "kde": "https://raw.githubusercontent.com/KDE/kate/master/po/my/kate.po"
+    },
+    "review": "terminology references available; native phrase review recommended"
+  },
+  {
+    "locale": "ne",
+    "source_count": 1,
+    "sources": {
+      "cldr": "https://raw.githubusercontent.com/unicode-org/cldr-json/main/cldr-json/cldr-localenames-full/main/ne/languages.json",
+      "kde": "https://raw.githubusercontent.com/KDE/kate/master/po/ne/kate.po"
+    },
+    "review": "native review recommended"
+  },
+  {
+    "locale": "nl",
+    "source_count": 2,
+    "sources": {
+      "browser": "https://raw.githubusercontent.com/mozilla-l10n/firefox-l10n/main/nl/browser/browser/preferences/preferences.ftl",
+      "cldr": "https://raw.githubusercontent.com/unicode-org/cldr-json/main/cldr-json/cldr-localenames-full/main/nl/languages.json",
+      "kde": "https://raw.githubusercontent.com/KDE/kate/master/po/nl/kate.po"
+    },
+    "review": "terminology references available; native phrase review recommended"
+  },
+  {
+    "locale": "no",
+    "source_count": 2,
+    "sources": {
+      "browser": "https://raw.githubusercontent.com/mozilla-l10n/firefox-l10n/main/nb-NO/browser/browser/preferences/preferences.ftl",
+      "cldr": "https://raw.githubusercontent.com/unicode-org/cldr-json/main/cldr-json/cldr-localenames-full/main/no/languages.json",
+      "kde": "https://raw.githubusercontent.com/KDE/kate/master/po/nb/kate.po"
+    },
+    "review": "terminology references available; native phrase review recommended"
+  },
+  {
+    "locale": "pa",
+    "source_count": 2,
+    "sources": {
+      "browser": "https://raw.githubusercontent.com/mozilla-l10n/firefox-l10n/main/pa-IN/browser/browser/preferences/preferences.ftl",
+      "cldr": "https://raw.githubusercontent.com/unicode-org/cldr-json/main/cldr-json/cldr-localenames-full/main/pa/languages.json",
+      "kde": "https://raw.githubusercontent.com/KDE/kate/master/po/pa/kate.po"
+    },
+    "review": "terminology references available; native phrase review recommended"
+  },
+  {
+    "locale": "pl",
+    "source_count": 3,
+    "sources": {
+      "browser": "https://raw.githubusercontent.com/mozilla-l10n/firefox-l10n/main/pl/browser/browser/preferences/preferences.ftl",
+      "editor": "https://raw.githubusercontent.com/microsoft/vscode-loc/main/i18n/vscode-language-pack-pl/translations/main.i18n.json",
+      "cldr": "https://raw.githubusercontent.com/unicode-org/cldr-json/main/cldr-json/cldr-localenames-full/main/pl/languages.json",
+      "kde": "https://raw.githubusercontent.com/KDE/kate/master/po/pl/kate.po"
+    },
+    "review": "terminology references available; native phrase review recommended"
+  },
+  {
+    "locale": "ro",
+    "source_count": 2,
+    "sources": {
+      "browser": "https://raw.githubusercontent.com/mozilla-l10n/firefox-l10n/main/ro/browser/browser/preferences/preferences.ftl",
+      "cldr": "https://raw.githubusercontent.com/unicode-org/cldr-json/main/cldr-json/cldr-localenames-full/main/ro/languages.json",
+      "kde": "https://raw.githubusercontent.com/KDE/kate/master/po/ro/kate.po"
+    },
+    "review": "terminology references available; native phrase review recommended"
+  },
+  {
+    "locale": "ru",
+    "source_count": 3,
+    "sources": {
+      "browser": "https://raw.githubusercontent.com/mozilla-l10n/firefox-l10n/main/ru/browser/browser/preferences/preferences.ftl",
+      "editor": "https://raw.githubusercontent.com/microsoft/vscode-loc/main/i18n/vscode-language-pack-ru/translations/main.i18n.json",
+      "cldr": "https://raw.githubusercontent.com/unicode-org/cldr-json/main/cldr-json/cldr-localenames-full/main/ru/languages.json",
+      "kde": "https://raw.githubusercontent.com/KDE/kate/master/po/ru/kate.po"
+    },
+    "review": "terminology references available; native phrase review recommended"
+  },
+  {
+    "locale": "si",
+    "source_count": 2,
+    "sources": {
+      "browser": "https://raw.githubusercontent.com/mozilla-l10n/firefox-l10n/main/si/browser/browser/preferences/preferences.ftl",
+      "cldr": "https://raw.githubusercontent.com/unicode-org/cldr-json/main/cldr-json/cldr-localenames-full/main/si/languages.json",
+      "kde": "https://raw.githubusercontent.com/KDE/kate/master/po/si/kate.po"
+    },
+    "review": "terminology references available; native phrase review recommended"
+  },
+  {
+    "locale": "sk",
+    "source_count": 2,
+    "sources": {
+      "browser": "https://raw.githubusercontent.com/mozilla-l10n/firefox-l10n/main/sk/browser/browser/preferences/preferences.ftl",
+      "cldr": "https://raw.githubusercontent.com/unicode-org/cldr-json/main/cldr-json/cldr-localenames-full/main/sk/languages.json",
+      "kde": "https://raw.githubusercontent.com/KDE/kate/master/po/sk/kate.po"
+    },
+    "review": "terminology references available; native phrase review recommended"
+  },
+  {
+    "locale": "sl",
+    "source_count": 2,
+    "sources": {
+      "browser": "https://raw.githubusercontent.com/mozilla-l10n/firefox-l10n/main/sl/browser/browser/preferences/preferences.ftl",
+      "cldr": "https://raw.githubusercontent.com/unicode-org/cldr-json/main/cldr-json/cldr-localenames-full/main/sl/languages.json",
+      "kde": "https://raw.githubusercontent.com/KDE/kate/master/po/sl/kate.po"
+    },
+    "review": "terminology references available; native phrase review recommended"
+  },
+  {
+    "locale": "sq",
+    "source_count": 2,
+    "sources": {
+      "browser": "https://raw.githubusercontent.com/mozilla-l10n/firefox-l10n/main/sq/browser/browser/preferences/preferences.ftl",
+      "cldr": "https://raw.githubusercontent.com/unicode-org/cldr-json/main/cldr-json/cldr-localenames-full/main/sq/languages.json",
+      "kde": "https://raw.githubusercontent.com/KDE/kate/master/po/sq/kate.po"
+    },
+    "review": "terminology references available; native phrase review recommended"
+  },
+  {
+    "locale": "sr",
+    "source_count": 2,
+    "sources": {
+      "browser": "https://raw.githubusercontent.com/mozilla-l10n/firefox-l10n/main/sr/browser/browser/preferences/preferences.ftl",
+      "cldr": "https://raw.githubusercontent.com/unicode-org/cldr-json/main/cldr-json/cldr-localenames-full/main/sr/languages.json",
+      "kde": "https://raw.githubusercontent.com/KDE/kate/master/po/sr/kate.po"
+    },
+    "review": "terminology references available; native phrase review recommended"
+  },
+  {
+    "locale": "sv",
+    "source_count": 1,
+    "sources": {
+      "cldr": "https://raw.githubusercontent.com/unicode-org/cldr-json/main/cldr-json/cldr-localenames-full/main/sv/languages.json",
+      "kde": "https://raw.githubusercontent.com/KDE/kate/master/po/sv/kate.po"
+    },
+    "review": "native review recommended"
+  },
+  {
+    "locale": "tg",
+    "source_count": 2,
+    "sources": {
+      "browser": "https://raw.githubusercontent.com/mozilla-l10n/firefox-l10n/main/tg/browser/browser/preferences/preferences.ftl",
+      "cldr": "https://raw.githubusercontent.com/unicode-org/cldr-json/main/cldr-json/cldr-localenames-full/main/tg/languages.json",
+      "kde": "https://raw.githubusercontent.com/KDE/kate/master/po/tg/kate.po"
+    },
+    "review": "terminology references available; native phrase review recommended"
+  },
+  {
+    "locale": "th",
+    "source_count": 2,
+    "sources": {
+      "browser": "https://raw.githubusercontent.com/mozilla-l10n/firefox-l10n/main/th/browser/browser/preferences/preferences.ftl",
+      "cldr": "https://raw.githubusercontent.com/unicode-org/cldr-json/main/cldr-json/cldr-localenames-full/main/th/languages.json",
+      "kde": "https://raw.githubusercontent.com/KDE/kate/master/po/th/kate.po"
+    },
+    "review": "terminology references available; native phrase review recommended"
+  },
+  {
+    "locale": "tk",
+    "source_count": 0,
+    "sources": {
+      "cldr": "https://raw.githubusercontent.com/unicode-org/cldr-json/main/cldr-json/cldr-localenames-full/main/tk/languages.json"
+    },
+    "review": "native review recommended"
+  },
+  {
+    "locale": "tr",
+    "source_count": 3,
+    "sources": {
+      "browser": "https://raw.githubusercontent.com/mozilla-l10n/firefox-l10n/main/tr/browser/browser/preferences/preferences.ftl",
+      "editor": "https://raw.githubusercontent.com/microsoft/vscode-loc/main/i18n/vscode-language-pack-tr/translations/main.i18n.json",
+      "cldr": "https://raw.githubusercontent.com/unicode-org/cldr-json/main/cldr-json/cldr-localenames-full/main/tr/languages.json",
+      "kde": "https://raw.githubusercontent.com/KDE/kate/master/po/tr/kate.po"
+    },
+    "review": "terminology references available; native phrase review recommended"
+  },
+  {
+    "locale": "uk",
+    "source_count": 2,
+    "sources": {
+      "browser": "https://raw.githubusercontent.com/mozilla-l10n/firefox-l10n/main/uk/browser/browser/preferences/preferences.ftl",
+      "cldr": "https://raw.githubusercontent.com/unicode-org/cldr-json/main/cldr-json/cldr-localenames-full/main/uk/languages.json",
+      "kde": "https://raw.githubusercontent.com/KDE/kate/master/po/uk/kate.po"
+    },
+    "review": "terminology references available; native phrase review recommended"
+  },
+  {
+    "locale": "ur",
+    "source_count": 1,
+    "sources": {
+      "browser": "https://raw.githubusercontent.com/mozilla-l10n/firefox-l10n/main/ur/browser/browser/preferences/preferences.ftl",
+      "cldr": "https://raw.githubusercontent.com/unicode-org/cldr-json/main/cldr-json/cldr-localenames-full/main/ur/languages.json"
+    },
+    "review": "native review recommended"
+  },
+  {
+    "locale": "uz",
+    "source_count": 2,
+    "sources": {
+      "browser": "https://raw.githubusercontent.com/mozilla-l10n/firefox-l10n/main/uz/browser/browser/preferences/preferences.ftl",
+      "cldr": "https://raw.githubusercontent.com/unicode-org/cldr-json/main/cldr-json/cldr-localenames-full/main/uz/languages.json",
+      "kde": "https://raw.githubusercontent.com/KDE/kate/master/po/uz/kate.po"
+    },
+    "review": "terminology references available; native phrase review recommended"
+  },
+  {
+    "locale": "vi",
+    "source_count": 2,
+    "sources": {
+      "browser": "https://raw.githubusercontent.com/mozilla-l10n/firefox-l10n/main/vi/browser/browser/preferences/preferences.ftl",
+      "cldr": "https://raw.githubusercontent.com/unicode-org/cldr-json/main/cldr-json/cldr-localenames-full/main/vi/languages.json",
+      "kde": "https://raw.githubusercontent.com/KDE/kate/master/po/vi/kate.po"
+    },
+    "review": "terminology references available; native phrase review recommended"
+  },
+  {
+    "locale": "zh",
+    "source_count": 3,
+    "sources": {
+      "browser": "https://raw.githubusercontent.com/mozilla-l10n/firefox-l10n/main/zh-CN/browser/browser/preferences/preferences.ftl",
+      "editor": "https://raw.githubusercontent.com/microsoft/vscode-loc/main/i18n/vscode-language-pack-zh-hans/translations/main.i18n.json",
+      "cldr": "https://raw.githubusercontent.com/unicode-org/cldr-json/main/cldr-json/cldr-localenames-full/main/zh/languages.json",
+      "kde": "https://raw.githubusercontent.com/KDE/kate/master/po/zh_CN/kate.po"
+    },
+    "review": "terminology references available; native phrase review recommended"
+  },
+  {
+    "locale": "zht",
+    "source_count": 3,
+    "sources": {
+      "browser": "https://raw.githubusercontent.com/mozilla-l10n/firefox-l10n/main/zh-TW/browser/browser/preferences/preferences.ftl",
+      "editor": "https://raw.githubusercontent.com/microsoft/vscode-loc/main/i18n/vscode-language-pack-zh-hant/translations/main.i18n.json",
+      "cldr": "https://raw.githubusercontent.com/unicode-org/cldr-json/main/cldr-json/cldr-localenames-full/main/zh-Hant/languages.json",
+      "kde": "https://raw.githubusercontent.com/KDE/kate/master/po/zh_TW/kate.po"
+    },
+    "review": "terminology references available; native phrase review recommended"
+  }
+]

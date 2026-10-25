@@ -3,6 +3,19 @@ import { dict as en } from "./en"
 type Keys = keyof typeof en
 
 export const dict = {
+  "context.timeline.title": "Bağlam ve önbellek geçmişi",
+  "context.timeline.step":
+    "{{model}} · {{time}} · {{input}} bilgi istemi jetonu · {{read}} önbellek okuma · {{write}} önbellek yazma",
+  "context.timeline.requestWindow": "İstek anında {{value}} jeton penceresi",
+  "context.timeline.catalogWindow": "Mevcut katalogdaki {{value}} jeton penceresi",
+  "context.timeline.unknownWindow": "Bağlam penceresi bilinmiyor",
+  "context.timeline.empty": "Henüz yerleşik bir sağlayıcı kullanımı kaydedilmedi.",
+  "context.timeline.retry": "Kullanım geçmişini yeniden dene",
+  "context.timeline.compaction": "Bağlam sıkıştırılmış",
+  "context.timeline.cacheRead": "Önbellek okuma",
+  "context.timeline.cacheWrite": "Önbelleğe yazma",
+  "context.timeline.ttft": "İlk jetona {{value}} ms",
+
   "desktop.menu.app": "miao",
   "desktop.menu.file": "Dosya",
   "desktop.menu.edit": "Düzen",
@@ -645,7 +658,8 @@ export const dict = {
   "toast.permissions.autoaccept.off.title": "İzinleri otomatik kabul etme durduruldu",
   "toast.permissions.autoaccept.off.description": "İzin istekleri onay gerektirecek",
   "settings.permissions.autoaccept.project.title": "Bu proje için izinleri otomatik kabul et",
-  "settings.permissions.autoaccept.project.description": "Bu projedeki herhangi bir oturumdan gelen yeni izin isteklerini sormadan yanıtla. Oturum ve dizin seçimleri önce gelir.",
+  "settings.permissions.autoaccept.project.description":
+    "Bu projedeki herhangi bir oturumdan gelen yeni izin isteklerini sormadan yanıtla. Oturum ve dizin seçimleri önce gelir.",
 
   "toast.model.none.title": "Model seçilmedi",
   "toast.model.none.description": "Bu oturumu özetlemek için bir sağlayıcı bağlayın",
@@ -927,8 +941,7 @@ export const dict = {
   "settings.general.row.appearance.title": "Görünüm",
   "settings.general.row.appearance.description": "miao'un cihazınızdaki görünümünü özelleştirin",
   "settings.general.row.colorScheme.title": "Renk şeması",
-  "settings.general.row.colorScheme.description":
-    "miao'un sistem, açık veya koyu temayı takip etip etmeyeceğini seçin",
+  "settings.general.row.colorScheme.description": "miao'un sistem, açık veya koyu temayı takip etip etmeyeceğini seçin",
   "settings.general.row.theme.title": "Tema",
   "settings.general.row.theme.description": "miao'un temasını özelleştirin.",
   "settings.general.row.font.title": "Kod yazı tipi",
@@ -961,7 +974,8 @@ export const dict = {
   "settings.general.row.reasoningSummaries.title": "Akıl yürütme özetlerini göster",
   "settings.general.row.reasoningSummaries.description": "Zaman çizelgesinde model akıl yürütme özetlerini görüntüle",
   "settings.general.row.turnDiffs.title": "Tur başına değişen dosyaları göster",
-  "settings.general.row.turnDiffs.description": "Zaman çizelgesinde, tamamlanan her turun değişen dosyalarını satır sayıları ve açılabilir farklarla listeler.",
+  "settings.general.row.turnDiffs.description":
+    "Zaman çizelgesinde, tamamlanan her turun değişen dosyalarını satır sayıları ve açılabilir farklarla listeler.",
   "settings.general.row.shellToolPartsExpanded.title": "Kabuk araç bileşenlerini genişlet",
   "settings.general.row.shellToolPartsExpanded.description":
     "Zaman çizelgesinde kabuk araç bileşenlerini varsayılan olarak genişletilmiş göster",

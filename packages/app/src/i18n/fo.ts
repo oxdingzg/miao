@@ -1,4 +1,17 @@
 export const dict = {
+  "context.timeline.title": "Samanhangur og goymslusøga",
+  "context.timeline.step":
+    "{{model}} · {{time}} · {{input}} biðjamerki · {{read}} goymsla lesa · {{write}} goymsla skriva",
+  "context.timeline.requestWindow": "{{value}} merkisvindeyga við umbønartíð",
+  "context.timeline.catalogWindow": "{{value}} merkisvindeyga í núverandi skrá",
+  "context.timeline.unknownWindow": "Samanhangsvindeyga ókent",
+  "context.timeline.empty": "Eingin avroknað veitaranýtsla er skrásett enn.",
+  "context.timeline.retry": "Royn nýtslusøgu aftur",
+  "context.timeline.compaction": "Samanhangur tættur saman",
+  "context.timeline.cacheRead": "Goymsla lesa",
+  "context.timeline.cacheWrite": "Cache skriva",
+  "context.timeline.ttft": "{{value}} ms til fyrsta merki",
+
   "desktop.menu.app": "miao",
   "desktop.menu.file": "Skrá",
   "desktop.menu.edit": "Rætta",
@@ -602,7 +615,8 @@ export const dict = {
   "toast.permissions.autoaccept.off.title": "Steðgað sjálvvirkandi góðkenning av loyvum",
   "toast.permissions.autoaccept.off.description": "Loyvisumbønir krevja góðkenning.",
   "settings.permissions.autoaccept.project.title": "Goðggja rættindi sjálvvirkandi fyri hetta verkætlanini",
-  "settings.permissions.autoaccept.project.description": "Svara nýggjum rættindaumbønum frá hvørjum seti í hesum verkætlanini uttan at spyrja. Val á seta og mappu stuðla fram.",
+  "settings.permissions.autoaccept.project.description":
+    "Svara nýggjum rættindaumbønum frá hvørjum seti í hesum verkætlanini uttan at spyrja. Val á seta og mappu stuðla fram.",
   "toast.model.none.title": "Einki modell valt",
   "toast.model.none.description": "Set samband við ein veitara fyri at taka saman um hesa setuna",
   "toast.file.loadFailed.title": "Tað eydnaðist ikki at heinta fíluna",
@@ -965,7 +979,8 @@ export const dict = {
   "settings.general.row.reasoningSummaries.title": "Vís grundgevingarsamantektir",
   "settings.general.row.reasoningSummaries.description": "Vís modellgrundgevingarsamantektir í tíðarlinjuni",
   "settings.general.row.turnDiffs.title": "Vís broyttar fílur fyri hvørja rund",
-  "settings.general.row.turnDiffs.description": "Upplistar á tíðarlinuni broyttar fílur frá hvørjum fullrættaði rund við linutali og útvíkjanligum mun.",
+  "settings.general.row.turnDiffs.description":
+    "Upplistar á tíðarlinuni broyttar fílur frá hvørjum fullrættaði rund við linutali og útvíkjanligum mun.",
   "settings.general.row.shellToolPartsExpanded.title": "Víðka shell-tólpartar",
   "settings.general.row.shellToolPartsExpanded.description": "Vís shell-tólpartar víðkaðar sum standard í tíðarlinjuni",
   "settings.general.row.editToolPartsExpanded.title": "Víðka rætta tólpartar",

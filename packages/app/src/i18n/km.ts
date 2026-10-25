@@ -1,4 +1,17 @@
 export const dict = {
+  "context.timeline.title": "បរិបទ និងប្រវត្តិឃ្លាំងសម្ងាត់",
+  "context.timeline.step":
+    "{{model}} · {{time}} · {{input}} បញ្ចូលសញ្ញាសម្ងាត់ · {{read}} ឃ្លាំងសម្ងាត់បានអាន · {{write}} សរសេរឃ្លាំងសម្ងាត់",
+  "context.timeline.requestWindow": "បង្អួចនិមិត្តសញ្ញា {{value}} នៅពេលស្នើសុំ",
+  "context.timeline.catalogWindow": "បង្អួចនិមិត្តសញ្ញា {{value}} នៅក្នុងកាតាឡុកបច្ចុប្បន្ន",
+  "context.timeline.unknownWindow": "បង្អួចបរិបទមិនស្គាល់",
+  "context.timeline.empty": "មិន​ទាន់​មាន​ការ​កត់ត្រា​ការ​ប្រើប្រាស់​អ្នក​ផ្តល់​សេវា​ដែល​បាន​ទូទាត់​នៅ​ឡើយ​ទេ។",
+  "context.timeline.retry": "ព្យាយាមប្រវត្តិប្រើប្រាស់ឡើងវិញ",
+  "context.timeline.compaction": "បានបង្រួមបរិបទ",
+  "context.timeline.cacheRead": "ឃ្លាំងសម្ងាត់បានអាន",
+  "context.timeline.cacheWrite": "សរសេរឃ្លាំងសម្ងាត់",
+  "context.timeline.ttft": "{{value}} ms ទៅសញ្ញាសម្ងាត់ដំបូង",
+
   "desktop.menu.app": "miao",
   "desktop.menu.file": "ឯកសារ",
   "desktop.menu.edit": "កែសម្រួល",
@@ -601,7 +614,8 @@ export const dict = {
   "toast.permissions.autoaccept.off.title": "បានបញ្ឈប់ការអនុញ្ញាតដោយស្វ័យប្រវត្តិ",
   "toast.permissions.autoaccept.off.description": "សំណើសុំការអនុញ្ញាតនឹងទាមទារការយល់ព្រម",
   "settings.permissions.autoaccept.project.title": "Auto-accept permissions for this project",
-  "settings.permissions.autoaccept.project.description": "Answer new permission requests from any session in this project without asking. Session and directory choices still win.",
+  "settings.permissions.autoaccept.project.description":
+    "Answer new permission requests from any session in this project without asking. Session and directory choices still win.",
   "toast.model.none.title": "មិនបានជ្រើសរើសម៉ូដែលទេ។",
   "toast.model.none.description": "ភ្ជាប់អ្នកផ្តល់សេវាដើម្បីសង្ខេបសម័យនេះ។",
   "toast.file.loadFailed.title": "បរាជ័យក្នុងការផ្ទុកឯកសារ",
@@ -962,7 +976,8 @@ export const dict = {
   "settings.general.row.reasoningSummaries.title": "បង្ហាញការសង្ខេបហេតុផល",
   "settings.general.row.reasoningSummaries.description": "បង្ហាញសេចក្តីសង្ខេបហេតុផលរបស់ម៉ូដែលក្នុងបន្ទាត់ពេលវេលា",
   "settings.general.row.turnDiffs.title": "Show changed files per turn",
-  "settings.general.row.turnDiffs.description": "List each finished turn's changed files with line counts and expandable diffs in the timeline.",
+  "settings.general.row.turnDiffs.description":
+    "List each finished turn's changed files with line counts and expandable diffs in the timeline.",
   "settings.general.row.shellToolPartsExpanded.title": "ពង្រីកផ្នែកឧបករណ៍សែល",
   "settings.general.row.shellToolPartsExpanded.description":
     "បង្ហាញផ្នែកឧបករណ៍សែលដែលបានពង្រីកតាមលំនាំដើមនៅក្នុងបន្ទាត់ពេលវេលា",

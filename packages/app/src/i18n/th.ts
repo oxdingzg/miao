@@ -1,4 +1,16 @@
 export const dict = {
+  "context.timeline.title": "บริบทและประวัติแคช",
+  "context.timeline.step": "{{model}} · {{time}} · {{input}} โทเค็นพร้อมท์ · {{read}} แคชอ่าน · {{write}} แคชเขียน",
+  "context.timeline.requestWindow": "หน้าต่างโทเค็น {{value}} ในเวลาร้องขอ",
+  "context.timeline.catalogWindow": "หน้าต่างโทเค็น {{value}} ในแค็ตตาล็อกปัจจุบัน",
+  "context.timeline.unknownWindow": "ไม่ทราบหน้าต่างบริบท",
+  "context.timeline.empty": "ยังไม่มีการบันทึกการใช้งานของผู้ให้บริการที่ตกลงกันไว้",
+  "context.timeline.retry": "ลองประวัติการใช้งานอีกครั้ง",
+  "context.timeline.compaction": "บริบทถูกบีบอัด",
+  "context.timeline.cacheRead": "แคชอ่าน",
+  "context.timeline.cacheWrite": "แคชเขียน",
+  "context.timeline.ttft": "{{value}} มิลลิวินาทีถึงโทเค็นแรก",
+
   "desktop.menu.app": "miao",
   "desktop.menu.file": "ไฟล์",
   "desktop.menu.edit": "แก้ไข",
@@ -260,8 +272,7 @@ export const dict = {
   "provider.connect.oauth.code.invalid": "รหัสการอนุญาตไม่ถูกต้อง",
   "provider.connect.oauth.auto.visit.prefix": "เยี่ยมชม ",
   "provider.connect.oauth.auto.visit.link": "ลิงก์นี้",
-  "provider.connect.oauth.auto.visit.suffix":
-    " และป้อนรหัสด้านล่างเพื่อเชื่อมต่อบัญชีและใช้โมเดล {{provider}} ใน miao",
+  "provider.connect.oauth.auto.visit.suffix": " และป้อนรหัสด้านล่างเพื่อเชื่อมต่อบัญชีและใช้โมเดล {{provider}} ใน miao",
   "provider.connect.oauth.auto.confirmationCode": "รหัสยืนยัน",
   "provider.connect.toast.connected.title": "เชื่อมต่อ {{provider}} แล้ว",
   "provider.connect.toast.connected.description": "โมเดล {{provider}} พร้อมใช้งานแล้ว",
@@ -637,7 +648,8 @@ export const dict = {
   "toast.permissions.autoaccept.off.title": "หยุดยอมรับสิทธิ์โดยอัตโนมัติแล้ว",
   "toast.permissions.autoaccept.off.description": "คำขอสิทธิ์จะต้องได้รับการอนุมัติ",
   "settings.permissions.autoaccept.project.title": "ยอมรับสิทธิ์สำหรับโปรเจกต์นี้โดยอัตโนมัติ",
-  "settings.permissions.autoaccept.project.description": "ตอบคำขอสิทธิ์ใหม่จากทุกเซสชันในโปรเจกต์นี้โดยไม่ถาม การเลือกแบบเซสชันและไดเรกทอรียังคงมีผลก่อน",
+  "settings.permissions.autoaccept.project.description":
+    "ตอบคำขอสิทธิ์ใหม่จากทุกเซสชันในโปรเจกต์นี้โดยไม่ถาม การเลือกแบบเซสชันและไดเรกทอรียังคงมีผลก่อน",
 
   "toast.model.none.title": "ไม่ได้เลือกโมเดล",
   "toast.model.none.description": "เชื่อมต่อผู้ให้บริการเพื่อสรุปเซสชันนี้",
@@ -941,7 +953,8 @@ export const dict = {
   "settings.general.row.reasoningSummaries.title": "แสดงสรุปการใช้เหตุผล",
   "settings.general.row.reasoningSummaries.description": "แสดงสรุปการใช้เหตุผลของโมเดลในไทม์ไลน์",
   "settings.general.row.turnDiffs.title": "แสดงไฟล์ที่เปลี่ยนแปลงในแต่ละรอบ",
-  "settings.general.row.turnDiffs.description": "แสดงรายการไฟล์ที่เปลี่ยนแปลงของแต่ละรอบที่เสร็จสิ้นพร้อมจำนวนบรรทัดและ diff ที่ขยายได้ในไทม์ไลน์",
+  "settings.general.row.turnDiffs.description":
+    "แสดงรายการไฟล์ที่เปลี่ยนแปลงของแต่ละรอบที่เสร็จสิ้นพร้อมจำนวนบรรทัดและ diff ที่ขยายได้ในไทม์ไลน์",
   "settings.general.row.shellToolPartsExpanded.title": "ขยายส่วนเครื่องมือ shell",
   "settings.general.row.shellToolPartsExpanded.description": "แสดงส่วนเครื่องมือ shell แบบขยายตามค่าเริ่มต้นในไทม์ไลน์",
   "settings.general.row.editToolPartsExpanded.title": "ขยายส่วนเครื่องมือ edit",

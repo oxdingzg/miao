@@ -94,6 +94,19 @@ const desktop = [
 ]
 
 export const dict = {
+  "context.timeline.title": "Saga samhengi og skyndiminni",
+  "context.timeline.step":
+    "{{model}} · {{time}} · {{input}} kvaðningartákn · {{read}} skyndiminni lesinn · {{write}} skyndiminni skrifa",
+  "context.timeline.requestWindow": "{{value}} tákngluggi á beiðnitíma",
+  "context.timeline.catalogWindow": "{{value}} tákngluggi í núverandi vörulista",
+  "context.timeline.unknownWindow": "Samhengisgluggi óþekktur",
+  "context.timeline.empty": "Engin uppgjört notkun veitenda hefur verið skráð ennþá.",
+  "context.timeline.retry": "Reyndu aftur notkunarferil",
+  "context.timeline.compaction": "Samhengi þjappað saman",
+  "context.timeline.cacheRead": "Cache lesið",
+  "context.timeline.cacheWrite": "Cache skrifa",
+  "context.timeline.ttft": "{{value}} ms í fyrsta táknið",
+
   ...Object.fromEntries(DESKTOP_NATIVE_KEYS.map((key, index) => [key, desktop[index]])),
   "command.category.suggested": "Tillögur",
   "command.category.view": "Skoða",
@@ -493,8 +506,7 @@ export const dict = {
   "wsl.onboarding.wslUnavailable.title": "WSL ekki í boði",
   "wsl.onboarding.wslUnavailable.description": "miao gat ekki staðfest WSL á þessari vél.",
   "wsl.onboarding.installWsl": "Settu upp WSL",
-  "wsl.onboarding.windowsRestartRequired":
-    "Endurræstu Windows til að klára að setja upp WSL, opnaðu síðan miao aftur.",
+  "wsl.onboarding.windowsRestartRequired": "Endurræstu Windows til að klára að setja upp WSL, opnaðu síðan miao aftur.",
   "wsl.onboarding.next": "Næst",
   "wsl.onboarding.refresh": "Endurnýja",
   "wsl.onboarding.allDistrosAdded": "Öllum uppsettum dreifingum er þegar bætt við.",
@@ -606,7 +618,8 @@ export const dict = {
   "toast.permissions.autoaccept.off.title": "Hætti að samþykkja heimildir sjálfkrafa",
   "toast.permissions.autoaccept.off.description": "Leyfisbeiðnir þurfa samþykki",
   "settings.permissions.autoaccept.project.title": "Samþykkja heimildir fyrir þetta verkefni sjálfvirkt",
-  "settings.permissions.autoaccept.project.description": "Svaraðu nýjum heimildabeiðnum frá öllum setum í þessu verkefni án þess að spyrja. Val á setu og möppu fer samt fyrir.",
+  "settings.permissions.autoaccept.project.description":
+    "Svaraðu nýjum heimildabeiðnum frá öllum setum í þessu verkefni án þess að spyrja. Val á setu og möppu fer samt fyrir.",
   "toast.model.none.title": "Engin gerð valin",
   "toast.model.none.description": "Tengdu þjónustuaðila til að draga saman þessa lotu",
   "toast.file.loadFailed.title": "Mistókst að hlaða skrá",
@@ -968,7 +981,8 @@ export const dict = {
   "settings.general.row.reasoningSummaries.title": "Sýndu samantektir um rökstuðning",
   "settings.general.row.reasoningSummaries.description": "Birta rökstuðningssamantektir líkana á tímalínunni",
   "settings.general.row.turnDiffs.title": "Sýndu breyttar skrár fyrir hverja umferð",
-  "settings.general.row.turnDiffs.description": "Listar á tímalínunum breyttar skrár hverrar lokiðrar umferðar með línufjölda og útvíkkanlegum mun.",
+  "settings.general.row.turnDiffs.description":
+    "Listar á tímalínunum breyttar skrár hverrar lokiðrar umferðar með línufjölda og útvíkkanlegum mun.",
   "settings.general.row.shellToolPartsExpanded.title": "Stækkaðu hluta skeljaverkfæra",
   "settings.general.row.shellToolPartsExpanded.description": "Sýna hluta skelverkfæra stækkað sjálfgefið á tímalínunni",
   "settings.general.row.editToolPartsExpanded.title": "Stækkaðu breytingaverkfærahluta",

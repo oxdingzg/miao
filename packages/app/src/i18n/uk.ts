@@ -1,4 +1,17 @@
 export const dict = {
+  "context.timeline.title": "Історія контексту та кешу",
+  "context.timeline.step":
+    "{{model}} · {{time}} · {{input}} маркерів запиту · {{read}} читання кешу · {{write}} запис кешу",
+  "context.timeline.requestWindow": "Вікно маркера {{value}} під час запиту",
+  "context.timeline.catalogWindow": "Вікно маркера {{value}} у поточному каталозі",
+  "context.timeline.unknownWindow": "Контекстне вікно невідоме",
+  "context.timeline.empty": "Жодного розрахункового використання постачальника ще не зафіксовано.",
+  "context.timeline.retry": "Повторити історію використання",
+  "context.timeline.compaction": "Контекст ущільнений",
+  "context.timeline.cacheRead": "Читання кешу",
+  "context.timeline.cacheWrite": "Запис кешу",
+  "context.timeline.ttft": "{{value}} мс до першого маркера",
+
   "desktop.menu.app": "miao",
   "desktop.menu.file": "Файл",
   "desktop.menu.edit": "Редагування",
@@ -655,7 +668,8 @@ export const dict = {
   "toast.permissions.autoaccept.off.title": "Автоматичне прийняття дозволів зупинено",
   "toast.permissions.autoaccept.off.description": "Запити дозволів вимагатимуть схвалення",
   "settings.permissions.autoaccept.project.title": "Автоматичне прийняття дозволів для цього проєкту",
-  "settings.permissions.autoaccept.project.description": "Відповідати на нові запити дозволів з будь-якої сесії цього проєкту без запитання. Вибір на рівні сесії та каталогу має пріоритет.",
+  "settings.permissions.autoaccept.project.description":
+    "Відповідати на нові запити дозволів з будь-якої сесії цього проєкту без запитання. Вибір на рівні сесії та каталогу має пріоритет.",
 
   "toast.model.none.title": "Модель не вибрано",
   "toast.model.none.description": "Підключіть провайдера, щоб підсумувати цю сесію",
@@ -728,8 +742,7 @@ export const dict = {
   "error.chain.didYouMean": "Можливо, ви мали на увазі: {{suggestions}}",
   "error.chain.modelNotFound": "Модель не знайдено: {{provider}}/{{model}}",
   "error.chain.checkConfig": "Перевірте назви провайдерів/моделей у конфігурації (miao.json)",
-  "error.chain.mcpFailed":
-    'Сервер MCP "{{name}}" не працює. Зверніть увагу, miao ще не підтримує автентифікацію MCP.',
+  "error.chain.mcpFailed": 'Сервер MCP "{{name}}" не працює. Зверніть увагу, miao ще не підтримує автентифікацію MCP.',
   "error.chain.providerAuthFailed": "Автентифікація провайдера не вдалася ({{provider}}): {{message}}",
   "error.chain.providerInitFailed":
     'Не вдалося ініціалізувати провайдера "{{provider}}". Перевірте облікові дані та конфігурацію.',
@@ -1063,7 +1076,8 @@ export const dict = {
   "settings.general.row.reasoningSummaries.title": "Показувати підсумки мислення",
   "settings.general.row.reasoningSummaries.description": "Відображати підсумки мислення моделі на часовій шкалі",
   "settings.general.row.turnDiffs.title": "Показувати змінені файли за ходами",
-  "settings.general.row.turnDiffs.description": "Перелічує на шкалі часу змінені файли кожного завершеного ходу з підрахунком рядків і розгортаними відмінностями.",
+  "settings.general.row.turnDiffs.description":
+    "Перелічує на шкалі часу змінені файли кожного завершеного ходу з підрахунком рядків і розгортаними відмінностями.",
   "settings.general.row.shellToolPartsExpanded.title": "Розгортати частини інструменту оболонки",
   "settings.general.row.shellToolPartsExpanded.description":
     "Показувати частини інструменту оболонки розгорнутими за замовчуванням на часовій шкалі",

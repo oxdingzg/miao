@@ -1,4 +1,16 @@
 export const dict = {
+  "context.timeline.title": "ບໍລິບົດ ແລະປະຫວັດຖານຄວາມຈຳ",
+  "context.timeline.step": "{{model}} · {{time}} · {{input}} Input Token · {{read}} Cache ອ່ານ · {{write}} ຂຽນ cache",
+  "context.timeline.requestWindow": "{{value}} ໜ້າຕ່າງ token ໃນເວລາຮ້ອງຂໍ",
+  "context.timeline.catalogWindow": "{{value}} ໜ້າຕ່າງ token ໃນລາຍການປັດຈຸບັນ",
+  "context.timeline.unknownWindow": "ບໍ່ຮູ້ຈັກໜ້າຕ່າງບໍລິບົດ",
+  "context.timeline.empty": "ຍັງບໍ່ມີການບັນທຶກການນຳໃຊ້ຜູ້ໃຫ້ບໍລິການເທື່ອ.",
+  "context.timeline.retry": "ລອງປະຫວັດການນຳໃຊ້ຄືນໃໝ່",
+  "context.timeline.compaction": "ຫຍໍ້ເນື້ອໃນ",
+  "context.timeline.cacheRead": "Cache ອ່ານ",
+  "context.timeline.cacheWrite": "ຂຽນ cache",
+  "context.timeline.ttft": "{{value}} ms ກັບ token ທໍາອິດ",
+
   "desktop.menu.app": "miao",
   "desktop.menu.file": "ໄຟລ໌",
   "desktop.menu.edit": "ແກ້ໄຂ",
@@ -599,7 +611,8 @@ export const dict = {
   "toast.permissions.autoaccept.off.title": "ຢຸດການອະນຸຍາດອັດຕະໂນມັດ",
   "toast.permissions.autoaccept.off.description": "ການຮ້ອງຂໍການອະນຸຍາດຈະຕ້ອງມີການອະນຸມັດ",
   "settings.permissions.autoaccept.project.title": "Auto-accept permissions for this project",
-  "settings.permissions.autoaccept.project.description": "Answer new permission requests from any session in this project without asking. Session and directory choices still win.",
+  "settings.permissions.autoaccept.project.description":
+    "Answer new permission requests from any session in this project without asking. Session and directory choices still win.",
   "toast.model.none.title": "ບໍ່ໄດ້ເລືອກຕົວແບບ",
   "toast.model.none.description": "ເຊື່ອມຕໍ່ຜູ້ໃຫ້ບໍລິການເພື່ອສະຫຼຸບກອງປະຊຸມນີ້",
   "toast.file.loadFailed.title": "ລົ້ມເຫລວໃນການໂຫຼດໄຟລ໌",
@@ -959,7 +972,8 @@ export const dict = {
   "settings.general.row.reasoningSummaries.title": "ສະແດງການສັງລວມເຫດຜົນ",
   "settings.general.row.reasoningSummaries.description": "ສະແດງສະຫຼຸບເຫດຜົນຂອງຕົວແບບໃນທາມລາຍ",
   "settings.general.row.turnDiffs.title": "Show changed files per turn",
-  "settings.general.row.turnDiffs.description": "List each finished turn's changed files with line counts and expandable diffs in the timeline.",
+  "settings.general.row.turnDiffs.description":
+    "List each finished turn's changed files with line counts and expandable diffs in the timeline.",
   "settings.general.row.shellToolPartsExpanded.title": "ຂະຫຍາຍສ່ວນຂອງເຄື່ອງມື Shell",
   "settings.general.row.shellToolPartsExpanded.description":
     "ສະແດງສ່ວນຂອງເຄື່ອງມື Shell ແບບຂະຫຍາຍເປັນຄ່າເລີ່ມຕົ້ນໃນໄທມ໌ລາຍ",
