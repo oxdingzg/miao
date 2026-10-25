@@ -424,6 +424,7 @@ export type AgentsListOutput = {
     readonly hidden: boolean
     readonly color?: string | "primary" | "secondary" | "accent" | "success" | "warning" | "error" | "info"
     readonly steps?: number
+    readonly budget?: number
     readonly permissions: ReadonlyArray<{
       readonly action: string
       readonly resource: string

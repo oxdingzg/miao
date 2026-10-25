@@ -7737,6 +7737,136 @@ describe("SessionRunnerLLM", () => {
     }),
   )
 
+  it.effect("asks the model to wrap up as the prompt token budget nears exhaustion", () =>
+    Effect.gen(function* () {
+      yield* setup
+      const agents = yield* AgentV2.Service
+      yield* agents.transform((editor) =>
+        editor.update(AgentV2.ID.make("build"), (agent) => {
+          agent.budget = 1000
+        }),
+      )
+      const session = yield* SessionV2.Service
+      yield* session.prompt({ sessionID, prompt: Prompt.make({ text: "Use the budget" }), resume: false })
+
+      requests.length = 0
+      responses = [
+        [
+          LLMEvent.stepStart({ index: 0 }),
+          LLMEvent.toolCall({ id: "call-budget-wrap", name: "echo", input: { text: "work" } }),
+          LLMEvent.stepFinish({ index: 0, reason: "tool-calls", usage: { nonCachedInputTokens: 900 } }),
+          LLMEvent.finish({ reason: "tool-calls" }),
+        ],
+        [
+          LLMEvent.stepStart({ index: 0 }),
+          LLMEvent.stepFinish({ index: 0, reason: "stop" }),
+          LLMEvent.finish({ reason: "stop" }),
+        ],
+      ]
+
+      yield* session.resume(sessionID)
+
+      expect(requests).toHaveLength(2)
+      expect(requests[0]?.messages.at(-1)).toMatchObject({ role: "user" })
+      expect(requests[1]?.toolChoice).toBeUndefined()
+      expect(requests[1]?.tools?.length).toBeGreaterThan(0)
+      expect(requests[1]?.messages.at(-1)).toMatchObject({
+        role: "assistant",
+        content: [{ type: "text", text: expect.stringContaining("PROMPT BUDGET WRAP-UP") }],
+      })
+    }),
+  )
+
+  it.effect("ends the turn text-only when the prompt token budget is exhausted and pauses resumably", () =>
+    Effect.gen(function* () {
+      yield* setup
+      const agents = yield* AgentV2.Service
+      yield* agents.transform((editor) =>
+        editor.update(AgentV2.ID.make("build"), (agent) => {
+          agent.budget = 1000
+        }),
+      )
+      const session = yield* SessionV2.Service
+      yield* session.prompt({ sessionID, prompt: Prompt.make({ text: "Exhaust the budget" }), resume: false })
+
+      requests.length = 0
+      executions.length = 0
+      responses = [
+        [
+          LLMEvent.stepStart({ index: 0 }),
+          LLMEvent.toolCall({ id: "call-budget-final", name: "echo", input: { text: "done" } }),
+          LLMEvent.stepFinish({ index: 0, reason: "tool-calls", usage: { nonCachedInputTokens: 1200 } }),
+          LLMEvent.finish({ reason: "tool-calls" }),
+        ],
+        [
+          LLMEvent.stepStart({ index: 0 }),
+          LLMEvent.toolCall({ id: "call-budget-forbidden", name: "echo", input: { text: "forbidden" } }),
+          LLMEvent.stepFinish({ index: 0, reason: "tool-calls" }),
+          LLMEvent.finish({ reason: "tool-calls" }),
+        ],
+      ]
+
+      yield* session.resume(sessionID)
+
+      expect(requests).toHaveLength(2)
+      expect(requests[1]?.toolChoice).toMatchObject({ type: "none" })
+      expect(requests[1]?.tools).toEqual([])
+      expect(requests[1]?.messages.at(-1)).toMatchObject({
+        role: "assistant",
+        content: [{ type: "text", text: expect.stringContaining("PROMPT TOKEN BUDGET EXHAUSTED") }],
+      })
+      expect(executions).toEqual(["done"])
+      const history = yield* session.context(sessionID)
+      expect(history.filter((message) => message.type === "synthetic")).toHaveLength(1)
+      expect(JSON.stringify(history)).toContain("prompt token budget")
+      expect(JSON.stringify(history)).toContain("promptBudgetPause")
+    }),
+  )
+
+  it.effect("grants a fresh prompt token budget when a new user input promotes", () =>
+    Effect.gen(function* () {
+      yield* setup
+      const agents = yield* AgentV2.Service
+      yield* agents.transform((editor) =>
+        editor.update(AgentV2.ID.make("build"), (agent) => {
+          agent.budget = 1000
+        }),
+      )
+      const session = yield* SessionV2.Service
+      yield* session.prompt({ sessionID, prompt: Prompt.make({ text: "Exhaust the budget" }), resume: false })
+      responses = [
+        [
+          LLMEvent.stepStart({ index: 0 }),
+          LLMEvent.toolCall({ id: "call-budget-first", name: "echo", input: { text: "done" } }),
+          LLMEvent.stepFinish({ index: 0, reason: "tool-calls", usage: { nonCachedInputTokens: 1200 } }),
+          LLMEvent.finish({ reason: "tool-calls" }),
+        ],
+        [
+          LLMEvent.stepStart({ index: 0 }),
+          LLMEvent.stepFinish({ index: 0, reason: "stop" }),
+          LLMEvent.finish({ reason: "stop" }),
+        ],
+      ]
+      yield* session.resume(sessionID)
+
+      requests.length = 0
+      responses = [
+        [
+          LLMEvent.stepStart({ index: 0 }),
+          LLMEvent.stepFinish({ index: 0, reason: "stop" }),
+          LLMEvent.finish({ reason: "stop" }),
+        ],
+      ]
+      yield* session.prompt({ sessionID, prompt: Prompt.make({ text: "Continue with a fresh budget" }), resume: false })
+      yield* session.resume(sessionID)
+
+      expect(requests).toHaveLength(1)
+      expect(requests[0]?.toolChoice).toBeUndefined()
+      expect(requests[0]?.tools?.length).toBeGreaterThan(0)
+      expect(JSON.stringify(requests[0]?.messages)).not.toContain("PROMPT TOKEN BUDGET EXHAUSTED")
+    }),
+  )
+
   it.effect("resets the configured step allowance when steering input promotes", () =>
     Effect.gen(function* () {
       yield* setup
