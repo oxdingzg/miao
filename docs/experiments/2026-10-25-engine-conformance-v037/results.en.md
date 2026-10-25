@@ -1,6 +1,6 @@
 # Native / TypeScript conformance — 0.3.7 candidate, 2026-10-25
 
-The latest complete run, R7, passed **23/24** on one unchanged paired CLI/engine artifact containing the full Web UI. The failing TypeScript tool-recall cell returned the token already supplied in its prompt without executing the required bash command. Its command exited normally; the missing tool execution remains a failure. This is not a 24/24 result.
+The latest complete run, R7, passed **23/24** on one unchanged paired CLI/engine artifact containing the full Web UI. The failing TypeScript tool-recall cell returned the token already supplied in its prompt without executing the required bash command. Its command exited normally; the missing tool execution remains a failure. This is not a 24/24 result. Re-running that one cell on the same frozen artifact (under `runs/r7-retry-ts`, $0.0035) passed with two turns: the model executed the command that time. The cell is model-dependent, while the R7 failure itself is kept as recorded.
 
 | Scenario             | TypeScript | Rust      |
 | -------------------- | ---------- | --------- |
