@@ -32,6 +32,17 @@
       "sourceCheckpoint": "96e5d42c33",
       "aborted": true,
       "reason": "Harness mistakenly pinned a raw zero-rate catalog, bypassing the normal reference-price overlay. Partial run not counted as acceptance."
+    },
+    "r13": {
+      "sourceCheckpoint": "7aa5c0abb30693d86f48cbba51360e333b0be084",
+      "cells": 24,
+      "pass": 23,
+      "fail": 1,
+      "skip": 0,
+      "reportedMainTurnReferenceCost": 0.04854149622,
+      "fullWebUIEmbedded": true,
+      "cliSha256": "b407db0783d0790ffe098100c1d8ce0793a934246b27ba8c0241948bcee682ab",
+      "engineSha256": "a0ef6cf53bdb58bc2b66229d5d78594c726b01e42b682a77d8c622e894b3362a"
     }
   },
   "fixes": {
@@ -39,7 +50,13 @@
     "headlessTitleSettlement": "d657c09090",
     "conformanceHarness": "0f3a4712a8",
     "releaseEnginePairing": "7cdace8835",
-    "nativeCreateRetry": "0b68705b09"
+    "nativeCreateRetry": "0b68705b09",
+    "routeCapabilities": "c267e6de64",
+    "nativeProtocolLogging": "30f1f7a37f",
+    "mcpOriginalIdentity": "91c54fa39b",
+    "compactToolApproval": "0bfb4cfb9f",
+    "hookCancellation": "5d7aab7838",
+    "compactPendingReceipt": "bb46bdfa07"
   },
   "artifactHashes": {
     "r2-host": "9e2643c096a691d76b315e7ba5b99aefd589e569418c209134a46af401fa44df",
@@ -49,14 +66,17 @@
     "r5-host": "bdbd70a48ad858d24d15d03d5ddb6945284837e354045740dc0700e36cc1579b",
     "r5-engine": "fdf793e224dac6a2a8a97ce63d434e1b2ef1eac2b8b832d47990dcac1770ece9",
     "r7-host": "8f19156725475282d37273837faa0b48d894e77e3f658301ede595205198f712",
-    "r7-engine": "65cf97243fbb7bbfe66d971acafb818be9617b7941decca095b20c1b48f5fd3c"
+    "r7-engine": "65cf97243fbb7bbfe66d971acafb818be9617b7941decca095b20c1b48f5fd3c",
+    "r13-host": "b407db0783d0790ffe098100c1d8ce0793a934246b27ba8c0241948bcee682ab",
+    "r13-engine": "a0ef6cf53bdb58bc2b66229d5d78594c726b01e42b682a77d8c622e894b3362a"
   },
   "limitations": [
-    "R7 is a private feature integration, not final merged main or final release-installation acceptance.",
-    "R7 passed 23/24: the TS model answered a token supplied in the prompt without the required bash call; the structural failure is retained.",
-    "R7 artifact contains the full Web UI; model conformance does not establish App UI correctness.",
-    "R3 host executable hash was not recorded before replacement; its source checkpoint is retained.",
-    "Reference costs count recorded main provider turns, not subscription cash charges or auxiliary title calls.",
-    "R6 was aborted because of a harness catalog-selection mistake; no R6 complete-matrix claim is made."
+    "R13 is a private feature integration, not final merged main or a published release.",
+    "All latest R13 results are selected, including any failure; older failures and individual retries remain preserved.",
+    "TypeScript forced-compaction checks completion only; a Rust compaction pass additionally requires a durable engine_compaction row.",
+    "Model conformance records parsed CLI events and does not prove raw ACP protocol purity. A separate compiled R12 ACP test passed strict framing; actual R11 Neovim/CodeCompanion UI receipts are in the ACP acceptance record.",
+    "The full Web UI was embedded; this matrix does not establish App UI correctness or final cross-platform release installation.",
+    "Reference costs count main provider turns, exclude auxiliary title calls, and are not subscription cash charges. Missing vision prices do not establish free calls.",
+    "Final merged-artifact checks, real-provider quota/natural credential-expiry acceptance and later Rust migration phases remain separate gates."
   ]
 }
