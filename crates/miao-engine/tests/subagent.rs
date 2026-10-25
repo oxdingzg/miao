@@ -186,7 +186,7 @@ impl Provider for Chatty {
             .collect();
         if texts.iter().any(|text| text.contains("say hello")) {
             let turn = self.turns.fetch_add(1, Ordering::SeqCst);
-            if turn < 60 {
+            if turn < 200 {
                 return Ok(Reply {
                     content: json!([{"type":"tool_use","id":format!("c{turn}"),"name":"bash","input":{"command":"true"}}]),
                     usage: json!({}),
