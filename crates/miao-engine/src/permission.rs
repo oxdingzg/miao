@@ -63,6 +63,10 @@ pub struct Config {
     pub allow_cron: bool,
     #[serde(default)]
     pub process_network: bool,
+    /// Operator sandbox switch. The engine keeps confining commands unless a
+    /// product policy explicitly records `sandbox: false`.
+    #[serde(default = "sandbox_on")]
+    pub sandbox: bool,
     #[serde(default)]
     pub rules: Vec<Rule>,
     #[serde(default = "approval_timeout")]
@@ -77,6 +81,9 @@ fn provider_turns() -> Option<u32> {
 }
 fn approval_timeout() -> u64 {
     60_000
+}
+fn sandbox_on() -> bool {
+    true
 }
 impl Config {
     /// Entry-point default. An interactive editor (ACP) is the approval
@@ -107,6 +114,7 @@ impl Default for Config {
             allow_wakeup: false,
             allow_cron: false,
             process_network: false,
+            sandbox: sandbox_on(),
             rules: vec![],
             approval_timeout_ms: approval_timeout(),
             max_provider_turns: provider_turns(),
@@ -268,6 +276,9 @@ impl Policy {
     }
     pub fn process_enabled(&self) -> bool {
         self.config.mode == Mode::Workspace && self.config.allow_process
+    }
+    pub fn process_sandbox(&self) -> bool {
+        self.config.sandbox
     }
     pub fn background_enabled(&self) -> bool {
         self.process_enabled() && self.config.allow_background

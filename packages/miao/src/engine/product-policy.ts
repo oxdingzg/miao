@@ -13,9 +13,14 @@ import { EngineError, type EngineOptions } from "./client"
  * engine would surface no coding tools at all.
  *
  * An explicit `MIAO_ENGINE_POLICY` remains the operator's authority boundary
- * and always wins; this file is generated only when that is absent.
+ * and always wins; this file is generated only when that is absent. The
+ * `sandbox` argument records the operator's OS-sandbox choice for process
+ * commands; `false` lets them run unsandboxed.
  */
-export const prepare = Effect.fn("Engine.productPolicy")(function* (configuration: Pick<EngineOptions, "policyFile">) {
+export const prepare = Effect.fn("Engine.productPolicy")(function* (
+  configuration: Pick<EngineOptions, "policyFile">,
+  sandbox: boolean,
+) {
   const options: Partial<EngineOptions> = {}
   if (configuration.policyFile) return options
   const directory = yield* Effect.acquireRelease(
@@ -36,6 +41,8 @@ export const prepare = Effect.fn("Engine.productPolicy")(function* (configuratio
     allow_wakeup: true,
     allow_cron: true,
     process_network: true,
+    // The operator's OS-sandbox switch for process commands.
+    sandbox,
     // Match the TS product: no implicit request-count cutoff. Explicit
     // operator policies and agent.steps remain authoritative.
     max_provider_turns: null,

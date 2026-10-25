@@ -5,6 +5,18 @@ use miao_engine::{
 use serde_json::json;
 
 #[test]
+fn sandbox_switch_defaults_on_and_parses_an_explicit_off() {
+    let default: Config =
+        serde_json::from_str("{\"mode\":\"workspace\",\"allow_process\":true}").unwrap();
+    assert!(default.sandbox);
+    let off: Config =
+        serde_json::from_str("{\"mode\":\"workspace\",\"allow_process\":true,\"sandbox\":false}")
+            .unwrap();
+    assert!(!off.sandbox);
+    assert!(!Policy::new(off).unwrap().process_sandbox());
+}
+
+#[test]
 fn modes_and_rules_have_monotonic_deny_and_explicit_ask() {
     let policy = Policy::new(Config {
         mode: Mode::Workspace,
