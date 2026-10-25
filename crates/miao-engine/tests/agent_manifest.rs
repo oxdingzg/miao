@@ -124,6 +124,7 @@ fn manifest() -> AgentManifest {
         mode: None,
         request: None,
         steps: None,
+        budget: None,
     }
 }
 

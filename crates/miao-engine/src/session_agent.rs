@@ -77,6 +77,9 @@ pub struct AgentManifest {
     pub request: Option<crate::request_options::Options>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub steps: Option<u32>,
+    /// Soft per-prompt token budget, matching the TS agent `budget` setting.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub budget: Option<u64>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -174,6 +177,15 @@ impl AgentManifest {
         }
         if self.steps.is_some_and(|steps| steps == 0 || steps > 1000) {
             return Err(invalid("steps"));
+        }
+        // Same bound as a prompt budget in the product config: zero would pause
+        // before the first turn, and an absurd value is a wire mistake rather
+        // than a large budget.
+        if self
+            .budget
+            .is_some_and(|budget| budget == 0 || budget > 1_000_000_000)
+        {
+            return Err(invalid("budget"));
         }
         if let Some(request) = &self.request {
             request

@@ -27,6 +27,7 @@ export const Info = Schema.Struct({
   hidden: Schema.Boolean,
   color: Color.pipe(optional),
   steps: PositiveInt.pipe(optional),
+  budget: PositiveInt.pipe(optional),
   permissions: Permission.Ruleset,
   permission_mode: Permission.Mode.pipe(optional),
 })
