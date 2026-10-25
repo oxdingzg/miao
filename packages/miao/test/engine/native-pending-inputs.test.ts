@@ -1,7 +1,9 @@
 import { expect, test } from "bun:test"
 import { translatePrompt } from "@/engine/bridge"
-import { pendingInputsPage } from "@/engine/native-engine"
+import { generatedInputMessageID } from "@/engine/identity"
+import { cancelPendingInput, pendingInputsPage } from "@/engine/native-engine"
 import { SessionID } from "@miao/schema/session-id"
+import { SessionMessage } from "@miao/schema/session-message"
 import { DateTime } from "effect"
 
 test("an engine inbox page becomes admitted receipts with their attachments", () => {
@@ -113,6 +115,46 @@ test("an engine-generated notice reads and promotes under one identity", () => {
     data: { input_id: engineInputID, prompt: "Monitor job produced matching output" },
   })
   expect(String(page.inputs[0]?.id)).toBe(String(promoted?.messageID))
+})
+
+test("a generated notice is cancelled by resolving its engine identity once", async () => {
+  const calls: string[] = []
+  const accepted = await cancelPendingInput(async (inputID) => {
+    calls.push(inputID)
+    return inputID.startsWith("msg_gen_") ? { accepted: false, reason: "unknown" } : { accepted: true }
+  }, generatedInputMessageID("monitor:job:u"))
+  expect(accepted).toBe(true)
+  expect(calls).toEqual([String(generatedInputMessageID("monitor:job:u")), "monitor:job:u"])
+})
+
+test("a submitted prompt cancels under its own identity", async () => {
+  const calls: string[] = []
+  const accepted = await cancelPendingInput(async (inputID) => {
+    calls.push(inputID)
+    return { accepted: true, duplicate: true }
+  }, SessionMessage.ID.make("msg_submitted"))
+  expect(accepted).toBe(true)
+  expect(calls).toEqual(["msg_submitted"])
+})
+
+test("a promoted notice keeps its final answer instead of resolving elsewhere", async () => {
+  const calls: string[] = []
+  const accepted = await cancelPendingInput(async (inputID) => {
+    calls.push(inputID)
+    return { accepted: false, reason: "promoted" }
+  }, generatedInputMessageID("monitor:job:u"))
+  expect(accepted).toBe(false)
+  expect(calls).toEqual([String(generatedInputMessageID("monitor:job:u"))])
+})
+
+test("a generated identity the engine cannot resolve reports false", async () => {
+  const calls: string[] = []
+  const accepted = await cancelPendingInput(async (inputID) => {
+    calls.push(inputID)
+    return { accepted: false, reason: "unknown" }
+  }, generatedInputMessageID("monitor:missing"))
+  expect(accepted).toBe(false)
+  expect(calls).toEqual([String(generatedInputMessageID("monitor:missing")), "monitor:missing"])
 })
 
 test("an engine input needs a non-empty identity", () => {

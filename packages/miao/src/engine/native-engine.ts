@@ -3,6 +3,7 @@ import type { AgentAttachment } from "@miao/schema/prompt"
 import { Event } from "@miao/schema/event"
 import { SessionEvent } from "@miao/schema/session-event"
 import { agentManifest, modelRoute, type Route } from "./product-agent"
+import type { SessionMessage } from "@miao/schema/session-message"
 import { LocationServiceMap } from "@miao/core/location-service-map"
 import type { LocationServices } from "@miao/core/location-services"
 import { SessionCreate } from "@miao/core/session-create"
@@ -351,6 +352,28 @@ export function pendingInputsPage(sessionID: SessionID, value: unknown) {
   }
 }
 
+/**
+ * Cancel one admitted input.
+ *
+ * A product prompt is cancelled under the identity it was submitted with. A
+ * generated notice is displayed under an identity derived from the engine's
+ * own input id, so a refusal that names an unknown id is resolved back to that
+ * durable row. Only `reason: "unknown"` is resolved: a promoted or cancelled
+ * row already has a final answer, and retrying it under another id would
+ * address a different input.
+ */
+export async function cancelPendingInput(
+  request: (inputID: string) => Promise<unknown>,
+  inputID: SessionMessage.ID,
+): Promise<boolean> {
+  const reply = Schema.decodeUnknownSync(CancelReply)(await request(inputID))
+  if (reply.accepted) return true
+  if (reply.reason !== "unknown") return false
+  const engineInputID = generatedInputEngineID(inputID)
+  if (engineInputID === undefined || engineInputID === inputID) return false
+  return Schema.decodeUnknownSync(AcceptedReply)(await request(engineInputID)).accepted
+}
+
 const refusal = (sessionID: string, error: unknown) =>
   error instanceof ConflictError
     ? error
@@ -630,29 +653,13 @@ export const fromOwners = (
         }),
       ).pipe(Effect.map((value) => pendingInputsPage(input.sessionID, value))),
     cancelInput: (input) =>
-      read<boolean>(input, async (connection) => {
-        const reply = Schema.decodeUnknownSync(CancelReply)(
-          await connection.client.request("cancel_input", {
-            session_id: input.sessionID,
-            input_id: input.inputID,
-          }),
-        )
-        if (reply.accepted) return true
-        // A generated notice is displayed under an identity derived from the
-        // engine's own input id. Only a genuinely unknown id may be that
-        // derived identity: a promoted or cancelled row already has a final
-        // answer, and retrying it under another id would address a different
-        // input.
-        if (reply.reason !== "unknown") return false
-        const engineInputID = generatedInputEngineID(input.inputID)
-        if (engineInputID === undefined) return false
-        return Schema.decodeUnknownSync(AcceptedReply)(
-          await connection.client.request("cancel_input", {
-            session_id: input.sessionID,
-            input_id: engineInputID,
-          }),
-        ).accepted
-      }),
+      read<boolean>(input, (connection) =>
+        cancelPendingInput(
+          (inputID) =>
+            connection.client.request("cancel_input", { session_id: input.sessionID, input_id: inputID }),
+          input.inputID,
+        ),
+      ),
     revertStage: (input) =>
       read(input, async (connection) => {
         const snapshot = Schema.decodeUnknownSync(Schema.Struct({ cursor: Schema.Number }))(
