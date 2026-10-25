@@ -1,6 +1,6 @@
 # Session takeover ledger for 25 October 2026
 
-Status checkpoint: 2026-10-25T20:11:49+08:00. This ledger preserves the interrupted workstreams; `docs/roadmap.md` remains the project-wide roadmap. PR status is a checkpoint, so query the recorded head and current checks before any merge.
+Status checkpoint: 2026-10-25T21:06:29+08:00. This ledger preserves the interrupted workstreams; `docs/roadmap.md` remains the project-wide roadmap. PR status is a checkpoint, so query the recorded head and current checks before any merge.
 
 ## Completed work
 
@@ -12,26 +12,31 @@ Status checkpoint: 2026-10-25T20:11:49+08:00. This ledger preserves the interrup
 
 | PR | Branch | Work | Checks at checkpoint |
 | --- | --- | --- | --- |
-| [#1394](https://github.com/oxdingzg/miao/pull/1394) | `feat/embedded-engine-artifact` | feat(build): embed the engine binary into the single-file build | Reported checks successful or skipped; BEHIND |
-| [#1398](https://github.com/oxdingzg/miao/pull/1398) | `fix/native-session-stalls` | fix(engine): prevent catalog reads and transport loss from stalling sessions | Reported checks successful or skipped; BEHIND |
-| [#1399](https://github.com/oxdingzg/miao/pull/1399) | `fix/tui-session-blank` | fix(tui): keep open sessions visible when catalog entries fail | Reported checks successful or skipped; CLEAN |
+| [#1394](https://github.com/oxdingzg/miao/pull/1394) | `feat/embedded-engine-artifact` | feat(build): embed the engine binary into the single-file build | 8 checks pending; BLOCKED |
+| [#1398](https://github.com/oxdingzg/miao/pull/1398) | `fix/native-session-stalls` | fix(engine): prevent catalog reads and transport loss from stalling sessions | 3 checks pending; BLOCKED |
 | [#1400](https://github.com/oxdingzg/miao/pull/1400) | `fix/engine-idle-ownership` | fix(engine): reclaim idle runtimes using process-owned live work | Reported checks successful or skipped; CLEAN |
 | [#1401](https://github.com/oxdingzg/miao/pull/1401) | `fix/native-stream-watchdog` | fix(engine): keep event idle deadlines active throughout provider streams | Reported checks successful or skipped; CLEAN |
-| [#1402](https://github.com/oxdingzg/miao/pull/1402) | `test/conformance-workspace` | test(conformance): verify isolated engine placement and durable outcomes | Reported checks successful or skipped; BEHIND |
+| [#1402](https://github.com/oxdingzg/miao/pull/1402) | `test/conformance-workspace` | test(conformance): verify isolated engine placement and durable outcomes | 3 checks pending; BLOCKED |
 | [#1403](https://github.com/oxdingzg/miao/pull/1403) | `fix/native-run-admission-gap` | fix(engine): publish initial input promotion and run start atomically | Reported checks successful or skipped; CLEAN |
 | [#1404](https://github.com/oxdingzg/miao/pull/1404) | `feat/context-prune-events` | feat(engine): persist measured tool output pruning facts | Reported checks successful or skipped; CLEAN |
-| [#1405](https://github.com/oxdingzg/miao/pull/1405) | `fix/native-long-history` | fix(engine): preserve long session context, snapshots and forks | Running: engine / engine (macos-14), engine / engine (ubuntu-latest), engine / engine (windows); UNSTABLE |
-| [#1406](https://github.com/oxdingzg/miao/pull/1406) | `docs/native-acceptance-status` | docs: refresh native engine acceptance status | Reported checks successful or skipped; BEHIND |
-| [#1407](https://github.com/oxdingzg/miao/pull/1407) | `feat/tui-compact-footer` | feat(tui): consolidate the composer into a compact status layout | Reported checks successful or skipped; BEHIND |
-| [#1408](https://github.com/oxdingzg/miao/pull/1408) | `feat/session-usage-history` | feat(session): expose paginated provider usage history | Running: unit / unit tests (linux), unit / window runtime (windows), engine / engine (macos-14), engine / engine (ubuntu-latest), engine / engine (windows), e2e / e2e (linux), e2e / e2e (windows, non-blocking until Windows suite is fixed); BLOCKED |
+| [#1405](https://github.com/oxdingzg/miao/pull/1405) | `fix/native-long-history` | fix(engine): preserve long session context, snapshots and forks | Reported checks successful or skipped; CLEAN |
+| [#1406](https://github.com/oxdingzg/miao/pull/1406) | `docs/native-acceptance-status` | docs: refresh native engine acceptance status | 3 checks pending; BLOCKED |
+| [#1407](https://github.com/oxdingzg/miao/pull/1407) | `feat/tui-compact-footer` | feat(tui): consolidate the composer into a compact status layout | 1 checks pending; UNSTABLE |
+| [#1408](https://github.com/oxdingzg/miao/pull/1408) | `feat/session-usage-history` | feat(session): expose paginated provider usage history | Failed: e2e / e2e (windows, non-blocking until Windows suite is fixed); UNSTABLE |
 | [#1409](https://github.com/oxdingzg/miao/pull/1409) | `docs/session-takeover` | docs: preserve interrupted session work and acceptance checklist | Reported checks successful or skipped; CLEAN |
 | [#1410](https://github.com/oxdingzg/miao/pull/1410) | `feat/app-context-history` | feat(app): chart persisted context and cache history | Reported checks successful or skipped; CLEAN |
 | [#1411](https://github.com/oxdingzg/miao/pull/1411) | `fix/engine-orphan-leak` | fix(engine): release orphaned engines instead of resurrecting them | Reported checks successful or skipped; CLEAN |
 | [#1413](https://github.com/oxdingzg/miao/pull/1413) | `feat/app-context-composition` | feat(app): chart estimated input composition over time | Reported checks successful or skipped; CLEAN |
-| [#1414](https://github.com/oxdingzg/miao/pull/1414) | `fix/native-pruning-growth` | fix(engine): reject pruning that expands tool output | Failed: engine / engine (windows), ci-gate; UNSTABLE |
-| [#1415](https://github.com/oxdingzg/miao/pull/1415) | `chore/release-0.3.7` | chore(release): prepare v0.3.7 | Running: engine / engine (windows); BLOCKED |
-| [#1416](https://github.com/oxdingzg/miao/pull/1416) | `feat/context-settlement-cards` | feat(context): replay pruning facts and render settlement cards | Running: unit / unit tests (linux), engine / engine (ubuntu-latest), engine / engine (windows); UNSTABLE |
-| [#1417](https://github.com/oxdingzg/miao/pull/1417) | `fix/tui-session-list-scope` | fix(tui): scope session listings to the active directory or project | Running: unit / changes / changes, typecheck / changes / changes; UNSTABLE |
+| [#1414](https://github.com/oxdingzg/miao/pull/1414) | `fix/native-pruning-growth` | fix(engine): reject pruning that expands tool output | Reported checks successful or skipped; CLEAN |
+| [#1416](https://github.com/oxdingzg/miao/pull/1416) | `feat/context-settlement-cards` | feat(context): replay pruning facts and render settlement cards | Failed: unit / unit tests (linux), unit / unit (linux), ci-gate; UNSTABLE |
+| [#1417](https://github.com/oxdingzg/miao/pull/1417) | `fix/tui-session-list-scope` | fix(tui): scope session listings to the active directory or project | Reported checks successful or skipped; CLEAN |
+| [#1418](https://github.com/oxdingzg/miao/pull/1418) | `fix/engine-tool-timeout` | fix(engine): accept ten-minute foreground timeouts | 1 checks pending; BLOCKED |
+| [#1419](https://github.com/oxdingzg/miao/pull/1419) | `fix/native-pending-input-ids` | fix(engine): give generated inbox inputs a product identity | 9 checks pending; BLOCKED |
+| [#1420](https://github.com/oxdingzg/miao/pull/1420) | `test/ripgrep-timeout` | test(core): make ripgrep deadline coverage deterministic | 3 checks pending; BLOCKED |
+| [#1421](https://github.com/oxdingzg/miao/pull/1421) | `fix/native-catalog-readonly` | fix(engine): read native catalogs without execution owners | 2 checks pending; UNSTABLE |
+| [#1422](https://github.com/oxdingzg/miao/pull/1422) | `fix/native-context-limits` | fix(engine): preserve explicit context limits in generated routes | Failed: engine / engine (macos-14); BLOCKED |
+| [#1423](https://github.com/oxdingzg/miao/pull/1423) | `fix/headless-session-title` | fix(core): settle session titles before headless teardown | 3 checks pending; BLOCKED |
+| [#1424](https://github.com/oxdingzg/miao/pull/1424) | `docs/conformance-v037` | docs(engine): record corrected 0.3.7 conformance receipts | 3 checks pending; BLOCKED |
 
 The owner explicitly approved completion without further confirmation, including reviewed squash merges after successful CI and deletion of merged branches. This resolves the earlier approval wait. Required checks and dependency ordering remain mandatory; never report a tested preview as merged or published.
 
@@ -120,3 +125,19 @@ PR backlog has multiple causes: unreconciled approving reviews, strict up-to-dat
 Further review of #1411 reproduced a second ownership defect using a real native engine: a timer sweep could unregister a live replacement created by a concurrent request. Commit `50500f36b3` guards snapshot and connection identity before publishing probe results or deleting the registry entry. The regression failed before the guard and passes after it, including ten concurrent close/sweep/reopen rounds and 27 assertions; the miao package typecheck passes. The commit was pushed directly to the existing #1411 topic branch because it is the same cleanup concern. The temporary remote topic was deleted; no extra PR was created. New-head CI remains required.
 
 The session-list scope repair is #1417, stacked on #1399. Its historical same-directory placement limitation remains tracked in #1412.
+
+
+## Release constraint and new defect checkpoint
+
+The owner requires completing the current PRs, branches, and adopted tasks before publishing 0.3.7. #1415 only synchronized development versions and was squash-merged to main as `fb78c5dac1`; no release workflow has been dispatched. #1399 was merged by a concurrent writer into its parent feature branch #1398, not main. The coordinator has reconciled this and owns all further merges and releases. Other writers now handle explicitly recorded source and CI work only.
+
+- #1421 (`9e1ad53b8c`): read native catalog batches without execution runtimes, leases, migrations, provider calls, LSP, or MCP. Three native/CLI tests and ten product tests, including an actual subprocess against a live engine, passed; Miao/Server checks and native Clippy passed. A follow-up moves batch identities to bounded stdin so legal long IDs cannot exceed Windows command-line limits. Historical placements remain intact.
+- #1419: the original pending-notice decoding repair was expanded after review to preserve reversible input identity across reading, cancellation, promotion, and legacy message addressing. The source owner reports a complete 372-test engine suite and actual native read/cancel/read verification; final-head CI remains required.
+- #1420: a reproducible 1ms ripgrep test race blocked #1416. The repair retains actual deadline/child termination checks using an immediate deadline and a blocking FIFO instead of relying on a fast file scan losing a 1ms race. Merge this test repair before refreshing the affected dependency chain.
+- #1422 preserves explicitly configured native context limits that generated route defaults overwrote; a corrected compiled forced-compaction rerun persisted a real compaction row. #1423 settles in-flight TS titles before headless runtime teardown, with bounded Session-specific waits.
+- #1424 records the corrected 24-cell conformance evidence. One complete run was 22 pass/2 fail; both defects passed targeted compiled reruns after repairs. This is 24 passing selected receipts across recorded versions, not a claim that one unchanged final release artifact passed all 24 cells. Final combined artifact validation remains required.
+- Published Windows updates previously replaced only the CLI. A newer unmarked global engine could therefore stay stale even when embedding was enabled manually. The in-progress pairing change builds/signs each target engine before embedding that exact architecture, automatically embeds it in release builds, resolves retained build directories before the launcher directory, and materializes a fresh paired engine without replacing an engine used by another window. Explicit operator overrides remain authoritative. Seventeen unit tests, package typecheck, and an actual compiled Windows locked-engine/offline-upgrade fixture passed; the full macOS two-architecture/Web-UI production build is still being validated. No publication follows from these checks alone.
+
+The usage API branch also reported a non-blocking Windows cached-timeline E2E failure: latest-message position assertions passed, but ten first-paint descendant nodes were removed. The parallel source owner is investigating the baseline and actual removed nodes; do not call that check passed or weaken its assertion merely to clear CI.
+
+Rust Phase2/3/4 and external acceptance conditions above remain unfinished; packaging and passing targeted defect checks do not complete them.
