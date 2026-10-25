@@ -1,4 +1,16 @@
 export const dict = {
+  "context.timeline.title": "컨텍스트 및 캐시 기록",
+  "context.timeline.step": "{{model}} · {{time}} · {{input}} 프롬프트 토큰 · {{read}} 캐시 읽기 · {{write}} 캐시 쓰기",
+  "context.timeline.requestWindow": "요청 시 {{value}} 토큰 기간",
+  "context.timeline.catalogWindow": "현재 카탈로그의 {{value}} 토큰 창",
+  "context.timeline.unknownWindow": "알 수 없는 컨텍스트 창",
+  "context.timeline.empty": "아직 확정된 공급자 사용량이 기록되지 않았습니다.",
+  "context.timeline.retry": "사용량 기록 다시 불러오기",
+  "context.timeline.compaction": "컨텍스트가 압축됨",
+  "context.timeline.cacheRead": "캐시 읽기",
+  "context.timeline.cacheWrite": "캐시 쓰기",
+  "context.timeline.ttft": "첫 번째 토큰까지 {{value}}ms",
+
   "command.category.suggested": "추천",
   "command.category.view": "보기",
   "command.category.project": "프로젝트",
@@ -403,7 +415,8 @@ export const dict = {
   "toast.permissions.autoaccept.off.title": "권한 자동 수락 중지됨",
   "toast.permissions.autoaccept.off.description": "권한 요청에 승인이 필요합니다",
   "settings.permissions.autoaccept.project.title": "이 프로젝트의 권한 자동 수락",
-  "settings.permissions.autoaccept.project.description": "이 프로젝트의 모든 세션에서 새 권한 요청을 묻지 않고 수락합니다. 세션 및 디렉터리 설정이 우선합니다.",
+  "settings.permissions.autoaccept.project.description":
+    "이 프로젝트의 모든 세션에서 새 권한 요청을 묻지 않고 수락합니다. 세션 및 디렉터리 설정이 우선합니다.",
   "toast.model.none.title": "선택된 모델 없음",
   "toast.model.none.description": "이 세션을 요약하려면 공급자를 연결하세요",
   "toast.file.loadFailed.title": "파일 로드 실패",
@@ -613,7 +626,8 @@ export const dict = {
   "settings.general.row.reasoningSummaries.title": "추론 요약 표시",
   "settings.general.row.reasoningSummaries.description": "타임라인에 모델 추론 요약 표시",
   "settings.general.row.turnDiffs.title": "턴별 변경 파일 표시",
-  "settings.general.row.turnDiffs.description": "타임라인에 완료된 턴별 변경 파일을 줄 수와 펼칠 수 있는 차이와 함께 표시합니다.",
+  "settings.general.row.turnDiffs.description":
+    "타임라인에 완료된 턴별 변경 파일을 줄 수와 펼칠 수 있는 차이와 함께 표시합니다.",
   "settings.general.row.shellToolPartsExpanded.title": "shell 도구 항목 펼치기",
   "settings.general.row.shellToolPartsExpanded.description":
     "타임라인에서 기본적으로 shell 도구 항목을 펼친 상태로 표시합니다",

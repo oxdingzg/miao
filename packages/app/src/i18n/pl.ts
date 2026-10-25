@@ -1,4 +1,17 @@
 export const dict = {
+  "context.timeline.title": "Kontekst i historia pamięci podręcznej",
+  "context.timeline.step":
+    "{{model}} · {{time}} · {{input}} tokeny zachęty · {{read}} odczyt pamięci podręcznej · {{write}} zapis pamięci podręcznej",
+  "context.timeline.requestWindow": "Okno tokenu {{value}} w momencie żądania",
+  "context.timeline.catalogWindow": "Okno tokena {{value}} w bieżącym katalogu",
+  "context.timeline.unknownWindow": "Okno kontekstowe nieznane",
+  "context.timeline.empty": "Nie zarejestrowano jeszcze żadnego rozliczonego wykorzystania dostawcy.",
+  "context.timeline.retry": "Spróbuj ponownie historii użycia",
+  "context.timeline.compaction": "Kontekst zwięzły",
+  "context.timeline.cacheRead": "Pamięć podręczna odczytana",
+  "context.timeline.cacheWrite": "Zapisz w pamięci podręcznej",
+  "context.timeline.ttft": "{{value}} ms do pierwszego tokena",
+
   "desktop.menu.app": "miao",
   "desktop.menu.file": "Plik",
   "desktop.menu.edit": "Edycja",
@@ -603,7 +616,8 @@ export const dict = {
   "toast.permissions.autoaccept.off.title": "Zatrzymano automatyczne akceptowanie uprawnień",
   "toast.permissions.autoaccept.off.description": "Żądania uprawnień będą wymagały zatwierdzenia",
   "settings.permissions.autoaccept.project.title": "Automatycznie akceptuj uprawnienia w tym projekcie",
-  "settings.permissions.autoaccept.project.description": "Odpowiadaj na nowe prośby o uprawnienia z dowolnej sesji tego projektu bez pytania. Wybory na poziomie sesji i katalogu mają pierwszeństwo.",
+  "settings.permissions.autoaccept.project.description":
+    "Odpowiadaj na nowe prośby o uprawnienia z dowolnej sesji tego projektu bez pytania. Wybory na poziomie sesji i katalogu mają pierwszeństwo.",
   "toast.model.none.title": "Nie wybrano modelu",
   "toast.model.none.description": "Połącz dostawcę, aby podsumować tę sesję",
   "toast.file.loadFailed.title": "Nie udało się załadować pliku",
@@ -892,7 +906,8 @@ export const dict = {
   "settings.general.row.reasoningSummaries.title": "Pokaż podsumowania wnioskowania",
   "settings.general.row.reasoningSummaries.description": "Wyświetlaj podsumowania wnioskowania modelu na osi czasu",
   "settings.general.row.turnDiffs.title": "Pokaż zmienione pliki dla każdej tury",
-  "settings.general.row.turnDiffs.description": "Wymienia na osi czasu pliki zmienione w każdej ukończonej turze, z liczbą linii i rozwijanymi różnicami.",
+  "settings.general.row.turnDiffs.description":
+    "Wymienia na osi czasu pliki zmienione w każdej ukończonej turze, z liczbą linii i rozwijanymi różnicami.",
   "settings.general.row.shellToolPartsExpanded.title": "Rozwijaj elementy narzędzia shell",
   "settings.general.row.shellToolPartsExpanded.description":
     "Domyślnie pokazuj rozwinięte elementy narzędzia shell na osi czasu",

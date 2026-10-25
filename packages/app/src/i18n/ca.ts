@@ -1,4 +1,17 @@
 export const dict = {
+  "context.timeline.title": "Context i historial de memòria cau",
+  "context.timeline.step":
+    "{{model}} · {{time}} · {{input}} fitxes d'indicació · {{read}} lectura de memòria cau · {{write}} escriptura de memòria cau",
+  "context.timeline.requestWindow": "{{value}} finestra de testimoni a l'hora de la sol·licitud",
+  "context.timeline.catalogWindow": "{{value}} finestra de testimoni al catàleg actual",
+  "context.timeline.unknownWindow": "Finestra de context desconeguda",
+  "context.timeline.empty": "Encara no s'ha registrat cap ús del proveïdor establert.",
+  "context.timeline.retry": "Torna a provar l'historial d'ús",
+  "context.timeline.compaction": "Context compactat",
+  "context.timeline.cacheRead": "Llegit la memòria cau",
+  "context.timeline.cacheWrite": "Escriptura de la memòria cau",
+  "context.timeline.ttft": "{{value}} ms al primer testimoni",
+
   "desktop.menu.app": "miao",
   "desktop.menu.file": "Fitxer",
   "desktop.menu.edit": "Edita",
@@ -606,7 +619,8 @@ export const dict = {
   "toast.permissions.autoaccept.off.title": "S'ha aturat l'acceptació automàtica de permisos",
   "toast.permissions.autoaccept.off.description": "Les sol·licituds de permís requeriran aprovació",
   "settings.permissions.autoaccept.project.title": "Accepta automàticament els permisos d'aquest projecte",
-  "settings.permissions.autoaccept.project.description": "Respon les noves sol·licituds de permís de qualsevol sessió d'aquest projecte sense preguntar. Les eleccions per sessió i directori tenen prioritat.",
+  "settings.permissions.autoaccept.project.description":
+    "Respon les noves sol·licituds de permís de qualsevol sessió d'aquest projecte sense preguntar. Les eleccions per sessió i directori tenen prioritat.",
   "toast.model.none.title": "No s'ha seleccionat cap model",
   "toast.model.none.description": "Connecteu un proveïdor per resumir aquesta sessió",
   "toast.file.loadFailed.title": "No s'ha pogut carregar el fitxer",
@@ -977,7 +991,8 @@ export const dict = {
   "settings.general.row.reasoningSummaries.title": "Mostra resums de raonament",
   "settings.general.row.reasoningSummaries.description": "Mostra els resums de raonament del model a la línia de temps",
   "settings.general.row.turnDiffs.title": "Mostra els fitxers modificats per torn",
-  "settings.general.row.turnDiffs.description": "Llista a la cronologia els fitxers modificats de cada torn completat, amb recomptes de línies i diferències desplegables.",
+  "settings.general.row.turnDiffs.description":
+    "Llista a la cronologia els fitxers modificats de cada torn completat, amb recomptes de línies i diferències desplegables.",
   "settings.general.row.shellToolPartsExpanded.title": "Amplieu les peces de l'eina de closca",
   "settings.general.row.shellToolPartsExpanded.description":
     "Mostra les parts de l'eina d'intèrpret d'ordres ampliades per defecte a la línia de temps",
@@ -1002,8 +1017,7 @@ export const dict = {
   "settings.general.row.releaseNotes.description":
     "Mostra les finestres emergents Novetats després de les actualitzacions",
   "settings.updates.row.startup.title": "Comproveu si hi ha actualitzacions a l'inici",
-  "settings.updates.row.startup.description":
-    "Comprova automàticament si hi ha actualitzacions quan s'iniciï Miao.",
+  "settings.updates.row.startup.description": "Comprova automàticament si hi ha actualitzacions quan s'iniciï Miao.",
   "settings.updates.row.check.title": "Comproveu si hi ha actualitzacions",
   "settings.updates.row.check.description":
     "Comproveu manualment si hi ha actualitzacions i instal·leu si està disponible",

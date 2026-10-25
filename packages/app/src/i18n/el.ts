@@ -1,4 +1,17 @@
 export const dict = {
+  "context.timeline.title": "Ιστορικό περιβάλλοντος και προσωρινής μνήμης",
+  "context.timeline.step":
+    "{{model}} · {{time}} · {{input}} κουπόνια προτροπής · {{read}} ανάγνωση προσωρινής μνήμης · {{write}} εγγραφή προσωρινής μνήμης",
+  "context.timeline.requestWindow": "Παράθυρο διακριτικού {{value}} κατά την ώρα αιτήματος",
+  "context.timeline.catalogWindow": "Παράθυρο διακριτικού {{value}} στον τρέχοντα κατάλογο",
+  "context.timeline.unknownWindow": "Παράθυρο περιβάλλοντος άγνωστο",
+  "context.timeline.empty": "Δεν έχει καταγραφεί ακόμη καμία διευθετημένη χρήση παρόχου.",
+  "context.timeline.retry": "Δοκιμάστε ξανά το ιστορικό χρήσης",
+  "context.timeline.compaction": "Συμπυκνωμένο πλαίσιο",
+  "context.timeline.cacheRead": "Ανάγνωση κρυφής μνήμης",
+  "context.timeline.cacheWrite": "Εγγραφή κρυφής μνήμης",
+  "context.timeline.ttft": "{{value}} ms στο πρώτο διακριτικό",
+
   "desktop.menu.app": "miao",
   "desktop.menu.file": "Αρχείο",
   "desktop.menu.edit": "Επεξεργασία",
@@ -606,7 +619,8 @@ export const dict = {
   "toast.permissions.autoaccept.off.title": "Διακοπή αυτόματης αποδοχής δικαιωμάτων",
   "toast.permissions.autoaccept.off.description": "Τα αιτήματα άδειας απαιτούν έγκριση",
   "settings.permissions.autoaccept.project.title": "Αυτόματη αποδοχή δικαιωμάτων για αυτό το έργο",
-  "settings.permissions.autoaccept.project.description": "Απάντηση σε νέα αιτήματα δικαιωμάτων από οποιαδήποτε συνεδρία αυτού του έργου χωρίς ερώτηση. Οι επιλογές ανά συνεδρία και κατάλογο υπερισχύουν.",
+  "settings.permissions.autoaccept.project.description":
+    "Απάντηση σε νέα αιτήματα δικαιωμάτων από οποιαδήποτε συνεδρία αυτού του έργου χωρίς ερώτηση. Οι επιλογές ανά συνεδρία και κατάλογο υπερισχύουν.",
   "toast.model.none.title": "Δεν έχει επιλεγεί μοντέλο",
   "toast.model.none.description": "Συνδέστε έναν πάροχο για να συνοψίσετε αυτήν τη συνεδρία",
   "toast.file.loadFailed.title": "Αποτυχία φόρτωσης αρχείου",
@@ -981,7 +995,8 @@ export const dict = {
   "settings.general.row.reasoningSummaries.title": "Εμφάνιση περιλήψεων συλλογισμών",
   "settings.general.row.reasoningSummaries.description": "Εμφάνιση περιλήψεων συλλογισμών μοντέλων στη γραμμή χρόνου",
   "settings.general.row.turnDiffs.title": "Εμφάνιση αρχείων που άλλαξαν ανά γύρο",
-  "settings.general.row.turnDiffs.description": "Απαριθμεί στο χρονολόγιο τα αρχεία που άλλαξαν σε κάθε ολοκληρωμένο γύρο, με πλήθος γραμμών και αναπτυσσόμενες διαφορές.",
+  "settings.general.row.turnDiffs.description":
+    "Απαριθμεί στο χρονολόγιο τα αρχεία που άλλαξαν σε κάθε ολοκληρωμένο γύρο, με πλήθος γραμμών και αναπτυσσόμενες διαφορές.",
   "settings.general.row.shellToolPartsExpanded.title": "Ανάπτυξη εξαρτημάτων εργαλείου κελύφους",
   "settings.general.row.shellToolPartsExpanded.description":
     "Εμφάνιση εξαρτημάτων εργαλείου κελύφους που έχουν αναπτυχθεί από προεπιλογή στη γραμμή χρόνου",

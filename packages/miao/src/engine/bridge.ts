@@ -7,7 +7,7 @@ import { Prompt, CommandInvocation, AgentAttachment } from "@miao/schema/prompt"
 import { Question } from "@miao/schema/question"
 import { Delivery } from "@miao/schema/session-delivery"
 import { StatusInfo } from "@miao/schema/session-event"
-import { adoptSession, messageID } from "./identity"
+import { adoptSession, messageID, promotedInputMessageID } from "./identity"
 import type { EngineEvent, EngineProgress } from "./client"
 import { decodeAttachments } from "./prompt-attachments"
 import { SessionRunnerCost } from "@miao/core/session/runner/cost"
@@ -112,8 +112,8 @@ export function translatePrompt(
     sessionID: adoptSession(event.session_id),
     timestamp: eventTimestamp(event),
     messageID:
-      "input_id" in event.data && typeof event.data.input_id === "string" && event.data.input_id.startsWith("msg_")
-        ? SessionMessage.ID.make(event.data.input_id)
+      "input_id" in event.data && typeof event.data.input_id === "string"
+        ? promotedInputMessageID(event.data.input_id)
         : messageID(event.session_id, event.seq),
     prompt: { text, ...(files.length ? { files } : {}), ...promptMetadata(event.data) },
     delivery,
@@ -1253,10 +1253,7 @@ export function translateCopiedPrompt(event: EngineEvent): SessionPromptAdmitted
   return {
     sessionID: adoptSession(event.session_id),
     timestamp: eventTimestamp(event),
-    messageID:
-      "input_id" in event.data && typeof event.data.input_id === "string" && event.data.input_id.startsWith("msg_")
-        ? SessionMessage.ID.make(event.data.input_id)
-        : messageID(event.session_id, event.seq),
+    messageID: promotedInputMessageID(event.data.input_id),
     prompt: { text, ...(files.length ? { files } : {}), ...promptMetadata(event.data, event.data.content) },
     delivery: "delivery" in event.data && event.data.delivery === "queue" ? "queue" : "steer",
   }
