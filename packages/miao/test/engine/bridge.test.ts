@@ -200,6 +200,23 @@ test("projects start_job input into the product bash shape", () => {
   expect(productToolInput("bash", { command: "ls" })).toEqual({ command: "ls" })
 })
 
+test("projects engine task input into the product task shape", () => {
+  expect(
+    productToolInput("task", {
+      prompt: "Explore the repo\n\nSymptom: tab title",
+      agent: "explore",
+      background: true,
+    }),
+  ).toEqual({
+    prompt: "Explore the repo\n\nSymptom: tab title",
+    agent: "explore",
+    subagent_type: "explore",
+    description: "Explore the repo",
+    background: true,
+  })
+  expect(productToolInput("read_file", { path: "a" })).toEqual({ path: "a" })
+})
+
 test("tool.completed for a shell call carries the projected result", () => {
   const bridge = new ToolBridge()
   bridge.note({
