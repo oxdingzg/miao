@@ -10,7 +10,7 @@ import {
   type Renderable,
 } from "@opentui/core"
 import type { CommandContext } from "@opentui/keymap"
-import { createEffect, createMemo, onMount, createSignal, onCleanup, on, Show, Switch, Match } from "solid-js"
+import { children, createEffect, createMemo, onMount, createSignal, onCleanup, on, Show, Switch, Match } from "solid-js"
 import path from "path"
 import { fileURLToPath } from "url"
 import { useLocal } from "../../context/local"
@@ -231,7 +231,8 @@ export function Prompt(props: PromptProps) {
   const [cursorVersion, setCursorVersion] = createSignal(0)
   const currentProviderLabel = createMemo(() => local.model.parsed().provider)
   const [footerHover, setFooterHover] = createSignal<"agent" | "model" | "provider" | "variant" | null>(null)
-  const hasRightContent = createMemo(() => Boolean(props.right))
+  const rightContent = children(() => props.right)
+  const hasRightContent = createMemo(() => rightContent.toArray().length > 0)
 
   function openAgentList() {
     if (local.selectionLocked()) {
@@ -1628,7 +1629,7 @@ export function Prompt(props: PromptProps) {
                 </Show>
                 <Show when={hasRightContent()}>
                   <box flexDirection="row" gap={1} alignItems="center">
-                    {props.right}
+                    {rightContent()}
                   </box>
                 </Show>
               </box>
