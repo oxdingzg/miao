@@ -167,6 +167,9 @@ export function Prompt(props: PromptProps) {
   const compaction = createMemo(() => sync.data.session_compaction[props.sessionID ?? ""])
   const status = createMemo(() => sync.data.session_status?.[props.sessionID ?? ""] ?? { type: "idle" })
   const waitingPrompts = createMemo(() => (props.sessionID ? sync.prompt.waiting(props.sessionID) : []))
+  // The footer names the next esc action, the same way the transcript status
+  // line does: a waiting prompt is removed before the turn is interrupted.
+  const escAction = createMemo(() => (waitingPrompts().length > 0 ? "remove prompt" : "interrupt"))
   const history = usePromptHistory()
   const stash = usePromptStash()
   const keymap = useOpencodeKeymap()
@@ -1699,7 +1702,7 @@ export function Prompt(props: PromptProps) {
                     <text fg={theme.textMuted}>{Locale.duration(turnElapsed())}</text>
                   </Show>
                   <text fg={theme.text}>
-                    esc <span style={{ fg: theme.textMuted }}>{waitingPrompts().length > 0 ? "remove prompt" : "interrupt"}</span>
+                    esc <span style={{ fg: theme.textMuted }}>{escAction()}</span>
                   </text>
                 </box>
               </Match>
