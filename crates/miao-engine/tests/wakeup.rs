@@ -269,3 +269,21 @@ fn wakeup_has_explicit_permission_upper_bound_and_session_local_input() {
         Delivery::Queue
     );
 }
+
+#[tokio::test]
+async fn a_finished_timer_handle_does_not_keep_the_runtime_alive() {
+    let dir = tempfile::tempdir().unwrap();
+    let (runtime, store, _) = setup(dir.path(), false, 1).await;
+    let timers = store.wakeups("s").await.unwrap();
+    let id = timers[0]["timer_id"].as_str().unwrap();
+    assert!(runtime.has_live_work().await.unwrap());
+    runtime.cancel_wakeup("s", id).await.unwrap();
+    tokio::time::timeout(std::time::Duration::from_secs(3), async {
+        while runtime.has_live_work().await.unwrap() {
+            tokio::time::sleep(std::time::Duration::from_millis(10)).await;
+        }
+    })
+    .await
+    .expect("a completed timer handle still counted as live work");
+    runtime.shutdown().await;
+}

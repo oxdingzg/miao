@@ -1,4 +1,17 @@
 export const dict = {
+  "context.timeline.title": "Kontekst ja vahemälu ajalugu",
+  "context.timeline.step":
+    "{{model}} · {{time}} · {{input}} viibamärgid · {{read}} vahemälu lugemine · {{write}} vahemälu kirjutamine",
+  "context.timeline.requestWindow": "{{value}} loa aken päringu ajal",
+  "context.timeline.catalogWindow": "{{value}} märgi aken praeguses kataloogis",
+  "context.timeline.unknownWindow": "Kontekstikaken teadmata",
+  "context.timeline.empty": "Arveldatud teenusepakkuja kasutust pole veel salvestatud.",
+  "context.timeline.retry": "Proovige uuesti kasutusajalugu",
+  "context.timeline.compaction": "Kontekst tihendatud",
+  "context.timeline.cacheRead": "Vahemälu lugemine",
+  "context.timeline.cacheWrite": "Vahemällu kirjutamine",
+  "context.timeline.ttft": "{{value}} ms esimese märgini",
+
   "desktop.menu.app": "miao",
   "desktop.menu.file": "Fail",
   "desktop.menu.edit": "Muuda",
@@ -599,7 +612,8 @@ export const dict = {
   "toast.permissions.autoaccept.off.title": "Lubade automaatne vastuvõtmine on peatatud",
   "toast.permissions.autoaccept.off.description": "Loataotlused nõuavad kinnitust",
   "settings.permissions.autoaccept.project.title": "Selle projekti õiguste automaatne aktsepteerimine",
-  "settings.permissions.autoaccept.project.description": "Vasta selle projekti mis tahes seansi uutele õigustaotlustele küsimata. Seansi ja kataloogi tasandi valikud on siiski esmatähtsad.",
+  "settings.permissions.autoaccept.project.description":
+    "Vasta selle projekti mis tahes seansi uutele õigustaotlustele küsimata. Seansi ja kataloogi tasandi valikud on siiski esmatähtsad.",
   "toast.model.none.title": "Ühtegi mudelit pole valitud",
   "toast.model.none.description": "Seansi kokkuvõtte tegemiseks ühendage teenusepakkuja",
   "toast.file.loadFailed.title": "Faili laadimine ebaõnnestus",
@@ -962,7 +976,8 @@ export const dict = {
   "settings.general.row.reasoningSummaries.title": "Näita põhjenduste kokkuvõtteid",
   "settings.general.row.reasoningSummaries.description": "Kuva mudeli arutluskäigu kokkuvõtted ajaskaalal",
   "settings.general.row.turnDiffs.title": "Kuva muudetud failid iga vooru kohta",
-  "settings.general.row.turnDiffs.description": "Loetleb ajajoonel iga lõpetatud vooru muudetud failid rea-arvude ja laiendatavate erinevustega.",
+  "settings.general.row.turnDiffs.description":
+    "Loetleb ajajoonel iga lõpetatud vooru muudetud failid rea-arvude ja laiendatavate erinevustega.",
   "settings.general.row.shellToolPartsExpanded.title": "Laienda shellitööriista osi",
   "settings.general.row.shellToolPartsExpanded.description":
     "Kuva shellitööriista osad ajaskaalal vaikimisi laiendatuna",

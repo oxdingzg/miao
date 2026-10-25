@@ -1,4 +1,17 @@
 export const dict: Record<string, string> = {
+  "context.timeline.title": "සන්දර්භය සහ හැඹිලි ඉතිහාසය",
+  "context.timeline.step":
+    "{{model}} · {{time}} · {{input}} විමසුම් ටෝකන · {{read}} හැඹිලි කියවීම · {{write}} හැඹිලි ලිවීම",
+  "context.timeline.requestWindow": "ඉල්ලීම් වේලාවට {{value}} සංකේත කවුළුව",
+  "context.timeline.catalogWindow": "වත්මන් නාමාවලියෙහි {{value}} සංකේත කවුළුව",
+  "context.timeline.unknownWindow": "සන්දර්භය කවුළුව නොදනී",
+  "context.timeline.empty": "නිරවුල් කරන ලද සැපයුම්කරු භාවිතයක් තවමත් වාර්තා කර නොමැත.",
+  "context.timeline.retry": "භාවිත ඉතිහාසය නැවත උත්සාහ කරන්න",
+  "context.timeline.compaction": "සන්දර්භය සංයුක්ත කර ඇත",
+  "context.timeline.cacheRead": "හැඹිලිය කියවීම",
+  "context.timeline.cacheWrite": "හැඹිලි ලිවීම",
+  "context.timeline.ttft": "පළමු ටෝකනයට ms {{value}}",
+
   "desktop.menu.app": "miao",
   "desktop.menu.file": "ගොනුව",
   "desktop.menu.edit": "සංස්කරණය කරන්න",
@@ -488,8 +501,7 @@ export const dict: Record<string, string> = {
   "wsl.onboarding.wslUnavailable.title": "WSL නොමැත",
   "wsl.onboarding.wslUnavailable.description": "miao හට මෙම යන්ත්‍රයේ WSL සත්‍යාපනය කළ නොහැක.",
   "wsl.onboarding.installWsl": "WSL ස්ථාපනය කරන්න",
-  "wsl.onboarding.windowsRestartRequired":
-    "WSL ස්ථාපනය අවසන් කිරීමට Windows නැවත අරඹන්න, පසුව miao නැවත විවෘත කරන්න.",
+  "wsl.onboarding.windowsRestartRequired": "WSL ස්ථාපනය අවසන් කිරීමට Windows නැවත අරඹන්න, පසුව miao නැවත විවෘත කරන්න.",
   "wsl.onboarding.next": "ඊළඟ",
   "wsl.onboarding.refresh": "නැවුම් කරන්න",
   "wsl.onboarding.allDistrosAdded": "ස්ථාපිත සියලුම බෙදාහැරීම් දැනටමත් එකතු කර ඇත.",
@@ -601,7 +613,8 @@ export const dict: Record<string, string> = {
   "toast.permissions.autoaccept.off.title": "අවසර ස්වයංක්‍රීයව පිළිගැනීම නතර විය",
   "toast.permissions.autoaccept.off.description": "අවසර ඉල්ලීම් සඳහා අනුමැතිය අවශ්‍ය වනු ඇත",
   "settings.permissions.autoaccept.project.title": "Auto-accept permissions for this project",
-  "settings.permissions.autoaccept.project.description": "Answer new permission requests from any session in this project without asking. Session and directory choices still win.",
+  "settings.permissions.autoaccept.project.description":
+    "Answer new permission requests from any session in this project without asking. Session and directory choices still win.",
   "toast.model.none.title": "ආකෘතියක් තෝරා නැත",
   "toast.model.none.description": "මෙම සැසිය සාරාංශ කිරීමට සැපයුම්කරුවෙකු සම්බන්ධ කරන්න",
   "toast.file.loadFailed.title": "ගොනුව පූරණය කිරීමට අසමත් විය",
@@ -962,7 +975,8 @@ export const dict: Record<string, string> = {
   "settings.general.row.reasoningSummaries.title": "තර්ක සාරාංශ පෙන්වන්න",
   "settings.general.row.reasoningSummaries.description": "කාලරේඛාව තුළ ආකෘති තර්ක සාරාංශ සංදර්ශන කරන්න",
   "settings.general.row.turnDiffs.title": "Show changed files per turn",
-  "settings.general.row.turnDiffs.description": "List each finished turn's changed files with line counts and expandable diffs in the timeline.",
+  "settings.general.row.turnDiffs.description":
+    "List each finished turn's changed files with line counts and expandable diffs in the timeline.",
   "settings.general.row.shellToolPartsExpanded.title": "ෂෙල් මෙවලම් කොටස් පුළුල් කරන්න",
   "settings.general.row.shellToolPartsExpanded.description":
     "කාලරේඛාව තුළ පෙරනිමියෙන් පුළුල් කළ ෂෙල් මෙවලම් කොටස් පෙන්වන්න",
