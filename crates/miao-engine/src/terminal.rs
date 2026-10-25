@@ -176,6 +176,7 @@ impl Drop for Registry {
 }
 impl Registry {
     #[cfg(unix)]
+    #[allow(clippy::too_many_arguments)]
     pub async fn start(
         &self,
         session: &str,
@@ -184,6 +185,7 @@ impl Registry {
         cwd: &Path,
         input: Start,
         network: bool,
+        sandbox: bool,
     ) -> Result<Value, ToolError> {
         use std::os::fd::AsRawFd;
         if self.stop.is_cancelled() {
@@ -210,6 +212,7 @@ impl Registry {
             true,
             true,
             network,
+            sandbox,
             &[],
         )
         .await?;
@@ -333,6 +336,7 @@ impl Registry {
     /// in the shared AppContainer/job sandbox. A failed confined launch is
     /// reported as an error, without retrying in a wider security context.
     #[cfg(windows)]
+    #[allow(clippy::too_many_arguments)]
     pub async fn start(
         &self,
         session: &str,
@@ -341,6 +345,7 @@ impl Registry {
         cwd: &Path,
         input: Start,
         network: bool,
+        _sandbox: bool,
     ) -> Result<Value, ToolError> {
         if self.stop.is_cancelled() {
             return Err(ToolError::Interrupted);
@@ -447,6 +452,7 @@ impl Registry {
         _: &Path,
         _: &Path,
         _: Start,
+        _: bool,
         _: bool,
     ) -> Result<Value, ToolError> {
         Err(ToolError::Unsupported)

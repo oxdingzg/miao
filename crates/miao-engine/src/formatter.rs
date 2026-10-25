@@ -70,7 +70,13 @@ impl Registry {
         json!({"sha256": crate::permission::digest(&serde_json::to_vec(&self.configs).unwrap_or_default())})
     }
 
-    pub async fn file(&self, file: &Path, runner: &Path, cancel: &CancellationToken) -> Vec<Value> {
+    pub async fn file(
+        &self,
+        file: &Path,
+        runner: &Path,
+        sandbox: bool,
+        cancel: &CancellationToken,
+    ) -> Vec<Value> {
         let extension = file.extension().and_then(|ext| ext.to_str()).unwrap_or("");
         let mut results = Vec::new();
         for config in &self.configs {
@@ -104,6 +110,7 @@ impl Registry {
                 false,
                 false,
                 false,
+                sandbox,
                 &envs,
             )
             .await;

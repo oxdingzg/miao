@@ -178,6 +178,8 @@ V2 `bash` 工具可以把每条命令放进 OS 沙箱运行：macOS 用 seatbelt
 
 `MIAO_SANDBOX=1`、`MIAO_SANDBOX_DENY_NETWORK=1` 可覆盖配置。`workspace-write` 不限制读取，只允许写入当前 Location、命令工作目录、临时目录、`writable_roots`，以及被拦截后你批准的路径（命令会带该目录重跑）。网络默认允许，可显式禁止。沙箱已开启但主机没有后端时，`on_unavailable` 默认 `"warn"`，命令不带沙箱运行；设为 `"fail"` 则直接拒绝。平台限制见 [接入说明](native-benchmarks.zh.md#原生工具与沙箱适用范围)。
 
+原生引擎自己的进程命令（bash、run_command、start_job、终端、hooks、格式化）始终在 OS 沙箱内运行，权限规则改变不了这一点——全量放行规则也抬不掉沙箱。同一个开关也是显式的运营者退出通道：配置里 `sandbox.mode: "off"` 或环境变量 `MIAO_SANDBOX=0` 会让引擎命令不带沙箱运行；`MIAO_SANDBOX=1` 或 `mode: "workspace-write"` 则保持约束。两者都没设置时，引擎保持沙箱。
+
 ### 5.7 成本与缓存遥测
 
 每轮 provider turn 记录 TTFT、缓存命中率、`warm` / `expectedRebuild` / `cacheMiss` 与成本；会话汇总。成本按模型费率估算，不等于供应商账单；侧边栏显示 `% cached` 与估算花费。

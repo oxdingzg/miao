@@ -138,7 +138,11 @@ impl Runtime {
             .with_cron(policy.cron_enabled())
             .with_wakeup(policy.wakeup_enabled())
             .with_writes(policy.writes_enabled())
-            .with_process(policy.process_enabled(), policy.process_network())
+            .with_process(
+                policy.process_enabled(),
+                policy.process_network(),
+                policy.process_sandbox(),
+            )
             .with_background(policy.background_enabled())
             .with_delegation(policy.subagents_enabled())
             .protect_store(store.path());
@@ -4496,6 +4500,7 @@ async fn spawn_sandboxed_monitor(
         false,
         false,
         inner.tools.process_network_allowed(),
+        inner.tools.process_sandbox(),
         &envs,
     )
     .await?;

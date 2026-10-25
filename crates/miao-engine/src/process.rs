@@ -33,6 +33,9 @@ fn cwd() -> String {
 fn timeout() -> u64 {
     10_000
 }
+fn sandbox_on() -> bool {
+    true
+}
 impl Input {
     pub fn parse(input: Value) -> Result<Self, ToolError> {
         let input: Self = serde_json::from_value(input).map_err(|_| ToolError::InvalidInput)?;
@@ -89,6 +92,8 @@ struct Runner {
     temp: PathBuf,
     argv: Vec<String>,
     allow_network: bool,
+    #[serde(default = "sandbox_on")]
+    sandbox: bool,
     timeout_ms: u64,
     #[serde(default)]
     interactive: bool,
@@ -193,6 +198,28 @@ pub fn sandbox_runner(payload: &str) -> Result<(), Box<dyn std::error::Error>> {
     let temp = std::fs::canonicalize(&spec.temp)?;
     if !cwd.starts_with(&workspace) || !cwd.is_dir() || !temp.is_dir() {
         return Err("invalid runner placement".into());
+    }
+    // An operator sandbox opt-out skips confinement but keeps the same
+    // guardian lifecycle, working directory, and environment handling.
+    #[cfg(unix)]
+    if !spec.sandbox {
+        use std::os::unix::process::CommandExt;
+        let error = std::process::Command::new(&spec.argv[0])
+            .args(&spec.argv[1..])
+            .current_dir(cwd)
+            .exec();
+        return Err(error.into());
+    }
+    #[cfg(target_os = "windows")]
+    if !spec.sandbox {
+        let code = std::process::Command::new(&spec.argv[0])
+            .args(&spec.argv[1..])
+            .current_dir(&cwd)
+            .status()
+            .map_err(std::io::Error::other)?
+            .code()
+            .unwrap_or(1);
+        std::process::exit(code);
     }
     #[cfg(target_os = "macos")]
     {
@@ -433,25 +460,39 @@ pub(crate) type Progress = tokio::sync::mpsc::Sender<Value>;
 
 /// Foreground process ownership. No detached/background process API is implied.
 /// A cancelled task still kills/reaps its group and joins pipe readers.
+#[allow(clippy::too_many_arguments)]
 pub(crate) async fn execute(
     runner: &Path,
     workspace: &Path,
     cwd: &Path,
     input: Input,
     allow_network: bool,
+    sandbox: bool,
     cancel: CancellationToken,
 ) -> Result<Value, ToolError> {
-    execute_with_progress(runner, workspace, cwd, input, allow_network, cancel, None).await
+    execute_with_progress(
+        runner,
+        workspace,
+        cwd,
+        input,
+        allow_network,
+        sandbox,
+        cancel,
+        None,
+    )
+    .await
 }
 
 /// `progress` receives best-effort decoded output chunks while the command
 /// runs. A full or dropped channel never affects execution or the result.
+#[allow(clippy::too_many_arguments)]
 pub(crate) async fn execute_with_progress(
     runner: &Path,
     workspace: &Path,
     cwd: &Path,
     input: Input,
     allow_network: bool,
+    sandbox: bool,
     cancel: CancellationToken,
     progress: Option<tokio::sync::mpsc::Sender<Value>>,
 ) -> Result<Value, ToolError> {
@@ -470,6 +511,7 @@ pub(crate) async fn execute_with_progress(
         input.pty,
         false,
         allow_network,
+        sandbox,
         &[],
     )
     .await?;
@@ -569,7 +611,7 @@ pub(crate) async fn execute_with_progress(
     let exit_code = status.and_then(|s| s.code());
     group.armed = false;
     Ok(
-        json!({"stdout":String::from_utf8_lossy(&stdout),"stderr":String::from_utf8_lossy(&stderr),"exit_code":exit_code,"signal":signal,"pid":group.pid,"reason":reason,"output_incomplete":output_incomplete,"sandbox_profile":"workspace_write","enforcement_required":true,"network_allowed":allow_network}),
+        json!({"stdout":String::from_utf8_lossy(&stdout),"stderr":String::from_utf8_lossy(&stderr),"exit_code":exit_code,"signal":signal,"pid":group.pid,"reason":reason,"output_incomplete":output_incomplete,"sandbox_profile":if sandbox{"workspace_write"}else{"off"},"enforcement_required":sandbox,"network_allowed":allow_network}),
     )
 }
 
@@ -593,6 +635,7 @@ pub(crate) async fn spawn(
     pty: bool,
     interactive: bool,
     allow_network: bool,
+    sandbox: bool,
     envs: &[(String, String)],
 ) -> Result<(Group, Option<std::fs::File>, tempfile::TempDir), ToolError> {
     let temp = tokio::task::spawn_blocking(tempfile::tempdir)
@@ -604,6 +647,7 @@ pub(crate) async fn spawn(
         temp: temp.path().into(),
         argv,
         allow_network,
+        sandbox,
         timeout_ms,
         interactive,
     };

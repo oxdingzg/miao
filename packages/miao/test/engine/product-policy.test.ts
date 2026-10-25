@@ -8,7 +8,7 @@ const it = testEffect(Layer.empty)
 it.live("generates the product capability policy when no explicit policy is configured", () =>
   Effect.gen(function* () {
     const file = yield* Effect.gen(function* () {
-      const options = yield* ProductPolicy.prepare({})
+      const options = yield* ProductPolicy.prepare({}, true)
       if (!options.policyFile) throw new Error("missing generated native policy")
       expect(yield* Effect.promise(() => Bun.file(options.policyFile!).json())).toEqual({
         mode: "workspace",
@@ -20,6 +20,7 @@ it.live("generates the product capability policy when no explicit policy is conf
         allow_wakeup: true,
         allow_cron: true,
         process_network: true,
+        sandbox: true,
         max_provider_turns: null,
       })
       if (process.platform !== "win32")
@@ -32,6 +33,17 @@ it.live("generates the product capability policy when no explicit policy is conf
 
 it.live("an explicit operator policy is never replaced", () =>
   Effect.gen(function* () {
-    expect(yield* ProductPolicy.prepare({ policyFile: "/operator/policy.json" })).toEqual({})
+    expect(yield* ProductPolicy.prepare({ policyFile: "/operator/policy.json" }, true)).toEqual({})
+  }),
+)
+
+it.live("records an operator sandbox opt-out in the generated policy", () =>
+  Effect.gen(function* () {
+    const policy = yield* Effect.gen(function* () {
+      const options = yield* ProductPolicy.prepare({}, false)
+      if (!options.policyFile) throw new Error("missing generated native policy")
+      return yield* Effect.promise(() => Bun.file(options.policyFile!).json())
+    }).pipe(Effect.scoped)
+    expect(policy.sandbox).toBe(false)
   }),
 )

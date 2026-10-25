@@ -42,10 +42,14 @@ impl Provider for Executor {
     }
 }
 fn policy(network: bool) -> Policy {
+    policy_with(network, true)
+}
+fn policy_with(network: bool, sandbox: bool) -> Policy {
     Policy::new(Config {
         mode: Mode::Workspace,
         allow_process: true,
         process_network: network,
+        sandbox,
         rules: vec![Rule {
             tool: "*".into(),
             path: "**".into(),
@@ -56,6 +60,13 @@ fn policy(network: bool) -> Policy {
     .unwrap()
 }
 async fn start(parent: &Path, input: Value, network: bool) -> (Runtime, Store, PathBuf) {
+    start_with(parent, input, policy(network)).await
+}
+async fn start_with(
+    parent: &Path,
+    input: Value,
+    sandbox_policy: Policy,
+) -> (Runtime, Store, PathBuf) {
     let workspace = parent.join("workspace");
     std::fs::create_dir_all(&workspace).unwrap();
     let store = Store::open(parent.join("engine.db")).await.unwrap();
@@ -67,7 +78,7 @@ async fn start(parent: &Path, input: Value, network: bool) -> (Runtime, Store, P
         store.clone(),
         Arc::new(Executor { input }),
         tools,
-        policy(network),
+        sandbox_policy,
     )
     .await
     .unwrap();
@@ -126,6 +137,27 @@ async fn explicit_argv_runs_in_workspace_and_stdout_stderr_are_separate() {
         .contains(workspace.canonicalize().unwrap().to_str().unwrap()));
     assert!(result["stdout"].as_str().unwrap().ends_with("output"));
     assert_eq!(result["stderr"], "error");
+    runtime.shutdown().await;
+}
+
+#[tokio::test]
+async fn sandbox_off_reports_unsandboxed_and_runs_unconfined() {
+    let dir = tempfile::tempdir().unwrap();
+    let outside = dir.path().join("outside.txt");
+    let (runtime, store, _) = start_with(
+        dir.path(),
+        json!({"argv":["/usr/bin/touch", outside.to_str().unwrap()]}),
+        policy_with(false, false),
+    )
+    .await;
+    let result = finish(&store).await;
+    assert_eq!(result["exit_code"], 0, "{result}");
+    assert_eq!(result["enforcement_required"], false, "{result}");
+    assert_eq!(result["sandbox_profile"], "off", "{result}");
+    assert!(
+        outside.exists(),
+        "an unsandboxed command must write outside the workspace roots"
+    );
     runtime.shutdown().await;
 }
 
