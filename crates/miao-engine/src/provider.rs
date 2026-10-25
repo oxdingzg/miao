@@ -100,25 +100,42 @@ pub struct Identity {
     pub model: String,
 }
 
+/// Ceiling for a pause the provider itself asked for. The endpoint is telling
+/// us when it will be ready; honouring anything longer would hold the turn for
+/// most of an hour, so a hostile or buggy `Retry-After` is treated as this.
+const RETRY_AFTER_MAX: Duration = Duration::from_secs(15 * 60);
+
+/// A runaway guard only: the turn's retry window ends the attempts first.
+const MAX_REQUEST_ATTEMPTS: usize = 25;
+
+/// A routed turn shares this many HTTP attempts across its routes, so a failing
+/// primary cannot spend the whole window before the fallback is tried.
+const ROUTED_ATTEMPTS: usize = 3;
+
 pub(crate) struct Budget {
     pub deadline: tokio::time::Instant,
     attempts: AtomicUsize,
 }
 impl Budget {
     pub fn new() -> Arc<Self> {
+        Self::with_deadline(Duration::from_secs(60))
+    }
+    /// One provider turn's retry window. Tests build a shorter one so the
+    /// schedule can be observed without waiting out the real budget.
+    fn with_deadline(window: Duration) -> Arc<Self> {
         Arc::new(Self {
-            deadline: tokio::time::Instant::now() + Duration::from_secs(60),
+            deadline: tokio::time::Instant::now() + window,
             attempts: AtomicUsize::new(0),
         })
     }
     pub fn used(&self) -> usize {
         self.attempts.load(Ordering::Relaxed)
     }
-    fn take(&self) -> bool {
+    fn take(&self, limit: usize) -> bool {
         // Keep the declared MSRV across newer atomics API renames.
         loop {
             let used = self.used();
-            if used >= 3 {
+            if used >= limit {
                 return false;
             }
             if self
@@ -134,7 +151,14 @@ impl Budget {
 #[derive(Clone)]
 struct RetryScope {
     budget: Arc<Budget>,
+    /// Stream reconnects one attempt may spend through `transport_attempt`.
     limit: usize,
+    /// HTTP attempts this turn may spend in total. A routed turn shares one
+    /// cap across its routes; a plain turn follows the retry window, so its cap
+    /// is only a runaway guard.
+    cap: usize,
+    /// HTTP requests this scope may send.
+    requests: usize,
 }
 tokio::task_local! {static RETRY_SCOPE:RetryScope;}
 pub(crate) fn transport_retry_limit() -> usize {
@@ -146,10 +170,12 @@ pub(crate) fn transport_attempt() -> Result<(tokio::time::Instant, usize), Provi
         .unwrap_or_else(|_| RetryScope {
             budget: Budget::new(),
             limit: 3,
+            cap: ROUTED_ATTEMPTS,
+            requests: 3,
         });
     if scope.limit == 0
         || tokio::time::Instant::now() >= scope.budget.deadline
-        || !scope.budget.take()
+        || !scope.budget.take(scope.limit)
     {
         return Err(ProviderError::Transport);
     }
@@ -161,7 +187,35 @@ pub(crate) async fn scoped<F: std::future::Future<Output = Result<Reply, Provide
     future: F,
 ) -> Result<Reply, ProviderError> {
     RETRY_SCOPE
-        .scope(RetryScope { budget, limit }, future)
+        .scope(
+            RetryScope {
+                budget,
+                limit,
+                cap: MAX_REQUEST_ATTEMPTS,
+                requests: MAX_REQUEST_ATTEMPTS,
+            },
+            future,
+        )
+        .await
+}
+
+/// A routed turn: every route draws from one `limit`-request budget instead of
+/// letting each route spend the turn's whole retry window.
+pub(crate) async fn scoped_shared<F: std::future::Future<Output = Result<Reply, ProviderError>>>(
+    budget: Arc<Budget>,
+    limit: usize,
+    future: F,
+) -> Result<Reply, ProviderError> {
+    RETRY_SCOPE
+        .scope(
+            RetryScope {
+                budget,
+                limit,
+                cap: ROUTED_ATTEMPTS,
+                requests: limit,
+            },
+            future,
+        )
         .await
 }
 
@@ -204,7 +258,10 @@ mod route_header_tests {
                             headers["x-opencode-session"].to_str().unwrap().to_owned(),
                             headers["x-route-fixture"].to_str().unwrap().to_owned(),
                         ));
-                        axum::http::StatusCode::BAD_REQUEST
+                        // Neither retryable nor self-healable, so each stream
+                        // sends exactly one request and `seen` stays one entry
+                        // per stream.
+                        axum::http::StatusCode::UNPROCESSABLE_ENTITY
                     },
                 ),
             )
@@ -244,7 +301,7 @@ mod route_header_tests {
                     ),
                 )
                 .await;
-                assert!(matches!(result, Err(ProviderError::Http(400))));
+                assert!(matches!(result, Err(ProviderError::Http(422))));
             }
             let (progress, _received) = mpsc::channel(16);
             assert!(matches!(
@@ -845,17 +902,22 @@ pub(crate) async fn request_with_retry(
         .unwrap_or_else(|_| RetryScope {
             budget: Budget::new(),
             limit: 3,
+            cap: MAX_REQUEST_ATTEMPTS,
+            requests: MAX_REQUEST_ATTEMPTS,
         });
     let deadline = scope.budget.deadline;
-    for attempt in 0..scope.limit {
-        if tokio::time::Instant::now() >= deadline || !scope.budget.take() {
+    // A rejected request earns one extra attempt outside the schedule; every
+    // other decision below is bounded by the turn's retry window, so the
+    // attempt cap is only a runaway guard that the window normally wins.
+    let mut self_healed = false;
+    for attempt in 0..scope.requests {
+        if tokio::time::Instant::now() >= deadline || !scope.budget.take(scope.cap) {
             return Err(ProviderError::Transport);
         }
         let request = request
             .try_clone()
             .ok_or_else(|| ProviderError::Stream("request cannot be replayed".into()))?;
-        let request_seq =
-            crate::runtime_profile::record(protocol, &request, scope.budget.used()).await?;
+        let request_seq = crate::runtime_profile::record(protocol, &request, attempt + 1).await?;
         let request_bytes = request
             .body()
             .and_then(|body| body.as_bytes())
@@ -877,6 +939,7 @@ pub(crate) async fn request_with_retry(
             Err(_) => (None, "transport_unknown"),
         };
         let mut last_failure_detail: Option<String> = None;
+        let mut requested: Option<Duration> = None;
         let error = match response {
             Ok(response) if response.status().is_success() => {
                 crate::runtime_profile::result(request_seq, status, outcome, None).await?;
@@ -885,6 +948,11 @@ pub(crate) async fn request_with_retry(
             }
             Ok(mut response) => {
                 let status = response.status().as_u16();
+                // Only a rate limit or a server-side failure names a pause the
+                // runner trusts; any other status' header is ignored.
+                requested = matches!(status, 429 | 500 | 502 | 503 | 504 | 529)
+                    .then(|| retry_after(response.headers()))
+                    .flatten();
                 let detail = failure_detail(&mut response).await;
                 crate::runtime_profile::result(
                     request_seq,
@@ -918,30 +986,356 @@ pub(crate) async fn request_with_retry(
             error,
             ProviderError::Transport | ProviderError::Http(429 | 500 | 502 | 503 | 504 | 529)
         ) || transient_image_parse;
-        if !retryable
-            || attempt + 1 >= scope.limit
-            || scope.budget.used() >= 3
-            || tokio::time::Instant::now() >= deadline
-        {
-            return Err(error);
-        }
         // Carry the reason so a client can show why the attempt was retried.
-        // Only retryable errors reach here, so `is_retryable` is true by
-        // construction; the status code is the HTTP one when there was one.
+        // The status code is the HTTP one when there was one.
         let (reason, status) = match &error {
             ProviderError::Http(status) => (error.to_string(), Some(*status)),
             other => (other.to_string(), None),
         };
-        tokio::select! {
-            _=cancel.cancelled()=>return Err(ProviderError::Interrupted),
-            result=progress.send(json!({"kind":"provider.retry","attempt":attempt+1,"reason":reason,"status":status}))=>if result.is_err(){return Err(ProviderError::Interrupted);},
+        if !retryable {
+            // A request the endpoint rejected (HTTP 400) is normally
+            // deterministic, but a gateway also wraps a transient upstream
+            // hiccup in one. Grant exactly one immediate replay so that class
+            // recovers on its own; a real defect still fails, one request
+            // later. Mirrors the TS runner's `selfHealable`.
+            if matches!(error, ProviderError::Http(400)) && !self_healed {
+                self_healed = true;
+                announce_retry(
+                    progress,
+                    cancel,
+                    attempt + 1,
+                    &reason,
+                    status,
+                    Duration::ZERO,
+                )
+                .await?;
+                continue;
+            }
+            return Err(error);
         }
-        tokio::select! {
-            _=cancel.cancelled()=>return Err(ProviderError::Interrupted),
-            _=tokio::time::sleep(Duration::from_millis(250*(1<<attempt)))=>{},
+        if tokio::time::Instant::now() >= deadline
+            || attempt + 1 >= scope.requests
+            || scope.budget.used() >= scope.cap
+        {
+            return Err(error);
         }
+        let pause = retry_pause(attempt, requested);
+        announce_retry(progress, cancel, attempt + 1, &reason, status, pause).await?;
     }
-    unreachable!()
+    Err(ProviderError::Transport)
+}
+
+/// Announce the next attempt, then wait for it. A cancelled wait reports the
+/// interrupt instead of retrying, and a closed receiver means the turn is gone.
+async fn announce_retry(
+    progress: &mpsc::Sender<Value>,
+    cancel: &CancellationToken,
+    attempt: usize,
+    reason: &str,
+    status: Option<u16>,
+    pause: Duration,
+) -> Result<(), ProviderError> {
+    tokio::select! {
+        _=cancel.cancelled()=>return Err(ProviderError::Interrupted),
+        result=progress.send(json!({"kind":"provider.retry","attempt":attempt,"reason":reason,"status":status,"delay_ms":pause.as_millis() as u64}))=>if result.is_err(){return Err(ProviderError::Interrupted);},
+    }
+    tokio::select! {
+        _=cancel.cancelled()=>return Err(ProviderError::Interrupted),
+        _=tokio::time::sleep(pause)=>{},
+    }
+    Ok(())
+}
+
+/// The pause before the next attempt: the backoff schedule, raised to the pause
+/// the provider asked for. Mirrors the TS runner's `providerSchedule` —
+/// exponential from 500 ms at 1.7, capped at 5 s, jittered by ±20 %, and never
+/// shorter than an honoured `Retry-After`.
+fn retry_pause(attempt: usize, requested: Option<Duration>) -> Duration {
+    retry_pause_at(attempt, requested, entropy_sample())
+}
+
+/// The same pause for a given entropy sample: the sample lands in `[0, 999]`
+/// and scales the backoff by `[0.8, 1.2]`, so the delay is testable exactly.
+fn retry_pause_at(attempt: usize, requested: Option<Duration>, sample: u32) -> Duration {
+    let backoff = Duration::from_millis(500)
+        .mul_f64(1.7_f64.powi(attempt as i32))
+        .min(Duration::from_secs(5));
+    let jittered = backoff.mul_f64(0.8 + f64::from(sample % 1_000) / 1_000.0 * 0.4);
+    match requested {
+        Some(requested) => jittered.max(requested.min(RETRY_AFTER_MAX)),
+        None => jittered,
+    }
+}
+
+/// Nanosecond time is entropy enough for backoff jitter: the point is to keep
+/// concurrently waiting turns from retrying in lockstep, not secrecy.
+fn entropy_sample() -> u32 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|elapsed| elapsed.subsec_nanos())
+        .unwrap_or_default()
+}
+
+/// The pause a rejection named, in either form the header allows. A millisecond
+/// header wins when both are present: it is the precise value a gateway that
+/// understands sub-second pauses sends.
+fn retry_after(headers: &reqwest::header::HeaderMap) -> Option<Duration> {
+    if let Some(milliseconds) = headers
+        .get("retry-after-ms")
+        .and_then(|value| value.to_str().ok())
+        .and_then(|value| value.trim().parse::<u64>().ok())
+    {
+        return Some(Duration::from_millis(milliseconds));
+    }
+    let value = headers
+        .get(reqwest::header::RETRY_AFTER)?
+        .to_str()
+        .ok()?
+        .trim();
+    if let Ok(seconds) = value.parse::<u64>() {
+        return Some(Duration::from_secs(seconds));
+    }
+    let at = chrono::DateTime::parse_from_rfc2822(value).ok()?;
+    let wait = at.timestamp_millis() - chrono::Utc::now().timestamp_millis();
+    (wait > 0).then(|| Duration::from_millis(wait as u64))
+}
+
+#[cfg(test)]
+mod retry_tests {
+    use super::*;
+    use axum::{
+        body::Body,
+        extract::State,
+        http::{HeaderValue, StatusCode},
+        response::Response,
+        routing::post,
+        Router,
+    };
+    use std::sync::Mutex;
+
+    /// One scripted reply. A single remaining entry repeats, so a script can
+    /// describe "reject every time".
+    #[derive(Clone)]
+    struct Scripted {
+        status: u16,
+        retry_after: Option<&'static str>,
+    }
+
+    type Script = Arc<Mutex<(Vec<Scripted>, usize)>>;
+
+    async fn serve(script: Vec<Scripted>) -> (String, Script, tokio::task::JoinHandle<()>) {
+        let state: Script = Arc::new(Mutex::new((script, 0)));
+        let router = Router::new()
+            .route(
+                "/fixture",
+                post(|State(state): State<Script>| async move {
+                    let reply = {
+                        let mut guard = state.lock().unwrap();
+                        guard.1 += 1;
+                        if guard.0.len() > 1 {
+                            guard.0.remove(0)
+                        } else {
+                            guard.0[0].clone()
+                        }
+                    };
+                    let mut response = Response::new(Body::from("{}"));
+                    *response.status_mut() = StatusCode::from_u16(reply.status).unwrap();
+                    if let Some(value) = reply.retry_after {
+                        response
+                            .headers_mut()
+                            .insert("retry-after", HeaderValue::from_static(value));
+                    }
+                    response
+                }),
+            )
+            .with_state(state.clone());
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let endpoint = format!("http://{}/fixture", listener.local_addr().unwrap());
+        let server = tokio::spawn(async move { axum::serve(listener, router).await.unwrap() });
+        (endpoint, state, server)
+    }
+
+    /// Drive one provider turn's request path and collect the retry notices the
+    /// runtime would have recorded.
+    async fn drive(endpoint: &str, window: Duration) -> (Result<(), ProviderError>, Vec<Value>) {
+        let client = reqwest::Client::new();
+        let request = client.post(endpoint).body("{}").build().unwrap();
+        let cancel = CancellationToken::new();
+        let (progress, mut received) = mpsc::channel(32);
+        let outcome = RETRY_SCOPE
+            .scope(
+                RetryScope {
+                    budget: Budget::with_deadline(window),
+                    limit: 3,
+                    cap: MAX_REQUEST_ATTEMPTS,
+                    requests: MAX_REQUEST_ATTEMPTS,
+                },
+                async {
+                    request_with_retry("fixture", &client, request, &progress, &cancel)
+                        .await
+                        .map(|_| ())
+                },
+            )
+            .await;
+        let mut notices = Vec::new();
+        while let Ok(notice) = received.try_recv() {
+            notices.push(notice);
+        }
+        (outcome, notices)
+    }
+
+    /// The pauses the schedule asked for, in milliseconds. Attempt notices
+    /// share the channel and carry no pause.
+    fn delays(notices: &[Value]) -> Vec<u64> {
+        notices
+            .iter()
+            .filter(|notice| notice["kind"] == "provider.retry")
+            .map(|notice| notice["delay_ms"].as_u64().unwrap())
+            .collect()
+    }
+
+    /// The backoff window a jittered delay must fall in.
+    fn backoff_window(attempt: usize) -> (u64, u64) {
+        let base = (500.0 * 1.7_f64.powi(attempt as i32)).min(5_000.0);
+        ((base * 0.8) as u64, (base * 1.2) as u64)
+    }
+
+    #[test]
+    fn the_pause_is_exponential_capped_jittered_and_raised_by_retry_after() {
+        assert_eq!(retry_pause_at(0, None, 0).as_millis(), 400);
+        assert_eq!(retry_pause_at(0, None, 999).as_millis(), 599);
+        assert_eq!(retry_pause_at(1, None, 500).as_millis(), 850);
+        // The schedule caps at 5 s, so later attempts stay useful inside the
+        // turn's 60 s window.
+        assert_eq!(retry_pause_at(8, None, 500).as_millis(), 5_000);
+        // A pause the provider named raises the delay but never shortens it.
+        assert_eq!(
+            retry_pause_at(0, Some(Duration::from_secs(2)), 500),
+            Duration::from_secs(2)
+        );
+        assert_eq!(
+            retry_pause_at(8, Some(Duration::from_millis(100)), 500).as_millis(),
+            5_000
+        );
+        // A hostile or buggy header is capped rather than holding the turn.
+        assert_eq!(
+            retry_pause_at(0, Some(Duration::from_secs(86_400)), 500),
+            RETRY_AFTER_MAX
+        );
+    }
+
+    #[test]
+    fn retry_after_accepts_both_header_forms_and_prefers_milliseconds() {
+        let mut headers = reqwest::header::HeaderMap::new();
+        assert!(retry_after(&headers).is_none());
+        headers.insert("retry-after", HeaderValue::from_static("3"));
+        assert_eq!(retry_after(&headers), Some(Duration::from_secs(3)));
+        headers.insert("retry-after-ms", HeaderValue::from_static("250"));
+        assert_eq!(retry_after(&headers), Some(Duration::from_millis(250)));
+        headers.remove("retry-after-ms");
+        headers.insert("retry-after", HeaderValue::from_static("not a delay"));
+        assert!(retry_after(&headers).is_none());
+        let date = (chrono::Utc::now() + chrono::Duration::seconds(120)).to_rfc2822();
+        headers.insert("retry-after", HeaderValue::from_str(&date).unwrap());
+        let parsed = retry_after(&headers).unwrap();
+        assert!(
+            parsed >= Duration::from_secs(110) && parsed <= Duration::from_secs(120),
+            "unexpected http-date pause: {parsed:?}"
+        );
+    }
+
+    #[tokio::test]
+    async fn a_rate_limit_pause_is_honoured_instead_of_the_short_backoff() {
+        let (endpoint, state, server) = serve(vec![
+            Scripted {
+                status: 429,
+                retry_after: Some("1"),
+            },
+            Scripted {
+                status: 200,
+                retry_after: None,
+            },
+        ])
+        .await;
+        let started = std::time::Instant::now();
+        let (outcome, notices) = drive(&endpoint, Duration::from_secs(10)).await;
+        assert!(outcome.is_ok());
+        assert_eq!(state.lock().unwrap().1, 2, "one retry, then the answer");
+        assert_eq!(delays(&notices), vec![1_000]);
+        assert_eq!(notices[0]["status"], 429);
+        assert!(
+            started.elapsed() >= Duration::from_millis(900),
+            "the attempt waited for the pause the endpoint named"
+        );
+        server.abort();
+    }
+
+    #[tokio::test]
+    async fn a_rejected_request_gets_exactly_one_immediate_replay() {
+        let (endpoint, state, server) = serve(vec![
+            Scripted {
+                status: 400,
+                retry_after: None,
+            },
+            Scripted {
+                status: 200,
+                retry_after: None,
+            },
+        ])
+        .await;
+        let (outcome, notices) = drive(&endpoint, Duration::from_secs(10)).await;
+        assert!(outcome.is_ok(), "the immediate replay recovered the turn");
+        assert_eq!(state.lock().unwrap().1, 2);
+        assert_eq!(delays(&notices), vec![0]);
+        server.abort();
+
+        let (endpoint, state, server) = serve(vec![Scripted {
+            status: 400,
+            retry_after: None,
+        }])
+        .await;
+        let (outcome, _) = drive(&endpoint, Duration::from_secs(10)).await;
+        assert!(matches!(outcome, Err(ProviderError::Http(400))));
+        assert_eq!(
+            state.lock().unwrap().1,
+            2,
+            "a deterministic rejection still fails after one replay"
+        );
+        server.abort();
+    }
+
+    #[tokio::test]
+    async fn a_persistent_failure_retries_on_the_schedule_until_the_window_ends() {
+        let (endpoint, state, server) = serve(vec![Scripted {
+            status: 503,
+            retry_after: None,
+        }])
+        .await;
+        let started = std::time::Instant::now();
+        let (outcome, notices) = drive(&endpoint, Duration::from_millis(1_500)).await;
+        // Whichever end of the loop notices the spent window reports the last
+        // rejection: the loop top sees only the deadline and reports the
+        // transport failure the attempt count implies.
+        assert!(matches!(
+            outcome,
+            Err(ProviderError::Transport) | Err(ProviderError::Http(503))
+        ));
+        for (attempt, delay) in delays(&notices).into_iter().enumerate() {
+            let (low, high) = backoff_window(attempt);
+            assert!(
+                (low..=high).contains(&delay),
+                "attempt {attempt} waited {delay} ms, outside {low}..={high}"
+            );
+        }
+        assert!(!notices.is_empty(), "the schedule was used at all");
+        let attempts = state.lock().unwrap().1;
+        assert!(attempts >= 2, "the first failure earned a retry");
+        assert!(
+            started.elapsed() < Duration::from_secs(10),
+            "the window, not the schedule, ended the retries"
+        );
+        server.abort();
+    }
 }
 
 /// Some gateways report their own transient image-decode failures as HTTP 400:
@@ -1422,14 +1816,28 @@ mod image_parse_retry_tests {
             .any(|frame| frame["kind"] == "provider.retry" && frame["status"] == 400));
     }
 
+    /// A 400 that keeps recurring is still terminal: the runner's single
+    /// immediate replay runs once, and the second rejection ends the turn
+    /// instead of looping.
     #[tokio::test]
-    async fn other_400_bodies_stay_terminal() {
+    async fn a_recurring_400_stays_terminal_after_its_single_replay() {
         let attempts = Arc::new(AtomicUsize::new(0));
-        let endpoint = serve(
-            attempts.clone(),
-            json!({"error":{"code":"1211","message":"other"}}),
-        )
-        .await;
+        let router = Router::new()
+            .route(
+                "/fixture",
+                get(|State(state): State<Arc<AtomicUsize>>| async move {
+                    state.fetch_add(1, Ordering::SeqCst);
+                    (
+                        StatusCode::BAD_REQUEST,
+                        Json(json!({"error":{"code":"1211","message":"other"}})),
+                    )
+                        .into_response()
+                }),
+            )
+            .with_state(attempts.clone());
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let endpoint = format!("http://{}/fixture", listener.local_addr().unwrap());
+        tokio::spawn(async move { axum::serve(listener, router).await.unwrap() });
         let client = reqwest::Client::new();
         let (progress, _received) = mpsc::channel(16);
         let request = client.get(&endpoint).build().unwrap();
@@ -1442,7 +1850,7 @@ mod image_parse_retry_tests {
         )
         .await;
         assert!(matches!(result, Err(ProviderError::Http(400))));
-        assert_eq!(attempts.load(Ordering::SeqCst), 1);
+        assert_eq!(attempts.load(Ordering::SeqCst), 2);
     }
 }
 
