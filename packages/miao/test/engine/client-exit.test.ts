@@ -66,3 +66,58 @@ test.skipIf(!binary)(
   },
   10_000,
 )
+
+test.skipIf(process.platform === "win32")(
+  "close rejects outstanding requests and reaps an unresponsive stdio child",
+  async () => {
+    await using tmp = await tmpdir()
+    const binary = path.join(tmp.path, "unresponsive-engine")
+    // A real process that accepts its stdin pipe but never reads or replies.
+    await Bun.write(binary, "#!/bin/sh\nexec sleep 60\n")
+    await Bun.$`chmod +x ${binary}`.quiet()
+    const client = EngineClient.start({
+      binary,
+      db: path.join(tmp.path, "engine.db"),
+      workspace: tmp.path,
+      model: "fixture",
+    })
+    const pending = client.request("sessions").catch((error: unknown) => error)
+    await client.close()
+    expect(await pending).toMatchObject({ code: "engine_closed" })
+    expect(client.available).toBe(false)
+    await expect(client.request("sessions")).rejects.toMatchObject({ code: "engine_closed" })
+  },
+  5_000,
+)
+
+test.skipIf(process.platform === "win32")(
+  "unresponsive native RPCs fail with their operation and retire the client",
+  async () => {
+    await using tmp = await tmpdir()
+    const binary = path.join(tmp.path, "unresponsive-engine")
+    await Bun.write(binary, "#!/bin/sh\nexec sleep 60\n")
+    await Bun.$`chmod +x ${binary}`.quiet()
+    const client = EngineClient.start({
+      binary,
+      db: path.join(tmp.path, "engine.db"),
+      workspace: tmp.path,
+      model: "fixture",
+      requestTimeoutMs: 50,
+    })
+    try {
+      const first = client.request("snapshot", { session_id: "s" }).catch((error: unknown) => error)
+      const second = client.request("sessions").catch((error: unknown) => error)
+      const error = await first
+      expect(error).toMatchObject({ code: "engine_request_timeout" })
+      if (!(error instanceof EngineError)) throw error
+      expect(error.message).toContain("snapshot")
+      expect(error.message).toContain("durable receipt")
+      expect(await second).toBe(error)
+      expect(client.available).toBe(false)
+      await expect(client.request("sessions")).rejects.toBe(error)
+    } finally {
+      await client.close()
+    }
+  },
+  5_000,
+)
