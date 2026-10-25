@@ -258,6 +258,16 @@ pub enum Command {
     Resume {
         session_id: String,
     },
+    /// Inputs durably admitted and still waiting for promotion, oldest first.
+    /// A natively placed Session owns this inbox instead of the TypeScript
+    /// input table, so the product needs this read to show queued prompts.
+    PendingInputs {
+        session_id: String,
+        #[serde(default)]
+        after: Option<u64>,
+        #[serde(default = "pending_input_limit")]
+        limit: usize,
+    },
     /// Drop one durably admitted input before promotion. The admission row is
     /// retained as cancelled evidence, so an exact retry cannot resurrect a
     /// prompt the operator dropped; an unknown or already promoted input is
@@ -524,6 +534,10 @@ pub enum Command {
 
 fn recall_limit() -> usize {
     10
+}
+
+fn pending_input_limit() -> usize {
+    50
 }
 
 fn yes() -> bool {
