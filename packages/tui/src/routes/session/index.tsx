@@ -61,6 +61,7 @@ import { DialogForkFromTimeline } from "./dialog-fork-from-timeline"
 import { DialogSessionRename } from "../../component/dialog-session-rename"
 import { Sidebar } from "./sidebar"
 import { SessionScrollbox } from "./scrollbox"
+import { messagesAfter } from "./new-messages"
 import { SubagentFooter } from "./subagent-footer.tsx"
 import { filetype } from "../../util/filetype"
 import parsers from "../../parsers-config"
@@ -391,6 +392,13 @@ export function Session() {
   let tailPinned = true
   let tailWant = true
   const tailSnap = 3
+  // Reading state mirrored for the render: `follow` is true while the viewport
+  // owns the live tail, and `tailMark` remembers the last message the reader
+  // saw when they scrolled away. New content then surfaces as an offer to
+  // return instead of pulling the viewport out from under them.
+  const [follow, setFollow] = createSignal(true)
+  const [tailMark, setTailMark] = createSignal<string | undefined>(undefined)
+  const unseen = createMemo(() => (follow() ? 0 : messagesAfter(displayMessages(), tailMark())))
   const bind = (r: PromptRef | undefined) => {
     prompt = r
     promptRef.set(r)
@@ -489,6 +497,8 @@ export function Session() {
   const leaveTail = () => {
     tailPinned = false
     tailWant = false
+    setTailMark(displayMessages().at(-1)?.id)
+    setFollow(false)
   }
   const rejoinTail = () => {
     tailWant = true
@@ -501,6 +511,8 @@ export function Session() {
     bottomPin = { tries: 0 }
     tailPinned = true
     tailWant = true
+    setTailMark(undefined)
+    setFollow(true)
   }
 
   const local = useLocal()
@@ -824,8 +836,7 @@ export function Session() {
       category: "Session",
       hidden: true,
       run: () => {
-        tailPinned = true
-        tailWant = true
+        toBottom()
         scroll.scrollTo(scroll.scrollHeight)
         dialog.clear()
       },
@@ -1255,6 +1266,7 @@ export function Session() {
         <box flexDirection="row" flexGrow={1} minHeight={0}>
           <box flexGrow={1} minWidth={0} minHeight={0} paddingBottom={1} paddingLeft={1} paddingRight={1} gap={1}>
             <Show when={session()}>
+              <box flexGrow={1} minHeight={0}>
               <SessionScrollbox
                 ref={(r) => {
                   scroll = r
@@ -1267,7 +1279,11 @@ export function Session() {
                     applyBottom()
                     followWindow(geometry)
                     const tailGap = scroll.scrollHeight - scroll.height - scroll.scrollTop
-                    if (tailWant && !tailPinned && tailGap >= 0 && tailGap <= tailSnap) tailPinned = true
+                    if (tailWant && !tailPinned && tailGap >= 0 && tailGap <= tailSnap) {
+                      tailPinned = true
+                      setTailMark(undefined)
+                      setFollow(true)
+                    }
                     if (tailPinned && !loadingHistory && tailGap > 0) scroll.scrollTo(scroll.scrollHeight)
                   }
                   r.ctx.registerLifecyclePass(r)
@@ -1427,6 +1443,23 @@ export function Session() {
                 </Show>
                 <SessionActivity sessionID={route.sessionID} />
               </SessionScrollbox>
+              <Show when={unseen() > 0}>
+                <box position="absolute" bottom={0} left={0} right={0} justifyContent="center" zIndex={100}>
+                  <box
+                    backgroundColor={theme.backgroundElement}
+                    paddingLeft={2}
+                    paddingRight={2}
+                    onMouseUp={() => toBottom()}
+                  >
+                    <text fg={theme.text}>
+                      <span style={{ fg: theme.info }}>↓ </span>
+                      {unseen() === 1 ? "1 new message" : `${unseen()} new messages`}
+                      <span style={{ fg: theme.textMuted }}> (click)</span>
+                    </text>
+                  </box>
+                </box>
+              </Show>
+              </box>
               <box flexShrink={0}>
                 <Show when={permissions().length > 0}>
                   <PermissionPrompt
