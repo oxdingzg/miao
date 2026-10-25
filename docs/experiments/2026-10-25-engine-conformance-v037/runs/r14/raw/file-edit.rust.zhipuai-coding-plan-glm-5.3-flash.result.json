@@ -1,0 +1,26 @@
+{
+  "scenario": "file-edit",
+  "engine": "rust",
+  "model": "zhipuai-coding-plan/glm-5.3-flash",
+  "outcome": {
+    "status": "pass"
+  },
+  "sessionID": "ses_gfe5e8c21cdfbffeTpy95Z79P7",
+  "cost": 0.00159,
+  "tokensIn": 42440,
+  "tokensOut": 209,
+  "stepFinishes": 3,
+  "tools": [
+    {
+      "tool": "read",
+      "status": "completed",
+      "background": false
+    },
+    {
+      "tool": "edit",
+      "status": "completed",
+      "background": false
+    }
+  ],
+  "errors": []
+}

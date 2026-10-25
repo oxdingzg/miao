@@ -43,6 +43,25 @@
       "fullWebUIEmbedded": true,
       "cliSha256": "b407db0783d0790ffe098100c1d8ce0793a934246b27ba8c0241948bcee682ab",
       "engineSha256": "a0ef6cf53bdb58bc2b66229d5d78594c726b01e42b682a77d8c622e894b3362a"
+    },
+    "r14": {
+      "sourceCheckpoint": "599f279a785833d2b8bf152fcff7067a526ecf21",
+      "cells": 24,
+      "pass": 23,
+      "fail": 1,
+      "skip": 0,
+      "reportedMainTurnReferenceCost": 0.05058853966,
+      "fullWebUIEmbedded": true,
+      "cliSha256": "5c8f904fc1dec4c747cbaa96820b894ca86ced715087d268a7bb8e7a8ecb60fa",
+      "engineSha256": "a0ef6cf53bdb58bc2b66229d5d78594c726b01e42b682a77d8c622e894b3362a",
+      "completedAtUTC": "2026-10-25T16:39:11.697833+00:00"
+    },
+    "r14-title": {
+      "sourceCheckpoint": "599f279a785833d2b8bf152fcff7067a526ecf21",
+      "cells": 1,
+      "pass": 1,
+      "fail": 0,
+      "role": "Separate targeted live native-title verification, not a replacement matrix cell."
     }
   },
   "fixes": {
@@ -56,7 +75,8 @@
     "mcpOriginalIdentity": "91c54fa39b",
     "compactToolApproval": "0bfb4cfb9f",
     "hookCancellation": "5d7aab7838",
-    "compactPendingReceipt": "bb46bdfa07"
+    "compactPendingReceipt": "bb46bdfa07",
+    "nativeTitleSettlement": "6c9b36d40a"
   },
   "artifactHashes": {
     "r2-host": "9e2643c096a691d76b315e7ba5b99aefd589e569418c209134a46af401fa44df",
@@ -68,11 +88,14 @@
     "r7-host": "8f19156725475282d37273837faa0b48d894e77e3f658301ede595205198f712",
     "r7-engine": "65cf97243fbb7bbfe66d971acafb818be9617b7941decca095b20c1b48f5fd3c",
     "r13-host": "b407db0783d0790ffe098100c1d8ce0793a934246b27ba8c0241948bcee682ab",
-    "r13-engine": "a0ef6cf53bdb58bc2b66229d5d78594c726b01e42b682a77d8c622e894b3362a"
+    "r13-engine": "a0ef6cf53bdb58bc2b66229d5d78594c726b01e42b682a77d8c622e894b3362a",
+    "r14-host": "5c8f904fc1dec4c747cbaa96820b894ca86ced715087d268a7bb8e7a8ecb60fa",
+    "r14-engine": "a0ef6cf53bdb58bc2b66229d5d78594c726b01e42b682a77d8c622e894b3362a"
   },
   "limitations": [
-    "R13 is a private feature integration, not final merged main or a published release.",
-    "All latest R13 results are selected, including any failure; older failures and individual retries remain preserved.",
+    "R14 permission-deny failed because both rm attempts were correctly denied, then the model used the separately authorized apply_patch tool. The fixture only denies bash rm; this is not evidence of a permission-matcher bypass.",
+    "R14 is a private feature integration, not final merged main or a published release.",
+    "All latest R14 results are selected, including any failure; older failures and individual retries remain preserved.",
     "TypeScript forced-compaction checks completion only; a Rust compaction pass additionally requires a durable engine_compaction row.",
     "Model conformance records parsed CLI events and does not prove raw ACP protocol purity. A separate compiled R12 ACP test passed strict framing; actual R11 Neovim/CodeCompanion UI receipts are in the ACP acceptance record.",
     "The full Web UI was embedded; this matrix does not establish App UI correctness or final cross-platform release installation.",

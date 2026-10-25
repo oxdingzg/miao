@@ -1,0 +1,33 @@
+{
+  "scenario": "background-job",
+  "engine": "ts",
+  "model": "zhipuai-coding-plan/glm-5.3-flash",
+  "outcome": {
+    "status": "pass"
+  },
+  "sessionID": "ses_gfe5e8c1c4415ffeGb40oTNi9i",
+  "cost": 0.00348,
+  "tokensIn": 16778,
+  "tokensOut": 106,
+  "stepFinishes": 4,
+  "tools": [
+    {
+      "tool": "bash",
+      "status": "completed",
+      "command": "sleep 2",
+      "background": true
+    },
+    {
+      "tool": "job_wait",
+      "status": "error",
+      "error": "Invalid tool input: Expected number | undefined, got \"10000\"\n  at [\"timeoutMs\"]",
+      "background": false
+    },
+    {
+      "tool": "job_list",
+      "status": "completed",
+      "background": false
+    }
+  ],
+  "errors": []
+}
