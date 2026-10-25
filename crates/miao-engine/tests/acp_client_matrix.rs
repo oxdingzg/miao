@@ -1,7 +1,16 @@
 mod common;
 
+use axum::{http::StatusCode, Json, Router};
 use serde_json::{json, Value};
-use std::{path::Path, process::Stdio, time::Duration};
+use std::{
+    path::Path,
+    process::Stdio,
+    sync::{
+        atomic::{AtomicBool, Ordering},
+        Arc,
+    },
+    time::Duration,
+};
 use tokio::{
     io::{AsyncBufReadExt, AsyncReadExt, AsyncWriteExt, BufReader, Lines},
     process::{Child, ChildStdin, ChildStdout, Command},
@@ -143,20 +152,34 @@ async fn reconnect_resumes_the_same_session_without_replaying_old_output() {
 
 #[tokio::test]
 async fn provider_failure_settles_and_the_session_accepts_a_later_prompt() {
-    let (endpoint, _requests, server) = common::endpoint(vec![
-        // A rejected request earns one replay before the turn reports the
-        // failure, so a persistent rejection needs both answers.
-        (
-            400,
-            json!({"error":{"message":"fixture rejection"}}).to_string(),
-        ),
-        (
-            400,
-            json!({"error":{"message":"fixture rejection"}}).to_string(),
-        ),
-        (200, text_reply("recovered")),
-    ])
-    .await;
+    // A rejected request earns one replay, and a turn may reach the provider
+    // more than once, so a fixed reply queue would hand the recovery answer to
+    // the failing turn. Keep rejecting until the test declares recovery.
+    let recovered = Arc::new(AtomicBool::new(false));
+    let router = Router::new().fallback({
+        let recovered = recovered.clone();
+        move |Json(_body): Json<Value>| {
+            let recovered = recovered.clone();
+            async move {
+                if recovered.load(Ordering::SeqCst) {
+                    (
+                        StatusCode::OK,
+                        [("content-type", "text/event-stream")],
+                        text_reply("recovered"),
+                    )
+                } else {
+                    (
+                        StatusCode::BAD_REQUEST,
+                        [("content-type", "application/json")],
+                        json!({"error":{"message":"fixture rejection"}}).to_string(),
+                    )
+                }
+            }
+        }
+    });
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let endpoint = format!("http://{}/fixture", listener.local_addr().unwrap());
+    let server = tokio::spawn(async move { axum::serve(listener, router).await.unwrap() });
     let root = tempfile::tempdir().unwrap();
     let mut client = Client::start(root.path(), &endpoint).await;
     let session = client.new_session().await;
@@ -167,12 +190,13 @@ async fn provider_failure_settles_and_the_session_accepts_a_later_prompt() {
         "provider failure must be reported: {failed}"
     );
     assert!(text.is_empty());
+    recovered.store(true, Ordering::SeqCst);
     client.prompt(4, &session, "recover this turn").await;
     let (reply, text) = client.response(4).await;
     assert_eq!(reply["result"]["stopReason"], "end_turn");
     assert_eq!(text, "recovered");
     client.terminate().await;
-    server.await.unwrap();
+    server.abort();
 }
 
 #[tokio::test]

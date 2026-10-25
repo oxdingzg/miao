@@ -146,7 +146,7 @@ async fn actual_native_process_bounds_headers_silence_and_pings_without_refillin
             ])
             .env("ANTHROPIC_API_KEY", "fixture-key")
             // Modes 0-2 exercise the bound itself, so they keep a budget tight
-            // enough to fire three times inside the event wait. Mode 3 is the
+            // enough to fire on every attempt. Mode 3 is the
             // healthy control: its first event releases the deadline, and that
             // must not depend on how fast a loaded runner accepts and reads the
             // request, so it gets a budget no healthy setup can miss while the
@@ -184,7 +184,9 @@ async fn actual_native_process_bounds_headers_silence_and_pings_without_refillin
             json!({"input":{"session_id":"s","input_id":"human","prompt":"answer"},"resume":true}),
         )
         .await;
-        let events = tokio::time::timeout(Duration::from_secs(15), async {
+        // The failed modes retry until the turn's 60 s retry window closes, so
+        // the wait has to outlast the window itself.
+        let events = tokio::time::timeout(Duration::from_secs(90), async {
             loop {
                 let events = rpc(
                     &mut input,
@@ -218,11 +220,17 @@ async fn actual_native_process_bounds_headers_silence_and_pings_without_refillin
             if mode == 3 { "completed" } else { "failed" },
             "{events}"
         );
-        assert_eq!(
-            calls.load(Ordering::SeqCst),
-            if mode == 3 { 1 } else { 3 },
-            "{events}"
-        );
+        // A stalled stream is retried until the turn's retry window closes, so
+        // the exact attempt count is the window divided by the backoff rather
+        // than a fixed number. What the bound still promises: the turn fails
+        // after retrying, and the runaway guard keeps the attempts finite.
+        let calls = calls.load(Ordering::SeqCst);
+        if mode == 3 {
+            assert_eq!(calls, 1, "{events}");
+        } else {
+            assert!(calls >= 3, "the turn gave up too early: {calls} attempts");
+            assert!(calls <= 25, "attempts escaped the retry cap: {calls}");
+        }
         assert!(!events
             .as_array()
             .unwrap()
