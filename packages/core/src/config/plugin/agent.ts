@@ -39,6 +39,7 @@ const agentKeys = new Set([
   "hidden",
   "color",
   "steps",
+  "budget",
   "disabled",
   "permissions",
   "permission_mode",
@@ -106,6 +107,7 @@ export const Plugin = define({
               if (item.hidden !== undefined) agent.hidden = item.hidden
               if (item.color !== undefined) agent.color = item.color
               if (item.steps !== undefined) agent.steps = item.steps
+              if (item.budget !== undefined) agent.budget = item.budget
               if (item.permissions !== undefined) {
                 agent.permissions.push(...expandPermissions(item.permissions, global.home))
               }

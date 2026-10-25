@@ -10,6 +10,7 @@ test("agent manifests preserve ordered exceptions, generation settings and model
     ...Agent.Info.empty(Agent.ID.make("reviewer")),
     system: "Review first",
     steps: 7,
+    budget: 40_000,
     model: { providerID: "host", id: "model", variant: "high" },
     request: { body: { temperature: 0.2 }, headers: { "x-test": "agent" } },
     permissions: [
@@ -25,6 +26,7 @@ test("agent manifests preserve ordered exceptions, generation settings and model
   expect(manifest.instructions).toBe("Review first")
   expect(manifest.request).toEqual(agent.request)
   expect(manifest.steps).toBe(7)
+  expect(manifest.budget).toBe(40_000)
   expect(manifest.model).toEqual({
     route_id: "host/model",
     protocol: "openai-chat",
