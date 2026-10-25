@@ -1539,7 +1539,7 @@ export function Prompt(props: PromptProps) {
               />
             </PromptPlaceholder>
             <Show when={!props.compactFooter || store.mode === "shell" || hasRightContent()}>
-              <box flexDirection="row" flexShrink={0} paddingTop={1} gap={1} justifyContent="space-between">
+              <box flexDirection="row" flexShrink={0} paddingTop={props.compactFooter ? 0 : 1} gap={1} justifyContent="space-between">
                 <Show when={!props.compactFooter || store.mode === "shell"}>
                   <box flexDirection="row" gap={1}>
                     <Show when={local.agent.current()} fallback={<box height={1} />}>
