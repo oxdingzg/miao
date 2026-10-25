@@ -56,7 +56,9 @@ test("extracts beside the executable, and reuses a matching extraction", async (
   await using tmp = await scratch()
   const executable = path.join(tmp.dir, "miao")
   await writeFile(executable, "#!/bin/sh\n")
-  const target = path.join(tmp.dir, "miao-engine")
+  // A temp dir is a symlink under macOS (/tmp -> /private/tmp), so the target
+  // has to be the realpath the implementation resolves before it probes.
+  const target = path.join(await realpath(tmp.dir), "miao-engine")
   const load = async () => ({ bytes: payload("ENGINE-1"), sha256: "hash-1" })
   const first = await ensureEmbeddedEngine({
     executable,
@@ -64,7 +66,7 @@ test("extracts beside the executable, and reuses a matching extraction", async (
     load,
     probe: (binary) => (binary === target ? ok()() : undefined),
   })
-  expect(first).toBeUndefined()
+  expect(first).toBe(target)
   expect(await readFile(target, "utf8")).toBe("ENGINE-1")
   expect(await readFile(`${target}.embedded.sha256`, "utf8")).toBe("hash-1")
   const before = (await stat(target)).mtimeMs
