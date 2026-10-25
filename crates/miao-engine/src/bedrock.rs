@@ -360,7 +360,7 @@ impl Provider for Bedrock {
             };
             let notices = state.event(received, &self.model)?;
             if !notices.is_empty() {
-                event = None;
+                event = watchdogs.next_event_deadline();
             }
             // Bedrock builds its own notices instead of going through the SSE
             // parser, so the same repetitive-output guard runs here.
