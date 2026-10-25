@@ -100,5 +100,5 @@ test("one missing native Session does not hide healthy siblings in the same stor
       projects: { resolve: () => Effect.succeed({ id: Project.ID.global }) },
     })
   }).pipe(Effect.provide(Database.layerFromPath(path.join(tmp.path, "product.db"))), Effect.runPromise)
-  expect(result.map((session) => session.id).sort()).toEqual(["ses_healthy", "ses_later"])
+  expect(result.map((session) => session.id).sort()).toEqual([SessionID.make("ses_healthy"), SessionID.make("ses_later")])
 })
