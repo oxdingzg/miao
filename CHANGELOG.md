@@ -11,6 +11,18 @@ at `docs/releases/vX.Y.Z.md` and `docs/releases/vX.Y.Z.zh.md`; both are required
 
 ## [Unreleased]
 
+## [0.3.4] - 2026-10-25
+
+### Added
+- **engine**: honor the operator sandbox switch for process commands (#1367) (`8c8ddd7a36`)
+
+### Fixed
+- **engine**: register the task tool's named subagents for every admission (#1371) (`824ff9e13f`)
+- **engine**: attribute assistant identity to the serving agent (#1370) (`4646d63b6b`)
+- **engine**: refuse identical tool calls with a corrective error (#1369) (`7fdb1dd7d9`)
+- **tui**: wait for prompt admission without a client timeout (#1382) (`649778397a`)
+- **engine**: reclaim idle stdio engines from client activity alone (#1368) (`056e505705`)
+
 ## [0.3.3] - 2026-10-25
 
 ### Fixed
