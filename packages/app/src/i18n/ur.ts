@@ -1,4 +1,16 @@
 export const dict = {
+  "context.timeline.title": "سیاق و سباق اور کیش ہسٹری",
+  "context.timeline.step": "{{model}} · {{time}} · {{input}} پرامپٹ ٹوکن · {{read}} کیش ریڈ · {{write}} کیش رائٹ",
+  "context.timeline.requestWindow": "درخواست کے وقت {{value}} ٹوکن ونڈو",
+  "context.timeline.catalogWindow": "موجودہ کیٹلاگ میں {{value}} ٹوکن ونڈو",
+  "context.timeline.unknownWindow": "سیاق و سباق کی ونڈو نامعلوم ہے۔",
+  "context.timeline.empty": "ابھی تک کوئی طے شدہ فراہم کنندہ کا استعمال ریکارڈ نہیں کیا گیا ہے۔",
+  "context.timeline.retry": "استعمال کی سرگزشت کی دوبارہ کوشش کریں۔",
+  "context.timeline.compaction": "سیاق و سباق کو کمپیکٹ کیا گیا۔",
+  "context.timeline.cacheRead": "کیشے پڑھا۔",
+  "context.timeline.cacheWrite": "کیش لکھنا",
+  "context.timeline.ttft": "پہلے ٹوکن کے لیے {{value}} ms",
+
   "desktop.menu.app": "miao",
   "desktop.menu.file": "فائل",
   "desktop.menu.edit": "ترمیم",
@@ -614,7 +626,8 @@ export const dict = {
   "toast.permissions.autoaccept.off.title": "اجازتوں کو خودکار طور پر قبول کرنا بند کر دیا گیا۔",
   "toast.permissions.autoaccept.off.description": "اجازت کی درخواستوں کو منظوری درکار ہوگی۔",
   "settings.permissions.autoaccept.project.title": "اس پروجیکٹ کے لیے اجازتیں خودکار قبول کریں",
-  "settings.permissions.autoaccept.project.description": "اس پروجیکٹ کے کسی بھی سیشن سے نئی اجازت کی درخواستوں کا بغیر پوچھے جواب دیں۔ سیشن اور ڈائریکٹری سطح کے انتخاب کو ترجیح حاصل ہے۔",
+  "settings.permissions.autoaccept.project.description":
+    "اس پروجیکٹ کے کسی بھی سیشن سے نئی اجازت کی درخواستوں کا بغیر پوچھے جواب دیں۔ سیشن اور ڈائریکٹری سطح کے انتخاب کو ترجیح حاصل ہے۔",
   "toast.model.none.title": "کوئی ماڈل منتخب نہیں کیا گیا۔",
   "toast.model.none.description": "اس سیشن کا خلاصہ کرنے کے لیے فراہم کنندہ سے رابطہ کریں۔",
   "toast.file.loadFailed.title": "فائل لوڈ کرنے میں ناکام",
@@ -943,8 +956,7 @@ export const dict = {
   "settings.general.row.appearance.title": "ظاہری شکل",
   "settings.general.row.appearance.description": "اپنی مرضی کے مطابق بنائیں کہ آپ کے آلے پر miao کیسا لگتا ہے۔",
   "settings.general.row.colorScheme.title": "رنگ سکیم",
-  "settings.general.row.colorScheme.description":
-    "منتخب کریں کہ آیا miao سسٹم، لائٹ یا ڈارک تھیم کی پیروی کرتا ہے۔",
+  "settings.general.row.colorScheme.description": "منتخب کریں کہ آیا miao سسٹم، لائٹ یا ڈارک تھیم کی پیروی کرتا ہے۔",
   "settings.general.row.theme.title": "تھیم",
   "settings.general.row.theme.description": "miao کی تھیم حسب ضرورت بنائیں۔",
   "settings.general.row.font.title": "کوڈ فونٹ",
@@ -976,7 +988,8 @@ export const dict = {
   "settings.general.row.reasoningSummaries.title": "استدلال کے خلاصے دکھائیں۔",
   "settings.general.row.reasoningSummaries.description": "ٹائم لائن میں ماڈل استدلال کے خلاصے ڈسپلے کریں۔",
   "settings.general.row.turnDiffs.title": "ہر مرحلے کی تبدیل شدہ فائلیں دکھائیں",
-  "settings.general.row.turnDiffs.description": "ٹائم لائن میں ہر مکمل مرحلے کی تبدیل شدہ فائلوں کو سطر شمار اور پھیلنے والے فرق کے ساتھ فہرست کرتا ہے۔",
+  "settings.general.row.turnDiffs.description":
+    "ٹائم لائن میں ہر مکمل مرحلے کی تبدیل شدہ فائلوں کو سطر شمار اور پھیلنے والے فرق کے ساتھ فہرست کرتا ہے۔",
   "settings.general.row.shellToolPartsExpanded.title": "شیل ٹول کے حصے پھیلائیں",
   "settings.general.row.shellToolPartsExpanded.description":
     "ٹائم لائن میں شیل ٹول کے حصے بطور طے شدہ پھیلے ہوئے دکھائیں۔",
