@@ -124,9 +124,11 @@ async fn repeated_identical_calls_are_refused_with_a_corrective_error() {
     runtime.admit(input("s", "loop"), true).await.unwrap();
     assert_eq!(terminal(&store, "s").await, "completed");
     let events = store.events("s", 0, 2000).await.unwrap();
+    // The last allowed provider turn closes the prompt instead of running the
+    // tool it asks for, so 25 allowed turns leave 24 tool rounds.
     assert_eq!(
         events.iter().filter(|e| e.kind == "tool.completed").count(),
-        25
+        24
     );
     assert!(events.iter().any(|e| e.kind == "tool.completed"
         && e.data["result"]["error"]

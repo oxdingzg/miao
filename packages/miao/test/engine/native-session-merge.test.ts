@@ -139,5 +139,4 @@ test("a catalog batch lists native Sessions without execution snapshot or usage 
       projects: { resolve: () => Effect.succeed({ id: Project.ID.global }) },
     })
   }).pipe(Effect.provide(Database.layerFromPath(path.join(tmp.path, "product.db"))), Effect.runPromise)
-  expect(result.map((session) => session.title)).toEqual(["read only"])
-})
+  expect(result.map((session) => session.title)).toEqual(["read only"])})

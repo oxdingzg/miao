@@ -8,7 +8,7 @@ import { SessionInfo } from "@miao/schema/session-info"
 import { SessionID } from "@miao/schema/session-id"
 import { ModelV2 } from "@miao/core/model"
 import { SessionRunnerCost } from "@miao/core/session/runner/cost"
-import { Cause, DateTime, Effect, Option, Schema } from "effect"
+import { Cause, DateTime, Deferred, Effect, Option, Schema } from "effect"
 import { Database } from "@miao/core/database/database"
 import { SessionEnginePlacement } from "@miao/core/session/engine-placement"
 import { NativeEngine } from "./native-engine"
@@ -486,6 +486,9 @@ export const nativeTitlePrompt = (events: readonly { type: string; data: unknown
   return typeof answer.text === "string" && answer.text ? answer.text : undefined
 }
 
+// Completion only: model work remains in the caller's Location scope.
+const nativeTitleSettlements = new Map<string, Deferred.Deferred<void>>()
+
 /**
  * Best-effort product title for a native Session whose first run just settled:
  * read the durable wire page, derive the title prompt from it, and hand both to
@@ -495,42 +498,64 @@ export const nativeTitlePrompt = (events: readonly { type: string; data: unknown
  * cannot resurrect the placeholder. Callers wrap this in their own error
  * boundary — a missing title must never fail a wait or an idle transition.
  */
-export const generateNativeTitle = Effect.fn("NativeSession.generateTitle")(function* (input: {
-  native: Pick<NativeEngine.Interface, "history" | "title" | "rename">
-  sessionID: SessionID
-  storage: AbsolutePath
-  location: Location.Ref
-}) {
-  const events: Array<{ type: string; data: unknown }> = []
-  const readPrompt = Effect.gen(function* () {
-    let after = 0
-    // Image-only requests may not have a readable assistant answer until
-    // several tool batches later. Follow bounded pages, not just page one.
-    for (let pageIndex = 0; pageIndex < 20; pageIndex++) {
-      const page = yield* input.native.history({
-        sessionID: input.sessionID,
-        storage: input.storage,
-        location: input.location,
-        after,
-        limit: 100,
-      })
-      events.push(...page.events)
-      const prompt = nativeTitlePrompt(events)
-      if (prompt !== undefined) return prompt
-      if (!page.hasMore || page.cursor <= after) return
-      after = page.cursor
-    }
-  })
-  const prompt = yield* readPrompt
-  if (prompt === undefined) return
-  const title = yield* input.native.title({
-    sessionID: input.sessionID,
-    storage: input.storage,
-    location: input.location,
-    prompt,
-  })
-  if (title !== undefined)
-    yield* input.native
-      .rename({ sessionID: input.sessionID, storage: input.storage, location: input.location, title })
-      .pipe(Effect.catch(() => Effect.void))
-})
+export const generateNativeTitle = Effect.fn("NativeSession.generateTitle")(
+  function* (input: {
+    native: Pick<NativeEngine.Interface, "history" | "title" | "rename">
+    sessionID: SessionID
+    storage: AbsolutePath
+    location: Location.Ref
+  }) {
+    const events: Array<{ type: string; data: unknown }> = []
+    const readPrompt = Effect.gen(function* () {
+      let after = 0
+      // Image-only requests may not have a readable assistant answer until
+      // several tool batches later. Follow bounded pages, not just page one.
+      for (let pageIndex = 0; pageIndex < 20; pageIndex++) {
+        const page = yield* input.native.history({
+          sessionID: input.sessionID,
+          storage: input.storage,
+          location: input.location,
+          after,
+          limit: 100,
+        })
+        events.push(...page.events)
+        const prompt = nativeTitlePrompt(events)
+        if (prompt !== undefined) return prompt
+        if (!page.hasMore || page.cursor <= after) return
+        after = page.cursor
+      }
+    })
+    const prompt = yield* readPrompt
+    if (prompt === undefined) return
+    const title = yield* input.native.title({
+      sessionID: input.sessionID,
+      storage: input.storage,
+      location: input.location,
+      prompt,
+    })
+    if (title !== undefined)
+      yield* input.native
+        .rename({ sessionID: input.sessionID, storage: input.storage, location: input.location, title })
+        .pipe(Effect.catch(() => Effect.void))
+  },
+  (effect, input) =>
+    Effect.uninterruptibleMask((restore) =>
+      Effect.suspend(() => {
+        const key = JSON.stringify([input.storage, input.sessionID])
+        const pending = nativeTitleSettlements.get(key)
+        // An idle listener may already be generating the title. A headless waiter
+        // must join it through the engine rename, or teardown cancels that work.
+        if (pending) return restore(Deferred.await(pending))
+        const settled = Deferred.makeUnsafe<void>()
+        nativeTitleSettlements.set(key, settled)
+        return restore(effect).pipe(
+          Effect.ensuring(
+            Effect.gen(function* () {
+              yield* Deferred.succeed(settled, undefined)
+              if (nativeTitleSettlements.get(key) === settled) nativeTitleSettlements.delete(key)
+            }),
+          ),
+        )
+      }),
+    ),
+)

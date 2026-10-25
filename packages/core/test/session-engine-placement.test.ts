@@ -2,13 +2,15 @@ import { EventTable } from "../src/event/sql"
 import placementMigration from "../src/database/migration/20261011151147_session_engine_placement"
 import { expect, test } from "bun:test"
 import path from "node:path"
-import { Effect, Exit } from "effect"
+import { Deferred, Effect, Exit, Fiber, Layer } from "effect"
 import { eq, sql } from "drizzle-orm"
 import { Database } from "../src/database/database"
 import { AppNodeBuilder } from "../src/effect/app-node-builder"
+import { makeGlobalNode } from "../src/effect/app-node"
 import { LayerNode } from "../src/effect/layer-node"
 import { SessionV2 } from "../src/session"
 import { SessionExecution } from "../src/session/execution"
+import { SessionOwnership } from "../src/session/ownership"
 import { SessionEnginePlacement } from "../src/session/engine-placement"
 import { SessionEnginePlacementTable } from "../src/session/engine-placement.sql"
 import { SessionTable, SessionInputTable } from "../src/session/sql"
@@ -295,5 +297,63 @@ test("direct TS core mutation and admission cannot write a native-owned Session"
       expect((yield* sessions.get(info.id)).title).toBe(info.title)
       expect(yield* SessionEnginePlacement.find(database.db, info.id)).toEqual(native(tmp.path))
     }),
+  )
+})
+
+test("a native create retry adopts the winner after its initial empty read", async () => {
+  await using tmp = await tmpdir()
+  await Effect.runPromise(
+    Effect.gen(function* () {
+      const entered = yield* Deferred.make<void>()
+      const release = yield* Deferred.make<void>()
+      const state = { paused: false }
+      const ownership = Layer.effect(
+        SessionOwnership.Service,
+        Effect.gen(function* () {
+          const database = yield* Database.Service
+          const actual = yield* SessionOwnership.make(":memory:", database.db)
+          return SessionOwnership.Service.of({
+            ...actual,
+            claim: (id) =>
+              Effect.gen(function* () {
+                if (!state.paused) {
+                  state.paused = true
+                  yield* Deferred.succeed(entered, undefined)
+                  yield* Deferred.await(release)
+                }
+                yield* actual.claim(id)
+              }),
+          })
+        }),
+      )
+      yield* Effect.gen(function* () {
+        const sessions = yield* SessionV2.Service
+        const input = {
+          id: SessionV2.ID.create(),
+          location: { directory: AbsolutePath.make(tmp.path) },
+          nativeStorage: native(tmp.path).storage,
+        }
+        const retry = yield* sessions.create(input).pipe(Effect.forkChild)
+        yield* Deferred.await(entered)
+        const winner = yield* sessions.create(input)
+        yield* Deferred.succeed(release, undefined)
+        expect(yield* Fiber.join(retry)).toEqual(winner)
+        const database = yield* Database.Service
+        expect(yield* SessionEnginePlacement.find(database.db, input.id)).toEqual(native(tmp.path))
+        expect(yield* database.db.select().from(SessionTable).all()).toHaveLength(1)
+        expect(yield* database.db.select().from(EventTable).all()).toHaveLength(1)
+      }).pipe(
+        Effect.provide(
+          AppNodeBuilder.build(LayerNode.group([SessionV2.node, Database.node, EventV2.node]), [
+            [Database.node, Database.layerFromPath(":memory:")],
+            [SessionExecution.node, SessionExecution.noopLayer],
+            [
+              SessionOwnership.node,
+              makeGlobalNode({ service: SessionOwnership.Service, layer: ownership, deps: [Database.node] }),
+            ],
+          ]),
+        ),
+      )
+    }).pipe(Effect.scoped),
   )
 })

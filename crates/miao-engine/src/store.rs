@@ -1818,13 +1818,13 @@ command: None,
         })
         .await
     }
-    /// A lease is alive while its last heartbeat is within twice the declared
-    /// interval; expired or missing leases make timers adoptable.
-    pub async fn has_running_runs(&self) -> Result<bool, Error> {
+    /// Runs claimed by this process, excluding other owners and unclaimed
+    /// crash residue in the shared database.
+    pub async fn has_owned_running_runs(&self) -> Result<bool, Error> {
         self.call(|conn| {
             Ok(conn.query_row(
-                "SELECT EXISTS(SELECT 1 FROM engine_run WHERE state='running')",
-                [],
+                "SELECT EXISTS(SELECT 1 FROM engine_run r JOIN engine_lease l ON l.session_id=r.session_id WHERE r.state='running' AND l.owner_pid=?1)",
+                [std::process::id()],
                 |row| row.get(0),
             )?)
         })
@@ -2171,7 +2171,15 @@ command: None,
             let row:Option<(String,String,String)>=tx.query_row("SELECT t.name,t.input,l.root FROM engine_tool t JOIN engine_run r ON r.id=t.run_id JOIN engine_location l ON l.session_id=r.session_id WHERE t.id=?1 AND t.state='planned' AND r.id=?2 AND r.session_id=?3 AND r.state='running'",params![key,approval.run_id,approval.session_id],|r|Ok((r.get(0)?,r.get(1)?,r.get(2)?))).optional()?;
             let (name,input,root)=row.ok_or(Error::ApprovalResolved)?;
             let original:Value=serde_json::from_str(&input)?;
-            if name!=approval.tool||root!=approval.location||original["input"]!=approval.input||input_digest(&root,&name,&approval.resource,&approval.input)?!=approval.input_hash {return Err(Error::ApprovalMismatch);}
+            // Compact discovery persists the provider's wrapper, while the
+            // approval and exact grant scope authorize the prepared target.
+            // Derive both target and arguments from that immutable plan.
+            let (name,input)=if name=="tool_call" {
+                let invocation=crate::tool_catalog::Invocation::parse(original["input"].clone()).map_err(|_|Error::ApprovalMismatch)?;
+                if !invocation.name.starts_with("mcp_")&&!crate::worker::owns(&invocation.name) {return Err(Error::ApprovalMismatch);}
+                (invocation.name,invocation.arguments)
+            } else { (name,original["input"].clone()) };
+            if name!=approval.tool||root!=approval.location||input!=approval.input||input_digest(&root,&name,&approval.resource,&approval.input)?!=approval.input_hash {return Err(Error::ApprovalMismatch);}
             if approval.expires_at_ms<=now_ms(){return Err(Error::ApprovalExpired);}
             tx.execute("INSERT INTO engine_approval VALUES(?1,?2,?3,?4,?5,?6,'pending')",params![approval.request_id,approval.session_id,approval.run_id,key,serde_json::to_string(&approval)?,approval.expires_at_ms])?;
             if let Some(scope) = &scope { crate::permission_grant::bind_request(&tx,&approval,scope)?; }

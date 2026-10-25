@@ -67,6 +67,14 @@ export const SessionHandler = HttpApiBuilder.group(Api, "server.session", (handl
 
     return handlers
       .handle(
+        "session.usageHistory",
+        Effect.fn(function* (ctx) {
+          const data = yield* SessionUsageStore.history(db, ctx.params.sessionID, ctx.query)
+          if (!data) return yield* new InvalidCursorError({ message: "Invalid usage history cursor" })
+          return { data }
+        }),
+      )
+      .handle(
         "session.list",
         Effect.fn(function* (ctx) {
           const query =

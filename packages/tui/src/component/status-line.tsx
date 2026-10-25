@@ -75,7 +75,7 @@ export function StatusLine(props: { sessionID?: string; directory?: string; newW
     <box
       width="100%"
       height={1}
-      marginBottom={1}
+      marginBottom={props.sessionID ? 0 : 1}
       paddingLeft={2}
       paddingRight={2}
       flexDirection="row"

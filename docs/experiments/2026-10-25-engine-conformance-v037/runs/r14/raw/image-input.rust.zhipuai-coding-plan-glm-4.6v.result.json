@@ -1,0 +1,22 @@
+{
+  "scenario": "image-input",
+  "engine": "rust",
+  "model": "zhipuai-coding-plan/glm-4.6v",
+  "outcome": {
+    "status": "pass"
+  },
+  "sessionID": "ses_gfe5e8c195892ffes0mwK4CP21",
+  "cost": 0,
+  "tokensIn": 28226,
+  "tokensOut": 320,
+  "stepFinishes": 2,
+  "tools": [
+    {
+      "tool": "read",
+      "status": "error",
+      "error": "{\"error\":\"file IO failed: No such file or directory (os error 2)\"}",
+      "background": false
+    }
+  ],
+  "errors": []
+}

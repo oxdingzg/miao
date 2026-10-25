@@ -1,0 +1,38 @@
+{
+  "scenario": "forced-compaction",
+  "engine": "ts",
+  "model": "zhipuai-coding-plan/glm-5.3-flash",
+  "outcome": {
+    "status": "pass",
+    "note": "completion-only; the compaction-row assert is rust-only (tsEquivalent n/a)"
+  },
+  "sessionID": "ses_gfe5e8c204e26ffeGb8FKd3J0o",
+  "cost": 0.00484,
+  "tokensIn": 15106,
+  "tokensOut": 302,
+  "stepFinishes": 5,
+  "tools": [
+    {
+      "tool": "bash",
+      "status": "completed",
+      "command": "wc -l data/large.txt && wc -c data/large.txt",
+      "background": false
+    },
+    {
+      "tool": "read",
+      "status": "completed",
+      "background": false
+    },
+    {
+      "tool": "read",
+      "status": "completed",
+      "background": false
+    },
+    {
+      "tool": "read",
+      "status": "completed",
+      "background": false
+    }
+  ],
+  "errors": []
+}

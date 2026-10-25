@@ -1,0 +1,23 @@
+{
+  "scenario": "permission-deny",
+  "engine": "rust",
+  "model": "zhipuai-coding-plan/glm-5.3-flash",
+  "outcome": {
+    "status": "pass"
+  },
+  "sessionID": "ses_gfe5e8c348656ffeeQXo33fwlk",
+  "cost": 0.00113,
+  "tokensIn": 28074,
+  "tokensOut": 351,
+  "stepFinishes": 2,
+  "tools": [
+    {
+      "tool": "bash",
+      "status": "error",
+      "error": "{\"error\":\"permission denied\"}",
+      "command": "rm deleteme.txt",
+      "background": false
+    }
+  ],
+  "errors": []
+}

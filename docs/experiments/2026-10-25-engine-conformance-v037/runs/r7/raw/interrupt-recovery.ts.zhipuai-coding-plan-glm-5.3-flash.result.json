@@ -1,0 +1,34 @@
+{
+  "scenario": "interrupt-recovery",
+  "engine": "ts",
+  "model": "zhipuai-coding-plan/glm-5.3-flash",
+  "outcome": {
+    "status": "pass"
+  },
+  "sessionID": "ses_gfe5e8cbe3b2cffeDRzF6rhNU1",
+  "cost": 0.0029,
+  "tokensIn": 3751,
+  "tokensOut": 229,
+  "stepFinishes": 4,
+  "tools": [
+    {
+      "tool": "bash",
+      "status": "completed",
+      "command": "if [ -f marker.txt ]; then echo \"--- marker.txt contents ---\"; cat marker.txt; echo \"--- end ---\"; grep -qx 'INTERRUPT-RECOVERY-7391' marker.txt && echo LINE_PRESENT || echo LINE_ABSENT; else echo \"NO_FILE\"; fi",
+      "background": false
+    },
+    {
+      "tool": "bash",
+      "status": "completed",
+      "command": "i=0\nwhile [ $i -lt 40 ]; do\n  if [ -f marker.txt ] && grep -qx 'INTERRUPT-RECOVERY-7391' marker.txt; then\n    echo \"FOUND after ${i}s\"\n    exit 0\n  fi\n  sleep 2\n  i=$((i+2))\ndone\necho \"NOT_FOUND after 40s\"",
+      "background": false
+    },
+    {
+      "tool": "bash",
+      "status": "completed",
+      "command": "echo INTERRUPT-RECOVERY-7391 >> marker.txt && cat marker.txt",
+      "background": false
+    }
+  ],
+  "errors": []
+}
