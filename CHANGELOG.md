@@ -11,6 +11,17 @@ at `docs/releases/vX.Y.Z.md` and `docs/releases/vX.Y.Z.zh.md`; both are required
 
 ## [Unreleased]
 
+## [0.3.6] - 2026-10-25
+
+### Added
+- **engine**: publish each native provider phase as the turn advances (#1393) (`1fa06afadb`)
+- **tui**: redesign the sidebar context section with pressure and trend charts (#1395) (`36152c0565`)
+- **engine**: read a native Session's queued prompts (#1391) (`527be4c3f2`)
+
+### Fixed
+- **engine**: advance the delegation cursor past one event page (#1390) (`851ab3d73f`)
+- **tui**: keep a waiting turn from reading as a stopped one (#1392) (`ef8aa76129`)
+
 ## [0.3.5] - 2026-10-25
 
 ### Added
