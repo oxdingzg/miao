@@ -1272,6 +1272,7 @@ async fn read_stream_with_budget<P: Parser>(
         .copied()
         .unwrap_or_default();
     let mut event = watchdogs.event;
+    let mut received_event = false;
     let byte_idle = watchdogs.byte_idle;
     let mut bytes = response.bytes_stream();
     let mut decoder = SseDecoder::default();
@@ -1286,19 +1287,19 @@ async fn read_stream_with_budget<P: Parser>(
             event.unwrap_or_else(|| tokio::time::Instant::now() + Duration::from_secs(3600));
         let chunk = tokio::select! {
             _=cancel.cancelled()=>return Err(ProviderError::Interrupted),
-            _=tokio::time::sleep_until(event_deadline), if event.is_some()=>return Err(ProviderError::Transport),
+            _=tokio::time::sleep_until(event_deadline), if event.is_some()=>return Err(watchdogs.event_timeout(received_event)),
             _=tokio::time::sleep_until(deadline), if input_budget.deadline().is_some()=>return Err(input_budget.timeout_error()),
             result=async {
                 let chunk = match byte_idle.is_zero() {
                     true => bytes.next().await,
                     false => tokio::time::timeout(byte_idle, bytes.next())
                         .await
-                        .map_err(|_| match event.is_some() {
+                        .map_err(|_| match received_event {
                             // Silence before any semantic event is the same
                             // retryable failure the old single deadline produced;
                             // after one, a stalled stream stays terminal.
-                            true => ProviderError::Transport,
-                            false => ProviderError::Stream(format!(
+                            false => ProviderError::Transport,
+                            true => ProviderError::Stream(format!(
                                 "provider sent no response bytes for {}ms (set MIAO_LLM_STREAM_IDLE_TIMEOUT_MS to adjust, 0 disables)",
                                 byte_idle.as_millis(),
                             )),
@@ -1325,7 +1326,8 @@ async fn read_stream_with_budget<P: Parser>(
                 Frame::Done => true,
                 Frame::Json(event) => crate::first_event::semantic_event(event),
             } {
-                event = None;
+                received_event = true;
+                event = watchdogs.next_event_deadline();
             }
             // Publish a normalized delta alongside the raw frame. The engine's
             // own first-event and retry logic reads `raw` through `semantic_event`,
@@ -1347,8 +1349,11 @@ async fn read_stream_with_budget<P: Parser>(
             let deadline = input_budget
                 .deadline()
                 .unwrap_or_else(|| tokio::time::Instant::now() + Duration::from_secs(120));
+            let event_deadline =
+                event.unwrap_or_else(|| tokio::time::Instant::now() + Duration::from_secs(3600));
             tokio::select! {
                 _=cancel.cancelled()=>return Err(ProviderError::Interrupted),
+                _=tokio::time::sleep_until(event_deadline), if event.is_some()=>return Err(watchdogs.event_timeout(received_event)),
                 _=tokio::time::sleep_until(deadline), if input_budget.deadline().is_some()=>return Err(input_budget.timeout_error()),
                 result=send_all(&progress, &notices)=>if result.is_err(){return Err(ProviderError::Interrupted);},
             }
