@@ -285,6 +285,10 @@ export function Session() {
   // Delivery state is transient chrome, not a transcript event: it lives on the
   // footer line instead of growing the history row it belongs to.
   const latestReceipt = createMemo(() => sync.prompt.latest(route.sessionID))
+  const inlineReceipt = createMemo(() => {
+    const status = sync.data.session_status[route.sessionID]
+    return latestReceipt()?.state === "admitted" && visible() && (status?.type === "busy" || status?.type === "retry")
+  })
 
   const dimensions = useTerminalDimensions()
   const [sidebar, setSidebar] = kv.signal<"auto" | "hide">("sidebar", "auto")
@@ -1496,7 +1500,7 @@ export function Session() {
                 <Show when={session()?.parentID}>
                   <SubagentFooter />
                 </Show>
-                <Show when={latestReceipt()}>{(receipt) => <PromptStatus prompt={receipt()} />}</Show>
+                <Show when={!inlineReceipt() && latestReceipt()}>{(receipt) => <PromptStatus prompt={receipt()} />}</Show>
                 <SessionTimers sessionID={route.sessionID} />
                 <Show when={visible()}>
                   <pluginRuntime.Slot

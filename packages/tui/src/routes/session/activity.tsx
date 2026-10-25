@@ -194,11 +194,16 @@ export function SessionActivity(props: { sessionID: string; compact?: boolean; s
   // esc cancels the newest waiting prompt, and only an empty queue interrupts.
   const waitingCount = createMemo(() => sync.prompt.waiting(props.sessionID).length)
   const esc = createMemo(() => (waitingCount() > 0 ? "remove prompt" : "interrupt"))
+  const receipt = createMemo(() => {
+    const current = sync.prompt.latest(props.sessionID)
+    if (current?.state !== "admitted" || (!busy() && status()?.type !== "retry")) return undefined
+    return { delivery: current.delivery, count: waitingCount(), since: current.info.time.created }
+  })
   if (props.compact)
     return (
       <Show when={!blocked() && (active() || status()?.type === "retry")}>
         <Show
-          when={status()?.type === "retry"}
+          when={status()?.type === "retry" && !receipt()}
           fallback={
             <SessionActiveWaiting
               compact
@@ -206,9 +211,10 @@ export function SessionActivity(props: { sessionID: string; compact?: boolean; s
               activity={activity()}
               phase={phase()}
               progress={progress()}
-              base={elapsedBase}
+              base={() => (receipt() ? (receipt()!.since ?? undefined) : elapsedBase())}
               totalBase={turnStartedAt}
               esc={esc()}
+              receipt={receipt()}
             />
           }
         >
@@ -220,8 +226,12 @@ export function SessionActivity(props: { sessionID: string; compact?: boolean; s
             paddingRight={2}
             overflow="hidden"
           >
-            <ProviderRetryStatus status={status()!} />
-            <text>esc {esc()}</text>
+            <box flexGrow={1} minWidth={0} overflow="hidden">
+              <ProviderRetryStatus status={status()!} compact />
+            </box>
+            <text wrapMode="none" flexShrink={0}>
+              esc {esc()}
+            </text>
           </box>
         </Show>
       </Show>
@@ -271,6 +281,7 @@ export function SessionActivity(props: { sessionID: string; compact?: boolean; s
  */
 function SessionActiveWaiting(props: {
   compact?: boolean
+  receipt?: { delivery: "steer" | "queue"; count: number; since: number | null }
   waiting: boolean
   activity?: string
   phase?: SessionPhase
@@ -290,6 +301,7 @@ function SessionActiveWaiting(props: {
       waiting={props.waiting}
       elapsed={elapsed()}
       compact={props.compact}
+      receipt={props.receipt}
       totalElapsed={(() => {
         seconds()
         const start = props.totalBase?.()
@@ -474,6 +486,7 @@ export function groupReadRuns(content: ReadonlyArray<AssistantContent>): Readonl
 
 export function SessionWaiting(props: {
   compact?: boolean
+  receipt?: { delivery: "steer" | "queue"; count: number; since: number | null }
   totalElapsed?: number
   waiting: boolean
   elapsed: number
@@ -488,6 +501,11 @@ export function SessionWaiting(props: {
   // is still reading its first token or already running tools.
   const text = createMemo(() => {
     if (props.compact) {
+      if (props.receipt) {
+        const label = props.receipt.delivery === "queue" ? "Queued" : "Received"
+        if (width() < 60) return props.receipt.count > 1 ? `${props.receipt.count} pending` : label
+        return `${label}${props.receipt.count > 1 ? ` · ${props.receipt.count} pending` : ""} · ${props.receipt.delivery === "queue" ? "starts when idle" : "joins next turn"}`
+      }
       if (props.phase === "compacting") {
         if (props.progress?.stages)
           return width() < 60
@@ -538,7 +556,7 @@ export function SessionWaiting(props: {
         </box>
         <Show when={width() >= 32}>
           <text wrapMode="none" flexShrink={0} fg={theme.textMuted}>
-            {Locale.duration(props.elapsed)}
+            {props.receipt?.since === null ? "—" : Locale.duration(props.elapsed)}
             <Show when={width() >= 80 && props.totalElapsed !== undefined && props.totalElapsed > props.elapsed + 1000}>
               {` · turn ${Locale.duration(props.totalElapsed!)}`}
             </Show>

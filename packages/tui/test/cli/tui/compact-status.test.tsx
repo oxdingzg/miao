@@ -23,6 +23,7 @@ test("composer status keeps progress, clocks and the next escape action on one r
     const [phase, setPhase] = createSignal<"requesting" | "compacting" | "streaming">("requesting")
     const [activity, setActivity] = createSignal<string>()
     const [esc, setEsc] = createSignal("interrupt")
+    const [receipt, setReceipt] = createSignal<{ delivery: "steer" | "queue"; count: number; since: number | null }>()
     const app = await testRender(
       () => (
         <TestTuiContexts directory={tmp.path} paths={{ home: tmp.path, state, worktree: tmp.path }}>
@@ -38,6 +39,7 @@ test("composer status keeps progress, clocks and the next escape action on one r
                   totalElapsed={91000}
                   progress={{ stage: 2, stages: 4 }}
                   esc={esc()}
+                  receipt={receipt()}
                 />
               </ThemeProvider>
             </KVProvider>
@@ -73,6 +75,22 @@ test("composer status keeps progress, clocks and the next escape action on one r
       expect(tool).toContain("22.0s")
       expect(tool).toContain("esc remove prompt")
       expect(tool.split("\n").filter((line) => line.trim())).toHaveLength(1)
+      setReceipt({ delivery: "steer", count: 1, since: Date.now() - 22000 })
+      await app.renderOnce()
+      const received = app.captureCharFrame()
+      expect(received).toContain("Received")
+      expect(received).toContain("22.0s")
+      expect(received).toContain("esc remove prompt")
+      expect(received.split("\n").filter((line) => line.trim())).toHaveLength(1)
+      if (width > 80) expect(received).toContain("joins next turn")
+      setReceipt({ delivery: "queue", count: 2, since: null })
+      await app.renderOnce()
+      const queued = app.captureCharFrame()
+      expect(queued).toContain("2 pending")
+      expect(queued).toContain("esc remove prompt")
+      expect(queued).not.toContain("22.0s")
+      expect(queued.split("\n").filter((line) => line.trim())).toHaveLength(1)
+      if (width > 80) expect(queued).toContain("starts when idle")
     } finally {
       app.renderer.destroy()
     }
