@@ -274,6 +274,7 @@ mod tests {
     #[test]
     fn detects_single_line_and_alternating_short_prose_loops() {
         assert_eq!(text(&looped()), Some(Channel::Text));
+        assert_eq!(reasoning(&looped()), Some(Channel::Reasoning));
         assert_eq!(
             text(&"我发出工具调用。\n好。\n".repeat(80)),
             Some(Channel::Text)
