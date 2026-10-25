@@ -45,7 +45,7 @@ test.skipIf(process.platform === "win32")(
     const script = path.join(tmp.path, "miao-engine")
     await Bun.write(
       script,
-      "#!/bin/sh\nprintf '%s' '{\"name\":\"miao-engine\",\"version\":\"9.9.9\",\"protocol\":2,\"schema\":12}'\n",
+      '#!/bin/sh\nprintf \'%s\' \'{"name":"miao-engine","version":"9.9.9","protocol":2,"schema":12}\'\n',
     )
     await chmod(script, 0o755)
     expect(capabilities(script)).toEqual(engine(2))
@@ -66,12 +66,56 @@ test("an engine whose route manifest schema is too old is refused", () => {
     resolveEngine({ environment: {}, probe: () => ({ ...engine(2), routesSchema: 2 }), exists: () => true })?.binary,
   ).toContain("miao-engine")
   // An engine that predates the field is still used; its loader decides.
-  expect(resolveEngine({ environment: {}, probe: () => engine(2), exists: () => true })?.binary).toContain("miao-engine")
+  expect(resolveEngine({ environment: {}, probe: () => engine(2), exists: () => true })?.binary).toContain(
+    "miao-engine",
+  )
 })
 
 test("an installed preview's paired engine precedes the stable engine", () => {
   const executable = path.join("/preview", ".versions", "build", "miao")
   const paired = path.join(path.dirname(executable), process.platform === "win32" ? "miao-engine.exe" : "miao-engine")
-  expect(resolveEngine({ executable, environment: {}, exists: () => true, probe: () => engine(2) })?.binary).toBe(paired)
-  expect(resolveEngine({ executable, environment: { MIAO_ENGINE_BIN: "/chosen" }, exists: () => true, probe: () => engine(2) })?.binary).toBe("/chosen")
+  expect(resolveEngine({ executable, environment: {}, exists: () => true, probe: () => engine(2) })?.binary).toBe(
+    paired,
+  )
+  expect(
+    resolveEngine({
+      executable,
+      environment: { MIAO_ENGINE_BIN: "/chosen" },
+      exists: () => true,
+      probe: () => engine(2),
+    })?.binary,
+  ).toBe("/chosen")
+})
+
+test.skipIf(process.platform === "win32")("real engine route-schema fields are checked before selection", async () => {
+  await using tmp = await tmpdir()
+  const binary = path.join(tmp.path, "miao-engine")
+  for (const input of [
+    { wire: {}, normalized: undefined, accepted: true },
+    { wire: { routes_schema: 1 }, normalized: 1, accepted: false },
+    { wire: { routes_schema: 2 }, normalized: 2, accepted: true },
+    { wire: { routesSchema: 2 }, normalized: 2, accepted: true },
+    { wire: { routes_schema: 2, routesSchema: 2 }, normalized: 2, accepted: true },
+  ]) {
+    await Bun.write(binary, `#!/bin/sh\nprintf '%s' '${JSON.stringify({ ...engine(2), ...input.wire })}'\n`)
+    await chmod(binary, 0o755)
+    expect(capabilities(binary)?.routesSchema).toBe(input.normalized)
+    if (input.accepted) expect(resolveEngine({ environment: { MIAO_ENGINE_BIN: binary } })?.binary).toBe(binary)
+    if (!input.accepted)
+      expect(() => resolveEngine({ environment: { MIAO_ENGINE_BIN: binary } })).toThrow("route schema")
+  }
+  for (const wire of [
+    { routes_schema: "2" },
+    { routesSchema: "2" },
+    { routes_schema: 1, routesSchema: 2 },
+    { routes_schema: 2, routesSchema: 1 },
+  ]) {
+    await Bun.write(binary, `#!/bin/sh\nprintf '%s' '${JSON.stringify({ ...engine(2), ...wire })}'\n`)
+    expect(capabilities(binary)).toBeUndefined()
+    expect(() => resolveEngine({ environment: { MIAO_ENGINE_BIN: binary } })).toThrow("cannot report capabilities")
+  }
+})
+
+test.skipIf(!process.env.MIAO_ENGINE_BIN)("the native executable reports a normalized route schema", () => {
+  expect(capabilities(process.env.MIAO_ENGINE_BIN!)?.routesSchema).toBeGreaterThanOrEqual(2)
 })
