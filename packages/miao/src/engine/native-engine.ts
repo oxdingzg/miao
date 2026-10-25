@@ -440,7 +440,7 @@ export const fromOwners = (
           )
         const connection = yield* connect({ ...input, refreshContext: true })
         const snapshot = yield* Effect.tryPromise({
-          try: () => connection.client.request("snapshot", { session_id: input.sessionID }),
+          try: () => connection.client.request("snapshot", { session_id: input.sessionID, metadata_only: true }),
           catch: (error) => error,
         })
         const sessionAgent = Schema.decodeUnknownSync(
@@ -467,49 +467,42 @@ export const fromOwners = (
           // durable-input reconciliation makes the retry idempotent.
           Effect.catch((error) =>
             Effect.tryPromise(async () => {
-              if (
-                !(error instanceof Error) ||
-                !error.message.includes("selected history exceeds budget")
-              )
-                throw error
+              if (!(error instanceof Error) || !error.message.includes("selected history exceeds budget")) throw error
               const seen = await Effect.runPromise(
-              Effect.tryPromise({
-                try: () =>
-                  connection.client.request("events", {
-                    session_id: input.sessionID,
-                    after: "",
-                  }) as Promise<Array<{ seq?: number }>>,
-                catch: (cause) => cause,
-              }).pipe(Effect.catch(() => Effect.succeed(undefined))),
-            ).catch(() => undefined)
-            const cursor = Array.isArray(seen)
-              ? Math.max(0, ...seen.map((event) => event?.seq ?? 0))
-              : 0
-            await connection.client.request("request_compact", {
-              session_id: input.sessionID,
-            })
-            await connection.client.request("wake", { session_id: input.sessionID })
-            const deadline = Date.now() + 180_000
-            let compacted = false
-            while (Date.now() < deadline && !compacted) {
-              await Bun.sleep(2_000)
-              const events = (await Effect.runPromise(
                 Effect.tryPromise({
                   try: () =>
                     connection.client.request("events", {
                       session_id: input.sessionID,
-                      after: String(cursor),
-                    }) as Promise<Array<{ type?: string }>>,
+                      after: "",
+                    }) as Promise<Array<{ seq?: number }>>,
                   catch: (cause) => cause,
                 }).pipe(Effect.catch(() => Effect.succeed(undefined))),
-              ).catch(() => undefined)) as Array<{ type?: string }> | undefined
-              compacted =
-                Array.isArray(events) &&
-                events.some((event) => event?.type === "history.compacted")
-            }
-            if (!compacted) throw error
-            await admit(true)
-          })),
+              ).catch(() => undefined)
+              const cursor = Array.isArray(seen) ? Math.max(0, ...seen.map((event) => event?.seq ?? 0)) : 0
+              await connection.client.request("request_compact", {
+                session_id: input.sessionID,
+              })
+              await connection.client.request("wake", { session_id: input.sessionID })
+              const deadline = Date.now() + 180_000
+              let compacted = false
+              while (Date.now() < deadline && !compacted) {
+                await Bun.sleep(2_000)
+                const events = (await Effect.runPromise(
+                  Effect.tryPromise({
+                    try: () =>
+                      connection.client.request("events", {
+                        session_id: input.sessionID,
+                        after: String(cursor),
+                      }) as Promise<Array<{ type?: string }>>,
+                    catch: (cause) => cause,
+                  }).pipe(Effect.catch(() => Effect.succeed(undefined))),
+                ).catch(() => undefined)) as Array<{ type?: string }> | undefined
+                compacted = Array.isArray(events) && events.some((event) => event?.type === "history.compacted")
+              }
+              if (!compacted) throw error
+              await admit(true)
+            }),
+          ),
         )
       }).pipe(Effect.mapError((error) => refusal(input.sessionID, error))),
     shell: (input) =>
@@ -568,7 +561,7 @@ export const fromOwners = (
       ).pipe(Effect.asVoid),
     modelRoutes: (input) =>
       read<readonly SessionModelRoute.Info[]>(input, async (connection) => {
-        await connection.client.request("snapshot", { session_id: input.sessionID })
+        await connection.client.request("snapshot", { session_id: input.sessionID, metadata_only: true })
         return (await routes(connection)).map((entry) => ({
           model: SessionModelRoute.reference(entry.route_id),
           ...(entry.model_key
@@ -626,7 +619,7 @@ export const fromOwners = (
     revertStage: (input) =>
       read(input, async (connection) => {
         const snapshot = Schema.decodeUnknownSync(Schema.Struct({ cursor: Schema.Number }))(
-          await connection.client.request("snapshot", { session_id: input.sessionID }),
+          await connection.client.request("snapshot", { session_id: input.sessionID, metadata_only: true }),
         )
         let after = 0
         const events: EngineEvent[] = []
@@ -701,7 +694,10 @@ export const fromOwners = (
       }).pipe(Effect.mapError((error) => refusal(input.sessionID, error))),
     snapshot: (input) =>
       read<Readonly<Record<string, unknown>>>(input, (connection) =>
-        connection.client.request("snapshot", { session_id: input.sessionID, metadata_only: input.metadataOnly ?? false }),
+        connection.client.request("snapshot", {
+          session_id: input.sessionID,
+          metadata_only: input.metadataOnly ?? false,
+        }),
       ).pipe(Effect.map((value) => (typeof value === "object" && value !== null ? value : {}))),
     usage: (input) =>
       read<Readonly<Record<string, unknown>>>(input, (connection) =>
@@ -732,12 +728,15 @@ export const fromOwners = (
       read(input, async (connection) => {
         // Rust's rename can initialize a Session; the product command operates
         // only on an existing owner, so missing identity must fail first.
-        await connection.client.request("snapshot", { session_id: input.sessionID })
+        await connection.client.request("snapshot", { session_id: input.sessionID, metadata_only: true })
         return connection.client.request("rename", { session_id: input.sessionID, title: input.title })
       }).pipe(Effect.asVoid),
     permissions: (input) =>
       read<readonly Permission.Request[]>(input, async (connection) => {
-        const snapshot = await connection.client.request("snapshot", { session_id: input.sessionID })
+        const snapshot = await connection.client.request("snapshot", {
+          session_id: input.sessionID,
+          metadata_only: true,
+        })
         return Schema.decodeUnknownSync(ApprovalBindings)(snapshot).approvals.map((binding) => {
           if (binding.session_id !== input.sessionID)
             throw new EngineError("approval_owner_mismatch", "Approval belongs to another Session")
@@ -753,7 +752,10 @@ export const fromOwners = (
       }),
     replyPermission: (input) =>
       read(input, async (connection) => {
-        const snapshot = await connection.client.request("snapshot", { session_id: input.sessionID })
+        const snapshot = await connection.client.request("snapshot", {
+          session_id: input.sessionID,
+          metadata_only: true,
+        })
         const binding = Schema.decodeUnknownSync(ApprovalBindings)(snapshot).approvals.find(
           (binding) => binding.session_id === input.sessionID && `per_${binding.request_id}` === input.requestID,
         )
@@ -1067,7 +1069,7 @@ const layer = Layer.effect(
             const locationContext = runtime as unknown as Context.Context<
               AgentV2.Service | EventV2.Service | SessionRunnerModel.Service
             >
-            const snapshot = yield* engine.snapshot(input)
+            const snapshot = yield* engine.snapshot({ ...input, metadataOnly: true })
             const selection = Schema.decodeUnknownOption(Schema.NullOr(SessionModelRoute.Binding))(
               snapshot["model_selection"],
             )
@@ -1151,7 +1153,11 @@ const layer = Layer.effect(
                   })
                 return
               }
-              if (snapshot.active_run || !Array.isArray(snapshot.messages) || snapshot.messages.length === 0) return
+              if (
+                snapshot.active_run ||
+                !(snapshot.has_messages === true || (Array.isArray(snapshot.messages) && snapshot.messages.length > 0))
+              )
+                return
               yield* scheduleTitle(input)
             }),
           ),

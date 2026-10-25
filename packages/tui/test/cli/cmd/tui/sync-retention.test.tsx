@@ -91,3 +91,35 @@ test("text budget evicts idle history while preserving the displayed session", a
     mounted.app.renderer.destroy()
   }
 })
+
+test("a partial session listing cannot remove the displayed Session", async () => {
+  await using tmp = await tmpdir()
+  await Bun.write(`${tmp.path}/kv.json`, "{}")
+  const id = "ses_retention_0"
+  const mounted = await mount((url) => {
+    if (url.pathname === "/api/session") return json({ data: [] })
+    if (url.pathname === `/api/session/${id}`) return json({ data: session(id) })
+    if (url.pathname === `/api/session/${id}/context`) return json({ data: [message(`${id}_msg`)] })
+    if (url.pathname === `/api/session/${id}/message`) return json({ data: [], cursor: {} })
+    if (url.pathname === `/api/session/${id}/todo` || url.pathname === `/api/session/${id}/diff`)
+      return json({ data: [] })
+    if (url.pathname === `/api/session/${id}/status`) return json({ data: { type: "idle" } })
+    return undefined
+  }, tmp.path)
+  try {
+    mounted.sync.session.pin(id)
+    await mounted.sync.session.sync(id)
+    expect(mounted.sync.session.get(id)?.title).toBe(id)
+    await mounted.sync.session.refresh()
+    expect(mounted.sync.session.get(id)?.title).toBe(id)
+    expect(mounted.sync.data.message[id]).toHaveLength(1)
+    await mounted.sync.bootstrap({ fatal: false })
+    await mounted.sync.session.refresh()
+    expect(mounted.sync.session.get(id)?.title).toBe(id)
+    mounted.sync.session.unpin(id)
+    await mounted.sync.session.refresh()
+    expect(mounted.sync.session.get(id)).toBeUndefined()
+  } finally {
+    mounted.app.renderer.destroy()
+  }
+})
