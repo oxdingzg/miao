@@ -597,6 +597,26 @@ test("durable MCP identities preserve long server and tool names through replay 
     },
   }
   expect(translateTools(committed)[0]?.tool).toBe("mcp__team_search.production-west__find_documents_with_metadata/v2")
+  expect(
+    translateTools({
+      ...committed,
+      data: {
+        ...committed.data,
+        content: [
+          {
+            type: "tool_use",
+            id: "call_mcp",
+            name: "tool_call",
+            input: { name: alias, arguments: { query: "fixture" }, select: ["/content/0/text"] },
+            _miao_mcp: identity,
+          },
+        ],
+      },
+    })[0],
+  ).toMatchObject({
+    tool: "mcp__team_search.production-west__find_documents_with_metadata/v2",
+    input: { query: "fixture" },
+  })
   expect(translateTools(JSON.parse(JSON.stringify(committed)))[0]?.tool).toBe(
     "mcp__team_search.production-west__find_documents_with_metadata/v2",
   )

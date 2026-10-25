@@ -853,7 +853,19 @@ export function productToolID(engineTool: string, identity?: unknown): string {
  * `run_command` (argv-shaped); the product vocabulary is a `bash` call with
  * `run_in_background`, so the bridge translates instead of leaking argv.
  */
-export function productToolInput(engineTool: string, input: Record<string, unknown>): Record<string, unknown> {
+export function productToolInput(
+  engineTool: string,
+  input: Record<string, unknown>,
+  identity?: unknown,
+): Record<string, unknown> {
+  if (
+    engineTool === "tool_call" &&
+    productToolID(engineTool, identity).startsWith("mcp__") &&
+    typeof input.arguments === "object" &&
+    input.arguments !== null &&
+    !Array.isArray(input.arguments)
+  )
+    return Object.fromEntries(Object.entries(input.arguments))
   if (engineTool === "task") {
     // The engine's task schema keys differ from the product vocabulary the
     // transcript renderer reads: `agent` is the product's `subagent_type`,
@@ -974,14 +986,15 @@ export function translateTools(event: EngineEvent): SessionToolCalled[] {
     if ("input" in block && typeof block.input === "object" && block.input !== null) {
       for (const key of Object.keys(block.input)) input[key] = Reflect.get(block.input, key)
     }
+    const identity = "_miao_mcp" in block ? block._miao_mcp : undefined
     return [
       {
         sessionID,
         timestamp: eventTimestamp(event),
         assistantMessageID,
         callID: block.id,
-        tool: productToolID(block.name, "_miao_mcp" in block ? block._miao_mcp : undefined),
-        input: productToolInput(block.name, input),
+        tool: productToolID(block.name, identity),
+        input: productToolInput(block.name, input, identity),
         provider: { executed: false },
       },
     ]
