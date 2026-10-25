@@ -2,6 +2,8 @@ import { expect, test } from "bun:test"
 import { nativeEngineOptions } from "@/engine/native-engine"
 import { engineArgs } from "@/engine/client"
 import path from "node:path"
+import { chmod } from "node:fs/promises"
+import { tmpdir } from "../fixture/fixture"
 
 test("explicit formatter manifest survives native option resolution and reaches argv", () => {
   const options = nativeEngineOptions({
@@ -33,3 +35,36 @@ test("native coding receives only explicitly configured policy and endpoint", ()
   expect(args[args.indexOf("--policy") + 1]).toBe("/tmp/policy.json")
   expect(args[args.indexOf("--endpoint") + 1]).toBe("http://127.0.0.1:1234/chat/completions")
 })
+
+test.skipIf(process.platform === "win32")(
+  "production option resolution validates explicit native binaries",
+  async () => {
+    await using tmp = await tmpdir()
+    const binary = path.join(tmp.path, "miao-engine")
+    await Bun.write(
+      binary,
+      `#!/bin/sh\nprintf '%s' '{"name":"miao-engine","version":"0.3.6","protocol":2,"schema":21,"routes_schema":1}'\n`,
+    )
+    await chmod(binary, 0o755)
+    const child = Bun.spawn(
+      [
+        process.execPath,
+        "--eval",
+        `import { nativeEngineOptions } from ${JSON.stringify(path.resolve(import.meta.dir, "../../src/engine/native-engine.ts"))}; nativeEngineOptions();`,
+      ],
+      {
+        env: { ...process.env, MIAO_ENGINE_BIN: binary },
+        stdout: "pipe",
+        stderr: "pipe",
+      },
+    )
+    const [code, stdout, stderr] = await Promise.all([
+      child.exited,
+      new Response(child.stdout).text(),
+      new Response(child.stderr).text(),
+    ])
+    expect(code).not.toBe(0)
+    expect(stdout).toBe("")
+    expect(stderr).toContain("requires protocol 2 and route schema 2")
+  },
+)
