@@ -3,9 +3,15 @@
 Status: `unit (windows)` and `e2e (windows)` in `.github/workflows/test.yml` run with
 `continue-on-error: true` — non-blocking until Windows suite is fixed. Linux is the merge gate.
 
+`e2e (windows)` does not run on pull requests at all: it is non-blocking and cost a Windows
+runner on every push, so `.github/workflows/e2e.yml` now lists it only on the nightly schedule
+and on manual dispatch. `engine (windows)` follows the same split — a pull request runs
+`cargo check --all-targets`, and the full Rust suite runs on merge, nightly, manual and engine
+release runs.
+
 This file tracks what still fails so the Windows jobs can become blocking again. Remove a row
-once a fix is merged and a green Windows run proves it; flip `blocking: true` for the Windows
-matrix entries once the table is empty.
+once a fix is merged and a green Windows run proves it; make the `blocking: true` Windows
+entries in `.github/workflows/test.yml` blocking again once the table is empty.
 
 Evidence comes from runs 36954126870 and 36954890353 on `oxdingzg/miao` (first runs of the test
 workflow on `main`). Upstream `anomalyco/opencode` is green on Windows, but runs on
