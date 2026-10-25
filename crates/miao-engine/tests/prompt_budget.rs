@@ -171,7 +171,10 @@ async fn soft_prompt_budget_wraps_up_then_pauses_with_text_only() {
     runtime.set_agent("s", manifest(100)).await.unwrap();
     run_to_stop(&runtime, &store, 0, "one").await;
 
-    let requests = provider.requests.lock().unwrap();
+    let events = store.events("s", 0, 1000).await.unwrap();
+
+    // Snapshot the requests so the guard is released before the awaits below.
+    let requests = provider.requests.lock().unwrap().clone();
     assert_eq!(requests.len(), 4, "three tool turns and one closing answer");
     assert!(!requests[0].tools.is_empty());
     assert!(!message_text(&requests[0]).contains("PROMPT BUDGET WRAP-UP"));
@@ -185,7 +188,6 @@ async fn soft_prompt_budget_wraps_up_then_pauses_with_text_only() {
     assert!(message_text(&requests[3]).contains("PROMPT TOKEN BUDGET EXHAUSTED"));
     assert!(!message_text(&requests[3]).contains("PROMPT BUDGET WRAP-UP"));
 
-    let events = store.events("s", 0, 1000).await.unwrap();
     assert_eq!(
         events
             .iter()
@@ -218,7 +220,7 @@ async fn a_new_prompt_grants_a_fresh_budget() {
     let before = store.events("s", 0, 1000).await.unwrap().len();
     run_to_stop(&runtime, &store, before, "two").await;
 
-    let requests = provider.requests.lock().unwrap();
+    let requests = provider.requests.lock().unwrap().clone();
     let resumed = &requests[4];
     assert!(
         !resumed.tools.is_empty(),
