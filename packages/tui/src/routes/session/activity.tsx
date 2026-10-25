@@ -1,5 +1,5 @@
 import type { Accessor } from "solid-js"
-import { createMemo, Show } from "solid-js"
+import { createMemo, createSignal, Show } from "solid-js"
 import { Spinner, useSecond } from "../../component/spinner"
 import { useSync } from "../../context/sync"
 import { useTheme } from "../../context/theme"
@@ -15,7 +15,7 @@ import type {
   TranscriptReasoningPart,
   TranscriptToolPart,
 } from "@miao/schema/view-models"
-import { ProviderFailure } from "./provider-failure"
+import { ProviderFailure, ProviderRetryStatus } from "./provider-failure"
 
 // Claude Code reports a turn as `[running|ran] N shell commands` on one live
 // status line. miao's V2 core emits one assistant message per provider turn, so
@@ -99,7 +99,9 @@ export function lastOutputAt(parts: ReadonlyArray<AssistantContent>, fallback: n
   const times = parts.flatMap((part) => {
     if (part.type === "tool") {
       if (part.state.status === "pending") return []
-      return [part.time?.ran ?? part.time?.created].filter((value): value is number => value !== undefined && value !== null)
+      return [part.time?.ran ?? part.time?.created].filter(
+        (value): value is number => value !== undefined && value !== null,
+      )
     }
     if (part.type === "text") return []
     if (part.type === "reasoning") {
@@ -113,7 +115,7 @@ export function lastOutputAt(parts: ReadonlyArray<AssistantContent>, fallback: n
   return fallback === undefined || fallback === null ? latest : Math.max(latest, fallback)
 }
 
-export function SessionActivity(props: { sessionID: string }) {
+export function SessionActivity(props: { sessionID: string; compact?: boolean; settledOnly?: boolean }) {
   const sync = useSync()
   const status = createMemo(() => sync.data.session_status[props.sessionID])
   const compaction = createMemo(() => sync.data.session_compaction[props.sessionID])
@@ -186,30 +188,62 @@ export function SessionActivity(props: { sessionID: string }) {
   // Replaced by the live line while the turn runs; a settled turn keeps one
   // line naming its duration and completion time.
   const summary = createMemo(() =>
-    busy() || compaction() || blocked()
-      ? undefined
-      : turnSummary({ messages: messages(), background: background() }),
+    busy() || compaction() || blocked() ? undefined : turnSummary({ messages: messages(), background: background() }),
   )
   // The esc hint names the next esc action, matching the prompt footer: one
   // esc cancels the newest waiting prompt, and only an empty queue interrupts.
   const waitingCount = createMemo(() => sync.prompt.waiting(props.sessionID).length)
   const esc = createMemo(() => (waitingCount() > 0 ? "remove prompt" : "interrupt"))
+  if (props.compact)
+    return (
+      <Show when={!blocked() && (active() || status()?.type === "retry")}>
+        <Show
+          when={status()?.type === "retry"}
+          fallback={
+            <SessionActiveWaiting
+              compact
+              waiting={waiting()}
+              activity={activity()}
+              phase={phase()}
+              progress={progress()}
+              base={elapsedBase}
+              totalBase={turnStartedAt}
+              esc={esc()}
+            />
+          }
+        >
+          <box
+            height={1}
+            flexDirection="row"
+            justifyContent="space-between"
+            paddingLeft={2}
+            paddingRight={2}
+            overflow="hidden"
+          >
+            <ProviderRetryStatus status={status()!} />
+            <text>esc {esc()}</text>
+          </box>
+        </Show>
+      </Show>
+    )
   return (
     <Show
       when={error()}
       fallback={
         <Show
-          when={active()}
+          when={active() && !props.settledOnly}
           fallback={
             <>
-              <SessionWaiting
-                waiting={waiting()}
-                elapsed={0}
-                activity={activity()}
-                phase={phase()}
-                progress={progress()}
-                esc={esc()}
-              />
+              <Show when={!props.settledOnly}>
+                <SessionWaiting
+                  waiting={waiting()}
+                  elapsed={0}
+                  activity={activity()}
+                  phase={phase()}
+                  progress={progress()}
+                  esc={esc()}
+                />
+              </Show>
               <SessionSummary text={summary()} />
             </>
           }
@@ -236,11 +270,13 @@ export function SessionActivity(props: { sessionID: string }) {
  * when the last active turn unmounts this node.
  */
 function SessionActiveWaiting(props: {
+  compact?: boolean
   waiting: boolean
   activity?: string
   phase?: SessionPhase
   progress?: { readonly stage: number; readonly stages: number }
   base: Accessor<number | undefined>
+  totalBase?: Accessor<number | null | undefined>
   esc?: string
 }) {
   const seconds = useSecond()
@@ -253,6 +289,12 @@ function SessionActiveWaiting(props: {
     <SessionWaiting
       waiting={props.waiting}
       elapsed={elapsed()}
+      compact={props.compact}
+      totalElapsed={(() => {
+        seconds()
+        const start = props.totalBase?.()
+        return start === undefined || start === null ? undefined : Math.max(0, Date.now() - start)
+      })()}
       activity={props.activity}
       phase={props.phase}
       progress={props.progress}
@@ -410,9 +452,7 @@ export type ReadRun = { type: "read-run"; id: string; parts: TranscriptToolPart[
 // Reading several files in a row is one action, not one row per file. Runs keep
 // their place in the timeline; pending and failed reads stay individual so their
 // state is never hidden inside a group.
-export function groupReadRuns(
-  content: ReadonlyArray<AssistantContent>,
-): ReadonlyArray<AssistantContent | ReadRun> {
+export function groupReadRuns(content: ReadonlyArray<AssistantContent>): ReadonlyArray<AssistantContent | ReadRun> {
   const out: (AssistantContent | ReadRun)[] = []
   let run: TranscriptToolPart[] = []
   const flush = () => {
@@ -433,6 +473,8 @@ export function groupReadRuns(
 }
 
 export function SessionWaiting(props: {
+  compact?: boolean
+  totalElapsed?: number
   waiting: boolean
   elapsed: number
   activity?: string
@@ -441,9 +483,26 @@ export function SessionWaiting(props: {
   esc?: string
 }) {
   const { theme } = useTheme()
+  const [width, setWidth] = createSignal(80)
   // Claude Code keeps the elapsed time on the live status line whether the turn
   // is still reading its first token or already running tools.
   const text = createMemo(() => {
+    if (props.compact) {
+      if (props.phase === "compacting") {
+        if (props.progress?.stages)
+          return width() < 60
+            ? `${props.progress.stage}/${props.progress.stages} compacting`
+            : `Compacting ${props.progress.stage}/${props.progress.stages}`
+        return "Compacting context"
+      }
+      if (!props.waiting && props.activity) return props.activity
+      if (props.phase === "queued") return "Queued"
+      if (props.phase === "preparing") return width() < 60 ? "Preparing" : "Preparing request"
+      if (props.phase === "streaming") return width() < 60 ? "Streaming" : "Receiving response"
+      if (props.phase === "retrying") return "Retrying"
+      if (!props.waiting && !props.phase) return "Working"
+      return width() < 60 ? "Waiting" : "Waiting for model"
+    }
     if (props.phase === "compacting")
       return waitingText(props.phase, props.elapsed, props.esc ?? "interrupt", props.progress)
     // Waiting for the model outranks the last tool activity: "ran 2 shell
@@ -456,6 +515,40 @@ export function SessionWaiting(props: {
     }
     return undefined
   })
+  if (props.compact)
+    return (
+      <box
+        height={1}
+        width="100%"
+        flexDirection="row"
+        gap={1}
+        paddingLeft={2}
+        paddingRight={2}
+        onSizeChange={function () {
+          setWidth(this.width)
+        }}
+        overflow="hidden"
+        flexShrink={0}
+      >
+        <box flexDirection="row" gap={1} flexGrow={1} minWidth={0} overflow="hidden">
+          <Spinner color={props.waiting && props.elapsed >= 30_000 ? theme.warning : theme.textMuted} />
+          <text wrapMode="none" fg={theme.textMuted}>
+            {text()}
+          </text>
+        </box>
+        <Show when={width() >= 32}>
+          <text wrapMode="none" flexShrink={0} fg={theme.textMuted}>
+            {Locale.duration(props.elapsed)}
+            <Show when={width() >= 80 && props.totalElapsed !== undefined && props.totalElapsed > props.elapsed + 1000}>
+              {` · turn ${Locale.duration(props.totalElapsed!)}`}
+            </Show>
+          </text>
+        </Show>
+        <text wrapMode="none" flexShrink={0} fg={theme.textMuted}>
+          esc {props.esc ?? "interrupt"}
+        </text>
+      </box>
+    )
   return (
     <Show when={text()}>
       {(value) => (

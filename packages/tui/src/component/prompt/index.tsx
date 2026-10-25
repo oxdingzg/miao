@@ -19,6 +19,7 @@ import { DiagnosticMetrics } from "@miao/core/diagnostic-metrics"
 import { createInputLatency } from "../../context/input-latency"
 import { tint, useTheme } from "../../context/theme"
 import { ProviderRetryStatus } from "../../routes/session/provider-failure"
+import { SessionActivity } from "../../routes/session/activity"
 import { EmptyBorder, SplitBorder } from "../../ui/border"
 import { useTuiPaths, useTuiTerminalEnvironment } from "../../context/runtime"
 import { useClipboard } from "../../context/clipboard"
@@ -313,7 +314,7 @@ export function Prompt(props: PromptProps) {
   // the prompt so the timer matches the completed footer.
   const [now, setNow] = createSignal(Date.now())
   createEffect(() => {
-    if (status().type === "idle" && !compaction()) return
+    if (props.compactFooter || (status().type === "idle" && !compaction())) return
     setNow(Date.now())
     const timer = setInterval(() => setNow(Date.now()), 1000)
     onCleanup(() => clearInterval(timer))
@@ -1022,9 +1023,7 @@ export function Prompt(props: PromptProps) {
     const sessionID = props.sessionID
     const newest = sessionID ? sync.prompt.newest(sessionID) : undefined
     if (!sessionID || !newest) return false
-    const cancelled = await sync.prompt
-      .cancel({ sessionID, messageID: newest.info.id })
-      .catch(() => false)
+    const cancelled = await sync.prompt.cancel({ sessionID, messageID: newest.info.id }).catch(() => false)
     if (!cancelled) return false
     const item = promptInfoFromUserMessage(newest.info)
     input.setText(item.input)
@@ -1429,6 +1428,9 @@ export function Prompt(props: PromptProps) {
 
   return (
     <>
+      <Show when={props.compactFooter && props.visible !== false && props.sessionID}>
+        {(sessionID) => <SessionActivity sessionID={sessionID()} compact />}
+      </Show>
       <box ref={(r: BoxRenderable) => (anchor = r)} visible={props.visible !== false} width="100%">
         <box
           width="100%"
@@ -1442,7 +1444,7 @@ export function Prompt(props: PromptProps) {
           <box
             paddingLeft={2}
             paddingRight={2}
-            paddingTop={1}
+            paddingTop={props.compactFooter ? 0 : 1}
             flexShrink={0}
             backgroundColor={theme.backgroundElement}
             flexGrow={1}
@@ -1633,37 +1635,37 @@ export function Prompt(props: PromptProps) {
             </Show>
           </box>
         </box>
-        <box
-          height={1}
-          border={["left"]}
-          borderColor={borderHighlight()}
-          customBorderChars={{
-            ...EmptyBorder,
-            vertical: theme.backgroundElement.a !== 0 ? "╹" : " ",
-          }}
-        >
+        <Show when={!props.compactFooter}>
           <box
             height={1}
-            border={["bottom"]}
-            borderColor={theme.backgroundElement}
-            customBorderChars={
-              theme.backgroundElement.a !== 0
-                ? {
-                    ...EmptyBorder,
-                    horizontal: "▀",
-                  }
-                : {
-                    ...EmptyBorder,
-                    horizontal: " ",
-                  }
-            }
-          />
-        </box>
+            border={["left"]}
+            borderColor={borderHighlight()}
+            customBorderChars={{
+              ...EmptyBorder,
+              vertical: theme.backgroundElement.a !== 0 ? "╹" : " ",
+            }}
+          >
+            <box
+              height={1}
+              border={["bottom"]}
+              borderColor={theme.backgroundElement}
+              customBorderChars={
+                theme.backgroundElement.a !== 0
+                  ? {
+                      ...EmptyBorder,
+                      horizontal: "▀",
+                    }
+                  : {
+                      ...EmptyBorder,
+                      horizontal: " ",
+                    }
+              }
+            />
+          </box>
+        </Show>
         <Show
           when={
             !props.compactFooter ||
-            status().type !== "idle" ||
-            compaction() ||
             workspace.notice() ||
             workspace.label() ||
             move.progress() ||
@@ -1675,7 +1677,7 @@ export function Prompt(props: PromptProps) {
         >
           <box width="100%" flexDirection="row" justifyContent="space-between">
             <Switch>
-              <Match when={status().type !== "idle" || compaction()}>
+              <Match when={!props.compactFooter && (status().type !== "idle" || compaction())}>
                 <box
                   flexDirection="row"
                   gap={1}
