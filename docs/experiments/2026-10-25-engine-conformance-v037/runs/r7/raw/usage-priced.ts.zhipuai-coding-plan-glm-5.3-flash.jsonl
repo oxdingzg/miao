@@ -1,0 +1,5 @@
+{"type":"segment","index":0,"resume":false,"prompt":"What is 2+2? Reply with just the number."}
+{"type":"step_start","timestamp":1792935352477,"sessionID":"ses_gfe5e8cb9ba67ffeH8Wph12KLY","part":{"id":"msg_g01a17346589100140oCtTEPlo-step-start","sessionID":"ses_gfe5e8cb9ba67ffeH8Wph12KLY","messageID":"msg_g01a17346589100140oCtTEPlo","type":"step-start"}}
+{"type":"text","timestamp":1792935352490,"sessionID":"ses_gfe5e8cb9ba67ffeH8Wph12KLY","part":{"id":"text-0","sessionID":"ses_gfe5e8cb9ba67ffeH8Wph12KLY","messageID":"msg_g01a17346589100140oCtTEPlo","type":"text","text":"4"}}
+{"type":"step_finish","timestamp":1792935352490,"sessionID":"ses_gfe5e8cb9ba67ffeH8Wph12KLY","part":{"id":"msg_g01a17346589100140oCtTEPlo-step-finish","sessionID":"ses_gfe5e8cb9ba67ffeH8Wph12KLY","messageID":"msg_g01a17346589100140oCtTEPlo","type":"step-finish","reason":"stop","cost":0.00166951509,"tokens":{"input":13958,"output":3,"reasoning":0,"cache":{"read":0,"write":0}}}}
+{"type":"segment.end","index":0,"exitCode":0,"seconds":8.6,"killed":false,"timedOut":false}
