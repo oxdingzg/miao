@@ -94,7 +94,7 @@ async fn fixture(mode: usize) -> (String, Arc<AtomicUsize>, tokio::task::JoinHan
                         tokio::time::sleep(Duration::from_millis(5)).await;
                     }
                 }
-                if mode == 3 {
+                if mode >= 3 {
                     if socket
                         .write_all(
                             b"data: {\"type\":\"message_start\",\"message\":{\"usage\":{}}}\n\n",
@@ -102,6 +102,41 @@ async fn fixture(mode: usize) -> (String, Arc<AtomicUsize>, tokio::task::JoinHan
                         .await
                         .is_err()
                     {
+                        return;
+                    }
+                    if mode == 4 {
+                        // Transport keep-alives after a real event must not keep
+                        // a stalled model turn alive indefinitely.
+                        loop {
+                            if socket
+                                .write_all(b"data: {\"type\":\"ping\"}\n\n")
+                                .await
+                                .is_err()
+                            {
+                                return;
+                            }
+                            tokio::time::sleep(Duration::from_millis(5)).await;
+                        }
+                    }
+                    if mode == 5 {
+                        if socket.write_all(format!("data: {}\n\n", json!({"type":"content_block_start","index":0,"content_block":{"type":"text","text":""}})).as_bytes()).await.is_err() { return; }
+                        for _ in 0..8 {
+                            tokio::time::sleep(Duration::from_millis(200)).await;
+                            if socket.write_all(format!("data: {}\n\n", json!({"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"progress"}})).as_bytes()).await.is_err() { return; }
+                        }
+                        for event in [
+                            json!({"type":"content_block_stop","index":0}),
+                            json!({"type":"message_delta","delta":{"stop_reason":"end_turn"}}),
+                            json!({"type":"message_stop"}),
+                        ] {
+                            if socket
+                                .write_all(format!("data: {event}\n\n").as_bytes())
+                                .await
+                                .is_err()
+                            {
+                                return;
+                            }
+                        }
                         return;
                     }
                     // This gap is the probe: it must stay comfortably longer than
@@ -129,7 +164,7 @@ async fn fixture(mode: usize) -> (String, Arc<AtomicUsize>, tokio::task::JoinHan
 
 #[tokio::test]
 async fn actual_native_process_bounds_headers_silence_and_pings_without_refilling_retry_budget() {
-    for mode in 0..4 {
+    for mode in 0..6 {
         let dir = tempfile::tempdir().unwrap();
         let (endpoint, calls, server) = fixture(mode).await;
         let mut child = Command::new(env!("CARGO_BIN_EXE_miao-engine"))
@@ -147,26 +182,31 @@ async fn actual_native_process_bounds_headers_silence_and_pings_without_refillin
             .env("ANTHROPIC_API_KEY", "fixture-key")
             // Modes 0-2 exercise the bound itself, so they keep a budget tight
             // enough to fire three times inside the event wait. Mode 3 is the
-            // healthy control: its first event releases the deadline, and that
-            // must not depend on how fast a loaded runner accepts and reads the
-            // request, so it gets a budget no healthy setup can miss while the
-            // fixture's 3s mid-stream gap stays the probe for a release that
-            // never happened.
+            // healthy control uses generous post-header budgets so its 3s
+            // mid-stream gap never reuses the shorter response-header budget.
+            // Modes 4-5 verify that heartbeats do not extend event idleness,
+            // while real output re-arms it throughout a long response.
             .env(
                 "MIAO_LLM_FIRST_BYTE_TIMEOUT_MS",
-                if mode == 3 { "1000" } else { "100" },
+                if mode >= 3 { "1000" } else { "100" },
             )
             // The layered phases keep modes 0-2 fast: header, byte, and event
             // silence each get the same tight budget the single deadline used
-            // to cover. Mode 3 relies on its first event releasing the event
-            // phase; its byte phase keeps the 180s default.
+            // to cover. Mode 3 keeps generous idle budgets after the first
+            // event; modes 4-5 exercise the rolling event bound.
             .env(
                 "MIAO_LLM_STREAM_IDLE_TIMEOUT_MS",
-                if mode == 3 { "180000" } else { "100" },
+                if mode >= 3 { "180000" } else { "100" },
             )
             .env(
                 "MIAO_LLM_EVENT_IDLE_TIMEOUT_MS",
-                if mode == 3 { "300000" } else { "100" },
+                if mode == 3 {
+                    "300000"
+                } else if mode >= 4 {
+                    "1000"
+                } else {
+                    "100"
+                },
             )
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
@@ -199,6 +239,12 @@ async fn actual_native_process_bounds_headers_silence_and_pings_without_refillin
                     .unwrap()
                     .iter()
                     .any(|event| event["kind"] == "run.finished")
+                    && (mode != 4
+                        || events
+                            .as_array()
+                            .unwrap()
+                            .iter()
+                            .any(|event| event["kind"] == "stop_failure"))
                 {
                     return events;
                 }
@@ -215,14 +261,28 @@ async fn actual_native_process_bounds_headers_silence_and_pings_without_refillin
             .unwrap();
         assert_eq!(
             terminal["data"]["reason"],
-            if mode == 3 { "completed" } else { "failed" },
+            if mode == 3 || mode == 5 {
+                "completed"
+            } else {
+                "failed"
+            },
             "{events}"
         );
         assert_eq!(
             calls.load(Ordering::SeqCst),
-            if mode == 3 { 1 } else { 3 },
+            if mode >= 3 { 1 } else { 3 },
             "{events}"
         );
+        if mode == 4 {
+            assert!(events
+                .as_array()
+                .unwrap()
+                .iter()
+                .any(|event| event["kind"] == "stop_failure"
+                    && event["data"]["message"]
+                        .as_str()
+                        .is_some_and(|message| message.contains("no stream event"))));
+        }
         assert!(!events
             .as_array()
             .unwrap()

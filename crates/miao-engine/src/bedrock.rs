@@ -359,7 +359,7 @@ impl Provider for Bedrock {
             };
             let notices = state.event(received, &self.model)?;
             if !notices.is_empty() {
-                event = None;
+                event = watchdogs.next_event_deadline();
             }
             for notice in notices {
                 let send_deadline = state
