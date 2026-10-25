@@ -1685,13 +1685,15 @@ function AssistantMessage(props: { message: TranscriptAssistantMessage; sessionI
               <ReadRun parts={(part as ReadRun).parts} />
             </Match>
             <Match when={true}>
-              <Dynamic
-                last={index() === rendered().length - 1}
-                component={PART_MAPPING[(part as TranscriptAssistantMessage["content"][number]).type]}
-                part={part as any}
-                message={props.message}
-                sessionID={props.sessionID}
-              />
+              <Show when={PART_MAPPING[(part as TranscriptAssistantMessage["content"][number]).type]}>
+                <Dynamic
+                  last={index() === rendered().length - 1}
+                  component={PART_MAPPING[(part as TranscriptAssistantMessage["content"][number]).type]}
+                  part={part as any}
+                  message={props.message}
+                  sessionID={props.sessionID}
+                />
+              </Show>
             </Match>
           </Switch>
         )}
