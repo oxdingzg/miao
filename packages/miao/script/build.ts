@@ -282,7 +282,9 @@ for (const item of targets) {
     const home = await mkdtemp(path.join(os.tmpdir(), "miao-engine-embed-"))
     try {
       await $`env HOME=${home} ${binaryPath} --version`.quiet()
-      const extracted = path.join(home, ".local/share/miao-engine/bin/miao-engine")
+      const beside = path.join(path.dirname(path.resolve(binaryPath)), "miao-engine")
+      const inHome = path.join(home, ".local/share/miao-engine/bin/miao-engine")
+      const extracted = existsSync(beside) ? beside : inHome
       const caps = JSON.parse(await $`${extracted} --capabilities`.text())
       if (caps.name !== "miao-engine") throw new Error(`embedded engine reports name ${caps.name}`)
       console.log(`Embedded engine smoke passed: ${extracted} (protocol ${caps.protocol})`)
