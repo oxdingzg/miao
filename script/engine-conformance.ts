@@ -483,6 +483,10 @@ const runSegment = async (input: {
     "run",
     "--format",
     "json",
+    // Bun's cwd does not update inherited PWD, which the CLI uses for local
+    // placement. Bind the run explicitly to its isolated fixture workspace.
+    "--dir",
+    input.cwd,
     ...(input.model ? ["--model", input.model] : []),
     ...(input.resume ? ["--continue"] : []),
     input.prompt,
