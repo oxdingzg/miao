@@ -48,7 +48,7 @@ miao 今天不是"一个内核 + 一层壳"，而是**按 Session 分派的两�
 | G0-2 | Code Mode `execute` 无 Rust 实现 | `tool/code-mode.ts:12`；`tool_catalog.rs:95` | 原生路径明确废弃：`tool_search`/`tool_call` 部分覆盖，组合式调用为书面接受损失；`execute` 留在 TS placement 至 S3，见 `specs/g0-2-code-mode.md` |
 | G0-3 | 无重复输出守卫：长 prose/reasoning 打转不会被中和（工具调用打转已有界） | `runner/output-guard.ts:10`；`runtime.rs:2060` | 引擎侧等价守卫 + 重放同一段打转输出的回归测试 |
 | G0-4 | 重试语义回退：不读 `Retry-After`、无抖动、无 self-heal 400 | `runner/provider-retry.ts:40-121`；`provider.rs:104-160,836` | 同一条 429/400 序列在两侧的尝试次数与退避分布一致 |
-| G0-5 | 插件 `aisdk` provider 钩子在原生路由上不执行；缺每轮 session-affinity 头 | `plugin/host.ts:46`；`openai_responses.rs:268` | 原生路由下钩子被调用；头与实际 session 一致 |
+| G0-5 | 插件 `aisdk` provider 钩子在原生路由上不执行；缺每轮 session-affinity 头 | `plugin/host.ts:46`；`openai_responses.rs:268` | 钩子按家族在原生路由上"语义适用"（工具钩子已实现，`aisdk` 钩子书面接受）；头与实际 session 一致，见 `specs/g0-5-plugin-hooks.md` |
 | G0-6 | 行为差：max-steps 是"暂停"而非 TS 的收尾提示；历史里的 `@file` 引用 Rust 不内联；websearch 端点不同 | `runtime.rs:1430`；`materialize-files.ts:310`；`web.rs:24` | 逐项定调（对齐或书面接受差异），不允许默认沉默 |
 
 ## 4. 切片
