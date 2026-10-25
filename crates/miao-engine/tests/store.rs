@@ -487,6 +487,7 @@ async fn reply_identity_is_atomic_replayable_and_preserved_when_forked() {
                 protocol: "openai-chat".into(),
                 model: "actual-secondary".into(),
             }),
+            None,
         )
         .await
         .unwrap();
@@ -530,12 +531,13 @@ async fn reply_identity_is_atomic_replayable_and_preserved_when_forked() {
             None,
             json!([{"type":"text","text":"unknown"}]),
             None,
+            None,
         )
         .await
         .unwrap();
     assert!(reopened.events("s", unknown.seq, 10).await.unwrap()[0].data["provider"].is_null());
     assert!(reopened
-        .assistant_reply_profiled("s", "missing-run", 4, None, json!([]), None)
+        .assistant_reply_profiled("s", "missing-run", 4, None, json!([]), None, None)
         .await
         .is_err());
     assert_eq!(

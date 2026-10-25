@@ -63,7 +63,14 @@ export const references = Effect.fn("ProductCommand.references")(function* (
   catalog: readonly Route[],
 ) {
   const agents = yield* AgentV2.Service
-  const names = [...new Set(mentions.map((mention) => mention.name))].sort()
+  // The engine resolves the task tool's named targets against this catalog,
+  // so every subagent-capable product agent rides along instead of only the
+  // prompt's @-mentions; otherwise a plain `task` call naming a subagent
+  // fails native-side as unregistered.
+  const subagents = (yield* agents.all()).filter((agent) => agent.mode !== "primary" && !agent.hidden)
+  const names = [
+    ...new Set([...mentions.map((mention) => mention.name), ...subagents.map((agent) => agent.id)]),
+  ].sort()
   const definitions = yield* Effect.forEach(names, (name) =>
     agents
       .resolve(name)

@@ -43,6 +43,32 @@ test("journal replay translates committed assistant text with per-event provenan
   expect(settlement.ttft).toBeUndefined()
 })
 
+test("assistant identity resolves the product model through pricing and keeps the engine's agent", () => {
+  const outputs: EngineSessionEvent[] = []
+  const translator = new EngineTranslator(
+    (event) => outputs.push(event),
+    (id) => {
+      if (id !== "actual") return
+      return {
+        model: Schema.decodeUnknownSync(Model.Ref)({ providerID: "catalog", id }),
+        cost: [{ input: 1000, output: 2000, cache: { read: 100, write: 1000 } }],
+      }
+    },
+  )
+  translator.dispatch({
+    session_id: "ses_identity",
+    seq: 9,
+    kind: "assistant.identity",
+    data: { assistant_seq: 7, provider: { protocol: "openai-chat", model: "actual" }, agent: "explore" },
+    recorded_at_ms: 500,
+  })
+  const identity = outputs.find((event) => event.type === "session.next.assistant.identity")
+  expect(identity?.data).toMatchObject({
+    agent: "explore",
+    model: { providerID: "catalog", id: "actual" },
+  })
+})
+
 test("unrelated journal kinds produce no product events and engine vocabulary stays engine-side", () => {
   const { outputs, translator } = collect()
   translator.dispatch({ session_id: "ses_replay", seq: 8, kind: "context.changed", data: { epoch: 1 } })
