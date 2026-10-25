@@ -32,7 +32,9 @@ async fn peer(
                     json!({"protocolVersion":request["params"]["protocolVersion"],"capabilities":{"tools":{}},"serverInfo":{"name":"fixture","version":"1"}})
                 }
                 "tools/list" => {
-                    let native = if request["params"]["cursor"] == "page2" {
+                    let native = if mode == "identity" {
+                        "find_documents_with_metadata/v2"
+                    } else if request["params"]["cursor"] == "page2" {
                         "second.tool"
                     } else {
                         "first/tool"
@@ -52,6 +54,7 @@ async fn peer(
                     assert!(
                         request["params"]["name"] == "first/tool"
                             || request["params"]["name"] == "second.tool"
+                            || request["params"]["name"] == "find_documents_with_metadata/v2"
                     );
                     if mode == "pending" {
                         continue;
@@ -82,9 +85,18 @@ async fn peer(
         }
     });
     let (read, write) = tokio::io::split(client);
-    let registry = Registry::connect_io("fixture".into(), read, write)
-        .await
-        .unwrap();
+    let registry = Registry::connect_io(
+        if mode == "identity" {
+            "team_search.production-west"
+        } else {
+            "fixture"
+        }
+        .into(),
+        read,
+        write,
+    )
+    .await
+    .unwrap();
     (Arc::new(registry), calls, task)
 }
 
@@ -353,9 +365,9 @@ impl miao_engine::provider::Provider for Caller {
         if request.messages.len() == 1 {
             return Ok(miao_engine::provider::Reply {
                 content: if self.bridge {
-                    json!([{"type":"tool_use","id":"external-call","name":"tool_call","input":{"name":self.name,"arguments":{"text":"effect"},"select":["/content/0/text"]}}])
+                    json!([{"type":"tool_use","id":"external-call","_miao_mcp":{"server":"forged","tool":"forged"},"name":"tool_call","input":{"name":self.name,"arguments":{"text":"effect"},"select":["/content/0/text"]}}])
                 } else {
-                    json!([{"type":"tool_use","id":"external-call","name":self.name,"input":{"text":"effect"}}])
+                    json!([{"type":"tool_use","id":"external-call","_miao_mcp":{"server":"forged","tool":"forged"},"name":self.name,"input":{"text":"effect"}}])
                 },
                 usage: json!({}),
                 needs_tools: true,
@@ -782,4 +794,131 @@ async fn failed_refresh_keeps_previous_catalog_until_next_change() {
     assert_eq!(registry.definitions().len(), 2);
     registry.shutdown().await;
     task.abort();
+}
+
+#[tokio::test]
+async fn original_catalog_identity_survives_approval_reopen_and_fork() {
+    use miao_engine::{approval::Response, protocol::Input, runtime::Runtime, store::Store};
+    let identity =
+        json!({"server":"team_search.production-west","tool":"find_documents_with_metadata/v2"});
+    for bridge in [false, true] {
+        let (registry, calls, task) = peer("identity").await;
+        let dir = tempfile::tempdir().unwrap();
+        let database = dir.path().join("engine.db");
+        let store = Store::open(&database).await.unwrap();
+        let name = registry.definitions()[0].name.clone();
+        assert_eq!(
+            serde_json::to_value(registry.identity(&name).unwrap()).unwrap(),
+            identity
+        );
+        assert!(registry.identity("unknown").is_none());
+        let done = Arc::new(tokio::sync::Notify::new());
+        let runtime = Runtime::with_policy(
+            store.clone(),
+            Arc::new(Caller {
+                name: name.clone(),
+                bridge,
+                done: done.clone(),
+            }),
+            Tools::new(dir.path())
+                .await
+                .unwrap()
+                .with_mcp(registry.clone())
+                .with_compact_disclosure(bridge),
+            Policy::new(Config {
+                mode: Mode::Workspace,
+                allow_mcp: true,
+                rules: if bridge {
+                    vec![miao_engine::permission::Rule {
+                        tool: name.clone(),
+                        path: "@mcp/**".into(),
+                        decision: Decision::Allow,
+                    }]
+                } else {
+                    Vec::new()
+                },
+                ..Default::default()
+            })
+            .unwrap(),
+        )
+        .await
+        .unwrap();
+        runtime
+            .admit(
+                Input {
+                    session_id: "s".into(),
+                    input_id: "p".into(),
+                    prompt: "call fixture".into(),
+                    delivery: Default::default(),
+                    command: None,
+                    agent_references: Default::default(),
+                },
+                true,
+            )
+            .await
+            .unwrap();
+        if !bridge {
+            let approval = tokio::time::timeout(std::time::Duration::from_secs(5), async {
+                loop {
+                    if let Some(event) = store
+                        .events("s", 0, 100)
+                        .await
+                        .unwrap()
+                        .into_iter()
+                        .find(|event| event.kind == "approval.requested")
+                    {
+                        break event;
+                    }
+                    let events = store.events("s", 0, 100).await.unwrap();
+                    assert!(
+                        !events.iter().any(|event| event.kind == "run.finished"),
+                        "run ended before approval: {events:?}"
+                    );
+                    tokio::time::sleep(std::time::Duration::from_millis(5)).await;
+                }
+            })
+            .await
+            .unwrap_or_else(|error| panic!("approval timeout {error}; bridge={bridge}"));
+            assert_eq!(approval.data["mcp"], identity);
+            assert_eq!(calls.load(Ordering::SeqCst), 0);
+            runtime
+                .approve(
+                    &runtime.controller(),
+                    "s",
+                    Response {
+                        request_id: approval.data["request_id"].as_str().unwrap().into(),
+                        input_hash: approval.data["input_hash"].as_str().unwrap().into(),
+                        policy_revision: approval.data["policy_revision"].as_str().unwrap().into(),
+                        decision: Decision::Allow,
+                        matcher: None,
+                    },
+                )
+                .await
+                .unwrap();
+        }
+        tokio::time::timeout(std::time::Duration::from_secs(5), done.notified())
+            .await
+            .unwrap();
+        runtime.shutdown().await;
+        assert_eq!(calls.load(Ordering::SeqCst), 1);
+        drop(runtime);
+        drop(store);
+        let reopened = Store::open(&database).await.unwrap();
+        reopened.fork("s", "fork", None).await.unwrap();
+        for session in ["s", "fork"] {
+            let events = reopened.events(session, 0, 200).await.unwrap();
+            let content = events
+                .iter()
+                .filter(|event| event.kind == "message.committed")
+                .flat_map(|event| event.data["content"].as_array().into_iter().flatten())
+                .find(|block| block["type"] == "tool_use")
+                .unwrap();
+            assert_eq!(content["_miao_mcp"], identity);
+            assert_eq!(
+                content["name"],
+                if bridge { "tool_call" } else { name.as_str() }
+            );
+        }
+        task.await.unwrap();
+    }
 }

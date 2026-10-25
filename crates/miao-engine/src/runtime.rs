@@ -1977,6 +1977,7 @@ command: None,
             );
         }
         crate::session_model::stamp_route(&mut reply.content, binding.as_ref());
+        inner.tools.stamp_tool_identities(&mut reply.content);
         let assistant_boundary = inner
             .store
             .assistant_reply_profiled_fenced(
@@ -4241,6 +4242,7 @@ async fn authorize(
         call_id: call.into(),
         location: inner.tools.location().into(),
         tool: prepared.name().into(),
+        mcp: inner.tools.mcp_identity(prepared.name()),
         resource: prepared.resource().into(),
         input: prepared.input().clone(),
         input_hash,

@@ -816,11 +816,26 @@ const TOOL_IDS: Record<string, string> = {
  * (`facade-mapping.md`). Engine MCP tools surface under the product's
  * `mcp__<server>__<tool>` vocabulary: the engine aliases a server tool as
  * `mcp_<server>_<tool>_<32-hex digest>` (slugs truncated to 12/14 chars), so
- * the digest suffix is stripped and the first underscore separates server from
- * tool. Other tools retain their native names for the generic renderer.
+ * new commits carry the original catalog identity separately. Historical
+ * aliases without that metadata retain their legacy best-effort presentation.
+ * Other tools retain their native names for the generic renderer.
  */
-export function productToolID(engineTool: string): string {
+export function productToolID(engineTool: string, identity?: unknown): string {
   if (engineTool in TOOL_IDS) return TOOL_IDS[engineTool]
+  if (
+    (engineTool.startsWith("mcp_") || engineTool === "tool_call") &&
+    typeof identity === "object" &&
+    identity !== null &&
+    "server" in identity &&
+    typeof identity.server === "string" &&
+    /^[A-Za-z0-9_.-]{1,64}$/.test(identity.server) &&
+    "tool" in identity &&
+    typeof identity.tool === "string" &&
+    identity.tool.length > 0 &&
+    identity.tool.length <= 256 &&
+    !/[\u0000-\u001f\u007f]/.test(identity.tool)
+  )
+    return `mcp__${identity.server}__${identity.tool}`
   if (engineTool.startsWith("mcp_")) {
     const rest = engineTool.slice("mcp_".length)
     const digest = rest.match(/_[0-9a-f]{32}$/)
@@ -965,7 +980,7 @@ export function translateTools(event: EngineEvent): SessionToolCalled[] {
         timestamp: eventTimestamp(event),
         assistantMessageID,
         callID: block.id,
-        tool: productToolID(block.name),
+        tool: productToolID(block.name, "_miao_mcp" in block ? block._miao_mcp : undefined),
         input: productToolInput(block.name, input),
         provider: { executed: false },
       },
@@ -1044,7 +1059,10 @@ export class ToolBridge {
       if (typeof block !== "object" || block === null) continue
       if (!("type" in block) || block.type !== "tool_use") continue
       if (!("id" in block) || typeof block.id !== "string") continue
-      const tool = "name" in block && typeof block.name === "string" ? productToolID(block.name) : "custom"
+      const tool =
+        "name" in block && typeof block.name === "string"
+          ? productToolID(block.name, "_miao_mcp" in block ? block._miao_mcp : undefined)
+          : "custom"
       const known = { sessionID, assistantMessageID, tool }
       this.#calls.set(JSON.stringify([event.session_id, block.id]), known)
       for (const plan of this.#plans.values()) {
@@ -1111,7 +1129,7 @@ export function translateApproval(event: EngineEvent): SessionPermissionAsked | 
   return {
     id: Permission.ID.create(`per_${event.data.request_id}`),
     sessionID: adoptSession(event.data.session_id),
-    action: productToolID(tool),
+    action: productToolID(tool, "mcp" in event.data ? event.data.mcp : undefined),
     resources: [resource],
     metadata: { request_id: event.data.request_id, input_hash: inputHash, policy_revision: policyRevision },
   }

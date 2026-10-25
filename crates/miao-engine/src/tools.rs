@@ -794,6 +794,32 @@ impl Tools {
         }
         name
     }
+    pub(crate) fn mcp_identity(&self, name: &str) -> Option<mcp::Identity> {
+        self.mcp
+            .as_ref()
+            .and_then(|registry| registry.identity(name))
+    }
+
+    /// Stamp trusted catalog names before persistence, never model-supplied metadata.
+    pub(crate) fn stamp_tool_identities(&self, content: &mut Value) {
+        let Some(blocks) = content.as_array_mut() else {
+            return;
+        };
+        for block in blocks {
+            if block["type"] != "tool_use" {
+                continue;
+            }
+            let identity = block["name"]
+                .as_str()
+                .and_then(|name| self.mcp_identity(self.effective_name(name, &block["input"])));
+            if let Some(object) = block.as_object_mut() {
+                object.remove("_miao_mcp");
+                if let Some(identity) = identity {
+                    object.insert("_miao_mcp".into(), serde_json::json!(identity));
+                }
+            }
+        }
+    }
     /// Evaluation ablation switch: `false` disables the read warm-up and the
     /// post-edit diagnostics report while every other path stays identical.
     pub fn with_lsp_diagnostics(mut self, enabled: bool) -> Self {

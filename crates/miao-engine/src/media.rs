@@ -36,6 +36,10 @@ fn normalize_parts(
     input: &[String],
 ) -> Result<(), ProviderError> {
     for part in parts {
+        // Catalog identity is durable presentation metadata, not provider input.
+        if let Some(object) = part.as_object_mut() {
+            object.remove("_miao_mcp");
+        }
         if part["type"] == "command_reference" {
             let name = part["name"]
                 .as_str()
@@ -121,4 +125,35 @@ pub(crate) fn anthropic_part(part: &Value, role: &str) -> Result<Value, Provider
     Ok(
         json!({"type":if mime == "application/pdf" {"document"} else {"image"},"source":{"type":"base64","media_type":mime,"data":data}}),
     )
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    #[test]
+    fn catalog_identity_stays_durable_but_never_crosses_provider_boundaries() {
+        let content = json!([{"type":"tool_use","id":"call","name":"mcp_alias","input":{},"_miao_mcp":{"server":"original_server","tool":"original_tool"}}]);
+        for protocol in [
+            "anthropic",
+            "openai-chat",
+            "openai-responses",
+            "gemini",
+            "bedrock-converse",
+        ] {
+            let request = ModelRequest {
+                system: String::new(),
+                tools: Vec::new(),
+                messages: vec![crate::protocol::Message {
+                    role: "assistant".into(),
+                    content: content.clone(),
+                    checkpoint: None,
+                    recorded_at_ms: None,
+                }],
+            };
+            let normalized = normalize(request, protocol, &[]).unwrap();
+            assert!(normalized.messages[0].content[0].get("_miao_mcp").is_none());
+            assert_eq!(normalized.messages[0].content[0]["name"], "mcp_alias");
+            assert!(content[0].get("_miao_mcp").is_some());
+        }
+    }
 }
