@@ -2,7 +2,7 @@ mod common;
 use async_trait::async_trait;
 use miao_engine::{
     openai_chat::OpenAIChat,
-    protocol::{Delivery, Input, ModelRequest, Event},
+    protocol::{Delivery, Event, Input, ModelRequest},
     provider::{Provider, ProviderError, Reply},
     runtime::Runtime,
     store::Store,
