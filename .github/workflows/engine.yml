@@ -101,6 +101,10 @@ jobs:
 
   engine-windows:
     name: engine (windows)
+    # A pull request (and a merge queue entry) only proves the crate still
+    # compiles on Windows. The full suite compiles it again with test targets and
+    # takes most of an hour of Windows runner time, so it runs on pushed commits,
+    # nightly, manual and engine release runs instead.
     runs-on: windows-latest
     timeout-minutes: 60
     defaults:
@@ -121,23 +125,32 @@ jobs:
         with:
           workspaces: crates/miao-engine
 
+      - name: Type check
+        if: github.event_name == 'pull_request' || github.event_name == 'merge_group'
+        run: cargo check --all-targets
+
       - name: Test
+        if: github.event_name == 'push' || github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
         # SQLite-backed event waits compete for disk on hosted Windows runners.
         # Serialize these tests rather than relax their event deadlines.
         run: cargo test -- --test-threads=1
 
       - name: Credential daemon tests
+        if: github.event_name == 'push' || github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
         run: cargo test --locked --manifest-path ../miao-credential/Cargo.toml
 
       - name: Credential daemon clippy
+        if: github.event_name == 'push' || github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
         run: cargo clippy --locked --manifest-path ../miao-credential/Cargo.toml --all-targets -- -D warnings
 
       - name: Setup product client runtime
+        if: github.event_name == 'push' || github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
         uses: ./.github/actions/setup-bun
         with:
           install-flags: --frozen-lockfile --ignore-scripts
 
       - name: Verify native and TypeScript long tasks through actual HTTP
+        if: github.event_name == 'push' || github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
         working-directory: packages/miao
         env:
           MIAO_ENGINE_BIN: ${{ github.workspace }}/crates/miao-engine/target/debug/miao-engine.exe
