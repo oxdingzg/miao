@@ -1,7 +1,7 @@
 import { expect, test } from "bun:test"
 import { Schema } from "effect"
 import { Model } from "@miao/schema/model"
-import { EngineTranslator, type EngineSessionEvent } from "@/engine/session"
+import { EngineTranslator, LIVE_ORDINAL_BASE, type EngineSessionEvent } from "@/engine/session"
 import { messageID } from "@/engine/identity"
 
 const collect = () => {
@@ -152,6 +152,33 @@ test.each([
   expect(ended).toBeDefined()
   expect(ended.model?.id).toBe(row.expected)
   expect(ended.cost).toBeCloseTo(row.expected ? 0.14 : 0)
+})
+
+test("a delta cannot take the ordinal of the commit it anchors to", () => {
+  const { outputs, translator } = collect()
+  translator.dispatch({
+    session_id: "ses_band",
+    seq: 4,
+    kind: "provider.started",
+    recorded_at_ms: 900,
+    data: { run_id: "run", step: 0 },
+  })
+  // The progress pipe and the journal pages are separate channels, so the
+  // delta can land before the commit that bears its ordinal. Sharing the low
+  // ordinals would give two published events one source triple.
+  translator.progress({
+    session_id: "ses_band",
+    kind: "provider.delta",
+    run_id: "run",
+    step: 0,
+    anchor_seq: 4,
+    recorded_at_ms: 900,
+    data: { delta: { kind: "text.delta", text: "hi" } },
+  })
+  const status = outputs.find((event) => event.type === "session.next.status")
+  const delta = outputs.find((event) => event.type === "session.next.text.delta")
+  expect(status?.source).toEqual({ sessionID: "ses_band", seq: 4, index: 0, recordedAtMs: 900 })
+  expect(delta?.source).toEqual({ sessionID: "ses_band", seq: 4, index: LIVE_ORDINAL_BASE, recordedAtMs: 900 })
 })
 
 test("a native turn publishes each provider phase as the turn advances", () => {

@@ -3,7 +3,7 @@ import fs from "fs/promises"
 import os from "os"
 import path from "path"
 import { EngineClient } from "@/engine/client"
-import { EngineSession, type EngineSessionEvent } from "@/engine/session"
+import { EngineSession, LIVE_ORDINAL_BASE, type EngineSessionEvent } from "@/engine/session"
 
 const fake = path.join(import.meta.dir, "..", "fixture", "engine-fake.ts")
 const tmp = () => fs.mkdtemp(path.join(os.tmpdir(), "miao-engine-session-"))
@@ -98,7 +98,9 @@ test.each(["failed", "interrupted", "completed"])(
       const discarded = outputs.filter((event) => event.type === "session.next.stream.discarded")
       expect(discarded).toHaveLength(1)
       expect(discarded[0]?.data).toMatchObject({ assistantMessageID: "msg_ses_boundary_5" })
-      expect(discarded[0]?.source).toMatchObject({ seq: 5, index: 1 })
+      // The closure is a live-only frame, so it publishes in the live ordinal
+      // band rather than competing with the commit's own events.
+      expect(discarded[0]?.source).toMatchObject({ seq: 5, index: LIVE_ORDINAL_BASE + 1 })
       expect(
         outputs
           .filter((event) => event.type === "session.next.status" && event.source.seq === 7)
@@ -186,7 +188,11 @@ test("native fragments translate into reasoning, tool, and indexed text events",
       }),
     ).toEqual([["call_1", '{"p":1']])
     const streamed = outputs.filter((event) => event.type.startsWith("session.next."))
-    expect(streamed.map((event) => event.source?.index)).toEqual([0, 1, 2, 3, 4, 5])
+    // Live frames keep their own consecutive ordinals, in the band that cannot
+    // collide with the commit they anchor to.
+    expect(streamed.map((event) => event.source?.index)).toEqual(
+      [0, 1, 2, 3, 4, 5].map((ordinal) => LIVE_ORDINAL_BASE + ordinal),
+    )
   } finally {
     await client.close()
     await fs.rm(root, { recursive: true, force: true })
