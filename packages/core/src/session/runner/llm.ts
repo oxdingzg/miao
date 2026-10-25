@@ -95,7 +95,7 @@ import { createLLMEventPublisher, progressContent, progressGate } from "./publis
 import { SessionToolDispatch } from "../tool-dispatch"
 import { toLLMMessages } from "./to-llm-message"
 import { inlineTextFiles, materializeBlobRefs } from "./materialize-files"
-import { MAX_STEPS_PROMPT } from "./max-steps"
+import { BUDGET_EXHAUSTED_PROMPT, BUDGET_WRAP_UP_NOTE, MAX_STEPS_PROMPT } from "./max-steps"
 import { Token } from "../../util/token"
 import { SessionRunnerMetrics } from "./metrics"
 import { SessionRunnerModelIo } from "./model-io"
@@ -186,6 +186,12 @@ const MAX_STREAM_CONTINUATIONS = 2
  */
 const MAX_OUTPUT_CONTINUATIONS = 2
 const MAX_TOOL_INPUT_CORRECTIONS = 2
+/**
+ * Share of the agent's per-prompt token budget at which the model is told to
+ * wrap up. The last stretch stays reserved so the summary itself fits under
+ * the budget instead of being cut off by it.
+ */
+const PROMPT_BUDGET_WRAP_UP_FRACTION = 0.8
 /**
  * Empty `tool_search` results in a row before the deferred catalog is dropped
  * and every tool is advertised again. One miss is a model guessing at a name;
@@ -331,6 +337,10 @@ const layer = Layer.effect(
     const disclosureMisses = new Map<string, number>()
     const disclosureEscalated = new Set<string>()
     const toolInputCorrections = new Map<string, number>()
+    // Tokens billed across the provider turns of one admitted prompt, against
+    // the selected agent's soft budget. Reset when a new input is promoted, so
+    // every user prompt re-arms the budget the same way the step allowance does.
+    const promptBudgetSpent = new Map<string, number>()
     // A new input may legitimately ask for the same operation again. Drain
     // boundaries are scheduler details, not user-request boundaries.
     const repeatedToolCalls = new Map<string, number>()
@@ -624,6 +634,7 @@ const layer = Layer.effect(
         if (promoted > 0) {
           currentStep = 1
           resetToolRepeats(initialSession.id)
+          promptBudgetSpent.delete(initialSession.id)
         }
       }
       const commandChanged = yield* prepareCommands(sessionID)
@@ -741,10 +752,16 @@ const layer = Layer.effect(
         }
       })
       const isLastStep = agent.info?.steps !== undefined && currentStep >= agent.info.steps
+      const budget = agent.info?.budget
+      const budgetSpent = promptBudgetSpent.get(session.id) ?? 0
+      const budgetExhausted = budget !== undefined && budgetSpent >= budget
+      const budgetWrapUp =
+        budget !== undefined && !budgetExhausted && budgetSpent >= budget * PROMPT_BUDGET_WRAP_UP_FRACTION
+      const finalStep = isLastStep || budgetExhausted
       const settings = yield* readSettings()
       const toolsStartedAt = Date.now()
       const admitProgress = progressGate()
-      const toolMaterialization = isLastStep
+      const toolMaterialization = finalStep
         ? undefined
         : yield* tools.materialize(agent.info?.permissions, {
             codeMode: Flag.MIAO_EXPERIMENTAL_CODE_MODE,
@@ -781,6 +798,8 @@ const layer = Layer.effect(
       const messages = [
         ...toLLMMessages(materialized, model, resolved.info.capabilities.input),
         ...(isLastStep ? [Message.assistant(MAX_STEPS_PROMPT)] : []),
+        ...(budgetExhausted ? [Message.assistant(BUDGET_EXHAUSTED_PROMPT)] : []),
+        ...(budgetWrapUp ? [Message.assistant(BUDGET_WRAP_UP_NOTE)] : []),
       ]
       // The note reads best ahead of the turn's actual request, so the user
       // prompt stays the closing message.
@@ -831,7 +850,7 @@ const layer = Layer.effect(
           .map(SystemPart.make),
         messages: settings.prune ? SessionPrune.toolResults(messages) : messages,
         tools: toolMaterialization?.definitions ?? [],
-        toolChoice: isLastStep ? "none" : undefined,
+        toolChoice: finalStep ? "none" : undefined,
       })
       const requestBuildMs = Date.now() - requestBuildStartedAt
       // One attempt per admitted user prompt, not one per tool/provider turn.
@@ -1290,6 +1309,11 @@ const layer = Layer.effect(
             lastPromptTokens.set(session.id, SessionRunnerMetrics.promptTokens(stepSettlement.tokens))
             lastPromptMessages.set(session.id, request.messages.length)
             lastPromptPrefix.set(session.id, SessionCompaction.prefix(request))
+            const settlementTokens = stepSettlement.tokens
+            const billed =
+              settlementTokens.input + settlementTokens.output + settlementTokens.reasoning +
+              settlementTokens.cache.read + settlementTokens.cache.write
+            promptBudgetSpent.set(session.id, (promptBudgetSpent.get(session.id) ?? 0) + billed)
             const cacheMissed = SessionRunnerMetrics.cacheMissed(stepSettlement.tokens)
             const endSnapshotStartedAt = Date.now()
             // A step that published no tool call cannot have mutated the
@@ -1382,7 +1406,7 @@ const layer = Layer.effect(
           if (
             stream._tag === "Failure" && !Cause.hasInterrupts(stream.cause) &&
             settled._tag === "Success" && invalidToolInput && publisher.hasVisibleOutput() &&
-            !isLastStep && (toolInputCorrections.get(session.id) ?? 0) < MAX_TOOL_INPUT_CORRECTIONS
+            !finalStep && (toolInputCorrections.get(session.id) ?? 0) < MAX_TOOL_INPUT_CORRECTIONS
           ) {
             const attempt = (toolInputCorrections.get(session.id) ?? 0) + 1
             toolInputCorrections.set(session.id, attempt)
@@ -1406,7 +1430,7 @@ const layer = Layer.effect(
             llmFailure?.reason._tag === "Transport" &&
             llmFailure.reason.retryable &&
             publisher.hasVisibleOutput() &&
-            !isLastStep &&
+            !finalStep &&
             (streamContinuations.get(session.id) ?? 0) < MAX_STREAM_CONTINUATIONS
           ) {
             // This is a NEW provider turn over reloaded durable history, never
@@ -1441,7 +1465,7 @@ const layer = Layer.effect(
             stepSettlement?.finish === "length" &&
             !publisher.hasProviderError() &&
             !publisher.hasToolCalls() &&
-            !isLastStep
+            !finalStep
           ) {
             const attempt = (outputContinuations.get(session.id) ?? 0) + 1
             if (attempt > MAX_OUTPUT_CONTINUATIONS) {
@@ -1475,6 +1499,7 @@ const layer = Layer.effect(
             needsContinuation: !publisher.hasProviderError() && needsContinuation,
             step: currentStep,
             failed: publisher.hasProviderError(),
+            budgetExhausted,
           }
         }),
       )
@@ -1485,7 +1510,10 @@ const layer = Layer.effect(
       step: number,
       phase: ReportPhase,
       remaining?: number,
-    ) => Effect.Effect<{ readonly needsContinuation: boolean; readonly step: number; readonly failed?: boolean }, RunError>
+    ) => Effect.Effect<
+      { readonly needsContinuation: boolean; readonly step: number; readonly failed?: boolean; readonly budgetExhausted?: boolean },
+      RunError
+    >
 
     // Recovery after a compaction may compact again, including an
     // already-compacted history that still overflows, so it opts into
@@ -1973,6 +2001,7 @@ const layer = Layer.effect(
           let lastTodoSignature: string | undefined
           let loopStalls = 0
           let finishReason = "idle"
+          let budgetPaused = false
           const exceeded = (session: SessionSchema.Info) =>
             settings.budget !== undefined && session.cost >= settings.budget
           const initial = yield* getSession(input.sessionID)
@@ -2016,6 +2045,7 @@ const layer = Layer.effect(
                 providerFailed = true
                 break
               }
+              if (result.budgetExhausted !== undefined) budgetPaused = result.budgetExhausted
               needsContinuation = result.needsContinuation
               step = result.step + 1
               promotion = "steer"
@@ -2134,6 +2164,24 @@ const layer = Layer.effect(
           }
           if (!shouldRun && (yield* SessionDelegationStore.pauseIfExhausted(db, events, input.sessionID)))
             finishReason = "notification-wake-allowance-exhausted"
+          if (!shouldRun && budgetPaused) {
+            finishReason = "prompt-budget-exhausted"
+            const id = SessionMessage.ID.make(`msg_prompt_budget_pause_${input.sessionID}`)
+            const existing = yield* db
+              .select({ id: SessionMessageTable.id })
+              .from(SessionMessageTable)
+              .where(and(eq(SessionMessageTable.session_id, input.sessionID), eq(SessionMessageTable.id, id)))
+              .get()
+              .pipe(Effect.orDie)
+            if (!existing)
+              yield* events.publish(SessionEvent.Synthetic, {
+                sessionID: input.sessionID,
+                messageID: id,
+                timestamp: yield* DateTime.now,
+                text: `Task paused: the prompt token budget${drainAgent?.info?.budget !== undefined ? ` (${drainAgent.info.budget} tokens)` : ""} is exhausted. Send a message to continue with a fresh budget.`,
+                metadata: { promptBudgetPause: { spent: promptBudgetSpent.get(input.sessionID) ?? 0, budget: drainAgent?.info?.budget } },
+              })
+          }
           if (yield* SessionBlackbox.Current) yield* BlackboxHistory.checkpoint(input.sessionID, "drain.finished", store.context(input.sessionID), db)
           yield* Effect.logInfo("session.drain.finished", { sessionID: input.sessionID, reason: finishReason })
         }),

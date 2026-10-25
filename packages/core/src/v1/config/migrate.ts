@@ -135,6 +135,7 @@ export function migrateAgent(info: ConfigAgentV1.Info) {
     hidden: info.hidden,
     color: info.color,
     steps: info.steps,
+    budget: info.budget,
     disabled: info.disable,
     permissions: permissions(info.permission),
   }
