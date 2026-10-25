@@ -378,7 +378,7 @@ const layer = Layer.effect(
     // Title generation runs beside the first provider turn and outlives the drain.
     // The title model can fail transiently — a 5xx, or a plan-limited small model
     // that answers 403 — and a Session nobody retitles keeps its placeholder for
-    // good, so the terminal shows a bare `miao` instead of `miao | <title>`. The
+    // good, so the terminal keeps its bare `miao` fallback instead of the title. The
     // mark therefore only holds while an attempt is in flight or has succeeded;
     // a failure clears it so a later drain retries while the title is still the
     // placeholder.
