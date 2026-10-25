@@ -1,0 +1,18 @@
+{
+  "spent": 0.004046012690000001,
+  "rows": [
+    {
+      "scenario": "forced-compaction",
+      "engine": "rust",
+      "model": "zhipuai-coding-plan/glm-5.3-flash",
+      "status": "pass",
+      "note": "engine_compaction rows: 1 (db e09aa6234acf0f37945e7c565ef12d6cc968eff7a376aea7f6c7ff543ebab2ae.db)",
+      "seconds": 59.589,
+      "cost": 0.004046012690000001,
+      "tokensIn": 75822,
+      "tokensOut": 803,
+      "turns": 4,
+      "archived": "runs/r3/raw/forced-compaction.rust.zhipuai-coding-plan-glm-5.3-flash"
+    }
+  ]
+}

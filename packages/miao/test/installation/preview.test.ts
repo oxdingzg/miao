@@ -14,7 +14,7 @@ test.skipIf(process.platform === "win32")("preview installation and rollback ret
     const cli = path.join(tmp.path, id)
     const engine = cli + "-engine"
     await Bun.write(cli, `#!/bin/sh\ncase "$1" in --version) echo 9.9.9;; --build-id) echo ${id};; *) exit 1;; esac\n`)
-    await Bun.write(engine, `#!/bin/sh\ncase "$1" in --version) echo 'miao-engine ${version}';; --capabilities) echo '{"name":"miao-engine","version":"${version}","protocol":2,"schema":12,"routesSchema":2,"build":"${id}"}';; *) exit 1;; esac\n`)
+    await Bun.write(engine, `#!/bin/sh\ncase "$1" in --version) echo 'miao-engine ${version}';; --capabilities) echo '{"name":"miao-engine","version":"${version}","protocol":2,"schema":12,"routes_schema":2,"build":"${id}"}';; *) exit 1;; esac\n`)
     await chmod(cli, 0o755)
     await chmod(engine, 0o755)
     const child = Bun.spawn(["bash", install, "--binary", cli, "--engine-binary", engine], {
