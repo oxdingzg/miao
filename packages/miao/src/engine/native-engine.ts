@@ -42,7 +42,7 @@ import { Location } from "@miao/schema/location"
 import { Cause, DateTime, Effect, Layer, Option, Queue, Schema, Context } from "effect"
 import { EngineError, type EngineOptions, type EngineEvent } from "./client"
 import { discoveredEngine } from "./discovery"
-import { messageID } from "./identity"
+import { generatedInputEngineID, messageID, promotedInputMessageID } from "./identity"
 import { makeEngineOwners } from "./owners"
 import type { EnginePricing } from "./session"
 import { NativeRecovery } from "./recovery"
@@ -57,7 +57,6 @@ import { LLMClient } from "@miao/llm"
 import { llmClient } from "@miao/core/effect/app-node-platform"
 import { SessionNativeTitle } from "@miao/core/session/native-title"
 import { SessionInput } from "@miao/schema/session-input"
-import { SessionMessage } from "@miao/schema/session-message"
 import type { SessionID } from "@miao/schema/session-id"
 import { SessionTitle } from "@miao/core/session/title"
 import { SessionRunnerModel } from "@miao/core/session/runner/model"
@@ -90,6 +89,8 @@ const QuestionBindings = Schema.Array(
 )
 /** The engine's `{accepted: boolean}` reply shared by cancel-shaped commands. */
 const AcceptedReply = Schema.Struct({ accepted: Schema.Boolean })
+/** A refused cancel names why, so an unknown id can be resolved and a final one kept. */
+const CancelReply = Schema.Struct({ accepted: Schema.Boolean, reason: Schema.optional(Schema.String) })
 
 import { replayJournal } from "./journal"
 import { readTranscript } from "./transcript"
@@ -331,11 +332,12 @@ export function pendingInputsPage(sessionID: SessionID, value: unknown) {
       SessionInput.Admitted.make({
         admittedSeq: entry.admitted_seq,
         // A product prompt keeps the identity it was submitted with, so a
-        // later cancel can address it. An engine-generated notice has no
-        // product identity of its own; synthesize the same deterministic
-        // message id the promotion event falls back to instead of failing
-        // the page on a non-`msg_` engine id.
-        id: entry.id.startsWith("msg_") ? SessionMessage.ID.make(entry.id) : messageID(sessionID, entry.admitted_seq),
+        // later exact retry and cancel can address it. An engine-generated
+        // notice has no product identity of its own, so derive one from the
+        // durable engine input id — the same derivation the promotion event
+        // and the cancel path use. Decoding it as SessionMessage.ID failed the
+        // whole page on ids like `monitor:<job>:<uuid>`.
+        id: promotedInputMessageID(entry.id),
         sessionID,
         prompt: {
           text: entry.prompt,
@@ -628,12 +630,29 @@ export const fromOwners = (
         }),
       ).pipe(Effect.map((value) => pendingInputsPage(input.sessionID, value))),
     cancelInput: (input) =>
-      read<unknown>(input, (connection) =>
-        connection.client.request("cancel_input", {
-          session_id: input.sessionID,
-          input_id: input.inputID,
-        }),
-      ).pipe(Effect.map((value) => Schema.decodeUnknownSync(AcceptedReply)(value).accepted)),
+      read<boolean>(input, async (connection) => {
+        const reply = Schema.decodeUnknownSync(CancelReply)(
+          await connection.client.request("cancel_input", {
+            session_id: input.sessionID,
+            input_id: input.inputID,
+          }),
+        )
+        if (reply.accepted) return true
+        // A generated notice is displayed under an identity derived from the
+        // engine's own input id. Only a genuinely unknown id may be that
+        // derived identity: a promoted or cancelled row already has a final
+        // answer, and retrying it under another id would address a different
+        // input.
+        if (reply.reason !== "unknown") return false
+        const engineInputID = generatedInputEngineID(input.inputID)
+        if (engineInputID === undefined) return false
+        return Schema.decodeUnknownSync(AcceptedReply)(
+          await connection.client.request("cancel_input", {
+            session_id: input.sessionID,
+            input_id: engineInputID,
+          }),
+        ).accepted
+      }),
     revertStage: (input) =>
       read(input, async (connection) => {
         const snapshot = Schema.decodeUnknownSync(Schema.Struct({ cursor: Schema.Number }))(

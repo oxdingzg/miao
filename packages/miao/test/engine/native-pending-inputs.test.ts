@@ -1,4 +1,5 @@
 import { expect, test } from "bun:test"
+import { translatePrompt } from "@/engine/bridge"
 import { pendingInputsPage } from "@/engine/native-engine"
 import { SessionID } from "@miao/schema/session-id"
 import { DateTime } from "effect"
@@ -78,10 +79,40 @@ test("engine-generated inputs get a product identity instead of failing the page
     ],
     has_more: false,
   })
+  // The id derives from the engine's durable input id, not from the admission
+  // sequence, so the promotion event (which carries the same input id) can
+  // project the same identity and a later cancel can decode it back.
   expect(page.inputs.map((input) => String(input.id))).toEqual([
-    "msg_ses_inbox_9",
-    "msg_ses_inbox_11",
+    "msg_gen_bW9uaXRvcjo4ZmZjYTc2OC01ZjJhLTRjZWEtYTYyYS0xZDE2ODg1MjlmZGY6ZDNhM2U2NzAtNDI0MC00NzJiLThmYjctY2E1NjcyZWEwZjJj",
+    "msg_gen_d2FrZXVwL3NjaGVkXzE",
   ])
+})
+
+test("an engine-generated notice reads and promotes under one identity", () => {
+  const engineInputID = "monitor:8ffca768-5f2a-4cea-a62a-1d1688529fdf:d3a3e670-4240-472b-8fb7-ca5672ea0f2c"
+  const page = pendingInputsPage(SessionID.make("ses_inbox"), {
+    inputs: [
+      {
+        id: engineInputID,
+        session_id: "ses_inbox",
+        prompt: "Monitor job produced matching output",
+        delivery: "steer",
+        admitted_seq: 9,
+        recorded_at_ms: 1_700_000_000_000,
+        attachments: [],
+      },
+    ],
+    has_more: false,
+  })
+  // The promotion lands at a later journal seq than admission; the identity
+  // must not follow the seq or the read and the promoted message disagree.
+  const promoted = translatePrompt({
+    session_id: "ses_inbox",
+    seq: 12,
+    kind: "input.promoted",
+    data: { input_id: engineInputID, prompt: "Monitor job produced matching output" },
+  })
+  expect(String(page.inputs[0]?.id)).toBe(String(promoted?.messageID))
 })
 
 test("an engine input needs a non-empty identity", () => {
