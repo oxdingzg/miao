@@ -28,24 +28,17 @@ export const readCatalog = Effect.fn("NativeCatalog.read")(function* (
       const entries = yield* Effect.tryPromise({
         try: async (signal) => {
           const child = Bun.spawn(
-            [
-              binary,
-              "catalog",
-              "--db",
-              input.storage,
-              "--sessions",
-              JSON.stringify(sessions),
-              "--usage",
-              String(input.usage),
-            ],
+            [binary, "catalog", "--db", input.storage, "--sessions", "-", "--usage", String(input.usage)],
             {
-              stdin: "ignore",
+              stdin: "pipe",
               stdout: "pipe",
               stderr: "pipe",
               timeout: 15_000,
               signal,
             },
           )
+          child.stdin.write(JSON.stringify(sessions))
+          await child.stdin.end()
           const [stdout, stderr, code] = await Promise.all([
             new Response(child.stdout).text(),
             new Response(child.stderr).text(),

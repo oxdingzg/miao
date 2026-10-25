@@ -88,11 +88,23 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
             return Err("missing catalog option value".into());
         }
         let db = options.remove("--db").ok_or("--db is required")?;
-        let sessions: Vec<String> = serde_json::from_str(
-            &options
-                .remove("--sessions")
-                .ok_or("--sessions is required")?,
-        )?;
+        let sessions = options
+            .remove("--sessions")
+            .ok_or("--sessions is required")?;
+        let sessions: Vec<String> = if sessions == "-" {
+            use std::io::Read;
+            let mut input = Vec::new();
+            std::io::stdin()
+                .lock()
+                .take(1024 * 1024 + 1)
+                .read_to_end(&mut input)?;
+            if input.len() > 1024 * 1024 {
+                return Err("catalog input exceeds 1 MiB".into());
+            }
+            serde_json::from_slice(&input)?
+        } else {
+            serde_json::from_str(&sessions)?
+        };
         let usage = match options.remove("--usage").as_deref() {
             Some("true") => true,
             Some("false") | None => false,

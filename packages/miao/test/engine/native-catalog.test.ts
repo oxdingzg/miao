@@ -35,6 +35,24 @@ test.skipIf(!binary || capabilities(binary)?.catalog !== 1)(
       )
       expect(result.map((entry) => entry.snapshot.title)).toEqual(["live title"])
       expect(result[0]?.usage).toBeDefined()
+      const longID = SessionID.make(`ses_${"x".repeat(252)}`)
+      await client.request("initialize", { session_id: longID, title: "long identity" })
+      const longBefore = await client.request("snapshot", { session_id: longID })
+      const sessions = Array.from({ length: 200 }, () => longID)
+      expect(JSON.stringify(sessions).length).toBeGreaterThan(32_767)
+      const longPage = await Effect.runPromise(
+        readCatalog(binary!, {
+          storage,
+          location: { directory: AbsolutePath.make(tmp.path) },
+          sessions,
+          usage: false,
+        }),
+      )
+      expect(longPage).toHaveLength(200)
+      expect(longPage.every((entry) => entry.sessionID === longID && entry.snapshot.title === "long identity")).toBe(
+        true,
+      )
+      expect(await client.request("snapshot", { session_id: longID })).toEqual(longBefore)
       expect(client.available).toBe(true)
       expect(await client.request("snapshot", { session_id: "ses_catalog" })).toEqual(before)
     } finally {

@@ -4,7 +4,10 @@ use miao_engine::{
     store::Store,
 };
 use serde_json::json;
-use std::process::Command;
+use std::{
+    io::Write,
+    process::{Command, Stdio},
+};
 
 #[tokio::test]
 async fn catalog_reads_live_storage_without_projecting_history_or_adopting_inputs() {
@@ -143,4 +146,63 @@ async fn old_catalog_metadata_survives_unavailable_usage_without_a_migration() {
             .unwrap(),
         0
     );
+}
+
+#[tokio::test]
+async fn catalog_accepts_bounded_stdin_instead_of_a_long_command_line() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("engine.db");
+    let store = Store::open(&path).await.unwrap();
+    let id = format!("ses_{}", "x".repeat(252));
+    store
+        .initialize(&id, "Long identity", "/workspace")
+        .await
+        .unwrap();
+    let input = serde_json::to_vec(&vec![&id; 200]).unwrap();
+    assert!(input.len() > 32_767);
+    let mut child = Command::new(env!("CARGO_BIN_EXE_miao-engine"))
+        .args(["catalog", "--db", path.to_str().unwrap(), "--sessions", "-"])
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .unwrap();
+    child.stdin.take().unwrap().write_all(&input).unwrap();
+    let output = child.wait_with_output().unwrap();
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let entries: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(entries.as_array().unwrap().len(), 200);
+    assert!(entries
+        .as_array()
+        .unwrap()
+        .iter()
+        .all(|entry| entry["snapshot"]["title"] == "Long identity"));
+    store.close().await.unwrap();
+}
+
+#[test]
+fn catalog_rejects_stdin_beyond_its_bound() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("missing.db");
+    let mut child = Command::new(env!("CARGO_BIN_EXE_miao-engine"))
+        .args(["catalog", "--db", path.to_str().unwrap(), "--sessions", "-"])
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .unwrap();
+    child
+        .stdin
+        .take()
+        .unwrap()
+        .write_all(&vec![b' '; 1024 * 1024 + 1])
+        .unwrap();
+    let output = child.wait_with_output().unwrap();
+    assert!(!output.status.success());
+    assert!(String::from_utf8_lossy(&output.stderr).contains("catalog input exceeds 1 MiB"));
+    assert!(!path.exists());
 }
