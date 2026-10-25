@@ -30,7 +30,10 @@ jobs:
         settings:
           - name: linux
             label: linux
-            host: ubuntu-latest
+            # Playwright 1.59 has no Chromium build for Ubuntu 26.04, which
+            # `ubuntu-latest` now resolves to: the install step fails before any
+            # test runs. Pin the last image the browser supports.
+            host: ubuntu-24.04
             blocking: true
           # non-blocking until Windows suite is fixed; remaining failures: specs/ci-windows.md
           - name: windows
