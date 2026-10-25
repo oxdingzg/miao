@@ -94,3 +94,19 @@ test("unpromoted receipts stay at the transcript tail when the client clock trai
 
   expect(receipts.messages("ses_test", projected).map((message) => message.id)).toEqual(["msg_server", "msg_local"])
 })
+
+test("newest is the prompt esc removes and the up arrow takes back", () => {
+  const receipts = createPendingPrompts()
+  receipts.add(prompt("msg_first"))
+  receipts.admit("msg_first")
+  receipts.add(prompt("msg_second"))
+  receipts.admit("msg_second")
+  // An in-flight send has no durable admission yet, so it is not recallable.
+  receipts.add(prompt("msg_sending"))
+  expect(receipts.newest("ses_test")?.info.id).toBe("msg_second")
+  receipts.remove("msg_second")
+  expect(receipts.newest("ses_test")?.info.id).toBe("msg_first")
+  receipts.remove("msg_first")
+  expect(receipts.newest("ses_test")).toBeUndefined()
+  expect(receipts.newest("ses_other")).toBeUndefined()
+})
