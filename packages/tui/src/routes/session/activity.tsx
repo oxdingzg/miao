@@ -193,7 +193,7 @@ export function SessionActivity(props: { sessionID: string }) {
   // The esc hint names the next esc action, matching the prompt footer: one
   // esc cancels the newest waiting prompt, and only an empty queue interrupts.
   const waitingCount = createMemo(() => sync.prompt.waiting(props.sessionID).length)
-  const esc = createMemo(() => "interrupt")
+  const esc = createMemo(() => (waitingCount() > 0 ? "remove prompt" : "interrupt"))
   return (
     <Show
       when={error()}
