@@ -29,6 +29,10 @@ export async function replayJournal(input: {
     snapshot.cursor < 0
   )
     throw new EngineError("engine_replay_invalid", "native snapshot has no valid cursor")
+  // SSE polls every 250 ms. A caught-up subscriber needs no prefix replay;
+  // rebuilding it here repeatedly parses and translates the whole history
+  // while competing with prompt admission on the same stdio connection.
+  if (snapshot.cursor <= input.after) return { events: [], cursor: input.after, hasMore: false }
   const outputs: EngineSessionEvent[] = []
   const translator = new EngineTranslator((event) => {
     if (event.source.seq > input.after) outputs.push(event)
