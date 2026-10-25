@@ -166,7 +166,9 @@ export function translateAssistantIdentity(event: EngineEvent): SessionAssistant
     // The engine only knows the wire protocol and model id, so the reference
     // carries those as a display fallback; catalog resolution stays client-side.
     model: provider ? Schema.decodeUnknownSync(Model.Ref)({ id: provider.model, providerID: provider.protocol }) : null,
-    agent: null,
+    // Engines record the serving agent manifest's name; null on engines that
+    // predate agent attribution.
+    agent: readNonEmptyString(event.data, "agent") ?? null,
   }
 }
 
@@ -814,6 +816,20 @@ export function productToolID(engineTool: string): string {
  * `run_in_background`, so the bridge translates instead of leaking argv.
  */
 export function productToolInput(engineTool: string, input: Record<string, unknown>): Record<string, unknown> {
+  if (engineTool === "task") {
+    // The engine's task schema keys differ from the product vocabulary the
+    // transcript renderer reads: `agent` is the product's `subagent_type`,
+    // and the row title needs a description the engine schema never asks
+    // for, so the prompt's first line stands in for it.
+    const projected = { ...input }
+    if (projected.agent !== undefined && projected.subagent_type === undefined)
+      projected.subagent_type = projected.agent
+    if (projected.description === undefined && typeof projected.prompt === "string") {
+      const line = projected.prompt.split("\n").find((candidate) => candidate.trim().length > 0)
+      if (line !== undefined) projected.description = line.trim().slice(0, 120)
+    }
+    return projected
+  }
   if (engineTool !== "start_job") return input
   const argv = Array.isArray(input.argv) ? input.argv.filter((item): item is string => typeof item === "string") : []
   const command = argv.length > 2 && argv[0] === "bash" && argv[1] === "-c" ? argv.slice(2).join(" ") : argv.join(" ")

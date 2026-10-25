@@ -35,7 +35,7 @@ impl Provider for Scheduler {
         if self.calls.fetch_add(1, Ordering::SeqCst) == 0 {
             assert!(request.tools.iter().any(|tool| tool.name == "cron_create"));
             let count = if self.mixed { 8 } else { 1 };
-            let mut calls=(0..count).map(|index|json!({"type":"tool_use","id":format!("cron-{index}"),"name":"cron_create","input":{"prompt":"cron-fire","cron":self.pattern,"recurring":self.recurring}})).collect::<Vec<_>>();
+            let mut calls=(0..count).map(|index|json!({"type":"tool_use","id":format!("cron-{index}"),"name":"cron_create","input":{"prompt":if self.mixed { format!("cron-fire-{index}") } else { "cron-fire".to_owned() },"cron":self.pattern,"recurring":self.recurring}})).collect::<Vec<_>>();
             if self.mixed {
                 calls.push(json!({"type":"tool_use","id":"wakeup","name":"schedule_wakeup","input":{"prompt":"extra","delaySeconds":60}}));
             }
