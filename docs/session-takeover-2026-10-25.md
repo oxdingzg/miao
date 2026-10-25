@@ -1,6 +1,6 @@
 # Session takeover ledger for 25 October 2026
 
-Status checkpoint: 2026-10-25T19:41:44+08:00. This ledger preserves the interrupted workstreams; `docs/roadmap.md` remains the project-wide roadmap. PR status is a checkpoint, so query the recorded head and current checks before any merge.
+Status checkpoint: 2026-10-25T20:11:49+08:00. This ledger preserves the interrupted workstreams; `docs/roadmap.md` remains the project-wide roadmap. PR status is a checkpoint, so query the recorded head and current checks before any merge.
 
 ## Completed work
 
@@ -12,22 +12,26 @@ Status checkpoint: 2026-10-25T19:41:44+08:00. This ledger preserves the interrup
 
 | PR | Branch | Work | Checks at checkpoint |
 | --- | --- | --- | --- |
-| [#1394](https://github.com/oxdingzg/miao/pull/1394) | `feat/embedded-engine-artifact` | feat(build): embed the engine binary into the single-file build | All reported checks successful or skipped |
-| [#1398](https://github.com/oxdingzg/miao/pull/1398) | `fix/native-session-stalls` | fix(engine): prevent catalog reads and transport loss from stalling sessions | All reported checks successful or skipped |
-| [#1399](https://github.com/oxdingzg/miao/pull/1399) | `fix/tui-session-blank` | fix(tui): keep open sessions visible when catalog entries fail | All reported checks successful or skipped |
-| [#1400](https://github.com/oxdingzg/miao/pull/1400) | `fix/engine-idle-ownership` | fix(engine): reclaim idle runtimes using process-owned live work | All reported checks successful or skipped |
-| [#1401](https://github.com/oxdingzg/miao/pull/1401) | `fix/native-stream-watchdog` | fix(engine): keep event idle deadlines active throughout provider streams | All reported checks successful or skipped |
-| [#1402](https://github.com/oxdingzg/miao/pull/1402) | `test/conformance-workspace` | test(conformance): verify isolated engine placement and durable outcomes | All reported checks successful or skipped |
-| [#1403](https://github.com/oxdingzg/miao/pull/1403) | `fix/native-run-admission-gap` | fix(engine): publish initial input promotion and run start atomically | All reported checks successful or skipped |
-| [#1404](https://github.com/oxdingzg/miao/pull/1404) | `feat/context-prune-events` | feat(engine): persist measured tool output pruning facts | All reported checks successful or skipped |
-| [#1405](https://github.com/oxdingzg/miao/pull/1405) | `fix/native-long-history` | fix(engine): preserve long session context, snapshots and forks | Running: engine / engine (macos-14), engine / engine (ubuntu-latest), engine / engine (windows), blackbox / session blackbox replay |
-| [#1406](https://github.com/oxdingzg/miao/pull/1406) | `docs/native-acceptance-status` | docs: refresh native engine acceptance status | All reported checks successful or skipped |
-| [#1407](https://github.com/oxdingzg/miao/pull/1407) | `feat/tui-compact-footer` | feat(tui): consolidate the composer into a compact status layout | All reported checks successful or skipped |
-| [#1408](https://github.com/oxdingzg/miao/pull/1408) | `feat/session-usage-history` | feat(session): expose paginated provider usage history | All reported checks successful or skipped |
-| [#1409](https://github.com/oxdingzg/miao/pull/1409) | `docs/session-takeover` | docs: preserve interrupted session work and acceptance checklist | All reported checks successful or skipped |
-| [#1410](https://github.com/oxdingzg/miao/pull/1410) | `feat/app-context-history` | feat(app): chart persisted context and cache history | Running: e2e / e2e (linux), e2e / e2e (windows, non-blocking until Windows suite is fixed) |
-| [#1411](https://github.com/oxdingzg/miao/pull/1411) | `fix/engine-orphan-leak` | fix(engine): release orphaned engines instead of resurrecting them | Failed: engine / engine (macos-14), engine / engine (ubuntu-latest) |
-| [#1413](https://github.com/oxdingzg/miao/pull/1413) | `feat/app-context-composition` | feat(app): chart estimated input composition over time | Running: typecheck / typecheck tasks, typecheck / typecheck, e2e / e2e (linux), e2e / e2e (windows, non-blocking until Windows suite is fixed) |
+| [#1394](https://github.com/oxdingzg/miao/pull/1394) | `feat/embedded-engine-artifact` | feat(build): embed the engine binary into the single-file build | Reported checks successful or skipped; BEHIND |
+| [#1398](https://github.com/oxdingzg/miao/pull/1398) | `fix/native-session-stalls` | fix(engine): prevent catalog reads and transport loss from stalling sessions | Reported checks successful or skipped; BEHIND |
+| [#1399](https://github.com/oxdingzg/miao/pull/1399) | `fix/tui-session-blank` | fix(tui): keep open sessions visible when catalog entries fail | Reported checks successful or skipped; CLEAN |
+| [#1400](https://github.com/oxdingzg/miao/pull/1400) | `fix/engine-idle-ownership` | fix(engine): reclaim idle runtimes using process-owned live work | Reported checks successful or skipped; CLEAN |
+| [#1401](https://github.com/oxdingzg/miao/pull/1401) | `fix/native-stream-watchdog` | fix(engine): keep event idle deadlines active throughout provider streams | Reported checks successful or skipped; CLEAN |
+| [#1402](https://github.com/oxdingzg/miao/pull/1402) | `test/conformance-workspace` | test(conformance): verify isolated engine placement and durable outcomes | Reported checks successful or skipped; BEHIND |
+| [#1403](https://github.com/oxdingzg/miao/pull/1403) | `fix/native-run-admission-gap` | fix(engine): publish initial input promotion and run start atomically | Reported checks successful or skipped; CLEAN |
+| [#1404](https://github.com/oxdingzg/miao/pull/1404) | `feat/context-prune-events` | feat(engine): persist measured tool output pruning facts | Reported checks successful or skipped; CLEAN |
+| [#1405](https://github.com/oxdingzg/miao/pull/1405) | `fix/native-long-history` | fix(engine): preserve long session context, snapshots and forks | Running: engine / engine (macos-14), engine / engine (ubuntu-latest), engine / engine (windows); UNSTABLE |
+| [#1406](https://github.com/oxdingzg/miao/pull/1406) | `docs/native-acceptance-status` | docs: refresh native engine acceptance status | Reported checks successful or skipped; BEHIND |
+| [#1407](https://github.com/oxdingzg/miao/pull/1407) | `feat/tui-compact-footer` | feat(tui): consolidate the composer into a compact status layout | Reported checks successful or skipped; BEHIND |
+| [#1408](https://github.com/oxdingzg/miao/pull/1408) | `feat/session-usage-history` | feat(session): expose paginated provider usage history | Running: unit / unit tests (linux), unit / window runtime (windows), engine / engine (macos-14), engine / engine (ubuntu-latest), engine / engine (windows), e2e / e2e (linux), e2e / e2e (windows, non-blocking until Windows suite is fixed); BLOCKED |
+| [#1409](https://github.com/oxdingzg/miao/pull/1409) | `docs/session-takeover` | docs: preserve interrupted session work and acceptance checklist | Reported checks successful or skipped; CLEAN |
+| [#1410](https://github.com/oxdingzg/miao/pull/1410) | `feat/app-context-history` | feat(app): chart persisted context and cache history | Reported checks successful or skipped; CLEAN |
+| [#1411](https://github.com/oxdingzg/miao/pull/1411) | `fix/engine-orphan-leak` | fix(engine): release orphaned engines instead of resurrecting them | Reported checks successful or skipped; CLEAN |
+| [#1413](https://github.com/oxdingzg/miao/pull/1413) | `feat/app-context-composition` | feat(app): chart estimated input composition over time | Reported checks successful or skipped; CLEAN |
+| [#1414](https://github.com/oxdingzg/miao/pull/1414) | `fix/native-pruning-growth` | fix(engine): reject pruning that expands tool output | Failed: engine / engine (windows), ci-gate; UNSTABLE |
+| [#1415](https://github.com/oxdingzg/miao/pull/1415) | `chore/release-0.3.7` | chore(release): prepare v0.3.7 | Running: engine / engine (windows); BLOCKED |
+| [#1416](https://github.com/oxdingzg/miao/pull/1416) | `feat/context-settlement-cards` | feat(context): replay pruning facts and render settlement cards | Running: unit / unit tests (linux), engine / engine (ubuntu-latest), engine / engine (windows); UNSTABLE |
+| [#1417](https://github.com/oxdingzg/miao/pull/1417) | `fix/tui-session-list-scope` | fix(tui): scope session listings to the active directory or project | Running: unit / changes / changes, typecheck / changes / changes; UNSTABLE |
 
 No approving review was recorded on these PRs at this checkpoint. Follow the project rule requiring an approving review, successful CI, squash merge, and branch deletion. Never report a tested preview as merged or published.
 
@@ -88,7 +92,7 @@ Before App changes, the production first-navigation benchmark passed on a build 
 
 - Context history #1410 passed 683 App unit tests after all 61 non-English dictionaries received the new keys; the initial CI key-parity failure was fixed and pushed.
 - Estimated composition #1413 passed the complete App checks: 686 unit tests, 41 browser-oriented unit tests, typecheck, and remote UI smoke. Production navigation before/after records have zero blank/unknown samples. Current CI is listed above; local checks do not establish CI success.
-- An independent active writer owns #1411 for orphaned engine cleanup and resurrection. Its original Clippy failure was repaired in `567d237aaa`; the replacement CI run is pending. Do not overwrite that writer’s checkout.
+- The former #1411 writer’s window has closed. This takeover now also owns #1411, issue #1412, and the version-only #1415 release preparation. #1411 at `567d237aaa` has successful reported checks; it is not merged or released.
 - Localization source coverage, single-run performance limits, and the existing obsolete streaming/e2e fixtures are recorded in `docs/experiments/2026-10-25-context-timeline/` on the feature branches. Native phrase review remains recommended for sparse-corpus locales.
 
 ## Reidentified blank context window
@@ -97,4 +101,15 @@ The window showing branch `feat/app-context-timeline` is the original context-di
 
 The window is running the published 0.3.6 binary. Logs at 2026-10-25 11:54 UTC show invalid native catalog identities causing the miao Location’s Sessions to be skipped. #1399 addresses per-Session catalog failure isolation and pinned identity retention, but that fix is not in the published 0.3.6 binary. This evidence does not establish a regression in the repaired preview.
 
-The App history and category branches are committed and pushed through `c24a96b52d` and `62507317ea`; the latest combined App unit suite passes 687 tests and package typecheck. The TUI settlement continuation is still completing native integration and must be committed/pushed once its required checks pass. The Windows continuation-test timeout on #1405 is also an active repair item; its failed run must not be called green.
+The App history and category branches are committed and pushed through `c24a96b52d` and `62507317ea`; the latest combined App unit suite passes 687 tests and package typecheck. The TUI settlement continuation is committed and pushed in #1416 (`db66d57ffa`): 20 replay/transcript tests including a real native engine, two rendered card tests, and six package typechecks pass; CI remains separate. The Windows continuation-test timeout on #1405 is also an active repair item; its failed run must not be called green.
+
+
+## Closed-window process ownership and startup follow-up
+
+The user confirmed that only this Codex tab handles miao; the other miao and Codex tabs both handle embrix. Preserve those processes. The closed context window’s host and its 17 engine children have exited. A fresh audit found 17 engines attached to the still-live embrix miao host and no engine with parent PID 1. This observation does not claim that every possible helper process has been audited.
+
+The orphan-cleanup source Session is `ses_gfe5e8d4368c6ffeggzQpy8PJl`. Its unfinished work is adopted here: #1411 process cleanup, #1412 startup bursts and catalog contamination, and #1415 release preparation. A version bump alone does not publish the fixes.
+
+The TUI’s refresh and session picker dropped the directory/project scope when calling the V2 API, causing global native catalog enumeration. The scope repair is committed and pushed as `14926197e5`, with seven targeted tests and package typecheck passing. It is stacked on #1399. Same-directory historical test placements remain a separate issue; do not delete them heuristically. #1402 isolates future conformance databases.
+
+PR backlog has multiple causes: unreconciled approving reviews, strict up-to-date checks on root branches, dependent PR chains, and actual Windows CI failures. #1408 and this ledger branch were updated from main. #1405 has a newly pushed incremental test waiter and is rerunning; #1414 has a failed Windows job requiring repair. No open branch in the audit was proven safe to delete merely because main lacks its commits.
