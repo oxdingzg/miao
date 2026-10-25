@@ -85,6 +85,7 @@ export function agentManifest(agent: Agent.Info, catalog: readonly Route[]) {
     ...(agent.permission_mode === "auto" ? { permission_mode: "auto" as const } : {}),
     ...(agent.model === undefined ? {} : { model: modelRoute(agent.model, catalog) }),
     ...(agent.steps === undefined ? {} : { steps: agent.steps }),
+    ...(agent.budget === undefined ? {} : { budget: agent.budget }),
     ...(Object.keys(agent.request.body).length || Object.keys(agent.request.headers).length
       ? { request: agent.request }
       : {}),

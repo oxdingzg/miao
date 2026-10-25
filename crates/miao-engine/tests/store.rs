@@ -234,6 +234,7 @@ async fn an_agent_selection_is_derived_from_the_ledger_and_idempotent() {
         mode: None,
         request: None,
         steps: None,
+        budget: None,
     };
     assert!(matches!(
         store.set_agent("s", manifest.clone()).await,
@@ -293,6 +294,7 @@ async fn an_agent_manifest_is_bounded() {
             mode: None,
             request: None,
             steps: None,
+            budget: None,
         };
     assert!(matches!(
         store.set_agent("s", manifest("".into(), None, None)).await,

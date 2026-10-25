@@ -1377,6 +1377,9 @@ async fn execute(
 ) -> Result<(), Error> {
     let mut step = 0;
     let mut allowance = inner.policy.max_provider_turns();
+    // Billed tokens this prompt has spent. The soft budget is per prompt, so
+    // the same external admission that refills the allowance resets it.
+    let mut budget_spent = 0u64;
     let mut reset_allowance = true;
     let mut input_corrections = 0;
     let mut transport_continuations = 0;
@@ -1417,6 +1420,9 @@ async fn execute(
         // A newly promoted external input gets the selected agent's whole
         // allowance, even if that input also switched agents. Internal loop
         // continuations never reset it.
+        if reset_allowance {
+            budget_spent = 0;
+        }
         allowance = if reset_allowance {
             policy.max_provider_turns()
         } else {
@@ -1427,6 +1433,14 @@ async fn execute(
             }
         };
         reset_allowance = false;
+        // The soft budget is advisory: at the wrap-up share the model is asked
+        // to close the turn, and once spent the request goes text-only so the
+        // run pauses with a summary instead of stopping mid-operation. Same
+        // thresholds and strings as the TS runner.
+        let budget = manifest.and_then(|manifest| manifest.budget);
+        let budget_exhausted = budget.is_some_and(|budget| budget_spent >= budget);
+        let budget_wrap_up = !budget_exhausted
+            && budget.is_some_and(|budget| budget_spent >= budget.saturating_mul(8) / 10);
         if allowance == Some(0) {
             // Exhausting the allowance pauses the drain; it is not a provider
             // failure. End the run cleanly and leave a visible history fact so
@@ -1644,7 +1658,30 @@ async fn execute(
         // The plugin `tool.definition` family reviews the assembled surface
         // before it reaches the model, the same reverse dispatch the
         // before/after families use around calls.
-        let tools = dispatch_plugin_definitions(inner, session, run, tools).await?;
+        let tools = if budget_exhausted {
+            // An exhausted budget withholds the tool surface for this turn, so
+            // the model can only close with text. Skipping the definition hook
+            // is part of the same decision: there is no surface to review.
+            Vec::new()
+        } else {
+            dispatch_plugin_definitions(inner, session, run, tools).await?
+        };
+        // Soft-budget guidance rides the request after the durable history as
+        // an assistant note, matching the TS runner's message shape.
+        if let Some(note) = if budget_exhausted {
+            Some(crate::history::BUDGET_EXHAUSTED_PROMPT)
+        } else if budget_wrap_up {
+            Some(crate::history::BUDGET_WRAP_UP_NOTE)
+        } else {
+            None
+        } {
+            history.push(crate::protocol::Message {
+                role: "assistant".into(),
+                content: json!([{"type":"text","text":note}]),
+                checkpoint: None,
+                recorded_at_ms: None,
+            });
+        }
         // Match the TS harness: explicit agent instructions replace the model
         // persona. Family instructions follow the effective wire model on each
         // turn and stay outside the durable baseline/context epoch.
@@ -1913,6 +1950,7 @@ command: None,
                 json!({"run_id":run,"step":step,"usage":reply.usage,"model":binding.as_ref().map(|binding|binding.model.as_str()),"cache":crate::usage::cache_lineage(&reply.usage),"context_message_seq":inner.store.max_message_seq(session).await?}),
             )
             .await?;
+        budget_spent = budget_spent.saturating_add(billed_tokens(&reply.usage));
         // The billed turn's settle wall-clock rides the timing side table, so
         // usage reports can order turns in time without timestamps in replayed
         // payloads.
@@ -1956,7 +1994,7 @@ command: None,
         if invalid_input {
             input_corrections += 1;
         }
-        if reply.needs_tools {
+        if reply.needs_tools && !budget_exhausted {
             let mut reads = execute_read_batch(
                 inner,
                 session,
@@ -2644,7 +2682,7 @@ command: None,
             .promote_fenced(session, !reply.needs_tools, lease)
             .await?;
         let mut goal_stopped_this_turn = false;
-        if !reply.needs_tools && promoted.is_empty() && state_allowed {
+        if !reply.needs_tools && !budget_exhausted && promoted.is_empty() && state_allowed {
             let state = inner.store.state(session).await?;
             let goal = &state["goal"]["value"];
             if goal["status"] == "active"
@@ -2712,7 +2750,11 @@ command: None,
                         .is_none_or(|text| text.trim().is_empty())
             })
         });
-        if !reply.needs_tools && promoted.is_empty() && !goal_stopped_this_turn && reply_text_empty
+        if !reply.needs_tools
+            && !budget_exhausted
+            && promoted.is_empty()
+            && !goal_stopped_this_turn
+            && reply_text_empty
         {
             if empty_completions == 0 {
                 empty_completions += 1;
@@ -2757,7 +2799,8 @@ command: None,
         // configured, a run may not finish until it passes. A failure is a
         // classified continuation carrying the bounded output, and the retry
         // budget turns a persistent failure into a classified closure.
-        if !reply.needs_tools && promoted.is_empty() && !goal_stopped_this_turn {
+        if !reply.needs_tools && !budget_exhausted && promoted.is_empty() && !goal_stopped_this_turn
+        {
             let command = inner.verification.lock().await.clone();
             if let Some(command) = command {
                 // The configured value is a command line, so the check runs
@@ -2867,7 +2910,22 @@ command: None,
                 }
             }
         }
-        if !reply.needs_tools && promoted.is_empty() {
+        // An exhausted soft budget ends the drain even if the reply still names
+        // tools: the surface was withheld, so none of them may run. The pause
+        // is visible in history and the next external input re-arms the budget.
+        if (budget_exhausted || !reply.needs_tools) && promoted.is_empty() {
+            if budget_exhausted {
+                let note = match budget {
+                    Some(budget) => format!(
+                        "Task paused: the prompt token budget ({budget} tokens) is exhausted. Send a message to continue with a fresh budget."
+                    ),
+                    None => "Task paused: the prompt token budget is exhausted. Send a message to continue with a fresh budget.".to_owned(),
+                };
+                inner
+                    .store
+                    .inject(session, &format!("prompt-budget-{run}"), &note, "engine")
+                    .await?;
+            }
             if let Some(replay) = &inner.tool_replay {
                 replay.assert_consumed().await?;
             }
@@ -3984,6 +4042,16 @@ fn agent_tools(
                 && policy.tool_visible(&tool.name)
         })
         .collect()
+}
+
+/// Billed tokens for one provider turn in the TS runner's accounting: the
+/// inclusive input axis (cached and fresh alike) plus the inclusive output
+/// axis, which already contains reasoning.
+fn billed_tokens(usage: &Value) -> u64 {
+    usage["inputTokens"]
+        .as_u64()
+        .unwrap_or_default()
+        .saturating_add(usage["outputTokens"].as_u64().unwrap_or_default())
 }
 
 /// Immutable authority chosen at the provider-turn boundary, shared by every
