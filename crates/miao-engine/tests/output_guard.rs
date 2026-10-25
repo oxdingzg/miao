@@ -29,11 +29,11 @@ fn input(session: &str, prompt: &str) -> Input {
     }
 }
 
-async fn events_until_finished(store: &Store, session: &str) -> Vec<Event> {
+async fn events_until(store: &Store, session: &str, done: impl Fn(&[Event]) -> bool) -> Vec<Event> {
     tokio::time::timeout(std::time::Duration::from_secs(10), async {
         loop {
             let events = store.events(session, 0, 2000).await.unwrap();
-            if events.iter().any(|event| event.kind == "run.finished") {
+            if done(&events) {
                 return events;
             }
             tokio::time::sleep(std::time::Duration::from_millis(5)).await;
@@ -41,6 +41,13 @@ async fn events_until_finished(store: &Store, session: &str) -> Vec<Event> {
     })
     .await
     .unwrap()
+}
+
+async fn events_until_finished(store: &Store, session: &str) -> Vec<Event> {
+    events_until(store, session, |events| {
+        events.iter().any(|event| event.kind == "run.finished")
+    })
+    .await
 }
 
 /// A provider that stops itself the way the stream guard does: deltas already
@@ -91,7 +98,12 @@ async fn a_stopped_loop_fails_the_turn_without_retrying_or_dispatching() {
     .await
     .unwrap();
     runtime.admit(input("s", "go"), true).await.unwrap();
-    let events = events_until_finished(&store, "s").await;
+    // The engine journals `run.finished` before `stop_failure`, so the stopping
+    // test waits for the explanation instead of the finish marker.
+    let events = events_until(&store, "s", |events| {
+        events.iter().any(|event| event.kind == "stop_failure")
+    })
+    .await;
 
     assert_eq!(
         calls.load(Ordering::SeqCst),
