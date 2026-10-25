@@ -1,4 +1,17 @@
 export const dict = {
+  "context.timeline.title": "コンテキストとキャッシュ履歴",
+  "context.timeline.step":
+    "{{model}} · {{time}} · {{input}} プロンプト トークン · {{read}} キャッシュ読み取り · {{write}} キャッシュ書き込み",
+  "context.timeline.requestWindow": "リクエスト時の {{value}} トークン ウィンドウ",
+  "context.timeline.catalogWindow": "現在のカタログの {{value}} トークン ウィンドウ",
+  "context.timeline.unknownWindow": "コンテキストウィンドウが不明",
+  "context.timeline.empty": "確定したモデル呼び出しの使用量はまだ記録されていません。",
+  "context.timeline.retry": "使用量の履歴を再読み込み",
+  "context.timeline.compaction": "圧縮されたコンテキスト",
+  "context.timeline.cacheRead": "キャッシュ読み取り",
+  "context.timeline.cacheWrite": "キャッシュ書き込み",
+  "context.timeline.ttft": "最初のトークンまで {{value}} ミリ秒",
+
   "desktop.menu.app": "miao",
   "desktop.menu.file": "ファイル",
   "desktop.menu.edit": "編集",
@@ -601,7 +614,8 @@ export const dict = {
   "toast.permissions.autoaccept.off.title": "権限の自動承認を停止しました",
   "toast.permissions.autoaccept.off.description": "権限の要求には承認が必要になります",
   "settings.permissions.autoaccept.project.title": "このプロジェクトの権限を自動承認",
-  "settings.permissions.autoaccept.project.description": "このプロジェクト内のすべてのセッションの権限リクエストを確認なしで承認します。セッションやディレクトリ単位の設定が優先されます。",
+  "settings.permissions.autoaccept.project.description":
+    "このプロジェクト内のすべてのセッションの権限リクエストを確認なしで承認します。セッションやディレクトリ単位の設定が優先されます。",
   "toast.model.none.title": "モデルが選択されていません",
   "toast.model.none.description": "このセッションを要約するにはプロバイダーを接続してください",
   "toast.file.loadFailed.title": "ファイルの読み込みに失敗しました",
@@ -875,7 +889,8 @@ export const dict = {
   "settings.general.row.reasoningSummaries.title": "推論の要約を表示",
   "settings.general.row.reasoningSummaries.description": "タイムラインにモデルの推論の要約を表示します",
   "settings.general.row.turnDiffs.title": "ターンごとの変更ファイルを表示",
-  "settings.general.row.turnDiffs.description": "タイムラインに、完了したターンごとの変更ファイルを行数と展開可能な差分つきで表示します。",
+  "settings.general.row.turnDiffs.description":
+    "タイムラインに、完了したターンごとの変更ファイルを行数と展開可能な差分つきで表示します。",
   "settings.general.row.shellToolPartsExpanded.title": "shell ツールパーツを展開",
   "settings.general.row.shellToolPartsExpanded.description":
     "タイムラインで shell ツールパーツをデフォルトで展開して表示します",
