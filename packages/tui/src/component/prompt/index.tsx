@@ -34,6 +34,7 @@ import { useExit } from "../../context/exit"
 import { promptOffsetWidth } from "../../prompt/display"
 import { createStore, produce, unwrap } from "solid-js/store"
 import { usePromptHistory, type PromptInfo } from "../../prompt/history"
+import { promptInfoFromUserMessage } from "../../context/session-v2-write"
 import { computePromptTraits } from "../../prompt/traits"
 import { expandPastedTextPlaceholders, expandTrackedPastedText } from "../../prompt/part"
 import { usePromptStash } from "../../prompt/stash"
@@ -166,6 +167,9 @@ export function Prompt(props: PromptProps) {
   const compaction = createMemo(() => sync.data.session_compaction[props.sessionID ?? ""])
   const status = createMemo(() => sync.data.session_status?.[props.sessionID ?? ""] ?? { type: "idle" })
   const waitingPrompts = createMemo(() => (props.sessionID ? sync.prompt.waiting(props.sessionID) : []))
+  // The footer names the next esc action, the same way the transcript status
+  // line does: a waiting prompt is removed before the turn is interrupted.
+  const escAction = createMemo(() => (waitingPrompts().length > 0 ? "remove prompt" : "interrupt"))
   const history = usePromptHistory()
   const stash = usePromptStash()
   const keymap = useOpencodeKeymap()
@@ -468,11 +472,19 @@ export function Prompt(props: PromptProps) {
           }
           if (!props.sessionID) return
 
-          // Esc interrupts the running turn; queued prompts survive it and the
-          // queue advances on its own — Claude Code's user esc sends
-          // `{ subtype: "interrupt" }` without cancel_queued, and the
-          // interrupt response reports what is still_queued.
-          //
+          // One esc removes the newest prompt still waiting for promotion, and
+          // only an empty queue interrupts the turn. The status line already
+          // promises this order; interrupting first while a prompt is queued
+          // throws away work the user can still take back one message at a time.
+          const newest = sync.prompt.newest(props.sessionID)
+          if (newest) {
+            void sync.prompt
+              .cancel({ sessionID: props.sessionID, messageID: newest.info.id })
+              .catch(() => toast.show({ message: "Could not remove the waiting prompt", variant: "error" }))
+            dialog.clear()
+            return
+          }
+
           // A rejected interrupt (server 500, runtime unreachable) must not
           // kill the TUI: Bun exits the process on an unhandled rejection.
           void sdk.api.sessions
@@ -943,6 +955,14 @@ export function Prompt(props: PromptProps) {
               return false
             }
 
+            // Before reaching into sent history, take back the prompt that has
+            // not been delivered yet. It is newer than anything in history, and
+            // recalling it is the only way to correct it.
+            if (!input.plainText && waitingPrompts().length > 0) {
+              void recallWaiting()
+              return true
+            }
+
             const item = history.move(-1, input.plainText)
             if (!item) return false
             input.setText(item.input)
@@ -992,6 +1012,28 @@ export function Prompt(props: PromptProps) {
       bindings: tuiConfig.keybinds.get("prompt.history.next"),
     }
   })
+
+  // Take back the newest prompt that is still waiting to be promoted. It is the
+  // most recent thing the user typed, so editing it must not require retyping:
+  // the server cancels it first, and only a confirmed cancel puts its text back
+  // — a prompt that crossed the promotion boundary is already history, and
+  // restoring it would send it twice.
+  async function recallWaiting() {
+    const sessionID = props.sessionID
+    const newest = sessionID ? sync.prompt.newest(sessionID) : undefined
+    if (!sessionID || !newest) return false
+    const cancelled = await sync.prompt
+      .cancel({ sessionID, messageID: newest.info.id })
+      .catch(() => false)
+    if (!cancelled) return false
+    const item = promptInfoFromUserMessage(newest.info)
+    input.setText(item.input)
+    setStore("prompt", item)
+    setStore("mode", "normal")
+    restoreExtmarksFromParts(item.parts)
+    input.cursorOffset = item.input.length
+    return true
+  }
 
   let submitting = false
   async function submit() {
@@ -1660,7 +1702,7 @@ export function Prompt(props: PromptProps) {
                     <text fg={theme.textMuted}>{Locale.duration(turnElapsed())}</text>
                   </Show>
                   <text fg={theme.text}>
-                    esc <span style={{ fg: theme.textMuted }}>interrupt</span>
+                    esc <span style={{ fg: theme.textMuted }}>{escAction()}</span>
                   </text>
                 </box>
               </Match>
