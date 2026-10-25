@@ -84,7 +84,8 @@ async fn bedrock_mantle_routes_send_the_wire_the_plugin_selects() {
             }
         ]),
     );
-    let owner = Arc::new(OpenAIChat::new(base.clone(), "owner-key".into(), "owner".into()).unwrap());
+    let owner =
+        Arc::new(OpenAIChat::new(base.clone(), "owner-key".into(), "owner".into()).unwrap());
     let catalog = load(&file, &workspace, owner).await.unwrap().0;
     for (route, path, model, field) in [
         (
