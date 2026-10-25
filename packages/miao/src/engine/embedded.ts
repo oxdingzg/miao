@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto"
 import { existsSync, realpathSync } from "node:fs"
-import { chmod, mkdir, readFile, rename } from "node:fs/promises"
+import { chmod, mkdir, readFile, rename, rm } from "node:fs/promises"
 import os from "node:os"
 import path from "node:path"
 import { capabilities, resolveEngine, type Capabilities } from "./discovery"
@@ -37,9 +37,7 @@ export async function loadEmbeddedEngine(): Promise<EmbeddedEngine | undefined> 
 export function engineTargets(input: { executable?: string; home?: string } = {}): string[] {
   const executable = input.executable ?? process.execPath
   const real = existsSync(executable) ? realpathSync(executable) : executable
-  const beside = path.basename(real).startsWith("miao")
-    ? path.join(path.dirname(real), `miao-engine${EXE}`)
-    : undefined
+  const beside = path.basename(real).startsWith("miao") ? path.join(path.dirname(real), `miao-engine${EXE}`) : undefined
   const home = input.home ?? os.homedir()
   return [...(beside ? [beside] : []), path.join(home, ".local", "share", "miao-engine", "bin", `miao-engine${EXE}`)]
 }
@@ -48,37 +46,54 @@ async function extractTo(target: string, engine: EmbeddedEngine): Promise<void> 
   const dir = path.dirname(target)
   await mkdir(dir, { recursive: true })
   const tmp = path.join(dir, `.${path.basename(target)}.${process.pid}.${crypto.randomUUID()}`)
-  await Bun.write(tmp, engine.bytes)
-  if (process.platform !== "win32") await chmod(tmp, 0o755)
-  await rename(tmp, target)
+  try {
+    await Bun.write(tmp, engine.bytes)
+    if (process.platform !== "win32") await chmod(tmp, 0o755)
+    await rename(tmp, target)
+  } finally {
+    await rm(tmp, { force: true }).catch(() => undefined)
+  }
   await Bun.write(`${target}.embedded.sha256`, engine.sha256)
 }
 
 /**
  * Materialize the embedded engine where candidate discovery looks. An
- * already-installed compatible engine always wins; the embedded copy only
- * fills the gap so a fresh single-file install works offline. Never throws:
+ * compatible operator-installed engine wins. Hash-marked extractions follow
+ * this executable's embedded payload, so upgrading a host upgrades its managed
+ * engine even when the wire protocol has not changed. Never throws:
  * a failed extraction must not block CLI startup.
  */
 export async function ensureEmbeddedEngine(
   input: {
     executable?: string
     home?: string
+    environment?: Record<string, string | undefined>
     load?: typeof loadEmbeddedEngine
     probe?: (binary: string) => Capabilities | undefined
     exists?: (binary: string) => boolean
   } = {},
 ): Promise<string | undefined> {
+  if ((input.environment ?? process.env).MIAO_ENGINE_BIN) return undefined
   const engine = await (input.load ?? loadEmbeddedEngine)()
   if (!engine) return undefined
   const probe = input.probe ?? capabilities
   const exists = input.exists ?? existsSync
   const existing = resolveEngine({ environment: {}, probe, exists, executable: input.executable })
-  if (existing) return undefined
-  for (const target of engineTargets(input)) {
+  if (existing) {
+    const marker = await readFile(`${existing.binary}.embedded.sha256`, "utf8").catch(() => "")
+    if (!marker) return undefined
+    const current = await Bun.file(existing.binary)
+      .arrayBuffer()
+      .catch(() => undefined)
+    // A stale marker does not grant ownership over an operator's replacement.
+    if (!current || createHash("sha256").update(new Uint8Array(current)).digest("hex") !== marker) return undefined
+    if (marker === engine.sha256) return undefined
+  }
+  for (const target of new Set([...(existing ? [existing.binary] : []), ...engineTargets(input)])) {
     try {
-      const current = exists(target) ? await readFile(`${target}.embedded.sha256`, "utf8").catch(() => "") : ""
-      if (current !== engine.sha256) await extractTo(target, engine)
+      // No healthy matching extraction was found. Rewrite even when the marker
+      // matches: an invalid/missing binary must not be trusted by marker alone.
+      await extractTo(target, engine)
       if (probe(target)) return target
     } catch {
       // Unwritable candidate dir or a dead probe: fall through to the next target.
