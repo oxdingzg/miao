@@ -1,0 +1,18 @@
+{
+  "spent": 0.00168409617,
+  "rows": [
+    {
+      "scenario": "session-title",
+      "engine": "ts",
+      "model": "zhipuai-coding-plan/glm-5.3-flash",
+      "status": "pass",
+      "note": "title: Conformance title check test",
+      "seconds": 15.86,
+      "cost": 0.00168409617,
+      "tokensIn": 13954,
+      "tokensOut": 6,
+      "turns": 1,
+      "archived": "runs/r5/raw/session-title.ts.zhipuai-coding-plan-glm-5.3-flash"
+    }
+  ]
+}

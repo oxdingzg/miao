@@ -1,4 +1,17 @@
 export const dict = {
+  "context.timeline.title": "Contexto e historial de caché",
+  "context.timeline.step":
+    "{{model}} · {{time}} · {{input}} tokens de aviso · {{read}} lectura de caché · {{write}} escritura de caché",
+  "context.timeline.requestWindow": "{{value}} ventana de token en el momento de la solicitud",
+  "context.timeline.catalogWindow": "{{value}} ventana de token en el catálogo actual",
+  "context.timeline.unknownWindow": "Ventana de contexto desconocida",
+  "context.timeline.empty": "Aún no se ha registrado ningún uso de proveedor establecido.",
+  "context.timeline.retry": "Reintentar el historial de uso",
+  "context.timeline.compaction": "Contexto compactado",
+  "context.timeline.cacheRead": "lectura de caché",
+  "context.timeline.cacheWrite": "escritura en caché",
+  "context.timeline.ttft": "{{value}} ms al primer token",
+
   "desktop.menu.app": "miao",
   "desktop.menu.file": "Archivo",
   "desktop.menu.edit": "Editar",
@@ -644,7 +657,8 @@ export const dict = {
   "toast.permissions.autoaccept.off.title": "Se dejó de aceptar permisos automáticamente",
   "toast.permissions.autoaccept.off.description": "Las solicitudes de permisos requerirán aprobación",
   "settings.permissions.autoaccept.project.title": "Aceptar permisos automáticamente para este proyecto",
-  "settings.permissions.autoaccept.project.description": "Responde a las nuevas solicitudes de permiso de cualquier sesión de este proyecto sin preguntar. Las elecciones por sesión y directorio siguen teniendo prioridad.",
+  "settings.permissions.autoaccept.project.description":
+    "Responde a las nuevas solicitudes de permiso de cualquier sesión de este proyecto sin preguntar. Las elecciones por sesión y directorio siguen teniendo prioridad.",
 
   "toast.model.none.title": "Ningún modelo seleccionado",
   "toast.model.none.description": "Conecta un proveedor para resumir esta sesión",
@@ -961,8 +975,9 @@ export const dict = {
   "settings.general.row.reasoningSummaries.title": "Mostrar resúmenes de razonamiento",
   "settings.general.row.reasoningSummaries.description":
     "Mostrar resúmenes del razonamiento del modelo en la línea de tiempo",
-    "settings.general.row.turnDiffs.title": "Show changed files per turn",
-    "settings.general.row.turnDiffs.description": "List each finished turn's changed files with line counts and expandable diffs in the timeline.",
+  "settings.general.row.turnDiffs.title": "Show changed files per turn",
+  "settings.general.row.turnDiffs.description":
+    "List each finished turn's changed files with line counts and expandable diffs in the timeline.",
   "settings.general.row.shellToolPartsExpanded.title": "Expandir partes de la herramienta shell",
   "settings.general.row.shellToolPartsExpanded.description":
     "Mostrar las partes de la herramienta shell expandidas por defecto en la línea de tiempo",

@@ -1,4 +1,17 @@
 export const dict = {
+  "context.timeline.title": "Context en cachegeschiedenis",
+  "context.timeline.step":
+    "{{model}} · {{time}} · {{input}} prompttokens · {{read}} cache lezen · {{write}} cache schrijven",
+  "context.timeline.requestWindow": "{{value}} tokenvenster op aanvraagtijdstip",
+  "context.timeline.catalogWindow": "{{value}} tokenvenster in huidige catalogus",
+  "context.timeline.unknownWindow": "Contextvenster onbekend",
+  "context.timeline.empty": "Er is nog geen verrekend providergebruik geregistreerd.",
+  "context.timeline.retry": "Probeer de gebruiksgeschiedenis opnieuw",
+  "context.timeline.compaction": "Context gecomprimeerd",
+  "context.timeline.cacheRead": "Cache lezen",
+  "context.timeline.cacheWrite": "Cache schrijven",
+  "context.timeline.ttft": "{{value}} ms tot eerste token",
+
   "desktop.menu.app": "miao",
   "desktop.menu.file": "Bestand",
   "desktop.menu.edit": "Bewerken",
@@ -608,7 +621,8 @@ export const dict = {
   "toast.permissions.autoaccept.off.title": "Machtigingen niet meer automatisch accepteren",
   "toast.permissions.autoaccept.off.description": "Machtigingsverzoeken moeten worden goedgekeurd",
   "settings.permissions.autoaccept.project.title": "Machtigingen voor dit project automatisch accepteren",
-  "settings.permissions.autoaccept.project.description": "Beantwoord nieuwe machtigingsverzoeken van elke sessie in dit project zonder te vragen. Keuzes per sessie en map blijven voorrang krijgen.",
+  "settings.permissions.autoaccept.project.description":
+    "Beantwoord nieuwe machtigingsverzoeken van elke sessie in dit project zonder te vragen. Keuzes per sessie en map blijven voorrang krijgen.",
   "toast.model.none.title": "Geen model geselecteerd",
   "toast.model.none.description": "Maak verbinding met een aanbieder om deze sessie samen te vatten",
   "toast.file.loadFailed.title": "Kan bestand niet laden",
@@ -978,8 +992,9 @@ export const dict = {
   "settings.general.row.reasoningSummaries.title": "Toon redeneeroverzichten",
   "settings.general.row.reasoningSummaries.description":
     "Geef samenvattingen van modelredeneringen weer in de tijdlijn",
-    "settings.general.row.turnDiffs.title": "Show changed files per turn",
-    "settings.general.row.turnDiffs.description": "List each finished turn's changed files with line counts and expandable diffs in the timeline.",
+  "settings.general.row.turnDiffs.title": "Show changed files per turn",
+  "settings.general.row.turnDiffs.description":
+    "List each finished turn's changed files with line counts and expandable diffs in the timeline.",
   "settings.general.row.shellToolPartsExpanded.title": "Shelltoolonderdelen uitvouwen",
   "settings.general.row.shellToolPartsExpanded.description":
     "Toon shelltoolonderdelen standaard uitgevouwen in de tijdlijn",
