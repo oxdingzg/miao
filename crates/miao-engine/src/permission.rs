@@ -177,10 +177,14 @@ impl Policy {
         agent.validate()?;
         let mut config = self.config.clone();
         if let Some(steps) = agent.steps {
+            // The TS runner's `steps: N` runs N working turns and then one
+            // closing turn that carries the step wrap-up, so the allowance
+            // reserves that closing turn on top of the agent's own count.
+            let allowance = steps + 1;
             config.max_provider_turns = Some(
                 config
                     .max_provider_turns
-                    .map_or(steps, |limit| limit.min(steps)),
+                    .map_or(allowance, |limit| limit.min(allowance)),
             );
         }
         if let Some(rules) = &agent.permissions {
@@ -697,6 +701,35 @@ mod agent_policy_tests {
             base.for_agent(Some(&other)).unwrap().revision()
         );
         assert_eq!(base.revision(), base.for_agent(None).unwrap().revision());
+    }
+
+    #[test]
+    fn agent_steps_leave_room_for_the_closing_turn() {
+        let base = Policy::new(Config {
+            max_provider_turns: Some(25),
+            ..Config::default()
+        })
+        .unwrap();
+        let agent: crate::session_agent::AgentManifest =
+            serde_json::from_value(serde_json::json!({"name":"build","steps":3})).unwrap();
+        assert_eq!(
+            base.for_agent(Some(&agent)).unwrap().max_provider_turns(),
+            Some(4),
+            "three working turns plus the wrap-up turn"
+        );
+        let bounded = Policy::new(Config {
+            max_provider_turns: Some(2),
+            ..Config::default()
+        })
+        .unwrap();
+        assert_eq!(
+            bounded
+                .for_agent(Some(&agent))
+                .unwrap()
+                .max_provider_turns(),
+            Some(2),
+            "a lower configured cap still bounds the total"
+        );
     }
 
     #[test]
