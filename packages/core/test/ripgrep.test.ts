@@ -62,20 +62,33 @@ describe("Ripgrep", () => {
       (tmp) => Effect.promise(() => tmp[Symbol.asyncDispose]()),
     ),
   )
-  it.live("kills a search that exceeds its timeout and reports a failure", () =>
+  it.live("reports an immediate search deadline", () =>
     Effect.acquireUseRelease(
       Effect.promise(() => tmpdir()),
       (tmp) =>
         Effect.gen(function* () {
-          // No match, and enough input that ripgrep must scan the whole file. A
-          // scan that cannot finish inside the 1ms budget makes the timeout path
-          // deterministic instead of racing a fast search on a tiny file.
-          yield* Effect.promise(() => fs.writeFile(path.join(tmp.path, "file.txt"), "filler\n".repeat(500_000)))
-
-          const error = yield* (yield* Ripgrep.Service)
-            .grep({ cwd: tmp.path, pattern: "needle", limit: 10, timeout: 1 })
+          const ripgrep = yield* Ripgrep.Service
+          const error = yield* ripgrep
+            .grep({ cwd: tmp.path, pattern: "needle", limit: 10, timeout: 0 })
             .pipe(Effect.flip)
-
+          expect(error.message).toContain("timed out")
+        }),
+      (tmp) => Effect.promise(() => tmp[Symbol.asyncDispose]()),
+    ),
+  )
+  ;(process.platform === "win32" ? it.live.skip : it.live)("kills a search blocked on a named pipe", () =>
+    Effect.acquireUseRelease(
+      Effect.promise(() => tmpdir()),
+      (tmp) =>
+        Effect.gen(function* () {
+          // A real FIFO with no writer cannot finish before the deadline. A
+          // cached regular-file scan may win even a 1ms timer on fast runners.
+          const file = path.join(tmp.path, "waiting.pipe")
+          yield* Effect.promise(() => Bun.$`mkfifo ${file}`)
+          const ripgrep = yield* Ripgrep.Service
+          const error = yield* ripgrep
+            .grep({ cwd: tmp.path, file, pattern: "needle", limit: 10, timeout: 50 })
+            .pipe(Effect.flip)
           expect(error.message).toContain("timed out")
         }),
       (tmp) => Effect.promise(() => tmp[Symbol.asyncDispose]()),
