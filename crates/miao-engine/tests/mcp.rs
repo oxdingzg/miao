@@ -802,3 +802,136 @@ async fn failed_refresh_keeps_previous_catalog_until_next_change() {
     registry.shutdown().await;
     task.abort();
 }
+
+#[tokio::test]
+async fn compact_extension_approval_binds_target_and_arguments_before_dispatch() {
+    use miao_engine::{
+        approval::{Approval, Response},
+        permission::input_digest,
+        protocol::Input,
+        runtime::Runtime,
+        store::Store,
+    };
+    for decision in [Decision::Allow, Decision::Deny] {
+        let (registry, calls, task) = peer("normal").await;
+        let dir = tempfile::tempdir().unwrap();
+        let store = Store::open(dir.path().join("engine.db")).await.unwrap();
+        let name = registry.definitions()[0].name.clone();
+        let done = Arc::new(tokio::sync::Notify::new());
+        let runtime = Runtime::with_policy(
+            store.clone(),
+            Arc::new(Caller {
+                name: name.clone(),
+                bridge: true,
+                done: done.clone(),
+            }),
+            Tools::new(dir.path())
+                .await
+                .unwrap()
+                .with_mcp(registry.clone())
+                .with_compact_disclosure(true),
+            Policy::new(Config {
+                mode: Mode::Workspace,
+                allow_mcp: true,
+                ..Default::default()
+            })
+            .unwrap(),
+        )
+        .await
+        .unwrap();
+        runtime
+            .admit(
+                Input {
+                    session_id: "s".into(),
+                    input_id: "p".into(),
+                    prompt: "call fixture".into(),
+                    delivery: Default::default(),
+                    command: None,
+                    agent_references: Default::default(),
+                },
+                true,
+            )
+            .await
+            .unwrap();
+        let approval = tokio::time::timeout(std::time::Duration::from_secs(5), async {
+            loop {
+                let events = store.events("s", 0, 100).await.unwrap();
+                if let Some(event) = events
+                    .iter()
+                    .find(|event| event.kind == "approval.requested")
+                {
+                    break serde_json::from_value::<Approval>(event.data.clone()).unwrap();
+                }
+                assert!(
+                    !events.iter().any(|event| event.kind == "run.finished"),
+                    "ended before approval: {events:?}"
+                );
+                tokio::time::sleep(std::time::Duration::from_millis(5)).await;
+            }
+        })
+        .await
+        .unwrap();
+        assert_eq!(approval.tool, name);
+        assert_eq!(approval.input, json!({"text":"effect"}));
+        assert_eq!(calls.load(Ordering::SeqCst), 0);
+        for change_tool in [false, true] {
+            let mut tampered = approval.clone();
+            tampered.request_id = "tampered".into();
+            if change_tool {
+                tampered.tool = "mcp_other_target".into();
+            } else {
+                tampered.input = json!({"text":"changed"});
+            }
+            tampered.input_hash = input_digest(
+                &tampered.location,
+                &tampered.tool,
+                &tampered.resource,
+                &tampered.input,
+            )
+            .unwrap();
+            assert!(matches!(
+                store.request_approval(tampered).await,
+                Err(miao_engine::protocol::Error::ApprovalMismatch)
+            ));
+        }
+        let response = Response {
+            request_id: approval.request_id.clone(),
+            input_hash: approval.input_hash.clone(),
+            policy_revision: approval.policy_revision.clone(),
+            decision,
+            matcher: None,
+        };
+        let mut wrong = response.clone();
+        wrong.input_hash = "wrong".into();
+        assert!(runtime
+            .approve(&runtime.controller(), "s", wrong)
+            .await
+            .is_err());
+        if decision == Decision::Allow {
+            runtime
+                .approve_persistent(&runtime.controller(), "s", response)
+                .await
+                .unwrap();
+        } else {
+            runtime
+                .approve(&runtime.controller(), "s", response)
+                .await
+                .unwrap();
+        }
+        tokio::time::timeout(std::time::Duration::from_secs(5), done.notified())
+            .await
+            .unwrap();
+        runtime.shutdown().await;
+        assert_eq!(
+            calls.load(Ordering::SeqCst),
+            usize::from(decision == Decision::Allow)
+        );
+        assert!(!store
+            .events("s", 0, 200)
+            .await
+            .unwrap()
+            .iter()
+            .any(|event| event.kind == "stop_failure"));
+        task.await.unwrap();
+    }
+}
