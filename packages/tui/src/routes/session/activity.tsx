@@ -404,6 +404,34 @@ export function orderTaskBlocks(content: ReadonlyArray<AssistantContent>): Assis
   return out
 }
 
+/** Consecutive completed reads collapsed into one transcript row. */
+export type ReadRun = { type: "read-run"; id: string; parts: TranscriptToolPart[] }
+
+// Reading several files in a row is one action, not one row per file. Runs keep
+// their place in the timeline; pending and failed reads stay individual so their
+// state is never hidden inside a group.
+export function groupReadRuns(
+  content: ReadonlyArray<AssistantContent>,
+): ReadonlyArray<AssistantContent | ReadRun> {
+  const out: (AssistantContent | ReadRun)[] = []
+  let run: TranscriptToolPart[] = []
+  const flush = () => {
+    if (run.length > 1) out.push({ type: "read-run", id: `read-run-${run[0].id}`, parts: run })
+    else out.push(...run)
+    run = []
+  }
+  for (const part of content) {
+    if (part.type === "tool" && part.name === "read" && part.state.status === "completed") {
+      run.push(part)
+      continue
+    }
+    flush()
+    out.push(part)
+  }
+  flush()
+  return out
+}
+
 export function SessionWaiting(props: {
   waiting: boolean
   elapsed: number
