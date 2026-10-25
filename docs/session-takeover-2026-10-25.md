@@ -33,7 +33,7 @@ Status checkpoint: 2026-10-25T20:11:49+08:00. This ledger preserves the interrup
 | [#1416](https://github.com/oxdingzg/miao/pull/1416) | `feat/context-settlement-cards` | feat(context): replay pruning facts and render settlement cards | Running: unit / unit tests (linux), engine / engine (ubuntu-latest), engine / engine (windows); UNSTABLE |
 | [#1417](https://github.com/oxdingzg/miao/pull/1417) | `fix/tui-session-list-scope` | fix(tui): scope session listings to the active directory or project | Running: unit / changes / changes, typecheck / changes / changes; UNSTABLE |
 
-No approving review was recorded on these PRs at this checkpoint. Follow the project rule requiring an approving review, successful CI, squash merge, and branch deletion. Never report a tested preview as merged or published.
+The owner explicitly approved completion without further confirmation, including reviewed squash merges after successful CI and deletion of merged branches. This resolves the earlier approval wait. Required checks and dependency ordering remain mandatory; never report a tested preview as merged or published.
 
 ## Context display work still to finish
 
