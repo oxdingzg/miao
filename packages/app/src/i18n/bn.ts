@@ -1,4 +1,17 @@
 export const dict: Record<string, string> = {
+  "context.timeline.title": "প্রসঙ্গ এবং ক্যাশে ইতিহাস",
+  "context.timeline.step":
+    "{{model}} · {{time}} · {{input}} প্রম্পট টোকেন · {{read}} ক্যাশে রিড · {{write}} cache write",
+  "context.timeline.requestWindow": "অনুরোধের সময় {{value}} টোকেন উইন্ডো",
+  "context.timeline.catalogWindow": "বর্তমান ক্যাটালগে {{value}} টোকেন উইন্ডো",
+  "context.timeline.unknownWindow": "প্রসঙ্গ উইন্ডো অজানা",
+  "context.timeline.empty": "কোনো সেটেলড প্রদানকারীর ব্যবহার এখনো রেকর্ড করা হয়নি।",
+  "context.timeline.retry": "ব্যবহারের ইতিহাস পুনরায় চেষ্টা করুন",
+  "context.timeline.compaction": "প্রসঙ্গ কম্প্যাক্ট করা হয়েছে",
+  "context.timeline.cacheRead": "ক্যাশে পড়া",
+  "context.timeline.cacheWrite": "ক্যাশে লিখুন",
+  "context.timeline.ttft": "প্রথম টোকেনে {{value}} ms",
+
   "desktop.menu.app": "miao",
   "desktop.menu.file": "ফাইল",
   "desktop.menu.edit": "সম্পাদনা করুন",
@@ -489,8 +502,7 @@ export const dict: Record<string, string> = {
   "wsl.onboarding.wslUnavailable.title": "WSL অনুপলব্ধ",
   "wsl.onboarding.wslUnavailable.description": "miao এই মেশিনে WSL যাচাই করতে পারেনি।",
   "wsl.onboarding.installWsl": "WSL ইনস্টল করুন",
-  "wsl.onboarding.windowsRestartRequired":
-    "WSL ইনস্টল করা শেষ করতে Windows পুনরায় চালু করুন, তারপর miao আবার খুলুন।",
+  "wsl.onboarding.windowsRestartRequired": "WSL ইনস্টল করা শেষ করতে Windows পুনরায় চালু করুন, তারপর miao আবার খুলুন।",
   "wsl.onboarding.next": "পরবর্তী",
   "wsl.onboarding.refresh": "রিফ্রেশ",
   "wsl.onboarding.allDistrosAdded": "সমস্ত ইনস্টল করা ডিস্ট্রো ইতিমধ্যেই যোগ করা হয়েছে।",
@@ -602,7 +614,8 @@ export const dict: Record<string, string> = {
   "toast.permissions.autoaccept.off.title": "স্বয়ংক্রিয়ভাবে গ্রহণযোগ্য অনুমতি বন্ধ করা হয়েছে৷",
   "toast.permissions.autoaccept.off.description": "অনুমতি অনুরোধ অনুমোদন প্রয়োজন হবে",
   "settings.permissions.autoaccept.project.title": "এই প্রকল্পের জন্য অনুমতিগুলি স্বয়ংক্রিয়ভাবে গ্রহণ করুন",
-  "settings.permissions.autoaccept.project.description": "এই প্রকল্পের যেকোনো সেশন থেকে নতুন অনুমতির অনুরোধের জবাব না জিজ্ঞেস করেই দিন। সেশন এবং ডিরেক্টরি স্তরের পছন্দগুলি প্রাধান্য পায়।",
+  "settings.permissions.autoaccept.project.description":
+    "এই প্রকল্পের যেকোনো সেশন থেকে নতুন অনুমতির অনুরোধের জবাব না জিজ্ঞেস করেই দিন। সেশন এবং ডিরেক্টরি স্তরের পছন্দগুলি প্রাধান্য পায়।",
   "toast.model.none.title": "কোনো মডেল নির্বাচন করা হয়নি",
   "toast.model.none.description": "এই সেশনের সংক্ষিপ্ত বিবরণ দিতে একজন প্রদানকারীকে সংযুক্ত করুন",
   "toast.file.loadFailed.title": "ফাইল লোড করতে ব্যর্থ হয়েছে",
@@ -663,8 +676,7 @@ export const dict: Record<string, string> = {
   "error.chain.didYouMean": "আপনি কি বলতে চাইছেন: {{suggestions}}",
   "error.chain.modelNotFound": "মডেল পাওয়া যায়নি: {{provider}}/{{model}}",
   "error.chain.checkConfig": "আপনার কনফিগারেশন (miao.json) প্রদানকারী/মডেলের নাম পরীক্ষা করুন",
-  "error.chain.mcpFailed":
-    'MCP সার্ভার "{{name}}" ব্যর্থ হয়েছে৷ মনে রাখবেন, miao এখনও MCP প্রমাণীকরণ সমর্থন করে না।',
+  "error.chain.mcpFailed": 'MCP সার্ভার "{{name}}" ব্যর্থ হয়েছে৷ মনে রাখবেন, miao এখনও MCP প্রমাণীকরণ সমর্থন করে না।',
   "error.chain.providerAuthFailed": "প্রদানকারীর প্রমাণীকরণ ব্যর্থ হয়েছে ({{provider}}): {{message}}",
   "error.chain.providerInitFailed":
     '"{{provider}}" প্রদানকারী শুরু করতে ব্যর্থ হয়েছে৷ শংসাপত্র এবং কনফিগারেশন চেক করুন.',
@@ -964,7 +976,8 @@ export const dict: Record<string, string> = {
   "settings.general.row.reasoningSummaries.title": "যুক্তির সারাংশ দেখান",
   "settings.general.row.reasoningSummaries.description": "টাইমলাইনে মডেল যুক্তির সারাংশ প্রদর্শন করুন",
   "settings.general.row.turnDiffs.title": "প্রতি ধাপে পরিবর্তিত ফাইল দেখান",
-  "settings.general.row.turnDiffs.description": "টাইমলাইনে প্রতিটি সম্পূর্ণ ধাপের পরিবর্তিত ফাইলগুলি লাইন সংখ্যা এবং প্রসারণযোগ্য পার্থক্যসহ তালিকাভুক্ত করে।",
+  "settings.general.row.turnDiffs.description":
+    "টাইমলাইনে প্রতিটি সম্পূর্ণ ধাপের পরিবর্তিত ফাইলগুলি লাইন সংখ্যা এবং প্রসারণযোগ্য পার্থক্যসহ তালিকাভুক্ত করে।",
   "settings.general.row.shellToolPartsExpanded.title": "শেল টুল অংশ প্রসারিত",
   "settings.general.row.shellToolPartsExpanded.description": "টাইমলাইনে ডিফল্টরূপে প্রসারিত শেল টুল অংশগুলি দেখান",
   "settings.general.row.editToolPartsExpanded.title": "সম্পাদনা টুল অংশ প্রসারিত করুন",

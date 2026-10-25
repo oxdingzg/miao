@@ -69,6 +69,7 @@ if (binary)
       stderr: "pipe",
     })
     const stderr = new Response(child.stderr).text()
+    let createFailed = false
     const timer = setTimeout(() => child.kill(), 60_000)
     const productDb = () => {
       const db = new Database(path.join(tmp.path, "miao.db"), { readonly: true })
@@ -102,7 +103,10 @@ if (binary)
         fetch(url + "/api/session", { method: "POST", headers, body: JSON.stringify({ id: "ses_g1_placement", location: { directory } }) }),
         fetch(url + "/api/session", { method: "POST", headers, body: JSON.stringify({ id: "ses_g1_placement", location: { directory } }) }),
       ])
-      expect(creates.map((response) => response.status)).toEqual([200, 200])
+      const statuses = creates.map((response) => response.status)
+      createFailed = statuses.some((status) => status !== 200)
+      const replies = createFailed ? await Promise.all(creates.map((response) => response.text())) : []
+      expect(statuses, JSON.stringify({ replies })).toEqual([200, 200])
 
       const prompt = await fetch(url + "/api/session/ses_g1_placement/prompt", {
         method: "POST",
@@ -157,7 +161,8 @@ if (binary)
       clearTimeout(timer)
       child.kill()
       await child.exited
-      await stderr
+      const diagnostics = await stderr
+      if (createFailed) console.error(diagnostics)
       provider.stop(true)
     }
   }, 90_000)

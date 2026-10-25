@@ -1,4 +1,17 @@
 export const dict = {
+  "context.timeline.title": "Lịch sử bối cảnh và bộ đệm",
+  "context.timeline.step":
+    "{{model}} · {{time}} · {{input}} mã thông báo nhắc nhở · {{read}} đọc bộ nhớ đệm · {{write}} ghi bộ nhớ đệm",
+  "context.timeline.requestWindow": "{{value}} cửa sổ mã thông báo tại thời điểm yêu cầu",
+  "context.timeline.catalogWindow": "{{value}} cửa sổ mã thông báo trong danh mục hiện tại",
+  "context.timeline.unknownWindow": "Cửa sổ ngữ cảnh không xác định",
+  "context.timeline.empty": "Chưa có việc sử dụng nhà cung cấp đã giải quyết nào được ghi lại.",
+  "context.timeline.retry": "Thử lại lịch sử sử dụng",
+  "context.timeline.compaction": "Bối cảnh được nén",
+  "context.timeline.cacheRead": "Đọc bộ nhớ đệm",
+  "context.timeline.cacheWrite": "Ghi bộ nhớ đệm",
+  "context.timeline.ttft": "{{value}} ms tới mã thông báo đầu tiên",
+
   "desktop.menu.app": "miao",
   "desktop.menu.file": "Tệp",
   "desktop.menu.edit": "Chỉnh sửa",
@@ -612,7 +625,8 @@ export const dict = {
   "toast.permissions.autoaccept.off.title": "Đã dừng quyền tự động chấp nhận",
   "toast.permissions.autoaccept.off.description": "Yêu cầu quyền sẽ cần được phê duyệt",
   "settings.permissions.autoaccept.project.title": "Tự động chấp nhận quyền cho dự án này",
-  "settings.permissions.autoaccept.project.description": "Trả lời các yêu cầu quyền mới từ bất kỳ phiên nào trong dự án này mà không cần hỏi. Lựa chọn theo phiên và thư mục vẫn được ưu tiên.",
+  "settings.permissions.autoaccept.project.description":
+    "Trả lời các yêu cầu quyền mới từ bất kỳ phiên nào trong dự án này mà không cần hỏi. Lựa chọn theo phiên và thư mục vẫn được ưu tiên.",
   "toast.model.none.title": "Không có mô hình nào được chọn",
   "toast.model.none.description": "Kết nối nhà cung cấp để tóm tắt phiên này",
   "toast.file.loadFailed.title": "Không tải được tệp",
@@ -979,7 +993,8 @@ export const dict = {
   "settings.general.row.reasoningSummaries.title": "Hiển thị tóm tắt lý luận",
   "settings.general.row.reasoningSummaries.description": "Hiển thị tóm tắt lý luận mô hình trong dòng thời gian",
   "settings.general.row.turnDiffs.title": "Hiện các tệp đã thay đổi theo lượt",
-  "settings.general.row.turnDiffs.description": "Liệt kê trên dòng thời gian các tệp thay đổi của từng lượt đã hoàn thành, kèm số dòng và phần khác biệt có thể mở rộng.",
+  "settings.general.row.turnDiffs.description":
+    "Liệt kê trên dòng thời gian các tệp thay đổi của từng lượt đã hoàn thành, kèm số dòng và phần khác biệt có thể mở rộng.",
   "settings.general.row.shellToolPartsExpanded.title": "Mở rộng các phần của công cụ shell",
   "settings.general.row.shellToolPartsExpanded.description":
     "Hiển thị các phần công cụ shell được mở rộng theo mặc định trong dòng thời gian",

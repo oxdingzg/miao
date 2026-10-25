@@ -1,4 +1,17 @@
 export const dict = {
+  "context.timeline.title": "Contesto e cronologia della cache",
+  "context.timeline.step":
+    "{{model}} · {{time}} · {{input}} token di prompt · {{read}} lettura della cache · {{write}} scrittura della cache",
+  "context.timeline.requestWindow": "Finestra token {{value}} al momento della richiesta",
+  "context.timeline.catalogWindow": "Finestra token {{value}} nel catalogo corrente",
+  "context.timeline.unknownWindow": "Finestra di contesto sconosciuta",
+  "context.timeline.empty": "Non è stato ancora registrato alcun utilizzo stabilito del provider.",
+  "context.timeline.retry": "Riprova la cronologia di utilizzo",
+  "context.timeline.compaction": "Contesto compattato",
+  "context.timeline.cacheRead": "Lettura della cache",
+  "context.timeline.cacheWrite": "Scrittura nella cache",
+  "context.timeline.ttft": "{{value}} ms al primo token",
+
   "command.category.suggested": "Suggeriti",
   "command.category.view": "Visualizzazione",
   "command.category.project": "Progetto",
@@ -398,8 +411,7 @@ export const dict = {
   "wsl.onboarding.wslUnavailable.title": "WSL non disponibile",
   "wsl.onboarding.wslUnavailable.description": "miao non ha potuto verificare WSL su questa macchina.",
   "wsl.onboarding.installWsl": "Installa WSL",
-  "wsl.onboarding.windowsRestartRequired":
-    "Riavvia Windows per completare l'installazione WSL, quindi riapri Miao.",
+  "wsl.onboarding.windowsRestartRequired": "Riavvia Windows per completare l'installazione WSL, quindi riapri Miao.",
   "wsl.onboarding.next": "Avanti",
   "wsl.onboarding.refresh": "Aggiorna",
   "wsl.onboarding.allDistrosAdded": "Tutte le distribuzioni installate sono già aggiunte.",
@@ -516,7 +528,8 @@ export const dict = {
   "toast.permissions.autoaccept.off.title": "Accettazione automatica delle autorizzazioni disattivata",
   "toast.permissions.autoaccept.off.description": "Le richieste di autorizzazione richiederanno l'approvazione",
   "settings.permissions.autoaccept.project.title": "Accetta automaticamente i permessi per questo progetto",
-  "settings.permissions.autoaccept.project.description": "Risponde alle nuove richieste di permesso da qualsiasi sessione di questo progetto senza chiedere. Le scelte per sessione e directory restano prioritarie.",
+  "settings.permissions.autoaccept.project.description":
+    "Risponde alle nuove richieste di permesso da qualsiasi sessione di questo progetto senza chiedere. Le scelte per sessione e directory restano prioritarie.",
   "toast.model.none.title": "Nessun modello selezionato",
   "toast.model.none.description": "Connetti un provider per riepilogare questa sessione",
   "toast.file.loadFailed.title": "Impossibile caricare il file",
@@ -889,8 +902,9 @@ export const dict = {
   "settings.general.row.reasoningSummaries.title": "Mostra riassunti del ragionamento",
   "settings.general.row.reasoningSummaries.description":
     "Visualizza i riepiloghi del ragionamento del modello nella sequenza temporale",
-    "settings.general.row.turnDiffs.title": "Show changed files per turn",
-    "settings.general.row.turnDiffs.description": "List each finished turn's changed files with line counts and expandable diffs in the timeline.",
+  "settings.general.row.turnDiffs.title": "Show changed files per turn",
+  "settings.general.row.turnDiffs.description":
+    "List each finished turn's changed files with line counts and expandable diffs in the timeline.",
   "settings.general.row.shellToolPartsExpanded.title": "Espandi le parti dello strumento Shell",
   "settings.general.row.shellToolPartsExpanded.description":
     "Mostra le parti dello strumento Shell espanse per impostazione predefinita nella sequenza temporale",
