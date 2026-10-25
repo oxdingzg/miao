@@ -51,6 +51,12 @@ miao 今天不是"一个内核 + 一层壳"，而是**按 Session 分派的两�
 | G0-5 | 插件 `aisdk` provider 钩子在原生路由上不执行；缺每轮 session-affinity 头 | `plugin/host.ts:46`；`openai_responses.rs:268` | 原生路由下钩子被调用；头与实际 session 一致 |
 | G0-6 | 行为差：max-steps 是"暂停"而非 TS 的收尾提示；历史里的 `@file` 引用 Rust 不内联；websearch 端点不同 | `runtime.rs:1430`；`materialize-files.ts:310`；`web.rs:24` | 逐项定调（对齐或书面接受差异），不允许默认沉默 |
 
+S1 进度（2026-10-26）：G0-3 已完成。守卫在 `crates/miao-engine/src/output_guard.rs`，
+对 SSE 归一化 delta（`provider.rs`）与 Bedrock 通知（`bedrock.rs`）共用同一份状态机；
+回合停止时保留已流出的文本、记录 `output.repetition`、不重试、不派发迟到的工具调用，
+历史里的打转输出只在 provider 请求副本中被替换。回归测试
+`crates/miao-engine/tests/output_guard.rs` 用真实 SSE 重放同一段打转输出。
+
 ## 4. 切片
 
 顺序按"先补能力、再删路径"，每片单独可发布、可回滚。

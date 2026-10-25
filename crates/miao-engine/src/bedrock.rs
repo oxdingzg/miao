@@ -341,6 +341,7 @@ impl Provider for Bedrock {
         }
         let mut output = output.ok_or(ProviderError::Transport)?;
         let mut state = crate::bedrock_stream::State::default();
+        let mut guard = crate::output_guard::Guard::new();
         let mut event = watchdogs.event;
         let byte_idle = watchdogs.byte_idle;
         loop {
@@ -360,6 +361,14 @@ impl Provider for Bedrock {
             let notices = state.event(received, &self.model)?;
             if !notices.is_empty() {
                 event = None;
+            }
+            // Bedrock builds its own notices instead of going through the SSE
+            // parser, so the same repetitive-output guard runs here.
+            if let Some(channel) = notices.iter().find_map(|notice| guard.observe(notice)) {
+                return Err(ProviderError::Repetitive {
+                    channel: channel.as_str(),
+                    partial: guard.partial(),
+                });
             }
             for notice in notices {
                 let send_deadline = state

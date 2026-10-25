@@ -45,6 +45,14 @@ pub enum ProviderError {
     Stream(String),
     #[error("provider request rejected: {0}")]
     Rejected(String),
+    /// The repetitive-output guard stopped the stream. Never retried: the same
+    /// request would loop again, and earlier tool changes may already have
+    /// completed. `partial` keeps what the user already saw durable.
+    #[error("stopped repetitive {channel} output; this turn was not retried and earlier tool changes may already have completed")]
+    Repetitive {
+        channel: &'static str,
+        partial: Reply,
+    },
 }
 
 impl ProviderError {
@@ -61,6 +69,14 @@ impl ProviderError {
                 unexecuted_calls,
             } => Some((partial, *unexecuted_calls)),
             Self::Routed { source, .. } => source.continuation(),
+            _ => None,
+        }
+    }
+    /// The guard's channel and the reply the stopped stream had produced.
+    pub(crate) fn repetition(&self) -> Option<(&'static str, &Reply)> {
+        match self {
+            Self::Repetitive { channel, partial } => Some((channel, partial)),
+            Self::Routed { source, .. } => source.repetition(),
             _ => None,
         }
     }
@@ -1275,6 +1291,7 @@ async fn read_stream_with_budget<P: Parser>(
     let byte_idle = watchdogs.byte_idle;
     let mut bytes = response.bytes_stream();
     let mut decoder = SseDecoder::default();
+    let mut guard = crate::output_guard::Guard::new();
     let mut total = 0;
     loop {
         let deadline = input_budget
@@ -1336,6 +1353,17 @@ async fn read_stream_with_budget<P: Parser>(
                     if normalized.is_empty() {
                         vec![event.clone()]
                     } else {
+                        // The detecting delta is deliberately not published: the
+                        // stream stops where the loop was recognized, and the
+                        // turn fails instead of continuing into a late tool call.
+                        if let Some(channel) =
+                            normalized.iter().find_map(|delta| guard.observe(delta))
+                        {
+                            return Err(ProviderError::Repetitive {
+                                channel: channel.as_str(),
+                                partial: guard.partial(),
+                            });
+                        }
                         normalized
                             .into_iter()
                             .map(|delta| json!({"kind":"delta","delta":delta,"raw":event}))
