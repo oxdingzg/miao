@@ -34,7 +34,7 @@ impl Provider for Schedule {
                 .tools
                 .iter()
                 .any(|tool| tool.name == "schedule_wakeup"));
-            return Ok(Reply{content:Value::Array((0..self.count).map(|index|json!({"type":"tool_use","id":format!("timer-{index}"),"name":"schedule_wakeup","input":{"prompt":"fire-me","delaySeconds":60}})).collect()),usage:json!({}),needs_tools:true});
+            return Ok(Reply{content:Value::Array((0..self.count).map(|index|json!({"type":"tool_use","id":format!("timer-{index}"),"name":"schedule_wakeup","input":{"prompt":if self.count == 1 { "fire-me".to_owned() } else { format!("fire-me-{index}") },"delaySeconds":60}})).collect()),usage:json!({}),needs_tools:true});
         }
         if request.messages.last().is_some_and(|message| {
             message.content.as_array().is_some_and(|parts| {

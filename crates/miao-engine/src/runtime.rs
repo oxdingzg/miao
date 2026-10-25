@@ -22,6 +22,11 @@ use tokio::sync::{broadcast, mpsc, oneshot, Mutex, Semaphore};
 use tokio::task::{JoinHandle, JoinSet};
 use tokio_util::sync::CancellationToken;
 
+/// TS parity (`packages/core/src/session/runner/llm.ts`): how many times one
+/// identical tool input may execute between promoted user inputs before
+/// further identical calls are refused with a corrective error result.
+const MAX_IDENTICAL_TOOL_CALLS: u32 = 5;
+
 #[derive(Clone)]
 pub struct Runtime {
     inner: Arc<Inner>,
@@ -1385,6 +1390,9 @@ async fn execute(
     // Consecutive failed completion checks for the configured verification.
     let mut verification_failures = 0;
     let mut repeats = HashMap::<String, u32>::new();
+    // Signatures whose bound exhaustion already fired loop.detected, so a
+    // signature is reported once instead of on every refused call.
+    let mut loop_reported = HashSet::<String>::new();
     // A moved product-tool reply ends the run at its boundary; set only by
     // the bridge arm, checked after each provider turn's tool batch.
     let mut moved = false;
@@ -1857,6 +1865,7 @@ command: None,
                             reset_allowance = true;
                             input_corrections = 0;
                             repeats.clear();
+                            loop_reported.clear();
                             transport_continuations = 0;
                             empty_completions = 0;
                             verification_failures = 0;
@@ -1939,6 +1948,7 @@ command: None,
                 Some(started.seq),
                 reply.content.clone(),
                 provider.reply_identity(&reply),
+                manifest.map(|manifest| manifest.name.as_str()),
                 lease,
             )
             .await?
@@ -2003,6 +2013,40 @@ command: None,
                     continue;
                 }
                 let batched = reads.contains_key(id);
+                // TS parity (core/session/runner/llm.ts): the identical-call
+                // bound signs the model's raw input alone and refuses to
+                // execute past the cap, settling a corrective error result so
+                // the model can change approach; failing the whole run was
+                // native-only behavior. Batched reads settle before this loop
+                // and terminal_read polling legitimately repeats its input,
+                // so both bypass the refusal and are counted at settlement.
+                let repeat_key =
+                    serde_json::to_string(&json!({"name":name,"input":block["input"]}))?;
+                let mut replayed_call = false;
+                if !batched
+                    && name != "terminal_read"
+                    && repeats.get(&repeat_key).copied().unwrap_or(0) >= MAX_IDENTICAL_TOOL_CALLS
+                {
+                    if repeats.get(&repeat_key).copied() == Some(MAX_IDENTICAL_TOOL_CALLS)
+                        && loop_reported.insert(repeat_key.clone())
+                    {
+                        inner.store.record(
+                            session,
+                            "loop.detected",
+                            json!({"run_id":run,"name":name,"repeats":MAX_IDENTICAL_TOOL_CALLS + 1}),
+                        ).await?;
+                    }
+                    inner.store.tool_result(
+                        session,
+                        run,
+                        id,
+                        json!({"error": format!(
+                            "Refusing to run {name} again: the same call has already executed {MAX_IDENTICAL_TOOL_CALLS} times for this input. Stop repeating it and change approach, or explain the blocker."
+                        )}),
+                        true,
+                    ).await?;
+                    continue;
+                }
                 let (output, is_error) = if let Some((output, is_error)) = reads.remove(id) {
                     (output, is_error)
                 } else {
@@ -2097,6 +2141,7 @@ command: None,
                                     let (executed, replay_error) = if let Some((output, is_error)) =
                                         replayed
                                     {
+                                        replayed_call = true;
                                         (Ok(output), Some(is_error))
                                     } else {
                                         let _ = inner.progress.send(json!({
@@ -2392,9 +2437,6 @@ command: None,
                 } else {
                     (output, is_error)
                 };
-                let signature = serde_json::to_string(
-                    &json!({"name":name,"input":block["input"],"output":output,"is_error":is_error}),
-                )?;
                 let polling_terminal = name == "terminal_read"
                     && !is_error
                     && output.get("exit").is_some_and(Value::is_null);
@@ -2422,20 +2464,22 @@ command: None,
                 if polling_terminal {
                     continue;
                 }
-                let repeat = repeats.entry(signature).or_default();
-                *repeat += 1;
-                if *repeat >= 3 {
-                    inner
-                        .store
-                        .record(
-                            session,
-                            "loop.detected",
-                            json!({"run_id":run,"name":name,"repeats":repeat}),
-                        )
-                        .await?;
-                    return Err(Error::Invalid(
-                        "repeated identical tool input/result without new user input".into(),
-                    ));
+                // Only real executions advance the bound: a replay restores a
+                // recorded result, mirroring TS which drops replayed calls
+                // before counting.
+                if !replayed_call {
+                    let repeat = repeats.entry(repeat_key.clone()).or_default();
+                    *repeat += 1;
+                    if *repeat == MAX_IDENTICAL_TOOL_CALLS + 1 && loop_reported.insert(repeat_key) {
+                        inner
+                            .store
+                            .record(
+                                session,
+                                "loop.detected",
+                                json!({"run_id":run,"name":name,"repeats":*repeat}),
+                            )
+                            .await?;
+                    }
                 }
             }
         }
@@ -2889,6 +2933,7 @@ command: None,
                 empty_completions = 0;
                 verification_failures = 0;
                 repeats.clear();
+                loop_reported.clear();
                 goal_iterations = 0;
                 goal_stalls = 0;
                 goal_signature = None;

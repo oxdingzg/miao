@@ -45,6 +45,14 @@ test("unknown provider evidence stays null and malformed evidence is dropped", (
   ).toBeUndefined()
 })
 
+test("the engine's recorded agent name rides the identity", () => {
+  expect(
+    translateAssistantIdentity(
+      event({ assistant_seq: 3, provider: { protocol: "openai-chat", model: "actual" }, agent: "explore" }),
+    ),
+  ).toMatchObject({ agent: "explore" })
+})
+
 const binary = process.env.MIAO_ENGINE_BIN
 const real = binary ? test : test.skip
 
