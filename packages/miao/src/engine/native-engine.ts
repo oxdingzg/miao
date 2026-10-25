@@ -1021,7 +1021,9 @@ const layer = Layer.effect(
     )
     ownerRouter = owners
     // Supervisor tick: probe every live owner's timer sessions; a dead child
-    // is transparently re-owned so its adopted timers re-arm and fire.
+    // with armed timers is transparently re-owned so its adopted timers
+    // re-arm and fire. A dead child without timers is released instead of
+    // resurrected, so idle-reclaimed engines stay reclaimed.
     yield* Effect.forever(
       Effect.gen(function* () {
         yield* Effect.sleep("60 seconds")

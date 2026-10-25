@@ -771,6 +771,17 @@ async fn serve(
     let mut bytes = Vec::new();
     let mut progress = runtime.progress();
     let mut poll = tokio::time::interval(Duration::from_millis(100));
+    // Host-death watchdog: stdin EOF is unreliable because grandchild
+    // processes (LSP servers, MCP workers) inherit the pipe write end, and
+    // idle reclaim must not fire while durable runs look live. Reparenting is
+    // the orphan signal that survives both: a dead host re-parents this
+    // process within seconds regardless of inherited descriptors.
+    #[cfg(unix)]
+    let initial_parent = Some(std::os::unix::process::parent_id());
+    #[cfg(not(unix))]
+    let initial_parent: Option<u32> = None;
+    let host_watch = initial_parent.is_some();
+    let mut host_watch_deadline = tokio::time::Instant::now() + Duration::from_secs(5);
     // Auto-reclaim: a stdio engine whose client died without a clean exit
     // would otherwise linger forever (its stdin pipe can stay open through
     // grandchild processes). Only client input counts as activity: internal
@@ -828,6 +839,13 @@ async fn serve(
                     Err(tokio::sync::broadcast::error::RecvError::Closed)=>break,
                 },
                 _=signal_exit()=>{ break; },
+                _ = tokio::time::sleep_until(host_watch_deadline), if host_watch => {
+                    #[cfg(unix)]
+                    if std::os::unix::process::parent_id() != initial_parent.unwrap_or(0) {
+                        break;
+                    }
+                    host_watch_deadline = tokio::time::Instant::now() + Duration::from_secs(5);
+                },
             }
         }
         Ok::<_,io::Error>(())

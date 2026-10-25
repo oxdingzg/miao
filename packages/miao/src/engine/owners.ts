@@ -34,13 +34,25 @@ export const makeEngineOwners = Effect.fn("Engine.owners")(function* (
       connection: Effect.Success<ReturnType<typeof connectEngine>>
     }
   >()
+  // Last observed timer_sessions count per storage. The supervisor re-owns a
+  // dead child only when its last probe showed timers; every other dead
+  // engine is released so an idle-reclaimed engine stays reclaimed.
+  const timerMemory = new Map<string, number>()
   const state = { closing: false }
   const configuration = { ...options, ...(options.env ? { env: { ...options.env } } : {}) }
   yield* Effect.addFinalizer((exit) =>
     gate.withPermit(
       Effect.sync(() => {
         state.closing = true
-      }).pipe(Effect.andThen(Scope.close(scope, exit)), Effect.ensuring(Effect.sync(() => owners.clear()))),
+      }).pipe(
+        Effect.andThen(Scope.close(scope, exit)),
+        Effect.ensuring(
+          Effect.sync(() => {
+            owners.clear()
+            timerMemory.clear()
+          }),
+        ),
+      ),
     ),
   )
   const get = Effect.fn("Engine.owners.get")(function* (input: {
@@ -116,17 +128,39 @@ export const makeEngineOwners = Effect.fn("Engine.owners")(function* (
             ? error
             : new EngineError("engine_owner_sweep", "native timer session probe failed"),
       })
+    const attempt = (connection: Effect.Success<ReturnType<typeof get>>) =>
+      probe(connection).pipe(Effect.catch(() => Effect.succeed(null)))
     for (const [storage, owner] of snapshot) {
-      // A dead child still holds unresolved timers; re-owning spawns a
-      // fresh engine whose startup adoption re-arms and fires them.
-      const sessions = yield* probe(owner.connection).pipe(
-        Effect.catch((error) =>
-          owner.connection.client.available
-            ? Effect.fail(error)
-            : Effect.flatMap(get({ ...owner.input, refreshContext: true }), (connection) => probe(connection)),
-        ),
-      )
-      results.push({ storage, sessions: sessions.sessions })
+      const probed = yield* attempt(owner.connection)
+      if (probed === null) {
+        // A live child that fails the probe stays: the next real request
+        // surfaces the engine error instead of a silent replacement.
+        if (owner.connection.client.available) continue
+        // A dead child still holds unresolved timers; re-owning spawns a
+        // fresh engine whose startup adoption re-arms and fires them. A
+        // timer armed after the last probe waits for the next request to
+        // the storage, which re-owns and adopts the durable record.
+        if ((timerMemory.get(storage) ?? 0) > 0) {
+          const reowned = yield* get({ ...owner.input, refreshContext: true }).pipe(
+            Effect.catch(() => Effect.succeed(null)),
+          )
+          if (reowned === null) continue
+          const recovered = yield* attempt(reowned)
+          if (recovered === null) continue
+          timerMemory.set(storage, recovered.sessions.length)
+          results.push({ storage, sessions: recovered.sessions })
+          continue
+        }
+        yield* gate.withPermit(
+          Effect.sync(() => {
+            owners.delete(storage)
+            timerMemory.delete(storage)
+          }),
+        )
+        continue
+      }
+      timerMemory.set(storage, probed.sessions.length)
+      results.push({ storage, sessions: probed.sessions })
     }
     return results
   })
