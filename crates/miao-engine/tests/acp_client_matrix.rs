@@ -144,6 +144,12 @@ async fn reconnect_resumes_the_same_session_without_replaying_old_output() {
 #[tokio::test]
 async fn provider_failure_settles_and_the_session_accepts_a_later_prompt() {
     let (endpoint, _requests, server) = common::endpoint(vec![
+        // A rejected request earns one replay before the turn reports the
+        // failure, so a persistent rejection needs both answers.
+        (
+            400,
+            json!({"error":{"message":"fixture rejection"}}).to_string(),
+        ),
         (
             400,
             json!({"error":{"message":"fixture rejection"}}).to_string(),
