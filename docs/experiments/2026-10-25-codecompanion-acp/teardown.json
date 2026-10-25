@@ -1,0 +1,6 @@
+{
+  "editorAndAgentProcessesRemaining": 0,
+  "nativeRunsRunning": 0,
+  "providerStopped": true,
+  "shutdown": "actual Neovim :qa! then owned provider SIGTERM after PID and cwd verification"
+}
