@@ -2157,6 +2157,7 @@ command: None,
                                     session,
                                     crate::events::Lifecycle::PreToolUse,
                                     effective_name,
+                                    cancel.child_token(),
                                 )
                                 .await?
                                 {
@@ -2517,6 +2518,7 @@ command: None,
                     session,
                     crate::events::Lifecycle::PostToolUse,
                     effective_name,
+                    cancel.child_token(),
                 )
                 .await?;
                 if polling_terminal {
@@ -3636,6 +3638,7 @@ async fn run_hooks(
     session: &str,
     phase: crate::events::Lifecycle,
     tool: &str,
+    cancel: CancellationToken,
 ) -> Result<Option<String>, Error> {
     let hooks = inner.tools.hooks();
     if hooks.is_empty() {
@@ -3643,11 +3646,11 @@ async fn run_hooks(
     }
     let mut blocked = None;
     for hook in hooks.iter().filter(|hook| hook.matches(phase, tool)) {
+        if cancel.is_cancelled() {
+            break;
+        }
         let started = std::time::Instant::now();
-        let result = inner
-            .tools
-            .run_hook(hook, tokio_util::sync::CancellationToken::new())
-            .await;
+        let result = inner.tools.run_hook(hook, cancel.child_token()).await;
         let (outcome, exit_code, reason) = match &result {
             Ok(output) => {
                 let exit = output["exit_code"].as_i64();
