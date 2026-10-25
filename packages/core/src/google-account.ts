@@ -45,7 +45,7 @@ export class RequestError extends Error {
     readonly retryAfterMs?: number,
   ) {
     super(
-      `Google account ${operation} failed (HTTP ${status}). ${status === 401 ? "Reconnect the Google account." : status === 403 ? "The account may not be eligible for this model service." : status === 429 ? `${reason === "RATE_LIMIT_EXCEEDED" || reason === "RATE_LIMITED" ? "The service is rate limiting requests." : reason === "QUOTA_EXHAUSTED" || reason === "QUOTA_EXCEEDED" ? "The quota for this service or model was reached." : reason === "MODEL_CAPACITY_EXHAUSTED" || reason === "CAPACITY_EXHAUSTED" ? "The service temporarily has insufficient capacity." : "The service returned a rate or quota limit."}${retryAfterMs === undefined ? " Retry later or choose another model/account." : ` Retry after ${retryAfterMs < 60_000 ? `${Math.ceil(retryAfterMs / 1000)} seconds` : new Date(Date.now() + retryAfterMs).toISOString()}.`}${reason ? ` Service reason: ${reason}.` : ""}` : "Retry the request or check the service status."}`,
+      `Google account ${operation} failed (HTTP ${status}). ${status === 401 ? "Reconnect the Google account." : status === 403 ? "The account may not be eligible for this model service." : status === 429 ? `${reason === "RATE_LIMIT_EXCEEDED" || reason === "RATE_LIMITED" ? "The service is rate limiting requests." : reason === "QUOTA_EXHAUSTED" || reason === "QUOTA_EXCEEDED" ? "The Antigravity quota for this service or model was reached. Gemini App usage limits are separate." : reason === "MODEL_CAPACITY_EXHAUSTED" || reason === "CAPACITY_EXHAUSTED" ? "The service temporarily has insufficient capacity." : "The Antigravity service returned a rate or quota limit; this does not establish that your Gemini App quota is exhausted."}${retryAfterMs === undefined ? " Retry later or choose another model/account." : ` Retry after ${retryAfterMs < 60_000 ? `${Math.ceil(retryAfterMs / 1000)} seconds` : new Date(Date.now() + retryAfterMs).toISOString()}.`}${reason ? ` Service reason: ${reason}.` : ""}` : "Retry the request or check the service status."}`,
     )
     this.name = "GoogleAccount.RequestError"
   }
@@ -324,7 +324,7 @@ export async function request(
     signal: signal ? AbortSignal.any([signal, AbortSignal.timeout(30_000)]) : AbortSignal.timeout(30_000),
     redirect: "error",
   })
-  if (!response.ok) throw new RequestError(operation, response.status)
+  if (!response.ok) throw await rejection(response, operation)
   return response.json() as Promise<unknown>
 }
 
@@ -382,5 +382,45 @@ export function owns(integrationID: string, value: Credential.Value): value is C
     value.metadata?.oauthOwner === "miao/google-account" &&
     value.metadata.integrationID === integrationID &&
     (value.methodID === browserMethodID || value.methodID === manualMethodID)
+  )
+}
+
+const isRecord = (value: unknown): value is Record<string, unknown> =>
+  typeof value === "object" && value !== null && !Array.isArray(value)
+
+// Preserve machine-readable rejection evidence without exposing arbitrary
+// provider text, which can contain credential or project details.
+export async function rejection(response: Response, operation: string) {
+  const body: unknown = await response.json().catch(() => undefined)
+  const details = isRecord(body) && isRecord(body.error) && Array.isArray(body.error.details) ? body.error.details : []
+  const reason = details
+    .flatMap((entry) => (isRecord(entry) && typeof entry.reason === "string" ? [entry.reason] : []))
+    .find((value) =>
+      [
+        "RATE_LIMIT_EXCEEDED",
+        "RATE_LIMITED",
+        "QUOTA_EXHAUSTED",
+        "QUOTA_EXCEEDED",
+        "RESOURCE_EXHAUSTED",
+        "MODEL_CAPACITY_EXHAUSTED",
+        "CAPACITY_EXHAUSTED",
+      ].includes(value),
+    )
+  const retry = response.headers.get("retry-after")
+  const headerDelay =
+    retry === null ? undefined : /^\d+(?:\.\d+)?$/.test(retry) ? Number(retry) * 1000 : Date.parse(retry) - Date.now()
+  const detailDelay = details.flatMap((entry) => {
+    if (!isRecord(entry)) return []
+    const value = typeof entry.retryDelay === "string" ? entry.retryDelay : isRecord(entry.metadata) ? entry.metadata.quotaResetDelay : undefined
+    if (typeof value !== "string") return []
+    const match = /^(\d+(?:\.\d+)?)s$/.exec(value)
+    return match ? [Number(match[1]) * 1000] : []
+  })[0]
+  const delay = headerDelay ?? detailDelay
+  return new RequestError(
+    operation,
+    response.status,
+    reason,
+    delay !== undefined && Number.isFinite(delay) && delay >= 0 && delay <= 604_800_000 ? delay : undefined,
   )
 }
