@@ -250,9 +250,7 @@ export function nativeSessionUsage(input: {
         turns: group.turns,
         cost: group.cost,
         tokens: group.tokens,
-        ...(group.ttft.turns > 0
-          ? { ttftMs: Math.round(group.ttft.sum / group.ttft.turns) }
-          : {}),
+        ...(group.ttft.turns > 0 ? { ttftMs: Math.round(group.ttft.sum / group.ttft.turns) } : {}),
         lastTurnAt: DateTime.makeUnsafe(group.lastTurnMs),
       }))
       .toSorted((left, right) => DateTime.toEpochMillis(right.lastTurnAt) - DateTime.toEpochMillis(left.lastTurnAt)),
@@ -370,15 +368,33 @@ export const mergeNativeSessions = Effect.fn("NativeSession.mergeSessions")(func
       const entries: SessionInfo.Info[] = []
       for (const raw of group.sessions) {
         const sessionID = Schema.decodeUnknownSync(SessionID)(raw)
-        const snapshot = yield* input.native.snapshot({ sessionID, storage: group.storage, location: group.location, metadataOnly: true })
-        const usage = input.models
-          ? nativeSessionUsage({
-              report: yield* input.native.usage({ sessionID, storage: group.storage, location: group.location }),
-              models: input.models,
-              snapshot,
-            })
-          : undefined
-        entries.push(nativeSessionInfo({ sessionID, projectID: project, location: group.location, snapshot, usage }))
+        const entry = yield* Effect.gen(function* () {
+          const snapshot = yield* input.native.snapshot({
+            sessionID,
+            storage: group.storage,
+            location: group.location,
+            metadataOnly: true,
+          })
+          const usage = input.models
+            ? nativeSessionUsage({
+                report: yield* input.native.usage({ sessionID, storage: group.storage, location: group.location }),
+                models: input.models,
+                snapshot,
+              })
+            : undefined
+          return nativeSessionInfo({ sessionID, projectID: project, location: group.location, snapshot, usage })
+        }).pipe(
+          Effect.catchCause((cause) =>
+            Cause.hasInterrupts(cause)
+              ? Effect.failCause(cause)
+              : Effect.logWarning("skipping unreadable native Session", {
+                  sessionID,
+                  directory: group.location.directory,
+                  cause,
+                }).pipe(Effect.as(undefined)),
+          ),
+        )
+        if (entry) entries.push(entry)
       }
       return entries
     }).pipe(
@@ -475,8 +491,11 @@ export const generateNativeTitle = Effect.fn("NativeSession.generateTitle")(func
     // several tool batches later. Follow bounded pages, not just page one.
     for (let pageIndex = 0; pageIndex < 20; pageIndex++) {
       const page = yield* input.native.history({
-        sessionID: input.sessionID, storage: input.storage, location: input.location,
-        after, limit: 100,
+        sessionID: input.sessionID,
+        storage: input.storage,
+        location: input.location,
+        after,
+        limit: 100,
       })
       events.push(...page.events)
       const prompt = nativeTitlePrompt(events)

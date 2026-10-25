@@ -67,3 +67,38 @@ test("an unreadable native Location does not fail the session listing", async ()
   expect(result.map((session) => session.id)).toEqual([SessionID.make("ses_healthy")])
   expect(result[0]?.title).toBe("kept")
 })
+
+test("one missing native Session does not hide healthy siblings in the same storage", async () => {
+  await using tmp = await tmpdir()
+  const directory = AbsolutePath.make(tmp.path)
+  const nativeStorage = AbsolutePath.make(path.join(tmp.path, "native.db"))
+  const result = await Effect.gen(function* () {
+    const database = yield* Database.Service
+    for (const id of ["ses_healthy", "ses_missing", "ses_later"]) {
+      yield* SessionEnginePlacement.claim(database.db, {
+        sessionID: SessionID.make(id),
+        placement: { engine: "rust", storage: nativeStorage, location: { directory } },
+      })
+    }
+    return yield* mergeNativeSessions({
+      native: {
+        snapshot: (input) =>
+          input.sessionID === "ses_missing"
+            ? Effect.die(new Error("Session does not exist"))
+            : Effect.succeed({
+                session_id: input.sessionID,
+                title: input.sessionID,
+                created_at_ms: 1,
+                updated_at_ms: 2,
+              }),
+        usage: () => Effect.succeed({}),
+      },
+      db: database.db,
+      sessions: [],
+      limit: 10,
+      order: "desc",
+      projects: { resolve: () => Effect.succeed({ id: Project.ID.global }) },
+    })
+  }).pipe(Effect.provide(Database.layerFromPath(path.join(tmp.path, "product.db"))), Effect.runPromise)
+  expect(result.map((session) => session.id).sort()).toEqual(["ses_healthy", "ses_later"])
+})
