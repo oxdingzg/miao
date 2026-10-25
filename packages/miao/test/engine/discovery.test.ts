@@ -94,12 +94,14 @@ test.skipIf(process.platform === "win32")("real engine route-schema fields are c
     { wire: {}, normalized: undefined, accepted: true },
     { wire: { routes_schema: 1 }, normalized: 1, accepted: false },
     { wire: { routes_schema: 2 }, normalized: 2, accepted: true },
+    { wire: { routes_schema: 2, catalog: 1 }, normalized: 2, accepted: true },
     { wire: { routesSchema: 2 }, normalized: 2, accepted: true },
     { wire: { routes_schema: 2, routesSchema: 2 }, normalized: 2, accepted: true },
   ]) {
     await Bun.write(binary, `#!/bin/sh\nprintf '%s' '${JSON.stringify({ ...engine(2), ...input.wire })}'\n`)
     await chmod(binary, 0o755)
     expect(capabilities(binary)?.routesSchema).toBe(input.normalized)
+    if ("catalog" in input.wire) expect(capabilities(binary)).toHaveProperty("catalog", 1)
     if (input.accepted) expect(resolveEngine({ environment: { MIAO_ENGINE_BIN: binary } })?.binary).toBe(binary)
     if (!input.accepted)
       expect(() => resolveEngine({ environment: { MIAO_ENGINE_BIN: binary } })).toThrow("route schema")
