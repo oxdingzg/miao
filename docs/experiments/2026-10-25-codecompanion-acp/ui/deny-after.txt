@@ -42,4 +42,3 @@ ACP_DENY complete                                                          │~
 ~                                                                          │~
 ~                                                                          │~
 [CodeCompanion] 4                                        27,0-1         All [No Name]                                               0,0-1          All
-

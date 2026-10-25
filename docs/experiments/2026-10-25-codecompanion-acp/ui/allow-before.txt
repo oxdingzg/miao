@@ -42,4 +42,3 @@ Please select an option:                                                   │~
 ~                                                                          │~
 ~                                                                          │~
 [CodeCompanion] 2 [-]                                    20,0-1         All [No Name]                                               0,0-1          All
-
