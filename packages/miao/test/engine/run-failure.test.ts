@@ -41,7 +41,11 @@ test("malformed or foreign lifecycle facts are dropped", () => {
 test("the lifecycle stop settles the client status even without run.finished", () => {
   expect(statusOf(event({ run_id: "run_1", reason: "x" }))).toEqual({ type: "idle" })
   expect(statusOf(event({ run_id: "run_1" }, "stop"))).toEqual({ type: "idle" })
-  expect(statusOf(event({ run_id: "run_1" }, "run.started"))).toEqual({ type: "busy" })
+  expect(statusOf(event({ run_id: "run_1" }, "run.started"))).toEqual({
+    type: "busy",
+    phase: "preparing",
+    since: 500,
+  })
 })
 
 const binary = process.env.MIAO_ENGINE_BIN
