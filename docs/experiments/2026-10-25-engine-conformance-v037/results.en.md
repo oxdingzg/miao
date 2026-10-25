@@ -1,28 +1,28 @@
 # Native / TypeScript conformance — 0.3.7 candidate, 2026-10-25
 
-All 24 cells have a passing receipt: the complete R2 run passed 22/24, then each failing cell passed against its compiled fix in R3 and R4. This is a full run plus targeted fix verification, not a single unchanged binary passing all 24 cells.
+The latest complete run, R7, passed **23/24** on one unchanged paired CLI/engine artifact containing the full Web UI. The failing TypeScript tool-recall cell returned the token already supplied in its prompt without executing the required bash command. Its command exited normally; the missing tool execution remains a failure. This is not a 24/24 result.
 
-Each cell used an explicit engine, its own `--dir` workspace, its own product database and native storage. The host and engine both reported 0.3.7. The existing provider credential was passed only in the test process environment; it was not copied into the evidence. The harness checks native durable completion, actual native usage/title storage, and the requested Session's compaction rows. A failed or interrupted native run cannot pass merely because the CLI exits zero.
+| Scenario             | TypeScript | Rust      |
+| -------------------- | ---------- | --------- |
+| tool-recall          | FAIL (r7)  | PASS (r7) |
+| file-edit            | PASS (r7)  | PASS (r7) |
+| apply-patch          | PASS (r7)  | PASS (r7) |
+| multi-turn-retention | PASS (r7)  | PASS (r7) |
+| forced-compaction    | PASS (r7)  | PASS (r7) |
+| interrupt-recovery   | PASS (r7)  | PASS (r7) |
+| background-job       | PASS (r7)  | PASS (r7) |
+| mcp-fixture          | PASS (r7)  | PASS (r7) |
+| permission-deny      | PASS (r7)  | PASS (r7) |
+| usage-priced         | PASS (r7)  | PASS (r7) |
+| session-title        | PASS (r7)  | PASS (r7) |
+| image-input          | PASS (r7)  | PASS (r7) |
 
-| Scenario | TypeScript | Rust |
-| --- | --- | --- |
-| tool-recall | PASS (r2) | PASS (r2) |
-| file-edit | PASS (r2) | PASS (r2) |
-| apply-patch | PASS (r2) | PASS (r2) |
-| multi-turn-retention | PASS (r2) | PASS (r2) |
-| forced-compaction | PASS (r2) | PASS (r3) |
-| interrupt-recovery | PASS (r2) | PASS (r2) |
-| background-job | PASS (r2) | PASS (r2) |
-| mcp-fixture | PASS (r2) | PASS (r2) |
-| permission-deny | PASS (r2) | PASS (r2) |
-| usage-priced | PASS (r2) | PASS (r2) |
-| session-title | PASS (r5) | PASS (r2) |
-| image-input | PASS (r2) | PASS (r2) |
+Both engines passed file editing, patch application, multi-turn retention, interruption recovery, background jobs, MCP, permission denial, priced usage, title persistence and image input. Rust forced compaction recorded one durable engine_compaction row. The TypeScript compaction cell checks completion only and does not prove a TypeScript compaction occurred. No process stall or crash was observed in this matrix.
 
-R2 used `zhipuai-coding-plan/glm-5.3-flash`; the image pair used `glm-4.6v`. R2's two failures remain in `runs/r2`: generated routes replaced explicit native context limits, and the short TS process exited before its title settled. PR #1422 preserves explicit limits; R3 records one durable compaction row. PR #1423 lets explicit Session waiters finish that Session's pending title within a 30-second best-effort bound; R4 records the persisted title before the command exits. The TS compaction cell checks completion only; it does not prove a TypeScript compaction occurred.
+Each cell used an explicit engine and --dir, an isolated product database and native storage. The host and engine both reported 0.3.7. Credentials were supplied only in process memory. The harness checks native durable completion and actual usage/title storage; interrupted runs cannot pass merely because the CLI exits zero. Main cells used zhipuai-coding-plan/glm-5.3-flash; image cells used glm-4.6v. The source checkpoint and executable hashes are in provenance.json.
 
-`results.json` selects the latest passing receipt per cell and identifies its evidence run. Each run retains redacted JSONL, stderr and per-cell assertions; `provenance.json` records source checkpoints and available executable hashes. Absolute fixture paths are normalized. The original failed assertions are preserved rather than overwritten. Total recorded main-turn reference cost across R2–R5 was $0.05987; this excludes auxiliary title calls and is not a subscription cash charge. The vision model's missing catalog prices are recorded as zero, not a measured free call.
+R2 previously passed 22/24. Its two product defects—explicit native context limits being overwritten and headless TypeScript title work ending too early—were fixed in #1422 and #1423 and passed targeted R3–R5 verification. Both now pass in the full R7 run. R2–R5 and the earlier selected passing receipts remain under runs; results.json now selects every latest R7 result, including the failure. This avoids hiding a later failure behind an earlier passing receipt.
 
-This acceptance covers the compiled CLI and native engine, not the embedded Web UI or final release installation. Release pairing and final combined artifact verification remain separate gates. It also does not close external multi-editor, naturally expired credential, or quota-limited provider acceptance, and does not implement later Rust migration phases. R3's executable hash was not captured before replacement; its source checkpoint is retained.
+R7 recorded $0.05362252294 in main-turn reference cost. R2–R5 recorded $0.05987445618. These exclude auxiliary title calls and are not subscription cash charges. Missing vision-model catalog prices are zero, which does not establish a free call. R6 was aborted after a harness setup mistake pinned the raw zero-rate catalog and bypassed the normal pricing overlay; its abort record is retained and it is not counted as complete acceptance.
 
-R5 rechecks the TS title after completion tickets moved into a process-local registry. The model call remains Location-owned; explicit waiters no longer construct an idle Location to find pending title work. It passes on the new compiled artifact. The selected title receipt is R5; R4 remains as earlier evidence.
+The R7 binary includes the paired-engine build change #1425 and concurrent native-create fix #1426. The full Web UI built and the compiled TUI prompt rendered at 120 and 42 columns. Model conformance does not replace App UI checks, final main integration, final installed-artifact validation, or cross-platform upgrade acceptance. The separately discovered route-schema capability decoding issue also remains outside this frozen R7 artifact. No release was published. External editor/provider/credential acceptance and later Rust migration phases are not completed by this matrix.

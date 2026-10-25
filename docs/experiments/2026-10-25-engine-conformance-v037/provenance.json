@@ -19,12 +19,27 @@
       "sourceCheckpoint": "73959cb247",
       "cells": 1,
       "reportedMainTurnReferenceCost": 0.00168409617
+    },
+    "r7": {
+      "sourceCheckpoint": "96e5d42c33",
+      "cells": 24,
+      "pass": 23,
+      "fail": 1,
+      "reportedMainTurnReferenceCost": 0.05362252294000001,
+      "fullWebUIEmbedded": true
+    },
+    "r6": {
+      "sourceCheckpoint": "96e5d42c33",
+      "aborted": true,
+      "reason": "Harness mistakenly pinned a raw zero-rate catalog, bypassing the normal reference-price overlay. Partial run not counted as acceptance."
     }
   },
   "fixes": {
     "nativeContextLimits": "66cfa5086a",
     "headlessTitleSettlement": "d657c09090",
-    "conformanceHarness": "0f3a4712a8"
+    "conformanceHarness": "0f3a4712a8",
+    "releaseEnginePairing": "7cdace8835",
+    "nativeCreateRetry": "0b68705b09"
   },
   "artifactHashes": {
     "r2-host": "9e2643c096a691d76b315e7ba5b99aefd589e569418c209134a46af401fa44df",
@@ -32,12 +47,16 @@
     "r4-host": "ae3445f31d5428a2d97266a3f27edefaf654daeeedf3d8c1d1787b5408d4fca3",
     "r4-engine": "614cac3a7bdb0e2082460213b54ec137398c416b91488da1c4b2e20c7c6e2e5d",
     "r5-host": "bdbd70a48ad858d24d15d03d5ddb6945284837e354045740dc0700e36cc1579b",
-    "r5-engine": "fdf793e224dac6a2a8a97ce63d434e1b2ef1eac2b8b832d47990dcac1770ece9"
+    "r5-engine": "fdf793e224dac6a2a8a97ce63d434e1b2ef1eac2b8b832d47990dcac1770ece9",
+    "r7-host": "8f19156725475282d37273837faa0b48d894e77e3f658301ede595205198f712",
+    "r7-engine": "65cf97243fbb7bbfe66d971acafb818be9617b7941decca095b20c1b48f5fd3c"
   },
   "limitations": [
-    "R3 host executable hash was not recorded before the next build; its source checkpoint is recorded.",
-    "The CLI acceptance build omitted the embedded Web UI.",
-    "Final retained-build release pairing is validated separately before publication.",
-    "Reference costs count the recorded main provider turns, not subscription cash charges or all auxiliary title calls."
+    "R7 is a private feature integration, not final merged main or final release-installation acceptance.",
+    "R7 passed 23/24: the TS model answered a token supplied in the prompt without the required bash call; the structural failure is retained.",
+    "R7 artifact contains the full Web UI; model conformance does not establish App UI correctness.",
+    "R3 host executable hash was not recorded before replacement; its source checkpoint is retained.",
+    "Reference costs count recorded main provider turns, not subscription cash charges or auxiliary title calls.",
+    "R6 was aborted because of a harness catalog-selection mistake; no R6 complete-matrix claim is made."
   ]
 }

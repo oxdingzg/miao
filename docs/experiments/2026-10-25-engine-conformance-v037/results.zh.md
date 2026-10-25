@@ -1,28 +1,28 @@
 # 0.3.7 候选版本双引擎一致性验证（2026-10-25）
 
-24 个测试单元现均有通过记录：R2 完整运行通过 22/24，两个失败项分别在修复后的编译产物上以 R3、R4 复测通过。这是“完整运行 + 定向修复验证”，并非同一个未变更二进制一次通过全部 24 项。
+最新完整 R7 在同一份未变更、包含完整 Web UI 的 CLI／引擎配对产物上通过 **23/24**。唯一失败是 TypeScript 工具调用单元：模型直接回答提示中已有的 token，没有执行要求的 bash 命令。命令正常退出，但缺少实际工具调用仍判失败，不能称为 24/24。
 
-每个单元显式指定引擎及 `--dir`，隔离工作区、产品数据库和原生存储。宿主及引擎均报告 0.3.7。已有连接的凭据仅传入测试进程环境，未复制到证据文件。测试读取原生数据库中的实际完成、计费及标题记录，并限定当前会话检查压缩记录；退出码为零但运行中断的情况不能通过。
+| Scenario             | TypeScript | Rust      |
+| -------------------- | ---------- | --------- |
+| tool-recall          | FAIL (r7)  | PASS (r7) |
+| file-edit            | PASS (r7)  | PASS (r7) |
+| apply-patch          | PASS (r7)  | PASS (r7) |
+| multi-turn-retention | PASS (r7)  | PASS (r7) |
+| forced-compaction    | PASS (r7)  | PASS (r7) |
+| interrupt-recovery   | PASS (r7)  | PASS (r7) |
+| background-job       | PASS (r7)  | PASS (r7) |
+| mcp-fixture          | PASS (r7)  | PASS (r7) |
+| permission-deny      | PASS (r7)  | PASS (r7) |
+| usage-priced         | PASS (r7)  | PASS (r7) |
+| session-title        | PASS (r7)  | PASS (r7) |
+| image-input          | PASS (r7)  | PASS (r7) |
 
-| 场景 | TypeScript | Rust |
-| --- | --- | --- |
-| tool-recall | PASS (r2) | PASS (r2) |
-| file-edit | PASS (r2) | PASS (r2) |
-| apply-patch | PASS (r2) | PASS (r2) |
-| multi-turn-retention | PASS (r2) | PASS (r2) |
-| forced-compaction | PASS (r2) | PASS (r3) |
-| interrupt-recovery | PASS (r2) | PASS (r2) |
-| background-job | PASS (r2) | PASS (r2) |
-| mcp-fixture | PASS (r2) | PASS (r2) |
-| permission-deny | PASS (r2) | PASS (r2) |
-| usage-priced | PASS (r2) | PASS (r2) |
-| session-title | PASS (r5) | PASS (r2) |
-| image-input | PASS (r2) | PASS (r2) |
+两种引擎的文件编辑、补丁应用、多轮记忆、中断恢复、后台任务、MCP、权限拒绝、用量计价、标题保存和图片输入均通过。Rust 强制压缩确认一条持久化 engine_compaction 记录；TS 压缩单元只验证完成，不证明发生了 TS 压缩。本轮矩阵没有观察到进程卡死或崩溃。
 
-R2 的两个失败保留在 `runs/r2`：生成路由覆盖显式上下文限制，以及 TS 短命令结束时后台标题尚未落库。PR #1422 修复限制优先级，R3 确认一条持久化压缩记录；PR #1423 为显式会话等待增加独立于执行占用状态的标题收尾，最多等待 30 秒，R4 确认标题在退出前持久化。TS 压缩单元只验证完成，不证明发生了 TS 压缩。
+每个单元显式指定引擎与 --dir，隔离产品数据库和原生存储。宿主与引擎均报告 0.3.7。凭据只通过进程内存传递。验收读取原生持久化完成、用量及标题记录，退出码为零但运行中断不能通过。主模型为 zhipuai-coding-plan/glm-5.3-flash，图片单元为 glm-4.6v；源码与可执行文件摘要见 provenance.json。
 
-`results.json` 汇总每个单元最新的通过记录，并标记证据轮次；原始 JSONL、标准错误和结构断言分别保留。`provenance.json` 记录源码检查点及已采集的可执行文件摘要。绝对测试路径已归一化，旧失败断言没有覆盖。R2–R5 记录的主模型轮次参考成本合计 $0.05987，不含辅助标题调用，也不是订阅实付费用。视觉模型缺少目录价格，因此记为零，不能据此认定免费。
+R2 曾通过 22/24，两个产品缺陷分别是显式上下文限制被覆盖和 TS 短命令退出前标题尚未保存。#1422、#1423 修复后经 R3–R5 定向验证通过，本次完整 R7 也均通过。旧轮次及此前汇总保留在 runs；results.json 现在选择全部最新 R7 记录，包括失败，不会用较早通过结果遮盖新失败。
 
-本次验证覆盖编译后的 CLI 与原生引擎，不包含嵌入 Web UI 和最终发布安装链；发布配对及最终组合产物仍需单独验收。外部编辑器覆盖、自然到期凭据刷新及受额度限制的服务验收没有因此完成，后续 Rust 迁移阶段也没有实现。R3 可执行文件替换前未采集摘要，保留了源码检查点。
+R7 主模型轮次参考成本为 $0.05362252294，R2–R5 为 $0.05987445618；均不含辅助标题调用，也不是订阅实付费用。视觉模型缺少目录价格而记零，不能据此认定免费。R6 因验收环境误固定零价原始目录、绕过正常参考价覆盖而中止，保留中止记录，不算一次完整验收。
 
-R5 对标题收尾协调调整后的 TS 命令再次复测通过。进程内登记表只保存完成信号，模型调用仍由 Location 持有；显式等待不再为了查标题而新建空闲 Location。汇总采用 R5 标题记录，R4 保留为先前证据。
+R7 产物包含 #1425 引擎配对与 #1426 并发创建修复。完整 Web UI 构建及编译版 TUI 在 120／42 列显示输入框均通过；模型验收不替代 App UI、最终 main 集成、最终安装产物或跨平台升级验收。另行发现的路由能力字段解码修复也不在本轮冻结产物中。未发布版本；外部编辑器／服务商／自然到期凭据验收及后续 Rust 迁移没有因此完成。
