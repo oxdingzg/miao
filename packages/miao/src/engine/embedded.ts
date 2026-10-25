@@ -3,6 +3,7 @@ import { existsSync, realpathSync } from "node:fs"
 import { chmod, mkdir, readFile, rename, rm } from "node:fs/promises"
 import os from "node:os"
 import path from "node:path"
+import { InstallationExecutable } from "@miao/core/installation/executable"
 import { capabilities, resolveEngine, type Capabilities } from "./discovery"
 
 const EXE = process.platform === "win32" ? ".exe" : ""
@@ -35,7 +36,7 @@ export async function loadEmbeddedEngine(): Promise<EmbeddedEngine | undefined> 
 
 /** Mirrors discovery's candidate order: beside a `miao*` executable first, then the shared install dir. */
 export function engineTargets(input: { executable?: string; home?: string } = {}): string[] {
-  const executable = input.executable ?? process.execPath
+  const executable = input.executable ?? InstallationExecutable.executable
   const real = existsSync(executable) ? realpathSync(executable) : executable
   const beside = path.basename(real).startsWith("miao") ? path.join(path.dirname(real), `miao-engine${EXE}`) : undefined
   const home = input.home ?? os.homedir()
@@ -66,6 +67,8 @@ async function extractTo(target: string, engine: EmbeddedEngine): Promise<void> 
 export async function ensureEmbeddedEngine(
   input: {
     executable?: string
+    launcher?: string
+    preferPaired?: boolean
     home?: string
     environment?: Record<string, string | undefined>
     load?: typeof loadEmbeddedEngine
@@ -78,7 +81,33 @@ export async function ensureEmbeddedEngine(
   if (!engine) return undefined
   const probe = input.probe ?? capabilities
   const exists = input.exists ?? existsSync
-  const existing = resolveEngine({ environment: {}, probe, exists, executable: input.executable })
+  const existing = resolveEngine({
+    environment: {},
+    probe,
+    exists,
+    executable: input.executable,
+    launcher: input.launcher,
+  })
+  const targets = engineTargets(input)
+  const preferred = targets[0]
+  const executable = input.executable ?? InstallationExecutable.executable
+  // New release builds carry their paired engine. Create it in this build's
+  // own directory instead of replacing an installed engine that another
+  // window may still be using (especially a locked executable on Windows).
+  if (
+    (input.preferPaired ?? InstallationExecutable.buildID !== "local") &&
+    preferred &&
+    path.dirname(preferred) === path.dirname(executable) &&
+    existing?.binary !== preferred &&
+    !exists(preferred)
+  ) {
+    try {
+      await extractTo(preferred, engine)
+      if (probe(preferred)) return preferred
+    } catch {
+      return undefined
+    }
+  }
   if (existing) {
     const marker = await readFile(`${existing.binary}.embedded.sha256`, "utf8").catch(() => "")
     if (!marker) return undefined
@@ -89,7 +118,7 @@ export async function ensureEmbeddedEngine(
     if (!current || createHash("sha256").update(new Uint8Array(current)).digest("hex") !== marker) return undefined
     if (marker === engine.sha256) return undefined
   }
-  for (const target of new Set([...(existing ? [existing.binary] : []), ...engineTargets(input)])) {
+  for (const target of new Set([...(existing ? [existing.binary] : []), ...targets])) {
     try {
       // No healthy matching extraction was found. Rewrite even when the marker
       // matches: an invalid/missing binary must not be trusted by marker alone.
