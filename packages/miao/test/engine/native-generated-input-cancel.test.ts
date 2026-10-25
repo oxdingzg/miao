@@ -7,6 +7,8 @@ import { Location } from "@miao/schema/location"
 import { SessionID } from "@miao/schema/session-id"
 import { Effect, Schema } from "effect"
 import { translatePrompt } from "@/engine/bridge"
+import { messageID } from "@/engine/identity"
+import { engineMessageSequence } from "@/engine/message-sequence"
 import { fromOwners } from "@/engine/native-engine"
 import { makeEngineOwners } from "@/engine/owners"
 import { testEffectShared } from "../lib/effect"
@@ -92,6 +94,16 @@ if (binary)
         )
         expect(promotion).toBeDefined()
         expect(String(translatePrompt(promotion!)?.messageID)).toBe(String(promoted))
+        // The durable history answers both the derived identity and the legacy
+        // seq-shaped one older callers hold for fork and revert.
+        expect(engineMessageSequence(sessionID, promoted, journal)).toBe(promotion!.seq)
+        expect(engineMessageSequence(sessionID, messageID(sessionID, promotion!.seq), journal)).toBe(promotion!.seq)
+        // A durable product replay, not just the projection: the captured
+        // transcript shows the notice under the identity the inbox handed out.
+        const transcript = yield* native.transcript({ ...input, selected: true })
+        const replayed = transcript.find((message) => String(message.id) === String(promoted))
+        expect(replayed?.type).toBe("user")
+        expect(replayed?.type === "user" ? replayed.text : undefined).toContain("monitor:job:promoted")
         yield* generated("monitor:job:kept", "queue")
         expect(yield* native.cancelInput({ ...input, inputID: promoted })).toBe(false)
         const kept = yield* native.inputs({ ...input, limit: 50 })

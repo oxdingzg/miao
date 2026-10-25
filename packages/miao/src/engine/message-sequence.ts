@@ -17,7 +17,12 @@ export function engineMessageSequence(sessionID: string, requested: SessionMessa
     if (event.kind === "input.promoted") {
       const data = Schema.decodeUnknownSync(Promoted)(event.data)
       const id = promotedInputMessageID(data.input_id)
-      if (id === requested) {
+      // Older projections derived a generated notice's public id from the
+      // promotion seq. Keep addressing that identity for fork and revert, on
+      // the same durable event, but never alias a submitted `msg_` prompt: its
+      // seq-shaped neighbour names a different message.
+      const legacy = data.input_id.startsWith("msg_") ? undefined : messageID(sessionID, event.seq)
+      if (id === requested || legacy === requested) {
         if (typeof data.command === "object" && data.command !== null)
           return events.find(
             (item) =>
