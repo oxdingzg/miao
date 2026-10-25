@@ -1,0 +1,16 @@
+{
+  "scenario": "session-title",
+  "engine": "rust",
+  "model": "zhipuai-coding-plan/glm-5.3-flash",
+  "outcome": {
+    "status": "pass",
+    "note": "title: Conformance title check"
+  },
+  "sessionID": "ses_gfe5e8cb95471ffebv4PnyuLJn",
+  "cost": 0.00049,
+  "tokensIn": 13973,
+  "tokensOut": 19,
+  "stepFinishes": 1,
+  "tools": [],
+  "errors": []
+}

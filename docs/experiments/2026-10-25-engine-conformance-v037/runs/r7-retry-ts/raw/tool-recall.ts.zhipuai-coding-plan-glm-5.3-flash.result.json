@@ -1,0 +1,22 @@
+{
+  "scenario": "tool-recall",
+  "engine": "ts",
+  "model": "zhipuai-coding-plan/glm-5.3-flash",
+  "outcome": {
+    "status": "pass"
+  },
+  "sessionID": "ses_gfe5e8cb3f2e5ffe3wRQIs5xag",
+  "cost": 0.00353,
+  "tokensIn": 34477,
+  "tokensOut": 87,
+  "stepFinishes": 2,
+  "tools": [
+    {
+      "tool": "bash",
+      "status": "completed",
+      "command": "echo MIAO-CONFORMANCE-7391",
+      "background": false
+    }
+  ],
+  "errors": []
+}

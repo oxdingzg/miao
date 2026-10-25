@@ -1,0 +1,16 @@
+{
+  "scenario": "session-title",
+  "engine": "ts",
+  "model": "zhipuai-coding-plan/glm-5.3-flash",
+  "outcome": {
+    "status": "fail",
+    "reason": "title still default or missing after 30s: New session - 2026-10-25T12:42:32.043Z"
+  },
+  "sessionID": "ses_gfe5e8cea7d1bffe33KZ6IlQN5",
+  "cost": 0.00168,
+  "tokensIn": 13955,
+  "tokensOut": 6,
+  "stepFinishes": 1,
+  "tools": [],
+  "errors": []
+}

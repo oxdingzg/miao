@@ -1,4 +1,17 @@
 export const dict = {
+  "context.timeline.title": "Context și istoricul memoriei cache",
+  "context.timeline.step":
+    "{{model}} · {{time}} · {{input}} jetoane prompte · {{read}} citire cache · {{write}} scriere cache",
+  "context.timeline.requestWindow": "{{value}} fereastră de simbol la momentul solicitării",
+  "context.timeline.catalogWindow": "{{value}} fereastra de simboluri în catalogul curent",
+  "context.timeline.unknownWindow": "Fereastra context necunoscută",
+  "context.timeline.empty": "Nu a fost înregistrată încă nicio utilizare stabilită a furnizorului.",
+  "context.timeline.retry": "Reîncercați istoricul utilizării",
+  "context.timeline.compaction": "Context compactat",
+  "context.timeline.cacheRead": "Citirea memoriei cache",
+  "context.timeline.cacheWrite": "Scrierea în cache",
+  "context.timeline.ttft": "{{value}} ms la primul simbol",
+
   "desktop.menu.app": "miao",
   "desktop.menu.file": "Fișier",
   "desktop.menu.edit": "Editare",
@@ -488,8 +501,7 @@ export const dict = {
   "wsl.onboarding.wslUnavailable.title": "WSL indisponibil",
   "wsl.onboarding.wslUnavailable.description": "miao nu a putut verifica WSL pe acest calculator.",
   "wsl.onboarding.installWsl": "Instalează WSL",
-  "wsl.onboarding.windowsRestartRequired":
-    "Repornește Windows pentru a finaliza instalarea WSL, apoi redeschide Miao.",
+  "wsl.onboarding.windowsRestartRequired": "Repornește Windows pentru a finaliza instalarea WSL, apoi redeschide Miao.",
   "wsl.onboarding.next": "Următorul",
   "wsl.onboarding.refresh": "Reîmprospătează",
   "wsl.onboarding.allDistrosAdded": "Toate distro-urile instalate sunt deja adăugate.",
@@ -602,7 +614,8 @@ export const dict = {
   "toast.permissions.autoaccept.off.title": "Oprire acceptare automată permisiuni",
   "toast.permissions.autoaccept.off.description": "Solicitările de permisiune vor necesita aprobare",
   "settings.permissions.autoaccept.project.title": "Acceptă automat permisiunile pentru acest proiect",
-  "settings.permissions.autoaccept.project.description": "Răspunde la noile cereri de permisiune din orice sesiune a acestui proiect fără a întreba. Alegerile pe sesiune și director au prioritate.",
+  "settings.permissions.autoaccept.project.description":
+    "Răspunde la noile cereri de permisiune din orice sesiune a acestui proiect fără a întreba. Alegerile pe sesiune și director au prioritate.",
   "toast.model.none.title": "Niciun model selectat",
   "toast.model.none.description": "Conectează un furnizor pentru a rezuma această sesiune",
   "toast.file.loadFailed.title": "Nu s-a putut încărca fișierul",
@@ -971,8 +984,9 @@ export const dict = {
   "settings.general.row.reasoningSummaries.title": "Afișează rezumatele de raționament",
   "settings.general.row.reasoningSummaries.description":
     "Afișează rezumatele de raționament ale modelului în cronologie",
-    "settings.general.row.turnDiffs.title": "Show changed files per turn",
-    "settings.general.row.turnDiffs.description": "List each finished turn's changed files with line counts and expandable diffs in the timeline.",
+  "settings.general.row.turnDiffs.title": "Show changed files per turn",
+  "settings.general.row.turnDiffs.description":
+    "List each finished turn's changed files with line counts and expandable diffs in the timeline.",
   "settings.general.row.shellToolPartsExpanded.title": "Extinde părțile shell",
   "settings.general.row.shellToolPartsExpanded.description": "Afișează implicit părțile shell extinse în cronologie",
   "settings.general.row.editToolPartsExpanded.title": "Extinde părțile de editare",

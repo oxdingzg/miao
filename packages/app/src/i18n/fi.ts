@@ -1,4 +1,17 @@
 export const dict = {
+  "context.timeline.title": "Konteksti ja välimuistihistoria",
+  "context.timeline.step":
+    "{{model}} · {{time}} · {{input}} kehotetunnukset · {{read}} välimuistin luku · {{write}} välimuistin kirjoitus",
+  "context.timeline.requestWindow": "{{value}} token-ikkuna pyyntöhetkellä",
+  "context.timeline.catalogWindow": "{{value}} token-ikkuna nykyisessä luettelossa",
+  "context.timeline.unknownWindow": "Kontekstiikkuna tuntematon",
+  "context.timeline.empty": "Vakiintunutta palveluntarjoajan käyttöä ei ole vielä tallennettu.",
+  "context.timeline.retry": "Yritä käyttöhistoriaa uudelleen",
+  "context.timeline.compaction": "Konteksti tiivistetty",
+  "context.timeline.cacheRead": "Välimuistin luku",
+  "context.timeline.cacheWrite": "Välimuistin kirjoitus",
+  "context.timeline.ttft": "{{value}} ms ensimmäiseen tunnukseen",
+
   "command.category.suggested": "Ehdotetut",
   "command.category.view": "Näytä",
   "command.category.project": "Projekti",
@@ -498,7 +511,8 @@ export const dict = {
   "toast.permissions.autoaccept.off.title": "Lupien automaattinen hyväksyminen lopetettu",
   "toast.permissions.autoaccept.off.description": "Lupapyynnöt vaativat hyväksynnän",
   "settings.permissions.autoaccept.project.title": "Hyväksy tämän projektin käyttöoikeudet automaattisesti",
-  "settings.permissions.autoaccept.project.description": "Vastaa uusiin käyttöoikeuspyyntöihin tämän projektin mistä tahansa istunnosta kysymättä. Istunnon ja hakemiston valinnat ovat edelleen etusijalla.",
+  "settings.permissions.autoaccept.project.description":
+    "Vastaa uusiin käyttöoikeuspyyntöihin tämän projektin mistä tahansa istunnosta kysymättä. Istunnon ja hakemiston valinnat ovat edelleen etusijalla.",
   "toast.model.none.title": "Mallia ei ole valittu",
   "toast.model.none.description": "Yhdistä palveluntarjoaja tehdäksesi yhteenvedon tästä istunnosta",
   "toast.file.loadFailed.title": "Tiedoston lataaminen epäonnistui",
@@ -867,7 +881,8 @@ export const dict = {
   "settings.general.row.reasoningSummaries.title": "Näytä päättelyn yhteenvedot",
   "settings.general.row.reasoningSummaries.description": "Näytä mallin päättelyn yhteenvedot aikajanalla",
   "settings.general.row.turnDiffs.title": "Näytä muuttuneet tiedostot per kierros",
-  "settings.general.row.turnDiffs.description": "Luetteloi aikajanalle jokaisen valmiin kierroksen muuttuneet tiedostot rivimäärineen ja laajennettavine eroineen.",
+  "settings.general.row.turnDiffs.description":
+    "Luetteloi aikajanalle jokaisen valmiin kierroksen muuttuneet tiedostot rivimäärineen ja laajennettavine eroineen.",
   "settings.general.row.shellToolPartsExpanded.title": "Laajenna shell-työkalun osat",
   "settings.general.row.shellToolPartsExpanded.description":
     "Näytä shell-työkalun osat oletuksena laajennettuina aikajanalla",
