@@ -480,7 +480,12 @@ export class EngineTranslator {
     this.#publish({
       type: fragment.type,
       data: fragment.data,
-      source: { sessionID, seq: anchor.seq, index: LIVE_ORDINAL_BASE + anchor.nextDelta++, recordedAtMs: anchor.recordedAtMs },
+      source: {
+        sessionID,
+        seq: anchor.seq,
+        index: LIVE_ORDINAL_BASE + anchor.nextDelta++,
+        recordedAtMs: anchor.recordedAtMs,
+      },
     })
   }
 }
@@ -634,7 +639,7 @@ export class EngineSession {
   }
 
   async #restore(sessionID: string): Promise<unknown> {
-    const snapshot = await this.#client.request("snapshot", { session_id: sessionID })
+    const snapshot = await this.#client.request("snapshot", { session_id: sessionID, metadata_only: true })
     if (
       typeof snapshot !== "object" ||
       snapshot === null ||
