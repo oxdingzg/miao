@@ -73,6 +73,15 @@ export function createPendingPrompts() {
       )
     },
     waiting,
+    // The footer renders one receipt line. Receipts enter in send order, so the
+    // last one for this Session is the prompt whose state the user is waiting on.
+    latest(sessionID: string): PendingPrompt | undefined {
+      let found: PendingPrompt | undefined
+      for (const prompt of Object.values(data)) {
+        if (prompt.sessionID === sessionID) found = prompt
+      }
+      return found
+    },
     // The one prompt esc removes and the up arrow takes back for editing: the
     // newest admitted prompt. Two actions on the same target must not disagree
     // about which message the user is pointing at.

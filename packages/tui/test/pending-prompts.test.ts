@@ -95,6 +95,20 @@ test("unpromoted receipts stay at the transcript tail when the client clock trai
   expect(receipts.messages("ses_test", projected).map((message) => message.id)).toEqual(["msg_server", "msg_local"])
 })
 
+test("the footer receipt is the newest prompt in any state for its Session", () => {
+  const receipts = createPendingPrompts()
+  expect(receipts.latest("ses_test")).toBeUndefined()
+  receipts.add(prompt("msg_one"))
+  expect(receipts.latest("ses_test")?.info.id).toBe("msg_one")
+  receipts.add(prompt("msg_other", "ses_other"))
+  expect(receipts.latest("ses_test")?.info.id).toBe("msg_one")
+  receipts.add(prompt("msg_two"))
+  expect(receipts.latest("ses_test")?.info.id).toBe("msg_two")
+  // A failed send stays on the footer line; states do not hide older receipts.
+  receipts.fail("msg_two", "offline")
+  expect(receipts.latest("ses_test")?.state).toBe("failed")
+})
+
 test("newest is the prompt esc removes and the up arrow takes back", () => {
   const receipts = createPendingPrompts()
   receipts.add(prompt("msg_first"))

@@ -273,6 +273,9 @@ export function Session() {
   const lastAssistant = createMemo(() => {
     return messages().findLast((x) => x.type === "assistant")
   })
+  // Delivery state is transient chrome, not a transcript event: it lives on the
+  // footer line instead of growing the history row it belongs to.
+  const latestReceipt = createMemo(() => sync.prompt.latest(route.sessionID))
 
   const dimensions = useTerminalDimensions()
   const [sidebar, setSidebar] = kv.signal<"auto" | "hide">("sidebar", "auto")
@@ -1480,6 +1483,7 @@ export function Session() {
                 <Show when={session()?.parentID}>
                   <SubagentFooter />
                 </Show>
+                <Show when={latestReceipt()}>{(receipt) => <PromptStatus prompt={receipt()} />}</Show>
                 <SessionTimers sessionID={route.sessionID} />
                 <Show when={visible()}>
                   <pluginRuntime.Slot
@@ -1641,7 +1645,6 @@ function UserMessage(props: {
                 </For>
               </box>
             </Show>
-            <Show when={props.receipt}>{(receipt) => <PromptStatus prompt={receipt()} />}</Show>
             <Show when={ctx.showTimestamps() || (!props.receipt && queued())}>
               <text fg={theme.textMuted}>
                 <Show when={!props.receipt && queued()}>
