@@ -96,6 +96,16 @@ impl Host {
             Command::SelectAgent { session_id, agent } => {
                 runtime.set_agent(&session_id, *agent).await
             }
+            Command::PendingInputs {
+                session_id,
+                after,
+                limit,
+            } => {
+                runtime
+                    .store()
+                    .pending_inputs(&session_id, after, limit)
+                    .await
+            }
             Command::CancelInput {
                 session_id,
                 input_id,

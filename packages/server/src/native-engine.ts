@@ -123,6 +123,18 @@ export interface Interface {
     title: string
   }) => Effect.Effect<void, ConflictError>
   /**
+   * Inputs the engine admitted and has not promoted yet. A natively placed
+   * Session keeps its inbox in the engine, so the product reads queued
+   * receipts here instead of the TypeScript input table.
+   */
+  readonly inputs: (input: {
+    sessionID: SessionID
+    storage: AbsolutePath
+    location: Location.Ref
+    after?: number
+    limit: number
+  }) => Effect.Effect<{ inputs: readonly SessionInput.Admitted[]; hasMore: boolean }, ConflictError>
+  /**
    * Drop one durably admitted input before the engine promotes it. The engine
    * keeps the cancelled admission as durable evidence, so an exact retry cannot
    * resurrect the prompt; an unknown or already promoted input reports `false`.

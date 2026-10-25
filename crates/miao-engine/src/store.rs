@@ -396,6 +396,65 @@ impl Store {
         .await
     }
 
+    /// Inputs still waiting for promotion, oldest first, with the time their
+    /// admission event was recorded.
+    ///
+    /// A natively placed Session owns its inbox, so the TypeScript input table
+    /// stays empty for it; the product reads queued receipts from here instead.
+    /// `after` is the last `admitted_seq` the caller already saw.
+    pub async fn pending_inputs(
+        &self,
+        session: &str,
+        after: Option<u64>,
+        limit: usize,
+    ) -> Result<Value, Error> {
+        if session.is_empty() || session.len() > 256 {
+            return Err(Error::Invalid("invalid Session id".into()));
+        }
+        let session = session.to_owned();
+        let after = after.map(|value| value as i64);
+        let limit = limit.clamp(1, 1000);
+        self.call(move |conn| {
+            let mut stmt = conn.prepare(
+                "SELECT i.id,i.prompt,i.delivery,i.admitted_seq,e.recorded_at_ms,i.attachments
+                 FROM engine_input i
+                 LEFT JOIN engine_event e ON e.session_id=i.session_id AND e.seq=i.admitted_seq
+                 WHERE i.session_id=?1 AND i.state='pending' AND (?2 IS NULL OR i.admitted_seq > ?2)
+                 ORDER BY i.admitted_seq LIMIT ?3",
+            )?;
+            let rows = stmt.query_map(params![&session, after, limit as i64 + 1], |row| {
+                Ok((
+                    row.get::<_, String>(0)?,
+                    row.get::<_, String>(1)?,
+                    row.get::<_, String>(2)?,
+                    row.get::<_, u64>(3)?,
+                    row.get::<_, Option<u64>>(4)?.unwrap_or_default(),
+                    row.get::<_, Option<String>>(5)?,
+                ))
+            })?;
+            let mut inputs = Vec::new();
+            for row in rows {
+                let (id, prompt, delivery, admitted_seq, recorded_at_ms, attachments) = row?;
+                inputs.push(json!({
+                    "id": id,
+                    "session_id": session,
+                    "prompt": prompt,
+                    "delivery": delivery,
+                    "admitted_seq": admitted_seq,
+                    "recorded_at_ms": recorded_at_ms,
+                    "attachments": attachments
+                        .map(|value| serde_json::from_str::<Value>(&value))
+                        .transpose()?
+                        .unwrap_or_else(|| json!([])),
+                }));
+            }
+            let has_more = inputs.len() > limit;
+            inputs.truncate(limit);
+            Ok(json!({"inputs": inputs, "has_more": has_more}))
+        })
+        .await
+    }
+
     /// Drop one durably admitted input before promotion.
     ///
     /// The row is retained as `cancelled` evidence instead of being deleted, so

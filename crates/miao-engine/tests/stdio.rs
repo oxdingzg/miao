@@ -123,6 +123,71 @@ fn pending_input_cancel_is_a_wire_command_with_a_durable_audit_trail() {
 }
 
 #[test]
+fn pending_inputs_is_a_wire_command_with_cursor_pagination() {
+    let dir = tempfile::tempdir().unwrap();
+    let mut process = Command::new(env!("CARGO_BIN_EXE_miao-engine"))
+        .args([
+            "serve",
+            "--db",
+            dir.path().join("engine.db").to_str().unwrap(),
+            "--workspace",
+            dir.path().to_str().unwrap(),
+            "--model",
+            "fixture",
+        ])
+        .env("ANTHROPIC_API_KEY", "fixture-key")
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .unwrap();
+    let requests = [
+        json!({"id":1,"method":"admit","params":{"input":{"session_id":"s","input_id":"one","prompt":"first","delivery":"queue"},"resume":false}}),
+        json!({"id":2,"method":"admit","params":{"input":{"session_id":"s","input_id":"two","prompt":"second","delivery":"queue"},"resume":false}}),
+        json!({"id":3,"method":"pending_inputs","params":{"session_id":"s"}}),
+        json!({"id":4,"method":"pending_inputs","params":{"session_id":"s","limit":1}}),
+        json!({"id":5,"method":"pending_inputs","params":{"session_id":"s","after":1}}),
+        json!({"id":6,"method":"shutdown"}),
+    ];
+    let mut stdin = process.stdin.take().unwrap();
+    for request in requests {
+        writeln!(stdin, "{request}").unwrap();
+    }
+    drop(stdin);
+    let output = process.wait_with_output().unwrap();
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let replies: Vec<Value> = String::from_utf8(output.stdout)
+        .unwrap()
+        .lines()
+        .map(|l| serde_json::from_str(l).unwrap())
+        .collect();
+    let result = |id: u64| replies.iter().find(|r| r["id"] == id).unwrap()["result"].clone();
+    let page = result(3);
+    assert_eq!(page["has_more"], json!(false), "{page}");
+    let inputs = page["inputs"].as_array().unwrap();
+    assert_eq!(
+        inputs
+            .iter()
+            .map(|input| input["id"].as_str().unwrap())
+            .collect::<Vec<_>>(),
+        vec!["one", "two"]
+    );
+    assert_eq!(inputs[0]["prompt"], json!("first"));
+    assert_eq!(inputs[0]["delivery"], json!("queue"));
+    assert!(inputs[0]["recorded_at_ms"].as_u64().unwrap() > 0);
+    let head = result(4);
+    assert_eq!(head["has_more"], json!(true));
+    assert_eq!(head["inputs"].as_array().unwrap().len(), 1);
+    let rest = result(5);
+    assert_eq!(rest["has_more"], json!(false));
+    assert_eq!(rest["inputs"][0]["id"], json!("two"));
+}
+
+#[test]
 fn archive_and_remove_are_wire_commands_with_a_durable_effect() {
     let dir = tempfile::tempdir().unwrap();
     let mut process = Command::new(env!("CARGO_BIN_EXE_miao-engine"))
