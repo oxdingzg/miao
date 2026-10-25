@@ -1,0 +1,36 @@
+{
+  "sources": {
+    "r2": {
+      "sourceCheckpoint": "bed91deeac",
+      "cells": 24,
+      "reportedMainTurnReferenceCost": 0.05245875718
+    },
+    "r3": {
+      "sourceCheckpoint": "5ff51aa007",
+      "cells": 1,
+      "reportedMainTurnReferenceCost": 0.004046012690000001
+    },
+    "r4": {
+      "sourceCheckpoint": "4c95a4182b",
+      "cells": 1,
+      "reportedMainTurnReferenceCost": 0.0016855901400000001
+    }
+  },
+  "fixes": {
+    "nativeContextLimits": "66cfa5086a",
+    "headlessTitleSettlement": "073b6aed25",
+    "conformanceHarness": "0f3a4712a8"
+  },
+  "artifactHashes": {
+    "r2-host": "9e2643c096a691d76b315e7ba5b99aefd589e569418c209134a46af401fa44df",
+    "r2-engine": "608f08abe310ce4627c1187e36012f21ec617d54398f3bec8656fbb54eb216aa",
+    "r4-host": "ae3445f31d5428a2d97266a3f27edefaf654daeeedf3d8c1d1787b5408d4fca3",
+    "r4-engine": "614cac3a7bdb0e2082460213b54ec137398c416b91488da1c4b2e20c7c6e2e5d"
+  },
+  "limitations": [
+    "R3 host executable hash was not recorded before the next build; its source checkpoint is recorded.",
+    "The CLI acceptance build omitted the embedded Web UI.",
+    "Final retained-build release pairing is validated separately before publication.",
+    "Reference costs count the recorded main provider turns, not subscription cash charges or all auxiliary title calls."
+  ]
+}
