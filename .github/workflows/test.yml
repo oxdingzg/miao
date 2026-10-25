@@ -177,9 +177,12 @@ jobs:
           CHANGES: ${{ needs.changes.result }}
           CODE: ${{ needs.changes.outputs.code }}
           WINDOWS: ${{ needs.changes.outputs.windows }}
+          # The Windows runtime suite only runs on the nightly schedule and on
+          # manual dispatch, so its result must be `skipped` everywhere else.
+          WINDOWS_RUNS: ${{ github.event_name == 'schedule' || github.event_name == 'workflow_dispatch' }}
           UNIT: ${{ needs.unit-tests.result }}
           RUNTIME: ${{ needs.window-runtime-windows.result }}
         run: |
           test "$CHANGES" = success
           if [ "$CODE" = true ]; then test "$UNIT" = success; else test "$UNIT" = skipped; fi
-          if [ "$WINDOWS" = true ]; then test "$RUNTIME" = success; else test "$RUNTIME" = skipped; fi
+          if [ "$WINDOWS" = true ] && [ "$WINDOWS_RUNS" = true ]; then test "$RUNTIME" = success; else test "$RUNTIME" = skipped; fi
