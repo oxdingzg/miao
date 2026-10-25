@@ -14,18 +14,25 @@
       "sourceCheckpoint": "4c95a4182b",
       "cells": 1,
       "reportedMainTurnReferenceCost": 0.0016855901400000001
+    },
+    "r5": {
+      "sourceCheckpoint": "73959cb247",
+      "cells": 1,
+      "reportedMainTurnReferenceCost": 0.00168409617
     }
   },
   "fixes": {
     "nativeContextLimits": "66cfa5086a",
-    "headlessTitleSettlement": "073b6aed25",
+    "headlessTitleSettlement": "d657c09090",
     "conformanceHarness": "0f3a4712a8"
   },
   "artifactHashes": {
     "r2-host": "9e2643c096a691d76b315e7ba5b99aefd589e569418c209134a46af401fa44df",
     "r2-engine": "608f08abe310ce4627c1187e36012f21ec617d54398f3bec8656fbb54eb216aa",
     "r4-host": "ae3445f31d5428a2d97266a3f27edefaf654daeeedf3d8c1d1787b5408d4fca3",
-    "r4-engine": "614cac3a7bdb0e2082460213b54ec137398c416b91488da1c4b2e20c7c6e2e5d"
+    "r4-engine": "614cac3a7bdb0e2082460213b54ec137398c416b91488da1c4b2e20c7c6e2e5d",
+    "r5-host": "bdbd70a48ad858d24d15d03d5ddb6945284837e354045740dc0700e36cc1579b",
+    "r5-engine": "fdf793e224dac6a2a8a97ce63d434e1b2ef1eac2b8b832d47990dcac1770ece9"
   },
   "limitations": [
     "R3 host executable hash was not recorded before the next build; its source checkpoint is recorded.",

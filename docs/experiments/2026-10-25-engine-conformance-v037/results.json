@@ -1,6 +1,6 @@
 {
   "version": "0.3.7",
-  "method": "24-cell full run followed by two targeted fix verifications; not one unchanged-binary 24-cell run",
+  "method": "24-cell full run followed by targeted fix verifications and a title-lifecycle recheck; not one unchanged-binary 24-cell run",
   "runs": {
     "r2": {
       "sourceCheckpoint": "bed91deeac",
@@ -16,6 +16,11 @@
       "sourceCheckpoint": "4c95a4182b",
       "cells": 1,
       "reportedMainTurnReferenceCost": 0.0016855901400000001
+    },
+    "r5": {
+      "sourceCheckpoint": "73959cb247",
+      "cells": 1,
+      "reportedMainTurnReferenceCost": 0.00168409617
     }
   },
   "pass": 24,
@@ -290,13 +295,13 @@
       "model": "zhipuai-coding-plan/glm-5.3-flash",
       "status": "pass",
       "note": "title: Conformance title check test",
-      "seconds": 12.679,
-      "cost": 0.0016855901400000001,
-      "tokensIn": 13956,
+      "seconds": 15.86,
+      "cost": 0.00168409617,
+      "tokensIn": 13954,
       "tokensOut": 6,
       "turns": 1,
-      "archived": "runs/r4/raw/session-title.ts.zhipuai-coding-plan-glm-5.3-flash",
-      "evidenceRun": "r4"
+      "archived": "runs/r5/raw/session-title.ts.zhipuai-coding-plan-glm-5.3-flash",
+      "evidenceRun": "r5"
     },
     {
       "scenario": "session-title",

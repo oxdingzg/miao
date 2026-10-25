@@ -16,11 +16,13 @@ Each cell used an explicit engine, its own `--dir` workspace, its own product da
 | mcp-fixture | PASS (r2) | PASS (r2) |
 | permission-deny | PASS (r2) | PASS (r2) |
 | usage-priced | PASS (r2) | PASS (r2) |
-| session-title | PASS (r4) | PASS (r2) |
+| session-title | PASS (r5) | PASS (r2) |
 | image-input | PASS (r2) | PASS (r2) |
 
 R2 used `zhipuai-coding-plan/glm-5.3-flash`; the image pair used `glm-4.6v`. R2's two failures remain in `runs/r2`: generated routes replaced explicit native context limits, and the short TS process exited before its title settled. PR #1422 preserves explicit limits; R3 records one durable compaction row. PR #1423 lets explicit Session waiters finish that Session's pending title within a 30-second best-effort bound; R4 records the persisted title before the command exits. The TS compaction cell checks completion only; it does not prove a TypeScript compaction occurred.
 
-`results.json` selects the latest passing receipt per cell and identifies its evidence run. Each run retains redacted JSONL, stderr and per-cell assertions; `provenance.json` records source checkpoints and available executable hashes. Absolute fixture paths are normalized. The original failed assertions are preserved rather than overwritten. Total recorded main-turn reference cost across R2–R4 was $0.05819; this excludes auxiliary title calls and is not a subscription cash charge. The vision model's missing catalog prices are recorded as zero, not a measured free call.
+`results.json` selects the latest passing receipt per cell and identifies its evidence run. Each run retains redacted JSONL, stderr and per-cell assertions; `provenance.json` records source checkpoints and available executable hashes. Absolute fixture paths are normalized. The original failed assertions are preserved rather than overwritten. Total recorded main-turn reference cost across R2–R5 was $0.05987; this excludes auxiliary title calls and is not a subscription cash charge. The vision model's missing catalog prices are recorded as zero, not a measured free call.
 
 This acceptance covers the compiled CLI and native engine, not the embedded Web UI or final release installation. Release pairing and final combined artifact verification remain separate gates. It also does not close external multi-editor, naturally expired credential, or quota-limited provider acceptance, and does not implement later Rust migration phases. R3's executable hash was not captured before replacement; its source checkpoint is retained.
+
+R5 rechecks the TS title after completion tickets moved into a process-local registry. The model call remains Location-owned; explicit waiters no longer construct an idle Location to find pending title work. It passes on the new compiled artifact. The selected title receipt is R5; R4 remains as earlier evidence.
