@@ -1,6 +1,6 @@
 export * as SessionUsageStore from "./usage-store"
 
-import { and, eq, sql } from "drizzle-orm"
+import { and, desc, eq, lt, or, sql } from "drizzle-orm"
 import { DateTime, Effect } from "effect"
 import type { Database } from "../database/database"
 import { ModelV2 } from "../model"
@@ -12,6 +12,68 @@ import { SessionTable, SessionToolUsageTable, SessionTurnUsageTable } from "./sq
 type DB = Database.Interface["db"]
 
 export type Usage = Pick<SessionEvent.Step.Ended["data"], "cost" | "tokens">
+
+export const history = Effect.fn("SessionUsageStore.history")(function* (
+  db: DB,
+  sessionID: SessionSchema.ID,
+  input: { before?: string; limit?: number } = {},
+) {
+  const anchor =
+    input.before === undefined
+      ? undefined
+      : yield* db
+          .select({
+            time: SessionTurnUsageTable.time_created,
+            id: SessionTurnUsageTable.event_id,
+          })
+          .from(SessionTurnUsageTable)
+          .where(and(eq(SessionTurnUsageTable.session_id, sessionID), eq(SessionTurnUsageTable.event_id, input.before)))
+          .get()
+          .pipe(Effect.orDie)
+  if (input.before !== undefined && !anchor) return undefined
+  const limit = Math.max(1, Math.min(200, input.limit ?? 100))
+  const rows = yield* db
+    .select()
+    .from(SessionTurnUsageTable)
+    .where(
+      and(
+        eq(SessionTurnUsageTable.session_id, sessionID),
+        anchor
+          ? or(
+              lt(SessionTurnUsageTable.time_created, anchor.time),
+              and(eq(SessionTurnUsageTable.time_created, anchor.time), lt(SessionTurnUsageTable.event_id, anchor.id)),
+            )
+          : undefined,
+      ),
+    )
+    .orderBy(desc(SessionTurnUsageTable.time_created), desc(SessionTurnUsageTable.event_id))
+    .limit(limit + 1)
+    .all()
+    .pipe(Effect.orDie)
+  const page = rows.slice(0, limit)
+  return {
+    items: page.toReversed().map((row) => ({
+      id: row.event_id,
+      messageID: row.assistant_message_id,
+      model: {
+        providerID: ProviderV2.ID.make(row.model_provider),
+        id: ModelV2.ID.make(row.model_id),
+        variant: row.variant === null ? undefined : ModelV2.VariantID.make(row.variant),
+      },
+      time: row.time_created,
+      finish: row.finish,
+      cost: row.cost,
+      tokens: {
+        input: row.tokens_input,
+        output: row.tokens_output,
+        reasoning: row.tokens_reasoning,
+        cache: { read: row.tokens_cache_read, write: row.tokens_cache_write },
+      },
+      ttftMs: row.ttft_ms ?? undefined,
+    })),
+    next: rows.length > limit ? page.at(-1)?.event_id : undefined,
+  }
+})
 
 export function applyUsage(db: DB, sessionID: SessionSchema.ID, value: Usage, sign = 1) {
   return db
