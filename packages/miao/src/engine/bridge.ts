@@ -51,22 +51,7 @@ export function statusOf(event: EngineEvent): StatusInfo | undefined {
   }
 }
 
-/**
- * The status a live progress frame implies. Progress carries no journal
- * sequence and is never replayed, so it only refines a phase the durable
- * events already established.
- */
-export function progressStatus(progress: EngineProgress): StatusInfo | undefined {
-  switch (progress.kind) {
-    case "provider.ttft":
-      // The first readable token arrived, so the wait is now a stream.
-      return typeof progress.ttft_ms === "number" ? busy("streaming", Date.now()) : undefined
-    default:
-      return undefined
-  }
-}
-
-function busy(phase: "preparing" | "requesting" | "streaming" | "retrying", since?: number | null): StatusInfo {
+function busy(phase: "preparing" | "requesting" | "retrying", since?: number | null): StatusInfo {
   return { type: "busy", phase, ...(typeof since === "number" ? { since } : {}) }
 }
 
@@ -80,7 +65,7 @@ export function translateStatus(event: EngineEvent): SessionStatus | undefined {
  * Emits a product status payload only when the session's status actually changes,
  * so a burst of engine events (or a resubscribe) does not republish `busy`. A
  * phase change within `busy` is a real change: it is what tells the shell that
- * a request left for the provider or that the first token arrived.
+ * a request left for the provider.
  */
 export class StatusBridge {
   #current = new Map<string, string>()
@@ -89,12 +74,6 @@ export class StatusBridge {
     const status = statusOf(event)
     if (!status) return undefined
     return this.#emit(event.session_id, status, eventTimestamp(event))
-  }
-
-  progress(progress: EngineProgress): SessionStatus | undefined {
-    const status = progressStatus(progress)
-    if (!status || typeof progress.session_id !== "string") return undefined
-    return this.#emit(progress.session_id, status, DateTime.makeUnsafe(Date.now()))
   }
 
   #emit(sessionID: string, status: StatusInfo, timestamp: DateTime.Utc): SessionStatus | undefined {

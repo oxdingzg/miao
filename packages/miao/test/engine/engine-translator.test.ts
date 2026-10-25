@@ -179,6 +179,8 @@ test("a native turn publishes each provider phase as the turn advances", () => {
     recorded_at_ms: 1200,
     data: {},
   })
+  // A live-only frame must not produce a status: the journal would not have it
+  // on replay, so the replayed stream would differ from the live one.
   translator.progress({ session_id: "ses_phase", kind: "provider.ttft", ttft_ms: 900 })
   translator.dispatch({
     session_id: "ses_phase",
@@ -200,7 +202,6 @@ test("a native turn publishes each provider phase as the turn advances", () => {
   expect(phases).toEqual([
     { type: "busy", phase: "preparing", since: 1000 },
     { type: "busy", phase: "requesting", since: 1200 },
-    { type: "busy", phase: "streaming", since: expect.any(Number) },
     { type: "busy", phase: "preparing", since: 1300 },
     { type: "idle" },
   ])

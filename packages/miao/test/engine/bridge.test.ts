@@ -5,7 +5,6 @@ import {
   productToolID,
   productToolInput,
   productToolResult,
-  progressStatus,
   statusOf,
   translateApproval,
   translateApprovalResolved,
@@ -65,13 +64,16 @@ test("names the phase of a provider step from the durable events", () => {
   })
 })
 
-test("the first token turns a dispatched request into a stream", () => {
-  expect(progressStatus({ session_id: "ses_test", kind: "provider.ttft", ttft_ms: 58_000 })).toEqual({
+test("a dispatched request is a phase a replay can reproduce", () => {
+  // Status comes from durable events only. A phase derived from the live
+  // progress pipe would be missing after a reconnect, and the replayed event
+  // stream would no longer match the live one.
+  expect(statusOf(event("provider.request", 1_700_000_000_200))).toEqual({
     type: "busy",
-    phase: "streaming",
-    since: expect.any(Number),
+    phase: "requesting",
+    since: 1_700_000_000_200,
   })
-  expect(progressStatus({ session_id: "ses_test", kind: "provider.delta" })).toBeUndefined()
+  expect(statusOf(event("provider.ttft"))).toBeUndefined()
 })
 
 test("translateStatus carries the engine session id and a status", () => {
@@ -93,12 +95,12 @@ test("StatusBridge emits only on a transition", () => {
     since: 1_700_000_000_200,
   })
   expect(bridge.update(event("provider.request", 1_700_000_000_201))).toBeUndefined()
-  expect(bridge.progress({ session_id: "ses_test", kind: "provider.ttft", ttft_ms: 1200 })?.status).toEqual({
+  // A new step restarts preparation after a tool result, which is a transition.
+  expect(bridge.update(event("provider.started", 1_700_000_000_300))?.status).toEqual({
     type: "busy",
-    phase: "streaming",
-    since: expect.any(Number),
+    phase: "preparing",
+    since: 1_700_000_000_300,
   })
-  expect(bridge.progress({ session_id: "ses_test", kind: "provider.ttft", ttft_ms: 1300 })).toBeUndefined()
   expect(bridge.update(event("run.finished"))?.status).toEqual({ type: "idle" })
 })
 
