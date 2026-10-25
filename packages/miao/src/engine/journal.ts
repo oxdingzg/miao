@@ -15,9 +15,12 @@ export async function replayJournal(input: {
   location: Location.Ref
   /** Replayed steps price like live ones: replayed step.ended carries the same catalog rates. */
   pricing?: EnginePricing
-  request: (method: string, params: { session_id: string; after?: number; cursor?: number }) => Promise<unknown>
+  request: (
+    method: string,
+    params: { session_id: string; after?: number; cursor?: number; metadata_only?: boolean },
+  ) => Promise<unknown>
 }) {
-  const snapshot = await input.request("snapshot", { session_id: input.sessionID })
+  const snapshot = await input.request("snapshot", { session_id: input.sessionID, metadata_only: true })
   if (
     typeof snapshot !== "object" ||
     snapshot === null ||

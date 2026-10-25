@@ -1,0 +1,16 @@
+{
+  "scenario": "session-title",
+  "engine": "ts",
+  "model": "zhipuai-coding-plan/glm-5.3-flash",
+  "outcome": {
+    "status": "pass",
+    "note": "title: Conformance title check test"
+  },
+  "sessionID": "ses_gfe5e8ce1ef82ffemGPC2dl8F6",
+  "cost": 0.00169,
+  "tokensIn": 13956,
+  "tokensOut": 6,
+  "stepFinishes": 1,
+  "tools": [],
+  "errors": []
+}

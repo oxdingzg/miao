@@ -1,0 +1,29 @@
+{
+  "scenario": "permission-deny",
+  "engine": "ts",
+  "model": "zhipuai-coding-plan/glm-5.3-flash",
+  "outcome": {
+    "status": "pass"
+  },
+  "sessionID": "ses_gfe5e8cbaa73affeNaPY5ai6cx",
+  "cost": 0.00299,
+  "tokensIn": 16533,
+  "tokensOut": 66,
+  "stepFinishes": 3,
+  "tools": [
+    {
+      "tool": "bash",
+      "status": "error",
+      "error": "Unable to execute command: rm deleteme.txt",
+      "command": "rm deleteme.txt",
+      "background": false
+    },
+    {
+      "tool": "bash",
+      "status": "completed",
+      "command": "ls -la",
+      "background": false
+    }
+  ],
+  "errors": []
+}

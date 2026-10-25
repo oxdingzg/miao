@@ -1,0 +1,37 @@
+--- data/large.txt
+0001 alpha echo harbor kernel delta granite jasper bravo
+0002 ivory alpha echo harbor kernel delta granite jasper
+0003 forge ivory alpha echo harbor kernel delta granite
+0004 bravo forge ivory alpha echo harbor kernel delta
+0005 jasper bravo forge ivory alpha echo harbor kernel
+0006 granite jasper bravo forge ivory alpha echo harbor
+0007 delta granite jasper bravo forge ivory alpha echo
+0008 kernel delta granite jasper bravo forge ivory alpha
+0009 harbor kernel delta granite jasper bravo forge ivory
+0010 echo harbor kernel delta granite jasper bravo forge
+0011 alpha echo harbor kernel delta granite jasper bravo
+0012 ivory alpha echo harbor kernel delta granite jasper
+0013 forge ivory alpha echo harbor kernel delta granite
+0014 bravo forge ivory alpha echo harbor kernel delta
+0015 jasper bravo forge ivory alpha echo harbor kernel
+0016 granite jasper bravo forge ivory alpha echo harbor
+0017 delta granite jasper bravo forge ivory alpha echo
+0018 kernel delta granite jasper bravo forge ivory alpha
+0019 harbor kernel delta granite jasper bravo forge ivory
+0020 echo harbor kernel delta granite jasper bravo forge
+0021 alpha echo harbor kernel delta granite jasper bravo
+0022 ivory alpha echo harbor kernel delta granite jasper
+0023 forge ivory alpha echo harbor kernel delta granite
+0024 bravo forge ivory alpha echo harbor kernel delta
+0025 jasper bravo forge ivory alpha echo harbor kernel
+0026 granite jasper bravo forge ivory alpha echo harbor
+0027 delta granite jasper bravo forge ivory alpha echo
+0028 kernel delta granite jasper bravo forge ivory alpha
+0029 harbor kernel delta granite jasper bravo forge ivory
+0030 echo harbor kernel delta granite jasper bravo forge
+0031 alpha echo harbor kernel delta granite jasper bravo
+0032 ivory alpha echo harbor kernel delta granite jasper
+0033 forge ivory alpha echo harbor kernel delta granite
+0034 bravo forge ivory alpha echo harbor kernel delta
+0035 jasper bravo forge ivory alpha echo harbor kernel
+0036 granite jasper bravo forge ivo
