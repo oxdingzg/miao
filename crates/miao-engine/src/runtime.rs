@@ -1756,6 +1756,9 @@ async fn execute(
         } else {
             system
         };
+        // Providers that cannot carry PDF parts tell the model to read the
+        // attachment with tools; that promise needs the bytes on disk first.
+        crate::media::materialize_files(&mut history, std::path::Path::new(inner.tools.location()));
         let request = ModelRequest {
             system,
             messages: history,

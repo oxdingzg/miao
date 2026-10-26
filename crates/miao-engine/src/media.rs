@@ -170,6 +170,71 @@ pub(crate) fn anthropic_part(part: &Value, role: &str) -> Result<Value, Provider
     )
 }
 
+/// Providers that cannot carry a `file` part still tell the model to `read`
+/// the attachment with tools. That only works when the bytes reach the
+/// workspace, so materialize PDF attachments under `.miao/attachments` and
+/// point the part's metadata at the copy. Inline data stays authoritative for
+/// providers that accept it; every failure degrades to today's note without a
+/// location instead of failing the turn.
+pub(crate) fn materialize_files(
+    history: &mut [crate::protocol::Message],
+    workspace: &std::path::Path,
+) {
+    use base64::engine::general_purpose::STANDARD;
+    use sha2::{Digest, Sha256};
+
+    let dir = workspace.join(".miao").join("attachments");
+    for message in history {
+        let Some(parts) = message.content.as_array_mut() else {
+            continue;
+        };
+        for part in parts {
+            if part["type"] != "file" || part["mime"].as_str() != Some("application/pdf") {
+                continue;
+            }
+            if part["metadata"]["path"]
+                .as_str()
+                .is_some_and(|path| std::path::Path::new(path).is_file())
+            {
+                continue;
+            }
+            let Some(data) = part["data"].as_str() else {
+                continue;
+            };
+            let Ok(bytes) = STANDARD.decode(data) else {
+                continue;
+            };
+            let Ok(()) = std::fs::create_dir_all(&dir) else {
+                continue;
+            };
+            let digest = Sha256::digest(&bytes);
+            let fingerprint: String = digest
+                .iter()
+                .take(4)
+                .map(|byte| format!("{byte:02x}"))
+                .collect();
+            let source = part["metadata"]["name"].as_str().unwrap_or("document.pdf");
+            let safe: String = source
+                .chars()
+                .filter(|character| {
+                    character.is_ascii_alphanumeric() || matches!(character, '.' | '-' | '_')
+                })
+                .take(64)
+                .collect();
+            let safe = if safe.ends_with(".pdf") {
+                safe
+            } else {
+                format!("{safe}.pdf")
+            };
+            let path = dir.join(format!("{fingerprint}-{safe}"));
+            if !path.exists() && std::fs::write(&path, &bytes).is_err() {
+                continue;
+            }
+            part["metadata"]["path"] = json!(path.display().to_string());
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
