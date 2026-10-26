@@ -229,9 +229,12 @@ async fn invalid_regex_glob_scope_and_limits_fail_before_search() {
 async fn a_file_path_is_rejected_with_the_directory_requirement() {
     // Search tools walk a directory; a file path used to fail with a bare
     // "invalid tool input" and the model resent the same path.
-    let dir = tempfile::tempdir().unwrap();
-    std::fs::write(dir.path().join("plain.txt"), "needle").unwrap();
     for name in ["grep", "glob"] {
+        // A Store keeps a process-wide lease on its path until its worker has
+        // torn down, so reopening one path case after case raced that teardown
+        // and failed with `Busy` under load. Each case gets its own database.
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(dir.path().join("plain.txt"), "needle").unwrap();
         let result = run(
             dir.path(),
             name,
