@@ -1,0 +1,165 @@
+import { PermissionV2 } from "../../../../packages/core/src/permission"
+
+// Golden decisions come from the real layered TypeScript evaluator (S6 step 1).
+// Rust consumes this corpus to pin the rule semantics at the bridge: same
+// input, same conclusion, including the exact ruleset each outcome reports.
+const rule = (action: string, resource: string, effect: PermissionV2.Effect) => ({
+  action,
+  resource,
+  effect,
+})
+
+const cases = [
+  { name: "last-rule-wins-so-a-later-scope-shadows-an-earlier-one", request: {
+    actions: ["bash"],
+    resources: ["rm -rf x"],
+    configured: [rule("bash", "*", "allow"), rule("bash", "rm *", "deny")],
+  } },
+  { name: "priority-inverts-with-rule-order", request: {
+    actions: ["bash"],
+    resources: ["rm -rf x"],
+    configured: [rule("bash", "rm *", "deny"), rule("bash", "*", "allow")],
+  } },
+  { name: "project-scope-shadows-global", request: {
+    actions: ["edit"],
+    resources: ["secrets/key.env"],
+    configured: [rule("edit", "*", "allow"), rule("edit", "secrets/*", "ask")],
+  } },
+  { name: "configured-deny-beats-a-later-saved-allow", request: {
+    actions: ["bash"],
+    resources: ["git push origin"],
+    configured: [rule("bash", "git push *", "deny")],
+    saved: [rule("bash", "git *", "allow")],
+  } },
+  { name: "saved-allow-lifts-a-configured-ask", request: {
+    actions: ["bash"],
+    resources: ["git status"],
+    configured: [rule("bash", "git status *", "ask")],
+    saved: [rule("bash", "git status *", "allow")],
+  } },
+  { name: "no-matching-rule-asks", request: {
+    actions: ["read"],
+    resources: ["a.ts"],
+    configured: [],
+  } },
+  { name: "no-configured-rules-with-a-saved-allow-allows", request: {
+    actions: ["read"],
+    resources: ["a.ts"],
+    configured: [],
+    saved: [rule("read", "*", "allow")],
+  } },
+  { name: "agent-without-a-ruleset-denies-everything-saved-included", request: {
+    actions: ["read"],
+    resources: ["a.ts"],
+    saved: [rule("read", "*", "allow")],
+  } },
+  { name: "star-crosses-directories", request: {
+    actions: ["read"],
+    resources: ["nested/secret.env"],
+    configured: [rule("read", "*", "allow"), rule("read", "*.env", "ask")],
+  } },
+  { name: "question-mark-consumes-exactly-one-character", request: {
+    actions: ["read"],
+    resources: ["file1.txt"],
+    configured: [rule("read", "*", "allow"), rule("read", "file?.txt", "ask")],
+  } },
+  { name: "question-mark-does-not-consume-two-characters", request: {
+    actions: ["read"],
+    resources: ["file12.txt"],
+    configured: [rule("read", "*", "allow"), rule("read", "file?.txt", "ask")],
+  } },
+  { name: "trailing-star-makes-arguments-optional", request: {
+    actions: ["bash"],
+    resources: ["git status"],
+    configured: [rule("bash", "git status *", "allow")],
+  } },
+  { name: "trailing-star-matches-arguments", request: {
+    actions: ["bash"],
+    resources: ["git status --short"],
+    configured: [rule("bash", "git status *", "allow")],
+  } },
+  { name: "trailing-star-does-not-extend-the-prefix", request: {
+    actions: ["bash"],
+    resources: ["git status-other"],
+    configured: [rule("bash", "git status *", "allow")],
+  } },
+  { name: "brackets-are-literal-not-a-character-class", request: {
+    actions: ["read"],
+    resources: ["literal[1].txt"],
+    configured: [rule("read", "literal[1].txt", "allow")],
+  } },
+  { name: "escaped-syntax-does-not-wildcard", request: {
+    actions: ["read"],
+    resources: ["literal1.txt"],
+    configured: [rule("read", "literal[1].txt", "allow")],
+  } },
+  { name: "backslash-normalizes-to-slash", request: {
+    actions: ["read"],
+    resources: ["nested\\secret.env"],
+    configured: [rule("read", "*", "allow"), rule("read", "*.env", "ask")],
+  } },
+  { name: "multi-resource-takes-the-worst-effect", request: {
+    actions: ["read"],
+    resources: ["a.ts", "secret.env"],
+    configured: [rule("read", "*", "allow"), rule("read", "*.env", "ask")],
+  } },
+  { name: "every-resource-allowing-allows", request: {
+    actions: ["read"],
+    resources: ["a.ts", "b.ts"],
+    configured: [rule("read", "*", "allow")],
+  } },
+  { name: "a-deny-on-any-resource-deny-despite-other-allows", request: {
+    actions: ["read"],
+    resources: ["a.ts", ".env"],
+    configured: [rule("read", "*", "allow"), rule("read", ".env", "deny")],
+    saved: [rule("read", "*", "allow")],
+  } },
+  { name: "explicit-skips-bare-wildcard-action-rules", request: {
+    actions: ["sandbox-escape"],
+    resources: ["host"],
+    configured: [rule("*", "*", "allow")],
+    explicit: true,
+  } },
+  { name: "explicit-keeps-rules-naming-the-action", request: {
+    actions: ["read"],
+    resources: ["a.ts"],
+    configured: [rule("read", "*", "allow"), rule("*", "*", "deny")],
+    explicit: true,
+  } },
+  { name: "explicit-filters-the-deny-all-too", request: {
+    actions: ["sandbox-escape"],
+    resources: ["host"],
+    configured: [rule("*", "*", "deny")],
+    explicit: true,
+  } },
+  { name: "aliases-decide-like-the-action-they-name", request: {
+    actions: ["bash", "terminal"],
+    resources: ["git status"],
+    configured: [rule("terminal", "git status *", "allow")],
+  } },
+  { name: "a-saved-deny-can-decide-in-the-merged-sweep", request: {
+    actions: ["read"],
+    resources: ["secret.env"],
+    configured: [rule("read", "*", "allow")],
+    saved: [rule("read", "secret.env", "deny")],
+  } },
+  { name: "empty-resources-allows-vacuously-as-pinned", request: {
+    actions: ["read"],
+    resources: [],
+    configured: [],
+  } },
+  { name: "empty-actions-never-match-so-they-ask", request: {
+    actions: [],
+    resources: ["a.ts"],
+    configured: [rule("read", "*", "allow")],
+  } },
+].map((item) => ({ ...item, expected: PermissionV2.decide(item.request) }))
+
+const file = new URL("permission_decide.json", import.meta.url)
+const content =
+  JSON.stringify({ semantics: "configured-deny-first-then-last-match-v1", cases }, null, 2) + "\n"
+if (Bun.argv.includes("--check")) {
+  if ((await Bun.file(file).text()) !== content)
+    throw new Error("Permission decide corpus differs from the TypeScript reference")
+  console.log("permission_decide.json matches the TypeScript reference")
+} else await Bun.write(file, content)

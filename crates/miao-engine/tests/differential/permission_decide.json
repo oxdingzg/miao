@@ -1,0 +1,862 @@
+{
+  "semantics": "configured-deny-first-then-last-match-v1",
+  "cases": [
+    {
+      "name": "last-rule-wins-so-a-later-scope-shadows-an-earlier-one",
+      "request": {
+        "actions": [
+          "bash"
+        ],
+        "resources": [
+          "rm -rf x"
+        ],
+        "configured": [
+          {
+            "action": "bash",
+            "resource": "*",
+            "effect": "allow"
+          },
+          {
+            "action": "bash",
+            "resource": "rm *",
+            "effect": "deny"
+          }
+        ]
+      },
+      "expected": {
+        "effect": "deny",
+        "rules": [
+          {
+            "action": "bash",
+            "resource": "*",
+            "effect": "allow"
+          },
+          {
+            "action": "bash",
+            "resource": "rm *",
+            "effect": "deny"
+          }
+        ]
+      }
+    },
+    {
+      "name": "priority-inverts-with-rule-order",
+      "request": {
+        "actions": [
+          "bash"
+        ],
+        "resources": [
+          "rm -rf x"
+        ],
+        "configured": [
+          {
+            "action": "bash",
+            "resource": "rm *",
+            "effect": "deny"
+          },
+          {
+            "action": "bash",
+            "resource": "*",
+            "effect": "allow"
+          }
+        ]
+      },
+      "expected": {
+        "effect": "allow",
+        "rules": [
+          {
+            "action": "bash",
+            "resource": "rm *",
+            "effect": "deny"
+          },
+          {
+            "action": "bash",
+            "resource": "*",
+            "effect": "allow"
+          }
+        ]
+      }
+    },
+    {
+      "name": "project-scope-shadows-global",
+      "request": {
+        "actions": [
+          "edit"
+        ],
+        "resources": [
+          "secrets/key.env"
+        ],
+        "configured": [
+          {
+            "action": "edit",
+            "resource": "*",
+            "effect": "allow"
+          },
+          {
+            "action": "edit",
+            "resource": "secrets/*",
+            "effect": "ask"
+          }
+        ]
+      },
+      "expected": {
+        "effect": "ask",
+        "rules": [
+          {
+            "action": "edit",
+            "resource": "*",
+            "effect": "allow"
+          },
+          {
+            "action": "edit",
+            "resource": "secrets/*",
+            "effect": "ask"
+          }
+        ]
+      }
+    },
+    {
+      "name": "configured-deny-beats-a-later-saved-allow",
+      "request": {
+        "actions": [
+          "bash"
+        ],
+        "resources": [
+          "git push origin"
+        ],
+        "configured": [
+          {
+            "action": "bash",
+            "resource": "git push *",
+            "effect": "deny"
+          }
+        ],
+        "saved": [
+          {
+            "action": "bash",
+            "resource": "git *",
+            "effect": "allow"
+          }
+        ]
+      },
+      "expected": {
+        "effect": "deny",
+        "rules": [
+          {
+            "action": "bash",
+            "resource": "git push *",
+            "effect": "deny"
+          }
+        ]
+      }
+    },
+    {
+      "name": "saved-allow-lifts-a-configured-ask",
+      "request": {
+        "actions": [
+          "bash"
+        ],
+        "resources": [
+          "git status"
+        ],
+        "configured": [
+          {
+            "action": "bash",
+            "resource": "git status *",
+            "effect": "ask"
+          }
+        ],
+        "saved": [
+          {
+            "action": "bash",
+            "resource": "git status *",
+            "effect": "allow"
+          }
+        ]
+      },
+      "expected": {
+        "effect": "allow",
+        "rules": [
+          {
+            "action": "bash",
+            "resource": "git status *",
+            "effect": "ask"
+          },
+          {
+            "action": "bash",
+            "resource": "git status *",
+            "effect": "allow"
+          }
+        ]
+      }
+    },
+    {
+      "name": "no-matching-rule-asks",
+      "request": {
+        "actions": [
+          "read"
+        ],
+        "resources": [
+          "a.ts"
+        ],
+        "configured": []
+      },
+      "expected": {
+        "effect": "ask",
+        "rules": []
+      }
+    },
+    {
+      "name": "no-configured-rules-with-a-saved-allow-allows",
+      "request": {
+        "actions": [
+          "read"
+        ],
+        "resources": [
+          "a.ts"
+        ],
+        "configured": [],
+        "saved": [
+          {
+            "action": "read",
+            "resource": "*",
+            "effect": "allow"
+          }
+        ]
+      },
+      "expected": {
+        "effect": "allow",
+        "rules": [
+          {
+            "action": "read",
+            "resource": "*",
+            "effect": "allow"
+          }
+        ]
+      }
+    },
+    {
+      "name": "agent-without-a-ruleset-denies-everything-saved-included",
+      "request": {
+        "actions": [
+          "read"
+        ],
+        "resources": [
+          "a.ts"
+        ],
+        "saved": [
+          {
+            "action": "read",
+            "resource": "*",
+            "effect": "allow"
+          }
+        ]
+      },
+      "expected": {
+        "effect": "deny",
+        "rules": [
+          {
+            "action": "*",
+            "resource": "*",
+            "effect": "deny"
+          }
+        ]
+      }
+    },
+    {
+      "name": "star-crosses-directories",
+      "request": {
+        "actions": [
+          "read"
+        ],
+        "resources": [
+          "nested/secret.env"
+        ],
+        "configured": [
+          {
+            "action": "read",
+            "resource": "*",
+            "effect": "allow"
+          },
+          {
+            "action": "read",
+            "resource": "*.env",
+            "effect": "ask"
+          }
+        ]
+      },
+      "expected": {
+        "effect": "ask",
+        "rules": [
+          {
+            "action": "read",
+            "resource": "*",
+            "effect": "allow"
+          },
+          {
+            "action": "read",
+            "resource": "*.env",
+            "effect": "ask"
+          }
+        ]
+      }
+    },
+    {
+      "name": "question-mark-consumes-exactly-one-character",
+      "request": {
+        "actions": [
+          "read"
+        ],
+        "resources": [
+          "file1.txt"
+        ],
+        "configured": [
+          {
+            "action": "read",
+            "resource": "*",
+            "effect": "allow"
+          },
+          {
+            "action": "read",
+            "resource": "file?.txt",
+            "effect": "ask"
+          }
+        ]
+      },
+      "expected": {
+        "effect": "ask",
+        "rules": [
+          {
+            "action": "read",
+            "resource": "*",
+            "effect": "allow"
+          },
+          {
+            "action": "read",
+            "resource": "file?.txt",
+            "effect": "ask"
+          }
+        ]
+      }
+    },
+    {
+      "name": "question-mark-does-not-consume-two-characters",
+      "request": {
+        "actions": [
+          "read"
+        ],
+        "resources": [
+          "file12.txt"
+        ],
+        "configured": [
+          {
+            "action": "read",
+            "resource": "*",
+            "effect": "allow"
+          },
+          {
+            "action": "read",
+            "resource": "file?.txt",
+            "effect": "ask"
+          }
+        ]
+      },
+      "expected": {
+        "effect": "allow",
+        "rules": [
+          {
+            "action": "read",
+            "resource": "*",
+            "effect": "allow"
+          },
+          {
+            "action": "read",
+            "resource": "file?.txt",
+            "effect": "ask"
+          }
+        ]
+      }
+    },
+    {
+      "name": "trailing-star-makes-arguments-optional",
+      "request": {
+        "actions": [
+          "bash"
+        ],
+        "resources": [
+          "git status"
+        ],
+        "configured": [
+          {
+            "action": "bash",
+            "resource": "git status *",
+            "effect": "allow"
+          }
+        ]
+      },
+      "expected": {
+        "effect": "allow",
+        "rules": [
+          {
+            "action": "bash",
+            "resource": "git status *",
+            "effect": "allow"
+          }
+        ]
+      }
+    },
+    {
+      "name": "trailing-star-matches-arguments",
+      "request": {
+        "actions": [
+          "bash"
+        ],
+        "resources": [
+          "git status --short"
+        ],
+        "configured": [
+          {
+            "action": "bash",
+            "resource": "git status *",
+            "effect": "allow"
+          }
+        ]
+      },
+      "expected": {
+        "effect": "allow",
+        "rules": [
+          {
+            "action": "bash",
+            "resource": "git status *",
+            "effect": "allow"
+          }
+        ]
+      }
+    },
+    {
+      "name": "trailing-star-does-not-extend-the-prefix",
+      "request": {
+        "actions": [
+          "bash"
+        ],
+        "resources": [
+          "git status-other"
+        ],
+        "configured": [
+          {
+            "action": "bash",
+            "resource": "git status *",
+            "effect": "allow"
+          }
+        ]
+      },
+      "expected": {
+        "effect": "ask",
+        "rules": [
+          {
+            "action": "bash",
+            "resource": "git status *",
+            "effect": "allow"
+          }
+        ]
+      }
+    },
+    {
+      "name": "brackets-are-literal-not-a-character-class",
+      "request": {
+        "actions": [
+          "read"
+        ],
+        "resources": [
+          "literal[1].txt"
+        ],
+        "configured": [
+          {
+            "action": "read",
+            "resource": "literal[1].txt",
+            "effect": "allow"
+          }
+        ]
+      },
+      "expected": {
+        "effect": "allow",
+        "rules": [
+          {
+            "action": "read",
+            "resource": "literal[1].txt",
+            "effect": "allow"
+          }
+        ]
+      }
+    },
+    {
+      "name": "escaped-syntax-does-not-wildcard",
+      "request": {
+        "actions": [
+          "read"
+        ],
+        "resources": [
+          "literal1.txt"
+        ],
+        "configured": [
+          {
+            "action": "read",
+            "resource": "literal[1].txt",
+            "effect": "allow"
+          }
+        ]
+      },
+      "expected": {
+        "effect": "ask",
+        "rules": [
+          {
+            "action": "read",
+            "resource": "literal[1].txt",
+            "effect": "allow"
+          }
+        ]
+      }
+    },
+    {
+      "name": "backslash-normalizes-to-slash",
+      "request": {
+        "actions": [
+          "read"
+        ],
+        "resources": [
+          "nested\\secret.env"
+        ],
+        "configured": [
+          {
+            "action": "read",
+            "resource": "*",
+            "effect": "allow"
+          },
+          {
+            "action": "read",
+            "resource": "*.env",
+            "effect": "ask"
+          }
+        ]
+      },
+      "expected": {
+        "effect": "ask",
+        "rules": [
+          {
+            "action": "read",
+            "resource": "*",
+            "effect": "allow"
+          },
+          {
+            "action": "read",
+            "resource": "*.env",
+            "effect": "ask"
+          }
+        ]
+      }
+    },
+    {
+      "name": "multi-resource-takes-the-worst-effect",
+      "request": {
+        "actions": [
+          "read"
+        ],
+        "resources": [
+          "a.ts",
+          "secret.env"
+        ],
+        "configured": [
+          {
+            "action": "read",
+            "resource": "*",
+            "effect": "allow"
+          },
+          {
+            "action": "read",
+            "resource": "*.env",
+            "effect": "ask"
+          }
+        ]
+      },
+      "expected": {
+        "effect": "ask",
+        "rules": [
+          {
+            "action": "read",
+            "resource": "*",
+            "effect": "allow"
+          },
+          {
+            "action": "read",
+            "resource": "*.env",
+            "effect": "ask"
+          }
+        ]
+      }
+    },
+    {
+      "name": "every-resource-allowing-allows",
+      "request": {
+        "actions": [
+          "read"
+        ],
+        "resources": [
+          "a.ts",
+          "b.ts"
+        ],
+        "configured": [
+          {
+            "action": "read",
+            "resource": "*",
+            "effect": "allow"
+          }
+        ]
+      },
+      "expected": {
+        "effect": "allow",
+        "rules": [
+          {
+            "action": "read",
+            "resource": "*",
+            "effect": "allow"
+          }
+        ]
+      }
+    },
+    {
+      "name": "a-deny-on-any-resource-deny-despite-other-allows",
+      "request": {
+        "actions": [
+          "read"
+        ],
+        "resources": [
+          "a.ts",
+          ".env"
+        ],
+        "configured": [
+          {
+            "action": "read",
+            "resource": "*",
+            "effect": "allow"
+          },
+          {
+            "action": "read",
+            "resource": ".env",
+            "effect": "deny"
+          }
+        ],
+        "saved": [
+          {
+            "action": "read",
+            "resource": "*",
+            "effect": "allow"
+          }
+        ]
+      },
+      "expected": {
+        "effect": "deny",
+        "rules": [
+          {
+            "action": "read",
+            "resource": "*",
+            "effect": "allow"
+          },
+          {
+            "action": "read",
+            "resource": ".env",
+            "effect": "deny"
+          }
+        ]
+      }
+    },
+    {
+      "name": "explicit-skips-bare-wildcard-action-rules",
+      "request": {
+        "actions": [
+          "sandbox-escape"
+        ],
+        "resources": [
+          "host"
+        ],
+        "configured": [
+          {
+            "action": "*",
+            "resource": "*",
+            "effect": "allow"
+          }
+        ],
+        "explicit": true
+      },
+      "expected": {
+        "effect": "ask",
+        "rules": []
+      }
+    },
+    {
+      "name": "explicit-keeps-rules-naming-the-action",
+      "request": {
+        "actions": [
+          "read"
+        ],
+        "resources": [
+          "a.ts"
+        ],
+        "configured": [
+          {
+            "action": "read",
+            "resource": "*",
+            "effect": "allow"
+          },
+          {
+            "action": "*",
+            "resource": "*",
+            "effect": "deny"
+          }
+        ],
+        "explicit": true
+      },
+      "expected": {
+        "effect": "allow",
+        "rules": [
+          {
+            "action": "read",
+            "resource": "*",
+            "effect": "allow"
+          }
+        ]
+      }
+    },
+    {
+      "name": "explicit-filters-the-deny-all-too",
+      "request": {
+        "actions": [
+          "sandbox-escape"
+        ],
+        "resources": [
+          "host"
+        ],
+        "configured": [
+          {
+            "action": "*",
+            "resource": "*",
+            "effect": "deny"
+          }
+        ],
+        "explicit": true
+      },
+      "expected": {
+        "effect": "ask",
+        "rules": []
+      }
+    },
+    {
+      "name": "aliases-decide-like-the-action-they-name",
+      "request": {
+        "actions": [
+          "bash",
+          "terminal"
+        ],
+        "resources": [
+          "git status"
+        ],
+        "configured": [
+          {
+            "action": "terminal",
+            "resource": "git status *",
+            "effect": "allow"
+          }
+        ]
+      },
+      "expected": {
+        "effect": "allow",
+        "rules": [
+          {
+            "action": "terminal",
+            "resource": "git status *",
+            "effect": "allow"
+          }
+        ]
+      }
+    },
+    {
+      "name": "a-saved-deny-can-decide-in-the-merged-sweep",
+      "request": {
+        "actions": [
+          "read"
+        ],
+        "resources": [
+          "secret.env"
+        ],
+        "configured": [
+          {
+            "action": "read",
+            "resource": "*",
+            "effect": "allow"
+          }
+        ],
+        "saved": [
+          {
+            "action": "read",
+            "resource": "secret.env",
+            "effect": "deny"
+          }
+        ]
+      },
+      "expected": {
+        "effect": "deny",
+        "rules": [
+          {
+            "action": "read",
+            "resource": "*",
+            "effect": "allow"
+          },
+          {
+            "action": "read",
+            "resource": "secret.env",
+            "effect": "deny"
+          }
+        ]
+      }
+    },
+    {
+      "name": "empty-resources-allows-vacuously-as-pinned",
+      "request": {
+        "actions": [
+          "read"
+        ],
+        "resources": [],
+        "configured": []
+      },
+      "expected": {
+        "effect": "allow",
+        "rules": []
+      }
+    },
+    {
+      "name": "empty-actions-never-match-so-they-ask",
+      "request": {
+        "actions": [],
+        "resources": [
+          "a.ts"
+        ],
+        "configured": [
+          {
+            "action": "read",
+            "resource": "*",
+            "effect": "allow"
+          }
+        ]
+      },
+      "expected": {
+        "effect": "ask",
+        "rules": [
+          {
+            "action": "read",
+            "resource": "*",
+            "effect": "allow"
+          }
+        ]
+      }
+    }
+  ]
+}
