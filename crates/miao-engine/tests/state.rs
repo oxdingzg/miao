@@ -540,8 +540,7 @@ async fn an_oversized_input_drops_the_state_note_instead_of_failing() {
     assert!(!events.iter().any(|event| event.kind == "stop_failure"));
     let started = events
         .iter()
-        .filter(|event| event.kind == "provider.started")
-        .last()
+        .rfind(|event| event.kind == "provider.started")
         .unwrap();
     assert_eq!(started.data["state_selection"]["status"], "skipped");
     assert_eq!(started.data["state_selection"]["reason"], "input_budget");
