@@ -3,7 +3,9 @@ import "./init-projectors"
 import { NodeHttpServer } from "@effect/platform-node"
 import { AppNodeBuilder } from "@miao/core/effect/app-node-builder"
 import { memoMap } from "@miao/core/effect/memo-map"
-import { ConfigProvider, Context, Effect, Exit, Layer, Scope } from "effect"
+import { Observability } from "@miao/core/observability"
+import { Logging } from "@miao/core/observability/logging"
+import { ConfigProvider, Context, Effect, Exit, Layer, Logger, References, Scope } from "effect"
 import { HttpRouter, HttpServer } from "effect/unstable/http"
 import { OpenApi } from "effect/unstable/httpapi"
 import { createServer } from "node:http"
@@ -84,13 +86,17 @@ export async function openapi() {
 export let url: URL | undefined
 
 export async function listen(opts: ListenOptions): Promise<Listener> {
-  const listener = await Effect.runPromise(listenEffect(opts))
+  const diagnostics = Context.make(Logger.CurrentLoggers, new Set([Logging.stderrLogger])).pipe(
+    Context.add(References.MinimumLogLevel, Logging.minimumLogLevel()),
+  )
+  const listener = await Effect.runPromise(listenEffect(opts).pipe(Effect.provide(diagnostics)))
   return {
     hostname: listener.hostname,
     port: listener.port,
     url: listener.url,
     connected: listener.connected,
-    stop: (close?: boolean) => Effect.runPromiseExit(listener.stop(close)).then(() => undefined),
+    stop: (close?: boolean) =>
+      Effect.runPromiseExit(listener.stop(close).pipe(Effect.provide(diagnostics))).then(() => undefined),
   }
 }
 
@@ -132,9 +138,12 @@ function listenerLayer(opts: ListenOptions, port: number) {
   )
   // The native transport composes only when an engine binary is configured;
   // otherwise native-owned Sessions keep the explicit refusal.
-  if (NativeEngineNode.configured())
-    return base.pipe(Layer.provideMerge(Layer.fresh(AppNodeBuilder.build(NativeEngineNode.node))))
-  return base
+  const native = NativeEngineNode.configured()
+    ? base.pipe(Layer.provideMerge(Layer.fresh(AppNodeBuilder.build(NativeEngineNode.node))))
+    : base
+  // Native background fibers capture their logger during construction. Keep
+  // this outside their layer so diagnostics cannot corrupt ACP/TUI stdout.
+  return native.pipe(Layer.provideMerge(Observability.layer))
 }
 
 function startWithPortFallback(opts: ListenOptions) {

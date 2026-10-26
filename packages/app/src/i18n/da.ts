@@ -1,4 +1,17 @@
 export const dict = {
+  "context.timeline.title": "Kontekst og cachehistorie",
+  "context.timeline.step":
+    "{{model}} · {{time}} · {{input}} prompt tokens · {{read}} cache læst · {{write}} cache skrivning",
+  "context.timeline.requestWindow": "{{value}} tokenvindue på anmodningstidspunkt",
+  "context.timeline.catalogWindow": "{{value}} tokenvindue i det aktuelle katalog",
+  "context.timeline.unknownWindow": "Kontekstvindue ukendt",
+  "context.timeline.empty": "Der er endnu ikke registreret noget afgjort udbyderbrug.",
+  "context.timeline.retry": "Prøv brugshistorik igen",
+  "context.timeline.compaction": "Kontekst komprimeret",
+  "context.timeline.cacheRead": "Cache læst",
+  "context.timeline.cacheWrite": "Cache skriv",
+  "context.timeline.ttft": "{{value}} ms til første token",
+
   "command.category.suggested": "Foreslået",
   "command.category.view": "Vis",
   "command.category.project": "Projekt",
@@ -518,7 +531,8 @@ export const dict = {
   "toast.permissions.autoaccept.off.title": "Stoppet med at acceptere tilladelser automatisk",
   "toast.permissions.autoaccept.off.description": "Anmodninger om tilladelse vil kræve godkendelse",
   "settings.permissions.autoaccept.project.title": "Acceptér tilladelser automatisk for dette projekt",
-  "settings.permissions.autoaccept.project.description": "Besvar nye tilladelsesanmodninger fra enhver session i dette projekt uden at spørge. Valg pr. session og mappe går forud.",
+  "settings.permissions.autoaccept.project.description":
+    "Besvar nye tilladelsesanmodninger fra enhver session i dette projekt uden at spørge. Valg pr. session og mappe går forud.",
 
   "toast.workspace.enabled.title": "Arbejdsområder aktiveret",
   "toast.workspace.enabled.description": "Flere worktrees vises nu i sidepanelet",
@@ -831,7 +845,8 @@ export const dict = {
   "settings.general.row.reasoningSummaries.title": "Vis ræsonneringsoversigter",
   "settings.general.row.reasoningSummaries.description": "Vis oversigter over modellens ræsonnering på tidslinjen",
   "settings.general.row.turnDiffs.title": "Vis ændrede filer per runde",
-  "settings.general.row.turnDiffs.description": "Viser på tidslinjen de ændrede filer for hver afsluttet runde med linjetal og udfoldelige diffs.",
+  "settings.general.row.turnDiffs.description":
+    "Viser på tidslinjen de ændrede filer for hver afsluttet runde med linjetal og udfoldelige diffs.",
 
   "settings.general.row.shellToolPartsExpanded.title": "Udvid shell-værktøjsdele",
   "settings.general.row.shellToolPartsExpanded.description": "Vis shell-værktøjsdele udvidet som standard i tidslinjen",

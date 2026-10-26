@@ -7,7 +7,7 @@ import { Prompt, CommandInvocation, AgentAttachment } from "@miao/schema/prompt"
 import { Question } from "@miao/schema/question"
 import { Delivery } from "@miao/schema/session-delivery"
 import { StatusInfo } from "@miao/schema/session-event"
-import { adoptSession, messageID } from "./identity"
+import { adoptSession, messageID, promotedInputMessageID } from "./identity"
 import type { EngineEvent, EngineProgress } from "./client"
 import { decodeAttachments } from "./prompt-attachments"
 import { SessionRunnerCost } from "@miao/core/session/runner/cost"
@@ -112,8 +112,8 @@ export function translatePrompt(
     sessionID: adoptSession(event.session_id),
     timestamp: eventTimestamp(event),
     messageID:
-      "input_id" in event.data && typeof event.data.input_id === "string" && event.data.input_id.startsWith("msg_")
-        ? SessionMessage.ID.make(event.data.input_id)
+      "input_id" in event.data && typeof event.data.input_id === "string"
+        ? promotedInputMessageID(event.data.input_id)
         : messageID(event.session_id, event.seq),
     prompt: { text, ...(files.length ? { files } : {}), ...promptMetadata(event.data) },
     delivery,
@@ -816,11 +816,26 @@ const TOOL_IDS: Record<string, string> = {
  * (`facade-mapping.md`). Engine MCP tools surface under the product's
  * `mcp__<server>__<tool>` vocabulary: the engine aliases a server tool as
  * `mcp_<server>_<tool>_<32-hex digest>` (slugs truncated to 12/14 chars), so
- * the digest suffix is stripped and the first underscore separates server from
- * tool. Other tools retain their native names for the generic renderer.
+ * new commits carry the original catalog identity separately. Historical
+ * aliases without that metadata retain their legacy best-effort presentation.
+ * Other tools retain their native names for the generic renderer.
  */
-export function productToolID(engineTool: string): string {
+export function productToolID(engineTool: string, identity?: unknown): string {
   if (engineTool in TOOL_IDS) return TOOL_IDS[engineTool]
+  if (
+    (engineTool.startsWith("mcp_") || engineTool === "tool_call") &&
+    typeof identity === "object" &&
+    identity !== null &&
+    "server" in identity &&
+    typeof identity.server === "string" &&
+    /^[A-Za-z0-9_.-]{1,64}$/.test(identity.server) &&
+    "tool" in identity &&
+    typeof identity.tool === "string" &&
+    identity.tool.length > 0 &&
+    identity.tool.length <= 256 &&
+    !/[\u0000-\u001f\u007f]/.test(identity.tool)
+  )
+    return `mcp__${identity.server}__${identity.tool}`
   if (engineTool.startsWith("mcp_")) {
     const rest = engineTool.slice("mcp_".length)
     const digest = rest.match(/_[0-9a-f]{32}$/)
@@ -838,7 +853,19 @@ export function productToolID(engineTool: string): string {
  * `run_command` (argv-shaped); the product vocabulary is a `bash` call with
  * `run_in_background`, so the bridge translates instead of leaking argv.
  */
-export function productToolInput(engineTool: string, input: Record<string, unknown>): Record<string, unknown> {
+export function productToolInput(
+  engineTool: string,
+  input: Record<string, unknown>,
+  identity?: unknown,
+): Record<string, unknown> {
+  if (
+    engineTool === "tool_call" &&
+    productToolID(engineTool, identity).startsWith("mcp__") &&
+    typeof input.arguments === "object" &&
+    input.arguments !== null &&
+    !Array.isArray(input.arguments)
+  )
+    return Object.fromEntries(Object.entries(input.arguments))
   if (engineTool === "task") {
     // The engine's task schema keys differ from the product vocabulary the
     // transcript renderer reads: `agent` is the product's `subagent_type`,
@@ -852,6 +879,19 @@ export function productToolInput(engineTool: string, input: Record<string, unkno
       if (line !== undefined) projected.description = line.trim().slice(0, 120)
     }
     return projected
+  }
+  if (
+    (engineTool === "run_command" || engineTool === "bash") &&
+    typeof input.command !== "string" &&
+    Array.isArray(input.argv) &&
+    input.argv.length > 0 &&
+    input.argv.every((item): item is string => typeof item === "string")
+  ) {
+    // Display argv faithfully; joining raw arguments would hide spaces and shell metacharacters.
+    const command = input.argv
+      .map((item) => (/^[A-Za-z0-9_./:=+-]+$/.test(item) ? item : "'" + item.replaceAll("'", "'\\''") + "'"))
+      .join(" ")
+    return { ...input, command }
   }
   if (engineTool !== "start_job") return input
   const argv = Array.isArray(input.argv) ? input.argv.filter((item): item is string => typeof item === "string") : []
@@ -959,14 +999,15 @@ export function translateTools(event: EngineEvent): SessionToolCalled[] {
     if ("input" in block && typeof block.input === "object" && block.input !== null) {
       for (const key of Object.keys(block.input)) input[key] = Reflect.get(block.input, key)
     }
+    const identity = "_miao_mcp" in block ? block._miao_mcp : undefined
     return [
       {
         sessionID,
         timestamp: eventTimestamp(event),
         assistantMessageID,
         callID: block.id,
-        tool: productToolID(block.name),
-        input: productToolInput(block.name, input),
+        tool: productToolID(block.name, identity),
+        input: productToolInput(block.name, input, identity),
         provider: { executed: false },
       },
     ]
@@ -1044,7 +1085,10 @@ export class ToolBridge {
       if (typeof block !== "object" || block === null) continue
       if (!("type" in block) || block.type !== "tool_use") continue
       if (!("id" in block) || typeof block.id !== "string") continue
-      const tool = "name" in block && typeof block.name === "string" ? productToolID(block.name) : "custom"
+      const tool =
+        "name" in block && typeof block.name === "string"
+          ? productToolID(block.name, "_miao_mcp" in block ? block._miao_mcp : undefined)
+          : "custom"
       const known = { sessionID, assistantMessageID, tool }
       this.#calls.set(JSON.stringify([event.session_id, block.id]), known)
       for (const plan of this.#plans.values()) {
@@ -1111,7 +1155,7 @@ export function translateApproval(event: EngineEvent): SessionPermissionAsked | 
   return {
     id: Permission.ID.create(`per_${event.data.request_id}`),
     sessionID: adoptSession(event.data.session_id),
-    action: productToolID(tool),
+    action: productToolID(tool, "mcp" in event.data ? event.data.mcp : undefined),
     resources: [resource],
     metadata: { request_id: event.data.request_id, input_hash: inputHash, policy_revision: policyRevision },
   }
@@ -1209,10 +1253,7 @@ export function translateCopiedPrompt(event: EngineEvent): SessionPromptAdmitted
   return {
     sessionID: adoptSession(event.session_id),
     timestamp: eventTimestamp(event),
-    messageID:
-      "input_id" in event.data && typeof event.data.input_id === "string" && event.data.input_id.startsWith("msg_")
-        ? SessionMessage.ID.make(event.data.input_id)
-        : messageID(event.session_id, event.seq),
+    messageID: promotedInputMessageID(event.data.input_id),
     prompt: { text, ...(files.length ? { files } : {}), ...promptMetadata(event.data, event.data.content) },
     delivery: "delivery" in event.data && event.data.delivery === "queue" ? "queue" : "steer",
   }
