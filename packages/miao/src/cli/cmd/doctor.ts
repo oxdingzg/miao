@@ -376,7 +376,7 @@ const SnapshotCommand = effectCmd({
       try: () => engineSettings(Global.Path.config),
       catch: () => undefined,
     }).pipe(Effect.orElseSucceed(() => undefined))
-    const storage = engineStorageRoot(process.env, engineConfiguration)
+    const storage = engineStorageRoot(process.env, engineConfiguration, path.join(Global.Path.data, "engines"))
     console.log(
       storage
         ? `  storage:     ${storage}  (new Sessions place natively)`
