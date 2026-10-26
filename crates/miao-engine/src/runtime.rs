@@ -4543,14 +4543,18 @@ async fn start_monitor(
                 biased;
                 _ = token.cancelled() => {
                     group.terminate();
-                    let _ = finish_background_job(
-                        &task_inner,
-                        &owner,
-                        &task_id,
-                        "cancelled",
-                        json!({"reason":"cancelled_by_request"}),
-                    )
-                    .await;
+                    // An explicit cancel_job result already told the model;
+                    // a session stop means nobody is listening. Either way a
+                    // durable "job finished" wake would be pure noise.
+                    let _ = task_inner
+                        .store
+                        .finish_job_quiet(
+                            &owner,
+                            &task_id,
+                            "cancelled",
+                            json!({"reason":"cancelled_by_request"}),
+                        )
+                        .await;
                     task_inner.jobs.lock().await.remove(&task_id);
                     return;
                 }
@@ -4560,10 +4564,17 @@ async fn start_monitor(
                         .store
                         .record(&owner, "monitor.timeout", json!({"job_id":task_id,"timeout_ms":input.timeout()}))
                         .await;
-                    if let Some(notice) = batcher.flush(true, &task_id, description.as_deref()) {
-                        emit_monitor_notice(&task_inner, &owner, &task_id, notice).await;
-                    }
-                    let _ = finish_background_job(&task_inner, &owner, &task_id, "failed", json!({"timed_out":true})).await;
+                    let notice = batcher.flush(true, &task_id, description.as_deref());
+                    finish_monitor_job(
+                        &task_inner,
+                        &owner,
+                        &task_id,
+                        "failed",
+                        format!("timed out after {} ms (state failed)", input.timeout()),
+                        notice,
+                        json!({"timed_out":true}),
+                    )
+                    .await;
                     break;
                 }
                 _ = window.tick() => {
@@ -4584,11 +4595,18 @@ async fn start_monitor(
                 status = group.child.wait(), if !stdout_open => {
                     let code = status.map(|status| status.code().unwrap_or(-1)).unwrap_or(-1);
                     let _ = task_inner.store.record(&owner, "monitor.exited", json!({"job_id":task_id,"code":code})).await;
-                    if let Some(notice) = batcher.flush(true, &task_id, description.as_deref()) {
-                        emit_monitor_notice(&task_inner, &owner, &task_id, notice).await;
-                    }
+                    let notice = batcher.flush(true, &task_id, description.as_deref());
                     let state = if code == 0 { "completed" } else { "failed" };
-                    let _ = finish_background_job(&task_inner, &owner, &task_id, state, json!({"exit_code":code})).await;
+                    finish_monitor_job(
+                        &task_inner,
+                        &owner,
+                        &task_id,
+                        state,
+                        format!("finished with state {state} (exit code {code})"),
+                        notice,
+                        json!({"exit_code":code}),
+                    )
+                    .await;
                     break;
                 }
             }
@@ -4620,7 +4638,7 @@ async fn emit_monitor_notice(inner: &Inner, session: &str, job: &str, notice: Va
             command: None,
             session_id: session.to_owned(),
             input_id: format!("monitor:{job}:{}", uuid::Uuid::new_v4()),
-            prompt: format!("Monitor job {job} produced matching output:\n{notice}"),
+            prompt: crate::monitor::render_notice_text(job, &notice),
             delivery: Delivery::Steer,
         })
         .await;
@@ -4647,6 +4665,70 @@ async fn emit_monitor_notice(inner: &Inner, session: &str, job: &str, notice: Va
         json!({"job_id":job,"input_id":admitted.input_id}),
     )
     .await;
+}
+
+/// Settle a finished monitor with ONE durable input: the terminal state plus
+/// the final matched lines. The generic job-finished admission would double-
+/// wake the Session even though the notice already carries the output.
+async fn finish_monitor_job(
+    inner: &Inner,
+    session: &str,
+    job: &str,
+    state: &str,
+    state_text: String,
+    notice: Option<Value>,
+    result: Value,
+) {
+    if let Some(notice) = &notice {
+        let _ = inner.progress.send(notice.clone());
+    }
+    let prompt = crate::monitor::render_finish_text(job, &state_text, notice.as_ref());
+    let admitted = inner
+        .store
+        .admit(Input {
+            agent_references: Default::default(),
+            command: None,
+            session_id: session.to_owned(),
+            input_id: format!("monitor:{job}:finished"),
+            prompt,
+            delivery: Delivery::Steer,
+        })
+        .await;
+    if let Err(error) = &admitted {
+        let _ = inner
+            .store
+            .record(
+                session,
+                "monitor.notice_failed",
+                json!({"job_id":job,"message":error.to_string()}),
+            )
+            .await;
+    }
+    if let Err(error) = inner
+        .store
+        .finish_job_quiet(session, job, state, result)
+        .await
+    {
+        let _ = inner
+            .store
+            .record(
+                session,
+                "monitor.settle_failed",
+                json!({"job_id":job,"message":error.to_string()}),
+            )
+            .await;
+        return;
+    }
+    if let Ok(admitted) = admitted {
+        let _ = notify_admission(
+            inner,
+            session,
+            &admitted,
+            "monitor.wake_failed",
+            json!({"job_id":job,"input_id":admitted.input_id}),
+        )
+        .await;
+    }
 }
 
 /// Launch a monitor command through the same sandboxed runner the process
