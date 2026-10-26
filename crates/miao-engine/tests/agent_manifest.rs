@@ -662,7 +662,9 @@ async fn an_agent_can_narrow_but_not_silently_reset_the_provider_turn_allowance(
     agent.steps = Some(1);
     runtime.set_agent("s", agent).await.unwrap();
     turn(&runtime, &store, "one").await;
-    assert_eq!(provider.calls.load(Ordering::SeqCst), 1);
+    // One working turn plus the closing turn the step budget reserves, not the
+    // configured 25 the base policy would otherwise allow.
+    assert_eq!(provider.calls.load(Ordering::SeqCst), 2);
     assert!(store.active_run("s").await.unwrap().is_none());
     runtime.shutdown().await;
 }
@@ -676,7 +678,14 @@ async fn exhausting_the_provider_turn_allowance_pauses_instead_of_failing() {
     agent.steps = Some(1);
     runtime.set_agent("s", agent).await.unwrap();
     turn(&runtime, &store, "one").await;
-    assert_eq!(provider.calls.load(Ordering::SeqCst), 1);
+    // The working turn, then the closing turn spent on the step wrap-up: it
+    // runs without a tool surface instead of the run stopping mid-operation.
+    assert_eq!(provider.calls.load(Ordering::SeqCst), 2);
+    assert_eq!(
+        provider.tools.lock().unwrap()[1].len(),
+        0,
+        "the closing turn carries no tool surface"
+    );
     let events = store.events("s", 0, 500).await.unwrap();
     assert!(events.iter().any(|event| event.kind == "message.synthetic"
         && event.data["text"]

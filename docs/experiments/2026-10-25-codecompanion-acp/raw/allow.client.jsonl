@@ -1,0 +1,4 @@
+{"id":1,"jsonrpc":"2.0","params":{"protocolVersion":1,"clientInfo":{"name":"CodeCompanion.nvim","version":"1.0.0"},"clientCapabilities":{"fs":{"readTextFile":true,"writeTextFile":true}}},"method":"initialize"}
+{"id":2,"jsonrpc":"2.0","params":{"cwd":"[workspace]","mcpServers":[]},"method":"session/new"}
+{"id":3,"jsonrpc":"2.0","params":{"sessionId":"ses_gfe5e8c643836ffeHzkz6seOYh","prompt":[{"type":"text","text":"ACP_ALLOW"}]},"method":"session/prompt"}
+{"id":0,"jsonrpc":"2.0","result":{"outcome":{"outcome":"selected","optionId":"once"}}}

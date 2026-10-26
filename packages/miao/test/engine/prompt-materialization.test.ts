@@ -126,7 +126,6 @@ it.live("rejects missing, oversized or invalid references before admission and l
         Blob.refUri(stored.hash),
         Blob.refUri("0".repeat(64)),
         "blob://../escape",
-        pathToFileURL(root).href,
         "ftp://example.invalid/image.png",
       ]
       for (const uri of invalid)
@@ -180,6 +179,58 @@ it.live("snapshots PDF and UTF-8 text references, including empty files, with re
       expect(encodeAttachments([{ uri: "data:text/markdown;charset=utf-8;base64,IyBoaQ==" }])[0]?.mime).toBe(
         "text/markdown",
       )
+    }),
+  ),
+)
+
+const inlinedText = (uri: string) => Buffer.from(uri.slice(uri.indexOf(",") + 1), "base64").toString("utf8")
+
+it.live("inlines a directory listing and only the lines a range mention named", () =>
+  withStorage((root) =>
+    Effect.gen(function* () {
+      const fs = yield* FSUtil.Service
+      const folder = path.join(root, "folder")
+      yield* fs.ensureDir(path.join(folder, "child"))
+      yield* fs.writeFile(path.join(folder, "a.ts"), Buffer.from("a"))
+      yield* fs.writeFile(path.join(folder, "z.ts"), Buffer.from("z"))
+      const notes = path.join(root, "notes.md")
+      yield* fs.writeFile(notes, Buffer.from("one\ntwo\nthree\nfour"))
+      const ranged = pathToFileURL(notes)
+      ranged.searchParams.set("start", "2")
+      ranged.searchParams.set("end", "3")
+      const prompt = yield* PromptMaterialization.prepare({
+        text: "inspect",
+        files: [
+          { uri: pathToFileURL(folder).href, name: "folder/", path: folder },
+          { uri: ranged.href, name: "notes.md#2-3" },
+          { uri: pathToFileURL(path.join(root, "gone.md")).href, name: "gone.md" },
+        ],
+      })
+      const [listed, selected, missing] = prompt.files ?? []
+      expect(listed!.uri.startsWith("data:text/plain;base64,")).toBe(true)
+      expect(inlinedText(listed!.uri).split("\n").sort()).toEqual(["a.ts", "child/", "z.ts"])
+      expect(inlinedText(selected!.uri)).toBe("two\nthree")
+      expect(inlinedText(missing!.uri)).toBe("[attachment unavailable: gone.md]")
+    }),
+  ),
+)
+
+it.live("bounds a directory listing at the runner's limit", () =>
+  withStorage((root) =>
+    Effect.gen(function* () {
+      const fs = yield* FSUtil.Service
+      const folder = path.join(root, "many")
+      yield* fs.ensureDir(folder)
+      yield* Effect.forEach(Array.from({ length: 205 }, (_, index) => `f${index}.ts`), (name) =>
+        fs.writeFile(path.join(folder, name), Buffer.from("")),
+      )
+      const prompt = yield* PromptMaterialization.prepare({
+        text: "",
+        files: [{ uri: pathToFileURL(folder).href, name: "many/" }],
+      })
+      const lines = inlinedText(prompt.files![0]!.uri).split("\n")
+      expect(lines).toHaveLength(201)
+      expect(lines.at(-1)).toBe("... 5 more entries")
     }),
   ),
 )

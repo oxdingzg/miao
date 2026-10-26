@@ -23,26 +23,21 @@ env:
 
 jobs:
   e2e:
-    name: e2e (${{ matrix.settings.label }})
+    name: e2e (${{ matrix.settings }})
     strategy:
       fail-fast: false
       matrix:
-        settings:
-          - name: linux
-            label: linux
-            # Playwright 1.59 has no Chromium build for Ubuntu 26.04, which
-            # `ubuntu-latest` now resolves to: the install step fails before any
-            # test runs. Pin the last image the browser supports.
-            host: ubuntu-24.04
-            blocking: true
-          # non-blocking until Windows suite is fixed; remaining failures: specs/ci-windows.md
-          - name: windows
-            label: windows, non-blocking until Windows suite is fixed
-            host: windows-2025
-            blocking: false
-    runs-on: ${{ matrix.settings.host }}
+        # The Windows leg is non-blocking until specs/ci-windows.md is finished,
+        # so on a pull request it only spent a Windows runner reporting a status
+        # nobody may act on. The nightly schedule and manual dispatch still run
+        # it, where a regression can be picked up deliberately.
+        settings: ${{ fromJSON((github.event_name == 'schedule' || github.event_name == 'workflow_dispatch') && '["linux","windows"]' || '["linux"]') }}
+    # Playwright 1.59 has no Chromium build for Ubuntu 26.04, which
+    # `ubuntu-latest` now resolves to: the install step fails before any test
+    # runs. Pin the last image the browser supports.
+    runs-on: ${{ matrix.settings == 'windows' && 'windows-2025' || 'ubuntu-24.04' }}
     timeout-minutes: 60
-    continue-on-error: ${{ !matrix.settings.blocking }}
+    continue-on-error: ${{ matrix.settings == 'windows' }}
     env:
       PLAYWRIGHT_BROWSERS_PATH: ${{ github.workspace }}/.playwright-browsers
       PLAYWRIGHT_WORKERS: 1
@@ -105,7 +100,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
-          name: playwright-${{ matrix.settings.name }}-${{ github.run_attempt }}
+          name: playwright-${{ matrix.settings }}-${{ github.run_attempt }}
           if-no-files-found: ignore
           retention-days: 7
           path: |

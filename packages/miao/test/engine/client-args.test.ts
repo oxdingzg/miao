@@ -117,3 +117,41 @@ test("an explicit credential overrides an inherited value of the same name", () 
   expect(child.TEMP).toBe("/explicit")
   expect(child.PATH).toBe("/usr/bin")
 })
+
+test("the retained web-search provider knob reaches the engine under its own name", () => {
+  const child = engineEnvironment(undefined, {
+    EXA_API_KEY: "exa-parent",
+    PARALLEL_API_KEY: "parallel-parent",
+    MIAO_WEBSEARCH_PROVIDER: "parallel",
+  })
+  expect(child.MIAO_WEB_SEARCH_PROVIDER).toBe("parallel")
+  expect(child.MIAO_WEBSEARCH_PROVIDER).toBeUndefined()
+  // An environment already using the engine's name is authoritative.
+  const current = engineEnvironment(undefined, {
+    MIAO_WEB_SEARCH_PROVIDER: "exa",
+    MIAO_WEBSEARCH_PROVIDER: "parallel",
+  })
+  expect(current.MIAO_WEB_SEARCH_PROVIDER).toBe("exa")
+})
+
+test("worker configuration diagnostics leave stdout available for protocols", async () => {
+  const child = Bun.spawn(
+    [
+      process.execPath,
+      "--eval",
+      `
+    import { engineArgs } from ${JSON.stringify(new URL("../../src/engine/client.ts", import.meta.url).href)}
+    console.log(JSON.stringify(engineArgs({ binary: "engine", db: "db", workspace: "workspace", model: "model", workerConfigFile: "worker.json" })))
+  `,
+    ],
+    { stdout: "pipe", stderr: "pipe" },
+  )
+  const [stdout, stderr, exit] = await Promise.all([
+    new Response(child.stdout).text(),
+    new Response(child.stderr).text(),
+    child.exited,
+  ])
+  expect(exit).toBe(0)
+  expect(JSON.parse(stdout)).toContain("--worker-config")
+  expect(stderr).toBe("")
+})

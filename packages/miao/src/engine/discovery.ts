@@ -26,6 +26,8 @@ export type Capabilities = {
   schema: number
   /** Host route manifest version; absent on engines that predate it. */
   routesSchema?: number
+  /** Version of the short-lived read-only catalog command, when supported. */
+  catalog?: number
 }
 
 const EXE = process.platform === "win32" ? ".exe" : ""
@@ -48,13 +50,32 @@ export function capabilities(binary: string): Capabilities | undefined {
   const result = spawnSync(binary, ["--capabilities"], { encoding: "utf8", timeout: 5_000 })
   if (result.status !== 0 || !result.stdout) return undefined
   try {
-    const value = JSON.parse(result.stdout) as Partial<Capabilities>
-    if (value.name !== "miao-engine") return undefined
-    if (typeof value.protocol !== "number") return undefined
-    if (typeof value.schema !== "number") return undefined
-    if (typeof value.version !== "string") return undefined
-    if (value.routesSchema !== undefined && typeof value.routesSchema !== "number") return undefined
-    return value as Capabilities
+    const value: unknown = JSON.parse(result.stdout)
+    if (typeof value !== "object" || value === null) return undefined
+    const wire = value as Record<string, unknown>
+    if (wire.name !== "miao-engine") return undefined
+    if (typeof wire.protocol !== "number") return undefined
+    if (typeof wire.schema !== "number") return undefined
+    if (typeof wire.version !== "string") return undefined
+    // The engine writes snake_case (`routes_schema`); a probe fixture may carry
+    // the camelCase spelling. Read either, refuse a frame that disagrees with
+    // itself, and treat a frame with neither as an engine that predates the
+    // field — that policy is unchanged, only the accepted encoding is wider.
+    const camel = wire.routesSchema
+    const snake = wire.routes_schema
+    if (camel !== undefined && typeof camel !== "number") return undefined
+    if (snake !== undefined && typeof snake !== "number") return undefined
+    if (camel !== undefined && snake !== undefined && camel !== snake) return undefined
+    const routesSchema = camel ?? snake
+    if (wire.catalog !== undefined && typeof wire.catalog !== "number") return undefined
+    return {
+      name: "miao-engine",
+      version: wire.version,
+      protocol: wire.protocol,
+      schema: wire.schema,
+      ...(typeof routesSchema === "number" ? { routesSchema } : {}),
+      ...(typeof wire.catalog === "number" ? { catalog: wire.catalog } : {}),
+    }
   } catch {
     return undefined
   }

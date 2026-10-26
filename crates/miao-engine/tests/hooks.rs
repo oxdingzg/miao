@@ -244,3 +244,87 @@ fn hook_configuration_is_bounded_and_unambiguous() {
     )
     .is_err());
 }
+
+#[tokio::test]
+async fn cancellation_stops_inflight_hooks_and_their_processes() {
+    for phase in [Event::PreToolUse, Event::PostToolUse] {
+        let dir = tempfile::tempdir().unwrap();
+        let workspace = dir.path().join("workspace");
+        std::fs::create_dir(&workspace).unwrap();
+        std::fs::write(workspace.join("AGENTS.md"), "rules").unwrap();
+        let store = Store::open(dir.path().join("engine.db")).await.unwrap();
+        let tools = Tools::new(&workspace)
+            .await
+            .unwrap()
+            .with_process_runner(env!("CARGO_BIN_EXE_miao-engine").into())
+            .with_hooks(vec![Hook {
+                event: phase,
+                tool: "run_command".into(),
+                argv: vec![
+                    "/bin/sh".into(),
+                    "-c".into(),
+                    "echo $$ > hook.pid; touch hook.ready; sleep 30".into(),
+                ],
+                timeout_ms: 30000,
+            }])
+            .unwrap();
+        let runtime = Runtime::with_policy(store.clone(), Arc::new(Executor), tools, policy())
+            .await
+            .unwrap();
+        runtime
+            .admit(
+                Input {
+                    session_id: "s".into(),
+                    input_id: "p".into(),
+                    prompt: "run fixture".into(),
+                    delivery: Default::default(),
+                    command: None,
+                    agent_references: Default::default(),
+                },
+                true,
+            )
+            .await
+            .unwrap();
+        tokio::time::timeout(std::time::Duration::from_secs(20), async {
+            while !workspace.join("hook.ready").exists() {
+                tokio::time::sleep(std::time::Duration::from_millis(10)).await;
+            }
+        })
+        .await
+        .unwrap();
+        let pid: i32 = std::fs::read_to_string(workspace.join("hook.pid"))
+            .unwrap()
+            .trim()
+            .parse()
+            .unwrap();
+        assert!(runtime.cancel("s").await.unwrap());
+        tokio::time::timeout(std::time::Duration::from_secs(3), async {
+            loop {
+                let events = store.events("s", 0, 200).await.unwrap();
+                if let Some(finished) = events.iter().find(|event| event.kind == "run.finished") {
+                    assert_eq!(finished.data["reason"], "interrupted");
+                    assert!(events.iter().any(|event| event.kind == "hook.completed"
+                        && event.data["reason"] == "cancelled"));
+                    break;
+                }
+                tokio::time::sleep(std::time::Duration::from_millis(10)).await;
+            }
+        })
+        .await
+        .unwrap();
+        assert_eq!(
+            workspace.join("probe.txt").exists(),
+            phase == Event::PostToolUse
+        );
+        assert_eq!(
+            unsafe { libc::kill(pid, 0) },
+            -1,
+            "hook process remained alive"
+        );
+        assert_eq!(
+            std::io::Error::last_os_error().raw_os_error(),
+            Some(libc::ESRCH)
+        );
+        runtime.shutdown().await;
+    }
+}
