@@ -135,6 +135,72 @@ async fn truncation_refusal_length_and_invalid_shapes_never_complete_or_retry() 
     }
 }
 
+/// Some gateways close the stream with `[DONE]` and never send a finish
+/// reason. The stream is complete, so the turn commits instead of failing
+/// after its content was already streamed.
+#[tokio::test]
+async fn done_without_a_finish_reason_completes_the_reply() {
+    let body = frames(
+        vec![chunk(
+            json!({"role":"assistant","content":"done thinking"}),
+            json!(null),
+        )],
+        true,
+    );
+    let (url, _requests, server) = common::endpoint(vec![(200, body)]).await;
+    let provider = OpenAIChat::new(url, "fixture".into(), "model".into()).unwrap();
+    let (progress, _receive) = mpsc::channel(64);
+    let reply = provider
+        .stream(request(), progress, CancellationToken::new())
+        .await
+        .unwrap();
+    assert_eq!(reply.content[0]["text"], "done thinking");
+    assert!(!reply.needs_tools);
+    server.await.unwrap();
+}
+
+#[tokio::test]
+async fn done_without_a_finish_reason_keeps_the_tool_call_it_carried() {
+    let body = frames(
+        vec![chunk(
+            json!({"tool_calls":[{"index":0,"id":"call","function":{"name":"read_file","arguments":"{\"path\":\"file\"}"}}]}),
+            json!(null),
+        )],
+        true,
+    );
+    let (url, _requests, server) = common::endpoint(vec![(200, body)]).await;
+    let provider = OpenAIChat::new(url, "fixture".into(), "model".into()).unwrap();
+    let (progress, _receive) = mpsc::channel(64);
+    let reply = provider
+        .stream(request(), progress, CancellationToken::new())
+        .await
+        .unwrap();
+    assert!(reply.needs_tools);
+    assert_eq!(reply.content[0]["name"], "read_file");
+    assert_eq!(reply.content[0]["input"]["path"], "file");
+    server.await.unwrap();
+}
+
+#[tokio::test]
+async fn an_unsupported_finish_reason_names_the_reason() {
+    let body = frames(
+        vec![chunk(json!({"content":"partial"}), json!("content_filter"))],
+        true,
+    );
+    let (url, _requests, server) = common::endpoint(vec![(200, body)]).await;
+    let provider = OpenAIChat::new(url, "fixture".into(), "model".into()).unwrap();
+    let (progress, _receive) = mpsc::channel(64);
+    let error = provider
+        .stream(request(), progress, CancellationToken::new())
+        .await
+        .unwrap_err();
+    assert!(
+        matches!(&error, ProviderError::Stream(message) if message.contains("content_filter")),
+        "unexpected error: {error:?}"
+    );
+    server.await.unwrap();
+}
+
 #[tokio::test]
 async fn unsupported_history_is_rejected_before_any_network_request() {
     let mut request = request();

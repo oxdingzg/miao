@@ -501,12 +501,23 @@ impl Parser for ChatState {
                 unexecuted_calls,
             });
         }
-        if (needs_tools && self.finish.as_deref() != Some("tool_calls"))
-            || (!needs_tools && self.finish.as_deref() != Some("stop"))
-        {
-            return Err(ProviderError::Stream(
-                "incomplete or unsupported Chat finish reason".into(),
-            ));
+        // Some gateways close the stream with `[DONE]` and never send a finish
+        // reason. The stream declared itself complete, so the missing reason
+        // ends it naturally; truncated tool arguments still surface as their
+        // own invalid-arguments result instead of losing the turn.
+        let reason =
+            self.finish
+                .as_deref()
+                .unwrap_or(if needs_tools { "tool_calls" } else { "stop" });
+        if reason != "tool_calls" && reason != "stop" {
+            return Err(ProviderError::Stream(format!(
+                "unsupported Chat finish reason: {reason}"
+            )));
+        }
+        if needs_tools != (reason == "tool_calls") {
+            return Err(ProviderError::Stream(format!(
+                "Chat finish reason {reason} does not match the content it ended"
+            )));
         }
         if self.text.is_empty() && self.calls.is_empty() {
             return Err(ProviderError::Stream("empty completed Chat message".into()));
