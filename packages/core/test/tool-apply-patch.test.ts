@@ -461,7 +461,10 @@ describe("ApplyPatchTool", () => {
                     registry,
                     call("*** Begin Patch\n*** Update File: old.txt\n*** Move to: new.txt\n*** End Patch"),
                   ),
-                ).toEqual({ type: "error", value: "Unable to apply patch at old.txt" })
+                ).toEqual({
+                  type: "error",
+                  value: expect.stringContaining("Unable to apply patch at old.txt: the file changed on disk"),
+                })
                 expect(yield* Effect.promise(() => fs.readFile(source, "utf8"))).toBe("manual edit\n")
                 expect(yield* exists(path.join(tmp.path, "new.txt"))).toBe(false)
               }),
@@ -714,7 +717,7 @@ describe("ApplyPatchTool", () => {
                   "*** Begin Patch\n*** Add File: created.txt\n+created\n*** Update File: missing.txt\n@@\n-before\n+after\n*** End Patch",
                 ),
               ),
-            ).toEqual({ type: "error", value: "Unable to apply patch at missing.txt" })
+            ).toEqual({ type: "error", value: expect.stringContaining("Unable to apply patch at missing.txt: NotFound") })
             expect(yield* exists(path.join(tmp.path, "created.txt"))).toBe(false)
             // The failure is reported only after edit approval, which then carries no diff.
             expect(assertions).toMatchObject([{ action: "edit", metadata: { filepath: "created.txt, missing.txt" } }])
@@ -770,7 +773,11 @@ describe("ApplyPatchTool", () => {
                     registry,
                     call("*** Begin Patch\n*** Add File: existing.txt\n+replacement\n*** End Patch"),
                   ),
-                ).toEqual({ type: "error", value: "Unable to apply patch at existing.txt" })
+                ).toEqual({
+                  type: "error",
+                  value:
+                    "Unable to apply patch at existing.txt: the target already exists; use an update hunk instead of an add",
+                })
                 expect(yield* Effect.promise(() => fs.readFile(target, "utf8"))).toBe("sentinel\n")
               }),
             ),
@@ -822,7 +829,10 @@ describe("ApplyPatchTool", () => {
                 registry,
                 call("*** Begin Patch\n*** Add File: appeared.txt\n+replacement\n*** End Patch"),
               ),
-            ).toEqual({ type: "error", value: "Unable to apply patch at appeared.txt" })
+            ).toEqual({
+              type: "error",
+              value: "Unable to apply patch at appeared.txt: the target already exists; use an update hunk instead of an add",
+            })
             expect(yield* Effect.promise(() => fs.readFile(target, "utf8"))).toBe("winner\n")
           }),
         )

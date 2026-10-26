@@ -91,12 +91,16 @@ const layer = Layer.effectDiscard(
             toModelOutput: ({ output }) => [{ type: "text", text: toModelOutput(output) }],
             execute: (input, context) => {
               const applied: Array<typeof Applied.Type> = []
-              const fail = (path: string) => {
+              // The matcher names the context or lines that did not match; a
+              // bare "unable to apply" left the model guessing which hunk was
+              // wrong, so it resent the same patch.
+              const fail = (path: string, cause?: unknown) => {
                 const prefix =
                   applied.length === 0
                     ? `Unable to apply patch at ${path}`
                     : `Patch partially applied before failing at ${path}. Applied: ${applied.map((item) => item.resource).join(", ")}`
-                return new ToolFailure({ message: prefix })
+                const detail = cause === undefined ? undefined : describeCause(cause)
+                return new ToolFailure({ message: detail === undefined ? prefix : `${prefix}: ${detail}` })
               }
               return Effect.gen(function* () {
                 const source = {
@@ -211,7 +215,7 @@ const layer = Layer.effectDiscard(
                     // stay a failure so it is reported only after edit approval.
                     const update = yield* Effect.try({
                       try: () => Patch.derive(hunk.path, hunk.chunks, original),
-                      catch: () => fail(hunk.path),
+                      catch: (cause) => fail(hunk.path, cause),
                     })
                     const after = original.includes("\r\n")
                       ? update.content.replaceAll("\r\n", "\n").replaceAll("\n", "\r\n")
@@ -225,7 +229,7 @@ const layer = Layer.effectDiscard(
                       before,
                       after,
                     } satisfies Prepared
-                  }).pipe(Effect.mapError((error) => (error instanceof ToolFailure ? error : fail(item.hunk.path)))),
+                  }).pipe(Effect.mapError((error) => (error instanceof ToolFailure ? error : fail(item.hunk.path, error)))),
                 ).pipe(Effect.result)
                 const patchFiles = Result.isSuccess(preparation) ? preparation.success.flatMap(filesForChange) : []
                 const resources = [
@@ -313,7 +317,7 @@ const layer = Layer.effectDiscard(
                       })
                       applied.push({ type: change.type, resource: result.resource, target: result.target })
                       if (change.chunks.length > 0) yield* format.file(change.target.canonical).pipe(Effect.ignore)
-                    }).pipe(Effect.mapError((error) => (error instanceof ToolFailure ? error : fail(change.path)))),
+                    }).pipe(Effect.mapError((error) => (error instanceof ToolFailure ? error : fail(change.path, error)))),
                   { discard: true },
                 )
                 // Like write and edit, report the errors language servers see in the
@@ -350,7 +354,7 @@ const layer = Layer.effectDiscard(
                     .pipe(Effect.map((after) => filesForChange({ ...change, after: after.replace(/^\uFEFF/, "") })))
                 })
                 return { applied, files: finalFiles.flat(), ...(report ? { diagnostics: report } : {}) }
-              }).pipe(Effect.mapError((error) => (error instanceof ToolFailure ? error : fail("patch"))))
+              }).pipe(Effect.mapError((error) => (error instanceof ToolFailure ? error : fail("patch", error))))
             },
           }),
           "edit",
@@ -388,6 +392,17 @@ function patchFile(change: Pick<Prepared, "type" | "target" | "before" | "after"
     status: change.type === "add" ? "added" : change.type === "delete" ? "deleted" : "modified",
     ...counts,
   }
+}
+
+function describeCause(cause: unknown) {
+  // FileMutation errors are tagged values without a message, so naming the
+  // condition is the only way the model learns why the patch was refused.
+  if (cause instanceof FileMutation.TargetExistsError)
+    return "the target already exists; use an update hunk instead of an add"
+  if (cause instanceof FileMutation.StaleContentError)
+    return "the file changed on disk after the patch was prepared; re-read it and send a fresh patch"
+  if (cause instanceof Error && cause.message !== "") return cause.message
+  return undefined
 }
 
 function filesForChange(change: Prepared): Array<typeof FileDiff.Info.Type> {
