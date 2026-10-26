@@ -140,9 +140,10 @@ test("caught-up idle polling does not reread a long journal", async () => {
     location,
     engineID: "store",
     after: 2500,
-    request: async (method) => {
+    request: async (method, params) => {
       methods.push(method)
       if (method !== "snapshot") throw new Error("idle poll reread the journal")
+      expect(params.metadata_only).toBe(true)
       return { session_id: sessionID, cursor: 2500 }
     },
   })

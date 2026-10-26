@@ -84,6 +84,14 @@ struct Tool {
     server: Arc<Server>,
     validator: jsonschema::Validator,
 }
+
+/// Original catalog identity; the provider-safe alias is deliberately lossy.
+#[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Eq)]
+#[serde(deny_unknown_fields)]
+pub struct Identity {
+    pub server: String,
+    pub tool: String,
+}
 #[derive(Clone, Copy)]
 enum Operation {
     Tool,
@@ -677,6 +685,12 @@ impl Registry {
             .unwrap()
             .get(name)
             .map(|tool| format!("@mcp/{}/{}", tool.server.name, name))
+    }
+    pub fn identity(&self, name: &str) -> Option<Identity> {
+        self.tools.read().unwrap().get(name).map(|tool| Identity {
+            server: tool.server.name.clone(),
+            tool: tool.native.clone(),
+        })
     }
     pub fn validate(&self, name: &str, input: &Value) -> Result<(), ToolError> {
         let tools = self.tools.read().unwrap();

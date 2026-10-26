@@ -1065,6 +1065,7 @@ command: None,
             let cursor:u64=tx.query_row("SELECT next_seq FROM engine_session WHERE id=?1",[&session],|r|r.get(0)).optional()?.ok_or_else(||Error::Invalid("Session does not exist".into()))?;
             let location:Option<String>=tx.query_row("SELECT root FROM engine_location WHERE session_id=?1",[&session],|r|r.get(0)).optional()?;
             let messages=if metadata_only { Vec::new() } else { projected(&tx,&session,cursor,true)? };
+            let has_messages:bool=tx.query_row("SELECT EXISTS(SELECT 1 FROM engine_message m WHERE m.session_id=?1 AND m.reverted=0 AND NOT EXISTS(SELECT 1 FROM engine_transfer_message t JOIN engine_transfer_import i ON i.id=t.import_id WHERE i.session_id=m.session_id AND t.seq=m.seq))",[&session],|row|row.get(0))?;
             // Context readers need the cut and summary from the same transaction
             // as the visible messages. A second selected-history read could race
             // a compaction/revert and produce a mixed-generation transcript.
@@ -1107,6 +1108,7 @@ command: None,
             if metadata_only {
                 snapshot.as_object_mut().unwrap().remove("messages");
             }
+            snapshot["has_messages"]=json!(has_messages);
             // A snapshot carries the whole Session (messages + selection + state);
             // a 1M-token Session serializes to roughly 4-6 MB, so this bound
             // only stops runaway payloads.
@@ -2105,7 +2107,15 @@ command: None,
             let row:Option<(String,String,String)>=tx.query_row("SELECT t.name,t.input,l.root FROM engine_tool t JOIN engine_run r ON r.id=t.run_id JOIN engine_location l ON l.session_id=r.session_id WHERE t.id=?1 AND t.state='planned' AND r.id=?2 AND r.session_id=?3 AND r.state='running'",params![key,approval.run_id,approval.session_id],|r|Ok((r.get(0)?,r.get(1)?,r.get(2)?))).optional()?;
             let (name,input,root)=row.ok_or(Error::ApprovalResolved)?;
             let original:Value=serde_json::from_str(&input)?;
-            if name!=approval.tool||root!=approval.location||original["input"]!=approval.input||input_digest(&root,&name,&approval.resource,&approval.input)?!=approval.input_hash {return Err(Error::ApprovalMismatch);}
+            // Compact discovery persists the provider's wrapper, while the
+            // approval and exact grant scope authorize the prepared target.
+            // Derive both target and arguments from that immutable plan.
+            let (name,input)=if name=="tool_call" {
+                let invocation=crate::tool_catalog::Invocation::parse(original["input"].clone()).map_err(|_|Error::ApprovalMismatch)?;
+                if !invocation.name.starts_with("mcp_")&&!crate::worker::owns(&invocation.name) {return Err(Error::ApprovalMismatch);}
+                (invocation.name,invocation.arguments)
+            } else { (name,original["input"].clone()) };
+            if name!=approval.tool||root!=approval.location||input!=approval.input||input_digest(&root,&name,&approval.resource,&approval.input)?!=approval.input_hash {return Err(Error::ApprovalMismatch);}
             if approval.expires_at_ms<=now_ms(){return Err(Error::ApprovalExpired);}
             tx.execute("INSERT INTO engine_approval VALUES(?1,?2,?3,?4,?5,?6,'pending')",params![approval.request_id,approval.session_id,approval.run_id,key,serde_json::to_string(&approval)?,approval.expires_at_ms])?;
             if let Some(scope) = &scope { crate::permission_grant::bind_request(&tx,&approval,scope)?; }

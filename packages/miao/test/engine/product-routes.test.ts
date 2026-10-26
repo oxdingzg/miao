@@ -180,6 +180,9 @@ it.live("product routes bind active accounts without persisting secrets and keep
             })
           }
         })
+        const limits = { window: 4_000, ratio: 0.6, headroom: 1_000, perPass: 2 }
+        const configured = yield* ProductRoutes.prepare(location, { binary: "fixture", model: "", contextLimits: limits })
+        expect({ contextLimits: limits, ...configured }.contextLimits).toEqual(limits)
         const options = yield* ProductRoutes.prepare(location, { binary: "fixture", model: "" })
         expect(options).toMatchObject({
           model: "remote-0",

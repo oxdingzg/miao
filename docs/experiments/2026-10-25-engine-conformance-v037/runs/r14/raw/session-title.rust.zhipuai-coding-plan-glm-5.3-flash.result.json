@@ -1,0 +1,16 @@
+{
+  "scenario": "session-title",
+  "engine": "rust",
+  "model": "zhipuai-coding-plan/glm-5.3-flash",
+  "outcome": {
+    "status": "pass",
+    "note": "title: Exact reply conformance check"
+  },
+  "sessionID": "ses_gfe5e8c19b884ffeNcHeVnIbK3",
+  "cost": 0.00048,
+  "tokensIn": 13973,
+  "tokensOut": 6,
+  "stepFinishes": 1,
+  "tools": [],
+  "errors": []
+}
