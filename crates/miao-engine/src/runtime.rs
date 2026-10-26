@@ -1250,15 +1250,14 @@ async fn drain(
     // Message tail before this drain promotes its inputs: a terminal
     // first-turn provider rejection quarantines exactly what it promoted.
     let history_base = inner.store.max_message_seq(&session).await?;
-    let promoted = inner.store.promote_fenced(&session, true, &lease).await?;
-    if promoted.is_empty() && !force {
-        return Ok(());
-    }
-    if inner.store.history(&session).await?.is_empty() {
-        return Err(Error::Invalid("Session has no admitted history".into()));
-    }
     let run = uuid::Uuid::new_v4().to_string();
-    inner.store.start_run_fenced(&session, &run, &lease).await?;
+    let Some(promoted) = inner
+        .store
+        .start_run_with_inputs_fenced(&session, &run, force, &lease)
+        .await?
+    else {
+        return Ok(());
+    };
     let _keepalive = LeaseKeepalive(tokio::spawn(keep_lease(
         inner.store.clone(),
         lease.clone(),
@@ -1581,6 +1580,10 @@ async fn execute(
             .await?;
         let (mut history, state) = inner.store.selected_input(session).await?;
         crate::session_model::validate_history(&history, binding.as_ref(), provider.identity())?;
+        // A loop that survived in the transcript is replaced in this request
+        // only: the model imitates its own prior output, so leaving it in the
+        // prompt reseeds the same refrain. Durable rows are untouched.
+        crate::output_guard::neutralize(&mut history);
         let state_allowed = policy.evaluate(
             "session_state",
             "@session/state/session_state",
@@ -1616,16 +1619,26 @@ async fn execute(
         // before.
         if let Some(limits) = &*inner.context.lock().await {
             if let Some(budget) = limits.prune_chars {
-                let (elided, dropped) = crate::context_trigger::prune_history(
+                let stats = crate::context_trigger::prune_history_with_stats(
                     &mut history,
                     budget,
                     limits.protect_turns,
                     limits.prune_total_chars,
                 );
-                if elided > 0 {
+                if stats.payloads > 0 {
+                    let saved = stats.before_bytes - stats.after_bytes;
+                    inner.store.record_fenced(session, "context.pruned", json!({
+                        "run_id": run, "step": step, "context_epoch": context_epoch,
+                        "reason": "tool_output_budget", "scope": "tool_result_payloads",
+                        "unit": "utf8_bytes", "payloads": stats.payloads, "messages": stats.messages,
+                        "before_bytes": stats.before_bytes, "after_bytes": stats.after_bytes,
+                        "saved_bytes": saved,
+                    }), lease).await?;
                     let _ = inner.progress.send(json!({
                         "session_id": session, "run_id": run, "step": step,
-                        "kind": "context.pruned", "payloads": elided, "characters": dropped,
+                        "kind": "context.pruned", "payloads": stats.payloads, "characters": saved,
+                        "unit": "utf8_bytes", "before_bytes": stats.before_bytes,
+                        "after_bytes": stats.after_bytes, "saved_bytes": saved,
                     }));
                 }
             }
@@ -1804,6 +1817,7 @@ async fn execute(
                             inner.store.record(session,"provider.retry",json!({
                                 "run_id":run,"step":step,
                                 "attempt":delta["attempt"],"reason":delta["reason"],"status":delta["status"],
+                                "delay_ms":delta["delay_ms"],
                             })).await?;
                         } else if delta["kind"] == "provider.attempt" {
                             // An attempt describes the request, not the answer it may
@@ -1830,6 +1844,7 @@ async fn execute(
                     inner.store.record(session, "provider.retry", json!({
                         "run_id":run,"step":step,
                         "attempt":delta["attempt"],"reason":delta["reason"],"status":delta["status"],
+                        "delay_ms":delta["delay_ms"],
                     })).await?;
                 } else if delta["kind"] == "provider.attempt" {
                     let _=inner.progress.send(json!({"session_id":session,"run_id":run,"step":step,"kind":"provider.attempt","protocol":delta["protocol"],"attempt":delta["attempt"],"status":delta["status"],"outcome":delta["outcome"],"detail":delta["detail"]}));
@@ -1872,6 +1887,43 @@ async fn execute(
                     .await?;
                 if cancel.is_cancelled() {
                     return Ok(());
+                }
+                // A stopped loop is a non-retryable failure, not a transport
+                // problem: the same request would loop again. Keep what the
+                // user already saw durable, but dispatch no tool call from it.
+                if let Some((channel, partial)) = error.repetition() {
+                    inner
+                        .store
+                        .record(
+                            session,
+                            "usage",
+                            json!({"run_id":run,"step":step,"usage":partial.usage,"partial":true,"model":binding.as_ref().map(|binding|binding.model.as_str()),"cache":crate::usage::cache_lineage(&partial.usage),"context_message_seq":inner.store.max_message_seq(session).await?}),
+                        )
+                        .await?;
+                    if partial
+                        .content
+                        .as_array()
+                        .is_some_and(|content| !content.is_empty())
+                    {
+                        inner
+                            .store
+                            .assistant_reply_fenced(
+                                session,
+                                run,
+                                Some(started.seq),
+                                partial.content.clone(),
+                                lease,
+                            )
+                            .await?;
+                    }
+                    inner
+                        .store
+                        .record(
+                            session,
+                            "output.repetition",
+                            json!({"run_id":run,"step":step,"channel":channel,"window_lines":64}),
+                        )
+                        .await?;
                 }
                 if let Some((partial, unexecuted_calls)) = error.continuation() {
                     inner
@@ -4493,14 +4545,18 @@ async fn start_monitor(
                 biased;
                 _ = token.cancelled() => {
                     group.terminate();
-                    let _ = finish_background_job(
-                        &task_inner,
-                        &owner,
-                        &task_id,
-                        "cancelled",
-                        json!({"reason":"cancelled_by_request"}),
-                    )
-                    .await;
+                    // An explicit cancel_job result already told the model;
+                    // a session stop means nobody is listening. Either way a
+                    // durable "job finished" wake would be pure noise.
+                    let _ = task_inner
+                        .store
+                        .finish_job_quiet(
+                            &owner,
+                            &task_id,
+                            "cancelled",
+                            json!({"reason":"cancelled_by_request"}),
+                        )
+                        .await;
                     task_inner.jobs.lock().await.remove(&task_id);
                     return;
                 }
@@ -4510,10 +4566,17 @@ async fn start_monitor(
                         .store
                         .record(&owner, "monitor.timeout", json!({"job_id":task_id,"timeout_ms":input.timeout()}))
                         .await;
-                    if let Some(notice) = batcher.flush(true, &task_id, description.as_deref()) {
-                        emit_monitor_notice(&task_inner, &owner, &task_id, notice).await;
-                    }
-                    let _ = finish_background_job(&task_inner, &owner, &task_id, "failed", json!({"timed_out":true})).await;
+                    let notice = batcher.flush(true, &task_id, description.as_deref());
+                    finish_monitor_job(
+                        &task_inner,
+                        &owner,
+                        &task_id,
+                        "failed",
+                        format!("timed out after {} ms (state failed)", input.timeout()),
+                        notice,
+                        json!({"timed_out":true}),
+                    )
+                    .await;
                     break;
                 }
                 _ = window.tick() => {
@@ -4534,11 +4597,18 @@ async fn start_monitor(
                 status = group.child.wait(), if !stdout_open => {
                     let code = status.map(|status| status.code().unwrap_or(-1)).unwrap_or(-1);
                     let _ = task_inner.store.record(&owner, "monitor.exited", json!({"job_id":task_id,"code":code})).await;
-                    if let Some(notice) = batcher.flush(true, &task_id, description.as_deref()) {
-                        emit_monitor_notice(&task_inner, &owner, &task_id, notice).await;
-                    }
+                    let notice = batcher.flush(true, &task_id, description.as_deref());
                     let state = if code == 0 { "completed" } else { "failed" };
-                    let _ = finish_background_job(&task_inner, &owner, &task_id, state, json!({"exit_code":code})).await;
+                    finish_monitor_job(
+                        &task_inner,
+                        &owner,
+                        &task_id,
+                        state,
+                        format!("finished with state {state} (exit code {code})"),
+                        notice,
+                        json!({"exit_code":code}),
+                    )
+                    .await;
                     break;
                 }
             }
@@ -4570,7 +4640,7 @@ async fn emit_monitor_notice(inner: &Inner, session: &str, job: &str, notice: Va
             command: None,
             session_id: session.to_owned(),
             input_id: format!("monitor:{job}:{}", uuid::Uuid::new_v4()),
-            prompt: format!("Monitor job {job} produced matching output:\n{notice}"),
+            prompt: crate::monitor::render_notice_text(job, &notice),
             delivery: Delivery::Steer,
         })
         .await;
@@ -4597,6 +4667,70 @@ async fn emit_monitor_notice(inner: &Inner, session: &str, job: &str, notice: Va
         json!({"job_id":job,"input_id":admitted.input_id}),
     )
     .await;
+}
+
+/// Settle a finished monitor with ONE durable input: the terminal state plus
+/// the final matched lines. The generic job-finished admission would double-
+/// wake the Session even though the notice already carries the output.
+async fn finish_monitor_job(
+    inner: &Inner,
+    session: &str,
+    job: &str,
+    state: &str,
+    state_text: String,
+    notice: Option<Value>,
+    result: Value,
+) {
+    if let Some(notice) = &notice {
+        let _ = inner.progress.send(notice.clone());
+    }
+    let prompt = crate::monitor::render_finish_text(job, &state_text, notice.as_ref());
+    let admitted = inner
+        .store
+        .admit(Input {
+            agent_references: Default::default(),
+            command: None,
+            session_id: session.to_owned(),
+            input_id: format!("monitor:{job}:finished"),
+            prompt,
+            delivery: Delivery::Steer,
+        })
+        .await;
+    if let Err(error) = &admitted {
+        let _ = inner
+            .store
+            .record(
+                session,
+                "monitor.notice_failed",
+                json!({"job_id":job,"message":error.to_string()}),
+            )
+            .await;
+    }
+    if let Err(error) = inner
+        .store
+        .finish_job_quiet(session, job, state, result)
+        .await
+    {
+        let _ = inner
+            .store
+            .record(
+                session,
+                "monitor.settle_failed",
+                json!({"job_id":job,"message":error.to_string()}),
+            )
+            .await;
+        return;
+    }
+    if let Ok(admitted) = admitted {
+        let _ = notify_admission(
+            inner,
+            session,
+            &admitted,
+            "monitor.wake_failed",
+            json!({"job_id":job,"input_id":admitted.input_id}),
+        )
+        .await;
+    }
 }
 
 /// Launch a monitor command through the same sandboxed runner the process

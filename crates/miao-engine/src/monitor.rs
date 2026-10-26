@@ -111,6 +111,50 @@ impl Batcher {
     }
 }
 
+fn notice_description(notice: &Value) -> Option<&str> {
+    notice
+        .get("description")
+        .and_then(Value::as_str)
+        .filter(|description| !description.is_empty())
+}
+
+fn notice_with_lines(head: String, notice: &Value) -> String {
+    let mut text = head;
+    if let Some(lines) = notice.get("lines").and_then(Value::as_array) {
+        let lines: Vec<&str> = lines.iter().filter_map(Value::as_str).collect();
+        if !lines.is_empty() {
+            text.push_str("\n\nMatched output:\n");
+            text.push_str(&lines.join("\n"));
+        }
+    }
+    if notice.get("suppressed").and_then(Value::as_bool) == Some(true) {
+        text.push_str("\n(earlier matching lines were suppressed)");
+    }
+    text
+}
+
+/// Durable input text for a mid-stream notice: the matched lines verbatim
+/// instead of the internal notice envelope.
+pub fn render_notice_text(job: &str, notice: &Value) -> String {
+    let head = match notice_description(notice) {
+        Some(description) => {
+            format!("Monitor job {job} produced matching output ({description}):")
+        }
+        None => format!("Monitor job {job} produced matching output:"),
+    };
+    notice_with_lines(head, notice)
+}
+
+/// Durable input text for a monitor's terminal settle. Merges the terminal
+/// state with the final matched lines so exit and output wake the model once.
+pub fn render_finish_text(job: &str, state_text: &str, notice: Option<&Value>) -> String {
+    let head = format!("Monitor job {job} {state_text}.");
+    match notice {
+        Some(notice) => notice_with_lines(head, notice),
+        None => head,
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -155,5 +199,54 @@ mod tests {
         assert!(batcher.flush(true, "job", None).is_none());
         batcher.feed(None, "tick");
         assert!(batcher.flush(true, "job", None).is_none());
+    }
+
+    #[test]
+    fn notice_text_quotes_lines_without_the_envelope() {
+        let notice = json!({
+            "kind":"monitor.notice",
+            "job_id":"job-1",
+            "description":"等待 foundation job 完成",
+            "lines":["FINAL completed/success"],
+            "suppressed":false,
+        });
+        assert_eq!(
+            render_notice_text("job-1", &notice),
+            "Monitor job job-1 produced matching output (等待 foundation job 完成):\n\nMatched output:\nFINAL completed/success"
+        );
+    }
+
+    #[test]
+    fn notice_text_handles_missing_description_and_suppression() {
+        let notice = json!({
+            "kind":"monitor.notice",
+            "job_id":"job-1",
+            "description":null,
+            "lines":["a","b"],
+            "suppressed":true,
+        });
+        assert_eq!(
+            render_notice_text("job-1", &notice),
+            "Monitor job job-1 produced matching output:\n\nMatched output:\na\nb\n(earlier matching lines were suppressed)"
+        );
+    }
+
+    #[test]
+    fn finish_text_merges_state_with_final_lines() {
+        let notice = json!({
+            "kind":"monitor.notice",
+            "job_id":"job-1",
+            "description":null,
+            "lines":["READY-final"],
+            "suppressed":false,
+        });
+        assert_eq!(
+            render_finish_text("job-1", "finished with state completed (exit code 0)", Some(&notice)),
+            "Monitor job job-1 finished with state completed (exit code 0).\n\nMatched output:\nREADY-final"
+        );
+        assert_eq!(
+            render_finish_text("job-1", "timed out after 30000 ms (state failed)", None),
+            "Monitor job job-1 timed out after 30000 ms (state failed)."
+        );
     }
 }
