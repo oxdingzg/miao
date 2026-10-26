@@ -48,13 +48,22 @@ export function capabilities(binary: string): Capabilities | undefined {
   const result = spawnSync(binary, ["--capabilities"], { encoding: "utf8", timeout: 5_000 })
   if (result.status !== 0 || !result.stdout) return undefined
   try {
-    const value = JSON.parse(result.stdout) as Partial<Capabilities>
+    const value = JSON.parse(result.stdout) as Partial<Capabilities> & { routes_schema?: number }
     if (value.name !== "miao-engine") return undefined
     if (typeof value.protocol !== "number") return undefined
     if (typeof value.schema !== "number") return undefined
     if (typeof value.version !== "string") return undefined
     if (value.routesSchema !== undefined && typeof value.routesSchema !== "number") return undefined
-    return value as Capabilities
+    if (value.routes_schema !== undefined && typeof value.routes_schema !== "number") return undefined
+    if (
+      value.routesSchema !== undefined &&
+      value.routes_schema !== undefined &&
+      value.routesSchema !== value.routes_schema
+    )
+      return undefined
+    // Rust emits snake_case; normalize before the compatibility fence reads it.
+    const routesSchema = value.routesSchema ?? value.routes_schema
+    return routesSchema === undefined ? (value as Capabilities) : ({ ...value, routesSchema } as Capabilities)
   } catch {
     return undefined
   }

@@ -157,7 +157,7 @@ test("targets mirror discovery: beside a miao executable first, then the shared 
 
 test("without an embedded engine nothing is written", async () => {
   await using tmp = await scratch()
-  const result = await ensureEmbeddedEngine({ home: tmp.dir, load: async () => undefined })
+  const result = await ensureEmbeddedEngine({ environment: {}, home: tmp.dir, load: async () => undefined })
   expect(result).toBeUndefined()
 })
 
@@ -168,6 +168,7 @@ test("an installed compatible engine wins and the embedded copy stays dormant", 
   const result = await ensureEmbeddedEngine({
     executable,
     home: tmp.dir,
+    environment: {},
     load: async () => ({ bytes: payload("embedded"), sha256: "hash" }),
     probe: ok(),
     exists: () => true,
@@ -187,6 +188,7 @@ test("extracts beside the executable, and reuses a matching extraction", async (
   const first = await ensureEmbeddedEngine({
     executable,
     home: tmp.dir,
+    environment: {},
     load,
     probe: (binary) => (binary === target ? ok()() : undefined),
   })
@@ -194,7 +196,7 @@ test("extracts beside the executable, and reuses a matching extraction", async (
   expect(await readFile(target, "utf8")).toBe("ENGINE-1")
   expect(await readFile(`${target}.embedded.sha256`, "utf8")).toBe("hash-1")
   const before = (await stat(target)).mtimeMs
-  const retry = await ensureEmbeddedEngine({ executable, home: tmp.dir, load, probe: ok() })
+  const retry = await ensureEmbeddedEngine({ executable, home: tmp.dir, environment: {}, load, probe: ok() })
   expect(retry).toBeUndefined()
   expect((await stat(target)).mtimeMs).toBe(before)
 })
@@ -207,6 +209,7 @@ test("a probe that passes on first sight extracts once and reports the path", as
   const result = await ensureEmbeddedEngine({
     executable,
     home: tmp.dir,
+    environment: {},
     load: async () => ({ bytes: payload("ENGINE-2"), sha256: "hash-2" }),
     probe: ok(),
     exists: (binary) => binary === executable,
@@ -221,6 +224,7 @@ test("falls back to the shared install dir when the executable is not a miao bin
   const result = await ensureEmbeddedEngine({
     executable: path.join(tmp.dir, "bun"),
     home: tmp.dir,
+    environment: {},
     load: async () => ({ bytes: payload("ENGINE-3"), sha256: "hash-3" }),
     probe: ok(),
     exists: () => false,
