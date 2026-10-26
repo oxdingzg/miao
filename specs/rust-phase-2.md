@@ -51,11 +51,22 @@ miao 今天不是"一个内核 + 一层壳"，而是**按 Session 分派的两�
 | G0-5 | 插件 `aisdk` provider 钩子在原生路由上不执行；缺每轮 session-affinity 头 | `plugin/host.ts:46`；`openai_responses.rs:268` | 钩子按家族在原生路由上"语义适用"（工具钩子已实现，`aisdk` 钩子书面接受）；头与实际 session 一致，见 `specs/g0-5-plugin-hooks.md` |
 | G0-6 | 行为差：max-steps 是"暂停"而非 TS 的收尾提示；历史里的 `@file` 引用 Rust 不内联；websearch 端点不同 | `runtime.rs:1430`；`materialize-files.ts:310`；`web.rs:24` | 逐项定调（对齐或书面接受差异），不允许默认沉默 |
 
-S1 进度（2026-10-26）：G0-3 已完成。守卫在 `crates/miao-engine/src/output_guard.rs`，
+S1 进度（2026-10-26）：
+
+- **G0-1 已完成**。五条原生路由按 `specs/g0-1-route-parity.md` §5 的顺序落地，每条都有两侧等价测试：
+  Bedrock Mantle（#1449）、Azure Chat（#1459）、Vertex Anthropic（#1462）、Azure Responses（#1463）、
+  Vertex Gemini（#1464）。`provider-gateway.ts` 只剩长尾 `@ai-sdk/*` 一条路径。实现过程修正了该文档的
+  三处前提（见其"实现记录"）：Vertex 传输要改 body（`rawPredict` 不收 `model`、必须发
+  `anthropic_version`）、产品侧不发 `x-goog-user-project`、Google Cloud ADC 没有引擎凭据来源
+  （ADC-only 账号保留网关，书面接受）。
+- **G0-3 已完成**：守卫在 `crates/miao-engine/src/output_guard.rs`，
 对 SSE 归一化 delta（`provider.rs`）与 Bedrock 通知（`bedrock.rs`）共用同一份状态机；
 回合停止时保留已流出的文本、记录 `output.repetition`、不重试、不派发迟到的工具调用，
 历史里的打转输出只在 provider 请求副本中被替换。回归测试
 `crates/miao-engine/tests/output_guard.rs` 用真实 SSE 重放同一段打转输出。
+
+- **G0-4 已完成**：60 s 重试窗口、500 ms×1.7 且上限 5 s、±20 % 抖动、`Retry-After`（毫秒/秒/RFC 2822，
+  15 分钟上限，只对限流与服务端失败生效）与一次立即 self-heal 的 400 重放，均在 `provider.rs` 的重试循环里。
 
 ### G0-6 的 web search 差异（书面接受）
 
