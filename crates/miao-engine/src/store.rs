@@ -27,6 +27,10 @@ pub const SCHEMA_VERSION: u32 = 21;
 
 type Work = Box<dyn FnOnce(&mut Connection) + Send>;
 
+/// The catalog columns a listing needs, in query order; a store written before
+/// one of them existed reads that column as NULL.
+type CatalogFields = (String, Option<i64>, Option<i64>, Option<i64>);
+
 /// A durable, fenced claim on one Session's execution. Every claim advances
 /// `epoch`, so a writer whose ownership was superseded is rejected even while
 /// it is still running. This is the fence later cross-process ownership uses.
@@ -126,7 +130,14 @@ impl Store {
 
     /// Only the fields needed for catalog projection; never materialize inbox,
     /// transcript, tool payloads, questions, or context-source contents.
-    pub async fn catalog_info(&self, session: &str) -> Result<Value, Error> {
+    ///
+    /// `None` means this store does not know the Session. A placement can
+    /// outlive the storage it names — a release or smoke run that wrote its
+    /// own storage root, a temp checkout that was deleted — and a listing has
+    /// to tell that apart from a storage it cannot read at all. Reading the
+    /// absence as an error made every listing refresh warn about rows no one
+    /// can ever read.
+    pub async fn catalog_info(&self, session: &str) -> Result<Option<Value>, Error> {
         let session = session.to_owned();
         self.call(move |conn| {
             let tx = conn.transaction()?;
@@ -140,16 +151,17 @@ impl Store {
             let fields = ["title", "created_at_ms", "updated_at_ms", "archived_at_ms"].map(|name| {
                 if columns.contains(name) { name } else if name == "title" { "''" } else { "NULL" }
             });
-            let (title, created, updated, archived): (String, Option<i64>, Option<i64>, Option<i64>) = tx.query_row(
+            let row: Option<CatalogFields> = tx.query_row(
                 &format!("SELECT {} FROM engine_session WHERE id=?1", fields.join(",")), [&session],
                 |row| Ok((row.get(0)?,row.get(1)?,row.get(2)?,row.get(3)?)),
-            )?;
+            ).optional()?;
+            let Some((title, created, updated, archived)) = row else { return Ok(None) };
             let parent: Option<String> = tx.query_row("SELECT parent_session_id FROM engine_lineage WHERE session_id=?1", [&session], |row| row.get(0)).optional()?;
             let model = crate::session_model::selected(&tx, &session)?;
             let account = crate::session_account::selected_at(&tx, &session, i64::MAX as u64)?;
             let agent = crate::session_agent::selected(&tx, &session)?.map(|(agent, _)| json!({"name":agent.name}));
             tx.commit()?;
-            Ok(json!({"session_id":session,"title":title,"created_at_ms":created,"updated_at_ms":updated,"archived_at_ms":archived,"parent_session_id":parent,"model_selection":model,"account_selection":account,"agent":agent}))
+            Ok(Some(json!({"session_id":session,"title":title,"created_at_ms":created,"updated_at_ms":updated,"archived_at_ms":archived,"parent_session_id":parent,"model_selection":model,"account_selection":account,"agent":agent})))
         }).await
     }
 
