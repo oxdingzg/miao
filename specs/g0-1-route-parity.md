@@ -64,7 +64,8 @@ G0-1 的验收是"逐个 provider 的等价路由测试：同一请求在两侧�
 
 - URL：`…/openai/v1/responses`（`@ai-sdk/azure` 的 `responses` 模型），同样带 `api-version`。
 - 认证：同 Azure Chat。
-- 引擎侧缺：`openai_responses.rs:112-118` 明确拒绝 `api-key` 与任何 query。
+- 引擎侧缺：`openai_responses.rs` 的 `with_route_auth` 明确拒绝 `api-key` 与任何 query
+  （实现时该拦在 `openai_responses.rs:112-118`）。
 - 需要做：允许 Responses 路由声明 `api-key` 认证与 `api-version` query（Azure 是它们唯一的使用者），
   然后补 `profile()` 分支与测试。**这是本清单里唯一需要改引擎传输的 Azure 项。**
 
@@ -73,9 +74,12 @@ G0-1 的验收是"逐个 provider 的等价路由测试：同一请求在两侧�
 - URL：`{base}/v1/projects/{project}/locations/{region}/publishers/anthropic/models/{model}:streamRawPredict`
   （流式；非流式为 `:rawPredict`，见 `@ai-sdk/google-vertex/dist/anthropic/index.mjs:124-133`），
   base 为 `https://{region}-aiplatform.googleapis.com`。
-- 认证：`Authorization: Bearer {access_token}`（Google OAuth），常配 `x-goog-user-project: {project}`。
-- 引擎侧已具备：`vertex-anthropic` 用 bearer，endpoint 由宿主给。
-- 需要做：`profile()` 分支 + `x-goog-user-project` 头（走路由 `auth.headers`）+ 两侧测试。
+- 认证：`Authorization: Bearer {access_token}`（Google OAuth）。
+- 引擎侧**不**已具备（实现时发现）：`vertex-anthropic` 的 bearer 逻辑存在，但它的 Anthropic 编解码器
+  总是发 `model` 且从不发 `anthropic_version`，而 `rawPredict` 恰好要求相反。所以这一项同时要改传输。
+- 需要做：`profile()` 分支 + 引擎 `vertex` body 模式 + 两侧测试。
+- 更正：产品侧的 TS 路由**不发送** `x-goog-user-project`（全仓库只有本文提到它）。为等价而不加该头；
+  主机方是否要求它属于配置项，不属于本清单。
 
 ### Vertex Gemini
 
@@ -83,9 +87,10 @@ G0-1 的验收是"逐个 provider 的等价路由测试：同一请求在两侧�
   - 标准：`https://{region}-aiplatform.googleapis.com/v1beta1/projects/{project}/locations/{region}/publishers/google/models/{model}:streamGenerateContent?alt=sse`
   - express（API key）：`https://aiplatform.googleapis.com/v1/publishers/google/models/{model}:streamGenerateContent?alt=sse`，
     无 project/location。
-- 认证：标准模式 bearer（+`x-goog-user-project`）；express 模式 `x-goog-api-key`。
-- 引擎侧缺：`gemini` 传输只有 API key；需要补 bearer 能力（或新增 `vertex-gemini` 路由名）。
-- 需要做：引擎传输扩展 + `profile()` 分支 + 两侧测试。
+- 认证：标准模式 bearer；express 模式 `x-goog-api-key`。
+- 引擎侧缺：`gemini` 传输只接受 `Key` 凭据（`credential.kind() != Kind::Key` 直接 `AuthProfile`）。
+- 需要做：引擎传输补 bearer（新增 `vertex-gemini` 路由名）+ `profile()` 分支 + 两侧测试。
+- 更正：`alt=sse` 不需要补，引擎的 `gemini` 传输已经强制该 query（`gemini.rs:55-62`）。
 
 ### Bedrock Mantle
 
@@ -122,6 +127,20 @@ G0-1 的验收是"逐个 provider 的等价路由测试：同一请求在两侧�
 - PR 描述里列出允许的差异（§2 的两类），不允许留空。
 
 全部五步完成后，G0-1 行从"缺口"变为"已具备等价测试"，`provider-gateway.ts` 只剩长尾兜底一条路径。
+
+### 实现记录（2026-10-26）
+
+五个 provider 的落地过程修正了本文三处关于"引擎侧已具备"的判断：
+
+1. **Vertex Anthropic 的传输并不就绪**：bearer 有了，body 不对（见 §4 的更正）。缺 `anthropic_version`
+   的请求会被 Vertex 拒绝，所以只补映射是没用的。
+2. **`x-goog-user-project` 在产品侧不存在**：加它等于制造差异，本清单不加。
+3. **Google Cloud 的 ADC 没有引擎凭据来源**：`Source` 只有 Aws / Static / Database / Legacy / Daemon，
+   而 ADC 在 `google-auth-library` 里。所以只有"token 是已存凭据"的账号走原生路由，ADC-only 的账号
+   保留网关。这是一条**书面接受的损失**，写在这里而不是留给沉默。
+
+另外两条实现约束写进了 §4：Azure 的 `api-version` 必须由路由显式给出（否则引擎用自己的旧默认），
+Vertex Gemini 的 `alt=sse` 引擎已经强制、不需要产品再补。
 
 ## 6. 不做
 
