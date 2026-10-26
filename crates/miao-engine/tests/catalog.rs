@@ -45,7 +45,10 @@ async fn catalog_reads_live_storage_without_projecting_history_or_adopting_input
     assert!(result[0]["snapshot"].get("messages").is_none());
     assert!(result[0]["snapshot"].get("pending").is_none());
     assert!(result[0]["usage"].is_object());
-    assert!(result[1]["error"].is_string());
+    // A Session this storage never held is absent, not unreadable: no snapshot
+    // and no error, so a listing can skip it without warning about it.
+    assert!(result[1].get("snapshot").is_none());
+    assert!(result[1].get("error").is_none());
     assert!(serde_json::to_vec(&result).unwrap().len() < 10_000);
     assert_eq!(store.events("s", 0, 100).await.unwrap().len(), before);
     assert_eq!(

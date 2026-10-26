@@ -79,7 +79,8 @@ mod tool_input;
 
 mod first_event;
 
-mod delta;
+pub mod delta;
+mod display_diff;
 mod output_guard;
 mod runtime_profile;
 

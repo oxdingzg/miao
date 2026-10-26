@@ -420,8 +420,7 @@ const layer = Layer.effect(
         }).pipe(Effect.catch((error) => {
           // A permanent provider rejection will not improve on the next tool turn
           // or in another Session using this Location's same model catalog.
-          if (error.reason._tag === "InvalidRequest" && /model.*(?:not supported|not found|not available|does not exist)|unsupported.*model/i.test(error.reason.message))
-            unavailableTitleModels.add(`${model.provider}/${model.id}`)
+          if (SessionTitle.permanentRejection(error)) unavailableTitleModels.add(`${model.provider}/${model.id}`)
           return Effect.logWarning("failed to generate title", { model: model.id, error }).pipe(Effect.as(undefined))
         }))
         const primary = preferred.provider === input.model.provider && preferred.id === input.model.id

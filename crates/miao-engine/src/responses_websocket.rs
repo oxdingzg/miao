@@ -182,9 +182,11 @@ pub(crate) async fn try_stream<P: Parser>(
     } else {
         "ws"
     };
-    endpoint
-        .set_scheme(scheme)
-        .map_err(|_| ProviderError::Transport)?;
+    // `set_scheme` reports only that the endpoint cannot take a WebSocket
+    // scheme, and the URL itself must not reach the error.
+    endpoint.set_scheme(scheme).map_err(|_| {
+        ProviderError::Transport("the endpoint cannot be reached over WebSocket".into())
+    })?;
     let session = crate::cache_affinity::session_key();
     let affinity=session.as_ref().map(|session|digest(&serde_json::to_vec(&json!({"session":session,"endpoint":endpoint.as_str(),"model":contract.model,"authentication":contract.authentication,"beta":contract.beta,"authorization":request.headers().get(reqwest::header::AUTHORIZATION).and_then(|value|value.to_str().ok()),"account":request.headers().get("ChatGPT-Account-Id").and_then(|value|value.to_str().ok())})).unwrap()));
     let Some(slot) = pool.slot(affinity).await else {
@@ -195,17 +197,23 @@ pub(crate) async fn try_stream<P: Parser>(
         request
             .body()
             .and_then(reqwest::Body::as_bytes)
-            .ok_or(ProviderError::Transport)?,
+            .ok_or_else(|| {
+                ProviderError::Transport(
+                    "the request body is not held in memory for the WebSocket transport".into(),
+                )
+            })?,
     )
-    .map_err(|_| ProviderError::Transport)?;
+    .map_err(|error| {
+        ProviderError::Transport(format!("the WebSocket frame could not be decoded: {error}"))
+    })?;
     frame
         .as_object_mut()
-        .ok_or(ProviderError::Transport)?
+        .ok_or_else(|| ProviderError::Transport("the WebSocket frame is not an object".into()))?
         .remove("stream");
     frame["type"] = json!("response.create");
     let full_input = frame["input"]
         .as_array()
-        .ok_or(ProviderError::Transport)?
+        .ok_or_else(|| ProviderError::Transport("the WebSocket frame has no input array".into()))?
         .clone();
     let mut parameters = frame.clone();
     parameters.as_object_mut().unwrap().remove("input");
@@ -223,7 +231,9 @@ pub(crate) async fn try_stream<P: Parser>(
         frame["input"] = json!(&full_input[chain.prefix.len()..]);
         frame["previous_response_id"] = json!(chain.id);
     }
-    let wire = serde_json::to_string(&frame).map_err(|_| ProviderError::Transport)?;
+    let wire = serde_json::to_string(&frame).map_err(|error| {
+        ProviderError::Transport(format!("the WebSocket frame could not be encoded: {error}"))
+    })?;
     if wire.len() > 8 * 1024 * 1024 {
         return Err(ProviderError::Stream(
             "WebSocket request exceeds 8 MiB".into(),
@@ -243,10 +253,11 @@ pub(crate) async fn try_stream<P: Parser>(
     let socket = match existing {
         Some(socket) => socket,
         None => {
-            let mut handshake = endpoint
-                .as_str()
-                .into_client_request()
-                .map_err(|_| ProviderError::Transport)?;
+            let mut handshake = endpoint.as_str().into_client_request().map_err(|error| {
+                ProviderError::Transport(format!(
+                    "the WebSocket handshake could not be built: {error}"
+                ))
+            })?;
             for (name, value) in request.headers() {
                 handshake.headers_mut().insert(name.clone(), value.clone());
             }
@@ -351,7 +362,11 @@ pub(crate) async fn try_stream<P: Parser>(
     let response = tokio_tungstenite::tungstenite::http::Response::builder()
         .status(200)
         .body(reqwest::Body::wrap_stream(stream))
-        .map_err(|_| ProviderError::Transport)?;
+        .map_err(|error| {
+            ProviderError::Transport(format!(
+                "the WebSocket response could not be wrapped: {error}"
+            ))
+        })?;
     let mut response = reqwest::Response::from(response);
     response.extensions_mut().insert(watchdogs);
     let result = read_stream(response, progress.clone(), cancel.clone(), parser).await;

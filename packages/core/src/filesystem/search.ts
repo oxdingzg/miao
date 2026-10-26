@@ -2,6 +2,7 @@ export * as FileSystemSearch from "./search"
 
 import { makeLocationNode } from "../effect/app-node"
 import path from "path"
+import { existsSync } from "node:fs"
 import { Context, Effect, Layer, Scope } from "effect"
 import { Fff } from "#fff"
 import fuzzysort from "fuzzysort"
@@ -122,6 +123,16 @@ export const fffLayer = Layer.effect(
   Service,
   Effect.gen(function* () {
     const location = yield* Location.Service
+    const empty = Service.of({
+      find: () => Effect.succeed([]),
+      glob: () => Effect.succeed([]),
+      grep: () => Effect.succeed([]),
+    })
+    // A Location outlives its directory — a removed worktree, a temp checkout —
+    // and there is nothing to search in a directory that is gone. Initializing
+    // there failed with "Invalid path" and warned on every boot of the Location,
+    // which reported an expected state as a fault.
+    if (!existsSync(location.directory)) return empty
     const result = yield* Effect.try({
       try: () =>
         Fff.create({
@@ -136,11 +147,7 @@ export const fffLayer = Layer.effect(
     )
     if (!result?.ok) {
       if (result) yield* Effect.logWarning("failed to initialize fff", { error: result.error })
-      return Service.of({
-        find: () => Effect.succeed([]),
-        glob: () => Effect.succeed([]),
-        grep: () => Effect.succeed([]),
-      })
+      return empty
     }
     yield* Effect.addFinalizer(() => Effect.sync(() => result.value.destroy()).pipe(Effect.ignore))
     return Service.of({

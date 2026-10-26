@@ -280,7 +280,7 @@ impl Provider for Bedrock {
             .body
             .get("additionalModelRequestFields")
             .map(crate::bedrock_input::document);
-        let sdk = tokio::select! {_=cancel.cancelled()=>return Err(ProviderError::Interrupted),result=tokio::time::timeout(Duration::from_secs(30),self.sdk())=>result.map_err(|_|ProviderError::Transport)??};
+        let sdk = tokio::select! {_=cancel.cancelled()=>return Err(ProviderError::Interrupted),result=tokio::time::timeout(Duration::from_secs(30),self.sdk())=>result.map_err(|_|ProviderError::Transport("the Bedrock SDK did not initialise within 30s".into()))??};
         let mut headers = self.headers.clone();
         for (name, value) in &self.options.headers {
             headers.retain(|key, _| !key.eq_ignore_ascii_case(name));
@@ -316,13 +316,13 @@ impl Provider for Bedrock {
                     request.headers_mut().insert(name.clone(), value.clone());
                 }
             });
-            let result = tokio::select! {_=cancel.cancelled()=>return Err(ProviderError::Interrupted),result=tokio::time::timeout_at(first,operation.send())=>result.map_err(|_|ProviderError::Transport)};
+            let result = tokio::select! {_=cancel.cancelled()=>return Err(ProviderError::Interrupted),result=tokio::time::timeout_at(first,operation.send())=>result.map_err(|_|ProviderError::Transport("no Bedrock response before the request deadline".into()))};
             let result = match result {
                 Ok(Ok(output)) => Ok(output),
-                Ok(Err(error)) => Err(error
-                    .raw_response()
-                    .map(|response| ProviderError::Http(response.status().as_u16()))
-                    .unwrap_or(ProviderError::Transport)),
+                Ok(Err(error)) => Err(match error.raw_response() {
+                    Some(response) => ProviderError::Http(response.status().as_u16()),
+                    None => ProviderError::Transport(format!("Bedrock request failed: {error}")),
+                }),
                 Err(error) => Err(error),
             };
             match result {
@@ -339,7 +339,11 @@ impl Provider for Bedrock {
                 Err(error) => return Err(error),
             }
         }
-        let mut output = output.ok_or(ProviderError::Transport)?;
+        let mut output = output.ok_or_else(|| {
+            ProviderError::Transport(
+                "every Bedrock attempt failed before a response stream was received".into(),
+            )
+        })?;
         let mut state = crate::bedrock_stream::State::default();
         let mut guard = crate::output_guard::Guard::new();
         let mut event = watchdogs.event;
@@ -378,7 +382,7 @@ impl Provider for Bedrock {
                         None => limit,
                     })
                     .unwrap_or(now + Duration::from_secs(120));
-                tokio::select! {_=cancel.cancelled()=>return Err(ProviderError::Interrupted),result=tokio::time::timeout_at(send_deadline,progress.send(json!({"kind":"delta","delta":notice})))=>{result.map_err(|_|ProviderError::Transport)?.map_err(|_|ProviderError::Interrupted)?;}}
+                tokio::select! {_=cancel.cancelled()=>return Err(ProviderError::Interrupted),result=tokio::time::timeout_at(send_deadline,progress.send(json!({"kind":"delta","delta":notice})))=>{result.map_err(|_|ProviderError::Transport("the progress channel did not accept the notice before its deadline".into()))?.map_err(|_|ProviderError::Interrupted)?;}}
             }
         }
     }

@@ -37,7 +37,9 @@ impl Provider for Flaky {
                     .await;
                 return Err(ProviderError::ResponseTransport);
             }
-            return Err(ProviderError::Transport);
+            return Err(ProviderError::Transport(
+                "the primary endpoint is unreachable".into(),
+            ));
         }
         Ok(Reply {
             content: json!([{"type":"text","text":"recovered"}]),
@@ -154,7 +156,9 @@ impl Provider for Unreachable {
         _: CancellationToken,
     ) -> Result<Reply, ProviderError> {
         self.calls.fetch_add(1, Ordering::SeqCst);
-        Err(ProviderError::Transport)
+        Err(ProviderError::Transport(
+            "the model endpoint is unreachable".into(),
+        ))
     }
 }
 
@@ -222,4 +226,31 @@ async fn a_routed_transport_failure_is_reported_as_unavailable() {
         "unexpected failure message: {message}"
     );
     runtime.shutdown().await;
+}
+
+/// A request that never reaches the endpoint keeps the reason the socket gave,
+/// and never copies the URL: a route's query string can carry a credential.
+#[tokio::test]
+async fn a_transport_failure_keeps_the_underlying_cause() {
+    let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+    let port = listener.local_addr().unwrap().port();
+    drop(listener);
+    let error = reqwest::Client::new()
+        .post(format!("http://127.0.0.1:{port}/?api-key=sk-secret"))
+        .send()
+        .await
+        .unwrap_err();
+    let message = ProviderError::from(error).to_string();
+    assert!(
+        message.starts_with("provider transport failed: connect failed: "),
+        "unexpected failure message: {message}"
+    );
+    assert!(
+        message.to_ascii_lowercase().contains("refused"),
+        "the socket's reason is missing: {message}"
+    );
+    assert!(
+        !message.contains("sk-secret"),
+        "the URL's query reached the message: {message}"
+    );
 }

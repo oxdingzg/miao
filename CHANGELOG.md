@@ -11,6 +11,19 @@ at `docs/releases/vX.Y.Z.md` and `docs/releases/vX.Y.Z.zh.md`; both are required
 
 ## [Unreleased]
 
+## [0.3.9] - 2026-10-26
+
+### Added
+- **engine**: read the product config files in the engine (S5 step 1) (#1487) (`bec1660432`)
+
+### Fixed
+- **engine**: replay a mutation's display diff from the tape (#1498) (`89e6c21e67`)
+- **session**: surface native title failures and stop retrying dead models (#1492) (`1b8f9c8f2f`)
+- **native**: skip a Location whose directory is gone instead of warning (#1491) (`3f5e90a636`)
+- **engine**: report a Session absent from its storage as absent (#1490) (`10219daca3`)
+- **engine**: carry a file mutation's diff to the transcript (#1493) (`fc1f50916a`)
+- **engine**: keep the cause a transport failure reported (#1488) (`06ccf21acc`)
+
 ## [0.3.8] - 2026-10-26
 
 ### Added

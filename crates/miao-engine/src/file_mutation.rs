@@ -296,6 +296,22 @@ pub(crate) fn apply(
         "file_synced"
     };
     let mut result = json!({"sha256":digest(text.as_bytes()),"bytes":text.len(),"applied":true,"durability":durability,"durability_error":durability_error});
+    // A rebase shows the drift it replaced in this diff, not just the span the
+    // model asked for, so the host renders what actually landed on disk.
+    let before = original
+        .as_ref()
+        .and_then(|bytes| std::str::from_utf8(bytes).ok())
+        .unwrap_or_default();
+    let action = if original.is_none() {
+        "create"
+    } else {
+        "update"
+    };
+    if let Some(entry) =
+        crate::display_diff::file(before, &text, &relative.to_string_lossy(), action)
+    {
+        result["_display"] = crate::display_diff::files(vec![entry]);
+    }
     if let Some((_, note)) = rebase {
         // The diff the model gets must show the rebase and the drift it
         // replaced, not just the requested span.
