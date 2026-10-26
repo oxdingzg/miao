@@ -10,7 +10,7 @@ use portable_pty::{Child, CommandBuilder, ExitStatus, MasterPty, PtySize};
 struct Harness {
     pty: Box<dyn MasterPty + Send>,
     child: Box<dyn Child + Send + Sync>,
-    writer: Box<dyn Write + Send>,
+    writer: Arc<Mutex<Box<dyn Write + Send>>>,
     output: Arc<Mutex<String>>,
     reader: JoinHandle<()>,
     dir: PathBuf,
@@ -39,18 +39,32 @@ impl Harness {
         let child = pair.slave.spawn_command(cmd).expect("spawn miao-tui");
         drop(pair.slave);
         let mut reader = pair.master.try_clone_reader().expect("clone reader");
-        let writer = pair.master.take_writer().expect("take writer");
+        let writer = Arc::new(Mutex::new(pair.master.take_writer().expect("take writer")));
         let output = Arc::new(Mutex::new(String::new()));
         let seen = output.clone();
+        let responder = writer.clone();
         let reader_thread = std::thread::spawn(move || {
+            let mut replied_cpr = false;
             let mut buf = [0u8; 4096];
             loop {
                 match reader.read(&mut buf) {
                     Ok(0) | Err(_) => break,
-                    Ok(n) => seen
-                        .lock()
-                        .expect("output lock")
-                        .push_str(&String::from_utf8_lossy(&buf[..n])),
+                    Ok(n) => {
+                        seen.lock()
+                            .expect("output lock")
+                            .push_str(&String::from_utf8_lossy(&buf[..n]));
+                        // windows-2025 ConPTY probes the attached terminal with a
+                        // cursor-position report and stalls rendering until the
+                        // terminal answers; act like one.
+                        if !replied_cpr && seen.lock().expect("output lock").contains("\x1b[6n") {
+                            replied_cpr = true;
+                            let _ = responder
+                                .lock()
+                                .expect("writer lock")
+                                .write_all(b"\x1b[1;1R");
+                            let _ = responder.lock().expect("writer lock").flush();
+                        }
+                    }
                 }
             }
         });
@@ -69,8 +83,9 @@ impl Harness {
     }
 
     fn write(&mut self, keys: &[u8]) {
-        self.writer.write_all(keys).expect("write keys");
-        self.writer.flush().expect("flush keys");
+        let mut writer = self.writer.lock().expect("writer lock");
+        writer.write_all(keys).expect("write keys");
+        writer.flush().expect("flush keys");
     }
 
     fn resize(&self, rows: u16, cols: u16) {
