@@ -357,3 +357,42 @@ test("a native create retry adopts the winner after its initial empty read", asy
     }).pipe(Effect.scoped),
   )
 })
+
+// S4's migration walks the Sessions the TypeScript engine still owns, and needs
+// the same storage path the creator computes: one function, two callers.
+test("lists only TypeScript-owned Sessions and derives one storage path per Location", async () => {
+  const tmp = await tmpdir()
+  try {
+    const storage = path.join(tmp.path, "miao.db")
+    const legacy = await run(
+      storage,
+      Effect.gen(function* () {
+        const { db } = yield* Database.Service
+        yield* SessionEnginePlacement.claim(db, {
+          sessionID: SessionV2.ID.make("ses_legacy"),
+          placement: { engine: "ts" },
+        })
+        yield* SessionEnginePlacement.claim(db, {
+          sessionID: SessionV2.ID.make("ses_native"),
+          placement: {
+            engine: "rust",
+            storage: AbsolutePath.make(path.join(tmp.path, "engine.db")),
+            location: { directory: AbsolutePath.make("/workspace/native") },
+          },
+        })
+        return yield* SessionEnginePlacement.legacy(db)
+      }),
+    )
+    expect(legacy).toEqual([SessionV2.ID.make("ses_legacy")])
+
+    const storageA = SessionEnginePlacement.storageFor("/root", { directory: AbsolutePath.make("/workspace/a") })
+    const storageAgain = SessionEnginePlacement.storageFor("/root", { directory: AbsolutePath.make("/workspace/a") })
+    const storageB = SessionEnginePlacement.storageFor("/root", { directory: AbsolutePath.make("/workspace/b") })
+    expect(storageA).toBe(storageAgain)
+    expect(storageA).not.toBe(storageB)
+    expect(path.dirname(storageA)).toBe("/root")
+    expect(path.basename(storageA)).toMatch(/^[a-f0-9]{64}\.db$/)
+  } finally {
+    await tmp[Symbol.asyncDispose]()
+  }
+})

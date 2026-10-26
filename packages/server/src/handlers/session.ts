@@ -148,15 +148,10 @@ export const SessionHandler = HttpApiBuilder.group(Api, "server.session", (handl
           // identity. Everything else stays TypeScript-owned.
           const native = Option.getOrUndefined(yield* Effect.serviceOption(NativeEngine.Service))
           const root = native?.storageRoot ?? process.env.MIAO_ENGINE_STORAGE
+          // One Session per Location: the path is a pure function of the
+          // Location, shared with the migration CLI so both agree.
           const nativeStorage =
-            native && root && !binding
-              ? AbsolutePath.make(
-                  path.resolve(
-                    root,
-                    `${new Bun.CryptoHasher("sha256").update(JSON.stringify(location)).digest("hex")}.db`,
-                  ),
-                )
-              : undefined
+            native && root && !binding ? SessionEnginePlacement.storageFor(root, location) : undefined
           // Initialize the engine before publishing its placement: get/list
           // must work even when no prompt has ever been submitted. Retrying a
           // catalogued identity preserves its original placement.

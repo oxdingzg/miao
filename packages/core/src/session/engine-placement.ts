@@ -1,5 +1,6 @@
 export * as SessionEnginePlacement from "./engine-placement"
 
+import path from "path"
 import { and, eq, notInArray } from "drizzle-orm"
 import { Effect, Schema } from "effect"
 import { SessionID } from "@miao/schema/session-id"
@@ -58,6 +59,30 @@ export const list = Effect.fn("SessionEnginePlacement.list")(function* (db: Db) 
     ]
   })
 })
+
+/**
+ * Every Session still owned by the TypeScript engine. S4's migration walks this
+ * list; it is the inverse of `list`, which reports only native bindings.
+ */
+export const legacy = Effect.fn("SessionEnginePlacement.legacy")(function* (db: Db) {
+  const rows = yield* db
+    .select({ id: SessionEnginePlacementTable.session_id })
+    .from(SessionEnginePlacementTable)
+    .where(eq(SessionEnginePlacementTable.engine, "ts"))
+    .all()
+    .pipe(Effect.orDie)
+  return rows.map((row) => row.id)
+})
+
+/**
+ * The engine database one Location owns. A Session's storage is a pure function
+ * of its Location, so the creator, the migration and the CLI must agree on the
+ * same path rather than each hashing it themselves.
+ */
+export const storageFor = (root: string, location: Location.Ref) =>
+  AbsolutePath.make(
+    path.resolve(root, `${new Bun.CryptoHasher("sha256").update(JSON.stringify(location)).digest("hex")}.db`),
+  )
 
 /** Forget a binding. Used when a native Session is removed, so the next create
  * of the same identity is not routed back to a storage that no longer has it. */
