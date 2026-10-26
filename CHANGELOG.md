@@ -11,6 +11,54 @@ at `docs/releases/vX.Y.Z.md` and `docs/releases/vX.Y.Z.zh.md`; both are required
 
 ## [Unreleased]
 
+## [0.3.8] - 2026-10-26
+
+### Added
+- **engine**: migrate every remaining TypeScript Session in one run (S4) (#1478) (`4eb3f37337`)
+- **tui**: report permission mode and the escape action under the composer (#1472) (`c99d242a3c`)
+- **engine**: place new Sessions on the engine by default (#1471) (`8ec0d70c3b`)
+- **context**: replay pruning facts and render settlement cards (#1469) (`ae35e1acc1`)
+- **engine**: route Vertex Gemini models to their native wire (#1464) (`efeee97d3d`)
+- **app**: chart estimated input composition over time (#1413) (`6a66e0f456`)
+- **engine**: give Azure OpenAI its Responses wire (#1463) (`2ede06dea7`)
+- **engine**: route Vertex Anthropic to a working native wire (#1462) (`0409ef5fd5`)
+- **engine**: route Azure OpenAI chat models to their native wire (#1459) (`ba87f5fa40`)
+- **engine**: route Bedrock Mantle models to their native wire (#1449) (`2fe22aa22f`)
+- **tui**: bound the prompt with horizontal rules (#1452) (`1fb0f3fdc3`)
+- **engine**: persist measured tool output pruning facts (#1404) (`abafb875de`)
+- **engine**: stop repetitive provider output mid-stream (#1442) (`ecaebe77b4`)
+- **engine**: close the last allowed turn with the step wrap-up (#1445) (`804214a463`)
+- **engine**: present inlined text attachments as file blocks (#1444) (`f1d90f1303`)
+
+### Fixed
+- **engine**: drop the state note instead of failing an oversized input (#1481) (`9be5485238`)
+- **engine**: report a routed availability failure as unavailable (#1480) (`88aab89666`)
+- **tui**: keep the selected model when clearing a session (#1484) (`c2969a1f7a`)
+- **engine**: accept a Chat stream that ends without a finish reason (#1482) (`19dacfa624`)
+- **cli**: keep a closed terminal from crashing the process (#1483) (`58c314e3de`)
+- **core**: keep the reason a built-in tool refused (#1477) (`07d62413af`)
+- **engine**: tell the model why a tool call was rejected (#1473) (`c47a3f9836`)
+- **core**: accept the tool input a model actually sends (#1476) (`6c5159fb4b`)
+- **miao**: carry the engine's refusal into a shell result (#1475) (`b47a5d117c`)
+- **server**: confirm a settled idle before reporting a native turn finished (#1467) (`1f582f92fa`)
+- **script**: seed each conformance cell from the operator's product database (#1468) (`8f31b9d1e6`)
+- **engine**: recover from the Session-state overflow the engine sends (#1465) (`a126fb6ae6`)
+- **build**: ship and select engines paired with each release artifact (#1425) (`ddbfda3073`)
+- **engine**: surface provider availability failures honestly (#1457) (`b861241e68`)
+- **engine**: materialize PDF attachments providers cannot carry inline (#1456) (`662f2e152e`)
+- **cli**: stop --file from swallowing the prompt message (#1454) (`aebbc172ac`)
+- **engine**: refuse a snapshot truncated by an old engine projection (#1466) (`d8014148cd`)
+- **engine**: reject pruning that expands tool output (#1414) (`90449745e5`)
+- **engine**: follow the TS runner's provider retry policy (#1446) (`f81e70d91c`)
+- **engine**: settle monitors with a single readable notice (#1453) (`a988166c75`)
+- **engine**: preserve long session context, snapshots and forks (#1405) (`2c14f2c7da`)
+- **engine**: publish initial input promotion and run start atomically (#1403) (`18d2f68d13`)
+- **tui**: display native argv shell commands (#1440) (`a342532b8a`)
+- **engine**: read native catalogs without execution owners (#1421) (`28e2f1ca87`)
+- **engine**: keep the product's web-search provider selection (#1447) (`b4b2d56417`)
+- **engine**: keep event idle deadlines active throughout provider streams (#1401) (`6cf84803a0`)
+- **miao**: materialize text references like the runner (#1443) (`4e1f38cffd`)
+
 ## [0.3.7] - 2026-10-25
 
 ### Added
