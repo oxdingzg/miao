@@ -43,7 +43,9 @@ impl Provider for Answer {
         let text = if summarizing {
             self.summaries.fetch_add(1, Ordering::SeqCst);
             if self.refuse_summary {
-                return Err(ProviderError::Transport);
+                return Err(ProviderError::Transport(
+                    "the summarising provider is unreachable".into(),
+                ));
             }
             "A summary of the earlier turns."
         } else {
