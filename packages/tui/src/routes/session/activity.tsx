@@ -190,8 +190,10 @@ export function SessionActivity(props: { sessionID: string; compact?: boolean; s
   const summary = createMemo(() =>
     busy() || compaction() || blocked() ? undefined : turnSummary({ messages: messages(), background: background() }),
   )
-  // The esc hint names the next esc action, matching the prompt footer: one
+  // The esc hint names the next esc action, matching the prompt's hint row: one
   // esc cancels the newest waiting prompt, and only an empty queue interrupts.
+  // The live line above the composer reports the turn, so only the non-compact
+  // transcript line keeps the escape action here.
   const waitingCount = createMemo(() => sync.prompt.waiting(props.sessionID).length)
   const esc = createMemo(() => (waitingCount() > 0 ? "remove prompt" : "interrupt"))
   const receipt = createMemo(() => {
@@ -229,9 +231,6 @@ export function SessionActivity(props: { sessionID: string; compact?: boolean; s
             <box flexGrow={1} minWidth={0} overflow="hidden">
               <ProviderRetryStatus status={status()!} compact />
             </box>
-            <text wrapMode="none" flexShrink={0}>
-              esc {esc()}
-            </text>
           </box>
         </Show>
       </Show>
@@ -562,9 +561,6 @@ export function SessionWaiting(props: {
             </Show>
           </text>
         </Show>
-        <text wrapMode="none" flexShrink={0} fg={theme.textMuted}>
-          esc {props.esc ?? "interrupt"}
-        </text>
       </box>
     )
   return (
