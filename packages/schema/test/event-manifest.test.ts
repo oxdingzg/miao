@@ -11,8 +11,8 @@ describe("public event manifest", () => {
   test("owns the complete public event surface", () => {
     // The account-switch event reaches this surface twice: it is durable and it
     // is part of the bridged `session.next.*` family.
-    expect(EventManifest.ServerDefinitions.length).toBe(132)
-    expect(EventManifest.Definitions.length).toBe(107)
+    expect(EventManifest.ServerDefinitions.length).toBe(134)
+    expect(EventManifest.Definitions.length).toBe(108)
     expect(SessionV1.Event.Definitions).toEqual([
       SessionV1.Event.Created,
       SessionV1.Event.Updated,
@@ -25,10 +25,10 @@ describe("public event manifest", () => {
       SessionV1.Event.Diff,
       SessionV1.Event.Error,
     ])
-    expect(EventManifest.Latest.size).toBe(107)
+    expect(EventManifest.Latest.size).toBe(108)
     // Durable background subagent handoff added the delegation pair.
     // Pinning a conversation to one provider account added one durable event.
-    expect(EventManifest.Durable.size).toBe(46)
+    expect(EventManifest.Durable.size).toBe(47)
     // The `/api/event` surface carries the whole bridged `session.next.*`
     // family: a type missing here fails `clientEvent` validation and kills
     // live delivery for attached clients.

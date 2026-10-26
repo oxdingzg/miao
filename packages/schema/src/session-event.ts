@@ -14,6 +14,7 @@ import { Location } from "./location"
 import { SessionMessage } from "./session-message"
 import { SessionInfo } from "./session-info"
 import { Revert } from "./revert"
+import { SessionContextManagement } from "./session-context-management"
 
 export { FileAttachment }
 
@@ -517,7 +518,14 @@ export type Retried = typeof Retried.Type
  * awaiting the provider's first event (TTFT); `streaming` is at least one
  * provider event received; `retrying` is a bounded retry of a failed attempt.
  */
-export const BusyPhase = Schema.Literals(["queued", "preparing", "requesting", "streaming", "retrying", "compacting"]).annotate({
+export const BusyPhase = Schema.Literals([
+  "queued",
+  "preparing",
+  "requesting",
+  "streaming",
+  "retrying",
+  "compacting",
+]).annotate({
   identifier: "session.next.busy_phase",
 })
 export type BusyPhase = Schema.Schema.Type<typeof BusyPhase>
@@ -609,6 +617,13 @@ export const Failed = Event.define({
 })
 export type Failed = typeof Failed.Type
 
+export const ContextPruned = Event.define({
+  type: "session.next.context.pruned",
+  ...options,
+  schema: { ...Base, messageID: SessionMessage.ID, pruning: SessionContextManagement.Pruning },
+})
+export type ContextPruned = typeof ContextPruned.Type
+
 export namespace Compaction {
   export const Started = Event.define({
     type: "session.next.compaction.started",
@@ -640,6 +655,7 @@ export namespace Compaction {
       reason: Started.data.fields.reason,
       text: Schema.String,
       recent: Schema.String,
+      throughMessageSeq: NonNegativeInt.pipe(optional),
     },
   })
   export type Ended = typeof Ended.Type
@@ -724,6 +740,7 @@ export const DurableDefinitions = Event.inventory(
   Retried,
   Compaction.Started,
   Compaction.Ended,
+  ContextPruned,
   RevertEvent.Staged,
   RevertEvent.Cleared,
   RevertEvent.Committed,
@@ -774,6 +791,7 @@ export const Definitions = Event.inventory(
   Compaction.Started,
   Compaction.Delta,
   Compaction.Ended,
+  ContextPruned,
   RevertEvent.Staged,
   RevertEvent.Cleared,
   RevertEvent.Committed,
