@@ -1817,6 +1817,7 @@ async fn execute(
                             inner.store.record(session,"provider.retry",json!({
                                 "run_id":run,"step":step,
                                 "attempt":delta["attempt"],"reason":delta["reason"],"status":delta["status"],
+                                "delay_ms":delta["delay_ms"],
                             })).await?;
                         } else if delta["kind"] == "provider.attempt" {
                             // An attempt describes the request, not the answer it may
@@ -1843,6 +1844,7 @@ async fn execute(
                     inner.store.record(session, "provider.retry", json!({
                         "run_id":run,"step":step,
                         "attempt":delta["attempt"],"reason":delta["reason"],"status":delta["status"],
+                        "delay_ms":delta["delay_ms"],
                     })).await?;
                 } else if delta["kind"] == "provider.attempt" {
                     let _=inner.progress.send(json!({"session_id":session,"run_id":run,"step":step,"kind":"provider.attempt","protocol":delta["protocol"],"attempt":delta["attempt"],"status":delta["status"],"outcome":delta["outcome"],"detail":delta["detail"]}));
