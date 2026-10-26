@@ -452,6 +452,8 @@ Commands:
   miao session delete <sessionID>        delete a session
   miao session migrate <sessionID>       move a session from the TypeScript engine to the native
                                          engine
+  miao session migrate-all               move every remaining TypeScript session to the native
+                                         engine
   miao session migrate-back <sessionID>  move a session from the native engine back to the
                                          TypeScript engine
 
