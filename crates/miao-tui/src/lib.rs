@@ -35,11 +35,9 @@ async fn drive(
     events: &mut event::Rx,
 ) -> Result<(), Box<dyn Error>> {
     let mut ticker = tokio::time::interval(Duration::from_millis(100));
-    let mut test_panic_armed = std::env::var_os("MIAO_TUI_TEST_PANIC").is_some();
     loop {
         terminal.draw(|frame| app.shell.render(frame))?;
-        if test_panic_armed {
-            test_panic_armed = false;
+        if std::env::var_os("MIAO_TUI_TEST_PANIC").is_some() {
             panic!("miao-tui: injected panic (MIAO_TUI_TEST_PANIC)");
         }
         if app.quit {

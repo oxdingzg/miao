@@ -366,7 +366,7 @@ fn strip_jsonc(input: &str) -> String {
                 Some('*') => {
                     chars.next();
                     let mut previous = '\0';
-                    while let Some(rest) = chars.next() {
+                    for rest in chars.by_ref() {
                         if previous == '*' && rest == '/' {
                             break;
                         }

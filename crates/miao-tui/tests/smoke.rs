@@ -1,5 +1,5 @@
 use std::io::{Read, Write};
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 use std::thread::JoinHandle;
 use std::time::{Duration, Instant};
@@ -29,7 +29,8 @@ impl Harness {
             })
             .expect("open pty");
         let mut cmd = CommandBuilder::new(env!("CARGO_BIN_EXE_miao-tui"));
-        cmd.arg("--workspace").arg(&dir);
+        cmd.arg("--workspace");
+        cmd.arg(&dir);
         cmd.cwd(&dir);
         cmd.env("TERM", "xterm-256color");
         if inject_panic {
