@@ -332,7 +332,7 @@ export function mergeListingPage(input: {
  * merged page continues seamlessly across sources in both directions.
  */
 export const mergeNativeSessions = Effect.fn("NativeSession.mergeSessions")(function* (input: {
-  native: Pick<NativeEngine.Interface, "snapshot" | "usage">
+  native: Pick<NativeEngine.Interface, "snapshot" | "usage" | "catalog">
   db: Database.Interface["db"]
   sessions: readonly SessionInfo.Info[]
   limit: number
@@ -365,19 +365,35 @@ export const mergeNativeSessions = Effect.fn("NativeSession.mergeSessions")(func
     const groupEntries = yield* Effect.gen(function* () {
       const project = (yield* input.projects.resolve(group.location.directory)).id
       if (input.project && project !== input.project) return []
+      const catalog = input.native.catalog
+        ? new Map(
+            (yield* input.native.catalog({
+              storage: group.storage,
+              location: group.location,
+              sessions: group.sessions.map((id) => Schema.decodeUnknownSync(SessionID)(id)),
+              usage: input.models !== undefined,
+            })).map((entry) => [entry.sessionID, entry]),
+          )
+        : undefined
       const entries: SessionInfo.Info[] = []
       for (const raw of group.sessions) {
         const sessionID = Schema.decodeUnknownSync(SessionID)(raw)
+        const stored = catalog?.get(sessionID)
+        if (catalog && !stored) continue
         const entry = yield* Effect.gen(function* () {
-          const snapshot = yield* input.native.snapshot({
-            sessionID,
-            storage: group.storage,
-            location: group.location,
-            metadataOnly: true,
-          })
+          const snapshot =
+            stored?.snapshot ??
+            (yield* input.native.snapshot({
+              sessionID,
+              storage: group.storage,
+              location: group.location,
+              metadataOnly: true,
+            }))
           const usage = input.models
             ? nativeSessionUsage({
-                report: yield* input.native.usage({ sessionID, storage: group.storage, location: group.location }),
+                report: stored
+                  ? (stored.usage ?? {})
+                  : yield* input.native.usage({ sessionID, storage: group.storage, location: group.location }),
                 models: input.models,
                 snapshot,
               })
