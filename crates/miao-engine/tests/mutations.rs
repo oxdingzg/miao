@@ -418,6 +418,45 @@ async fn anchor_form_replaces_the_unique_fragment_and_rejects_ambiguous_or_mixed
     runtime.shutdown().await;
 }
 
+#[tokio::test]
+async fn model_spellings_of_absent_hashes_and_mixed_anchor_pairs_still_apply() {
+    // The create-only form is JSON null, and models write that null as the
+    // string "null"; reading it as a hash rejected an otherwise exact call.
+    let dir = tempfile::tempdir().unwrap();
+    let (runtime, store) = launch(
+        dir.path(),
+        "write_file",
+        json!({"path":"new.txt","text":"hello\n","expected_sha256":"null"}),
+        config(Decision::Allow),
+    )
+    .await;
+    finished(&store).await;
+    assert_eq!(
+        std::fs::read_to_string(dir.path().join("new.txt")).unwrap(),
+        "hello\n"
+    );
+    runtime.shutdown().await;
+
+    // `anchor` names the old text and `new_string` the replacement; mixing the
+    // two pairs is one unambiguous replacement, not an ambiguity.
+    let dir = tempfile::tempdir().unwrap();
+    std::fs::write(dir.path().join("ledger.ts"), "let sum = 0\n").unwrap();
+    let (runtime, store) = launch(
+        dir.path(),
+        "edit_file",
+        json!({"path":"ledger.ts","anchor":"let sum = 0","new_string":"let total = 0","expected_sha256":digest(b"let sum = 0\n")}),
+        config(Decision::Allow),
+    )
+    .await;
+    finished(&store).await;
+    assert_eq!(
+        std::fs::read_to_string(dir.path().join("ledger.ts")).unwrap(),
+        "let total = 0\n"
+    );
+    assert!(edit_result(&store).await["applied"].as_bool().unwrap());
+    runtime.shutdown().await;
+}
+
 async fn edit_result(store: &Store) -> Value {
     serde_json::from_str::<Value>(
         store.history("s").await.unwrap()[2].content[0]["content"]
