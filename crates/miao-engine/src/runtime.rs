@@ -2020,10 +2020,7 @@ command: None,
                 // one bad attachment. Quarantine what this run promoted so the
                 // next prompt starts from the last good history; the transcript
                 // keeps the message visible next to the failure record.
-                if step == 0
-                    && !produced
-                    && matches!(error, ProviderError::Http(400 | 404 | 413 | 422))
-                {
+                if step == 0 && !produced && error.input_rejected() {
                     inner
                         .store
                         .quarantine_failed_input(session, history_base, &error.to_string())
@@ -2033,13 +2030,7 @@ command: None,
                     Some(text) => format!("{error}: {text}"),
                     None => error.to_string(),
                 };
-                if matches!(
-                    error,
-                    ProviderError::Transport
-                        | ProviderError::ResponseTransport
-                        | ProviderError::ContinuableTransport { .. }
-                        | ProviderError::Http(429 | 500 | 502 | 503 | 504 | 529)
-                ) {
+                if error.unavailable() {
                     return Err(Error::Provider(format!(
                         "the model endpoint kept failing after retries: {message}"
                     )));

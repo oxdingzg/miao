@@ -1,7 +1,8 @@
 use async_trait::async_trait;
 use miao_engine::{
     protocol::{Delivery, Input, ModelRequest},
-    provider::{Provider, ProviderError, Reply},
+    provider::{Identity, Provider, ProviderError, Reply},
+    routing::Fallback,
     runtime::Runtime,
     store::Store,
     tools::Tools,
@@ -130,4 +131,95 @@ async fn post_output_transport_failure_is_not_replayed() {
         .unwrap()
         .iter()
         .any(|event| event.kind == "provider.failed"));
+}
+
+/// A route that cannot be reached at all, so the fallback wraps the transport
+/// failure the same way a configured pair does.
+struct Unreachable {
+    model: &'static str,
+    calls: AtomicUsize,
+}
+#[async_trait]
+impl Provider for Unreachable {
+    fn identity(&self) -> Option<Identity> {
+        Some(Identity {
+            protocol: "openai-chat".into(),
+            model: self.model.into(),
+        })
+    }
+    async fn stream(
+        &self,
+        _: ModelRequest,
+        _: mpsc::Sender<Value>,
+        _: CancellationToken,
+    ) -> Result<Reply, ProviderError> {
+        self.calls.fetch_add(1, Ordering::SeqCst);
+        Err(ProviderError::Transport)
+    }
+}
+
+/// Both routes of a routed turn fail at transport level. The router wraps the
+/// route's error, and that wrapper used to fall through the runtime's
+/// availability check, so an unreachable endpoint was reported as
+/// "invalid request: provider transport failed" and sent operators looking for
+/// a malformed prompt.
+#[tokio::test]
+async fn a_routed_transport_failure_is_reported_as_unavailable() {
+    let dir = tempfile::tempdir().unwrap();
+    let store = Store::open(dir.path().join("engine.db")).await.unwrap();
+    let provider = Arc::new(
+        Fallback::new(
+            Arc::new(Unreachable {
+                model: "primary",
+                calls: AtomicUsize::new(0),
+            }),
+            Arc::new(Unreachable {
+                model: "fallback",
+                calls: AtomicUsize::new(0),
+            }),
+        )
+        .unwrap(),
+    );
+    let runtime = Runtime::new(
+        store.clone(),
+        provider,
+        Tools::new(dir.path()).await.unwrap(),
+    )
+    .await
+    .unwrap();
+    runtime
+        .admit(
+            Input {
+                agent_references: Default::default(),
+                command: None,
+                session_id: "s".into(),
+                input_id: "one".into(),
+                prompt: "go".into(),
+                delivery: Delivery::Steer,
+            },
+            true,
+        )
+        .await
+        .unwrap();
+    let events = tokio::time::timeout(std::time::Duration::from_secs(10), async {
+        loop {
+            let events = store.events("s", 0, 1000).await.unwrap();
+            if events.iter().any(|event| event.kind == "stop_failure") {
+                return events;
+            }
+            tokio::time::sleep(std::time::Duration::from_millis(5)).await;
+        }
+    })
+    .await
+    .unwrap();
+    let failure = events
+        .iter()
+        .find(|event| event.kind == "stop_failure")
+        .unwrap();
+    let message = failure.data["message"].as_str().unwrap();
+    assert!(
+        message.starts_with("provider unavailable: the model endpoint kept failing after retries"),
+        "unexpected failure message: {message}"
+    );
+    runtime.shutdown().await;
 }
