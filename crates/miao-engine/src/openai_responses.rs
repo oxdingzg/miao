@@ -260,20 +260,23 @@ impl OpenAIResponses {
             &body,
             &json!({
                 "input_modalities":self.input_modalities,
-                "route_headers":crate::permission::digest(&serde_json::to_vec(&self.extra_headers).map_err(|_| ProviderError::Transport)?),
+                "route_headers":crate::permission::digest(&serde_json::to_vec(&self.extra_headers).map_err(|error| ProviderError::Transport(format!("route headers could not be encoded: {error}")))?),
                 "endpoint":self.endpoint,"profile":match self.profile {Profile::Api=>"api",Profile::Subscription=>"subscription",Profile::Copilot=>"copilot"},"account":credential.account(),
                 "generation":crate::permission::digest(credential.secret().as_bytes()),
-                "request_options":crate::permission::digest(&serde_json::to_vec(&self.request_options).map_err(|_| ProviderError::Transport)?),
+                "request_options":crate::permission::digest(&serde_json::to_vec(&self.request_options).map_err(|error| ProviderError::Transport(format!("request options could not be encoded: {error}")))?),
             }),
         )?;
         if let Some(key) = &cache_key {
             body["prompt_cache_key"] = json!(key);
         }
         let endpoint = match self.query.as_deref() {
-            None => reqwest::Url::parse(&self.endpoint).map_err(|_| ProviderError::Transport)?,
+            None => reqwest::Url::parse(&self.endpoint).map_err(|error| {
+                ProviderError::Transport(format!("the endpoint is not a URL: {error}"))
+            })?,
             Some(query) => {
-                let mut endpoint =
-                    reqwest::Url::parse(&self.endpoint).map_err(|_| ProviderError::Transport)?;
+                let mut endpoint = reqwest::Url::parse(&self.endpoint).map_err(|error| {
+                    ProviderError::Transport(format!("the endpoint is not a URL: {error}"))
+                })?;
                 endpoint.set_query(Some(query));
                 endpoint
             }
@@ -299,11 +302,7 @@ impl OpenAIResponses {
             }
         }
         let builder = crate::provider::route_headers(builder, &self.extra_headers)?;
-        let mut request = self
-            .request_options
-            .headers(builder)?
-            .build()
-            .map_err(|_| ProviderError::Transport)?;
+        let mut request = self.request_options.headers(builder)?.build()?;
         if let Some(headers) = copilot {
             crate::copilot::apply(&mut request, &headers, false)?;
         }

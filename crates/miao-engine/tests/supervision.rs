@@ -55,7 +55,9 @@ impl Provider for Fixture {
                     .send(json!({"kind":"provider.attempt","protocol":"fixture","attempt":call,"status":null,"outcome":"transport_unknown","detail":null}))
                     .await
                     .unwrap();
-                Err(ProviderError::Transport)
+                Err(ProviderError::Transport(
+                    "the fixture endpoint is unreachable".into(),
+                ))
             }
             "pending" => {
                 cancel.cancelled().await;

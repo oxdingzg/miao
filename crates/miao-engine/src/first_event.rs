@@ -71,7 +71,10 @@ impl Watchdogs {
 
     pub(crate) fn event_timeout(&self, received: bool) -> crate::provider::ProviderError {
         if !received {
-            return crate::provider::ProviderError::Transport;
+            return crate::provider::ProviderError::Transport(format!(
+                "provider produced no stream event for {}ms (set MIAO_LLM_EVENT_IDLE_TIMEOUT_MS to adjust, 0 disables)",
+                self.event_idle.as_millis(),
+            ));
         }
         crate::provider::ProviderError::Stream(format!(
             "provider produced no stream event for {}ms (set MIAO_LLM_EVENT_IDLE_TIMEOUT_MS to adjust, 0 disables)",
