@@ -85,6 +85,9 @@ const layer = Layer.effectDiscard(
               "Apply one patch containing add, update, and delete file operations. All targets are resolved and external directories approved before target contents are read; the whole patch is then approved, with its diff, before any file changes. Operations apply sequentially; if a later operation fails, earlier operations remain applied and the failure reports them explicitly. File moves preserve the source on destination conflicts; moves and batches are not atomically rolled back.",
             input: Input,
             output: Output,
+            // Models also name the patch `patch_text` or wrap it under `input`;
+            // either spelling carries the same single value.
+            aliases: { patchText: ["patch_text", "input"] },
             toModelOutput: ({ output }) => [{ type: "text", text: toModelOutput(output) }],
             execute: (input, context) => {
               const applied: Array<typeof Applied.Type> = []

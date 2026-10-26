@@ -207,6 +207,37 @@ describe("EditTool", () => {
     ),
   )
 
+  it.live("accepts the file and text under the other spellings models use", () =>
+    Effect.acquireUseRelease(
+      Effect.promise(() => tmpdir()),
+      (tmp) => {
+        reset()
+        const target = path.join(tmp.path, "hello.txt")
+        return Effect.promise(() => fs.writeFile(target, "before\nrest\n")).pipe(
+          Effect.andThen(
+            withTool(tmp.path, (registry) =>
+              Effect.gen(function* () {
+                const settled = yield* settleTool(registry, {
+                  sessionID,
+                  ...toolIdentity,
+                  call: {
+                    type: "tool-call" as const,
+                    id: "call-edit-aliases",
+                    name: "edit",
+                    input: { filePath: "hello.txt", old_string: "before", new_string: "after" },
+                  },
+                })
+                expect(settled.output?.structured).toMatchObject({ replacements: 1 })
+                expect(yield* Effect.promise(() => fs.readFile(target, "utf8"))).toBe("after\nrest\n")
+              }),
+            ),
+          ),
+        )
+      },
+      (tmp) => Effect.promise(() => tmp[Symbol.asyncDispose]()),
+    ),
+  )
+
   it.live("reports language server errors in the edited file", () =>
     Effect.acquireUseRelease(
       Effect.promise(() => tmpdir()),

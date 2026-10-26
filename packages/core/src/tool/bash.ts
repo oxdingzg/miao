@@ -55,11 +55,9 @@ export const Input = Schema.Struct({
   workdir: Schema.String.pipe(Schema.optional).annotate({
     description: "Working directory. Defaults to the active Location; relative paths resolve from that Location.",
   }),
-  timeout: PositiveInt.check(Schema.isLessThanOrEqualTo(MAX_TIMEOUT_MS))
-    .pipe(Schema.optional)
-    .annotate({
-      description: `Timeout in milliseconds. Defaults to ${DEFAULT_TIMEOUT_MS} and may not exceed ${MAX_TIMEOUT_MS}.`,
-    }),
+  timeout: PositiveInt.pipe(Schema.optional).annotate({
+    description: `Timeout in milliseconds. Defaults to ${DEFAULT_TIMEOUT_MS}; a larger value runs with the ${MAX_TIMEOUT_MS} ceiling.`,
+  }),
   stdin: Schema.String.pipe(Schema.optional).annotate({
     description:
       "Text written verbatim to the command's standard input, never parsed by the shell. Use it to hand a script to another interpreter instead of nesting quotes or heredocs, for example `ssh host 'bash -s'`, `docker exec -i <container> sh`, `kubectl exec -i <pod> -- sh`, `python3 -`, or `psql`. At most 1 MiB. Omit it and standard input is closed.",
@@ -657,7 +655,9 @@ const executionLayer = Layer.effect(
             detached: process.platform !== "win32",
             forceKillAfter: Duration.seconds(3),
           } as const
-          const timeout = input.timeout ?? DEFAULT_TIMEOUT_MS
+          // A caller asking for longer than the ceiling meant "as long as
+          // allowed"; rejecting the call left the command never running.
+          const timeout = Math.min(input.timeout ?? DEFAULT_TIMEOUT_MS, MAX_TIMEOUT_MS)
           const status = yield* sandbox.status()
           if (status.enabled && !status.available && status.onUnavailable === "fail")
             return yield* new ToolFailure({

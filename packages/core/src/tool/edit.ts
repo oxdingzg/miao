@@ -111,6 +111,14 @@ const layer = Layer.effectDiscard(
               "Replace exact text in one file. Relative paths resolve within the active Location. Absolute paths inside the Location are accepted. Explicit external absolute paths require external_directory approval before edit approval.",
             input: Input,
             output: Output,
+            // Models reach for the engine's snake_case names and for
+            // `filePath`; each names the same argument.
+            aliases: {
+              path: ["filePath", "file_path"],
+              oldString: ["old_string"],
+              newString: ["new_string"],
+              replaceAll: ["replace_all"],
+            },
             toModelOutput: ({ output }) => [{ type: "text", text: toModelOutput(output) }],
             execute: (input, context) => {
               const unableToEdit = <A, E, R>(effect: Effect.Effect<A, E, R>) =>
