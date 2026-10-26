@@ -1,4 +1,8 @@
 export const dict = {
+  "context.history.title": "Geschatte inputsamenstelling in de loop van de tijd",
+  "context.history.point": "{{time}} · {{tokens}} rapporteerde prompttokens",
+  "context.history.note":
+    "Gebaseerd op maximaal 80 geladen assistent-beurten. Categorieschattingen maken gebruik van geladen tekst, geschaald naar gerapporteerde prompttokens. Controlepunten herstarten de schatting; ongeladen of niet-geclassificeerde inhoud is opgenomen in Overige. Dit zijn geen momentopnamen van opgeslagen verzoeken.",
   "context.timeline.title": "Context en cachegeschiedenis",
   "context.timeline.step":
     "{{model}} · {{time}} · {{input}} prompttokens · {{read}} cache lezen · {{write}} cache schrijven",

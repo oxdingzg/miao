@@ -1,4 +1,8 @@
 export const dict = {
+  "context.history.title": "Aptuvenais ievades sastāvs laika gaitā",
+  "context.history.point": "{{time}} · {{tokens}} ziņoja par uzvednes marķieriem",
+  "context.history.note":
+    "Balstīts uz līdz pat 80 ielādētiem palīga pagriezieniem. Kategoriju aprēķinos tiek izmantots ielādēts teksts, kas mērogots atbilstoši ziņotajām uzvednes pilnvarām. Kontrolpunkti restartē tāmi; izlādēts vai neklasificēts saturs ir iekļauts sadaļā Cits. Tie nav saglabāti pieprasījuma momentuzņēmumi.",
   "context.timeline.title": "Konteksts un kešatmiņas vēsture",
   "context.timeline.step":
     "{{model}} · {{time}} · {{input}} uzvednes marķieri · {{read}} kešatmiņas lasīšana · {{write}} kešatmiņas rakstīšana",

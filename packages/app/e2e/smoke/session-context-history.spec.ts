@@ -53,6 +53,17 @@ test("context history pages durable usage and remains usable after a fetch failu
     .focus()
   await expect(chart.getByRole("button", { name: /350 prompt tokens/ }).first()).toHaveAttribute("aria-pressed", "true")
   await expect(chart).toContainText("250 ms to first token")
+  const composition = page.locator('[data-component="context-composition"]')
+  await expect(composition).toContainText("not saved request snapshots")
+  await composition
+    .getByRole("button", { name: /reported prompt tokens/ })
+    .first()
+    .focus()
+  await expect(composition.getByRole("button", { name: /reported prompt tokens/ }).first()).toHaveAttribute(
+    "aria-pressed",
+    "true",
+  )
   await chart.screenshot({ path: testInfo.outputPath("context-history.png") })
+  await composition.screenshot({ path: testInfo.outputPath("context-composition.png") })
   expect(errors).toEqual([])
 })

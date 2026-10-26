@@ -1,4 +1,8 @@
 export const dict = {
+  "context.history.title": "Compoziția estimată a intrărilor în timp",
+  "context.history.point": "{{time}} · {{tokens}} a raportat jetoane prompte",
+  "context.history.note":
+    "Bazat pe până la 80 de ture de asistent încărcate. Estimările categoriilor folosesc text încărcat, scalat la indicatoarele de prompt raportate. Punctele de control repornesc estimarea; conținutul descărcat sau neclasificat este inclus în Altele. Acestea nu sunt instantanee ale solicitărilor salvate.",
   "context.timeline.title": "Context și istoricul memoriei cache",
   "context.timeline.step":
     "{{model}} · {{time}} · {{input}} jetoane prompte · {{read}} citire cache · {{write}} scriere cache",

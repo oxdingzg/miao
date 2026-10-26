@@ -1,4 +1,8 @@
 export const dict = {
+  "context.history.title": "Szacowany skład wejściowy w czasie",
+  "context.history.point": "{{time}} · {{tokens}} zgłosiło tokeny podpowiedzi",
+  "context.history.note":
+    "Na podstawie maksymalnie 80 załadowanych tur asystenta. Oszacowania kategorii wykorzystują załadowany tekst, przeskalowany do zgłoszonych tokenów podpowiedzi. Punkty kontrolne wznawiają oszacowanie; niewyładowana lub niesklasyfikowana treść jest uwzględniona w kategorii Inne. Nie są to zapisane migawki żądań.",
   "context.timeline.title": "Kontekst i historia pamięci podręcznej",
   "context.timeline.step":
     "{{model}} · {{time}} · {{input}} tokeny zachęty · {{read}} odczyt pamięci podręcznej · {{write}} zapis pamięci podręcznej",

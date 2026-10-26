@@ -1,4 +1,8 @@
 export const dict = {
+  "context.history.title": "Arvioitu syötteen koostumus ajan mittaan",
+  "context.history.point": "{{time}} · {{tokens}} ilmoitti kehotteita",
+  "context.history.note":
+    "Perustuu jopa 80 ladatun avustajan kierrokseen. Luokka-arvioissa käytetään ladattua tekstiä, joka on skaalattu raportoituihin kehotteisiin. Tarkistuspisteet käynnistävät arvion uudelleen; lataamaton tai luokittelematon sisältö sisältyy Muuhun. Nämä eivät ole tallennettuja pyyntökuvia.",
   "context.timeline.title": "Konteksti ja välimuistihistoria",
   "context.timeline.step":
     "{{model}} · {{time}} · {{input}} kehotetunnukset · {{read}} välimuistin luku · {{write}} välimuistin kirjoitus",

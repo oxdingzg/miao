@@ -1,4 +1,8 @@
 export const dict = {
+  "context.history.title": "Perkiraan komposisi masukan dari waktu ke waktu",
+  "context.history.point": "{{time}} · {{tokens}} melaporkan token cepat",
+  "context.history.note":
+    "Berdasarkan hingga 80 putaran asisten yang dimuat. Perkiraan kategori menggunakan teks yang dimuat, diskalakan ke token cepat yang dilaporkan. Pos pemeriksaan memulai kembali perkiraan; konten yang dibongkar atau tidak diklasifikasikan termasuk dalam Lainnya. Ini bukan snapshot permintaan yang disimpan.",
   "context.timeline.title": "Konteks dan riwayat cache",
   "context.timeline.step":
     "{{model}} · {{time}} · {{input}} token prompt · {{read}} pembacaan cache · {{write}} penulisan cache",

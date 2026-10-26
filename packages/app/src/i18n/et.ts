@@ -1,4 +1,8 @@
 export const dict = {
+  "context.history.title": "Hinnanguline sisendi koostis aja jooksul",
+  "context.history.point": "{{time}} · {{tokens}} teatatud viibamärgid",
+  "context.history.note":
+    "Põhineb kuni 80 koormatud abilise pöördel. Kategooria hinnangud kasutavad laaditud teksti, mis on skaleeritud teatatud viipade märkide järgi. Kontrollpunktid alustavad kalkulatsiooni uuesti; laadimata või klassifitseerimata sisu sisaldub jaotises Muu. Need ei ole salvestatud päringu hetktõmmised.",
   "context.timeline.title": "Kontekst ja vahemälu ajalugu",
   "context.timeline.step":
     "{{model}} · {{time}} · {{input}} viibamärgid · {{read}} vahemälu lugemine · {{write}} vahemälu kirjutamine",

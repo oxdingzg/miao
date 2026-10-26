@@ -3,6 +3,10 @@ import { dict as en } from "./en"
 type Keys = keyof typeof en
 
 export const dict = {
+  "context.history.title": "输入构成估算趋势",
+  "context.history.point": "{{time}} · 模型报告的提示词用量：{{tokens}} token",
+  "context.history.note":
+    "最多展示已加载记录中最近 80 个助手回合。各分类根据已加载文本估算，并按模型报告的提示词用量缩放。压缩检查点会重新开始估算；未加载或未分类的内容计入“其他”。这些估算并非当时请求的快照。",
   "context.timeline.title": "上下文与缓存历史",
   "context.timeline.step":
     "{{model}} · {{time}} · 提示词 {{input}} token · 缓存读取 {{read}} token · 缓存写入 {{write}} token",

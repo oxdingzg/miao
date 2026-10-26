@@ -1,4 +1,8 @@
 export const dict = {
+  "context.history.title": "Beräknad insatssammansättning över tid",
+  "context.history.point": "{{time}} · {{tokens}} rapporterade prompt-tokens",
+  "context.history.note":
+    "Baserat på upp till 80 laddade assistentvarv. Kategoriuppskattningar använder inläst text, skalad till rapporterade prompttokens. Kontrollpunkter startar om uppskattningen; avlastat eller oklassificerat innehåll ingår i Övrigt. Dessa är inte sparade ögonblicksbilder av begäran.",
   "context.timeline.title": "Kontext och cachehistorik",
   "context.timeline.step":
     "{{model}} · {{time}} · {{input}} prompt tokens · {{read}} cache läs · {{write}} cache skriv",

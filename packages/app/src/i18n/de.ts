@@ -3,6 +3,10 @@ import { dict as en } from "./en"
 type Keys = keyof typeof en
 
 export const dict = {
+  "context.history.title": "Geschätzte Eingabezusammensetzung im Zeitverlauf",
+  "context.history.point": "{{time}} · {{tokens}} hat Prompt-Tokens gemeldet",
+  "context.history.note":
+    "Basierend auf bis zu 80 geladenen Assistentenrunden. Kategorieschätzungen verwenden geladenen Text, skaliert auf gemeldete Prompt-Tokens. Kontrollpunkte starten die Schätzung neu; Entladener oder nicht klassifizierter Inhalt ist in „Sonstige“ enthalten. Hierbei handelt es sich nicht um gespeicherte Anfrage-Snapshots.",
   "context.timeline.title": "Kontext- und Cache-Verlauf",
   "context.timeline.step":
     "{{model}} · {{time}} · {{input}} Prompt-Tokens · {{read}} Cache-Lesen · {{write}} Cache-Schreiben",

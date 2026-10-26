@@ -1,4 +1,8 @@
 export const dict = {
+  "context.history.title": "시간 경과에 따른 예상 입력 구성",
+  "context.history.point": "{{time}} · {{tokens}} 보고된 프롬프트 토큰",
+  "context.history.note":
+    "최대 80개의 로드된 보조 회전을 기준으로 합니다. 카테고리 추정은 보고된 프롬프트 토큰에 맞게 크기가 조정된 로드된 텍스트를 사용합니다. 체크포인트는 추정을 다시 시작합니다. 언로드되었거나 분류되지 않은 콘텐츠는 기타에 포함됩니다. 이는 저장된 요청 스냅샷이 아닙니다.",
   "context.timeline.title": "컨텍스트 및 캐시 기록",
   "context.timeline.step": "{{model}} · {{time}} · {{input}} 프롬프트 토큰 · {{read}} 캐시 읽기 · {{write}} 캐시 쓰기",
   "context.timeline.requestWindow": "요청 시 {{value}} 토큰 기간",

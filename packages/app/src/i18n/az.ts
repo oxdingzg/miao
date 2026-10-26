@@ -1,4 +1,8 @@
 export const dict = {
+  "context.history.title": "Zamanla hesablanmış giriş tərkibi",
+  "context.history.point": "{{time}} · {{tokens}} xəbərdaredici nişanlar",
+  "context.history.note":
+    "80-ə qədər yüklənmiş köməkçi növbəsinə əsaslanır. Kateqoriya təxminləri yüklənmiş mətndən istifadə edir. Yoxlama məntəqələri təxmini yenidən başlayır; boşaldılmış və ya təsnif edilməmiş məzmun Digərlərə daxildir. Bunlar yadda saxlanılan sorğu snapshotları deyil.",
   "context.timeline.title": "Kontekst və keş tarixçəsi",
   "context.timeline.step":
     "{{model}} · {{time}} · {{input}} operativ işarələr · {{read}} keş oxunması · {{write}} keş yazma",

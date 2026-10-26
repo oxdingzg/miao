@@ -94,6 +94,10 @@ const desktop = [
 ]
 
 export const dict = {
+  "context.history.title": "Áætluð inntakssamsetning með tímanum",
+  "context.history.point": "{{time}} · {{tokens}} tilkynnti hvetjandi tákn",
+  "context.history.note":
+    "Byggt á allt að 80 hlaðnum aðstoðarbeygjum. Áætlanir flokka nota hlaðinn texta, kvarðann að tilkynntum kvaðningartáknum. Eftirlitsstöðvar endurræsa matið; óhlaðið eða óflokkað efni er innifalið í Annað. Þetta eru ekki vistaðar skyndimyndir af beiðni.",
   "context.timeline.title": "Saga samhengi og skyndiminni",
   "context.timeline.step":
     "{{model}} · {{time}} · {{input}} kvaðningartákn · {{read}} skyndiminni lesinn · {{write}} skyndiminni skrifa",

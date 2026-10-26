@@ -1,4 +1,8 @@
 export const dict = {
+  "context.history.title": "Ocenjena vhodna sestava skozi čas",
+  "context.history.point": "{{time}} · {{tokens}} je prijavilo žetone poziva",
+  "context.history.note":
+    "Na podlagi do 80 naloženih asistenčnih obratov. Ocene kategorij uporabljajo naloženo besedilo, prilagojeno prijavljenim pozivnim žetonom. Kontrolne točke znova zaženejo oceno; nenaložena ali nerazvrščena vsebina je vključena v Drugo. To niso shranjeni posnetki zahtev.",
   "context.timeline.title": "Kontekst in zgodovina predpomnilnika",
   "context.timeline.step":
     "{{model}} · {{time}} · {{input}} pozivnih žetonov · {{read}} branje predpomnilnika · {{write}} pisanje predpomnilnika",

@@ -1,4 +1,8 @@
 export const dict = {
+  "context.history.title": "Estimeret inputsammensætning over tid",
+  "context.history.point": "{{time}} · {{tokens}} rapporterede prompt-tokens",
+  "context.history.note":
+    "Baseret på op til 80 belastede assistentdrejninger. Kategoriestimater bruger indlæst tekst, skaleret til rapporterede prompt-tokens. Kontrolpunkter genstarter estimatet; unloaded eller uklassificeret indhold er inkluderet i Andet. Disse er ikke gemte anmodningssnapshots.",
   "context.timeline.title": "Kontekst og cachehistorie",
   "context.timeline.step":
     "{{model}} · {{time}} · {{input}} prompt tokens · {{read}} cache læst · {{write}} cache skrivning",

@@ -1,4 +1,8 @@
 export const dict = {
+  "context.history.title": "Odhadované zloženie vstupov v priebehu času",
+  "context.history.point": "{{time}} · {{tokens}} nahlásilo tokeny výzvy",
+  "context.history.note":
+    "Na základe až 80 načítaných otáčok asistenta. Odhady kategórií používajú načítaný text, upravený na nahlásené tokeny výzvy. Kontrolné body reštartujú odhad; vyložený alebo nezaradený obsah je zahrnutý v Iné. Toto nie sú uložené snímky žiadostí.",
   "context.timeline.title": "Kontext a história vyrovnávacej pamäte",
   "context.timeline.step":
     "{{model}} · {{time}} · {{input}} tokeny výzvy · {{read}} čítanie do vyrovnávacej pamäte · {{write}} zápis do vyrovnávacej pamäte",

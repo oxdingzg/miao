@@ -1,4 +1,8 @@
 export const dict = {
+  "context.history.title": "ການ​ປະ​ກອບ​ປະ​ກອບ​ການ​ຄາດ​ຄະ​ເນ​ໃນ​ໄລ​ຍະ​",
+  "context.history.point": "{{time}} · {{tokens}} ລາຍງານໂທເຄນເຕືອນ",
+  "context.history.note":
+    "ອີງ​ຕາມ​ການ​ສູງ​ເຖິງ 80 Loaded turns Assistant​. ການປະເມີນໝວດໝູ່ໃຊ້ຂໍ້ຄວາມທີ່ໂຫລດ, ປັບຂະໜາດເປັນໂທເຄັນທີ່ລາຍງານ. ດ່ານກວດຄືນການປະເມີນ; unloaded ຫຼື unclassified ເນື້ອໃນແມ່ນລວມຢູ່ໃນອື່ນໆ. ເຫຼົ່ານີ້ແມ່ນບໍ່ໄດ້ບັນທຶກການຮ້ອງຂໍການຖ່າຍພາບ.",
   "context.timeline.title": "ບໍລິບົດ ແລະປະຫວັດຖານຄວາມຈຳ",
   "context.timeline.step": "{{model}} · {{time}} · {{input}} Input Token · {{read}} Cache ອ່ານ · {{write}} ຂຽນ cache",
   "context.timeline.requestWindow": "{{value}} ໜ້າຕ່າງ token ໃນເວລາຮ້ອງຂໍ",
