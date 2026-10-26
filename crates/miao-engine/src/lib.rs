@@ -79,6 +79,7 @@ mod tool_input;
 mod first_event;
 
 mod delta;
+mod output_guard;
 mod runtime_profile;
 
 pub mod catalog;
