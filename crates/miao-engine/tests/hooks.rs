@@ -233,11 +233,23 @@ fn hook_configuration_is_bounded_and_unambiguous() {
             hook(Event::PreToolUse, "*", 0),
         ],
     ] {
-        assert!(matches!(
-            hooks::validate(&hooks),
-            Err(ToolError::InvalidInput)
-        ));
+        assert!(
+            matches!(hooks::validate(&hooks), Err(ToolError::InvalidArgs(_))),
+            "{:?} hooks",
+            hooks.len()
+        );
     }
+    // The operator needs the same actionable reason the model gets: a zero
+    // timeout is named as such instead of a bare "invalid".
+    let Err(ToolError::InvalidArgs(message)) = hooks::validate(&[Hook {
+        event: Event::PreToolUse,
+        tool: "*".into(),
+        argv: vec!["true".into()],
+        timeout_ms: 0,
+    }]) else {
+        panic!("a zero hook timeout must be rejected with a reason");
+    };
+    assert!(message.contains("timeout_ms"), "{message}");
     assert!(hooks::validate(&[hook(Event::PreToolUse, "*", 0)]).is_ok());
     assert!(serde_json::from_str::<Hook>(
         r#"{"event":"pre_tool_use","tool":"*","argv":["true"],"timeout_ms":1000,"extra":1}"#

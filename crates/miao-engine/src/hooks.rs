@@ -44,17 +44,32 @@ impl Hook {
 
 pub fn validate(hooks: &[Hook]) -> Result<(), ToolError> {
     if hooks.len() > 16 {
-        return Err(ToolError::InvalidInput);
+        return Err(ToolError::InvalidArgs(format!(
+            "at most 16 hooks are allowed; got {}",
+            hooks.len()
+        )));
     }
     let mut seen = std::collections::BTreeSet::new();
     for hook in hooks {
-        if hook.tool.is_empty()
-            || hook.tool.len() > 128
-            || hook
-                .tool
-                .contains(|c: char| c.is_whitespace() || c.is_control())
+        if hook.tool.is_empty() {
+            return Err(ToolError::InvalidArgs(
+                "every hook needs a tool name, or \"*\" for all tools".into(),
+            ));
+        }
+        if hook.tool.len() > 128 {
+            return Err(ToolError::InvalidArgs(format!(
+                "tool name is {} bytes; at most 128 are allowed",
+                hook.tool.len()
+            )));
+        }
+        if hook
+            .tool
+            .contains(|c: char| c.is_whitespace() || c.is_control())
         {
-            return Err(ToolError::InvalidInput);
+            return Err(ToolError::InvalidArgs(format!(
+                "tool name {:?} must not contain whitespace or control characters",
+                hook.tool
+            )));
         }
         hook.input()?;
         let key = (
@@ -63,7 +78,10 @@ pub fn validate(hooks: &[Hook]) -> Result<(), ToolError> {
             serde_json::to_string(&hook.argv).map_err(|_| ToolError::InvalidInput)?,
         );
         if !seen.insert(key) {
-            return Err(ToolError::InvalidInput);
+            return Err(ToolError::InvalidArgs(format!(
+                "duplicate hook for {:?}; it would run twice",
+                hook.tool
+            )));
         }
     }
     Ok(())
