@@ -172,7 +172,6 @@ export const RunCommand = cmd({
       .option("file", {
         alias: ["f"],
         type: "string",
-        array: true,
         describe: "file(s) to attach to message",
       })
       .option("title", {
