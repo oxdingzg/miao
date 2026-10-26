@@ -36,6 +36,11 @@ struct Settlement {
     is_error: bool,
     #[serde(default)]
     output_json: Option<String>,
+    /// What the host rendered beside the model-facing result. It never reaches
+    /// the model, but a replay has to reproduce it or the host's transcript
+    /// loses the diff on every replayed run.
+    #[serde(default)]
+    display: Option<Value>,
 }
 
 struct Cursor {
@@ -145,7 +150,7 @@ fn encode(value: &Value) -> Result<Vec<u8>, Error> {
 
 impl Settlement {
     fn materialize(self) -> Result<(Value, bool), Error> {
-        let output = if let Some(raw) = self.output_json {
+        let mut output = if let Some(raw) = self.output_json {
             let decoded: Value = serde_json::from_str(&raw)?;
             if encode(&decoded)? != encode(&self.output)? {
                 return Err(Error::Invalid(
@@ -156,6 +161,11 @@ impl Settlement {
         } else {
             self.output
         };
+        // Carried the same way a live mutation carries it, so the store moves
+        // it into the event and keeps it out of the model-facing result.
+        if let (Some(display), Some(object)) = (self.display, output.as_object_mut()) {
+            object.insert("_display".into(), display);
+        }
         Ok((output, self.is_error))
     }
 }
@@ -200,6 +210,25 @@ mod tests {
             .await
             .is_err());
         assert!(replay.take("session", "write_file", &input).await.is_err());
+    }
+
+    #[test]
+    fn a_recorded_display_block_rides_the_replayed_result() {
+        // The model-facing output and its raw JSON stay exactly as recorded;
+        // the host's diff comes back only through `_display`, where the store
+        // moves it into the event.
+        let settlement: Settlement = serde_json::from_value(json!({
+            "output":{"applied":true},"is_error":false,"output_json":"{\"applied\":true}",
+            "display":{"files":[{"path":"a.txt","patch":"@@ -1 +1 @@"}]}
+        }))
+        .unwrap();
+        let (output, is_error) = settlement.materialize().unwrap();
+        assert!(!is_error);
+        assert_eq!(output["applied"], json!(true));
+        assert_eq!(output["_display"]["files"][0]["path"], json!("a.txt"));
+        let without: Settlement =
+            serde_json::from_value(json!({"output":{"applied":true},"is_error":false})).unwrap();
+        assert!(without.materialize().unwrap().0.get("_display").is_none());
     }
 
     #[test]
