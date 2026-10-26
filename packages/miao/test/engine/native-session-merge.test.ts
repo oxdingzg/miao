@@ -20,7 +20,10 @@ test("an unreadable native Location does not fail the session listing", async ()
   const healthy = AbsolutePath.make(path.join(tmp.path, "healthy"))
   await Bun.write(path.join(healthy, ".keep"), "")
   const vanished = AbsolutePath.make(path.join(tmp.path, "vanished"))
+  // `broken` exists but still fails, so the run proves a single unreadable
+  // Location neither hides its siblings nor gets swallowed by the probe.
   const broken = AbsolutePath.make(path.join(tmp.path, "broken"))
+  await Bun.write(path.join(broken, ".keep"), "")
   const storage = path.join(tmp.path, "product.db")
 
   const result = await Effect.gen(function* () {
@@ -53,13 +56,17 @@ test("an unreadable native Location does not fail the session listing", async ()
       sessions: [],
       limit: 10,
       order: "desc",
-      // A Location whose directory vanished fails during resolution, the way
-      // `Project.resolve` dies on `realPath` before an engine child is spawned.
+      // A Location whose directory vanished is skipped before resolution: the
+      // probe keeps `Project.resolve`, and every service it would boot, off a
+      // path that no longer exists. Resolution stays fatal for anything else,
+      // so a genuine failure is still reported.
       projects: {
-        resolve: (directory: AbsolutePath) =>
-          directory === vanished
-            ? Effect.die(new Error(`realPath: ${directory} does not exist`))
-            : Effect.succeed({ id: Project.ID.global }),
+        resolve: (directory: AbsolutePath) => {
+          expect(directory).not.toBe(vanished)
+          return directory === broken
+            ? Effect.die(new Error("realPath failed for a directory that exists"))
+            : Effect.succeed({ id: Project.ID.global })
+        },
       },
     })
   }).pipe(Effect.provide(Database.layerFromPath(storage)), Effect.runPromise)

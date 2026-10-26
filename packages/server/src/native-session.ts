@@ -1,3 +1,4 @@
+import { existsSync } from "node:fs"
 import { Credential } from "@miao/schema/credential"
 import { Agent } from "@miao/schema/agent"
 import { SessionModelRoute } from "@miao/schema/session-model-route"
@@ -361,8 +362,19 @@ export const mergeNativeSessions = Effect.fn("NativeSession.mergeSessions")(func
     // an engine storage adopted from a temp workspace. Opening that Location dies
     // in `realPath`, and one dead path must not fail the whole page — the catalog
     // and every healthy native Location still have Sessions the user needs to
-    // see. Skip only the unreadable group, and leave a trace for the operator.
+    // see. Skip only the unreadable group.
     const groupEntries = yield* Effect.gen(function* () {
+      // A directory that is already gone is the expected end of a Location
+      // rather than a failure to read it: miao creates and removes worktrees,
+      // and temp checkouts go away on their own. Probing it here keeps the
+      // listing from resolving, booting location services for, and warning
+      // about the same dead path on every refresh.
+      if (!existsSync(group.location.directory)) {
+        yield* Effect.logDebug("native Session Location directory no longer exists", {
+          directory: group.location.directory,
+        })
+        return []
+      }
       const project = (yield* input.projects.resolve(group.location.directory)).id
       if (input.project && project !== input.project) return []
       const catalog = input.native.catalog
