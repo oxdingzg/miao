@@ -26,6 +26,25 @@ TS 的判定路径删除。
 4. **迁移**：产品表现有行一次性导入引擎库（幂等，按 `(scope, rule)` 去重），导入后产品表只读。
 5. **收紧**：S4 之后产品表可以整体删除；S6 只承诺"产品表不再是权威"。
 
+### 3.1 实现前必须知道：grant 不是规则
+
+引擎的 grant 是**精确调用**的摘要（`crates/miao-engine/src/permission_grant.rs:13-100`）：
+`Scope` 由 `workspace + authority_revision + tool + resource + targets + input_hash` 求 SHA-256 得到，
+`contains` 只做精确匹配。它回答的是"这一次调用是否已被批准"，不是"某条模式规则是否允许"。
+
+产品的 saved permission 是**模式规则**（`packages/core/src/permission/sql.ts:7`），由 TS 的
+policy 做优先级求值。两者不是同一种东西，所以 S6 不是"加一个导入 RPC 把产品表灌进 grant 表"：
+
+- 精确 grant 无法表达 `bash:git *` 这类模式；导入时只能为历史调用逐个造 scope，对新调用无效。
+- 真正缺的是"规则求值"进引擎：模式匹配、优先级（session > project > global）、allow/ask/deny
+  三态与 deny 优先，以及 `authority_revision` 与 agent manifest 的绑定关系。
+- 这一步是安全敏感的：判定语义出错等于悄悄放宽权限。因此 S6 的实施顺序应为
+  ①引擎侧规则模型与求值（含与 TS 判定表的黄金样例对齐）→ ②把产品表投影为引擎规则 →
+  ③删除 TS 判定路径。三者在同一个 PR 里做是不安全的。
+
+本文原来的"grant 表成为唯一存储"仍然成立，但"唯一存储"存的是**规则**，而不是今天的精确 scope；
+`engine_permission_grant` 继续作为"这次调用已批准"的缓存，二者并存。
+
 ## 4. 验收
 
 - 同一组审批脚本（允许一次、always allow、项目级 allow、拒绝）在 native 与 TS Session 上
