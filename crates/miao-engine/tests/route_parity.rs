@@ -259,3 +259,59 @@ async fn vertex_anthropic_wire_matches_the_product_route() {
     assert!(body.get("model").is_none());
     server.abort();
 }
+/// Azure's Responses wire: the same `api-key` auth and `api-version` query as
+/// its chat wire, carrying the Responses body instead of `messages`.
+#[tokio::test]
+async fn azure_responses_wire_matches_the_product_route() {
+    let (send, mut seen) = mpsc::channel(8);
+    let router = Router::new().fallback(
+        move |uri: Uri, headers: HeaderMap, Json(body): Json<Value>| {
+            let send = send.clone();
+            async move {
+                send.send((uri.to_string(), headers, body)).await.unwrap();
+                (StatusCode::UNPROCESSABLE_ENTITY, "fixture")
+            }
+        },
+    );
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let base = format!("http://{}", listener.local_addr().unwrap());
+    let server = tokio::spawn(async move { axum::serve(listener, router).await.unwrap() });
+    std::env::set_var(AZURE_KEY, "azure-secret");
+    let root = tempfile::tempdir().unwrap();
+    let (file, workspace) = manifest(
+        root.path(),
+        json!([
+            {
+                "id": "azure/gpt-4.1",
+                "provider": "openai-responses",
+                "model": "prod-chat",
+                "endpoint": format!("{base}/openai/v1/responses"),
+                "primary": true,
+                "auth": {"style": "api-key", "query": {"api-version": "v1"}},
+                "variants": [],
+                "credential": {"type": "environment", "key": AZURE_KEY}
+            }
+        ]),
+    );
+    let owner = Arc::new(
+        OpenAIResponses::new(base.clone(), "owner-key".into(), "prod-chat".into()).unwrap(),
+    );
+    let catalog = load(&file, &workspace, owner).await.unwrap().0;
+    let (progress, _receive) = mpsc::channel(16);
+    assert!(matches!(
+        catalog
+            .for_route("azure/gpt-4.1")
+            .unwrap()
+            .stream(request(), progress, CancellationToken::new())
+            .await,
+        Err(ProviderError::Http(422))
+    ));
+    let (uri, headers, body) = seen.recv().await.unwrap();
+    assert_eq!(uri, "/openai/v1/responses?api-version=v1");
+    assert_eq!(headers["api-key"], "azure-secret");
+    assert!(!headers.contains_key("authorization"));
+    assert_eq!(body["model"], "prod-chat");
+    assert!(body.get("input").is_some());
+    assert!(body.get("messages").is_none());
+    server.abort();
+}

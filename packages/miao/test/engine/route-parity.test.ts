@@ -127,7 +127,7 @@ const AZURE_DEPLOYMENT = "prod-chat"
  * model, the resource on the provider, and picks the Chat wire through
  * `useCompletionUrls`; without it the same model would ask for Responses.
  */
-const azureCatalog = (options: { deployment?: boolean }) =>
+const azureCatalog = (options: { deployment?: boolean; responses?: boolean }) =>
   Effect.gen(function* () {
     const services = yield* Catalog.Service
     const integrations = yield* Integration.Service
@@ -141,7 +141,7 @@ const azureCatalog = (options: { deployment?: boolean }) =>
       draft.provider.update(ProviderV2.ID.azure, (provider) => {
         provider.integrationID = Integration.ID.make("azure")
         provider.api = { type: "aisdk", package: "@ai-sdk/azure", settings: { resourceName: "contoso" } }
-        provider.request.body.useCompletionUrls = true
+        if (options.responses !== true) provider.request.body.useCompletionUrls = true
         if (options.deployment === true) provider.request.body.useDeploymentBasedUrls = true
       })
       draft.model.update(ProviderV2.ID.azure, ModelV2.ID.make(AZURE_MODEL), (model) => {
@@ -154,7 +154,7 @@ const azureCatalog = (options: { deployment?: boolean }) =>
   })
 
 /** The manifest `profile()` produced, with an Azure key in the environment. */
-const azureManifest = (options: { deployment?: boolean; version?: string } = {}) =>
+const azureManifest = (options: { deployment?: boolean; responses?: boolean; version?: string } = {}) =>
   Effect.acquireUseRelease(
     Effect.sync(() => {
       const previous = process.env.AZURE_API_KEY
@@ -184,7 +184,7 @@ it.live("azure chat keeps the plugin's resource URL and the v1 api-version defau
     expect(routes.find((route) => route.id === `azure/${AZURE_MODEL}`)).toMatchObject({
       provider: "azure",
       endpoint: "https://contoso.openai.azure.com/openai/v1/chat/completions",
-      auth: { query: { "api-version": "v1" } },
+      auth: { style: "api-key", query: { "api-version": "v1" } },
       credential: { type: "environment", key: "AZURE_API_KEY" },
     })
   }),
@@ -286,5 +286,16 @@ it.live("vertex anthropic resolves a plain region to its own host", () =>
     expect(routes.find((route) => route.id === `google-vertex/${VERTEX_MODEL}`)?.endpoint).toBe(
       `https://europe-west4-aiplatform.googleapis.com/v1/projects/proj-alpha/locations/europe-west4/publishers/anthropic/models/${VERTEX_MODEL}:streamRawPredict`,
     )
+  }),
+)
+
+it.live("azure keeps the Responses wire, with api-key and the api-version query", () =>
+  Effect.gen(function* () {
+    const routes = yield* azureManifest({ responses: true })
+    expect(routes.find((route) => route.id === `azure/${AZURE_MODEL}`)).toMatchObject({
+      provider: "openai-responses",
+      endpoint: "https://contoso.openai.azure.com/openai/v1/responses",
+      auth: { style: "api-key", query: { "api-version": "v1" } },
+    })
   }),
 )

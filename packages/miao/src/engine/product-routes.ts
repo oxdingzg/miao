@@ -508,11 +508,8 @@ function profile(model: ModelV2.Info, account: Account, integration: string): Tr
   if (model.api.package === "@ai-sdk/azure") {
     // Azure OpenAI has two wires and the plugin picks between them: the SDK's
     // `chat` model when the provider sets `useCompletionUrls`, otherwise its
-    // `responses` model. Only the chat wire has a native transport today, so a
-    // default (Responses) route keeps the gateway until G0-1.4 maps it.
-    if (setting(model, "useCompletionUrls") !== true) return undefined
-    // An Entra (or configured `Authorization`) account authenticates with a
-    // Google-free OAuth token the engine cannot mint; it keeps the gateway.
+    // `responses` model. Both authenticate with `api-key` and carry the API
+    // version in the query rather than the path.
     if (account.value?.type !== "key") return undefined
     const resource = azureResource(model)
     const declared = model.api.url
@@ -523,15 +520,19 @@ function profile(model: ModelV2.Info, account: Account, integration: string): Tr
       setting(model, "useDeploymentBasedUrls") === true
         ? `${base.replace(/\/v1\/?$/, "")}/deployments/${model.api.id}`
         : (declared ?? `${base}/v1`)
-    const url = endpoint(baseURL, "chat/completions")
+    const chat = setting(model, "useCompletionUrls") === true
+    const url = endpoint(baseURL, chat ? "chat/completions" : "responses")
     if (!url) return undefined
     // The route defaults to `v1`, which is what the plugin sends when the model
     // declares no version.
     const version = setting(model, "apiVersion")
     return {
-      provider: "azure",
+      provider: chat ? "azure" : "openai-responses",
       endpoint: url,
-      auth: { query: { "api-version": typeof version === "string" && version !== "" ? version : "v1" } },
+      auth: {
+        style: "api-key",
+        query: { "api-version": typeof version === "string" && version !== "" ? version : "v1" },
+      },
     }
   }
   if (model.api.package === "@ai-sdk/amazon-bedrock/mantle") {
