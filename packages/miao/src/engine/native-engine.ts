@@ -108,7 +108,10 @@ import { readTranscript } from "./transcript"
  * boundary has to close before a compaction pass can run. The Session-state
  * variant rises when durable progress would be injected into an oversized
  * prompt; matching only the first message left that case with no recovery at
- * all, so a Session with todos or a goal could never compact out of it.
+ * all, so a Session with todos or a goal could never compact out of it. The
+ * engine now sends such a turn without the note instead of refusing it, but the
+ * engine is installed separately: a newer product can still reach one that
+ * emits this refusal, so it stays recognised.
  */
 const OVERFLOW = [
   "selected history exceeds budget",

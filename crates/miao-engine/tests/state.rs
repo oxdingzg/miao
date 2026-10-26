@@ -488,3 +488,60 @@ async fn provider_receives_dependency_ready_context_without_unlocking_serial_wor
     assert!(text.contains(r#"Runnable tasks (all prerequisites completed): ["7"]"#));
     assert!(!text.contains(r#"Runnable tasks (all prerequisites completed): ["5""#));
 }
+
+/// An input already close to the request budget still runs: the state note is
+/// optional context, so it is dropped rather than refusing every turn. Before
+/// this, a Session whose history reached the budget with todos or a goal open
+/// failed permanently, because each retry assembled the same oversized input.
+#[tokio::test]
+async fn an_oversized_input_drops_the_state_note_instead_of_failing() {
+    let dir = tempfile::tempdir().unwrap();
+    let store = setup(&dir.path().join("engine.db")).await;
+    store
+        .update_state("s", "state1", todos("current-task", 0))
+        .await
+        .unwrap();
+    store
+        .message(
+            "s",
+            "assistant",
+            json!([{"type":"text","text":"x".repeat(2 * 1024 * 1024 - 200)}]),
+        )
+        .await
+        .unwrap();
+    let (send, mut receive) = tokio::sync::mpsc::channel(4);
+    let runtime = miao_engine::runtime::Runtime::new(
+        store.clone(),
+        std::sync::Arc::new(Capture { send }),
+        Tools::new(dir.path()).await.unwrap(),
+    )
+    .await
+    .unwrap();
+    runtime
+        .admit(
+            Input {
+                agent_references: Default::default(),
+                command: None,
+                session_id: "s".into(),
+                input_id: "two".into(),
+                prompt: "continue".into(),
+                delivery: Delivery::Steer,
+            },
+            true,
+        )
+        .await
+        .unwrap();
+    let request = receive.recv().await.unwrap();
+    finished(&store, 1).await;
+    let text = serde_json::to_string(&request.messages).unwrap();
+    assert!(!text.contains("<session-state>"));
+    assert!(text.len() < 2 * 1024 * 1024 + 1024);
+    let events = store.events("s", 0, 100).await.unwrap();
+    assert!(!events.iter().any(|event| event.kind == "stop_failure"));
+    let started = events
+        .iter()
+        .rfind(|event| event.kind == "provider.started")
+        .unwrap();
+    assert_eq!(started.data["state_selection"]["status"], "skipped");
+    assert_eq!(started.data["state_selection"]["reason"], "input_budget");
+}

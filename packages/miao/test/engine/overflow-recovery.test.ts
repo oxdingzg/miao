@@ -14,9 +14,12 @@ test("both overflow refusals reach the compaction recovery", () => {
   expect(overflows("selected history exceeds budget")).toBe(false)
 })
 
-// The Session-state refusal is the one the engine actually emits today, so the
-// recovery must keep matching its exact wording.
-test("the engine still emits the Session-state overflow the recovery matches", async () => {
+// The engine no longer refuses an oversized input over its Session-state note:
+// it sends the turn without the note. The host keeps matching the old refusal
+// because the engine is installed separately, so a newer product can still be
+// talking to one that emits it, and an unrecognised overflow is terminal.
+test("the engine drops the state note instead of refusing the turn", async () => {
   const source = await Bun.file(new URL("../../../../crates/miao-engine/src/runtime.rs", import.meta.url)).text()
-  expect(source.includes('"selected input including Session state exceeds budget"')).toBe(true)
+  expect(source.includes('"status":"skipped","reason":"input_budget"')).toBe(true)
+  expect(source.includes("selected input including Session state exceeds budget")).toBe(false)
 })

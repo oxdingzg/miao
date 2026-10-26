@@ -1391,6 +1391,12 @@ fn provider_error_text(detail: &Value) -> Option<String> {
     }
 }
 
+fn state_selected(state: &Value) -> Result<Value, Error> {
+    Ok(
+        json!({"status":"selected","todos_revision":state["todos"]["revision"],"goal_revision":state["goal"]["revision"],"fingerprint":crate::permission::digest(&serde_json::to_vec(state)?)}),
+    )
+}
+
 async fn execute(
     session: &str,
     run: &str,
@@ -1590,25 +1596,31 @@ async fn execute(
             crate::permission::Access::Read,
         ) == Decision::Allow;
         let state_selection = if state_allowed {
-            if !state["todos"].is_null() || !state["goal"].is_null() {
+            if state["todos"].is_null() && state["goal"].is_null() {
+                state_selected(&state)?
+            } else {
                 let ready = crate::state::runnable_state(&state)?;
                 let text=format!("<session-state>\n{}\n</session-state>\nRunnable tasks (all prerequisites completed): {}. Waiting jobs block only their dependents; continue independent runnable work. Current durable progress tracking; recorded evidence is a claim, not independent verification. Follow the latest user request.",serde_json::to_string(&state)?,serde_json::to_string(&ready)?);
+                // The note is optional context, so an input already near the
+                // request budget is sent without it. Refusing the turn left a
+                // Session with todos or a goal unable to run at all once its
+                // history reached the budget, and retrying only re-sent the
+                // same oversized request.
                 if serde_json::to_vec(&history)?.len() + text.len() > 2 * 1024 * 1024 {
-                    return Err(Error::Invalid(
-                        "selected input including Session state exceeds budget".into(),
-                    ));
+                    json!({"status":"skipped","reason":"input_budget"})
+                } else {
+                    history.insert(
+                        0,
+                        crate::protocol::Message {
+                            role: "user".into(),
+                            content: json!([{"type":"text","text":text}]),
+                            checkpoint: None,
+                            recorded_at_ms: None,
+                        },
+                    );
+                    state_selected(&state)?
                 }
-                history.insert(
-                    0,
-                    crate::protocol::Message {
-                        role: "user".into(),
-                        content: json!([{"type":"text","text":text}]),
-                        checkpoint: None,
-                        recorded_at_ms: None,
-                    },
-                );
             }
-            json!({"status":"selected","todos_revision":state["todos"]["revision"],"goal_revision":state["goal"]["revision"],"fingerprint":crate::permission::digest(&serde_json::to_vec(&state)?)})
         } else {
             json!({"status":"skipped","reason":"state_read_policy"})
         };
