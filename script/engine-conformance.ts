@@ -19,7 +19,8 @@
  * <data>/results.json. Secrets from the engine credential environment are
  * redacted from every archive; they are never printed.
  */
-import { mkdir, mkdtemp, readdir, readFile, rm, stat, writeFile } from "node:fs/promises"
+import { copyFile, mkdir, mkdtemp, readdir, readFile, rm, stat, writeFile } from "node:fs/promises"
+import { existsSync } from "node:fs"
 import os from "node:os"
 import path from "node:path"
 import { deflateSync } from "node:zlib"
@@ -721,6 +722,21 @@ const runCell = async (scenario: Scenario, engine: Engine, model: string) => {
     errors: [],
   }
   await mkdir(storageDir, { recursive: true })
+  // A fresh product database knows no integrations, so the seeded model
+  // (providerID/modelID resolved from the operator's own login) is missing and
+  // every cell dies pre-flight. Start each cell from a copy of the local
+  // product database instead; the copy stays cell-private.
+  // The release channel's database carries the operator's latest logins (the
+  // dev channel's copy can lag); fall back to it when the release db is absent.
+  const seedDb = [".local/share/miao/miao.db", ".local/share/miao/miao-local.db"]
+    .map((relative) => path.join(os.homedir(), relative))
+    .find((candidate) => existsSync(candidate))
+  if (seedDb !== undefined) {
+    await copyFile(seedDb, ctx.productDbPath).catch(() => undefined)
+    for (const side of ["-wal", "-shm"]) {
+      await copyFile(seedDb + side, ctx.productDbPath + side).catch(() => undefined)
+    }
+  }
   for (const [name, content] of Object.entries(scenario.files?.() ?? {})) {
     const file = path.join(workspace, name)
     await mkdir(path.dirname(file), { recursive: true })
