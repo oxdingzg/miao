@@ -94,15 +94,14 @@ pub fn sandbox_enabled(documents: &[Document], miao_sandbox: Option<&str>) -> bo
         .map(|document| document.value.clone())
         .collect::<Vec<_>>();
     let merged = config_scope::merge_values(&values);
-    match merged
-        .get("sandbox")
-        .and_then(Value::as_object)
-        .and_then(|sandbox| sandbox.get("mode"))
-        .and_then(Value::as_str)
-    {
-        Some("off") => false,
-        _ => true,
-    }
+    !matches!(
+        merged
+            .get("sandbox")
+            .and_then(Value::as_object)
+            .and_then(|sandbox| sandbox.get("mode"))
+            .and_then(Value::as_str),
+        Some("off")
+    )
 }
 
 fn env_switch(value: Option<&str>) -> Option<bool> {
