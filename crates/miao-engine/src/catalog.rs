@@ -17,7 +17,11 @@ pub async fn read(
     let mut entries = Vec::with_capacity(sessions.len());
     for session in sessions {
         let entry = async {
-            let snapshot = store.catalog_info(session).await?;
+            // A Session this storage never held carries no facts and no error:
+            // the reader's absence is the answer, and a listing skips it.
+            let Some(snapshot) = store.catalog_info(session).await? else {
+                return Ok::<_, Error>(json!({"session_id":session}));
+            };
             let (report, usage_error) = if usage {
                 match store.usage_report(session).await {
                     Ok(report) => (report, None),

@@ -9,6 +9,20 @@ import { EngineClient } from "@/engine/client"
 import { tmpdir } from "../fixture/fixture"
 
 const binary = process.env.MIAO_ENGINE_BIN
+test("a storage file that is already gone answers no facts instead of a conflict", async () => {
+  // A placement can outlive its storage. The reader must not be spawned for a
+  // path no one can open — a bogus binary proves no child ran — and the empty
+  // answer is what keeps a listing from warning about the row on every refresh.
+  const result = await Effect.runPromise(
+    readCatalog("/nonexistent/miao-engine", {
+      storage: AbsolutePath.make(path.join(process.env.TMPDIR ?? "/tmp", `missing-${crypto.randomUUID()}.db`)),
+      location: { directory: AbsolutePath.make(process.env.TMPDIR ?? "/tmp") },
+      sessions: [SessionID.make("ses_missing")],
+      usage: true,
+    }),
+  )
+  expect(result).toEqual([])
+})
 test.skipIf(!binary || capabilities(binary)?.catalog !== 1)(
   "catalog subprocess reads live storage without changing its owner or durable cursor",
   async () => {

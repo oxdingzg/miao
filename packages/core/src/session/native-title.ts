@@ -14,6 +14,7 @@ import { SessionEvent } from "@miao/schema/session-event"
 import { DateTime, Effect, Option, type Stream } from "effect"
 
 const inFlight = new Set<string>()
+const unavailableTitleModels = new Set<string>()
 
 /**
  * Generate the product title for a Session whose first run just settled and
@@ -77,16 +78,35 @@ export const afterRun = Effect.fn("SessionNativeTitle.afterRun")(function* (inpu
           ) === index,
       )
     for (const resolved of candidates) {
-      const title = yield* SessionTitle.generate({
+      const key = `${resolved.model.provider}/${resolved.model.id}`
+      // A model whose rejection is permanent stays rejected for the process:
+      // repeating it per idle transition only reproduces the same failure.
+      if (unavailableTitleModels.has(key)) continue
+      let failure: LLMError | undefined
+      const answered = yield* SessionTitle.generate({
         llm: input.llm,
         model: resolved.model,
         system: titleAgent?.system,
         prompt: input.prompt,
       }).pipe(
+        Effect.catch((error) =>
+          Effect.gen(function* () {
+            failure = error
+            yield* Effect.logWarning("native Session title model failed", { model: key, error })
+            return undefined
+          }),
+        ),
         Effect.timeoutOption("15 seconds"),
-        Effect.map(Option.getOrUndefined),
-        Effect.catch(() => Effect.succeed(undefined)),
       )
+      if (failure) {
+        if (SessionTitle.permanentRejection(failure)) unavailableTitleModels.add(key)
+        continue
+      }
+      if (Option.isNone(answered)) {
+        yield* Effect.logWarning("native Session title model timed out", { model: key })
+        continue
+      }
+      const title = answered.value
       if (!title) continue
       // The user may have renamed the Session while the title model ran.
       const current = yield* input.store.get(input.sessionID)

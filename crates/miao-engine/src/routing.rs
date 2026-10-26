@@ -79,20 +79,16 @@ pub fn build_with_responses(
                     .into(),
                 source,
                 model,
-            )
-            .map_err(|_| ProviderError::Transport)?
+            )?
             .with_prompt_cache(prompt_cache),
         )),
-        "openai-chat" => Ok(Arc::new(
-            OpenAIChat::with_source(
-                endpoint
-                    .unwrap_or("https://api.openai.com/v1/chat/completions")
-                    .into(),
-                source,
-                model,
-            )
-            .map_err(|_| ProviderError::Transport)?,
-        )),
+        "openai-chat" => Ok(Arc::new(OpenAIChat::with_source(
+            endpoint
+                .unwrap_or("https://api.openai.com/v1/chat/completions")
+                .into(),
+            source,
+            model,
+        )?)),
         "openai-responses" | "subscription-responses" => {
             let subscription = name == "subscription-responses";
             let default = if subscription {
@@ -109,8 +105,7 @@ pub fn build_with_responses(
                 } else {
                     Profile::Api
                 },
-            )
-            .map_err(|_| ProviderError::Transport)?;
+            )?;
             let provider = match cache {
                 Some(contract) => provider
                     .with_cache_contract(contract)
@@ -130,10 +125,12 @@ pub fn build_with_responses(
                 .ok_or_else(|| ProviderError::Stream("azure route requires an endpoint".into()))?;
             let api_version =
                 std::env::var("AZURE_OPENAI_API_VERSION").unwrap_or_else(|_| "2024-10-21".into());
-            Ok(Arc::new(
-                OpenAIChat::with_azure(endpoint.into(), source, model, &api_version)
-                    .map_err(|_| ProviderError::Transport)?,
-            ))
+            Ok(Arc::new(OpenAIChat::with_azure(
+                endpoint.into(),
+                source,
+                model,
+                &api_version,
+            )?))
         }
         "vertex-anthropic" => {
             let endpoint = endpoint.ok_or_else(|| {
@@ -141,10 +138,11 @@ pub fn build_with_responses(
                     "vertex-anthropic route requires a rawPredict endpoint".into(),
                 )
             })?;
-            Ok(Arc::new(
-                Anthropic::with_vertex_source(endpoint.into(), source, model)
-                    .map_err(|_| ProviderError::Transport)?,
-            ))
+            Ok(Arc::new(Anthropic::with_vertex_source(
+                endpoint.into(),
+                source,
+                model,
+            )?))
         }
         "vertex-gemini" => {
             let endpoint = endpoint.ok_or_else(|| {

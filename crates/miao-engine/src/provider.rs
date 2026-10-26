@@ -20,8 +20,8 @@ use tokio_util::sync::CancellationToken;
 pub enum ProviderError {
     #[error("interrupted")]
     Interrupted,
-    #[error("provider transport failed")]
-    Transport,
+    #[error("provider transport failed: {0}")]
+    Transport(String),
     #[error("provider response transport failed; outcome is not replayable")]
     ResponseTransport,
     #[error("provider response transport interrupted; local calls were not dispatched")]
@@ -59,7 +59,7 @@ impl ProviderError {
     pub(crate) fn can_fallback(&self) -> bool {
         matches!(
             self,
-            Self::Transport | Self::Http(429 | 500 | 502 | 503 | 504 | 529)
+            Self::Transport(_) | Self::Http(429 | 500 | 502 | 503 | 504 | 529)
         )
     }
     pub(crate) fn continuation(&self) -> Option<(&Reply, usize)> {
@@ -94,7 +94,9 @@ impl ProviderError {
     pub(crate) fn unavailable(&self) -> bool {
         match self {
             Self::Routed { source, .. } => source.unavailable(),
-            Self::Transport | Self::ResponseTransport | Self::ContinuableTransport { .. } => true,
+            Self::Transport(_) | Self::ResponseTransport | Self::ContinuableTransport { .. } => {
+                true
+            }
             Self::Http(status) => matches!(status, 429 | 500 | 502 | 503 | 504 | 529),
             _ => false,
         }
@@ -108,6 +110,45 @@ impl ProviderError {
             Self::Http(status) => matches!(status, 400 | 404 | 413 | 422),
             _ => false,
         }
+    }
+}
+
+impl From<reqwest::Error> for ProviderError {
+    fn from(error: reqwest::Error) -> Self {
+        Self::Transport(transport_reason(&error))
+    }
+}
+
+/// Why a request never produced a response, without `reqwest`'s own sentence:
+/// that one appends the request URL, and a route's query string can carry a
+/// credential. The innermost cause is the part an operator can act on, such as
+/// `Connection refused (os error 61)` or an invalid peer certificate.
+fn transport_reason(error: &reqwest::Error) -> String {
+    let kind = if error.is_timeout() {
+        "timed out"
+    } else if error.is_connect() {
+        "connect failed"
+    } else if error.is_body() {
+        "body failed"
+    } else if error.is_decode() {
+        "decode failed"
+    } else if error.is_redirect() {
+        "redirect failed"
+    } else if error.is_builder() {
+        "request could not be built"
+    } else {
+        "request failed"
+    };
+    let cause = std::error::Error::source(error).map(|source| {
+        let mut cause = source;
+        while let Some(inner) = cause.source() {
+            cause = inner;
+        }
+        cause.to_string()
+    });
+    match cause {
+        Some(cause) if !cause.is_empty() => format!("{kind}: {cause}"),
+        _ => kind.to_string(),
     }
 }
 /// Unavailable arguments remain explicit null in history; raw malformed JSON
@@ -215,7 +256,9 @@ pub(crate) fn transport_attempt() -> Result<(tokio::time::Instant, usize), Provi
         || tokio::time::Instant::now() >= scope.budget.deadline
         || !scope.budget.take(scope.limit)
     {
-        return Err(ProviderError::Transport);
+        return Err(ProviderError::Transport(
+            "the turn's retry window was spent before another stream attempt".into(),
+        ));
     }
     Ok((scope.budget.deadline, scope.budget.used()))
 }
@@ -669,8 +712,9 @@ impl Anthropic {
         // The default stays the plain string system prompt and a plain tool
         // catalog; the block form is only needed to carry a cache breakpoint.
         let tools = if self.prompt_cache {
-            let mut tools =
-                serde_json::to_value(&request.tools).map_err(|_| ProviderError::Transport)?;
+            let mut tools = serde_json::to_value(&request.tools).map_err(|error| {
+                ProviderError::Transport(format!("the tool catalog could not be encoded: {error}"))
+            })?;
             if let Some(last) = tools.as_array_mut().and_then(|tools| tools.last_mut()) {
                 last["cache_control"] = json!({"type":"ephemeral"});
             }
@@ -705,8 +749,7 @@ impl Anthropic {
                 .headers(request.header("anthropic-version", "2023-06-01"))?,
             &self.extra_headers,
         )?
-        .build()
-        .map_err(|_| ProviderError::Transport)?;
+        .build()?;
         if let Some(headers) = copilot {
             crate::copilot::apply(&mut request, &headers, true)?;
         }
@@ -962,7 +1005,9 @@ pub(crate) async fn request_with_retry(
     let mut self_healed = false;
     for attempt in 0..scope.requests {
         if tokio::time::Instant::now() >= deadline || !scope.budget.take(scope.cap) {
-            return Err(ProviderError::Transport);
+            return Err(ProviderError::Transport(
+                "the turn's retry window was spent before another request".into(),
+            ));
         }
         let request = request
             .try_clone()
@@ -980,7 +1025,8 @@ pub(crate) async fn request_with_retry(
             _=cancel.cancelled()=>Err(ProviderError::Interrupted),
             result=tokio::time::timeout_at(request_deadline,client.execute(request))=>match result {
                 Ok(Ok(mut response))=>{ response.extensions_mut().insert(watchdogs); Ok(response) },
-                _=>Err(ProviderError::Transport),
+                Ok(Err(error))=>Err(ProviderError::from(error)),
+                Err(_)=>Err(ProviderError::Transport("no response headers before the request deadline".into())),
             },
         };
         let (status, outcome) = match &response {
@@ -1034,7 +1080,7 @@ pub(crate) async fn request_with_retry(
                 .is_some_and(image_parse_transient);
         let retryable = matches!(
             error,
-            ProviderError::Transport | ProviderError::Http(429 | 500 | 502 | 503 | 504 | 529)
+            ProviderError::Transport(_) | ProviderError::Http(429 | 500 | 502 | 503 | 504 | 529)
         ) || transient_image_parse;
         // Carry the reason so a client can show why the attempt was retried.
         // The status code is the HTTP one when there was one.
@@ -1072,7 +1118,9 @@ pub(crate) async fn request_with_retry(
         let pause = retry_pause(attempt, requested);
         announce_retry(progress, cancel, attempt + 1, &reason, status, pause).await?;
     }
-    Err(ProviderError::Transport)
+    Err(ProviderError::Transport(
+        "no attempt produced a response within the turn's request budget".into(),
+    ))
 }
 
 /// Announce the next attempt, then wait for it. A cancelled wait reports the
@@ -1368,7 +1416,7 @@ mod retry_tests {
         // transport failure the attempt count implies.
         assert!(matches!(
             outcome,
-            Err(ProviderError::Transport) | Err(ProviderError::Http(503))
+            Err(ProviderError::Transport(_)) | Err(ProviderError::Http(503))
         ));
         for (attempt, delay) in delays(&notices).into_iter().enumerate() {
             let (low, high) = backoff_window(attempt);
@@ -1743,7 +1791,10 @@ async fn read_stream_with_budget<P: Parser>(
                             // Silence before any semantic event is the same
                             // retryable failure the old single deadline produced;
                             // after one, a stalled stream stays terminal.
-                            false => ProviderError::Transport,
+                            false => ProviderError::Transport(format!(
+                                "provider sent no response bytes for {}ms (set MIAO_LLM_STREAM_IDLE_TIMEOUT_MS to adjust, 0 disables)",
+                                byte_idle.as_millis(),
+                            )),
                             true => ProviderError::Stream(format!(
                                 "provider sent no response bytes for {}ms (set MIAO_LLM_STREAM_IDLE_TIMEOUT_MS to adjust, 0 disables)",
                                 byte_idle.as_millis(),

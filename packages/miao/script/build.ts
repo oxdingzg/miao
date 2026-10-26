@@ -331,7 +331,10 @@ for (const item of targets) {
       console.error(`Embedded engine smoke failed for ${name}:`, e)
       process.exit(1)
     } finally {
-      await $`rm -rf ${home}`
+      // Windows keeps the probe's image locked for a moment after the child
+      // exits, so this cleanup can still see EBUSY. The directory is
+      // disposable, and a failed cleanup must never fail the build.
+      await $`rm -rf ${home}`.nothrow()
     }
   }
 

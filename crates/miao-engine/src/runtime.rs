@@ -1878,7 +1878,7 @@ async fn execute(
                 }
             }
             match outcome {
-                Err(ProviderError::Transport) | Err(ProviderError::ResponseTransport)
+                Err(ProviderError::Transport(_)) | Err(ProviderError::ResponseTransport)
                     if !produced && attempts < 2 =>
                 {
                     attempts += 1;

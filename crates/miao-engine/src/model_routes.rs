@@ -120,8 +120,11 @@ impl Auth {
         if self.query.is_empty() {
             return Ok(None);
         }
-        let mut url = reqwest::Url::parse("http://localhost")
-            .map_err(|_| crate::provider::ProviderError::Transport)?;
+        let mut url = reqwest::Url::parse("http://localhost").map_err(|error| {
+            crate::provider::ProviderError::Transport(format!(
+                "the route query could not be encoded: {error}"
+            ))
+        })?;
         url.query_pairs_mut().extend_pairs(self.query.iter());
         Ok(url.query().map(str::to_owned))
     }

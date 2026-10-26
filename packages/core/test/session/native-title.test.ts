@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test"
-import { LLMEvent, Model, type LLMRequest } from "@miao/llm"
+import { LLMError, LLMEvent, Model, RateLimitReason, type LLMRequest } from "@miao/llm"
 import { AgentV2 } from "@miao/core/agent"
 import { SessionNativeTitle } from "@miao/core/session/native-title"
 import { SessionRunnerModel } from "@miao/core/session/runner/model"
@@ -276,4 +276,46 @@ test("a serving model without a pin clears the stale stored credential", async (
   expect(String(seen[0]?.model?.id)).toBe("serving-model")
   expect(seen[0]?.credentialID).toBeUndefined()
   expect(fixture.published).toHaveLength(1)
+})
+
+test("a plan-excluded title model is not retried on the next idle transition", async () => {
+  const provider = "plan-excluded-fixture"
+  const info0 = info(DEFAULT_TITLE)
+  const published: Array<{ readonly title: string }> = []
+  const requests: string[] = []
+  const deps = {
+    sessionID: "ses_plan_excluded" as SessionID,
+    prompt: "Fix the login flake",
+    store: { get: () => Effect.succeed(info0) },
+    llm: {
+      stream: (request: LLMRequest) => {
+        requests.push(`${request.model.provider}/${request.model.id}`)
+        return Stream.fail(
+          new LLMError({
+            module: "test",
+            method: "test",
+            reason: new RateLimitReason({ message: "当前订阅套餐暂未开放GLM-5.3-Highspeed权限" }),
+          }),
+        ) as never
+      },
+    },
+    agents: { get: () => Effect.succeed(undefined as never) },
+    models: {
+      resolve: (() =>
+        Effect.succeed({
+          model: Model.make({ id: "glm-5.3-highspeed", provider, route: {} as never }),
+          info: undefined as never,
+        })) as unknown as SessionRunnerModel.Interface["resolve"],
+    },
+    events: {
+      publish: (definition: unknown, payload: { readonly title: string }) => {
+        published.push(payload)
+        return Effect.void
+      },
+    },
+  }
+  await Effect.runPromise(SessionNativeTitle.afterRun(deps))
+  await Effect.runPromise(SessionNativeTitle.afterRun(deps))
+  expect(requests).toEqual([`${provider}/glm-5.3-highspeed`])
+  expect(published).toHaveLength(0)
 })
