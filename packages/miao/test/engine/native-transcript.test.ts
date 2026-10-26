@@ -270,6 +270,35 @@ test("replay uses the captured snapshot even when the native journal advances", 
   expect(messages.map((message) => message.id)).not.toContain("msg_future")
 })
 
+test("a snapshot cut at the legacy projection limit fails instead of hiding the tail", async () => {
+  const events = [
+    ...Array.from({ length: 1001 }, (_, index) => row(index + 1, "instructions_loaded", {})),
+    row(1002, "assistant.identity", {
+      anchor_seq: 1000,
+      assistant_seq: 1000,
+      agent: null,
+      provider: { protocol: "openai-chat", model: "fixture" },
+    }),
+  ]
+  await expect(
+    readTranscript({
+      sessionID: session,
+      engineID: "store",
+      location,
+      selected: false,
+      request: request(
+        {
+          session_id: session,
+          cursor: 1002,
+          messages: Array.from({ length: 1001 }, (_, index) => ({ seq: index + 1, role: "assistant" })),
+          selection: null,
+        },
+        events,
+      ),
+    }),
+  ).rejects.toThrow(/truncates long Session snapshots/)
+})
+
 test("a snapshot without provenance/selection fails rather than returning TS history", async () => {
   await expect(
     readTranscript({
